@@ -71,8 +71,8 @@ struct JackDescriptor {
   Polarity polarity;
 
   // Nominal recommended range (virtual volts). Tolerated range is the absolute
-  // hardware-tolerant limit; 0 when unstated (then fieldEvidence.range is not
-  // confirmed).
+  // hardware-tolerant limit; 0 when unstated (then fieldEvidence.nominalRange is
+  // the only range fact evidenced — tolerated is never implied from it).
   double nominalMin;
   double nominalMax;
   double toleratedMin;
@@ -95,7 +95,7 @@ struct JackDescriptor {
   Coupling coupling;
   EvidenceRef evidence;
   EvidenceStatus status;
-  FieldEvidence fieldEvidence;  // per-field provenance (range/threshold/saturation/transfer)
+  FieldEvidence fieldEvidence;  // per-field provenance (nominal/tolerated range, threshold, saturation, transfer)
 };
 
 // A hidden signal edge in the patching graph. Does not consume user-cable

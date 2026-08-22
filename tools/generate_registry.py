@@ -104,23 +104,18 @@ class Registry:
         self.jack_ids = [(j["id"], j["stable_id"], i) for i, j in enumerate(self.jacks)]
 
     def _validate(self):
-        # --- explicit numeric ids: present, integer, unique per kind, non-negative ---
-        for label, group in (("module", self.modules), ("program", self.programs)):
+        # --- explicit numeric ids: present, integer, unique per kind, uint32-range ---
+        # The id IS the persisted numeric value, so it must be expressible in the
+        # u32 wire type (order-independent identity, design/07 §7). Both under- and
+        # over-flow are rejected.
+        for label, group in (("module", self.modules), ("program", self.programs),
+                             ("parameter", self.parameters), ("jack", self.jacks)):
             seen = set()
             for item in group:
                 nid = item.get("id", None)
-                if not isinstance(nid, int) or nid < 0:
-                    raise ValueError(f"{label} {item.get('stable_id', '?')} is missing a non-negative numeric id")
-                if nid in seen:
-                    raise ValueError(f"{label} numeric id {nid} is reused")
-                seen.add(nid)
-
-        for label, group in (("parameter", self.parameters), ("jack", self.jacks)):
-            seen = set()
-            for item in group:
-                nid = item.get("id", None)
-                if not isinstance(nid, int) or nid < 0:
-                    raise ValueError(f"{label} {item['stable_id']} is missing a non-negative numeric id")
+                if not isinstance(nid, int) or nid < 0 or nid > 0xFFFFFFFF:
+                    raise ValueError(f"{label} {item.get('stable_id', '?')} is missing a numeric id "
+                                     f"in [0, 0xFFFFFFFF] (got {nid!r})")
                 if nid in seen:
                     raise ValueError(f"{label} numeric id {nid} is reused")
                 seen.add(nid)
@@ -185,7 +180,8 @@ class Registry:
                 if label == "jack":
                     fe = item.get("fieldEvidence", {})
                     if not all(fe.get(k, "unverified") in VALID_STATUS
-                               for k in ("range", "threshold", "saturation", "transfer")):
+                               for k in ("nominalRange", "toleratedRange",
+                                         "threshold", "saturation", "transfer")):
                         raise ValueError(f"jack {item['stable_id']} bad fieldEvidence")
 
 
@@ -257,11 +253,12 @@ def saturation_expr(j):
 
 def field_evidence_expr(j):
     fe = j.get("fieldEvidence", {})
-    r = status_from(fe.get("range", "unverified"))
+    nr = status_from(fe.get("nominalRange", "unverified"))
+    tr = status_from(fe.get("toleratedRange", "unverified"))
     t = status_from(fe.get("threshold", "unverified"))
     s = status_from(fe.get("saturation", "unverified"))
-    tr = status_from(fe.get("transfer", "unverified"))
-    return f"FieldEvidence{{{r}, {t}, {s}, {tr}}}"
+    xf = status_from(fe.get("transfer", "unverified"))
+    return f"FieldEvidence{{{nr}, {tr}, {t}, {s}, {xf}}}"
 
 
 # ----------------------------------------------------------------------------

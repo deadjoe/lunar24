@@ -47,8 +47,9 @@ static bool valid_status(core::EvidenceStatus s) {
 }
 
 static bool valid_fe(const core::FieldEvidence& fe) {
-  return valid_status(fe.range) && valid_status(fe.threshold) &&
-         valid_status(fe.saturation) && valid_status(fe.transfer);
+  return valid_status(fe.nominalRange) && valid_status(fe.toleratedRange) &&
+         valid_status(fe.threshold) && valid_status(fe.saturation) &&
+         valid_status(fe.transfer);
 }
 
 static void frozen_counts() {
@@ -153,12 +154,25 @@ static void devices_capacity_matches_routes() {
 }
 
 static void id_string_lookup_is_complete() {
-  // Every enum value must round-trip through the generated id-string switch.
+  // Every enum value must round-trip through the generated id-string switch, keyed
+  // by each descriptor's OWN explicit numeric id (order-independent identity,
+  // design/07 §7) — never by its JSON/array index. index==id is an accident to be
+  // caught by keys-by-id, not an ordering guarantee to rely on.
   for (std::uint32_t i = 0; i < core::kModuleCount; ++i) {
-    CHECK(core::module_id_string(core::ModuleId{i}) == reg::kModules[i].stable_id);
+    const auto& d = reg::kModules[i];
+    CHECK(core::module_id_string(d.id) == d.stable_id);
   }
   for (std::uint32_t i = 0; i < core::kParameterCount; ++i) {
-    CHECK(core::parameter_id_string(core::ParameterId{i}) == reg::kParameters[i].stable_id);
+    const auto& d = reg::kParameters[i];
+    CHECK(core::parameter_id_string(d.id) == d.stable_id);
+  }
+  for (std::uint32_t i = 0; i < core::kJackCount; ++i) {
+    const auto& d = reg::kJacks[i];
+    CHECK(core::jack_id_string(d.id) == d.stable_id);
+  }
+  for (std::uint32_t i = 0; i < core::kProgramCount; ++i) {
+    const auto& d = reg::kPrograms[i];
+    CHECK(core::program_id_string(d.id) == d.stable_id);
   }
 }
 
