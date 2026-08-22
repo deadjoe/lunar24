@@ -1,14 +1,19 @@
 # Lunar 24
 
-An open-source desktop software musical instrument: a software emulation of the
-ELTA Music **Solar 42N** — the analogue microtonal ambient drone machine and semi-modular
-stand-alone synthesizer.
+An open-source desktop software musical instrument: an **independent, unaffiliated study**
+of the ELTA Music **Solar 42N** — the analogue microtonal ambient drone machine and
+semi-modular stand-alone synthesizer. Lunar 24 is not affiliated with, endorsed by, or a
+product of ELTA Music / Analogue Solutions; it is a clean-room engineering study built from
+the freely published manual and the project's own fact mapping.
 
-Lunar 24 keeps the Solar 42N sound topology, panel layout, and operating relationships, and
-remaps its visual aesthetic through a restrained "moon" theme. The product boundary is
-strict: it does **not** add sound sources, modulators, general-purpose routing matrices,
-macros, plugin/DAW hosts, or a multi-preset library beyond the hardware's own four keyboard
-presets.
+Lunar 24 aims to reproduce the Solar 42N **panel layout and operating behaviour** as
+documented, and remaps its visual aesthetic through a restrained "moon" theme. The product
+boundary is strict: it does **not** add sound sources, modulators, general-purpose routing
+matrices, macros, plugin/DAW hosts, or a multi-preset library beyond the hardware's own four
+keyboard presets. The goal is architectural and behavioural, **not** a claim of calibrated or
+identical sonic fidelity — that would require the hardware as a reference and would
+over-claim beyond the evidence discipline in `design/07-core-contract.md`. Public audio may
+inform perceptual tuning only; it is never presented as strict calibration.
 
 > This repository tracks its own source and design documents only. The ELTA Solar 42N
 > reference manual, panel render and effector catalog images are copyrighted third-party
