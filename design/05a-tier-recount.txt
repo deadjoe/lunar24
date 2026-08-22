@@ -1,0 +1,30 @@
+
+【A 空间核心】完成 DSP 家族 ['P1', 'P2', 'P3']
+  可交付程序 14/39 = 36%   （本档新增 14）
+
+【B 完整处理】完成 DSP 家族 ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7']
+  可交付程序 33/39 = 85%   （本档新增 19）
+
+【C 全量】完成 DSP 家族 ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']
+  可交付程序 39/39 = 100%   （本档新增 6）
+
+=== 各 DSP 家族被多少程序『需要』(≠可交付) ===
+  P1: 13
+  P2: 12
+  P3: 10
+  P4: 11
+  P5: 5
+  P6: 3
+  P7: 3
+  P8: 6
+
+=== 判断口径 ===
+「可交付」= 该程序的**全部**必需 DSP 家族都已完成（required ⊆ done），
+不是「该程序用到了某个家族」。
+
+=== 已复核的判断口径 ===
+1. MAGIC-2 / ORCHE 的 **reverse / loop 播放**：留在 P1 家族，但必须实现 reverse/windowed-playback 子路径，不能把普通 delay 当成已完成。
+2. INFINITY-1 **Pre delay mod** 必须依赖 P4；固定 modulation 会让 Y 参数失真，不能计为可交付。
+3. FILTER-1 **Auto Wah 的 Envelope**、ORCHE 的 **Trigger threshold**、DIGITAL-3 的 **Envelope amount**：
+   复用包络跟随器代码，但左右效果通道各有本地运行实例，不共享面板 PREAMP 的状态；不另立家族。
+4. GENERATOR-3 **Voice 的 Z=LP/HP** 依赖 P5，并使用效果器本地滤波实例。
