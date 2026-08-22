@@ -15,7 +15,12 @@ endif()
 
 # Strict warnings on Lunar-24-owned code. -Werror is applied per-target below so
 # third-party build units (iPlug2, P1+) are never forced to be warning-clean.
-add_compile_options(-Wall -Wextra -Wpedantic)
+# MSVC uses /W4 + /WX; GCC/Clang use -Wall -Wextra -Wpedantic -Werror.
+if(MSVC)
+  add_compile_options(/W4)
+else()
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
 # ---------------------------------------------------------------------------
 # lunar_core: the framework-free synth core (header-only at P0: descriptors,
@@ -46,19 +51,27 @@ add_test(NAME core_headers_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_core_headers.py)
 
-# Negative registry fixtures must each be REJECTED by the validator.
-foreach(fix duplicate_id bad_range dangling_route bad_status)
-  add_test(NAME reg_negative_${fix}
-    COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_registry.py --validate
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/reg_negative/${fix}.json)
-  set_tests_properties(reg_negative_${fix} PROPERTIES WILL_FAIL TRUE)
-endforeach()
+# Negative registry fixtures must each be REJECTED by the validator FOR THEIR
+# INTENDED REASON (a message-asserting wrapper, so a fixture that fails for an
+# accidental reason no longer passes).
+add_test(NAME reg_negative
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_registry_negative.py)
+
+# Order-independent identity regression: serialized ids = explicit numeric id,
+# never a JSON-order index. Reordering the spec must not renumber the enums.
+add_test(NAME registry_id_stability
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_id_stability.py)
 
 function(lunar_add_test name src)
   add_executable(${name} ${src})
   target_link_libraries(${name} PRIVATE lunar_core)
-  target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  if(MSVC)
+    target_compile_options(${name} PRIVATE /W4 /WX)
+  else()
+    target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
   add_test(NAME ${name} COMMAND ${name})
 endfunction()
 

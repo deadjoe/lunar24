@@ -39,8 +39,8 @@ core/        framework-free synth core (public contract headers + implementation
 app/         standalone app / device / MIDI / UI adapter  (P1)
 spec/machine/  canonical machine registry source of truth (JSON)
 generated/   committed C++ headers generated from spec/machine/ (regenerate via tools/)
-tools/       stdlib-only generators (generate_registry.py)
-tests/core/  framework-free unit + validation tests
+tools/       stdlib-only gates (generate_registry.py, check_core_headers.py, check_registry_negative.py)
+tests/core/  framework-free unit + validation + regression tests
 design/      design specifications and reference index
 third_party/ dependency license inventory
 ```
@@ -61,5 +61,8 @@ testable logical unit.
 
 ## Status
 
-P0 — lock an auditable baseline (canonical machine registry, framework-free core contract,
-`DeviceStateV1`, evidence + tests). See `design/06-master-plan.md` for the full P0–P8 plan.
+**P0 — auditable foundation vertical slice, in review.** It establishes the canonical
+machine registry, the framework-free core contract, `DeviceStateV1`, a field-evidence
+policy, and the gates that keep them consistent and switch-clean. This is a reviewed basis
+to build on, **not** a frozen/locked final implementation; the concrete P0–P8 plan is in
+`design/06-master-plan.md`.

@@ -1,0 +1,48 @@
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Cross-platform build + gate CI. One matrix job per OS; each configures, builds,
+# and runs every CTest gate (regeneration zero-diff, header/license gate, negative
+# fixture gate, id-stability regression, core contract tests, registry tests).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} (${{ matrix.cxx }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cxx: g++
+          - os: ubuntu-latest
+            cxx: clang++
+          - os: macos-latest
+            cxx: clang++
+          - os: windows-latest
+            cxx: cl
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3
+
+      - name: Configure project
+        run: |
+          python3 --version || python --version
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run gate suite (CTest)
+        run: ctest --test-dir build --output-on-failure --build-config Release
