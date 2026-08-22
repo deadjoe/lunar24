@@ -23,6 +23,16 @@ namespace lunar24::core {
 // Kept bounded so the contract is a fixed no-heap struct.
 inline constexpr std::uint32_t kMaxModulePathDelays = 16;
 
+// Per-claim provenance for one path's scheduling facts (design/07 §10). Each of
+// min-delay, direct-through eligibility, and exact-zero-gain is its own audited
+// fact and carries its own status — they are NOT three faces of one jack voltage
+// field. Unverified until the real algorithm is prepared.
+struct PathEvidence {
+  EvidenceStatus minDelay = EvidenceStatus::unverified;        // minCausalDelaySamples
+  EvidenceStatus canDirectThrough = EvidenceStatus::unverified; // canDirectThrough
+  EvidenceStatus exactZeroGain = EvidenceStatus::unverified;    // directThroughExactZeroGain
+};
+
 // A specific input→output path and its scheduling facts.
 struct ModulePathDelay {
   JackId inPort;
@@ -43,9 +53,8 @@ struct ModulePathDelay {
   // canDirectThrough is true.
   bool directThroughExactZeroGain = false;
 
-  // Each numeric claim's provenance (design/07 §10): min delay and direct-through
-  // eligibility are audited facts; unverified until the real algorithm is prepared.
-  FieldEvidence evidenceState;
+  // Each scheduling fact's own provenance (design/07 §10).
+  PathEvidence evidence;
 };
 
 struct ModuleExecutionContract {
@@ -72,5 +81,20 @@ struct ModuleExecutionContract {
   std::uint32_t pathDelayCount = 0;
   ModulePathDelay pathDelays[kMaxModulePathDelays] = {};
 };
+
+// Invariants the scheduler relies on (design/07 §2, §4). A prepared contract that
+// violates any of them is rejected at prepare time, before it reaches the audio
+// thread. This is the single gate for the per-path causal facts.
+inline bool module_contract_is_valid(const ModuleExecutionContract& c) {
+  if (c.pathDelayCount > kMaxModulePathDelays) return false;
+  for (std::uint32_t i = 0; i < c.pathDelayCount; ++i) {
+    const auto& p = c.pathDelays[i];
+    if (p.inPort == p.outPort) return false;              // degenerate self-path
+    if (p.minCausalDelaySamples < 0.0) return false;
+    if (p.directThroughExactZeroGain && !p.canDirectThrough) return false;  // exact-zero-gain requires a direct-through path
+    if (p.canDirectThrough && p.minCausalDelaySamples > 0.0) return false;  // a >0 min-delay path is never zero-delay through
+  }
+  return true;
+}
 
 }  // namespace lunar24::core

@@ -23,19 +23,19 @@ using ControlSourceId = std::uint32_t;
 // silently. The lane is DERIVED from kind (design/07 §3), so it can never
 // contradict the kind.
 enum class ControlLane : std::uint8_t {
-  continuous,
-  critical,
+  continuous = 0,
+  critical = 1,
 };
 
 enum class ControlEventKind : std::uint8_t {
-  parameter,   // a continuous parameter target change
-  pitch,       // pitch CV target (note on pitch)
-  pressure,    // pressure/aftertouch target
-  gate_on,
-  gate_off,
-  clock,       // clock edge
-  sync,        // arp/sequencer sync/reset edge
-  reset,       // failsafe: all-gates-off / clock resync
+  parameter = 0,   // a continuous parameter target change
+  pitch = 1,       // pitch CV target (note on pitch)
+  pressure = 2,    // pressure/aftertouch target
+  gate_on = 3,
+  gate_off = 4,
+  clock = 5,       // clock edge
+  sync = 6,        // arp/sequencer sync/reset edge
+  reset = 7,       // failsafe: all-gates-off / clock resync
 };
 
 // The dispatch lane an event kind belongs to (design/07 §3: note/gate/clock/
@@ -85,5 +85,19 @@ struct ControlEvent {
 
   ControlLane lane() const { return control_event_lane(kind); }
 };
+
+// Strict same-sample, same-block ordering (design/07 §3). The resolved order is:
+// sampleOffset → phase → stable source id → producer sequence. This is the ONE
+// deterministic comparator the scheduler uses to stabilise control events that
+// share a block; two events with equal (offset, phase, source, sequence) are
+// indistinguishable and any order is valid.
+inline bool control_event_before(const ControlEvent& a, const ControlEvent& b) {
+  if (a.sampleOffset != b.sampleOffset) return a.sampleOffset < b.sampleOffset;
+  const std::uint32_t pa = control_event_phase(a.kind);
+  const std::uint32_t pb = control_event_phase(b.kind);
+  if (pa != pb) return pa < pb;
+  if (a.source != b.source) return a.source < b.source;
+  return a.producerSequence < b.producerSequence;
+}
 
 }  // namespace lunar24::core

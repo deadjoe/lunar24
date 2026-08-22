@@ -8,6 +8,10 @@
 
 #include "mini_test.h"
 
+#include <algorithm>
+#include <string_view>
+#include <vector>
+
 #include <lunar24/core/audio_block_view.h>
 #include <lunar24/core/control_event.h>
 #include <lunar24/core/device_state.h>
@@ -95,6 +99,39 @@ static void module_execution_contract_flags() {
   CHECK_EQ(c.pathDelays[0].minCausalDelaySamples, 0.0);
   CHECK_FALSE(c.pathDelays[0].canDirectThrough);
   CHECK_FALSE(c.pathDelays[0].directThroughExactZeroGain);
+  // Each scheduling fact carries its OWN provenance (path semantics, not a
+  // reused jack voltage field). All default to unverified until prepared.
+  CHECK(c.pathDelays[0].evidence.minDelay == core::EvidenceStatus::unverified);
+  CHECK(c.pathDelays[0].evidence.canDirectThrough == core::EvidenceStatus::unverified);
+  CHECK(c.pathDelays[0].evidence.exactZeroGain == core::EvidenceStatus::unverified);
+}
+
+static void module_contract_validation() {
+  // Invariants the scheduler relies on (design/07 §2, §4). A default contract is
+  // valid; the negative cases must each reject one specific violation.
+  core::ModuleExecutionContract c;
+  CHECK(core::module_contract_is_valid(c));
+
+  core::ModuleExecutionContract over;
+  over.pathDelayCount = core::kMaxModulePathDelays + 1;
+  CHECK_FALSE(core::module_contract_is_valid(over));  // count > path-array capacity
+
+  core::ModuleExecutionContract self;
+  self.pathDelayCount = 1;
+  self.pathDelays[0].inPort = core::JackId{3};
+  self.pathDelays[0].outPort = core::JackId{3};  // degenerate self-path
+  CHECK_FALSE(core::module_contract_is_valid(self));
+
+  core::ModuleExecutionContract zeroGain;
+  zeroGain.pathDelayCount = 1;
+  zeroGain.pathDelays[0].directThroughExactZeroGain = true;  // requires canDirectThrough
+  CHECK_FALSE(core::module_contract_is_valid(zeroGain));
+
+  core::ModuleExecutionContract delayedThrough;
+  delayedThrough.pathDelayCount = 1;
+  delayedThrough.pathDelays[0].minCausalDelaySamples = 16.0;
+  delayedThrough.pathDelays[0].canDirectThrough = true;  // >0 min delay can't be zero-delay through
+  CHECK_FALSE(core::module_contract_is_valid(delayedThrough));
 }
 
 static void patch_graph_types_and_handles() {
@@ -107,6 +144,116 @@ static void patch_graph_types_and_handles() {
   struct HasHandle { core::CompiledGraph* handle = nullptr; };
   HasHandle h;
   CHECK(h.handle == nullptr);
+}
+
+static core::ControlEvent mk_event(core::ControlEventKind k, std::uint32_t offset,
+                                   std::uint32_t src, std::uint64_t seq) {
+  core::ControlEvent e;
+  e.kind = k;
+  e.sampleOffset = offset;
+  e.source = src;
+  e.producerSequence = seq;
+  return e;
+}
+
+static void control_event_ordering() {
+  // Deterministic same-block order (07 §3): sampleOffset → phase → source →
+  // producerSequence. Provide a shuffled set; the sorted result must match the
+  // canonical order below.
+  std::vector<core::ControlEvent> v = {
+      mk_event(core::ControlEventKind::gate_on,    2u, 9u, 5u),
+      mk_event(core::ControlEventKind::reset,      0u, 1u, 1u),
+      mk_event(core::ControlEventKind::gate_off,   1u, 2u, 2u),
+      mk_event(core::ControlEventKind::parameter,  0u, 4u, 3u),
+      mk_event(core::ControlEventKind::sync,       1u, 2u, 9u),
+      mk_event(core::ControlEventKind::pitch,      0u, 4u, 6u),
+  };
+  std::stable_sort(v.begin(), v.end(), core::control_event_before);
+
+  const core::ControlEventKind expect[] = {
+      core::ControlEventKind::reset,      // phase 0, offset 0
+      core::ControlEventKind::parameter,  // phase 1, offset 0, source 4, seq 3
+      core::ControlEventKind::pitch,      // phase 1, offset 0, source 4, seq 6
+      core::ControlEventKind::gate_off,   // phase 2, offset 1, source 2, seq 2
+      core::ControlEventKind::sync,       // phase 3, offset 1, source 2, seq 9
+      core::ControlEventKind::gate_on,    // phase 4, offset 2
+  };
+  for (int i = 0; i < 6; ++i) {
+    CHECK(v[static_cast<std::size_t>(i)].kind == expect[i]);
+  }
+}
+
+static std::uint32_t storage_type_bytes(core::StorageFieldType t) {
+  switch (t) {
+    case core::StorageFieldType::u8:  return 1u;
+    case core::StorageFieldType::u16: return 2u;
+    case core::StorageFieldType::u32: return 4u;
+    case core::StorageFieldType::u64: return 8u;
+    case core::StorageFieldType::f32: return 4u;
+    case core::StorageFieldType::f64: return 8u;
+  }
+  return 0u;
+}
+
+static void device_storage_schema() {
+  const auto& s = core::kDeviceStorageSchema;
+  CHECK_EQ(s.schemaVersion, core::kDeviceStorageSchemaVersion);
+  CHECK_EQ(s.revision, core::kDeviceStorageInitialRevision);
+  CHECK(s.fields != nullptr);
+  CHECK(s.fieldCount >= 8u);
+  CHECK(s.totalBytesHint > 0u);
+
+  // Recompute the canonical width from the declared field table so the hint can
+  // never silently diverge from the schema.
+  std::uint32_t recomputed = 0;
+  for (std::uint32_t i = 0; i < s.fieldCount; ++i) {
+    const auto& f = s.fields[i];
+    CHECK(f.name != nullptr && f.name[0] != '\0');
+    CHECK(f.versionFrom >= 1u && f.versionFrom <= s.schemaVersion);
+    CHECK(f.count > 0u);
+    if (f.kind == core::StorageFieldKind::scalar) {
+      CHECK_EQ(f.count, 1u);
+      recomputed += storage_type_bytes(f.type);
+    } else if (f.kind == core::StorageFieldKind::array) {
+      recomputed += storage_type_bytes(f.type) * f.count;
+    } else if (f.kind == core::StorageFieldKind::record) {
+      CHECK(f.itemBytes > 0u);
+      recomputed += f.itemBytes * f.count;
+    } else {  // reserved: fixed byte block, no value invented
+      recomputed += f.count;
+    }
+  }
+  CHECK_EQ(recomputed, s.totalBytesHint);
+
+  // The named fields a future serialization layer walks by name.
+  bool found_params = false, found_presets = false, found_effector = false;
+  for (std::uint32_t i = 0; i < s.fieldCount; ++i) {
+    std::string_view n = s.fields[i].name;
+    if (n == "parameters") found_params = true;
+    if (n == "keyboard_presets") found_presets = true;
+    if (n == "effector_left_program" || n == "effector_right_program") found_effector = true;
+  }
+  CHECK(found_params && found_presets && found_effector);
+
+  // Effector selects a STABLE ProgramId, not a registry array index.
+  core::EffectorSelection l;
+  l.program = core::ProgramId{1};
+  CHECK(l.program == core::ProgramId{1});
+
+  // A keyboard preset carries its own keyboard-owned state (not a bare id).
+  core::KeyboardPreset p;
+  p.id = 3u;
+  p.pressureBehaviour = 1u;
+  p.pressureOutput = 2u;
+  CHECK_EQ(p.id, 3u);
+  CHECK_EQ(p.pressureBehaviour, 1u);
+  CHECK_EQ(p.pressureOutput, 2u);
+
+  // Sequencer holds a named reserved block — not a fake opaque packed decode.
+  core::SequencerSettings seq;
+  CHECK_EQ(static_cast<std::uint32_t>(sizeof(seq.reserved)),
+           core::kSequencerPhysicalBytes);
+  CHECK(core::kSequencerPhysicalBytes > 0u);
 }
 
 static void enum_category_stability() {
@@ -136,9 +283,12 @@ int main() {
   capacity_ge_registry();
   virtual_volts_domain();
   control_event_contract();
+  control_event_ordering();
   audio_block_view_has_four_outputs();
   module_execution_contract_flags();
+  module_contract_validation();
   patch_graph_types_and_handles();
+  device_storage_schema();
   enum_category_stability();
   return ::test::finish("core contract");
 }
