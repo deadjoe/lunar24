@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Regenerate the Lunar 24 machine-registry C++ headers from spec/machine/lunar24.json.
 
 Stdlib only (no third-party deps). Emits two committed headers under generated/:
@@ -9,9 +11,14 @@ Stdlib only (no third-party deps). Emits two committed headers under generated/:
 Usage:
   python3 tools/generate_registry.py            # write + validate
   python3 tools/generate_registry.py --check    # fail if output differs from disk (CTest)
+  python3 tools/generate_registry.py --validate <path>  # validate only; non-zero on invalid
 
-This generator is the authoritative schema validator. It enforces (and CTest verifies once
-per run that output matches disk):
+Identity is order-independent: every serialized entity carries an explicit,
+immutable numeric `id` in the spec. Enum values are those explicit numbers, NOT an
+index derived from JSON order — so reordering (or inserting) entries never renumbers
+serialized ids. This generator is the authoritative schema validator, enforcing
+(and CTest verifies once per run) that output matches disk:
+  * every entity has an explicit numeric id, unique per kind, and >= 0
   * every stable id unique, verbatim and after C++-identifier sanitising
   * every ParameterId owner (module or program) exists
   * every JackId endpoint in a NormalizedRoute exists; a sink is the target of <=1 route
@@ -59,14 +66,6 @@ def literal(value):
 
 
 # ----------------------------------------------------------------------------
-# semantic accessors (dead-simple, no enums needed here)
-# ----------------------------------------------------------------------------
-
-def elec(item):  # evidence/status presence helper
-    return item
-
-
-# ----------------------------------------------------------------------------
 # Registry: load + validate
 # ----------------------------------------------------------------------------
 
@@ -86,64 +85,89 @@ class Registry:
     def _flatten(self):
         for m in self.modules:
             for p in m["parameters"]:
-                p = dict(p); p["owner"] = m["id"]; self.parameters.append(p)
+                p = dict(p); p["owner"] = m["id"]; p["_stable_owner"] = m["stable_id"] \
+                    if "stable_id" in m else m.get("id_string", m["id"])
+                self.parameters.append(p)
             for j in m["jacks"]:
-                j = dict(j); j["module"] = m["id"]; self.jacks.append(j)
+                j = dict(j); j["module"] = m["id"]; j["_module_stable"] = m.get("stable_id", m["id"])
+                self.jacks.append(j)
         for prog in self.programs:
             for p in prog.get("parameters", []):
-                p = dict(p); p["owner"] = prog["id"]; self.parameters.append(p)
+                p = dict(p); p["owner"] = prog["id"]; p["_stable_owner"] = prog.get("stable_id", prog["id"])
+                self.parameters.append(p)
 
     def _ids(self):
-        self.module_ids = [(sanitize(m["id"]), i) for i, m in enumerate(self.modules)]
-        self.program_ids = [(sanitize(p["id"]), i) for i, p in enumerate(self.programs)]
-        self.parameter_ids = [(sanitize(p["id"]), i) for i, p in enumerate(self.parameters)]
-        self.jack_ids = [(sanitize(j["id"]), i) for i, j in enumerate(self.jacks)]
+        # present a stable string id for each entity so a reorder-regression may key on it.
+        self.module_ids = [(m["id"], m["stable_id"], i) for i, m in enumerate(self.modules)]
+        self.program_ids = [(p["id"], p["stable_id"], i) for i, p in enumerate(self.programs)]
+        self.parameter_ids = [(p["id"], p["stable_id"], i) for i, p in enumerate(self.parameters)]
+        self.jack_ids = [(j["id"], j["stable_id"], i) for i, j in enumerate(self.jacks)]
 
     def _validate(self):
-        def dup_fail(group, label):
+        # --- explicit numeric ids: present, integer, unique per kind, non-negative ---
+        for label, group in (("module", self.modules), ("program", self.programs)):
+            seen = set()
+            for item in group:
+                nid = item.get("id", None)
+                if not isinstance(nid, int) or nid < 0:
+                    raise ValueError(f"{label} {item.get('stable_id', '?')} is missing a non-negative numeric id")
+                if nid in seen:
+                    raise ValueError(f"{label} numeric id {nid} is reused")
+                seen.add(nid)
+
+        for label, group in (("parameter", self.parameters), ("jack", self.jacks)):
+            seen = set()
+            for item in group:
+                nid = item.get("id", None)
+                if not isinstance(nid, int) or nid < 0:
+                    raise ValueError(f"{label} {item['stable_id']} is missing a non-negative numeric id")
+                if nid in seen:
+                    raise ValueError(f"{label} numeric id {nid} is reused")
+                seen.add(nid)
+
+        # enumerator collisions after C++-identifier sanitising (stable ids)
+        for label, group, key in (("modules", self.modules, "stable_id"),
+                                   ("programs", self.programs, "stable_id"),
+                                   ("parameters", self.parameters, "stable_id"),
+                                   ("jacks", self.jacks, "stable_id")):
             seen = {}
             for item in group:
-                en = sanitize(item["id"])
+                en = sanitize(item[key])
                 if en in seen:
                     raise ValueError(f"enumerator collision {en!r} in {label}")
                 seen[en] = True
 
-        # stable id uniqueness (across every entity kind)
-        all_ids = ([m["id"] for m in self.modules] + [p["id"] for p in self.programs] +
-                   [p["id"] for p in self.parameters] + [j["id"] for j in self.jacks] +
-                   [r["id"] for r in self.routes])
+        # stable-id uniqueness across every entity kind
+        all_ids = ([m["stable_id"] for m in self.modules] + [p["stable_id"] for p in self.programs] +
+                   [p["stable_id"] for p in self.parameters] + [j["stable_id"] for j in self.jacks] +
+                   [r["stable_id"] for r in self.routes])
         dup = {s for s in set(all_ids) if all_ids.count(s) > 1}
         if dup:
             raise ValueError(f"duplicate stable ids: {sorted(dup)}")
 
-        dup_fail(self.modules, "modules")
-        dup_fail(self.programs, "programs")
-        dup_fail(self.parameters, "parameters")
-        dup_fail(self.jacks, "jacks")
-        dup_fail(self.routes, "routes")
-
-        known_modules = {m["id"] for m in self.modules}
-        known_programs = {p["id"] for p in self.programs}
+        # owner existence
+        known_modules = {m["stable_id"] for m in self.modules}
+        known_programs = {p["stable_id"] for p in self.programs}
         for p in self.parameters:
-            if p["owner"] not in known_modules and p["owner"] not in known_programs:
-                raise ValueError(f"parameter {p['id']} unknown owner {p['owner']!r}")
+            if p["_stable_owner"] not in known_modules and p["_stable_owner"] not in known_programs:
+                raise ValueError(f"parameter {p['stable_id']} unknown owner {p['_stable_owner']!r}")
 
         for p in self.parameters:
             lo, hi, dflt = float(p["min"]), float(p["max"]), float(p["default"])
             step = float(p.get("step", 0.0))
             if lo > hi:
-                raise ValueError(f"parameter {p['id']} min>max ({lo}>{hi})")
+                raise ValueError(f"parameter {p['stable_id']} min>max ({lo}>{hi})")
             if not (lo <= dflt <= hi):
-                raise ValueError(f"parameter {p['id']} default {dflt} outside [{lo},{hi}]")
+                raise ValueError(f"parameter {p['stable_id']} default {dflt} outside [{lo},{hi}]")
             if step < 0:
-                raise ValueError(f"parameter {p['id']} negative step")
+                raise ValueError(f"parameter {p['stable_id']} negative step")
 
-        known_jacks = {j["id"] for j in self.jacks}
+        known_jacks = {j["stable_id"] for j in self.jacks}
         sink_seen = set()
         for r in self.routes:
             for f in ("sourceJack", "sinkJack"):
                 if r[f] not in known_jacks:
-                    raise ValueError(f"route {r['id']} dangling {f}={r[f]!r}")
+                    raise ValueError(f"route {r['stable_id']} dangling {f}={r[f]!r}")
             if r["sinkJack"] in sink_seen:
                 raise ValueError(f"jack {r['sinkJack']!r} is the sink of >1 normalized route")
             sink_seen.add(r["sinkJack"])
@@ -153,9 +177,16 @@ class Registry:
                              ("program", self.programs)):
             for item in group:
                 if not item.get("evidence"):
-                    raise ValueError(f"{label} {item['id']} has no evidence")
+                    raise ValueError(f"{label} {item['stable_id']} has no evidence")
                 if item.get("status", "") not in VALID_STATUS:
-                    raise ValueError(f"{label} {item['id']} bad/absent status {item.get('status')!r}")
+                    raise ValueError(f"{label} {item['stable_id']} bad/absent status {item.get('status')!r}")
+                if label == "parameter" and item.get("rangeEvidence", "unverified") not in VALID_STATUS:
+                    raise ValueError(f"parameter {item['stable_id']} bad rangeEvidence")
+                if label == "jack":
+                    fe = item.get("fieldEvidence", {})
+                    if not all(fe.get(k, "unverified") in VALID_STATUS
+                               for k in ("range", "threshold", "saturation", "transfer")):
+                        raise ValueError(f"jack {item['stable_id']} bad fieldEvidence")
 
 
 # ----------------------------------------------------------------------------
@@ -174,6 +205,12 @@ def status_expr(item):
     return {"confirmed": "EvidenceStatus::confirmed",
             "unverified": "EvidenceStatus::unverified",
             "provisional": "EvidenceStatus::provisional"}[item["status"]]
+
+
+def status_from(s):
+    return {"confirmed": "EvidenceStatus::confirmed",
+            "unverified": "EvidenceStatus::unverified",
+            "provisional": "EvidenceStatus::provisional"}[s]
 
 
 def smoothing_expr(p):
@@ -208,6 +245,25 @@ def direction_expr(j):
     return {"input": "PinDirection::input", "output": "PinDirection::output"}[j["direction"]]
 
 
+def transfer_expr(j):
+    return {"linear": "SignalTransfer::linear", "exponential": "SignalTransfer::exponential",
+            "none": "SignalTransfer::none", "unknown": "SignalTransfer::unknown"}[j.get("transfer", "unknown")]
+
+
+def saturation_expr(j):
+    return {"none": "SaturationType::none", "hard": "SaturationType::hard",
+            "soft": "SaturationType::soft", "unknown": "SaturationType::unknown"}[j.get("saturation", "unknown")]
+
+
+def field_evidence_expr(j):
+    fe = j.get("fieldEvidence", {})
+    r = status_from(fe.get("range", "unverified"))
+    t = status_from(fe.get("threshold", "unverified"))
+    s = status_from(fe.get("saturation", "unverified"))
+    tr = status_from(fe.get("transfer", "unverified"))
+    return f"FieldEvidence{{{r}, {t}, {s}, {tr}}}"
+
+
 # ----------------------------------------------------------------------------
 # emit registry_ids.hpp
 # ----------------------------------------------------------------------------
@@ -219,7 +275,7 @@ def gen_ids(reg):
            "namespace lunar24::core {", ""]
 
     def enum_block(kind, pairs):
-        body = ",\n".join(f"    {en} = {i}" for en, i in pairs)
+        body = ",\n".join(f"    {sanitize(sid)} = {nid}" for nid, sid, _ in pairs)
         out.append(f"enum class {kind}Id : std::uint32_t {{\n{body}\n}};\n")
 
     enum_block("Module", reg.module_ids)
@@ -236,8 +292,8 @@ def gen_ids(reg):
     def strs(kind, items, pairs):
         out.append(f"inline constexpr std::string_view {kind.lower()}_id_string({kind}Id id) {{")
         out.append("  switch (id) {")
-        for en, i in pairs:
-            out.append(f"    case {kind}Id::{en}: return \"{items[i]['id']}\";")
+        for nid, sid, _ in pairs:
+            out.append(f"    case {kind}Id::{sanitize(sid)}: return \"{sid}\";")
         out.append("  }")
         out.append(f"  return \"(unknown {kind})\";")
         out.append("}\n")
@@ -270,34 +326,37 @@ def gen_registry(reg):
         pb = sum(len(x["parameters"]) for x in reg.modules[:i])
         jb = sum(len(x["jacks"]) for x in reg.modules[:i])
         out.append("  { ModuleId::%s, %s, %s, %s, %s, %du, %du, %du, %du, %s, %s }," % (
-            sanitize(m["id"]), qs(m["id"]), qs(m["name"]), qs(m["category"]),
+            sanitize(m["stable_id"]), qs(m["stable_id"]), qs(m["name"]), qs(m["category"]),
             qs(m["description"]), pb, len(m["parameters"]), jb, len(m["jacks"]),
             evidence_expr(m, src), status_expr(m)))
     out.append("};\n")
 
     out.append("inline constexpr ParameterDescriptor kParameters[kParameterCount] = {")
     for p in reg.parameters:
-        out.append("  { ParameterId::%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s }," % (
-            sanitize(p["id"]), qs(p["id"]), qs(p["name"]), qs(p["owner"]), qs(p["unit"]),
+        out.append("  { ParameterId::%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s }," % (
+            sanitize(p["stable_id"]), qs(p["stable_id"]), qs(p["name"]), qs(p["_stable_owner"]), qs(p["unit"]),
             literal(p["min"]), literal(p["max"]), literal(p.get("step", 0.0)), literal(p["default"]),
             smoothing_expr(p), persistence_expr(p), role_expr(p),
-            evidence_expr(p, src), status_expr(p)))
+            evidence_expr(p, src), status_expr(p), status_from(p.get("rangeEvidence", "unverified"))))
     out.append("};\n")
 
     out.append("inline constexpr JackDescriptor kJacks[kJackCount] = {")
     for j in reg.jacks:
-        out.append("  { JackId::%s, %s, %s, ModuleId::%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s }," % (
-            sanitize(j["id"]), qs(j["id"]), qs(j["name"]), sanitize(j["module"]),
+        out.append("  { JackId::%s, %s, %s, ModuleId::%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %du, %s, %s, %s, %s, %s, %s }," % (
+            sanitize(j["stable_id"]), qs(j["stable_id"]), qs(j["name"]), sanitize(j["_module_stable"]),
             direction_expr(j), signal_type_expr(j), polarity_expr(j),
             literal(j["nominalMin"]), literal(j["nominalMax"]),
+            literal(j.get("toleratedMin", 0.0)), literal(j.get("toleratedMax", 0.0)),
+            literal(j.get("modulationDepthPerVolt", 1.0)), transfer_expr(j), saturation_expr(j),
+            int(j.get("maxCables", 1)),
             literal(j.get("gateThresholdVolts", 0.0)), literal(j.get("hysteresisVolts", 0.0)),
-            coupling_expr(j), evidence_expr(j, src), status_expr(j)))
+            coupling_expr(j), evidence_expr(j, src), status_expr(j), field_evidence_expr(j)))
     out.append("};\n")
 
     out.append("inline constexpr NormalizedRoute kNormalizedRoutes[%d] = {" % len(reg.routes))
     for r in reg.routes:
         out.append("  { %s, JackId::%s, JackId::%s, %s, %s, %s }," % (
-            qs(r["id"]), sanitize(r["sourceJack"]), sanitize(r["sinkJack"]),
+            qs(r["stable_id"]), sanitize(r["sourceJack"]), sanitize(r["sinkJack"]),
             qs(r.get("description", "")), evidence_expr(r, src), status_expr(r)))
     out.append("};\n")
 
@@ -306,7 +365,7 @@ def gen_registry(reg):
         pb = (sum(len(x["parameters"]) for x in reg.modules) +
               sum(len(p.get("parameters", [])) for p in reg.programs[:i]))
         out.append("  { ProgramId::%s, %s, %s, %du, %s, %s, %s, %du, %du, %s, %s }," % (
-            sanitize(prog["id"]), qs(prog["id"]), qs(prog["cartridge"]), int(prog["slot"]),
+            sanitize(prog["stable_id"]), qs(prog["stable_id"]), qs(prog["cartridge"]), int(prog["slot"]),
             qs(prog["name"]), qs(prog["family"]),
             "true" if prog.get("selfOscillating") else "false",
             pb, len(prog.get("parameters", [])), evidence_expr(prog, src), status_expr(prog)))

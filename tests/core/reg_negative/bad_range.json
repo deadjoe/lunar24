@@ -1,12 +1,13 @@
 {
-  "meta": { "machine": "Lunar 24", "schemaVersion": "0.1", "registryVersion": "0.1", "source": "fixture" },
+  "meta": { "machine": "Lunar 24", "schemaVersion": "0.1", "registryVersion": "0.1",
+            "source": "fixture", "expectedError": "outside [" },
   "modules": [
     {
-      "id": "vco_a", "name": "VCO A", "category": "source", "description": "",
+      "id": 0, "stable_id": "vco_m", "name": "VCO M", "category": "source", "description": "",
       "evidence": { "ref": "fixture", "lineStart": 1, "lineEnd": 1 }, "status": "confirmed",
       "parameters": [
-        { "id": "vco_a.p", "name": "p", "unit": "norm", "min": 0, "max": 1, "default": 5,
-          "persistence": "deviceState", "smoothing": "seconds",
+        { "id": 0, "stable_id": "vco_m.p", "name": "p", "unit": "norm", "min": 0, "max": 1,
+          "default": 5, "persistence": "deviceState", "smoothing": "seconds",
           "evidence": { "line": 1 }, "status": "confirmed" }
       ],
       "jacks": []

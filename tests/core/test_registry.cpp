@@ -46,6 +46,11 @@ static bool valid_status(core::EvidenceStatus s) {
          s == core::EvidenceStatus::provisional;
 }
 
+static bool valid_fe(const core::FieldEvidence& fe) {
+  return valid_status(fe.range) && valid_status(fe.threshold) &&
+         valid_status(fe.saturation) && valid_status(fe.transfer);
+}
+
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
@@ -102,6 +107,7 @@ static void parameters_are_valid() {
     CHECK(p.initial >= p.min && p.initial <= p.max);
     CHECK(p.step >= 0.0);
     CHECK(valid_status(p.status));
+    CHECK(valid_status(p.rangeEvidence));  // numeric-range provenance split (07 §10)
     CHECK(!p.evidence.source.empty());
   }
 }
@@ -112,9 +118,13 @@ static void jacks_are_valid() {
     CHECK(!j.stable_id.empty());
     CHECK(find_module(j.module) >= 0);      // owning module must exist
     CHECK(j.nominalMin <= j.nominalMax);
+    CHECK(j.toleratedMin <= j.toleratedMax);
+    CHECK(j.maxCables >= 1u);
+    CHECK(j.modulationDepthPerVolt >= 0.0);
     CHECK(j.gateThresholdVolts >= 0.0);
     CHECK(j.hysteresisVolts >= 0.0);
     CHECK(valid_status(j.status));
+    CHECK(valid_fe(j.fieldEvidence));       // per-field provenance split (07 §3, §10)
     CHECK(!j.evidence.source.empty());
   }
 }

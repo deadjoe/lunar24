@@ -3,130 +3,135 @@
     "machine": "lunar24",
     "schemaVersion": "deviceState-v1",
     "registryVersion": "0.0.1",
-    "description": "Lunar 24 canonical machine registry — source of truth for DSP/UI/MIDI/serialization/tests. P0 vertical-slice dataset (oscillator, normalized jack route, effector program). Evidence refs point to design/reference/solar42N_manual_text.txt line numbers."
+    "description": "Lunar 24 canonical machine registry — source of truth for DSP/UI/MIDI/serialization/tests. P0 vertical-slice dataset (oscillator, normalized jack route, effector program). Identity is order-independent: every serialized enum entity carries an explicit immutable numeric id. Evidence refs point to design/reference/solar42N_manual_text.txt line numbers."
   },
   "modules": [
     {
-      "id": "vco_a",
+      "id": 0,
+      "stable_id": "vco_a",
       "name": "VCO A",
       "category": "source",
       "description": "AS3340 triangle-core VCO, 6 waveforms (2 morphing). Mirrors VCO B except VCO A has a SYNC input.",
       "evidence": { "ref": "solar42N_manual_v15", "lineStart": 376, "lineEnd": 422 },
       "status": "confirmed",
       "parameters": [
-        { "id": "vco_a.tune", "name": "Tune", "unit": "oct", "min": -1.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 393 }, "status": "confirmed" },
-        { "id": "vco_a.wave", "name": "Morphing waveform", "unit": "index", "min": 0.0, "max": 5.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 380 }, "status": "confirmed" },
-        { "id": "vco_a.shape", "name": "Pulse width (SHAPE)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 386 }, "status": "confirmed" },
-        { "id": "vco_a.oct_high", "name": "Octave +3", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 391 }, "status": "confirmed" },
-        { "id": "vco_a.oct_low", "name": "Octave low", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 391 }, "status": "confirmed" },
-        { "id": "vco_a.sub", "name": "Sub generator -1 oct", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 392 }, "status": "confirmed" },
-        { "id": "vco_a.cv_amt", "name": "CV AMT", "unit": "norm", "min": 0.0, "max": 1.0, "default": 1.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 413 }, "status": "confirmed" },
-        { "id": "vco_a.lin_exp", "name": "lin/exp CV mode", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 389 }, "status": "confirmed" },
-        { "id": "vco_a.fm_amt", "name": "Linear FM amount", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 387 }, "status": "confirmed" }
+        { "id": 0, "stable_id": "vco_a.tune", "name": "Tune", "unit": "oct", "min": -1.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 393 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 1, "stable_id": "vco_a.wave", "name": "Morphing waveform", "unit": "index", "min": 0.0, "max": 5.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 380 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 2, "stable_id": "vco_a.shape", "name": "Pulse width (SHAPE)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 386 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 3, "stable_id": "vco_a.oct_high", "name": "Octave +3", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 391 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 4, "stable_id": "vco_a.oct_low", "name": "Octave low", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 391 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 5, "stable_id": "vco_a.sub", "name": "Sub generator -1 oct", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 392 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 6, "stable_id": "vco_a.cv_amt", "name": "CV AMT", "unit": "norm", "min": 0.0, "max": 1.0, "default": 1.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 413 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 7, "stable_id": "vco_a.lin_exp", "name": "lin/exp CV mode", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 389 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 8, "stable_id": "vco_a.fm_amt", "name": "Linear FM amount", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 387 }, "status": "confirmed", "rangeEvidence": "unverified" }
       ],
       "jacks": [
-        { "id": "vco_a.cv_in", "name": "CV", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed" },
-        { "id": "vco_a.v_oct_in", "name": "V/O", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed" },
-        { "id": "vco_a.fm_in", "name": "FM", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 387 }, "status": "confirmed" },
-        { "id": "vco_a.sync_in", "name": "Sync (VCO A only)", "direction": "input", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 5.0, "hysteresisVolts": 0.2, "coupling": "dc", "evidence": { "line": 411 }, "status": "provisional" },
-        { "id": "vco_a.vca_ctl", "name": "VCA CV", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 576 }, "status": "confirmed" },
-        { "id": "vco_a.dry_out", "name": "VCO dry out", "direction": "output", "signalType": "audio", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "ac", "evidence": { "line": 401 }, "status": "confirmed" }
+        { "id": 0, "stable_id": "vco_a.cv_in", "name": "CV", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 1, "stable_id": "vco_a.v_oct_in", "name": "V/O", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "modulationDepthPerVolt": 1.0, "transfer": "linear", "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "confirmed" } },
+        { "id": 2, "stable_id": "vco_a.fm_in", "name": "FM", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 387 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 3, "stable_id": "vco_a.sync_in", "name": "Sync (VCO A only)", "direction": "input", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 5.0, "hysteresisVolts": 0.2, "coupling": "dc", "evidence": { "line": 411 }, "status": "provisional", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 4, "stable_id": "vco_a.vca_ctl", "name": "VCA CV", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 576 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 5, "stable_id": "vco_a.dry_out", "name": "VCO dry out", "direction": "output", "signalType": "audio", "polarity": "bipolar", "nominalMin": -1.0, "nominalMax": 1.0, "coupling": "ac", "evidence": { "line": 153 }, "status": "confirmed", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
       ]
     },
     {
-      "id": "vco_b",
+      "id": 1,
+      "stable_id": "vco_b",
       "name": "VCO B",
       "category": "source",
       "description": "AS3340 VCO, mirrors VCO A except VCO B has a VCO output and VCO A's output is normalised to its CV input (CV AMT knob).",
       "evidence": { "ref": "solar42N_manual_v15", "lineStart": 376, "lineEnd": 422 },
       "status": "confirmed",
       "parameters": [
-        { "id": "vco_b.tune", "name": "Tune", "unit": "oct", "min": -1.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 393 }, "status": "confirmed" },
-        { "id": "vco_b.wave", "name": "Morphing waveform", "unit": "index", "min": 0.0, "max": 5.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 380 }, "status": "confirmed" },
-        { "id": "vco_b.shape", "name": "Pulse width (SHAPE)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 386 }, "status": "confirmed" },
-        { "id": "vco_b.cv_amt", "name": "CV AMT", "unit": "norm", "min": 0.0, "max": 1.0, "default": 1.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 413 }, "status": "confirmed" }
+        { "id": 9, "stable_id": "vco_b.tune", "name": "Tune", "unit": "oct", "min": -1.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 393 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 10, "stable_id": "vco_b.wave", "name": "Morphing waveform", "unit": "index", "min": 0.0, "max": 5.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 380 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 11, "stable_id": "vco_b.shape", "name": "Pulse width (SHAPE)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 386 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 12, "stable_id": "vco_b.cv_amt", "name": "CV AMT", "unit": "norm", "min": 0.0, "max": 1.0, "default": 1.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 413 }, "status": "confirmed", "rangeEvidence": "unverified" }
       ],
       "jacks": [
-        { "id": "vco_b.cv_in", "name": "CV", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed" },
-        { "id": "vco_b.v_oct_in", "name": "V/O", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed" },
-        { "id": "vco_b.vco_out", "name": "VCO out (VCO B only)", "direction": "output", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 412 }, "status": "confirmed" },
-        { "id": "vco_b.dry_out", "name": "VCO dry out", "direction": "output", "signalType": "audio", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "ac", "evidence": { "line": 401 }, "status": "confirmed" }
+        { "id": 6, "stable_id": "vco_b.cv_in", "name": "CV", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 7, "stable_id": "vco_b.v_oct_in", "name": "V/O", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "modulationDepthPerVolt": 1.0, "transfer": "linear", "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "confirmed" } },
+        { "id": 8, "stable_id": "vco_b.vco_out", "name": "VCO out (VCO B only)", "direction": "output", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 412 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 9, "stable_id": "vco_b.dry_out", "name": "VCO dry out", "direction": "output", "signalType": "audio", "polarity": "bipolar", "nominalMin": -1.0, "nominalMax": 1.0, "coupling": "ac", "evidence": { "line": 153 }, "status": "confirmed", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
       ]
     },
     {
-      "id": "vcf",
+      "id": 2,
+      "stable_id": "vcf",
       "name": "Dual 12dB Polivoks VCF",
       "category": "processing",
       "description": "Dual 12dB Polivoks LP/BP filter. Product behavior spec: raising resonance does NOT lose lows. CV L is normally connected to CV R (CV L controls both channels when CV R has no signal).",
       "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1118, "lineEnd": 1157 },
       "status": "confirmed",
       "parameters": [
-        { "id": "vcf.l.freq", "name": "FREQ L", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.3, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1138 }, "status": "confirmed" },
-        { "id": "vcf.l.res", "name": "RES L", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1140 }, "status": "confirmed" },
-        { "id": "vcf.l.mod", "name": "MOD L (CV amount)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1145 }, "status": "confirmed" },
-        { "id": "vcf.l.dist", "name": "DIST L (dry/wet)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1151 }, "status": "confirmed" },
-        { "id": "vcf.l.gain", "name": "GAIN L (distortion amount)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1151 }, "status": "confirmed" },
-        { "id": "vcf.l.freq_r", "name": "FREQ R", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.3, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1138 }, "status": "confirmed" },
-        { "id": "vcf.mode", "name": "BP-LP mode", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1149 }, "status": "confirmed" },
-        { "id": "vcf.link", "name": "LINK (CV1 controls both filters)", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1147 }, "status": "confirmed" }
+        { "id": 13, "stable_id": "vcf.l.freq", "name": "FREQ L", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.3, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1138 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 14, "stable_id": "vcf.l.res", "name": "RES L", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1140 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 15, "stable_id": "vcf.l.mod", "name": "MOD L (CV amount)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1145 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 16, "stable_id": "vcf.l.dist", "name": "DIST L (dry/wet)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1151 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 17, "stable_id": "vcf.l.gain", "name": "GAIN L (distortion amount)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1151 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 18, "stable_id": "vcf.r.freq", "name": "FREQ R", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.3, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1138 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 19, "stable_id": "vcf.mode", "name": "BP-LP mode", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1149 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 20, "stable_id": "vcf.link", "name": "LINK (CV1 controls both filters)", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1147 }, "status": "confirmed", "rangeEvidence": "unverified" }
       ],
       "jacks": [
-        { "id": "vcf.cv_l_in", "name": "CV L", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 1142 }, "status": "confirmed" },
-        { "id": "vcf.cv_r_in", "name": "CV R", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 1142 }, "status": "confirmed" },
-        { "id": "vcf.audio_in", "name": "Filter L input", "direction": "input", "signalType": "audio", "polarity": "bipolar", "nominalMin": -2.0, "nominalMax": 2.0, "coupling": "ac", "evidence": { "line": 1102 }, "status": "confirmed" }
+        { "id": 10, "stable_id": "vcf.cv_l_in", "name": "CV L", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 1142 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 11, "stable_id": "vcf.cv_r_in", "name": "CV R", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 1142 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 12, "stable_id": "vcf.audio_in", "name": "Filter L input", "direction": "input", "signalType": "audio", "polarity": "bipolar", "nominalMin": -2.0, "nominalMax": 2.0, "coupling": "ac", "evidence": { "line": 1102 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
       ]
     },
     {
-      "id": "keyboard",
+      "id": 3,
+      "stable_id": "keyboard",
       "name": "Sensor keyboard",
       "category": "performance",
       "description": "12 capacitively-sensitive touch plates with VOLT/octave, gate, pressure and clock outputs. Larger subsystem; P0 captures the normalized-route evidence only.",
       "evidence": { "ref": "solar42N_manual_v15", "lineStart": 559, "lineEnd": 634 },
       "status": "confirmed",
       "parameters": [
-        { "id": "keyboard.pressure_signal", "name": "PRESSURE signal", "unit": "volts", "min": 0.0, "max": 8.0, "default": 0.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 584 }, "status": "confirmed" }
+        { "id": 21, "stable_id": "keyboard.pressure_signal", "name": "PRESSURE signal", "unit": "volts", "min": 0.0, "max": 8.0, "default": 0.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 584 }, "status": "confirmed", "rangeEvidence": "confirmed" }
       ],
       "jacks": [
-        { "id": "keyboard.v_oct_out", "name": "V/OCT", "direction": "output", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 573 }, "status": "confirmed" },
-        { "id": "keyboard.gate_left_main_out", "name": "GATE LEFT (MAIN)", "direction": "output", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 576 }, "status": "provisional" },
-        { "id": "keyboard.gate_right_out", "name": "GATE RIGHT", "direction": "output", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 580 }, "status": "provisional" },
-        { "id": "keyboard.clock_in", "name": "CLOCK", "direction": "input", "signalType": "clock", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 5.0, "gateThresholdVolts": 2.5, "hysteresisVolts": 0.2, "coupling": "dc", "evidence": { "line": 568 }, "status": "provisional" }
+        { "id": 13, "stable_id": "keyboard.v_oct_out", "name": "V/OCT", "direction": "output", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "modulationDepthPerVolt": 1.0, "transfer": "linear", "coupling": "dc", "evidence": { "line": 573 }, "status": "confirmed", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "confirmed" } },
+        { "id": 14, "stable_id": "keyboard.gate_left_main_out", "name": "GATE LEFT (MAIN)", "direction": "output", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 576 }, "status": "provisional", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 15, "stable_id": "keyboard.gate_right_out", "name": "GATE RIGHT", "direction": "output", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 580 }, "status": "provisional", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 16, "stable_id": "keyboard.clock_in", "name": "CLOCK", "direction": "input", "signalType": "clock", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 5.0, "gateThresholdVolts": 2.5, "hysteresisVolts": 0.2, "coupling": "dc", "evidence": { "line": 568 }, "status": "provisional", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
       ]
     },
     {
-      "id": "envelope_a",
+      "id": 4,
+      "stable_id": "envelope_a",
       "name": "Envelope A",
       "category": "source",
       "description": "ADSR envelope + hold, gate in, VCA CV. P0 captures gate-normalized-route evidence.",
       "evidence": { "ref": "solar42N_manual_v15", "lineStart": 385, "lineEnd": 408 },
       "status": "confirmed",
       "parameters": [
-        { "id": "envelope_a.attack", "name": "Attack", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 0.01, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 387 }, "status": "confirmed" },
-        { "id": "envelope_a.release", "name": "Release", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 0.1, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 399 }, "status": "confirmed" }
+        { "id": 22, "stable_id": "envelope_a.attack", "name": "Attack", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 0.01, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 387 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 23, "stable_id": "envelope_a.release", "name": "Release", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 0.1, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 399 }, "status": "confirmed", "rangeEvidence": "unverified" }
       ],
       "jacks": [
-        { "id": "envelope_a.gate_in", "name": "GATE", "direction": "input", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 576 }, "status": "provisional" },
-        { "id": "envelope_a.env_out", "name": "ENV", "direction": "output", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed" }
+        { "id": 17, "stable_id": "envelope_a.gate_in", "name": "GATE", "direction": "input", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 576 }, "status": "provisional", "fieldEvidence": { "range": "confirmed", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
+        { "id": 18, "stable_id": "envelope_a.env_out", "name": "ENV", "direction": "output", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "range": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
       ]
     }
   ],
   "normalizedRoutes": [
     {
-      "id": "route.keyboard_v_oct_to_vco",
+      "stable_id": "route.keyboard_v_oct_to_vco",
       "sourceJack": "keyboard.v_oct_out",
       "sinkJack": "vco_a.v_oct_in",
-      "description": "By default the keyboard V/OCT output is normalised to the Volt/octave input of the VCOs (VCO A and VCO B). Plugging a cable into the sink overrides it.",
+      "description": "By default the keyboard V/OCT output is normalised to the Volt/octave input of VCO A (VCO B is normalised analogously; only VCO A's sink is captured in this P0 slice). Plugging a cable into the sink overrides it.",
       "evidence": { "line": 573 }, "status": "confirmed"
     },
     {
-      "id": "route.keyboard_gate_to_eg",
+      "stable_id": "route.keyboard_gate_to_eg",
       "sourceJack": "keyboard.gate_left_main_out",
       "sinkJack": "envelope_a.gate_in",
       "description": "By default GATE LEFT (MAIN) is normalised to the gate input of the envelope generators controlling the VCO A/B VCAs.",
       "evidence": { "line": 576 }, "status": "confirmed"
     },
     {
-      "id": "route.vcf_cv_l_to_cv_r",
+      "stable_id": "route.vcf_cv_l_to_cv_r",
       "sourceJack": "vcf.cv_l_in",
       "sinkJack": "vcf.cv_r_in",
       "description": "CV L is normally connected to CV R. CV L controls both channels if there is no CV-signal in CV R. Plugging into CV R overrides this.",
@@ -135,7 +140,8 @@
   ],
   "programs": [
     {
-      "id": "program.cathedral.1",
+      "id": 0,
+      "stable_id": "program.cathedral.1",
       "cartridge": "CATHEDRAL",
       "slot": 1,
       "name": "Shimmer",
@@ -144,13 +150,14 @@
       "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1207, "lineEnd": 1213 },
       "status": "confirmed",
       "parameters": [
-        { "id": "program.cathedral.1.octave_up", "role": "x", "name": "Octave up", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1209 }, "status": "confirmed" },
-        { "id": "program.cathedral.1.octave_down", "role": "y", "name": "Octave down", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1209 }, "status": "confirmed" },
-        { "id": "program.cathedral.1.decay", "role": "z", "name": "Decay", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 2.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1211 }, "status": "confirmed" }
+        { "id": 24, "stable_id": "program.cathedral.1.octave_up", "role": "x", "name": "Octave up", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1209 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 25, "stable_id": "program.cathedral.1.octave_down", "role": "y", "name": "Octave down", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1209 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 26, "stable_id": "program.cathedral.1.decay", "role": "z", "name": "Decay", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 2.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1211 }, "status": "confirmed", "rangeEvidence": "unverified" }
       ]
     },
     {
-      "id": "program.magic.1",
+      "id": 1,
+      "stable_id": "program.magic.1",
       "cartridge": "MAGIC",
       "slot": 1,
       "name": "Pitch delay",
@@ -159,9 +166,9 @@
       "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1210, "lineEnd": 1213 },
       "status": "confirmed",
       "parameters": [
-        { "id": "program.magic.1.semitones", "role": "x", "name": "Pitch", "unit": "semitones", "min": -12.0, "max": 12.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed" },
-        { "id": "program.magic.1.delay", "role": "y", "name": "Delay", "unit": "milliseconds", "min": 1.0, "max": 1500.0, "default": 400.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed" },
-        { "id": "program.magic.1.feedback", "role": "z", "name": "Feedback", "unit": "norm", "min": 0.0, "max": 0.98, "default": 0.4, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed" }
+        { "id": 27, "stable_id": "program.magic.1.feedback", "role": "x", "name": "Feedback", "unit": "norm", "min": 0.0, "max": 0.98, "default": 0.4, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 28, "stable_id": "program.magic.1.delay", "role": "y", "name": "Delay", "unit": "milliseconds", "min": 1.0, "max": 1500.0, "default": 400.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed", "rangeEvidence": "unverified" },
+        { "id": 29, "stable_id": "program.magic.1.pitch", "role": "z", "name": "Pitch", "unit": "semitones", "min": -12.0, "max": 12.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed", "rangeEvidence": "unverified" }
       ]
     }
   ]

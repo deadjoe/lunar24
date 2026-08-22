@@ -1,20 +1,21 @@
 {
-  "meta": { "machine": "Lunar 24", "schemaVersion": "0.1", "registryVersion": "0.1", "source": "fixture" },
+  "meta": { "machine": "Lunar 24", "schemaVersion": "0.1", "registryVersion": "0.1",
+            "source": "fixture", "expectedError": "dangling" },
   "modules": [
     {
-      "id": "vco_a", "name": "VCO A", "category": "source", "description": "",
+      "id": 0, "stable_id": "vco_m", "name": "VCO M", "category": "source", "description": "",
       "evidence": { "ref": "fixture", "lineStart": 1, "lineEnd": 1 }, "status": "confirmed",
       "parameters": [],
       "jacks": [
-        { "id": "vco_a.out", "name": "out", "direction": "output", "signalType": "audio",
-          "polarity": "bipolar", "nominalMin": -1, "nominalMax": 1, "coupling": "ac",
-          "evidence": { "line": 1 }, "status": "confirmed" }
+        { "id": 0, "stable_id": "vco_m.out", "name": "out", "direction": "output",
+          "signalType": "audio", "polarity": "bipolar", "nominalMin": -1, "nominalMax": 1,
+          "coupling": "ac", "evidence": { "line": 1 }, "status": "confirmed" }
       ]
     }
   ],
   "normalizedRoutes": [
-    { "id": "r", "sourceJack": "vco_a.out", "sinkJack": "vco_missing.in", "description": "sink absent",
-      "evidence": { "line": 1 }, "status": "confirmed" }
+    { "stable_id": "r", "sourceJack": "vco_m.out", "sinkJack": "vco_missing.in",
+      "description": "sink absent", "evidence": { "line": 1 }, "status": "confirmed" }
   ],
   "programs": []
 }

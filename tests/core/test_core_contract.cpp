@@ -48,11 +48,16 @@ static void control_event_contract() {
 
   core::ControlEvent ev;
   ev.kind = core::ControlEventKind::gate_on;
-  ev.lane = core::ControlLane::critical;
   ev.sampleOffset = 42;
+  ev.source = 5;
   ev.producerSequence = 7;
   CHECK(ev.kind == core::ControlEventKind::gate_on);
-  CHECK(ev.lane == core::ControlLane::critical);
+  CHECK(ev.lane() == core::ControlLane::critical);  // lane is DERIVED from kind (07 §3)
+  CHECK(ev.source == 5u);
+  // Same-sample ordering tiebreak (07 §3): later producerSequence is later.
+  core::ControlEvent later = ev;
+  later.producerSequence = 8;
+  CHECK(later.producerSequence > ev.producerSequence);
   // A {}-initialised ControlEvent has a valid default ParameterId of value 0.
   core::ControlEvent def;
   CHECK_EQ(static_cast<core::IdValue>(def.parameter), 0u);
@@ -81,8 +86,15 @@ static void module_execution_contract_flags() {
   CHECK_EQ(c.intrinsicLatencySamples, 0u);
   CHECK_EQ(c.maxResources, 0u);
   CHECK_FALSE(c.hasDirectThroughPath);
-  CHECK_FALSE(c.declaresCausalPathDelay);
   CHECK_FALSE(c.allowedInCyclicSCC);
+  // Per-path causal facts (07 §2, §4): module-wide latency alone never grants
+  // cycle-breaking credit — paths are named and each has its own min delay.
+  CHECK_EQ(c.pathDelayCount, 0u);
+  CHECK_EQ(c.pathDelays[0].inPort, core::JackId{0});
+  CHECK_EQ(c.pathDelays[0].outPort, core::JackId{0});
+  CHECK_EQ(c.pathDelays[0].minCausalDelaySamples, 0.0);
+  CHECK_FALSE(c.pathDelays[0].canDirectThrough);
+  CHECK_FALSE(c.pathDelays[0].directThroughExactZeroGain);
 }
 
 static void patch_graph_types_and_handles() {
@@ -107,6 +119,16 @@ static void enum_category_stability() {
                   static_cast<int>(core::EvidenceStatus::unverified),
                   static_cast<int>(core::EvidenceStatus::provisional)};
   CHECK(status[0] == 0 && status[1] == 1 && status[2] == 2);
+  int transfer[] = {static_cast<int>(core::SignalTransfer::linear),
+                    static_cast<int>(core::SignalTransfer::exponential),
+                    static_cast<int>(core::SignalTransfer::none),
+                    static_cast<int>(core::SignalTransfer::unknown)};
+  CHECK(transfer[0] == 0 && transfer[1] == 1 && transfer[2] == 2 && transfer[3] == 3);
+  int sat[] = {static_cast<int>(core::SaturationType::none),
+               static_cast<int>(core::SaturationType::hard),
+               static_cast<int>(core::SaturationType::soft),
+               static_cast<int>(core::SaturationType::unknown)};
+  CHECK(sat[0] == 0 && sat[1] == 1 && sat[2] == 2 && sat[3] == 3);
 }
 
 int main() {

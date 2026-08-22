@@ -38,7 +38,7 @@ enum class ParameterId : std::uint32_t {
     vcf_l_mod = 15,
     vcf_l_dist = 16,
     vcf_l_gain = 17,
-    vcf_l_freq_r = 18,
+    vcf_r_freq = 18,
     vcf_mode = 19,
     vcf_link = 20,
     keyboard_pressure_signal = 21,
@@ -47,9 +47,9 @@ enum class ParameterId : std::uint32_t {
     program_cathedral_1_octave_up = 24,
     program_cathedral_1_octave_down = 25,
     program_cathedral_1_decay = 26,
-    program_magic_1_semitones = 27,
+    program_magic_1_feedback = 27,
     program_magic_1_delay = 28,
-    program_magic_1_feedback = 29
+    program_magic_1_pitch = 29
 };
 
 enum class JackId : std::uint32_t {
@@ -115,7 +115,7 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::vcf_l_mod: return "vcf.l.mod";
     case ParameterId::vcf_l_dist: return "vcf.l.dist";
     case ParameterId::vcf_l_gain: return "vcf.l.gain";
-    case ParameterId::vcf_l_freq_r: return "vcf.l.freq_r";
+    case ParameterId::vcf_r_freq: return "vcf.r.freq";
     case ParameterId::vcf_mode: return "vcf.mode";
     case ParameterId::vcf_link: return "vcf.link";
     case ParameterId::keyboard_pressure_signal: return "keyboard.pressure_signal";
@@ -124,9 +124,9 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_cathedral_1_octave_up: return "program.cathedral.1.octave_up";
     case ParameterId::program_cathedral_1_octave_down: return "program.cathedral.1.octave_down";
     case ParameterId::program_cathedral_1_decay: return "program.cathedral.1.decay";
-    case ParameterId::program_magic_1_semitones: return "program.magic.1.semitones";
-    case ParameterId::program_magic_1_delay: return "program.magic.1.delay";
     case ParameterId::program_magic_1_feedback: return "program.magic.1.feedback";
+    case ParameterId::program_magic_1_delay: return "program.magic.1.delay";
+    case ParameterId::program_magic_1_pitch: return "program.magic.1.pitch";
   }
   return "(unknown Parameter)";
 }
