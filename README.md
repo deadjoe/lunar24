@@ -1,6 +1,6 @@
 # Lunar 24
 
-An open-source desktop software musical instrument: a faithful software emulation of the
+An open-source desktop software musical instrument: a software emulation of the
 ELTA Music **Solar 42N** — the analogue microtonal ambient drone machine and semi-modular
 stand-alone synthesizer.
 
@@ -10,9 +10,10 @@ strict: it does **not** add sound sources, modulators, general-purpose routing m
 macros, plugin/DAW hosts, or a multi-preset library beyond the hardware's own four keyboard
 presets.
 
-> This is the official repository only. The ELTA Solar 42N reference manual, panel render and
-> effector catalog images are copyrighted third-party material and are intentionally **not**
-> committed — see `design/reference/SOURCES.md` for their source URLs and checksums.
+> This repository tracks its own source and design documents only. The ELTA Solar 42N
+> reference manual, panel render and effector catalog images are copyrighted third-party
+> material and are intentionally **not** committed — see `design/reference/SOURCES.md` for
+> their source URLs and checksums.
 
 ## License
 
