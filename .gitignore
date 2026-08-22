@@ -1,0 +1,32 @@
+# Build directories
+/build/
+/cmake-build-*/
+**/build/
+
+# IDE / OS cruft
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs / temporary files
+*.log
+*.tmp
+*.bak
+*.orig
+
+# Secrets — never commit
+.env
+*.key
+*.pem
+*.p12
+secrets/
+
+# ELTA Solar 42N reference source materials.
+# Binaries (extracted manual text, panel render, effector catalog images) are kept
+# LOCAL ONLY to avoid carrying third-party full materials if this repo ever goes
+# public. Source URL + checksums + extraction notes live in design/reference/SOURCES.md.
+design/reference/*.png
+design/reference/solar42N_manual_text.txt
