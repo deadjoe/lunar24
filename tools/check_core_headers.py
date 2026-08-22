@@ -5,13 +5,19 @@
 
 Two gates, both hard enough that they cannot false-pass:
 
-  1. License gate — every authored file under core/include/lunar24/core/, the
-     generated headers, and every tools/*.py must carry the Apache-2.0 SPDX block
-     in its LEADING header lines (a "header present somewhere in the file" check
-     is not enough). Generated files are verified by exact emission, so this also
-     catches an out-of-date generated header.
-  2. Forbidden-include gate — no core public header may include a framework /
-     platform / filesystem type (keeps lunar-core framework-free).
+  1. License gate — every AUTHORED CODE file in the tree (C/C++ headers+sources,
+     Python, CMakeLists.txt), wherever it lives, must carry the Apache-2.0 SPDX
+     block in its LEADING header lines. The scan is RECURSIVE over the whole
+     tracked source (core/, generated/, tests/, tools/, design/*.py, the root
+     CMakeLists.txt) so a script dropped in a subdirectory, or a new CMake file,
+     is caught and not silently skipped. A "header present somewhere in the file"
+     check is not enough; generated files are verified by exact emission too.
+  2. Forbidden-include gate — only the core PUBLIC headers (they define the
+     framework-free boundary) may be scanned for framework / platform /
+     filesystem includes; the rest of the tree is NOT restricted that way.
+
+Third-party / vendored dirs (third_party/) and build/ are never scanned as
+authored. Non-code files (docs, JSON, YAML, LICENSE) are not license-gated.
 
 Usage:
   python3 tools/check_core_headers.py          # scans, exits non-zero on violation
@@ -23,8 +29,13 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CORE_INC = os.path.join(ROOT, "core", "include", "lunar24", "core")
-GEN_DIR = os.path.join(ROOT, "generated", "lunar24")
-TOOLS_DIR = os.path.join(ROOT, "tools")
+
+# Directories that are never part of the authored source (vendored / generated
+# build scratch). A future vendored third-party lib lands here and stays uncounted.
+SKIP_DIRS = {".git", "build", "third_party"}
+
+# A file is code (license-gated) by extension, or by being a CMakeLists.
+CODE_EXTS = {".h", ".hpp", ".cpp", ".cc", ".cxx", ".py"}
 
 SPDX = "SPDX-License-Identifier: Apache-2.0"
 SPDX_HEADING = "Copyright (c) 2026 Lunar 24 contributors"
@@ -63,19 +74,25 @@ def scan_forbidden(text):
     return None
 
 
+def _is_code(name):
+    return name == "CMakeLists.txt" or os.path.splitext(name)[1] in CODE_EXTS
+
+
 def collect_files():
+    # Recursive over the whole tree. License-scan every code file; the forbidden-
+    # include scan applies ONLY to core public headers (the framework-free line).
+    real_core = os.path.realpath(CORE_INC)
     files = []  # (display, abs_path, do_forbidden_scan)
-    for d in (CORE_INC, GEN_DIR):
-        if os.path.isdir(d):
-            for base in sorted(os.listdir(d)):
-                p = os.path.join(d, base)
-                if os.path.isfile(p) and base.endswith((".h", ".hpp")):
-                    files.append((os.path.relpath(p, ROOT), p, d == CORE_INC))
-    if os.path.isdir(TOOLS_DIR):
-        for base in sorted(os.listdir(TOOLS_DIR)):
-            p = os.path.join(TOOLS_DIR, base)
-            if os.path.isfile(p) and base.endswith(".py"):
-                files.append((os.path.relpath(p, ROOT), p, False))
+    for base, dirs, names in os.walk(ROOT):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for n in sorted(names):
+            if not _is_code(n):
+                continue
+            p = os.path.join(base, n)
+            if not os.path.isfile(p):
+                continue
+            do_forbidden = os.path.realpath(p).startswith(real_core)
+            files.append((os.path.relpath(p, ROOT), p, do_forbidden))
     return files
 
 

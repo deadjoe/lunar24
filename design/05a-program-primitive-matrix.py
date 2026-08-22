@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
+#
 # 39 个程序 → 必需基元集合。依据 = 手册 p23/p24 每个程序的 X/Y/Z 参数语义。
 # P1 延迟线+反馈 P2 混响 P3 变调 P4 LFO调制 P5 滤波 P6 环形调制/S&H P7 降采样 P8 迷你合成器
 P = {

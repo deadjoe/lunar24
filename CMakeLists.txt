@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Build for Lunar 24 — the independent, unaffiliated desktop emulation of the
+# ELTA Solar 42N panel/behaviour. See design/ and README.md for scope.
+
 cmake_minimum_required(VERSION 3.24)
 
 project(Lunar24
@@ -11,15 +17,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
-
-# Strict warnings on Lunar-24-owned code. -Werror is applied per-target below so
-# third-party build units (iPlug2, P1+) are never forced to be warning-clean.
-# MSVC uses /W4 + /WX; GCC/Clang use -Wall -Wextra -Wpedantic -Werror.
-if(MSVC)
-  add_compile_options(/W4)
-else()
-  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -45,8 +42,9 @@ add_test(NAME registry_regen_zero_diff
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_registry.py --check)
 
-# Static gates: every core public header carries the SPDX Apache-2.0 header and
-# stays framework-free (forbidden-include scan).
+# Static gates: every authored code file carries a leading SPDX Apache-2.0 header
+# (recursive scan), and core public headers stay framework-free (forbidden-include
+# scan restricted to the core boundary).
 add_test(NAME core_headers_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_core_headers.py)
@@ -64,14 +62,22 @@ add_test(NAME registry_id_stability
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_id_stability.py)
 
+# Strict warnings, applied PRIVATE to a Lunar-owned compiled target only. Never
+# set globally: a future third-party build unit (iPlug2, P1+) must not be forced
+# warning-clean by a global add_compile_options, and lunar_core (header-only
+# INTERFACE) has no compilation unit of its own to set them on.
+function(lunar_enable_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /WX)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+endfunction()
+
 function(lunar_add_test name src)
   add_executable(${name} ${src})
   target_link_libraries(${name} PRIVATE lunar_core)
-  if(MSVC)
-    target_compile_options(${name} PRIVATE /W4 /WX)
-  else()
-    target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic -Werror)
-  endif()
+  lunar_enable_warnings(${name})
   add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
