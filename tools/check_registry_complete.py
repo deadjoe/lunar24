@@ -1321,8 +1321,21 @@ def check(spec, manifest, require_full=False):
             continue
         kind = "selector-toggle" if rp.get("positions") else "continuous"
         de = f.get("descriptorEvidence") or {}
-        rpfe = rp.get("fieldEvidence") or {}
         ffe = f.get("fieldEvidence") or {}
+        # Codex msg a42e4791: the exact key-shape gate must also cover the two NESTED objects, not
+        # just the fact top level. A garbage field added to descriptorEvidence or fieldEvidence must
+        # fail (the tuple compare ignores an extra key, so only an explicit nested key-set check
+        # catches it); a missing nested key is likewise diagnosed here rather than only as a tuple
+        # mismatch.
+        if set(de.keys()) != {"line"}:
+            problems.append(f"landed param fact {sid!r} descriptorEvidence key-set "
+                            f"{sorted(de.keys())} != exact ['line']")
+            continue
+        if set(ffe.keys()) != set(pfe_keys):
+            problems.append(f"landed param fact {sid!r} fieldEvidence key-set "
+                            f"{sorted(ffe.keys())} != exact {sorted(pfe_keys)}")
+            continue
+        rpfe = rp.get("fieldEvidence") or {}
         got = (rp.get("id"), rp.get("_stable_owner"), kind, rp.get("name"), rp.get("unit"),
                rp.get("min"), rp.get("max"), rp.get("default"), rp.get("step"),
                rp.get("smoothing"), rp.get("persistence"), rp.get("status"),

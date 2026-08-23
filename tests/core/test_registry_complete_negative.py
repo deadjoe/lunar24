@@ -1883,6 +1883,29 @@ def main():
         raise SystemExit("landed param fact garbage key (lfo_a.wave positions) not enforced: "
                         "%r" % problems)
 
+    # (by)-(bz) NESTED key-set (Codex msg a42e4791): the exact-shape gate must also cover the two
+    # nested objects. The value tuple already catches a MISSING nested key, but an EXTRA/garbage
+    # nested key is invisible to it (`.get` ignores unknowns), so only an explicit nested key-set
+    # check can fail it. descriptorEvidence must be exactly {line}; fieldEvidence exactly the six
+    # keys {range,unit,default,step,smoothing,persistence}.
+
+    # (by) descriptorEvidence nested garbage key.
+    by_bad = copy.deepcopy(manifest)
+    by_bad["target"]["landedDescriptorFacts"]["parameters"]["lfo_a.rate"]["descriptorEvidence"] \
+        ["garbage"] = 1
+    problems, _ = gate.check(spec, by_bad)
+    if not has(problems, "descriptorEvidence key-set"):
+        raise SystemExit("descriptorEvidence nested garbage key (lfo_a.rate) not enforced: "
+                        "%r" % problems)
+
+    # (bz) fieldEvidence nested garbage key.
+    bz_bad = copy.deepcopy(manifest)
+    bz_bad["target"]["landedDescriptorFacts"]["parameters"]["lfo_a.rate"]["fieldEvidence"]["garbage"] \
+        = "confirmed"
+    problems, _ = gate.check(spec, bz_bad)
+    if not has(problems, "fieldEvidence key-set"):
+        raise SystemExit("fieldEvidence nested garbage key (lfo_a.rate) not enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
