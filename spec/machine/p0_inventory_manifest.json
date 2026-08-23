@@ -1766,7 +1766,7 @@
   "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "program:program.cathedral.1", "program:program.magic.1", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r"],
   "migrationAllowlist": {
     "note": "Monotonically-shrinking migration allowlist for pre-correction registry rogue ids. The gate is ALWAYS-ON: any registry param/jack not in the target and not in this list is a NEW rogue and fails even without --require-full. --require-full requires the list empty AND no rogue.",
-    "parameters": ["envelope_a.attack", "envelope_a.release", "keyboard.pressure_signal", "program.cathedral.1.decay", "program.cathedral.1.octave_down", "program.cathedral.1.octave_up", "program.magic.1.delay", "program.magic.1.feedback", "program.magic.1.pitch", "vcf.l.dist", "vcf.l.freq", "vcf.l.gain", "vcf.l.mod", "vcf.l.res", "vcf.mode", "vcf.r.freq", "vco_a.fm_amt", "vco_a.oct_high", "vco_a.oct_low", "vco_a.shape", "vco_a.sub", "vco_a.wave", "vco_b.shape", "vco_b.wave"],
-    "jacks": ["vcf.audio_in"]
+    "parameters": [],
+    "jacks": []
   }
 }

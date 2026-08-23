@@ -303,9 +303,21 @@ def main():
         raise SystemExit("--require-full did not report the program-identity gap: %r" % problems)
     if not has(problems, "parameter target-not-implemented"):
         raise SystemExit("--require-full did not report per-ID parameter gaps: %r" % problems)
-    if not has(problems, "parameter registry-rogue"):
-        raise SystemExit("--require-full did not report per-ID parameter rogues "
-                         "(pre-correction ids like vco_a.oct_high): %r" % problems)
+    # --require-full must ALSO report a per-ID *parameter* rogue (a registry param
+    # whose stable_id is absent from the frozen target and not on the allowlist).
+    # Build this from a fixture copy: the live registry is now clean of rogues
+    # (pre-correction ids like vco_a.oct_high were re-ID'd to target ids in
+    # Phase B), so asserting against a still-present live rogue would be a
+    # self-proving no-op rather than an independent check.
+    roguep = copy.deepcopy(spec)
+    roguep_mod = [x for x in roguep["modules"] if x["stable_id"] == "vco_a"][0]
+    roguep_mod["parameters"].append(copy.deepcopy(roguep_mod["parameters"][0]))
+    roguep_parm = roguep_mod["parameters"][-1]
+    roguep_parm["id"] = 999
+    roguep_parm["stable_id"] = "vco_a.rogue_oct_high"
+    problems_p, _ = gate.check(roguep, manifest, require_full=True)
+    if not has(problems_p, "parameter registry-rogue"):
+        raise SystemExit("--require-full did not report a per-ID parameter rogue: %r" % problems_p)
 
     # 30. fixed route invalid kind.
     badkind = copy.deepcopy(manifest)

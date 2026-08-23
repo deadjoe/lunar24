@@ -56,8 +56,8 @@ static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
   CHECK_EQ(core::kModuleCount, 5u);
-  CHECK_EQ(core::kParameterCount, 30u);
-  CHECK_EQ(core::kJackCount, 19u);
+  CHECK_EQ(core::kParameterCount, 75u);  // Phase B re-ID + keyboard transcription
+  CHECK_EQ(core::kJackCount, 18u);       // Phase B dropped rogue jack vcf.audio_in
   CHECK_EQ(core::kProgramCount, 2u);
   CHECK_EQ(core::kRouteCount, 3u);
   // kNormalizedRoutes[] still holds exactly the frozen route count (kRouteCount

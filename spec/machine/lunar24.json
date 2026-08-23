@@ -12,26 +12,285 @@
       "name": "VCO A",
       "category": "source",
       "description": "AS3340 triangle-core VCO, 6 waveforms (2 morphing). Mirrors VCO B except VCO A has a SYNC input.",
-      "evidence": { "ref": "solar42N_manual_v15", "lineStart": 376, "lineEnd": 422 },
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 376,
+        "lineEnd": 422
+      },
       "status": "confirmed",
       "parameters": [
-        { "id": 0, "stable_id": "vco_a.tune", "name": "Tune", "unit": "oct", "min": -1.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 393 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 1, "stable_id": "vco_a.wave", "name": "Morphing waveform", "unit": "index", "min": 0.0, "max": 5.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 380 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 2, "stable_id": "vco_a.shape", "name": "Pulse width (SHAPE)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 386 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 3, "stable_id": "vco_a.oct_high", "name": "Octave +3", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 391 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 4, "stable_id": "vco_a.oct_low", "name": "Octave low", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 391 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 5, "stable_id": "vco_a.sub", "name": "Sub generator -1 oct", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 392 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 6, "stable_id": "vco_a.cv_amt", "name": "CV AMT", "unit": "norm", "min": 0.0, "max": 1.0, "default": 1.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 413 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 7, "stable_id": "vco_a.lin_exp", "name": "lin/exp CV mode", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 389 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 8, "stable_id": "vco_a.fm_amt", "name": "Linear FM amount", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 387 }, "status": "confirmed", "rangeEvidence": "unverified" }
+        {
+          "id": 0,
+          "stable_id": "vco_a.tune",
+          "name": "Tune",
+          "unit": "oct",
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 393
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 1,
+          "stable_id": "vco_a.morph",
+          "name": "Morph",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 380
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 2,
+          "stable_id": "vco_a.pw",
+          "name": "Pulse width (SHAPE)",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 386
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 3,
+          "stable_id": "vco_a.oct_sel",
+          "name": "Octave",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 391
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 5,
+          "stable_id": "vco_a.sub_sel",
+          "name": "Sub (-1 oct)",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 392
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 6,
+          "stable_id": "vco_a.cv_amt",
+          "name": "CV AMT",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 1.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 413
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 7,
+          "stable_id": "vco_a.lin_exp",
+          "name": "lin/exp CV mode",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 389
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 8,
+          "stable_id": "vco_a.pwm",
+          "name": "PWM",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 387
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        }
       ],
       "jacks": [
-        { "id": 0, "stable_id": "vco_a.cv_in", "name": "CV", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 1, "stable_id": "vco_a.v_oct_in", "name": "V/O", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "modulationDepthPerVolt": 1.0, "transfer": "exponential", "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "confirmed", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "confirmed" } },
-        { "id": 2, "stable_id": "vco_a.fm_in", "name": "FM", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 387 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 3, "stable_id": "vco_a.sync_in", "name": "Sync (VCO A only)", "direction": "input", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 5.0, "hysteresisVolts": 0.2, "coupling": "dc", "evidence": { "line": 411 }, "status": "provisional", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 4, "stable_id": "vco_a.vca_ctl", "name": "VCA CV", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 576 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 5, "stable_id": "vco_a.dry_out", "name": "VCO dry out", "direction": "output", "signalType": "audio", "polarity": "bipolar", "nominalMin": -1.0, "nominalMax": 1.0, "coupling": "ac", "evidence": { "line": 153 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "provisional", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
+        {
+          "id": 0,
+          "stable_id": "vco_a.cv_in",
+          "name": "CV",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "dc",
+          "evidence": {
+            "line": 398
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 1,
+          "stable_id": "vco_a.v_oct_in",
+          "name": "V/O",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "modulationDepthPerVolt": 1.0,
+          "transfer": "exponential",
+          "coupling": "dc",
+          "evidence": {
+            "line": 398
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "confirmed"
+          }
+        },
+        {
+          "id": 2,
+          "stable_id": "vco_a.fm_in",
+          "name": "FM",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "dc",
+          "evidence": {
+            "line": 387
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 3,
+          "stable_id": "vco_a.sync_in",
+          "name": "Sync (VCO A only)",
+          "direction": "input",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "gateThresholdVolts": 5.0,
+          "hysteresisVolts": 0.2,
+          "coupling": "dc",
+          "evidence": {
+            "line": 411
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 4,
+          "stable_id": "vco_a.vca_ctl",
+          "name": "VCA CV",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "coupling": "dc",
+          "evidence": {
+            "line": 576
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 5,
+          "stable_id": "vco_a.dry_out",
+          "name": "VCO dry out",
+          "direction": "output",
+          "signalType": "audio",
+          "polarity": "bipolar",
+          "nominalMin": -1.0,
+          "nominalMax": 1.0,
+          "coupling": "ac",
+          "evidence": {
+            "line": 153
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "provisional",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        }
       ]
     },
     {
@@ -40,19 +299,171 @@
       "name": "VCO B",
       "category": "source",
       "description": "AS3340 VCO, mirrors VCO A except VCO B has a VCO output and VCO A's output is normalised to its CV input (CV AMT knob).",
-      "evidence": { "ref": "solar42N_manual_v15", "lineStart": 376, "lineEnd": 422 },
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 376,
+        "lineEnd": 422
+      },
       "status": "confirmed",
       "parameters": [
-        { "id": 9, "stable_id": "vco_b.tune", "name": "Tune", "unit": "oct", "min": -1.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 393 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 10, "stable_id": "vco_b.wave", "name": "Morphing waveform", "unit": "index", "min": 0.0, "max": 5.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 380 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 11, "stable_id": "vco_b.shape", "name": "Pulse width (SHAPE)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 386 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 12, "stable_id": "vco_b.cv_amt", "name": "CV AMT", "unit": "norm", "min": 0.0, "max": 1.0, "default": 1.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 413 }, "status": "confirmed", "rangeEvidence": "unverified" }
+        {
+          "id": 9,
+          "stable_id": "vco_b.tune",
+          "name": "Tune",
+          "unit": "oct",
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 393
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 10,
+          "stable_id": "vco_b.morph",
+          "name": "Morph",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 380
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 11,
+          "stable_id": "vco_b.pw",
+          "name": "Pulse width (SHAPE)",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 386
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 12,
+          "stable_id": "vco_b.cv_amt",
+          "name": "CV AMT",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 1.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 413
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        }
       ],
       "jacks": [
-        { "id": 6, "stable_id": "vco_b.cv_in", "name": "CV", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 7, "stable_id": "vco_b.v_oct_in", "name": "V/O", "direction": "input", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "modulationDepthPerVolt": 1.0, "transfer": "exponential", "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "confirmed", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "confirmed" } },
-        { "id": 8, "stable_id": "vco_b.vco_out", "name": "VCO out (VCO B only)", "direction": "output", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 412 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 9, "stable_id": "vco_b.dry_out", "name": "VCO dry out", "direction": "output", "signalType": "audio", "polarity": "bipolar", "nominalMin": -1.0, "nominalMax": 1.0, "coupling": "ac", "evidence": { "line": 153 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "provisional", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
+        {
+          "id": 6,
+          "stable_id": "vco_b.cv_in",
+          "name": "CV",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "dc",
+          "evidence": {
+            "line": 398
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 7,
+          "stable_id": "vco_b.v_oct_in",
+          "name": "V/O",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "modulationDepthPerVolt": 1.0,
+          "transfer": "exponential",
+          "coupling": "dc",
+          "evidence": {
+            "line": 398
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "confirmed"
+          }
+        },
+        {
+          "id": 8,
+          "stable_id": "vco_b.vco_out",
+          "name": "VCO out (VCO B only)",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "dc",
+          "evidence": {
+            "line": 412
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 9,
+          "stable_id": "vco_b.dry_out",
+          "name": "VCO dry out",
+          "direction": "output",
+          "signalType": "audio",
+          "polarity": "bipolar",
+          "nominalMin": -1.0,
+          "nominalMax": 1.0,
+          "coupling": "ac",
+          "evidence": {
+            "line": 153
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "provisional",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        }
       ]
     },
     {
@@ -61,22 +472,195 @@
       "name": "Dual 12dB Polivoks VCF",
       "category": "processing",
       "description": "Dual 12dB Polivoks LP/BP filter. Product behavior spec: raising resonance does NOT lose lows. CV L is normally connected to CV R (CV L controls both channels when CV R has no signal).",
-      "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1118, "lineEnd": 1157 },
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 1118,
+        "lineEnd": 1157
+      },
       "status": "confirmed",
       "parameters": [
-        { "id": 13, "stable_id": "vcf.l.freq", "name": "FREQ L", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.3, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1138 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 14, "stable_id": "vcf.l.res", "name": "RES L", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1140 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 15, "stable_id": "vcf.l.mod", "name": "MOD L (CV amount)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1145 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 16, "stable_id": "vcf.l.dist", "name": "DIST L (dry/wet)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1151 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 17, "stable_id": "vcf.l.gain", "name": "GAIN L (distortion amount)", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1151 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 18, "stable_id": "vcf.r.freq", "name": "FREQ R", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.3, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1138 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 19, "stable_id": "vcf.mode", "name": "BP-LP mode", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1149 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 20, "stable_id": "vcf.link", "name": "LINK (CV1 controls both filters)", "unit": "bool", "min": 0.0, "max": 1.0, "default": 0.0, "step": 1.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 1147 }, "status": "confirmed", "rangeEvidence": "unverified" }
+        {
+          "id": 13,
+          "stable_id": "vcf.l_freq",
+          "name": "FREQ L",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.3,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1138
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 14,
+          "stable_id": "vcf.l_res",
+          "name": "RES L",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1140
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 15,
+          "stable_id": "vcf.l_mod",
+          "name": "MOD L (CV amount)",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1145
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 16,
+          "stable_id": "vcf.dist",
+          "name": "DIST L (dry/wet)",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1151
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 17,
+          "stable_id": "vcf.gain",
+          "name": "GAIN L (distortion amount)",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1151
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 18,
+          "stable_id": "vcf.r_freq",
+          "name": "FREQ R",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.3,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1138
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 19,
+          "stable_id": "vcf.l_bp_lp",
+          "name": "BP-LP L",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1149
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 20,
+          "stable_id": "vcf.link",
+          "name": "LINK (CV1 controls both filters)",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1147
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        }
       ],
       "jacks": [
-        { "id": 10, "stable_id": "vcf.cv_l_in", "name": "CV L", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 1142 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 11, "stable_id": "vcf.cv_r_in", "name": "CV R", "direction": "input", "signalType": "cv", "polarity": "bipolar", "nominalMin": -5.0, "nominalMax": 5.0, "coupling": "dc", "evidence": { "line": 1142 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 12, "stable_id": "vcf.audio_in", "name": "Filter L input", "direction": "input", "signalType": "audio", "polarity": "bipolar", "nominalMin": -2.0, "nominalMax": 2.0, "coupling": "ac", "evidence": { "line": 1102 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
+        {
+          "id": 10,
+          "stable_id": "vcf.cv_l_in",
+          "name": "CV L",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "dc",
+          "evidence": {
+            "line": 1142
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 11,
+          "stable_id": "vcf.cv_r_in",
+          "name": "CV R",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "dc",
+          "evidence": {
+            "line": 1142
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        }
       ]
     },
     {
@@ -85,16 +669,1051 @@
       "name": "Sensor keyboard",
       "category": "performance",
       "description": "12 capacitively-sensitive touch plates with VOLT/octave, gate, pressure and clock outputs. Larger subsystem; P0 captures the normalized-route evidence only.",
-      "evidence": { "ref": "solar42N_manual_v15", "lineStart": 559, "lineEnd": 634 },
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 559,
+        "lineEnd": 634
+      },
       "status": "confirmed",
       "parameters": [
-        { "id": 21, "stable_id": "keyboard.pressure_signal", "name": "PRESSURE signal", "unit": "volts", "min": 0.0, "max": 8.0, "default": 0.0, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 584 }, "status": "confirmed", "rangeEvidence": "confirmed" }
+        {
+          "id": 100,
+          "stable_id": "keyboard.behaviour",
+          "name": "Single/Twin/Split",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 659,
+            "lineEnd": 733,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 101,
+          "stable_id": "keyboard.mode",
+          "name": "Mode",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 809,
+            "lineEnd": 818,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 102,
+          "stable_id": "keyboard.arp_hold",
+          "name": "Arp Hold",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 822,
+            "lineEnd": 857,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 103,
+          "stable_id": "keyboard.arp_clock",
+          "name": "Arp Clock",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 822,
+            "lineEnd": 857,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 104,
+          "stable_id": "keyboard.arp_direction",
+          "name": "Arp Direction",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 822,
+            "lineEnd": 857,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 105,
+          "stable_id": "keyboard.arp_variation",
+          "name": "Arp Variation",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 822,
+            "lineEnd": 857,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 106,
+          "stable_id": "keyboard.arp_interval",
+          "name": "Arp Interval",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 822,
+            "lineEnd": 857,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 107,
+          "stable_id": "keyboard.arp_rhythm",
+          "name": "Arp Rhythm",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 822,
+            "lineEnd": 857,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 108,
+          "stable_id": "keyboard.arp_length",
+          "name": "Arp Length",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 822,
+            "lineEnd": 857,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 109,
+          "stable_id": "keyboard.seq_run",
+          "name": "Seq Run",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 866,
+            "lineEnd": 910,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 110,
+          "stable_id": "keyboard.seq_length",
+          "name": "Seq Length",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 866,
+            "lineEnd": 910,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 111,
+          "stable_id": "keyboard.seq_clock",
+          "name": "Seq Clock",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 866,
+            "lineEnd": 910,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 112,
+          "stable_id": "keyboard.seq_direction",
+          "name": "Seq Direction",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 866,
+            "lineEnd": 910,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 113,
+          "stable_id": "keyboard.seq_cv_output",
+          "name": "Seq Cv Output",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 866,
+            "lineEnd": 910,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 114,
+          "stable_id": "keyboard.seq_rhythm",
+          "name": "Seq Rhythm",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 866,
+            "lineEnd": 910,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 115,
+          "stable_id": "keyboard.seq_rhythm_length",
+          "name": "Seq Rhythm Length",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 866,
+            "lineEnd": 910,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 116,
+          "stable_id": "keyboard.seq_steps",
+          "name": "up to 16 step note/value + gate",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 866,
+            "lineEnd": 910,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 117,
+          "stable_id": "keyboard.portamento_speed",
+          "name": "Portamento Speed",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 916,
+            "lineEnd": 923,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 118,
+          "stable_id": "keyboard.portamento_legato",
+          "name": "Portamento Legato",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 916,
+            "lineEnd": 923,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 119,
+          "stable_id": "keyboard.vibrato_speed",
+          "name": "Vibrato Speed",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 934,
+            "lineEnd": 946,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 120,
+          "stable_id": "keyboard.vibrato_depth",
+          "name": "Vibrato Depth",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 934,
+            "lineEnd": 946,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 121,
+          "stable_id": "keyboard.vibrato_delay",
+          "name": "Vibrato Delay",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 934,
+            "lineEnd": 946,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 122,
+          "stable_id": "keyboard.vibrato_pressure",
+          "name": "Vibrato Pressure",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 934,
+            "lineEnd": 946,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 123,
+          "stable_id": "keyboard.pressure_output",
+          "name": "Pressure Output",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 951,
+            "lineEnd": 965,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 124,
+          "stable_id": "keyboard.pressure_rise",
+          "name": "Pressure Rise",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 951,
+            "lineEnd": 965,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 125,
+          "stable_id": "keyboard.pressure_fall",
+          "name": "Pressure Fall",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 951,
+            "lineEnd": 965,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 126,
+          "stable_id": "keyboard.quantise_scale_editor",
+          "name": "scale mask",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 970,
+            "lineEnd": 984,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 127,
+          "stable_id": "keyboard.quantise_load_scale",
+          "name": "Quantise Load Scale",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 970,
+            "lineEnd": 984,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 128,
+          "stable_id": "keyboard.root_note",
+          "name": "Root Note",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 992,
+            "lineEnd": 993,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 129,
+          "stable_id": "keyboard.clock_bpm",
+          "name": "Clock Bpm",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1028,
+            "lineEnd": 1029,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 130,
+          "stable_id": "keyboard.calibration_v_oct",
+          "name": "V/oct calibration",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 131,
+          "stable_id": "keyboard.calibration_pressure",
+          "name": "pressure calibration",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 132,
+          "stable_id": "keyboard.dac_vref",
+          "name": "DAC voltage reference source",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 133,
+          "stable_id": "keyboard.touch_threshold",
+          "name": "touch threshold",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 134,
+          "stable_id": "keyboard.release_threshold",
+          "name": "release threshold",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 135,
+          "stable_id": "keyboard.pressure_min",
+          "name": "pressure minimum",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 136,
+          "stable_id": "keyboard.pressure_max",
+          "name": "pressure maximum",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 137,
+          "stable_id": "keyboard.mpr121_charge",
+          "name": "MPR121 charge",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 138,
+          "stable_id": "keyboard.mpr121_discharge",
+          "name": "MPR121 discharge",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 139,
+          "stable_id": "keyboard.debounce",
+          "name": "debounce",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 140,
+          "stable_id": "keyboard.encoder_direction",
+          "name": "normal/reversed",
+          "unit": "bool",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1050,
+            "lineEnd": 1093,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 141,
+          "stable_id": "keyboard.plate_tune",
+          "name": "plate tuning",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 620,
+            "lineEnd": 660,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 142,
+          "stable_id": "keyboard.pushbutton_value",
+          "name": "button offset",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 601,
+            "lineEnd": 613,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 143,
+          "stable_id": "keyboard.preset_a",
+          "name": "preset A payload",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1040,
+            "lineEnd": 1045,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 144,
+          "stable_id": "keyboard.preset_b",
+          "name": "preset B payload",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1040,
+            "lineEnd": 1045,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 145,
+          "stable_id": "keyboard.preset_c",
+          "name": "preset C payload",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1040,
+            "lineEnd": 1045,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 146,
+          "stable_id": "keyboard.preset_d",
+          "name": "preset D payload",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "ref": "solar42N_manual_v15",
+            "lineStart": 1040,
+            "lineEnd": 1045,
+            "panelSite": "底部 12 触摸片"
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        }
       ],
       "jacks": [
-        { "id": 13, "stable_id": "keyboard.v_oct_out", "name": "V/OCT", "direction": "output", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "modulationDepthPerVolt": 1.0, "transfer": "exponential", "coupling": "dc", "evidence": { "line": 573 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "confirmed", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "confirmed" } },
-        { "id": 14, "stable_id": "keyboard.gate_left_main_out", "name": "GATE LEFT (MAIN)", "direction": "output", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 576 }, "status": "provisional", "fieldEvidence": { "nominalRange": "confirmed", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 15, "stable_id": "keyboard.gate_right_out", "name": "GATE RIGHT", "direction": "output", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 580 }, "status": "provisional", "fieldEvidence": { "nominalRange": "confirmed", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 16, "stable_id": "keyboard.clock_in", "name": "CLOCK", "direction": "input", "signalType": "clock", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 5.0, "gateThresholdVolts": 2.5, "hysteresisVolts": 0.2, "coupling": "dc", "evidence": { "line": 568 }, "status": "provisional", "fieldEvidence": { "nominalRange": "confirmed", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
+        {
+          "id": 13,
+          "stable_id": "keyboard.v_oct_out",
+          "name": "V/OCT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "modulationDepthPerVolt": 1.0,
+          "transfer": "exponential",
+          "coupling": "dc",
+          "evidence": {
+            "line": 573
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "confirmed"
+          }
+        },
+        {
+          "id": 14,
+          "stable_id": "keyboard.gate_left_main_out",
+          "name": "GATE LEFT (MAIN)",
+          "direction": "output",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
+          "coupling": "dc",
+          "evidence": {
+            "line": 576
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 15,
+          "stable_id": "keyboard.gate_right_out",
+          "name": "GATE RIGHT",
+          "direction": "output",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
+          "coupling": "dc",
+          "evidence": {
+            "line": 580
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 16,
+          "stable_id": "keyboard.clock_in",
+          "name": "CLOCK",
+          "direction": "input",
+          "signalType": "clock",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 5.0,
+          "gateThresholdVolts": 2.5,
+          "hysteresisVolts": 0.2,
+          "coupling": "dc",
+          "evidence": {
+            "line": 568
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        }
       ]
     },
     {
@@ -103,15 +1722,95 @@
       "name": "Envelope A",
       "category": "source",
       "description": "ADSR envelope + hold, gate in, VCA CV. P0 captures gate-normalized-route evidence.",
-      "evidence": { "ref": "solar42N_manual_v15", "lineStart": 385, "lineEnd": 408 },
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 385,
+        "lineEnd": 408
+      },
       "status": "confirmed",
       "parameters": [
-        { "id": 22, "stable_id": "envelope_a.attack", "name": "Attack", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 0.01, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 387 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 23, "stable_id": "envelope_a.release", "name": "Release", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 0.1, "smoothing": "none", "persistence": "deviceState", "evidence": { "line": 399 }, "status": "confirmed", "rangeEvidence": "unverified" }
+        {
+          "id": 22,
+          "stable_id": "envelope_a.a",
+          "name": "Attack",
+          "unit": "seconds",
+          "min": 0.0,
+          "max": 10.0,
+          "default": 0.01,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 387
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 23,
+          "stable_id": "envelope_a.r",
+          "name": "Release",
+          "unit": "seconds",
+          "min": 0.0,
+          "max": 10.0,
+          "default": 0.1,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 399
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        }
       ],
       "jacks": [
-        { "id": 17, "stable_id": "envelope_a.gate_in", "name": "GATE", "direction": "input", "signalType": "gate", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 10.0, "gateThresholdVolts": 0.5, "hysteresisVolts": 0.1, "coupling": "dc", "evidence": { "line": 576 }, "status": "provisional", "fieldEvidence": { "nominalRange": "confirmed", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } },
-        { "id": 18, "stable_id": "envelope_a.env_out", "name": "ENV", "direction": "output", "signalType": "cv", "polarity": "unipolar", "nominalMin": 0.0, "nominalMax": 8.0, "coupling": "dc", "evidence": { "line": 398 }, "status": "confirmed", "fieldEvidence": { "nominalRange": "unverified", "toleratedRange": "unverified", "threshold": "unverified", "saturation": "unverified", "transfer": "unverified" } }
+        {
+          "id": 17,
+          "stable_id": "envelope_a.gate_in",
+          "name": "GATE",
+          "direction": "input",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
+          "coupling": "dc",
+          "evidence": {
+            "line": 576
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        },
+        {
+          "id": 18,
+          "stable_id": "envelope_a.env_out",
+          "name": "ENV",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "coupling": "dc",
+          "evidence": {
+            "line": 398
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified"
+          }
+        }
       ]
     }
   ],
@@ -122,7 +1821,10 @@
       "sourceJack": "keyboard.v_oct_out",
       "sinkJack": "vco_a.v_oct_in",
       "description": "By default the keyboard V/OCT output is normalised to the Volt/octave input of VCO A (VCO B is normalised analogously; only VCO A's sink is captured in this P0 slice). Plugging a cable into the sink overrides it.",
-      "evidence": { "line": 573 }, "status": "confirmed"
+      "evidence": {
+        "line": 573
+      },
+      "status": "confirmed"
     },
     {
       "id": 1,
@@ -130,7 +1832,10 @@
       "sourceJack": "keyboard.gate_left_main_out",
       "sinkJack": "envelope_a.gate_in",
       "description": "By default GATE LEFT (MAIN) is normalised to the gate input of the envelope generators controlling the VCO A/B VCAs.",
-      "evidence": { "line": 576 }, "status": "confirmed"
+      "evidence": {
+        "line": 576
+      },
+      "status": "confirmed"
     },
     {
       "id": 2,
@@ -138,7 +1843,10 @@
       "sourceJack": "vcf.cv_l_in",
       "sinkJack": "vcf.cv_r_in",
       "description": "CV L is normally connected to CV R. CV L controls both channels if there is no CV-signal in CV R. Plugging into CV R overrides this.",
-      "evidence": { "line": 1142 }, "status": "confirmed"
+      "evidence": {
+        "line": 1142
+      },
+      "status": "confirmed"
     }
   ],
   "programs": [
@@ -150,12 +1858,67 @@
       "name": "Shimmer",
       "family": "reverb",
       "selfOscillating": false,
-      "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1207, "lineEnd": 1213 },
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 1207,
+        "lineEnd": 1213
+      },
       "status": "confirmed",
       "parameters": [
-        { "id": 24, "stable_id": "program.cathedral.1.octave_up", "role": "x", "name": "Octave up", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "step": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1209 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 25, "stable_id": "program.cathedral.1.octave_down", "role": "y", "name": "Octave down", "unit": "norm", "min": 0.0, "max": 1.0, "default": 0.0, "step": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1209 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 26, "stable_id": "program.cathedral.1.decay", "role": "z", "name": "Decay", "unit": "seconds", "min": 0.0, "max": 10.0, "default": 2.5, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1211 }, "status": "confirmed", "rangeEvidence": "unverified" }
+        {
+          "id": 24,
+          "stable_id": "program.cathedral.1.x",
+          "role": "x",
+          "name": "Octave up",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1209
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 25,
+          "stable_id": "program.cathedral.1.y",
+          "role": "y",
+          "name": "Octave down",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1209
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified"
+        },
+        {
+          "id": 26,
+          "stable_id": "program.cathedral.1.z",
+          "role": "z",
+          "name": "Decay",
+          "unit": "seconds",
+          "min": 0.0,
+          "max": 10.0,
+          "default": 2.5,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1211
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        }
       ]
     },
     {
@@ -166,12 +1929,67 @@
       "name": "Pitch delay",
       "family": "pitched_delay",
       "selfOscillating": false,
-      "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1210, "lineEnd": 1213 },
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 1210,
+        "lineEnd": 1213
+      },
       "status": "confirmed",
       "parameters": [
-        { "id": 27, "stable_id": "program.magic.1.feedback", "role": "x", "name": "Feedback", "unit": "norm", "min": 0.0, "max": 0.98, "default": 0.4, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 28, "stable_id": "program.magic.1.delay", "role": "y", "name": "Delay", "unit": "milliseconds", "min": 1.0, "max": 1500.0, "default": 400.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed", "rangeEvidence": "unverified" },
-        { "id": 29, "stable_id": "program.magic.1.pitch", "role": "z", "name": "Pitch", "unit": "semitones", "min": -12.0, "max": 12.0, "default": 0.0, "smoothing": "seconds", "persistence": "deviceState", "evidence": { "line": 1212 }, "status": "confirmed", "rangeEvidence": "unverified" }
+        {
+          "id": 27,
+          "stable_id": "program.magic.1.x",
+          "role": "x",
+          "name": "Feedback",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 0.98,
+          "default": 0.4,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1212
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 28,
+          "stable_id": "program.magic.1.y",
+          "role": "y",
+          "name": "Delay",
+          "unit": "milliseconds",
+          "min": 1.0,
+          "max": 1500.0,
+          "default": 400.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1212
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        },
+        {
+          "id": 29,
+          "stable_id": "program.magic.1.z",
+          "role": "z",
+          "name": "Pitch",
+          "unit": "semitones",
+          "min": -12.0,
+          "max": 12.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1212
+          },
+          "status": "confirmed",
+          "rangeEvidence": "unverified",
+          "step": 0.0
+        }
       ]
     }
   ]
