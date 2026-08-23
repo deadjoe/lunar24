@@ -1532,23 +1532,26 @@ def main():
     if not has(problems, "NON-REGRESSION"):
         raise SystemExit("old-jack drop (vco_a.cv_in) not enforced by mustComplete: %r" % problems)
 
-    # (ap) renumber a landed route -> the route landed-fact exact-compare must FAIL normal.
+    # (ap) renumber a landed route -> facts are the only registry-specific id authority, so the
+    #      numeric-id exact-compare must FAIL normal (an id-drift whose value is invisible to
+    #      source/sink/status, which now derive from the canonical target).
     ap_bad = copy.deepcopy(spec)
     reg_route(ap_bad, "route.keyboard_v_oct_to_vco")["id"] = 99
     problems, _ = gate.check(ap_bad, manifest)
-    if not has(problems, "implementation route 'route.keyboard_v_oct_to_vco': landed route fact"):
+    if not has(problems, "id 99 !="):
         raise SystemExit("route renumber (id 0->99) not enforced by landedRouteFacts: %r" % problems)
 
-    # (aq) wrong route endpoint (sink) -> exact-compare FAIL. Use an EXISTING jack so only the
-    #      endpoint (not a dangling-reference) mismatches; the wrong endpoint is caught as drift.
+    # (aq) wrong route endpoint (sink) -> canonical-target exact-compare FAIL. Use an EXISTING jack
+    #      so only the endpoint (not a dangling-reference) mismatches; the wrong sink is caught as
+    #      drift against target.normalizedRoutes, not a parallel facts copy.
     aq_bad = copy.deepcopy(spec)
     reg_route(aq_bad, "route.vco_b_vco_out_to_cv_in")["sinkJack"] = "vco_b.wave_out"
     problems, _ = gate.check(aq_bad, manifest)
     if not has(problems, "sinkJack"):
         raise SystemExit("route wrong sink (vco_b.cv_in -> vco_b.wave_out) not enforced: %r" % problems)
 
-    # (ar) route status/evidence drift -> exact-compare FAIL. Change the descriptor line away from
-    #      the frozen fact (1142 -> 999) so descriptorEvidence.line mismatch is caught.
+    # (ar) actual effective-evidence drift -> the route's evidence.line must equal the fact's
+    #      descriptorEvidence.line; drifting it away (1142 -> 999) is caught at effective granularity.
     ar_bad = copy.deepcopy(spec)
     reg_route(ar_bad, "route.vcf_cv_l_to_cv_r")["evidence"]["line"] = 999
     problems, _ = gate.check(ar_bad, manifest)
@@ -1577,6 +1580,60 @@ def main():
                         % problems)
     if not has(problems, "NON-REGRESSION"):
         raise SystemExit("new-route drop (route.vco_b_vco_out_to_cv_in) not NON-REGRESSION-flagged: %r"
+                        % problems)
+
+    # (au) delete a FACT for a still-landed route -> the facts key-set must equal the present route
+    #      set; a missing fact is a hard fail (Codex f2868b6b: dropping a fact must not NORMAL-pass).
+    au_bad = copy.deepcopy(manifest)
+    del au_bad["target"]["landedRouteFacts"]["routes"]["route.keyboard_v_oct_to_vco_b"]
+    problems, _ = gate.check(spec, au_bad)
+    if not has(problems, "absent from target.landedRouteFacts"):
+        raise SystemExit("dropped route fact (route.keyboard_v_oct_to_vco_b) not enforced: %r"
+                        % problems)
+
+    # (av) actual route status drift -> status now derives from the canonical target, so a
+    #      confirmed->provisional drift on the actual side must FAIL normal.
+    av_bad = copy.deepcopy(spec)
+    reg_route(av_bad, "route.vcf_cv_l_to_cv_r")["status"] = "provisional"
+    problems, _ = gate.check(av_bad, manifest)
+    if not has(problems, "status 'provisional'"):
+        raise SystemExit("route actual status drift (confirmed -> provisional) not enforced: %r"
+                        % problems)
+
+    # (aw) drift the CANONICAL target sink to a different LEGAL input (so no dangling ref): because
+    #      source/sink/status come only from target.normalizedRoutes, the actual sink no longer
+    #      matches and the gate must FAIL — previously a parallel facts copy hid this.
+    aw_bad = copy.deepcopy(manifest)
+    for tr in aw_bad["target"]["normalizedRoutes"]:
+        if tr.get("stable_id") == "route.vco_b_vco_out_to_cv_in":
+            tr["sinkJack"] = "vco_a.cv_in"
+    problems, _ = gate.check(spec, aw_bad)
+    if not has(problems, "sinkJack"):
+        raise SystemExit("canonical target sink drift (vco_b.cv_in -> vco_a.cv_in) not enforced: %r"
+                        % problems)
+
+    # (ax) drift the CANONICAL target status: the actual confirmed vs target provisional mismatch must
+    #      FAIL (status authority is the canonical target, and it is a legal value, so no other gate
+    #      catches it).
+    ax_bad = copy.deepcopy(manifest)
+    for tr in ax_bad["target"]["normalizedRoutes"]:
+        if tr.get("stable_id") == "route.keyboard_v_oct_to_vco":
+            tr["status"] = "provisional"
+    problems, _ = gate.check(spec, ax_bad)
+    if not has(problems, "status 'confirmed'"):
+        raise SystemExit("canonical target status drift (confirmed -> provisional) not enforced: %r"
+                        % problems)
+
+    # (ay) drift the CANONICAL target evidence span so it no longer CONTAINS the descriptorEvidence.line
+    #      -> the fact line must sit inside the target route's span; moving the span away is caught.
+    ay_bad = copy.deepcopy(manifest)
+    for tr in ay_bad["target"]["normalizedRoutes"]:
+        if tr.get("stable_id") == "route.vcf_cv_l_to_cv_r":
+            tr["evidence"]["lineStart"] = 2000
+            tr["evidence"]["lineEnd"] = 2001
+    problems, _ = gate.check(spec, ay_bad)
+    if not has(problems, "outside target span"):
+        raise SystemExit("canonical target evidence-span drift (1142 outside [2000,2001]) not enforced: %r"
                         % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "

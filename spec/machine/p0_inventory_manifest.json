@@ -2037,50 +2037,40 @@
       }
     },
     "landedRouteFacts": {
-      "note": "Closed identity/evidence facts for the 5 landed normalized routes (Codex msg b527ef3b). Their presence IS the declaration that these routes have landed, so a registry missing one fails NORMAL rather than reopening a gap. The registry route cites a WIDGET-granularity descriptorEvidence.line (via evidence_expr fallback to `line`); the parent region-span `evidence` (lineStart/lineEnd) in target.normalizedRoutes is untouched. exact-compare is by stable_id on id / sourceJack / sinkJack / status / descriptorEvidence.line, so a renumber or wrong endpoint is caught. route.keyboard_gate_to_eg_b is intentionally absent: it waits for envelope_b.",
+      "note": "Registry-specific identity/evidence facts for the 5 landed normalized routes (Codex msg b527ef3b / f2868b6b). source/sink/status are NOT duplicated here: target.normalizedRoutes is their single authority, and the checker exact-compares the actual route against it. landedRouteFacts holds ONLY what normalizedRoutes does not: numeric `id` plus a widget-granularity descriptorEvidence {ref, line}. descriptorEvidence.ref must equal the target route evidence ref, and descriptorEvidence.line must fall inside the target span. The facts key-set must equal the present (landed) route set, so dropping a fact is a hard fail. route.keyboard_gate_to_eg_b is intentionally absent: it waits for envelope_b.",
       "routes": {
         "route.keyboard_v_oct_to_vco": {
           "id": 0,
-          "sourceJack": "keyboard.v_oct_out",
-          "sinkJack": "vco_a.v_oct_in",
-          "status": "confirmed",
           "descriptorEvidence": {
+            "ref": "solar42N_manual_v15",
             "line": 573
           }
         },
         "route.keyboard_v_oct_to_vco_b": {
           "id": 3,
-          "sourceJack": "keyboard.v_oct_out",
-          "sinkJack": "vco_b.v_oct_in",
-          "status": "confirmed",
           "descriptorEvidence": {
+            "ref": "solar42N_manual_v15",
             "line": 573
           }
         },
         "route.keyboard_gate_to_eg": {
           "id": 1,
-          "sourceJack": "keyboard.gate_left_main_out",
-          "sinkJack": "envelope_a.gate_in",
-          "status": "confirmed",
           "descriptorEvidence": {
+            "ref": "solar42N_manual_v15",
             "line": 576
           }
         },
         "route.vcf_cv_l_to_cv_r": {
           "id": 2,
-          "sourceJack": "vcf.cv_l_in",
-          "sinkJack": "vcf.cv_r_in",
-          "status": "confirmed",
           "descriptorEvidence": {
+            "ref": "solar42N_manual_v15",
             "line": 1142
           }
         },
         "route.vco_b_vco_out_to_cv_in": {
           "id": 4,
-          "sourceJack": "vco_b.vco_out",
-          "sinkJack": "vco_b.cv_in",
-          "status": "provisional",
           "descriptorEvidence": {
+            "ref": "solar42N_manual_v15",
             "line": 410
           }
         }

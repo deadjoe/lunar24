@@ -1341,31 +1341,70 @@ def check(spec, manifest, require_full=False):
                             f"status={want[8]}, descriptorEvidence.line={want[9]}, "
                             f"fieldEvidence={want[10:]})")
 
-    # ---- landed ROUTE fact gate (Codex msg b527ef3b) ----
-    # The 5 landed normalized routes live in target.landedRouteFacts (hand-authored, sibling of
-    # target.landedDescriptorFacts). Their presence IS the declaration that they have landed, so a
-    # registry route missing from the facts is a MISSING landed route and must FAIL normal. The
-    # registry route cites a WIDGET-granularity descriptorEvidence.line (evidence_expr falls back to
-    # `line`); the parent region-span evidence (lineStart/lineEnd) in target.normalizedRoutes is
-    # untouched. Exact-compare id / sourceJack / sinkJack / status / descriptorEvidence.line by
-    # stable_id, so a renumber or a wrong endpoint is caught at landed-descriptor granularity.
+    # ---- landed ROUTE fact gate (Codex msg b527ef3b / f2868b6b NON-GO) ----
+    # target.landedRouteFacts is the ONLY registry-specific declaration of what has landed for
+    # normalized routes; it deliberately holds just the fields the canonical target.normalizedRoutes
+    # does NOT (numeric `id` + a widget-granularity descriptorEvidence{ref,line}). source/sink/status
+    # are NEVER duplicated here — target.normalizedRoutes is their single authority, and the actual
+    # route is exact-compared against it, so drifting the canonical target sink/status (or the actual
+    # sink/status) is caught without a parallel copy to lie about. The facts key-set must EXACTLY
+    # equal the present (landed) route set and every fact must reference a canonical target route:
+    # dropping a fact is a hard fail no matter which route it was.
+    #
+    # Chain of authority per landed route:
+    #   facts key-set == present_routes (deleting a fact   -> fail; removing a route -> MISSING+regen)
+    #   fact.sid ∈ canonical target.normalizedRoutes      (a fact may not name a non-canonical route)
+    #   actual.sourceJack/sinkJack/status == canonical route            (single authority, no dup copy)
+    #   actual.id == fact.id                                           (renumber caught)
+    #   fact.descriptorEvidence.ref == canonical route evidence.ref    (same citation, not a new one)
+    #   fact.descriptorEvidence.line ∈ [route.lineStart, lineEnd]      (widget line inside target span)
+    #   actual.evidence.line == fact.descriptorEvidence.line           (effective evidence == fact)
     reg_route_by_fact = {r["stable_id"]: r for r in reg.routes}
-    for sid, f in sorted(landed_routes.items()):
-        rr = reg_route_by_fact.get(sid)
-        if rr is None:
-            problems.append(f"MISSING landed descriptor route {sid!r}: in "
-                            f"target.landedRouteFacts but absent from the registry")
-            continue
+    troute_by_id = {r["stable_id"]: r for r in norm_routes if r.get("stable_id")}
+    fact_sids = set(landed_routes.keys())
+    # (a) every landed route must have a fact
+    for sid in sorted(present_routes - fact_sids):
+        problems.append(f"implementation route {sid!r}: present in the registry but absent from "
+                        f"target.landedRouteFacts (every landed route must have a route fact)")
+    # (b) every fact must name a present (landed) route
+    for sid in sorted(fact_sids - present_routes):
+        problems.append(f"MISSING landed descriptor route {sid!r}: in target.landedRouteFacts "
+                        f"but absent from the registry")
+    # (c) every fact must reference a canonical target.normalizedRoutes entry
+    for sid in sorted(fact_sids - troute_by_id.keys()):
+        problems.append(f"landed route fact {sid!r}: not in target.normalizedRoutes (a route fact "
+                        f"must reference a canonical target route)")
+    for sid in sorted(fact_sids & present_routes & troute_by_id.keys()):
+        rr = reg_route_by_fact[sid]
+        t = troute_by_id[sid]
+        f = landed_routes[sid]
+        # source/sink/status: canonical target.normalizedRoutes is the single authority.
+        for field in ("sourceJack", "sinkJack", "status"):
+            if rr.get(field) != t.get(field):
+                problems.append(f"implementation route {sid!r}: {field} {rr.get(field)!r} "
+                                f"!= target.normalizedRoutes {t.get(field)!r}")
+        # id: registry-specific, carried in the fact (renumber caught).
+        if rr.get("id") != f.get("id"):
+            problems.append(f"implementation route {sid!r}: id {rr.get('id')!r} != landed fact "
+                            f"id {f.get('id')!r}")
         de = f.get("descriptorEvidence") or {}
-        got = (rr.get("id"), rr.get("sourceJack"), rr.get("sinkJack"), rr.get("status"),
-               (rr.get("evidence") or {}).get("line"))
-        want = (f["id"], f["sourceJack"], f["sinkJack"], f["status"], de.get("line"))
-        if got != want:
-            problems.append(f"implementation route {sid!r}: landed route fact "
-                            f"(id={got[0]}, sourceJack={got[1]}, sinkJack={got[2]}, "
-                            f"status={got[3]}, descriptorEvidence.line={got[4]}) "
-                            f"!= target.landedRouteFacts (id={want[0]}, sourceJack={want[1]}, "
-                            f"sinkJack={want[2]}, status={want[3]}, descriptorEvidence.line={want[4]})")
+        te = t.get("evidence") or {}
+        # descriptorEvidence must cite the SAME evidence ref as the canonical target route, and its
+        # widget-granularity line must fall inside the target route's region span.
+        de_line, de_ref = de.get("line"), de.get("ref")
+        if de_ref != te.get("ref"):
+            problems.append(f"implementation route {sid!r}: descriptorEvidence.ref {de_ref!r} "
+                            f"!= target evidence ref {te.get('ref')!r}")
+        ls, le = te.get("lineStart"), te.get("lineEnd")
+        if de_line is not None and (ls is not None and de_line < ls or
+                                    le is not None and de_line > le):
+            problems.append(f"implementation route {sid!r}: descriptorEvidence.line {de_line} "
+                            f"outside target span [{ls},{le}]")
+        # effective evidence: the actual route's evidence.line must equal the fact's.
+        if (rr.get("evidence") or {}).get("line") != de_line:
+            problems.append(f"implementation route {sid!r}: evidence.line "
+                            f"{(rr.get('evidence') or {}).get('line')} != descriptorEvidence.line "
+                            f"{de_line}")
 
     # ---- per-CAPABILITY present-but-empty (replaces blanket param+jack) ----
     tmodel = {m["stable_id"]: m for m in modules if m.get("stable_id")}
