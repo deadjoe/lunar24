@@ -1200,6 +1200,28 @@ def check(spec, manifest, require_full=False):
         if not e.get("patchable"):
             internal_endpoints.add(e.get("stable_id"))
 
+    # ---- classic-drone CV-input dedup (Codex msg 23f32c19) ------------------
+    # The panel's single CV jack (panel label "CV", manual L56) is the SAME physical
+    # input the manual prose calls "the input of CV MOD" (L297-300). The target must
+    # transcribe it exactly ONCE, as the canonical <owner>.cv_mod_in. The old alias
+    # <owner>.cv_in is a duplicate of that same jack and is banned — it must never
+    # reappear (always-on, not just --require-full). Each classic drone (1,2,4,5) must
+    # also carry exactly the canonical patchable set {cv_mod_in, gate_in, env_out};
+    # drone_3/6 are different (clock_in/cv_out/noise_in) and are not classic drones.
+    DRONE_ALIAS_BANNED = {f"drone_{n}.cv_in" for n in (1, 2, 4, 5)}
+    _reappeared = sorted(DRONE_ALIAS_BANNED & {e["stable_id"] for e in endpoints})
+    if _reappeared:
+        problems.append(f"endpoint dedup: classic drone CV-input alias must not reappear "
+                        f"(use the canonical <owner>.cv_mod_in): {_reappeared}")
+    DRONE_CANONICAL_PATCHABLE = {"cv_mod_in", "gate_in", "env_out"}
+    for _n in (1, 2, 4, 5):
+        _owner = f"drone_{_n}"
+        _have = {e["stable_id"].rsplit(".", 1)[1] for e in endpoints
+                 if e["owner"] == _owner and e.get("patchable")}
+        if _have != DRONE_CANONICAL_PATCHABLE:
+            problems.append(f"endpoint dedup: classic drone {_owner} patchable set must be "
+                            f"exactly {sorted(DRONE_CANONICAL_PATCHABLE)}, got {sorted(_have)}")
+
     def validate_routes(routes, enforce_direction, allowed_internal):
         for r in routes:
             sid = r.get("stable_id")

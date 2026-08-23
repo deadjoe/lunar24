@@ -119,6 +119,45 @@ def main():
     if problems:
         raise SystemExit("baseline gate should pass, got problems: %r" % problems)
 
+    # -- frozen classic-drone CV-input dedup (Codex msg 23f32c19) ----------------
+    # The panel's single CV jack (panel label "CV", manual L56) is the SAME physical input the
+    # manual prose calls "the input of CV MOD" (L297-300). The target must transcribe it ONCE,
+    # as the canonical <owner>.cv_mod_in — the old <owner>.cv_in is a banned duplicate. Pin the
+    # endpoint total (111) and patchable count (64) and the canonical per-owner patchable set.
+    _eps = manifest["target"]["paramsJackTargets"]["endpoints"]
+    _patch = [e for e in _eps if e.get("patchable")]
+    if len(_eps) != 111 or len(_patch) != 64:
+        raise SystemExit("frozen endpoint counts drift: total=%d patchable=%d (want 111/64)"
+                         % (len(_eps), len(_patch)))
+    _CANON = {"cv_mod_in", "gate_in", "env_out"}
+    for _n in (1, 2, 4, 5):
+        _owner = "drone_%d" % _n
+        _have = {e["stable_id"].rsplit(".", 1)[1] for e in _eps
+                 if e["owner"] == _owner and e.get("patchable")}
+        if _have != _CANON:
+            raise SystemExit("drone-%d canonical patchable set drift: %r" % (_n, sorted(_have)))
+
+    # dedup-negative 1: a banned classic-drone cv_in alias must never reappear (always-on).
+    alias = copy.deepcopy(manifest)
+    for _n in (1, 2, 4, 5):
+        alias["target"]["paramsJackTargets"]["endpoints"].append({
+            "stable_id": "drone_%d.cv_in" % _n, "owner": "drone_%d" % _n,
+            "kind": "endpoint", "direction": "input", "patchable": True,
+            "status": "confirmed", "evidence": {"ref": "solar42N_manual_v15",
+            "panelSite": "left-top drone classic", "lineStart": 56}})
+    problems, _ = gate.check(spec, alias)
+    if not has(problems, "classic drone CV-input alias must not reappear"):
+        raise SystemExit("classic-drone cv_in alias reappearance not flagged: %r" % problems)
+
+    # dedup-negative 2: a classic drone whose canonical patchable set drifts fails (always-on).
+    drift = copy.deepcopy(manifest)
+    for e in drift["target"]["paramsJackTargets"]["endpoints"]:
+        if e["stable_id"] == "drone_1.cv_mod_in":
+            e["patchable"] = False  # canonical cv_mod_in silently demoted -> patchable set shrinks
+    problems, _ = gate.check(spec, drift)
+    if not has(problems, "classic drone drone_1 patchable set"):
+        raise SystemExit("classic-drone canonical patchable set drift not flagged: %r" % problems)
+
     # 1. duplicate target module -> 重件
     dup = copy.deepcopy(manifest)
     dup["target"]["modules"].append(copy.deepcopy(dup["target"]["modules"][0]))
