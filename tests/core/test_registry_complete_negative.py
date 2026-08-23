@@ -4063,10 +4063,10 @@ def main():
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
     # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3, vibe.1/.2/.3,
-    #      pitch_shifter.1/.2/.3, infinity.1/.2/.3 and string_ringer.1/.2/.3 must NOT be re-openable as
-    #      an honest gap: with those programs' params landed, the --require-full residual must exclude
-    #      every one of those ids. It widens exactly across the 12 keyboard complex + 36 other program
-    #      XYZ params (48 total).
+    #      pitch_shifter.1/.2/.3, infinity.1/.2/.3, string_ringer.1/.2/.3 and syntex_1.1/.2/.3 must NOT
+    #      be re-openable as an honest gap: with those programs' params landed, the --require-full
+    #      residual must exclude every one of those ids. It widens exactly across the 12 keyboard
+    #      complex + 27 other program XYZ params (39 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4076,13 +4076,14 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 48:
-        raise SystemExit("residual honest-gap total %d != 48 (12 keyboard complex + 36 program XYZ); "
+    if len(_gap_ids) != 39:
+        raise SystemExit("residual honest-gap total %d != 39 (12 keyboard complex + 27 program XYZ); "
                          "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + "
                          "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 + "
-                         "string_ringer.1/.2/.3 must have landed and closed exactly 75" % len(_gap_ids))
-    if len(_kb) != 12 or len(_prog) != 36:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/36: %r" % (len(_kb), len(_prog),
+                         "string_ringer.1/.2/.3 + syntex_1.1/.2/.3 must have landed and closed exactly "
+                         "84" % len(_gap_ids))
+    if len(_kb) != 12 or len(_prog) != 27:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/27: %r" % (len(_kb), len(_prog),
                                                                                 _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
@@ -4108,13 +4109,16 @@ def main():
                  "program.infinity.3.x", "program.infinity.3.y", "program.infinity.3.z",
                  "program.string_ringer.1.x", "program.string_ringer.1.y", "program.string_ringer.1.z",
                  "program.string_ringer.2.x", "program.string_ringer.2.y", "program.string_ringer.2.z",
-                 "program.string_ringer.3.x", "program.string_ringer.3.y", "program.string_ringer.3.z"):
+                 "program.string_ringer.3.x", "program.string_ringer.3.y", "program.string_ringer.3.z",
+                 "program.syntex_1.1.x", "program.syntex_1.1.y", "program.syntex_1.1.z",
+                 "program.syntex_1.2.x", "program.syntex_1.2.y", "program.syntex_1.2.z",
+                 "program.syntex_1.3.x", "program.syntex_1.3.y", "program.syntex_1.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 36 "
-                             "other program XYZ gaps are preserved, NOT cathedral.2/3, magic.2/3, "
-                             "time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, vibe.1/2/3, "
-                             "pitch_shifter.1/2/3, infinity.1/2/3 or string_ringer.1/2/3): %r"
-                             % (_sid, _gap_ids))
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 27 "
+                             "other program XYZ gaps (digital/generator/orche) are preserved, NOT "
+                             "cathedral.2/3, magic.2/3, time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, "
+                             "vibe.1/2/3, pitch_shifter.1/2/3, infinity.1/2/3, string_ringer.1/2/3 or "
+                             "syntex_1.1/2/3): %r" % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
@@ -4794,6 +4798,92 @@ def main():
     problems, _ = gate.check(oi_bad, manifest)
     if not has(problems, "implementation param 'program.string_ringer.3.x'"):
         raise SystemExit("string_ringer.3.x physical value keep-out (hz/20..20000) not enforced: %r"
+                         % problems)
+
+    # (oj)-(or) SYNTEX-1 Program 1/2/3 X/Y/Z descriptor lock (Claude msg cadb0b08). The nine program
+    #      syntex_1.1/.2/.3 x/y/z params (ids 376-384) are landed descriptor facts locked by the
+    #      exact-compare — id renumber, owner / cross-owner leak, per-line evidence drift and a
+    #      fieldEvidence overclaim must all fail normal. ROLE is also locked (a program x/y/z param's
+    #      role must equal its stable-id .x/.y/.z suffix), and a terminator delete is a landed/
+    #      mustComplete drop. KEY DIFF: NO physical value is derived from the Vibe Synth/Pulse Synth/
+    #      Acid Synth program names or the Vibrato Rate/Tremolo Rate/Resonance/Tone/Color/Sub labels —
+    #      no Hz/Q/gain/db/level, and SYNTEX-1 is a P8 self-oscillating cartridge (B-tier deferred
+    #      DSP): this lands registry metadata only, NOT its DSP, so neither MAGIC 1's nor any other
+    #      family's concrete values must be copied over.
+    # (oj) id renumber: syntex_1.1.x is id 376; renumbering (376 -> 999) must fail.
+    oj_bad = copy.deepcopy(spec)
+    reg_param(oj_bad, "program.syntex_1.1.x")["id"] = 999
+    problems, _ = gate.check(oj_bad, manifest)
+    if not has(problems, "implementation param 'program.syntex_1.1.x'"):
+        raise SystemExit("syntex_1.1.x param id renumber (376 -> 999) not enforced: %r" % problems)
+    # (ok) owner / cross-owner leak: syntex_1.1.x must stay owned by program.syntex_1.1; moving it
+    #      under program.syntex_1.2's array makes the generated owner program.syntex_1.2, which the
+    #      landed fact rejects.
+    ok_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in ok_bad["programs"] if pr.get("stable_id") == "program.syntex_1.1")
+    _p2 = next(pr for pr in ok_bad["programs"] if pr.get("stable_id") == "program.syntex_1.2")
+    _x = [p for p in _p1["parameters"] if p["stable_id"] == "program.syntex_1.1.x"][0]
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.syntex_1.1.x"]
+    _p2["parameters"].append(_x)
+    problems, _ = gate.check(ok_bad, manifest)
+    if not has(problems, "implementation param 'program.syntex_1.1.x'"):
+        raise SystemExit("syntex_1.1.x cross-owner leak (-> program.syntex_1.2) not enforced: %r"
+                         % problems)
+    # (ol) ROLE drift: syntex_1.1.x being role y (valid but wrong position) must fail (role gate).
+    ol_bad = copy.deepcopy(spec)
+    reg_param(ol_bad, "program.syntex_1.1.x")["role"] = "y"
+    problems, _ = gate.check(ol_bad, manifest)
+    if not has(problems, "stable-id position"):
+        raise SystemExit("syntex_1.1.x role drift (x -> y) not enforced by the role gate: %r"
+                         % problems)
+    # (om) per-line descriptorEvidence drift: syntex_1.1.x cites L1285; moving it (1285 -> 1286) must
+    #      fail.
+    om_bad = copy.deepcopy(spec)
+    reg_param(om_bad, "program.syntex_1.1.x")["evidence"]["line"] = 1286
+    problems, _ = gate.check(om_bad, manifest)
+    if not has(problems, "implementation param 'program.syntex_1.1.x'"):
+        raise SystemExit("syntex_1.1.x descriptorEvidence.line drift (1285 -> 1286) not enforced: %r"
+                         % problems)
+    # (on) fieldEvidence overclaim: syntex_1.1.x fieldEvidence.range unverified -> confirmed must fail.
+    on_bad = copy.deepcopy(spec)
+    reg_param(on_bad, "program.syntex_1.1.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(on_bad, manifest)
+    if not has(problems, "implementation param 'program.syntex_1.1.x'"):
+        raise SystemExit("syntex_1.1.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+    # (oo) FIRST terminator delete: dropping syntex_1.1.x is a landed/mustComplete drop.
+    oo_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in oo_bad["programs"] if pr.get("stable_id") == "program.syntex_1.1")
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.syntex_1.1.x"]
+    problems, _ = gate.check(oo_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.syntex_1.1.x'"):
+        raise SystemExit("syntex_1.1.x terminator delete (family first) not enforced: %r" % problems)
+    # (op) MIDDLE terminator delete: dropping syntex_1.2.y is likewise a landed/mustComplete drop.
+    op_bad = copy.deepcopy(spec)
+    _p2 = next(pr for pr in op_bad["programs"] if pr.get("stable_id") == "program.syntex_1.2")
+    _p2["parameters"] = [p for p in _p2["parameters"] if p["stable_id"] != "program.syntex_1.2.y"]
+    problems, _ = gate.check(op_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.syntex_1.2.y'"):
+        raise SystemExit("syntex_1.2.y terminator delete (family middle) not enforced: %r" % problems)
+    # (oq) LAST terminator delete: dropping syntex_1.3.z is likewise a landed/mustComplete drop.
+    oq_bad = copy.deepcopy(spec)
+    _p3 = next(pr for pr in oq_bad["programs"] if pr.get("stable_id") == "program.syntex_1.3")
+    _p3["parameters"] = [p for p in _p3["parameters"] if p["stable_id"] != "program.syntex_1.3.z"]
+    problems, _ = gate.check(oq_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.syntex_1.3.z'"):
+        raise SystemExit("syntex_1.3.z terminator delete (family last) not enforced: %r" % problems)
+    # (or) physical-value keep-out: syntex_1.1.x (Vibrato rate) must stay a software-normalized 0..1
+    #      placeholder — dressing it with a concrete Hz/rate (or any physical unit/range/default)
+    #      derived from a vibrato/tremolo model must fail the exact-compare against the landed
+    #      unit=norm fact.
+    or_bad = copy.deepcopy(spec)
+    reg_param(or_bad, "program.syntex_1.1.x")["unit"] = "hz"
+    reg_param(or_bad, "program.syntex_1.1.x")["min"] = 0.1
+    reg_param(or_bad, "program.syntex_1.1.x")["max"] = 20
+    reg_param(or_bad, "program.syntex_1.1.x")["default"] = 1
+    problems, _ = gate.check(or_bad, manifest)
+    if not has(problems, "implementation param 'program.syntex_1.1.x'"):
+        raise SystemExit("syntex_1.1.x physical value keep-out (hz/0.1..20) not enforced: %r"
                          % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason;baseline passes; "

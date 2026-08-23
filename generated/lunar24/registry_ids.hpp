@@ -345,7 +345,16 @@ enum class ParameterId : std::uint32_t {
     program_string_ringer_2_z = 372,
     program_string_ringer_3_x = 373,
     program_string_ringer_3_y = 374,
-    program_string_ringer_3_z = 375
+    program_string_ringer_3_z = 375,
+    program_syntex_1_1_x = 376,
+    program_syntex_1_1_y = 377,
+    program_syntex_1_1_z = 378,
+    program_syntex_1_2_x = 379,
+    program_syntex_1_2_y = 380,
+    program_syntex_1_2_z = 381,
+    program_syntex_1_3_x = 382,
+    program_syntex_1_3_y = 383,
+    program_syntex_1_3_z = 384
 };
 
 enum class JackId : std::uint32_t {
@@ -467,13 +476,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 309;
+inline constexpr std::uint32_t kParameterCount = 318;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 376;
+inline constexpr std::uint64_t kParameterIdSpace = 385;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -820,6 +829,15 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_string_ringer_3_x: return "program.string_ringer.3.x";
     case ParameterId::program_string_ringer_3_y: return "program.string_ringer.3.y";
     case ParameterId::program_string_ringer_3_z: return "program.string_ringer.3.z";
+    case ParameterId::program_syntex_1_1_x: return "program.syntex_1.1.x";
+    case ParameterId::program_syntex_1_1_y: return "program.syntex_1.1.y";
+    case ParameterId::program_syntex_1_1_z: return "program.syntex_1.1.z";
+    case ParameterId::program_syntex_1_2_x: return "program.syntex_1.2.x";
+    case ParameterId::program_syntex_1_2_y: return "program.syntex_1.2.y";
+    case ParameterId::program_syntex_1_2_z: return "program.syntex_1.2.z";
+    case ParameterId::program_syntex_1_3_x: return "program.syntex_1.3.x";
+    case ParameterId::program_syntex_1_3_y: return "program.syntex_1.3.y";
+    case ParameterId::program_syntex_1_3_z: return "program.syntex_1.3.z";
   }
   return "(unknown Parameter)";
 }

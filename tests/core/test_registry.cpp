@@ -113,9 +113,21 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 309u); // Phase B STRING RINGER Programs 1/2/3 X/Y/Z slice (Codex msg
-                                         // 4de86f09): +9 program params (string_ringer.1/.2/.3 x/y/z
-                                         // frequency/resonance/sub + frequency/rate/reverb +
+  CHECK_EQ(core::kParameterCount, 318u); // Phase B SYNTEX-1 Programs 1/2/3 X/Y/Z slice (Claude msg
+                                         // cadb0b08): +9 program params (syntex_1.1/.2/.3 x/y/z
+                                         // vibrato rate/resonance/sub + tremolo rate/resonance/sub +
+                                         // tone/color/sub, ids 376-384, neutral software-normalized
+                                         // 0..1 placeholders, all six-field fieldEvidence unverified,
+                                         // roles x/y/z; no physical unit/range/default asserted — no
+                                         // Hz/Q/octave/level values derived from the Vibe Synth/
+                                         // Pulse Synth/Acid Synth program names or the Vibrato Rate/
+                                         // Tremolo Rate/Resonance/Tone/Color/Sub labels; SYNTEX-1 is a
+                                         // P8 self-oscillating cartridge (B-tier deferred DSP) — the
+                                         // registry metadata does NOT implement its DSP, and neither
+                                         // MAGIC 1's nor the string-ringer conventions are re-used).
+                                         // Prior: Phase B STRING RINGER Programs 1/2/3 X/Y/Z slice
+                                         // (Codex msg 4de86f09): +9 program params (string_ringer.1/.2/.3
+                                         // x/y/z frequency/resonance/sub + frequency/rate/reverb +
                                          // pitch speed/s&h rate/freq ring mod, ids 367-375, neutral
                                          // software-normalized 0..1 placeholders, all six-field
                                          // fieldEvidence unverified, roles x/y/z; no physical
