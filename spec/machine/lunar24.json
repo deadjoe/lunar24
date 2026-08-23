@@ -10919,7 +10919,84 @@
       "fieldEvidence": {
         "family": "unverified",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 385,
+          "stable_id": "program.digital.1.x",
+          "role": "x",
+          "name": "Sample rate",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1285
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 386,
+          "stable_id": "program.digital.1.y",
+          "role": "y",
+          "name": "Cutoff",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1286
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 387,
+          "stable_id": "program.digital.1.z",
+          "role": "z",
+          "name": "Input gain",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1287
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 31,
@@ -10938,7 +11015,84 @@
       "fieldEvidence": {
         "family": "unverified",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 388,
+          "stable_id": "program.digital.2.x",
+          "role": "x",
+          "name": "Sample rate",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1291
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 389,
+          "stable_id": "program.digital.2.y",
+          "role": "y",
+          "name": "LFO speed",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1292
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 390,
+          "stable_id": "program.digital.2.z",
+          "role": "z",
+          "name": "LFO amount",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1293
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 32,
@@ -10957,7 +11111,84 @@
       "fieldEvidence": {
         "family": "unverified",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 391,
+          "stable_id": "program.digital.3.x",
+          "role": "x",
+          "name": "Sample rate",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1298
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 392,
+          "stable_id": "program.digital.3.y",
+          "role": "y",
+          "name": "Envelope amount",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1299
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 393,
+          "stable_id": "program.digital.3.z",
+          "role": "z",
+          "name": "Input gain",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1300
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 33,

@@ -4063,10 +4063,10 @@ def main():
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
     # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3, vibe.1/.2/.3,
-    #      pitch_shifter.1/.2/.3, infinity.1/.2/.3, string_ringer.1/.2/.3 and syntex_1.1/.2/.3 must NOT
-    #      be re-openable as an honest gap: with those programs' params landed, the --require-full
-    #      residual must exclude every one of those ids. It widens exactly across the 12 keyboard
-    #      complex + 27 other program XYZ params (39 total).
+    #      pitch_shifter.1/.2/.3, infinity.1/.2/.3, string_ringer.1/.2/.3, syntex_1.1/.2/.3 and
+    #      digital.1/.2/.3 must NOT be re-openable as an honest gap: with those programs' params landed,
+    #      the --require-full residual must exclude every one of those ids. It widens exactly across the
+    #      12 keyboard complex + 18 other program XYZ params (30 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4076,14 +4076,14 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 39:
-        raise SystemExit("residual honest-gap total %d != 39 (12 keyboard complex + 27 program XYZ); "
+    if len(_gap_ids) != 30:
+        raise SystemExit("residual honest-gap total %d != 30 (12 keyboard complex + 18 program XYZ); "
                          "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + "
                          "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 + "
-                         "string_ringer.1/.2/.3 + syntex_1.1/.2/.3 must have landed and closed exactly "
-                         "84" % len(_gap_ids))
-    if len(_kb) != 12 or len(_prog) != 27:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/27: %r" % (len(_kb), len(_prog),
+                         "string_ringer.1/.2/.3 + syntex_1.1/.2/.3 + digital.1/.2/.3 must all be "
+                         "landed/closed (not re-openable as a gap): %r" % _gap_ids)
+    if len(_kb) != 12 or len(_prog) != 18:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/18: %r" % (len(_kb), len(_prog),
                                                                                 _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
@@ -4112,13 +4112,16 @@ def main():
                  "program.string_ringer.3.x", "program.string_ringer.3.y", "program.string_ringer.3.z",
                  "program.syntex_1.1.x", "program.syntex_1.1.y", "program.syntex_1.1.z",
                  "program.syntex_1.2.x", "program.syntex_1.2.y", "program.syntex_1.2.z",
-                 "program.syntex_1.3.x", "program.syntex_1.3.y", "program.syntex_1.3.z"):
+                 "program.syntex_1.3.x", "program.syntex_1.3.y", "program.syntex_1.3.z",
+                 "program.digital.1.x", "program.digital.1.y", "program.digital.1.z",
+                 "program.digital.2.x", "program.digital.2.y", "program.digital.2.z",
+                 "program.digital.3.x", "program.digital.3.y", "program.digital.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 27 "
-                             "other program XYZ gaps (digital/generator/orche) are preserved, NOT "
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 18 "
+                             "remaining program XYZ gaps (generator/orche) are preserved, NOT "
                              "cathedral.2/3, magic.2/3, time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, "
-                             "vibe.1/2/3, pitch_shifter.1/2/3, infinity.1/2/3, string_ringer.1/2/3 or "
-                             "syntex_1.1/2/3): %r" % (_sid, _gap_ids))
+                             "vibe.1/2/3, pitch_shifter.1/2/3, infinity.1/2/3, string_ringer.1/2/3, "
+                             "syntex_1.1/2/3 or digital.1/2/3): %r" % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
@@ -4884,6 +4887,86 @@ def main():
     problems, _ = gate.check(or_bad, manifest)
     if not has(problems, "implementation param 'program.syntex_1.1.x'"):
         raise SystemExit("syntex_1.1.x physical value keep-out (hz/0.1..20) not enforced: %r"
+                         % problems)
+
+    # (ps)-(qa) DIGITAL Program 1/2/3 X/Y/Z descriptor lock (Claude msg b6f928bb). The nine program
+    #      digital.1/.2/.3 x/y/z params (ids 385-393) are landed descriptor facts locked by the exact-
+    #      compare. This family is the most tempting for physical values (Sample rate -> 44100/48000
+    #      or Hz, Cutoff -> Hz, Input gain -> dB); all must stay software-normalized norm 0..1.
+    # (ps) id renumber: digital.1.x is id 385; renumbering (385 -> 999) must fail.
+    ps_bad = copy.deepcopy(spec)
+    reg_param(ps_bad, "program.digital.1.x")["id"] = 999
+    problems, _ = gate.check(ps_bad, manifest)
+    if not has(problems, "implementation param 'program.digital.1.x'"):
+        raise SystemExit("digital.1.x param id renumber (385 -> 999) not enforced: %r" % problems)
+    # (pt) owner / cross-owner leak: digital.1.x must stay owned by program.digital.1; moving it under
+    #      program.digital.2's array makes the generated owner program.digital.2, which the gate
+    #      rejects (cross-owner).
+    pt_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in pt_bad["programs"] if pr.get("stable_id") == "program.digital.1")
+    _p2 = next(pr for pr in pt_bad["programs"] if pr.get("stable_id") == "program.digital.2")
+    _x = [p for p in _p1["parameters"] if p["stable_id"] == "program.digital.1.x"][0]
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.digital.1.x"]
+    _p2["parameters"].append(_x)
+    problems, _ = gate.check(pt_bad, manifest)
+    if not has(problems, "implementation param 'program.digital.1.x'"):
+        raise SystemExit("digital.1.x cross-owner leak (-> program.digital.2) not enforced: %r"
+                         % problems)
+    # (pu) ROLE drift: digital.1.x being role y (valid but wrong position) must fail (role gate).
+    pu_bad = copy.deepcopy(spec)
+    reg_param(pu_bad, "program.digital.1.x")["role"] = "y"
+    problems, _ = gate.check(pu_bad, manifest)
+    if not has(problems, "implementation param 'program.digital.1.x'"):
+        raise SystemExit("digital.1.x role drift (x -> y) not enforced by the role gate: %r"
+                         % problems)
+    # (pv) per-line descriptorEvidence drift: digital.1.x cites L1285; moving it (1285 -> 1286) must
+    #      fail.
+    pv_bad = copy.deepcopy(spec)
+    reg_param(pv_bad, "program.digital.1.x")["evidence"]["line"] = 1286
+    problems, _ = gate.check(pv_bad, manifest)
+    if not has(problems, "implementation param 'program.digital.1.x'"):
+        raise SystemExit("digital.1.x descriptorEvidence.line drift (1285 -> 1286) not enforced: %r"
+                         % problems)
+    # (pw) fieldEvidence overclaim: digital.1.x fieldEvidence.range unverified -> confirmed must fail.
+    pw_bad = copy.deepcopy(spec)
+    reg_param(pw_bad, "program.digital.1.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(pw_bad, manifest)
+    if not has(problems, "implementation param 'program.digital.1.x'"):
+        raise SystemExit("digital.1.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+    # (px) FIRST terminator delete: dropping digital.1.x is a landed/mustComplete drop.
+    px_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in px_bad["programs"] if pr.get("stable_id") == "program.digital.1")
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.digital.1.x"]
+    problems, _ = gate.check(px_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.digital.1.x'"):
+        raise SystemExit("digital.1.x terminator delete (family first) not enforced: %r" % problems)
+    # (py) MIDDLE terminator delete: dropping digital.2.y is likewise a landed/mustComplete drop.
+    py_bad = copy.deepcopy(spec)
+    _p2 = next(pr for pr in py_bad["programs"] if pr.get("stable_id") == "program.digital.2")
+    _p2["parameters"] = [p for p in _p2["parameters"] if p["stable_id"] != "program.digital.2.y"]
+    problems, _ = gate.check(py_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.digital.2.y'"):
+        raise SystemExit("digital.2.y terminator delete (family middle) not enforced: %r" % problems)
+    # (pz) LAST terminator delete: dropping digital.3.z is likewise a landed/mustComplete drop.
+    pz_bad = copy.deepcopy(spec)
+    _p3 = next(pr for pr in pz_bad["programs"] if pr.get("stable_id") == "program.digital.3")
+    _p3["parameters"] = [p for p in _p3["parameters"] if p["stable_id"] != "program.digital.3.z"]
+    problems, _ = gate.check(pz_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.digital.3.z'"):
+        raise SystemExit("digital.3.z terminator delete (family last) not enforced: %r" % problems)
+    # (qa) physical-value keep-out: digital.1.x (Sample rate) must stay a software-normalized 0..1
+    #      placeholder — dressing it with a Hz sample-rate (or any physical unit/range/default)
+    #      derived from a sample-rate/ADC model must fail the exact-compare against the landed
+    #      unit=norm fact (Sample rate is the most tempting physical value: 44100/48000/Hz).
+    qa_bad = copy.deepcopy(spec)
+    reg_param(qa_bad, "program.digital.1.x")["unit"] = "hz"
+    reg_param(qa_bad, "program.digital.1.x")["min"] = 20000
+    reg_param(qa_bad, "program.digital.1.x")["max"] = 192000
+    reg_param(qa_bad, "program.digital.1.x")["default"] = 48000
+    problems, _ = gate.check(qa_bad, manifest)
+    if not has(problems, "implementation param 'program.digital.1.x'"):
+        raise SystemExit("digital.1.x physical value keep-out (hz/20000..192000/48000) not enforced: %r"
                          % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason;baseline passes; "

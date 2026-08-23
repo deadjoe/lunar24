@@ -113,18 +113,32 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 318u); // Phase B SYNTEX-1 Programs 1/2/3 X/Y/Z slice (Claude msg
-                                         // cadb0b08): +9 program params (syntex_1.1/.2/.3 x/y/z
-                                         // vibrato rate/resonance/sub + tremolo rate/resonance/sub +
-                                         // tone/color/sub, ids 376-384, neutral software-normalized
-                                         // 0..1 placeholders, all six-field fieldEvidence unverified,
-                                         // roles x/y/z; no physical unit/range/default asserted — no
-                                         // Hz/Q/octave/level values derived from the Vibe Synth/
-                                         // Pulse Synth/Acid Synth program names or the Vibrato Rate/
-                                         // Tremolo Rate/Resonance/Tone/Color/Sub labels; SYNTEX-1 is a
-                                         // P8 self-oscillating cartridge (B-tier deferred DSP) — the
-                                         // registry metadata does NOT implement its DSP, and neither
-                                         // MAGIC 1's nor the string-ringer conventions are re-used).
+  CHECK_EQ(core::kParameterCount, 327u); // Phase B DIGITAL Programs 1/2/3 X/Y/Z slice (Claude msg
+                                         // b6f928bb): +9 program params (digital.1/.2/.3 x/y/z
+                                         // sample rate/cutoff/input gain + sample rate/lfo speed/lfo
+                                         // amount + sample rate/envelope amount/input gain, ids
+                                         // 385-393, neutral software-normalized 0..1 placeholders,
+                                         // all six-field fieldEvidence unverified, roles x/y/z; no
+                                         // physical unit/range/default asserted — no Hz/44100-48000/
+                                         // dB values derived from the Program 1/2/3 names or the
+                                         // Sample rate/Cutoff/Input gain/LFO speed/LFO amount/
+                                         // Envelope amount labels; DIGITAL is a sample-rate crusher
+                                         // family — the registry metadata does NOT implement its
+                                         // DSP; Program 3 header "Envelope crusher" wraps across
+                                         // L1294-1297 and its X/Y/Z are L1298/1299/1300).
+                                         // Prior: Phase B SYNTEX-1 Programs 1/2/3 X/Y/Z slice
+                                         // (Claude msg cadb0b08): +9 program params (syntex_1.1/.2/.3
+                                         // x/y/z vibrato rate/resonance/sub + tremolo rate/resonance/
+                                         // sub + tone/color/sub, ids 376-384, neutral software-
+                                         // normalized 0..1 placeholders, all six-field fieldEvidence
+                                         // unverified, roles x/y/z; no physical unit/range/default
+                                         // asserted — no Hz/Q/octave/level values derived from the
+                                         // Vibe Synth/Pulse Synth/Acid Synth program names or the
+                                         // Vibrato Rate/Tremolo Rate/Resonance/Tone/Color/Sub labels;
+                                         // SYNTEX-1 is a P8 self-oscillating cartridge (B-tier
+                                         // deferred DSP) — the registry metadata does NOT implement
+                                         // its DSP, and neither MAGIC 1's nor the string-ringer
+                                         // conventions are re-used).
                                          // Prior: Phase B STRING RINGER Programs 1/2/3 X/Y/Z slice
                                          // (Codex msg 4de86f09): +9 program params (string_ringer.1/.2/.3
                                          // x/y/z frequency/resonance/sub + frequency/rate/reverb +
