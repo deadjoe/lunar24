@@ -149,8 +149,8 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // The declared storage record. `totalBytesHint` is the canonical fixed-width
 // byte size (recomputed in a test so it can never silently diverge from the
 // field table). It rose 3506 -> 3511 when kDevicePatchCapacity went 64 -> 65
-// (DRONE 6, Codex msg 2a4b0c19): the `input_cable` u8 array grows +1 and the
-// `cable_source` u32 array grows +4.
+// (DRONE 6, Codex msg cc68ab2b — Option A narrow release): the `input_cable` u8
+// array grows +1 and the `cable_source` u32 array grows +4.
 inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageSchemaVersion,
     kDeviceStorageInitialRevision,

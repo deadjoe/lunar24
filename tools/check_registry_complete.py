@@ -1868,16 +1868,28 @@ def check(spec, manifest, require_full=False):
                                 "coherence and required completeness under --require-full"},
     }
 
-    # Codex msg 2a4b0c19 (DRONE 6 narrow release), ALWAYS-ON: once the patchable-jack
+    # Codex msg cc68ab2b (DRONE 6 narrow release), ALWAYS-ON: once the patchable-jack
     # inventory is FULL (every target patchable jack landed, no rogue), the patch bank must
     # be sized EXACTLY to the serialized jack id-space (capacity == kJackIdSpace), not
     # merely >= it and not rounded up. The inventory is now 64/64 jacks whose id space is
     # 65 (max id 64, with a legacy hole at id 12), so kDevicePatchCapacity must equal
-    # kJackIdSpace. This pins the Codex ruling of "exactly 65, not 96/128".
+    # kJackIdSpace. This pins the Codex ruling of "exactly 65, not 96/128". FAIL CLOSED: if
+    # either constant is deleted or becomes unreadable to the reader, that is a hard problem
+    # too — an unreadable capacity/id-space constant must never silently pass the gate open.
     if not coverage["jacks"]["gap"] and not coverage["jacks"]["rogue"]:
         cap_patch = _read_uint_const(CAPS_HPP, "kDevicePatchCapacity")
         space_jack = _read_uint_const(IDS_HPP, "kJackIdSpace")
-        if cap_patch is not None and space_jack is not None and cap_patch != space_jack:
+        if cap_patch is None or space_jack is None:
+            missing = []
+            if cap_patch is None:
+                missing.append("kDevicePatchCapacity in device_capacities.h")
+            if space_jack is None:
+                missing.append("kJackIdSpace in registry_ids.hpp")
+            problems.append(
+                "full patchable-jack inventory: cannot read the patch-bank capacity gate "
+                "constant(s) %s — a deleted/unreadable capacity or id-space constant must "
+                "FAIL closed, never pass open" % ", ".join(missing))
+        elif cap_patch != space_jack:
             problems.append(
                 f"full patchable-jack inventory: kDevicePatchCapacity ({cap_patch}) must "
                 f"EXACTLY equal the jack id-space kJackIdSpace ({space_jack}) — the patch bank "

@@ -136,10 +136,11 @@ static void frozen_counts() {
                                          // seq_clock, arp_rhythm, seq_rhythm + remaining module
                                          // ranges)
   CHECK_EQ(core::kJackCount, 64u);       // Phase B DRONE 6 voice slice (Codex msg b121ba1b):
-                                         // +5 patchable jacks (drone_6.cv_out output/cv
-                                         // 0..+12V/unipolar id 60 — KEY DIFF: manual L158 "ENV VOICES
+                                         // +5 patchable jacks (drone_6.cv_out output/cv id 60 — 0..12 is
+                                         // only a numeric placeholder, range/polarity stay
+                                         // unverified/unknown — KEY DIFF: manual L158 "ENV VOICES
                                          // 1,2,3,6,7,8" does NOT list voice 6, so unlike DRONE 3 this
-                                         // range/polarity stays unknown/unverified, not copied;
+                                         // range/polarity is NOT copied as confirmed;
                                          // .env_out output/cv -10..+10V/bipolar confirmed id 61 — L157
                                          // DOES list voice 6; .gate_in id 62 input/gate with the 5V
                                          // gate PRODUCED by the keyboard so the input

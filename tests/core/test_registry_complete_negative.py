@@ -3953,6 +3953,40 @@ def main():
         raise SystemExit("patch capacity drifted to 96 (headroom) not flagged by the == id-space "
                          "gate: %r" % problems_cap)
 
+    # (lc) missing kDevicePatchCapacity constant (Codex msg cce4fa09 item #1 — "FAIL closed, never
+    #      pass open"): if the capacity constant is deleted or becomes unreadable to the reader,
+    #      the gate must report a hard problem, not silently pass. The Python fixture cannot delete
+    #      the header constant, so point the checker's header read at a temp header that omits it;
+    #      the reader returns None and the gate must flag the missing constant.
+    _cap_hpp_saved = gate.CAPS_HPP
+    _cap_tmp = tempfile.NamedTemporaryFile("w", suffix=".h", delete=False)
+    _cap_tmp.write("#pragma once\n#include <cstddef>\nnamespace lunar24::core {\n}\n")
+    _cap_tmp.close()
+    try:
+        gate.CAPS_HPP = _cap_tmp.name
+        problems_cap_miss, _ = gate.check(spec, manifest)
+    finally:
+        gate.CAPS_HPP = _cap_hpp_saved
+        os.unlink(_cap_tmp.name)
+    if not has(problems_cap_miss, "cannot read the patch-bank capacity gate constant"):
+        raise SystemExit("missing kDevicePatchCapacity constant not flagged (fail-open): %r"
+                         % problems_cap_miss)
+
+    # (ld) missing kJackIdSpace constant — the same fail-closed requirement on the id-space side.
+    _ids_hpp_saved = gate.IDS_HPP
+    _ids_tmp = tempfile.NamedTemporaryFile("w", suffix=".h", delete=False)
+    _ids_tmp.write("#pragma once\n#include <cstddef>\nnamespace lunar24::core {\n}\n")
+    _ids_tmp.close()
+    try:
+        gate.IDS_HPP = _ids_tmp.name
+        problems_space_miss, _ = gate.check(spec, manifest)
+    finally:
+        gate.IDS_HPP = _ids_hpp_saved
+        os.unlink(_ids_tmp.name)
+    if not has(problems_space_miss, "cannot read the patch-bank capacity gate constant"):
+        raise SystemExit("missing kJackIdSpace constant not flagged (fail-open): %r"
+                         % problems_space_miss)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

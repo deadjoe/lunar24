@@ -28,7 +28,7 @@ inline constexpr std::size_t kDeviceParamCapacity = 384;
 // registry id-space of JackId and RouteId respectively. PROVISIONAL until the
 // full P0 inventory.
 // kDevicePatchCapacity = 65: the frozen patchable-jack inventory is 64 jacks, and
-// the DRONE 6 slice (Codex msg 2a4b0c19) completes 64/64 of them. Their stable
+// the DRONE 6 slice (Codex msg cc68ab2b — Option A narrow release) completes 64/64 of them. Their stable
 // serialized JackId space (one-past max id 64) is 65 — NOT 64 — because the
 // id-space is max-id+1 and jack id 12 is a legacy hole (non-dense): the bank is
 // indexed by serialized JackId, so it must be sized to the id-space (65), never
