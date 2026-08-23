@@ -4668,6 +4668,21 @@
           }
         }
       ]
+    },
+    {
+      "id": 14,
+      "stable_id": "voices",
+      "name": "Drone voices 1-6",
+      "category": "performance",
+      "description": "Six physical touch buttons (1-6) in the lower-right DRONE VOICES region, one per drone voice; each momentarily triggers its drone voice gate-out. The per-button control/action/binding identity is locked in the manifest target (L778-788) — this core registry entry declares no state parameter for the module. The six internal gate-out endpoints (voice1_gate_out..voice6_gate_out) are internal (not patchable jacks) and are not landed here.",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 106,
+        "lineEnd": 118
+      },
+      "status": "confirmed",
+      "parameters": [],
+      "jacks": []
     }
   ],
   "normalizedRoutes": [

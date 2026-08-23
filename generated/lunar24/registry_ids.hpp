@@ -26,7 +26,8 @@ enum class ModuleId : std::uint32_t {
     env_follower = 10,
     sequencer = 11,
     mixer = 12,
-    effector = 13
+    effector = 13,
+    voices = 14
 };
 
 enum class ParameterId : std::uint32_t {
@@ -262,13 +263,13 @@ enum class RouteId : std::uint32_t {
     route_keyboard_gate_to_eg_b = 5
 };
 
-inline constexpr std::uint32_t kModuleCount = 14;
+inline constexpr std::uint32_t kModuleCount = 15;
 inline constexpr std::uint32_t kParameterCount = 134;
 inline constexpr std::uint32_t kJackCount = 42;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
-inline constexpr std::uint64_t kModuleIdSpace = 14;
+inline constexpr std::uint64_t kModuleIdSpace = 15;
 inline constexpr std::uint64_t kParameterIdSpace = 201;
 inline constexpr std::uint64_t kJackIdSpace = 43;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
@@ -294,6 +295,7 @@ inline constexpr std::string_view module_id_string(ModuleId id) {
     case ModuleId::sequencer: return "sequencer";
     case ModuleId::mixer: return "mixer";
     case ModuleId::effector: return "effector";
+    case ModuleId::voices: return "voices";
   }
   return "(unknown Module)";
 }

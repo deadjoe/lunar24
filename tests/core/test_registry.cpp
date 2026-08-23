@@ -97,11 +97,12 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 14u);     // Phase B dual-effector slice (Codex msg 1a47b5d0): +1
-                                         // module (effector id 13). Prior: voice-mixer slice
-                                         // (Codex msg 920fa79b) mixer id 12, 5-step sequencer
-                                         // slice (Codex msg 6bedef35) sequencer id 11, preamp/
-                                         // env_follower (Codex ebd65910) id 9/10, joystick id 8,
+  CHECK_EQ(core::kModuleCount, 15u);     // Phase B drone-voices module closure (Codex msg c212dcfb):
+                                         // +1 module (voices id 14, performance, zero params/jacks).
+                                         // Prior: dual-effector slice (Codex msg 1a47b5d0) effector
+                                         // id 13, voice-mixer slice (Codex msg 920fa79b) mixer id 12,
+                                         // 5-step sequencer slice (Codex msg 6bedef35) sequencer id 11,
+                                         // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
   CHECK_EQ(core::kParameterCount, 134u); // Phase B dual-effector slice (Codex msg 1a47b5d0): +8

@@ -2406,6 +2406,46 @@ def main():
         raise SystemExit("effector.cv_x_in fieldEvidence drift (nominalRange confirmed->unverified) "
                         "not enforced: %r" % problems)
 
+    # (ec) voices module delete: pulling the whole landed module (id 14) out of the registry must
+    #      fail as a MISSING landed module (its 6 internal gate-out endpoints stay non-landed).
+    ec_bad = copy.deepcopy(spec)
+    ec_bad["modules"] = [m for m in ec_bad["modules"] if m.get("stable_id") != "voices"]
+    problems, _ = gate.check(ec_bad, manifest)
+    if not has(problems, "MISSING landed module 'voices'"):
+        raise SystemExit("voices module delete not enforced: %r" % problems)
+
+    # (ed) voices module id renumber: voices is a landed module with id 14; renumbering it
+    #      (14 -> 999) is a registry-id vs landed-fact-id mismatch and must fail.
+    ed_bad = copy.deepcopy(spec)
+    for m in ed_bad["modules"]:
+        if m.get("stable_id") == "voices":
+            m["id"] = 999
+    problems, _ = gate.check(ed_bad, manifest)
+    if not has(problems, "implementation module 'voices': id"):
+        raise SystemExit("voices module id renumber (14 -> 999) not enforced: %r" % problems)
+
+    # (ee) voices module target name drift: the registry module name stays in lock-step with
+    #      target.modules ('Drone voices 1-6'); a silent rename is a target drift.
+    ee_bad = copy.deepcopy(spec)
+    for m in ee_bad["modules"]:
+        if m.get("stable_id") == "voices":
+            m["name"] = "Drone voices"
+    problems, _ = gate.check(ee_bad, manifest)
+    if not has(problems, "implementation module 'voices': name"):
+        raise SystemExit("voices module name drift ('Drone voices 1-6' -> 'Drone voices') not "
+                        "enforced: %r" % problems)
+
+    # (ef) voices module evidence drift: the target evidence span (L106-118) is the authority;
+    #      moving lineStart is a target-evidence drift and must fail.
+    ef_bad = copy.deepcopy(spec)
+    for m in ef_bad["modules"]:
+        if m.get("stable_id") == "voices":
+            m["evidence"]["lineStart"] = 999
+    problems, _ = gate.check(ef_bad, manifest)
+    if not has(problems, "implementation module 'voices': evidence.lineStart"):
+        raise SystemExit("voices module evidence.lineStart drift (106 -> 999) not enforced: %r"
+                        % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -2431,7 +2471,9 @@ def main():
           "(effector.x) + param id renumber, a landed jack delete (effector.cv_x_in) + jack id renumber, "
           "selector positions drift (SELECT L ['1','2','3'] reorder), X/Y/Z / BLEND / MASTER / PHONE "
           "descriptorEvidence.line drift, and CV input nominal-range / polarity / fieldEvidence drift "
-          "all fail.")
+          "all fail; the dual-effector-slice successor, the drone-voices module closure (Codex msg "
+          "c212dcfb), closes the voices module (id 14) too — module delete, module id renumber, "
+          "module target name drift and module evidence.lineStart drift all fail.")
     return 0
 
 
