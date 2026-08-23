@@ -4083,7 +4083,7 @@ def main():
                          "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 + "
                          "string_ringer.1/.2/.3 + syntex_1.1/.2/.3 + digital.1/.2/.3 + generator.1/.2/.3 "
                          "+ orche.1/.2/.3 are all "
-                         "landed/closed (not re-openable as a gap)); got %d: %r"
+                         "landed/closed (not re-openable as a gap)); got: %r"
                          % (len(_gap_ids), _gap_ids))
     if len(_kb) != 12 or len(_prog) != 0:
         raise SystemExit("residual split keyboard=%d program=%d != 12/0 (orche landed/closed): %r"
