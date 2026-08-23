@@ -97,24 +97,28 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 8u);      // Phase B LFO slice (Codex msg 2ec93491): +2 modules (lfo_a,
-                                         // lfo_b), each 1 patchable cv_out + 3 params; prior phases
-                                         // landed vco_a/vco_b/vcf/keyboard/envelope_a/envelope_b.
-  CHECK_EQ(core::kParameterCount, 86u);  // Phase B LFO slice: +6 params (lfo_a/lfo_b wave/rate
-                                         // continuous, speed_mult x1/x6/x10 selector); modules now
-                                         // carry 80, programs 6. Left as honest gaps the 12 keyboard
-                                         // complex params (seq_steps, quantise_scale_editor,
-                                         // plate_tune, pushbutton_value, preset_a..d, arp_clock,
-                                         // seq_clock, arp_rhythm, seq_rhythm + remaining module ranges)
-  CHECK_EQ(core::kJackCount, 30u);       // Phase B LFO slice: +2 patchable cv_out jacks (nominal
-                                         // 0..+10V, unipolar, from manual L158) on lfo_a/lfo_b;
-                                         // prior phases added envelope_b gate_in/env_out/vca_cv_out,
-                                         // vco_a/vco_b wave_out+pwm_in, keyboard pressure_out+reset_in,
-                                         // envelope_a vca_cv_out and dropped bad jack vcf.audio_in
+  CHECK_EQ(core::kModuleCount, 9u);      // Phase B joystick slice (Codex msg add70a95): +1 module
+                                         // (joystick, id 8) with 4 software-normalized continuous
+                                         // params + 2 bipolar CV outputs. Prior slices: LFO (Codex msg
+                                         // 2ec93491) added lfo_a/lfo_b; earlier phases landed
+                                         // vco_a/vco_b/vcf/keyboard/envelope_a/envelope_b.
+  CHECK_EQ(core::kParameterCount, 90u);  // Phase B joystick slice: +4 params (joystick x/y/offset_x/
+                                         // offset_y, unit norm 0..1 default 0.5, fieldEvidence all
+                                         // unverified). Modules now carry 84, programs 6. Left as
+                                         // honest gaps the 12 keyboard complex params (seq_steps,
+                                         // quantise_scale_editor, plate_tune, pushbutton_value,
+                                         // preset_a..d, arp_clock, seq_clock, arp_rhythm, seq_rhythm +
+                                         // remaining module ranges)
+  CHECK_EQ(core::kJackCount, 32u);       // Phase B joystick slice: +2 patchable bipolar cv_out jacks
+                                         // (nominal -10..+10V, from manual L453) on the joystick;
+                                         // prior phases added lfo_a/lfo_b cv_out, envelope_b
+                                         // gate_in/env_out/vca_cv_out, vco_a/vco_b wave_out+pwm_in,
+                                         // keyboard pressure_out+reset_in, envelope_a vca_cv_out and
+                                         // dropped bad jack vcf.audio_in
   // Program identity layer landed (Codex 7a6467cc slice #57): 39 program
   // identities (cathedral.1 + magic.1 keep their params; the other 37 are
   // identity-only, paramCount==0, honest gaps pending Phase B). kParameterCount
-  // counts modules(74) + programs(6) = 80 — the 37 additions add no params.
+  // counts modules(84) + programs(6) = 90 — the 37 additions add no params.
   CHECK_EQ(core::kProgramCount, 39u);
   CHECK_EQ(core::kRouteCount, 6u);       // Phase B route slice: +2 normalized routes whose endpoints
                                          // already existed + route.keyboard_gate_to_eg_b (Codex msg

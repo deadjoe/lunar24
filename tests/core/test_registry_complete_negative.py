@@ -1906,6 +1906,89 @@ def main():
     if not has(problems, "fieldEvidence key-set"):
         raise SystemExit("fieldEvidence nested garbage key (lfo_a.rate) not enforced: %r" % problems)
 
+    # (ca)-(ci) joystick slice (Codex msg add70a95): the newly-landed joystick module and its 4
+    # continuous params (x/y/offset_x/offset_y, software-normalized 0..1 placeholders) + 2 bipolar
+    # CV outputs (x_out/y_out, nominal -10..+10V) must fall under the SAME landed-module /
+    # landed-param / landed-jack gates. Codex scope is explicit: "补删除/renumber，以及参数 fieldEvidence
+    # 或输出 range/evidence 漂移负例" — so cover deletion, id renumber, param fieldEvidence drift, and
+    # output range/evidence drift. joystick carries no normalized route, so no dangling-endpoint strip.
+
+    # (ca) renumber a landed joystick module id.
+    ca_bad = copy.deepcopy(spec)
+    for m in ca_bad["modules"]:
+        if m.get("stable_id") == "joystick":
+            m["id"] = 99
+    problems, _ = gate.check(ca_bad, manifest)
+    if not has(problems, "id 99 !="):
+        raise SystemExit("joystick module id renumber (joystick 8 -> 99) not enforced: %r" % problems)
+
+    # (cb) delete the joystick module fact (module still landed).
+    cb_bad = copy.deepcopy(manifest)
+    del cb_bad["target"]["landedModuleFacts"]["modules"]["joystick"]
+    problems, _ = gate.check(spec, cb_bad)
+    if not has(problems, "absent from target.landedModuleFacts"):
+        raise SystemExit("joystick module-fact delete (fact dropped, module still present) not "
+                        "enforced: %r" % problems)
+
+    # (cc) delete the whole joystick module -> a fact naming an absent module must FAIL. No route to
+    #      strip (joystick owns no normalized route).
+    cc_bad = copy.deepcopy(spec)
+    cc_bad["modules"] = [m for m in cc_bad["modules"] if m.get("stable_id") != "joystick"]
+    problems, _ = gate.check(cc_bad, manifest)
+    if not has(problems, "MISSING landed module 'joystick'"):
+        raise SystemExit("joystick module delete not enforced: %r" % problems)
+
+    # (cd) renumber a landed joystick param id.
+    cd_bad = copy.deepcopy(spec)
+    reg_param(cd_bad, "joystick.x")["id"] = 999
+    problems, _ = gate.check(cd_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("joystick param id renumber (joystick.x 153 -> 999) not enforced: %r" % problems)
+
+    # (ce) delete a landed joystick param.
+    ce_bad = copy.deepcopy(spec)
+    for m in ce_bad["modules"]:
+        if m.get("stable_id") == "joystick":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "joystick.x"]
+    problems, _ = gate.check(ce_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param"):
+        raise SystemExit("joystick param delete (joystick.x) not enforced: %r" % problems)
+
+    # (cf) delete a landed joystick jack.
+    cf_bad = copy.deepcopy(spec)
+    for m in cf_bad["modules"]:
+        if m.get("stable_id") == "joystick":
+            m["jacks"] = [j for j in m.get("jacks", [])
+                          if j.get("stable_id") != "joystick.x_out"]
+    problems, _ = gate.check(cf_bad, manifest)
+    if not has(problems, "MISSING landed descriptor jack"):
+        raise SystemExit("joystick jack delete (joystick.x_out) not enforced: %r" % problems)
+
+    # (cg) param fieldEvidence drift: a software-normalized placeholder range must not be elevated to
+    #      confirmed (it stays unverified until a real hardware range is sourced).
+    cg_bad = copy.deepcopy(spec)
+    reg_param(cg_bad, "joystick.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(cg_bad, manifest)
+    if not has(problems, "implementation param 'joystick.x'"):
+        raise SystemExit("joystick param fieldEvidence drift (range unverified->confirmed) not "
+                        "enforced: %r" % problems)
+
+    # (ch) output range drift: the bipolar -10..+10V nominal range must not silently narrow.
+    ch_bad = copy.deepcopy(spec)
+    reg_jack(ch_bad, "joystick.x_out")["nominalMin"] = 0
+    problems, _ = gate.check(ch_bad, manifest)
+    if not has(problems, "implementation jack 'joystick.x_out'"):
+        raise SystemExit("joystick output range drift (x_out nominalMin -10 -> 0) not enforced: "
+                        "%r" % problems)
+
+    # (ci) output evidence drift: the x_out nominal-range citation line must not move.
+    ci_bad = copy.deepcopy(spec)
+    reg_jack(ci_bad, "joystick.y_out")["evidence"]["line"] = 999
+    problems, _ = gate.check(ci_bad, manifest)
+    if not has(problems, "descriptorEvidence.line=999"):
+        raise SystemExit("joystick output evidence drift (y_out line) not enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

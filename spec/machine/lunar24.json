@@ -3076,6 +3076,169 @@
           }
         }
       ]
+    },
+    {
+      "id": 8,
+      "stable_id": "joystick",
+      "name": "Joystick",
+      "category": "control",
+      "description": "Position-locking joystick: X/Y axes + two voltage offset regulators -> two patchable CV outputs (nominal -10..+10V). P0 captures the panel state params as software-normalized placeholders and the two bipolar CV outputs.",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 447,
+        "lineEnd": 478
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 153,
+          "stable_id": "joystick.x",
+          "name": "X",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 449
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 154,
+          "stable_id": "joystick.y",
+          "name": "Y",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 449
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 155,
+          "stable_id": "joystick.offset_x",
+          "name": "OFFSET X",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 449
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 156,
+          "stable_id": "joystick.offset_y",
+          "name": "OFFSET Y",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 449
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ],
+      "jacks": [
+        {
+          "id": 31,
+          "stable_id": "joystick.x_out",
+          "name": "X OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -10.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 453
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 32,
+          "stable_id": "joystick.y_out",
+          "name": "Y OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -10.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 453
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        }
+      ]
     }
   ],
   "normalizedRoutes": [
