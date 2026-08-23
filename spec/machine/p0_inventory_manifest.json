@@ -1761,9 +1761,283 @@
         ],
         "excludes": ["keyboard.calibration_pressure", "keyboard.calibration_v_oct", "keyboard.clock_bpm", "keyboard.dac_vref", "keyboard.debounce", "keyboard.encoder_direction", "keyboard.mpr121_charge", "keyboard.mpr121_discharge", "keyboard.preset_a", "keyboard.preset_b", "keyboard.preset_c", "keyboard.preset_d", "keyboard.pressure_max", "keyboard.pressure_min", "keyboard.release_threshold", "keyboard.touch_threshold"]
       }
+    },
+    "landedDescriptorFacts": {
+      "note": "Closed identity/evidence facts for the Phase B mods-gap slice (Codex msg 17cc9a4a). Their presence IS the declaration that these params/jacks have landed, so a registry missing one fails NORMAL rather than reopening a gap. descriptorEvidence.line is at WIDGET granularity (matching the per-widget evidence.line the registry cites); the parent region-span `evidence` is untouched. fieldEvidence is the 8-key exact projection of the same fields.",
+      "parameters": {
+        "vco_b.pwm": {
+          "id": 30,
+          "owner": "vco_b",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 387
+          }
+        },
+        "vco_b.lin_exp": {
+          "id": 31,
+          "owner": "vco_b",
+          "kind": "selector-toggle",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 389
+          }
+        },
+        "vco_b.oct_sel": {
+          "id": 32,
+          "owner": "vco_b",
+          "kind": "selector-toggle",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 391
+          }
+        },
+        "vco_b.sub_sel": {
+          "id": 33,
+          "owner": "vco_b",
+          "kind": "selector-toggle",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 392
+          }
+        },
+        "vcf.r_res": {
+          "id": 34,
+          "owner": "vcf",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1140
+          }
+        },
+        "vcf.r_mod": {
+          "id": 35,
+          "owner": "vcf",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1145
+          }
+        },
+        "vcf.r_bp_lp": {
+          "id": 36,
+          "owner": "vcf",
+          "kind": "selector-toggle",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1149
+          }
+        },
+        "envelope_a.d": {
+          "id": 37,
+          "owner": "envelope_a",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 389
+          }
+        },
+        "envelope_a.s": {
+          "id": 38,
+          "owner": "envelope_a",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 392
+          }
+        },
+        "envelope_a.hold": {
+          "id": 39,
+          "owner": "envelope_a",
+          "kind": "selector-toggle",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 402
+          }
+        },
+        "envelope_a.self_gen": {
+          "id": 40,
+          "owner": "envelope_a",
+          "kind": "selector-toggle",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 404
+          }
+        }
+      },
+      "jacks": {
+        "vco_a.wave_out": {
+          "id": 19,
+          "owner": "vco_a",
+          "direction": "output",
+          "signalType": "audio",
+          "polarity": "unknown",
+          "min": -5.0,
+          "max": 5.0,
+          "coupling": "unknown",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 155
+          },
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        "vco_a.pwm_in": {
+          "id": 20,
+          "owner": "vco_a",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "min": -5.0,
+          "max": 5.0,
+          "coupling": "unknown",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 387
+          },
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        "vco_b.wave_out": {
+          "id": 21,
+          "owner": "vco_b",
+          "direction": "output",
+          "signalType": "audio",
+          "polarity": "unknown",
+          "min": -5.0,
+          "max": 5.0,
+          "coupling": "unknown",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 155
+          },
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        "vco_b.pwm_in": {
+          "id": 22,
+          "owner": "vco_b",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "min": -5.0,
+          "max": 5.0,
+          "coupling": "unknown",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 387
+          },
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        "keyboard.pressure_out": {
+          "id": 23,
+          "owner": "keyboard",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "min": 0.0,
+          "max": 8.0,
+          "coupling": "unknown",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 584
+          },
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        "keyboard.reset_in": {
+          "id": 24,
+          "owner": "keyboard",
+          "direction": "input",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "min": 0.0,
+          "max": 5.0,
+          "coupling": "unknown",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 587
+          },
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        "envelope_a.vca_cv_out": {
+          "id": 25,
+          "owner": "envelope_a",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "min": 0.0,
+          "max": 8.0,
+          "coupling": "unknown",
+          "status": "provisional",
+          "descriptorEvidence": {
+            "line": 87
+          },
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "provisional",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        }
+      }
     }
   },
-  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r"],
+  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:vcf.r_bp_lp", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_b.lin_exp", "parameter:vco_b.oct_sel", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "jack:envelope_a.vca_cv_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:vco_a.pwm_in", "jack:vco_a.wave_out", "jack:vco_b.pwm_in", "jack:vco_b.wave_out"],
   "migrationAllowlist": {
     "note": "Permanently-empty migration allowlist. Migration is complete and it is LOCKED EMPTY (Codex msg 064cfa6e): never computed from the implementation, so the manifest does not reverse-depend on lunar24.json and stays a one-way target->overlay source. Any registry param/jack not in the target is a NEW rogue and fails the always-on gate; the legacy ceiling backstop also forbids re-whitelisting a re-introduced pre-correction id outside the target.",
     "parameters": [],

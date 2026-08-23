@@ -441,6 +441,11 @@ def check(spec, manifest, require_full=False):
     if not meta.get("source"):
         problems.append("manifest.meta.source missing (must name the source)")
     tgt = manifest.get("target") or {}
+    landed_facts = tgt.get("landedDescriptorFacts") or {}
+    landed_params = landed_facts.get("parameters") or {}
+    landed_jacks = landed_facts.get("jacks") or {}
+    landed_fact_keys = set(f"parameter:{x}" for x in landed_params) | \
+                       set(f"jack:{x}" for x in landed_jacks)
 
     modules = tgt.get("modules", [])
     terminals = tgt.get("terminals", [])
@@ -1277,6 +1282,64 @@ def check(spec, manifest, require_full=False):
                 problems.append(f"implementation program {sid!r}: evidence.{f} {aev.get(f)!r} "
                                 f"!= frozen target {te.get(f)!r}")
 
+    # ---- landed-descriptor fact gate (Codex 17cc9a4a) ----
+    # The frozen identity/evidence facts for this slice live in
+    # target.landedDescriptorFacts (built by p0_regions_build.py). Each FACTS entry's
+    # appearance IS the declaration that it has landed, so a fact the registry lacks is
+    # a MISSING landed descriptor and must FAIL normal (it must not reopen a gap). The
+    # facts carry a descriptorEvidence.line at widget granularity (matching what the
+    # registry cites); the parent region-span `evidence` in the registry is untouched —
+    # only the facts' own descriptorEvidence line is compared. Exact-compare each fact:
+    # renumber / re-owner / kind drift / status / descriptorEvidence.line, and for a jack
+    # direction / signalType / polarity / coupling / nominalRange / fieldEvidence are all
+    # caught at the landed-descriptor granularity.
+    reg_param_by_fact = {p["stable_id"]: p for p in reg.parameters}
+    reg_jack_by_fact = {j["stable_id"]: j for j in reg.jacks}
+    for sid, f in sorted(landed_params.items()):
+        rp = reg_param_by_fact.get(sid)
+        if rp is None:
+            problems.append(f"MISSING landed descriptor param {sid!r}: in "
+                            f"target.landedDescriptorFacts but absent from the registry")
+            continue
+        kind = "selector-toggle" if rp.get("positions") else "continuous"
+        de = f.get("descriptorEvidence") or {}
+        got = (rp.get("id"), rp.get("_stable_owner"), kind, rp.get("status"),
+               (rp.get("evidence") or {}).get("line"))
+        want = (f["id"], f["owner"], f["kind"], f["status"], de.get("line"))
+        if got != want:
+            problems.append(f"implementation param {sid!r}: landed descriptor fact "
+                            f"(id={got[0]}, owner={got[1]}, kind={got[2]}, status={got[3]}, "
+                            f"descriptorEvidence.line={got[4]}) != target.landedDescriptorFacts "
+                            f"(id={want[0]}, owner={want[1]}, kind={want[2]}, status={want[3]}, "
+                            f"descriptorEvidence.line={want[4]})")
+    fe_keys = ("nominalRange", "toleratedRange", "threshold", "saturation", "transfer",
+               "signalType", "polarity", "coupling")
+    for sid, f in sorted(landed_jacks.items()):
+        rj = reg_jack_by_fact.get(sid)
+        if rj is None:
+            problems.append(f"MISSING landed descriptor jack {sid!r}: in "
+                            f"target.landedDescriptorFacts but absent from the registry")
+            continue
+        rjfe = rj.get("fieldEvidence") or {}
+        de = f.get("descriptorEvidence") or {}
+        ffe = f.get("fieldEvidence") or {}
+        got = (rj.get("id"), rj.get("_module_stable"), rj.get("direction"), rj.get("signalType"),
+               rj.get("polarity"), rj.get("nominalMin"), rj.get("nominalMax"), rj.get("coupling"),
+               rj.get("status"), (rj.get("evidence") or {}).get("line"),
+               *(rjfe.get(k) for k in fe_keys))
+        want = (f["id"], f["owner"], f["direction"], f["signalType"], f["polarity"], f["min"], f["max"],
+                f["coupling"], f["status"], de.get("line"), *(ffe.get(k) for k in fe_keys))
+        if got != want:
+            problems.append(f"implementation jack {sid!r}: landed descriptor fact "
+                            f"(id={got[0]}, owner={got[1]}, direction={got[2]}, signalType={got[3]}, "
+                            f"polarity={got[4]}, nominalMin={got[5]}, nominalMax={got[6]}, "
+                            f"coupling={got[7]}, status={got[8]}, descriptorEvidence.line={got[9]}, "
+                            f"fieldEvidence={got[10:]}) != target.landedDescriptorFacts "
+                            f"(id={want[0]}, owner={want[1]}, direction={want[2]}, signalType={want[3]}, "
+                            f"polarity={want[4]}, min={want[5]}, max={want[6]}, coupling={want[7]}, "
+                            f"status={want[8]}, descriptorEvidence.line={want[9]}, "
+                            f"fieldEvidence={want[10:]})")
+
     # ---- per-CAPABILITY present-but-empty (replaces blanket param+jack) ----
     tmodel = {m["stable_id"]: m for m in modules if m.get("stable_id")}
     reg_param_owners = {p["_stable_owner"] for p in reg.parameters}
@@ -1300,12 +1363,19 @@ def check(spec, manifest, require_full=False):
                             f"transcribes no panelControl")
 
     # ---- mustComplete coherence + non-regression + == landed set ------------
+    # landedDescriptorFacts are synchronized into mustComplete (parameter:/jack: keys) by
+    # the builder so the identical landed-equality mechanism uniformly guards every slice.
+    present_reg_params = {p["stable_id"] for p in reg.parameters}
+    present_reg_jacks = {j["stable_id"] for j in reg.jacks}
     target_all = (set(f"module:{x}" for x in module_ids)
                   | set(f"program:{x}" for x in target_program_ids)
-                  | set(f"route:{x}" for x in target_norm_routes))
+                  | set(f"route:{x}" for x in target_norm_routes)
+                  | landed_fact_keys)
     present_keys = (set(f"module:{x}" for x in present_modules)
                     | set(f"program:{x}" for x in present_programs)
-                    | set(f"route:{x}" for x in present_routes))
+                    | set(f"route:{x}" for x in present_routes)
+                    | {f"parameter:{x}" for x in present_reg_params if x in landed_params}
+                    | {f"jack:{x}" for x in present_reg_jacks if x in landed_jacks})
     for key in must_complete:
         if key not in target_all:
             problems.append(f"mustComplete item {key!r} is not a manifest target")

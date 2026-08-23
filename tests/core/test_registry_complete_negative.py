@@ -1414,6 +1414,93 @@ def main():
     if not has(problems, "violates the unknown ⇔ unverified biconditional"):
         raise SystemExit("selfOscillating=unknown+provisional not enforced: %r" % problems)
 
+    # ---- Phase B mods-gap landed-descriptor gate (Codex 17cc9a4a) ----
+    # The 11 params + 7 jacks closed in this slice are frozen to explicit numeric ids, owners, kinds,
+    # statuses and per-widget descriptorEvidence lines (and for jacks, direction/signalType/polarity/
+    # coupling/nominalRange + fieldEvidence). The facts live in target.landedDescriptorFacts in the
+    # manifest — NOT checker constants — so the manifest stays the single auditable target. Their
+    # presence IS the declaration that they have landed, so a registry that DROPS one must FAIL normal
+    # (it must not reopen a gap). Any renumber / re-owner / direction flip / status or evidence drift /
+    # kind drift (selector-toggle->continuous via dropped positions) / legal-but-wrong signalType is
+    # rejected by the landed-descriptor fact compare in check_registry_complete.py.
+
+    # (ae) renumber a landed param id.
+    ae_bad = copy.deepcopy(spec)
+    reg_param(ae_bad, "vco_b.pwm")["id"] = 999
+    problems, _ = gate.check(ae_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed mods-gap renumber (param id) not enforced: %r" % problems)
+
+    # (af) re-owner a landed param by relocating it into another module (owner is module-derived,
+    #      so a drift means the entity physically moved).
+    af_bad = copy.deepcopy(spec)
+    af_p = reg_param(af_bad, "vco_b.pwm")
+    for m in af_bad["modules"]:
+        if m.get("stable_id") == "vco_b":
+            m["parameters"].remove(af_p)
+        if m.get("stable_id") == "vcf":
+            m.setdefault("parameters", []).append(af_p)
+    problems, _ = gate.check(af_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed mods-gap re-owner (param) not enforced: %r" % problems)
+
+    # (ag) evidence-line drift on a landed param (the fact's descriptorEvidence.line must match).
+    ag_bad = copy.deepcopy(spec)
+    reg_param(ag_bad, "vco_b.pwm")["evidence"]["line"] = 999
+    problems, _ = gate.check(ag_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed mods-gap evidence drift (param) not enforced: %r" % problems)
+
+    # (ah) kind drift: drop the selector positions so a selector-toggle reads as continuous.
+    ah_bad = copy.deepcopy(spec)
+    del reg_param(ah_bad, "vcf.r_bp_lp")["positions"]
+    problems, _ = gate.check(ah_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed mods-gap kind drift (selector->continuous) not enforced: %r" % problems)
+
+    # (ai) direction flip on a landed jack.
+    ai_bad = copy.deepcopy(spec)
+    reg_jack(ai_bad, "vco_a.wave_out")["direction"] = "input"
+    problems, _ = gate.check(ai_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed mods-gap direction flip (jack) not enforced: %r" % problems)
+
+    # (aj) legal-but-wrong signalType on a landed jack (cv is a legal signal type, but wave_out is audio).
+    aj_bad = copy.deepcopy(spec)
+    reg_jack(aj_bad, "vco_a.wave_out")["signalType"] = "cv"
+    problems, _ = gate.check(aj_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed mods-gap legal-but-wrong signalType (jack) not enforced: %r" % problems)
+
+    # (ak) status drift on a landed jack (values stay concrete, so only the landed lock catches it).
+    ak_bad = copy.deepcopy(spec)
+    reg_jack(ak_bad, "keyboard.pressure_out")["status"] = "provisional"
+    problems, _ = gate.check(ak_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed mods-gap status drift (jack) not enforced: %r" % problems)
+
+    # (al) drop a landed param entirely -> the MISSING landed descriptor must FAIL normal (Codex
+    #      17cc9a4a: presence in landedDescriptorFacts IS the landed declaration, so a drop reopens
+    #      a gap and must be a hard fail, never `continue`).
+    al_bad = copy.deepcopy(spec)
+    for m in al_bad["modules"]:
+        if m.get("stable_id") == "vco_b":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "vco_b.pwm"]
+    problems, _ = gate.check(al_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param"):
+        raise SystemExit("landed mods-gap MISSING seen-param (vco_b.pwm) not enforced: %r" % problems)
+
+    # (am) drop a landed jack entirely -> must FAIL normal.
+    am_bad = copy.deepcopy(spec)
+    for m in am_bad["modules"]:
+        if m.get("stable_id") == "vco_a":
+            m["jacks"] = [j for j in m.get("jacks", [])
+                          if j.get("stable_id") != "vco_a.wave_out"]
+    problems, _ = gate.check(am_bad, manifest)
+    if not has(problems, "MISSING landed descriptor jack"):
+        raise SystemExit("landed mods-gap MISSING seen-jack (vco_a.wave_out) not enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

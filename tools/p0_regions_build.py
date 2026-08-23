@@ -1157,6 +1157,85 @@ RECORD_SCHEMAS = {
     },
 }
 
+# —————————————————————————————————————————————————————————————————————————————
+# Landed descriptor facts (Phase B mods-gap slice; source of truth for the checker's
+# landed-descriptor gate). Codex msg 17cc9a4a: the closed identity/evidence facts for the
+# 11 ordinary params + 7 patchable jacks live HERE in target.landedDescriptorFacts — not as
+# checker constants — so the manifest stays the single auditable target. Their presence IS the
+# declaration that they have landed. descriptorEvidence.line is at WIDGET granularity (matching
+# the per-widget evidence.line the registry cites); the registry's parent region-span `evidence`
+# (lineStart/lineEnd) is untouched. fieldEvidence is an 8-key exact projection: the four unlisted
+# keys (toleratedRange/threshold/saturation/transfer) are "unverified" unless asserted below.
+# —————————————————————————————————————————————————————————————————————————————
+def _field_evidence(nominalRange, signalType, polarity, coupling):
+    return dict(nominalRange=nominalRange, toleratedRange="unverified", threshold="unverified",
+                saturation="unverified", transfer="unverified", signalType=signalType,
+                polarity=polarity, coupling=coupling)
+
+LANDED_DESCRIPTOR_FACTS = {
+    "parameters": {
+        "vco_b.pwm": dict(id=30, owner="vco_b", kind="continuous", status="confirmed",
+                          descriptorEvidence=dict(line=387)),
+        "vco_b.lin_exp": dict(id=31, owner="vco_b", kind="selector-toggle", status="confirmed",
+                              descriptorEvidence=dict(line=389)),
+        "vco_b.oct_sel": dict(id=32, owner="vco_b", kind="selector-toggle", status="confirmed",
+                              descriptorEvidence=dict(line=391)),
+        "vco_b.sub_sel": dict(id=33, owner="vco_b", kind="selector-toggle", status="confirmed",
+                              descriptorEvidence=dict(line=392)),
+        "vcf.r_res": dict(id=34, owner="vcf", kind="continuous", status="confirmed",
+                          descriptorEvidence=dict(line=1140)),
+        "vcf.r_mod": dict(id=35, owner="vcf", kind="continuous", status="confirmed",
+                          descriptorEvidence=dict(line=1145)),
+        "vcf.r_bp_lp": dict(id=36, owner="vcf", kind="selector-toggle", status="confirmed",
+                            descriptorEvidence=dict(line=1149)),
+        "envelope_a.d": dict(id=37, owner="envelope_a", kind="continuous", status="confirmed",
+                             descriptorEvidence=dict(line=389)),
+        "envelope_a.s": dict(id=38, owner="envelope_a", kind="continuous", status="confirmed",
+                             descriptorEvidence=dict(line=392)),
+        "envelope_a.hold": dict(id=39, owner="envelope_a", kind="selector-toggle", status="confirmed",
+                                descriptorEvidence=dict(line=402)),
+        "envelope_a.self_gen": dict(id=40, owner="envelope_a", kind="selector-toggle",
+                                    status="confirmed", descriptorEvidence=dict(line=404)),
+    },
+    "jacks": {
+        "vco_a.wave_out": dict(id=19, owner="vco_a", direction="output", signalType="audio",
+                               polarity="unknown", min=-5.0, max=5.0, coupling="unknown",
+                               status="confirmed", descriptorEvidence=dict(line=155),
+                               fieldEvidence=_field_evidence("confirmed", "confirmed",
+                                                             "unverified", "unverified")),
+        "vco_a.pwm_in": dict(id=20, owner="vco_a", direction="input", signalType="cv",
+                             polarity="unknown", min=-5.0, max=5.0, coupling="unknown",
+                             status="confirmed", descriptorEvidence=dict(line=387),
+                             fieldEvidence=_field_evidence("unverified", "confirmed",
+                                                           "unverified", "unverified")),
+        "vco_b.wave_out": dict(id=21, owner="vco_b", direction="output", signalType="audio",
+                               polarity="unknown", min=-5.0, max=5.0, coupling="unknown",
+                               status="confirmed", descriptorEvidence=dict(line=155),
+                               fieldEvidence=_field_evidence("confirmed", "confirmed",
+                                                             "unverified", "unverified")),
+        "vco_b.pwm_in": dict(id=22, owner="vco_b", direction="input", signalType="cv",
+                             polarity="unknown", min=-5.0, max=5.0, coupling="unknown",
+                             status="confirmed", descriptorEvidence=dict(line=387),
+                             fieldEvidence=_field_evidence("unverified", "confirmed",
+                                                           "unverified", "unverified")),
+        "keyboard.pressure_out": dict(id=23, owner="keyboard", direction="output", signalType="cv",
+                                      polarity="unipolar", min=0.0, max=8.0, coupling="unknown",
+                                      status="confirmed", descriptorEvidence=dict(line=584),
+                                      fieldEvidence=_field_evidence("confirmed", "confirmed",
+                                                                    "confirmed", "unverified")),
+        "keyboard.reset_in": dict(id=24, owner="keyboard", direction="input", signalType="gate",
+                                  polarity="unipolar", min=0.0, max=5.0, coupling="unknown",
+                                  status="confirmed", descriptorEvidence=dict(line=587),
+                                  fieldEvidence=_field_evidence("confirmed", "confirmed",
+                                                                "confirmed", "unverified")),
+        "envelope_a.vca_cv_out": dict(id=25, owner="envelope_a", direction="output", signalType="cv",
+                                      polarity="unknown", min=0.0, max=8.0, coupling="unknown",
+                                      status="provisional", descriptorEvidence=dict(line=87),
+                                      fieldEvidence=_field_evidence("unverified", "provisional",
+                                                                    "unverified", "unverified")),
+    },
+}
+
 def main():
     with open(MANIFEST, encoding="utf-8") as fh:
         m = json.load(fh)
@@ -1180,6 +1259,25 @@ def main():
     tgt["actions"] = L.actions
     tgt["controlRegions"] = L.regions
     tgt["recordSchemas"] = RECORD_SCHEMAS
+    # Landed descriptor facts (Codex msg 17cc9a4a): the frozen identity/evidence for the closed
+    # params+jacks is carried in the manifest (not checker constants), and is kept in sync with
+    # mustComplete so the identical landed-equality mechanism guards this and every later slice.
+    landed = LANDED_DESCRIPTOR_FACTS
+    tgt["landedDescriptorFacts"] = {
+        "note": ("Closed identity/evidence facts for the Phase B mods-gap slice (Codex msg "
+                 "17cc9a4a). Their presence IS the declaration that these params/jacks have "
+                 "landed, so a registry missing one fails NORMAL rather than reopening a gap. "
+                 "descriptorEvidence.line is at WIDGET granularity (matching the per-widget "
+                 "evidence.line the registry cites); the parent region-span `evidence` is "
+                 "untouched. fieldEvidence is the 8-key exact projection of the same fields."),
+        "parameters": landed["parameters"],
+        "jacks": landed["jacks"],
+    }
+    # Synchronize the landed fact keys into mustComplete so the == landed-set gate covers them.
+    _present_must = set(m.get("mustComplete", []))
+    _fact_keys = (sorted("parameter:%s" % x for x in landed["parameters"]) +
+                  sorted("jack:%s" % x for x in landed["jacks"]))
+    m["mustComplete"] = list(m.get("mustComplete", [])) + [k for k in _fact_keys if k not in _present_must]
     # paramsJackTargets records jacks + internal endpoints ONLY (the old stale .params list is
     # dropped). Per-item Parameter id-space lives on parameters[].
     tgt["paramsJackTargets"] = {

@@ -389,11 +389,11 @@
           "nominalMax": 5.0,
           "coupling": "unknown",
           "evidence": {
-            "line": 397
+            "line": 155
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "nominalRange": "unverified",
+            "nominalRange": "confirmed",
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
@@ -711,11 +711,11 @@
           "nominalMax": 5.0,
           "coupling": "unknown",
           "evidence": {
-            "line": 412
+            "line": 155
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "nominalRange": "unverified",
+            "nominalRange": "confirmed",
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
@@ -761,11 +761,11 @@
           "nominalMax": 5.0,
           "coupling": "unknown",
           "evidence": {
-            "line": 397
+            "line": 155
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "nominalRange": "unverified",
+            "nominalRange": "confirmed",
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
@@ -2552,11 +2552,11 @@
           "nominalMax": 8.0,
           "coupling": "unknown",
           "evidence": {
-            "line": 398
+            "line": 156
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "nominalRange": "unverified",
+            "nominalRange": "confirmed",
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
