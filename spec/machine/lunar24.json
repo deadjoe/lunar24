@@ -33,13 +33,13 @@
             "line": 393
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -57,13 +57,13 @@
             "line": 380
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -80,14 +80,14 @@
             "line": 386
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -105,20 +105,25 @@
             "line": 391
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "confirmed",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "low",
+            "0",
+            "+3"
+          ]
         },
         {
           "id": 5,
           "stable_id": "vco_a.sub_sel",
           "name": "Sub (-1 oct)",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -129,14 +134,18 @@
             "line": 392
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "0",
+            "-1"
+          ]
         },
         {
           "id": 6,
@@ -152,20 +161,20 @@
             "line": 413
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 7,
           "stable_id": "vco_a.lin_exp",
           "name": "lin/exp CV mode",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -176,14 +185,18 @@
             "line": 389
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "lin",
+            "exp"
+          ]
         },
         {
           "id": 8,
@@ -199,14 +212,14 @@
             "line": 387
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         }
       ],
@@ -376,13 +389,13 @@
             "line": 393
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -400,13 +413,13 @@
             "line": 380
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -423,14 +436,14 @@
             "line": 386
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -447,13 +460,13 @@
             "line": 413
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         }
       ],
@@ -577,14 +590,14 @@
             "line": 1138
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -601,14 +614,14 @@
             "line": 1140
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -625,14 +638,14 @@
             "line": 1145
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -649,14 +662,14 @@
             "line": 1151
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -673,14 +686,14 @@
             "line": 1151
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -697,21 +710,21 @@
             "line": 1138
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 19,
           "stable_id": "vcf.l_bp_lp",
           "name": "BP-LP L",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -722,20 +735,24 @@
             "line": 1149
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "bp",
+            "lp"
+          ]
         },
         {
           "id": 20,
           "stable_id": "vcf.link",
           "name": "LINK (CV1 controls both filters)",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -746,14 +763,18 @@
             "line": 1147
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
         }
       ],
       "jacks": [
@@ -834,22 +855,27 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "confirmed",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "Single",
+            "Twin",
+            "Split"
+          ]
         },
         {
           "id": 101,
           "stable_id": "keyboard.mode",
           "name": "Mode",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
-          "max": 1.0,
+          "max": 2.0,
           "default": 0.0,
           "step": 1.0,
           "smoothing": "none",
@@ -861,20 +887,25 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "keyboard",
+            "arpeggiator",
+            "sequencer"
+          ]
         },
         {
           "id": 102,
           "stable_id": "keyboard.arp_hold",
           "name": "Arp Hold",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -888,49 +919,26 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
-        },
-        {
-          "id": 103,
-          "stable_id": "keyboard.arp_clock",
-          "name": "Arp Clock",
-          "unit": "bool",
-          "min": 0.0,
-          "max": 1.0,
-          "default": 0.0,
-          "step": 1.0,
-          "smoothing": "none",
-          "persistence": "deviceState",
-          "evidence": {
-            "ref": "solar42N_manual_v15",
-            "lineStart": 822,
-            "lineEnd": 857,
-            "panelSite": "底部 12 触摸片"
+            "persistence": "unverified",
+            "range": "provisional"
           },
-          "status": "confirmed",
-          "rangeEvidence": "unverified",
-          "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+          "positions": [
+            "off",
+            "on"
+          ]
         },
         {
           "id": 104,
           "stable_id": "keyboard.arp_direction",
           "name": "Arp Direction",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
-          "max": 1.0,
+          "max": 3.0,
           "default": 0.0,
           "step": 1.0,
           "smoothing": "none",
@@ -942,22 +950,28 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "forward",
+            "backward",
+            "ping-pong",
+            "random"
+          ]
         },
         {
           "id": 105,
           "stable_id": "keyboard.arp_variation",
           "name": "Arp Variation",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
-          "max": 1.0,
+          "max": 3.0,
           "default": 0.0,
           "step": 1.0,
           "smoothing": "none",
@@ -969,14 +983,20 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "x1",
+            "x2",
+            "x3"
+          ]
         },
         {
           "id": 106,
@@ -996,40 +1016,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
-        },
-        {
-          "id": 107,
-          "stable_id": "keyboard.arp_rhythm",
-          "name": "Arp Rhythm",
-          "unit": "bool",
-          "min": 0.0,
-          "max": 1.0,
-          "default": 0.0,
-          "step": 1.0,
-          "smoothing": "none",
-          "persistence": "deviceState",
-          "evidence": {
-            "ref": "solar42N_manual_v15",
-            "lineStart": 822,
-            "lineEnd": 857,
-            "panelSite": "底部 12 触摸片"
-          },
-          "status": "confirmed",
-          "rangeEvidence": "unverified",
-          "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1050,20 +1043,20 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 109,
           "stable_id": "keyboard.seq_run",
           "name": "Seq Run",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -1077,14 +1070,18 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "free",
+            "keyboard"
+          ]
         },
         {
           "id": 110,
@@ -1104,49 +1101,22 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
-        },
-        {
-          "id": 111,
-          "stable_id": "keyboard.seq_clock",
-          "name": "Seq Clock",
-          "unit": "bool",
-          "min": 0.0,
-          "max": 1.0,
-          "default": 0.0,
-          "step": 1.0,
-          "smoothing": "none",
-          "persistence": "deviceState",
-          "evidence": {
-            "ref": "solar42N_manual_v15",
-            "lineStart": 866,
-            "lineEnd": 910,
-            "panelSite": "底部 12 触摸片"
-          },
-          "status": "confirmed",
-          "rangeEvidence": "unverified",
-          "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 112,
           "stable_id": "keyboard.seq_direction",
           "name": "Seq Direction",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
-          "max": 1.0,
+          "max": 3.0,
           "default": 0.0,
           "step": 1.0,
           "smoothing": "none",
@@ -1158,20 +1128,26 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "forward",
+            "backward",
+            "ping-pong",
+            "random"
+          ]
         },
         {
           "id": 113,
           "stable_id": "keyboard.seq_cv_output",
           "name": "Seq Cv Output",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -1185,41 +1161,18 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
-        },
-        {
-          "id": 114,
-          "stable_id": "keyboard.seq_rhythm",
-          "name": "Seq Rhythm",
-          "unit": "bool",
-          "min": 0.0,
-          "max": 1.0,
-          "default": 0.0,
-          "step": 1.0,
-          "smoothing": "none",
-          "persistence": "deviceState",
-          "evidence": {
-            "ref": "solar42N_manual_v15",
-            "lineStart": 866,
-            "lineEnd": 910,
-            "panelSite": "底部 12 触摸片"
+            "persistence": "unverified",
+            "range": "provisional"
           },
-          "status": "confirmed",
-          "rangeEvidence": "unverified",
-          "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+          "positions": [
+            "continuous",
+            "gated"
+          ]
         },
         {
           "id": 115,
@@ -1239,13 +1192,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1266,20 +1219,20 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 118,
           "stable_id": "keyboard.portamento_legato",
           "name": "Portamento Legato",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -1293,14 +1246,18 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
         },
         {
           "id": 119,
@@ -1320,13 +1277,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1347,13 +1304,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1374,13 +1331,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1401,22 +1358,22 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 123,
           "stable_id": "keyboard.pressure_output",
           "name": "Pressure Output",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
-          "max": 1.0,
+          "max": 4.0,
           "default": 0.0,
           "step": 1.0,
           "smoothing": "none",
@@ -1428,14 +1385,21 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "pressure",
+            "asr",
+            "ad",
+            "loop",
+            "random"
+          ]
         },
         {
           "id": 124,
@@ -1455,13 +1419,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1482,22 +1446,22 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 127,
           "stable_id": "keyboard.quantise_load_scale",
           "name": "Quantise Load Scale",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
-          "max": 1.0,
+          "max": 18.0,
           "default": 0.0,
           "step": 1.0,
           "smoothing": "none",
@@ -1509,14 +1473,35 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "semitones",
+            "ionian",
+            "dorian",
+            "phrygian",
+            "lydian",
+            "mixolydian",
+            "aeolian",
+            "locrian",
+            "blues-major",
+            "blues-minor",
+            "pentatonic-major",
+            "pentatonic-minor",
+            "folk",
+            "japanese",
+            "gamelan",
+            "gypsy",
+            "arabian",
+            "flamenco",
+            "whole-tone"
+          ]
         },
         {
           "id": 128,
@@ -1536,13 +1521,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1563,13 +1548,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1590,13 +1575,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1617,20 +1602,20 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 132,
           "stable_id": "keyboard.dac_vref",
           "name": "DAC voltage reference source",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -1644,14 +1629,18 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "internal",
+            "ex"
+          ]
         },
         {
           "id": 133,
@@ -1671,13 +1660,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1698,13 +1687,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1725,13 +1714,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1752,13 +1741,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1779,13 +1768,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1806,13 +1795,13 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -1833,20 +1822,20 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
           "id": 140,
           "stable_id": "keyboard.encoder_direction",
           "name": "normal/reversed",
-          "unit": "bool",
+          "unit": "selector",
           "min": 0.0,
           "max": 1.0,
           "default": 0.0,
@@ -1860,14 +1849,18 @@
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
-          }
+            "persistence": "unverified",
+            "range": "provisional"
+          },
+          "positions": [
+            "normal",
+            "reversed"
+          ]
         }
       ],
       "jacks": [
@@ -1996,14 +1989,14 @@
             "line": 387
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -2020,14 +2013,14 @@
             "line": 399
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         }
       ],
@@ -2148,13 +2141,13 @@
             "line": 1209
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -2173,13 +2166,13 @@
             "line": 1209
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -2197,14 +2190,14 @@
             "line": 1211
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         }
       ]
@@ -2239,14 +2232,14 @@
             "line": 1212
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -2264,14 +2257,14 @@
             "line": 1212
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         },
         {
@@ -2289,14 +2282,14 @@
             "line": 1212
           },
           "status": "confirmed",
-          "rangeEvidence": "unverified",
           "step": 0.0,
           "fieldEvidence": {
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
             "smoothing": "unverified",
-            "persistence": "unverified"
+            "persistence": "unverified",
+            "range": "unverified"
           }
         }
       ]

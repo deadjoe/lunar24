@@ -52,13 +52,21 @@ static bool valid_fe(const core::FieldEvidence& fe) {
          valid_status(fe.transfer);
 }
 
+static bool valid_pfe(const core::ParameterFieldEvidence& pfe) {
+  return valid_status(pfe.range) && valid_status(pfe.unit) &&
+         valid_status(pfe.initial) && valid_status(pfe.step) &&
+         valid_status(pfe.smoothing) && valid_status(pfe.persistence);
+}
+
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
   CHECK_EQ(core::kModuleCount, 5u);
-  CHECK_EQ(core::kParameterCount, 67u);  // Phase B: fixed 75; 8 non-scalar keyboard params (seq_steps,
-                                         // quantise_scale_editor, plate_tune, pushbutton_value,
-                                         // preset_a..d) moved to honest target-not-implemented gap
+  CHECK_EQ(core::kParameterCount, 63u);  // Phase B: fixed 75; moved to honest gap the 8 non-scalar
+                                         // keyboard params (seq_steps, quantise_scale_editor,
+                                         // plate_tune, pushbutton_value, preset_a..d) AND the 4
+                                         // un-evidenced selector params (arp_clock, seq_clock,
+                                         // arp_rhythm, seq_rhythm — no enumerated manual set)
   CHECK_EQ(core::kJackCount, 18u);       // Phase B dropped rogue jack vcf.audio_in
   CHECK_EQ(core::kProgramCount, 2u);
   CHECK_EQ(core::kRouteCount, 3u);
@@ -112,8 +120,39 @@ static void parameters_are_valid() {
     CHECK(p.initial >= p.min && p.initial <= p.max);
     CHECK(p.step >= 0.0);
     CHECK(valid_status(p.status));
-    CHECK(valid_status(p.rangeEvidence));  // numeric-range provenance split (07 §10)
+    CHECK(valid_pfe(p.fieldEvidence));  // per-field provenance split (07 §10, Codex 03848819)
     CHECK(!p.evidence.source.empty());
+  }
+}
+
+static void selector_options_are_well_formed() {
+  // A selector parameter's discrete value domain is carried IN the descriptor so UI/MIDI never
+  // receive a bare 0/1/2 integer without knowing what it means (Codex 03848819 Root 2). Verify the
+  // option table is exact and the pointer/count wiring is consistent: a continuous parameter has
+  // optionCount==0 with options==nullptr; a selector has optionCount>=2, a non-null options pointer,
+  // non-empty labels, no duplicate label within one selector's slice, and every option slice counted
+  // exactly once (sum(optionCount) == kParameterOptionLabelCount).
+  std::uint32_t totalOptions = 0;
+  for (std::uint32_t i = 0; i < core::kParameterCount; ++i) {
+    const auto& p = reg::kParameters[i];
+    if (p.optionCount == 0) {
+      CHECK(p.options == nullptr);
+      continue;
+    }
+    CHECK(p.optionCount >= 2u);
+    CHECK(p.options != nullptr);
+    totalOptions += p.optionCount;
+    for (std::uint32_t k = 0; k < p.optionCount; ++k) {
+      CHECK(p.options[k] != nullptr);
+      CHECK(p.options[k][0] != '\0');  // non-empty label
+      for (std::uint32_t m = k + 1; m < p.optionCount; ++m)
+        CHECK_FALSE(p.options[k] == p.options[m]);  // no duplicate within one selector's slice
+    }
+  }
+  CHECK_EQ(totalOptions, reg::kParameterOptionLabelCount);
+  for (std::uint32_t k = 0; k < reg::kParameterOptionLabelCount; ++k) {
+    CHECK(reg::kParameterOptionLabels[k] != nullptr);
+    CHECK(reg::kParameterOptionLabels[k][0] != '\0');
   }
 }
 
@@ -192,6 +231,7 @@ int main() {
   module_ranges_are_contiguous_and_disjoint();
   program_ranges_within_params();
   parameters_are_valid();
+  selector_options_are_well_formed();
   jacks_are_valid();
   routes_resolve_and_sink_cardinality();
   devices_capacity_matches_routes();

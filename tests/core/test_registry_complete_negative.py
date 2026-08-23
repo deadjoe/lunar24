@@ -1185,6 +1185,46 @@ def main():
     if not has(problems, "fieldEvidence.unit bad status"):
         raise SystemExit("Root C: invalid fieldEvidence status not flagged: %r" % problems)
 
+    # (p) Codex 03848819 Root 2 — runaway positions: a registry parameter carries selector positions
+    #     but its target is NOT a selector-toggle. Positions are only valid on a selector-toggle, so
+    #     this is positions-on-the-wrong-entity (the option table would label a continuous control).
+    p_pres = copy.deepcopy(spec)
+    p_parm = reg_param(p_pres, "vco_a.tune")
+    p_parm["positions"] = ["ON", "OFF"]
+    problems, _ = gate.check(p_pres, manifest)
+    if not has(problems, "but its target is not a selector-toggle"):
+        raise SystemExit("Root 2: positions on a non-selector-toggle not flagged: %r" % problems)
+
+    # (q) Codex 03848819 Root 2 — delete-positions-to-pass: an IMPLEMENTED selector-toggle target
+    #     stripped of its positions is the "un-evidenced bool treated as implemented" class. The old
+    #     gate skipped every selector check once positions were gone; now an implemented selector with
+    #     no target evidence MUST stay a gap.
+    q_pres = copy.deepcopy(manifest)
+    q_tgt = tgt_param(q_pres, "vco_a.oct_sel")
+    del q_tgt["positions"]
+    problems, _ = gate.check(spec, q_pres)
+    if not has(problems, "must stay a GAP"):
+        raise SystemExit("Root 2: implemented selector with no target positions not flagged: %r"
+                         % problems)
+
+    # (r) Codex 03848819 Root 2 — option labels must equal the target EXACTLY (UI/MIDI must not get a
+    #     bare 0/1/2 integer without its meaning). Re-label the implemented registry selector.
+    r_pres = copy.deepcopy(spec)
+    r_parm = reg_param(r_pres, "vco_a.oct_sel")
+    r_parm["positions"] = ["-1", "0", "+12"]
+    problems, _ = gate.check(r_pres, manifest)
+    if not has(problems, "registry selector options"):
+        raise SystemExit("Root 2: mismatched registry selector labels not flagged: %r" % problems)
+
+    # (s) Codex 03848819 Root 2 — a software-mapped selector value domain must be provisional, never an
+    #     unverified-but-concrete range (the seemingly-certain bool mis-read).
+    s_pres = copy.deepcopy(spec)
+    s_parm = reg_param(s_pres, "vco_a.oct_sel")
+    s_parm["fieldEvidence"]["range"] = "unverified"
+    problems, _ = gate.check(s_pres, manifest)
+    if not has(problems, "implemented selector range evidence is unverified"):
+        raise SystemExit("Root 2: unverified selector range not flagged: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -1199,8 +1239,10 @@ def main():
           "present, and the EXACT closed relation set — single-edge deletion, enter slot/item "
           "misalignment, execute target/item misalignment, and a workflow action rebound outside "
           "a PRESETS page all fail) are gated too; Root A (non-scalar target faked as a scalar "
-          "descriptor), Root B (selector-toggle cardinality / malformed manifest positions), and "
-          "Root C (missing or invalid fieldEvidence) are gated too (Codex 22f545c1).")
+          "descriptor), Root B (selector-toggle cardinality / malformed manifest positions), Root C "
+          "(missing or invalid fieldEvidence), and Codex 03848819 Root 2 (positions on a non-selector, "
+          "delete-positions-to-pass, mismatched selector labels, unverified selector range) are gated "
+          "too (Codex 22f545c1/03848819).")
     return 0
 
 

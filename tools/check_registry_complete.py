@@ -1326,11 +1326,59 @@ def check(spec, manifest, require_full=False):
     # A ParameterDescriptor may only back a SCALAR target. A non-scalar target (vector/mask/record)
     # has real shape/cardinality and must stay a GAP rather than be faked as a scalar (Root A).
     # A selector-toggle target with KNOWN positions has discrete cardinality; the registry
-    # descriptor's (max-min)/step+1 must equal it — a bool (max-min=1) can never cover a
-    # 3-position selector (Root B). Every scalar ParameterDescriptor carries a per-field Provenance
-    # audit; unknown value domains are provisional, never silently concrete (Root C).
-    FE_FIELDS = ("unit", "default", "step", "smoothing", "persistence")
+    # descriptor's (max-min)/step+1 AND its option labels must equal it — a bool (max-min=1)
+    # can never cover a 3-position selector (Root B + Codex 03848819 Root 2).
+    # Every scalar ParameterDescriptor carries a per-field Provenance audit; unknown value
+    # domains are provisional, never silently concrete (Root C).
+    #
+    # Codex 03848819 Root 2 closes the "delete positions to pass" hole. The old check only
+    # validated cardinality WHEN the target already held positions, so a selector-toggle target
+    # stripped of its positions silently skipped every check. Here we iterate the INDEPENDENT
+    # TARGET (not the registry), and:
+    #   * a selector-toggle target with NO positions has no evidenced value domain → it MUST stay a
+    #     GAP; if the registry implements it at all that is the "un-evidenced bool treated as
+    #     implemented" class Codex flagged.
+    #   * a selector-toggle target WITH positions, once the registry implements it, must carry
+    #     EXACTLY the same option count AND labels (UI/MIDI must never receive a bare 0/1/2 integer
+    #     without knowing what each value means). A target-with-positions that is NOT yet implemented
+    #     is a legitimate Phase-B GAP — the whole module may still be unimplemented — and --require-full
+    #     sees it via parameters.gap, so it is never reported here.
+    #   * the value domain is a software-normalized index space, not a documented hardware value,
+    #     so the `range` field evidence must be `provisional`; an `unverified` range next to a
+    #     concrete min/max is precisely the "seemingly-certain bool" mis-read.
+    FE_FIELDS = ("range", "unit", "default", "step", "smoothing", "persistence")
     FE_STATUS = {"confirmed", "unverified", "provisional"}
+    reg_param_by_sid = {p["stable_id"]: p for p in reg.parameters}
+    for tp in parameters:
+        if tp.get("kind") != "selector-toggle":
+            continue
+        sid = tp.get("stable_id")
+        tpos = tp.get("positions")
+        rp = reg_param_by_sid.get(sid)
+        if not tpos:
+            if rp is not None:
+                problems.append(
+                    f"parameter {sid}: selector-toggle target has NO positions (no evidence for a "
+                    f"value domain) but the registry implements it — it must stay a GAP")
+            continue
+        if rp is None:
+            continue
+        rpos = rp.get("positions")
+        if rpos != tpos:
+            problems.append(
+                f"parameter {sid}: registry selector options {rpos!r} != target positions "
+                f"{tpos!r} (UI/MIDI must see exactly the documented labels)")
+        card = (rp["max"] - rp["min"]) / rp["step"] + 1.0 if rp["step"] > 0 else None
+        if card is None or abs(card - len(tpos)) > 1e-9:
+            problems.append(
+                f"parameter {sid}: selector-toggle cardinality {card!r} != positions count "
+                f"{len(tpos)} (bool cannot cover a multi-position selector)")
+        fe = rp.get("fieldEvidence") or {}
+        if fe.get("range") == "unverified":
+            problems.append(
+                f"parameter {sid}: implemented selector range evidence is unverified — a "
+                f"software-mapped value domain must be provisional, never an unverified-but-concrete "
+                f"range")
     for p in reg.parameters:
         tp = param_by_sid.get(p["stable_id"])
         tshape = (tp or {}).get("shape")
@@ -1338,13 +1386,11 @@ def check(spec, manifest, require_full=False):
             problems.append(
                 f"parameter {p['stable_id']}: target shape {tshape!r} is non-scalar — cannot be "
                 f"represented as a scalar ParameterDescriptor (must gap)")
-        pos = (tp or {}).get("positions")
-        if pos:
-            card = (p["max"] - p["min"]) / p["step"] + 1.0 if p["step"] > 0 else None
-            if card is None or abs(card - len(pos)) > 1e-9:
-                problems.append(
-                    f"parameter {p['stable_id']}: selector-toggle cardinality {card!r} != "
-                    f"positions count {len(pos)} (bool cannot cover a multi-position selector)")
+        # A registry parameter may only carry selector positions if its target is a selector-toggle.
+        if (tp or {}).get("kind") != "selector-toggle" and p.get("positions"):
+            problems.append(
+                f"parameter {p['stable_id']}: registry carries selector positions but its target "
+                f"is not a selector-toggle (positions are only valid on a selector-toggle)")
         fe = p.get("fieldEvidence")
         if not isinstance(fe, dict):
             problems.append(f"parameter {p['stable_id']}: missing fieldEvidence audit object")

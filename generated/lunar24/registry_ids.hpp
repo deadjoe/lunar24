@@ -44,18 +44,14 @@ enum class ParameterId : std::uint32_t {
     keyboard_behaviour = 100,
     keyboard_mode = 101,
     keyboard_arp_hold = 102,
-    keyboard_arp_clock = 103,
     keyboard_arp_direction = 104,
     keyboard_arp_variation = 105,
     keyboard_arp_interval = 106,
-    keyboard_arp_rhythm = 107,
     keyboard_arp_length = 108,
     keyboard_seq_run = 109,
     keyboard_seq_length = 110,
-    keyboard_seq_clock = 111,
     keyboard_seq_direction = 112,
     keyboard_seq_cv_output = 113,
-    keyboard_seq_rhythm = 114,
     keyboard_seq_rhythm_length = 115,
     keyboard_portamento_speed = 117,
     keyboard_portamento_legato = 118,
@@ -123,7 +119,7 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 5;
-inline constexpr std::uint32_t kParameterCount = 67;
+inline constexpr std::uint32_t kParameterCount = 63;
 inline constexpr std::uint32_t kJackCount = 18;
 inline constexpr std::uint32_t kProgramCount = 2;
 inline constexpr std::uint32_t kRouteCount = 3;
@@ -174,18 +170,14 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::keyboard_behaviour: return "keyboard.behaviour";
     case ParameterId::keyboard_mode: return "keyboard.mode";
     case ParameterId::keyboard_arp_hold: return "keyboard.arp_hold";
-    case ParameterId::keyboard_arp_clock: return "keyboard.arp_clock";
     case ParameterId::keyboard_arp_direction: return "keyboard.arp_direction";
     case ParameterId::keyboard_arp_variation: return "keyboard.arp_variation";
     case ParameterId::keyboard_arp_interval: return "keyboard.arp_interval";
-    case ParameterId::keyboard_arp_rhythm: return "keyboard.arp_rhythm";
     case ParameterId::keyboard_arp_length: return "keyboard.arp_length";
     case ParameterId::keyboard_seq_run: return "keyboard.seq_run";
     case ParameterId::keyboard_seq_length: return "keyboard.seq_length";
-    case ParameterId::keyboard_seq_clock: return "keyboard.seq_clock";
     case ParameterId::keyboard_seq_direction: return "keyboard.seq_direction";
     case ParameterId::keyboard_seq_cv_output: return "keyboard.seq_cv_output";
-    case ParameterId::keyboard_seq_rhythm: return "keyboard.seq_rhythm";
     case ParameterId::keyboard_seq_rhythm_length: return "keyboard.seq_rhythm_length";
     case ParameterId::keyboard_portamento_speed: return "keyboard.portamento_speed";
     case ParameterId::keyboard_portamento_legato: return "keyboard.portamento_legato";

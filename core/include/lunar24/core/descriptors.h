@@ -55,9 +55,17 @@ struct ParameterDescriptor {
   ParamRole role;
   EvidenceRef evidence;
   EvidenceStatus status;
-  // Range/default provenance is split from identity: numeric min/max/initial are
-  // only `confirmed` when the manual states them, else unverified/provisional.
-  EvidenceStatus rangeEvidence = EvidenceStatus::unverified;
+  // Range/default provenance is split from identity: numeric min/max/initial and the
+  // unit/step/smoothing/persistence policies are each independently evidenced, never
+  // inherited from the descriptor-wide status (design/07 §10, Codex 03848819). The numeric
+  // values themselves are software-normalized when the manual states only a symbolic set.
+  ParameterFieldEvidence fieldEvidence;
+  // Discrete selector positions. optionCount==0 for a continuous parameter; otherwise
+  // `options` points at optionCount labels (this parameter's slice of the generated
+  // kParameterOptionLabels table). UI/MIDI decode the integer index via this table, so a
+  // 0/1/2 value is never offered without knowing what it means.
+  std::uint32_t optionCount = 0;
+  const char* const* options = nullptr;
 };
 
 // A physical patch point (3.5mm jack). Electrical + signal semantics are fixed.

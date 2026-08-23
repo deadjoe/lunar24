@@ -39,4 +39,25 @@ struct FieldEvidence {
   }
 };
 
+// Per-field evidence status for a ParameterDescriptor (Codex 03848819). The numeric
+// range, the unit label, the default, the step and the smoothing/persistence policies
+// are each independently evidenced, rather than inheriting the descriptor-wide status.
+// This keeps a software-normalized 0..1 encoding of a multi-position selector from ever
+// masquerading as a confirmed hardware fact: an unknown value domain is provisionally
+// mapped, never silently concrete, and every member carries its own provenance.
+struct ParameterFieldEvidence {
+  EvidenceStatus range = EvidenceStatus::unverified;        // min/max numeric range
+  EvidenceStatus unit = EvidenceStatus::unverified;         // unit label (V/OCT, seconds, ...)
+  EvidenceStatus initial = EvidenceStatus::unverified;      // default value
+  EvidenceStatus step = EvidenceStatus::unverified;         // step (0 == continuous)
+  EvidenceStatus smoothing = EvidenceStatus::unverified;    // smoothing policy
+  EvidenceStatus persistence = EvidenceStatus::unverified;  // persistence policy
+
+  bool anyUnverified() const {
+    return range != EvidenceStatus::confirmed || unit != EvidenceStatus::confirmed ||
+           initial != EvidenceStatus::confirmed || step != EvidenceStatus::confirmed ||
+           smoothing != EvidenceStatus::confirmed || persistence != EvidenceStatus::confirmed;
+  }
+};
+
 }  // namespace lunar24::core
