@@ -27,7 +27,8 @@ enum class ModuleId : std::uint32_t {
     sequencer = 11,
     mixer = 12,
     effector = 13,
-    voices = 14
+    voices = 14,
+    drone_1 = 15
 };
 
 enum class ParameterId : std::uint32_t {
@@ -159,6 +160,25 @@ enum class ParameterId : std::uint32_t {
     effector_phone = 198,
     effector_select_l = 199,
     effector_select_r = 200,
+    drone_1_tune_1 = 201,
+    drone_1_tune_2 = 202,
+    drone_1_tune_3 = 203,
+    drone_1_tune_4 = 204,
+    drone_1_tune_5 = 205,
+    drone_1_mute_1 = 206,
+    drone_1_mute_2 = 207,
+    drone_1_mute_3 = 208,
+    drone_1_mute_4 = 209,
+    drone_1_mute_5 = 210,
+    drone_1_mod_1 = 211,
+    drone_1_mod_2 = 212,
+    drone_1_mod_3 = 213,
+    drone_1_mod_4 = 214,
+    drone_1_mod_5 = 215,
+    drone_1_volt = 216,
+    drone_1_att = 217,
+    drone_1_rls = 218,
+    drone_1_gate_hold = 219,
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
@@ -209,7 +229,10 @@ enum class JackId : std::uint32_t {
     sequencer_gate_out = 39,
     effector_cv_x_in = 40,
     effector_cv_y_in = 41,
-    effector_cv_z_in = 42
+    effector_cv_z_in = 42,
+    drone_1_cv_mod_in = 43,
+    drone_1_gate_in = 44,
+    drone_1_env_out = 45
 };
 
 enum class ProgramId : std::uint32_t {
@@ -263,15 +286,15 @@ enum class RouteId : std::uint32_t {
     route_keyboard_gate_to_eg_b = 5
 };
 
-inline constexpr std::uint32_t kModuleCount = 15;
-inline constexpr std::uint32_t kParameterCount = 134;
-inline constexpr std::uint32_t kJackCount = 42;
+inline constexpr std::uint32_t kModuleCount = 16;
+inline constexpr std::uint32_t kParameterCount = 153;
+inline constexpr std::uint32_t kJackCount = 45;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
-inline constexpr std::uint64_t kModuleIdSpace = 15;
-inline constexpr std::uint64_t kParameterIdSpace = 201;
-inline constexpr std::uint64_t kJackIdSpace = 43;
+inline constexpr std::uint64_t kModuleIdSpace = 16;
+inline constexpr std::uint64_t kParameterIdSpace = 220;
+inline constexpr std::uint64_t kJackIdSpace = 46;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
 
@@ -296,6 +319,7 @@ inline constexpr std::string_view module_id_string(ModuleId id) {
     case ModuleId::mixer: return "mixer";
     case ModuleId::effector: return "effector";
     case ModuleId::voices: return "voices";
+    case ModuleId::drone_1: return "drone_1";
   }
   return "(unknown Module)";
 }
@@ -430,6 +454,25 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::effector_phone: return "effector.phone";
     case ParameterId::effector_select_l: return "effector.select_l";
     case ParameterId::effector_select_r: return "effector.select_r";
+    case ParameterId::drone_1_tune_1: return "drone_1.tune_1";
+    case ParameterId::drone_1_tune_2: return "drone_1.tune_2";
+    case ParameterId::drone_1_tune_3: return "drone_1.tune_3";
+    case ParameterId::drone_1_tune_4: return "drone_1.tune_4";
+    case ParameterId::drone_1_tune_5: return "drone_1.tune_5";
+    case ParameterId::drone_1_mute_1: return "drone_1.mute_1";
+    case ParameterId::drone_1_mute_2: return "drone_1.mute_2";
+    case ParameterId::drone_1_mute_3: return "drone_1.mute_3";
+    case ParameterId::drone_1_mute_4: return "drone_1.mute_4";
+    case ParameterId::drone_1_mute_5: return "drone_1.mute_5";
+    case ParameterId::drone_1_mod_1: return "drone_1.mod_1";
+    case ParameterId::drone_1_mod_2: return "drone_1.mod_2";
+    case ParameterId::drone_1_mod_3: return "drone_1.mod_3";
+    case ParameterId::drone_1_mod_4: return "drone_1.mod_4";
+    case ParameterId::drone_1_mod_5: return "drone_1.mod_5";
+    case ParameterId::drone_1_volt: return "drone_1.volt";
+    case ParameterId::drone_1_att: return "drone_1.att";
+    case ParameterId::drone_1_rls: return "drone_1.rls";
+    case ParameterId::drone_1_gate_hold: return "drone_1.gate_hold";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";
@@ -484,6 +527,9 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::effector_cv_x_in: return "effector.cv_x_in";
     case JackId::effector_cv_y_in: return "effector.cv_y_in";
     case JackId::effector_cv_z_in: return "effector.cv_z_in";
+    case JackId::drone_1_cv_mod_in: return "drone_1.cv_mod_in";
+    case JackId::drone_1_gate_in: return "drone_1.gate_in";
+    case JackId::drone_1_env_out: return "drone_1.env_out";
   }
   return "(unknown Jack)";
 }

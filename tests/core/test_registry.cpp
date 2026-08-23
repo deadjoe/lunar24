@@ -97,27 +97,31 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 15u);     // Phase B drone-voices module closure (Codex msg c212dcfb):
-                                         // +1 module (voices id 14, performance, zero params/jacks).
-                                         // Prior: dual-effector slice (Codex msg 1a47b5d0) effector
+  CHECK_EQ(core::kModuleCount, 16u);     // Phase B DRONE 1 classic voice slice (Codex msg 28e00d92):
+                                         // +1 module (drone_1 id 15, source, 19 params/3 jacks).
+                                         // Prior: drone-voices module closure (Codex msg c212dcfb)
+                                         // voices id 14 (performance, zero params/jacks),
+                                         // dual-effector slice (Codex msg 1a47b5d0) effector
                                          // id 13, voice-mixer slice (Codex msg 920fa79b) mixer id 12,
                                          // 5-step sequencer slice (Codex msg 6bedef35) sequencer id 11,
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 134u); // Phase B dual-effector slice (Codex msg 1a47b5d0): +8
-                                         // params (effector.x/.y/.z/.blend/.master/.phone continuous
-                                         // + .select_l/.select_r selector, ids 193-200). Prior:
-                                         // voice-mixer slice +20 (mixer.ch1..ch10 so{pan,vol},
-                                         // ids 173-192, software-normalized placeholders).
-                                         // Modules now carry 128, programs 6. Left as honest gaps
-                                         // the drones + voices params + the 12 keyboard complex
+  CHECK_EQ(core::kParameterCount, 153u); // Phase B DRONE 1 classic voice slice (Codex msg 28e00d92):
+                                         // +19 params (drone_1.tune_1..5 / mute_1..5 / mod_1..5 /
+                                         // volt / att / rls continuous + gate_hold selector,
+                                         // ids 201-219, software-normalized placeholders). Prior:
+                                         // dual-effector slice +8 (ids 193-200), voice-mixer slice
+                                         // +20 (mixer.ch1..ch10 so{pan,vol}, ids 173-192).
+                                         // Modules now carry 147, programs 6. Left as honest gaps
+                                         // the drone_2/4/5 voice params + 12 keyboard complex
                                          // params (seq_steps, quantise_scale_editor, plate_tune,
                                          // pushbutton_value, preset_a..d, arp_clock, seq_clock,
                                          // arp_rhythm, seq_rhythm + remaining module ranges)
-  CHECK_EQ(core::kJackCount, 42u);       // Phase B dual-effector slice (Codex msg 1a47b5d0): +3
-                                         // patchable CV inputs (effector.cv_x_in/.cv_y_in/.cv_z_in,
-                                         // ids 40-42, -10..+10V CV/bipolar from L1164). Prior: the
+  CHECK_EQ(core::kJackCount, 45u);       // Phase B DRONE 1 classic voice slice (Codex msg 28e00d92):
+                                         // +3 patchable jacks (drone_1.cv_mod_in/.gate_in/.env_out,
+                                         // ids 43-45). Prior: dual-effector slice +3 CV inputs
+                                         // (ids 40-42, -10..+10V CV/bipolar from L1164). Prior: the
                                          // 5-step sequencer slice +4 (sequencer.ext_clock_in/
                                          // clock_out clock, cv_out 0..+5V CV/unipolar L159, gate_out
                                          // 0..+10V gate/unipolar L160). Prior phases added
