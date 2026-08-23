@@ -104,7 +104,11 @@ static void frozen_counts() {
                                          // un-evidenced selector params (arp_clock, seq_clock,
                                          // arp_rhythm, seq_rhythm — no enumerated manual set)
   CHECK_EQ(core::kJackCount, 18u);       // Phase B dropped rogue jack vcf.audio_in
-  CHECK_EQ(core::kProgramCount, 2u);
+  // Program identity layer landed (Codex 7a6467cc slice #57): 39 program
+  // identities (cathedral.1 + magic.1 keep their params; the other 37 are
+  // identity-only, paramCount==0, honest gaps pending Phase B). kParameterCount
+  // stays 63 — the 37 additions add no params.
+  CHECK_EQ(core::kProgramCount, 39u);
   CHECK_EQ(core::kRouteCount, 3u);
   // kNormalizedRoutes[] still holds exactly the frozen route count (kRouteCount
   // generated; the array is sized by that count).

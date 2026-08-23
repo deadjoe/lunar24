@@ -333,10 +333,16 @@ def main():
     problems, _ = gate.check(spec, manifest, require_full=True)
     if not has(problems, "--require-full"):
         raise SystemExit("incomplete manifest did not trip --require-full: %r" % problems)
-    if not has(problems, "program identity gaps"):
-        raise SystemExit("--require-full did not report the program-identity gap: %r" % problems)
     if not has(problems, "parameter target-not-implemented"):
         raise SystemExit("--require-full did not report per-ID parameter gaps: %r" % problems)
+    # 29b. The live registry's program-identity layer is now COMPLETE (39/39, no gap), so the
+    #      program-identity-gap branch (checker 1551) is exercised from a fixture copy with one
+    #      identity-only target program dropped. digital.1 carries no params, so the drop is clean.
+    dropp = copy.deepcopy(spec)
+    dropp["programs"] = [p for p in dropp["programs"] if p["stable_id"] != "program.digital.1"]
+    problems, _ = gate.check(dropp, manifest, require_full=True)
+    if not has(problems, "program identity gaps"):
+        raise SystemExit("--require-full did not report program-identity gap for a dropped program: %r" % problems)
     # --require-full must ALSO report a per-ID *parameter* rogue (a registry param
     # whose stable_id is absent from the frozen target and not on the allowlist).
     # Build this from a fixture copy: the live registry is now clean of rogues

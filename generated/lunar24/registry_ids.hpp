@@ -109,7 +109,44 @@ enum class JackId : std::uint32_t {
 
 enum class ProgramId : std::uint32_t {
     program_cathedral_1 = 0,
-    program_magic_1 = 1
+    program_cathedral_2 = 1,
+    program_cathedral_3 = 2,
+    program_magic_1 = 3,
+    program_magic_2 = 4,
+    program_magic_3 = 5,
+    program_time_1 = 6,
+    program_time_2 = 7,
+    program_time_3 = 8,
+    program_vibrotrem_1 = 9,
+    program_vibrotrem_2 = 10,
+    program_vibrotrem_3 = 11,
+    program_filter_1 = 12,
+    program_filter_2 = 13,
+    program_filter_3 = 14,
+    program_vibe_1 = 15,
+    program_vibe_2 = 16,
+    program_vibe_3 = 17,
+    program_pitch_shifter_1 = 18,
+    program_pitch_shifter_2 = 19,
+    program_pitch_shifter_3 = 20,
+    program_infinity_1 = 21,
+    program_infinity_2 = 22,
+    program_infinity_3 = 23,
+    program_string_ringer_1 = 24,
+    program_string_ringer_2 = 25,
+    program_string_ringer_3 = 26,
+    program_syntex_1_1 = 27,
+    program_syntex_1_2 = 28,
+    program_syntex_1_3 = 29,
+    program_digital_1 = 30,
+    program_digital_2 = 31,
+    program_digital_3 = 32,
+    program_generator_1 = 33,
+    program_generator_2 = 34,
+    program_generator_3 = 35,
+    program_orche_1 = 36,
+    program_orche_2 = 37,
+    program_orche_3 = 38
 };
 
 enum class RouteId : std::uint32_t {
@@ -121,13 +158,13 @@ enum class RouteId : std::uint32_t {
 inline constexpr std::uint32_t kModuleCount = 5;
 inline constexpr std::uint32_t kParameterCount = 63;
 inline constexpr std::uint32_t kJackCount = 18;
-inline constexpr std::uint32_t kProgramCount = 2;
+inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 3;
 
 inline constexpr std::uint64_t kModuleIdSpace = 5;
 inline constexpr std::uint64_t kParameterIdSpace = 141;
 inline constexpr std::uint64_t kJackIdSpace = 19;
-inline constexpr std::uint64_t kProgramIdSpace = 2;
+inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 3;
 
 static_assert(kDeviceParamCapacity >= kParameterIdSpace, "parameter bank too small for ParameterId space");
@@ -241,7 +278,44 @@ inline constexpr std::string_view jack_id_string(JackId id) {
 inline constexpr std::string_view program_id_string(ProgramId id) {
   switch (id) {
     case ProgramId::program_cathedral_1: return "program.cathedral.1";
+    case ProgramId::program_cathedral_2: return "program.cathedral.2";
+    case ProgramId::program_cathedral_3: return "program.cathedral.3";
     case ProgramId::program_magic_1: return "program.magic.1";
+    case ProgramId::program_magic_2: return "program.magic.2";
+    case ProgramId::program_magic_3: return "program.magic.3";
+    case ProgramId::program_time_1: return "program.time.1";
+    case ProgramId::program_time_2: return "program.time.2";
+    case ProgramId::program_time_3: return "program.time.3";
+    case ProgramId::program_vibrotrem_1: return "program.vibrotrem.1";
+    case ProgramId::program_vibrotrem_2: return "program.vibrotrem.2";
+    case ProgramId::program_vibrotrem_3: return "program.vibrotrem.3";
+    case ProgramId::program_filter_1: return "program.filter.1";
+    case ProgramId::program_filter_2: return "program.filter.2";
+    case ProgramId::program_filter_3: return "program.filter.3";
+    case ProgramId::program_vibe_1: return "program.vibe.1";
+    case ProgramId::program_vibe_2: return "program.vibe.2";
+    case ProgramId::program_vibe_3: return "program.vibe.3";
+    case ProgramId::program_pitch_shifter_1: return "program.pitch_shifter.1";
+    case ProgramId::program_pitch_shifter_2: return "program.pitch_shifter.2";
+    case ProgramId::program_pitch_shifter_3: return "program.pitch_shifter.3";
+    case ProgramId::program_infinity_1: return "program.infinity.1";
+    case ProgramId::program_infinity_2: return "program.infinity.2";
+    case ProgramId::program_infinity_3: return "program.infinity.3";
+    case ProgramId::program_string_ringer_1: return "program.string_ringer.1";
+    case ProgramId::program_string_ringer_2: return "program.string_ringer.2";
+    case ProgramId::program_string_ringer_3: return "program.string_ringer.3";
+    case ProgramId::program_syntex_1_1: return "program.syntex_1.1";
+    case ProgramId::program_syntex_1_2: return "program.syntex_1.2";
+    case ProgramId::program_syntex_1_3: return "program.syntex_1.3";
+    case ProgramId::program_digital_1: return "program.digital.1";
+    case ProgramId::program_digital_2: return "program.digital.2";
+    case ProgramId::program_digital_3: return "program.digital.3";
+    case ProgramId::program_generator_1: return "program.generator.1";
+    case ProgramId::program_generator_2: return "program.generator.2";
+    case ProgramId::program_generator_3: return "program.generator.3";
+    case ProgramId::program_orche_1: return "program.orche.1";
+    case ProgramId::program_orche_2: return "program.orche.2";
+    case ProgramId::program_orche_3: return "program.orche.3";
   }
   return "(unknown Program)";
 }
