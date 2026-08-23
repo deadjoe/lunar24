@@ -359,6 +359,57 @@ def main():
     if not has(problems_p, "parameter registry-rogue"):
         raise SystemExit("--require-full did not report a per-ID parameter rogue: %r" % problems_p)
 
+    # 29c. Program identity CONTENT exact-compare (Codex msg f9a4bdae NON-GO): slice #57
+    #      locked only the program stable-id SET; the identity content (id/cartridge/slot/
+    #      name/status/family/selfOscillating/fieldEvidence/evidence ref+lines) drifted past
+    #      NORMAL. These negatives prove each drift mode is caught for its OWN reason.
+    #      (a) renumber: SWAP two programs' ids. Both stay in the unique contiguous id-space, so
+    #          the id-identity gate passes, but the position identity drifted (cathedral.1 now
+    #          carries cathedral.2's id) — exactly the renumber the content gate must catch.
+    cp = copy.deepcopy(spec)
+    reg_prog(cp, "program.cathedral.1")["id"], reg_prog(cp, "program.cathedral.2")["id"] = 1, 0
+    problems, _ = gate.check(cp, manifest)
+    if not has(problems, "id 1 != frozen target 0"):
+        raise SystemExit("program id renumber not flagged: %r" % problems)
+    #      (b) identity-field drift: change the name (and independently the status).
+    cp = copy.deepcopy(spec)
+    reg_prog(cp, "program.cathedral.1")["name"] = "Glow"
+    problems, _ = gate.check(cp, manifest)
+    if not has(problems, "name 'Glow' != frozen target 'Shimmer'"):
+        raise SystemExit("program name drift not flagged: %r" % problems)
+    cp = copy.deepcopy(spec)
+    reg_prog(cp, "program.cathedral.1")["status"] = "provisional"
+    problems, _ = gate.check(cp, manifest)
+    if not has(problems, "status 'provisional' != frozen target 'confirmed'"):
+        raise SystemExit("program status drift not flagged: %r" % problems)
+    #      (c) legal-but-wrong family (reverb -> delay: both in the vocabulary, wrong fact).
+    cp = copy.deepcopy(spec)
+    reg_prog(cp, "program.cathedral.1")["family"] = "delay"
+    problems, _ = gate.check(cp, manifest)
+    if not has(problems, "family 'delay' != frozen target 'reverb'"):
+        raise SystemExit("legal-but-wrong program family not flagged: %r" % problems)
+    #      (d) garbage family: outside the closed vocabulary, rejected even with legal provenance.
+    cp = copy.deepcopy(spec)
+    reg_prog(cp, "program.cathedral.1")["family"] = "banana"
+    problems, _ = gate.check(cp, manifest)
+    if not has(problems, "family 'banana' not in closed family vocabulary"):
+        raise SystemExit("garbage program family not flagged: %r" % problems)
+    #      (e) selfOsc assertion drift: unknown -> no, with a consistent concrete provenance so the
+    #          unknown-enum biconditional does not shadow the identity exact-compare.
+    cp = copy.deepcopy(spec)
+    pso = reg_prog(cp, "program.cathedral.1")
+    pso["selfOscillating"] = "no"
+    pso["fieldEvidence"]["selfOscillating"] = "confirmed"
+    problems, _ = gate.check(cp, manifest)
+    if not has(problems, "selfOscillating 'no' != frozen target 'unknown'"):
+        raise SystemExit("program selfOsc assertion drift not flagged: %r" % problems)
+    #      (f) evidence drift: change the manual line span of the cited program.
+    cp = copy.deepcopy(spec)
+    reg_prog(cp, "program.cathedral.1")["evidence"]["lineEnd"] = 1214
+    problems, _ = gate.check(cp, manifest)
+    if not has(problems, "evidence.lineEnd 1214 != frozen target 1213"):
+        raise SystemExit("program evidence drift not flagged: %r" % problems)
+
     # 30. fixed route invalid kind.
     badkind = copy.deepcopy(manifest)
     badkind["target"]["fixedRoutes"][0]["kind"] = "magic"

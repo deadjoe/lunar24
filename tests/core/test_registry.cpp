@@ -146,6 +146,10 @@ static void program_ranges_within_params() {
     CHECK(p.slot >= 1u && p.slot <= 3u);
     CHECK(!p.stable_id.empty());
     CHECK(!p.name.empty());
+    CHECK(!p.cartridge.empty());               // identity content (Codex f9a4bdae): +cartridge
+    CHECK(valid_status(p.status));             // +status basic validity
+    CHECK(!p.evidence.source.empty());         // +evidence basic validity (cited manual + span)
+    CHECK(p.evidence.lineStart <= p.evidence.lineEnd);
     CHECK(valid_so(p.selfOscillating));
     CHECK(valid_prog_fe(p.fieldEvidence));  // per-field provenance (family, selfOscillating)
     // unknown ⇔ unverified biconditional for both program facts (not just one-way).

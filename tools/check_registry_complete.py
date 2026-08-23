@@ -178,6 +178,9 @@ LEGACY_ROGUE_JACK_CEILING = {"vcf.audio_in"}
 # panel regions: they contribute no expectedPanelControlCount entry to controlRegions[].
 STATE_REGIONS = {"program_params", "keyboard_state"}
 PROGRAM_SLOTS = (1, 2, 3)
+FAMILY_TYPES = {"reverb", "delay", "chorus", "vibrato", "tremolo", "wah", "filter",
+                "phaser", "flanger", "pitch_shift", "pitched_delay", "ring_mod", "synth",
+                "unknown"}
 
 
 def load_json(path):
@@ -1232,6 +1235,47 @@ def check(spec, manifest, require_full=False):
         problems.append(f"implementation program {prog!r} not in independent target (impl ⊄ target)")
     for route in sorted(present_routes - target_norm_routes):
         problems.append(f"implementation route {route!r} not in independent target (impl ⊄ target)")
+
+    # ---- program identity CONTENT exact-compare (Codex msg f9a4bdae NON-GO) ----
+    # Slice #57 (b1b17df) locked only the program stable-id SET; the identity content (family /
+    # selfOscillating / fieldEvidence provenance / cartridge / status / evidence ref+lines) still
+    # drifted past NORMAL. The independent target now freezes id/family/selfOscillating/fieldEvidence
+    # per program, so the gate exact-compares the actual descriptor against the frozen target facts
+    # by stable_id. `id` is position-identity (matches the 0..38 manual order) and is also compared
+    # so a renumber is caught.
+    tprog = {p["stable_id"]: p for p in programs if p.get("stable_id")}
+    aprog = {p["stable_id"]: p for p in reg.programs}
+    # Closed family vocabulary (design/05): a registry program family must be a known DSP family
+    # (or "unknown"); a garbage family is rejected even if it happens to carry legal provenance.
+    for sid, p in aprog.items():
+        fam = p.get("family")
+        if fam not in FAMILY_TYPES:
+            problems.append(f"implementation program {sid!r}: family {fam!r} not in closed "
+                            f"family vocabulary {sorted(FAMILY_TYPES)}")
+        if fam not in FAMILY_TYPES:
+            continue
+        t = tprog.get(sid)
+        if t is None:
+            continue
+        # Each identity field must equal the frozen target fact. `id` is position-identity
+        # (0..38, matches the manual order), so a renumber is caught here; cartridge/slot/
+        # name/status are the remaining immutable identity facts.
+        for f in ("id", "cartridge", "slot", "name", "status", "family", "selfOscillating"):
+            if p.get(f) != t.get(f):
+                problems.append(f"implementation program {sid!r}: {f} {p.get(f)!r} != frozen target "
+                                f"{t.get(f)!r}")
+        tfe = t.get("fieldEvidence") or {}
+        pfe = p.get("fieldEvidence") or {}
+        for f in ("family", "selfOscillating"):
+            if pfe.get(f) != tfe.get(f):
+                problems.append(f"implementation program {sid!r}: fieldEvidence.{f} {pfe.get(f)!r} "
+                                f"!= frozen target {tfe.get(f)!r}")
+        te = t.get("evidence") or {}
+        aev = p.get("evidence") or {}
+        for f in ("ref", "lineStart", "lineEnd"):
+            if aev.get(f) != te.get(f):
+                problems.append(f"implementation program {sid!r}: evidence.{f} {aev.get(f)!r} "
+                                f"!= frozen target {te.get(f)!r}")
 
     # ---- per-CAPABILITY present-but-empty (replaces blanket param+jack) ----
     tmodel = {m["stable_id"]: m for m in modules if m.get("stable_id")}
