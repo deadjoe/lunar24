@@ -241,15 +241,17 @@ def role_expr(p):
 
 def signal_type_expr(j):
     return {"audio": "SignalType::audio", "cv": "SignalType::cv",
-            "gate": "SignalType::gate", "clock": "SignalType::clock"}[j["signalType"]]
+            "gate": "SignalType::gate", "clock": "SignalType::clock",
+            "unknown": "SignalType::unknown"}[j["signalType"]]
 
 
 def polarity_expr(j):
-    return {"unipolar": "Polarity::unipolar", "bipolar": "Polarity::bipolar"}[j["polarity"]]
+    return {"unipolar": "Polarity::unipolar", "bipolar": "Polarity::bipolar",
+            "unknown": "Polarity::unknown"}[j["polarity"]]
 
 
 def coupling_expr(j):
-    return {"ac": "Coupling::ac", "dc": "Coupling::dc"}[j["coupling"]]
+    return {"ac": "Coupling::ac", "dc": "Coupling::dc", "unknown": "Coupling::unknown"}[j["coupling"]]
 
 
 def direction_expr(j):
@@ -273,7 +275,25 @@ def field_evidence_expr(j):
     t = status_from(fe.get("threshold", "unverified"))
     s = status_from(fe.get("saturation", "unverified"))
     xf = status_from(fe.get("transfer", "unverified"))
-    return f"FieldEvidence{{{nr}, {tr}, {t}, {s}, {xf}}}"
+    st = status_from(fe.get("signalType", "unverified"))
+    po = status_from(fe.get("polarity", "unverified"))
+    co = status_from(fe.get("coupling", "unverified"))
+    # Emission order matches the FieldEvidence member order (evidence_policy.h):
+    # nominalRange, toleratedRange, threshold, saturation, transfer, signalType,
+    # polarity, coupling.
+    return f"FieldEvidence{{{nr}, {tr}, {t}, {s}, {xf}, {st}, {po}, {co}}}"
+
+
+def self_oscillating_expr(p):
+    return {"unknown": "SelfOscillating::unknown", "no": "SelfOscillating::no",
+            "yes": "SelfOscillating::yes"}[p.get("selfOscillating", "unknown")]
+
+
+def program_field_evidence_expr(p):
+    fe = p.get("fieldEvidence", {})
+    fam = status_from(fe.get("family", "unverified"))
+    so = status_from(fe.get("selfOscillating", "unverified"))
+    return f"ProgramFieldEvidence{{{fam}, {so}}}"
 
 
 def parameter_field_evidence_expr(p):
@@ -458,11 +478,11 @@ def gen_registry(reg):
     for i, prog in enumerate(reg.programs):
         pb = (sum(len(x["parameters"]) for x in reg.modules) +
               sum(len(p.get("parameters", [])) for p in reg.programs[:i]))
-        out.append("  { ProgramId::%s, %s, %s, %du, %s, %s, %s, %du, %du, %s, %s }," % (
+        out.append("  { ProgramId::%s, %s, %s, %du, %s, %s, %s, %du, %du, %s, %s, %s }," % (
             sanitize(prog["stable_id"]), qs(prog["stable_id"]), qs(prog["cartridge"]), int(prog["slot"]),
-            qs(prog["name"]), qs(prog["family"]),
-            "true" if prog.get("selfOscillating") else "false",
-            pb, len(prog.get("parameters", [])), evidence_expr(prog, src), status_expr(prog)))
+            qs(prog["name"]), qs(prog["family"]), self_oscillating_expr(prog),
+            pb, len(prog.get("parameters", [])), evidence_expr(prog, src), status_expr(prog),
+            program_field_evidence_expr(prog)))
     out.append("};\n")
 
     out.append("}  // namespace lunar24::registry")

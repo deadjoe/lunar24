@@ -88,6 +88,21 @@ def tgt_param(manifest, sid):
     return None
 
 
+def reg_jack(spec, sid):
+    for m in spec["modules"]:
+        for j in m.get("jacks", []):
+            if j["stable_id"] == sid:
+                return j
+    return None
+
+
+def reg_prog(spec, sid):
+    for p in spec.get("programs", []):
+        if p["stable_id"] == sid:
+            return p
+    return None
+
+
 def main():
     spec = load(SPEC)
     manifest = load(MANIFEST)
@@ -1260,6 +1275,37 @@ def main():
     problems, _ = gate.check(spec, v_pres)
     if not has(problems, "duplicate label"):
         raise SystemExit("Root 2: selector duplicate label not flagged: %r" % problems)
+
+    # (w) Codex 2026-08-23 unknown-enum contract — jack: a signal-class value of `unknown` that is
+    #     given a CONFIRMED/known provenance is a contradiction (an unknown is never a fact). The gate
+    #     must reject it for its intended reason, not by accident.
+    w_bad = copy.deepcopy(spec)
+    w_jack = reg_jack(w_bad, "vco_a.cv_in")
+    w_jack["signalType"] = "unknown"
+    w_jack["fieldEvidence"]["signalType"] = "confirmed"
+    problems, _ = gate.check(w_bad, manifest)
+    if not has(problems, "signalType=unknown MUST carry fieldEvidence.signalType=unverified"):
+        raise SystemExit("unknown-enum jack contract not enforced (unknown+confirmed passed): %r"
+                         % problems)
+
+    # (x) Codex 2026-08-23 unknown-enum contract — program: selfOscillating=unknown must not carry a
+    #     confirmed provenance either.
+    x_bad = copy.deepcopy(spec)
+    x_prog = reg_prog(x_bad, "program.cathedral.1")
+    x_prog["selfOscillating"] = "unknown"
+    x_prog["fieldEvidence"]["selfOscillating"] = "confirmed"
+    problems, _ = gate.check(x_bad, manifest)
+    if not has(problems, "selfOscillating=unknown MUST carry fieldEvidence.selfOscillating=unverified"):
+        raise SystemExit("unknown-enum program contract not enforced (selfOscillating unknown+confirmed "
+                         "passed): %r" % problems)
+
+    # (y) unknown-enum value not in the closed set (typo / invented type) must be rejected.
+    y_bad = copy.deepcopy(spec)
+    y_jack = reg_jack(y_bad, "vco_a.cv_in")
+    y_jack["coupling"] = "bipolarish"
+    problems, _ = gate.check(y_bad, manifest)
+    if not has(problems, "coupling"):
+        raise SystemExit("jack coupling not validated against the closed enum set: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "

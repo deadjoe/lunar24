@@ -103,7 +103,7 @@ struct JackDescriptor {
   Coupling coupling;
   EvidenceRef evidence;
   EvidenceStatus status;
-  FieldEvidence fieldEvidence;  // per-field provenance (nominal/tolerated range, threshold, saturation, transfer)
+  FieldEvidence fieldEvidence;  // per-field provenance (range/threshold/saturation/transfer/signal class)
 };
 
 // A hidden signal edge in the patching graph. Does not consume user-cable
@@ -129,12 +129,13 @@ struct ProgramDescriptor {
   std::string_view cartridge;
   std::uint32_t slot;           // 1..3
   std::string_view name;
-  std::string_view family;      // reverb / pitched_delay / ...
-  bool selfOscillating;         // program that sounds without an input
-  std::uint32_t paramBegin;     // index into kParameters[]
+  std::string_view family;           // effect family (reverb / pitched_delay / ...); "unknown" if un-evidenced
+  SelfOscillating selfOscillating;   // three-state assertion (not evidenced => unknown, NOT a silent no)
+  std::uint32_t paramBegin;          // index into kParameters[]
   std::uint32_t paramCount;
   EvidenceRef evidence;
   EvidenceStatus status;
+  ProgramFieldEvidence fieldEvidence;  // per-field provenance (family, selfOscillating)
 };
 
 }  // namespace lunar24::core

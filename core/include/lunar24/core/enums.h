@@ -32,23 +32,39 @@ enum class EvidenceStatus : std::uint8_t {
 };
 
 // Recommended signal use of a jack (advisory; cross-type patching is allowed).
+// `unknown` is appended (never reorders existing values): it is the honest record
+// for a jack whose recommended signal use is not evidenced by the manual/panel —
+// and per the unknown-enum contract (Codex 2026-08-23) an `unknown` value MUST carry
+// `unverified` field evidence. Signal class is NEVER inferred from a stable-id suffix.
 enum class SignalType : std::uint8_t {
   audio = 0,
   cv = 1,
   gate = 2,
   clock = 3,
+  unknown = 4,  // not evidenced; field evidence must be unverified
 };
 
-// Electrical polarity of a jack.
+// Electrical polarity of a jack. `unknown` is appended, same contract as above.
 enum class Polarity : std::uint8_t {
   unipolar = 0,  // 0 … +V
   bipolar = 1,   // -V … +V
+  unknown = 2,   // not evidenced; field evidence must be unverified
 };
 
-// AC / DC coupling of a jack.
+// AC / DC coupling of a jack. `unknown` is appended, same contract as above.
 enum class Coupling : std::uint8_t {
   ac = 0,
   dc = 1,
+  unknown = 2,  // not evidenced; field evidence must be unverified
+};
+
+// Whether a program asserts an output even with no input signal. Append-only
+// three-state (unknown/no/yes) so "not yet evidenced" is distinct from a measured
+// "no" — a program without evidence is `unknown`, never silently `no`.
+enum class SelfOscillating : std::uint8_t {
+  unknown = 0,  // not evidenced
+  no = 1,       // evidenced to NOT self-oscillate
+  yes = 2,      // evidenced to self-oscillate
 };
 
 // Jack signal direction on the physical panel.

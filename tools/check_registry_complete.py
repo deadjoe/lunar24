@@ -1433,6 +1433,50 @@ def check(spec, manifest, require_full=False):
                 elif fe[fk] not in FE_STATUS:
                     problems.append(f"parameter {p['stable_id']}: fieldEvidence.{fk} bad status "
                                     f"{fe[fk]!r}")
+    # ---- unknown-enum / evidence contract (Codex 2026-08-23) ---------------------
+    # Signal class (signalType/polarity/coupling) and program family/selfOscillating are
+    # their own audited facts. An `unknown` value MUST carry `unverified` provenance (an
+    # unknown can't be a confirmed/provisional fact). Unlike a selector parameter — whose
+    # CONSUMED value must be documented — a jack keeps a best-current concrete value with
+    # unverified provenance when the manual is silent; the value is a guess, not a fact.
+    JACK_FE_SIGNAL = ("signalType", "polarity", "coupling")
+    SIG_TYPES = {"audio", "cv", "gate", "clock", "unknown"}
+    POL_TYPES = {"unipolar", "bipolar", "unknown"}
+    COUP_TYPES = {"ac", "dc", "unknown"}
+    for j in reg.jacks:
+        fe = j.get("fieldEvidence")
+        if not isinstance(fe, dict):
+            problems.append(f"jack {j['stable_id']}: missing fieldEvidence audit object")
+            continue
+        for fk, allowed in ((JACK_FE_SIGNAL[0], SIG_TYPES),
+                            (JACK_FE_SIGNAL[1], POL_TYPES),
+                            (JACK_FE_SIGNAL[2], COUP_TYPES)):
+            if j.get(fk) not in allowed:
+                problems.append(f"jack {j['stable_id']}: {fk} {j.get(fk)!r} not in {sorted(allowed)}")
+            st = fe.get(fk)
+            if st not in FE_STATUS:
+                problems.append(f"jack {j['stable_id']}: fieldEvidence.{fk} bad status {st!r}")
+            elif j.get(fk) == "unknown" and st != "unverified":
+                problems.append(
+                    f"jack {j['stable_id']}: {fk}=unknown MUST carry fieldEvidence.{fk}=unverified "
+                    f"(not {st!r}); an unknown value is never a confirmed/provisional fact")
+    SO_TYPES = {"unknown", "no", "yes"}
+    for prog in reg.programs:
+        pfe = prog.get("fieldEvidence")
+        if not isinstance(pfe, dict):
+            problems.append(f"program {prog['stable_id']}: missing fieldEvidence audit object")
+            continue
+        if prog.get("family") == "unknown" and pfe.get("family") != "unverified":
+            problems.append(
+                f"program {prog['stable_id']}: family=unknown MUST carry fieldEvidence.family="
+                f"unverified (not {pfe.get('family')!r})")
+        if prog.get("selfOscillating") not in SO_TYPES:
+            problems.append(f"program {prog['stable_id']}: selfOscillating "
+                            f"{prog.get('selfOscillating')!r} not in {sorted(SO_TYPES)}")
+        if prog.get("selfOscillating") == "unknown" and pfe.get("selfOscillating") != "unverified":
+            problems.append(
+                f"program {prog['stable_id']}: selfOscillating=unknown MUST carry fieldEvidence."
+                f"selfOscillating=unverified (not {pfe.get('selfOscillating')!r})")
     sz = {}
     for p in parameters:
         sz[p.get("shape", "scalar")] = sz.get(p.get("shape", "scalar"), 0) + 1

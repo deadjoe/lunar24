@@ -49,13 +49,38 @@ static bool valid_status(core::EvidenceStatus s) {
 static bool valid_fe(const core::FieldEvidence& fe) {
   return valid_status(fe.nominalRange) && valid_status(fe.toleratedRange) &&
          valid_status(fe.threshold) && valid_status(fe.saturation) &&
-         valid_status(fe.transfer);
+         valid_status(fe.transfer) && valid_status(fe.signalType) &&
+         valid_status(fe.polarity) && valid_status(fe.coupling);
 }
 
 static bool valid_pfe(const core::ParameterFieldEvidence& pfe) {
   return valid_status(pfe.range) && valid_status(pfe.unit) &&
          valid_status(pfe.initial) && valid_status(pfe.step) &&
          valid_status(pfe.smoothing) && valid_status(pfe.persistence);
+}
+
+static bool valid_so(core::SelfOscillating s) {
+  return s == core::SelfOscillating::unknown || s == core::SelfOscillating::no ||
+         s == core::SelfOscillating::yes;
+}
+
+static bool valid_prog_fe(const core::ProgramFieldEvidence& pfe) {
+  return valid_status(pfe.family) && valid_status(pfe.selfOscillating);
+}
+
+// unknown-enum contract: an enum value of `unknown` MUST carry unverified field
+// provenance (an unknown is never a confirmed/provisional fact).
+static bool unknown_implies_unverified(core::SignalType v, core::EvidenceStatus ev) {
+  return v != core::SignalType::unknown || ev == core::EvidenceStatus::unverified;
+}
+static bool unknown_implies_unverified(core::Polarity v, core::EvidenceStatus ev) {
+  return v != core::Polarity::unknown || ev == core::EvidenceStatus::unverified;
+}
+static bool unknown_implies_unverified(core::Coupling v, core::EvidenceStatus ev) {
+  return v != core::Coupling::unknown || ev == core::EvidenceStatus::unverified;
+}
+static bool unknown_implies_unverified(core::SelfOscillating v, core::EvidenceStatus ev) {
+  return v != core::SelfOscillating::unknown || ev == core::EvidenceStatus::unverified;
 }
 
 static void frozen_counts() {
@@ -106,6 +131,9 @@ static void program_ranges_within_params() {
     CHECK(p.slot >= 1u && p.slot <= 3u);
     CHECK(!p.stable_id.empty());
     CHECK(!p.name.empty());
+    CHECK(valid_so(p.selfOscillating));
+    CHECK(valid_prog_fe(p.fieldEvidence));  // per-field provenance (family, selfOscillating)
+    CHECK(unknown_implies_unverified(p.selfOscillating, p.fieldEvidence.selfOscillating));
     next += p.paramCount;
   }
   CHECK(next == core::kParameterCount);
@@ -172,6 +200,11 @@ static void jacks_are_valid() {
     CHECK(valid_status(j.status));
     CHECK(valid_fe(j.fieldEvidence));       // per-field provenance split (07 §3, §10)
     CHECK(!j.evidence.source.empty());
+    // unknown-enum contract (Codex 2026-08-23): a signal-class enum value of
+    // `unknown` must carry unverified field provenance — never confirmed/provisional.
+    CHECK(unknown_implies_unverified(j.signalType, j.fieldEvidence.signalType));
+    CHECK(unknown_implies_unverified(j.polarity, j.fieldEvidence.polarity));
+    CHECK(unknown_implies_unverified(j.coupling, j.fieldEvidence.coupling));
   }
 }
 

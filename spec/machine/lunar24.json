@@ -230,10 +230,10 @@
           "name": "CV",
           "direction": "input",
           "signalType": "cv",
-          "polarity": "bipolar",
+          "polarity": "unknown",
           "nominalMin": -5.0,
           "nominalMax": 5.0,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 398
           },
@@ -243,7 +243,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         },
         {
@@ -257,7 +260,7 @@
           "nominalMax": 8.0,
           "modulationDepthPerVolt": 1.0,
           "transfer": "exponential",
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 398
           },
@@ -267,7 +270,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "confirmed"
+            "transfer": "confirmed",
+            "signalType": "confirmed",
+            "polarity": "provisional",
+            "coupling": "unverified"
           }
         },
         {
@@ -276,10 +282,10 @@
           "name": "FM",
           "direction": "input",
           "signalType": "cv",
-          "polarity": "bipolar",
+          "polarity": "unknown",
           "nominalMin": -5.0,
           "nominalMax": 5.0,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 387
           },
@@ -289,7 +295,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         },
         {
@@ -298,12 +307,12 @@
           "name": "Sync (VCO A only)",
           "direction": "input",
           "signalType": "gate",
-          "polarity": "unipolar",
+          "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 10.0,
           "gateThresholdVolts": 5.0,
           "hysteresisVolts": 0.2,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 411
           },
@@ -313,7 +322,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         },
         {
@@ -322,10 +334,10 @@
           "name": "VCA CV",
           "direction": "input",
           "signalType": "cv",
-          "polarity": "unipolar",
+          "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 8.0,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 576
           },
@@ -335,7 +347,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         },
         {
@@ -344,10 +359,10 @@
           "name": "VCO dry out",
           "direction": "output",
           "signalType": "audio",
-          "polarity": "bipolar",
+          "polarity": "unknown",
           "nominalMin": -1.0,
           "nominalMax": 1.0,
-          "coupling": "ac",
+          "coupling": "unknown",
           "evidence": {
             "line": 153
           },
@@ -357,7 +372,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         }
       ]
@@ -477,10 +495,10 @@
           "name": "CV",
           "direction": "input",
           "signalType": "cv",
-          "polarity": "bipolar",
+          "polarity": "unknown",
           "nominalMin": -5.0,
           "nominalMax": 5.0,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 398
           },
@@ -490,7 +508,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         },
         {
@@ -504,7 +525,7 @@
           "nominalMax": 8.0,
           "modulationDepthPerVolt": 1.0,
           "transfer": "exponential",
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 398
           },
@@ -514,7 +535,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "confirmed"
+            "transfer": "confirmed",
+            "signalType": "confirmed",
+            "polarity": "provisional",
+            "coupling": "unverified"
           }
         },
         {
@@ -526,7 +550,7 @@
           "polarity": "bipolar",
           "nominalMin": -5.0,
           "nominalMax": 5.0,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 412
           },
@@ -536,7 +560,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "unverified",
+            "polarity": "confirmed",
+            "coupling": "unverified"
           }
         },
         {
@@ -545,10 +572,10 @@
           "name": "VCO dry out",
           "direction": "output",
           "signalType": "audio",
-          "polarity": "bipolar",
+          "polarity": "unknown",
           "nominalMin": -1.0,
           "nominalMax": 1.0,
-          "coupling": "ac",
+          "coupling": "unknown",
           "evidence": {
             "line": 153
           },
@@ -558,7 +585,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         }
       ]
@@ -784,10 +814,10 @@
           "name": "CV L",
           "direction": "input",
           "signalType": "cv",
-          "polarity": "bipolar",
+          "polarity": "unknown",
           "nominalMin": -5.0,
           "nominalMax": 5.0,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 1142
           },
@@ -797,7 +827,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         },
         {
@@ -806,10 +839,10 @@
           "name": "CV R",
           "direction": "input",
           "signalType": "cv",
-          "polarity": "bipolar",
+          "polarity": "unknown",
           "nominalMin": -5.0,
           "nominalMax": 5.0,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 1142
           },
@@ -819,7 +852,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
           }
         }
       ]
@@ -1875,7 +1911,7 @@
           "nominalMax": 8.0,
           "modulationDepthPerVolt": 1.0,
           "transfer": "exponential",
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 573
           },
@@ -1885,7 +1921,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "confirmed"
+            "transfer": "confirmed",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
           }
         },
         {
@@ -1899,7 +1938,7 @@
           "nominalMax": 10.0,
           "gateThresholdVolts": 0.5,
           "hysteresisVolts": 0.1,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 576
           },
@@ -1909,7 +1948,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
           }
         },
         {
@@ -1923,7 +1965,7 @@
           "nominalMax": 10.0,
           "gateThresholdVolts": 0.5,
           "hysteresisVolts": 0.1,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 580
           },
@@ -1933,7 +1975,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
           }
         },
         {
@@ -1947,7 +1992,7 @@
           "nominalMax": 5.0,
           "gateThresholdVolts": 2.5,
           "hysteresisVolts": 0.2,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 568
           },
@@ -1957,7 +2002,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
           }
         }
       ]
@@ -2036,7 +2084,7 @@
           "nominalMax": 10.0,
           "gateThresholdVolts": 0.5,
           "hysteresisVolts": 0.1,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 576
           },
@@ -2046,7 +2094,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "provisional",
+            "coupling": "unverified"
           }
         },
         {
@@ -2058,7 +2109,7 @@
           "polarity": "unipolar",
           "nominalMin": 0.0,
           "nominalMax": 8.0,
-          "coupling": "dc",
+          "coupling": "unknown",
           "evidence": {
             "line": 398
           },
@@ -2068,7 +2119,10 @@
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
-            "transfer": "unverified"
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
           }
         }
       ]
@@ -2117,7 +2171,7 @@
       "slot": 1,
       "name": "Shimmer",
       "family": "reverb",
-      "selfOscillating": false,
+      "selfOscillating": "unknown",
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 1207,
@@ -2200,7 +2254,11 @@
             "range": "unverified"
           }
         }
-      ]
+      ],
+      "fieldEvidence": {
+        "family": "provisional",
+        "selfOscillating": "unverified"
+      }
     },
     {
       "id": 1,
@@ -2209,7 +2267,7 @@
       "slot": 1,
       "name": "Pitch delay",
       "family": "pitched_delay",
-      "selfOscillating": false,
+      "selfOscillating": "unknown",
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 1210,
@@ -2292,7 +2350,11 @@
             "range": "unverified"
           }
         }
-      ]
+      ],
+      "fieldEvidence": {
+        "family": "provisional",
+        "selfOscillating": "unverified"
+      }
     }
   ]
 }
