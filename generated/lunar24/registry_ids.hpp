@@ -318,7 +318,16 @@ enum class ParameterId : std::uint32_t {
     program_vibe_2_z = 345,
     program_vibe_3_x = 346,
     program_vibe_3_y = 347,
-    program_vibe_3_z = 348
+    program_vibe_3_z = 348,
+    program_pitch_shifter_1_x = 349,
+    program_pitch_shifter_1_y = 350,
+    program_pitch_shifter_1_z = 351,
+    program_pitch_shifter_2_x = 352,
+    program_pitch_shifter_2_y = 353,
+    program_pitch_shifter_2_z = 354,
+    program_pitch_shifter_3_x = 355,
+    program_pitch_shifter_3_y = 356,
+    program_pitch_shifter_3_z = 357
 };
 
 enum class JackId : std::uint32_t {
@@ -440,13 +449,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 282;
+inline constexpr std::uint32_t kParameterCount = 291;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 349;
+inline constexpr std::uint64_t kParameterIdSpace = 358;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -766,6 +775,15 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_vibe_3_x: return "program.vibe.3.x";
     case ParameterId::program_vibe_3_y: return "program.vibe.3.y";
     case ParameterId::program_vibe_3_z: return "program.vibe.3.z";
+    case ParameterId::program_pitch_shifter_1_x: return "program.pitch_shifter.1.x";
+    case ParameterId::program_pitch_shifter_1_y: return "program.pitch_shifter.1.y";
+    case ParameterId::program_pitch_shifter_1_z: return "program.pitch_shifter.1.z";
+    case ParameterId::program_pitch_shifter_2_x: return "program.pitch_shifter.2.x";
+    case ParameterId::program_pitch_shifter_2_y: return "program.pitch_shifter.2.y";
+    case ParameterId::program_pitch_shifter_2_z: return "program.pitch_shifter.2.z";
+    case ParameterId::program_pitch_shifter_3_x: return "program.pitch_shifter.3.x";
+    case ParameterId::program_pitch_shifter_3_y: return "program.pitch_shifter.3.y";
+    case ParameterId::program_pitch_shifter_3_z: return "program.pitch_shifter.3.z";
   }
   return "(unknown Parameter)";
 }

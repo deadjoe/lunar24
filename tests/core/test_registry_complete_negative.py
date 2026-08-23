@@ -4062,10 +4062,10 @@ def main():
     if not has(problems, "MISSING landed descriptor param 'program.cathedral.3.z'"):
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
-    # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3 and vibe.1/.2/.3
-    #      must NOT be re-openable as an honest gap: with those programs' params landed, the
-    #      --require-full residual must exclude every one of those ids. It widens exactly across the
-    #      12 keyboard complex + 63 other program XYZ params (75 total).
+    # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3, vibe.1/.2/.3
+    #      and pitch_shifter.1/.2/.3 must NOT be re-openable as an honest gap: with those programs'
+    #      params landed, the --require-full residual must exclude every one of those ids. It widens
+    #      exactly across the 12 keyboard complex + 54 other program XYZ params (66 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4075,12 +4075,13 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 75:
-        raise SystemExit("residual honest-gap total %d != 75 (12 keyboard complex + 63 program XYZ); "
-                         "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + filter.1/.2/.3 "
-                         "+ vibe.1/.2/.3 must have landed and closed exactly 48" % len(_gap_ids))
-    if len(_kb) != 12 or len(_prog) != 63:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/63: %r" % (len(_kb), len(_prog),
+    if len(_gap_ids) != 66:
+        raise SystemExit("residual honest-gap total %d != 66 (12 keyboard complex + 54 program XYZ); "
+                         "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + "
+                         "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 must have landed and "
+                         "closed exactly 57" % len(_gap_ids))
+    if len(_kb) != 12 or len(_prog) != 54:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/54: %r" % (len(_kb), len(_prog),
                                                                                 _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
@@ -4097,12 +4098,15 @@ def main():
                  "program.filter.3.x", "program.filter.3.y", "program.filter.3.z",
                  "program.vibe.1.x", "program.vibe.1.y", "program.vibe.1.z",
                  "program.vibe.2.x", "program.vibe.2.y", "program.vibe.2.z",
-                 "program.vibe.3.x", "program.vibe.3.y", "program.vibe.3.z"):
+                 "program.vibe.3.x", "program.vibe.3.y", "program.vibe.3.z",
+                 "program.pitch_shifter.1.x", "program.pitch_shifter.1.y", "program.pitch_shifter.1.z",
+                 "program.pitch_shifter.2.x", "program.pitch_shifter.2.y", "program.pitch_shifter.2.z",
+                 "program.pitch_shifter.3.x", "program.pitch_shifter.3.y", "program.pitch_shifter.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 63 "
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 54 "
                              "other program XYZ gaps are preserved, NOT cathedral.2/3, magic.2/3, "
-                             "time.1/2/3, vibrotrem.1/2/3, filter.1/2/3 or vibe.1/2/3): %r"
-                             % (_sid, _gap_ids))
+                             "time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, vibe.1/2/3 or "
+                             "pitch_shifter.1/2/3): %r" % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
@@ -4511,6 +4515,108 @@ def main():
     problems, _ = gate.check(mz_bad, manifest)
     if not has(problems, "MISSING landed descriptor param 'program.vibe.3.z'"):
         raise SystemExit("vibe.3.z terminator delete (family last) not enforced: %r" % problems)
+
+    # (na)-(ni) PITCH SHIFTER Program 1/2/3 X/Y/Z descriptor lock (Codex msg 7071e673). The nine
+    #      program pitch_shifter.1/.2/.3 x/y/z params (ids 349-357) are landed descriptor facts locked
+    #      by the exact-compare — id renumber, owner / cross-owner leak, per-line evidence drift and a
+    #      fieldEvidence overclaim must all fail normal. ROLE is also locked (a program x/y/z param's
+    #      role must equal its stable-id .x/.y/.z suffix), ALL three terminator shapes across the whole
+    #      PITCH SHIFTER family (first pitch_shifter.1.x / middle pitch_shifter.2.y / last
+    #      pitch_shifter.3.z) are a landed/mustComplete drop, and Direct is locked as a CONTINUOUS
+    #      placeholder — it must NOT be re-shaped into a selector. KEY DIFF: no octave/pitch/direct/
+    #      voice-mix semitone, ratio or level unit/range/default is asserted — the labels are NOT used
+    #      to derive values.
+
+    # (na) id renumber: pitch_shifter.1.x is id 349; renumbering (349 -> 999) must fail.
+    na_bad = copy.deepcopy(spec)
+    reg_param(na_bad, "program.pitch_shifter.1.x")["id"] = 999
+    problems, _ = gate.check(na_bad, manifest)
+    if not has(problems, "implementation param 'program.pitch_shifter.1.x'"):
+        raise SystemExit("pitch_shifter.1.x param id renumber (349 -> 999) not enforced: %r" % problems)
+
+    # (nb) owner / cross-owner leak: pitch_shifter.1.x must stay owned by program.pitch_shifter.1;
+    #      moving it under program.pitch_shifter.2's array makes the generated owner
+    #      program.pitch_shifter.2, which the landed fact rejects.
+    nb_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in nb_bad["programs"] if pr.get("stable_id") == "program.pitch_shifter.1")
+    _p2 = next(pr for pr in nb_bad["programs"] if pr.get("stable_id") == "program.pitch_shifter.2")
+    _x = [p for p in _p1["parameters"] if p["stable_id"] == "program.pitch_shifter.1.x"][0]
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.pitch_shifter.1.x"]
+    _p2.setdefault("parameters", []).append(_x)
+    problems, _ = gate.check(nb_bad, manifest)
+    if not has(problems, "implementation param 'program.pitch_shifter.1.x'"):
+        raise SystemExit("pitch_shifter.1.x cross-owner leak (-> program.pitch_shifter.2) not "
+                         "enforced: %r" % problems)
+
+    # (nc) ROLE drift: pitch_shifter.1.x being role y (valid but wrong position) must fail (role gate).
+    nc_bad = copy.deepcopy(spec)
+    reg_param(nc_bad, "program.pitch_shifter.1.x")["role"] = "y"
+    problems, _ = gate.check(nc_bad, manifest)
+    if not has(problems, "stable-id position"):
+        raise SystemExit("pitch_shifter.1.x role drift (x -> y) not enforced by the role gate: %r"
+                         % problems)
+
+    # (nd) per-line descriptorEvidence drift: pitch_shifter.1.x cites L1260; moving it (1260 -> 1261)
+    #      is a target drift and must fail.
+    nd_bad = copy.deepcopy(spec)
+    reg_param(nd_bad, "program.pitch_shifter.1.x")["evidence"]["line"] = 1261
+    problems, _ = gate.check(nd_bad, manifest)
+    if not has(problems, "implementation param 'program.pitch_shifter.1.x'"):
+        raise SystemExit("pitch_shifter.1.x descriptorEvidence.line drift (1260 -> 1261) not "
+                         "enforced: %r" % problems)
+
+    # (ne) fieldEvidence overclaim: a placeholder range must not be elevated to confirmed (the KEY
+    #      DIFF — no physical octave/pitch/direct/voice-mix unit/range/default is asserted here).
+    ne_bad = copy.deepcopy(spec)
+    reg_param(ne_bad, "program.pitch_shifter.1.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(ne_bad, manifest)
+    if not has(problems, "implementation param 'program.pitch_shifter.1.x'"):
+        raise SystemExit("pitch_shifter.1.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+
+    # (nf) FIRST terminator delete across the family: dropping pitch_shifter.1.x is a landed/
+    #      mustComplete drop.
+    nf_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in nf_bad["programs"] if pr.get("stable_id") == "program.pitch_shifter.1")
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.pitch_shifter.1.x"]
+    problems, _ = gate.check(nf_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.pitch_shifter.1.x'"):
+        raise SystemExit("pitch_shifter.1.x terminator delete (family first) not enforced: %r"
+                         % problems)
+
+    # (ng) MIDDLE terminator delete across the family: dropping pitch_shifter.2.y is likewise a
+    #      landed/mustComplete drop.
+    ng_bad = copy.deepcopy(spec)
+    _p2 = next(pr for pr in ng_bad["programs"] if pr.get("stable_id") == "program.pitch_shifter.2")
+    _p2["parameters"] = [p for p in _p2["parameters"] if p["stable_id"] != "program.pitch_shifter.2.y"]
+    problems, _ = gate.check(ng_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.pitch_shifter.2.y'"):
+        raise SystemExit("pitch_shifter.2.y terminator delete (family middle) not enforced: %r"
+                         % problems)
+
+    # (nh) LAST terminator delete across the family: dropping pitch_shifter.3.z is likewise a landed/
+    #      mustComplete drop.
+    nh_bad = copy.deepcopy(spec)
+    _p3 = next(pr for pr in nh_bad["programs"] if pr.get("stable_id") == "program.pitch_shifter.3")
+    _p3["parameters"] = [p for p in _p3["parameters"] if p["stable_id"] != "program.pitch_shifter.3.z"]
+    problems, _ = gate.check(nh_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.pitch_shifter.3.z'"):
+        raise SystemExit("pitch_shifter.3.z terminator delete (family last) not enforced: %r"
+                         % problems)
+
+    # (ni) Direct must NOT become a selector: Direct (program.pitch_shifter.1.z) is a CONTINUOUS
+    #      software-normalized 0..1 placeholder, not a binary selector. Shaping it into a selector
+    #      (giving it positions) must fail — the landed fact is kind=continuous, and the gate rejects
+    #      registry selector-positions on a non-selector-toggle landed param.
+    ni_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in ni_bad["programs"] if pr.get("stable_id") == "program.pitch_shifter.1")
+    for _p in _p1["parameters"]:
+        if _p["stable_id"] == "program.pitch_shifter.1.z":
+            _p["positions"] = ["Direct", "Wet"]
+    problems, _ = gate.check(ni_bad, manifest)
+    if not has(problems, "registry carries selector positions"):
+        raise SystemExit("Direct re-shaped as a selector (positions on a continuous landed param) not "
+                         "enforced: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason;baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "

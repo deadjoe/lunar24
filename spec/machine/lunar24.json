@@ -9767,7 +9767,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 349,
+          "stable_id": "program.pitch_shifter.1.x",
+          "role": "x",
+          "name": "Octave down",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1260
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 350,
+          "stable_id": "program.pitch_shifter.1.y",
+          "role": "y",
+          "name": "Octave up",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1261
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 351,
+          "stable_id": "program.pitch_shifter.1.z",
+          "role": "z",
+          "name": "Direct",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1262
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 19,
@@ -9786,7 +9863,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 352,
+          "stable_id": "program.pitch_shifter.2.x",
+          "role": "x",
+          "name": "Octave down",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1265
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 353,
+          "stable_id": "program.pitch_shifter.2.y",
+          "role": "y",
+          "name": "Octave up",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1266
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 354,
+          "stable_id": "program.pitch_shifter.2.z",
+          "role": "z",
+          "name": "Direct",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1268
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 20,
@@ -9805,7 +9959,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 355,
+          "stable_id": "program.pitch_shifter.3.x",
+          "role": "x",
+          "name": "Pitch 1",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1272
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 356,
+          "stable_id": "program.pitch_shifter.3.y",
+          "role": "y",
+          "name": "Pitch 2",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1273
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 357,
+          "stable_id": "program.pitch_shifter.3.z",
+          "role": "z",
+          "name": "Voice mix",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1276
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 21,

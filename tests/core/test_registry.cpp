@@ -113,7 +113,17 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 282u); // Phase B VIBE Programs 1/2/3 X/Y/Z slice (Codex msg
+  CHECK_EQ(core::kParameterCount, 291u); // Phase B PITCH SHIFTER Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 7071e673): +9 program params (pitch_shifter.1/.2/.3 x/y/z
+                                         // octave-down/octave-up/direct + octave-down/octave-up/
+                                         // direct + pitch 1/pitch 2/voice mix, ids 349-357, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no octave/pitch/direct/
+                                         // voice-mix semitone, ratio or level values derived from
+                                         // the Octave/Pitch/Direct/Voice-mix labels; Direct stays a
+                                         // CONTINUOUS 0..1 placeholder, NOT a binary selector).
+                                         // Prior: Phase B VIBE Programs 1/2/3 X/Y/Z slice (Codex msg
                                          // 1176d4f3): +9 program params (vibe.1/.2/.3 x/y/z
                                          // depth/rate/reverb + depth/rate/reverb +
                                          // resonance/rate/mod depth, ids 340-348, neutral
@@ -179,8 +189,8 @@ static void frozen_counts() {
                                          // (Codex msg 28e00d92) +19 (ids 201-219), dual-effector
                                          // slice +8 (ids 193-200), voice-mixer slice +20
                                          // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
-                                         // carry 228, programs 18 (54 program params). Left as honest
-                                         // gaps the 12 keyboard complex params and the 63 other
+                                         // carry 228, programs 21 (63 program params). Left as honest
+                                         // gaps the 12 keyboard complex params and the 54 other
                                          // program X/Y/Z params
                                          // (seq_steps, quantise_scale_editor,
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,
