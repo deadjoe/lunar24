@@ -1,0 +1,13 @@
+{
+  "meta": { "machine": "Lunar 24", "schemaVersion": "0.1", "registryVersion": "0.1",
+            "source": "fixture", "expectedError": "0xFFFFFFFF" },
+  "modules": [
+    {
+      "id": 4294967296, "stable_id": "vco_m", "name": "VCO M", "category": "source", "description": "",
+      "evidence": { "ref": "fixture", "lineStart": 1, "lineEnd": 1 }, "status": "confirmed",
+      "parameters": [], "jacks": []
+    }
+  ],
+  "normalizedRoutes": [],
+  "programs": []
+}

@@ -1,0 +1,23 @@
+{
+  "meta": { "machine": "Lunar 24", "schemaVersion": "0.1", "registryVersion": "0.1",
+            "source": "fixture", "expectedError": "module numeric id 0 is reused" },
+  "modules": [
+    {
+      "id": 0, "stable_id": "vco_m", "name": "VCO M", "category": "source", "description": "",
+      "evidence": { "ref": "fixture", "lineStart": 1, "lineEnd": 1 }, "status": "confirmed",
+      "parameters": [
+        { "id": 0, "stable_id": "vco_m.p", "name": "p", "unit": "norm", "min": 0, "max": 1,
+          "default": 0, "persistence": "deviceState", "smoothing": "seconds",
+          "evidence": { "line": 1 }, "status": "confirmed" }
+      ],
+      "jacks": []
+    },
+    {
+      "id": 0, "stable_id": "vco_m2", "name": "VCO M dup", "category": "source", "description": "",
+      "evidence": { "ref": "fixture", "lineStart": 1, "lineEnd": 1 }, "status": "confirmed",
+      "parameters": [], "jacks": []
+    }
+  ],
+  "normalizedRoutes": [],
+  "programs": []
+}

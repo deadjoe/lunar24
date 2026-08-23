@@ -1,0 +1,18 @@
+{
+  "meta": { "machine": "Lunar 24", "schemaVersion": "0.1", "registryVersion": "0.1",
+            "source": "fixture", "expectedError": "bad/absent status" },
+  "modules": [
+    {
+      "id": 0, "stable_id": "vco_m", "name": "VCO M", "category": "source", "description": "",
+      "evidence": { "ref": "fixture", "lineStart": 1, "lineEnd": 1 }, "status": "confirmed",
+      "parameters": [
+        { "id": 0, "stable_id": "vco_m.p", "name": "p", "unit": "norm", "min": 0, "max": 1,
+          "default": 0, "persistence": "deviceState", "smoothing": "seconds",
+          "evidence": { "line": 1 }, "status": "maybe" }
+      ],
+      "jacks": []
+    }
+  ],
+  "normalizedRoutes": [],
+  "programs": []
+}

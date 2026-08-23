@@ -1,18 +1,24 @@
 # Lunar 24
 
-An open-source desktop software musical instrument: a faithful software emulation of the
-ELTA Music **Solar 42N** — the analogue microtonal ambient drone machine and semi-modular
-stand-alone synthesizer.
+An open-source desktop software musical instrument: an **independent, unaffiliated study**
+of the ELTA Music **Solar 42N** — the analogue microtonal ambient drone machine and
+semi-modular stand-alone synthesizer. Lunar 24 is not affiliated with, endorsed by, or a
+product of ELTA Music / Analogue Solutions; it is a clean-room engineering study built from
+the freely published manual and the project's own fact mapping.
 
-Lunar 24 keeps the Solar 42N sound topology, panel layout, and operating relationships, and
-remaps its visual aesthetic through a restrained "moon" theme. The product boundary is
-strict: it does **not** add sound sources, modulators, general-purpose routing matrices,
-macros, plugin/DAW hosts, or a multi-preset library beyond the hardware's own four keyboard
-presets.
+Lunar 24 aims to reproduce the Solar 42N **panel layout and operating behaviour** as
+documented, and remaps its visual aesthetic through a restrained "moon" theme. The product
+boundary is strict: it does **not** add sound sources, modulators, general-purpose routing
+matrices, macros, plugin/DAW hosts, or a multi-preset library beyond the hardware's own four
+keyboard presets. The goal is architectural and behavioural, **not** a claim of calibrated or
+identical sonic fidelity — that would require the hardware as a reference and would
+over-claim beyond the evidence discipline in `design/07-core-contract.md`. Public audio may
+inform perceptual tuning only; it is never presented as strict calibration.
 
-> This is the official repository only. The ELTA Solar 42N reference manual, panel render and
-> effector catalog images are copyrighted third-party material and are intentionally **not**
-> committed — see `design/reference/SOURCES.md` for their source URLs and checksums.
+> This repository tracks its own source and design documents only. The ELTA Solar 42N
+> reference manual, panel render and effector catalog images are copyrighted third-party
+> material and are intentionally **not** committed — see `design/reference/SOURCES.md` for
+> their source URLs and checksums.
 
 ## License
 
@@ -39,8 +45,8 @@ core/        framework-free synth core (public contract headers + implementation
 app/         standalone app / device / MIDI / UI adapter  (P1)
 spec/machine/  canonical machine registry source of truth (JSON)
 generated/   committed C++ headers generated from spec/machine/ (regenerate via tools/)
-tools/       stdlib-only generators (generate_registry.py)
-tests/core/  framework-free unit + validation tests
+tools/       stdlib-only gates (generate_registry.py, check_core_headers.py, check_registry_negative.py)
+tests/core/  framework-free unit + validation + regression tests
 design/      design specifications and reference index
 third_party/ dependency license inventory
 ```
@@ -61,5 +67,8 @@ testable logical unit.
 
 ## Status
 
-P0 — lock an auditable baseline (canonical machine registry, framework-free core contract,
-`DeviceStateV1`, evidence + tests). See `design/06-master-plan.md` for the full P0–P8 plan.
+**P0 — auditable foundation vertical slice, in review.** It establishes the canonical
+machine registry, the framework-free core contract, `DeviceStateV1`, a field-evidence
+policy, and the gates that keep them consistent and switch-clean. This is a reviewed basis
+to build on, **not** a frozen/locked final implementation; the concrete P0–P8 plan is in
+`design/06-master-plan.md`.

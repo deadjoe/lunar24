@@ -1,0 +1,21 @@
+{
+  "meta": { "machine": "Lunar 24", "schemaVersion": "0.1", "registryVersion": "0.1",
+            "source": "fixture", "expectedError": "dangling" },
+  "modules": [
+    {
+      "id": 0, "stable_id": "vco_m", "name": "VCO M", "category": "source", "description": "",
+      "evidence": { "ref": "fixture", "lineStart": 1, "lineEnd": 1 }, "status": "confirmed",
+      "parameters": [],
+      "jacks": [
+        { "id": 0, "stable_id": "vco_m.out", "name": "out", "direction": "output",
+          "signalType": "audio", "polarity": "bipolar", "nominalMin": -1, "nominalMax": 1,
+          "coupling": "ac", "evidence": { "line": 1 }, "status": "confirmed" }
+      ]
+    }
+  ],
+  "normalizedRoutes": [
+    { "id": 0, "stable_id": "r", "sourceJack": "vco_m.out", "sinkJack": "vco_missing.in",
+      "description": "sink absent", "evidence": { "line": 1 }, "status": "confirmed" }
+  ],
+  "programs": []
+}

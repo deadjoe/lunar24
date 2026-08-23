@@ -11,6 +11,10 @@
 .DS_Store
 Thumbs.db
 
+# Python bytecode cache (analysis/generator scripts)
+__pycache__/
+*.py[cod]
+
 # Logs / temporary files
 *.log
 *.tmp
