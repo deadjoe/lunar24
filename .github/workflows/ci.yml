@@ -46,3 +46,21 @@ jobs:
 
       - name: Run gate suite (CTest)
         run: ctest --test-dir build --output-on-failure --build-config Release
+
+  # Full-machine coverage gate, invoked with --require-full for REAL (not an
+  # unused option). Independence is guaranteed by the manifest being transcribed
+  # from the panel/manual (not generated from the registry) and by a separate
+  # negative test proving the gate rejects 重件/no-evidence/NON-REGRESSION for the
+  # intended reason. Intermediate commits may be <100% (this job is then RED, by
+  # design) but must never regress the mustComplete baseline; this job turns green
+  # exactly when every target module / program identity / route is present — the
+  # signal that gates opening/merging PR #2.
+  full-coverage:
+    name: full coverage (--require-full)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run registry completeness gate with --require-full
+        run: |
+          python3 --version || python --version
+          python3 tools/check_registry_complete.py --require-full

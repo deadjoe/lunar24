@@ -1,0 +1,77 @@
+{
+  "meta": {
+    "machine": "lunar24",
+    "purpose": "Full-machine P0 registry target. INDEPENDENTLY TRANSCRIBED from the panel map (design/04 §1) and the manual-derived module/program inventories (design/01 §3-§4, design/05 §1) — NOT generated from the registry. Every item carries source/panel-site/manual-line provenance so completeness is auditable, not self-proving.",
+    "transcription": {
+      "author": "manual + panel 独立抄录 (design/01 §3-§4, design/04 §1, design/05 §1)",
+      "note": "各 module 的详细 manual line 粒度是阶段 B 的内容工作；这里对尚未逐项核到行的条目用 design-doc 抄录产证 + 面板分区（panelSite）作证据，状态 provisional，避免虚构行号。"
+    },
+    "source": "solar42N_manual_v15"
+  },
+  "target": {
+    "modules": [
+      { "stable_id": "vco_a",        "name": "VCO A",    "category": "source",      "panelSite": "中上 VCO A/B",   "status": "confirmed",    "evidence": { "ref": "solar42N_manual_v15", "lineStart": 376, "lineEnd": 422 } },
+      { "stable_id": "vco_b",        "name": "VCO B",    "category": "source",      "panelSite": "中上 VCO A/B",   "status": "confirmed",    "evidence": { "ref": "solar42N_manual_v15", "lineStart": 376, "lineEnd": 422 } },
+      { "stable_id": "drone_1",      "name": "DRONE 1",  "category": "source",      "panelSite": "左上 DRONE 1/2",  "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "left-top drone classic" } },
+      { "stable_id": "drone_2",      "name": "DRONE 2",  "category": "source",      "panelSite": "左上 DRONE 1/2",  "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "left-top drone classic" } },
+      { "stable_id": "drone_3",      "name": "DRONE 3",  "category": "source",      "panelSite": "左中 DRONE 3",    "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "left-mid drone new (Papa Srapa)" } },
+      { "stable_id": "drone_4",      "name": "DRONE 4",  "category": "source",      "panelSite": "右上 DRONE 4/5",  "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "right-top drone classic" } },
+      { "stable_id": "drone_5",      "name": "DRONE 5",  "category": "source",      "panelSite": "右上 DRONE 4/5",  "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "right-top drone classic" } },
+      { "stable_id": "drone_6",      "name": "DRONE 6",  "category": "source",      "panelSite": "右中 DRONE 6",    "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "right-mid drone new (Papa Srapa)" } },
+      { "stable_id": "envelope_a",   "name": "Envelope A","category": "source",     "panelSite": "中部 ENV A/B",   "status": "confirmed",    "evidence": { "ref": "solar42N_manual_v15", "lineStart": 385, "lineEnd": 408 } },
+      { "stable_id": "envelope_b",   "name": "Envelope B","category": "source",     "panelSite": "中部 ENV A/B",   "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "mid ENV A/B" } },
+      { "stable_id": "mixer",        "name": "Voice mixer","category": "processing","panelSite": "中部 VOICE MIXER","status": "provisional","evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "mid voice mixer 10ch" } },
+      { "stable_id": "vcf",          "name": "Dual 12dB Polivoks VCF","category": "processing","panelSite": "中上 DUAL VCF","status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1118, "lineEnd": 1157 } },
+      { "stable_id": "effector",     "name": "Dual effector","category": "processing","panelSite": "中上 DUAL EFFECTOR","status": "provisional","evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "mid-top dual effector" } },
+      { "stable_id": "lfo_a",        "name": "LFO A",    "category": "control",     "panelSite": "下排 LFO A",     "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom LFO A" } },
+      { "stable_id": "lfo_b",        "name": "LFO B",    "category": "control",     "panelSite": "下排 LFO B",     "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom LFO B" } },
+      { "stable_id": "joystick",     "name": "Joystick", "category": "control",     "panelSite": "下排 joystick",  "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom joystick" } },
+      { "stable_id": "sequencer",    "name": "5-step sequencer","category": "control","panelSite": "下排 5-step seq","status": "provisional","evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom 5-step sequencer" } },
+      { "stable_id": "preamp",       "name": "Preamp",   "category": "processing",  "panelSite": "下排 preamp",    "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom preamp" } },
+      { "stable_id": "env_follower", "name": "Envelope follower","category": "control","panelSite": "下排 env follower","status": "provisional","evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom envelope follower" } },
+      { "stable_id": "keyboard",     "name": "Sensor keyboard","category": "performance","panelSite": "底部 12 触摸片","status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 559, "lineEnd": 634 } },
+      { "stable_id": "voices",       "name": "Drone voices 1-6","category": "performance","panelSite": "右下 DRONE VOICES","status": "provisional","evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom-right drone voices 1-6" } }
+    ],
+    "cartridges": [
+      { "cassette": "CATHEDRAL",     "programs": ["Shimmer", "Oct up delay", "Space reverb"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "MAGIC",         "programs": ["Pitch delay", "Reverse pitch", "Bell"],      "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "TIME",          "programs": ["Delay reverb", "Delay chorus", "Delay vibrato"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "VIBROTREM",     "programs": ["Tremolo", "Vibrato", "Chorus"],              "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "FILTER",        "programs": ["Auto Wah", "HP-LP", "Notch"],                 "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "VIBE",          "programs": ["Phaser", "Flanger", "Resonance"],             "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "PITCH SHIFTER", "programs": ["SynthTaver", "Octaver", "Pitch Harmonizer"],  "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "INFINITY",      "programs": ["Resonance Reverb", "O.D.D", "Resonance Delay"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "STRING RINGER", "programs": ["Synthetic Ring", "Ring Mod", "S&H Ring Mod"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "SYNTEX-1",      "programs": ["Vibe Synth", "Pulse Synth", "Acid Synth"],    "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "DIGITAL",       "programs": ["Filter DAC", "LFO DAC", "Envelope crusher"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "GENERATOR",     "programs": ["FM tone", "Ramp", "Voice"],                   "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "cassette": "ORCHE",         "programs": ["One-shot Long", "One-shot Short", "Free-run Loop"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } }
+    ],
+    "normalizedRoutes": [
+      { "stable_id": "route.keyboard_v_oct_to_vco",   "sourceJack": "keyboard.v_oct_out", "sinkJack": "vco_a.v_oct_in", "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 573, "lineEnd": 573 } },
+      { "stable_id": "route.keyboard_v_oct_to_vco_b", "sourceJack": "keyboard.v_oct_out", "sinkJack": "vco_b.v_oct_in", "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §2", "description": "keyboard V/oct fan-out to VCO B (A handled by the base route above)" } },
+      { "stable_id": "route.keyboard_gate_to_eg",     "sourceJack": "keyboard.gate_left_main_out", "sinkJack": "envelope_a.gate_in", "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 576, "lineEnd": 576 } },
+      { "stable_id": "route.vcf_cv_l_to_cv_r",        "sourceJack": "vcf.cv_l_in", "sinkJack": "vcf.cv_r_in", "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1142, "lineEnd": 1142 } },
+      { "stable_id": "route.vco_a_cv_to_vco_b",       "sourceJack": "vco_a.vco_out", "sinkJack": "vco_b.cv_in", "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §2", "description": "VCO A output normalised to VCO B CV input (CV AMT sets depth)" } }
+    ],
+    "categories": {
+      "modules": "count of target modules",
+      "parameters": "sum of all Parameter entries across every module and program (operable controls + params)",
+      "jacks": "sum of all Jack entries across every module",
+      "normalizedAndFixedRoutes": "normalized-route + fixed-cable route entries",
+      "programIdentities": "13 cartridges × 3 slots = 39 program identities (identity list only — NOT 39 effects implemented)"
+    }
+  },
+  "mustComplete": [
+    "module:vco_a",
+    "module:vco_b",
+    "module:vcf",
+    "module:keyboard",
+    "module:envelope_a",
+    "program:program.cathedral.1",
+    "program:program.magic.1",
+    "route:route.keyboard_v_oct_to_vco",
+    "route:route.keyboard_gate_to_eg",
+    "route:route.vcf_cv_l_to_cv_r"
+  ]
+}

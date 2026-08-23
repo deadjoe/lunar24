@@ -69,6 +69,21 @@ add_test(NAME test_id_space_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_id_space_gate.py)
 
+# Full-machine completeness gate (Phase A): the independently-transcribed
+# p0_inventory_manifest.json is the target; the registry is the implementation.
+# Always-on (not --require-full) so a commit may be <100% but never regress the
+# mustComplete baseline or be self-incoherent. The CI step for the PR #2 exact
+# head runs the same tool with --require-full (see .github/workflows/ci.yml).
+add_test(NAME registry_complete_gate
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_registry_complete.py)
+
+# The gate must reject 重件 / no-evidence / short-cartridge / NON-REGRESSION /
+# --require-full for their intended reasons, not by accident.
+add_test(NAME registry_complete_negative
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_registry_complete_negative.py)
+
 # Strict warnings, applied PRIVATE to a Lunar-owned compiled target only. Never
 # set globally: a future third-party build unit (iPlug2, P1+) must not be forced
 # warning-clean by a global add_compile_options, and lunar_core (header-only
