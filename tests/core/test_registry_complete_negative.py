@@ -4066,7 +4066,7 @@ def main():
     #      pitch_shifter.1/.2/.3, infinity.1/.2/.3, string_ringer.1/.2/.3, syntex_1.1/.2/.3 and
     #      digital.1/.2/.3 must NOT be re-openable as an honest gap: with those programs' params landed,
     #      the --require-full residual must exclude every one of those ids. It widens exactly across the
-    #      12 keyboard complex + 18 other program XYZ params (30 total).
+    #      12 keyboard complex + 9 other program XYZ params (21 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4076,15 +4076,16 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 30:
-        raise SystemExit("residual honest-gap total %d != 30 (12 keyboard complex + 18 program XYZ); "
+    if len(_gap_ids) != 21:
+        raise SystemExit("residual honest-gap total %d != 21 (12 keyboard complex + 9 program XYZ); "
                          "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + "
                          "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 + "
-                         "string_ringer.1/.2/.3 + syntex_1.1/.2/.3 + digital.1/.2/.3 must all be "
+                         "string_ringer.1/.2/.3 + syntex_1.1/.2/.3 + digital.1/.2/.3 + generator.1/.2/.3 "
+                         "must all be "
                          "landed/closed (not re-openable as a gap): %r" % _gap_ids)
-    if len(_kb) != 12 or len(_prog) != 18:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/18: %r" % (len(_kb), len(_prog),
-                                                                                _gap_ids))
+    if len(_kb) != 12 or len(_prog) != 9:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/9: %r" % (len(_kb), len(_prog),
+                                                                               _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
                  "program.magic.2.x", "program.magic.2.y", "program.magic.2.z",
@@ -4115,13 +4116,16 @@ def main():
                  "program.syntex_1.3.x", "program.syntex_1.3.y", "program.syntex_1.3.z",
                  "program.digital.1.x", "program.digital.1.y", "program.digital.1.z",
                  "program.digital.2.x", "program.digital.2.y", "program.digital.2.z",
-                 "program.digital.3.x", "program.digital.3.y", "program.digital.3.z"):
+                 "program.digital.3.x", "program.digital.3.y", "program.digital.3.z",
+                 "program.generator.1.x", "program.generator.1.y", "program.generator.1.z",
+                 "program.generator.2.x", "program.generator.2.y", "program.generator.2.z",
+                 "program.generator.3.x", "program.generator.3.y", "program.generator.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 18 "
-                             "remaining program XYZ gaps (generator/orche) are preserved, NOT "
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 9 "
+                             "remaining program XYZ gaps (orche) are preserved, NOT "
                              "cathedral.2/3, magic.2/3, time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, "
                              "vibe.1/2/3, pitch_shifter.1/2/3, infinity.1/2/3, string_ringer.1/2/3, "
-                             "syntex_1.1/2/3 or digital.1/2/3): %r" % (_sid, _gap_ids))
+                             "syntex_1.1/2/3, digital.1/2/3 or generator.1/2/3): %r" % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
@@ -4967,6 +4971,87 @@ def main():
     problems, _ = gate.check(qa_bad, manifest)
     if not has(problems, "implementation param 'program.digital.1.x'"):
         raise SystemExit("digital.1.x physical value keep-out (hz/20000..192000/48000) not enforced: %r"
+                         % problems)
+
+    # (qb)-(qj) GENERATOR Program 1/2/3 X/Y/Z descriptor lock (Claude msg b6f928bb). The nine program
+    #      generator.1/.2/.3 x/y/z params (ids 394-402) are landed descriptor facts locked by the exact-
+    #      compare. This family is tempting for physical/bipolar values: Pitch/Pitch 2/FM 2-1 -> Hz or
+    #      semitones, Pitch mod +/- -> bipolar -1..+1, LP/HP -> a discrete selector. All must stay
+    #      software-normalized continuous norm 0..1 (the +/- and LP/HP are panel silk-screen literal
+    #      text, NOT confirmed polarity/selector facts).
+    # (qb) id renumber: generator.1.x is id 394; renumbering (394 -> 999) must fail.
+    qb_bad = copy.deepcopy(spec)
+    reg_param(qb_bad, "program.generator.1.x")["id"] = 999
+    problems, _ = gate.check(qb_bad, manifest)
+    if not has(problems, "implementation param 'program.generator.1.x'"):
+        raise SystemExit("generator.1.x param id renumber (394 -> 999) not enforced: %r" % problems)
+    # (qc) owner / cross-owner leak: generator.1.x must stay owned by program.generator.1; moving it
+    #      under program.generator.2's array makes the generated owner program.generator.2, which the
+    #      gate rejects (cross-owner).
+    qc_bad = copy.deepcopy(spec)
+    _g1 = next(pr for pr in qc_bad["programs"] if pr.get("stable_id") == "program.generator.1")
+    _g2 = next(pr for pr in qc_bad["programs"] if pr.get("stable_id") == "program.generator.2")
+    _x = [p for p in _g1["parameters"] if p["stable_id"] == "program.generator.1.x"][0]
+    _g1["parameters"] = [p for p in _g1["parameters"] if p["stable_id"] != "program.generator.1.x"]
+    _g2["parameters"].append(_x)
+    problems, _ = gate.check(qc_bad, manifest)
+    if not has(problems, "implementation param 'program.generator.1.x'"):
+        raise SystemExit("generator.1.x cross-owner leak (-> program.generator.2) not enforced: %r"
+                         % problems)
+    # (qd) ROLE drift: generator.1.x being role y (valid but wrong position) must fail (role gate).
+    qd_bad = copy.deepcopy(spec)
+    reg_param(qd_bad, "program.generator.1.x")["role"] = "y"
+    problems, _ = gate.check(qd_bad, manifest)
+    if not has(problems, "implementation param 'program.generator.1.x'"):
+        raise SystemExit("generator.1.x role drift (x -> y) not enforced by the role gate: %r"
+                         % problems)
+    # (qe) per-line descriptorEvidence drift: generator.1.x cites L1285; moving it (1285 -> 1286) must
+    #      fail.
+    qe_bad = copy.deepcopy(spec)
+    reg_param(qe_bad, "program.generator.1.x")["evidence"]["line"] = 1286
+    problems, _ = gate.check(qe_bad, manifest)
+    if not has(problems, "implementation param 'program.generator.1.x'"):
+        raise SystemExit("generator.1.x descriptorEvidence.line drift (1285 -> 1286) not enforced: %r"
+                         % problems)
+    # (qf) fieldEvidence overclaim: generator.1.x fieldEvidence.range unverified -> confirmed must fail.
+    qf_bad = copy.deepcopy(spec)
+    reg_param(qf_bad, "program.generator.1.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(qf_bad, manifest)
+    if not has(problems, "implementation param 'program.generator.1.x'"):
+        raise SystemExit("generator.1.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+    # (qg) FIRST terminator delete: dropping generator.1.x is a landed/mustComplete drop.
+    qg_bad = copy.deepcopy(spec)
+    _g1 = next(pr for pr in qg_bad["programs"] if pr.get("stable_id") == "program.generator.1")
+    _g1["parameters"] = [p for p in _g1["parameters"] if p["stable_id"] != "program.generator.1.x"]
+    problems, _ = gate.check(qg_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.generator.1.x'"):
+        raise SystemExit("generator.1.x terminator delete (family first) not enforced: %r" % problems)
+    # (qh) MIDDLE terminator delete: dropping generator.2.y is likewise a landed/mustComplete drop.
+    qh_bad = copy.deepcopy(spec)
+    _g2 = next(pr for pr in qh_bad["programs"] if pr.get("stable_id") == "program.generator.2")
+    _g2["parameters"] = [p for p in _g2["parameters"] if p["stable_id"] != "program.generator.2.y"]
+    problems, _ = gate.check(qh_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.generator.2.y'"):
+        raise SystemExit("generator.2.y terminator delete (family middle) not enforced: %r" % problems)
+    # (qi) LAST terminator delete: dropping generator.3.z is likewise a landed/mustComplete drop.
+    qi_bad = copy.deepcopy(spec)
+    _g3 = next(pr for pr in qi_bad["programs"] if pr.get("stable_id") == "program.generator.3")
+    _g3["parameters"] = [p for p in _g3["parameters"] if p["stable_id"] != "program.generator.3.z"]
+    problems, _ = gate.check(qi_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.generator.3.z'"):
+        raise SystemExit("generator.3.z terminator delete (family last) not enforced: %r" % problems)
+    # (qj) physical/bipolar-value keep-out: generator.2.z (Pitch mod +/-) must stay a software-normalized
+    #      0..1 placeholder. Dressing the +/- as a bipolar range (-1..+1, the temptation @Claude flagged)
+    #      must fail the exact-compare against the landed unit=norm/min=0/max=1 fact; the +/- is panel
+    #      silk-screen literal text, not a confirmed polarity fact. LP/HP likewise stays continuous norm
+    #      0..1 (not a discrete LP/HP selector) — kind is never changed by this slice.
+    qj_bad = copy.deepcopy(spec)
+    reg_param(qj_bad, "program.generator.2.z")["min"] = -1.0
+    reg_param(qj_bad, "program.generator.2.z")["max"] = 1.0
+    problems, _ = gate.check(qj_bad, manifest)
+    if not has(problems, "implementation param 'program.generator.2.z'"):
+        raise SystemExit("generator.2.z bipolar keep-out (min=-1/max=1 from Pitch mod +/-) not enforced: %r"
                          % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason;baseline passes; "

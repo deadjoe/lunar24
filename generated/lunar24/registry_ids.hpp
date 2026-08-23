@@ -363,7 +363,16 @@ enum class ParameterId : std::uint32_t {
     program_digital_2_z = 390,
     program_digital_3_x = 391,
     program_digital_3_y = 392,
-    program_digital_3_z = 393
+    program_digital_3_z = 393,
+    program_generator_1_x = 394,
+    program_generator_1_y = 395,
+    program_generator_1_z = 396,
+    program_generator_2_x = 397,
+    program_generator_2_y = 398,
+    program_generator_2_z = 399,
+    program_generator_3_x = 400,
+    program_generator_3_y = 401,
+    program_generator_3_z = 402
 };
 
 enum class JackId : std::uint32_t {
@@ -485,13 +494,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 327;
+inline constexpr std::uint32_t kParameterCount = 336;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 394;
+inline constexpr std::uint64_t kParameterIdSpace = 403;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -856,6 +865,15 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_digital_3_x: return "program.digital.3.x";
     case ParameterId::program_digital_3_y: return "program.digital.3.y";
     case ParameterId::program_digital_3_z: return "program.digital.3.z";
+    case ParameterId::program_generator_1_x: return "program.generator.1.x";
+    case ParameterId::program_generator_1_y: return "program.generator.1.y";
+    case ParameterId::program_generator_1_z: return "program.generator.1.z";
+    case ParameterId::program_generator_2_x: return "program.generator.2.x";
+    case ParameterId::program_generator_2_y: return "program.generator.2.y";
+    case ParameterId::program_generator_2_z: return "program.generator.2.z";
+    case ParameterId::program_generator_3_x: return "program.generator.3.x";
+    case ParameterId::program_generator_3_y: return "program.generator.3.y";
+    case ParameterId::program_generator_3_z: return "program.generator.3.z";
   }
   return "(unknown Parameter)";
 }

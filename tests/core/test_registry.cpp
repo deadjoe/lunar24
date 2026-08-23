@@ -113,11 +113,28 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 327u); // Phase B DIGITAL Programs 1/2/3 X/Y/Z slice (Claude msg
-                                         // b6f928bb): +9 program params (digital.1/.2/.3 x/y/z
-                                         // sample rate/cutoff/input gain + sample rate/lfo speed/lfo
-                                         // amount + sample rate/envelope amount/input gain, ids
-                                         // 385-393, neutral software-normalized 0..1 placeholders,
+  CHECK_EQ(core::kParameterCount, 336u); // Phase B GENERATOR Programs 1/2/3 X/Y/Z slice (Claude msg
+                                         // 760ec3d7): +9 program params (generator.1/.2/.3 x/y/z
+                                         // pitch 1/pitch 2/fm 2-1 + lfo rate/pitch/pitch mod +/-
+                                         // + cutoff/pitch/lp/hp, ids 394-402, neutral software-
+                                         // normalized 0..1 placeholders, all six-field fieldEvidence
+                                         // unverified, roles x/y/z; no physical unit/range/default
+                                         // asserted — no Hz/semitone/ratio/selector value derived
+                                         // from the FM tone/Ramp/Voice program names or the Pitch 1/
+                                         // Pitch 2/FM 2-1/LFO rate/Pitch mod +/-/Cutoff/LP/HP labels;
+                                         // the +/- is panel silk-screen literal text (not a confirmed
+                                         // bipolar/polarity fact) and LP/HP is a continuous X/Y/Z
+                                         // knob assignment, not a discrete selector — both stay
+                                         // norm 0..1; GENERATOR is the "Noise mini synth" cartridge
+                                         // (right column) — the registry metadata does NOT implement
+                                         // its DSP; Program 3 header "Voice" wraps and its Y Pitch
+                                         // lands at L1297 because the L1296 right column is empty
+                                         // (only SYNTEX Y Color), X Cutoff=L1295, Z LP/HP=L1298).
+                                         // Prior: Phase B DIGITAL Programs 1/2/3 X/Y/Z slice
+                                         // (Claude msg b6f928bb): +9 program params (digital.1/.2/.3
+                                         // x/y/z sample rate/cutoff/input gain + sample rate/lfo
+                                         // speed/lfo amount + sample rate/envelope amount/input gain,
+                                         // ids 385-393, neutral software-normalized 0..1 placeholders,
                                          // all six-field fieldEvidence unverified, roles x/y/z; no
                                          // physical unit/range/default asserted — no Hz/44100-48000/
                                          // dB values derived from the Program 1/2/3 names or the
