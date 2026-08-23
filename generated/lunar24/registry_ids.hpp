@@ -18,7 +18,9 @@ enum class ModuleId : std::uint32_t {
     vcf = 2,
     keyboard = 3,
     envelope_a = 4,
-    envelope_b = 5
+    envelope_b = 5,
+    lfo_a = 6,
+    lfo_b = 7
 };
 
 enum class ParameterId : std::uint32_t {
@@ -96,6 +98,12 @@ enum class ParameterId : std::uint32_t {
     envelope_b_s = 144,
     envelope_b_hold = 145,
     envelope_b_self_gen = 146,
+    lfo_a_wave = 147,
+    lfo_a_rate = 148,
+    lfo_a_speed_mult = 149,
+    lfo_b_wave = 150,
+    lfo_b_rate = 151,
+    lfo_b_speed_mult = 152,
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
@@ -132,7 +140,9 @@ enum class JackId : std::uint32_t {
     envelope_a_vca_cv_out = 25,
     envelope_b_gate_in = 26,
     envelope_b_env_out = 27,
-    envelope_b_vca_cv_out = 28
+    envelope_b_vca_cv_out = 28,
+    lfo_a_cv_out = 29,
+    lfo_b_cv_out = 30
 };
 
 enum class ProgramId : std::uint32_t {
@@ -186,15 +196,15 @@ enum class RouteId : std::uint32_t {
     route_keyboard_gate_to_eg_b = 5
 };
 
-inline constexpr std::uint32_t kModuleCount = 6;
-inline constexpr std::uint32_t kParameterCount = 80;
-inline constexpr std::uint32_t kJackCount = 28;
+inline constexpr std::uint32_t kModuleCount = 8;
+inline constexpr std::uint32_t kParameterCount = 86;
+inline constexpr std::uint32_t kJackCount = 30;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
-inline constexpr std::uint64_t kModuleIdSpace = 6;
-inline constexpr std::uint64_t kParameterIdSpace = 147;
-inline constexpr std::uint64_t kJackIdSpace = 29;
+inline constexpr std::uint64_t kModuleIdSpace = 8;
+inline constexpr std::uint64_t kParameterIdSpace = 153;
+inline constexpr std::uint64_t kJackIdSpace = 31;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
 
@@ -210,6 +220,8 @@ inline constexpr std::string_view module_id_string(ModuleId id) {
     case ModuleId::keyboard: return "keyboard";
     case ModuleId::envelope_a: return "envelope_a";
     case ModuleId::envelope_b: return "envelope_b";
+    case ModuleId::lfo_a: return "lfo_a";
+    case ModuleId::lfo_b: return "lfo_b";
   }
   return "(unknown Module)";
 }
@@ -290,6 +302,12 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::envelope_b_s: return "envelope_b.s";
     case ParameterId::envelope_b_hold: return "envelope_b.hold";
     case ParameterId::envelope_b_self_gen: return "envelope_b.self_gen";
+    case ParameterId::lfo_a_wave: return "lfo_a.wave";
+    case ParameterId::lfo_a_rate: return "lfo_a.rate";
+    case ParameterId::lfo_a_speed_mult: return "lfo_a.speed_mult";
+    case ParameterId::lfo_b_wave: return "lfo_b.wave";
+    case ParameterId::lfo_b_rate: return "lfo_b.rate";
+    case ParameterId::lfo_b_speed_mult: return "lfo_b.speed_mult";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";
@@ -330,6 +348,8 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::envelope_b_gate_in: return "envelope_b.gate_in";
     case JackId::envelope_b_env_out: return "envelope_b.env_out";
     case JackId::envelope_b_vca_cv_out: return "envelope_b.vca_cv_out";
+    case JackId::lfo_a_cv_out: return "lfo_a.cv_out";
+    case JackId::lfo_b_cv_out: return "lfo_b.cv_out";
   }
   return "(unknown Jack)";
 }

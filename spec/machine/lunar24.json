@@ -2838,6 +2838,244 @@
           }
         }
       ]
+    },
+    {
+      "id": 6,
+      "stable_id": "lfo_a",
+      "name": "LFO A",
+      "category": "control",
+      "description": "Dual LFO A: square<->triangle wave mix, rate, speed multiplier. P0 captures the patchable cv_out (nominal 0..+10V).",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 425,
+        "lineEnd": 443
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 147,
+          "stable_id": "lfo_a.wave",
+          "name": "WAVE",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 428
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 148,
+          "stable_id": "lfo_a.rate",
+          "name": "RATE",
+          "unit": "hz",
+          "min": 0.1,
+          "max": 20.0,
+          "default": 1.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 441
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 149,
+          "stable_id": "lfo_a.speed_mult",
+          "name": "SPEED MULT",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 2.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 438
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "x1",
+            "x6",
+            "x10"
+          ]
+        }
+      ],
+      "jacks": [
+        {
+          "id": 29,
+          "stable_id": "lfo_a.cv_out",
+          "name": "CV OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 158
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "stable_id": "lfo_b",
+      "name": "LFO B",
+      "category": "control",
+      "description": "Dual LFO B: square<->triangle wave mix, rate, speed multiplier. P0 captures the patchable cv_out (nominal 0..+10V).",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 425,
+        "lineEnd": 445
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 150,
+          "stable_id": "lfo_b.wave",
+          "name": "WAVE",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 428
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 151,
+          "stable_id": "lfo_b.rate",
+          "name": "RATE",
+          "unit": "hz",
+          "min": 0.1,
+          "max": 20.0,
+          "default": 1.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 441
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 152,
+          "stable_id": "lfo_b.speed_mult",
+          "name": "SPEED MULT",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 2.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 438
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "x1",
+            "x6",
+            "x10"
+          ]
+        }
+      ],
+      "jacks": [
+        {
+          "id": 30,
+          "stable_id": "lfo_b.cv_out",
+          "name": "CV OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 158
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        }
+      ]
     }
   ],
   "normalizedRoutes": [

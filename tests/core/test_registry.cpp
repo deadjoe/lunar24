@@ -97,19 +97,20 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 6u);
-  CHECK_EQ(core::kParameterCount, 80u);  // Phase B envelope_b slice (Codex msg c4e6c0ff): +6 ordinary
-                                         // params on the mirror envelope module (a/r/d/s continuous +
-                                         // hold/self_gen selectors); modules now carry 74, programs 6.
-                                         // Left as honest gaps the 12 keyboard complex params
-                                         // (seq_steps, quantise_scale_editor, plate_tune,
-                                         // pushbutton_value, preset_a..d, arp_clock, seq_clock,
-                                         // arp_rhythm, seq_rhythm — complex/un-enumerated, no scalar domain)
-  CHECK_EQ(core::kJackCount, 28u);       // Phase B envelope_b slice (Codex msg c4e6c0ff): +3 patchable
-                                         // jacks (gate_in/env_out/vca_cv_out) on the mirror envelope_b;
-                                         // prior phases added vco_a/vco_b wave_out+pwm_in, keyboard
-                                         // pressure_out+reset_in, envelope_a vca_cv_out and dropped bad
-                                         // jack vcf.audio_in
+  CHECK_EQ(core::kModuleCount, 8u);      // Phase B LFO slice (Codex msg 2ec93491): +2 modules (lfo_a,
+                                         // lfo_b), each 1 patchable cv_out + 3 params; prior phases
+                                         // landed vco_a/vco_b/vcf/keyboard/envelope_a/envelope_b.
+  CHECK_EQ(core::kParameterCount, 86u);  // Phase B LFO slice: +6 params (lfo_a/lfo_b wave/rate
+                                         // continuous, speed_mult x1/x6/x10 selector); modules now
+                                         // carry 80, programs 6. Left as honest gaps the 12 keyboard
+                                         // complex params (seq_steps, quantise_scale_editor,
+                                         // plate_tune, pushbutton_value, preset_a..d, arp_clock,
+                                         // seq_clock, arp_rhythm, seq_rhythm + remaining module ranges)
+  CHECK_EQ(core::kJackCount, 30u);       // Phase B LFO slice: +2 patchable cv_out jacks (nominal
+                                         // 0..+10V, unipolar, from manual L158) on lfo_a/lfo_b;
+                                         // prior phases added envelope_b gate_in/env_out/vca_cv_out,
+                                         // vco_a/vco_b wave_out+pwm_in, keyboard pressure_out+reset_in,
+                                         // envelope_a vca_cv_out and dropped bad jack vcf.audio_in
   // Program identity layer landed (Codex 7a6467cc slice #57): 39 program
   // identities (cathedral.1 + magic.1 keep their params; the other 37 are
   // identity-only, paramCount==0, honest gaps pending Phase B). kParameterCount

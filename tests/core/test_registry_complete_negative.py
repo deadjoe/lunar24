@@ -1752,6 +1752,76 @@ def main():
         raise SystemExit("A/B gate_input evidence reverting to line 576 (output rail) not enforced: "
                         "%r" % problems)
 
+    # (bj)-(bq) LFO slice (Codex msg 2ec93491): the newly-landed lfo_a/lfo_b modules and their
+    # params/jacks must be caught by the SAME landed-module / landed-param / landed-jack gates — a
+    # renumber, delete, or key evidence-line drift on a NEW entity (not just the older ones) must FAIL
+    # normal. lfo carries no normalized route, so a module delete needs no dangling-endpoint strip.
+
+    # (bj) renumber a landed LFO module id.
+    bj_bad = copy.deepcopy(spec)
+    for m in bj_bad["modules"]:
+        if m.get("stable_id") == "lfo_a":
+            m["id"] = 99
+    problems, _ = gate.check(bj_bad, manifest)
+    if not has(problems, "id 99 !="):
+        raise SystemExit("LFO module id renumber (lfo_a 6 -> 99) not enforced: %r" % problems)
+
+    # (bk) delete the LFO module fact (module still landed) -> facts key-set must equal present set.
+    bk_bad = copy.deepcopy(manifest)
+    del bk_bad["target"]["landedModuleFacts"]["modules"]["lfo_b"]
+    problems, _ = gate.check(spec, bk_bad)
+    if not has(problems, "absent from target.landedModuleFacts"):
+        raise SystemExit("LFO module-fact delete (lfo_b fact dropped, module still present) not "
+                        "enforced: %r" % problems)
+
+    # (bl) delete a whole LFO module -> a fact naming an absent module must FAIL. No route to strip.
+    bl_bad = copy.deepcopy(spec)
+    bl_bad["modules"] = [m for m in bl_bad["modules"] if m.get("stable_id") != "lfo_a"]
+    problems, _ = gate.check(bl_bad, manifest)
+    if not has(problems, "MISSING landed module 'lfo_a'"):
+        raise SystemExit("LFO module delete (lfo_a removed) not enforced: %r" % problems)
+
+    # (bm) renumber a landed LFO param id.
+    bm_bad = copy.deepcopy(spec)
+    reg_param(bm_bad, "lfo_a.wave")["id"] = 999
+    problems, _ = gate.check(bm_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("LFO param id renumber (lfo_a.wave 147 -> 999) not enforced: %r" % problems)
+
+    # (bn) delete a landed LFO param -> the MISSING landed descriptor must FAIL normal.
+    bn_bad = copy.deepcopy(spec)
+    for m in bn_bad["modules"]:
+        if m.get("stable_id") == "lfo_a":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "lfo_a.rate"]
+    problems, _ = gate.check(bn_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param"):
+        raise SystemExit("LFO param delete (lfo_a.rate) not enforced: %r" % problems)
+
+    # (bo) delete a landed LFO jack -> must FAIL normal.
+    bo_bad = copy.deepcopy(spec)
+    for m in bo_bad["modules"]:
+        if m.get("stable_id") == "lfo_a":
+            m["jacks"] = [j for j in m.get("jacks", [])
+                          if j.get("stable_id") != "lfo_a.cv_out"]
+    problems, _ = gate.check(bo_bad, manifest)
+    if not has(problems, "MISSING landed descriptor jack"):
+        raise SystemExit("LFO jack delete (lfo_a.cv_out) not enforced: %r" % problems)
+
+    # (bp) key evidence-line drift on a landed LFO param (speed_mult selector line).
+    bp_bad = copy.deepcopy(spec)
+    reg_param(bp_bad, "lfo_a.speed_mult")["evidence"]["line"] = 999
+    problems, _ = gate.check(bp_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("LFO param evidence drift (speed_mult line) not enforced: %r" % problems)
+
+    # (bq) key evidence-line drift on a landed LFO jack (cv_out nominal-range cite).
+    bq_bad = copy.deepcopy(spec)
+    reg_jack(bq_bad, "lfo_a.cv_out")["evidence"]["line"] = 999
+    problems, _ = gate.check(bq_bad, manifest)
+    if not has(problems, "descriptorEvidence.line=999"):
+        raise SystemExit("LFO jack evidence drift (cv_out line) not enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
