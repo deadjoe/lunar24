@@ -414,7 +414,7 @@ POS = {
     "select_r": ["1", "2", "3"],
     "speed_mult": ["x1", "x6", "x10"],
     "clock": ["int", "ext"],
-    "stages": ["1", "2", "3", "4", "5"],
+    "stages": ["3", "4", "5"],
     "step_gate": ["off", "on"],
 }
 

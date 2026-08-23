@@ -2105,6 +2105,110 @@ def main():
         raise SystemExit("preamp audio input signalType drift (ext_source_in audio -> cv) not "
                         "enforced: %r" % problems)
 
+    # (cv)-(df) 5-step sequencer slice (Codex msg 6bedef35): the newly-landed sequencer module, its
+    # 13 params (pulser/clock/stages + step_cv_1..5 + step_gate_1..5) and 4 jacks
+    # (ext_clock_in/clock_out/cv_out/gate_out) sit under the same landed-module/param/jack +
+    # descriptor-coherence gates. Codex explicitly calls out the stages correction: the canonical
+    # positions are (3,4,5), NOT (1,2,3,4,5) — L499 says "the maximum number of steps (3, 4, or 5)".
+    # Cover the target correction, per-kind deletion/renumber, param mapping/evidence drift, and
+    # jack range/evidence drift a reviewer cares about.
+
+    # (cv) regression: reverting the frozen-target stages positions to the OLD (1,2,3,4,5) must FAIL
+    #      (the registry carries the corrected (3,4,5) set).
+    cv_bad = copy.deepcopy(manifest)
+    cv_bad["target"]["parameters"] = [
+        {**p, "positions": ["1", "2", "3", "4", "5"]} if p.get("stable_id") == "sequencer.stages"
+        else p for p in cv_bad["target"]["parameters"]]
+    problems, _ = gate.check(spec, cv_bad)
+    if not has(problems, "target positions"):
+        raise SystemExit("sequencer.stages target positions reverted to (1,2,3,4,5) not rejected "
+                        "(canonical is (3,4,5)): %r" % problems)
+
+    # (cw) delete a landed sequencer module fact (module still present).
+    cw_bad = copy.deepcopy(manifest)
+    del cw_bad["target"]["landedModuleFacts"]["modules"]["sequencer"]
+    problems, _ = gate.check(spec, cw_bad)
+    if not has(problems, "absent from target.landedModuleFacts"):
+        raise SystemExit("sequencer module-fact delete (fact dropped, module still present) not "
+                        "enforced: %r" % problems)
+
+    # (cx) delete the whole sequencer module -> a fact naming an absent module must FAIL.
+    cx_bad = copy.deepcopy(spec)
+    cx_bad["modules"] = [m for m in cx_bad["modules"] if m.get("stable_id") != "sequencer"]
+    problems, _ = gate.check(cx_bad, manifest)
+    if not has(problems, "MISSING landed module 'sequencer'"):
+        raise SystemExit("sequencer module delete not enforced: %r" % problems)
+
+    # (cy) renumber a landed sequencer param id (stages 162 -> 999).
+    cy_bad = copy.deepcopy(spec)
+    reg_param(cy_bad, "sequencer.stages")["id"] = 999
+    problems, _ = gate.check(cy_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("sequencer param id renumber (sequencer.stages 162 -> 999) not enforced: "
+                        "%r" % problems)
+
+    # (cz) delete a landed sequencer param (seq_gate carries conditional items; strip step_cv_1).
+    cz_bad = copy.deepcopy(spec)
+    for m in cz_bad["modules"]:
+        if m.get("stable_id") == "sequencer":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "sequencer.step_cv_1"]
+    problems, _ = gate.check(cz_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param"):
+        raise SystemExit("sequencer param delete (sequencer.step_cv_1) not enforced: %r" % problems)
+
+    # (da) delete a landed sequencer jack (cv_out).
+    da_bad = copy.deepcopy(spec)
+    for m in da_bad["modules"]:
+        if m.get("stable_id") == "sequencer":
+            m["jacks"] = [j for j in m.get("jacks", [])
+                          if j.get("stable_id") != "sequencer.cv_out"]
+    problems, _ = gate.check(da_bad, manifest)
+    if not has(problems, "MISSING landed descriptor jack"):
+        raise SystemExit("sequencer jack delete (sequencer.cv_out) not enforced: %r" % problems)
+
+    # (db) param fieldEvidence drift: a confirmed step_cv 0..5V range must not be silently downgraded
+    #      to unverified, nor must its unit drop to a placeholder.
+    db_bad = copy.deepcopy(spec)
+    reg_param(db_bad, "sequencer.step_cv_1")["fieldEvidence"]["range"] = "unverified"
+    problems, _ = gate.check(db_bad, manifest)
+    if not has(problems, "implementation param 'sequencer.step_cv_1'"):
+        raise SystemExit("sequencer.step_cv_1 fieldEvidence drift (range confirmed->unverified) not "
+                        "enforced: %r" % problems)
+
+    # (dc) param descriptorEvidence line drift: the pulser citation line must not move (L500).
+    dc_bad = copy.deepcopy(spec)
+    reg_param(dc_bad, "sequencer.pulser")["evidence"]["line"] = 501
+    problems, _ = gate.check(dc_bad, manifest)
+    if not has(problems, "implementation param 'sequencer.pulser'"):
+        raise SystemExit("sequencer.pulser descriptorEvidence.line drift (500 -> 501) not enforced: "
+                        "%r" % problems)
+
+    # (dd) jack range drift: the seq cv_out 0..+5V CV nominal range must not widen.
+    dd_bad = copy.deepcopy(spec)
+    reg_jack(dd_bad, "sequencer.cv_out")["nominalMax"] = 6
+    problems, _ = gate.check(dd_bad, manifest)
+    if not has(problems, "implementation jack 'sequencer.cv_out'"):
+        raise SystemExit("sequencer output range drift (cv_out nominalMax 5 -> 6) not enforced: "
+                        "%r" % problems)
+
+    # (de) jack range drift: the seq gate_out 0..+10V gate nominal range must not widen.
+    de_bad = copy.deepcopy(spec)
+    reg_jack(de_bad, "sequencer.gate_out")["nominalMax"] = 11
+    problems, _ = gate.check(de_bad, manifest)
+    if not has(problems, "implementation jack 'sequencer.gate_out'"):
+        raise SystemExit("sequencer output range drift (gate_out nominalMax 10 -> 11) not enforced: "
+                        "%r" % problems)
+
+    # (df) clock-jack signalType drift: sequencer.ext_clock_in is a confirmed CLOCK input; silently
+    #      reclassifying it as CV must FAIL.
+    df_bad = copy.deepcopy(spec)
+    reg_jack(df_bad, "sequencer.ext_clock_in")["signalType"] = "cv"
+    problems, _ = gate.check(df_bad, manifest)
+    if not has(problems, "implementation jack 'sequencer.ext_clock_in'"):
+        raise SystemExit("sequencer clock input signalType drift (ext_clock_in clock -> cv) not "
+                        "enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

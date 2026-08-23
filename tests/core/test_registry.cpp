@@ -97,23 +97,24 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 11u);     // Phase B preamp + envelope follower slice (Codex msg
-                                         // ebd65910): +2 modules (preamp id 9, env_follower id 10).
-                                         // Prior slices: joystick (Codex msg add70a95) id 8, LFO
-                                         // (Codex msg 2ec93491) added lfo_a/lfo_b; earlier phases held
+  CHECK_EQ(core::kModuleCount, 12u);     // Phase B 5-step sequencer slice (Codex msg 6bedef35): +1
+                                         // module (sequencer id 11). Prior: preamp/env_follower
+                                         // (Codex ebd65910) id 9/10, joystick id 8, lfo_a/lfo_b,
                                          // vco_a/vco_b/vcf/keyboard/envelope_a/envelope_b.
-  CHECK_EQ(core::kParameterCount, 93u);  // Phase B preamp+env_follower slice: +3 software-normalized
-                                         // continuous params (preamp.gain, env_follower.attack/release,
-                                         // unit norm 0..1 default 0.5, fieldEvidence all unverified).
-                                         // Modules now carry 87, programs 6. Left as honest gaps the
-                                         // 12 keyboard complex params (seq_steps, quantise_scale_editor,
-                                         // plate_tune, pushbutton_value, preset_a..d, arp_clock,
-                                         // seq_clock, arp_rhythm, seq_rhythm + remaining module ranges)
-  CHECK_EQ(core::kJackCount, 35u);       // Phase B preamp+env_follower slice: +3 patchable jacks
-                                         // (preamp.ext_source_in audio input, nominal -1..+1V from
-                                         // L549; env_follower.env_out 0..+10V CV from L160;
-                                         // env_follower.gate_out 0..+8V gate from L161). Prior phases
-                                         // added joystick x_out/y_out, lfo_a/lfo_b cv_out, envelope_b
+  CHECK_EQ(core::kParameterCount, 106u); // Phase B sequencer slice: +13 params (pulser + clock +
+                                         // stages + step_cv_1..5 + step_gate_1..5). Modules now carry
+                                         // 100, programs 6. Left as honest gaps the drones/effector/
+                                         // mixer/voices params + the 12 keyboard complex params
+                                         // (seq_steps, quantise_scale_editor, plate_tune,
+                                         // pushbutton_value, preset_a..d, arp_clock, seq_clock,
+                                         // arp_rhythm, seq_rhythm + remaining module ranges)
+  CHECK_EQ(core::kJackCount, 39u);       // Phase B sequencer slice: +4 patchable jacks
+                                         // (sequencer.ext_clock_in/clock_out signalType=clock, range/
+                                         // polarity/coupling unknown + unverified; sequencer.cv_out
+                                         // 0..+5V CV/unipolar from L159 legend; sequencer.gate_out
+                                         // 0..+10V gate/unipolar from L160 legend). Prior phases added
+                                         // preamp.ext_source_in, env_follower.env_out/gate_out,
+                                         // joystick x_out/y_out, lfo_a/lfo_b cv_out, envelope_b
                                          // gate_in/env_out/vca_cv_out, vco_a/vco_b wave_out+pwm_in,
                                          // keyboard pressure_out+reset_in, envelope_a vca_cv_out and
                                          // dropped bad jack vcf.audio_in

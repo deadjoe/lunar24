@@ -23,7 +23,8 @@ enum class ModuleId : std::uint32_t {
     lfo_b = 7,
     joystick = 8,
     preamp = 9,
-    env_follower = 10
+    env_follower = 10,
+    sequencer = 11
 };
 
 enum class ParameterId : std::uint32_t {
@@ -114,6 +115,19 @@ enum class ParameterId : std::uint32_t {
     preamp_gain = 157,
     env_follower_attack = 158,
     env_follower_release = 159,
+    sequencer_pulser = 160,
+    sequencer_clock = 161,
+    sequencer_stages = 162,
+    sequencer_step_cv_1 = 163,
+    sequencer_step_cv_2 = 164,
+    sequencer_step_cv_3 = 165,
+    sequencer_step_cv_4 = 166,
+    sequencer_step_cv_5 = 167,
+    sequencer_step_gate_1 = 168,
+    sequencer_step_gate_2 = 169,
+    sequencer_step_gate_3 = 170,
+    sequencer_step_gate_4 = 171,
+    sequencer_step_gate_5 = 172,
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
@@ -157,7 +171,11 @@ enum class JackId : std::uint32_t {
     joystick_y_out = 32,
     preamp_ext_source_in = 33,
     env_follower_env_out = 34,
-    env_follower_gate_out = 35
+    env_follower_gate_out = 35,
+    sequencer_ext_clock_in = 36,
+    sequencer_clock_out = 37,
+    sequencer_cv_out = 38,
+    sequencer_gate_out = 39
 };
 
 enum class ProgramId : std::uint32_t {
@@ -211,15 +229,15 @@ enum class RouteId : std::uint32_t {
     route_keyboard_gate_to_eg_b = 5
 };
 
-inline constexpr std::uint32_t kModuleCount = 11;
-inline constexpr std::uint32_t kParameterCount = 93;
-inline constexpr std::uint32_t kJackCount = 35;
+inline constexpr std::uint32_t kModuleCount = 12;
+inline constexpr std::uint32_t kParameterCount = 106;
+inline constexpr std::uint32_t kJackCount = 39;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
-inline constexpr std::uint64_t kModuleIdSpace = 11;
-inline constexpr std::uint64_t kParameterIdSpace = 160;
-inline constexpr std::uint64_t kJackIdSpace = 36;
+inline constexpr std::uint64_t kModuleIdSpace = 12;
+inline constexpr std::uint64_t kParameterIdSpace = 173;
+inline constexpr std::uint64_t kJackIdSpace = 40;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
 
@@ -240,6 +258,7 @@ inline constexpr std::string_view module_id_string(ModuleId id) {
     case ModuleId::joystick: return "joystick";
     case ModuleId::preamp: return "preamp";
     case ModuleId::env_follower: return "env_follower";
+    case ModuleId::sequencer: return "sequencer";
   }
   return "(unknown Module)";
 }
@@ -333,6 +352,19 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::preamp_gain: return "preamp.gain";
     case ParameterId::env_follower_attack: return "env_follower.attack";
     case ParameterId::env_follower_release: return "env_follower.release";
+    case ParameterId::sequencer_pulser: return "sequencer.pulser";
+    case ParameterId::sequencer_clock: return "sequencer.clock";
+    case ParameterId::sequencer_stages: return "sequencer.stages";
+    case ParameterId::sequencer_step_cv_1: return "sequencer.step_cv_1";
+    case ParameterId::sequencer_step_cv_2: return "sequencer.step_cv_2";
+    case ParameterId::sequencer_step_cv_3: return "sequencer.step_cv_3";
+    case ParameterId::sequencer_step_cv_4: return "sequencer.step_cv_4";
+    case ParameterId::sequencer_step_cv_5: return "sequencer.step_cv_5";
+    case ParameterId::sequencer_step_gate_1: return "sequencer.step_gate_1";
+    case ParameterId::sequencer_step_gate_2: return "sequencer.step_gate_2";
+    case ParameterId::sequencer_step_gate_3: return "sequencer.step_gate_3";
+    case ParameterId::sequencer_step_gate_4: return "sequencer.step_gate_4";
+    case ParameterId::sequencer_step_gate_5: return "sequencer.step_gate_5";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";
@@ -380,6 +412,10 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::preamp_ext_source_in: return "preamp.ext_source_in";
     case JackId::env_follower_env_out: return "env_follower.env_out";
     case JackId::env_follower_gate_out: return "env_follower.gate_out";
+    case JackId::sequencer_ext_clock_in: return "sequencer.ext_clock_in";
+    case JackId::sequencer_clock_out: return "sequencer.clock_out";
+    case JackId::sequencer_cv_out: return "sequencer.cv_out";
+    case JackId::sequencer_gate_out: return "sequencer.gate_out";
   }
   return "(unknown Jack)";
 }

@@ -3420,6 +3420,464 @@
           }
         }
       ]
+    },
+    {
+      "id": 11,
+      "stable_id": "sequencer",
+      "name": "5-step sequencer",
+      "category": "control",
+      "description": "5-stage sequential voltage source: an internal clock (PULSER) with an external clock/trigger input, a STAGES selector for 3/4/5 steps, and five continuously adjustable step-CV outputs (0..+5V) plus five step-gate switches (off/on), a CLOCK OUT, and a CV/GATE out. Voltage/polarity/coupling on the clock jacks is not documented (kept unknown/unverified); CV/GATE outputs carry the legend ranges.",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 480,
+        "lineEnd": 505
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 160,
+          "stable_id": "sequencer.pulser",
+          "name": "PULSER",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 500
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 161,
+          "stable_id": "sequencer.clock",
+          "name": "CLOCK",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 492
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "int",
+            "ext"
+          ]
+        },
+        {
+          "id": 162,
+          "stable_id": "sequencer.stages",
+          "name": "STAGES",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 2.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 499
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "3",
+            "4",
+            "5"
+          ]
+        },
+        {
+          "id": 163,
+          "stable_id": "sequencer.step_cv_1",
+          "name": "STEP CV 1",
+          "unit": "V",
+          "min": 0.0,
+          "max": 5.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 486
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "confirmed",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "confirmed"
+          }
+        },
+        {
+          "id": 164,
+          "stable_id": "sequencer.step_cv_2",
+          "name": "STEP CV 2",
+          "unit": "V",
+          "min": 0.0,
+          "max": 5.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 486
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "confirmed",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "confirmed"
+          }
+        },
+        {
+          "id": 165,
+          "stable_id": "sequencer.step_cv_3",
+          "name": "STEP CV 3",
+          "unit": "V",
+          "min": 0.0,
+          "max": 5.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 486
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "confirmed",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "confirmed"
+          }
+        },
+        {
+          "id": 166,
+          "stable_id": "sequencer.step_cv_4",
+          "name": "STEP CV 4",
+          "unit": "V",
+          "min": 0.0,
+          "max": 5.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 486
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "confirmed",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "confirmed"
+          }
+        },
+        {
+          "id": 167,
+          "stable_id": "sequencer.step_cv_5",
+          "name": "STEP CV 5",
+          "unit": "V",
+          "min": 0.0,
+          "max": 5.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 486
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "confirmed",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "confirmed"
+          }
+        },
+        {
+          "id": 168,
+          "stable_id": "sequencer.step_gate_1",
+          "name": "STEP GATE 1",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 496
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 169,
+          "stable_id": "sequencer.step_gate_2",
+          "name": "STEP GATE 2",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 496
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 170,
+          "stable_id": "sequencer.step_gate_3",
+          "name": "STEP GATE 3",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 496
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 171,
+          "stable_id": "sequencer.step_gate_4",
+          "name": "STEP GATE 4",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 496
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 172,
+          "stable_id": "sequencer.step_gate_5",
+          "name": "STEP GATE 5",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 496
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        }
+      ],
+      "jacks": [
+        {
+          "id": 36,
+          "stable_id": "sequencer.ext_clock_in",
+          "name": "EXT CLOCK IN",
+          "direction": "input",
+          "signalType": "clock",
+          "polarity": "unknown",
+          "nominalMin": 0.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 493
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 37,
+          "stable_id": "sequencer.clock_out",
+          "name": "CLOCK OUT",
+          "direction": "output",
+          "signalType": "clock",
+          "polarity": "unknown",
+          "nominalMin": 0.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 501
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 38,
+          "stable_id": "sequencer.cv_out",
+          "name": "CV OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 159
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 39,
+          "stable_id": "sequencer.gate_out",
+          "name": "GATE OUT",
+          "direction": "output",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 160
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        }
+      ]
     }
   ],
   "normalizedRoutes": [
