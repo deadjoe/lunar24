@@ -4062,9 +4062,10 @@ def main():
     if not has(problems, "MISSING landed descriptor param 'program.cathedral.3.z'"):
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
-    # (ll) cathedral.2/.3 must NOT be re-openable as an honest gap: with the two cathedral programs'
-    #      params landed, the --require-full residual must exclude every cathedral.2/.3 id. It widens
-    #      exactly across the 12 keyboard complex + 105 other program XYZ params (117 total).
+    # (ll) cathedral.2/.3 and magic.2/.3 must NOT be re-openable as an honest gap: with those four
+    #      programs' params landed, the --require-full residual must exclude every cathedral.2/.3 and
+    #      magic.2/.3 id. It widens exactly across the 12 keyboard complex + 99 other program XYZ
+    #      params (111 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4074,23 +4075,98 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 117:
-        raise SystemExit("residual honest-gap total %d != 117 (12 keyboard complex + 105 program XYZ); "
-                         "cathedral.2/.3 must have landed and closed exactly 6" % len(_gap_ids))
-    if len(_kb) != 12 or len(_prog) != 105:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/105: %r" % (len(_kb), len(_prog),
-                                                                                 _gap_ids))
+    if len(_gap_ids) != 111:
+        raise SystemExit("residual honest-gap total %d != 111 (12 keyboard complex + 99 program XYZ); "
+                         "cathedral.2/.3 + magic.2/.3 must have landed and closed exactly 12"
+                         % len(_gap_ids))
+    if len(_kb) != 12 or len(_prog) != 99:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/99: %r" % (len(_kb), len(_prog),
+                                                                                _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
-                 "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z"):
+                 "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
+                 "program.magic.2.x", "program.magic.2.y", "program.magic.2.z",
+                 "program.magic.3.x", "program.magic.3.y", "program.magic.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("cathedral landed param %s re-opened as an honest gap (mandate: the 105 "
-                             "other program XYZ gaps are preserved, NOT cathedral.2/3): %r"
-                             % (_sid, _gap_ids))
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 99 "
+                             "other program XYZ gaps are preserved, NOT cathedral.2/3 or magic.2/3): "
+                             "%r" % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
             raise SystemExit("already-landed program param %s incorrectly left as a gap: %r"
                              % (_sid, _gap_ids))
+
+    # (lm)-(lt) MAGIC Program 2/3 X/Y/Z descriptor lock (Codex msg 62370964). The six program
+    #      magic.2/.3 x/y/z params (ids 307-312) are landed descriptor facts locked by the exact-
+    #      compare — id renumber, owner / cross-owner leak, per-line evidence drift and a fieldEvidence
+    #      overclaim must all fail normal. ROLE is also locked (a program x/y/z param's role must equal
+    #      its stable-id .x/.y/.z suffix), and a terminator delete is a landed/mustComplete drop. KEY
+    #      DIFF vs cathedral: the PLACEHOLDER values (unit=norm, 0..1, default 0) are chosen so that NO
+    #      feedback/delay/pitch unit, range or default is asserted — MAGIC 1's concrete millisecond /
+    #      semitone values are deliberately NOT reused here.
+
+    # (lm) id renumber: magic.2.x is id 307; renumbering (307 -> 999) must fail.
+    lm_bad = copy.deepcopy(spec)
+    reg_param(lm_bad, "program.magic.2.x")["id"] = 999
+    problems, _ = gate.check(lm_bad, manifest)
+    if not has(problems, "implementation param 'program.magic.2.x'"):
+        raise SystemExit("magic.2.x param id renumber (307 -> 999) not enforced: %r" % problems)
+
+    # (ln) owner / cross-owner leak: magic.2.x must stay owned by program.magic.2; moving it under
+    #      program.magic.3's array makes the generated owner program.magic.3, which the landed fact
+    #      rejects.
+    ln_bad = copy.deepcopy(spec)
+    _m2 = next(pr for pr in ln_bad["programs"] if pr.get("stable_id") == "program.magic.2")
+    _m3 = next(pr for pr in ln_bad["programs"] if pr.get("stable_id") == "program.magic.3")
+    _x = [p for p in _m2["parameters"] if p["stable_id"] == "program.magic.2.x"][0]
+    _m2["parameters"] = [p for p in _m2["parameters"] if p["stable_id"] != "program.magic.2.x"]
+    _m3.setdefault("parameters", []).append(_x)
+    problems, _ = gate.check(ln_bad, manifest)
+    if not has(problems, "implementation param 'program.magic.2.x'"):
+        raise SystemExit("magic.2.x cross-owner leak (-> program.magic.3) not enforced: %r"
+                         % problems)
+
+    # (lp) ROLE drift: magic.2.x being role y (valid but wrong position) must fail (role gate).
+    lp_bad = copy.deepcopy(spec)
+    reg_param(lp_bad, "program.magic.2.x")["role"] = "y"
+    problems, _ = gate.check(lp_bad, manifest)
+    if not has(problems, "stable-id position"):
+        raise SystemExit("magic.2.x role drift (x -> y) not enforced by the role gate: %r"
+                         % problems)
+
+    # (lq) per-line descriptorEvidence drift: magic.2.x cites L1217; moving it (1217 -> 1218) is a
+    #      target drift and must fail.
+    lq_bad = copy.deepcopy(spec)
+    reg_param(lq_bad, "program.magic.2.x")["evidence"]["line"] = 1218
+    problems, _ = gate.check(lq_bad, manifest)
+    if not has(problems, "implementation param 'program.magic.2.x'"):
+        raise SystemExit("magic.2.x descriptorEvidence.line drift (1217 -> 1218) not enforced: "
+                         "%r" % problems)
+
+    # (lr) fieldEvidence overclaim: a placeholder range must not be elevated to confirmed (the KEY
+    #      DIFF — no physical feedback/delay/pitch unit/range/default is being asserted here).
+    lr_bad = copy.deepcopy(spec)
+    reg_param(lr_bad, "program.magic.2.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(lr_bad, manifest)
+    if not has(problems, "implementation param 'program.magic.2.x'"):
+        raise SystemExit("magic.2.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+
+    # (ls) FIRST terminator delete: dropping magic.2.x is a landed/mustComplete drop, not a gap.
+    ls_bad = copy.deepcopy(spec)
+    _m2 = next(pr for pr in ls_bad["programs"] if pr.get("stable_id") == "program.magic.2")
+    _m2["parameters"] = [p for p in _m2["parameters"] if p["stable_id"] != "program.magic.2.x"]
+    problems, _ = gate.check(ls_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.magic.2.x'"):
+        raise SystemExit("magic.2.x terminator delete (first) not enforced: %r" % problems)
+
+    # (lt) LAST terminator delete: dropping magic.3.z is likewise a landed/mustComplete drop.
+    lt_bad = copy.deepcopy(spec)
+    _m3 = next(pr for pr in lt_bad["programs"] if pr.get("stable_id") == "program.magic.3")
+    _m3["parameters"] = [p for p in _m3["parameters"] if p["stable_id"] != "program.magic.3.z"]
+    problems, _ = gate.check(lt_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.magic.3.z'"):
+        raise SystemExit("magic.3.z terminator delete (last) not enforced: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
