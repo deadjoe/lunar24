@@ -463,12 +463,12 @@ def main():
     if not has(problems, "kind must be one of"):
         raise SystemExit("invalid fixed-route kind not flagged: %r" % problems)
 
-    # 31. mustComplete non-regression: a manifest target not in the registry. drone_2 / drone_4 /
-    #     drone_5 have now landed (Codex msg 3bc2111c / 483a9dc5 / 6e25b926), so use drone_3 — a target
-    #     module the registry still has NOT implemented — so a mustComplete key for an unimplemented
-    #     module is still a regression drop.
+    # 31. mustComplete non-regression: a manifest target not in the registry. drone_2 / drone_3 /
+    #     drone_4 / drone_5 have now landed (Codex msg 3bc2111c / b86a53c0 / 483a9dc5 / 6e25b926), so
+    #     use drone_6 — a target module the registry still has NOT implemented — so a mustComplete key
+    #     for an unimplemented module is still a regression drop.
     regress = copy.deepcopy(manifest)
-    regress["mustComplete"].append("module:drone_3")  # a manifest target, NOT in registry
+    regress["mustComplete"].append("module:drone_6")  # a manifest target, NOT in registry
     problems, _ = gate.check(spec, regress)
     if not has(problems, "NON-REGRESSION"):
         raise SystemExit("dropped mustComplete item not flagged as non-regression: %r" % problems)
@@ -3398,6 +3398,276 @@ def main():
         raise SystemExit("drone_5 cross-owner leak (tune_1 -> drone_1.tune_1) not enforced: %r"
                         % problems)
 
+    # ---- DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0) --------------
+    # DIFFERENT envelope boundary from DRONE 4/5: manual L157 "ENV VOICES 1,2,3,6,7,8" DOES list
+    # voice 3, so drone_3.env_out IS a confirmed -10..+10V/bipolar output (NOT the unverified/
+    # unknown placeholder DRONE 4/5 carry). So the env_out negatives are OPPOSITE-polarity here:
+    # drifting polarity away from bipolar MUST fail, and downgrading nominalRange evidence to
+    # unverified MUST fail. The 5V gate is produced by the keyboard (buttons 3 and 6, L331-332),
+    # NOT by the gate_in input rail — so asserting gate_in polarity unipolar (reverse-inferring
+    # from the keyboard's 5V gate) is a mandated-negative over-claim and MUST fail. cv_out is the
+    # confirmed 0..+12V/unipolar square-wave modulator output (L158 + L345-346). clock_in (clock
+    # sets the S&H speed) and noise_in (only the S&H/IN identity) have unverified electrical
+    # characteristics. Selector domains: hi_low = [hi,low]; fm/am/rate_switch/hold = [off,on]
+    # (all-six provisional). Continuous params are software-normalized 0..1 placeholders.
+    # Wrong if the group cardinality drifts, if any id/name mapping renumbers or renames a member,
+    # if a continuous param loses its 0..1 placeholder provenance, if a selector loses its value
+    # domain, if a jack's range / type / polarity / evidence drifts, or if a drone_3 member leaks
+    # a drone_1 stable_id (copy-paste from a prior slice). Each must FAIL normal for its own reason.
+
+    # (ia) module delete: pulling the whole landed module (id 19) out of the registry must fail.
+    ia_bad = copy.deepcopy(spec)
+    ia_bad["modules"] = [m for m in ia_bad["modules"] if m.get("stable_id") != "drone_3"]
+    problems, _ = gate.check(ia_bad, manifest)
+    if not has(problems, "MISSING landed module 'drone_3'"):
+        raise SystemExit("drone_3 module delete not enforced: %r" % problems)
+
+    # (ib) module id renumber: drone_3 is a landed module with id 19; renumbering (19 -> 999) must fail.
+    ib_bad = copy.deepcopy(spec)
+    for m in ib_bad["modules"]:
+        if m.get("stable_id") == "drone_3":
+            m["id"] = 999
+    problems, _ = gate.check(ib_bad, manifest)
+    if not has(problems, "implementation module 'drone_3': id"):
+        raise SystemExit("drone_3 module id renumber (19 -> 999) not enforced: %r" % problems)
+
+    # (ic) module target name drift: the registry module name stays in lock-step with target.modules
+    #      ('DRONE 3'); a silent rename is a target drift.
+    ic_bad = copy.deepcopy(spec)
+    for m in ic_bad["modules"]:
+        if m.get("stable_id") == "drone_3":
+            m["name"] = "DRONE THREE"
+    problems, _ = gate.check(ic_bad, manifest)
+    if not has(problems, "implementation module 'drone_3': name"):
+        raise SystemExit("drone_3 module name drift ('DRONE 3' -> 'DRONE THREE') not enforced: %r"
+                        % problems)
+
+    # (id) module evidence drift: the module spans L329-370; moving lineStart is a target drift.
+    id_bad = copy.deepcopy(spec)
+    for m in id_bad["modules"]:
+        if m.get("stable_id") == "drone_3":
+            m["evidence"]["lineStart"] = 330
+    problems, _ = gate.check(id_bad, manifest)
+    if not has(problems, "implementation module 'drone_3': evidence.lineStart"):
+        raise SystemExit("drone_3 module evidence.lineStart drift (329 -> 330) not enforced: %r"
+                        % problems)
+
+    # (ie) 7-continuous cardinality - FIRST generator: deleting drone_3.rate must fail.
+    ie_bad = copy.deepcopy(spec)
+    for m in ie_bad["modules"]:
+        if m.get("stable_id") == "drone_3":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "drone_3.rate"]
+    problems, _ = gate.check(ie_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'drone_3.rate'"):
+        raise SystemExit("drone_3 first-continuous delete (drone_3.rate) not enforced: %r" % problems)
+
+    # (if) 7-continuous cardinality - MIDDLE generator: deleting drone_3.pitch must fail.
+    if_bad = copy.deepcopy(spec)
+    for m in if_bad["modules"]:
+        if m.get("stable_id") == "drone_3":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "drone_3.pitch"]
+    problems, _ = gate.check(if_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'drone_3.pitch'"):
+        raise SystemExit("drone_3 middle-continuous delete (drone_3.pitch) not enforced: %r" % problems)
+
+    # (ig) 7-continuous cardinality - LAST generator: deleting drone_3.rls must fail.
+    ig_bad = copy.deepcopy(spec)
+    for m in ig_bad["modules"]:
+        if m.get("stable_id") == "drone_3":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "drone_3.rls"]
+    problems, _ = gate.check(ig_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'drone_3.rls'"):
+        raise SystemExit("drone_3 last-continuous delete (drone_3.rls) not enforced: %r" % problems)
+
+    # (ih) ID mapping: renumber a landed continuous param id (drone_3.rate 277 -> 999) must fail.
+    ih_bad = copy.deepcopy(spec)
+    reg_param(ih_bad, "drone_3.rate")["id"] = 999
+    problems, _ = gate.check(ih_bad, manifest)
+    if not has(problems, "implementation param 'drone_3.rate'"):
+        raise SystemExit("drone_3 param id renumber (rate 277 -> 999) not enforced: %r" % problems)
+
+    # (ii) NAME mapping: a landed selector param must keep its exact label ('RANGE'); a silent rename
+    #      is a target drift.
+    ii_bad = copy.deepcopy(spec)
+    reg_param(ii_bad, "drone_3.hi_low")["name"] = "RANGE SW"
+    problems, _ = gate.check(ii_bad, manifest)
+    if not has(problems, "implementation param 'drone_3.hi_low'"):
+        raise SystemExit("drone_3 param name drift (hi_low 'RANGE' -> 'RANGE SW') not enforced: %r"
+                        % problems)
+
+    # (ij) hi_low selector positions drift: RANGE is hi/low; reordering the domain is a re-mapping and
+    #      must fail.
+    ij_bad = copy.deepcopy(spec)
+    reg_param(ij_bad, "drone_3.hi_low")["positions"] = ["low", "hi"]
+    problems, _ = gate.check(ij_bad, manifest)
+    if not has(problems, "registry selector options"):
+        raise SystemExit("drone_3.hi_low selector positions drift (['hi','low'] -> ['low','hi']) "
+                        "not enforced: %r" % problems)
+
+    # (ik) FM selector positions drift: fm is the off/on toggle; its domain must not move.
+    ik_bad = copy.deepcopy(spec)
+    reg_param(ik_bad, "drone_3.fm")["positions"] = ["on", "off"]
+    problems, _ = gate.check(ik_bad, manifest)
+    if not has(problems, "registry selector options"):
+        raise SystemExit("drone_3.fm selector positions drift (['off','on'] -> ['on','off']) "
+                        "not enforced: %r" % problems)
+
+    # (il) RATE descriptorEvidence.line drift: RATE CONTROL cites L345; moving it must fail.
+    il_bad = copy.deepcopy(spec)
+    reg_param(il_bad, "drone_3.rate")["evidence"]["line"] = 346
+    problems, _ = gate.check(il_bad, manifest)
+    if not has(problems, "implementation param 'drone_3.rate'"):
+        raise SystemExit("drone_3.rate descriptorEvidence.line drift (345 -> 346) not enforced: %r"
+                        % problems)
+
+    # (im) PITCH descriptorEvidence.line drift: PITCH KNOBS cites L347; moving it must fail.
+    im_bad = copy.deepcopy(spec)
+    reg_param(im_bad, "drone_3.pitch")["evidence"]["line"] = 348
+    problems, _ = gate.check(im_bad, manifest)
+    if not has(problems, "implementation param 'drone_3.pitch'"):
+        raise SystemExit("drone_3.pitch descriptorEvidence.line drift (347 -> 348) not enforced: %r"
+                        % problems)
+
+    # (in) HOLD descriptorEvidence.line drift: hold cites the panel HOLD label (L82); moving it must
+    #      fail.
+    in_bad = copy.deepcopy(spec)
+    reg_param(in_bad, "drone_3.hold")["evidence"]["line"] = 83
+    problems, _ = gate.check(in_bad, manifest)
+    if not has(problems, "implementation param 'drone_3.hold'"):
+        raise SystemExit("drone_3.hold descriptorEvidence.line drift (82 -> 83) not enforced: %r"
+                        % problems)
+
+    # (io) continuous placeholder provenance over-claim: RATE is a software-normalized 0..1 placeholder
+    #      (all-six unverified); silently elevating fieldEvidence.range to confirmed is an evidence
+    #      over-claim and must fail.
+    io_bad = copy.deepcopy(spec)
+    reg_param(io_bad, "drone_3.rate")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(io_bad, manifest)
+    if not has(problems, "implementation param 'drone_3.rate'"):
+        raise SystemExit("drone_3.rate fieldEvidence over-claim (range unverified->confirmed) "
+                        "not enforced: %r" % problems)
+
+    # (ip) cv_out nominal range drift: cv_out is the confirmed 0..+12V output; drifting nominalMax must
+    #      fail.
+    ip_bad = copy.deepcopy(spec)
+    reg_jack(ip_bad, "drone_3.cv_out")["nominalMax"] = 13
+    problems, _ = gate.check(ip_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.cv_out'"):
+        raise SystemExit("drone_3.cv_out nominal range drift (12 -> 13) not enforced: %r" % problems)
+
+    # (iq) cv_out polarity drift: cv_out is a confirmed UNIPOLAR output; flipping to bipolar is a type
+    #      over-claim and must fail.
+    iq_bad = copy.deepcopy(spec)
+    reg_jack(iq_bad, "drone_3.cv_out")["polarity"] = "bipolar"
+    problems, _ = gate.check(iq_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.cv_out'"):
+        raise SystemExit("drone_3.cv_out polarity drift (unipolar -> bipolar) not enforced: %r"
+                        % problems)
+
+    # (ir) env_out nominal range drift: env_out is the confirmed -10..+10V output; widening nominalMax
+    #      must fail.
+    ir_bad = copy.deepcopy(spec)
+    reg_jack(ir_bad, "drone_3.env_out")["nominalMax"] = 11
+    problems, _ = gate.check(ir_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.env_out'"):
+        raise SystemExit("drone_3.env_out nominal range drift (10 -> 11) not enforced: %r" % problems)
+
+    # (is) env_out polarity drift (KEY DIFF): manual L157 DOES list voice 3, so env_out polarity is a
+    #      CONFIRMED bipolar. Dropping it to unknown (as DRONE 4/5 land) is an evidence downgrade and
+    #      must fail.
+    is_bad = copy.deepcopy(spec)
+    reg_jack(is_bad, "drone_3.env_out")["polarity"] = "unknown"
+    problems, _ = gate.check(is_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.env_out'"):
+        raise SystemExit("drone_3.env_out polarity drift (bipolar -> unknown) not enforced: %r"
+                        % problems)
+
+    # (it) env_out nominalRange evidence downgrade (KEY DIFF): because L157 lists voice 3 the
+    #      nominalRange evidence is CONFIRMED (unlike DRONE 4/5); silently downgrading it to unverified
+    #      is a mandated-negative over-claim and must fail.
+    it_bad = copy.deepcopy(spec)
+    reg_jack(it_bad, "drone_3.env_out")["fieldEvidence"]["nominalRange"] = "unverified"
+    problems, _ = gate.check(it_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.env_out'"):
+        raise SystemExit("drone_3.env_out fieldEvidence downgrade (nominalRange confirmed->unverified) "
+                        "not enforced: %r" % problems)
+
+    # (iu) gate_in signalType drift: gate_in is a confirmed GATE input; silently reclassifying it as a CV
+    #      input is a type drift and must fail.
+    iu_bad = copy.deepcopy(spec)
+    reg_jack(iu_bad, "drone_3.gate_in")["signalType"] = "cv"
+    problems, _ = gate.check(iu_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.gate_in'"):
+        raise SystemExit("drone_3.gate_in signalType drift (gate -> cv) not enforced: %r" % problems)
+
+    # (iv) gate_in polarity over-claim (KEY keyboard-5V reverse inference): the documented 5V gate is
+    #      PRODUCED by the keyboard buttons (L331-332), NOT by this input rail, so gate_in polarity stays
+    #      unknown/unverified. Reverse-inferring a concrete unipolar from the keyboard's 5V gate is a
+    #      mandated-negative over-claim and must fail.
+    iv_bad = copy.deepcopy(spec)
+    reg_jack(iv_bad, "drone_3.gate_in")["polarity"] = "unipolar"
+    problems, _ = gate.check(iv_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.gate_in'"):
+        raise SystemExit("drone_3.gate_in polarity over-claim (unknown -> unipolar, keyboard-5V "
+                        "reverse inference) not enforced: %r" % problems)
+
+    # (iw) gate_in nominal range drift: the gate input placeholder is 0..+10; drifting nominalMax must
+    #      fail.
+    iw_bad = copy.deepcopy(spec)
+    reg_jack(iw_bad, "drone_3.gate_in")["nominalMax"] = 9
+    problems, _ = gate.check(iw_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.gate_in'"):
+        raise SystemExit("drone_3.gate_in nominal range drift (10 -> 9) not enforced: %r" % problems)
+
+    # (ix) clock_in signalType drift: clock_in is a confirmed CLOCK input; reclassifying as CV is a type
+    #      drift and must fail.
+    ix_bad = copy.deepcopy(spec)
+    reg_jack(ix_bad, "drone_3.clock_in")["signalType"] = "cv"
+    problems, _ = gate.check(ix_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.clock_in'"):
+        raise SystemExit("drone_3.clock_in signalType drift (clock -> cv) not enforced: %r" % problems)
+
+    # (iy) noise_in nominal range drift: the noise input placeholder is -5..+5; drifting nominalMax must
+    #      fail.
+    iy_bad = copy.deepcopy(spec)
+    reg_jack(iy_bad, "drone_3.noise_in")["nominalMax"] = 6
+    problems, _ = gate.check(iy_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.noise_in'"):
+        raise SystemExit("drone_3.noise_in nominal range drift (5 -> 6) not enforced: %r" % problems)
+
+    # (iz) cross-owner leak: a drone_3 descriptor member must not be re-owner'd to a drone_1 stable_id
+    #      (a copy-paste from the DRONE 1 slice). Renaming drone_3.att to drone_1.att must fail — the
+    #      gate catches it as an enumerator collision (two members resolve to drone_1_att).
+    iz_bad = copy.deepcopy(spec)
+    reg_param(iz_bad, "drone_3.att")["stable_id"] = "drone_1.att"
+    problems, _ = gate.check(iz_bad, manifest)
+    if not has(problems, "enumerator collision"):
+        raise SystemExit("drone_3 cross-owner leak (att -> drone_1.att) not enforced: %r" % problems)
+
+    # (ja) drone_3.cv_out descriptorEvidence.line drift: cv_out is the confirmed 0..+12V/unipolar
+    #      square-wave modulator output, so its descriptor evidence anchor must be the output spec
+    #      L158 (same as the LFO output). Reverting L158 -> L346 (which only proves the CV OUT
+    #      identity) must fail — the anchor no longer proves the confirmed electrical range.
+    ja_bad = copy.deepcopy(spec)
+    reg_jack(ja_bad, "drone_3.cv_out")["evidence"]["line"] = 346
+    problems, _ = gate.check(ja_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.cv_out'"):
+        raise SystemExit("drone_3.cv_out descriptorEvidence.line drift (158 -> 346) not enforced: %r"
+                        % problems)
+
+    # (jb) drone_3.env_out descriptorEvidence.line drift: env_out is the confirmed -10..+10V/bipolar
+    #      ENV VOICES output, so its descriptor evidence anchor must be L157 (ENV VOICES lists voice 3).
+    #      Reverting L157 -> L334 (which only proves the envelope output identity) must fail.
+    jb_bad = copy.deepcopy(spec)
+    reg_jack(jb_bad, "drone_3.env_out")["evidence"]["line"] = 334
+    problems, _ = gate.check(jb_bad, manifest)
+    if not has(problems, "implementation jack 'drone_3.env_out'"):
+        raise SystemExit("drone_3.env_out descriptorEvidence.line drift (157 -> 334) not enforced: %r"
+                        % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -3459,7 +3729,19 @@ def main():
           "range / descriptorEvidence.line drift, and the cross-owner leak (a drone_5 member renamed to "
           "a drone_1 stable_id) all fail — and, as the mandated KEY DIFF, the env_out polarity guess to "
           "bipolar and the env_out nominalRange evidence over-claim (both forbidden because manual L157 "
-          "'ENV VOICES 1,2,3,6,7,8' does NOT list 4/5) also fail.")
+          "'ENV VOICES 1,2,3,6,7,8' does NOT list 4/5) also fail; its successor, the DRONE 3 \"Papa Srapa\" "
+          "voice slice (Codex msg b86a53c0), closes the drone_3 module (id 19) too — module delete / module "
+          "id renumber / module target name drift / module evidence.lineStart drift, the 7-continuous "
+          "cardinality (first rate / middle pitch / last rls delete), a continuous param id renumber + "
+          "name mapping drift, hi_low + FM selector positions reorder, RATE/PITCH/HOLD "
+          "descriptorEvidence.line drift, the continuous RATE placeholder provenance over-claim, the "
+          "cv_out range + polarity (unipolar) drift, the gate_in signalType + nominal-range drift, the "
+          "clock_in signalType drift, the noise_in nominal-range drift, and the cross-owner leak (a "
+          "drone_3 member renamed to a drone_1 stable_id) all fail — and, as the OPPOSITE-polarity KEY "
+          "DIFF ground, the env_out polarity drift away from bipolar (to unknown) and the env_out "
+          "nominalRange evidence downgrade (confirmed -> unverified) both fail because manual L157 'ENV "
+          "VOICES 1,2,3,6,7,8' DOES list voice 3, and the gate_in polarity over-claim (unknown -> unipolar, "
+          "reverse-inferred from the keyboard-produced 5V gate) fails too.")
     return 0
 
 
