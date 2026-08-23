@@ -18,15 +18,20 @@
 namespace lunar24::core {
 
 // Parameter value bank capacity. Must be >= registry kParameterIdSpace (the
-// one-past-the-last serialized ParameterId). This is now the P0 FINAL parameter
+// one-past-the-last serialized ParameterId). This is the P0 FINAL parameter
 // id-space: the frozen 357-parameter target plus an append-only id plan — new ids
-// continue from 376 and the 0..375 holes are never reused — so the space is
-// one-past last id 423 = 424. Capacity freeze (Codex msg deab14b7), a
-// metadata-only ruling: it does NOT implement the B-tier deferred self-oscillating
-// DSP. Future id allocation (registry metadata numbering only): SYNTEX-1 376-384,
-// DIGITAL 385-393, GENERATOR 394-402, ORCHE 403-411, 12 keyboard complex 412-423.
-// The completeness gate stays capacity >= id-space until the full inventory lands
-// (then it is tightened to ==), so this slice never fakes early full coverage.
+// continue from 376 and the 0..375 holes are never reused. Capacity freeze
+// (Codex msg deab14b7), a metadata-only ruling: it does NOT implement the B-tier
+// deferred self-oscillating DSP. Id allocation (registry metadata numbering only):
+// SYNTEX-1 376-384, DIGITAL 385-393, GENERATOR 394-402, ORCHE 403-411. The
+// 12 keyboard-complex params (which would have been 412-423) do NOT land: 8 are
+// non-scalar (vector/record/mask — Root A must-gap; they belong in DeviceState
+// structured fields per design/07 §6) and 4 are selector-toggles whose frozen
+// target omits positions (no evidenced value domain, and the manual gives no
+// options). So the last landed id is 411 and kParameterIdSpace == 412.
+// The completeness gate PERMANENTLY holds capacity >= idSpace (never tightened to
+// ==): the 12 empty slots (424-412) are exactly these structural keyboard-complex
+// left-outs, NOT reserved expansion (@Claude fb7841e6, 方案1 land 0 / gap 12).
 inline constexpr std::size_t kDeviceParamCapacity = 424;
 
 // Patch-cable / normalized-route-override bank capacities. Must be >= the

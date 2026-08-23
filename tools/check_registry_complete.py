@@ -1832,6 +1832,23 @@ def check(spec, manifest, require_full=False):
     sz = {}
     for p in parameters:
         sz[p.get("shape", "scalar")] = sz.get(p.get("shape", "scalar"), 0) + 1
+
+    # Parameter-gap reason classification (two structurally distinct must-gap categories). Root A
+    # rejects any registry param whose TARGET shape is non-scalar, so a vector/record/mask target
+    # is a permanent design gap (a scalar registry param can never represent it). A selector-toggle
+    # target with NO positions is a separate must-gap: the frozen target declares a value selector
+    # but omits its domain, and the manual (if it even reaches this case) only describes the
+    # behaviour, not the options — so its value domain is un-evidenced and must not be invented.
+    _param_gap = sorted(param_sids - reg_param_sids)
+    _param_root_a = [sid for sid in _param_gap
+                     if (param_by_sid.get(sid) or {}).get("shape") in ("vector", "record", "mask")]
+    _param_posl = [sid for sid in _param_gap
+                   if sid not in _param_root_a
+                   and (param_by_sid.get(sid) or {}).get("kind") == "selector-toggle"
+                   and not (param_by_sid.get(sid) or {}).get("positions")]
+    _param_other = [sid for sid in _param_gap
+                    if sid not in _param_root_a and sid not in _param_posl]
+
     coverage = {
         "registry": {
             "modules": len(reg.modules), "params": len(reg.parameters),
@@ -1861,7 +1878,10 @@ def check(spec, manifest, require_full=False):
         "parameters": {"target": len(param_sids), "transcribed": len(param_sids),
                        "present": len(reg_param_sids), "missingModules": modules_missing_params,
                        "shapes": sz,
-                       "gap": sorted(param_sids - reg_param_sids),
+                       "gap": _param_gap,
+                       "gapRootA": _param_root_a,
+                       "gapPositionless": _param_posl,
+                       "gapOther": _param_other,
                        "rogue": sorted(reg_param_sids - param_sids),
                        "rogueMigrating": rogue_params_migrate,
                        "newRogue": new_param_rogue},
@@ -1917,6 +1937,12 @@ def check(spec, manifest, require_full=False):
             not_full.append("normalized-route gaps=%s" % coverage["normalizedRoutes"]["gap"])
         if coverage["parameters"]["gap"]:
             not_full.append("parameter target-not-implemented=%s" % coverage["parameters"]["gap"])
+            not_full.append(
+                "parameter gap classification: %d non-scalar (Root A must-gap, structural, NOT "
+                "to-do — must NOT be flattened into scalar params)=%s; %d selector-toggle "
+                "no-value-domain (frozen target omits positions, manual gives no options — must "
+                "stay gap until the value domain is evidenced)=%s"
+                % (len(_param_root_a), _param_root_a, len(_param_posl), _param_posl))
         if coverage["parameters"]["rogue"]:
             not_full.append("parameter registry-rogue=%s" % coverage["parameters"]["rogue"])
         if coverage["jacks"]["gap"]:
@@ -1969,6 +1995,13 @@ def format_report(coverage):
                  "missingModules=%(missingModules)s shapes=%(shapes)s" % pr)
     lines.append("                    gap=%(gap)s rogue=%(rogue)s "
                  "rogueMigrating=%(rogueMigrating)s newRogue=%(newRogue)s" % pr)
+    _pra = pr.get("gapRootA", [])
+    _ppl = pr.get("gapPositionless", [])
+    lines.append("  parameter gaps (%d total = %d non-scalar + %d no-value-domain): "
+                 "Root-A non-scalar — structural, NOT a to-do; must NOT be flattened into scalar "
+                 "parameters =%s; selector-toggle no-value-domain — frozen target omits positions "
+                 "and manual gives no options, must stay gap until the value domain is evidenced "
+                 "=%s" % (len(pr["gap"]), len(_pra), len(_ppl), _pra, _ppl))
     jk = coverage["jacks"]
     lines.append("  jacks            : target=%(target)d present=%(present)d "
                  "internal=%(internal)s newRogue=%(newRogue)s" % jk)

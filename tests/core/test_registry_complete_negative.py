@@ -4062,81 +4062,45 @@ def main():
     if not has(problems, "MISSING landed descriptor param 'program.cathedral.3.z'"):
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
-    # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3, vibe.1/.2/.3,
-    #      pitch_shifter.1/.2/.3, infinity.1/.2/.3, string_ringer.1/.2/.3, syntex_1.1/.2/.3,
-    #      digital.1/.2/.3, generator.1/.2/.3 and orche.1/.2/.3 must NOT be re-openable as an honest
-    #      gap: with those programs' params landed, the --require-full residual must exclude every one
-    #      of those ids. It widens exactly across the 12 keyboard complex params (12 total; orche is
-    #      now landed/closed).
-    _res_full, _ = gate.check(spec, manifest, require_full=True)
-    _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
-    if len(_gap_lines) != 1:
-        raise SystemExit("unexpected --require-full residual shape: %r" % _gap_lines)
-    _txt = _gap_lines[0]
-    _body = _txt[_txt.index("[") + 1:_txt.rindex("]")]
-    _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
-    _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
-    _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 12:
-        raise SystemExit("residual honest-gap total %d != 12 (all 12 keyboard complex; "
-                         "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + "
-                         "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 + "
-                         "string_ringer.1/.2/.3 + syntex_1.1/.2/.3 + digital.1/.2/.3 + generator.1/.2/.3 "
-                         "+ orche.1/.2/.3 are all "
-                         "landed/closed (not re-openable as a gap)); got: %r"
-                         % (len(_gap_ids), _gap_ids))
-    if len(_kb) != 12 or len(_prog) != 0:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/0 (orche landed/closed): %r"
-                         % (len(_kb), len(_prog), _gap_ids))
-    for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
-                 "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
-                 "program.magic.2.x", "program.magic.2.y", "program.magic.2.z",
-                 "program.magic.3.x", "program.magic.3.y", "program.magic.3.z",
-                 "program.time.1.x", "program.time.1.y", "program.time.1.z",
-                 "program.time.2.x", "program.time.2.y", "program.time.2.z",
-                 "program.time.3.x", "program.time.3.y", "program.time.3.z",
-                 "program.vibrotrem.1.x", "program.vibrotrem.1.y", "program.vibrotrem.1.z",
-                 "program.vibrotrem.2.x", "program.vibrotrem.2.y", "program.vibrotrem.2.z",
-                 "program.vibrotrem.3.x", "program.vibrotrem.3.y", "program.vibrotrem.3.z",
-                 "program.filter.1.x", "program.filter.1.y", "program.filter.1.z",
-                 "program.filter.2.x", "program.filter.2.y", "program.filter.2.z",
-                 "program.filter.3.x", "program.filter.3.y", "program.filter.3.z",
-                 "program.vibe.1.x", "program.vibe.1.y", "program.vibe.1.z",
-                 "program.vibe.2.x", "program.vibe.2.y", "program.vibe.2.z",
-                 "program.vibe.3.x", "program.vibe.3.y", "program.vibe.3.z",
-                 "program.pitch_shifter.1.x", "program.pitch_shifter.1.y", "program.pitch_shifter.1.z",
-                 "program.pitch_shifter.2.x", "program.pitch_shifter.2.y", "program.pitch_shifter.2.z",
-                 "program.pitch_shifter.3.x", "program.pitch_shifter.3.y", "program.pitch_shifter.3.z",
-                 "program.infinity.1.x", "program.infinity.1.y", "program.infinity.1.z",
-                 "program.infinity.2.x", "program.infinity.2.y", "program.infinity.2.z",
-                 "program.infinity.3.x", "program.infinity.3.y", "program.infinity.3.z",
-                 "program.string_ringer.1.x", "program.string_ringer.1.y", "program.string_ringer.1.z",
-                 "program.string_ringer.2.x", "program.string_ringer.2.y", "program.string_ringer.2.z",
-                 "program.string_ringer.3.x", "program.string_ringer.3.y", "program.string_ringer.3.z",
-                 "program.syntex_1.1.x", "program.syntex_1.1.y", "program.syntex_1.1.z",
-                 "program.syntex_1.2.x", "program.syntex_1.2.y", "program.syntex_1.2.z",
-                 "program.syntex_1.3.x", "program.syntex_1.3.y", "program.syntex_1.3.z",
-                 "program.digital.1.x", "program.digital.1.y", "program.digital.1.z",
-                 "program.digital.2.x", "program.digital.2.y", "program.digital.2.z",
-                 "program.digital.3.x", "program.digital.3.y", "program.digital.3.z",
-                 "program.generator.1.x", "program.generator.1.y", "program.generator.1.z",
-                 "program.generator.2.x", "program.generator.2.y", "program.generator.2.z",
-                 "program.generator.3.x", "program.generator.3.y", "program.generator.3.z",
-                 "program.orche.1.x", "program.orche.1.y", "program.orche.1.z",
-                 "program.orche.2.x", "program.orche.2.y", "program.orche.2.z",
-                 "program.orche.3.x", "program.orche.3.y", "program.orche.3.z"):
-        if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: only the "
-                             "12 keyboard complex are honest gaps, NOT "
-                             "cathedral.2/3, magic.2/3, time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, "
-                             "vibe.1/2/3, pitch_shifter.1/2/3, infinity.1/2/3, string_ringer.1/2/3, "
-                             "syntex_1.1/2/3, digital.1/2/3, generator.1/2/3 or orche.1/2/3): %r"
-                             % (_sid, _gap_ids))
-    for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
-                 "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
-        if _sid in _gap_ids:
-            raise SystemExit("already-landed program param %s incorrectly left as a gap: %r"
-                             % (_sid, _gap_ids))
+    # (ll) With every landed family closed, the --require-full honest gap is EXACTLY the 12 keyboard
+    #      complex params, and each id carries its structural reason. Two categories, both must-gap,
+    #      NOT a to-do: (1) 8 non-scalar (Root A: target shape vector/record/mask — a scalar registry
+    #      param can never represent it, it belongs in DeviceState structured fields per 07 §6); and
+    #      (2) 4 selector-toggle whose frozen target omits `positions` (no value domain evidenced) —
+    #      landing them would be inventing options. No landed program param may re-open, and the
+    #      classification must cover every id (gapOther must be empty). @Claude fb7841e6 (方案1).
+    _res_full, _cov = gate.check(spec, manifest, require_full=True)
+    if not any("parameter target-not-implemented" in _p for _p in _res_full):
+        raise SystemExit("--require-full did not report a parameter gap: %r" % _res_full)
+    _gap = _cov["parameters"]["gap"]
+    _expected_12 = {"keyboard.arp_clock", "keyboard.arp_rhythm", "keyboard.plate_tune",
+                    "keyboard.preset_a", "keyboard.preset_b", "keyboard.preset_c",
+                    "keyboard.preset_d", "keyboard.pushbutton_value", "keyboard.quantise_scale_editor",
+                    "keyboard.seq_clock", "keyboard.seq_rhythm", "keyboard.seq_steps"}
+    if set(_gap) != _expected_12 or len(_gap) != 12:
+        raise SystemExit("residual honest-gap set != exact 12 keyboard complex ids "
+                         "(%r); got: %r" % (_expected_12, _gap))
+    if any(s.startswith("program.") for s in _gap):
+        raise SystemExit("a landed program param re-opened as an honest gap "
+                         "(cathedral/magic/time/vibrotrem/filter/vibe/pitch_shifter/infinity/"
+                         "string_ringer/syntex_1/digital/generator/orche must stay closed): %r"
+                         % _gap)
+    _ra = _cov["parameters"]["gapRootA"]
+    _pl = _cov["parameters"]["gapPositionless"]
+    if set(_ra) != _expected_12 - {"keyboard.arp_clock", "keyboard.arp_rhythm",
+                                   "keyboard.seq_clock", "keyboard.seq_rhythm"}:
+        raise SystemExit("Root-A non-scalar gap ids wrong (plate_tune/preset_a-d/pushbutton_value/"
+                         "quantise_scale_editor/seq_steps): %r" % _ra)
+    if set(_pl) != {"keyboard.arp_clock", "keyboard.arp_rhythm",
+                    "keyboard.seq_clock", "keyboard.seq_rhythm"}:
+        raise SystemExit("positionless selector-toggle gap ids wrong (arp_clock/arp_rhythm/seq_clock/"
+                         "seq_rhythm): %r" % _pl)
+    if _cov["parameters"]["gapOther"]:
+        raise SystemExit("unclassified parameter gap ids present (every gap must be Root-A or "
+                         "positionless): %r" % _cov["parameters"]["gapOther"])
+    if len(_ra) != 8 or len(_pl) != 4:
+        raise SystemExit("parameter-gap reason split %d/%d != 8 Root-A / 4 positionless"
+                         % (len(_ra), len(_pl)))
 
     # (lm)-(lt) MAGIC Program 2/3 X/Y/Z descriptor lock (Codex msg 62370964). The six program
     #      magic.2/.3 x/y/z params (ids 307-312) are landed descriptor facts locked by the exact-
