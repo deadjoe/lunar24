@@ -377,6 +377,56 @@
             "polarity": "unverified",
             "coupling": "unverified"
           }
+        },
+        {
+          "id": 19,
+          "stable_id": "vco_a.wave_out",
+          "name": "Wave out",
+          "direction": "output",
+          "signalType": "audio",
+          "polarity": "unknown",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 397
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 20,
+          "stable_id": "vco_a.pwm_in",
+          "name": "PWM",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 387
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
         }
       ]
     },
@@ -486,6 +536,115 @@
             "persistence": "unverified",
             "range": "unverified"
           }
+        },
+        {
+          "id": 30,
+          "stable_id": "vco_b.pwm",
+          "name": "PWM",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 387
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 31,
+          "stable_id": "vco_b.lin_exp",
+          "name": "lin/exp CV mode",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 389
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "lin",
+            "exp"
+          ]
+        },
+        {
+          "id": 32,
+          "stable_id": "vco_b.oct_sel",
+          "name": "Octave",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 2.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 391
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "low",
+            "0",
+            "+3"
+          ]
+        },
+        {
+          "id": 33,
+          "stable_id": "vco_b.sub_sel",
+          "name": "Sub (-1 oct)",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 392
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "0",
+            "-1"
+          ]
         }
       ],
       "jacks": [
@@ -582,6 +741,56 @@
           "status": "confirmed",
           "fieldEvidence": {
             "nominalRange": "provisional",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 21,
+          "stable_id": "vco_b.wave_out",
+          "name": "Wave out",
+          "direction": "output",
+          "signalType": "audio",
+          "polarity": "unknown",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 397
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 22,
+          "stable_id": "vco_b.pwm_in",
+          "name": "PWM",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 387
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
@@ -804,6 +1013,82 @@
           "positions": [
             "off",
             "on"
+          ]
+        },
+        {
+          "id": 34,
+          "stable_id": "vcf.r_res",
+          "name": "RES R",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1140
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 35,
+          "stable_id": "vcf.r_mod",
+          "name": "MOD R (CV amount)",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1145
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 36,
+          "stable_id": "vcf.r_bp_lp",
+          "name": "BP-LP R",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1149
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "bp",
+            "lp"
           ]
         }
       ],
@@ -2007,6 +2292,58 @@
             "polarity": "confirmed",
             "coupling": "unverified"
           }
+        },
+        {
+          "id": 23,
+          "stable_id": "keyboard.pressure_out",
+          "name": "PRESSURE",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 584
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 24,
+          "stable_id": "keyboard.reset_in",
+          "name": "RESET",
+          "direction": "input",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 5.0,
+          "gateThresholdVolts": 2.5,
+          "hysteresisVolts": 0.2,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 587
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
         }
       ]
     },
@@ -2070,6 +2407,110 @@
             "persistence": "unverified",
             "range": "unverified"
           }
+        },
+        {
+          "id": 37,
+          "stable_id": "envelope_a.d",
+          "name": "Decay",
+          "unit": "seconds",
+          "min": 0.0,
+          "max": 10.0,
+          "default": 0.1,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 389
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 38,
+          "stable_id": "envelope_a.s",
+          "name": "Sustain",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 392
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 39,
+          "stable_id": "envelope_a.hold",
+          "name": "HOLD",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 402
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 40,
+          "stable_id": "envelope_a.self_gen",
+          "name": "SELF-GEN",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 404
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
         }
       ],
       "jacks": [
@@ -2122,6 +2563,31 @@
             "transfer": "unverified",
             "signalType": "confirmed",
             "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 25,
+          "stable_id": "envelope_a.vca_cv_out",
+          "name": "VCA CV",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 87
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "provisional",
+            "polarity": "unverified",
             "coupling": "unverified"
           }
         }

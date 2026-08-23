@@ -33,6 +33,10 @@ enum class ParameterId : std::uint32_t {
     vco_b_morph = 10,
     vco_b_pw = 11,
     vco_b_cv_amt = 12,
+    vco_b_pwm = 30,
+    vco_b_lin_exp = 31,
+    vco_b_oct_sel = 32,
+    vco_b_sub_sel = 33,
     vcf_l_freq = 13,
     vcf_l_res = 14,
     vcf_l_mod = 15,
@@ -41,6 +45,9 @@ enum class ParameterId : std::uint32_t {
     vcf_r_freq = 18,
     vcf_l_bp_lp = 19,
     vcf_link = 20,
+    vcf_r_res = 34,
+    vcf_r_mod = 35,
+    vcf_r_bp_lp = 36,
     keyboard_behaviour = 100,
     keyboard_mode = 101,
     keyboard_arp_hold = 102,
@@ -78,6 +85,10 @@ enum class ParameterId : std::uint32_t {
     keyboard_encoder_direction = 140,
     envelope_a_a = 22,
     envelope_a_r = 23,
+    envelope_a_d = 37,
+    envelope_a_s = 38,
+    envelope_a_hold = 39,
+    envelope_a_self_gen = 40,
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
@@ -93,18 +104,25 @@ enum class JackId : std::uint32_t {
     vco_a_sync_in = 3,
     vco_a_vca_ctl = 4,
     vco_a_dry_out = 5,
+    vco_a_wave_out = 19,
+    vco_a_pwm_in = 20,
     vco_b_cv_in = 6,
     vco_b_v_oct_in = 7,
     vco_b_vco_out = 8,
     vco_b_dry_out = 9,
+    vco_b_wave_out = 21,
+    vco_b_pwm_in = 22,
     vcf_cv_l_in = 10,
     vcf_cv_r_in = 11,
     keyboard_v_oct_out = 13,
     keyboard_gate_left_main_out = 14,
     keyboard_gate_right_out = 15,
     keyboard_clock_in = 16,
+    keyboard_pressure_out = 23,
+    keyboard_reset_in = 24,
     envelope_a_gate_in = 17,
-    envelope_a_env_out = 18
+    envelope_a_env_out = 18,
+    envelope_a_vca_cv_out = 25
 };
 
 enum class ProgramId : std::uint32_t {
@@ -156,14 +174,14 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 5;
-inline constexpr std::uint32_t kParameterCount = 63;
-inline constexpr std::uint32_t kJackCount = 18;
+inline constexpr std::uint32_t kParameterCount = 74;
+inline constexpr std::uint32_t kJackCount = 25;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 3;
 
 inline constexpr std::uint64_t kModuleIdSpace = 5;
 inline constexpr std::uint64_t kParameterIdSpace = 141;
-inline constexpr std::uint64_t kJackIdSpace = 19;
+inline constexpr std::uint64_t kJackIdSpace = 26;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 3;
 
@@ -196,6 +214,10 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::vco_b_morph: return "vco_b.morph";
     case ParameterId::vco_b_pw: return "vco_b.pw";
     case ParameterId::vco_b_cv_amt: return "vco_b.cv_amt";
+    case ParameterId::vco_b_pwm: return "vco_b.pwm";
+    case ParameterId::vco_b_lin_exp: return "vco_b.lin_exp";
+    case ParameterId::vco_b_oct_sel: return "vco_b.oct_sel";
+    case ParameterId::vco_b_sub_sel: return "vco_b.sub_sel";
     case ParameterId::vcf_l_freq: return "vcf.l_freq";
     case ParameterId::vcf_l_res: return "vcf.l_res";
     case ParameterId::vcf_l_mod: return "vcf.l_mod";
@@ -204,6 +226,9 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::vcf_r_freq: return "vcf.r_freq";
     case ParameterId::vcf_l_bp_lp: return "vcf.l_bp_lp";
     case ParameterId::vcf_link: return "vcf.link";
+    case ParameterId::vcf_r_res: return "vcf.r_res";
+    case ParameterId::vcf_r_mod: return "vcf.r_mod";
+    case ParameterId::vcf_r_bp_lp: return "vcf.r_bp_lp";
     case ParameterId::keyboard_behaviour: return "keyboard.behaviour";
     case ParameterId::keyboard_mode: return "keyboard.mode";
     case ParameterId::keyboard_arp_hold: return "keyboard.arp_hold";
@@ -241,6 +266,10 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::keyboard_encoder_direction: return "keyboard.encoder_direction";
     case ParameterId::envelope_a_a: return "envelope_a.a";
     case ParameterId::envelope_a_r: return "envelope_a.r";
+    case ParameterId::envelope_a_d: return "envelope_a.d";
+    case ParameterId::envelope_a_s: return "envelope_a.s";
+    case ParameterId::envelope_a_hold: return "envelope_a.hold";
+    case ParameterId::envelope_a_self_gen: return "envelope_a.self_gen";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";
@@ -259,18 +288,25 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::vco_a_sync_in: return "vco_a.sync_in";
     case JackId::vco_a_vca_ctl: return "vco_a.vca_ctl";
     case JackId::vco_a_dry_out: return "vco_a.dry_out";
+    case JackId::vco_a_wave_out: return "vco_a.wave_out";
+    case JackId::vco_a_pwm_in: return "vco_a.pwm_in";
     case JackId::vco_b_cv_in: return "vco_b.cv_in";
     case JackId::vco_b_v_oct_in: return "vco_b.v_oct_in";
     case JackId::vco_b_vco_out: return "vco_b.vco_out";
     case JackId::vco_b_dry_out: return "vco_b.dry_out";
+    case JackId::vco_b_wave_out: return "vco_b.wave_out";
+    case JackId::vco_b_pwm_in: return "vco_b.pwm_in";
     case JackId::vcf_cv_l_in: return "vcf.cv_l_in";
     case JackId::vcf_cv_r_in: return "vcf.cv_r_in";
     case JackId::keyboard_v_oct_out: return "keyboard.v_oct_out";
     case JackId::keyboard_gate_left_main_out: return "keyboard.gate_left_main_out";
     case JackId::keyboard_gate_right_out: return "keyboard.gate_right_out";
     case JackId::keyboard_clock_in: return "keyboard.clock_in";
+    case JackId::keyboard_pressure_out: return "keyboard.pressure_out";
+    case JackId::keyboard_reset_in: return "keyboard.reset_in";
     case JackId::envelope_a_gate_in: return "envelope_a.gate_in";
     case JackId::envelope_a_env_out: return "envelope_a.env_out";
+    case JackId::envelope_a_vca_cv_out: return "envelope_a.vca_cv_out";
   }
   return "(unknown Jack)";
 }

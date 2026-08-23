@@ -98,16 +98,18 @@ static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
   CHECK_EQ(core::kModuleCount, 5u);
-  CHECK_EQ(core::kParameterCount, 63u);  // Phase B: fixed 75; moved to honest gap the 8 non-scalar
-                                         // keyboard params (seq_steps, quantise_scale_editor,
-                                         // plate_tune, pushbutton_value, preset_a..d) AND the 4
-                                         // un-evidenced selector params (arp_clock, seq_clock,
-                                         // arp_rhythm, seq_rhythm — no enumerated manual set)
-  CHECK_EQ(core::kJackCount, 18u);       // Phase B dropped rogue jack vcf.audio_in
+  CHECK_EQ(core::kParameterCount, 74u);  // Phase B slice (mods-gap): closed vco_b(4)+vcf(3)+envelope_a(4)
+                                         // ordinary params among the existing 5 modules; left as honest
+                                         // gaps the 12 keyboard params (seq_steps, quantise_scale_editor,
+                                         // plate_tune, pushbutton_value, preset_a..d, arp_clock, seq_clock,
+                                         // arp_rhythm, seq_rhythm — complex/un-enumerated, no scalar domain)
+  CHECK_EQ(core::kJackCount, 25u);       // Phase B slice (mods-gap): +7 patchable jacks (vco_a/vco_b
+                                         // wave_out+pwm_in, keyboard pressure_out+reset_in,
+                                         // envelope_a vca_cv_out); dropped rogue jack vcf.audio_in
   // Program identity layer landed (Codex 7a6467cc slice #57): 39 program
   // identities (cathedral.1 + magic.1 keep their params; the other 37 are
   // identity-only, paramCount==0, honest gaps pending Phase B). kParameterCount
-  // stays 63 — the 37 additions add no params.
+  // counts modules(68) + programs(6) = 74 — the 37 additions add no params.
   CHECK_EQ(core::kProgramCount, 39u);
   CHECK_EQ(core::kRouteCount, 3u);
   // kNormalizedRoutes[] still holds exactly the frozen route count (kRouteCount
