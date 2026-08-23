@@ -69,6 +69,25 @@ def has(problems, needle):
     return any(needle in p for p in problems)
 
 
+def reg_param(spec, sid):
+    for m in spec["modules"]:
+        for p in m["parameters"]:
+            if p["stable_id"] == sid:
+                return p
+    for pr in spec.get("programs", []):
+        for p in pr.get("parameters", []):
+            if p["stable_id"] == sid:
+                return p
+    return None
+
+
+def tgt_param(manifest, sid):
+    for p in manifest["target"]["parameters"]:
+        if p["stable_id"] == sid:
+            return p
+    return None
+
+
 def main():
     spec = load(SPEC)
     manifest = load(MANIFEST)
@@ -1122,6 +1141,50 @@ def main():
         raise SystemExit("presets workflow action rebound to a program context not flagged: %r"
                          % problems)
 
+    # (k) Root A — false coverage: a registry ParameterDescriptor can only back a SCALAR target.
+    #     Changing a scalar target's shape to vector (with the cardinality it demands) makes the
+    #     still-scalar registry descriptor a false scalar over a real-vector target (Codex 22f545c1).
+    a_pres = copy.deepcopy(manifest)
+    a_tgt = tgt_param(a_pres, "vco_a.oct_sel")
+    a_tgt["shape"] = "vector"; a_tgt["cardinality"] = 3; a_tgt.pop("positions", None)
+    problems, _ = gate.check(spec, a_pres)
+    if not has(problems, "cannot be represented as a scalar ParameterDescriptor"):
+        raise SystemExit("Root A: non-scalar target faked as scalar not flagged: %r" % problems)
+
+    # (l) Root B — selector cardinality: a bool (max-min=1) can never cover the multi-position
+    #     selector the target declares. Re-introduce the bool mis-typing for vco_a.oct_sel.
+    b_pres = copy.deepcopy(spec)
+    b_parm = reg_param(b_pres, "vco_a.oct_sel")
+    b_parm["min"] = 0.0; b_parm["max"] = 1.0; b_parm["step"] = 1.0
+    problems, _ = gate.check(b_pres, manifest)
+    if not has(problems, "selector-toggle cardinality"):
+        raise SystemExit("Root B: bool selector-cardinality mismatch not flagged: %r" % problems)
+
+    # (m) Root B (manifest self-coherence) — a selector-toggle parameter's positions must be a
+    #     non-empty label list, not a bare scalar.
+    m_pres = copy.deepcopy(manifest)
+    m_tgt = tgt_param(m_pres, "vco_a.oct_sel")
+    m_tgt["positions"] = "low,0,+3"
+    problems, _ = gate.check(spec, m_pres)
+    if not has(problems, "selector-toggle positions must be"):
+        raise SystemExit("Root B: malformed selector-toggle positions not flagged: %r" % problems)
+
+    # (n) Root C — per-field provenance: every registry param must carry a fieldEvidence audit.
+    n_pres = copy.deepcopy(spec)
+    n_parm = reg_param(n_pres, "vco_a.oct_sel")
+    del n_parm["fieldEvidence"]
+    problems, _ = gate.check(n_pres, manifest)
+    if not has(problems, "missing fieldEvidence audit object"):
+        raise SystemExit("Root C: missing fieldEvidence not flagged: %r" % problems)
+
+    # (o) Root C — a fieldEvidence status must be in {confirmed, unverified, provisional}.
+    o_pres = copy.deepcopy(spec)
+    o_parm = reg_param(o_pres, "vco_a.oct_sel")
+    o_parm["fieldEvidence"]["unit"] = "bogus"
+    problems, _ = gate.check(o_pres, manifest)
+    if not has(problems, "fieldEvidence.unit bad status"):
+        raise SystemExit("Root C: invalid fieldEvidence status not flagged: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -1135,7 +1198,9 @@ def main():
           "selector, display-item menuItem, enter-carries-slot, independent topology, both-pages-"
           "present, and the EXACT closed relation set — single-edge deletion, enter slot/item "
           "misalignment, execute target/item misalignment, and a workflow action rebound outside "
-          "a PRESETS page all fail) are gated too.")
+          "a PRESETS page all fail) are gated too; Root A (non-scalar target faked as a scalar "
+          "descriptor), Root B (selector-toggle cardinality / malformed manifest positions), and "
+          "Root C (missing or invalid fieldEvidence) are gated too (Codex 22f545c1).")
     return 0
 
 

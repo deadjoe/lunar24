@@ -56,7 +56,9 @@ static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
   CHECK_EQ(core::kModuleCount, 5u);
-  CHECK_EQ(core::kParameterCount, 75u);  // Phase B re-ID + keyboard transcription
+  CHECK_EQ(core::kParameterCount, 67u);  // Phase B: fixed 75; 8 non-scalar keyboard params (seq_steps,
+                                         // quantise_scale_editor, plate_tune, pushbutton_value,
+                                         // preset_a..d) moved to honest target-not-implemented gap
   CHECK_EQ(core::kJackCount, 18u);       // Phase B dropped rogue jack vcf.audio_in
   CHECK_EQ(core::kProgramCount, 2u);
   CHECK_EQ(core::kRouteCount, 3u);

@@ -57,7 +57,6 @@ enum class ParameterId : std::uint32_t {
     keyboard_seq_cv_output = 113,
     keyboard_seq_rhythm = 114,
     keyboard_seq_rhythm_length = 115,
-    keyboard_seq_steps = 116,
     keyboard_portamento_speed = 117,
     keyboard_portamento_legato = 118,
     keyboard_vibrato_speed = 119,
@@ -67,7 +66,6 @@ enum class ParameterId : std::uint32_t {
     keyboard_pressure_output = 123,
     keyboard_pressure_rise = 124,
     keyboard_pressure_fall = 125,
-    keyboard_quantise_scale_editor = 126,
     keyboard_quantise_load_scale = 127,
     keyboard_root_note = 128,
     keyboard_clock_bpm = 129,
@@ -82,12 +80,6 @@ enum class ParameterId : std::uint32_t {
     keyboard_mpr121_discharge = 138,
     keyboard_debounce = 139,
     keyboard_encoder_direction = 140,
-    keyboard_plate_tune = 141,
-    keyboard_pushbutton_value = 142,
-    keyboard_preset_a = 143,
-    keyboard_preset_b = 144,
-    keyboard_preset_c = 145,
-    keyboard_preset_d = 146,
     envelope_a_a = 22,
     envelope_a_r = 23,
     program_cathedral_1_x = 24,
@@ -131,13 +123,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 5;
-inline constexpr std::uint32_t kParameterCount = 75;
+inline constexpr std::uint32_t kParameterCount = 67;
 inline constexpr std::uint32_t kJackCount = 18;
 inline constexpr std::uint32_t kProgramCount = 2;
 inline constexpr std::uint32_t kRouteCount = 3;
 
 inline constexpr std::uint64_t kModuleIdSpace = 5;
-inline constexpr std::uint64_t kParameterIdSpace = 147;
+inline constexpr std::uint64_t kParameterIdSpace = 141;
 inline constexpr std::uint64_t kJackIdSpace = 19;
 inline constexpr std::uint64_t kProgramIdSpace = 2;
 inline constexpr std::uint64_t kRouteIdSpace = 3;
@@ -195,7 +187,6 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::keyboard_seq_cv_output: return "keyboard.seq_cv_output";
     case ParameterId::keyboard_seq_rhythm: return "keyboard.seq_rhythm";
     case ParameterId::keyboard_seq_rhythm_length: return "keyboard.seq_rhythm_length";
-    case ParameterId::keyboard_seq_steps: return "keyboard.seq_steps";
     case ParameterId::keyboard_portamento_speed: return "keyboard.portamento_speed";
     case ParameterId::keyboard_portamento_legato: return "keyboard.portamento_legato";
     case ParameterId::keyboard_vibrato_speed: return "keyboard.vibrato_speed";
@@ -205,7 +196,6 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::keyboard_pressure_output: return "keyboard.pressure_output";
     case ParameterId::keyboard_pressure_rise: return "keyboard.pressure_rise";
     case ParameterId::keyboard_pressure_fall: return "keyboard.pressure_fall";
-    case ParameterId::keyboard_quantise_scale_editor: return "keyboard.quantise_scale_editor";
     case ParameterId::keyboard_quantise_load_scale: return "keyboard.quantise_load_scale";
     case ParameterId::keyboard_root_note: return "keyboard.root_note";
     case ParameterId::keyboard_clock_bpm: return "keyboard.clock_bpm";
@@ -220,12 +210,6 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::keyboard_mpr121_discharge: return "keyboard.mpr121_discharge";
     case ParameterId::keyboard_debounce: return "keyboard.debounce";
     case ParameterId::keyboard_encoder_direction: return "keyboard.encoder_direction";
-    case ParameterId::keyboard_plate_tune: return "keyboard.plate_tune";
-    case ParameterId::keyboard_pushbutton_value: return "keyboard.pushbutton_value";
-    case ParameterId::keyboard_preset_a: return "keyboard.preset_a";
-    case ParameterId::keyboard_preset_b: return "keyboard.preset_b";
-    case ParameterId::keyboard_preset_c: return "keyboard.preset_c";
-    case ParameterId::keyboard_preset_d: return "keyboard.preset_d";
     case ParameterId::envelope_a_a: return "envelope_a.a";
     case ParameterId::envelope_a_r: return "envelope_a.r";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";

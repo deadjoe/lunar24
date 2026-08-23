@@ -565,6 +565,22 @@ def check(spec, manifest, require_full=False):
             if not (type(ms) is int and ms > 0):
                 problems.append(f"manifest parameter {sid!r}: shape=mask needs positive int "
                                 f"maskSize (got {ms!r})")
+        # A selector-toggle PARAMETER carries discrete positions (Root B, Codex 22f545c1): whenever
+        # a target declares positions, the registry descriptor cardinality must equal it (checked in
+        # the descriptor-coherence block below). Here: positions must be a non-empty label list, and
+        # only valid for a selector-toggle on a scalar state field.
+        if it.get("kind") == "selector-toggle":
+            pos = it.get("positions")
+            if pos is not None:
+                if not (isinstance(pos, list) and pos and all(isinstance(x, str) and x for x in pos)):
+                    problems.append(f"manifest parameter {sid!r}: selector-toggle positions must be "
+                                    f"a non-empty list of non-empty labels (got {pos!r})")
+                if shape != "scalar":
+                    problems.append(f"manifest parameter {sid!r}: selector-toggle positions only "
+                                    f"valid for shape=scalar (got {shape!r})")
+        elif it.get("positions") is not None:
+            problems.append(f"manifest parameter {sid!r}: positions only valid for "
+                            f"kind=selector-toggle")
         if shape != "vector" and it.get("cardinality") is not None:
             problems.append(f"manifest parameter {sid!r}: cardinality only valid for shape=vector")
         if shape != "record" and it.get("recordType") is not None:
@@ -1306,6 +1322,39 @@ def check(spec, manifest, require_full=False):
     if stale_jack:
         problems.append(f"stale migration allowlist jacks (id no longer a registry rogue): "
                         f"{stale_jack}")
+    # ---- Root A/B/C: descriptor coherence vs independent target (Codex 22f545c1) ----------
+    # A ParameterDescriptor may only back a SCALAR target. A non-scalar target (vector/mask/record)
+    # has real shape/cardinality and must stay a GAP rather than be faked as a scalar (Root A).
+    # A selector-toggle target with KNOWN positions has discrete cardinality; the registry
+    # descriptor's (max-min)/step+1 must equal it — a bool (max-min=1) can never cover a
+    # 3-position selector (Root B). Every scalar ParameterDescriptor carries a per-field Provenance
+    # audit; unknown value domains are provisional, never silently concrete (Root C).
+    FE_FIELDS = ("unit", "default", "step", "smoothing", "persistence")
+    FE_STATUS = {"confirmed", "unverified", "provisional"}
+    for p in reg.parameters:
+        tp = param_by_sid.get(p["stable_id"])
+        tshape = (tp or {}).get("shape")
+        if tshape not in (None, "scalar"):
+            problems.append(
+                f"parameter {p['stable_id']}: target shape {tshape!r} is non-scalar — cannot be "
+                f"represented as a scalar ParameterDescriptor (must gap)")
+        pos = (tp or {}).get("positions")
+        if pos:
+            card = (p["max"] - p["min"]) / p["step"] + 1.0 if p["step"] > 0 else None
+            if card is None or abs(card - len(pos)) > 1e-9:
+                problems.append(
+                    f"parameter {p['stable_id']}: selector-toggle cardinality {card!r} != "
+                    f"positions count {len(pos)} (bool cannot cover a multi-position selector)")
+        fe = p.get("fieldEvidence")
+        if not isinstance(fe, dict):
+            problems.append(f"parameter {p['stable_id']}: missing fieldEvidence audit object")
+        else:
+            for fk in FE_FIELDS:
+                if fk not in fe:
+                    problems.append(f"parameter {p['stable_id']}: fieldEvidence missing {fk}")
+                elif fe[fk] not in FE_STATUS:
+                    problems.append(f"parameter {p['stable_id']}: fieldEvidence.{fk} bad status "
+                                    f"{fe[fk]!r}")
     sz = {}
     for p in parameters:
         sz[p.get("shape", "scalar")] = sz.get(p.get("shape", "scalar"), 0) + 1
