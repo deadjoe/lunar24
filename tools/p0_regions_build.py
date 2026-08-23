@@ -252,14 +252,23 @@ class Ledger:
         # (`target_op` = set|adjust|toggle|invoke). A single `operation` can no longer conflate "the
         # encoder rotated" with "write this parameter".
         #
-        # unique id: (from, to, index, condition). The same encoder drives a shared vector at N held
-        # indices (index), and the same sub-page action is selected by N slots (condition), so neither
-        # an indexed write nor a slot-parameterised action may collide its id.
+        # unique id: (from, to, index, condition, context, source/target op, commandAddress). The same
+        # encoder drives a shared vector at N held indices (index), the same sub-page action is
+        # selected by N slots (condition), and the SAME from/to can appear under different legal
+        # contexts or be reached by different gestures — so the id must carry all of them or two
+        # distinct bindings collide (Codex 23ea438f #4). Stable-id therefore includes the structured
+        # context, the source/target triple and the commandAddress, not just from/to/index/condition.
         key = to_sid
         if index is not None:
             key += "[%s]" % index
         if condition:
             key += "{%s}" % ",".join("%s=%s" % (k, condition[k]) for k in sorted(condition))
+        if context and context.get("type"):
+            sel = ";".join("%s=%s" % (k, context[k]) for k in sorted(context) if k != "type")
+            key += "(%s%s)" % (context["type"], (":" + sel if sel else ""))
+        key += "#%s:%s" % ((source or SRC_CHANGE), (target_op or TO_SET))
+        if command_address is not None:
+            key += "@" + json.dumps(command_address, sort_keys=True, ensure_ascii=False)
         b = {"stable_id": "bnd.%s->%s" % (from_pc, key), "from": from_pc, "to": to_sid,
              "sourceOperation": source or SRC_CHANGE, "targetKind": kind or TK_PARAM,
              "targetOperation": target_op or TO_SET, "context": context, "status": status,
@@ -650,13 +659,19 @@ KB_CAL_ACTIONS = [
     ("calibration_save", "SAVE CALIBRATION SETTINGS (press+hold 1s)", ACT_SAVE, 1050, 1093),
 ]
 
-# Keyboard PRESETS sub-page actions (Codex item #2): load / save / initialise. `op` is the
-# physical edge on the shared encoder that reaches the sub-page entry (press / long_press /
-# rotate), so each entry has a control binding rather than being an unreachable decoration.
+# Keyboard PRESETS sub-page actions (manual L1045-1046). The manual ONLY confirms two preconditions:
+# "rotate the encoder to scroll through presets A to D" (slot SELECTION) and "click the encoder to
+# enter a sub-selection page where you can load, save or initialise a preset" (enter SUB-PAGE). It
+# does NOT document the sub-page ITEM-selection or ITEM-execution gestures, so those are PROVISIONAL
+# (Codex 23ea438f #1). We therefore build the workflow as: [rotate=select slot (confirmed) -> press
+# =enter sub-page (confirmed) -> item selection + invoke selected item (provisional)]. Each
+# load/save/initialise acts on a SELECTED slot, so it is bound once per slot under a closed
+# `presetSlot` condition; the sub-page execution edge is a SINGLE uniform provisional press — and
+# crucially NOT rotate, which the manual reserves for slot selection.
 KB_PRESET_ACTIONS = [
-    ("presets_load", "LOAD PRESET", ACT_LOAD, "press"),
-    ("presets_save", "SAVE PRESET", ACT_SAVE, "long_press"),
-    ("presets_initialise", "INITIALISE PRESET", ACT_INITIALISE, "rotate"),
+    ("presets_load", "LOAD PRESET", ACT_LOAD),
+    ("presets_save", "SAVE PRESET", ACT_SAVE),
+    ("presets_initialise", "INITIALISE PRESET", ACT_INITIALISE),
 ]
 
 
@@ -696,28 +711,38 @@ def add_keyboard_state(L):
         # not `change` — change is the continuous-knob gesture), stepping a discrete value (set) or
         # nudging a continuous one (adjust).
         tgt_op = TO_ADJUST if kind == K_CONT else TO_SET
+        # Calibration is entered at POWER-UP (press+hold encoder on boot, manual 1050), i.e. a MODE
+        # not a navigable menu, so its parameters live under keyboard-mode=calibration (Codex
+        # 23ea438f #1) rather than a plain keyboard-menu=calibration.
+        ctx = ctx_mode("calibration") if menu == "calibration" else ctx_menu(menu)
         ca = KSTATE_COMMAND_ADDRESS.get(leaf)
-        L.bind("keyboard.encoder", sid, ctx_menu(menu), source=SRC_ROTATE, kind=TK_PARAM,
+        L.bind("keyboard.encoder", sid, ctx, source=SRC_ROTATE, kind=TK_PARAM,
                target_op=tgt_op, command_address=ca, evidence=evd)
     for leaf, name, kind, ls, le in KB_CAL_ACTIONS:
         evd = ev(ls, le, kb_site)
         a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
-        # The calibration menu is a cursor-based sub-page: long-press the encoder on the HIGHLIGHTED
-        # calibration item to execute it. INIT and SAVE are two different highlighted items, so each
-        # carries a closed `menuItem` condition — without it the two bindings would be identical and
-        # could not be told apart (Codex 9d8b5f43 item #2: "校准选中项 + long-press").
-        L.bind("keyboard.encoder", a, ctx_menu("calibration"), source=SRC_LONG, kind=TK_ACTION,
+        # Calibration is a cursor-based BOOT MODE (manual 1050): long-press the encoder on the
+        # HIGHLIGHTED calibration item to execute it. INIT and SAVE are two different highlighted
+        # items, so each carries a closed `menuItem` condition — without it the two bindings would
+        # be identical and could not be told apart. The context is keyboard-mode=calibration, NOT a
+        # keyboard-menu=calibration, because calibration is entered at power-up (a mode, Codex
+        # 23ea438f #1).
+        L.bind("keyboard.encoder", a, ctx_mode("calibration"), source=SRC_LONG, kind=TK_ACTION,
                target_op=TO_INVOKE, condition={"menuItem": leaf}, evidence=evd)
-    # PRESETS sub-page: LOAD / SAVE / INITIALISE act on a SELECTED slot (A-D), so each is bound
-    # once per slot under a closed `presetSlot` condition — the slot is the disambiguator, not a
-    # hard-assigned press/long_press/rotate with no selection (Codex 9d8b5f43 item #2).
-    for leaf, name, kind, op in KB_PRESET_ACTIONS:
+    # PRESETS sub-page (manual L1045-1046): rotate selects a slot A-D (confirmed), press enters the
+    # load/save/initialise sub-page (confirmed). The sub-page ITEM-selection + ITEM-execution gesture
+    # is NOT documented, so it is marked provisional: a single uniform provisional press invokes the
+    # currently-highlighted item, bound once per slot under a closed `presetSlot` condition. The
+    # item (load/save/initialise) is identified by the action being targeted, NOT by rotating to it
+    # — rotate is reserved for slot selection (Codex 23ea438f #1). The ACTION is confirmed (the
+    # three items exist in the manual); only the execution gesture (the binding) is provisional.
+    for leaf, name, kind in KB_PRESET_ACTIONS:
         evd = ev(1040, 1045, kb_site)
         a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
-        src = {"press": SRC_PRESS, "long_press": SRC_LONG, "rotate": SRC_ROTATE}[op]
         for slot in PRESET_SLOTS:
-            L.bind("keyboard.encoder", a, ctx_menu("presets"), source=src, kind=TK_ACTION,
-                   target_op=TO_INVOKE, condition={"presetSlot": slot}, evidence=evd)
+            L.bind("keyboard.encoder", a, ctx_menu("presets"), source=SRC_PRESS, kind=TK_ACTION,
+                   target_op=TO_INVOKE, condition={"presetSlot": slot}, status="provisional",
+                   evidence=evd)
 
 
 # p23/p24 semantic labels per (cartridge, program). X/Y/Z knob meaning for each of the 39

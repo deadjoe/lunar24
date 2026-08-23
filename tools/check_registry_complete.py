@@ -175,7 +175,45 @@ RECORD_PRIMITIVES = {"number", "voltage", "int", "bool", "label"}
 RECORD_KINDS = {"record", "params"}
 
 
-def validate_record_schemas(record_schemas, param_sids):
+def expected_command_address(to_param, record_schemas):
+    """Derive the EXACT commandAddress a binding MUST carry for an addressable target.
+
+    A command-address locates a WRITE inside an editor object, so its kind/range/fields are not free
+    (Codex 23ea438f #2). For a mask target it is `{kind: mask, indexRange: [0, maskSize-1]}`. For a
+    record target it is `{kind: record, indexRange: [0, array.count-1], fields: <element field names>}`,
+    where the editable array field is the record's first `array` field and the fields are that array
+    element's field names (or the single element name for a primitive array). A non-addressable
+    target returns None.
+    """
+    shape = (to_param or {}).get("shape")
+    if shape == "mask":
+        sz = (to_param or {}).get("maskSize")
+        if type(sz) is int and sz > 0:
+            return {"kind": "mask", "indexRange": [0, sz - 1]}
+        return None
+    if shape == "record":
+        rt = (to_param or {}).get("recordType")
+        sch = record_schemas.get(rt) or {}
+        if not isinstance(sch, dict) or sch.get("kind") != "record":
+            return None
+        arr = next((f for f in sch.get("fields") or []
+                    if isinstance(f, dict) and f.get("type") == "array"), None)
+        if not arr:
+            return None
+        cnt = arr.get("count")
+        if type(cnt) is not int or cnt <= 0:
+            return None
+        elem = arr.get("element") or {}
+        if elem.get("type") == "record" and elem.get("of") in record_schemas:
+            esch = record_schemas[elem["of"]]
+            fields = sorted({f.get("name") for f in esch.get("fields") or [] if isinstance(f, dict)})
+        else:
+            fields = [elem.get("name") or elem.get("type")]
+        return {"kind": "record", "indexRange": [0, cnt - 1], "fields": fields}
+    return None
+
+
+def validate_record_schemas(record_schemas, param_sids, param_record_types=None):
     """Validate each record schema BODY, not just that its name is referenced (Codex a23a9618
     item #1). A record is only closed when every `element`/`of` resolves to a real schema of the
     right kind, no array element is an inline anonymous map, and a preset's excludes do not
@@ -185,32 +223,44 @@ def validate_record_schemas(record_schemas, param_sids):
     keyboard state (no overlap, no miss)."""
     out = []
 
-    # ---- record-graph cycle detection (direct or indirect) ----
-    def record_refs(nm):
+    # ---- record-graph cycle detection (direct or indirect) -------------------
+    # Crosses both edge kinds (Codex 23ea438f #4): a record/array `of` reference AND a params-set
+    # -> parameter(recordType) reference, so `record -> params -> parameter(recordType) -> record`
+    # is a real cycle just like a direct `record -> record`.
+    def _refs(nm, record_schemas, param_record_types):
         sch = record_schemas.get(nm) or {}
-        if not isinstance(sch, dict) or sch.get("kind") != "record":
+        if not isinstance(sch, dict):
             return []
-        refs = []
+        kind = sch.get("kind")
+        if kind == "params":
+            refs = set()
+            for p in sch.get("params") or []:
+                rt = (param_record_types or {}).get(p)
+                if rt in record_schemas:
+                    refs.add(rt)
+            return sorted(refs)
+        if kind != "record":
+            return []
+        refs = set()
         for f in sch.get("fields") or []:
             if not isinstance(f, dict):
                 continue
             if f.get("type") == "record":
                 of = f.get("of")
-                if record_schemas.get(of, {}).get("kind") == "record":
-                    refs.append(of)
+                if of in record_schemas:
+                    refs.add(of)
             elif f.get("type") == "array":
                 elem = f.get("element") or {}
-                of = elem.get("of")
-                if elem.get("type") == "record" and record_schemas.get(of, {}).get("kind") == "record":
-                    refs.append(of)
-        return refs
+                if elem.get("type") == "record" and elem.get("of") in record_schemas:
+                    refs.add(elem["of"])
+        return sorted(refs)
 
     WHITE, GREY, BLACK = 0, 1, 2
     color = {nm: WHITE for nm in record_schemas}
 
     def _dfs(nm):
         color[nm] = GREY
-        for r in record_refs(nm):
+        for r in _refs(nm, record_schemas, param_record_types):
             if color.get(r) == GREY:
                 return r
             if color.get(r) == WHITE:
@@ -221,7 +271,7 @@ def validate_record_schemas(record_schemas, param_sids):
         return None
 
     for nm in record_schemas:
-        if record_schemas.get(nm, {}).get("kind") == "record" and color.get(nm) == WHITE:
+        if color.get(nm) == WHITE:
             c = _dfs(nm)
             if c is not None:
                 out.append(f"record schema {nm!r}: record graph has a cycle involving {c!r}")
@@ -239,6 +289,9 @@ def validate_record_schemas(record_schemas, param_sids):
             plist = sch.get("params") or []
             if not plist:
                 out.append(f"record schema {name!r}: params list must be non-empty")
+            dup_ps = sorted({p for p in plist if plist.count(p) > 1})
+            if dup_ps:
+                out.append(f"record schema {name!r}: duplicate param members {dup_ps}")
             for psid in plist:
                 if psid not in param_sids:
                     out.append(f"record schema {name!r}: param {psid!r} is not a declared parameter")
@@ -484,7 +537,9 @@ def check(spec, manifest, require_full=False):
         param_sids.add(sid)
 
     # ---- record schema bodies: the reference is not enough, the body must be closed (item #1) ---
-    problems.extend(validate_record_schemas(record_schemas, param_sids))
+    param_record_types = {it.get("stable_id"): it.get("recordType") for it in parameters
+                          if it.get("shape") == "record" and it.get("recordType")}
+    problems.extend(validate_record_schemas(record_schemas, param_sids, param_record_types))
 
     # ---- panelControls: one row per real physical widget --------------------
     pc_sids = set()
@@ -549,6 +604,7 @@ def check(spec, manifest, require_full=False):
     binding_to_action = {}
     ops_by_pc = {}    # from -> set of operations actually wired (post-op validation)
     axes_by_pc = {}   # from -> set of axes actually wired (axis bindings only)
+    param_by_sid = {p.get("stable_id"): p for p in parameters}
     for b in bindings:
         sid = b.get("stable_id")
         if not (sid and b.get("from") and b.get("to")):
@@ -557,6 +613,7 @@ def check(spec, manifest, require_full=False):
         if b.get("from") not in pc_sids:
             problems.append(f"manifest controlBinding {sid}: from {b.get('from')!r} is not a "
                             f"declared panelControl")
+        to_param = param_by_sid.get(b.get("to"))
         if "operation" in b:
             # The legacy conflated field is rejected outright: it cannot express the split, and the
             # whole point of the split is that the gate no longer carries an `op`-based coupling.
@@ -637,7 +694,6 @@ def check(spec, manifest, require_full=False):
             # A held-index binding ("hold plate i then turn encoder") must land on a VECTOR
             # parameter and stay inside its cardinality (Codex a23a9618 item #2). An index on a
             # scalar/record is a malformed binding.
-            to_param = next((p for p in parameters if p.get("stable_id") == b.get("to")), None)
             card = (to_param or {}).get("cardinality")
             if (to_param or {}).get("shape") != "vector" or not isinstance(card, int):
                 problems.append(f"manifest controlBinding {sid}: index {b['index']!r} requires "
@@ -645,6 +701,7 @@ def check(spec, manifest, require_full=False):
             elif not (1 <= b["index"] <= card):
                 problems.append(f"manifest controlBinding {sid}: index {b['index']!r} outside "
                                 f"cardinality 1..{card} of {b.get('to')!r}")
+        # Condition: the KEY NAMES are closed, and the RELATIONSHIP is executable (msg 23ea438f #2).
         cond = b.get("condition")
         if cond is not None:
             if not isinstance(cond, dict) or not cond:
@@ -655,24 +712,76 @@ def check(spec, manifest, require_full=False):
                     if k not in COND_KEYS:
                         problems.append(f"manifest controlBinding {sid}: condition key {k!r} not in "
                                         f"{sorted(COND_KEYS)}")
-                    elif k == "presetSlot" and v not in PRESET_SLOTS:
-                        problems.append(f"manifest controlBinding {sid}: condition presetSlot "
-                                        f"{v!r} not in {sorted(PRESET_SLOTS)}")
+                        continue
+                    if k == "presetSlot":
+                        if v not in PRESET_SLOTS:
+                            problems.append(f"manifest controlBinding {sid}: condition presetSlot "
+                                            f"{v!r} not in {sorted(PRESET_SLOTS)}")
+                        elif ("keyboard." + v) not in param_sids:
+                            problems.append(f"manifest controlBinding {sid}: presetSlot {v!r} has "
+                                            f"no matching keyboard payload parameter")
+                    elif k == "menuItem":
+                        # The menu item must NAME the item being invoked: the target action's leaf,
+                        # so the binding is executable on a real highlighted item.
+                        if b.get("targetKind") != "action":
+                            problems.append(f"manifest controlBinding {sid}: menuItem condition only "
+                                            f"applies to an action target (got "
+                                            f"targetKind={b.get('targetKind')!r})")
+                        else:
+                            toid = b.get("to") or ""
+                            leaf = toid.split(".", 1)[-1] if "." in toid else toid
+                            if leaf != v:
+                                problems.append(f"manifest controlBinding {sid}: menuItem {v!r} does "
+                                                f"not name the target action leaf {leaf!r}")
+                    elif k == "heldControl":
+                        # The held control must be a REAL momentary-touch control, and it must map
+                        # 1:1 with the vector element the binding writes (its numeric suffix equals
+                        # the binding index, and it sits on the same owner as the target).
+                        hw = pc_by_id.get(v)
+                        if hw is None:
+                            problems.append(f"manifest controlBinding {sid}: heldControl {v!r} is "
+                                            f"not a declared panelControl")
+                        else:
+                            if hw.get("kind") != "momentary-touch":
+                                problems.append(f"manifest controlBinding {sid}: heldControl {v!r} "
+                                                f"is not a momentary-touch control")
+                            if b.get("index") is not None:
+                                suffix = (hw.get("leaf") or "").rsplit("_", 1)[-1]
+                                if suffix != str(b["index"]):
+                                    problems.append(f"manifest controlBinding {sid}: heldControl "
+                                                    f"{v!r} (element {suffix!r}) does not match "
+                                                    f"binding index {b['index']}")
+                            if to_param and hw.get("owner") != to_param.get("owner"):
+                                problems.append(f"manifest controlBinding {sid}: heldControl {v!r} "
+                                                f"owner {hw.get('owner')!r} != target owner "
+                                                f"{to_param.get('owner')!r}")
+        # commandAddress: present ONLY on an addressable record/mask editor, and its kind/range/
+        # fields must be DERIVED from the target shape + record schema / maskSize (msg 23ea438f #2).
         ca = b.get("commandAddress")
+        expect_ca = expected_command_address(to_param, record_schemas)
         if ca is not None:
-            if not isinstance(ca, dict) or ca.get("kind") not in CMD_ADDR_KINDS:
-                problems.append(f"manifest controlBinding {sid}: commandAddress must be an object "
-                                f"with kind in {sorted(CMD_ADDR_KINDS)}")
+            if expect_ca is None:
+                problems.append(f"manifest controlBinding {sid}: commandAddress on non-addressable "
+                                f"target {b.get('to')!r} (shape {to_param.get('shape') if to_param else None!r}; "
+                                f"only record/mask editors take a commandAddress)")
             else:
-                ir = ca.get("indexRange")
-                if not (isinstance(ir, list) and len(ir) == 2 and type(ir[0]) is int and
-                        type(ir[1]) is int and 0 <= ir[0] <= ir[1]):
-                    problems.append(f"manifest controlBinding {sid}: commandAddress needs a valid "
-                                    f"indexRange [min,max] of non-negative ints")
-                elif ca["kind"] == "record" and (not ca.get("fields") or
-                                                 not set(ca["fields"]) <= SEQ_STEP_FIELDS):
-                    problems.append(f"manifest controlBinding {sid}: record commandAddress needs "
-                                    f"fields within {sorted(SEQ_STEP_FIELDS)}")
+                if not isinstance(ca, dict) or ca.get("kind") != expect_ca["kind"]:
+                    problems.append(f"manifest controlBinding {sid}: commandAddress kind "
+                                    f"{ca.get('kind') if isinstance(ca, dict) else None!r} != "
+                                    f"expected {expect_ca['kind']!r} for target {b.get('to')!r}")
+                elif (not isinstance(ca.get("indexRange"), list) or ca["indexRange"] !=
+                      expect_ca["indexRange"]):
+                    problems.append(f"manifest controlBinding {sid}: commandAddress indexRange "
+                                    f"{ca.get('indexRange')!r} != expected "
+                                    f"{expect_ca['indexRange']!r} for target {b.get('to')!r}")
+                elif expect_ca["kind"] == "record" and (
+                        not ca.get("fields") or set(ca["fields"]) != set(expect_ca["fields"])):
+                    problems.append(f"manifest controlBinding {sid}: record commandAddress fields "
+                                    f"{sorted(ca.get('fields') or [])!r} != expected "
+                                    f"{expect_ca['fields']!r} for target {b.get('to')!r}")
+        elif expect_ca is not None:
+            problems.append(f"manifest controlBinding {sid}: addressable target {b.get('to')!r} "
+                            f"(shape {to_param.get('shape')!r}) needs a commandAddress")
         if not provenance_ok(b):
             problems.append(f"manifest controlBinding {sid}: incomplete evidence")
         binding_from_pc[b.get("from")] = binding_from_pc.get(b.get("from"), 0) + 1
@@ -686,8 +795,11 @@ def check(spec, manifest, require_full=False):
     # commandAddress) are un-executable — both would fire. Surface them rather than let one win.
     seen_tup = {}
     for b in bindings:
+        # Context is part of semantic identity (msg 23ea438f #4): the SAME from/to under two legal
+        # contexts (e.g. rotate-to-set X in menu A vs menu B) is two distinct bindings, not one.
         tup = (b.get("from"), b.get("to"), b.get("sourceOperation"), b.get("targetKind"),
                b.get("targetOperation"), b.get("axis"), b.get("index"),
+               json.dumps(b.get("context"), sort_keys=True) if b.get("context") else None,
                json.dumps(b.get("condition"), sort_keys=True) if b.get("condition") else None,
                json.dumps(b.get("commandAddress"), sort_keys=True) if b.get("commandAddress") else None)
         if tup in seen_tup:
@@ -731,7 +843,35 @@ def check(spec, manifest, require_full=False):
     # widget must carry at least one action binding. ACTION-MANAGED params (preset payloads) are
     # written only by presets_* actions, so they are exempt from the widget-reachability rule (msg
     # 9d8b5f43 item #2).
+    # ACTION-MANAGED params (preset payloads) are written only by presets_* actions, so they are
+    # exempt from the widget-reachability rule — but the flag must NOT be an arbitrary orphan-escape
+    # (msg 23ea438f #3): it is valid only on a preset payload, and each payload must be covered by
+    # the A-D load/save/initialise action relationship, not merely by the boolean.
     action_managed_sids = {p.get("stable_id") for p in parameters if p.get("actionManaged")}
+    preset_payload_sids = {p.get("stable_id") for p in parameters
+                           if p.get("shape") == "record" and p.get("recordType") == "keyboard_preset"}
+    if action_managed_sids != preset_payload_sids:
+        extra = sorted(action_managed_sids - preset_payload_sids)
+        if extra:
+            problems.append(f"actionManaged on non-preset-payload parameter(s) {extra} (only preset "
+                            f"payloads, written by presets_load/save/initialise, may carry "
+                            f"actionManaged)")
+        missing = sorted(preset_payload_sids - action_managed_sids)
+        if missing:
+            problems.append(f"preset payload parameter(s) {missing} must be actionManaged "
+                            f"(written only by presets_load/save/initialise)")
+    preset_op_actions = {"keyboard.presets_load", "keyboard.presets_save",
+                         "keyboard.presets_initialise"}
+    slot_ops = {s: set() for s in PRESET_SLOTS}
+    for b in bindings:
+        cs = b.get("condition") or {}
+        ps = cs.get("presetSlot")
+        if ps in slot_ops and b.get("targetKind") == "action" and b.get("to") in preset_op_actions:
+            slot_ops[ps].add(b.get("to"))
+    for ps in sorted(slot_ops):
+        if preset_op_actions - slot_ops[ps]:
+            problems.append(f"keyboard preset payload for slot {ps} not covered by A-D "
+                            f"load/save/initialise (missing {sorted(preset_op_actions - slot_ops[ps])})")
     orphan_params = sorted(param_sids - set(binding_to_param) - action_managed_sids)
     if orphan_params:
         problems.append(f"parameters with no controlBinding (orphan persisted state): "

@@ -421,7 +421,7 @@ def main():
     # 47. joystick binding on an axis the widget does not declare.
     badaxis = copy.deepcopy(manifest)
     for b in badaxis["target"]["controlBindings"]:
-        if b["stable_id"] == "bnd.joystick.joy->joystick.x":
+        if b["from"] == "joystick.joy" and b["to"] == "joystick.x":
             b["axis"] = "z"
     problems, _ = gate.check(spec, badaxis)
     if not has(problems, "not a declared axis of joystick.joy"):
@@ -430,7 +430,7 @@ def main():
     # 48. joystick axis must target exactly owner.<axis> (no cross-axis).
     wrongaxisparam = copy.deepcopy(manifest)
     for b in wrongaxisparam["target"]["controlBindings"]:
-        if b["stable_id"] == "bnd.joystick.joy->joystick.x":
+        if b["from"] == "joystick.joy" and b["to"] == "joystick.x":
             b["to"] = "joystick.y"  # keep axis=x, but point at the Y parameter
     problems, _ = gate.check(spec, wrongaxisparam)
     if not has(problems, "must target 'joystick.x', not 'joystick.y'"):
@@ -511,7 +511,7 @@ def main():
     norelease = copy.deepcopy(manifest)
     norelease["target"]["controlBindings"] = [
         b for b in norelease["target"]["controlBindings"]
-        if b["stable_id"] != "bnd.keyboard.plate_1->keyboard.plate_1.release"
+        if b["to"] != "keyboard.plate_1.release"
     ]
     problems, _ = gate.check(spec, norelease)
     if not has(problems, "declared source operation 'release' has no controlBinding"):
@@ -531,7 +531,7 @@ def main():
     # 55. index outside cardinality: a held-index binding must stay within the vector cardinality.
     badidx = copy.deepcopy(manifest)
     for b in badidx["target"]["controlBindings"]:
-        if b["stable_id"] == "bnd.keyboard.encoder->keyboard.plate_tune[1]{heldControl=keyboard.plate_1}":
+        if b["from"] == "keyboard.encoder" and b["to"] == "keyboard.plate_tune" and b.get("index") == 1:
             b["index"] = 99
     problems, _ = gate.check(spec, badidx)
     if not has(problems, "outside cardinality 1..12"):
@@ -639,38 +639,39 @@ def main():
     if not has(problems, "condition presetSlot 'preset_e' not in"):
         raise SystemExit("presetSlot outside the closed set not flagged: %r" % problems)
 
-    # 66. commandAddress kind is a closed record|mask locator (msg 9d8b5f43 item #2); an opaque
-    #     'set' is gone and a bogus kind is rejected.
+    # 66. commandAddress kind must be DERIVED from the target (msg 9d8b5f43 item #2, tightened by
+    #     msg 23ea438f item #2): a mask/foreign kind on a record editor is rejected as a mismatch,
+    #     not silently accepted.
     badca = copy.deepcopy(manifest)
     for b in badca["target"]["controlBindings"]:
-        if b.get("commandAddress"):
+        if b.get("to") == "keyboard.seq_steps":
             b["commandAddress"] = {"kind": "index", "indexRange": [0, 15], "fields": ["note"]}
             break
     problems, _ = gate.check(spec, badca)
-    if not has(problems, "commandAddress must be an object with kind in"):
-        raise SystemExit("commandAddress with an unclosed kind not flagged: %r" % problems)
+    if not has(problems, "commandAddress kind 'index' != expected 'record'"):
+        raise SystemExit("commandAddress with a mismatched kind not flagged: %r" % problems)
 
-    # 67. commandAddress indexRange must be a [min,max] of non-negative ints; a descending range is
-    #     malformed.
+    # 67. commandAddress indexRange must match the target's derived range (a descending [5,2] is
+    #     malformed AND disagrees with the derived [0,15]).
     badir = copy.deepcopy(manifest)
     for b in badir["target"]["controlBindings"]:
-        if b.get("commandAddress"):
+        if b.get("to") == "keyboard.seq_steps":
             b["commandAddress"] = {"kind": "record", "indexRange": [5, 2], "fields": ["note"]}
             break
     problems, _ = gate.check(spec, badir)
-    if not has(problems, "commandAddress needs a valid indexRange"):
-        raise SystemExit("commandAddress descending indexRange not flagged: %r" % problems)
+    if not has(problems, "commandAddress indexRange [5, 2] != expected [0, 15]"):
+        raise SystemExit("commandAddress mismatched indexRange not flagged: %r" % problems)
 
-    # 68. record commandAddress fields are a closed set (note/value/gate); an unknown field can't be
-    #     addressed.
+    # 68. record commandAddress fields must be exactly the array element's field names; an unknown
+    #     field can't be addressed.
     badfe = copy.deepcopy(manifest)
     for b in badfe["target"]["controlBindings"]:
-        if b.get("commandAddress"):
+        if b.get("to") == "keyboard.seq_steps":
             b["commandAddress"] = {"kind": "record", "indexRange": [0, 15], "fields": ["velocity"]}
             break
     problems, _ = gate.check(spec, badfe)
-    if not has(problems, "record commandAddress needs fields within"):
-        raise SystemExit("record commandAddress with an unclosed field not flagged: %r" % problems)
+    if not has(problems, "record commandAddress fields ['velocity'] != expected ['gate', 'note', 'value']"):
+        raise SystemExit("record commandAddress with a mismatched field not flagged: %r" % problems)
 
     # 69. record graph must be acyclic (msg 9d8b5f43 item #3): a direct field referencing its own
     #     schema is a self-cycle.
@@ -733,6 +734,110 @@ def main():
     problems, _ = gate.check(spec, capmis)
     if not has(problems, "!= module stable_ids"):
         raise SystemExit("capability table != module-ID set not flagged: %r" % problems)
+
+    # ---- msg 23ea438f (eighth review) validations --------------------------
+    # Item #2 — a condition / commandAddress must be an EXECUTABLE relationship, not merely a
+    # closed key name. A held control must be a real momentary-touch element 1:1 with the index;
+    # a menu item must name the invoked action's leaf; a commandAddress must match the target's
+    # derived record/mask locator (kind/range/fields).
+    # 75. heldControl naming a control absent from the panel inventory is a masked predicate.
+    badheld = copy.deepcopy(manifest)
+    for b in badheld["target"]["controlBindings"]:
+        if isinstance(b.get("condition"), dict) and b["condition"].get("heldControl"):
+            b["condition"] = dict(b["condition"])
+            b["condition"]["heldControl"] = "keyboard.plate_99"
+            break
+    problems, _ = gate.check(spec, badheld)
+    if not has(problems, "heldControl 'keyboard.plate_99' is not a declared panelControl"):
+        raise SystemExit("heldControl naming an unknown control not flagged: %r" % problems)
+
+    # 76. heldControl element suffix must be 1:1 with the binding index (hold plate 1 but write
+    #     vector element 5 is un-executable).
+    idxheld = copy.deepcopy(manifest)
+    for b in idxheld["target"]["controlBindings"]:
+        if b["from"] == "keyboard.encoder" and b["to"] == "keyboard.plate_tune" and b.get("index") == 1:
+            b["index"] = 5
+            break
+    problems, _ = gate.check(spec, idxheld)
+    if not has(problems, "does not match binding index"):
+        raise SystemExit("heldControl element/index mismatch not flagged: %r" % problems)
+
+    # 77. menuItem must name the invoked action's leaf (an arbitrary string can't be a highlighted
+    #     item).
+    badmenu = copy.deepcopy(manifest)
+    for b in badmenu["target"]["controlBindings"]:
+        c = b.get("condition")
+        if isinstance(c, dict) and c.get("menuItem"):
+            b["condition"] = dict(c)
+            b["condition"]["menuItem"] = "not_a_real_item"
+            break
+    problems, _ = gate.check(spec, badmenu)
+    if not has(problems, "does not name the target action leaf"):
+        raise SystemExit("menuItem not naming the action leaf not flagged: %r" % problems)
+
+    # 78. commandAddress kind/range/fields must be DERIVED from the target; a mask locator on a
+    #     record editor is a mixed address, not a valid one.
+    badca2 = copy.deepcopy(manifest)
+    for b in badca2["target"]["controlBindings"]:
+        if b.get("to") == "keyboard.seq_steps":
+            b["commandAddress"] = {"kind": "mask", "indexRange": [0, 7], "fields": []}
+            break
+    problems, _ = gate.check(spec, badca2)
+    if not has(problems, "commandAddress kind 'mask' != expected 'record'"):
+        raise SystemExit("record editor given a mask commandAddress not flagged: %r" % problems)
+
+    # Item #3 — actionManaged is NOT an arbitrary orphan escape: valid only on a preset payload, and
+    # each payload must be covered by the A-D load/save/initialise relationship, not merely flagged.
+    # 79. actionManaged lifted onto a non-preset (scalar) parameter is an escape hatch.
+    amnon = copy.deepcopy(manifest)
+    for p in amnon["target"]["parameters"]:
+        if p.get("shape") != "record":
+            p["actionManaged"] = True
+            break
+    problems, _ = gate.check(spec, amnon)
+    if not has(problems, "actionManaged on non-preset-payload parameter"):
+        raise SystemExit("actionManaged on a non-preset parameter not flagged: %r" % problems)
+
+    # 80. a preset payload that is not flagged actionManaged must be reported (the boolean is
+    #     required, not optional).
+    pamiss = copy.deepcopy(manifest)
+    for p in pamiss["target"]["parameters"]:
+        if p.get("stable_id") == "keyboard.preset_a":
+            p["actionManaged"] = False
+            break
+    problems, _ = gate.check(spec, pamiss)
+    if not has(problems, "preset payload parameter(s) ['keyboard.preset_a'] must be actionManaged"):
+        raise SystemExit("unflagged preset payload not reported: %r" % problems)
+
+    # 81. each preset slot must be covered by ALL of load/save/initialise (dropping the save
+    #     relationship for a slot is a real gap).
+    covmiss = copy.deepcopy(manifest)
+    covmiss["target"]["controlBindings"] = [
+        b for b in covmiss["target"]["controlBindings"] if not
+        ((b.get("condition") or {}).get("presetSlot") == "preset_a" and b.get("to") == "keyboard.presets_save")]
+    problems, _ = gate.check(spec, covmiss)
+    if not has(problems, "preset payload for slot preset_a not covered by A-D load/save/initialise"):
+        raise SystemExit("preset slot missing a load/save/initialise relationship not flagged: %r" % problems)
+
+    # Item #4 — schema/binding graph closure: params lists may not hold duplicates, the record DFS
+    # must cross params -> parameter(recordType), and context is part of semantic identity.
+    # 82. duplicate member in a params-kind schema is a closed-set contradiction.
+    dupam = copy.deepcopy(manifest)
+    dupam["target"]["recordSchemas"]["keyboard_params_minus_clock"]["params"].append("keyboard.behaviour")
+    problems, _ = gate.check(spec, dupam)
+    if not has(problems, "duplicate param members"):
+        raise SystemExit("duplicate params member not flagged: %r" % problems)
+
+    # 83. a cycle record -> params -> parameter(recordType) -> record must be caught (the DFS crosses
+    #     both edge kinds). Adding preset_a (recordType=keyboard_preset) to the params set closes a
+    #     2-cycle with keyboard_preset -> keyboard_params_minus_clock; moving it out of excludes keeps
+    #     the keyboard-state partition intact so the only defect reported is the cycle.
+    cyc2 = copy.deepcopy(manifest)
+    cyc2["target"]["recordSchemas"]["keyboard_params_minus_clock"]["params"].append("keyboard.preset_a")
+    cyc2["target"]["recordSchemas"]["keyboard_preset"]["excludes"].remove("keyboard.preset_a")
+    problems, _ = gate.check(spec, cyc2)
+    if not has(problems, "record graph has a cycle"):
+        raise SystemExit("params->parameter(recordType) cycle not flagged: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
