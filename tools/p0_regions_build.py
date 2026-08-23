@@ -112,6 +112,17 @@ WIDGET_SRC = {
 # sub-action. The gate validates the value against the closed grammar per context.
 COND_KEYS = {"heldControl", "menuItem", "presetSlot", "recordField", "recordIndex", "maskIndex"}
 PRESET_SLOTS = ("preset_a", "preset_b", "preset_c", "preset_d")
+# PRESETS two-level page state machine (Codex Phase-A 10th-review verdict msg e9f1f028). The presets
+# user flow is genuinely TWO PAGES, not one flat menu: the manual (L1045-1046) says rotate to scroll
+# presets A-D, then press to enter the selected slot's load/save/initialise sub-page. Each page is a
+# REAL keyboard-menu context selector (page=slot-list | action-list), so the gate can tell a
+# top-level slot list from an entered action sub-page instead of collapsing them into one
+# `menu=presets`. The navigation actions are NOT display items, so no `menuItem` ever names a
+# navigation action's own leaf — the topology is an independent declaration, never self-proven from a
+# target's `menu` field.
+PRESET_PAGE_SLOT_LIST = "slot-list"
+PRESET_PAGE_ACTION_LIST = "action-list"
+PRESET_PAGES = (PRESET_PAGE_SLOT_LIST, PRESET_PAGE_ACTION_LIST)
 SEQ_STEP_FIELDS = ("note", "value", "gate")
 
 
@@ -140,6 +151,18 @@ def ctx_program(program_id):
 
 def ctx_menu(menu):
     return {"type": "keyboard-menu", "menu": menu}
+
+
+def ctx_menu_page(page):
+    """A keyboard-menu context with a real page selector (PRESETS only).
+
+    The PRESETS workflow is a two-page state machine (slot-list -> action-list), so the context must
+    carry the current page, not just the menu name. Without it the slot-list and action-list would be
+    indistinguishable and the checker could not validate a page-scoped `menuItem` (Codex e9f1f028).
+    """
+    c = ctx_menu("presets")
+    c["page"] = page
+    return c
 
 
 def ctx_mode(mode):
@@ -697,19 +720,19 @@ KB_PRESET_ACTIONS = [
     ("presets_initialise", "INITIALISE PRESET", ACT_INITIALISE),
 ]
 
-# Presets sub-page WORKFLOW edges (Codex 9th-review item #1e). The manual documents ONLY two edges:
-# "rotate the encoder to scroll through presets A to D" (slot SELECTION, confirmed) and "click the
-# encoder to enter a sub-selection page where you can load, save or initialise a preset" (enter
-# SUB-PAGE, confirmed). Sub-page ITEM-selection is undocumented, so it stays provisional. Each is a
-# first-class transient ACTION (not a persisted parameter) so the dispatch edge is a declared entity,
-# not prose — and `menu=presets` lets the gate validate the closed `menuItem` on each binding.
-KB_PRESET_TRANSIENT = [
-    ("preset_rotate_slot", "rotate to select preset slot A-D", ACT_ENC_ROTATE, SRC_ROTATE,
+# Presets two-page workflow NAVIGATION actions (Codex Phase-A 10th-review verdict msg e9f1f028).
+# These drive the A-D slot list -> load/save/initialise action list state machine but are NOT
+# manual-displayed items, so they can never be a `menuItem` value (only a real display item can be).
+# Rotate=select-slot and press=enter-sub-page are the two manual edges (confirmed); sub-page
+# item-selection is undocumented, so it stays provisional (Codex 23ea438f #1). Each is a first-class
+# transient ACTION so the dispatch edge is a declared entity, not prose.
+KB_PRESET_NAV = [
+    ("preset_select_slot", "rotate to select preset slot A-D", ACT_ENC_ROTATE, SRC_ROTATE,
      "confirmed"),
-    ("preset_enter_subpage", "press to enter load/save/init sub-page", ACT_ENC_PRESS, SRC_PRESS,
-     "confirmed"),
-    ("preset_select_subpage_item", "select load/save/init sub-page item", ACT_ENC_ROTATE, SRC_ROTATE,
-     "provisional"),
+    ("preset_enter_subpage", "press to enter the selected slot's load/save/init sub-page",
+     ACT_ENC_PRESS, SRC_PRESS, "confirmed"),
+    ("preset_select_action", "rotate to select load/save/init sub-page action", ACT_ENC_ROTATE,
+     SRC_ROTATE, "provisional"),
 ]
 
 
@@ -790,34 +813,56 @@ def add_keyboard_state(L):
         # 23ea438f #1).
         L.bind("keyboard.encoder", a, ctx_mode("calibration"), source=SRC_LONG, kind=TK_ACTION,
                target_op=TO_INVOKE, condition={"menuItem": leaf}, evidence=evd)
-    # PRESETS sub-page (manual L1045-1046): rotate selects a slot A-D (confirmed), press enters the
-    # load/save/initialise sub-page (confirmed). The sub-page ITEM-selection + ITEM-execution gesture
-    # is NOT documented, so it is marked provisional: a single uniform provisional press invokes the
-    # currently-highlighted item, bound once per slot under a closed `presetSlot` condition. The
-    # item (load/save/initialise) is identified by the action being targeted, NOT by rotating to it
-    # — rotate is reserved for slot selection (Codex 23ea438f #1). The ACTION is confirmed (the
-    # three items exist in the manual); only the execution gesture (the binding) is provisional.
+    # PRESETS two-page state machine (Codex Phase-A 10th-review verdict msg e9f1f028). The manual
+    # (L1045-1046) documents TWO pages: rotate to scroll presets A-D (slot-list), then press to enter
+    # the selected slot's load/save/initialise sub-page (action-list). Each page is a REAL
+    # keyboard-menu context (page=slot-list | action-list) so the gate can tell the two apart instead
+    # of collapsing them into one flat `menu=presets` (the Round-10 root Codex found). The navigation
+    # actions (preset_select_slot / preset_enter_subpage / preset_select_action) drive the workflow but
+    # are NOT manual-displayed items, so every binding's `menuItem` is a REAL display item — a slot in
+    # slot-list, a load/save/initialise action in action-list — NEVER a navigation action's own leaf.
+    # That keeps the menu topology an INDEPENDENT declaration rather than self-proven from a target's
+    # `menu` field. Gesture evidence: rotate=select-slot and press=enter-sub-page are the two manual
+    # edges (confirmed); sub-page item-select + item-execution are undocumented, so they stay
+    # provisional (Codex 23ea438f #1). The three load/save/initialise ACTIONS are confirmed (they are
+    # manual items); only the execute gesture (the binding) is provisional.
+    for leaf, name, kind, src, st in KB_PRESET_NAV:
+        evd = ev(1040, 1045, kb_site)
+        L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd,
+                     menu="presets", status=st)
     for leaf, name, kind in KB_PRESET_ACTIONS:
         evd = ev(1040, 1045, kb_site)
-        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd,
-                         menu="presets")
+        L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd,
+                     menu="presets")
+    # slot-list page: rotate scrolls the A-D highlight, press opens that slot's action-list. The
+    # enter edge CARRIES the current slot (presetSlot) so the checker can confirm a sub-page is
+    # entered for a real slot, not an unbound press (Codex item #2/#5).
+    for slot in PRESET_SLOTS:
+        # rotate -> preset_select_slot (menuItem = the slot now highlighted).
+        L.bind("keyboard.encoder", "keyboard.preset_select_slot",
+               ctx_menu_page(PRESET_PAGE_SLOT_LIST), source=SRC_ROTATE, kind=TK_ACTION,
+               target_op=TO_INVOKE, condition={"menuItem": slot}, status="confirmed",
+               evidence=ev(1040, 1045, kb_site))
+        # press -> preset_enter_subpage (menuItem = the slot, presetSlot = the slot being entered).
+        L.bind("keyboard.encoder", "keyboard.preset_enter_subpage",
+               ctx_menu_page(PRESET_PAGE_SLOT_LIST), source=SRC_PRESS, kind=TK_ACTION,
+               target_op=TO_INVOKE, condition={"presetSlot": slot, "menuItem": slot},
+               status="confirmed", evidence=ev(1040, 1045, kb_site))
+    # action-list page: rotate scrolls load/save/initialise, press acts on the selected slot. The
+    # execute edge carries BOTH a closed `presetSlot` (which slot) and `menuItem` (which action), so
+    # one press invokes exactly one of the three, not all at once (dispatch closure).
+    for leaf, name, kind in KB_PRESET_ACTIONS:
+        # rotate -> preset_select_action (menuItem = the operation now highlighted).
+        L.bind("keyboard.encoder", "keyboard.preset_select_action",
+               ctx_menu_page(PRESET_PAGE_ACTION_LIST), source=SRC_ROTATE, kind=TK_ACTION,
+               target_op=TO_INVOKE, condition={"menuItem": leaf}, status="provisional",
+               evidence=ev(1040, 1045, kb_site))
         for slot in PRESET_SLOTS:
-            # Dispatch closure (Codex 9th-review item #1d): the invoke must carry BOTH a closed
-            # `presetSlot` (which slot it acts on) AND a `menuItem` naming the highlighted sub-page
-            # item (load / save / initialise), so the three actions are mutually exclusive — one press
-            # invokes exactly one of them, not all three at once.
-            L.bind("keyboard.encoder", a, ctx_menu("presets"), source=SRC_PRESS, kind=TK_ACTION,
+            # press -> load/save/initialise for this slot (menuItem = the operation, presetSlot = slot).
+            L.bind("keyboard.encoder", "keyboard.%s" % leaf,
+                   ctx_menu_page(PRESET_PAGE_ACTION_LIST), source=SRC_PRESS, kind=TK_ACTION,
                    target_op=TO_INVOKE, condition={"presetSlot": slot, "menuItem": leaf},
-                   status="provisional", evidence=evd)
-    # PRESETS WORKFLOW edges (Codex 9th-review item #1e): the top-level rotate=select-slot and
-    # press=enter-sub-page gestures plus the (provisional) sub-page item-selection are first-class
-    # transient actions, so they are declared entities with a real dispatch binding rather than prose.
-    for leaf, name, kind, src, st in KB_PRESET_TRANSIENT:
-        evd = ev(1040, 1045, kb_site)
-        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd,
-                         menu="presets", status=st)
-        L.bind("keyboard.encoder", a, ctx_menu("presets"), source=src, kind=TK_ACTION,
-               target_op=TO_INVOKE, condition={"menuItem": leaf}, status=st, evidence=evd)
+                   status="provisional", evidence=ev(1040, 1045, kb_site))
 
 
 # p23/p24 semantic labels per (cartridge, program). X/Y/Z knob meaning for each of the 39

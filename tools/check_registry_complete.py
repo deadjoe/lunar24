@@ -121,6 +121,26 @@ WIDGET_SRC = {"continuous": {"change"}, "selector-toggle": {"change"},
 # such a binding a closed-condition error (Codex 9th-review item #2b: remove-or-truly-validate).
 COND_KEYS = {"heldControl", "menuItem", "presetSlot"}
 PRESET_SLOTS = {"preset_a", "preset_b", "preset_c", "preset_d"}
+# PRESETS two-level page state machine (Codex Phase-A 10th-review verdict msg e9f1f028). The manual
+# (L1045-1046) documents TWO pages: rotate to scroll presets A-D (slot-list), then press to enter the
+# selected slot's load/save/initialise sub-page (action-list). Each page is a REAL keyboard-menu
+# context selector (page=slot-list | action-list) so the gate can tell a top-level slot list from an
+# entered action sub-page instead of collapsing both into one `menu=presets` (the Round-10 root).
+# `menuItem` on a presets binding must name a real DISPLAY ITEM of the current page — a slot in
+# slot-list, a load/save/initialise action in action-list — and may be a DIFFERENT entity from the
+# binding target, because the target may be a navigation action (preset_select_slot /
+# preset_enter_subpage / preset_select_action) whose leaf is never shown on the panel. Display items
+# and allowed targets per page are INDEPENDENT declarations (never inferred from any target's own
+# `menu` field — that was the self-proving loop Codex diagnosed).
+PRESET_PAGES = ("slot-list", "action-list")
+PRESET_PAGE_ITEMS = {
+    "slot-list":    ["preset_a", "preset_b", "preset_c", "preset_d"],
+    "action-list":  ["presets_load", "presets_save", "presets_initialise"],
+}
+PRESET_PAGE_TARGETS = {
+    "slot-list":    {"preset_select_slot", "preset_enter_subpage"},
+    "action-list":  {"presets_load", "presets_save", "presets_initialise", "preset_select_action"},
+}
 CMD_ADDR_KINDS = {"record", "mask"}
 SEQ_STEP_FIELDS = {"note", "value", "gate"}
 CTX_TYPES = {"global", "program", "keyboard-menu", "keyboard-mode"}
@@ -703,7 +723,12 @@ def check(spec, manifest, require_full=False):
                 # only 'program', menu only 'menu', mode only 'mode'. An extra selector key is a
                 # masked-context bug regardless of whether the type name is legal.
                 actual_ctx_keys = {k for k in ctx if k != "type"}
-                needed_ctx_keys = CTX_KEYS[ctype]
+                # The PRESETS menu is a two-page state machine, so keyboard-menu=presets must carry
+                # a `page` selector (Codex e9f1f028); every other menu is a single implicit page.
+                if ctype == "keyboard-menu" and ctx.get("menu") == "presets":
+                    needed_ctx_keys = {"menu", "page"}
+                else:
+                    needed_ctx_keys = CTX_KEYS[ctype]
                 if actual_ctx_keys != needed_ctx_keys:
                     problems.append(f"manifest controlBinding {sid}: context type {ctype!r} must "
                                     f"carry exactly {sorted(needed_ctx_keys)} (got "
@@ -714,6 +739,10 @@ def check(spec, manifest, require_full=False):
                 elif ctype == "keyboard-menu" and ctx.get("menu") not in KB_MENUS:
                     problems.append(f"manifest controlBinding {sid}: keyboard-menu context menu "
                                     f"{ctx.get('menu')!r} not in {sorted(KB_MENUS)}")
+                elif ctype == "keyboard-menu" and ctx.get("menu") == "presets" and \
+                        ctx.get("page") not in PRESET_PAGES:
+                    problems.append(f"manifest controlBinding {sid}: presets page "
+                                    f"{ctx.get('page')!r} not in {sorted(PRESET_PAGES)}")
                 elif ctype == "keyboard-mode" and ctx.get("mode") not in KB_MODES:
                     problems.append(f"manifest controlBinding {sid}: keyboard-mode context mode "
                                     f"{ctx.get('mode')!r} not in {sorted(KB_MODES)}")
@@ -770,7 +799,30 @@ def check(spec, manifest, require_full=False):
                         # target must genuinely belong to the binding's own menu/mode.
                         toid = b.get("to") or ""
                         leaf = toid.split(".", 1)[-1] if "." in toid else toid
-                        if v != leaf:
+                        if ctype == "keyboard-menu" and ctx.get("menu") == "presets":
+                            # PRESETS two-page state machine (Codex e9f1f028): menuItem names a real
+                            # DISPLAY ITEM of the current page (a slot in slot-list, a load/save/
+                            # initialise action in action-list) — it is NOT necessarily the target's
+                            # leaf, because a navigation action (preset_select_slot /
+                            # preset_enter_subpage / preset_select_action) is bound per slot/operation
+                            # but is never itself a displayed choice. The topology is an INDEPENDENT
+                            # declaration (PRESET_PAGE_ITEMS / PRESET_PAGE_TARGETS) never inferred from
+                            # a target's own `menu` field (the self-proving loop Codex diagnosed).
+                            page = ctx.get("page")
+                            if page not in PRESET_PAGES:
+                                problems.append(f"manifest controlBinding {sid}: presets menuItem "
+                                                f"{v!r} page {page!r} not in {sorted(PRESET_PAGES)}")
+                            elif v not in PRESET_PAGE_ITEMS[page]:
+                                problems.append(f"manifest controlBinding {sid}: presets menuItem "
+                                                f"{v!r} is not a display item of page {page!r} "
+                                                f"(display items "
+                                                f"{sorted(PRESET_PAGE_ITEMS[page])})")
+                            elif leaf not in PRESET_PAGE_TARGETS[page]:
+                                problems.append(f"manifest controlBinding {sid}: presets page "
+                                                f"{page!r} menuItem {v!r} target {toid!r} not in "
+                                                f"allowed targets "
+                                                f"{sorted(PRESET_PAGE_TARGETS[page])}")
+                        elif v != leaf:
                             problems.append(f"manifest controlBinding {sid}: menuItem {v!r} does "
                                             f"not name the target leaf {leaf!r}")
                         elif ctype == "keyboard-menu" and ctx.get("menu") not in menu_items:
@@ -869,6 +921,31 @@ def check(spec, manifest, require_full=False):
             ops_by_pc.setdefault(b.get("from"), set()).add(src)
         if b.get("axis") is not None:
             axes_by_pc.setdefault(b.get("from"), set()).add(b["axis"])
+
+    # ---- PRESETS two-page state machine invariants (Codex e9f1f028) -------------
+    # The presets workflow is a real two-page machine (slot-list -> action-list), so BOTH pages must
+    # actually be present in the bindings (delete/merge a page -> fail) and the enter-subpage edge
+    # must carry the slot it enters (enter without a slot -> fail). Without these the data cannot
+    # tell a top-level A-D slot list from an entered load/save/init action sub-page — the exact
+    # Round-10 root Codex diagnosed.
+    preset_pages_seen = {}
+    preset_enter_no_slot = []
+    for b in bindings:
+        bctx = b.get("context") or {}
+        if bctx.get("type") == "keyboard-menu" and bctx.get("menu") == "presets":
+            page = bctx.get("page")
+            preset_pages_seen[page] = preset_pages_seen.get(page, 0) + 1
+            if (b.get("to") or "").rsplit(".", 1)[-1] == "preset_enter_subpage":
+                cond = b.get("condition") or {}
+                if "presetSlot" not in cond:
+                    preset_enter_no_slot.append(b.get("stable_id"))
+    for page in PRESET_PAGES:
+        if not preset_pages_seen.get(page):
+            problems.append(f"presets two-page state machine: page {page!r} has no bindings "
+                            f"(both {sorted(PRESET_PAGES)} must exist)")
+    if preset_enter_no_slot:
+        problems.append(f"presets enter-subpage must carry a closed presetSlot: "
+                        f"{sorted(preset_enter_no_slot)}")
 
     # ---- reject duplicate semantic tuples (msg 9d8b5f43 item #1) ----------------
     # Two bindings describing the SAME (from,to,source,targetKind,targetOp,axis,index,condition,

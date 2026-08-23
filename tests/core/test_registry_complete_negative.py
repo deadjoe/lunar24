@@ -30,6 +30,13 @@ Codex msg c7089521 hardened shape/action/context/rogue gate:
     record-schema keys are exact key-sets; fields are unique + ORDER-preserving; the unused
     record{Field,Index}/maskIndex condition keys were removed from the closed set (a binding carrying
     one is rejected, not ignored),
+  PRESETS two-page state machine (Codex msg e9f1f028): the presets workflow is a REAL two-page state
+    machine (slot-list A-D -> action-list load/save/initialise), so a keyboard-menu=presets context
+    must carry a closed `page` selector, menuItem may only name a declared DISPLAY ITEM (never a
+    navigation action's own leaf), the enter-subpage edge must carry the slot it enters, the menu
+    topology is an independent declaration (never inferred from a target's `menu` field), and both
+    pages must actually be present — delete/merge a page, use a non-topology page, drop the enter
+    slot, or forge menuItem from the navigation action all fail for their intended reason,
   plus the inherited gates (重件 by category, provenance, program grid, directed/in-dangling
   routes, fixed-chain freeze, ORCHE provisional, terminal-owner, impl ⊆ target, mustComplete).
 
@@ -939,6 +946,66 @@ def main():
     if not has(problems, "element has keys ['junk'] not allowed"):
         raise SystemExit("array element junk key not flagged: %r" % problems)
 
+    # Codex 10th-review (msg e9f1f028) — PRESETS two-page state machine. The presets workflow is a
+    # REAL two-page machine (slot-list with A-D, then action-list with load/save/initialise); the
+    # Round-10 root was collapsing both pages into one flat `menu=presets` with the navigation actions
+    # masquerading as their own menuItem. Each of the four defects below must fail for ITS intended
+    # reason.
+
+    # (a) merge/delete a page: drop the `page` selector from every presets binding, flattening both
+    #     pages back into one flat menu=presets. The context key-set MUST demand menu+page, and the
+    #     two-page completeness must notice a page has no bindings.
+    mergepg = copy.deepcopy(manifest)
+    for b in mergepg["target"]["controlBindings"]:
+        ctx = b.get("context")
+        if (isinstance(ctx, dict) and ctx.get("type") == "keyboard-menu" and ctx.get("menu") == "presets"):
+            b["context"] = {k: v for k, v in ctx.items() if k != "page"}
+    problems, _ = gate.check(spec, mergepg)
+    if not has(problems, "must carry exactly ['menu', 'page']"):
+        raise SystemExit("merged presets pages (page selector dropped) not flagged by exact context "
+                         "key-set: %r" % problems)
+    if not has(problems, "page 'slot-list' has no bindings"):
+        raise SystemExit("merged presets pages not flagged as a deleted/absent page: %r" % problems)
+
+    # (b) bad page value: a page name outside the closed PRESET_PAGES topology must be rejected.
+    badpage = copy.deepcopy(manifest)
+    for b in badpage["target"]["controlBindings"]:
+        ctx = b.get("context")
+        if (isinstance(ctx, dict) and ctx.get("type") == "keyboard-menu"
+                and ctx.get("menu") == "presets" and ctx.get("page") == "slot-list"):
+            b["context"] = dict(ctx)
+            b["context"]["page"] = "slotz"
+            break
+    problems, _ = gate.check(spec, badpage)
+    if not has(problems, "presets page 'slotz' not in"):
+        raise SystemExit("non-topology presets page not rejected: %r" % problems)
+
+    # (c) enter lacks a slot: an enter-subpage binding without a closed presetSlot can't tell which
+    #     slot's action-list it enters, so it must fail.
+    noslot = copy.deepcopy(manifest)
+    for b in noslot["target"]["controlBindings"]:
+        if b.get("to") == "keyboard.preset_enter_subpage":
+            b["condition"] = {k: v for k, v in b["condition"].items() if k != "presetSlot"}
+            break
+    problems, _ = gate.check(spec, noslot)
+    if not has(problems, "enter-subpage must carry a closed presetSlot"):
+        raise SystemExit("enter-subpage without presetSlot not flagged: %r" % problems)
+
+    # (d) forge menuItem from the nav action itself: a slot-list binding whose menuItem is the
+    #     preset_enter_subpage navigation action (not a real display item) must be rejected — the
+    #     menu topology lives in the declared PRESET_PAGE_ITEMS, not in the target's own leaf.
+    forgeslot = copy.deepcopy(manifest)
+    for b in forgeslot["target"]["controlBindings"]:
+        ctx = b.get("context")
+        if (isinstance(ctx, dict) and ctx.get("type") == "keyboard-menu"
+                and ctx.get("menu") == "presets" and ctx.get("page") == "slot-list"):
+            b["condition"] = dict(b["condition"])
+            b["condition"]["menuItem"] = "preset_enter_subpage"
+            break
+    problems, _ = gate.check(spec, forgeslot)
+    if not has(problems, "is not a display item of page 'slot-list'"):
+        raise SystemExit("nav action forged as a presets menuItem not rejected: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -947,8 +1014,10 @@ def main():
           "(parameters/patchableJacks/internalEndpoints), empty-region declared-actual, binding "
           "invariants, impl⊆target, fixed-chain freeze, ORCHE provisional, terminal-owner and "
           "dangling-fixed-endpoint are all gated; dispatch closure (menuItem-selector + whole-vector "
-          "ban), exact commandAddress/record-schema key-sets, order-preserving unique fields and the "
-          "removed record* condition keys are gated too.")
+          "ban), exact commandAddress/record-schema key-sets, order-preserving unique fields, the "
+          "removed record* condition keys, and the PRESETS two-page state machine (closed page "
+          "selector, display-item menuItem, enter-carries-slot, independent topology, both-pages-"
+          "present) are gated too.")
     return 0
 
 
