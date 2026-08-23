@@ -966,13 +966,34 @@ def check(spec, manifest, require_full=False):
         expected_preset_relations.add(("action-list", "rotate", "preset_select_action", o, None))
         for s in PRESET_SLOTS:
             expected_preset_relations.add(("action-list", "press", o, o, s))
+    # Round 12 (Codex 11th-review verdict msg 0153c91f): the exact set above only collected bindings
+    # whose CONTEXT is `menu=presets`, so a PRESETS workflow action (preset_select_slot /
+    # preset_enter_subpage / preset_select_action / presets_load / presets_save / presets_initialise)
+    # could be REBOUND into a legal program/global context and escape the matrix — NORMAL gate returns
+    # 0 problems while the six workflow actions now exist outside the two-page machine. So the six
+    # workflow targets are a CLOSED set: ANY binding whose `to` is one of them must sit on a PRESETS
+    # page (and therefore inside the expected set). We additionally project such a stray binding so it
+    # shows up as an extra tuple, AND emit an explicit diagnosis rather than only a count.
+    presets_workflow_targets = {
+        "keyboard.preset_select_slot", "keyboard.preset_enter_subpage",
+        "keyboard.preset_select_action", "keyboard.presets_load",
+        "keyboard.presets_save", "keyboard.presets_initialise",
+    }
     actual_preset_relations = set()
     for b in bindings:
         bctx = b.get("context") or {}
-        if bctx.get("type") == "keyboard-menu" and bctx.get("menu") == "presets":
+        is_presets_page = (bctx.get("type") == "keyboard-menu" and bctx.get("menu") == "presets")
+        is_workflow_target = (b.get("to") in presets_workflow_targets)
+        if is_workflow_target and not is_presets_page:
+            problems.append(f"controlBinding {b.get('stable_id')!r}: PRESETS workflow action "
+                            f"{b.get('to')!r} bound outside a PRESETS page (context {bctx!r}); "
+                            f"the PRESETS workflow actions may only appear in the presets "
+                            f"two-page machine")
+        if is_presets_page or is_workflow_target:
             cond = b.get("condition") or {}
+            page = bctx.get("page") if is_presets_page else None
             actual_preset_relations.add(
-                (bctx.get("page"), b.get("sourceOperation"), (b.get("to") or "").rsplit(".", 1)[-1],
+                (page, b.get("sourceOperation"), (b.get("to") or "").rsplit(".", 1)[-1],
                  cond.get("menuItem"), cond.get("presetSlot")))
     if actual_preset_relations != expected_preset_relations:
         missing = sorted(expected_preset_relations - actual_preset_relations)
