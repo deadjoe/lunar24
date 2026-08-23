@@ -1636,6 +1636,23 @@ def main():
         raise SystemExit("canonical target evidence-span drift (1142 outside [2000,2001]) not enforced: %r"
                         % problems)
 
+    # (az) drift BOTH the canonical target evidence ref AND the fact descriptorEvidence.ref to the
+    #      same wrong_source while the ACTUAL (spec) route is unchanged. Because the registry route
+    #      carries no ref, the generator fills it with generate_registry.DEFAULT_SOURCE
+    #      (solar42N_manual_v15), so fact.ref==target.ref==wrong_source still NORMAL-passed before
+    #      the actual-effective-ref comparison was added (Codex msg 478e06f6). The actual ref must
+    #      equal the fact/target ref, so this must FAIL now.
+    az_bad = copy.deepcopy(manifest)
+    for tr in az_bad["target"]["normalizedRoutes"]:
+        if tr.get("stable_id") == "route.vcf_cv_l_to_cv_r":
+            tr["evidence"]["ref"] = "wrong_source"
+    az_bad["target"]["landedRouteFacts"]["routes"]["route.vcf_cv_l_to_cv_r"][
+        "descriptorEvidence"]["ref"] = "wrong_source"
+    problems, _ = gate.check(spec, az_bad)
+    if not has(problems, "evidence.ref"):
+        raise SystemExit("canonical target+fact ref sync-drift (both -> wrong_source, actual on "
+                        "DEFAULT_SOURCE) not enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

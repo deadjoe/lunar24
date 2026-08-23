@@ -1405,6 +1405,16 @@ def check(spec, manifest, require_full=False):
             problems.append(f"implementation route {sid!r}: evidence.line "
                             f"{(rr.get('evidence') or {}).get('line')} != descriptorEvidence.line "
                             f"{de_line}")
+        # actual EFFECTIVE evidence ref: route evidence carries no `ref` in the registry, so the
+        # generator fills it with generate_registry.DEFAULT_SOURCE (registry meta has no `source`,
+        # evidence_expr falls back to the DEFAULT_SOURCE). That is the ref the generated C++
+        # descriptor actually carries, so it must equal the fact/target ref. Without this, drifting
+        # the target ref AND the fact ref together while the actual stays on DEFAULT_SOURCE slipped
+        # past NORMAL (Codex msg 478e06f6).
+        actual_ref = (rr.get("evidence") or {}).get("ref", generate_registry.DEFAULT_SOURCE)
+        if actual_ref != de_ref:
+            problems.append(f"implementation route {sid!r}: evidence.ref {actual_ref!r} "
+                            f"!= descriptorEvidence.ref {de_ref!r}")
 
     # ---- per-CAPABILITY present-but-empty (replaces blanket param+jack) ----
     tmodel = {m["stable_id"]: m for m in modules if m.get("stable_id")}
