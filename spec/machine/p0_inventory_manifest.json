@@ -2064,6 +2064,30 @@
             "coupling": "unverified"
           }
         },
+        "envelope_a.gate_in": {
+          "id": 17,
+          "owner": "envelope_a",
+          "direction": "input",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "min": 0.0,
+          "max": 10.0,
+          "coupling": "unknown",
+          "status": "provisional",
+          "descriptorEvidence": {
+            "line": 577
+          },
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "provisional",
+            "coupling": "unverified"
+          }
+        },
         "envelope_a.vca_cv_out": {
           "id": 25,
           "owner": "envelope_a",
@@ -2123,7 +2147,7 @@
           "coupling": "unknown",
           "status": "provisional",
           "descriptorEvidence": {
-            "line": 576
+            "line": 577
           },
           "fieldEvidence": {
             "nominalRange": "unverified",

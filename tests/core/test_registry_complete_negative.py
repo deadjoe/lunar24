@@ -1725,6 +1725,33 @@ def main():
     if not has(problems, "MISSING landed module 'envelope_b'"):
         raise SystemExit("module delete (envelope_b + its route removed) not enforced: %r" % problems)
 
+    # (bh) envelope_a.gate_in nominalRange back to CONFIRMED -> the landed descriptor fact locks
+    #      nominalRange=unverified (Codex msg c419bad0 NON-GO), so undoing the correction must FAIL.
+    bh_bad = copy.deepcopy(spec)
+    for m in bh_bad["modules"]:
+        if m.get("stable_id") == "envelope_a":
+            for j in m["jacks"]:
+                if j.get("stable_id") == "envelope_a.gate_in":
+                    j["fieldEvidence"]["nominalRange"] = "confirmed"
+    problems, _ = gate.check(bh_bad, manifest)
+    if not has(problems, "implementation jack 'envelope_a.gate_in'"):
+        raise SystemExit("envelope_a.gate_in nominalRange reverting to confirmed not enforced: %r"
+                        % problems)
+
+    # (bi) A/B gate_input evidence back to 576 -> L576 is the GATE LEFT OUTPUT rail (0-10V) only;
+    #      the gate INPUT normalization is L577 (Codex msg c419bad0 NON-GO), so a 576 cite must FAIL
+    #      for BOTH envelopes now that their facts lock line 577.
+    bi_bad = copy.deepcopy(spec)
+    for m in bi_bad["modules"]:
+        if m.get("stable_id") in ("envelope_a", "envelope_b"):
+            for j in m["jacks"]:
+                if j.get("stable_id") in ("envelope_a.gate_in", "envelope_b.gate_in"):
+                    j["evidence"]["line"] = 576
+    problems, _ = gate.check(bi_bad, manifest)
+    if not has(problems, "descriptorEvidence.line=576"):
+        raise SystemExit("A/B gate_input evidence reverting to line 576 (output rail) not enforced: "
+                        "%r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
