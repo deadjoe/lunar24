@@ -97,7 +97,9 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 20u);     // Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
+  CHECK_EQ(core::kModuleCount, 21u);     // Phase B DRONE 6 voice slice (Codex msg b121ba1b):
+                                         // +1 module (drone_6 id 20, source, 12 params/5 jacks).
+                                         // Prior: Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
                                          // +1 module (drone_3 id 19, source, 12 params/5 jacks).
                                          // Prior: DRONE 5 classic voice slice (Codex msg 6e25b926)
                                          // drone_5 id 18, DRONE 4 classic voice slice (Codex msg 483a9dc5)
@@ -111,7 +113,12 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 222u); // Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
+  CHECK_EQ(core::kParameterCount, 234u); // Phase B DRONE 6 voice slice (Codex msg b121ba1b):
+                                         // +12 params (drone_6.rate/mod/divider/pitch/noise/att/rls
+                                         // continuous software-normalized 0..1 placeholders +
+                                         // hi_low selector hi/low + fm/am/rate_switch/hold selectors
+                                         // off/on, ids 289-300).
+                                         // Prior: Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
                                          // +12 params (drone_3.rate/mod/divider/pitch/noise/att/rls
                                          // continuous software-normalized 0..1 placeholders +
                                          // hi_low selector hi/low + fm/am/rate_switch/hold selectors
@@ -123,13 +130,25 @@ static void frozen_counts() {
                                          // (Codex msg 28e00d92) +19 (ids 201-219), dual-effector
                                          // slice +8 (ids 193-200), voice-mixer slice +20
                                          // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
-                                         // carry 216, programs 6. Left as honest gaps the
-                                         // drone_6 voice params + 12 keyboard
+                                         // carry 228, programs 6. Left as honest gaps the 12 keyboard
                                          // complex params (seq_steps, quantise_scale_editor,
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,
                                          // seq_clock, arp_rhythm, seq_rhythm + remaining module
                                          // ranges)
-  CHECK_EQ(core::kJackCount, 59u);       // Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
+  CHECK_EQ(core::kJackCount, 64u);       // Phase B DRONE 6 voice slice (Codex msg b121ba1b):
+                                         // +5 patchable jacks (drone_6.cv_out output/cv
+                                         // 0..+12V/unipolar id 60 — KEY DIFF: manual L158 "ENV VOICES
+                                         // 1,2,3,6,7,8" does NOT list voice 6, so unlike DRONE 3 this
+                                         // range/polarity stays unknown/unverified, not copied;
+                                         // .env_out output/cv -10..+10V/bipolar confirmed id 61 — L157
+                                         // DOES list voice 6; .gate_in id 62 input/gate with the 5V
+                                         // gate PRODUCED by the keyboard so the input
+                                         // rail/threshold/polarity stay unverified/unknown; .clock_in
+                                         // id 63 input/clock (clock socket sets the S&H speed,
+                                         // electrical range/polarity unverified); .noise_in id 64
+                                         // input with only the S&H/IN identity known, class + electrical
+                                         // kept unverified/unknown, not guessed).
+                                         // Prior: Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
                                          // +5 patchable jacks (drone_3.cv_out output/cv
                                          // 0..+12V/unipolar confirmed id 55; .env_out output/cv
                                          // -10..+10V/bipolar confirmed id 56 — manual L157 "ENV VOICES

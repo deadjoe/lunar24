@@ -79,6 +79,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -89,6 +90,23 @@ import p0_regions_build
 
 SPEC_PATH = os.path.join(ROOT, "spec", "machine", "lunar24.json")
 MANIFEST_PATH = os.path.join(ROOT, "spec", "machine", "p0_inventory_manifest.json")
+CAPS_HPP = os.path.join(ROOT, "core", "include", "lunar24", "core", "device_capacities.h")
+IDS_HPP = os.path.join(ROOT, "generated", "lunar24", "registry_ids.hpp")
+
+
+def _read_uint_const(path, name):
+    """Return the numeric value of `name = <uint>` in a C++ header, or None.
+
+    Used when the gate has to cross from the Python manifest/registry semantics
+    into the concrete C++ capacity / generated id-space constants. Reads by name
+    so it is robust to surrounding comment text.
+    """
+    with open(path, encoding="utf-8") as fh:
+        for ln in fh:
+            m = re.search(rf"\b{re.escape(name)}\s*=\s*(\d+)", ln)
+            if m:
+                return int(m.group(1))
+    return None
 
 VALID_STATUS = {"confirmed", "provisional"}
 VALID_DIR = {"input", "output"}
@@ -1849,6 +1867,22 @@ def check(spec, manifest, require_full=False):
                                 "equivalent; validated for provenance + endpoint/direction "
                                 "coherence and required completeness under --require-full"},
     }
+
+    # Codex msg 2a4b0c19 (DRONE 6 narrow release), ALWAYS-ON: once the patchable-jack
+    # inventory is FULL (every target patchable jack landed, no rogue), the patch bank must
+    # be sized EXACTLY to the serialized jack id-space (capacity == kJackIdSpace), not
+    # merely >= it and not rounded up. The inventory is now 64/64 jacks whose id space is
+    # 65 (max id 64, with a legacy hole at id 12), so kDevicePatchCapacity must equal
+    # kJackIdSpace. This pins the Codex ruling of "exactly 65, not 96/128".
+    if not coverage["jacks"]["gap"] and not coverage["jacks"]["rogue"]:
+        cap_patch = _read_uint_const(CAPS_HPP, "kDevicePatchCapacity")
+        space_jack = _read_uint_const(IDS_HPP, "kJackIdSpace")
+        if cap_patch is not None and space_jack is not None and cap_patch != space_jack:
+            problems.append(
+                f"full patchable-jack inventory: kDevicePatchCapacity ({cap_patch}) must "
+                f"EXACTLY equal the jack id-space kJackIdSpace ({space_jack}) — the patch bank "
+                f"is indexed by the serialized id-space (one-past max id, legacy hole at id 12), "
+                f"not the entity count")
 
     if require_full:
         not_full = []

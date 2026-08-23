@@ -27,7 +27,14 @@ inline constexpr std::size_t kDeviceParamCapacity = 384;
 // Patch-cable / normalized-route-override bank capacities. Must be >= the
 // registry id-space of JackId and RouteId respectively. PROVISIONAL until the
 // full P0 inventory.
-inline constexpr std::size_t kDevicePatchCapacity = 64;
+// kDevicePatchCapacity = 65: the frozen patchable-jack inventory is 64 jacks, and
+// the DRONE 6 slice (Codex msg 2a4b0c19) completes 64/64 of them. Their stable
+// serialized JackId space (one-past max id 64) is 65 — NOT 64 — because the
+// id-space is max-id+1 and jack id 12 is a legacy hole (non-dense): the bank is
+// indexed by serialized JackId, so it must be sized to the id-space (65), never
+// to the entity count (64). Sized to exactly 65 (not rounded to 96/128): the id
+// space here is final and the ruling is precision, not headroom.
+inline constexpr std::size_t kDevicePatchCapacity = 65;
 inline constexpr std::size_t kDeviceRouteCapacity = 32;
 
 // The keyboard subsystem owns exactly four native presets.
