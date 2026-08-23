@@ -103,6 +103,13 @@ def reg_prog(spec, sid):
     return None
 
 
+def reg_route(spec, sid):
+    for r in spec.get("normalizedRoutes", []):
+        if r["stable_id"] == sid:
+            return r
+    return None
+
+
 def main():
     spec = load(SPEC)
     manifest = load(MANIFEST)
@@ -1524,6 +1531,53 @@ def main():
     problems, _ = gate.check(ao_bad, manifest)
     if not has(problems, "NON-REGRESSION"):
         raise SystemExit("old-jack drop (vco_a.cv_in) not enforced by mustComplete: %r" % problems)
+
+    # (ap) renumber a landed route -> the route landed-fact exact-compare must FAIL normal.
+    ap_bad = copy.deepcopy(spec)
+    reg_route(ap_bad, "route.keyboard_v_oct_to_vco")["id"] = 99
+    problems, _ = gate.check(ap_bad, manifest)
+    if not has(problems, "implementation route 'route.keyboard_v_oct_to_vco': landed route fact"):
+        raise SystemExit("route renumber (id 0->99) not enforced by landedRouteFacts: %r" % problems)
+
+    # (aq) wrong route endpoint (sink) -> exact-compare FAIL. Use an EXISTING jack so only the
+    #      endpoint (not a dangling-reference) mismatches; the wrong endpoint is caught as drift.
+    aq_bad = copy.deepcopy(spec)
+    reg_route(aq_bad, "route.vco_b_vco_out_to_cv_in")["sinkJack"] = "vco_b.wave_out"
+    problems, _ = gate.check(aq_bad, manifest)
+    if not has(problems, "sinkJack"):
+        raise SystemExit("route wrong sink (vco_b.cv_in -> vco_b.wave_out) not enforced: %r" % problems)
+
+    # (ar) route status/evidence drift -> exact-compare FAIL. Change the descriptor line away from
+    #      the frozen fact (1142 -> 999) so descriptorEvidence.line mismatch is caught.
+    ar_bad = copy.deepcopy(spec)
+    reg_route(ar_bad, "route.vcf_cv_l_to_cv_r")["evidence"]["line"] = 999
+    problems, _ = gate.check(ar_bad, manifest)
+    if not has(problems, "descriptorEvidence.line"):
+        raise SystemExit("route evidence-line drift (1142 -> 999) not enforced: %r" % problems)
+
+    # (as) delete an OLD (pre-slice) route covered by mustComplete -> MISSING landed route +
+    #      NON-REGRESSION must both FAIL normal (Codex b527ef3b: whole current registry is mustComplete).
+    as_bad = copy.deepcopy(spec)
+    as_bad["normalizedRoutes"] = [r for r in as_bad["normalizedRoutes"]
+                                  if r.get("stable_id") != "route.vcf_cv_l_to_cv_r"]
+    problems, _ = gate.check(as_bad, manifest)
+    if not has(problems, "MISSING landed descriptor route"):
+        raise SystemExit("old-route drop (route.vcf_cv_l_to_cv_r) not MISSING-flagged: %r" % problems)
+    if not has(problems, "NON-REGRESSION"):
+        raise SystemExit("old-route drop (route.vcf_cv_l_to_cv_r) not NON-REGRESSION-flagged: %r"
+                        % problems)
+
+    # (at) delete a NEW (this-slice) route covered by mustComplete -> also both gates FAIL.
+    at_bad = copy.deepcopy(spec)
+    at_bad["normalizedRoutes"] = [r for r in at_bad["normalizedRoutes"]
+                                  if r.get("stable_id") != "route.vco_b_vco_out_to_cv_in"]
+    problems, _ = gate.check(at_bad, manifest)
+    if not has(problems, "MISSING landed descriptor route"):
+        raise SystemExit("new-route drop (route.vco_b_vco_out_to_cv_in) not MISSING-flagged: %r"
+                        % problems)
+    if not has(problems, "NON-REGRESSION"):
+        raise SystemExit("new-route drop (route.vco_b_vco_out_to_cv_in) not NON-REGRESSION-flagged: %r"
+                        % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "

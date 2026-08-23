@@ -2627,6 +2627,28 @@
         "line": 1142
       },
       "status": "confirmed"
+    },
+    {
+      "id": 3,
+      "stable_id": "route.keyboard_v_oct_to_vco_b",
+      "sourceJack": "keyboard.v_oct_out",
+      "sinkJack": "vco_b.v_oct_in",
+      "description": "By default the keyboard V/OCT output is also normalised to the Volt/octave input of VCO B (the analog of route.keyboard_v_oct_to_vco which captures VCO A's sink). Plugging a cable into the sink overrides it.",
+      "evidence": {
+        "line": 573
+      },
+      "status": "confirmed"
+    },
+    {
+      "id": 4,
+      "stable_id": "route.vco_b_vco_out_to_cv_in",
+      "sourceJack": "vco_b.vco_out",
+      "sinkJack": "vco_b.cv_in",
+      "description": "VCO B-region vco_b.vco_out carries the VCO A normalised signal into vco_b.cv_in; CV AMT sets the depth.",
+      "evidence": {
+        "line": 410
+      },
+      "status": "provisional"
     }
   ],
   "programs": [

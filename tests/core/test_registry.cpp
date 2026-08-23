@@ -111,7 +111,10 @@ static void frozen_counts() {
   // identity-only, paramCount==0, honest gaps pending Phase B). kParameterCount
   // counts modules(68) + programs(6) = 74 — the 37 additions add no params.
   CHECK_EQ(core::kProgramCount, 39u);
-  CHECK_EQ(core::kRouteCount, 3u);
+  CHECK_EQ(core::kRouteCount, 5u);       // Phase B route slice (Codex msg b527ef3b): +2 normalized
+                                         // routes whose endpoints already exist
+                                         // (route.keyboard_v_oct_to_vco_b, route.vco_b_vco_out_to_cv_in);
+                                         // route.keyboard_gate_to_eg_b still waits for envelope_b.
   // kNormalizedRoutes[] still holds exactly the frozen route count (kRouteCount
   // generated; the array is sized by that count).
   CHECK_EQ(sizeof(reg::kNormalizedRoutes) / sizeof(reg::kNormalizedRoutes[0]), core::kRouteCount);

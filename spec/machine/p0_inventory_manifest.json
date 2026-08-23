@@ -2035,9 +2035,59 @@
           }
         }
       }
+    },
+    "landedRouteFacts": {
+      "note": "Closed identity/evidence facts for the 5 landed normalized routes (Codex msg b527ef3b). Their presence IS the declaration that these routes have landed, so a registry missing one fails NORMAL rather than reopening a gap. The registry route cites a WIDGET-granularity descriptorEvidence.line (via evidence_expr fallback to `line`); the parent region-span `evidence` (lineStart/lineEnd) in target.normalizedRoutes is untouched. exact-compare is by stable_id on id / sourceJack / sinkJack / status / descriptorEvidence.line, so a renumber or wrong endpoint is caught. route.keyboard_gate_to_eg_b is intentionally absent: it waits for envelope_b.",
+      "routes": {
+        "route.keyboard_v_oct_to_vco": {
+          "id": 0,
+          "sourceJack": "keyboard.v_oct_out",
+          "sinkJack": "vco_a.v_oct_in",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 573
+          }
+        },
+        "route.keyboard_v_oct_to_vco_b": {
+          "id": 3,
+          "sourceJack": "keyboard.v_oct_out",
+          "sinkJack": "vco_b.v_oct_in",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 573
+          }
+        },
+        "route.keyboard_gate_to_eg": {
+          "id": 1,
+          "sourceJack": "keyboard.gate_left_main_out",
+          "sinkJack": "envelope_a.gate_in",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 576
+          }
+        },
+        "route.vcf_cv_l_to_cv_r": {
+          "id": 2,
+          "sourceJack": "vcf.cv_l_in",
+          "sinkJack": "vcf.cv_r_in",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1142
+          }
+        },
+        "route.vco_b_vco_out_to_cv_in": {
+          "id": 4,
+          "sourceJack": "vco_b.vco_out",
+          "sinkJack": "vco_b.cv_in",
+          "status": "provisional",
+          "descriptorEvidence": {
+            "line": 410
+          }
+        }
+      }
     }
   },
-  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "parameter:envelope_a.a", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.r", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:keyboard.arp_direction", "parameter:keyboard.arp_hold", "parameter:keyboard.arp_interval", "parameter:keyboard.arp_length", "parameter:keyboard.arp_variation", "parameter:keyboard.behaviour", "parameter:keyboard.calibration_pressure", "parameter:keyboard.calibration_v_oct", "parameter:keyboard.clock_bpm", "parameter:keyboard.dac_vref", "parameter:keyboard.debounce", "parameter:keyboard.encoder_direction", "parameter:keyboard.mode", "parameter:keyboard.mpr121_charge", "parameter:keyboard.mpr121_discharge", "parameter:keyboard.portamento_legato", "parameter:keyboard.portamento_speed", "parameter:keyboard.pressure_fall", "parameter:keyboard.pressure_max", "parameter:keyboard.pressure_min", "parameter:keyboard.pressure_output", "parameter:keyboard.pressure_rise", "parameter:keyboard.quantise_load_scale", "parameter:keyboard.release_threshold", "parameter:keyboard.root_note", "parameter:keyboard.seq_cv_output", "parameter:keyboard.seq_direction", "parameter:keyboard.seq_length", "parameter:keyboard.seq_rhythm_length", "parameter:keyboard.seq_run", "parameter:keyboard.touch_threshold", "parameter:keyboard.vibrato_delay", "parameter:keyboard.vibrato_depth", "parameter:keyboard.vibrato_pressure", "parameter:keyboard.vibrato_speed", "parameter:program.cathedral.1.x", "parameter:program.cathedral.1.y", "parameter:program.cathedral.1.z", "parameter:program.magic.1.x", "parameter:program.magic.1.y", "parameter:program.magic.1.z", "parameter:vcf.dist", "parameter:vcf.gain", "parameter:vcf.l_bp_lp", "parameter:vcf.l_freq", "parameter:vcf.l_mod", "parameter:vcf.l_res", "parameter:vcf.link", "parameter:vcf.r_bp_lp", "parameter:vcf.r_freq", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_a.cv_amt", "parameter:vco_a.lin_exp", "parameter:vco_a.morph", "parameter:vco_a.oct_sel", "parameter:vco_a.pw", "parameter:vco_a.pwm", "parameter:vco_a.sub_sel", "parameter:vco_a.tune", "parameter:vco_b.cv_amt", "parameter:vco_b.lin_exp", "parameter:vco_b.morph", "parameter:vco_b.oct_sel", "parameter:vco_b.pw", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "parameter:vco_b.tune", "jack:envelope_a.env_out", "jack:envelope_a.gate_in", "jack:envelope_a.vca_cv_out", "jack:keyboard.clock_in", "jack:keyboard.gate_left_main_out", "jack:keyboard.gate_right_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:keyboard.v_oct_out", "jack:vcf.cv_l_in", "jack:vcf.cv_r_in", "jack:vco_a.cv_in", "jack:vco_a.dry_out", "jack:vco_a.fm_in", "jack:vco_a.pwm_in", "jack:vco_a.sync_in", "jack:vco_a.v_oct_in", "jack:vco_a.vca_ctl", "jack:vco_a.wave_out", "jack:vco_b.cv_in", "jack:vco_b.dry_out", "jack:vco_b.pwm_in", "jack:vco_b.v_oct_in", "jack:vco_b.vco_out", "jack:vco_b.wave_out"],
+  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "route:route.keyboard_v_oct_to_vco_b", "route:route.vco_b_vco_out_to_cv_in", "parameter:envelope_a.a", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.r", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:keyboard.arp_direction", "parameter:keyboard.arp_hold", "parameter:keyboard.arp_interval", "parameter:keyboard.arp_length", "parameter:keyboard.arp_variation", "parameter:keyboard.behaviour", "parameter:keyboard.calibration_pressure", "parameter:keyboard.calibration_v_oct", "parameter:keyboard.clock_bpm", "parameter:keyboard.dac_vref", "parameter:keyboard.debounce", "parameter:keyboard.encoder_direction", "parameter:keyboard.mode", "parameter:keyboard.mpr121_charge", "parameter:keyboard.mpr121_discharge", "parameter:keyboard.portamento_legato", "parameter:keyboard.portamento_speed", "parameter:keyboard.pressure_fall", "parameter:keyboard.pressure_max", "parameter:keyboard.pressure_min", "parameter:keyboard.pressure_output", "parameter:keyboard.pressure_rise", "parameter:keyboard.quantise_load_scale", "parameter:keyboard.release_threshold", "parameter:keyboard.root_note", "parameter:keyboard.seq_cv_output", "parameter:keyboard.seq_direction", "parameter:keyboard.seq_length", "parameter:keyboard.seq_rhythm_length", "parameter:keyboard.seq_run", "parameter:keyboard.touch_threshold", "parameter:keyboard.vibrato_delay", "parameter:keyboard.vibrato_depth", "parameter:keyboard.vibrato_pressure", "parameter:keyboard.vibrato_speed", "parameter:program.cathedral.1.x", "parameter:program.cathedral.1.y", "parameter:program.cathedral.1.z", "parameter:program.magic.1.x", "parameter:program.magic.1.y", "parameter:program.magic.1.z", "parameter:vcf.dist", "parameter:vcf.gain", "parameter:vcf.l_bp_lp", "parameter:vcf.l_freq", "parameter:vcf.l_mod", "parameter:vcf.l_res", "parameter:vcf.link", "parameter:vcf.r_bp_lp", "parameter:vcf.r_freq", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_a.cv_amt", "parameter:vco_a.lin_exp", "parameter:vco_a.morph", "parameter:vco_a.oct_sel", "parameter:vco_a.pw", "parameter:vco_a.pwm", "parameter:vco_a.sub_sel", "parameter:vco_a.tune", "parameter:vco_b.cv_amt", "parameter:vco_b.lin_exp", "parameter:vco_b.morph", "parameter:vco_b.oct_sel", "parameter:vco_b.pw", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "parameter:vco_b.tune", "jack:envelope_a.env_out", "jack:envelope_a.gate_in", "jack:envelope_a.vca_cv_out", "jack:keyboard.clock_in", "jack:keyboard.gate_left_main_out", "jack:keyboard.gate_right_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:keyboard.v_oct_out", "jack:vcf.cv_l_in", "jack:vcf.cv_r_in", "jack:vco_a.cv_in", "jack:vco_a.dry_out", "jack:vco_a.fm_in", "jack:vco_a.pwm_in", "jack:vco_a.sync_in", "jack:vco_a.v_oct_in", "jack:vco_a.vca_ctl", "jack:vco_a.wave_out", "jack:vco_b.cv_in", "jack:vco_b.dry_out", "jack:vco_b.pwm_in", "jack:vco_b.v_oct_in", "jack:vco_b.vco_out", "jack:vco_b.wave_out"],
   "migrationAllowlist": {
     "note": "Permanently-empty migration allowlist. Migration is complete and it is LOCKED EMPTY (Codex msg 064cfa6e): never computed from the implementation, so the manifest does not reverse-depend on lunar24.json and stays a one-way target->overlay source. Any registry param/jack not in the target is a NEW rogue and fails the always-on gate; the legacy ceiling backstop also forbids re-whitelisting a re-introduced pre-correction id outside the target.",
     "parameters": [],

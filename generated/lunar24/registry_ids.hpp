@@ -170,20 +170,22 @@ enum class ProgramId : std::uint32_t {
 enum class RouteId : std::uint32_t {
     route_keyboard_v_oct_to_vco = 0,
     route_keyboard_gate_to_eg = 1,
-    route_vcf_cv_l_to_cv_r = 2
+    route_vcf_cv_l_to_cv_r = 2,
+    route_keyboard_v_oct_to_vco_b = 3,
+    route_vco_b_vco_out_to_cv_in = 4
 };
 
 inline constexpr std::uint32_t kModuleCount = 5;
 inline constexpr std::uint32_t kParameterCount = 74;
 inline constexpr std::uint32_t kJackCount = 25;
 inline constexpr std::uint32_t kProgramCount = 39;
-inline constexpr std::uint32_t kRouteCount = 3;
+inline constexpr std::uint32_t kRouteCount = 5;
 
 inline constexpr std::uint64_t kModuleIdSpace = 5;
 inline constexpr std::uint64_t kParameterIdSpace = 141;
 inline constexpr std::uint64_t kJackIdSpace = 26;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
-inline constexpr std::uint64_t kRouteIdSpace = 3;
+inline constexpr std::uint64_t kRouteIdSpace = 5;
 
 static_assert(kDeviceParamCapacity >= kParameterIdSpace, "parameter bank too small for ParameterId space");
 static_assert(kDevicePatchCapacity >= kJackIdSpace, "patch bank too small for JackId space");
@@ -361,6 +363,8 @@ inline constexpr std::string_view route_id_string(RouteId id) {
     case RouteId::route_keyboard_v_oct_to_vco: return "route.keyboard_v_oct_to_vco";
     case RouteId::route_keyboard_gate_to_eg: return "route.keyboard_gate_to_eg";
     case RouteId::route_vcf_cv_l_to_cv_r: return "route.vcf_cv_l_to_cv_r";
+    case RouteId::route_keyboard_v_oct_to_vco_b: return "route.keyboard_v_oct_to_vco_b";
+    case RouteId::route_vco_b_vco_out_to_cv_in: return "route.vco_b_vco_out_to_cv_in";
   }
   return "(unknown Route)";
 }

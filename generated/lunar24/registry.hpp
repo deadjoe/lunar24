@@ -207,10 +207,12 @@ inline constexpr JackDescriptor kJacks[kJackCount] = {
   { JackId::envelope_a_vca_cv_out, "envelope_a.vca_cv_out", "VCA CV", ModuleId::envelope_a, PinDirection::output, SignalType::cv, Polarity::unknown, 0, 8, 0, 0, 1, SignalTransfer::unknown, SaturationType::unknown, 1u, 0, 0, Coupling::unknown, EvidenceRef{"solar42N_manual_v15", 87u, 87u}, EvidenceStatus::provisional, FieldEvidence{EvidenceStatus::unverified, EvidenceStatus::unverified, EvidenceStatus::unverified, EvidenceStatus::unverified, EvidenceStatus::unverified, EvidenceStatus::provisional, EvidenceStatus::unverified, EvidenceStatus::unverified} },
 };
 
-inline constexpr NormalizedRoute kNormalizedRoutes[3] = {
+inline constexpr NormalizedRoute kNormalizedRoutes[5] = {
   { RouteId::route_keyboard_v_oct_to_vco, "route.keyboard_v_oct_to_vco", JackId::keyboard_v_oct_out, JackId::vco_a_v_oct_in, "By default the keyboard V/OCT output is normalised to the Volt/octave input of VCO A (VCO B is normalised analogously; only VCO A's sink is captured in this P0 slice). Plugging a cable into the sink overrides it.", EvidenceRef{"solar42N_manual_v15", 573u, 573u}, EvidenceStatus::confirmed },
   { RouteId::route_keyboard_gate_to_eg, "route.keyboard_gate_to_eg", JackId::keyboard_gate_left_main_out, JackId::envelope_a_gate_in, "By default GATE LEFT (MAIN) is normalised to the gate input of the envelope generators controlling the VCO A/B VCAs.", EvidenceRef{"solar42N_manual_v15", 576u, 576u}, EvidenceStatus::confirmed },
   { RouteId::route_vcf_cv_l_to_cv_r, "route.vcf_cv_l_to_cv_r", JackId::vcf_cv_l_in, JackId::vcf_cv_r_in, "CV L is normally connected to CV R. CV L controls both channels if there is no CV-signal in CV R. Plugging into CV R overrides this.", EvidenceRef{"solar42N_manual_v15", 1142u, 1142u}, EvidenceStatus::confirmed },
+  { RouteId::route_keyboard_v_oct_to_vco_b, "route.keyboard_v_oct_to_vco_b", JackId::keyboard_v_oct_out, JackId::vco_b_v_oct_in, "By default the keyboard V/OCT output is also normalised to the Volt/octave input of VCO B (the analog of route.keyboard_v_oct_to_vco which captures VCO A's sink). Plugging a cable into the sink overrides it.", EvidenceRef{"solar42N_manual_v15", 573u, 573u}, EvidenceStatus::confirmed },
+  { RouteId::route_vco_b_vco_out_to_cv_in, "route.vco_b_vco_out_to_cv_in", JackId::vco_b_vco_out, JackId::vco_b_cv_in, "VCO B-region vco_b.vco_out carries the VCO A normalised signal into vco_b.cv_in; CV AMT sets the depth.", EvidenceRef{"solar42N_manual_v15", 410u, 410u}, EvidenceStatus::provisional },
 };
 
 inline constexpr ProgramDescriptor kPrograms[kProgramCount] = {

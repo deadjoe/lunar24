@@ -66,7 +66,7 @@ Codex msg c7089521 (fifth review, still NOT GO) hardened this gate further:
      controls);
    - implementation ⊆ independent target (module/program/route): a registry item absent from the
      target is an error, never silently green;
-   - mustComplete == exactly the registry's landed target keys (auto-sync).
+   - mustComplete == exactly the registry's landed target keys (hand-authored in the manifest).
 
 2. CATEGORY-WISE COVERAGE (never one %): modules / program identities / params / panel
    controls / actions / bindings / patchable jacks + internal endpoints / normalized routes /
@@ -444,6 +444,8 @@ def check(spec, manifest, require_full=False):
     landed_facts = tgt.get("landedDescriptorFacts") or {}
     landed_params = landed_facts.get("parameters") or {}
     landed_jacks = landed_facts.get("jacks") or {}
+    landed_route_facts = tgt.get("landedRouteFacts") or {}
+    landed_routes = landed_route_facts.get("routes") or {}
 
     modules = tgt.get("modules", [])
     terminals = tgt.get("terminals", [])
@@ -1282,7 +1284,8 @@ def check(spec, manifest, require_full=False):
 
     # ---- landed-descriptor fact gate (Codex 17cc9a4a) ----
     # The frozen identity/evidence facts for this slice live in
-    # target.landedDescriptorFacts (built by p0_regions_build.py). Each FACTS entry's
+    # target.landedDescriptorFacts (hand-authored in the manifest; the builder only loads
+    # and preserves it — Codex msg 8165f8c2 Root 1). Each FACTS entry's
     # appearance IS the declaration that it has landed, so a fact the registry lacks is
     # a MISSING landed descriptor and must FAIL normal (it must not reopen a gap). The
     # facts carry a descriptorEvidence.line at widget granularity (matching what the
@@ -1337,6 +1340,32 @@ def check(spec, manifest, require_full=False):
                             f"polarity={want[4]}, min={want[5]}, max={want[6]}, coupling={want[7]}, "
                             f"status={want[8]}, descriptorEvidence.line={want[9]}, "
                             f"fieldEvidence={want[10:]})")
+
+    # ---- landed ROUTE fact gate (Codex msg b527ef3b) ----
+    # The 5 landed normalized routes live in target.landedRouteFacts (hand-authored, sibling of
+    # target.landedDescriptorFacts). Their presence IS the declaration that they have landed, so a
+    # registry route missing from the facts is a MISSING landed route and must FAIL normal. The
+    # registry route cites a WIDGET-granularity descriptorEvidence.line (evidence_expr falls back to
+    # `line`); the parent region-span evidence (lineStart/lineEnd) in target.normalizedRoutes is
+    # untouched. Exact-compare id / sourceJack / sinkJack / status / descriptorEvidence.line by
+    # stable_id, so a renumber or a wrong endpoint is caught at landed-descriptor granularity.
+    reg_route_by_fact = {r["stable_id"]: r for r in reg.routes}
+    for sid, f in sorted(landed_routes.items()):
+        rr = reg_route_by_fact.get(sid)
+        if rr is None:
+            problems.append(f"MISSING landed descriptor route {sid!r}: in "
+                            f"target.landedRouteFacts but absent from the registry")
+            continue
+        de = f.get("descriptorEvidence") or {}
+        got = (rr.get("id"), rr.get("sourceJack"), rr.get("sinkJack"), rr.get("status"),
+               (rr.get("evidence") or {}).get("line"))
+        want = (f["id"], f["sourceJack"], f["sinkJack"], f["status"], de.get("line"))
+        if got != want:
+            problems.append(f"implementation route {sid!r}: landed route fact "
+                            f"(id={got[0]}, sourceJack={got[1]}, sinkJack={got[2]}, "
+                            f"status={got[3]}, descriptorEvidence.line={got[4]}) "
+                            f"!= target.landedRouteFacts (id={want[0]}, sourceJack={want[1]}, "
+                            f"sinkJack={want[2]}, status={want[3]}, descriptorEvidence.line={want[4]})")
 
     # ---- per-CAPABILITY present-but-empty (replaces blanket param+jack) ----
     tmodel = {m["stable_id"]: m for m in modules if m.get("stable_id")}
