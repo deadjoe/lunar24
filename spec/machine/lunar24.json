@@ -2531,7 +2531,7 @@
           },
           "status": "provisional",
           "fieldEvidence": {
-            "nominalRange": "confirmed",
+            "nominalRange": "unverified",
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
@@ -2569,6 +2569,252 @@
         {
           "id": 25,
           "stable_id": "envelope_a.vca_cv_out",
+          "name": "VCA CV",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 87
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "provisional",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "stable_id": "envelope_b",
+      "name": "Envelope B",
+      "category": "source",
+      "description": "ADSR envelope + hold, gate in, VCA CV (mirror of Envelope A). P0 captures gate-normalized-route evidence.",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 385,
+        "lineEnd": 408
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 141,
+          "stable_id": "envelope_b.a",
+          "name": "Attack",
+          "unit": "seconds",
+          "min": 0.0,
+          "max": 10.0,
+          "default": 0.01,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 387
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 142,
+          "stable_id": "envelope_b.r",
+          "name": "Release",
+          "unit": "seconds",
+          "min": 0.0,
+          "max": 10.0,
+          "default": 0.1,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 399
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 143,
+          "stable_id": "envelope_b.d",
+          "name": "Decay",
+          "unit": "seconds",
+          "min": 0.0,
+          "max": 10.0,
+          "default": 0.1,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 389
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 144,
+          "stable_id": "envelope_b.s",
+          "name": "Sustain",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 392
+          },
+          "status": "confirmed",
+          "step": 0.0,
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 145,
+          "stable_id": "envelope_b.hold",
+          "name": "HOLD",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 402
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 146,
+          "stable_id": "envelope_b.self_gen",
+          "name": "SELF-GEN",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 404
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        }
+      ],
+      "jacks": [
+        {
+          "id": 26,
+          "stable_id": "envelope_b.gate_in",
+          "name": "GATE",
+          "direction": "input",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 576
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "provisional",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 27,
+          "stable_id": "envelope_b.env_out",
+          "name": "ENV",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 156
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 28,
+          "stable_id": "envelope_b.vca_cv_out",
           "name": "VCA CV",
           "direction": "output",
           "signalType": "cv",
@@ -2647,6 +2893,17 @@
       "description": "VCO B-region vco_b.vco_out carries the VCO A normalised signal into vco_b.cv_in; CV AMT sets the depth.",
       "evidence": {
         "line": 410
+      },
+      "status": "provisional"
+    },
+    {
+      "id": 5,
+      "stable_id": "route.keyboard_gate_to_eg_b",
+      "sourceJack": "keyboard.gate_left_main_out",
+      "sinkJack": "envelope_b.gate_in",
+      "description": "By default GATE LEFT (MAIN) is also normalised to the gate input of Envelope B (the analog of route.keyboard_gate_to_eg which captures Envelope A's sink). Plugging a cable into the sink overrides it.",
+      "evidence": {
+        "line": 576
       },
       "status": "provisional"
     }

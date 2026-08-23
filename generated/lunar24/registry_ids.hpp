@@ -17,7 +17,8 @@ enum class ModuleId : std::uint32_t {
     vco_b = 1,
     vcf = 2,
     keyboard = 3,
-    envelope_a = 4
+    envelope_a = 4,
+    envelope_b = 5
 };
 
 enum class ParameterId : std::uint32_t {
@@ -89,6 +90,12 @@ enum class ParameterId : std::uint32_t {
     envelope_a_s = 38,
     envelope_a_hold = 39,
     envelope_a_self_gen = 40,
+    envelope_b_a = 141,
+    envelope_b_r = 142,
+    envelope_b_d = 143,
+    envelope_b_s = 144,
+    envelope_b_hold = 145,
+    envelope_b_self_gen = 146,
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
@@ -122,7 +129,10 @@ enum class JackId : std::uint32_t {
     keyboard_reset_in = 24,
     envelope_a_gate_in = 17,
     envelope_a_env_out = 18,
-    envelope_a_vca_cv_out = 25
+    envelope_a_vca_cv_out = 25,
+    envelope_b_gate_in = 26,
+    envelope_b_env_out = 27,
+    envelope_b_vca_cv_out = 28
 };
 
 enum class ProgramId : std::uint32_t {
@@ -172,20 +182,21 @@ enum class RouteId : std::uint32_t {
     route_keyboard_gate_to_eg = 1,
     route_vcf_cv_l_to_cv_r = 2,
     route_keyboard_v_oct_to_vco_b = 3,
-    route_vco_b_vco_out_to_cv_in = 4
+    route_vco_b_vco_out_to_cv_in = 4,
+    route_keyboard_gate_to_eg_b = 5
 };
 
-inline constexpr std::uint32_t kModuleCount = 5;
-inline constexpr std::uint32_t kParameterCount = 74;
-inline constexpr std::uint32_t kJackCount = 25;
+inline constexpr std::uint32_t kModuleCount = 6;
+inline constexpr std::uint32_t kParameterCount = 80;
+inline constexpr std::uint32_t kJackCount = 28;
 inline constexpr std::uint32_t kProgramCount = 39;
-inline constexpr std::uint32_t kRouteCount = 5;
+inline constexpr std::uint32_t kRouteCount = 6;
 
-inline constexpr std::uint64_t kModuleIdSpace = 5;
-inline constexpr std::uint64_t kParameterIdSpace = 141;
-inline constexpr std::uint64_t kJackIdSpace = 26;
+inline constexpr std::uint64_t kModuleIdSpace = 6;
+inline constexpr std::uint64_t kParameterIdSpace = 147;
+inline constexpr std::uint64_t kJackIdSpace = 29;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
-inline constexpr std::uint64_t kRouteIdSpace = 5;
+inline constexpr std::uint64_t kRouteIdSpace = 6;
 
 static_assert(kDeviceParamCapacity >= kParameterIdSpace, "parameter bank too small for ParameterId space");
 static_assert(kDevicePatchCapacity >= kJackIdSpace, "patch bank too small for JackId space");
@@ -198,6 +209,7 @@ inline constexpr std::string_view module_id_string(ModuleId id) {
     case ModuleId::vcf: return "vcf";
     case ModuleId::keyboard: return "keyboard";
     case ModuleId::envelope_a: return "envelope_a";
+    case ModuleId::envelope_b: return "envelope_b";
   }
   return "(unknown Module)";
 }
@@ -272,6 +284,12 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::envelope_a_s: return "envelope_a.s";
     case ParameterId::envelope_a_hold: return "envelope_a.hold";
     case ParameterId::envelope_a_self_gen: return "envelope_a.self_gen";
+    case ParameterId::envelope_b_a: return "envelope_b.a";
+    case ParameterId::envelope_b_r: return "envelope_b.r";
+    case ParameterId::envelope_b_d: return "envelope_b.d";
+    case ParameterId::envelope_b_s: return "envelope_b.s";
+    case ParameterId::envelope_b_hold: return "envelope_b.hold";
+    case ParameterId::envelope_b_self_gen: return "envelope_b.self_gen";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";
@@ -309,6 +327,9 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::envelope_a_gate_in: return "envelope_a.gate_in";
     case JackId::envelope_a_env_out: return "envelope_a.env_out";
     case JackId::envelope_a_vca_cv_out: return "envelope_a.vca_cv_out";
+    case JackId::envelope_b_gate_in: return "envelope_b.gate_in";
+    case JackId::envelope_b_env_out: return "envelope_b.env_out";
+    case JackId::envelope_b_vca_cv_out: return "envelope_b.vca_cv_out";
   }
   return "(unknown Jack)";
 }
@@ -365,6 +386,7 @@ inline constexpr std::string_view route_id_string(RouteId id) {
     case RouteId::route_vcf_cv_l_to_cv_r: return "route.vcf_cv_l_to_cv_r";
     case RouteId::route_keyboard_v_oct_to_vco_b: return "route.keyboard_v_oct_to_vco_b";
     case RouteId::route_vco_b_vco_out_to_cv_in: return "route.vco_b_vco_out_to_cv_in";
+    case RouteId::route_keyboard_gate_to_eg_b: return "route.keyboard_gate_to_eg_b";
   }
   return "(unknown Route)";
 }

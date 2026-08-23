@@ -1653,6 +1653,78 @@ def main():
         raise SystemExit("canonical target+fact ref sync-drift (both -> wrong_source, actual on "
                         "DEFAULT_SOURCE) not enforced: %r" % problems)
 
+    # ---- landed MODULE identity gate negatives (Codex msg c4e6c0ff) ----
+    # The module gate is a single authority: target.modules carries name/category/status/evidence,
+    # landedModuleFacts carries ONLY the numeric id, and the facts key-set must equal the present
+    # (landed) module set. Mutating the ACTUAL module below simulates a registry-side edit; mutating
+    # the manifest simulates an editorial/facts-side change. Every identity field must be caught.
+
+    # (ba) renumber a landed module -> the fact's authoritative id is the only registry-specific one.
+    ba_bad = copy.deepcopy(spec)
+    for m in ba_bad["modules"]:
+        if m.get("stable_id") == "envelope_b":
+            m["id"] = 99
+    problems, _ = gate.check(ba_bad, manifest)
+    if not has(problems, "id 99 !="):
+        raise SystemExit("module id renumber (envelope_b 5 -> 99) not enforced: %r" % problems)
+
+    # (bb) name drift -> the actual name must equal target.modules.
+    bb_bad = copy.deepcopy(spec)
+    for m in bb_bad["modules"]:
+        if m.get("stable_id") == "envelope_a":
+            m["name"] = "Env A"
+    problems, _ = gate.check(bb_bad, manifest)
+    if not has(problems, "name 'Env A' !="):
+        raise SystemExit("module name drift ('Envelope A' -> 'Env A') not enforced: %r" % problems)
+
+    # (bc) category drift -> a legal category (source) is still a wrong fact for a filter module.
+    bc_bad = copy.deepcopy(spec)
+    for m in bc_bad["modules"]:
+        if m.get("stable_id") == "vcf":
+            m["category"] = "source"
+    problems, _ = gate.check(bc_bad, manifest)
+    if not has(problems, "category 'source' !="):
+        raise SystemExit("module category drift (processing -> source) not enforced: %r" % problems)
+
+    # (bd) status drift -> values stay concrete so only the target comparison catches it.
+    bd_bad = copy.deepcopy(spec)
+    for m in bd_bad["modules"]:
+        if m.get("stable_id") == "envelope_b":
+            m["status"] = "provisional"
+    problems, _ = gate.check(bd_bad, manifest)
+    if not has(problems, "status 'provisional' !="):
+        raise SystemExit("module status drift (confirmed -> provisional) not enforced: %r" % problems)
+
+    # (be) evidence lineStart drift -> the module's cited span must equal target.modules.
+    be_bad = copy.deepcopy(spec)
+    for m in be_bad["modules"]:
+        if m.get("stable_id") == "keyboard":
+            m["evidence"]["lineStart"] = 999
+    problems, _ = gate.check(be_bad, manifest)
+    if not has(problems, "evidence.lineStart 999"):
+        raise SystemExit("module evidence.lineStart drift (559 -> 999) not enforced: %r" % problems)
+
+    # (bf) delete a fact for a still-landed module -> the facts key-set must equal the present set
+    #      (direction a: a registry module with no fact must FAIL).
+    bf_bad = copy.deepcopy(manifest)
+    del bf_bad["target"]["landedModuleFacts"]["modules"]["vco_b"]
+    problems, _ = gate.check(spec, bf_bad)
+    if not has(problems, "absent from target.landedModuleFacts"):
+        raise SystemExit("module-fact delete (vco_b fact dropped, module still present) not enforced: %r"
+                        % problems)
+
+    # (bg) delete a whole landed module (and its route) -> direction b: a fact naming an absent
+    #      module must FAIL. The route is removed because its sink envelope_b.gate_in disappears with
+    #      the module, so the dangling-endpoint validator would otherwise fire first and mask the
+    #      module gate.
+    bg_bad = copy.deepcopy(spec)
+    bg_bad["modules"] = [m for m in bg_bad["modules"] if m.get("stable_id") != "envelope_b"]
+    bg_bad["normalizedRoutes"] = [r for r in bg_bad["normalizedRoutes"]
+                                  if r.get("stable_id") != "route.keyboard_gate_to_eg_b"]
+    problems, _ = gate.check(bg_bad, manifest)
+    if not has(problems, "MISSING landed module 'envelope_b'"):
+        raise SystemExit("module delete (envelope_b + its route removed) not enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

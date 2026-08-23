@@ -97,24 +97,29 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 5u);
-  CHECK_EQ(core::kParameterCount, 74u);  // Phase B slice (mods-gap): closed vco_b(4)+vcf(3)+envelope_a(4)
-                                         // ordinary params among the existing 5 modules; left as honest
-                                         // gaps the 12 keyboard params (seq_steps, quantise_scale_editor,
-                                         // plate_tune, pushbutton_value, preset_a..d, arp_clock, seq_clock,
+  CHECK_EQ(core::kModuleCount, 6u);
+  CHECK_EQ(core::kParameterCount, 80u);  // Phase B envelope_b slice (Codex msg c4e6c0ff): +6 ordinary
+                                         // params on the mirror envelope module (a/r/d/s continuous +
+                                         // hold/self_gen selectors); modules now carry 74, programs 6.
+                                         // Left as honest gaps the 12 keyboard complex params
+                                         // (seq_steps, quantise_scale_editor, plate_tune,
+                                         // pushbutton_value, preset_a..d, arp_clock, seq_clock,
                                          // arp_rhythm, seq_rhythm — complex/un-enumerated, no scalar domain)
-  CHECK_EQ(core::kJackCount, 25u);       // Phase B slice (mods-gap): +7 patchable jacks (vco_a/vco_b
-                                         // wave_out+pwm_in, keyboard pressure_out+reset_in,
-                                         // envelope_a vca_cv_out); dropped rogue jack vcf.audio_in
+  CHECK_EQ(core::kJackCount, 28u);       // Phase B envelope_b slice (Codex msg c4e6c0ff): +3 patchable
+                                         // jacks (gate_in/env_out/vca_cv_out) on the mirror envelope_b;
+                                         // prior phases added vco_a/vco_b wave_out+pwm_in, keyboard
+                                         // pressure_out+reset_in, envelope_a vca_cv_out and dropped bad
+                                         // jack vcf.audio_in
   // Program identity layer landed (Codex 7a6467cc slice #57): 39 program
   // identities (cathedral.1 + magic.1 keep their params; the other 37 are
   // identity-only, paramCount==0, honest gaps pending Phase B). kParameterCount
-  // counts modules(68) + programs(6) = 74 — the 37 additions add no params.
+  // counts modules(74) + programs(6) = 80 — the 37 additions add no params.
   CHECK_EQ(core::kProgramCount, 39u);
-  CHECK_EQ(core::kRouteCount, 5u);       // Phase B route slice (Codex msg b527ef3b): +2 normalized
-                                         // routes whose endpoints already exist
-                                         // (route.keyboard_v_oct_to_vco_b, route.vco_b_vco_out_to_cv_in);
-                                         // route.keyboard_gate_to_eg_b still waits for envelope_b.
+  CHECK_EQ(core::kRouteCount, 6u);       // Phase B route slice: +2 normalized routes whose endpoints
+                                         // already existed + route.keyboard_gate_to_eg_b (Codex msg
+                                         // c4e6c0ff) once envelope_b landed
+                                         // (route.keyboard_v_oct_to_vco_b, route.vco_b_vco_out_to_cv_in,
+                                         // route.keyboard_gate_to_eg_b
   // kNormalizedRoutes[] still holds exactly the frozen route count (kRouteCount
   // generated; the array is sized by that count).
   CHECK_EQ(sizeof(reg::kNormalizedRoutes) / sizeof(reg::kNormalizedRoutes[0]), core::kRouteCount);

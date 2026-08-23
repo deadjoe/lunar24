@@ -1416,6 +1416,54 @@ def check(spec, manifest, require_full=False):
             problems.append(f"implementation route {sid!r}: evidence.ref {actual_ref!r} "
                             f"!= descriptorEvidence.ref {de_ref!r}")
 
+    # ---- landed MODULE identity gate (Codex msg c4e6c0ff) ----
+    # target.modules is the single authority for a landed module's name/category/status/evidence;
+    # target.landedModuleFacts holds ONLY the numeric `id` (the one identity field the module
+    # descriptor owns that target.modules does not). The facts key-set must EXACTLY equal the
+    # present (landed) module set, and every fact must reference a canonical target module. The
+    # actual descriptor is exact-compared to target.modules (name/category/status/evidence) and to
+    # the fact (id), so renumber, name/category/status/evidence drift, delete-fact, and
+    # delete-module are all caught. The point of the split: target.modules never carries an id
+    # (identity is order-independent and owned by the descriptor), so the facts store is the ONLY
+    # id authority, exactly parallel to landedRouteFacts for routes.
+    landed_module_facts = tgt.get("landedModuleFacts") or {}
+    landed_modules = landed_module_facts.get("modules") or {}
+    tmodule = {m["stable_id"]: m for m in modules if m.get("stable_id")}
+    reg_mod_by_fact = {m["stable_id"]: m for m in reg.modules}
+    fact_msids = set(landed_modules.keys())
+    # (a) every present module must have a fact
+    for sid in sorted(present_modules - fact_msids):
+        problems.append(f"implementation module {sid!r}: present in the registry but absent from "
+                        f"target.landedModuleFacts (every landed module must have an id fact)")
+    # (b) every fact must name a present (landed) module
+    for sid in sorted(fact_msids - present_modules):
+        problems.append(f"MISSING landed module {sid!r}: in target.landedModuleFacts but absent "
+                        f"from the registry")
+    # (c) every fact must reference a canonical target module
+    for sid in sorted(fact_msids - module_ids):
+        problems.append(f"landed module fact {sid!r}: not in target.modules (a module fact must "
+                        f"reference a canonical target module)")
+    # (d) content exact-compare against target.modules (identity) + the fact (id).
+    for sid in sorted(fact_msids & present_modules & module_ids):
+        rm = reg_mod_by_fact[sid]
+        tm = tmodule[sid]
+        f = landed_modules[sid]
+        # id: registry-specific, carried in the fact (renumber caught).
+        if rm.get("id") != f.get("id"):
+            problems.append(f"implementation module {sid!r}: id {rm.get('id')!r} != landed fact "
+                            f"id {f.get('id')!r}")
+        # identity fields: target.modules is the single authority.
+        for field in ("name", "category", "status"):
+            if rm.get(field) != tm.get(field):
+                problems.append(f"implementation module {sid!r}: {field} {rm.get(field)!r} "
+                                f"!= target.modules {tm.get(field)!r}")
+        rm_ev = rm.get("evidence") or {}
+        tm_ev = tm.get("evidence") or {}
+        for field in ("ref", "lineStart", "lineEnd"):
+            if rm_ev.get(field) != tm_ev.get(field):
+                problems.append(f"implementation module {sid!r}: evidence.{field} {rm_ev.get(field)!r} "
+                                f"!= target.modules {tm_ev.get(field)!r}")
+
     # ---- per-CAPABILITY present-but-empty (replaces blanket param+jack) ----
     tmodel = {m["stable_id"]: m for m in modules if m.get("stable_id")}
     reg_param_owners = {p["_stable_owner"] for p in reg.parameters}

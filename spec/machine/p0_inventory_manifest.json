@@ -1863,6 +1863,60 @@
           "descriptorEvidence": {
             "line": 404
           }
+        },
+        "envelope_b.a": {
+          "id": 141,
+          "owner": "envelope_b",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 387
+          }
+        },
+        "envelope_b.d": {
+          "id": 143,
+          "owner": "envelope_b",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 389
+          }
+        },
+        "envelope_b.hold": {
+          "id": 145,
+          "owner": "envelope_b",
+          "kind": "selector-toggle",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 402
+          }
+        },
+        "envelope_b.r": {
+          "id": 142,
+          "owner": "envelope_b",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 399
+          }
+        },
+        "envelope_b.s": {
+          "id": 144,
+          "owner": "envelope_b",
+          "kind": "continuous",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 392
+          }
+        },
+        "envelope_b.self_gen": {
+          "id": 146,
+          "owner": "envelope_b",
+          "kind": "selector-toggle",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 404
+          }
         }
       },
       "jacks": {
@@ -2033,11 +2087,83 @@
             "polarity": "unverified",
             "coupling": "unverified"
           }
+        },
+        "envelope_b.env_out": {
+          "id": 27,
+          "owner": "envelope_b",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "min": 0.0,
+          "max": 8.0,
+          "coupling": "unknown",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 156
+          },
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        "envelope_b.gate_in": {
+          "id": 26,
+          "owner": "envelope_b",
+          "direction": "input",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "min": 0.0,
+          "max": 10.0,
+          "coupling": "unknown",
+          "status": "provisional",
+          "descriptorEvidence": {
+            "line": 576
+          },
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "provisional",
+            "coupling": "unverified"
+          }
+        },
+        "envelope_b.vca_cv_out": {
+          "id": 28,
+          "owner": "envelope_b",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "min": 0.0,
+          "max": 8.0,
+          "coupling": "unknown",
+          "status": "provisional",
+          "descriptorEvidence": {
+            "line": 87
+          },
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "provisional",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
         }
       }
     },
     "landedRouteFacts": {
-      "note": "Registry-specific identity/evidence facts for the 5 landed normalized routes (Codex msg b527ef3b / f2868b6b). source/sink/status are NOT duplicated here: target.normalizedRoutes is their single authority, and the checker exact-compares the actual route against it. landedRouteFacts holds ONLY what normalizedRoutes does not: numeric `id` plus a widget-granularity descriptorEvidence {ref, line}. descriptorEvidence.ref must equal the target route evidence ref, and descriptorEvidence.line must fall inside the target span. The facts key-set must equal the present (landed) route set, so dropping a fact is a hard fail. route.keyboard_gate_to_eg_b is intentionally absent: it waits for envelope_b.",
+      "note": "Registry-specific identity/evidence facts for the 6 landed normalized routes (Codex msg b527ef3b / f2868b6b). source/sink/status are NOT duplicated here: target.normalizedRoutes is their single authority, and the checker exact-compares the actual route against it. landedRouteFacts holds ONLY what normalizedRoutes does not: numeric `id` plus a widget-granularity descriptorEvidence {ref, line}. descriptorEvidence.ref must equal the target route evidence ref, and descriptorEvidence.line must fall inside the target span. The facts key-set must equal the present (landed) route set, so dropping a fact is a hard fail. route.keyboard_gate_to_eg_b landed with envelope_b (Codex msg c4e6c0ff), provisional status.",
       "routes": {
         "route.keyboard_v_oct_to_vco": {
           "id": 0,
@@ -2073,11 +2199,41 @@
             "ref": "solar42N_manual_v15",
             "line": 410
           }
+        },
+        "route.keyboard_gate_to_eg_b": {
+          "id": 5,
+          "descriptorEvidence": {
+            "ref": "solar42N_manual_v15",
+            "line": 576
+          }
+        }
+      }
+    },
+    "landedModuleFacts": {
+      "note": "Single-authority module identity gate (Codex msg c4e6c0ff). target.modules is the authoritative source for name/category/status/evidence of every landed module; landedModuleFacts holds ONLY the numeric `id`, because the registry descriptor carries the identity but not a separately-authoritative copy. The facts key-set must EXACTLY equal the present (landed) module set: dropping a fact is a hard fail, and a module the registry contains that has no fact is also a hard fail (no new module can land without an id fact). The checker exact-compares the actual module's id to the fact and its name/category/status/evidence to target.modules, so a renumber or any identity drift is caught.",
+      "modules": {
+        "vco_a": {
+          "id": 0
+        },
+        "vco_b": {
+          "id": 1
+        },
+        "vcf": {
+          "id": 2
+        },
+        "keyboard": {
+          "id": 3
+        },
+        "envelope_a": {
+          "id": 4
+        },
+        "envelope_b": {
+          "id": 5
         }
       }
     }
   },
-  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "route:route.keyboard_v_oct_to_vco_b", "route:route.vco_b_vco_out_to_cv_in", "parameter:envelope_a.a", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.r", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:keyboard.arp_direction", "parameter:keyboard.arp_hold", "parameter:keyboard.arp_interval", "parameter:keyboard.arp_length", "parameter:keyboard.arp_variation", "parameter:keyboard.behaviour", "parameter:keyboard.calibration_pressure", "parameter:keyboard.calibration_v_oct", "parameter:keyboard.clock_bpm", "parameter:keyboard.dac_vref", "parameter:keyboard.debounce", "parameter:keyboard.encoder_direction", "parameter:keyboard.mode", "parameter:keyboard.mpr121_charge", "parameter:keyboard.mpr121_discharge", "parameter:keyboard.portamento_legato", "parameter:keyboard.portamento_speed", "parameter:keyboard.pressure_fall", "parameter:keyboard.pressure_max", "parameter:keyboard.pressure_min", "parameter:keyboard.pressure_output", "parameter:keyboard.pressure_rise", "parameter:keyboard.quantise_load_scale", "parameter:keyboard.release_threshold", "parameter:keyboard.root_note", "parameter:keyboard.seq_cv_output", "parameter:keyboard.seq_direction", "parameter:keyboard.seq_length", "parameter:keyboard.seq_rhythm_length", "parameter:keyboard.seq_run", "parameter:keyboard.touch_threshold", "parameter:keyboard.vibrato_delay", "parameter:keyboard.vibrato_depth", "parameter:keyboard.vibrato_pressure", "parameter:keyboard.vibrato_speed", "parameter:program.cathedral.1.x", "parameter:program.cathedral.1.y", "parameter:program.cathedral.1.z", "parameter:program.magic.1.x", "parameter:program.magic.1.y", "parameter:program.magic.1.z", "parameter:vcf.dist", "parameter:vcf.gain", "parameter:vcf.l_bp_lp", "parameter:vcf.l_freq", "parameter:vcf.l_mod", "parameter:vcf.l_res", "parameter:vcf.link", "parameter:vcf.r_bp_lp", "parameter:vcf.r_freq", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_a.cv_amt", "parameter:vco_a.lin_exp", "parameter:vco_a.morph", "parameter:vco_a.oct_sel", "parameter:vco_a.pw", "parameter:vco_a.pwm", "parameter:vco_a.sub_sel", "parameter:vco_a.tune", "parameter:vco_b.cv_amt", "parameter:vco_b.lin_exp", "parameter:vco_b.morph", "parameter:vco_b.oct_sel", "parameter:vco_b.pw", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "parameter:vco_b.tune", "jack:envelope_a.env_out", "jack:envelope_a.gate_in", "jack:envelope_a.vca_cv_out", "jack:keyboard.clock_in", "jack:keyboard.gate_left_main_out", "jack:keyboard.gate_right_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:keyboard.v_oct_out", "jack:vcf.cv_l_in", "jack:vcf.cv_r_in", "jack:vco_a.cv_in", "jack:vco_a.dry_out", "jack:vco_a.fm_in", "jack:vco_a.pwm_in", "jack:vco_a.sync_in", "jack:vco_a.v_oct_in", "jack:vco_a.vca_ctl", "jack:vco_a.wave_out", "jack:vco_b.cv_in", "jack:vco_b.dry_out", "jack:vco_b.pwm_in", "jack:vco_b.v_oct_in", "jack:vco_b.vco_out", "jack:vco_b.wave_out"],
+  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "module:envelope_b", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "route:route.keyboard_v_oct_to_vco_b", "route:route.vco_b_vco_out_to_cv_in", "route:route.keyboard_gate_to_eg_b", "parameter:envelope_a.a", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.r", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:envelope_b.a", "parameter:envelope_b.d", "parameter:envelope_b.hold", "parameter:envelope_b.r", "parameter:envelope_b.s", "parameter:envelope_b.self_gen", "parameter:keyboard.arp_direction", "parameter:keyboard.arp_hold", "parameter:keyboard.arp_interval", "parameter:keyboard.arp_length", "parameter:keyboard.arp_variation", "parameter:keyboard.behaviour", "parameter:keyboard.calibration_pressure", "parameter:keyboard.calibration_v_oct", "parameter:keyboard.clock_bpm", "parameter:keyboard.dac_vref", "parameter:keyboard.debounce", "parameter:keyboard.encoder_direction", "parameter:keyboard.mode", "parameter:keyboard.mpr121_charge", "parameter:keyboard.mpr121_discharge", "parameter:keyboard.portamento_legato", "parameter:keyboard.portamento_speed", "parameter:keyboard.pressure_fall", "parameter:keyboard.pressure_max", "parameter:keyboard.pressure_min", "parameter:keyboard.pressure_output", "parameter:keyboard.pressure_rise", "parameter:keyboard.quantise_load_scale", "parameter:keyboard.release_threshold", "parameter:keyboard.root_note", "parameter:keyboard.seq_cv_output", "parameter:keyboard.seq_direction", "parameter:keyboard.seq_length", "parameter:keyboard.seq_rhythm_length", "parameter:keyboard.seq_run", "parameter:keyboard.touch_threshold", "parameter:keyboard.vibrato_delay", "parameter:keyboard.vibrato_depth", "parameter:keyboard.vibrato_pressure", "parameter:keyboard.vibrato_speed", "parameter:program.cathedral.1.x", "parameter:program.cathedral.1.y", "parameter:program.cathedral.1.z", "parameter:program.magic.1.x", "parameter:program.magic.1.y", "parameter:program.magic.1.z", "parameter:vcf.dist", "parameter:vcf.gain", "parameter:vcf.l_bp_lp", "parameter:vcf.l_freq", "parameter:vcf.l_mod", "parameter:vcf.l_res", "parameter:vcf.link", "parameter:vcf.r_bp_lp", "parameter:vcf.r_freq", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_a.cv_amt", "parameter:vco_a.lin_exp", "parameter:vco_a.morph", "parameter:vco_a.oct_sel", "parameter:vco_a.pw", "parameter:vco_a.pwm", "parameter:vco_a.sub_sel", "parameter:vco_a.tune", "parameter:vco_b.cv_amt", "parameter:vco_b.lin_exp", "parameter:vco_b.morph", "parameter:vco_b.oct_sel", "parameter:vco_b.pw", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "parameter:vco_b.tune", "jack:envelope_a.env_out", "jack:envelope_a.gate_in", "jack:envelope_a.vca_cv_out", "jack:envelope_b.env_out", "jack:envelope_b.gate_in", "jack:envelope_b.vca_cv_out", "jack:keyboard.clock_in", "jack:keyboard.gate_left_main_out", "jack:keyboard.gate_right_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:keyboard.v_oct_out", "jack:vcf.cv_l_in", "jack:vcf.cv_r_in", "jack:vco_a.cv_in", "jack:vco_a.dry_out", "jack:vco_a.fm_in", "jack:vco_a.pwm_in", "jack:vco_a.sync_in", "jack:vco_a.v_oct_in", "jack:vco_a.vca_ctl", "jack:vco_a.wave_out", "jack:vco_b.cv_in", "jack:vco_b.dry_out", "jack:vco_b.pwm_in", "jack:vco_b.v_oct_in", "jack:vco_b.vco_out", "jack:vco_b.wave_out"],
   "migrationAllowlist": {
     "note": "Permanently-empty migration allowlist. Migration is complete and it is LOCKED EMPTY (Codex msg 064cfa6e): never computed from the implementation, so the manifest does not reverse-depend on lunar24.json and stays a one-way target->overlay source. Any registry param/jack not in the target is a NEW rogue and fails the always-on gate; the legacy ceiling backstop also forbids re-whitelisting a re-introduced pre-correction id outside the target.",
     "parameters": [],
