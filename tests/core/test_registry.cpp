@@ -146,7 +146,9 @@ static void selector_options_are_well_formed() {
       CHECK(p.options[k] != nullptr);
       CHECK(p.options[k][0] != '\0');  // non-empty label
       for (std::uint32_t m = k + 1; m < p.optionCount; ++m)
-        CHECK_FALSE(p.options[k] == p.options[m]);  // no duplicate within one selector's slice
+        // Compare label CONTENT, not the pointer: ["same","same"] would share no pointer yet is
+        // still a duplicate label (Codex 644ea86e Root 2).
+        CHECK_FALSE(std::string_view(p.options[k]) == std::string_view(p.options[m]));
     }
   }
   CHECK_EQ(totalOptions, reg::kParameterOptionLabelCount);

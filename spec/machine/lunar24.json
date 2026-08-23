@@ -109,8 +109,8 @@
             "unit": "confirmed",
             "default": "provisional",
             "step": "provisional",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -135,11 +135,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -186,11 +186,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -736,11 +736,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -764,11 +764,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -859,8 +859,8 @@
             "unit": "confirmed",
             "default": "provisional",
             "step": "provisional",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -888,11 +888,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -920,11 +920,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -951,11 +951,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -984,11 +984,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -1071,11 +1071,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -1129,11 +1129,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -1162,11 +1162,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -1247,11 +1247,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -1386,11 +1386,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -1474,11 +1474,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -1630,11 +1630,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [
@@ -1850,11 +1850,11 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "unverified",
-            "default": "unverified",
-            "step": "unverified",
-            "smoothing": "unverified",
-            "persistence": "unverified",
+            "unit": "confirmed",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
             "range": "provisional"
           },
           "positions": [

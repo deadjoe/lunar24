@@ -1349,12 +1349,39 @@ def check(spec, manifest, require_full=False):
     FE_FIELDS = ("range", "unit", "default", "step", "smoothing", "persistence")
     FE_STATUS = {"confirmed", "unverified", "provisional"}
     reg_param_by_sid = {p["stable_id"]: p for p in reg.parameters}
+    # Physical selector domain: a panelControl of kind selector-toggle carries the authoritative
+    # position list for its stable_id (Codex 644ea86e Root 1). The builder projects target positions
+    # FROM these panel widgets, so the gate cross-checks every physical selector's target domain
+    # against its panel widget — regardless of whether the registry has implemented it yet. This is
+    # what closes the "unimplemented target stripped of positions (delete-to-pass)" hole: vco_b.oct_sel
+    # has a panel domain, so deleting its target positions must fail even though the registry's
+    # --require-full already reports it as target-not-implemented.
+    panel_pos_by_sid = {
+        pc["stable_id"]: pc.get("positions")
+        for pc in panel_controls
+        if pc.get("kind") == "selector-toggle" and pc.get("positions")
+    }
     for tp in parameters:
         if tp.get("kind") != "selector-toggle":
             continue
         sid = tp.get("stable_id")
         tpos = tp.get("positions")
         rp = reg_param_by_sid.get(sid)
+        # Label uniqueness (Codex 644ea86e Root 2): a selector's value domain must not repeat a
+        # label — two identical options are indistinguishable to UI/MIDI (["same","same"]).
+        if tpos and len(tpos) != len(set(tpos)):
+            problems.append(
+                f"parameter {sid}: selector positions contain a duplicate label {tpos!r} "
+                f"(UI/MIDI cannot disambiguate two identical options)")
+        # target↔panel cross-check: for a physical selector the domain is EXACTLY its panel widget's,
+        # and this holds even when the registry has not yet implemented the parameter.
+        if sid in panel_pos_by_sid:
+            ppos = panel_pos_by_sid[sid]
+            if tpos != ppos:
+                problems.append(
+                    f"parameter {sid}: target positions {tpos!r} != panelControl positions "
+                    f"{ppos!r} (physical selector domain must be projected from and equal its "
+                    f"panel widget)")
         if not tpos:
             if rp is not None:
                 problems.append(
@@ -1374,11 +1401,16 @@ def check(spec, manifest, require_full=False):
                 f"parameter {sid}: selector-toggle cardinality {card!r} != positions count "
                 f"{len(tpos)} (bool cannot cover a multi-position selector)")
         fe = rp.get("fieldEvidence") or {}
-        if fe.get("range") == "unverified":
-            problems.append(
-                f"parameter {sid}: implemented selector range evidence is unverified — a "
-                f"software-mapped value domain must be provisional, never an unverified-but-concrete "
-                f"range")
+        # Six-field non-unverified (Codex 644ea86e Root 2): an implemented selector consumes a value
+        # for every fieldEvidence field, so an `unverified` status next to a concrete value is the
+        # "seemingly-certain but un-evidenced" mis-read. Software-mapped index space → provisional;
+        # documented hardware fact → confirmed; never unverified on a consumed value.
+        for fk in FE_FIELDS:
+            if fe.get(fk) == "unverified":
+                problems.append(
+                    f"parameter {sid}: implemented selector fieldEvidence.{fk} is unverified — a "
+                    f"consumed value must be provisional or confirmed, never unverified (a concrete "
+                    f"value can't also be un-evidenced)")
     for p in reg.parameters:
         tp = param_by_sid.get(p["stable_id"])
         tshape = (tp or {}).get("shape")

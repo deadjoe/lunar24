@@ -1217,13 +1217,49 @@ def main():
         raise SystemExit("Root 2: mismatched registry selector labels not flagged: %r" % problems)
 
     # (s) Codex 03848819 Root 2 — a software-mapped selector value domain must be provisional, never an
-    #     unverified-but-concrete range (the seemingly-certain bool mis-read).
+    #     unverified-but-concrete range (the seemingly-certain bool mis-read). Extended by Codex
+    #     644ea86e Root 2 to ALL SIX fieldEvidence fields: any consumed value on an implemented selector
+    #     must be provisional or confirmed, never unverified (a concrete value can't be un-evidenced).
     s_pres = copy.deepcopy(spec)
     s_parm = reg_param(s_pres, "vco_a.oct_sel")
     s_parm["fieldEvidence"]["range"] = "unverified"
     problems, _ = gate.check(s_pres, manifest)
-    if not has(problems, "implemented selector range evidence is unverified"):
+    if not has(problems, "implemented selector fieldEvidence.range is unverified"):
         raise SystemExit("Root 2: unverified selector range not flagged: %r" % problems)
+
+    # (t) Codex 644ea86e Root 1 — UNIMPLEMENTED physical selector delete-to-pass: vco_b.oct_sel is a
+    #     target selector-toggle whose panelControl carries the authoritative domain, but the registry
+    #     does not implement it yet (--require-full reports it as target-not-implemented). Deleting its
+    #     target positions must still fail via the target↔panel cross-check, not silently skip because
+    #     the registry has no descriptor.
+    t_pres = copy.deepcopy(manifest)
+    t_tgt = tgt_param(t_pres, "vco_b.oct_sel")
+    del t_tgt["positions"]
+    problems, _ = gate.check(spec, t_pres)
+    if not has(problems, "!= panelControl positions"):
+        raise SystemExit("Root 1: unimplemented physical selector stripped of positions not flagged: %r"
+                         % problems)
+
+    # (u) Codex 644ea86e Root 1 — UNIMPLEMENTED physical selector domain mismatch: re-labelling the
+    #     target's positions away from its panel widget must fail the cross-check even though no
+    #     registry descriptor exists to compare against.
+    u_pres = copy.deepcopy(manifest)
+    u_tgt = tgt_param(u_pres, "vco_b.oct_sel")
+    u_tgt["positions"] = ["a", "b", "c"]
+    problems, _ = gate.check(spec, u_pres)
+    if not has(problems, "!= panelControl positions"):
+        raise SystemExit("Root 1: unimplemented physical selector with a mismatched domain not flagged: "
+                         "%r" % problems)
+
+    # (v) Codex 644ea86e Root 2 — label uniqueness: a selector whose value domain repeats a label is a
+    #     degenerate mapping UI/MIDI cannot disambiguate (["same","same"]). A keyboard selector has no
+    #     panel domain, so only the duplicate-label check is the catcher here.
+    v_pres = copy.deepcopy(manifest)
+    v_tgt = tgt_param(v_pres, "keyboard.behaviour")
+    v_tgt["positions"] = ["same", "same"]
+    problems, _ = gate.check(spec, v_pres)
+    if not has(problems, "duplicate label"):
+        raise SystemExit("Root 2: selector duplicate label not flagged: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "

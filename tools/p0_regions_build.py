@@ -44,6 +44,8 @@ import sys
 REF = "solar42N_manual_v15"
 MANIFEST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "spec", "machine", "p0_inventory_manifest.json")
+SPEC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "spec", "machine", "lunar24.json")
 
 # Physical-widget kinds (panelControls) vs logical-value kinds (parameters).
 K_CONT = "continuous"
@@ -242,7 +244,7 @@ class Ledger:
             psid = "%s.%s" % (po, pleaf)
             self.add_param(psid, po, param_kind, self._cur["rid"], evid, semantic=label,
                            shape=shape, cardinality=cardinality, record_type=record_type,
-                           mask_size=mask_size)
+                           mask_size=mask_size, positions=positions)
             # A continuous regulator/nudge: source edge = change, targets a parameter, effect =
             # adjust (continuous) or a plain write (discrete selector). Action effects use `invoke`.
             tgt_op = TO_ADJUST if kind == K_CONT else TO_SET
@@ -251,7 +253,7 @@ class Ledger:
 
     def add_param(self, sid, owner, kind, region, evidence, semantic=None,
                   shape=None, cardinality=None, record_type=None, mask_size=None,
-                  action_managed=False, status="confirmed", menu=None, mode=None):
+                  action_managed=False, status="confirmed", menu=None, mode=None, positions=None):
         p = {"stable_id": sid, "owner": owner, "kind": kind, "region": region,
              "shape": shape or SH_SCALAR, "status": status, "evidence": evidence}
         if semantic:
@@ -264,6 +266,14 @@ class Ledger:
             p["maskSize"] = mask_size
         if action_managed:
             p["actionManaged"] = True
+        # A selector-toggle parameter's discrete value domain is a reproducible, complete fact: the
+        # builder projects it here (Codex 644ea86e) so `positions` survives a rebuild instead of
+        # being a hand-entered manifest edit. Physical selectors are projected from the same-stable-id
+        # panelControl widget's positions (forwarded by emit()); keyboard menu selectors carry the
+        # closed set from the manual (KPOS). A selector-toggle with NO positions has no evidenced
+        # value domain and must stay a GAP.
+        if positions is not None:
+            p["positions"] = positions
         # A keyboard-state param declares which menu/mode it is edited under (Codex 9th-review
         # item #1), so the gate can validate that a `menuItem` condition naming it belongs to the
         # binding's own menu/mode rather than being an arbitrary string. Vector params (plate_tune /
@@ -407,6 +417,31 @@ POS = {
     "clock": ["int", "ext"],
     "stages": ["1", "2", "3", "4", "5"],
     "step_gate": ["off", "on"],
+}
+
+# Keyboard-state selector positions (Codex 644ea86e Root 1). These ARE NOT physical panel widgets —
+# they are software keyboard settings edited via the shared encoder under a menu/mode — so their
+# discrete value domain is transcribed here from the manual, not projected from a panelControl.
+# A keyboard selector-toggle param with a manual-enumerated domain belongs here; the 4 clock/rhythm
+# toggles (arp_clock/arp_rhythm/seq_clock/seq_rhythm) and the quantise scale MASK editor are NOT
+# (no enumerated manual set) and intentionally stay without positions + GAP.
+KPOS = {
+    "behaviour": ["Single", "Twin", "Split"],
+    "mode": ["keyboard", "arpeggiator", "sequencer"],
+    "arp_hold": ["off", "on"],
+    "arp_direction": ["forward", "backward", "ping-pong", "random"],
+    "arp_variation": ["off", "x1", "x2", "x3"],
+    "seq_run": ["free", "keyboard"],
+    "seq_direction": ["forward", "backward", "ping-pong", "random"],
+    "seq_cv_output": ["continuous", "gated"],
+    "portamento_legato": ["off", "on"],
+    "pressure_output": ["pressure", "asr", "ad", "loop", "random"],
+    "quantise_load_scale": ["semitones", "ionian", "dorian", "phrygian", "lydian", "mixolydian",
+                            "aeolian", "locrian", "blues-major", "blues-minor",
+                            "pentatonic-major", "pentatonic-minor", "folk", "japanese", "gamelan",
+                            "gypsy", "arabian", "flamenco", "whole-tone"],
+    "dac_vref": ["internal", "ex"],
+    "encoder_direction": ["normal", "reversed"],
 }
 
 
@@ -773,11 +808,14 @@ def add_keyboard_state(L):
             p_menu, p_mode = None, None
         else:
             p_menu, p_mode = menu, None
+        # A keyboard selector-toggle's discrete value domain is projected from the manual closed set
+        # (KPOS); an un-evidenced selector (no KPOS entry) keeps no positions and stays a GAP.
+        kpos = KPOS.get(leaf) if kind == K_SEL else None
         L.add_param(sid, "keyboard", kind, "keyboard_state", evd, semantic=label,
                     shape=shape, cardinality=extras.get("cardinality"),
                     record_type=extras.get("recordType"), mask_size=extras.get("maskSize"),
                     action_managed=(leaf in ACTION_MANAGED_KSTATE),
-                    menu=p_menu, mode=p_mode)
+                    menu=p_menu, mode=p_mode, positions=kpos)
         # Presets are action-managed (written only by presets_* actions), not encoder-settable.
         if leaf in ACTION_MANAGED_KSTATE:
             continue
@@ -1120,25 +1158,28 @@ RECORD_SCHEMAS = {
     },
 }
 
-# Grandfather the PRE-CORRECTION registry rogue ids (Codex c7089521 item #5). These are the
-# registry's legacy dot-space / pre-re-id ids that do NOT match the corrected target stable_ids;
-# Phase B re-ids the C++ id-space and shrinks this list to empty. It must only ever SHRINK, and
-# `--require-full` requires it to be empty.
-MIGRATION_ALLOWLIST = {
-    "note": "Monotonically-shrinking migration allowlist for pre-correction registry rogue ids. "
-            "The gate is ALWAYS-ON: any registry param/jack not in the target and not in this "
-            "list is a NEW rogue and fails even without --require-full. --require-full requires "
-            "the list empty AND no rogue.",
-    "parameters": [
-        "envelope_a.attack", "envelope_a.release", "keyboard.pressure_signal",
-        "program.cathedral.1.decay", "program.cathedral.1.octave_down",
-        "program.cathedral.1.octave_up", "program.magic.1.delay", "program.magic.1.feedback",
-        "program.magic.1.pitch", "vcf.l.dist", "vcf.l.freq", "vcf.l.gain", "vcf.l.mod",
-        "vcf.l.res", "vcf.mode", "vcf.r.freq", "vco_a.fm_amt", "vco_a.oct_high",
-        "vco_a.oct_low", "vco_a.shape", "vco_a.sub", "vco_a.wave", "vco_b.shape", "vco_b.wave",
-    ],
-    "jacks": ["vcf.audio_in"],
-}
+# Grandfather the PRE-CORRECTION registry rogue ids (Codex c7089521 item #5). The allowlist is
+# COMPUTED here, not hard-coded, so a rebuild reproduces the manifest exactly rather than popping a
+# stale hand-entered list (Codex 644ea86e reproducibility): it is exactly the set of registry
+# Parameter/Jack ids NOT in the freshly-built target. As Phase B re-ids the id-space toward the
+# target the list SHRINKS to empty, and --require-full requires it empty AND no rogue. The gate's
+# independent legacy ceiling (LEGACY_ROGUE_*_CEILING in check_registry_complete.py) still forbids
+# any try to mask a genuinely-NEW rogue: an allow entry for an id outside that ceiling fails there.
+def _registry_rogues(L, endpoints):
+    """Return ({param rogues}, {jack rogues}) = registry ids not in the freshly-built target."""
+    with open(SPEC, encoding="utf-8") as fh:
+        reg = json.load(fh)
+    reg_param_sids = set()
+    reg_jack_sids = set()
+    for mo in reg.get("modules", []):
+        reg_jack_sids |= {j.get("stable_id") for j in mo.get("jacks", [])}
+        reg_param_sids |= {p.get("stable_id") for p in mo.get("parameters", [])}
+    for pr in reg.get("programs", []):
+        reg_param_sids |= {p.get("stable_id") for p in pr.get("parameters", [])}
+
+    target_param_sids = {p["stable_id"] for p in L.params}
+    target_patchable = {e["stable_id"] for e in endpoints if e.get("patchable")}
+    return sorted(reg_param_sids - target_param_sids), sorted(reg_jack_sids - target_patchable)
 
 
 def main():
@@ -1177,7 +1218,15 @@ def main():
                  "jacks."),
         "endpoints": pjt.get("endpoints", []),
     }
-    m["migrationAllowlist"] = MIGRATION_ALLOWLIST
+    allow_params, allow_jacks = _registry_rogues(L, pjt.get("endpoints", []))
+    m["migrationAllowlist"] = {
+        "note": "Monotonically-shrinking migration allowlist for pre-correction registry rogue ids. "
+                "The gate is ALWAYS-ON: any registry param/jack not in the target and not in this "
+                "list is a NEW rogue and fails even without --require-full. --require-full requires "
+                "the list empty AND no rogue. Computed from the actual registry, never hand-set.",
+        "parameters": allow_params,
+        "jacks": allow_jacks,
+    }
 
     with open(MANIFEST, "w", encoding="utf-8") as fh:
         fh.write(_dump(m))
