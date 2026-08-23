@@ -154,7 +154,7 @@ inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    2482u,
+    3506u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).

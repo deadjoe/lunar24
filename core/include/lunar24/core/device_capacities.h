@@ -19,8 +19,10 @@ namespace lunar24::core {
 
 // Parameter value bank capacity. Must be >= registry kParameterIdSpace (the
 // one-past-the-last serialized ParameterId). PROVISIONAL until the full P0
-// inventory.
-inline constexpr std::size_t kDeviceParamCapacity = 256;
+// inventory. Bumped past Phase B DRONE 4 (Codex msg 483a9dc5): the landed param
+// id-space is now 258 (max id drone_4.gate_hold 257), and the value is sized to
+// also cover the remaining declared drone_3/5/6 + keyboard complex params.
+inline constexpr std::size_t kDeviceParamCapacity = 384;
 
 // Patch-cable / normalized-route-override bank capacities. Must be >= the
 // registry id-space of JackId and RouteId respectively. PROVISIONAL until the

@@ -5867,6 +5867,598 @@
           }
         }
       ]
+    },
+    {
+      "id": 17,
+      "stable_id": "drone_4",
+      "name": "DRONE 4",
+      "category": "source",
+      "description": "Classic drone voice 4. Five generators (TUNE 1..5) that can each be muted (MUTE 1..5) or pitch-modulated (MOD 1..5) by an external CV source on the CV MOD input or by the photo-sensitive detector; the five can be tuned to different pitches to form chords or triads, not a shared pitch. One VOLT knob transposes all five generators down together, and after half its stroke the generators start to modulate each other (FM synthesis). ATT/RLS set the attack and release of the voice's envelope. The pushbutton keyboard produces the documented 5V gate that triggers the voice; external control may trigger it via GATE IN, whose input rail and threshold remain unverified. The envelope output (ENV OUT) can trigger the next voice or modulate the filter or effector; its voltage range is not asserted here. HOLD is the panel control — its exact state, default, and transfer remain provisional. Continuous parameters are software-normalized 0..1 placeholders; no Hz/seconds/taper is asserted. The audio_out endpoint is internal and is not landed here.",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 288,
+        "lineEnd": 320
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 239,
+          "stable_id": "drone_4.tune_1",
+          "name": "TUNE 1",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 298
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 240,
+          "stable_id": "drone_4.tune_2",
+          "name": "TUNE 2",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 298
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 241,
+          "stable_id": "drone_4.tune_3",
+          "name": "TUNE 3",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 298
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 242,
+          "stable_id": "drone_4.tune_4",
+          "name": "TUNE 4",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 298
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 243,
+          "stable_id": "drone_4.tune_5",
+          "name": "TUNE 5",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 298
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 244,
+          "stable_id": "drone_4.mute_1",
+          "name": "MUTE 1",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 294
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 245,
+          "stable_id": "drone_4.mute_2",
+          "name": "MUTE 2",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 294
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 246,
+          "stable_id": "drone_4.mute_3",
+          "name": "MUTE 3",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 294
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 247,
+          "stable_id": "drone_4.mute_4",
+          "name": "MUTE 4",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 294
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 248,
+          "stable_id": "drone_4.mute_5",
+          "name": "MUTE 5",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 294
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 249,
+          "stable_id": "drone_4.mod_1",
+          "name": "MOD 1",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 301
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 250,
+          "stable_id": "drone_4.mod_2",
+          "name": "MOD 2",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 301
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 251,
+          "stable_id": "drone_4.mod_3",
+          "name": "MOD 3",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 301
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 252,
+          "stable_id": "drone_4.mod_4",
+          "name": "MOD 4",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 301
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 253,
+          "stable_id": "drone_4.mod_5",
+          "name": "MOD 5",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 301
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "id": 254,
+          "stable_id": "drone_4.volt",
+          "name": "VOLT",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 309
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 255,
+          "stable_id": "drone_4.att",
+          "name": "ATT",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 309
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 256,
+          "stable_id": "drone_4.rls",
+          "name": "RLS",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 309
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 257,
+          "stable_id": "drone_4.gate_hold",
+          "name": "HOLD",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 53
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "off",
+            "on"
+          ]
+        }
+      ],
+      "jacks": [
+        {
+          "id": 49,
+          "stable_id": "drone_4.cv_mod_in",
+          "name": "CV MOD",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 299
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 50,
+          "stable_id": "drone_4.gate_in",
+          "name": "GATE IN",
+          "direction": "input",
+          "signalType": "gate",
+          "polarity": "unknown",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 315
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 51,
+          "stable_id": "drone_4.env_out",
+          "name": "ENV OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": -10.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 318
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        }
+      ]
     }
   ],
   "normalizedRoutes": [

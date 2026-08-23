@@ -97,36 +97,45 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 17u);     // Phase B DRONE 2 classic voice slice (Codex msg 3bc2111c):
-                                         // +1 module (drone_2 id 16, source, 19 params/3 jacks).
-                                         // Prior: DRONE 1 classic voice slice (Codex msg 28e00d92)
-                                         // drone_1 id 15, drone-voices module closure (Codex msg
-                                         // c212dcfb) voices id 14 (performance, zero params/jacks),
+  CHECK_EQ(core::kModuleCount, 18u);     // Phase B DRONE 4 classic voice slice (Codex msg 483a9dc5):
+                                         // +1 module (drone_4 id 17, source, 19 params/3 jacks).
+                                         // Prior: DRONE 2 classic voice slice (Codex msg 3bc2111c)
+                                         // drone_2 id 16, DRONE 1 classic voice slice (Codex msg
+                                         // 28e00d92) drone_1 id 15, drone-voices module closure (Codex
+                                         // msg c212dcfb) voices id 14 (performance, zero params/jacks),
                                          // dual-effector slice (Codex msg 1a47b5d0) effector
                                          // id 13, voice-mixer slice (Codex msg 920fa79b) mixer id 12,
                                          // 5-step sequencer slice (Codex msg 6bedef35) sequencer id 11,
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 172u); // Phase B DRONE 2 classic voice slice (Codex msg 3bc2111c):
-                                         // +19 params (drone_2.tune_1..5 / mute_1..5 / mod_1..5 /
+  CHECK_EQ(core::kParameterCount, 191u); // Phase B DRONE 4 classic voice slice (Codex msg 483a9dc5):
+                                         // +19 params (drone_4.tune_1..5 / mute_1..5 / mod_1..5 /
                                          // volt / att / rls continuous + gate_hold selector,
-                                         // ids 220-238, software-normalized placeholders). Prior:
-                                         // DRONE 1 classic voice slice (Codex msg 28e00d92) +19
-                                         // (ids 201-219), dual-effector slice +8 (ids 193-200),
-                                         // voice-mixer slice +20 (mixer.ch1..ch10 so{pan,vol},
-                                         // ids 173-192). Modules now carry 166, programs 6. Left as
-                                         // honest gaps the drone_3/4/5/6 voice params + 12 keyboard
+                                         // ids 239-257, software-normalized placeholders). Prior:
+                                         // DRONE 2 classic voice slice (Codex msg 3bc2111c) +19
+                                         // (ids 220-238), DRONE 1 classic voice slice (Codex msg
+                                         // 28e00d92) +19 (ids 201-219), dual-effector slice +8
+                                         // (ids 193-200), voice-mixer slice +20
+                                         // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
+                                         // carry 185, programs 6. Left as honest gaps the
+                                         // drone_3/5/6 voice params + 12 keyboard
                                          // complex params (seq_steps, quantise_scale_editor,
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,
                                          // seq_clock, arp_rhythm, seq_rhythm + remaining module
                                          // ranges)
-  CHECK_EQ(core::kJackCount, 48u);       // Phase B DRONE 2 classic voice slice (Codex msg 3bc2111c):
-                                         // +3 patchable jacks (drone_2.cv_mod_in/.gate_in/.env_out,
-                                         // ids 46-48). Prior: DRONE 1 classic voice slice
-                                         // (Codex msg 28e00d92) +3 (drone_1.cv_mod_in/.gate_in/
-                                         // .env_out, ids 43-45). Prior: dual-effector slice +3 CV
-                                         // inputs (ids 40-42, -10..+10V CV/bipolar from L1164).
+  CHECK_EQ(core::kJackCount, 51u);       // Phase B DRONE 4 classic voice slice (Codex msg 483a9dc5):
+                                         // +3 patchable jacks (drone_4.cv_mod_in/.gate_in/.env_out,
+                                         // ids 49-51; for env_out the nominalRange + polarity stay
+                                         // unverified/unknown because manual L157 "ENV VOICES
+                                         // 1,2,3,6,7,8" does NOT list 4/5, so the DRONE 1/2
+                                         // -10..+10V/bipolar confirmed is not copied here).
+                                         // Prior: DRONE 2 classic voice slice (Codex msg 3bc2111c)
+                                         // +3 (drone_2.cv_mod_in/.gate_in/.env_out, ids 46-48),
+                                         // DRONE 1 classic voice slice (Codex msg 28e00d92) +3
+                                         // (drone_1.cv_mod_in/.gate_in/.env_out, ids 43-45),
+                                         // dual-effector slice +3 CV inputs (ids 40-42, -10..+10V
+                                         // CV/bipolar from L1164).
                                          // Prior: the
                                          // 5-step sequencer slice +4 (sequencer.ext_clock_in/
                                          // clock_out clock, cv_out 0..+5V CV/unipolar L159, gate_out
