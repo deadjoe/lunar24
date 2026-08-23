@@ -97,26 +97,29 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 13u);     // Phase B voice-mixer slice (Codex msg 920fa79b): +1
-                                         // module (mixer id 12). Prior: 5-step sequencer slice
-                                         // (Codex msg 6bedef35) sequencer id 11, preamp/
+  CHECK_EQ(core::kModuleCount, 14u);     // Phase B dual-effector slice (Codex msg 1a47b5d0): +1
+                                         // module (effector id 13). Prior: voice-mixer slice
+                                         // (Codex msg 920fa79b) mixer id 12, 5-step sequencer
+                                         // slice (Codex msg 6bedef35) sequencer id 11, preamp/
                                          // env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 126u); // Phase B voice-mixer slice: +20 params
-                                         // (mixer.ch1..ch10 so{pan,vol}, ids 173-192, all
-                                         // software-normalized 0..1 placeholders, six-field
-                                         // unverified). Modules now carry 120, programs 6. Left as
-                                         // honest gaps the drones/effector/voices params + the 12
-                                         // keyboard complex params (seq_steps, quantise_scale_editor,
-                                         // plate_tune, pushbutton_value, preset_a..d, arp_clock,
-                                         // seq_clock, arp_rhythm, seq_rhythm + remaining module
-                                         // ranges)
-  CHECK_EQ(core::kJackCount, 39u);       // Phase B sequencer slice: +4 patchable jacks
-                                         // (sequencer.ext_clock_in/clock_out signalType=clock, range/
-                                         // polarity/coupling unknown + unverified; sequencer.cv_out
-                                         // 0..+5V CV/unipolar from L159 legend; sequencer.gate_out
-                                         // 0..+10V gate/unipolar from L160 legend). Prior phases added
+  CHECK_EQ(core::kParameterCount, 134u); // Phase B dual-effector slice (Codex msg 1a47b5d0): +8
+                                         // params (effector.x/.y/.z/.blend/.master/.phone continuous
+                                         // + .select_l/.select_r selector, ids 193-200). Prior:
+                                         // voice-mixer slice +20 (mixer.ch1..ch10 so{pan,vol},
+                                         // ids 173-192, software-normalized placeholders).
+                                         // Modules now carry 128, programs 6. Left as honest gaps
+                                         // the drones + voices params + the 12 keyboard complex
+                                         // params (seq_steps, quantise_scale_editor, plate_tune,
+                                         // pushbutton_value, preset_a..d, arp_clock, seq_clock,
+                                         // arp_rhythm, seq_rhythm + remaining module ranges)
+  CHECK_EQ(core::kJackCount, 42u);       // Phase B dual-effector slice (Codex msg 1a47b5d0): +3
+                                         // patchable CV inputs (effector.cv_x_in/.cv_y_in/.cv_z_in,
+                                         // ids 40-42, -10..+10V CV/bipolar from L1164). Prior: the
+                                         // 5-step sequencer slice +4 (sequencer.ext_clock_in/
+                                         // clock_out clock, cv_out 0..+5V CV/unipolar L159, gate_out
+                                         // 0..+10V gate/unipolar L160). Prior phases added
                                          // preamp.ext_source_in, env_follower.env_out/gate_out,
                                          // joystick x_out/y_out, lfo_a/lfo_b cv_out, envelope_b
                                          // gate_in/env_out/vca_cv_out, vco_a/vco_b wave_out+pwm_in,

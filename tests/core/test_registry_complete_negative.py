@@ -322,7 +322,7 @@ def main():
     rogue["programs"][-1]["stable_id"] = "program.rogue"
     rogue["programs"][-1]["cartridge"] = "ROGUE"
     for i, parm in enumerate(rogue["programs"][-1]["parameters"]):
-        parm["id"] = 200 + i
+        parm["id"] = 500 + i  # far above the landed param id-space (now 200 = effector.select_r)
         parm["stable_id"] = "program.rogue.%s" % parm["stable_id"].split(".")[-1]
     problems, _ = gate.check(rogue, manifest)
     if not has(problems, "impl ⊄ target"):
@@ -2209,7 +2209,7 @@ def main():
         raise SystemExit("sequencer clock input signalType drift (ext_clock_in clock -> cv) not "
                         "enforced: %r" % problems)
 
-    # (dg) delete a MIDDLE mixer channel (ch5 = VCO A vol, id 176).
+    # (dg) delete a MIDDLE mixer channel (ch5 = VCO A vol, id 182).
     dg_bad = copy.deepcopy(spec)
     for m in dg_bad["modules"]:
         if m.get("stable_id") == "mixer":
@@ -2281,6 +2281,131 @@ def main():
         raise SystemExit("mixer.ch5_pan chain-mapping drift (name 'PAN VCO A' -> 'PAN VCO B') not "
                         "enforced: %r" % problems)
 
+    # (do) effector module delete: pulling the whole landed module (id 13) out of the registry must
+    #      fail as a MISSING landed module (cascading to its param/jack facts).
+    do_bad = copy.deepcopy(spec)
+    do_bad["modules"] = [m for m in do_bad["modules"] if m.get("stable_id") != "effector"]
+    problems, _ = gate.check(do_bad, manifest)
+    if not has(problems, "MISSING landed module 'effector'"):
+        raise SystemExit("effector module delete not enforced: %r" % problems)
+
+    # (dp) effector module id renumber: effector is a landed module with id 13; renumbering it
+    #      (13 -> 999) is a registry-id vs landed-fact-id mismatch and must fail.
+    dp_bad = copy.deepcopy(spec)
+    for m in dp_bad["modules"]:
+        if m.get("stable_id") == "effector":
+            m["id"] = 999
+    problems, _ = gate.check(dp_bad, manifest)
+    if not has(problems, "implementation module 'effector': id"):
+        raise SystemExit("effector module id renumber (13 -> 999) not enforced: %r" % problems)
+
+    # (dq) effector param delete: a landed X knob (effector.x, id 193) must not silently reopen as a
+    #      gap.
+    dq_bad = copy.deepcopy(spec)
+    for m in dq_bad["modules"]:
+        if m.get("stable_id") == "effector":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "effector.x"]
+    problems, _ = gate.check(dq_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'effector.x'"):
+        raise SystemExit("effector param delete (effector.x) not enforced: %r" % problems)
+
+    # (dr) effector param id renumber: effector.x id 193 -> 999 must fail.
+    dr_bad = copy.deepcopy(spec)
+    reg_param(dr_bad, "effector.x")["id"] = 999
+    problems, _ = gate.check(dr_bad, manifest)
+    if not has(problems, "implementation param 'effector.x'"):
+        raise SystemExit("effector param id renumber (effector.x 193 -> 999) not enforced: %r"
+                        % problems)
+
+    # (ds) effector jack delete: a landed patchable CV input (effector.cv_x_in, id 40) must not
+    #      silently reopen as a gap.
+    ds_bad = copy.deepcopy(spec)
+    for m in ds_bad["modules"]:
+        if m.get("stable_id") == "effector":
+            m["jacks"] = [j for j in m.get("jacks", [])
+                          if j.get("stable_id") != "effector.cv_x_in"]
+    problems, _ = gate.check(ds_bad, manifest)
+    if not has(problems, "MISSING landed descriptor jack 'effector.cv_x_in'"):
+        raise SystemExit("effector jack delete (effector.cv_x_in) not enforced: %r" % problems)
+
+    # (dt) effector jack id renumber: effector.cv_x_in id 40 -> 999 must fail.
+    dt_bad = copy.deepcopy(spec)
+    reg_jack(dt_bad, "effector.cv_x_in")["id"] = 999
+    problems, _ = gate.check(dt_bad, manifest)
+    if not has(problems, "implementation jack 'effector.cv_x_in'"):
+        raise SystemExit("effector jack id renumber (effector.cv_x_in 40 -> 999) not enforced: %r"
+                        % problems)
+
+    # (du) selector positions drift: effector SELECT L is an opaque 1-2-3 selector; UI/MIDI must
+    #      never see a reordered value domain. Changing the registry option order must fail.
+    du_bad = copy.deepcopy(spec)
+    reg_param(du_bad, "effector.select_l")["positions"] = ["2", "1", "3"]
+    problems, _ = gate.check(du_bad, manifest)
+    if not has(problems, "registry selector options"):
+        raise SystemExit("effector.select_l selector positions drift (['1','2','3'] -> "
+                        "['2','1','3']) not enforced: %r" % problems)
+
+    # (dv) X/Y/Z descriptorEvidence line drift: the shared X/Y/Z glyph-row citation (L1183) must not
+    #      move.
+    dv_bad = copy.deepcopy(spec)
+    reg_param(dv_bad, "effector.x")["evidence"]["line"] = 1184
+    problems, _ = gate.check(dv_bad, manifest)
+    if not has(problems, "implementation param 'effector.x'"):
+        raise SystemExit("effector.x descriptorEvidence.line drift (1183 -> 1184) not enforced: %r"
+                        % problems)
+
+    # (dw) BLEND descriptorEvidence line drift: the BLEND citation (L1162) must not move.
+    dw_bad = copy.deepcopy(spec)
+    reg_param(dw_bad, "effector.blend")["evidence"]["line"] = 1163
+    problems, _ = gate.check(dw_bad, manifest)
+    if not has(problems, "implementation param 'effector.blend'"):
+        raise SystemExit("effector.blend descriptorEvidence.line drift (1162 -> 1163) not "
+                        "enforced: %r" % problems)
+
+    # (dx) MASTER descriptorEvidence line drift: the MASTER citation (L1163) must not move.
+    dx_bad = copy.deepcopy(spec)
+    reg_param(dx_bad, "effector.master")["evidence"]["line"] = 1164
+    problems, _ = gate.check(dx_bad, manifest)
+    if not has(problems, "implementation param 'effector.master'"):
+        raise SystemExit("effector.master descriptorEvidence.line drift (1163 -> 1164) not "
+                        "enforced: %r" % problems)
+
+    # (dy) PHONE descriptorEvidence line drift: the PHONE citation (L1153) must not move.
+    dy_bad = copy.deepcopy(spec)
+    reg_param(dy_bad, "effector.phone")["evidence"]["line"] = 1154
+    problems, _ = gate.check(dy_bad, manifest)
+    if not has(problems, "implementation param 'effector.phone'"):
+        raise SystemExit("effector.phone descriptorEvidence.line drift (1153 -> 1154) not "
+                        "enforced: %r" % problems)
+
+    # (dz) CV input nominal range drift: effector.cv_x_in is a confirmed -10..+10V bipolar input;
+    #      widening its nominalMax must fail.
+    dz_bad = copy.deepcopy(spec)
+    reg_jack(dz_bad, "effector.cv_x_in")["nominalMax"] = 11
+    problems, _ = gate.check(dz_bad, manifest)
+    if not has(problems, "implementation jack 'effector.cv_x_in'"):
+        raise SystemExit("effector.cv_x_in nominal range drift (10 -> 11) not enforced: %r"
+                        % problems)
+
+    # (ea) CV input polarity drift: effector.cv_x_in is a confirmed bipolar CV input; silently
+    #      reclassifying it as unipolar must fail.
+    ea_bad = copy.deepcopy(spec)
+    reg_jack(ea_bad, "effector.cv_x_in")["polarity"] = "unipolar"
+    problems, _ = gate.check(ea_bad, manifest)
+    if not has(problems, "implementation jack 'effector.cv_x_in'"):
+        raise SystemExit("effector.cv_x_in polarity drift (bipolar -> unipolar) not enforced: %r"
+                        % problems)
+
+    # (eb) CV input fieldEvidence drift: effector.cv_x_in carries a confirmed -10..+10V nominalRange;
+    #      silently downgrading it to unverified is an evidence under-claim that must fail.
+    eb_bad = copy.deepcopy(spec)
+    reg_jack(eb_bad, "effector.cv_x_in")["fieldEvidence"]["nominalRange"] = "unverified"
+    problems, _ = gate.check(eb_bad, manifest)
+    if not has(problems, "implementation jack 'effector.cv_x_in'"):
+        raise SystemExit("effector.cv_x_in fieldEvidence drift (nominalRange confirmed->unverified) "
+                        "not enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -2301,7 +2426,12 @@ def main():
           "too (Codex 22f545c1/03848819); the voice-mixer slice (Codex 920fa79b) closes the 10-channel "
           "PAN/VOL chain too — begin (ch1_pan)/middle (ch5_vol)/end (ch10_vol) channel delete, param id "
           "renumber, PAN/VOL descriptorEvidence.line drift, six-field provenance over-claim, and "
-          "channel-mapping (name) drift all fail.")
+          "channel-mapping (name) drift all fail; the dual-effector slice (Codex 1a47b5d0) closes the "
+          "effector module (id 13) too — module delete / module id renumber, a landed param delete "
+          "(effector.x) + param id renumber, a landed jack delete (effector.cv_x_in) + jack id renumber, "
+          "selector positions drift (SELECT L ['1','2','3'] reorder), X/Y/Z / BLEND / MASTER / PHONE "
+          "descriptorEvidence.line drift, and CV input nominal-range / polarity / fieldEvidence drift "
+          "all fail.")
     return 0
 
 

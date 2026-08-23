@@ -25,7 +25,8 @@ enum class ModuleId : std::uint32_t {
     preamp = 9,
     env_follower = 10,
     sequencer = 11,
-    mixer = 12
+    mixer = 12,
+    effector = 13
 };
 
 enum class ParameterId : std::uint32_t {
@@ -149,6 +150,14 @@ enum class ParameterId : std::uint32_t {
     mixer_ch9_vol = 190,
     mixer_ch10_pan = 191,
     mixer_ch10_vol = 192,
+    effector_x = 193,
+    effector_y = 194,
+    effector_z = 195,
+    effector_blend = 196,
+    effector_master = 197,
+    effector_phone = 198,
+    effector_select_l = 199,
+    effector_select_r = 200,
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
@@ -196,7 +205,10 @@ enum class JackId : std::uint32_t {
     sequencer_ext_clock_in = 36,
     sequencer_clock_out = 37,
     sequencer_cv_out = 38,
-    sequencer_gate_out = 39
+    sequencer_gate_out = 39,
+    effector_cv_x_in = 40,
+    effector_cv_y_in = 41,
+    effector_cv_z_in = 42
 };
 
 enum class ProgramId : std::uint32_t {
@@ -250,15 +262,15 @@ enum class RouteId : std::uint32_t {
     route_keyboard_gate_to_eg_b = 5
 };
 
-inline constexpr std::uint32_t kModuleCount = 13;
-inline constexpr std::uint32_t kParameterCount = 126;
-inline constexpr std::uint32_t kJackCount = 39;
+inline constexpr std::uint32_t kModuleCount = 14;
+inline constexpr std::uint32_t kParameterCount = 134;
+inline constexpr std::uint32_t kJackCount = 42;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
-inline constexpr std::uint64_t kModuleIdSpace = 13;
-inline constexpr std::uint64_t kParameterIdSpace = 193;
-inline constexpr std::uint64_t kJackIdSpace = 40;
+inline constexpr std::uint64_t kModuleIdSpace = 14;
+inline constexpr std::uint64_t kParameterIdSpace = 201;
+inline constexpr std::uint64_t kJackIdSpace = 43;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
 
@@ -281,6 +293,7 @@ inline constexpr std::string_view module_id_string(ModuleId id) {
     case ModuleId::env_follower: return "env_follower";
     case ModuleId::sequencer: return "sequencer";
     case ModuleId::mixer: return "mixer";
+    case ModuleId::effector: return "effector";
   }
   return "(unknown Module)";
 }
@@ -407,6 +420,14 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::mixer_ch9_vol: return "mixer.ch9_vol";
     case ParameterId::mixer_ch10_pan: return "mixer.ch10_pan";
     case ParameterId::mixer_ch10_vol: return "mixer.ch10_vol";
+    case ParameterId::effector_x: return "effector.x";
+    case ParameterId::effector_y: return "effector.y";
+    case ParameterId::effector_z: return "effector.z";
+    case ParameterId::effector_blend: return "effector.blend";
+    case ParameterId::effector_master: return "effector.master";
+    case ParameterId::effector_phone: return "effector.phone";
+    case ParameterId::effector_select_l: return "effector.select_l";
+    case ParameterId::effector_select_r: return "effector.select_r";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";
@@ -458,6 +479,9 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::sequencer_clock_out: return "sequencer.clock_out";
     case JackId::sequencer_cv_out: return "sequencer.cv_out";
     case JackId::sequencer_gate_out: return "sequencer.gate_out";
+    case JackId::effector_cv_x_in: return "effector.cv_x_in";
+    case JackId::effector_cv_y_in: return "effector.cv_y_in";
+    case JackId::effector_cv_z_in: return "effector.cv_z_in";
   }
   return "(unknown Jack)";
 }

@@ -4374,6 +4374,300 @@
         }
       ],
       "jacks": []
+    },
+    {
+      "id": 13,
+      "stable_id": "effector",
+      "name": "Dual effector",
+      "category": "processing",
+      "description": "Dual effect block, one per left and right channel. Blends dry/wet (BLEND), sets the overall wet-out volume (MASTER) and a headphone/phone level (PHONE), and provides X/Y/Z effect-parameter knobs plus a 1-2-3 programme selector per channel (SELECT L/R) that loads an effect cartridge programme. X, Y and Z are controlled by CV -10V..+10V on three patchable inputs (cv_x_in/cv_y_in/cv_z_in). The 1-2-3 selector index is opaque — the cartridge programme identity is not encoded into the selector value. l_in/r_in/l_out/r_out are internal endpoints (not patchable jacks) and are not landed here.",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 1158,
+        "lineEnd": 1204
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 193,
+          "stable_id": "effector.x",
+          "name": "X",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1183
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 194,
+          "stable_id": "effector.y",
+          "name": "Y",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1183
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 195,
+          "stable_id": "effector.z",
+          "name": "Z",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1183
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 196,
+          "stable_id": "effector.blend",
+          "name": "BLEND",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1162
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 197,
+          "stable_id": "effector.master",
+          "name": "MASTER",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1163
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 198,
+          "stable_id": "effector.phone",
+          "name": "PHONE",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1153
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 199,
+          "stable_id": "effector.select_l",
+          "name": "SELECT L",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 2.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1177
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "id": 200,
+          "stable_id": "effector.select_r",
+          "name": "SELECT R",
+          "unit": "selector",
+          "min": 0.0,
+          "max": 2.0,
+          "default": 0.0,
+          "step": 1.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1177
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "provisional",
+            "default": "provisional",
+            "step": "provisional",
+            "smoothing": "provisional",
+            "persistence": "provisional",
+            "range": "provisional"
+          },
+          "positions": [
+            "1",
+            "2",
+            "3"
+          ]
+        }
+      ],
+      "jacks": [
+        {
+          "id": 40,
+          "stable_id": "effector.cv_x_in",
+          "name": "CV X IN",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -10.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 1173
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 41,
+          "stable_id": "effector.cv_y_in",
+          "name": "CV Y IN",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -10.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 1173
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 42,
+          "stable_id": "effector.cv_z_in",
+          "name": "CV Z IN",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -10.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 1173
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        }
+      ]
     }
   ],
   "normalizedRoutes": [
