@@ -336,7 +336,16 @@ enum class ParameterId : std::uint32_t {
     program_infinity_2_z = 363,
     program_infinity_3_x = 364,
     program_infinity_3_y = 365,
-    program_infinity_3_z = 366
+    program_infinity_3_z = 366,
+    program_string_ringer_1_x = 367,
+    program_string_ringer_1_y = 368,
+    program_string_ringer_1_z = 369,
+    program_string_ringer_2_x = 370,
+    program_string_ringer_2_y = 371,
+    program_string_ringer_2_z = 372,
+    program_string_ringer_3_x = 373,
+    program_string_ringer_3_y = 374,
+    program_string_ringer_3_z = 375
 };
 
 enum class JackId : std::uint32_t {
@@ -458,13 +467,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 300;
+inline constexpr std::uint32_t kParameterCount = 309;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 367;
+inline constexpr std::uint64_t kParameterIdSpace = 376;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -802,6 +811,15 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_infinity_3_x: return "program.infinity.3.x";
     case ParameterId::program_infinity_3_y: return "program.infinity.3.y";
     case ParameterId::program_infinity_3_z: return "program.infinity.3.z";
+    case ParameterId::program_string_ringer_1_x: return "program.string_ringer.1.x";
+    case ParameterId::program_string_ringer_1_y: return "program.string_ringer.1.y";
+    case ParameterId::program_string_ringer_1_z: return "program.string_ringer.1.z";
+    case ParameterId::program_string_ringer_2_x: return "program.string_ringer.2.x";
+    case ParameterId::program_string_ringer_2_y: return "program.string_ringer.2.y";
+    case ParameterId::program_string_ringer_2_z: return "program.string_ringer.2.z";
+    case ParameterId::program_string_ringer_3_x: return "program.string_ringer.3.x";
+    case ParameterId::program_string_ringer_3_y: return "program.string_ringer.3.y";
+    case ParameterId::program_string_ringer_3_z: return "program.string_ringer.3.z";
   }
   return "(unknown Parameter)";
 }

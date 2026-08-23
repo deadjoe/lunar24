@@ -10343,7 +10343,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 367,
+          "stable_id": "program.string_ringer.1.x",
+          "role": "x",
+          "name": "Frequency",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1260
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 368,
+          "stable_id": "program.string_ringer.1.y",
+          "role": "y",
+          "name": "Resonance",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1261
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 369,
+          "stable_id": "program.string_ringer.1.z",
+          "role": "z",
+          "name": "Sub",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1262
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 25,
@@ -10362,7 +10439,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 370,
+          "stable_id": "program.string_ringer.2.x",
+          "role": "x",
+          "name": "Frequency",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1265
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 371,
+          "stable_id": "program.string_ringer.2.y",
+          "role": "y",
+          "name": "Rate",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1267
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 372,
+          "stable_id": "program.string_ringer.2.z",
+          "role": "z",
+          "name": "Reverb",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1268
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 26,
@@ -10381,7 +10535,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 373,
+          "stable_id": "program.string_ringer.3.x",
+          "role": "x",
+          "name": "Pitch Speed",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1271
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 374,
+          "stable_id": "program.string_ringer.3.y",
+          "role": "y",
+          "name": "S&H Rate",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1272
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 375,
+          "stable_id": "program.string_ringer.3.z",
+          "role": "z",
+          "name": "Freq Ring Mod",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1275
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 27,

@@ -4063,9 +4063,10 @@ def main():
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
     # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3, vibe.1/.2/.3,
-    #      pitch_shifter.1/.2/.3 and infinity.1/.2/.3 must NOT be re-openable as an honest gap: with
-    #      those programs' params landed, the --require-full residual must exclude every one of those
-    #      ids. It widens exactly across the 12 keyboard complex + 45 other program XYZ params (57 total).
+    #      pitch_shifter.1/.2/.3, infinity.1/.2/.3 and string_ringer.1/.2/.3 must NOT be re-openable as
+    #      an honest gap: with those programs' params landed, the --require-full residual must exclude
+    #      every one of those ids. It widens exactly across the 12 keyboard complex + 36 other program
+    #      XYZ params (48 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4075,13 +4076,13 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 57:
-        raise SystemExit("residual honest-gap total %d != 57 (12 keyboard complex + 45 program XYZ); "
+    if len(_gap_ids) != 48:
+        raise SystemExit("residual honest-gap total %d != 48 (12 keyboard complex + 36 program XYZ); "
                          "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + "
-                         "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 "
-                         "must have landed and closed exactly 66" % len(_gap_ids))
-    if len(_kb) != 12 or len(_prog) != 45:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/45: %r" % (len(_kb), len(_prog),
+                         "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 + "
+                         "string_ringer.1/.2/.3 must have landed and closed exactly 75" % len(_gap_ids))
+    if len(_kb) != 12 or len(_prog) != 36:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/36: %r" % (len(_kb), len(_prog),
                                                                                 _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
@@ -4104,12 +4105,16 @@ def main():
                  "program.pitch_shifter.3.x", "program.pitch_shifter.3.y", "program.pitch_shifter.3.z",
                  "program.infinity.1.x", "program.infinity.1.y", "program.infinity.1.z",
                  "program.infinity.2.x", "program.infinity.2.y", "program.infinity.2.z",
-                 "program.infinity.3.x", "program.infinity.3.y", "program.infinity.3.z"):
+                 "program.infinity.3.x", "program.infinity.3.y", "program.infinity.3.z",
+                 "program.string_ringer.1.x", "program.string_ringer.1.y", "program.string_ringer.1.z",
+                 "program.string_ringer.2.x", "program.string_ringer.2.y", "program.string_ringer.2.z",
+                 "program.string_ringer.3.x", "program.string_ringer.3.y", "program.string_ringer.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 45 "
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 36 "
                              "other program XYZ gaps are preserved, NOT cathedral.2/3, magic.2/3, "
                              "time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, vibe.1/2/3, "
-                             "pitch_shifter.1/2/3 or infinity.1/2/3): %r" % (_sid, _gap_ids))
+                             "pitch_shifter.1/2/3, infinity.1/2/3 or string_ringer.1/2/3): %r"
+                             % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
@@ -4701,6 +4706,95 @@ def main():
     if not has(problems, "implementation param 'program.infinity.2.z'"):
         raise SystemExit("infinity.2.z MAGIC-1 physical value keep-out (semitone/0..12) not enforced: "
                          "%r" % problems)
+
+    # (oa)-(oi) STRING RINGER Program 1/2/3 X/Y/Z descriptor lock (Codex msg 4de86f09). The nine
+    #      program string_ringer.1/.2/.3 x/y/z params (ids 367-375) are landed descriptor facts locked
+    #      by the exact-compare — id renumber, owner / cross-owner leak, per-line evidence drift and a
+    #      fieldEvidence overclaim must all fail normal. ROLE is also locked (a program x/y/z param's
+    #      role must equal its stable-id .x/.y/.z suffix), and a terminator delete is a landed/
+    #      mustComplete drop. KEY DIFF: NO physical value is derived from the Synthetic Ring/Ring Mod/
+    #      S&H Ring Mod names or the Frequency/Resonance/Sub/Rate/Reverb/Pitch Speed/S&H Rate/Freq Ring
+    #      Mod labels — no Hz/pitch ratio/sample rate/modulation depth/range/default/taper, and MAGIC 1
+    #      or the ring-modulator family's concrete values must NOT be copied over.
+    # (oa) id renumber: string_ringer.1.x is id 367; renumbering (367 -> 999) must fail.
+    oa_bad = copy.deepcopy(spec)
+    reg_param(oa_bad, "program.string_ringer.1.x")["id"] = 999
+    problems, _ = gate.check(oa_bad, manifest)
+    if not has(problems, "implementation param 'program.string_ringer.1.x'"):
+        raise SystemExit("string_ringer.1.x param id renumber (367 -> 999) not enforced: %r" % problems)
+    # (ob) owner / cross-owner leak: string_ringer.1.x must stay owned by program.string_ringer.1;
+    #      moving it under program.string_ringer.2's array makes the generated owner program.
+    #      string_ringer.2, which the landed fact rejects.
+    ob_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in ob_bad["programs"] if pr.get("stable_id") == "program.string_ringer.1")
+    _p2 = next(pr for pr in ob_bad["programs"] if pr.get("stable_id") == "program.string_ringer.2")
+    _x = [p for p in _p1["parameters"] if p["stable_id"] == "program.string_ringer.1.x"][0]
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.string_ringer.1.x"]
+    _p2["parameters"].append(_x)
+    problems, _ = gate.check(ob_bad, manifest)
+    if not has(problems, "implementation param 'program.string_ringer.1.x'"):
+        raise SystemExit("string_ringer.1.x cross-owner leak (-> program.string_ringer.2) not enforced: "
+                         "%r" % problems)
+    # (oc) ROLE drift: string_ringer.1.x being role y (valid but wrong position) must fail (role gate).
+    oc_bad = copy.deepcopy(spec)
+    reg_param(oc_bad, "program.string_ringer.1.x")["role"] = "y"
+    problems, _ = gate.check(oc_bad, manifest)
+    if not has(problems, "stable-id position"):
+        raise SystemExit("string_ringer.1.x role drift (x -> y) not enforced by the role gate: %r"
+                         % problems)
+    # (od) per-line descriptorEvidence drift: string_ringer.1.x cites L1260; moving it (1260 -> 1261)
+    #      must fail.
+    od_bad = copy.deepcopy(spec)
+    reg_param(od_bad, "program.string_ringer.1.x")["evidence"]["line"] = 1261
+    problems, _ = gate.check(od_bad, manifest)
+    if not has(problems, "implementation param 'program.string_ringer.1.x'"):
+        raise SystemExit("string_ringer.1.x descriptorEvidence.line drift (1260 -> 1261) not enforced: "
+                         "%r" % problems)
+    # (oe) fieldEvidence overclaim: string_ringer.1.x fieldEvidence.range unverified -> confirmed must
+    #      fail.
+    oe_bad = copy.deepcopy(spec)
+    reg_param(oe_bad, "program.string_ringer.1.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(oe_bad, manifest)
+    if not has(problems, "implementation param 'program.string_ringer.1.x'"):
+        raise SystemExit("string_ringer.1.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+    # (of) FIRST terminator delete: dropping string_ringer.1.x is a landed/mustComplete drop.
+    of_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in of_bad["programs"] if pr.get("stable_id") == "program.string_ringer.1")
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.string_ringer.1.x"]
+    problems, _ = gate.check(of_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.string_ringer.1.x'"):
+        raise SystemExit("string_ringer.1.x terminator delete (family first) not enforced: %r"
+                         % problems)
+    # (og) MIDDLE terminator delete: dropping string_ringer.2.y is likewise a landed/mustComplete drop.
+    og_bad = copy.deepcopy(spec)
+    _p2 = next(pr for pr in og_bad["programs"] if pr.get("stable_id") == "program.string_ringer.2")
+    _p2["parameters"] = [p for p in _p2["parameters"] if p["stable_id"] != "program.string_ringer.2.y"]
+    problems, _ = gate.check(og_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.string_ringer.2.y'"):
+        raise SystemExit("string_ringer.2.y terminator delete (family middle) not enforced: %r"
+                         % problems)
+    # (oh) LAST terminator delete: dropping string_ringer.3.z is likewise a landed/mustComplete drop.
+    oh_bad = copy.deepcopy(spec)
+    _p3 = next(pr for pr in oh_bad["programs"] if pr.get("stable_id") == "program.string_ringer.3")
+    _p3["parameters"] = [p for p in _p3["parameters"] if p["stable_id"] != "program.string_ringer.3.z"]
+    problems, _ = gate.check(oh_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.string_ringer.3.z'"):
+        raise SystemExit("string_ringer.3.z terminator delete (family last) not enforced: %r"
+                         % problems)
+    # (oi) physical-value keep-out: string_ringer.3.x (Pitch Speed) must stay a software-normalized
+    #      0..1 placeholder — dressing it with a concrete Hz/ratio (or any physical unit/range/default)
+    #      copied from a ring-modulator family must fail the exact-compare against the landed
+    #      unit=norm fact.
+    oi_bad = copy.deepcopy(spec)
+    reg_param(oi_bad, "program.string_ringer.3.x")["unit"] = "hz"
+    reg_param(oi_bad, "program.string_ringer.3.x")["min"] = 20
+    reg_param(oi_bad, "program.string_ringer.3.x")["max"] = 20000
+    reg_param(oi_bad, "program.string_ringer.3.x")["default"] = 440
+    problems, _ = gate.check(oi_bad, manifest)
+    if not has(problems, "implementation param 'program.string_ringer.3.x'"):
+        raise SystemExit("string_ringer.3.x physical value keep-out (hz/20..20000) not enforced: %r"
+                         % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason;baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
