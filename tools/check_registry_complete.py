@@ -1296,23 +1296,52 @@ def check(spec, manifest, require_full=False):
     # caught at the landed-descriptor granularity.
     reg_param_by_fact = {p["stable_id"]: p for p in reg.parameters}
     reg_jack_by_fact = {j["stable_id"]: j for j in reg.jacks}
+    # Codex msg 7d57e347 NON-GO: the param facts previously locked only id/owner/kind/status/
+    # evidence.line, so a placeholder range/default/unit could silently flip to a confirmed
+    # "hardware fact" without the gate catching it. A landed param fact must now exact-lock the
+    # WHOLE descriptor: the numeric mapping (min/max/default/step), name/unit/smoothing/persistence,
+    # status, the widget-granularity descriptorEvidence.line, and the six-field fieldEvidence.
+    # selector `positions` stay in canonical target.parameters (the single authority) — they are NOT
+    # duplicated here. The fact key-set is itself exact (drop a field or add garbage fails), and a
+    # malformed fact is reported rather than raising, so the gate stays honest.
+    param_fact_keys = {"id", "owner", "kind", "name", "unit", "min", "max", "default", "step",
+                       "smoothing", "persistence", "status", "descriptorEvidence", "fieldEvidence"}
+    pfe_keys = ("range", "unit", "default", "step", "smoothing", "persistence")
     for sid, f in sorted(landed_params.items()):
         rp = reg_param_by_fact.get(sid)
         if rp is None:
             problems.append(f"MISSING landed descriptor param {sid!r}: in "
                             f"target.landedDescriptorFacts but absent from the registry")
             continue
+        if set(f.keys()) != param_fact_keys:
+            problems.append(f"landed param fact {sid!r} key-set {sorted(f.keys())} != exact "
+                            f"{sorted(param_fact_keys)}: a full parameter fact carries exactly the "
+                            f"whole numeric/provenance mapping (drop a field or add garbage is a "
+                            f"fail)")
+            continue
         kind = "selector-toggle" if rp.get("positions") else "continuous"
         de = f.get("descriptorEvidence") or {}
-        got = (rp.get("id"), rp.get("_stable_owner"), kind, rp.get("status"),
-               (rp.get("evidence") or {}).get("line"))
-        want = (f["id"], f["owner"], f["kind"], f["status"], de.get("line"))
+        rpfe = rp.get("fieldEvidence") or {}
+        ffe = f.get("fieldEvidence") or {}
+        got = (rp.get("id"), rp.get("_stable_owner"), kind, rp.get("name"), rp.get("unit"),
+               rp.get("min"), rp.get("max"), rp.get("default"), rp.get("step"),
+               rp.get("smoothing"), rp.get("persistence"), rp.get("status"),
+               (rp.get("evidence") or {}).get("line"), *(rpfe.get(k) for k in pfe_keys))
+        want = (f["id"], f["owner"], f["kind"], f["name"], f["unit"], f["min"], f["max"],
+                f["default"], f["step"], f["smoothing"], f["persistence"], f["status"],
+                de.get("line"), *(ffe.get(k) for k in pfe_keys))
         if got != want:
             problems.append(f"implementation param {sid!r}: landed descriptor fact "
-                            f"(id={got[0]}, owner={got[1]}, kind={got[2]}, status={got[3]}, "
-                            f"descriptorEvidence.line={got[4]}) != target.landedDescriptorFacts "
-                            f"(id={want[0]}, owner={want[1]}, kind={want[2]}, status={want[3]}, "
-                            f"descriptorEvidence.line={want[4]})")
+                            f"(id={got[0]}, owner={got[1]}, kind={got[2]}, name={got[3]}, "
+                            f"unit={got[4]}, min={got[5]}, max={got[6]}, default={got[7]}, "
+                            f"step={got[8]}, smoothing={got[9]}, persistence={got[10]}, "
+                            f"status={got[11]}, descriptorEvidence.line={got[12]}, "
+                            f"fieldEvidence={got[13:]}) != target.landedDescriptorFacts "
+                            f"(id={want[0]}, owner={want[1]}, kind={want[2]}, name={want[3]}, "
+                            f"unit={want[4]}, min={want[5]}, max={want[6]}, default={want[7]}, "
+                            f"step={want[8]}, smoothing={want[9]}, persistence={want[10]}, "
+                            f"status={want[11]}, descriptorEvidence.line={want[12]}, "
+                            f"fieldEvidence={want[13:]})")
     fe_keys = ("nominalRange", "toleratedRange", "threshold", "saturation", "transfer",
                "signalType", "polarity", "coupling")
     for sid, f in sorted(landed_jacks.items()):

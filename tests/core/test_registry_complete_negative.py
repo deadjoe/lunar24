@@ -1822,6 +1822,67 @@ def main():
     if not has(problems, "descriptorEvidence.line=999"):
         raise SystemExit("LFO jack evidence drift (cv_out line) not enforced: %r" % problems)
 
+    # (br)-(bx) landed-param FULL descriptor lock (Codex msg 7d57e347 NON-GO). The param facts must
+    # now exact-lock the WHOLE descriptor — numeric mapping (min/max/default/step), name/unit/
+    # smoothing/persistence, status, evidence.line, and the six-field fieldEvidence — so a placeholder
+    # range/default/unit can never silently flip into a confirmed "hardware fact", and the fact
+    # key-set itself is exact (drop a field / add garbage fails).
+
+    # (br) numeric-range drift: a placeholder max must not silently broaden into a hardware range.
+    br_bad = copy.deepcopy(spec)
+    reg_param(br_bad, "lfo_a.rate")["max"] = 20000
+    problems, _ = gate.check(br_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed param max drift (lfo_a.rate 20 -> 20000) not enforced: %r" % problems)
+
+    # (bs) evidence-status drift: a placeholder range must not be silently elevated to confirmed.
+    bs_bad = copy.deepcopy(spec)
+    reg_param(bs_bad, "lfo_a.rate")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(bs_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed param evidence-status drift (range unverified->confirmed) not "
+                        "enforced: %r" % problems)
+
+    # (bt) unit drift: a placeholder unit must not silently change.
+    bt_bad = copy.deepcopy(spec)
+    reg_param(bt_bad, "lfo_b.rate")["unit"] = "bpm"
+    problems, _ = gate.check(bt_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed param unit drift (lfo_b.rate hz -> bpm) not enforced: %r" % problems)
+
+    # (bu) default drift: a placeholder default must not silently change.
+    bu_bad = copy.deepcopy(spec)
+    reg_param(bu_bad, "lfo_a.wave")["default"] = 0
+    problems, _ = gate.check(bu_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("landed param default drift (lfo_a.wave 0.5 -> 0) not enforced: %r"
+                        % problems)
+
+    # (bv) a concrete selector's software mapping may be provisional (Codex msg 2ec93491 accepts) but
+    #      must NOT be upgradeable to confirmed.
+    bv_bad = copy.deepcopy(spec)
+    reg_param(bv_bad, "lfo_a.speed_mult")["fieldEvidence"]["default"] = "confirmed"
+    problems, _ = gate.check(bv_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("selector fieldEvidence.default provisional->confirmed not enforced: "
+                        "%r" % problems)
+
+    # (bw) fact key-set: dropping a field from a landed param fact must FAIL (exact key-set).
+    bw_bad = copy.deepcopy(manifest)
+    del bw_bad["target"]["landedDescriptorFacts"]["parameters"]["lfo_a.rate"]["min"]
+    problems, _ = gate.check(spec, bw_bad)
+    if not has(problems, "key-set"):
+        raise SystemExit("landed param fact field drop (lfo_a.rate min) not enforced: %r" % problems)
+
+    # (bx) fact key-set: adding a garbage/target-foreign field to a landed param fact must FAIL.
+    #      `positions` is a canonical target.parameters concern, NOT part of a landed descriptor fact.
+    bx_bad = copy.deepcopy(manifest)
+    bx_bad["target"]["landedDescriptorFacts"]["parameters"]["lfo_a.wave"]["positions"] = ["x1"]
+    problems, _ = gate.check(spec, bx_bad)
+    if not has(problems, "key-set"):
+        raise SystemExit("landed param fact garbage key (lfo_a.wave positions) not enforced: "
+                        "%r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
