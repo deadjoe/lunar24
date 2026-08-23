@@ -24,6 +24,12 @@ Codex msg c7089521 hardened shape/action/context/rogue gate:
   per-CAPABILITY present-but-empty (parameters / patchableJacks / internalEndpoints / controls),
   no-orphan / no-unbound-persist / no-unbound-action-event binding invariants,
   empty-region check as declaredRegionIds - actualRegionIds,
+  dispatch closure (Codex msg 720fc3d3): a keyboard-menu/mode binding must carry a menuItem selector
+    or a single event fans over every menu item ("press one slot hits 3 actions", "ARP rotate
+    changes 7 params"); a vector param needs an index (whole-vector binding banned); commandAddress /
+    record-schema keys are exact key-sets; fields are unique + ORDER-preserving; the unused
+    record{Field,Index}/maskIndex condition keys were removed from the closed set (a binding carrying
+    one is rejected, not ignored),
   plus the inherited gates (重件 by category, provenance, program grid, directed/in-dangling
   routes, fixed-chain freeze, ORCHE provisional, terminal-owner, impl ⊆ target, mustComplete).
 
@@ -670,7 +676,7 @@ def main():
             b["commandAddress"] = {"kind": "record", "indexRange": [0, 15], "fields": ["velocity"]}
             break
     problems, _ = gate.check(spec, badfe)
-    if not has(problems, "record commandAddress fields ['velocity'] != expected ['gate', 'note', 'value']"):
+    if not has(problems, "record commandAddress fields ['velocity'] != expected ['note', 'value', 'gate']"):
         raise SystemExit("record commandAddress with a mismatched field not flagged: %r" % problems)
 
     # 69. record graph must be acyclic (msg 9d8b5f43 item #3): a direct field referencing its own
@@ -772,7 +778,7 @@ def main():
             b["condition"]["menuItem"] = "not_a_real_item"
             break
     problems, _ = gate.check(spec, badmenu)
-    if not has(problems, "does not name the target action leaf"):
+    if not has(problems, "does not name the target leaf"):
         raise SystemExit("menuItem not naming the action leaf not flagged: %r" % problems)
 
     # 78. commandAddress kind/range/fields must be DERIVED from the target; a mask locator on a
@@ -839,6 +845,100 @@ def main():
     if not has(problems, "record graph has a cycle"):
         raise SystemExit("params->parameter(recordType) cycle not flagged: %r" % problems)
 
+    # ---- msg 720fc3d3 (ninth review) validations: dispatch closure + exact schema ------
+    # Item #1f — "press one slot hits 3 actions": a preset press binding that DROPS its per-item
+    # selector (menuItem) leaves only presetSlot, so one press fires load+save+initialise at once.
+    # Both the item-scoped selector requirement and the dispatch fan-out gate must catch it.
+    p3 = copy.deepcopy(manifest)
+    for b in p3["target"]["controlBindings"]:
+        c = b.get("condition")
+        if isinstance(c, dict) and "presetSlot" in c and "menuItem" in c:
+            b["condition"] = dict(c)
+            b["condition"].pop("menuItem")
+    problems, _ = gate.check(spec, p3)
+    if not has(problems, "must carry a menuItem condition"):
+        raise SystemExit("press-one-slot with a dropped selector not flagged as un-item-scoped: %r" % problems)
+    if not has(problems, "dispatch fan-out"):
+        raise SystemExit("press-one-slot multi-target fan-out not flagged: %r" % problems)
+
+    # Item #1f — "ARP rotate changes 7 params": an arp-menu rotate binding without a menuItem rotates
+    # every arp param the menu holds (7), not one. Same two gates, and the fan-out is specifically the
+    # 7 arp params (a 1-target "fan-out" would be a no-op and must not pass).
+    a7 = copy.deepcopy(manifest)
+    for b in a7["target"]["controlBindings"]:
+        c = b.get("condition")
+        ctx = b.get("context")
+        if (isinstance(ctx, dict) and ctx.get("type") == "keyboard-menu" and ctx.get("menu") == "arp"
+                and isinstance(c, dict) and "menuItem" in c):
+            b["condition"] = dict(c)
+            b["condition"].pop("menuItem")
+    problems, _ = gate.check(spec, a7)
+    if not has(problems, "must carry a menuItem condition"):
+        raise SystemExit("arp-rotate with a dropped selector not flagged as un-item-scoped: %r" % problems)
+    if not has(problems, "fires multiple targets"):
+        raise SystemExit("arp-rotate 7-param fan-out not flagged as multi-target: %r" % problems)
+
+    # Item #1c — whole-vector binding banned: a vector param (plate_tune / pushbutton_value) is
+    # edited one element at a time via the global heldControl+index path. Deleting the index makes the
+    # binding write every element at once, which the vector-needs-an-index rule must reject.
+    wv = copy.deepcopy(manifest)
+    for b in wv["target"]["controlBindings"]:
+        if b.get("from") == "keyboard.encoder" and b.get("to") == "keyboard.plate_tune" and b.get("index") == 1:
+            b["index"] = None
+            break
+    problems, _ = gate.check(spec, wv)
+    if not has(problems, "whole-vector binding banned"):
+        raise SystemExit("whole-vector plate_tune binding not flagged: %r" % problems)
+
+    # Item #2a — commandAddress with an arbitrary junk key must be rejected (exact key-set).
+    caek = copy.deepcopy(manifest)
+    for b in caek["target"]["controlBindings"]:
+        if b.get("to") == "keyboard.seq_steps" and isinstance(b.get("commandAddress"), dict):
+            b["commandAddress"] = dict(b["commandAddress"])
+            b["commandAddress"]["junk"] = True
+            break
+    problems, _ = gate.check(spec, caek)
+    if not has(problems, "commandAddress keys ['junk'] not allowed"):
+        raise SystemExit("commandAddress junk key not flagged by exact key-set: %r" % problems)
+
+    # Item #2a — commandAddress fields must be unique (a duplicated gate masks a re-address).
+    cadup = copy.deepcopy(manifest)
+    for b in cadup["target"]["controlBindings"]:
+        if b.get("to") == "keyboard.seq_steps":
+            b["commandAddress"] = {"kind": "record", "indexRange": [0, 15],
+                                   "fields": ["gate", "note", "value", "gate"]}
+            break
+    problems, _ = gate.check(spec, cadup)
+    if not has(problems, "contain a duplicate (must be unique)"):
+        raise SystemExit("commandAddress duplicate field not flagged: %r" % problems)
+
+    # Item #2b — the record* condition keys (recordField/recordIndex/maskIndex) were declared but
+    # never validated nor used; they are now REMOVED from the closed set, so a binding carrying
+    # condition.recordIndex='garbage' must be rejected rather than silently ignored.
+    recid = copy.deepcopy(manifest)
+    for b in recid["target"]["controlBindings"]:
+        if isinstance(b.get("condition"), dict):
+            b["condition"] = dict(b["condition"])
+            b["condition"]["recordIndex"] = "garbage"
+            break
+    problems, _ = gate.check(spec, recid)
+    if not has(problems, "condition key 'recordIndex' not in"):
+        raise SystemExit("removed condition.recordIndex not rejected as an unclosed key: %r" % problems)
+
+    # Item #2c — a params schema with an arbitrary top-level key must be rejected (exact key-set).
+    ptop = copy.deepcopy(manifest)
+    ptop["target"]["recordSchemas"]["keyboard_params_minus_clock"]["junk"] = True
+    problems, _ = gate.check(spec, ptop)
+    if not has(problems, "top-level keys ['junk'] not allowed"):
+        raise SystemExit("params schema top-level junk key not flagged: %r" % problems)
+
+    # Item #2d — an array field element with an arbitrary key must be rejected (exact key-set).
+    elx = copy.deepcopy(manifest)
+    elx["target"]["recordSchemas"]["keyboard_seq"]["fields"][0]["element"]["junk"] = True
+    problems, _ = gate.check(spec, elx)
+    if not has(problems, "element has keys ['junk'] not allowed"):
+        raise SystemExit("array element junk key not flagged: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -846,7 +946,9 @@ def main():
           "joystick-axis targeting, ALWAYS-ON no-new-rogue, capability-declared present-but-empty "
           "(parameters/patchableJacks/internalEndpoints), empty-region declared-actual, binding "
           "invariants, impl⊆target, fixed-chain freeze, ORCHE provisional, terminal-owner and "
-          "dangling-fixed-endpoint are all gated.")
+          "dangling-fixed-endpoint are all gated; dispatch closure (menuItem-selector + whole-vector "
+          "ban), exact commandAddress/record-schema key-sets, order-preserving unique fields and the "
+          "removed record* condition keys are gated too.")
     return 0
 
 

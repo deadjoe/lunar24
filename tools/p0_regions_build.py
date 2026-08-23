@@ -228,7 +228,7 @@ class Ledger:
 
     def add_param(self, sid, owner, kind, region, evidence, semantic=None,
                   shape=None, cardinality=None, record_type=None, mask_size=None,
-                  action_managed=False, status="confirmed"):
+                  action_managed=False, status="confirmed", menu=None, mode=None):
         p = {"stable_id": sid, "owner": owner, "kind": kind, "region": region,
              "shape": shape or SH_SCALAR, "status": status, "evidence": evidence}
         if semantic:
@@ -241,6 +241,15 @@ class Ledger:
             p["maskSize"] = mask_size
         if action_managed:
             p["actionManaged"] = True
+        # A keyboard-state param declares which menu/mode it is edited under (Codex 9th-review
+        # item #1), so the gate can validate that a `menuItem` condition naming it belongs to the
+        # binding's own menu/mode rather than being an arbitrary string. Vector params (plate_tune /
+        # pushbutton_value) are edited via held plate/button + encoder under the GLOBAL context, not a
+        # navigable menu, so they carry neither.
+        if menu is not None:
+            p["menu"] = menu
+        if mode is not None:
+            p["mode"] = mode
         self.params.append(p)
         return sid
 
@@ -259,6 +268,8 @@ class Ledger:
         # distinct bindings collide (Codex 23ea438f #4). Stable-id therefore includes the structured
         # context, the source/target triple and the commandAddress, not just from/to/index/condition.
         key = to_sid
+        if axis is not None:
+            key += "[axis=%s]" % axis
         if index is not None:
             key += "[%s]" % index
         if condition:
@@ -266,7 +277,11 @@ class Ledger:
         if context and context.get("type"):
             sel = ";".join("%s=%s" % (k, context[k]) for k in sorted(context) if k != "type")
             key += "(%s%s)" % (context["type"], (":" + sel if sel else ""))
-        key += "#%s:%s" % ((source or SRC_CHANGE), (target_op or TO_SET))
+        # The id must be faithful to the FULL semantic tuple (Codex 9th-review item #2): targetKind
+        # and axis were missing, so two bindings differing only in target-kind (parameter vs action)
+        # or axis collided. Now the id carries source:targetKind:targetOp and the axis selector, so it
+        # can never collide with a tuple the checker would treat as distinct.
+        key += "#%s:%s:%s" % ((source or SRC_CHANGE), (kind or TK_PARAM), (target_op or TO_SET))
         if command_address is not None:
             key += "@" + json.dumps(command_address, sort_keys=True, ensure_ascii=False)
         b = {"stable_id": "bnd.%s->%s" % (from_pc, key), "from": from_pc, "to": to_sid,
@@ -284,9 +299,17 @@ class Ledger:
         self.bindings.append(b)
         return b
 
-    def add_action(self, sid, owner, name, kind, region, evidence, status="confirmed"):
-        self.actions.append({"stable_id": sid, "owner": owner, "name": name, "kind": kind,
-                             "region": region, "status": status, "evidence": evidence})
+    def add_action(self, sid, owner, name, kind, region, evidence, status="confirmed",
+                   menu=None, mode=None):
+        a = {"stable_id": sid, "owner": owner, "name": name, "kind": kind,
+             "region": region, "status": status, "evidence": evidence}
+        # A keyboard-menu/mode action declares which menu/mode it ships in (Codex 9th-review #1) so a
+        # `menuItem` condition is validated against a real item set, not just any string.
+        if menu is not None:
+            a["menu"] = menu
+        if mode is not None:
+            a["mode"] = mode
+        self.actions.append(a)
         return sid
 
     def close(self):
@@ -674,6 +697,21 @@ KB_PRESET_ACTIONS = [
     ("presets_initialise", "INITIALISE PRESET", ACT_INITIALISE),
 ]
 
+# Presets sub-page WORKFLOW edges (Codex 9th-review item #1e). The manual documents ONLY two edges:
+# "rotate the encoder to scroll through presets A to D" (slot SELECTION, confirmed) and "click the
+# encoder to enter a sub-selection page where you can load, save or initialise a preset" (enter
+# SUB-PAGE, confirmed). Sub-page ITEM-selection is undocumented, so it stays provisional. Each is a
+# first-class transient ACTION (not a persisted parameter) so the dispatch edge is a declared entity,
+# not prose — and `menu=presets` lets the gate validate the closed `menuItem` on each binding.
+KB_PRESET_TRANSIENT = [
+    ("preset_rotate_slot", "rotate to select preset slot A-D", ACT_ENC_ROTATE, SRC_ROTATE,
+     "confirmed"),
+    ("preset_enter_subpage", "press to enter load/save/init sub-page", ACT_ENC_PRESS, SRC_PRESS,
+     "confirmed"),
+    ("preset_select_subpage_item", "select load/save/init sub-page item", ACT_ENC_ROTATE, SRC_ROTATE,
+     "provisional"),
+]
+
 
 # Closed editing-address schema for the sequencer + scale-mask editors (Codex 9d8b5f43 item #2):
 # these are NOT one opaque `set` over a whole editor object — the binding declares HOW the write is
@@ -700,12 +738,31 @@ def add_keyboard_state(L):
     for leaf, kind, (shape, extras), menu, label, ls, le in KEYBOARD_STATE_ROWS:
         sid = "keyboard.%s" % leaf
         evd = ev(ls, le, kb_site)
+        is_vector = shape == SH_VECTOR
+        # A keyboard-state param declares the menu (or calibration MODE) it is edited under, so the
+        # gate can validate that a `menuItem` naming it belongs to the binding's own menu/mode rather
+        # than being an arbitrary string (Codex 9th-review item #1b). Vector params (plate_tune /
+        # pushbutton_value) are edited via held plate/button + encoder under the GLOBAL context, not a
+        # navigable menu, so they carry neither menu nor mode.
+        if menu == "calibration":
+            p_menu, p_mode = None, "calibration"
+        elif is_vector:
+            p_menu, p_mode = None, None
+        else:
+            p_menu, p_mode = menu, None
         L.add_param(sid, "keyboard", kind, "keyboard_state", evd, semantic=label,
                     shape=shape, cardinality=extras.get("cardinality"),
                     record_type=extras.get("recordType"), mask_size=extras.get("maskSize"),
-                    action_managed=(leaf in ACTION_MANAGED_KSTATE))
+                    action_managed=(leaf in ACTION_MANAGED_KSTATE),
+                    menu=p_menu, mode=p_mode)
         # Presets are action-managed (written only by presets_* actions), not encoder-settable.
         if leaf in ACTION_MANAGED_KSTATE:
+            continue
+        # Vector params (plate_tune / pushbutton_value) are edited via held plate/button + encoder
+        # under the GLOBAL context with an explicit index (Codex 9th-review item #1c), NOT a
+        # navigable menu — so they get NO menu binding here; a whole-vector menu binding would be a
+        # fan-out bug. The heldControl+index path is emitted separately in add_keyboard_phys().
+        if is_vector:
             continue
         # The shared keyboard encoder is a ROTARY: it edits a menu value by turning (source=rotate,
         # not `change` — change is the continuous-knob gesture), stepping a discrete value (set) or
@@ -716,11 +773,15 @@ def add_keyboard_state(L):
         # 23ea438f #1) rather than a plain keyboard-menu=calibration.
         ctx = ctx_mode("calibration") if menu == "calibration" else ctx_menu(menu)
         ca = KSTATE_COMMAND_ADDRESS.get(leaf)
+        # Dispatch closure (Codex 9th-review item #1a): a menu/mode encoder binding must carry a
+        # closed `menuItem` naming the highlighted item, so ONE turn edits exactly ONE item instead of
+        # fanning out over every item the menu holds.
         L.bind("keyboard.encoder", sid, ctx, source=SRC_ROTATE, kind=TK_PARAM,
-               target_op=tgt_op, command_address=ca, evidence=evd)
+               target_op=tgt_op, command_address=ca, condition={"menuItem": leaf}, evidence=evd)
     for leaf, name, kind, ls, le in KB_CAL_ACTIONS:
         evd = ev(ls, le, kb_site)
-        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
+        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd,
+                         mode="calibration")
         # Calibration is a cursor-based BOOT MODE (manual 1050): long-press the encoder on the
         # HIGHLIGHTED calibration item to execute it. INIT and SAVE are two different highlighted
         # items, so each carries a closed `menuItem` condition — without it the two bindings would
@@ -738,11 +799,25 @@ def add_keyboard_state(L):
     # three items exist in the manual); only the execution gesture (the binding) is provisional.
     for leaf, name, kind in KB_PRESET_ACTIONS:
         evd = ev(1040, 1045, kb_site)
-        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
+        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd,
+                         menu="presets")
         for slot in PRESET_SLOTS:
+            # Dispatch closure (Codex 9th-review item #1d): the invoke must carry BOTH a closed
+            # `presetSlot` (which slot it acts on) AND a `menuItem` naming the highlighted sub-page
+            # item (load / save / initialise), so the three actions are mutually exclusive — one press
+            # invokes exactly one of them, not all three at once.
             L.bind("keyboard.encoder", a, ctx_menu("presets"), source=SRC_PRESS, kind=TK_ACTION,
-                   target_op=TO_INVOKE, condition={"presetSlot": slot}, status="provisional",
-                   evidence=evd)
+                   target_op=TO_INVOKE, condition={"presetSlot": slot, "menuItem": leaf},
+                   status="provisional", evidence=evd)
+    # PRESETS WORKFLOW edges (Codex 9th-review item #1e): the top-level rotate=select-slot and
+    # press=enter-sub-page gestures plus the (provisional) sub-page item-selection are first-class
+    # transient actions, so they are declared entities with a real dispatch binding rather than prose.
+    for leaf, name, kind, src, st in KB_PRESET_TRANSIENT:
+        evd = ev(1040, 1045, kb_site)
+        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd,
+                         menu="presets", status=st)
+        L.bind("keyboard.encoder", a, ctx_menu("presets"), source=src, kind=TK_ACTION,
+               target_op=TO_INVOKE, condition={"menuItem": leaf}, status=st, evidence=evd)
 
 
 # p23/p24 semantic labels per (cartridge, program). X/Y/Z knob meaning for each of the 39

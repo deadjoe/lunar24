@@ -114,7 +114,12 @@ WIDGET_SRC = {"continuous": {"change"}, "selector-toggle": {"change"},
 # Closed condition keys (msg 9d8b5f43 item #2): a compound gesture is expressed by a closed
 # condition (heldControl board, menu item, preset slot, record index/field, mask index), not by a
 # single opaque op.
-COND_KEYS = {"heldControl", "menuItem", "presetSlot", "recordField", "recordIndex", "maskIndex"}
+# The ONLY condition selectors are the ones the binding model actually consumes: the held
+# control that scopes a whole-vector write, the menu/mode item that scopes a menu dispatch, and
+# the preset slot. recordField/recordIndex/maskIndex were declared but never validated nor used by
+# any binding in the generator — so a binding carrying one passed silently. Removing them makes
+# such a binding a closed-condition error (Codex 9th-review item #2b: remove-or-truly-validate).
+COND_KEYS = {"heldControl", "menuItem", "presetSlot"}
 PRESET_SLOTS = {"preset_a", "preset_b", "preset_c", "preset_d"}
 CMD_ADDR_KINDS = {"record", "mask"}
 SEQ_STEP_FIELDS = {"note", "value", "gate"}
@@ -206,7 +211,11 @@ def expected_command_address(to_param, record_schemas):
         elem = arr.get("element") or {}
         if elem.get("type") == "record" and elem.get("of") in record_schemas:
             esch = record_schemas[elem["of"]]
-            fields = sorted({f.get("name") for f in esch.get("fields") or [] if isinstance(f, dict)})
+            # Preserve the reference record's field ORDER (Codex 9th-review item #2a): the derived
+            # fields must be EXACTLY equal to the declared ones as a list, so sorted() would silently
+            # accept a re-ordered command-address. The element schema is validated elsewhere for
+            # duplicate names, so order is the only thing to preserve here.
+            fields = [f.get("name") for f in esch.get("fields") or [] if isinstance(f, dict)]
         else:
             fields = [elem.get("name") or elem.get("type")]
         return {"kind": "record", "indexRange": [0, cnt - 1], "fields": fields}
@@ -285,6 +294,14 @@ def validate_record_schemas(record_schemas, param_sids, param_record_types=None)
         if kind not in RECORD_KINDS:
             out.append(f"record schema {name!r}: kind {kind!r} not in {sorted(RECORD_KINDS)}")
             continue
+        # Exact top-level key-set (Codex 9th-review item #2c): a params schema carries only
+        # kind/note/params, a record only kind/note/fields/excludes. A stray key masks a wrong shape
+        # and must be rejected, not ignored.
+        top_allowed = {"kind", "note"} | ({"params"} if kind == "params" else {"fields", "excludes"})
+        top_extra = sorted({k for k in sch if k not in top_allowed})
+        if top_extra:
+            out.append(f"record schema {name!r}: top-level keys {top_extra} not allowed for kind "
+                       f"{kind!r} (exact key-set is {sorted(top_allowed)})")
         if kind == "params":
             plist = sch.get("params") or []
             if not plist:
@@ -359,6 +376,14 @@ def validate_record_schemas(record_schemas, param_sids, param_record_types=None)
                 elif etype not in RECORD_PRIMITIVES:
                     out.append(f"record schema {name!r}: array field {fn!r} element type "
                                f"{etype!r} not in {sorted(RECORD_PRIMITIVES)}")
+                # Exact key-set on the ELEMENT too (Codex 9th-review item #2c): a primitive element
+                # takes name+type, a record element adds `of`. A stray key on an element masks a wrong
+                # shape and must be rejected.
+                elem_allowed = {"name", "type"} | ({"of"} if etype == "record" else set())
+                elem_extra = sorted({k for k in elem if k not in elem_allowed})
+                if elem_extra:
+                    out.append(f"record schema {name!r}: array field {fn!r} element has keys "
+                               f"{elem_extra} not allowed for type {etype!r}")
         # Precise partition: a record that references a params-kind set AND defines `excludes` must
         # have those two EXACTLY cover the keyboard param domain — no overlap (a param both stored
         # and excluded) and no miss (a stored param silently dropped from both). msg 9d8b5f43 item
@@ -605,6 +630,17 @@ def check(spec, manifest, require_full=False):
     ops_by_pc = {}    # from -> set of operations actually wired (post-op validation)
     axes_by_pc = {}   # from -> set of axes actually wired (axis bindings only)
     param_by_sid = {p.get("stable_id"): p for p in parameters}
+    # menuItems / modeItems: the set of stable_ids each keyboard menu (or calibration MODE) actually
+    # holds, from the declared `menu`/`mode` on parameters+actions. A `menuItem` condition must name an
+    # item of the binding's OWN menu/mode (Codex 9th-review item #1b), not an arbitrary string.
+    menu_items = {}
+    mode_items = {}
+    for _it in list(parameters) + list(actions):
+        _sid = _it.get("stable_id") or ""
+        if _it.get("menu"):
+            menu_items.setdefault(_it["menu"], set()).add(_sid)
+        if _it.get("mode"):
+            mode_items.setdefault(_it["mode"], set()).add(_sid)
     for b in bindings:
         sid = b.get("stable_id")
         if not (sid and b.get("from") and b.get("to")):
@@ -652,6 +688,7 @@ def check(spec, manifest, require_full=False):
             else:
                 binding_to_param[b.get("to")] = True
         ctx = b.get("context")
+        ctype = None
         if not isinstance(ctx, dict) or not ctx.get("type"):
             problems.append(f"manifest controlBinding {sid}: missing structured context "
                             f"({{type: global|program|keyboard-menu|keyboard-mode}})")
@@ -701,6 +738,12 @@ def check(spec, manifest, require_full=False):
             elif not (1 <= b["index"] <= card):
                 problems.append(f"manifest controlBinding {sid}: index {b['index']!r} outside "
                                 f"cardinality 1..{card} of {b.get('to')!r}")
+        elif to_param and to_param.get("shape") == "vector":
+            # A vector parameter WITHOUT an index is a whole-vector binding: it would write every
+            # element at once (Codex 9th-review item #1c). Vector params (plate_tune / pushbutton_value)
+            # are edited one element at a time via the heldControl+index path in the GLOBAL context.
+            problems.append(f"manifest controlBinding {sid}: vector target {b.get('to')!r} needs an "
+                            f"index (whole-vector binding banned)")
         # Condition: the KEY NAMES are closed, and the RELATIONSHIP is executable (msg 23ea438f #2).
         cond = b.get("condition")
         if cond is not None:
@@ -721,18 +764,31 @@ def check(spec, manifest, require_full=False):
                             problems.append(f"manifest controlBinding {sid}: presetSlot {v!r} has "
                                             f"no matching keyboard payload parameter")
                     elif k == "menuItem":
-                        # The menu item must NAME the item being invoked: the target action's leaf,
-                        # so the binding is executable on a real highlighted item.
-                        if b.get("targetKind") != "action":
-                            problems.append(f"manifest controlBinding {sid}: menuItem condition only "
-                                            f"applies to an action target (got "
-                                            f"targetKind={b.get('targetKind')!r})")
-                        else:
-                            toid = b.get("to") or ""
-                            leaf = toid.split(".", 1)[-1] if "." in toid else toid
-                            if leaf != v:
-                                problems.append(f"manifest controlBinding {sid}: menuItem {v!r} does "
-                                                f"not name the target action leaf {leaf!r}")
+                        # menuItem names the highlighted menu/mode item the binding acts on. It may be a
+                        # PARAMETER OR an ACTION (Codex 9th-review item #1b), so the old "actions only"
+                        # restriction is gone. It must equal the target's leaf (self-consistency) AND the
+                        # target must genuinely belong to the binding's own menu/mode.
+                        toid = b.get("to") or ""
+                        leaf = toid.split(".", 1)[-1] if "." in toid else toid
+                        if v != leaf:
+                            problems.append(f"manifest controlBinding {sid}: menuItem {v!r} does "
+                                            f"not name the target leaf {leaf!r}")
+                        elif ctype == "keyboard-menu" and ctx.get("menu") not in menu_items:
+                            problems.append(f"manifest controlBinding {sid}: menuItem {v!r} menu "
+                                            f"{ctx.get('menu')!r} has no declared items")
+                        elif ctype == "keyboard-menu" and toid not in menu_items.get(ctx.get("menu"), set()):
+                            problems.append(f"manifest controlBinding {sid}: menuItem {v!r} target "
+                                            f"{toid!r} is not an item of menu {ctx.get('menu')!r}")
+                        elif ctype == "keyboard-mode" and ctx.get("mode") not in mode_items:
+                            problems.append(f"manifest controlBinding {sid}: menuItem {v!r} mode "
+                                            f"{ctx.get('mode')!r} has no declared items")
+                        elif ctype == "keyboard-mode" and toid not in mode_items.get(ctx.get("mode"), set()):
+                            problems.append(f"manifest controlBinding {sid}: menuItem {v!r} target "
+                                            f"{toid!r} is not an item of mode {ctx.get('mode')!r}")
+                        elif ctype not in ("keyboard-menu", "keyboard-mode"):
+                            problems.append(f"manifest controlBinding {sid}: menuItem only applies "
+                                            f"to a keyboard-menu/keyboard-mode context (got "
+                                            f"{ctype!r})")
                     elif k == "heldControl":
                         # The held control must be a REAL momentary-touch control, and it must map
                         # 1:1 with the vector element the binding writes (its numeric suffix equals
@@ -765,6 +821,10 @@ def check(spec, manifest, require_full=False):
                                 f"target {b.get('to')!r} (shape {to_param.get('shape') if to_param else None!r}; "
                                 f"only record/mask editors take a commandAddress)")
             else:
+                ca_extra = sorted({k for k in ca if k not in ("kind", "indexRange", "fields")})
+                if ca_extra:
+                    problems.append(f"manifest controlBinding {sid}: commandAddress keys {ca_extra} "
+                                    f"not allowed (exact key-set is kind/indexRange/fields)")
                 if not isinstance(ca, dict) or ca.get("kind") != expect_ca["kind"]:
                     problems.append(f"manifest controlBinding {sid}: commandAddress kind "
                                     f"{ca.get('kind') if isinstance(ca, dict) else None!r} != "
@@ -774,14 +834,34 @@ def check(spec, manifest, require_full=False):
                     problems.append(f"manifest controlBinding {sid}: commandAddress indexRange "
                                     f"{ca.get('indexRange')!r} != expected "
                                     f"{expect_ca['indexRange']!r} for target {b.get('to')!r}")
-                elif expect_ca["kind"] == "record" and (
-                        not ca.get("fields") or set(ca["fields"]) != set(expect_ca["fields"])):
-                    problems.append(f"manifest controlBinding {sid}: record commandAddress fields "
-                                    f"{sorted(ca.get('fields') or [])!r} != expected "
-                                    f"{expect_ca['fields']!r} for target {b.get('to')!r}")
+                elif expect_ca["kind"] == "record":
+                    flds = ca.get("fields")
+                    if not isinstance(flds, list) or not flds:
+                        problems.append(f"manifest controlBinding {sid}: record commandAddress needs "
+                                        f"a non-empty fields list")
+                    elif len(set(flds)) != len(flds):
+                        problems.append(f"manifest controlBinding {sid}: record commandAddress fields "
+                                        f"{flds} contain a duplicate (must be unique)")
+                    # EXACT list equality (Codex 9th-review item #2a): set-equality would silently
+                    # accept a re-ordered or dropped-and-readded field, so compare against the derived
+                    # list in order.
+                    elif flds != expect_ca["fields"]:
+                        problems.append(f"manifest controlBinding {sid}: record commandAddress fields "
+                                        f"{flds} != expected {expect_ca['fields']} for target "
+                                        f"{b.get('to')!r}")
         elif expect_ca is not None:
             problems.append(f"manifest controlBinding {sid}: addressable target {b.get('to')!r} "
                             f"(shape {to_param.get('shape')!r}) needs a commandAddress")
+        # Dispatch closure (Codex 9th-review item #1a): a binding in a keyboard-menu/keyboard-mode
+        # context MUST be item-scoped — it MUST carry a closed `menuItem` naming the highlighted item.
+        # Without it the encoder fires for EVERY item the menu holds (selector-less fan-out). The
+        # condition key-set check above has already verified any menuItem it carries belongs to this
+        # binding's own menu/mode, so here we only require the selector to be present.
+        if ctype in ("keyboard-menu", "keyboard-mode"):
+            if not isinstance(cond, dict) or "menuItem" not in cond:
+                problems.append(f"manifest controlBinding {sid}: a {ctype} context binding must carry "
+                                f"a menuItem condition (one event must act on one item, not fan out "
+                                f"over the whole menu)")
         if not provenance_ok(b):
             problems.append(f"manifest controlBinding {sid}: incomplete evidence")
         binding_from_pc[b.get("from")] = binding_from_pc.get(b.get("from"), 0) + 1
@@ -807,6 +887,27 @@ def check(spec, manifest, require_full=False):
                             f" (also {seen_tup[tup]!r})")
         else:
             seen_tup[tup] = b.get("stable_id")
+
+    # ---- reject dispatch fan-out (Codex 9th-review item #1) -------------------
+    # One physical event under one selector state must hit exactly ONE target. Group bindings by
+    # (from, context, sourceOperation, axis, index, condition) — the state that decides WHICH binding
+    # fires; if a group holds TWO OR MORE distinct targets, the same event+state would trigger them all
+    # at once. This is the selector-less fan-out the 13 keyboard encoder groups (menu params, presets,
+    # calibration) had, and joystick X/Y axis targeting is naturally excluded because the group key
+    # carries `axis`.
+    dispatch_groups = {}
+    for b in bindings:
+        grp_key = (b.get("from"),
+                   json.dumps(b.get("context"), sort_keys=True) if b.get("context") else None,
+                   b.get("sourceOperation"), b.get("axis"), b.get("index"),
+                   json.dumps(b.get("condition"), sort_keys=True) if b.get("condition") else None)
+        dispatch_groups.setdefault(grp_key, {})[b.get("to")] = True
+    for grp_key, tos in dispatch_groups.items():
+        if len(tos) > 1:
+            problems.append(f"binding dispatch fan-out: one event ({grp_key[0]}, "
+                            f"{grp_key[2]!r}, ctx={grp_key[1]}, axis={grp_key[3]}, "
+                            f"index={grp_key[4]}, cond={grp_key[5]}) fires multiple targets "
+                            f"{sorted(tos)}")
 
     # ---- per-widget completeness: wired source ops == declared source ops (msg 9d8b5f43 item #1) --
     # EQUALITY, not subset: deleting an encoder press edge OR adding an undeclared release edge must
