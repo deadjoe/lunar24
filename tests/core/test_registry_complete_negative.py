@@ -1911,7 +1911,9 @@ def main():
     # CV outputs (x_out/y_out, nominal -10..+10V) must fall under the SAME landed-module /
     # landed-param / landed-jack gates. Codex scope is explicit: "补删除/renumber，以及参数 fieldEvidence
     # 或输出 range/evidence 漂移负例" — so cover deletion, id renumber, param fieldEvidence drift, and
-    # output range/evidence drift. joystick carries no normalized route, so no dangling-endpoint strip.
+    # output range/evidence drift. (cj)/(ck) add evidence-line fallback: x/y must cite L450 and
+    # offset_x/offset_y L452, not the module header L449 (Codex 12bc53ba). joystick carries no
+    # normalized route, so no dangling-endpoint strip.
 
     # (ca) renumber a landed joystick module id.
     ca_bad = copy.deepcopy(spec)
@@ -1988,6 +1990,24 @@ def main():
     problems, _ = gate.check(ci_bad, manifest)
     if not has(problems, "descriptorEvidence.line=999"):
         raise SystemExit("joystick output evidence drift (y_out line) not enforced: %r" % problems)
+
+    # (cj) axis evidence fallback: joystick.x must cite L450 ("position by X and Y"), not the module
+    #      header L449. Rolling the axis citation back to the module title must FAIL (Codex 12bc53ba).
+    cj_bad = copy.deepcopy(spec)
+    reg_param(cj_bad, "joystick.x")["evidence"]["line"] = 449
+    problems, _ = gate.check(cj_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("joystick axis evidence fallback (joystick.x line 450 -> 449) not enforced: "
+                        "%r" % problems)
+
+    # (ck) offset evidence fallback: joystick.offset_x must cite L452 ("two voltage offset regulators"),
+    #      not the module header L449. Rolling the offset citation back to the module title must FAIL.
+    ck_bad = copy.deepcopy(spec)
+    reg_param(ck_bad, "joystick.offset_x")["evidence"]["line"] = 449
+    problems, _ = gate.check(ck_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("joystick offset evidence fallback (joystick.offset_x line 452 -> 449) not "
+                        "enforced: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
