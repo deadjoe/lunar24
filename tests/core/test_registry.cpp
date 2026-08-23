@@ -113,7 +113,18 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 264u); // Phase B VIBROTREM Programs 1/2/3 X/Y/Z slice (Codex msg
+  CHECK_EQ(core::kParameterCount, 273u); // Phase B FILTER Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 8f5f8a22): +9 program params (filter.1/.2/.3 x/y/z
+                                         // filter amount/envelope/reverb + hp cutoff/lp cutoff/
+                                         // resonance + cut 1/cut 2/resonance, ids 331-339, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no Hz/Q/dB/taper/frequency
+                                         // values derived from the Auto Wah/HP-LP/Notch program
+                                         // names or the Filter amount/Envelope/HP cutoff/LP cutoff/
+                                         // Resonance/Cut 1/Cut 2 labels; L1234 OCR read "Evelope",
+                                         // written per frozen target semanticLabel "Envelope").
+                                         // Prior: Phase B VIBROTREM Programs 1/2/3 X/Y/Z slice (Codex msg
                                          // 2a7c2e94): +9 program params (vibrotrem.1/.2/.3 x/y/z
                                          // depth/rate/reverb, ids 322-330, neutral
                                          // software-normalized 0..1 placeholders, all six-field
@@ -158,8 +169,8 @@ static void frozen_counts() {
                                          // (Codex msg 28e00d92) +19 (ids 201-219), dual-effector
                                          // slice +8 (ids 193-200), voice-mixer slice +20
                                          // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
-                                         // carry 228, programs 12 (36 program params). Left as honest
-                                         // gaps the 12 keyboard complex params and the 81 other
+                                         // carry 228, programs 15 (45 program params). Left as honest
+                                         // gaps the 12 keyboard complex params and the 72 other
                                          // program X/Y/Z params
                                          // (seq_steps, quantise_scale_editor,
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,

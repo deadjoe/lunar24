@@ -6785,6 +6785,231 @@
             "smoothing": "unverified",
             "persistence": "unverified"
           }
+        },
+        "program.filter.1.x": {
+          "id": 331,
+          "owner": "program.filter.1",
+          "kind": "continuous",
+          "name": "Filter amount",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1233
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "program.filter.1.y": {
+          "id": 332,
+          "owner": "program.filter.1",
+          "kind": "continuous",
+          "name": "Envelope",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1234
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "program.filter.1.z": {
+          "id": 333,
+          "owner": "program.filter.1",
+          "kind": "continuous",
+          "name": "Reverb",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1235
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "program.filter.2.x": {
+          "id": 334,
+          "owner": "program.filter.2",
+          "kind": "continuous",
+          "name": "HP cutoff",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1238
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "program.filter.2.y": {
+          "id": 335,
+          "owner": "program.filter.2",
+          "kind": "continuous",
+          "name": "LP cutoff",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1239
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "program.filter.2.z": {
+          "id": 336,
+          "owner": "program.filter.2",
+          "kind": "continuous",
+          "name": "Resonance",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1240
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "program.filter.3.x": {
+          "id": 337,
+          "owner": "program.filter.3",
+          "kind": "continuous",
+          "name": "Cut 1",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1244
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "program.filter.3.y": {
+          "id": 338,
+          "owner": "program.filter.3",
+          "kind": "continuous",
+          "name": "Cut 2",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1245
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "program.filter.3.z": {
+          "id": 339,
+          "owner": "program.filter.3",
+          "kind": "continuous",
+          "name": "Resonance",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1247
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
         }
       },
       "jacks": {
@@ -8034,7 +8259,7 @@
       }
     }
   },
-  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "module:envelope_b", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "route:route.keyboard_v_oct_to_vco_b", "route:route.vco_b_vco_out_to_cv_in", "route:route.keyboard_gate_to_eg_b", "parameter:envelope_a.a", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.r", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:envelope_b.a", "parameter:envelope_b.d", "parameter:envelope_b.hold", "parameter:envelope_b.r", "parameter:envelope_b.s", "parameter:envelope_b.self_gen", "parameter:keyboard.arp_direction", "parameter:keyboard.arp_hold", "parameter:keyboard.arp_interval", "parameter:keyboard.arp_length", "parameter:keyboard.arp_variation", "parameter:keyboard.behaviour", "parameter:keyboard.calibration_pressure", "parameter:keyboard.calibration_v_oct", "parameter:keyboard.clock_bpm", "parameter:keyboard.dac_vref", "parameter:keyboard.debounce", "parameter:keyboard.encoder_direction", "parameter:keyboard.mode", "parameter:keyboard.mpr121_charge", "parameter:keyboard.mpr121_discharge", "parameter:keyboard.portamento_legato", "parameter:keyboard.portamento_speed", "parameter:keyboard.pressure_fall", "parameter:keyboard.pressure_max", "parameter:keyboard.pressure_min", "parameter:keyboard.pressure_output", "parameter:keyboard.pressure_rise", "parameter:keyboard.quantise_load_scale", "parameter:keyboard.release_threshold", "parameter:keyboard.root_note", "parameter:keyboard.seq_cv_output", "parameter:keyboard.seq_direction", "parameter:keyboard.seq_length", "parameter:keyboard.seq_rhythm_length", "parameter:keyboard.seq_run", "parameter:keyboard.touch_threshold", "parameter:keyboard.vibrato_delay", "parameter:keyboard.vibrato_depth", "parameter:keyboard.vibrato_pressure", "parameter:keyboard.vibrato_speed", "parameter:program.cathedral.1.x", "parameter:program.cathedral.1.y", "parameter:program.cathedral.1.z", "parameter:program.magic.1.x", "parameter:program.magic.1.y", "parameter:program.magic.1.z", "parameter:program.cathedral.2.x", "parameter:program.cathedral.2.y", "parameter:program.cathedral.2.z", "parameter:program.cathedral.3.x", "parameter:program.cathedral.3.y", "parameter:program.cathedral.3.z", "parameter:program.magic.2.x", "parameter:program.magic.2.y", "parameter:program.magic.2.z", "parameter:program.magic.3.x", "parameter:program.magic.3.y", "parameter:program.magic.3.z", "parameter:program.time.1.x", "parameter:program.time.1.y", "parameter:program.time.1.z", "parameter:program.time.2.x", "parameter:program.time.2.y", "parameter:program.time.2.z", "parameter:program.time.3.x", "parameter:program.time.3.y", "parameter:program.time.3.z", "parameter:program.vibrotrem.1.x", "parameter:program.vibrotrem.1.y", "parameter:program.vibrotrem.1.z", "parameter:program.vibrotrem.2.x", "parameter:program.vibrotrem.2.y", "parameter:program.vibrotrem.2.z", "parameter:program.vibrotrem.3.x", "parameter:program.vibrotrem.3.y", "parameter:program.vibrotrem.3.z", "parameter:vcf.dist", "parameter:vcf.gain", "parameter:vcf.l_bp_lp", "parameter:vcf.l_freq", "parameter:vcf.l_mod", "parameter:vcf.l_res", "parameter:vcf.link", "parameter:vcf.r_bp_lp", "parameter:vcf.r_freq", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_a.cv_amt", "parameter:vco_a.lin_exp", "parameter:vco_a.morph", "parameter:vco_a.oct_sel", "parameter:vco_a.pw", "parameter:vco_a.pwm", "parameter:vco_a.sub_sel", "parameter:vco_a.tune", "parameter:vco_b.cv_amt", "parameter:vco_b.lin_exp", "parameter:vco_b.morph", "parameter:vco_b.oct_sel", "parameter:vco_b.pw", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "parameter:vco_b.tune", "jack:envelope_a.env_out", "jack:envelope_a.gate_in", "jack:envelope_a.vca_cv_out", "jack:envelope_b.env_out", "jack:envelope_b.gate_in", "jack:envelope_b.vca_cv_out", "jack:keyboard.clock_in", "jack:keyboard.gate_left_main_out", "jack:keyboard.gate_right_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:keyboard.v_oct_out", "jack:vcf.cv_l_in", "jack:vcf.cv_r_in", "jack:vco_a.cv_in", "jack:vco_a.dry_out", "jack:vco_a.fm_in", "jack:vco_a.pwm_in", "jack:vco_a.sync_in", "jack:vco_a.v_oct_in", "jack:vco_a.vca_ctl", "jack:vco_a.wave_out", "jack:vco_b.cv_in", "jack:vco_b.dry_out", "jack:vco_b.pwm_in", "jack:vco_b.v_oct_in", "jack:vco_b.vco_out", "jack:vco_b.wave_out", "module:lfo_a", "module:lfo_b", "parameter:lfo_a.wave", "parameter:lfo_a.rate", "parameter:lfo_a.speed_mult", "parameter:lfo_b.wave", "parameter:lfo_b.rate", "parameter:lfo_b.speed_mult", "jack:lfo_a.cv_out", "jack:lfo_b.cv_out", "module:joystick", "parameter:joystick.x", "parameter:joystick.y", "parameter:joystick.offset_x", "parameter:joystick.offset_y", "jack:joystick.x_out", "jack:joystick.y_out", "module:preamp", "module:env_follower", "parameter:preamp.gain", "parameter:env_follower.attack", "parameter:env_follower.release", "jack:preamp.ext_source_in", "jack:env_follower.env_out", "jack:env_follower.gate_out", "module:sequencer", "parameter:sequencer.pulser", "parameter:sequencer.clock", "parameter:sequencer.stages", "parameter:sequencer.step_cv_1", "parameter:sequencer.step_cv_2", "parameter:sequencer.step_cv_3", "parameter:sequencer.step_cv_4", "parameter:sequencer.step_cv_5", "parameter:sequencer.step_gate_1", "parameter:sequencer.step_gate_2", "parameter:sequencer.step_gate_3", "parameter:sequencer.step_gate_4", "parameter:sequencer.step_gate_5", "jack:sequencer.ext_clock_in", "jack:sequencer.clock_out", "jack:sequencer.cv_out", "jack:sequencer.gate_out", "module:mixer", "parameter:mixer.ch1_pan", "parameter:mixer.ch1_vol", "parameter:mixer.ch2_pan", "parameter:mixer.ch2_vol", "parameter:mixer.ch3_pan", "parameter:mixer.ch3_vol", "parameter:mixer.ch4_pan", "parameter:mixer.ch4_vol", "parameter:mixer.ch5_pan", "parameter:mixer.ch5_vol", "parameter:mixer.ch6_pan", "parameter:mixer.ch6_vol", "parameter:mixer.ch7_pan", "parameter:mixer.ch7_vol", "parameter:mixer.ch8_pan", "parameter:mixer.ch8_vol", "parameter:mixer.ch9_pan", "parameter:mixer.ch9_vol", "parameter:mixer.ch10_pan", "parameter:mixer.ch10_vol", "module:effector", "parameter:effector.x", "parameter:effector.y", "parameter:effector.z", "parameter:effector.blend", "parameter:effector.master", "parameter:effector.phone", "parameter:effector.select_l", "parameter:effector.select_r", "jack:effector.cv_x_in", "jack:effector.cv_y_in", "jack:effector.cv_z_in", "module:voices", "module:drone_1", "parameter:drone_1.tune_1", "parameter:drone_1.tune_2", "parameter:drone_1.tune_3", "parameter:drone_1.tune_4", "parameter:drone_1.tune_5", "parameter:drone_1.mute_1", "parameter:drone_1.mute_2", "parameter:drone_1.mute_3", "parameter:drone_1.mute_4", "parameter:drone_1.mute_5", "parameter:drone_1.mod_1", "parameter:drone_1.mod_2", "parameter:drone_1.mod_3", "parameter:drone_1.mod_4", "parameter:drone_1.mod_5", "parameter:drone_1.volt", "parameter:drone_1.att", "parameter:drone_1.rls", "parameter:drone_1.gate_hold", "jack:drone_1.cv_mod_in", "jack:drone_1.gate_in", "jack:drone_1.env_out", "module:drone_2", "parameter:drone_2.tune_1", "parameter:drone_2.tune_2", "parameter:drone_2.tune_3", "parameter:drone_2.tune_4", "parameter:drone_2.tune_5", "parameter:drone_2.mute_1", "parameter:drone_2.mute_2", "parameter:drone_2.mute_3", "parameter:drone_2.mute_4", "parameter:drone_2.mute_5", "parameter:drone_2.mod_1", "parameter:drone_2.mod_2", "parameter:drone_2.mod_3", "parameter:drone_2.mod_4", "parameter:drone_2.mod_5", "parameter:drone_2.volt", "parameter:drone_2.att", "parameter:drone_2.rls", "parameter:drone_2.gate_hold", "jack:drone_2.cv_mod_in", "jack:drone_2.gate_in", "jack:drone_2.env_out", "module:drone_4", "parameter:drone_4.tune_1", "parameter:drone_4.tune_2", "parameter:drone_4.tune_3", "parameter:drone_4.tune_4", "parameter:drone_4.tune_5", "parameter:drone_4.mute_1", "parameter:drone_4.mute_2", "parameter:drone_4.mute_3", "parameter:drone_4.mute_4", "parameter:drone_4.mute_5", "parameter:drone_4.mod_1", "parameter:drone_4.mod_2", "parameter:drone_4.mod_3", "parameter:drone_4.mod_4", "parameter:drone_4.mod_5", "parameter:drone_4.volt", "parameter:drone_4.att", "parameter:drone_4.rls", "parameter:drone_4.gate_hold", "jack:drone_4.cv_mod_in", "jack:drone_4.gate_in", "jack:drone_4.env_out", "module:drone_5", "parameter:drone_5.tune_1", "parameter:drone_5.tune_2", "parameter:drone_5.tune_3", "parameter:drone_5.tune_4", "parameter:drone_5.tune_5", "parameter:drone_5.mute_1", "parameter:drone_5.mute_2", "parameter:drone_5.mute_3", "parameter:drone_5.mute_4", "parameter:drone_5.mute_5", "parameter:drone_5.mod_1", "parameter:drone_5.mod_2", "parameter:drone_5.mod_3", "parameter:drone_5.mod_4", "parameter:drone_5.mod_5", "parameter:drone_5.volt", "parameter:drone_5.att", "parameter:drone_5.rls", "parameter:drone_5.gate_hold", "jack:drone_5.cv_mod_in", "jack:drone_5.gate_in", "jack:drone_5.env_out", "module:drone_3", "parameter:drone_3.rate", "parameter:drone_3.mod", "parameter:drone_3.divider", "parameter:drone_3.pitch", "parameter:drone_3.noise", "parameter:drone_3.att", "parameter:drone_3.rls", "parameter:drone_3.hi_low", "parameter:drone_3.fm", "parameter:drone_3.am", "parameter:drone_3.rate_switch", "parameter:drone_3.hold", "jack:drone_3.cv_out", "jack:drone_3.env_out", "jack:drone_3.gate_in", "jack:drone_3.clock_in", "jack:drone_3.noise_in", "module:drone_6", "parameter:drone_6.rate", "parameter:drone_6.mod", "parameter:drone_6.divider", "parameter:drone_6.pitch", "parameter:drone_6.noise", "parameter:drone_6.att", "parameter:drone_6.rls", "parameter:drone_6.hi_low", "parameter:drone_6.fm", "parameter:drone_6.am", "parameter:drone_6.rate_switch", "parameter:drone_6.hold", "jack:drone_6.cv_out", "jack:drone_6.env_out", "jack:drone_6.gate_in", "jack:drone_6.clock_in", "jack:drone_6.noise_in"],
+  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "module:envelope_b", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "route:route.keyboard_v_oct_to_vco_b", "route:route.vco_b_vco_out_to_cv_in", "route:route.keyboard_gate_to_eg_b", "parameter:envelope_a.a", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.r", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:envelope_b.a", "parameter:envelope_b.d", "parameter:envelope_b.hold", "parameter:envelope_b.r", "parameter:envelope_b.s", "parameter:envelope_b.self_gen", "parameter:keyboard.arp_direction", "parameter:keyboard.arp_hold", "parameter:keyboard.arp_interval", "parameter:keyboard.arp_length", "parameter:keyboard.arp_variation", "parameter:keyboard.behaviour", "parameter:keyboard.calibration_pressure", "parameter:keyboard.calibration_v_oct", "parameter:keyboard.clock_bpm", "parameter:keyboard.dac_vref", "parameter:keyboard.debounce", "parameter:keyboard.encoder_direction", "parameter:keyboard.mode", "parameter:keyboard.mpr121_charge", "parameter:keyboard.mpr121_discharge", "parameter:keyboard.portamento_legato", "parameter:keyboard.portamento_speed", "parameter:keyboard.pressure_fall", "parameter:keyboard.pressure_max", "parameter:keyboard.pressure_min", "parameter:keyboard.pressure_output", "parameter:keyboard.pressure_rise", "parameter:keyboard.quantise_load_scale", "parameter:keyboard.release_threshold", "parameter:keyboard.root_note", "parameter:keyboard.seq_cv_output", "parameter:keyboard.seq_direction", "parameter:keyboard.seq_length", "parameter:keyboard.seq_rhythm_length", "parameter:keyboard.seq_run", "parameter:keyboard.touch_threshold", "parameter:keyboard.vibrato_delay", "parameter:keyboard.vibrato_depth", "parameter:keyboard.vibrato_pressure", "parameter:keyboard.vibrato_speed", "parameter:program.cathedral.1.x", "parameter:program.cathedral.1.y", "parameter:program.cathedral.1.z", "parameter:program.magic.1.x", "parameter:program.magic.1.y", "parameter:program.magic.1.z", "parameter:program.cathedral.2.x", "parameter:program.cathedral.2.y", "parameter:program.cathedral.2.z", "parameter:program.cathedral.3.x", "parameter:program.cathedral.3.y", "parameter:program.cathedral.3.z", "parameter:program.magic.2.x", "parameter:program.magic.2.y", "parameter:program.magic.2.z", "parameter:program.magic.3.x", "parameter:program.magic.3.y", "parameter:program.magic.3.z", "parameter:program.time.1.x", "parameter:program.time.1.y", "parameter:program.time.1.z", "parameter:program.time.2.x", "parameter:program.time.2.y", "parameter:program.time.2.z", "parameter:program.time.3.x", "parameter:program.time.3.y", "parameter:program.time.3.z", "parameter:program.vibrotrem.1.x", "parameter:program.vibrotrem.1.y", "parameter:program.vibrotrem.1.z", "parameter:program.vibrotrem.2.x", "parameter:program.vibrotrem.2.y", "parameter:program.vibrotrem.2.z", "parameter:program.vibrotrem.3.x", "parameter:program.vibrotrem.3.y", "parameter:program.vibrotrem.3.z", "parameter:program.filter.1.x", "parameter:program.filter.1.y", "parameter:program.filter.1.z", "parameter:program.filter.2.x", "parameter:program.filter.2.y", "parameter:program.filter.2.z", "parameter:program.filter.3.x", "parameter:program.filter.3.y", "parameter:program.filter.3.z", "parameter:vcf.dist", "parameter:vcf.gain", "parameter:vcf.l_bp_lp", "parameter:vcf.l_freq", "parameter:vcf.l_mod", "parameter:vcf.l_res", "parameter:vcf.link", "parameter:vcf.r_bp_lp", "parameter:vcf.r_freq", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_a.cv_amt", "parameter:vco_a.lin_exp", "parameter:vco_a.morph", "parameter:vco_a.oct_sel", "parameter:vco_a.pw", "parameter:vco_a.pwm", "parameter:vco_a.sub_sel", "parameter:vco_a.tune", "parameter:vco_b.cv_amt", "parameter:vco_b.lin_exp", "parameter:vco_b.morph", "parameter:vco_b.oct_sel", "parameter:vco_b.pw", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "parameter:vco_b.tune", "jack:envelope_a.env_out", "jack:envelope_a.gate_in", "jack:envelope_a.vca_cv_out", "jack:envelope_b.env_out", "jack:envelope_b.gate_in", "jack:envelope_b.vca_cv_out", "jack:keyboard.clock_in", "jack:keyboard.gate_left_main_out", "jack:keyboard.gate_right_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:keyboard.v_oct_out", "jack:vcf.cv_l_in", "jack:vcf.cv_r_in", "jack:vco_a.cv_in", "jack:vco_a.dry_out", "jack:vco_a.fm_in", "jack:vco_a.pwm_in", "jack:vco_a.sync_in", "jack:vco_a.v_oct_in", "jack:vco_a.vca_ctl", "jack:vco_a.wave_out", "jack:vco_b.cv_in", "jack:vco_b.dry_out", "jack:vco_b.pwm_in", "jack:vco_b.v_oct_in", "jack:vco_b.vco_out", "jack:vco_b.wave_out", "module:lfo_a", "module:lfo_b", "parameter:lfo_a.wave", "parameter:lfo_a.rate", "parameter:lfo_a.speed_mult", "parameter:lfo_b.wave", "parameter:lfo_b.rate", "parameter:lfo_b.speed_mult", "jack:lfo_a.cv_out", "jack:lfo_b.cv_out", "module:joystick", "parameter:joystick.x", "parameter:joystick.y", "parameter:joystick.offset_x", "parameter:joystick.offset_y", "jack:joystick.x_out", "jack:joystick.y_out", "module:preamp", "module:env_follower", "parameter:preamp.gain", "parameter:env_follower.attack", "parameter:env_follower.release", "jack:preamp.ext_source_in", "jack:env_follower.env_out", "jack:env_follower.gate_out", "module:sequencer", "parameter:sequencer.pulser", "parameter:sequencer.clock", "parameter:sequencer.stages", "parameter:sequencer.step_cv_1", "parameter:sequencer.step_cv_2", "parameter:sequencer.step_cv_3", "parameter:sequencer.step_cv_4", "parameter:sequencer.step_cv_5", "parameter:sequencer.step_gate_1", "parameter:sequencer.step_gate_2", "parameter:sequencer.step_gate_3", "parameter:sequencer.step_gate_4", "parameter:sequencer.step_gate_5", "jack:sequencer.ext_clock_in", "jack:sequencer.clock_out", "jack:sequencer.cv_out", "jack:sequencer.gate_out", "module:mixer", "parameter:mixer.ch1_pan", "parameter:mixer.ch1_vol", "parameter:mixer.ch2_pan", "parameter:mixer.ch2_vol", "parameter:mixer.ch3_pan", "parameter:mixer.ch3_vol", "parameter:mixer.ch4_pan", "parameter:mixer.ch4_vol", "parameter:mixer.ch5_pan", "parameter:mixer.ch5_vol", "parameter:mixer.ch6_pan", "parameter:mixer.ch6_vol", "parameter:mixer.ch7_pan", "parameter:mixer.ch7_vol", "parameter:mixer.ch8_pan", "parameter:mixer.ch8_vol", "parameter:mixer.ch9_pan", "parameter:mixer.ch9_vol", "parameter:mixer.ch10_pan", "parameter:mixer.ch10_vol", "module:effector", "parameter:effector.x", "parameter:effector.y", "parameter:effector.z", "parameter:effector.blend", "parameter:effector.master", "parameter:effector.phone", "parameter:effector.select_l", "parameter:effector.select_r", "jack:effector.cv_x_in", "jack:effector.cv_y_in", "jack:effector.cv_z_in", "module:voices", "module:drone_1", "parameter:drone_1.tune_1", "parameter:drone_1.tune_2", "parameter:drone_1.tune_3", "parameter:drone_1.tune_4", "parameter:drone_1.tune_5", "parameter:drone_1.mute_1", "parameter:drone_1.mute_2", "parameter:drone_1.mute_3", "parameter:drone_1.mute_4", "parameter:drone_1.mute_5", "parameter:drone_1.mod_1", "parameter:drone_1.mod_2", "parameter:drone_1.mod_3", "parameter:drone_1.mod_4", "parameter:drone_1.mod_5", "parameter:drone_1.volt", "parameter:drone_1.att", "parameter:drone_1.rls", "parameter:drone_1.gate_hold", "jack:drone_1.cv_mod_in", "jack:drone_1.gate_in", "jack:drone_1.env_out", "module:drone_2", "parameter:drone_2.tune_1", "parameter:drone_2.tune_2", "parameter:drone_2.tune_3", "parameter:drone_2.tune_4", "parameter:drone_2.tune_5", "parameter:drone_2.mute_1", "parameter:drone_2.mute_2", "parameter:drone_2.mute_3", "parameter:drone_2.mute_4", "parameter:drone_2.mute_5", "parameter:drone_2.mod_1", "parameter:drone_2.mod_2", "parameter:drone_2.mod_3", "parameter:drone_2.mod_4", "parameter:drone_2.mod_5", "parameter:drone_2.volt", "parameter:drone_2.att", "parameter:drone_2.rls", "parameter:drone_2.gate_hold", "jack:drone_2.cv_mod_in", "jack:drone_2.gate_in", "jack:drone_2.env_out", "module:drone_4", "parameter:drone_4.tune_1", "parameter:drone_4.tune_2", "parameter:drone_4.tune_3", "parameter:drone_4.tune_4", "parameter:drone_4.tune_5", "parameter:drone_4.mute_1", "parameter:drone_4.mute_2", "parameter:drone_4.mute_3", "parameter:drone_4.mute_4", "parameter:drone_4.mute_5", "parameter:drone_4.mod_1", "parameter:drone_4.mod_2", "parameter:drone_4.mod_3", "parameter:drone_4.mod_4", "parameter:drone_4.mod_5", "parameter:drone_4.volt", "parameter:drone_4.att", "parameter:drone_4.rls", "parameter:drone_4.gate_hold", "jack:drone_4.cv_mod_in", "jack:drone_4.gate_in", "jack:drone_4.env_out", "module:drone_5", "parameter:drone_5.tune_1", "parameter:drone_5.tune_2", "parameter:drone_5.tune_3", "parameter:drone_5.tune_4", "parameter:drone_5.tune_5", "parameter:drone_5.mute_1", "parameter:drone_5.mute_2", "parameter:drone_5.mute_3", "parameter:drone_5.mute_4", "parameter:drone_5.mute_5", "parameter:drone_5.mod_1", "parameter:drone_5.mod_2", "parameter:drone_5.mod_3", "parameter:drone_5.mod_4", "parameter:drone_5.mod_5", "parameter:drone_5.volt", "parameter:drone_5.att", "parameter:drone_5.rls", "parameter:drone_5.gate_hold", "jack:drone_5.cv_mod_in", "jack:drone_5.gate_in", "jack:drone_5.env_out", "module:drone_3", "parameter:drone_3.rate", "parameter:drone_3.mod", "parameter:drone_3.divider", "parameter:drone_3.pitch", "parameter:drone_3.noise", "parameter:drone_3.att", "parameter:drone_3.rls", "parameter:drone_3.hi_low", "parameter:drone_3.fm", "parameter:drone_3.am", "parameter:drone_3.rate_switch", "parameter:drone_3.hold", "jack:drone_3.cv_out", "jack:drone_3.env_out", "jack:drone_3.gate_in", "jack:drone_3.clock_in", "jack:drone_3.noise_in", "module:drone_6", "parameter:drone_6.rate", "parameter:drone_6.mod", "parameter:drone_6.divider", "parameter:drone_6.pitch", "parameter:drone_6.noise", "parameter:drone_6.att", "parameter:drone_6.rls", "parameter:drone_6.hi_low", "parameter:drone_6.fm", "parameter:drone_6.am", "parameter:drone_6.rate_switch", "parameter:drone_6.hold", "jack:drone_6.cv_out", "jack:drone_6.env_out", "jack:drone_6.gate_in", "jack:drone_6.clock_in", "jack:drone_6.noise_in"],
   "migrationAllowlist": {
     "note": "Permanently-empty migration allowlist. Migration is complete and it is LOCKED EMPTY (Codex msg 064cfa6e): never computed from the implementation, so the manifest does not reverse-depend on lunar24.json and stays a one-way target->overlay source. Any registry param/jack not in the target is a NEW rogue and fails the always-on gate; the legacy ceiling backstop also forbids re-whitelisting a re-introduced pre-correction id outside the target.",
     "parameters": [],

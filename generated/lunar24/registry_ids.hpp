@@ -300,7 +300,16 @@ enum class ParameterId : std::uint32_t {
     program_vibrotrem_2_z = 327,
     program_vibrotrem_3_x = 328,
     program_vibrotrem_3_y = 329,
-    program_vibrotrem_3_z = 330
+    program_vibrotrem_3_z = 330,
+    program_filter_1_x = 331,
+    program_filter_1_y = 332,
+    program_filter_1_z = 333,
+    program_filter_2_x = 334,
+    program_filter_2_y = 335,
+    program_filter_2_z = 336,
+    program_filter_3_x = 337,
+    program_filter_3_y = 338,
+    program_filter_3_z = 339
 };
 
 enum class JackId : std::uint32_t {
@@ -422,13 +431,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 264;
+inline constexpr std::uint32_t kParameterCount = 273;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 331;
+inline constexpr std::uint64_t kParameterIdSpace = 340;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -730,6 +739,15 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_vibrotrem_3_x: return "program.vibrotrem.3.x";
     case ParameterId::program_vibrotrem_3_y: return "program.vibrotrem.3.y";
     case ParameterId::program_vibrotrem_3_z: return "program.vibrotrem.3.z";
+    case ParameterId::program_filter_1_x: return "program.filter.1.x";
+    case ParameterId::program_filter_1_y: return "program.filter.1.y";
+    case ParameterId::program_filter_1_z: return "program.filter.1.z";
+    case ParameterId::program_filter_2_x: return "program.filter.2.x";
+    case ParameterId::program_filter_2_y: return "program.filter.2.y";
+    case ParameterId::program_filter_2_z: return "program.filter.2.z";
+    case ParameterId::program_filter_3_x: return "program.filter.3.x";
+    case ParameterId::program_filter_3_y: return "program.filter.3.y";
+    case ParameterId::program_filter_3_z: return "program.filter.3.z";
   }
   return "(unknown Parameter)";
 }
