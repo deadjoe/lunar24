@@ -14,7 +14,7 @@
     }
   ],
   "normalizedRoutes": [
-    { "stable_id": "r", "sourceJack": "vco_m.out", "sinkJack": "vco_missing.in",
+    { "id": 0, "stable_id": "r", "sourceJack": "vco_m.out", "sinkJack": "vco_missing.in",
       "description": "sink absent", "evidence": { "line": 1 }, "status": "confirmed" }
   ],
   "programs": []

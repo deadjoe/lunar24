@@ -34,8 +34,12 @@ CORE_INC = os.path.join(ROOT, "core", "include", "lunar24", "core")
 # build scratch). A future vendored third-party lib lands here and stays uncounted.
 SKIP_DIRS = {".git", "build", "third_party"}
 
-# A file is code (license-gated) by extension, or by being a CMakeLists.
-CODE_EXTS = {".h", ".hpp", ".cpp", ".cc", ".cxx", ".py"}
+# A file is code (license-gated) by extension, or by being a CMakeLists. These are
+# the comment-capable source types the gate claims to cover — C-family sources
+# (.c/.m/.mm — macOS desktop will land .mm shortly) and CMake modules, plus the
+# Python generators. Anything comment-capable and tracked is gated so a new
+# translation unit or CMake module cannot silently skip the header requirement.
+CODE_EXTS = {".h", ".hpp", ".cpp", ".cc", ".cxx", ".c", ".m", ".mm", ".py", ".cmake"}
 
 SPDX = "SPDX-License-Identifier: Apache-2.0"
 SPDX_HEADING = "Copyright (c) 2026 Lunar 24 contributors"

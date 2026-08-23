@@ -102,6 +102,7 @@ class Registry:
         self.program_ids = [(p["id"], p["stable_id"], i) for i, p in enumerate(self.programs)]
         self.parameter_ids = [(p["id"], p["stable_id"], i) for i, p in enumerate(self.parameters)]
         self.jack_ids = [(j["id"], j["stable_id"], i) for i, j in enumerate(self.jacks)]
+        self.route_ids = [(r.get("id", i), r["stable_id"], i) for i, r in enumerate(self.routes)]
 
     def _validate(self):
         # --- explicit numeric ids: present, integer, unique per kind, uint32-range ---
@@ -109,7 +110,8 @@ class Registry:
         # u32 wire type (order-independent identity, design/07 §7). Both under- and
         # over-flow are rejected.
         for label, group in (("module", self.modules), ("program", self.programs),
-                             ("parameter", self.parameters), ("jack", self.jacks)):
+                             ("parameter", self.parameters), ("jack", self.jacks),
+                             ("route", self.routes)):
             seen = set()
             for item in group:
                 nid = item.get("id", None)
@@ -124,7 +126,8 @@ class Registry:
         for label, group, key in (("modules", self.modules, "stable_id"),
                                    ("programs", self.programs, "stable_id"),
                                    ("parameters", self.parameters, "stable_id"),
-                                   ("jacks", self.jacks, "stable_id")):
+                                   ("jacks", self.jacks, "stable_id"),
+                                   ("routes", self.routes, "stable_id")):
             seen = {}
             for item in group:
                 en = sanitize(item[key])
@@ -265,9 +268,19 @@ def field_evidence_expr(j):
 # emit registry_ids.hpp
 # ----------------------------------------------------------------------------
 
+def _id_space(pairs):
+    """One-past-the-last serialized id, computed in Python (arbitrary precision)
+    so it can never overflow a u32 at the host: the emitted constant is a literal,
+    not a runtime `max+1`. An empty kind yields 0 (no bank to size against)."""
+    if not pairs:
+        return 0
+    return max(nid for nid, _, _ in pairs) + 1
+
+
 def gen_ids(reg):
     src = reg.spec["meta"].get("source", DEFAULT_SOURCE)
-    out = [SPDX_HEAD, "#pragma once", "", "#include <lunar24/core/id_types.h>",
+    out = [SPDX_HEAD, "#pragma once", "", "#include <lunar24/core/device_capacities.h>",
+           "#include <lunar24/core/id_types.h>",
            "#include <cstdint>", "#include <string_view>", "",
            "namespace lunar24::core {", ""]
 
@@ -279,11 +292,31 @@ def gen_ids(reg):
     enum_block("Parameter", reg.parameter_ids)
     enum_block("Jack", reg.jack_ids)
     enum_block("Program", reg.program_ids)
+    enum_block("Route", reg.route_ids)
 
     out.append("inline constexpr std::uint32_t kModuleCount = %d;" % len(reg.modules))
     out.append("inline constexpr std::uint32_t kParameterCount = %d;" % len(reg.parameters))
     out.append("inline constexpr std::uint32_t kJackCount = %d;" % len(reg.jacks))
     out.append("inline constexpr std::uint32_t kProgramCount = %d;" % len(reg.programs))
+    out.append("inline constexpr std::uint32_t kRouteCount = %d;" % len(reg.routes))
+    out.append("")
+
+    # Serialized id SPACE (one-past-the-last id). A state/storage bank is indexed
+    # by these ids, so the count alone is not enough: a sparse id (a hole between
+    # two ids) makes the id-space larger than the count and must still be covered.
+    out.append("inline constexpr std::uint32_t kModuleIdSpace = %d;" % _id_space(reg.module_ids))
+    out.append("inline constexpr std::uint32_t kParameterIdSpace = %d;" % _id_space(reg.parameter_ids))
+    out.append("inline constexpr std::uint32_t kJackIdSpace = %d;" % _id_space(reg.jack_ids))
+    out.append("inline constexpr std::uint32_t kProgramIdSpace = %d;" % _id_space(reg.program_ids))
+    out.append("inline constexpr std::uint32_t kRouteIdSpace = %d;" % _id_space(reg.route_ids))
+    out.append("")
+
+    # Compile-time gate: every state bank must be large enough for the ids it is
+    # indexed by. If a spec id goes sparse beyond the bank, this fails to compile —
+    # the "sparse id" hazard is caught here, not at a later runtime bank access.
+    out.append("static_assert(kDeviceParamCapacity >= kParameterIdSpace, \"parameter bank too small for ParameterId space\");")
+    out.append("static_assert(kDevicePatchCapacity >= kJackIdSpace, \"patch bank too small for JackId space\");")
+    out.append("static_assert(kDeviceRouteCapacity >= kRouteIdSpace, \"route bank too small for RouteId space\");")
     out.append("")
 
     def strs(kind, items, pairs):
@@ -299,6 +332,7 @@ def gen_ids(reg):
     strs("Parameter", reg.parameters, reg.parameter_ids)
     strs("Jack", reg.jacks, reg.jack_ids)
     strs("Program", reg.programs, reg.program_ids)
+    strs("Route", reg.routes, reg.route_ids)
 
     out.append("}  // namespace lunar24::core")
     out.append("")
@@ -352,9 +386,10 @@ def gen_registry(reg):
 
     out.append("inline constexpr NormalizedRoute kNormalizedRoutes[%d] = {" % len(reg.routes))
     for r in reg.routes:
-        out.append("  { %s, JackId::%s, JackId::%s, %s, %s, %s }," % (
-            qs(r["stable_id"]), sanitize(r["sourceJack"]), sanitize(r["sinkJack"]),
-            qs(r.get("description", "")), evidence_expr(r, src), status_expr(r)))
+        out.append("  { RouteId::%s, %s, JackId::%s, JackId::%s, %s, %s, %s }," % (
+            sanitize(r["stable_id"]), qs(r["stable_id"]), sanitize(r["sourceJack"]),
+            sanitize(r["sinkJack"]), qs(r.get("description", "")),
+            evidence_expr(r, src), status_expr(r)))
     out.append("};\n")
 
     out.append("inline constexpr ProgramDescriptor kPrograms[kProgramCount] = {")

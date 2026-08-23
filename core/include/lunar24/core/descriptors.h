@@ -100,7 +100,11 @@ struct JackDescriptor {
 
 // A hidden signal edge in the patching graph. Does not consume user-cable
 // cardinality; plugging into the sink honours the "patch overrides" rule.
+// It carries its own stable numeric RouteId, so a route is identified wherever it
+// is persisted (e.g. DeviceStateV1's route-override bank) by id, never by array
+// position in kNormalizedRoutes[].
 struct NormalizedRoute {
+  RouteId id;
   std::string_view stable_id;
   JackId sourceJack;
   JackId sinkJack;

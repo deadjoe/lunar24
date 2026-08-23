@@ -59,8 +59,10 @@ static void frozen_counts() {
   CHECK_EQ(core::kParameterCount, 30u);
   CHECK_EQ(core::kJackCount, 19u);
   CHECK_EQ(core::kProgramCount, 2u);
-  // Routes live in kNormalizedRoutes[] (no id enum).
-  CHECK_EQ(sizeof(reg::kNormalizedRoutes) / sizeof(reg::kNormalizedRoutes[0]), 3u);
+  CHECK_EQ(core::kRouteCount, 3u);
+  // kNormalizedRoutes[] still holds exactly the frozen route count (kRouteCount
+  // generated; the array is sized by that count).
+  CHECK_EQ(sizeof(reg::kNormalizedRoutes) / sizeof(reg::kNormalizedRoutes[0]), core::kRouteCount);
 }
 
 static void module_ranges_are_contiguous_and_disjoint() {
@@ -131,8 +133,7 @@ static void jacks_are_valid() {
 }
 
 static void routes_resolve_and_sink_cardinality() {
-  const std::uint32_t routeCount =
-      static_cast<std::uint32_t>(sizeof(reg::kNormalizedRoutes) / sizeof(reg::kNormalizedRoutes[0]));
+  const std::uint32_t routeCount = core::kRouteCount;
   for (std::uint32_t i = 0; i < routeCount; ++i) {
     const auto& r = reg::kNormalizedRoutes[i];
     CHECK(find_jack(r.sourceJack) >= 0);     // source jack must exist
@@ -140,6 +141,9 @@ static void routes_resolve_and_sink_cardinality() {
     CHECK(!r.stable_id.empty());
     CHECK(valid_status(r.status));
     CHECK(!r.evidence.source.empty());
+    // Route is identified by its own stable numeric id, and that id round-trips
+    // through the generated string switch (order-independent identity, 07 §7).
+    CHECK(core::route_id_string(r.id) == r.stable_id);
     // A sink is the target of at most one route.
     for (std::uint32_t j = i + 1; j < routeCount; ++j) {
       CHECK_FALSE(reg::kNormalizedRoutes[j].sinkJack == r.sinkJack);
@@ -148,9 +152,10 @@ static void routes_resolve_and_sink_cardinality() {
 }
 
 static void devices_capacity_matches_routes() {
-  const std::uint32_t routeCount =
-      static_cast<std::uint32_t>(sizeof(reg::kNormalizedRoutes) / sizeof(reg::kNormalizedRoutes[0]));
-  CHECK(core::kDeviceRouteCapacity >= routeCount);
+  // The route-override bank is indexed by RouteId, so it must cover the id-space
+  // (one-past-the-last id), not merely the count — a sparse route id is caught.
+  CHECK(core::kDeviceRouteCapacity >= core::kRouteIdSpace);
+  CHECK(core::kDeviceRouteCapacity >= core::kRouteCount);
 }
 
 static void id_string_lookup_is_complete() {
@@ -173,6 +178,10 @@ static void id_string_lookup_is_complete() {
   for (std::uint32_t i = 0; i < core::kProgramCount; ++i) {
     const auto& d = reg::kPrograms[i];
     CHECK(core::program_id_string(d.id) == d.stable_id);
+  }
+  for (std::uint32_t i = 0; i < core::kRouteCount; ++i) {
+    const auto& d = reg::kNormalizedRoutes[i];
+    CHECK(core::route_id_string(d.id) == d.stable_id);
   }
 }
 

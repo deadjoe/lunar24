@@ -117,6 +117,7 @@
   ],
   "normalizedRoutes": [
     {
+      "id": 0,
       "stable_id": "route.keyboard_v_oct_to_vco",
       "sourceJack": "keyboard.v_oct_out",
       "sinkJack": "vco_a.v_oct_in",
@@ -124,6 +125,7 @@
       "evidence": { "line": 573 }, "status": "confirmed"
     },
     {
+      "id": 1,
       "stable_id": "route.keyboard_gate_to_eg",
       "sourceJack": "keyboard.gate_left_main_out",
       "sinkJack": "envelope_a.gate_in",
@@ -131,6 +133,7 @@
       "evidence": { "line": 576 }, "status": "confirmed"
     },
     {
+      "id": 2,
       "stable_id": "route.vcf_cv_l_to_cv_r",
       "sourceJack": "vcf.cv_l_in",
       "sinkJack": "vcf.cv_r_in",

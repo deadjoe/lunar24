@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 
 #include <lunar24/core/evidence_policy.h>
@@ -87,13 +88,19 @@ struct ModuleExecutionContract {
 // thread. This is the single gate for the per-path causal facts.
 inline bool module_contract_is_valid(const ModuleExecutionContract& c) {
   if (c.pathDelayCount > kMaxModulePathDelays) return false;
+  bool anyDirectThrough = false;
   for (std::uint32_t i = 0; i < c.pathDelayCount; ++i) {
     const auto& p = c.pathDelays[i];
-    if (p.inPort == p.outPort) return false;              // degenerate self-path
+    if (p.inPort == p.outPort) return false;                              // degenerate self-path
+    if (!std::isfinite(p.minCausalDelaySamples)) return false;            // NaN/Inf is not a schedulable delay
     if (p.minCausalDelaySamples < 0.0) return false;
     if (p.directThroughExactZeroGain && !p.canDirectThrough) return false;  // exact-zero-gain requires a direct-through path
     if (p.canDirectThrough && p.minCausalDelaySamples > 0.0) return false;  // a >0 min-delay path is never zero-delay through
+    if (p.canDirectThrough) anyDirectThrough = true;
   }
+  // The module-wide convenience flag must be exactly the derived result of the
+  // per-path facts, so it can never contradict them.
+  if (c.hasDirectThroughPath != anyDirectThrough) return false;
   return true;
 }
 

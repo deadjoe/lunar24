@@ -75,9 +75,9 @@ inline constexpr JackDescriptor kJacks[kJackCount] = {
 };
 
 inline constexpr NormalizedRoute kNormalizedRoutes[3] = {
-  { "route.keyboard_v_oct_to_vco", JackId::keyboard_v_oct_out, JackId::vco_a_v_oct_in, "By default the keyboard V/OCT output is normalised to the Volt/octave input of VCO A (VCO B is normalised analogously; only VCO A's sink is captured in this P0 slice). Plugging a cable into the sink overrides it.", EvidenceRef{"solar42N_manual_v15", 573u, 573u}, EvidenceStatus::confirmed },
-  { "route.keyboard_gate_to_eg", JackId::keyboard_gate_left_main_out, JackId::envelope_a_gate_in, "By default GATE LEFT (MAIN) is normalised to the gate input of the envelope generators controlling the VCO A/B VCAs.", EvidenceRef{"solar42N_manual_v15", 576u, 576u}, EvidenceStatus::confirmed },
-  { "route.vcf_cv_l_to_cv_r", JackId::vcf_cv_l_in, JackId::vcf_cv_r_in, "CV L is normally connected to CV R. CV L controls both channels if there is no CV-signal in CV R. Plugging into CV R overrides this.", EvidenceRef{"solar42N_manual_v15", 1142u, 1142u}, EvidenceStatus::confirmed },
+  { RouteId::route_keyboard_v_oct_to_vco, "route.keyboard_v_oct_to_vco", JackId::keyboard_v_oct_out, JackId::vco_a_v_oct_in, "By default the keyboard V/OCT output is normalised to the Volt/octave input of VCO A (VCO B is normalised analogously; only VCO A's sink is captured in this P0 slice). Plugging a cable into the sink overrides it.", EvidenceRef{"solar42N_manual_v15", 573u, 573u}, EvidenceStatus::confirmed },
+  { RouteId::route_keyboard_gate_to_eg, "route.keyboard_gate_to_eg", JackId::keyboard_gate_left_main_out, JackId::envelope_a_gate_in, "By default GATE LEFT (MAIN) is normalised to the gate input of the envelope generators controlling the VCO A/B VCAs.", EvidenceRef{"solar42N_manual_v15", 576u, 576u}, EvidenceStatus::confirmed },
+  { RouteId::route_vcf_cv_l_to_cv_r, "route.vcf_cv_l_to_cv_r", JackId::vcf_cv_l_in, JackId::vcf_cv_r_in, "CV L is normally connected to CV R. CV L controls both channels if there is no CV-signal in CV R. Plugging into CV R overrides this.", EvidenceRef{"solar42N_manual_v15", 1142u, 1142u}, EvidenceStatus::confirmed },
 };
 
 inline constexpr ProgramDescriptor kPrograms[kProgramCount] = {

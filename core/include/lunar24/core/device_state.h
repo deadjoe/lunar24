@@ -17,21 +17,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <lunar24/core/device_capacities.h>
 #include <lunar24/core/id_types.h>
 
 namespace lunar24::core {
-
-// Parameter value bank capacity. Must be >= registry kParameterCount.
-// PROVISIONAL until the full P0 inventory.
-inline constexpr std::size_t kDeviceParamCapacity = 256;
-
-// Patch-cable and normalized-route-override bank capacities. Must be >= registry
-// kJackCount and route count. PROVISIONAL until the full P0 inventory.
-inline constexpr std::size_t kDevicePatchCapacity = 64;
-inline constexpr std::size_t kDeviceRouteCapacity = 32;
-
-// The keyboard subsystem owns exactly four native presets.
-inline constexpr std::size_t kDeviceKeyboardPresetCount = 4;
 
 // ---------------------------------------------------------------------------
 // Portable storage schema (design/07 §6) — SEPARATE from the raw C++ layout.
@@ -69,6 +58,28 @@ enum class StorageFieldKind : std::uint8_t {
   reserved = 3, // `count` bytes reserved until the subtype lands
 };
 
+// One named, typed field *inside* a record, at an explicit byte offset. Fixed
+// width only (no host `sizeof`/padding dependence), which is what keeps the wire
+// record portable. Declared so a future serializer can name-encode a record by
+// its own field names instead of treating it as an opaque byte block.
+struct StorageRecordField {
+  const char* name;
+  StorageFieldType type;
+  StorageEncoding encoding;
+  std::uint32_t offset;      // byte offset within the record's itemBytes
+  std::uint32_t sizeBytes;   // fixed wire width of this field
+  std::uint32_t versionFrom;
+};
+
+// A record's machine-readable interior. `fields`/`fieldCount` describe exactly
+// which named fields a `StorageFieldKind::record` carries and where they sit. A
+// record with `fieldCount==0` is an opaque byte block at this layer (value
+// semantics deferred), matching how `reserved` works for whole records.
+struct StorageRecordLayout {
+  const StorageRecordField* fields = nullptr;
+  std::uint32_t fieldCount = 0;
+};
+
 // One NAME + TYPE + ENCODING + CARDINALITY of the persisted device record.
 struct StorageField {
   const char* name;
@@ -78,6 +89,7 @@ struct StorageField {
   std::uint32_t count;        // scalar=1, array/record=item count, reserved=bytes
   std::uint32_t itemBytes;    // record only: fixed width per record
   std::uint32_t versionFrom;  // first schema version the field appears in
+  StorageRecordLayout record; // record only: machine-readable interior (opaque if fieldCount==0)
 };
 
 // The named, versioned "deviceState-v1" record. `fields` points at the declared
@@ -93,24 +105,42 @@ struct DeviceStorageSchema {
 // Fixed widths for the storage record, independent of C++ layout. PROVISIONAL
 // until the full P0 inventory proves them, and never a memcpy target.
 inline constexpr std::uint32_t kKeyboardPresetRecordBytes = 8u;  // id(4) + behaviour(1) + output(1) + pad(2)
+inline constexpr std::uint32_t kKeyboardSettingsRecordBytes = 2u;  // pressure behaviour(1) + pressure output(1)
 inline constexpr std::uint32_t kSequencerPhysicalBytes = 16u;    // reserved until the sequencer lands
 inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 1u;
 inline constexpr std::uint32_t kDeviceStorageInitialRevision = 0u;
 
+// A KeyboardPreset's machine-readable interior (offset within the 8-byte record).
+inline constexpr StorageRecordField kKeyboardPresetFields[] = {
+    {"id",                 StorageFieldType::u32, StorageEncoding::binary, 0u, 4u, 1u},
+    {"pressure_behaviour", StorageFieldType::u8,  StorageEncoding::binary, 4u, 1u, 1u},
+    {"pressure_output",    StorageFieldType::u8,  StorageEncoding::binary, 5u, 1u, 1u},
+    {"reserved",           StorageFieldType::u8,  StorageEncoding::binary, 6u, 2u, 1u},
+};
+inline constexpr StorageRecordField kKeyboardSettingsFields[] = {
+    {"pressure_behaviour", StorageFieldType::u8, StorageEncoding::binary, 0u, 1u, 1u},
+    {"pressure_output",    StorageFieldType::u8, StorageEncoding::binary, 1u, 1u, 1u},
+};
+
+// The map-able record layouts referenced by the two keyboard records below.
+inline constexpr StorageRecordLayout kKeyboardPresetLayout{kKeyboardPresetFields, 4u};
+inline constexpr StorageRecordLayout kKeyboardSettingsLayout{kKeyboardSettingsFields, 2u};
+
 inline constexpr StorageField kDeviceStorageFields[] = {
-    {"schema_version",           StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u},
-    {"identity_model_version",   StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u},
-    {"identity_seed",            StorageFieldKind::scalar,  StorageFieldType::u64, StorageEncoding::binary, 1u, 0u, 1u},
-    {"calibration_vcf_left",     StorageFieldKind::scalar,  StorageFieldType::f32, StorageEncoding::binary, 1u, 0u, 1u},
-    {"calibration_vcf_right",    StorageFieldKind::scalar,  StorageFieldType::f32, StorageEncoding::binary, 1u, 0u, 1u},
-    {"parameters",               StorageFieldKind::array,   StorageFieldType::f64, StorageEncoding::binary, kDeviceParamCapacity, 0u, 1u},
-    {"input_cable",              StorageFieldKind::array,   StorageFieldType::u8,  StorageEncoding::binary, kDevicePatchCapacity, 0u, 1u},
-    {"cable_source",             StorageFieldKind::array,   StorageFieldType::u32, StorageEncoding::binary, kDevicePatchCapacity, 0u, 1u},
-    {"route_overridden",         StorageFieldKind::array,   StorageFieldType::u8,  StorageEncoding::binary, kDeviceRouteCapacity, 0u, 1u},
-    {"keyboard_presets",         StorageFieldKind::record,  StorageFieldType::u8,  StorageEncoding::binary, kDeviceKeyboardPresetCount, kKeyboardPresetRecordBytes, 1u},
-    {"effector_left_program",    StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u},
-    {"effector_right_program",   StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u},
-    {"sequencer_physical",       StorageFieldKind::reserved, StorageFieldType::u8, StorageEncoding::binary, kSequencerPhysicalBytes, 0u, 1u},
+    {"schema_version",           StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u, {}},
+    {"identity_model_version",   StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u, {}},
+    {"identity_seed",            StorageFieldKind::scalar,  StorageFieldType::u64, StorageEncoding::binary, 1u, 0u, 1u, {}},
+    {"calibration_vcf_left",     StorageFieldKind::scalar,  StorageFieldType::f32, StorageEncoding::binary, 1u, 0u, 1u, {}},
+    {"calibration_vcf_right",    StorageFieldKind::scalar,  StorageFieldType::f32, StorageEncoding::binary, 1u, 0u, 1u, {}},
+    {"parameters",               StorageFieldKind::array,   StorageFieldType::f64, StorageEncoding::binary, kDeviceParamCapacity, 0u, 1u, {}},
+    {"input_cable",              StorageFieldKind::array,   StorageFieldType::u8,  StorageEncoding::binary, kDevicePatchCapacity, 0u, 1u, {}},
+    {"cable_source",             StorageFieldKind::array,   StorageFieldType::u32, StorageEncoding::binary, kDevicePatchCapacity, 0u, 1u, {}},
+    {"route_overridden",         StorageFieldKind::array,   StorageFieldType::u8,  StorageEncoding::binary, kDeviceRouteCapacity, 0u, 1u, {}},
+    {"keyboard_presets",         StorageFieldKind::record,  StorageFieldType::u8,  StorageEncoding::binary, kDeviceKeyboardPresetCount, kKeyboardPresetRecordBytes, 1u, kKeyboardPresetLayout},
+    {"keyboard_settings",        StorageFieldKind::record,  StorageFieldType::u8,  StorageEncoding::binary, 1u, kKeyboardSettingsRecordBytes, 1u, kKeyboardSettingsLayout},
+    {"effector_left_program",    StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u, {}},
+    {"effector_right_program",   StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u, {}},
+    {"sequencer_physical",       StorageFieldKind::reserved, StorageFieldType::u8, StorageEncoding::binary, kSequencerPhysicalBytes, 0u, 1u, {}},
 };
 
 inline constexpr std::uint32_t kDeviceStorageFieldCount =
@@ -124,7 +154,7 @@ inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    2480u,
+    2482u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).
@@ -191,7 +221,9 @@ struct DeviceStateV1 {
   std::uint8_t inputCable[kDevicePatchCapacity] = {};
   JackId cableSource[kDevicePatchCapacity] = {};
 
-  // Normalized-route override per route index.
+  // Normalized-route override per RouteId. Indexed by a stable RouteId (design/07
+  // §7), never by array position — kDeviceRouteCapacity is gated against the
+  // generated kRouteIdSpace so a route id can never exceed this bank.
   std::uint8_t routeOverridden[kDeviceRouteCapacity] = {};
 
   // Keyboard current settings + its native four presets.

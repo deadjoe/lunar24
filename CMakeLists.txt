@@ -62,6 +62,13 @@ add_test(NAME registry_id_stability
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_id_stability.py)
 
+# Id-space / state-bank gate: the banks are indexed by the serialized id, so they
+# must be sized for the id-space (one-past-the-last id), not the count — a sparse
+# id (a hole) is caught here and by the generated static_assert.
+add_test(NAME test_id_space_gate
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_id_space_gate.py)
+
 # Strict warnings, applied PRIVATE to a Lunar-owned compiled target only. Never
 # set globally: a future third-party build unit (iPlug2, P1+) must not be forced
 # warning-clean by a global add_compile_options, and lunar_core (header-only

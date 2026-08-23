@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <lunar24/core/device_capacities.h>
 #include <lunar24/core/id_types.h>
 #include <cstdint>
 #include <string_view>
@@ -79,10 +80,27 @@ enum class ProgramId : std::uint32_t {
     program_magic_1 = 1
 };
 
+enum class RouteId : std::uint32_t {
+    route_keyboard_v_oct_to_vco = 0,
+    route_keyboard_gate_to_eg = 1,
+    route_vcf_cv_l_to_cv_r = 2
+};
+
 inline constexpr std::uint32_t kModuleCount = 5;
 inline constexpr std::uint32_t kParameterCount = 30;
 inline constexpr std::uint32_t kJackCount = 19;
 inline constexpr std::uint32_t kProgramCount = 2;
+inline constexpr std::uint32_t kRouteCount = 3;
+
+inline constexpr std::uint32_t kModuleIdSpace = 5;
+inline constexpr std::uint32_t kParameterIdSpace = 30;
+inline constexpr std::uint32_t kJackIdSpace = 19;
+inline constexpr std::uint32_t kProgramIdSpace = 2;
+inline constexpr std::uint32_t kRouteIdSpace = 3;
+
+static_assert(kDeviceParamCapacity >= kParameterIdSpace, "parameter bank too small for ParameterId space");
+static_assert(kDevicePatchCapacity >= kJackIdSpace, "patch bank too small for JackId space");
+static_assert(kDeviceRouteCapacity >= kRouteIdSpace, "route bank too small for RouteId space");
 
 inline constexpr std::string_view module_id_string(ModuleId id) {
   switch (id) {
@@ -162,6 +180,15 @@ inline constexpr std::string_view program_id_string(ProgramId id) {
     case ProgramId::program_magic_1: return "program.magic.1";
   }
   return "(unknown Program)";
+}
+
+inline constexpr std::string_view route_id_string(RouteId id) {
+  switch (id) {
+    case RouteId::route_keyboard_v_oct_to_vco: return "route.keyboard_v_oct_to_vco";
+    case RouteId::route_keyboard_gate_to_eg: return "route.keyboard_gate_to_eg";
+    case RouteId::route_vcf_cv_l_to_cv_r: return "route.vcf_cv_l_to_cv_r";
+  }
+  return "(unknown Route)";
 }
 
 }  // namespace lunar24::core

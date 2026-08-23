@@ -33,6 +33,7 @@ def stable_map(reg):
         "parameter": {sid: nid for nid, sid, _ in reg.parameter_ids},
         "jack": {sid: nid for nid, sid, _ in reg.jack_ids},
         "program": {sid: nid for nid, sid, _ in reg.program_ids},
+        "route": {sid: nid for nid, sid, _ in reg.route_ids},
     }
 
 
@@ -51,6 +52,7 @@ def main():
         m["parameters"] = list(reversed(m.get("parameters", [])))
         m["jacks"] = list(reversed(m.get("jacks", [])))
     reordered["programs"] = list(reversed(reordered["programs"]))
+    reordered["normalizedRoutes"] = list(reversed(reordered["normalizedRoutes"]))
 
     reg = generate_registry.Registry(reordered)
     now = stable_map(reg)
@@ -66,8 +68,8 @@ def main():
             raise SystemExit(f"id map size changed for {kind}")
 
     print(f"OK: {len(base['module'])} modules, {len(base['parameter'])} params, "
-          f"{len(base['jack'])} jacks, {len(base['program'])} programs keep "
-          f"stable numeric ids under a reorder")
+          f"{len(base['jack'])} jacks, {len(base['program'])} programs, "
+          f"{len(base['route'])} routes keep stable numeric ids under a reorder")
     return 0
 
 

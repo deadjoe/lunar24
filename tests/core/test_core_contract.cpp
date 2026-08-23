@@ -9,6 +9,7 @@
 #include "mini_test.h"
 
 #include <algorithm>
+#include <limits>
 #include <string_view>
 #include <vector>
 
@@ -34,11 +35,14 @@ static void device_state_is_frozen() {
 }
 
 static void capacity_ge_registry() {
-  // The fixed banks must cover every registry id they index. kDeviceRouteCapacity
-  // is check in test_registry.cpp against the kNormalizedRoutes array, which is
-  // not visible from registry_ids.hpp (routes have no id enum).
-  CHECK(core::kDeviceParamCapacity >= core::kParameterCount);
-  CHECK(core::kDevicePatchCapacity >= core::kJackCount);
+  // The fixed banks must cover the SERIALIZED ID SPACE they are indexed by (not
+  // merely the count). id-space is one-past-the-last id, so a sparse id (a hole
+  // between two ids) is still covered. registry_ids.hpp static_asserts the same
+  // invariant at compile time; this test re-checks it at runtime against the
+  // current spec.
+  CHECK(core::kDeviceParamCapacity >= core::kParameterIdSpace);
+  CHECK(core::kDevicePatchCapacity >= core::kJackIdSpace);
+  CHECK(core::kDeviceRouteCapacity >= core::kRouteIdSpace);
 }
 
 static void virtual_volts_domain() {
@@ -132,6 +136,44 @@ static void module_contract_validation() {
   delayedThrough.pathDelays[0].minCausalDelaySamples = 16.0;
   delayedThrough.pathDelays[0].canDirectThrough = true;  // >0 min delay can't be zero-delay through
   CHECK_FALSE(core::module_contract_is_valid(delayedThrough));
+
+  // NaN / Inf are not schedulable delays: `NaN < 0` is false so a plain <0 check
+  // would let them through. Both must be rejected as non-finite.
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  core::ModuleExecutionContract nanDelay;
+  nanDelay.pathDelayCount = 1;
+  nanDelay.pathDelays[0].minCausalDelaySamples = nan;
+  CHECK_FALSE(core::module_contract_is_valid(nanDelay));
+  core::ModuleExecutionContract infDelay;
+  infDelay.pathDelayCount = 1;
+  infDelay.pathDelays[0].minCausalDelaySamples = inf;
+  CHECK_FALSE(core::module_contract_is_valid(infDelay));
+
+  // The module-wide hasDirectThroughPath flag must equal the derived result of
+  // the per-path canDirectThrough facts — it may never contradict them. Each
+  // case gives the path a distinct in/out pair so it is the FLAG MISMATCH, not a
+  // degenerate self-path, that governs the rejection.
+  core::ModuleExecutionContract flagOverclaim;
+  flagOverclaim.pathDelayCount = 1;
+  flagOverclaim.pathDelays[0].inPort = core::JackId{1};
+  flagOverclaim.pathDelays[0].outPort = core::JackId{2};
+  flagOverclaim.hasDirectThroughPath = true;  // claims a direct-through ... but no path declares one
+  CHECK_FALSE(core::module_contract_is_valid(flagOverclaim));
+  core::ModuleExecutionContract flagUnderclaim;
+  flagUnderclaim.pathDelayCount = 1;
+  flagUnderclaim.pathDelays[0].inPort = core::JackId{1};
+  flagUnderclaim.pathDelays[0].outPort = core::JackId{2};
+  flagUnderclaim.pathDelays[0].canDirectThrough = true;  // path can direct-through ...
+  flagUnderclaim.hasDirectThroughPath = false;            // ... but the flag denies it
+  CHECK_FALSE(core::module_contract_is_valid(flagUnderclaim));
+  core::ModuleExecutionContract flagConsistent;
+  flagConsistent.pathDelayCount = 1;
+  flagConsistent.pathDelays[0].inPort = core::JackId{1};
+  flagConsistent.pathDelays[0].outPort = core::JackId{2};
+  flagConsistent.pathDelays[0].canDirectThrough = true;
+  flagConsistent.hasDirectThroughPath = true;  // flag matches the per-path facts
+  CHECK(core::module_contract_is_valid(flagConsistent));
 }
 
 static void patch_graph_types_and_handles() {
@@ -225,15 +267,37 @@ static void device_storage_schema() {
   }
   CHECK_EQ(recomputed, s.totalBytesHint);
 
+  // A record's machine-readable interior (if declared) must be self-consistent:
+  // every sub-field has a name, sits inside the record's itemBytes, and does not
+  // overlap a sibling. This is what lets a later serializer name-encode the record.
+  for (std::uint32_t i = 0; i < s.fieldCount; ++i) {
+    const auto& f = s.fields[i];
+    if (f.kind != core::StorageFieldKind::record) continue;
+    const auto& rec = f.record;
+    if (rec.fieldCount == 0u) continue;  // opaque record block (no interior declared)
+    CHECK(rec.fields != nullptr);
+    std::uint32_t cursor = 0u;
+    for (std::uint32_t j = 0; j < rec.fieldCount; ++j) {
+      const auto& rf = rec.fields[j];
+      CHECK(rf.name != nullptr && rf.name[0] != '\0');
+      CHECK(rf.sizeBytes > 0u);
+      CHECK(rf.versionFrom >= 1u && rf.versionFrom <= s.schemaVersion);
+      CHECK(rf.offset >= cursor);  // ordered + non-overlapping as the wire writes them
+      CHECK(rf.offset + rf.sizeBytes <= f.itemBytes);
+      cursor = rf.offset + rf.sizeBytes;
+    }
+  }
+
   // The named fields a future serialization layer walks by name.
-  bool found_params = false, found_presets = false, found_effector = false;
+  bool found_params = false, found_presets = false, found_settings = false, found_effector = false;
   for (std::uint32_t i = 0; i < s.fieldCount; ++i) {
     std::string_view n = s.fields[i].name;
     if (n == "parameters") found_params = true;
     if (n == "keyboard_presets") found_presets = true;
+    if (n == "keyboard_settings") found_settings = true;
     if (n == "effector_left_program" || n == "effector_right_program") found_effector = true;
   }
-  CHECK(found_params && found_presets && found_effector);
+  CHECK(found_params && found_presets && found_settings && found_effector);
 
   // Effector selects a STABLE ProgramId, not a registry array index.
   core::EffectorSelection l;

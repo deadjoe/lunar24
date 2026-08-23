@@ -19,6 +19,7 @@ enum class ModuleId : std::uint32_t;
 enum class ParameterId : std::uint32_t;
 enum class JackId : std::uint32_t;
 enum class ProgramId : std::uint32_t;
+enum class RouteId : std::uint32_t;
 
 // The numeric type shared by every id (the value in the enum).
 using IdValue = std::uint32_t;
