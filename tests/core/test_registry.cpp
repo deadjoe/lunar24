@@ -113,7 +113,18 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 291u); // Phase B PITCH SHIFTER Programs 1/2/3 X/Y/Z slice (Codex msg
+  CHECK_EQ(core::kParameterCount, 300u); // Phase B INFINITY Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // daeed473): +9 program params (infinity.1/.2/.3 x/y/z
+                                         // pre delay/pre delay mod/decay + feedback/delay/pitch +
+                                         // feedback/delay/pitch, ids 358-366, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no ms/semitones/feedback/
+                                         // range/default/taper/time values derived from the
+                                         // Resonance Reveb/O.D.D/Resonance Delay program names or
+                                         // the Pre delay/Pre delay mod/Decay/Feedback/Delay/Pitch
+                                         // labels; MAGIC 1's concrete values deliberately NOT re-used).
+                                         // Prior: Phase B PITCH SHIFTER Programs 1/2/3 X/Y/Z slice (Codex msg
                                          // 7071e673): +9 program params (pitch_shifter.1/.2/.3 x/y/z
                                          // octave-down/octave-up/direct + octave-down/octave-up/
                                          // direct + pitch 1/pitch 2/voice mix, ids 349-357, neutral
@@ -189,8 +200,8 @@ static void frozen_counts() {
                                          // (Codex msg 28e00d92) +19 (ids 201-219), dual-effector
                                          // slice +8 (ids 193-200), voice-mixer slice +20
                                          // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
-                                         // carry 228, programs 21 (63 program params). Left as honest
-                                         // gaps the 12 keyboard complex params and the 54 other
+                                         // carry 237, programs 24 (72 program params). Left as honest
+                                         // gaps the 12 keyboard complex params and the 45 other
                                          // program X/Y/Z params
                                          // (seq_steps, quantise_scale_editor,
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,

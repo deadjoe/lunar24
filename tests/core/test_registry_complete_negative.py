@@ -4062,10 +4062,10 @@ def main():
     if not has(problems, "MISSING landed descriptor param 'program.cathedral.3.z'"):
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
-    # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3, vibe.1/.2/.3
-    #      and pitch_shifter.1/.2/.3 must NOT be re-openable as an honest gap: with those programs'
-    #      params landed, the --require-full residual must exclude every one of those ids. It widens
-    #      exactly across the 12 keyboard complex + 54 other program XYZ params (66 total).
+    # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3, vibe.1/.2/.3,
+    #      pitch_shifter.1/.2/.3 and infinity.1/.2/.3 must NOT be re-openable as an honest gap: with
+    #      those programs' params landed, the --require-full residual must exclude every one of those
+    #      ids. It widens exactly across the 12 keyboard complex + 45 other program XYZ params (57 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4075,13 +4075,13 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 66:
-        raise SystemExit("residual honest-gap total %d != 66 (12 keyboard complex + 54 program XYZ); "
+    if len(_gap_ids) != 57:
+        raise SystemExit("residual honest-gap total %d != 57 (12 keyboard complex + 45 program XYZ); "
                          "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + "
-                         "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 must have landed and "
-                         "closed exactly 57" % len(_gap_ids))
-    if len(_kb) != 12 or len(_prog) != 54:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/54: %r" % (len(_kb), len(_prog),
+                         "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 "
+                         "must have landed and closed exactly 66" % len(_gap_ids))
+    if len(_kb) != 12 or len(_prog) != 45:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/45: %r" % (len(_kb), len(_prog),
                                                                                 _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
@@ -4101,12 +4101,15 @@ def main():
                  "program.vibe.3.x", "program.vibe.3.y", "program.vibe.3.z",
                  "program.pitch_shifter.1.x", "program.pitch_shifter.1.y", "program.pitch_shifter.1.z",
                  "program.pitch_shifter.2.x", "program.pitch_shifter.2.y", "program.pitch_shifter.2.z",
-                 "program.pitch_shifter.3.x", "program.pitch_shifter.3.y", "program.pitch_shifter.3.z"):
+                 "program.pitch_shifter.3.x", "program.pitch_shifter.3.y", "program.pitch_shifter.3.z",
+                 "program.infinity.1.x", "program.infinity.1.y", "program.infinity.1.z",
+                 "program.infinity.2.x", "program.infinity.2.y", "program.infinity.2.z",
+                 "program.infinity.3.x", "program.infinity.3.y", "program.infinity.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 54 "
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 45 "
                              "other program XYZ gaps are preserved, NOT cathedral.2/3, magic.2/3, "
-                             "time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, vibe.1/2/3 or "
-                             "pitch_shifter.1/2/3): %r" % (_sid, _gap_ids))
+                             "time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, vibe.1/2/3, "
+                             "pitch_shifter.1/2/3 or infinity.1/2/3): %r" % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
@@ -4617,6 +4620,87 @@ def main():
     if not has(problems, "registry carries selector positions"):
         raise SystemExit("Direct re-shaped as a selector (positions on a continuous landed param) not "
                          "enforced: %r" % problems)
+
+    # (nj)-(nr) INFINITY Program 1/2/3 X/Y/Z descriptor lock (Codex msg daeed473). The nine program
+    #      infinity.1/.2/.3 x/y/z params (ids 358-366) are landed descriptor facts locked by the exact-
+    #      compare — id renumber, owner / cross-owner leak, per-line evidence drift and a fieldEvidence
+    #      overclaim must all fail normal. ROLE is also locked (a program x/y/z param's role must equal
+    #      its stable-id .x/.y/.z suffix), and a terminator delete is a landed/mustComplete drop. KEY
+    #      DIFF: NO physical value is derived from the Resonance Reveb/O.D.D/Resonance Delay names or
+    #      the Pre delay/Pre delay mod/Decay/Feedback/Delay/Pitch labels — no ms/semitones/feedback/
+    #      range/default/taper/time, and MAGIC 1's concrete values must NOT be copied over.
+    # (nj) id renumber: infinity.1.x is id 358; renumbering (358 -> 999) must fail.
+    nj_bad = copy.deepcopy(spec)
+    reg_param(nj_bad, "program.infinity.1.x")["id"] = 999
+    problems, _ = gate.check(nj_bad, manifest)
+    if not has(problems, "implementation param 'program.infinity.1.x'"):
+        raise SystemExit("infinity.1.x param id renumber (358 -> 999) not enforced: %r" % problems)
+    # (nk) owner / cross-owner leak: infinity.1.x must stay owned by program.infinity.1; moving it under
+    #      program.infinity.2's array makes the generated owner program.infinity.2, which the landed
+    #      fact rejects.
+    nk_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in nk_bad["programs"] if pr.get("stable_id") == "program.infinity.1")
+    _p2 = next(pr for pr in nk_bad["programs"] if pr.get("stable_id") == "program.infinity.2")
+    _x = [p for p in _p1["parameters"] if p["stable_id"] == "program.infinity.1.x"][0]
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.infinity.1.x"]
+    _p2["parameters"].append(_x)
+    problems, _ = gate.check(nk_bad, manifest)
+    if not has(problems, "implementation param 'program.infinity.1.x'"):
+        raise SystemExit("infinity.1.x cross-owner leak (-> program.infinity.2) not enforced: %r"
+                         % problems)
+    # (nl) ROLE drift: infinity.1.x being role y (valid but wrong position) must fail (role gate).
+    nl_bad = copy.deepcopy(spec)
+    reg_param(nl_bad, "program.infinity.1.x")["role"] = "y"
+    problems, _ = gate.check(nl_bad, manifest)
+    if not has(problems, "stable-id position"):
+        raise SystemExit("infinity.1.x role drift (x -> y) not enforced by the role gate: %r" % problems)
+    # (nm) per-line descriptorEvidence drift: infinity.1.x cites L1261; moving it (1261 -> 1262) must fail.
+    nm_bad = copy.deepcopy(spec)
+    reg_param(nm_bad, "program.infinity.1.x")["evidence"]["line"] = 1262
+    problems, _ = gate.check(nm_bad, manifest)
+    if not has(problems, "implementation param 'program.infinity.1.x'"):
+        raise SystemExit("infinity.1.x descriptorEvidence.line drift (1261 -> 1262) not enforced: %r"
+                         % problems)
+    # (nn) fieldEvidence overclaim: infinity.1.x fieldEvidence.range unverified -> confirmed must fail.
+    nn_bad = copy.deepcopy(spec)
+    reg_param(nn_bad, "program.infinity.1.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(nn_bad, manifest)
+    if not has(problems, "implementation param 'program.infinity.1.x'"):
+        raise SystemExit("infinity.1.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+    # (no) FIRST terminator delete: dropping infinity.1.x is a landed/mustComplete drop.
+    no_bad = copy.deepcopy(spec)
+    _p1 = next(pr for pr in no_bad["programs"] if pr.get("stable_id") == "program.infinity.1")
+    _p1["parameters"] = [p for p in _p1["parameters"] if p["stable_id"] != "program.infinity.1.x"]
+    problems, _ = gate.check(no_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.infinity.1.x'"):
+        raise SystemExit("infinity.1.x terminator delete (family first) not enforced: %r" % problems)
+    # (np) MIDDLE terminator delete: dropping infinity.2.y is likewise a landed/mustComplete drop.
+    np_bad = copy.deepcopy(spec)
+    _p2 = next(pr for pr in np_bad["programs"] if pr.get("stable_id") == "program.infinity.2")
+    _p2["parameters"] = [p for p in _p2["parameters"] if p["stable_id"] != "program.infinity.2.y"]
+    problems, _ = gate.check(np_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.infinity.2.y'"):
+        raise SystemExit("infinity.2.y terminator delete (family middle) not enforced: %r" % problems)
+    # (nq) LAST terminator delete: dropping infinity.3.z is likewise a landed/mustComplete drop.
+    nq_bad = copy.deepcopy(spec)
+    _p3 = next(pr for pr in nq_bad["programs"] if pr.get("stable_id") == "program.infinity.3")
+    _p3["parameters"] = [p for p in _p3["parameters"] if p["stable_id"] != "program.infinity.3.z"]
+    problems, _ = gate.check(nq_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.infinity.3.z'"):
+        raise SystemExit("infinity.3.z terminator delete (family last) not enforced: %r" % problems)
+    # (nr) MAGIC-1 physical-value keep-out: infinity.2.z (Pitch) must stay a software-normalized 0..1
+    #      placeholder — dressing it with a concrete semitone/ms range copied from MAGIC 1 (or any
+    #      physical unit/range/default) must fail the exact-compare against the landed unit=norm fact.
+    nr_bad = copy.deepcopy(spec)
+    reg_param(nr_bad, "program.infinity.2.z")["unit"] = "semitone"
+    reg_param(nr_bad, "program.infinity.2.z")["min"] = 0
+    reg_param(nr_bad, "program.infinity.2.z")["max"] = 12
+    reg_param(nr_bad, "program.infinity.2.z")["default"] = 1
+    problems, _ = gate.check(nr_bad, manifest)
+    if not has(problems, "implementation param 'program.infinity.2.z'"):
+        raise SystemExit("infinity.2.z MAGIC-1 physical value keep-out (semitone/0..12) not enforced: "
+                         "%r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason;baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
