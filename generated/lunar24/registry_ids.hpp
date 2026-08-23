@@ -24,7 +24,8 @@ enum class ModuleId : std::uint32_t {
     joystick = 8,
     preamp = 9,
     env_follower = 10,
-    sequencer = 11
+    sequencer = 11,
+    mixer = 12
 };
 
 enum class ParameterId : std::uint32_t {
@@ -128,6 +129,26 @@ enum class ParameterId : std::uint32_t {
     sequencer_step_gate_3 = 170,
     sequencer_step_gate_4 = 171,
     sequencer_step_gate_5 = 172,
+    mixer_ch1_pan = 173,
+    mixer_ch1_vol = 174,
+    mixer_ch2_pan = 175,
+    mixer_ch2_vol = 176,
+    mixer_ch3_pan = 177,
+    mixer_ch3_vol = 178,
+    mixer_ch4_pan = 179,
+    mixer_ch4_vol = 180,
+    mixer_ch5_pan = 181,
+    mixer_ch5_vol = 182,
+    mixer_ch6_pan = 183,
+    mixer_ch6_vol = 184,
+    mixer_ch7_pan = 185,
+    mixer_ch7_vol = 186,
+    mixer_ch8_pan = 187,
+    mixer_ch8_vol = 188,
+    mixer_ch9_pan = 189,
+    mixer_ch9_vol = 190,
+    mixer_ch10_pan = 191,
+    mixer_ch10_vol = 192,
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
@@ -229,14 +250,14 @@ enum class RouteId : std::uint32_t {
     route_keyboard_gate_to_eg_b = 5
 };
 
-inline constexpr std::uint32_t kModuleCount = 12;
-inline constexpr std::uint32_t kParameterCount = 106;
+inline constexpr std::uint32_t kModuleCount = 13;
+inline constexpr std::uint32_t kParameterCount = 126;
 inline constexpr std::uint32_t kJackCount = 39;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
-inline constexpr std::uint64_t kModuleIdSpace = 12;
-inline constexpr std::uint64_t kParameterIdSpace = 173;
+inline constexpr std::uint64_t kModuleIdSpace = 13;
+inline constexpr std::uint64_t kParameterIdSpace = 193;
 inline constexpr std::uint64_t kJackIdSpace = 40;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -259,6 +280,7 @@ inline constexpr std::string_view module_id_string(ModuleId id) {
     case ModuleId::preamp: return "preamp";
     case ModuleId::env_follower: return "env_follower";
     case ModuleId::sequencer: return "sequencer";
+    case ModuleId::mixer: return "mixer";
   }
   return "(unknown Module)";
 }
@@ -365,6 +387,26 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::sequencer_step_gate_3: return "sequencer.step_gate_3";
     case ParameterId::sequencer_step_gate_4: return "sequencer.step_gate_4";
     case ParameterId::sequencer_step_gate_5: return "sequencer.step_gate_5";
+    case ParameterId::mixer_ch1_pan: return "mixer.ch1_pan";
+    case ParameterId::mixer_ch1_vol: return "mixer.ch1_vol";
+    case ParameterId::mixer_ch2_pan: return "mixer.ch2_pan";
+    case ParameterId::mixer_ch2_vol: return "mixer.ch2_vol";
+    case ParameterId::mixer_ch3_pan: return "mixer.ch3_pan";
+    case ParameterId::mixer_ch3_vol: return "mixer.ch3_vol";
+    case ParameterId::mixer_ch4_pan: return "mixer.ch4_pan";
+    case ParameterId::mixer_ch4_vol: return "mixer.ch4_vol";
+    case ParameterId::mixer_ch5_pan: return "mixer.ch5_pan";
+    case ParameterId::mixer_ch5_vol: return "mixer.ch5_vol";
+    case ParameterId::mixer_ch6_pan: return "mixer.ch6_pan";
+    case ParameterId::mixer_ch6_vol: return "mixer.ch6_vol";
+    case ParameterId::mixer_ch7_pan: return "mixer.ch7_pan";
+    case ParameterId::mixer_ch7_vol: return "mixer.ch7_vol";
+    case ParameterId::mixer_ch8_pan: return "mixer.ch8_pan";
+    case ParameterId::mixer_ch8_vol: return "mixer.ch8_vol";
+    case ParameterId::mixer_ch9_pan: return "mixer.ch9_pan";
+    case ParameterId::mixer_ch9_vol: return "mixer.ch9_vol";
+    case ParameterId::mixer_ch10_pan: return "mixer.ch10_pan";
+    case ParameterId::mixer_ch10_vol: return "mixer.ch10_vol";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";

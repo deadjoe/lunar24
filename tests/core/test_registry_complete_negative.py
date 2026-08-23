@@ -2209,6 +2209,78 @@ def main():
         raise SystemExit("sequencer clock input signalType drift (ext_clock_in clock -> cv) not "
                         "enforced: %r" % problems)
 
+    # (dg) delete a MIDDLE mixer channel (ch5 = VCO A vol, id 176).
+    dg_bad = copy.deepcopy(spec)
+    for m in dg_bad["modules"]:
+        if m.get("stable_id") == "mixer":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "mixer.ch5_vol"]
+    problems, _ = gate.check(dg_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param"):
+        raise SystemExit("mixer middle-channel delete (mixer.ch5_vol) not enforced: %r" % problems)
+
+    # (dh) delete an END mixer channel (ch10 = DRONE 6 vol, id 192, last in the chain L1112).
+    dh_bad = copy.deepcopy(spec)
+    for m in dh_bad["modules"]:
+        if m.get("stable_id") == "mixer":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "mixer.ch10_vol"]
+    problems, _ = gate.check(dh_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param"):
+        raise SystemExit("mixer end-channel delete (mixer.ch10_vol) not enforced: %r" % problems)
+
+    # (di) delete the FIRST mixer channel (ch1 = DRONE 1 pan, id 173, head of the chain L1112).
+    di_bad = copy.deepcopy(spec)
+    for m in di_bad["modules"]:
+        if m.get("stable_id") == "mixer":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "mixer.ch1_pan"]
+    problems, _ = gate.check(di_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param"):
+        raise SystemExit("mixer head-channel delete (mixer.ch1_pan) not enforced: %r" % problems)
+
+    # (dj) renumber a landed mixer param id (mixer.ch1_pan 173 -> 999).
+    dj_bad = copy.deepcopy(spec)
+    reg_param(dj_bad, "mixer.ch1_pan")["id"] = 999
+    problems, _ = gate.check(dj_bad, manifest)
+    if not has(problems, "implementation param 'mixer.ch1_pan'"):
+        raise SystemExit("mixer param id renumber (mixer.ch1_pan 173 -> 999) not enforced: %r"
+                        % problems)
+
+    # (dk) PAN descriptorEvidence line drift: the PAN pot citation (L1105) must not move.
+    dk_bad = copy.deepcopy(spec)
+    reg_param(dk_bad, "mixer.ch1_pan")["evidence"]["line"] = 1106
+    problems, _ = gate.check(dk_bad, manifest)
+    if not has(problems, "implementation param 'mixer.ch1_pan'"):
+        raise SystemExit("mixer.ch1_pan PAN descriptorEvidence.line drift (1105 -> 1106) not "
+                        "enforced: %r" % problems)
+
+    # (dl) VOL descriptorEvidence line drift: the VOL pot citation (L1113) must not move.
+    dl_bad = copy.deepcopy(spec)
+    reg_param(dl_bad, "mixer.ch10_vol")["evidence"]["line"] = 1114
+    problems, _ = gate.check(dl_bad, manifest)
+    if not has(problems, "implementation param 'mixer.ch10_vol'"):
+        raise SystemExit("mixer.ch10_vol VOL descriptorEvidence.line drift (1113 -> 1114) not "
+                        "enforced: %r" % problems)
+
+    # (dm) fieldEvidence provenance drift: a PAN is an all-unverified normalized placeholder; silently
+    #      flipping range to confirmed is an evidence over-claim that must FAIL.
+    dm_bad = copy.deepcopy(spec)
+    reg_param(dm_bad, "mixer.ch5_pan")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(dm_bad, manifest)
+    if not has(problems, "implementation param 'mixer.ch5_pan'"):
+        raise SystemExit("mixer.ch5_pan fieldEvidence provenance drift (range unverified->confirmed) "
+                        "not enforced: %r" % problems)
+
+    # (dn) channel-mapping drift: mixer.ch5 is VCO A in the L1112 identity chain (name "PAN VCO A");
+    #      silently rebinding that channel to VCO B (name), not just renumbering, must FAIL.
+    dn_bad = copy.deepcopy(spec)
+    reg_param(dn_bad, "mixer.ch5_pan")["name"] = "PAN VCO B"
+    problems, _ = gate.check(dn_bad, manifest)
+    if not has(problems, "implementation param 'mixer.ch5_pan'"):
+        raise SystemExit("mixer.ch5_pan chain-mapping drift (name 'PAN VCO A' -> 'PAN VCO B') not "
+                        "enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -2226,7 +2298,10 @@ def main():
           "descriptor), Root B (selector-toggle cardinality / malformed manifest positions), Root C "
           "(missing or invalid fieldEvidence), and Codex 03848819 Root 2 (positions on a non-selector, "
           "delete-positions-to-pass, mismatched selector labels, unverified selector range) are gated "
-          "too (Codex 22f545c1/03848819).")
+          "too (Codex 22f545c1/03848819); the voice-mixer slice (Codex 920fa79b) closes the 10-channel "
+          "PAN/VOL chain too — begin (ch1_pan)/middle (ch5_vol)/end (ch10_vol) channel delete, param id "
+          "renumber, PAN/VOL descriptorEvidence.line drift, six-field provenance over-claim, and "
+          "channel-mapping (name) drift all fail.")
     return 0
 
 

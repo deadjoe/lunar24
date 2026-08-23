@@ -2839,6 +2839,506 @@
             "smoothing": "provisional",
             "persistence": "provisional"
           }
+        },
+        "mixer.ch1_pan": {
+          "id": 173,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN DRONE 1",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch1_vol": {
+          "id": 174,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL DRONE 1",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch2_pan": {
+          "id": 175,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN DRONE 2",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch2_vol": {
+          "id": 176,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL DRONE 2",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch3_pan": {
+          "id": 177,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN DRONE 3",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch3_vol": {
+          "id": 178,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL DRONE 3",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch4_pan": {
+          "id": 179,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN EXT. AUDIO",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch4_vol": {
+          "id": 180,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL EXT. AUDIO",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch5_pan": {
+          "id": 181,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN VCO A",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch5_vol": {
+          "id": 182,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL VCO A",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch6_pan": {
+          "id": 183,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN VCO B",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch6_vol": {
+          "id": 184,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL VCO B",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch7_pan": {
+          "id": 185,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN PREAMP",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch7_vol": {
+          "id": 186,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL PREAMP",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch8_pan": {
+          "id": 187,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN DRONE 4",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch8_vol": {
+          "id": 188,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL DRONE 4",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch9_pan": {
+          "id": 189,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN DRONE 5",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch9_vol": {
+          "id": 190,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL DRONE 5",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch10_pan": {
+          "id": 191,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "PAN DRONE 6",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1105
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
+        },
+        "mixer.ch10_vol": {
+          "id": 192,
+          "owner": "mixer",
+          "kind": "continuous",
+          "name": "VOL DRONE 6",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "status": "confirmed",
+          "descriptorEvidence": {
+            "line": 1113
+          },
+          "fieldEvidence": {
+            "range": "unverified",
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified"
+          }
         }
       },
       "jacks": {
@@ -3457,11 +3957,14 @@
         },
         "sequencer": {
           "id": 11
+        },
+        "mixer": {
+          "id": 12
         }
       }
     }
   },
-  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "module:envelope_b", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "route:route.keyboard_v_oct_to_vco_b", "route:route.vco_b_vco_out_to_cv_in", "route:route.keyboard_gate_to_eg_b", "parameter:envelope_a.a", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.r", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:envelope_b.a", "parameter:envelope_b.d", "parameter:envelope_b.hold", "parameter:envelope_b.r", "parameter:envelope_b.s", "parameter:envelope_b.self_gen", "parameter:keyboard.arp_direction", "parameter:keyboard.arp_hold", "parameter:keyboard.arp_interval", "parameter:keyboard.arp_length", "parameter:keyboard.arp_variation", "parameter:keyboard.behaviour", "parameter:keyboard.calibration_pressure", "parameter:keyboard.calibration_v_oct", "parameter:keyboard.clock_bpm", "parameter:keyboard.dac_vref", "parameter:keyboard.debounce", "parameter:keyboard.encoder_direction", "parameter:keyboard.mode", "parameter:keyboard.mpr121_charge", "parameter:keyboard.mpr121_discharge", "parameter:keyboard.portamento_legato", "parameter:keyboard.portamento_speed", "parameter:keyboard.pressure_fall", "parameter:keyboard.pressure_max", "parameter:keyboard.pressure_min", "parameter:keyboard.pressure_output", "parameter:keyboard.pressure_rise", "parameter:keyboard.quantise_load_scale", "parameter:keyboard.release_threshold", "parameter:keyboard.root_note", "parameter:keyboard.seq_cv_output", "parameter:keyboard.seq_direction", "parameter:keyboard.seq_length", "parameter:keyboard.seq_rhythm_length", "parameter:keyboard.seq_run", "parameter:keyboard.touch_threshold", "parameter:keyboard.vibrato_delay", "parameter:keyboard.vibrato_depth", "parameter:keyboard.vibrato_pressure", "parameter:keyboard.vibrato_speed", "parameter:program.cathedral.1.x", "parameter:program.cathedral.1.y", "parameter:program.cathedral.1.z", "parameter:program.magic.1.x", "parameter:program.magic.1.y", "parameter:program.magic.1.z", "parameter:vcf.dist", "parameter:vcf.gain", "parameter:vcf.l_bp_lp", "parameter:vcf.l_freq", "parameter:vcf.l_mod", "parameter:vcf.l_res", "parameter:vcf.link", "parameter:vcf.r_bp_lp", "parameter:vcf.r_freq", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_a.cv_amt", "parameter:vco_a.lin_exp", "parameter:vco_a.morph", "parameter:vco_a.oct_sel", "parameter:vco_a.pw", "parameter:vco_a.pwm", "parameter:vco_a.sub_sel", "parameter:vco_a.tune", "parameter:vco_b.cv_amt", "parameter:vco_b.lin_exp", "parameter:vco_b.morph", "parameter:vco_b.oct_sel", "parameter:vco_b.pw", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "parameter:vco_b.tune", "jack:envelope_a.env_out", "jack:envelope_a.gate_in", "jack:envelope_a.vca_cv_out", "jack:envelope_b.env_out", "jack:envelope_b.gate_in", "jack:envelope_b.vca_cv_out", "jack:keyboard.clock_in", "jack:keyboard.gate_left_main_out", "jack:keyboard.gate_right_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:keyboard.v_oct_out", "jack:vcf.cv_l_in", "jack:vcf.cv_r_in", "jack:vco_a.cv_in", "jack:vco_a.dry_out", "jack:vco_a.fm_in", "jack:vco_a.pwm_in", "jack:vco_a.sync_in", "jack:vco_a.v_oct_in", "jack:vco_a.vca_ctl", "jack:vco_a.wave_out", "jack:vco_b.cv_in", "jack:vco_b.dry_out", "jack:vco_b.pwm_in", "jack:vco_b.v_oct_in", "jack:vco_b.vco_out", "jack:vco_b.wave_out", "module:lfo_a", "module:lfo_b", "parameter:lfo_a.wave", "parameter:lfo_a.rate", "parameter:lfo_a.speed_mult", "parameter:lfo_b.wave", "parameter:lfo_b.rate", "parameter:lfo_b.speed_mult", "jack:lfo_a.cv_out", "jack:lfo_b.cv_out", "module:joystick", "parameter:joystick.x", "parameter:joystick.y", "parameter:joystick.offset_x", "parameter:joystick.offset_y", "jack:joystick.x_out", "jack:joystick.y_out", "module:preamp", "module:env_follower", "parameter:preamp.gain", "parameter:env_follower.attack", "parameter:env_follower.release", "jack:preamp.ext_source_in", "jack:env_follower.env_out", "jack:env_follower.gate_out", "module:sequencer", "parameter:sequencer.pulser", "parameter:sequencer.clock", "parameter:sequencer.stages", "parameter:sequencer.step_cv_1", "parameter:sequencer.step_cv_2", "parameter:sequencer.step_cv_3", "parameter:sequencer.step_cv_4", "parameter:sequencer.step_cv_5", "parameter:sequencer.step_gate_1", "parameter:sequencer.step_gate_2", "parameter:sequencer.step_gate_3", "parameter:sequencer.step_gate_4", "parameter:sequencer.step_gate_5", "jack:sequencer.ext_clock_in", "jack:sequencer.clock_out", "jack:sequencer.cv_out", "jack:sequencer.gate_out"],
+  "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "module:envelope_b", "program:program.cathedral.1", "program:program.cathedral.2", "program:program.cathedral.3", "program:program.magic.1", "program:program.magic.2", "program:program.magic.3", "program:program.time.1", "program:program.time.2", "program:program.time.3", "program:program.vibrotrem.1", "program:program.vibrotrem.2", "program:program.vibrotrem.3", "program:program.filter.1", "program:program.filter.2", "program:program.filter.3", "program:program.vibe.1", "program:program.vibe.2", "program:program.vibe.3", "program:program.pitch_shifter.1", "program:program.pitch_shifter.2", "program:program.pitch_shifter.3", "program:program.infinity.1", "program:program.infinity.2", "program:program.infinity.3", "program:program.string_ringer.1", "program:program.string_ringer.2", "program:program.string_ringer.3", "program:program.syntex_1.1", "program:program.syntex_1.2", "program:program.syntex_1.3", "program:program.digital.1", "program:program.digital.2", "program:program.digital.3", "program:program.generator.1", "program:program.generator.2", "program:program.generator.3", "program:program.orche.1", "program:program.orche.2", "program:program.orche.3", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r", "route:route.keyboard_v_oct_to_vco_b", "route:route.vco_b_vco_out_to_cv_in", "route:route.keyboard_gate_to_eg_b", "parameter:envelope_a.a", "parameter:envelope_a.d", "parameter:envelope_a.hold", "parameter:envelope_a.r", "parameter:envelope_a.s", "parameter:envelope_a.self_gen", "parameter:envelope_b.a", "parameter:envelope_b.d", "parameter:envelope_b.hold", "parameter:envelope_b.r", "parameter:envelope_b.s", "parameter:envelope_b.self_gen", "parameter:keyboard.arp_direction", "parameter:keyboard.arp_hold", "parameter:keyboard.arp_interval", "parameter:keyboard.arp_length", "parameter:keyboard.arp_variation", "parameter:keyboard.behaviour", "parameter:keyboard.calibration_pressure", "parameter:keyboard.calibration_v_oct", "parameter:keyboard.clock_bpm", "parameter:keyboard.dac_vref", "parameter:keyboard.debounce", "parameter:keyboard.encoder_direction", "parameter:keyboard.mode", "parameter:keyboard.mpr121_charge", "parameter:keyboard.mpr121_discharge", "parameter:keyboard.portamento_legato", "parameter:keyboard.portamento_speed", "parameter:keyboard.pressure_fall", "parameter:keyboard.pressure_max", "parameter:keyboard.pressure_min", "parameter:keyboard.pressure_output", "parameter:keyboard.pressure_rise", "parameter:keyboard.quantise_load_scale", "parameter:keyboard.release_threshold", "parameter:keyboard.root_note", "parameter:keyboard.seq_cv_output", "parameter:keyboard.seq_direction", "parameter:keyboard.seq_length", "parameter:keyboard.seq_rhythm_length", "parameter:keyboard.seq_run", "parameter:keyboard.touch_threshold", "parameter:keyboard.vibrato_delay", "parameter:keyboard.vibrato_depth", "parameter:keyboard.vibrato_pressure", "parameter:keyboard.vibrato_speed", "parameter:program.cathedral.1.x", "parameter:program.cathedral.1.y", "parameter:program.cathedral.1.z", "parameter:program.magic.1.x", "parameter:program.magic.1.y", "parameter:program.magic.1.z", "parameter:vcf.dist", "parameter:vcf.gain", "parameter:vcf.l_bp_lp", "parameter:vcf.l_freq", "parameter:vcf.l_mod", "parameter:vcf.l_res", "parameter:vcf.link", "parameter:vcf.r_bp_lp", "parameter:vcf.r_freq", "parameter:vcf.r_mod", "parameter:vcf.r_res", "parameter:vco_a.cv_amt", "parameter:vco_a.lin_exp", "parameter:vco_a.morph", "parameter:vco_a.oct_sel", "parameter:vco_a.pw", "parameter:vco_a.pwm", "parameter:vco_a.sub_sel", "parameter:vco_a.tune", "parameter:vco_b.cv_amt", "parameter:vco_b.lin_exp", "parameter:vco_b.morph", "parameter:vco_b.oct_sel", "parameter:vco_b.pw", "parameter:vco_b.pwm", "parameter:vco_b.sub_sel", "parameter:vco_b.tune", "jack:envelope_a.env_out", "jack:envelope_a.gate_in", "jack:envelope_a.vca_cv_out", "jack:envelope_b.env_out", "jack:envelope_b.gate_in", "jack:envelope_b.vca_cv_out", "jack:keyboard.clock_in", "jack:keyboard.gate_left_main_out", "jack:keyboard.gate_right_out", "jack:keyboard.pressure_out", "jack:keyboard.reset_in", "jack:keyboard.v_oct_out", "jack:vcf.cv_l_in", "jack:vcf.cv_r_in", "jack:vco_a.cv_in", "jack:vco_a.dry_out", "jack:vco_a.fm_in", "jack:vco_a.pwm_in", "jack:vco_a.sync_in", "jack:vco_a.v_oct_in", "jack:vco_a.vca_ctl", "jack:vco_a.wave_out", "jack:vco_b.cv_in", "jack:vco_b.dry_out", "jack:vco_b.pwm_in", "jack:vco_b.v_oct_in", "jack:vco_b.vco_out", "jack:vco_b.wave_out", "module:lfo_a", "module:lfo_b", "parameter:lfo_a.wave", "parameter:lfo_a.rate", "parameter:lfo_a.speed_mult", "parameter:lfo_b.wave", "parameter:lfo_b.rate", "parameter:lfo_b.speed_mult", "jack:lfo_a.cv_out", "jack:lfo_b.cv_out", "module:joystick", "parameter:joystick.x", "parameter:joystick.y", "parameter:joystick.offset_x", "parameter:joystick.offset_y", "jack:joystick.x_out", "jack:joystick.y_out", "module:preamp", "module:env_follower", "parameter:preamp.gain", "parameter:env_follower.attack", "parameter:env_follower.release", "jack:preamp.ext_source_in", "jack:env_follower.env_out", "jack:env_follower.gate_out", "module:sequencer", "parameter:sequencer.pulser", "parameter:sequencer.clock", "parameter:sequencer.stages", "parameter:sequencer.step_cv_1", "parameter:sequencer.step_cv_2", "parameter:sequencer.step_cv_3", "parameter:sequencer.step_cv_4", "parameter:sequencer.step_cv_5", "parameter:sequencer.step_gate_1", "parameter:sequencer.step_gate_2", "parameter:sequencer.step_gate_3", "parameter:sequencer.step_gate_4", "parameter:sequencer.step_gate_5", "jack:sequencer.ext_clock_in", "jack:sequencer.clock_out", "jack:sequencer.cv_out", "jack:sequencer.gate_out", "module:mixer", "parameter:mixer.ch1_pan", "parameter:mixer.ch1_vol", "parameter:mixer.ch2_pan", "parameter:mixer.ch2_vol", "parameter:mixer.ch3_pan", "parameter:mixer.ch3_vol", "parameter:mixer.ch4_pan", "parameter:mixer.ch4_vol", "parameter:mixer.ch5_pan", "parameter:mixer.ch5_vol", "parameter:mixer.ch6_pan", "parameter:mixer.ch6_vol", "parameter:mixer.ch7_pan", "parameter:mixer.ch7_vol", "parameter:mixer.ch8_pan", "parameter:mixer.ch8_vol", "parameter:mixer.ch9_pan", "parameter:mixer.ch9_vol", "parameter:mixer.ch10_pan", "parameter:mixer.ch10_vol"],
   "migrationAllowlist": {
     "note": "Permanently-empty migration allowlist. Migration is complete and it is LOCKED EMPTY (Codex msg 064cfa6e): never computed from the implementation, so the manifest does not reverse-depend on lunar24.json and stays a one-way target->overlay source. Any registry param/jack not in the target is a NEW rogue and fails the always-on gate; the legacy ceiling backstop also forbids re-whitelisting a re-introduced pre-correction id outside the target.",
     "parameters": [],

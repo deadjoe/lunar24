@@ -97,17 +97,21 @@ static bool unknown_evidence_consistent(std::string_view family, core::EvidenceS
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 12u);     // Phase B 5-step sequencer slice (Codex msg 6bedef35): +1
-                                         // module (sequencer id 11). Prior: preamp/env_follower
-                                         // (Codex ebd65910) id 9/10, joystick id 8, lfo_a/lfo_b,
-                                         // vco_a/vco_b/vcf/keyboard/envelope_a/envelope_b.
-  CHECK_EQ(core::kParameterCount, 106u); // Phase B sequencer slice: +13 params (pulser + clock +
-                                         // stages + step_cv_1..5 + step_gate_1..5). Modules now carry
-                                         // 100, programs 6. Left as honest gaps the drones/effector/
-                                         // mixer/voices params + the 12 keyboard complex params
-                                         // (seq_steps, quantise_scale_editor, plate_tune,
-                                         // pushbutton_value, preset_a..d, arp_clock, seq_clock,
-                                         // arp_rhythm, seq_rhythm + remaining module ranges)
+  CHECK_EQ(core::kModuleCount, 13u);     // Phase B voice-mixer slice (Codex msg 920fa79b): +1
+                                         // module (mixer id 12). Prior: 5-step sequencer slice
+                                         // (Codex msg 6bedef35) sequencer id 11, preamp/
+                                         // env_follower (Codex ebd65910) id 9/10, joystick id 8,
+                                         // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
+                                         // envelope_b.
+  CHECK_EQ(core::kParameterCount, 126u); // Phase B voice-mixer slice: +20 params
+                                         // (mixer.ch1..ch10 so{pan,vol}, ids 173-192, all
+                                         // software-normalized 0..1 placeholders, six-field
+                                         // unverified). Modules now carry 120, programs 6. Left as
+                                         // honest gaps the drones/effector/voices params + the 12
+                                         // keyboard complex params (seq_steps, quantise_scale_editor,
+                                         // plate_tune, pushbutton_value, preset_a..d, arp_clock,
+                                         // seq_clock, arp_rhythm, seq_rhythm + remaining module
+                                         // ranges)
   CHECK_EQ(core::kJackCount, 39u);       // Phase B sequencer slice: +4 patchable jacks
                                          // (sequencer.ext_clock_in/clock_out signalType=clock, range/
                                          // polarity/coupling unknown + unverified; sequencer.cv_out
