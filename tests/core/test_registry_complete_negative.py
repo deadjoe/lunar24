@@ -35,8 +35,9 @@ Codex msg c7089521 hardened shape/action/context/rogue gate:
     must carry a closed `page` selector, menuItem may only name a declared DISPLAY ITEM (never a
     navigation action's own leaf), the enter-subpage edge must carry the slot it enters, the menu
     topology is an independent declaration (never inferred from a target's `menu` field), and both
-    pages must actually be present — delete/merge a page, use a non-topology page, drop the enter
-    slot, or forge menuItem from the navigation action all fail for their intended reason,
+    pages must actually be present, and the CLOSED relation set must match EXACTLY (Codex msg
+    8cc637e9) — delete an edge, use a non-topology page, drop the enter slot, forge menuItem from the
+    navigation action, or misalign a slot/item all fail for their intended reason,
   plus the inherited gates (重件 by category, provenance, program grid, directed/in-dangling
   routes, fixed-chain freeze, ORCHE provisional, terminal-owner, impl ⊆ target, mustComplete).
 
@@ -1006,6 +1007,83 @@ def main():
     if not has(problems, "is not a display item of page 'slot-list'"):
         raise SystemExit("nav action forged as a presets menuItem not rejected: %r" % problems)
 
+    # Codex 11th-review (msg 8cc637e9) — PRESETS EXACT relation-set gate. The page/menuItem/slot
+    # topology is correct in the data but the checks above only enforced "each page has >=1 binding
+    # and values are in the allowed set", so a SINGLE-edge deletion still returned 0 problems. Each
+    # defect below must be caught by the exact-set equality gate (missing one, extra one, or a
+    # misaligned slot/item pairing) rather than silently passing.
+
+    # (e) delete one slot-list press edge (a slot's preset_enter_subpage). Other slots remain, so the
+    #     page/enter checks above still pass; only the exact relation set notices the missing edge.
+    del_enter = copy.deepcopy(manifest)
+    del_enter["target"]["controlBindings"] = [
+        b for b in del_enter["target"]["controlBindings"]
+        if b.get("to") != "keyboard.preset_enter_subpage"
+    ]
+    problems, _ = gate.check(spec, del_enter)
+    if not has(problems, "presets relation set != closed manual matrix"):
+        raise SystemExit("deleted one presets enter-subpage edge not flagged by exact relation set: %r"
+                         % problems)
+
+    # (f) delete one slot-list rotate edge (a slot's preset_select_slot).
+    del_select = copy.deepcopy(manifest)
+    del_select["target"]["controlBindings"] = [
+        b for b in del_select["target"]["controlBindings"]
+        if b.get("to") != "keyboard.preset_select_slot"
+    ]
+    problems, _ = gate.check(spec, del_select)
+    if not has(problems, "presets relation set != closed manual matrix"):
+        raise SystemExit("deleted one presets select_slot edge not flagged by exact relation set: %r"
+                         % problems)
+
+    # (g) delete one action-list rotate edge (an operation's preset_select_action).
+    del_act = copy.deepcopy(manifest)
+    del_act["target"]["controlBindings"] = [
+        b for b in del_act["target"]["controlBindings"]
+        if b.get("to") != "keyboard.preset_select_action"
+    ]
+    problems, _ = gate.check(spec, del_act)
+    if not has(problems, "presets relation set != closed manual matrix"):
+        raise SystemExit("deleted one presets select_action edge not flagged by exact relation set: %r"
+                         % problems)
+
+    # (h) enter slot/item mismatch: keep presetSlot=preset_a but re-point menuItem at a DIFFERENT slot.
+    #     Both are valid slot-list display items and the target is allowed, so every per-binding and
+    #     both-pages check passes; only the exact relation set sees the missing aligned tuple (and the
+    #     extra misaligned one).
+    mis_enter = copy.deepcopy(manifest)
+    for b in mis_enter["target"]["controlBindings"]:
+        if b.get("to") == "keyboard.preset_enter_subpage" \
+                and (b.get("condition") or {}).get("presetSlot") == "preset_a":
+            b["condition"] = dict(b["condition"])
+            b["condition"]["menuItem"] = "preset_b"
+            break
+    problems, _ = gate.check(spec, mis_enter)
+    if not has(problems, "presets relation set != closed manual matrix"):
+        raise SystemExit("enter presetSlot/menuItem mismatch not flagged by exact relation set: %r"
+                         % problems)
+
+    # (i) execute target/item mismatch: an action-list press whose target names one operation but
+    #     menuItem names a DIFFERENT operation. Also delete the original matching edge for that gesture
+    #     so the dispatch fan-out gate does not catch this coincidentally (Codex 8cc637e9) — the exact
+    #     relation set is the sole catcher of a target/item misalignment.
+    mis_exec = copy.deepcopy(manifest)
+    mis_exec["target"]["controlBindings"] = [
+        b for b in mis_exec["target"]["controlBindings"]
+        if not (b.get("to") == "keyboard.presets_load"
+                and (b.get("condition") or {}).get("presetSlot") == "preset_a")
+    ]
+    for b in mis_exec["target"]["controlBindings"]:
+        if b.get("to") == "keyboard.presets_save" \
+                and (b.get("condition") or {}).get("presetSlot") == "preset_a":
+            b["condition"] = dict(b["condition"])
+            b["condition"]["menuItem"] = "presets_load"
+            break
+    problems, _ = gate.check(spec, mis_exec)
+    if not has(problems, "presets relation set != closed manual matrix"):
+        raise SystemExit("execute target/menuItem mismatch not flagged by exact relation set: %r"
+                         % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
@@ -1017,7 +1095,8 @@ def main():
           "ban), exact commandAddress/record-schema key-sets, order-preserving unique fields, the "
           "removed record* condition keys, and the PRESETS two-page state machine (closed page "
           "selector, display-item menuItem, enter-carries-slot, independent topology, both-pages-"
-          "present) are gated too.")
+          "present, and the EXACT closed relation set — single-edge deletion, enter slot/item "
+          "misalignment, and execute target/item misalignment all fail) are gated too.")
     return 0
 
 

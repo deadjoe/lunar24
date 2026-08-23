@@ -947,6 +947,40 @@ def check(spec, manifest, require_full=False):
         problems.append(f"presets enter-subpage must carry a closed presetSlot: "
                         f"{sorted(preset_enter_no_slot)}")
 
+    # ---- PRESETS EXACT relation-set gate (Codex 11th-review verdict msg 8cc637e9) ----
+    # The page/menuItem/slot topology is correct in the data, but the gate above only enforced "each
+    # page has >=1 binding and values are in the allowed set" — so deleting ANY single edge (one slot's
+    # enter-subpage, one slot's select_slot, one operation's select_action) still returned 0 problems,
+    # and an enter whose menuItem and presetSlot disagree also passed. The manual's PRESETS matrix is
+    # CLOSED and small (2 pages x 4 slots x 3 operations), so we PROJECT every presets binding onto a
+    # canonical relation tuple and require EXACT SET EQUALITY with that closed matrix. A tuple matches
+    # only when menuItem is the real surface item AND the press edges pin menuItem == presetSlot (and
+    # the execute edge additionally pins target == menuItem); missing one, extra one, or a misaligned
+    # slot/item pairing all fail (the misalignment is BOTH a missing aligned tuple and an extra one).
+    preset_action_labels = PRESET_PAGE_ITEMS["action-list"]
+    expected_preset_relations = set()
+    for s in PRESET_SLOTS:
+        expected_preset_relations.add(("slot-list", "rotate", "preset_select_slot", s, None))
+        expected_preset_relations.add(("slot-list", "press", "preset_enter_subpage", s, s))
+    for o in preset_action_labels:
+        expected_preset_relations.add(("action-list", "rotate", "preset_select_action", o, None))
+        for s in PRESET_SLOTS:
+            expected_preset_relations.add(("action-list", "press", o, o, s))
+    actual_preset_relations = set()
+    for b in bindings:
+        bctx = b.get("context") or {}
+        if bctx.get("type") == "keyboard-menu" and bctx.get("menu") == "presets":
+            cond = b.get("condition") or {}
+            actual_preset_relations.add(
+                (bctx.get("page"), b.get("sourceOperation"), (b.get("to") or "").rsplit(".", 1)[-1],
+                 cond.get("menuItem"), cond.get("presetSlot")))
+    if actual_preset_relations != expected_preset_relations:
+        missing = sorted(expected_preset_relations - actual_preset_relations)
+        extra = sorted(actual_preset_relations - expected_preset_relations)
+        problems.append(
+            f"presets relation set != closed manual matrix: missing={len(missing)} "
+            f"extra={len(extra)} (missing={missing}; extra={extra})")
+
     # ---- reject duplicate semantic tuples (msg 9d8b5f43 item #1) ----------------
     # Two bindings describing the SAME (from,to,source,targetKind,targetOp,axis,index,condition,
     # commandAddress) are un-executable — both would fire. Surface them rather than let one win.
