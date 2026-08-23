@@ -3987,6 +3987,111 @@ def main():
         raise SystemExit("missing kJackIdSpace constant not flagged (fail-open): %r"
                          % problems_space_miss)
 
+    # (le)-(ll) Cathedral Program 2/3 X/Y/Z descriptor lock (Codex msg 3cad5c27). The six program
+    #      cathedral.2/.3 x/y/z params (ids 301-306) are landed descriptor facts locked by the same
+    #      exact-compare as module params — so id renumber, owner / cross-owner leak, per-line evidence
+    #      drift, and a fieldEvidence overclaim (unverified -> confirmed) must all fail normal. Unlike
+    #      the classic/generator voices, cathedral.2/.3 are program X/Y/Z params, so their ROLE is
+    #      also locked: a program x/y/z param's role must equal its stable-id .x/.y/.z suffix (it is
+    #      NOT a free choice of a valid enum name). A deletion of either terminator (cathedral.2.x
+    #      first, cathedral.3.z last) is a landed/mustComplete drop, not a reopenable gap.
+
+    # (le) id renumber: cathedral.2.x is id 301; renumbering (301 -> 999) must fail.
+    le_bad = copy.deepcopy(spec)
+    reg_param(le_bad, "program.cathedral.2.x")["id"] = 999
+    problems, _ = gate.check(le_bad, manifest)
+    if not has(problems, "implementation param 'program.cathedral.2.x'"):
+        raise SystemExit("cathedral.2.x param id renumber (301 -> 999) not enforced: %r" % problems)
+
+    # (lf) owner / cross-owner leak: cathedral.2.x must stay owned by program.cathedral.2. Moving it
+    #      under program.cathedral.3's parameter array makes the generated param owner
+    #      program.cathedral.3 (the carrying program), which the landed fact rejects.
+    lf_bad = copy.deepcopy(spec)
+    _c2 = next(pr for pr in lf_bad["programs"] if pr.get("stable_id") == "program.cathedral.2")
+    _c3 = next(pr for pr in lf_bad["programs"] if pr.get("stable_id") == "program.cathedral.3")
+    _x = [p for p in _c2["parameters"] if p["stable_id"] == "program.cathedral.2.x"][0]
+    _c2["parameters"] = [p for p in _c2["parameters"] if p["stable_id"] != "program.cathedral.2.x"]
+    _c3.setdefault("parameters", []).append(_x)
+    problems, _ = gate.check(lf_bad, manifest)
+    if not has(problems, "implementation param 'program.cathedral.2.x'"):
+        raise SystemExit("cathedral.2.x cross-owner leak (-> program.cathedral.3) not enforced: %r"
+                         % problems)
+
+    # (lg) ROLE drift: a program X/Y/Z param's role is part of its locked identity and must equal the
+    #      stable-id suffix. cathedral.2.x being role y (a valid enum, but the wrong position) must
+    #      fail — this is the gate added for this slice (the landed exact-compare does not compare
+    #      role, so a role mismatch is only caught here). needle is the role gate's own signature.
+    lg_bad = copy.deepcopy(spec)
+    reg_param(lg_bad, "program.cathedral.2.x")["role"] = "y"
+    problems, _ = gate.check(lg_bad, manifest)
+    if not has(problems, "stable-id position"):
+        raise SystemExit("cathedral.2.x role drift (x -> y) not enforced by the role gate: %r"
+                         % problems)
+
+    # (lh) per-line descriptorEvidence drift: cathedral.2.x cites L1216; moving it (1216 -> 1217) is a
+    #      target drift and must fail.
+    lh_bad = copy.deepcopy(spec)
+    reg_param(lh_bad, "program.cathedral.2.x")["evidence"]["line"] = 1217
+    problems, _ = gate.check(lh_bad, manifest)
+    if not has(problems, "implementation param 'program.cathedral.2.x'"):
+        raise SystemExit("cathedral.2.x descriptorEvidence.line drift (1216 -> 1217) not enforced: "
+                         "%r" % problems)
+
+    # (li) fieldEvidence overclaim: a placeholder range must not be silently elevated to confirmed
+    #      (the KEY DIFF — no physical feedback/reverb/delay unit/range/default is being asserted).
+    li_bad = copy.deepcopy(spec)
+    reg_param(li_bad, "program.cathedral.2.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(li_bad, manifest)
+    if not has(problems, "implementation param 'program.cathedral.2.x'"):
+        raise SystemExit("cathedral.2.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+
+    # (lj) FIRST terminator delete: dropping cathedral.2.x is a landed/mustComplete drop, not a gap.
+    lj_bad = copy.deepcopy(spec)
+    _c2 = next(pr for pr in lj_bad["programs"] if pr.get("stable_id") == "program.cathedral.2")
+    _c2["parameters"] = [p for p in _c2["parameters"] if p["stable_id"] != "program.cathedral.2.x"]
+    problems, _ = gate.check(lj_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.cathedral.2.x'"):
+        raise SystemExit("cathedral.2.x terminator delete (first) not enforced: %r" % problems)
+
+    # (lk) LAST terminator delete: dropping cathedral.3.z is likewise a landed/mustComplete drop.
+    lk_bad = copy.deepcopy(spec)
+    _c3 = next(pr for pr in lk_bad["programs"] if pr.get("stable_id") == "program.cathedral.3")
+    _c3["parameters"] = [p for p in _c3["parameters"] if p["stable_id"] != "program.cathedral.3.z"]
+    problems, _ = gate.check(lk_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.cathedral.3.z'"):
+        raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
+
+    # (ll) cathedral.2/.3 must NOT be re-openable as an honest gap: with the two cathedral programs'
+    #      params landed, the --require-full residual must exclude every cathedral.2/.3 id. It widens
+    #      exactly across the 12 keyboard complex + 105 other program XYZ params (117 total).
+    _res_full, _ = gate.check(spec, manifest, require_full=True)
+    _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
+    if len(_gap_lines) != 1:
+        raise SystemExit("unexpected --require-full residual shape: %r" % _gap_lines)
+    _txt = _gap_lines[0]
+    _body = _txt[_txt.index("[") + 1:_txt.rindex("]")]
+    _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
+    _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
+    _prog = [x for x in _gap_ids if x.startswith("program.")]
+    if len(_gap_ids) != 117:
+        raise SystemExit("residual honest-gap total %d != 117 (12 keyboard complex + 105 program XYZ); "
+                         "cathedral.2/.3 must have landed and closed exactly 6" % len(_gap_ids))
+    if len(_kb) != 12 or len(_prog) != 105:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/105: %r" % (len(_kb), len(_prog),
+                                                                                 _gap_ids))
+    for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
+                 "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z"):
+        if _sid in _gap_ids:
+            raise SystemExit("cathedral landed param %s re-opened as an honest gap (mandate: the 105 "
+                             "other program XYZ gaps are preserved, NOT cathedral.2/3): %r"
+                             % (_sid, _gap_ids))
+    for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
+                 "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
+        if _sid in _gap_ids:
+            raise SystemExit("already-landed program param %s incorrectly left as a gap: %r"
+                             % (_sid, _gap_ids))
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

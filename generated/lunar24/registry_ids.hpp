@@ -268,6 +268,12 @@ enum class ParameterId : std::uint32_t {
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
+    program_cathedral_2_x = 301,
+    program_cathedral_2_y = 302,
+    program_cathedral_2_z = 303,
+    program_cathedral_3_x = 304,
+    program_cathedral_3_y = 305,
+    program_cathedral_3_z = 306,
     program_magic_1_x = 27,
     program_magic_1_y = 28,
     program_magic_1_z = 29
@@ -392,13 +398,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 234;
+inline constexpr std::uint32_t kParameterCount = 240;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 301;
+inline constexpr std::uint64_t kParameterIdSpace = 307;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -667,6 +673,12 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";
+    case ParameterId::program_cathedral_2_x: return "program.cathedral.2.x";
+    case ParameterId::program_cathedral_2_y: return "program.cathedral.2.y";
+    case ParameterId::program_cathedral_2_z: return "program.cathedral.2.z";
+    case ParameterId::program_cathedral_3_x: return "program.cathedral.3.x";
+    case ParameterId::program_cathedral_3_y: return "program.cathedral.3.y";
+    case ParameterId::program_cathedral_3_z: return "program.cathedral.3.z";
     case ParameterId::program_magic_1_x: return "program.magic.1.x";
     case ParameterId::program_magic_1_y: return "program.magic.1.y";
     case ParameterId::program_magic_1_z: return "program.magic.1.z";

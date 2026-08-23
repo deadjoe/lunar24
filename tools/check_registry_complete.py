@@ -1395,6 +1395,17 @@ def check(spec, manifest, require_full=False):
                             f"step={want[8]}, smoothing={want[9]}, persistence={want[10]}, "
                             f"status={want[11]}, descriptorEvidence.line={want[12]}, "
                             f"fieldEvidence={want[13:]})")
+        # Codex msg 3cad5c27 (CATHEDRAL Program 2/3 X/Y/Z slice): a program X/Y/Z
+        # parameter's role is part of its locked identity. It must match the stable-id
+        # suffix (.x/.y/.z), not merely be a valid enum name — so the generator emitting
+        # ParamRole::y for program.cathedral.2.x is rejected. Module params carry no role,
+        # so this audit only reaches program-owned landed params.
+        if str(f.get("owner", "")).startswith("program."):
+            pos = sid.rsplit(".", 1)[-1]
+            if rp.get("role") != pos:
+                problems.append(f"implementation param {sid!r}: role {rp.get('role')!r} != "
+                                f"stable-id position {pos!r} (a program X/Y/Z param's role must "
+                                f"match its .x/.y/.z suffix)")
     fe_keys = ("nominalRange", "toleratedRange", "threshold", "saturation", "transfer",
                "signalType", "polarity", "coupling")
     for sid, f in sorted(landed_jacks.items()):

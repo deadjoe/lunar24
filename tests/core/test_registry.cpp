@@ -113,7 +113,12 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 234u); // Phase B DRONE 6 voice slice (Codex msg b121ba1b):
+  CHECK_EQ(core::kParameterCount, 240u); // Phase B Cathedral Program 2/3 X/Y/Z slice (Codex msg
+                                         // 3cad5c27): +6 program params (cathedral.2/.3 x/y/z
+                                         // feedback/delay/reverb, ids 301-306, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z).
+                                         // Prior: Phase B DRONE 6 voice slice (Codex msg b121ba1b):
                                          // +12 params (drone_6.rate/mod/divider/pitch/noise/att/rls
                                          // continuous software-normalized 0..1 placeholders +
                                          // hi_low selector hi/low + fm/am/rate_switch/hold selectors
@@ -130,7 +135,7 @@ static void frozen_counts() {
                                          // (Codex msg 28e00d92) +19 (ids 201-219), dual-effector
                                          // slice +8 (ids 193-200), voice-mixer slice +20
                                          // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
-                                         // carry 228, programs 6. Left as honest gaps the 12 keyboard
+                                         // carry 228, programs 12. Left as honest gaps the 12 keyboard
                                          // complex params (seq_steps, quantise_scale_editor,
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,
                                          // seq_clock, arp_rhythm, seq_rhythm + remaining module
