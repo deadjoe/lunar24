@@ -18,11 +18,16 @@
 namespace lunar24::core {
 
 // Parameter value bank capacity. Must be >= registry kParameterIdSpace (the
-// one-past-the-last serialized ParameterId). PROVISIONAL until the full P0
-// inventory. Bumped past Phase B DRONE 4 (Codex msg 483a9dc5): the landed param
-// id-space is now 258 (max id drone_4.gate_hold 257), and the value is sized to
-// also cover the remaining declared drone_3/5/6 + keyboard complex params.
-inline constexpr std::size_t kDeviceParamCapacity = 384;
+// one-past-the-last serialized ParameterId). This is now the P0 FINAL parameter
+// id-space: the frozen 357-parameter target plus an append-only id plan — new ids
+// continue from 376 and the 0..375 holes are never reused — so the space is
+// one-past last id 423 = 424. Capacity freeze (Codex msg deab14b7), a
+// metadata-only ruling: it does NOT implement the B-tier deferred self-oscillating
+// DSP. Future id allocation (registry metadata numbering only): SYNTEX-1 376-384,
+// DIGITAL 385-393, GENERATOR 394-402, ORCHE 403-411, 12 keyboard complex 412-423.
+// The completeness gate stays capacity >= id-space until the full inventory lands
+// (then it is tightened to ==), so this slice never fakes early full coverage.
+inline constexpr std::size_t kDeviceParamCapacity = 424;
 
 // Patch-cable / normalized-route-override bank capacities. Must be >= the
 // registry id-space of JackId and RouteId respectively. PROVISIONAL until the

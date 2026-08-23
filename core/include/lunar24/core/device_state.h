@@ -150,13 +150,15 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // byte size (recomputed in a test so it can never silently diverge from the
 // field table). It rose 3506 -> 3511 when kDevicePatchCapacity went 64 -> 65
 // (DRONE 6, Codex msg cc68ab2b — Option A narrow release): the `input_cable` u8
-// array grows +1 and the `cable_source` u32 array grows +4.
+// array grows +1 and the `cable_source` u32 array grows +4. It rose 3511 -> 3831
+// in the parameter-capacity freeze (Codex msg deab14b7) when kDeviceParamCapacity
+// went 384 -> 424: the `parameters` f64 array grows +40 (40 x 8 = 320 bytes).
 inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageSchemaVersion,
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    3511u,
+    3831u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).
