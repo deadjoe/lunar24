@@ -13,55 +13,64 @@ Codex msg 06ef6b70 (third review, ledger rework) split the old conflated `contro
 (370) into THREE entities and killed two self-proving gates:
 
   target.panelControls[]           -- ONE row per REAL physical panel widget
-      {stable_id, owner, kind, region, panelLabel, status, evidence}
+      {stable_id, owner, kind, region, leaf, panelLabel, positions|axes|operations, status, evidence}
       kind ∈ {continuous, selector-toggle, momentary-touch, rotary-encoder}
   target.parameters[]              -- the persisted LOGICAL state (the Parameter target)
-      {stable_id, owner, kind, region, semanticLabel?, status, evidence}
-      kind ∈ {continuous, selector-toggle, state-field}
-  target.controlBindings[]         -- widget -> parameter, with a program/mode/global context
-      {stable_id, from, to, context, status, evidence}
+      {stable_id, owner, kind, region, shape, cardinality|recordType|maskSize, semanticLabel?, ...}
+      kind ∈ {continuous, selector-toggle, state-field}; shape ∈ {scalar, vector, record, mask}
+  target.actions[]                 -- stable event identity for event-only widgets
+      {stable_id, owner, name, kind, region, status, evidence}
+      kind ∈ {trigger, encoder-rotate, encoder-press, encoder-long-press, init, save}
+  target.controlBindings[]         -- widget -> parameter|action, with a structured context
+      {stable_id, from, to, operation, context, axis?|index?, status, evidence}
   target.controlRegions[]          -- per-panel-region subtotal; the DECLARED count is an
-      INDEPENDENT hand-counted constant (`expectedPanelControlCount`), never `len(rows)`,
-      so an omission in the transcription is caught here rather than self-proven.
+      INDEPENDENT hand-counted constant (`expectedPanelControlCount`), never `len(rows)`.
+  target.recordSchemas{}           -- declared payload shapes for record-typed parameters.
+  manifest.migrationAllowlist{}    -- monotonically-shrinking legacy-rogue grandfather list.
 
-The states of the 117 program X/Y/Z knobs and the keyboard menu/state fields are NOT
-panel controls — they are logical parameters edited by the shared X/Y/Z / encoder. They
-live in `parameters[]` and are bound to those widgets via `controlBindings[]`.
+Codex msg c7089521 (fifth review, still NOT GO) hardened this gate further:
 
-The gate checks:
+  - Parameters carry an EXPLICIT shape (scalar|vector|record|mask) with cardinality /
+    recordType / maskSize; a mis-scalar continuous/state field (joystick=2-axis,
+    plate_tune=12, pushbutton_value=8, seq_editor=record, quantise_scale_editor=mask) is
+    now structurally declared instead of an opaque semanticLabel.
+  - Actions give the 27 event-only widgets a stable identity; controlBindings[].to may be a
+    parameter OR an action, and binding semantics (operation + axis/index) are validated.
+  - Context is a STRUCTURED closed-set object ({type: global|program|keyboard-menu|
+    keyboard-mode, ...}); program context must reference a declared ProgramId, keyboard-menu
+    must reference a legal menu, joystick axis / encoder operations are validated.
+  - Per-ID gate is ALWAYS-ON for rogue ids: any registry Parameter/Jack not in the target AND
+    not in `migrationAllowlist` is a NEW rogue and fails even without --require-full;
+    --require-full additionally requires the allowlist empty and no rogue. Capability is split
+    patchableJacks vs internalEndpoints (mixer/voices have no normal patchable jack). The
+    empty-region check is `declaredRegionIds - actualRegionIds`.
 
-  1. CONSISTENCY INVARIANTS (always on):
-     - real provenance shape (status + ref + panelSite/section/line);
-     - no duplicate stable_id within ANY category (重件), incl. panelControls/parameters/
-       controlBindings/controlRegions;
-     - every parameter/endpoint/panelControl `owner` is a target module or program/terminal;
-       every kind is in its closed enum; every parameter and panelControl names a real region;
-     - controlBindings: every `from` is a panelControl, every `to` a parameter, context present;
-       every parameter is bound (no orphan persisted state); every continuous/selector-toggle
-       panelControl drives ≥1 bound parameter;
-     - REGION SUBTOTAL INDEPENDENCE: each region's emitted panelControl count == its
-       INDEPENDENT expectedPanelControlCount, the subtotals sum to the full panelControls[]
-       set, and no panelControl lives in a non-panel (state) region;
-     - normalized/fixed route endpoints resolve in the inventory, are correctly directed,
-       and internal (non-patchable) endpoints stay in fixed/route position;
-     - per-CAPABILITY present-but-empty: a registry module that DECLARES a capability
-       (parameters/jacks/controls) must actually provide it — the old blanket "every module
-       must have a param AND a jack" is gone (voices legitimately has no persisted param);
-     - implementation ⊆ independent target (module/program/route): a registry item absent from
-       the target is an error, never silently green;
-     - mustComplete == exactly the registry's landed target keys (auto-sync).
+1. CONSISTENCY INVARIANTS (always on):
+   - real provenance shape (status + ref + panelSite/section/line);
+   - no duplicate stable_id within ANY category (重件), incl. panelControls/parameters/actions/
+     controlBindings/controlRegions;
+   - every parameter/endpoint/panelControl/action `owner` is a target module or program/terminal;
+     every kind/shape is in its closed enum; every parameter and panelControl names a real region;
+   - controlBindings: every `from` is a panelControl, every `to` a parameter|action with a valid
+     operation; context is a structured closed-set object with valid references; every parameter
+     is bound (no orphan persisted state); every continuous/selector-toggle panelControl drives
+     >=1 bound parameter; every event-only (momentary-touch/rotary-encoder) panelControl has >=1
+     action binding;
+   - REGION SUBTOTAL INDEPENDENCE: each region's emitted panelControl count == its INDEPENDENT
+     expectedPanelControlCount, the subtotals sum to the full panelControls[] set, and no
+     panelControl lives in a non-panel (state) region; a declared region with no widgets is an
+     error (declaredRegionIds - actualRegionIds, not the old region_actual==0 form);
+   - normalized/fixed route endpoints resolve in the inventory, are correctly directed, and
+     internal (non-patchable) endpoints stay in fixed/route position;
+   - per-CAPABILITY present-but-empty (parameters / patchableJacks / internalEndpoints /
+     controls);
+   - implementation ⊆ independent target (module/program/route): a registry item absent from the
+     target is an error, never silently green;
+   - mustComplete == exactly the registry's landed target keys (auto-sync).
 
-  2. CATEGORY-WISE COVERAGE (never one %): modules / program identities / params / panel
-     controls / bindings / patchable jacks + internal endpoints / normalized routes / fixed
-     routes. Params and endpoints are reported target-vs-present.
-
-  With `--require-full` the gate compares target↔registry PER STABLE ID for Parameters and
-  Patchable Jacks (gap = target item not implemented; rogue = implemented item not a target),
-  requires every capability-declared target module to be transcribed, and requires every
-  required fixed route to be defined. InternalEndpoint/FixedRoute per-ID comparison is deferred
-  until the C++ id-space lands (Codex msg 06ef6b70: fixed schema must not bind to a target
-  whose IDs are still moving). CI enables this mode against the exact head so PR #2 can turn
-  it green for real.
+2. CATEGORY-WISE COVERAGE (never one %): modules / program identities / params / panel
+   controls / actions / bindings / patchable jacks + internal endpoints / normalized routes /
+   fixed routes.
 
 Usage:
   python3 tools/check_registry_complete.py [--require-full]
@@ -85,6 +94,15 @@ VALID_DIR = {"input", "output"}
 VALID_KIND = {"audio", "control", "gate"}
 PANEL_KINDS = {"continuous", "selector-toggle", "momentary-touch", "rotary-encoder"}
 PARAM_KINDS = {"continuous", "selector-toggle", "state-field"}
+SHAPES = {"scalar", "vector", "record", "mask"}
+ACTION_KINDS = {"trigger", "encoder-rotate", "encoder-press", "encoder-long-press",
+                "init", "save"}
+VALID_OPS = {"set", "press", "rotate", "long_press"}
+CTX_TYPES = {"global", "program", "keyboard-menu", "keyboard-mode"}
+KB_MENUS = {"behaviour", "mode", "arp", "sequencer", "portamento", "vibrato", "pressure",
+            "quantiser", "clock", "calibration", "button-editor", "presets"}
+KB_MODES = {"single", "twin", "split"}
+VALID_AXES = {"x", "y"}
 # Parameter regions that hold LOGICAL state (program X/Y/Z, keyboard menu/state) but are NOT
 # panel regions: they contribute no expectedPanelControlCount entry to controlRegions[].
 STATE_REGIONS = {"program_params", "keyboard_state"}
@@ -125,14 +143,19 @@ def check(spec, manifest, require_full=False):
     programs = tgt.get("programs", [])
     panel_controls = tgt.get("panelControls", [])
     parameters = tgt.get("parameters", [])
+    actions = tgt.get("actions", [])
     bindings = tgt.get("controlBindings", [])
     control_regions = tgt.get("controlRegions", [])
+    record_schemas = tgt.get("recordSchemas", {}) or {}
     pjt = tgt.get("paramsJackTargets") or {}
     endpoints = pjt.get("endpoints", [])
     norm_routes = tgt.get("normalizedRoutes", [])
     fixed_routes = tgt.get("fixedRoutes", [])
     required_fixed = tgt.get("requiredFixedRoutes", [])
     must_complete = manifest.get("mustComplete", [])
+    allowlist = manifest.get("migrationAllowlist") or {}
+    allow_params = set(allowlist.get("parameters", []) or [])
+    allow_jacks = set(allowlist.get("jacks", []) or [])
 
     def dup_check(items, cat, sid_key="stable_id"):
         seen = {}
@@ -147,6 +170,7 @@ def check(spec, manifest, require_full=False):
     dup_check(programs, "program")
     dup_check(panel_controls, "panelControl")
     dup_check(parameters, "parameter")
+    dup_check(actions, "action")
     dup_check(bindings, "controlBinding")
     dup_check(endpoints, "endpoint")
     dup_check(norm_routes, "normalized route")
@@ -159,9 +183,10 @@ def check(spec, manifest, require_full=False):
             problems.append(f"manifest module {m.get('stable_id')!r}: needs stable_id+name+category")
         cap = m.get("capabilities")
         if not isinstance(cap, dict) or not all(
-                isinstance(cap.get(k), bool) for k in ("parameters", "jacks", "controls")):
+                isinstance(cap.get(k), bool) for k in ("parameters", "patchableJacks",
+                                                       "internalEndpoints", "controls")):
             problems.append(f"manifest module {m.get('stable_id')!r}: needs capabilities with "
-                            f"parameters/jacks/controls each a bool")
+                            f"parameters/patchableJacks/internalEndpoints/controls each a bool")
         if not provenance_ok(m):
             problems.append(f"manifest module {m.get('stable_id')!r}: incomplete evidence "
                             f"(need status in {sorted(VALID_STATUS)} + ref + panelSite/section/line)")
@@ -213,6 +238,22 @@ def check(spec, manifest, require_full=False):
         if not (sid and it.get("owner") and it.get("kind") in PARAM_KINDS):
             problems.append(f"manifest parameter {sid!r}: needs stable_id+owner+kind in "
                             f"{sorted(PARAM_KINDS)}")
+        shape = it.get("shape")
+        if shape not in SHAPES:
+            problems.append(f"manifest parameter {sid!r}: shape {shape!r} not in {sorted(SHAPES)}")
+        if shape == "vector" and not isinstance(it.get("cardinality"), int):
+            problems.append(f"manifest parameter {sid!r}: shape=vector needs int cardinality")
+        if shape == "record" and it.get("recordType") not in record_schemas:
+            problems.append(f"manifest parameter {sid!r}: shape=record needs a declared "
+                            f"recordType (have {sorted(record_schemas)})")
+        if shape == "mask" and not isinstance(it.get("maskSize"), int):
+            problems.append(f"manifest parameter {sid!r}: shape=mask needs int maskSize")
+        if shape != "vector" and it.get("cardinality") is not None:
+            problems.append(f"manifest parameter {sid!r}: cardinality only valid for shape=vector")
+        if shape != "record" and it.get("recordType") is not None:
+            problems.append(f"manifest parameter {sid!r}: recordType only valid for shape=record")
+        if shape != "mask" and it.get("maskSize") is not None:
+            problems.append(f"manifest parameter {sid!r}: maskSize only valid for shape=mask")
         if it.get("owner") not in (module_ids | program_stable_ids):
             problems.append(f"manifest parameter {sid!r}: owner {it.get('owner')!r} "
                             f"not a target module or program")
@@ -225,12 +266,26 @@ def check(spec, manifest, require_full=False):
 
     # ---- panelControls: one row per real physical widget --------------------
     pc_sids = set()
+    pc_by_id = {}
     region_actual = {}
     for c in panel_controls:
         sid = c.get("stable_id")
         if not (sid and c.get("owner") and c.get("kind") in PANEL_KINDS):
             problems.append(f"manifest panelControl {sid!r}: needs stable_id+owner+kind in "
                             f"{sorted(PANEL_KINDS)}")
+        if not c.get("leaf") or not c.get("panelLabel"):
+            problems.append(f"manifest panelControl {sid!r}: needs leaf + panelLabel "
+                            f"(verbatim panel label separate from the internal leaf)")
+        if c.get("kind") == "selector-toggle" and (not c.get("positions") or
+                                                   not isinstance(c.get("positions"), list)):
+            problems.append(f"manifest panelControl {sid!r}: selector-toggle needs a non-empty "
+                            f"positions[] (discrete position labels)")
+        if c.get("kind") == "rotary-encoder" and not c.get("operations"):
+            problems.append(f"manifest panelControl {sid!r}: rotary-encoder needs operations "
+                            f"[{ {'rotate','press','long_press'} }]")
+        if c.get("axes") and not set(c.get("axes")) <= VALID_AXES:
+            problems.append(f"manifest panelControl {sid!r}: axes {c.get('axes')} not within "
+                            f"{sorted(VALID_AXES)}")
         if c.get("owner") not in (allowed_owners | program_stable_ids):
             problems.append(f"manifest panelControl {sid!r}: owner {c.get('owner')!r} is not a "
                             f"target module, terminal, or program")
@@ -240,11 +295,34 @@ def check(spec, manifest, require_full=False):
         if not provenance_ok(c):
             problems.append(f"manifest panelControl {sid!r}: incomplete evidence")
         pc_sids.add(sid)
+        pc_by_id[sid] = c
         region_actual[c.get("region")] = region_actual.get(c.get("region"), 0) + 1
 
-    # ---- controlBindings: widget -> parameter -------------------------------
+    region_ids = {r.get("id") for r in control_regions}
+
+    # ---- actions: stable event identity for event-only widgets -------------
+    action_sids = set()
+    for a in actions:
+        sid = a.get("stable_id")
+        if not (sid and a.get("owner") and a.get("name")):
+            problems.append(f"manifest action {sid!r}: needs stable_id+owner+name")
+        if a.get("kind") not in ACTION_KINDS:
+            problems.append(f"manifest action {sid!r}: kind {a.get('kind')!r} not in "
+                            f"{sorted(ACTION_KINDS)}")
+        if a.get("owner") not in (allowed_owners | program_stable_ids):
+            problems.append(f"manifest action {sid!r}: owner {a.get('owner')!r} is not a target "
+                            f"module, terminal, or program")
+        if a.get("region") not in (region_ids | STATE_REGIONS):
+            problems.append(f"manifest action {sid!r}: region {a.get('region')!r} is not a panel "
+                            f"region nor {sorted(STATE_REGIONS)}")
+        if not provenance_ok(a):
+            problems.append(f"manifest action {sid!r}: incomplete evidence")
+        action_sids.add(sid)
+
+    # ---- controlBindings: widget -> parameter|action ------------------------
     binding_from_pc = {}
     binding_to_param = {}
+    binding_to_action = {}
     for b in bindings:
         sid = b.get("stable_id")
         if not (sid and b.get("from") and b.get("to")):
@@ -253,19 +331,57 @@ def check(spec, manifest, require_full=False):
         if b.get("from") not in pc_sids:
             problems.append(f"manifest controlBinding {sid}: from {b.get('from')!r} is not a "
                             f"declared panelControl")
-        if b.get("to") not in param_sids:
-            problems.append(f"manifest controlBinding {sid}: to {b.get('to')!r} is not a "
-                            f"declared parameter")
-        if not b.get("context"):
-            problems.append(f"manifest controlBinding {sid}: missing context "
-                            f"(program/mode/global)")
+        op = b.get("operation") or "set"
+        if op not in VALID_OPS:
+            problems.append(f"manifest controlBinding {sid}: operation {op!r} not in "
+                            f"{sorted(VALID_OPS)}")
+        if op in {"press", "rotate", "long_press"}:
+            if b.get("to") not in action_sids:
+                problems.append(f"manifest controlBinding {sid}: {op} target {b.get('to')!r} "
+                                f"is not a declared action")
+            else:
+                binding_to_action[b.get("to")] = True
+        else:
+            if b.get("to") not in param_sids:
+                problems.append(f"manifest controlBinding {sid}: to {b.get('to')!r} is not a "
+                                f"declared parameter")
+            else:
+                binding_to_param[b.get("to")] = True
+        ctx = b.get("context")
+        if not isinstance(ctx, dict) or not ctx.get("type"):
+            problems.append(f"manifest controlBinding {sid}: missing structured context "
+                            f"({{type: global|program|keyboard-menu|keyboard-mode}})")
+        else:
+            ctype = ctx["type"]
+            if ctype not in CTX_TYPES:
+                problems.append(f"manifest controlBinding {sid}: context type {ctype!r} not in "
+                                f"{sorted(CTX_TYPES)}")
+            elif ctype == "program" and ctx.get("program") not in program_stable_ids:
+                problems.append(f"manifest controlBinding {sid}: program context references "
+                                f"unknown ProgramId {ctx.get('program')!r}")
+            elif ctype == "keyboard-menu" and ctx.get("menu") not in KB_MENUS:
+                problems.append(f"manifest controlBinding {sid}: keyboard-menu context menu "
+                                f"{ctx.get('menu')!r} not in {sorted(KB_MENUS)}")
+            elif ctype == "keyboard-mode" and ctx.get("mode") not in KB_MODES:
+                problems.append(f"manifest controlBinding {sid}: keyboard-mode context mode "
+                                f"{ctx.get('mode')!r} not in {sorted(KB_MODES)}")
+        if b.get("axis") is not None:
+            fromw = pc_by_id.get(b.get("from")) or {}
+            axes = fromw.get("axes") or []
+            if b["axis"] not in axes:
+                problems.append(f"manifest controlBinding {sid}: axis {b['axis']!r} is not a "
+                                f"declared axis of {b.get('from')}")
+            expect_to = fromw.get("owner") + "." + b["axis"] if fromw.get("owner") else None
+            if expect_to and b.get("to") != expect_to:
+                problems.append(f"manifest controlBinding {sid}: axis {b['axis']!r} must target "
+                                f"{expect_to!r}, not {b.get('to')!r}")
         if not provenance_ok(b):
             problems.append(f"manifest controlBinding {sid}: incomplete evidence")
         binding_from_pc[b.get("from")] = binding_from_pc.get(b.get("from"), 0) + 1
-        binding_to_param[b.get("to")] = binding_to_param.get(b.get("to"), 0) + 1
 
-    # every persisted parameter must be reachable via a widget (no orphan state);
-    # every continuous/selector-toggle panelControl must drive a persisted parameter.
+    # every persisted parameter must be reachable via a widget (no orphan state); every
+    # continuous/selector-toggle panelControl must drive a persisted parameter; every event-only
+    # widget must carry at least one action binding.
     orphan_params = sorted(param_sids - set(binding_to_param))
     if orphan_params:
         problems.append(f"parameters with no controlBinding (orphan persisted state): "
@@ -276,6 +392,11 @@ def check(spec, manifest, require_full=False):
     if unbound_persist:
         problems.append(f"continuous/selector-toggle panelControls with no controlBinding: "
                         f"{unbound_persist}")
+    unbound_action_events = sorted(
+        {c.get("stable_id") for c in panel_controls if c.get("kind") in
+         {"momentary-touch", "rotary-encoder"}} - set(binding_from_pc))
+    if unbound_action_events:
+        problems.append(f"event-only panelControls with no action binding: {unbound_action_events}")
 
     # ---- region subtotal INDEPENDENCE (no len(rows) self-proving) -----------
     by_rid = {}
@@ -297,9 +418,8 @@ def check(spec, manifest, require_full=False):
                             f"(independent subtotal disagrees with the transcription)")
         if not provenance_ok(r):
             problems.append(f"control region {rid!r}: incomplete evidence")
-    region_ids = set(by_rid)
     if control_regions:
-        undeclared = sorted(set(region_actual) - region_ids)
+        undeclared = sorted(set(region_actual) - set(by_rid))
         if undeclared:
             problems.append(f"panelControls in undeclared regions (no controlRegion subtotal): "
                             f"{undeclared}")
@@ -308,11 +428,14 @@ def check(spec, manifest, require_full=False):
     if panel_controls and total_counted != len(panel_controls):
         problems.append(f"controlRegions expectedPanelControlCount subtotal {total_counted} "
                         f"!= panelControls[] length {len(panel_controls)}")
-    # A panel region must contain real widgets (0-count panel regions are not allowed; logical
-    # state regions are separate and excluded from controlRegions[]).
-    empty_regions = sorted(rid for rid, n in region_actual.items() if n == 0)
+    # A DECLARED panel region must contain real widgets: empty_or_absent = declaredRegionIds -
+    # actualRegionIds (Codex item #5), NOT the old region_actual==0 form. Logical state regions are
+    # separate and excluded from controlRegions[].
+    declared_region_ids = set(by_rid)
+    actual_region_ids = {rid for rid, n in region_actual.items() if n > 0}
+    empty_regions = sorted(declared_region_ids - actual_region_ids)
     if empty_regions:
-        problems.append(f"panel controlRegions with no panelControls: {empty_regions}")
+        problems.append(f"panel controlRegions declared but with no panelControls: {empty_regions}")
 
     # ---- endpoint inventory + route direction/dangling validation -----------
     inventory = {}
@@ -372,21 +495,23 @@ def check(spec, manifest, require_full=False):
         problems.append(f"implementation route {route!r} not in independent target (impl ⊄ target)")
 
     # ---- per-CAPABILITY present-but-empty (replaces blanket param+jack) ----
-    # A registry module that DECLARES a capability must actually provide it; a module that
-    # declares parameters=False (e.g. voices, momentary triggers) is NOT demanded to have any.
     tmodel = {m["stable_id"]: m for m in modules if m.get("stable_id")}
     reg_param_owners = {p["_stable_owner"] for p in reg.parameters}
     reg_jack_owners = {j["_module_stable"] for j in reg.jacks}
     cap_owners_target = {c.get("owner") for c in panel_controls}
+    internal_owners_target = {e.get("owner") for e in endpoints if not e.get("patchable")}
     for mod in sorted(present_modules):
         tm = tmodel.get(mod)
         cap = (tm or {}).get("capabilities") or {}
         if cap.get("parameters") and mod not in reg_param_owners:
             problems.append(f"module {mod!r} declares capability parameters but the registry "
                             f"provides none")
-        if cap.get("jacks") and mod not in reg_jack_owners:
-            problems.append(f"module {mod!r} declares capability jacks but the registry "
-                            f"provides none")
+        if cap.get("patchableJacks") and mod not in reg_jack_owners:
+            problems.append(f"module {mod!r} declares capability patchableJacks but the registry "
+                            f"provides no patchable jack")
+        if cap.get("internalEndpoints") and mod not in internal_owners_target:
+            problems.append(f"module {mod!r} declares capability internalEndpoints but the target "
+                            f"transcribes no internal endpoint")
         if cap.get("controls") and mod not in cap_owners_target:
             problems.append(f"module {mod!r} declares capability controls but the target "
                             f"transcribes no panelControl")
@@ -416,12 +541,6 @@ def check(spec, manifest, require_full=False):
     modules_missing_params = sorted(
         m for m in module_ids if (tmodel.get(m, {}).get("capabilities") or {}).get("parameters")
         and m not in param_owners_target)
-    modules_missing_endpoints = sorted(
-        m for m in module_ids if (tmodel.get(m, {}).get("capabilities") or {}).get("jacks")
-        and m not in endpoint_owners_target)
-    modules_no_inventory = sorted(
-        set(module_ids) - (param_owners_target | endpoint_owners_target | cap_owners_target))
-    # A module whose declared capability is untranscribed under the current manifest.
     modules_untranscribed = sorted(
         m for m in module_ids
         if (tmodel.get(m, {}).get("capabilities") or {}).get("parameters")
@@ -433,6 +552,19 @@ def check(spec, manifest, require_full=False):
     tgt_patchable = {e["stable_id"] for e in endpoints if e.get("patchable")}
     reg_jack_sids = {j["stable_id"] for j in reg.jacks}
     reg_param_sids = {p["stable_id"] for p in reg.parameters}
+    # ALWAYS-ON no-new-rogue (Codex item #5): a registry Parameter/Jack that is neither in the
+    # target nor on the migration allowlist is a NEW rogue and fails even without --require-full.
+    new_param_rogue = sorted(reg_param_sids - param_sids - allow_params)
+    if new_param_rogue:
+        problems.append(f"parameter registry-rogue NOT migration-allowed (NEW): {new_param_rogue}")
+    new_jack_rogue = sorted(reg_jack_sids - tgt_patchable - allow_jacks)
+    if new_jack_rogue:
+        problems.append(f"patchable jack registry-rogue NOT migration-allowed (NEW): {new_jack_rogue}")
+    rogue_params_migrate = sorted((reg_param_sids - param_sids) & allow_params)
+    rogue_jacks_migrate = sorted((reg_jack_sids - tgt_patchable) & allow_jacks)
+    sz = {}
+    for p in parameters:
+        sz[p.get("shape", "scalar")] = sz.get(p.get("shape", "scalar"), 0) + 1
     coverage = {
         "registry": {
             "modules": len(reg.modules), "params": len(reg.parameters),
@@ -441,7 +573,8 @@ def check(spec, manifest, require_full=False):
         "manifest": {
             "modules": len(modules), "terminals": len(terminals), "programs": len(programs),
             "panelControls": len(panel_controls), "parameters": len(parameters),
-            "controlBindings": len(bindings), "controlRegions": len(control_regions),
+            "actions": len(actions), "controlBindings": len(bindings),
+            "controlRegions": len(control_regions), "recordSchemas": len(record_schemas),
             "endpointsTranscribed": len(endpoints), "normalizedRoutes": len(norm_routes),
             "fixedRoutes": len(fixed_routes), "requiredFixedRoutes": len(required_fixed),
             "mustComplete": len(must_complete),
@@ -453,15 +586,22 @@ def check(spec, manifest, require_full=False):
                           "eventOnly": len([c for c in panel_controls if c.get("kind") in
                                             {"momentary-touch", "rotary-encoder"}])},
         "bindings": {"count": len(bindings), "orphanParams": orphan_params,
-                     "unboundPersist": unbound_persist},
+                     "unboundPersist": unbound_persist, "actionBindings": len(binding_to_action),
+                     "unboundActionEvents": unbound_action_events},
+        "actions": {"target": len(action_sids), "transcribed": len(action_sids),
+                    "kinds": sz, "bound": sorted(binding_to_action),
+                    "unbound": sorted(action_sids - set(binding_to_action))},
         "parameters": {"target": len(param_sids), "transcribed": len(param_sids),
                        "present": len(reg_param_sids), "missingModules": modules_missing_params,
+                       "shapes": sz,
                        "gap": sorted(param_sids - reg_param_sids),
-                       "rogue": sorted(reg_param_sids - param_sids)},
+                       "rogue": sorted(reg_param_sids - param_sids),
+                       "rogueMigrating": rogue_params_migrate,
+                       "newRogue": new_param_rogue},
         "jacks": {"target": len(tgt_patchable), "present": len(reg_jack_sids),
-                  "missingModules": modules_missing_endpoints,
-                  "gap": sorted(tgt_patchable - reg_jack_sids),
+                  "missingModules": [], "gap": sorted(tgt_patchable - reg_jack_sids),
                   "rogue": sorted(reg_jack_sids - tgt_patchable),
+                  "rogueMigrating": rogue_jacks_migrate, "newRogue": new_jack_rogue,
                   "internal": sorted(internal_endpoints),
                   "untranscribedModules": modules_untranscribed},
         "fixedRoutes": {"target": len(fixed_routes), "defined": len(fixed_routes),
@@ -492,6 +632,9 @@ def check(spec, manifest, require_full=False):
             not_full.append("capability-declared modules untranscribed=%s" % modules_untranscribed)
         if coverage["fixedRoutes"]["gap"]:
             not_full.append("required fixed routes missing=%s" % coverage["fixedRoutes"]["gap"])
+        if allow_params or allow_jacks:
+            not_full.append("migration allowlist must be empty under --require-full "
+                            "(parameters=%s jacks=%s)" % (sorted(allow_params), sorted(allow_jacks)))
         if not_full:
             problems.append("--require-full: " + "; ".join(not_full))
 
@@ -505,11 +648,11 @@ def format_report(coverage):
                  "%(routes)d routes / %(programs)d programs" % reg)
     m = coverage["manifest"]
     lines.append("manifest: %(modules)d modules / %(terminals)d terminals / %(programs)d programs / "
-                 "%(panelControls)d panel-controls / %(parameters)d parameters / "
+                 "%(panelControls)d panel-controls / %(parameters)d parameters / %(actions)d actions / "
                  "%(controlBindings)d bindings / %(controlRegions)d control-regions / "
-                 "%(endpointsTranscribed)d endpoints / %(normalizedRoutes)d normalized / "
-                 "%(fixedRoutes)d fixed / %(requiredFixedRoutes)d required-fixed / "
-                 "%(mustComplete)d mustComplete" % m)
+                 "%(recordSchemas)d record-schemas / %(endpointsTranscribed)d endpoints / "
+                 "%(normalizedRoutes)d normalized / %(fixedRoutes)d fixed / "
+                 "%(requiredFixedRoutes)d required-fixed / %(mustComplete)d mustComplete" % m)
     lines.append("")
     lines.append("coverage (target / present / gap):")
     lines.append("  modules          : %(target)d / %(present)d / gaps=%(gap)s" % coverage["modules"])
@@ -522,20 +665,26 @@ def format_report(coverage):
                  "eventOnly=%(eventOnly)d" % pc)
     bd = coverage["bindings"]
     lines.append("  bindings         : %(count)d orphanParams=%(orphanParams)s "
-                 "unboundPersist=%(unboundPersist)s" % bd)
+                 "unboundPersist=%(unboundPersist)s actionBindings=%(actionBindings)d "
+                 "unboundActionEvents=%(unboundActionEvents)s" % bd)
+    ac = coverage["actions"]
+    lines.append("  actions          : %(transcribed)d kinds=%(kinds)s unbound=%(unbound)s" % ac)
     pr = coverage["parameters"]
     lines.append("  parameters       : target=%(target)d present=%(present)d "
-                 "missingModules=%(missingModules)s" % pr)
+                 "missingModules=%(missingModules)s shapes=%(shapes)s" % pr)
+    lines.append("                    gap=%(gap)s rogue=%(rogue)s "
+                 "rogueMigrating=%(rogueMigrating)s newRogue=%(newRogue)s" % pr)
     jk = coverage["jacks"]
     lines.append("  jacks            : target=%(target)d present=%(present)d "
-                 "missingModules=%(missingModules)s internal=%(internal)s" % jk)
+                 "internal=%(internal)s newRogue=%(newRogue)s" % jk)
     fx = coverage["fixedRoutes"]
     lines.append("  fixed routes     : defined=%(defined)d required=%(required)s gap=%(gap)s  (%(note)s)"
                  % fx)
     lines.append("")
     lines.append("note: 39 program identities is an identity/existence list, NOT 39 implemented effects.")
-    lines.append("note: per-ID Parameter/Jack comparison runs under --require-full; internal "
-                 "endpoints & fixed routes are coherence-validated (no registry id-space yet).")
+    lines.append("note: rogue ids are ALWAYS-ON (must be on the migration allowlist); --require-full "
+                 "requires the allowlist empty + no rogue. Internal endpoints & fixed routes are "
+                 "coherence-validated (no registry id-space yet).")
     return lines
 
 
@@ -544,7 +693,8 @@ def main():
     ap.add_argument("--require-full", action="store_true",
                     help="fail unless every capability-declared target module/program/route is "
                          "present, per-ID Parameter/Jack target↔registry, every module is "
-                         "transcribed, and every required fixed route is defined")
+                         "transcribed, every required fixed route is defined, and the migration "
+                         "allowlist is empty")
     args = ap.parse_args()
 
     problems, coverage = check(load_json(SPEC_PATH), load_json(MANIFEST_PATH),
@@ -559,7 +709,8 @@ def main():
         return 1
     lines.append("")
     lines.append("OK: manifest self-coherent; region subtotals independent; every parameter bound; "
-                 "impl ⊆ target; per-capability present-but-empty; mustComplete == landed set.")
+                 "event widgets action-bound; impl ⊆ target; per-capability present-but-empty; "
+                 "no new rogue beyond the migration allowlist; mustComplete == landed set.")
     print("\n".join(lines))
     return 0
 

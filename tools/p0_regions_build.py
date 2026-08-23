@@ -7,18 +7,24 @@ TRANSCRIPTION TOOL, NOT a registry-derived generator: every row below is a hand-
 of the panel/manual (solar42N_manual_text.txt; the full-panel render at lines 61-116,
 the effector cartridge catalogue p23-24 at lines 1205-1310, the prose control sections).
 Codex 3rd-review msg 66a83ca0 demanded we stop conflating three entity kinds; this tool
-splits them (msg 06ef6b70 items 1/2/4):
+splits them (msg 06ef6b70 items 1/2/4). Codex 5th-review msg c7089521 (still NOT GO)
+adds the following:
 
-  - target.panelControls[]   : ONE row per REAL physical panel widget
-      {stable_id, owner, kind (continuous|selector-toggle|momentary-touch|rotary-encoder),
-       region, panelLabel, status, evidence}
-  - target.parameters[]      : the persisted LOGICAL state (the Parameter target)
-      {stable_id, owner, kind (continuous|selector-toggle|state-field),
-       semanticLabel?, region, status, evidence}
-  - target.controlBindings[] : widget -> parameter, with a program/mode/global context
-      {stable_id, from (panelControl id), to (parameter id), context, status, evidence}
-  - target.controlRegions[]  : per-panel-region subtotal; the DECLARED count is an
-      INDEPENDENT hand-counted constant (`expectedPanelControlCount`), never `len(rows)`.
+  - target.parameters[] carry an EXPLICIT `shape` (scalar|vector|record|mask) plus the
+    matching cardinality / recordType / maskSize, instead of mis-scalar continuous/state
+    fields (joystick=2-axis, plate_tune=12, pushbutton_value=8, seq_editor=up-to-16-step
+    record, quantise_scale_editor=mask, seq_rhythm_length present).
+  - target.actions[] give the 27 event-only widgets (12 plates, 8 buttons, encoder, 6 drone
+    buttons) a stable action identity (note-trigger / trigger / encoder-rotate|press|long-press),
+    plus keyboard.calibration_init/save; controlBindings[].to may be a parameter OR an action
+    (binding semantics: operation + index/axis/menu context, not a bare string).
+  - target.recordSchemas[] declare the keyboard_seq and keyboard_preset payload shapes; the 4
+    presets reference one shared keyboard_preset record and explicitly exclude clock_bpm.
+  - target.migrationAllowlist[] grandfathers the PRE-CORRECTION registry rogue ids (dot-space
+    vcf.l.freq, vco_a.fm_amt/oct_high/sub/wave ...) as a MONOTONICALLY-SHRINKING explicit list:
+    the gate is ALWAYS-ON (no new rogue unless allowlisted) and --require-full needs it empty.
+  - capabilities split `patchableJacks` vs `internalEndpoints` (mixer/voices have no normal
+    patchable jack — they are internal-only), derived from the hand-transcribed endpoint inventory.
 
 Every region's expectedPanelControlCount is a manual count of the widgets on the panel;
 if the emitted widgets do not reach it the tool FAILS (so a careless count is caught here,
@@ -49,6 +55,26 @@ K_STATE = "state-field"
 PANEL_KINDS = {K_CONT, K_SEL, K_MOM, K_RENC}
 PARAM_KINDS = {K_CONT, K_SEL, K_STATE}
 
+# Explicit parameter shapes (Codex c7089521 item #1): a mis-scalar field is no longer allowed.
+SH_SCALAR = "scalar"
+SH_VECTOR = "vector"
+SH_RECORD = "record"
+SH_MASK = "mask"
+SHAPES = {SH_SCALAR, SH_VECTOR, SH_RECORD, SH_MASK}
+
+# Keyboard menus: closed set of editing surfaces the shared encoder drives (Codex item #4).
+KB_MENUS = ("behaviour", "mode", "arp", "sequencer", "portamento", "vibrato",
+            "pressure", "quantiser", "clock", "calibration", "button-editor", "presets")
+
+# Action kinds (event-only widget behavioural identity, Codex item #3).
+ACT_TRIGGER = "trigger"
+ACT_ENC_ROTATE = "encoder-rotate"
+ACT_ENC_PRESS = "encoder-press"
+ACT_ENC_LONG = "encoder-long-press"
+ACT_INIT = "init"
+ACT_SAVE = "save"
+ACTION_KINDS = {ACT_TRIGGER, ACT_ENC_ROTATE, ACT_ENC_PRESS, ACT_ENC_LONG, ACT_INIT, ACT_SAVE}
+
 
 def ev(line_start, line_end=None, site=None):
     e = {"ref": REF, "lineStart": line_start}
@@ -65,8 +91,20 @@ def _count(leaf, n):
     return ["%s_%d" % (leaf, i) for i in range(1, n + 1)]
 
 
+def ctx_global():
+    return {"type": "global"}
+
+
+def ctx_program(program_id):
+    return {"type": "program", "program": program_id}
+
+
+def ctx_menu(menu):
+    return {"type": "keyboard-menu", "menu": menu}
+
+
 class Ledger:
-    """Collects panel controls, parameters, bindings, and region subtotals.
+    """Collects panel controls, parameters, actions, bindings, and region subtotals.
 
     `region()` declares a region with an INDEPENDENT hand-counted widget count. The
     helper then expands a spec of widget entries; each entry may be:
@@ -81,11 +119,18 @@ class Ledger:
                         For the common case the persisted parameter carries the SAME leaf id
                         as the widget, and a binding maps widget -> parameter (context global).
         semantic_label  optional p23/p24 text for program X/Y/Z knobs.
+
+    Codex c7089521 extensions: `panel_text` is the VERBATIM printed label (kept separate from
+    the internal `leaf`); selector-toggle widgets take `positions` (discrete position labels);
+    the joystick takes `axes=[x,y]`; the rotary-encoder takes `operations`; a parameter takes
+    `shape` plus cardinality / recordType / maskSize. `bind()` writes a structured context and
+    binding semantics (operation + optional axis/index) instead of a bare string.
     """
 
     def __init__(self):
         self.panel = []
         self.params = []
+        self.actions = []
         self.bindings = []
         self.regions = []
 
@@ -99,29 +144,74 @@ class Ledger:
         self._cur["placed"] += 1
         self.panel.append(widget)
 
+    def _mk_widget(self, wleaf, kind, panel_text, positions, axes, operations):
+        owner = self._cur["owner"]
+        wid = "%s.%s" % (owner, wleaf)
+        w = {"stable_id": wid, "owner": owner, "kind": kind, "region": self._cur["rid"],
+             "leaf": wleaf, "panelLabel": panel_text or wleaf,
+             "status": "confirmed", "evidence": self._cur["evidence"]}
+        if positions is not None:
+            w["positions"] = positions
+        if axes is not None:
+            w["axes"] = axes
+        if operations is not None:
+            w["operations"] = operations
+        return w
+
     def emit(self, leaf, kind, count=1, param_kind=None, label=None,
-             param_owner=None, param_leaf=None, context="global"):
+             param_owner=None, param_leaf=None, context=None,
+             panel_text=None, positions=None, axes=None, operations=None,
+             shape=None, cardinality=None, record_type=None, mask_size=None,
+             binding_op="set"):
         """Expand `count` identical widgets; each gets a persisted param + binding unless
-        `param_kind` is None (an event-only widget: momentary touch / trigger)."""
+        `param_kind` is None (an event-only widget: momentary touch / trigger / encoder)."""
         owner = self._cur["owner"]
         evid = self._cur["evidence"]
-        site = self._cur["site"]
         for i, wleaf in enumerate(_count(leaf, count)):
             wid = "%s.%s" % (owner, wleaf)
-            self._place({"stable_id": wid, "owner": owner, "kind": kind, "region": self._cur["rid"],
-                         "panelLabel": wleaf, "status": "confirmed", "evidence": evid})
+            self._place(self._mk_widget(wleaf, kind, panel_text, positions, axes, operations))
             if param_kind is None:
                 continue
             po = param_owner or owner
             pleaf = param_leaf or wleaf
             psid = "%s.%s" % (po, pleaf)
-            self.params.append({"stable_id": psid, "owner": po, "kind": param_kind,
-                                "region": self._cur["rid"], "status": "confirmed",
-                                "evidence": evid})
-            if label:
-                self.params[-1]["semanticLabel"] = label
-            self.bindings.append({"stable_id": "bnd.%s->%s" % (wid, psid), "from": wid, "to": psid,
-                                  "context": context, "status": "confirmed", "evidence": evid})
+            self.add_param(psid, po, param_kind, self._cur["rid"], evid, semantic=label,
+                           shape=shape, cardinality=cardinality, record_type=record_type,
+                           mask_size=mask_size)
+            self.bind(wid, psid, context or ctx_global(), op=binding_op, evidence=evid)
+
+    def add_param(self, sid, owner, kind, region, evidence, semantic=None,
+                  shape=None, cardinality=None, record_type=None, mask_size=None,
+                  status="confirmed"):
+        p = {"stable_id": sid, "owner": owner, "kind": kind, "region": region,
+             "shape": shape or SH_SCALAR, "status": status, "evidence": evidence}
+        if semantic:
+            p["semanticLabel"] = semantic
+        if cardinality is not None:
+            p["cardinality"] = cardinality
+        if record_type is not None:
+            p["recordType"] = record_type
+        if mask_size is not None:
+            p["maskSize"] = mask_size
+        self.params.append(p)
+        return sid
+
+    def bind(self, from_pc, to_sid, context, op="set", axis=None, index=None,
+             status="confirmed", evidence=None):
+        b = {"stable_id": "bnd.%s->%s" % (from_pc, to_sid), "from": from_pc, "to": to_sid,
+             "operation": op, "context": context, "status": status,
+             "evidence": evidence or self._cur.get("evidence")}
+        if axis is not None:
+            b["axis"] = axis
+        if index is not None:
+            b["index"] = index
+        self.bindings.append(b)
+        return b
+
+    def add_action(self, sid, owner, name, kind, region, evidence, status="confirmed"):
+        self.actions.append({"stable_id": sid, "owner": owner, "name": name, "kind": kind,
+                             "region": region, "status": status, "evidence": evidence})
+        return sid
 
     def close(self):
         cur = self._cur
@@ -136,6 +226,68 @@ class Ledger:
         self._cur = None
 
 
+# Verbatim printed panel labels (best-effort from the manual render/prose). Where the exact text
+# is not evidenced the generator falls back to the upper-cased leaf; positions below are the
+# discrete selector states (Codex item #4 requires them in the schema rather than an opaque label).
+P = {
+    # VCO
+    "cv_amt": "CV AMT", "morph": "MORPHING", "tune": "TUNE", "pwm": "PW AMT",
+    "pw": "PW", "lin_exp": "LIN / EXP", "oct_sel": "OCT +3 / LOW", "sub_sel": "SUB -1",
+    # drone classic
+    "tune": "TUNE", "mute": "MUTE", "mod": "MOD", "volt": "VOLT",
+    "att": "ATT", "rls": "RLS", "gate_hold": "GATE-HOLD",
+    # drone new
+    "rate": "RATE", "divider": "DIVIDER", "pitch": "PITCH", "noise": "NOISE",
+    "hi_low": "RANGE", "fm": "FM", "am": "AM", "rate_switch": "RATE SWT", "hold": "HOLD",
+    # env
+    "hold": "HOLD", "self_gen": "SELF-GEN", "a": "A", "d": "D", "s": "S", "r": "R",
+    # vcf
+    "l_freq": "FREQ L", "l_res": "RES L", "l_mod": "MOD L", "l_bp_lp": "BP/LP L",
+    "r_freq": "FREQ R", "r_res": "RES R", "r_mod": "MOD R", "r_bp_lp": "BP/LP R",
+    "dist": "DIST", "gain": "GAIN", "link": "LINK",
+    # effector
+    "x": "X", "y": "Y", "z": "Z", "blend": "BLEND", "master": "MASTER",
+    "phone": "PHONE", "select_l": "SELECT L", "select_r": "SELECT R",
+    # lfo
+    "wave": "WAVE", "speed_mult": "SPEED MULT",
+    # seq
+    "pulser": "PULSER", "clock": "CLOCK", "stages": "STAGES",
+    "step_cv": "STEP CV", "step_gate": "STEP GATE",
+    # joystick
+    "joy": "JOYSTICK", "offset_x": "X OFFSET", "offset_y": "Y OFFSET",
+    # preamp / env follower
+    "gain": "GAIN", "attack": "ATTACK", "release": "RELEASE",
+    # mixer
+    "pan": "PAN", "vol": "VOL",
+}
+
+# Discrete selector position labels (closed set per selector, Codex item #4). Position labels
+# are given for every selector-toggle so the gate never sees an opaque one-state switch.
+POS = {
+    "lin_exp": ["lin", "exp"],
+    "oct_sel": ["low", "0", "+3"],
+    "sub_sel": ["0", "-1"],
+    "mute": ["off", "on"],
+    "mod": ["off", "on"],
+    "gate_hold": ["off", "on"],
+    "hi_low": ["hi", "low"],
+    "fm": ["off", "on"],
+    "am": ["off", "on"],
+    "rate_switch": ["off", "on"],
+    "hold": ["off", "on"],
+    "self_gen": ["off", "on"],
+    "l_bp_lp": ["bp", "lp"],
+    "r_bp_lp": ["bp", "lp"],
+    "link": ["off", "on"],
+    "select_l": ["1", "2", "3"],
+    "select_r": ["1", "2", "3"],
+    "speed_mult": ["x1", "x6", "x10"],
+    "clock": ["int", "ext"],
+    "stages": ["1", "2", "3", "4", "5"],
+    "step_gate": ["off", "on"],
+}
+
+
 def build():
     L = Ledger()
 
@@ -143,184 +295,262 @@ def build():
     for mod, site in [("drone_1", "左上 DRONE 1/2"), ("drone_2", "左上 DRONE 1/2"),
                       ("drone_4", "右上 DRONE 4/5"), ("drone_5", "右上 DRONE 4/5")]:
         L.region("drone_classic_" + mod, mod, site, 19, ev(294, 312, site))
-        L.emit("tune", K_CONT, 5, K_CONT)
-        L.emit("mute", K_SEL, 5, K_SEL)
-        L.emit("mod", K_SEL, 5, K_SEL)
-        L.emit("volt", K_CONT, 1, K_CONT)
-        L.emit("att", K_CONT, 1, K_CONT)
-        L.emit("rls", K_CONT, 1, K_CONT)
-        L.emit("gate_hold", K_SEL, 1, K_SEL)
+        L.emit("tune", K_CONT, 5, K_CONT, panel_text=P["tune"])
+        L.emit("mute", K_SEL, 5, K_SEL, panel_text=P["mute"], positions=POS["mute"])
+        L.emit("mod", K_SEL, 5, K_SEL, panel_text=P["mod"], positions=POS["mod"])
+        L.emit("volt", K_CONT, 1, K_CONT, panel_text=P["volt"])
+        L.emit("att", K_CONT, 1, K_CONT, panel_text=P["att"])
+        L.emit("rls", K_CONT, 1, K_CONT, panel_text=P["rls"])
+        L.emit("gate_hold", K_SEL, 1, K_SEL, panel_text=P["gate_hold"], positions=POS["gate_hold"])
         L.close()
 
     # NEW drones 3/6 (Papa Srapa) : RATE/MOD/DIVIDER/PITCH/NOISE + the AR ATT/RLS + switches
     # HI-LOW/FM/AM/RATE + HOLD = 12. (S&H is a display/circuit region, NOT a control — Codex.)
     for mod, site in [("drone_3", "左中 DRONE 3"), ("drone_6", "右中 DRONE 6")]:
         L.region("drone_new_" + mod, mod, site, 12, ev(322, 370, site))
-        L.emit("rate", K_CONT, 1, K_CONT)
-        L.emit("mod", K_CONT, 1, K_CONT)
-        L.emit("divider", K_CONT, 1, K_CONT)
-        L.emit("pitch", K_CONT, 1, K_CONT)
-        L.emit("noise", K_CONT, 1, K_CONT)
-        L.emit("att", K_CONT, 1, K_CONT)
-        L.emit("rls", K_CONT, 1, K_CONT)
-        L.emit("hi_low", K_SEL, 1, K_SEL)
-        L.emit("fm", K_SEL, 1, K_SEL)
-        L.emit("am", K_SEL, 1, K_SEL)
-        L.emit("rate_switch", K_SEL, 1, K_SEL)
-        L.emit("hold", K_SEL, 1, K_SEL)
+        L.emit("rate", K_CONT, 1, K_CONT, panel_text=P["rate"])
+        L.emit("mod", K_CONT, 1, K_CONT, panel_text=P["mod"])
+        L.emit("divider", K_CONT, 1, K_CONT, panel_text=P["divider"])
+        L.emit("pitch", K_CONT, 1, K_CONT, panel_text=P["pitch"])
+        L.emit("noise", K_CONT, 1, K_CONT, panel_text=P["noise"])
+        L.emit("att", K_CONT, 1, K_CONT, panel_text=P["att"])
+        L.emit("rls", K_CONT, 1, K_CONT, panel_text=P["rls"])
+        L.emit("hi_low", K_SEL, 1, K_SEL, panel_text=P["hi_low"], positions=POS["hi_low"])
+        L.emit("fm", K_SEL, 1, K_SEL, panel_text=P["fm"], positions=POS["fm"])
+        L.emit("am", K_SEL, 1, K_SEL, panel_text=P["am"], positions=POS["am"])
+        L.emit("rate_switch", K_SEL, 1, K_SEL, panel_text=P["rate_switch"], positions=POS["rate_switch"])
+        L.emit("hold", K_SEL, 1, K_SEL, panel_text=P["hold"], positions=POS["hold"])
         L.close()
 
     # VCO A / VCO B : 8 physical controls each (Codex). No duplicate wave/shape/CV-FM, and the
     # octave +3/low is ONE 3-position selector, not two.
     for mod, site in [("vco_a", "中上 VCO A"), ("vco_b", "中上 VCO B")]:
         L.region(mod, mod, site, 8, ev(376, 422, site))
-        L.emit("cv_amt", K_CONT, 1, K_CONT)
-        L.emit("morph", K_CONT, 1, K_CONT)      # morphing waveform (saw->inv saw / sine->tri)
-        L.emit("tune", K_CONT, 1, K_CONT)
-        L.emit("pwm", K_CONT, 1, K_CONT)
-        L.emit("pw", K_CONT, 1, K_CONT)         # pulse width / SHAPE
-        L.emit("lin_exp", K_SEL, 1, K_SEL)
-        L.emit("oct_sel", K_SEL, 1, K_SEL)      # +3 / low (3-position)
-        L.emit("sub_sel", K_SEL, 1, K_SEL)      # -1 / sub
+        L.emit("cv_amt", K_CONT, 1, K_CONT, panel_text=P["cv_amt"])
+        L.emit("morph", K_CONT, 1, K_CONT, panel_text=P["morph"])      # morphing waveform
+        L.emit("tune", K_CONT, 1, K_CONT, panel_text=P["tune"])
+        L.emit("pwm", K_CONT, 1, K_CONT, panel_text=P["pwm"])
+        L.emit("pw", K_CONT, 1, K_CONT, panel_text=P["pw"])            # pulse width / SHAPE
+        L.emit("lin_exp", K_SEL, 1, K_SEL, panel_text=P["lin_exp"], positions=POS["lin_exp"])
+        L.emit("oct_sel", K_SEL, 1, K_SEL, panel_text=P["oct_sel"], positions=POS["oct_sel"])
+        L.emit("sub_sel", K_SEL, 1, K_SEL, panel_text=P["sub_sel"], positions=POS["sub_sel"])
         L.close()
 
     # ENVELOPE A / B : HOLD + SELF-GENERATION + ADSR = 6 each (Codex adds self-generation).
     for mod, site in [("envelope_a", "中部 ENV A"), ("envelope_b", "中部 ENV B")]:
         L.region(mod, mod, site, 6, ev(385, 408, site))
-        L.emit("hold", K_SEL, 1, K_SEL)
-        L.emit("self_gen", K_SEL, 1, K_SEL)
-        L.emit("a", K_CONT, 1, K_CONT)
-        L.emit("d", K_CONT, 1, K_CONT)
-        L.emit("s", K_CONT, 1, K_CONT)
-        L.emit("r", K_CONT, 1, K_CONT)
+        L.emit("hold", K_SEL, 1, K_SEL, panel_text=P["hold"], positions=POS["hold"])
+        L.emit("self_gen", K_SEL, 1, K_SEL, panel_text=P["self_gen"], positions=POS["self_gen"])
+        L.emit("a", K_CONT, 1, K_CONT, panel_text=P["a"])
+        L.emit("d", K_CONT, 1, K_CONT, panel_text=P["d"])
+        L.emit("s", K_CONT, 1, K_CONT, panel_text=P["s"])
+        L.emit("r", K_CONT, 1, K_CONT, panel_text=P["r"])
         L.close()
 
     # VOICE MIXER : 10 channels x (PAN/VOL) = 20.
     L.region("mixer", "mixer", "中部 VOICE MIXER", 20, ev(1105, 1113, "中部 VOICE MIXER"))
     for i in range(1, 11):
-        L.emit("ch%d_pan" % i, K_CONT, 1, K_CONT)
-        L.emit("ch%d_vol" % i, K_CONT, 1, K_CONT)
+        L.emit("ch%d_pan" % i, K_CONT, 1, K_CONT, panel_text=P["pan"])
+        L.emit("ch%d_vol" % i, K_CONT, 1, K_CONT, panel_text=P["vol"])
     L.close()
 
     # DUAL VCF : per-side FREQ/RES/MOD + BP-LP; shared DIST/GAIN/LINK.
     L.region("dual_vcf", "vcf", "中上 DUAL VCF", 11, ev(1118, 1153, "中上 DUAL VCF"))
-    L.emit("l_freq", K_CONT, 1, K_CONT)
-    L.emit("l_res", K_CONT, 1, K_CONT)
-    L.emit("l_mod", K_CONT, 1, K_CONT)
-    L.emit("l_bp_lp", K_SEL, 1, K_SEL)
-    L.emit("r_freq", K_CONT, 1, K_CONT)
-    L.emit("r_res", K_CONT, 1, K_CONT)
-    L.emit("r_mod", K_CONT, 1, K_CONT)
-    L.emit("r_bp_lp", K_SEL, 1, K_SEL)
-    L.emit("dist", K_CONT, 1, K_CONT)
-    L.emit("gain", K_CONT, 1, K_CONT)
-    L.emit("link", K_SEL, 1, K_SEL)
+    L.emit("l_freq", K_CONT, 1, K_CONT, panel_text=P["l_freq"])
+    L.emit("l_res", K_CONT, 1, K_CONT, panel_text=P["l_res"])
+    L.emit("l_mod", K_CONT, 1, K_CONT, panel_text=P["l_mod"])
+    L.emit("l_bp_lp", K_SEL, 1, K_SEL, panel_text=P["l_bp_lp"], positions=POS["l_bp_lp"])
+    L.emit("r_freq", K_CONT, 1, K_CONT, panel_text=P["r_freq"])
+    L.emit("r_res", K_CONT, 1, K_CONT, panel_text=P["r_res"])
+    L.emit("r_mod", K_CONT, 1, K_CONT, panel_text=P["r_mod"])
+    L.emit("r_bp_lp", K_SEL, 1, K_SEL, panel_text=P["r_bp_lp"], positions=POS["r_bp_lp"])
+    L.emit("dist", K_CONT, 1, K_CONT, panel_text=P["dist"])
+    L.emit("gain", K_CONT, 1, K_CONT, panel_text=P["gain"])
+    L.emit("link", K_SEL, 1, K_SEL, panel_text=P["link"], positions=POS["link"])
     L.close()
 
     # DUAL EFFECTOR : shared X/Y/Z + BLEND + MASTER + PHONE + two 1-2-3 selectors = 8.
     # (No duplicate cartridge-slot control; PHONE volume added — Codex.)
     L.region("dual_effector", "effector", "中上 DUAL EFFECTOR", 8, ev(1159, 1199, "中上 DUAL EFFECTOR"))
-    L.emit("x", K_CONT, 1, K_CONT)
-    L.emit("y", K_CONT, 1, K_CONT)
-    L.emit("z", K_CONT, 1, K_CONT)
-    L.emit("blend", K_CONT, 1, K_CONT)
-    L.emit("master", K_CONT, 1, K_CONT)
-    L.emit("phone", K_CONT, 1, K_CONT)
-    L.emit("select_l", K_SEL, 1, K_SEL)
-    L.emit("select_r", K_SEL, 1, K_SEL)
+    L.emit("x", K_CONT, 1, K_CONT, panel_text=P["x"])
+    L.emit("y", K_CONT, 1, K_CONT, panel_text=P["y"])
+    L.emit("z", K_CONT, 1, K_CONT, panel_text=P["z"])
+    L.emit("blend", K_CONT, 1, K_CONT, panel_text=P["blend"])
+    L.emit("master", K_CONT, 1, K_CONT, panel_text=P["master"])
+    L.emit("phone", K_CONT, 1, K_CONT, panel_text=P["phone"])
+    L.emit("select_l", K_SEL, 1, K_SEL, panel_text=P["select_l"], positions=POS["select_l"])
+    L.emit("select_r", K_SEL, 1, K_SEL, panel_text=P["select_r"], positions=POS["select_r"])
     L.close()
 
     # LFO A / LFO B : wave + rate + x1/x6/x10.
     for mod, site in [("lfo_a", "下排 LFO A"), ("lfo_b", "下排 LFO B")]:
         L.region(mod, mod, site, 3, ev(425, 442, site))
-        L.emit("wave", K_CONT, 1, K_CONT)
-        L.emit("rate", K_CONT, 1, K_CONT)
-        L.emit("speed_mult", K_SEL, 1, K_SEL)
+        L.emit("wave", K_CONT, 1, K_CONT, panel_text=P["wave"])
+        L.emit("rate", K_CONT, 1, K_CONT, panel_text=P["rate"])
+        L.emit("speed_mult", K_SEL, 1, K_SEL, panel_text=P["speed_mult"], positions=POS["speed_mult"])
         L.close()
 
     # 5 STEP SEQ : pulser is a CONTINUOUS fine-tune knob (Codex); clock/stages selectors;
     # 5 step-CV + 5 step-gate.
     L.region("seq", "sequencer", "下排 5-step seq", 13, ev(766, 775, "下排 5-step seq"))
-    L.emit("pulser", K_CONT, 1, K_CONT)
-    L.emit("clock", K_SEL, 1, K_SEL)
-    L.emit("stages", K_SEL, 1, K_SEL)
-    L.emit("step_cv", K_CONT, 5, K_CONT)
-    L.emit("step_gate", K_SEL, 5, K_SEL)
+    L.emit("pulser", K_CONT, 1, K_CONT, panel_text=P["pulser"])
+    L.emit("clock", K_SEL, 1, K_SEL, panel_text=P["clock"], positions=POS["clock"])
+    L.emit("stages", K_SEL, 1, K_SEL, panel_text=P["stages"], positions=POS["stages"])
+    L.emit("step_cv", K_CONT, 5, K_CONT, panel_text=P["step_cv"])
+    L.emit("step_gate", K_SEL, 5, K_SEL, panel_text=P["step_gate"], positions=POS["step_gate"])
     L.close()
 
-    # JOYSTICK : one 2-axis stick + two offset regulators = 3 physical widgets.
+    # JOYSTICK : one 2-axis stick + two offset regulators = 3 physical widgets. The stick edits
+    # TWO persisted axes (X and Y) with a separate binding each (Codex item #1/#4: not one scalar).
     L.region("joystick", "joystick", "下排 joystick", 3, ev(446, 470, "下排 joystick"))
-    L.emit("joy", K_CONT, 1, K_CONT)            # two-axis X/Y stick (X + Y persisted)
-    L.emit("offset_x", K_CONT, 1, K_CONT)
-    L.emit("offset_y", K_CONT, 1, K_CONT)
+    L.emit("joy", K_CONT, 1, None, panel_text=P["joy"], axes=["x", "y"])
+    L.add_param("joystick.x", "joystick", K_CONT, "joystick", ev(446, 470, "下排 joystick"),
+                semantic="joystick X axis CV")
+    L.add_param("joystick.y", "joystick", K_CONT, "joystick", ev(446, 470, "下排 joystick"),
+                semantic="joystick Y axis CV")
+    L.bind("joystick.joy", "joystick.x", ctx_global(), op="set", axis="x")
+    L.bind("joystick.joy", "joystick.y", ctx_global(), op="set", axis="y")
+    L.emit("offset_x", K_CONT, 1, K_CONT, panel_text=P["offset_x"])
+    L.emit("offset_y", K_CONT, 1, K_CONT, panel_text=P["offset_y"])
     L.close()
 
     # PREAMP : GAIN only (EXT SOURCE is a jack; built-in mic auto-bypassed — Codex item #2).
     L.region("preamp", "preamp", "下排 preamp", 1, ev(516, 555, "下排 preamp"))
-    L.emit("gain", K_CONT, 1, K_CONT)
+    L.emit("gain", K_CONT, 1, K_CONT, panel_text=P["gain"])
     L.close()
 
     # ENVELOPE FOLLOWER : attack + release.
     L.region("env_follower", "env_follower", "下排 env follower", 2, ev(551, 553, "下排 env follower"))
-    L.emit("attack", K_CONT, 1, K_CONT)
-    L.emit("release", K_CONT, 1, K_CONT)
+    L.emit("attack", K_CONT, 1, K_CONT, panel_text=P["attack"])
+    L.emit("release", K_CONT, 1, K_CONT, panel_text=P["release"])
     L.close()
 
     # KEYBOARD physical: 12 touchplates + 8 pushbuttons + a push/turn encoder = 21 widgets.
     # Plates/buttons are MOMENTARY (touch/press event) and the encoder is ROTARY — none stores a
-    # value of its own. The persisted keyboard STATE (plate tune, button offset, calibration, arp,
-    # seq, presets, ...) lives in the `keyboard_state` parameter region and is edited via the
-    # encoder (Codex: "the encoder must express rotate + press/long-press, not a single momentary
-    # param").
-    L.region("keyboard_phys", "keyboard", "底部 12 触摸片", 21, ev(559, 654, "底部 12 触摸片"))
-    L.emit("plate", K_MOM, 12, None)            # momentary note/gate trigger (no persisted value)
-    L.emit("pushbutton", K_MOM, 8, None)        # momentary function trigger (no persisted value)
-    L.emit("encoder", K_RENC, 1, None)          # rotate + press/long-press; edits a highlighted param
+    # value of its own. Each gets an ACTION identity (Codex item #3) and a binding to that action;
+    # the persisted keyboard STATE lives in `keyboard_state` and is edited via the encoder.
+    kb_evid = ev(559, 654, "底部 12 触摸片")
+    L.region("keyboard_phys", "keyboard", "底部 12 触摸片", 21, kb_evid)
+    for i in range(1, 13):
+        w = "keyboard.plate_%d" % i
+        L._place(L._mk_widget("plate_%d" % i, K_MOM, "NOTE PLATE %d" % i, None, None, None))
+        a = L.add_action("%s.press" % w, "keyboard", "note plate %d press" % i, ACT_TRIGGER,
+                         "keyboard_phys", kb_evid)
+        L.bind(w, a, ctx_global(), op="press", evidence=kb_evid)
+    for i in range(1, 9):
+        w = "keyboard.pushbutton_%d" % i
+        L._place(L._mk_widget("pushbutton_%d" % i, K_MOM, "FUNC BUTTON %d" % i, None, None, None))
+        a = L.add_action("%s.press" % w, "keyboard", "function button %d press" % i, ACT_TRIGGER,
+                         "keyboard_phys", kb_evid)
+        L.bind(w, a, ctx_global(), op="press", evidence=kb_evid)
+    L._place(L._mk_widget("encoder", K_RENC, "ENCODER", None, None,
+                          [{"name": "rotate"}, {"name": "press"}, {"name": "long_press"}]))
+    for nm, kind in [("rotate", ACT_ENC_ROTATE), ("press", ACT_ENC_PRESS),
+                     ("long_press", ACT_ENC_LONG)]:
+        a = L.add_action("keyboard.encoder.%s" % nm, "keyboard", "encoder %s" % nm, kind,
+                         "keyboard_phys", kb_evid)
+        L.bind("keyboard.encoder", a, ctx_global(), op=nm, evidence=kb_evid)
     L.close()
 
-    # DRONE VOICES 1-6 pushbutton triggers (module 'voices') : 6 momentary, NO persisted state.
-    L.region("drone_voices", "voices", "右下 DRONE VOICES", 6, ev(778, 788, "右下 DRONE VOICES"))
-    L.emit("button", K_MOM, 6, None)
+    # DRONE VOICES 1-6 pushbutton triggers (module 'voices') : 6 momentary, NO persisted state,
+    # each with a trigger action (Codex item #3).
+    vc_evid = ev(778, 788, "右下 DRONE VOICES")
+    L.region("drone_voices", "voices", "右下 DRONE VOICES", 6, vc_evid)
+    for i in range(1, 7):
+        w = "voices.button_%d" % i
+        L._place(L._mk_widget("button_%d" % i, K_MOM, "DRONE %d" % i, None, None, None))
+        a = L.add_action("%s.press" % w, "voices", "drone voice %d trigger" % i, ACT_TRIGGER,
+                         "drone_voices", vc_evid)
+        L.bind(w, a, ctx_global(), op="press", evidence=vc_evid)
     L.close()
 
     return L
 
 
 # Keyboard menu / state parameters. These are NOT panel controls — they are LOGICAL state
-# edited via the shared encoder / pushbuttons (Codex: three-entity split). Presets A-D are
-# state records (payloads), not four ordinary params; plate/button/calibration values too.
-# (owner, leaf, kind, semanticLabel|None, lineStart, lineEnd)
+# edited via the shared encoder / pushbuttons (Codex: three-entity split). Codex c7089521
+# item #1/#2: every row now declares an EXPLICIT shape; seq_editor is a seq record (the menu is
+# not a parameter), plate_tune/pushbutton_value are vectors, quantise_scale_editor is a mask,
+# the 4 presets are records referencing the shared keyboard_preset payload, and seq_rhythm_length +
+# the full calibration set (DAC vref, touch/release threshold, pressure min/max, MPR121, debounce)
+# are now transcribed. (owner, leaf, kind, shape, cardinality/recordType/maskSize, menu, semantic,
+#  lineStart, lineEnd)
+SCALAR = (SH_SCALAR, {})
+
+
+def _vec(n):
+    return (SH_VECTOR, {"cardinality": n})
+
+
+def _rec(t):
+    return (SH_RECORD, {"recordType": t})
+
+
+def _mask(n):
+    return (SH_MASK, {"maskSize": n})
+
+
 KEYBOARD_STATE_ROWS = [
-    ("behaviour", K_SEL, "Single/Twin/Split", 659, 733),
-    ("mode", K_SEL, None, 809, 818),
-    ("arp_hold", K_SEL, None, 822, 857), ("arp_clock", K_SEL, None, 822, 857),
-    ("arp_direction", K_SEL, None, 822, 857), ("arp_variation", K_SEL, None, 822, 857),
-    ("arp_interval", K_CONT, None, 822, 857), ("arp_rhythm", K_SEL, None, 822, 857),
-    ("arp_length", K_CONT, None, 822, 857),
-    ("seq_run", K_SEL, None, 866, 910), ("seq_length", K_CONT, None, 866, 910),
-    ("seq_clock", K_SEL, None, 866, 910), ("seq_direction", K_SEL, None, 866, 910),
-    ("seq_editor", K_SEL, None, 866, 910), ("seq_cv_output", K_SEL, None, 866, 910),
-    ("seq_rhythm", K_SEL, None, 866, 910),
-    ("portamento_speed", K_CONT, None, 916, 923), ("portamento_legato", K_SEL, None, 916, 923),
-    ("vibrato_speed", K_CONT, None, 934, 946), ("vibrato_depth", K_CONT, None, 934, 946),
-    ("vibrato_delay", K_CONT, None, 934, 946), ("vibrato_pressure", K_CONT, None, 934, 946),
-    ("pressure_output", K_SEL, None, 951, 965), ("pressure_rise", K_CONT, None, 951, 965),
-    ("pressure_fall", K_CONT, None, 951, 965),
-    ("quantise_scale_editor", K_SEL, None, 970, 984), ("quantise_load_scale", K_SEL, None, 970, 984),
-    ("root_note", K_CONT, None, 992, 993), ("clock_bpm", K_CONT, None, 1028, 1029),
-    ("calibration_v_oct", K_CONT, "V/oct calibration", 1050, 1093),
-    ("calibration_pressure", K_CONT, "pressure calibration", 1050, 1093),
-    ("encoder_direction", K_SEL, None, 1050, 1093),
-    ("plate_tune", K_CONT, "plate tuning", 620, 660),
-    ("pushbutton_value", K_CONT, "button offset", 601, 613),
-    ("preset_a", K_STATE, "preset A payload", 1040, 1045),
-    ("preset_b", K_STATE, "preset B payload", 1040, 1045),
-    ("preset_c", K_STATE, "preset C payload", 1040, 1045),
-    ("preset_d", K_STATE, "preset D payload", 1040, 1045),
+    # (leaf, kind, shape(shape,extras), menu, semantic, lineStart, lineEnd)
+    ("behaviour", K_SEL, SCALAR, "behaviour", "Single/Twin/Split", 659, 733),
+    ("mode", K_SEL, SCALAR, "mode", None, 809, 818),
+    ("arp_hold", K_SEL, SCALAR, "arp", None, 822, 857),
+    ("arp_clock", K_SEL, SCALAR, "arp", None, 822, 857),
+    ("arp_direction", K_SEL, SCALAR, "arp", None, 822, 857),
+    ("arp_variation", K_SEL, SCALAR, "arp", None, 822, 857),
+    ("arp_interval", K_CONT, SCALAR, "arp", None, 822, 857),
+    ("arp_rhythm", K_SEL, SCALAR, "arp", None, 822, 857),
+    ("arp_length", K_CONT, SCALAR, "arp", None, 822, 857),
+    ("seq_run", K_SEL, SCALAR, "sequencer", None, 866, 910),
+    ("seq_length", K_CONT, SCALAR, "sequencer", None, 866, 910),
+    ("seq_clock", K_SEL, SCALAR, "sequencer", None, 866, 910),
+    ("seq_direction", K_SEL, SCALAR, "sequencer", None, 866, 910),
+    ("seq_cv_output", K_SEL, SCALAR, "sequencer", None, 866, 910),
+    ("seq_rhythm", K_SEL, SCALAR, "sequencer", None, 866, 910),
+    ("seq_rhythm_length", K_CONT, SCALAR, "sequencer", None, 866, 910),
+    ("seq_steps", K_STATE, _rec("keyboard_seq"), "sequencer", "up to 16 step note/value + gate", 866, 910),
+    ("portamento_speed", K_CONT, SCALAR, "portamento", None, 916, 923),
+    ("portamento_legato", K_SEL, SCALAR, "portamento", None, 916, 923),
+    ("vibrato_speed", K_CONT, SCALAR, "vibrato", None, 934, 946),
+    ("vibrato_depth", K_CONT, SCALAR, "vibrato", None, 934, 946),
+    ("vibrato_delay", K_CONT, SCALAR, "vibrato", None, 934, 946),
+    ("vibrato_pressure", K_CONT, SCALAR, "vibrato", None, 934, 946),
+    ("pressure_output", K_SEL, SCALAR, "pressure", None, 951, 965),
+    ("pressure_rise", K_CONT, SCALAR, "pressure", None, 951, 965),
+    ("pressure_fall", K_CONT, SCALAR, "pressure", None, 951, 965),
+    ("quantise_scale_editor", K_SEL, _mask(12), "quantiser", "scale mask", 970, 984),
+    ("quantise_load_scale", K_SEL, SCALAR, "quantiser", None, 970, 984),
+    ("root_note", K_CONT, SCALAR, "mode", None, 992, 993),
+    ("clock_bpm", K_CONT, SCALAR, "clock", None, 1028, 1029),
+    ("calibration_v_oct", K_CONT, SCALAR, "calibration", "V/oct calibration", 1050, 1093),
+    ("calibration_pressure", K_CONT, SCALAR, "calibration", "pressure calibration", 1050, 1093),
+    ("dac_vref", K_SEL, SCALAR, "calibration", "DAC voltage reference source", 1050, 1093),
+    ("touch_threshold", K_CONT, SCALAR, "calibration", "touch threshold (650)", 1050, 1093),
+    ("release_threshold", K_CONT, SCALAR, "calibration", "release threshold (690)", 1050, 1093),
+    ("pressure_min", K_CONT, SCALAR, "calibration", "pressure minimum", 1050, 1093),
+    ("pressure_max", K_CONT, SCALAR, "calibration", "pressure maximum", 1050, 1093),
+    ("mpr121_charge", K_CONT, SCALAR, "calibration", "MPR121 charge", 1050, 1093),
+    ("mpr121_discharge", K_CONT, SCALAR, "calibration", "MPR121 discharge", 1050, 1093),
+    ("debounce", K_CONT, SCALAR, "calibration", "debounce", 1050, 1093),
+    ("encoder_direction", K_SEL, SCALAR, "calibration", "normal/reversed", 1050, 1093),
+    ("plate_tune", K_CONT, _vec(12), "button-editor", "plate tuning", 620, 660),
+    ("pushbutton_value", K_CONT, _vec(8), "button-editor", "button offset", 601, 613),
+    ("preset_a", K_STATE, _rec("keyboard_preset"), "presets", "preset A payload", 1040, 1045),
+    ("preset_b", K_STATE, _rec("keyboard_preset"), "presets", "preset B payload", 1040, 1045),
+    ("preset_c", K_STATE, _rec("keyboard_preset"), "presets", "preset C payload", 1040, 1045),
+    ("preset_d", K_STATE, _rec("keyboard_preset"), "presets", "preset D payload", 1040, 1045),
+]
+
+# Keyboard calibration menu ACCESS actions (Codex item #2/#3): init + save are menu-invoked
+# actions, not persisted state. They exist so the gate can validate a stable event target even
+# though no single panel widget maps to them 1:1 (unbound is allowed for actions).
+KB_CAL_ACTIONS = [
+    ("calibration_init", "INIT CALIBRATION VALUES (press+hold 1s)", ACT_INIT, 1050, 1093),
+    ("calibration_save", "SAVE CALIBRATION SETTINGS (press+hold 1s)", ACT_SAVE, 1050, 1093),
 ]
 
 
-def add_keyboard_state(L, panel_sids):
+def add_keyboard_state(L):
     """Add the keyboard logical state, binding each to its editing widget.
 
     `keyboard_state` is a PARAMETER region (not a panel region): it is state edited via the
@@ -328,18 +558,19 @@ def add_keyboard_state(L, panel_sids):
     expectedPanelControlCount entry in controlRegions[].
     """
     kb_site = "底部 12 触摸片"
-    for leaf, kind, label, ls, le in KEYBOARD_STATE_ROWS:
+    for leaf, kind, (shape, extras), menu, label, ls, le in KEYBOARD_STATE_ROWS:
         sid = "keyboard.%s" % leaf
         evd = ev(ls, le, kb_site)
-        L.params.append({"stable_id": sid, "owner": "keyboard", "kind": kind,
-                         "region": "keyboard_state", "status": "confirmed", "evidence": evd})
-        if label:
-            L.params[-1]["semanticLabel"] = label
-        # Each persisted keyboard state field is edited via the shared encoder (rotate changes the
-        # selected/highlighted parameter; the momentary plates/buttons select the note/gate event).
-        src = "keyboard.encoder"
-        L.bindings.append({"stable_id": "bnd.%s->%s" % (src, sid), "from": src, "to": sid,
-                           "context": "global", "status": "confirmed", "evidence": evd})
+        L.add_param(sid, "keyboard", kind, "keyboard_state", evd, semantic=label,
+                    shape=shape, cardinality=extras.get("cardinality"),
+                    record_type=extras.get("recordType"), mask_size=extras.get("maskSize"))
+        # Each persisted keyboard state field is edited via the shared encoder under its menu.
+        L.bind("keyboard.encoder", sid, ctx_menu(menu), op="set", evidence=evd)
+    for leaf, name, kind, ls, le in KB_CAL_ACTIONS:
+        evd = ev(ls, le, kb_site)
+        # Menu-invoked action; intentionally unbound (no single panel widget maps 1:1), which is
+        # allowed for actions (only persisted PARAMETERS must be bound).
+        L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
 
 
 # p23/p24 semantic labels per (cartridge, program). X/Y/Z knob meaning for each of the 39
@@ -417,7 +648,8 @@ def add_program_params(L, manifest):
     """117 program-owned X/Y/Z persisted state, bound to the shared effector X/Y/Z widget.
 
     Each carries its p23/p24 semantic label. The widget `effector.x/y/z` is shared and binds
-    to the program's X/Y/Z parameter under that program's context.
+    to the program's X/Y/Z parameter under that program's context (a structured `program`
+    context that references the ProgramId — Codex item #4, not a bare string).
     """
     for p in manifest["target"]["programs"]:
         cat = p.get("cartridge", "").lower().replace(" ", "_").replace("-", "_")
@@ -430,11 +662,8 @@ def add_program_params(L, manifest):
             widget = "effector.%s" % axis          # shared effector X/Y/Z widget
             psid = "%s.%s" % (own, axis)           # program.<cart>.slot.<axis> persisted state
             sem = labels[slot][idx] if labels else None
-            L.params.append({"stable_id": psid, "owner": own, "kind": K_CONT,
-                             "semanticLabel": sem, "region": "program_params",
-                             "status": status, "evidence": e})
-            L.bindings.append({"stable_id": "bnd.%s->%s" % (widget, psid), "from": widget,
-                               "to": psid, "context": own, "status": status, "evidence": e})
+            L.add_param(psid, own, K_CONT, "program_params", e, semantic=sem, status=status)
+            L.bind(widget, psid, ctx_program(own), op="set", status=status, evidence=e)
 
 
 def _compact(o):
@@ -493,17 +722,78 @@ def _dump(m):
 # Per-module capability declaration (independent transcription; replaces the old generic
 # "every module must have a param AND a jack" blanket gate). `voices` (drone triggers) has
 # parameters=False: it is momentary-touch only. Terminals are NOT modules; their endpoints are
-# the terminal I/O. Codex msg 06ef6b70 item #3.
+# the terminal I/O. Codex msg 06ef6b70 item #3; c7089521 item #5 splits `jacks` into
+# `patchableJacks` vs `internalEndpoints` (mixer / voices have no normal patchable jack).
 CAPABILITIES = {
-    "voices": {"parameters": False, "jacks": True, "controls": True},
+    "voices": {"parameters": False, "patchableJacks": True, "internalEndpoints": False,
+               "controls": True},
 }
-DEFAULT_CAP = {"parameters": True, "jacks": True, "controls": True}
+DEFAULT_CAP = {"parameters": True, "patchableJacks": True, "internalEndpoints": False,
+               "controls": True}
 
 
-def inject_capabilities(modules):
+def inject_capabilities(modules, endpoints):
+    """Derive patchableJacks / internalEndpoints from the hand-transcribed endpoint inventory.
+
+    A module declares `patchableJacks` if it owns >=1 patchable endpoint and
+    `internalEndpoints` if it owns >=1 non-patchable endpoint; both are facts about what was
+    actually transcribed for that module, so the gate can check present-but-empty per capability
+    instead of blanket "every module must have a jack".
+    """
+    from collections import defaultdict
+    patch = defaultdict(bool)
+    internal = defaultdict(bool)
+    for e in endpoints:
+        if e.get("patchable"):
+            patch[e.get("owner")] = True
+        else:
+            internal[e.get("owner")] = True
     for m in modules:
         sid = m.get("stable_id")
-        m["capabilities"] = CAPABILITIES.get(sid, dict(DEFAULT_CAP))
+        cap = dict(CAPABILITIES.get(sid, DEFAULT_CAP))
+        cap["patchableJacks"] = bool(patch.get(sid))
+        cap["internalEndpoints"] = bool(internal.get(sid))
+        m["capabilities"] = cap
+
+
+# Top-level record payload schemas for the two non-scalar keyboard records (Codex c7089521
+# item #1/#2). Declared once; the 4 presets reference the single keyboard_preset record and
+# explicitly exclude clock_bpm.
+RECORD_SCHEMAS = {
+    "keyboard_seq": {
+        "note": "Sequencer step data: up to 16 steps of note/value + gate. The seq_editor menu "
+                "is NOT a parameter; the state is this record.",
+        "fields": [{"name": "steps", "type": "array", "count": 16,
+                    "element": {"note": "number", "value": "voltage", "gate": "bool"}}],
+    },
+    "keyboard_preset": {
+        "note": "Keyboard parameter payload for presets A-D: contains all keyboard parameters "
+                "EXCLUDING clock BPM (manual L1040-1045).",
+        "fields": [{"name": "payload", "type": "record",
+                    "of": "keyboard_params_minus_clock"}],
+        "excludes": ["keyboard.clock_bpm"],
+    },
+}
+
+# Grandfather the PRE-CORRECTION registry rogue ids (Codex c7089521 item #5). These are the
+# registry's legacy dot-space / pre-re-id ids that do NOT match the corrected target stable_ids;
+# Phase B re-ids the C++ id-space and shrinks this list to empty. It must only ever SHRINK, and
+# `--require-full` requires it to be empty.
+MIGRATION_ALLOWLIST = {
+    "note": "Monotonically-shrinking migration allowlist for pre-correction registry rogue ids. "
+            "The gate is ALWAYS-ON: any registry param/jack not in the target and not in this "
+            "list is a NEW rogue and fails even without --require-full. --require-full requires "
+            "the list empty AND no rogue.",
+    "parameters": [
+        "envelope_a.attack", "envelope_a.release", "keyboard.pressure_signal",
+        "program.cathedral.1.decay", "program.cathedral.1.octave_down",
+        "program.cathedral.1.octave_up", "program.magic.1.delay", "program.magic.1.feedback",
+        "program.magic.1.pitch", "vcf.l.dist", "vcf.l.freq", "vcf.l.gain", "vcf.l.mod",
+        "vcf.l.res", "vcf.mode", "vcf.r.freq", "vco_a.fm_amt", "vco_a.oct_high",
+        "vco_a.oct_low", "vco_a.shape", "vco_a.sub", "vco_a.wave", "vco_b.shape", "vco_b.wave",
+    ],
+    "jacks": ["vcf.audio_in"],
+}
 
 
 def main():
@@ -511,13 +801,13 @@ def main():
         m = json.load(fh)
 
     L = build()
-    panel_sids = [p["stable_id"] for p in L.panel]
-    add_keyboard_state(L, panel_sids)
+    add_keyboard_state(L)
     add_program_params(L, m)
-    inject_capabilities(m["target"]["modules"])
+    pjt = m["target"].get("paramsJackTargets") or {}
+    inject_capabilities(m["target"]["modules"], pjt.get("endpoints", []))
 
     # fixed lfo cv_out evidence -> manual LFO section (Codex item #4).
-    for ep in m["target"]["paramsJackTargets"]["endpoints"]:
+    for ep in pjt.get("endpoints", []):
         if ep.get("stable_id") in ("lfo_a.cv_out", "lfo_b.cv_out"):
             ep["evidence"] = ev(427, 442)
             ep["status"] = "confirmed"
@@ -526,27 +816,30 @@ def main():
     tgt["panelControls"] = L.panel
     tgt["controlBindings"] = L.bindings
     tgt["parameters"] = L.params
+    tgt["actions"] = L.actions
     tgt["controlRegions"] = L.regions
-    # Canonical Parameter target is top-level `target.parameters[]`; `paramsJackTargets` records
-    # jacks + internal endpoints ONLY (the old stale .params list is dropped). Per-item Parameter
-    # id-space lives on parameters[] (Codex msg 06ef6b70: panelControls/parameters/controlBindings
-    # three entities).
-    pjt = tgt.get("paramsJackTargets") or {}
+    tgt["recordSchemas"] = RECORD_SCHEMAS
+    # paramsJackTargets records jacks + internal endpoints ONLY (the old stale .params list is
+    # dropped). Per-item Parameter id-space lives on parameters[].
     tgt["paramsJackTargets"] = {
         "note": ("Three-entity split (Codex msg 06ef6b70): panelControls[] = real physical panel "
                  "widgets; parameters[] = the persisted logical state (Parameter target); "
-                 "controlBindings[] = widget->parameter with a program/mode/global context. "
-                 "controlRegions[] expectedPanelControlCount is an INDEPENDENT hand-counted "
-                 "constant, never derived from rows. Fixed internal endpoints are independent of "
-                 "patchable jacks."),
+                 "controlBindings[] = widget -> parameter|action with a structured context "
+                 "(global / program / keyboard-menu). Codex msg c7089521: parameters carry an "
+                 "explicit shape/cardinality/recordType/maskSize; actions[] gives the event-only "
+                 "widgets a stable identity; migrationAllowlist grandfathers pre-correction rogues "
+                 "(always-on no-new-rogue). Fixed internal endpoints are independent of patchable "
+                 "jacks."),
         "endpoints": pjt.get("endpoints", []),
     }
+    m["migrationAllowlist"] = MIGRATION_ALLOWLIST
 
     with open(MANIFEST, "w", encoding="utf-8") as fh:
         fh.write(_dump(m))
 
     print("panelControls:", len(tgt["panelControls"]),
           "parameters:", len(tgt["parameters"]),
+          "actions:", len(tgt["actions"]),
           "bindings:", len(tgt["controlBindings"]),
           "regions:", len(tgt["controlRegions"]))
     for r in tgt["controlRegions"]:

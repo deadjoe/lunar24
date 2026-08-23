@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Lunar 24 contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Negative tests for the registry completeness gate (Phase A, three-entity model).
+"""Negative tests for the registry completeness gate (Phase A, four-entity model).
 
 The gate must reject each defect for its INTENDED reason, not stumble onto it by accident.
 We mutate a copy of the real manifest/spec and assert the resulting `problems` list contains
 the matching diagnostic, and that the un-mutated baseline passes. Covers the tightened checks
-added to close the Phase-A false-green under the Codex msg 06ef6b70 ledger rework:
+added to close the Phase-A false-green under the Codex msg 06ef6b70 ledger rework AND the
+Codex msg c7089521 hardened shape/action/context/rogue gate:
 
-  the three-entity split (panelControls / parameters / controlBindings),
+  the three-entity split extended to four (panelControls / parameters / actions /
+    controlBindings),
   INDEPENDENT region subtotals (expectedPanelControlCount is not self-derived),
+  EXPLICIT parameter shape (scalar|vector|record|mask) with cardinality / recordType /
+    maskSize coupling,
+  structured closed-set context (global | program | keyboard-menu | keyboard-mode) with
+    valid ProgramId / menu / mode references,
+  binding semantics (operation ∈ {set,press,rotate,long_press}; press/rotate/long_press
+    must target an action; joystick axis must target exactly owner.<axis>),
+  ALWAYS-ON no-new-rogue (a registry Parameter/Jack absent from the target AND the migration
+    allowlist fails in NORMAL mode, not just --require-full),
   per-ID --require-full target↔registry for Parameters and Patchable Jacks,
-  per-CAPABILITY present-but-empty (replaces the blanket param+jack check),
-  no-orphan / no-unbound-persist binding invariants,
+  per-CAPABILITY present-but-empty (parameters / patchableJacks / internalEndpoints / controls),
+  no-orphan / no-unbound-persist / no-unbound-action-event binding invariants,
+  empty-region check as declaredRegionIds - actualRegionIds,
   plus the inherited gates (重件 by category, provenance, program grid, directed/in-dangling
   routes, fixed-chain freeze, ORCHE provisional, terminal-owner, impl ⊆ target, mustComplete).
 
@@ -199,12 +210,12 @@ def main():
     if not has(problems, "is not a declared parameter"):
         raise SystemExit("binding to an unknown parameter not flagged: %r" % problems)
 
-    # 21. binding missing context.
+    # 21. binding missing structured context (must be a {type: ...} object, not "").
     badctx = copy.deepcopy(manifest)
     badctx["target"]["controlBindings"][0]["context"] = ""
     problems, _ = gate.check(spec, badctx)
-    if not has(problems, "missing context"):
-        raise SystemExit("binding without a context not flagged: %r" % problems)
+    if not has(problems, "missing structured context"):
+        raise SystemExit("binding without a structured context not flagged: %r" % problems)
 
     # 22. orphan parameter (a persisted state with no binding to reach it).
     orphan = copy.deepcopy(manifest)
@@ -302,11 +313,206 @@ def main():
     if not has(problems, "mustComplete != registry landed target keys"):
         raise SystemExit("mustComplete not required to match the landed set: %r" % problems)
 
+    # ---- c7089521 (fifth review) validations ---------------------------------
+    # 33. parameter shape outside the closed enum.
+    badshape = copy.deepcopy(manifest)
+    badshape["target"]["parameters"][0]["shape"] = "array"
+    problems, _ = gate.check(spec, badshape)
+    if not has(problems, "shape 'array' not in"):
+        raise SystemExit("parameter with an invalid shape not flagged: %r" % problems)
+
+    # 34. shape=vector without an int cardinality.
+    badvec = copy.deepcopy(manifest)
+    badvec["target"]["parameters"][0]["shape"] = "vector"
+    badvec["target"]["parameters"][0]["cardinality"] = None
+    problems, _ = gate.check(spec, badvec)
+    if not has(problems, "shape=vector needs int cardinality"):
+        raise SystemExit("vector parameter without a cardinality not flagged: %r" % problems)
+
+    # 35. shape=record without a declared recordType.
+    badrec = copy.deepcopy(manifest)
+    badrec["target"]["parameters"][0]["shape"] = "record"
+    badrec["target"]["parameters"][0]["recordType"] = None
+    problems, _ = gate.check(spec, badrec)
+    if not has(problems, "needs a declared recordType"):
+        raise SystemExit("record parameter without a recordType not flagged: %r" % problems)
+
+    # 36. shape=mask without an int maskSize.
+    badmask = copy.deepcopy(manifest)
+    badmask["target"]["parameters"][0]["shape"] = "mask"
+    badmask["target"]["parameters"][0]["maskSize"] = None
+    problems, _ = gate.check(spec, badmask)
+    if not has(problems, "shape=mask needs int maskSize"):
+        raise SystemExit("mask parameter without a maskSize not flagged: %r" % problems)
+
+    # 37. shape extras on the WRONG shape (cardinality on a scalar).
+    badextra = copy.deepcopy(manifest)
+    badextra["target"]["parameters"][0]["cardinality"] = 5
+    problems, _ = gate.check(spec, badextra)
+    if not has(problems, "cardinality only valid for shape=vector"):
+        raise SystemExit("cardinality smuggled onto a scalar not flagged: %r" % problems)
+
+    # 38. press operation targeting a PARAMETER (must be an action).
+    pressparam = copy.deepcopy(manifest)
+    pressparam["target"]["controlBindings"][0]["operation"] = "press"
+    problems, _ = gate.check(spec, pressparam)
+    if not has(problems, "is not a declared action"):
+        raise SystemExit("press binding targeting a parameter not flagged: %r" % problems)
+
+    # 39. duplicate action -> 重件.
+    dupa = copy.deepcopy(manifest)
+    dupa["target"]["actions"].append(copy.deepcopy(dupa["target"]["actions"][0]))
+    problems, _ = gate.check(spec, dupa)
+    if not has(problems, "action duplicate stable_id"):
+        raise SystemExit("duplicate action not flagged as 重件: %r" % problems)
+
+    # 40. action kind outside the closed enum.
+    badakind = copy.deepcopy(manifest)
+    badakind["target"]["actions"][0]["kind"] = "tap"
+    problems, _ = gate.check(spec, badakind)
+    if not has(problems, "kind 'tap' not in"):
+        raise SystemExit("invalid action kind not flagged: %r" % problems)
+
+    # 41. action owner outside module|program|terminal.
+    badaowner = copy.deepcopy(manifest)
+    badaowner["target"]["actions"][0]["owner"] = "not_a_module"
+    problems, _ = gate.check(spec, badaowner)
+    if not has(problems, "not a target module"):
+        raise SystemExit("action with an invalid owner not flagged: %r" % problems)
+
+    # 42. structured context type outside the closed set.
+    badctype = copy.deepcopy(manifest)
+    badctype["target"]["controlBindings"][0]["context"] = {"type": "nope"}
+    problems, _ = gate.check(spec, badctype)
+    if not has(problems, "context type 'nope' not in"):
+        raise SystemExit("binding context type outside the closed set not flagged: %r" % problems)
+
+    # 43. program context referencing an unknown ProgramId.
+    badprog = copy.deepcopy(manifest)
+    badprog["target"]["controlBindings"][0]["context"] = {"type": "program", "program": "program.nope"}
+    problems, _ = gate.check(spec, badprog)
+    if not has(problems, "unknown ProgramId"):
+        raise SystemExit("program context with an unknown ProgramId not flagged: %r" % problems)
+
+    # 44. keyboard-menu context referencing a legal-looking but unknown menu.
+    badmenu = copy.deepcopy(manifest)
+    badmenu["target"]["controlBindings"][0]["context"] = {"type": "keyboard-menu", "menu": "nope"}
+    problems, _ = gate.check(spec, badmenu)
+    if not has(problems, "keyboard-menu context menu 'nope' not in"):
+        raise SystemExit("keyboard-menu context with an unknown menu not flagged: %r" % problems)
+
+    # 45. keyboard-mode context referencing an unknown mode.
+    badmode = copy.deepcopy(manifest)
+    badmode["target"]["controlBindings"][0]["context"] = {"type": "keyboard-mode", "mode": "nope"}
+    problems, _ = gate.check(spec, badmode)
+    if not has(problems, "keyboard-mode context mode 'nope' not in"):
+        raise SystemExit("keyboard-mode context with an unknown mode not flagged: %r" % problems)
+
+    # 46. selector-toggle without a non-empty positions[].
+    noselpos = copy.deepcopy(manifest)
+    for c in noselpos["target"]["panelControls"]:
+        if c["stable_id"] == "vco_a.oct_sel":
+            c["positions"] = None
+    problems, _ = gate.check(spec, noselpos)
+    if not has(problems, "selector-toggle needs a non-empty positions"):
+        raise SystemExit("selector-toggle without positions not flagged: %r" % problems)
+
+    # 47. joystick binding on an axis the widget does not declare.
+    badaxis = copy.deepcopy(manifest)
+    for b in badaxis["target"]["controlBindings"]:
+        if b["stable_id"] == "bnd.joystick.joy->joystick.x":
+            b["axis"] = "z"
+    problems, _ = gate.check(spec, badaxis)
+    if not has(problems, "not a declared axis of joystick.joy"):
+        raise SystemExit("joystick binding on an undeclared axis not flagged: %r" % problems)
+
+    # 48. joystick axis must target exactly owner.<axis> (no cross-axis).
+    wrongaxisparam = copy.deepcopy(manifest)
+    for b in wrongaxisparam["target"]["controlBindings"]:
+        if b["stable_id"] == "bnd.joystick.joy->joystick.x":
+            b["to"] = "joystick.y"  # keep axis=x, but point at the Y parameter
+    problems, _ = gate.check(spec, wrongaxisparam)
+    if not has(problems, "must target 'joystick.x', not 'joystick.y'"):
+        raise SystemExit("joystick axis bound to the wrong parameter not flagged: %r" % problems)
+
+    # 49. ALWAYS-ON no-new-rogue: a registry Parameter/Jack absent from the target AND the
+    #     migration allowlist fails in NORMAL mode (not just under --require-full).
+    newrogue = copy.deepcopy(spec)
+    vco_cards = [mm for mm in newrogue["modules"] if mm["stable_id"] == "vco_a"]
+    vco_card = vco_cards[0]
+    vco_param = copy.deepcopy(vco_card["parameters"][0])
+    vco_param["id"] = 900
+    vco_param["stable_id"] = "vco_a.rogue_new"
+    vco_param["name"] = "Rogue param"
+    vco_card["parameters"].append(vco_param)
+    vco_jack = copy.deepcopy(vco_card["jacks"][0])
+    vco_jack["id"] = 900
+    vco_jack["stable_id"] = "vco_a.rogue_jack_new"
+    vco_jack["name"] = "Rogue jack"
+    vco_card["jacks"].append(vco_jack)
+    problems, _ = gate.check(newrogue, manifest)
+    if not has(problems, "parameter registry-rogue NOT migration-allowed (NEW)"):
+        raise SystemExit("new parameter rogue not flagged in NORMAL mode (always-on): %r" % problems)
+    if not has(problems, "patchable jack registry-rogue NOT migration-allowed (NEW)"):
+        raise SystemExit("new jack rogue not flagged in NORMAL mode (always-on): %r" % problems)
+
+    # 50. capability patchableJacks present-but-empty: a module that DECLARES the patchable-jacks
+    #     capability but provides zero jacks in the registry. (We add a genuine zero-jack module
+    #     rather than emptying vco_a, whose jacks anchor generated normalized routes.)
+    capjack = copy.deepcopy(spec)
+    capjack["modules"].append({
+        "id": 99, "stable_id": "mutant", "name": "Mutant", "category": "util",
+        "parameters": [], "jacks": [],
+        "status": "confirmed",
+        "evidence": {"ref": "solar42N_manual_v15", "lineStart": 1, "lineEnd": 1},
+    })
+    capman = copy.deepcopy(manifest)
+    capman["target"]["modules"].append({
+        "stable_id": "mutant", "name": "Mutant", "category": "util",
+        "capabilities": {"parameters": False, "patchableJacks": True,
+                         "internalEndpoints": False, "controls": False},
+        "status": "confirmed",
+        "evidence": {"ref": "solar42N_manual_v15", "lineStart": 1, "lineEnd": 1, "panelSite": "mutant"},
+    })
+    capman["mustComplete"] = capman["mustComplete"] + ["module:mutant"]
+    problems, _ = gate.check(capjack, capman)
+    if not has(problems, "declares capability patchableJacks but the registry provides no patchable jack"):
+        raise SystemExit("patchableJacks capability present-but-empty not flagged: %r" % problems)
+
+    # 51. capability internalEndpoints present-but-empty: a REGISTRY module (the capability loop only
+    #     sweeps registry modules) that declares internalEndpoints but owns no non-patchable endpoint.
+    #     envelope_a is in the registry and owns no internal endpoint in the target inventory.
+    capint = copy.deepcopy(manifest)
+    for mo in capint["target"]["modules"]:
+        if mo["stable_id"] == "envelope_a":
+            mo["capabilities"]["internalEndpoints"] = True
+    problems, _ = gate.check(spec, capint)
+    if not has(problems, "declares capability internalEndpoints but the target transcribes no internal endpoint"):
+        raise SystemExit("internalEndpoints capability present-but-empty not flagged: %r" % problems)
+
+    # 52. empty region check = declaredRegionIds - actualRegionIds (a declared region with no widgets).
+    ghostreg = copy.deepcopy(manifest)
+    ghostreg["target"]["controlRegions"].append({
+        "id": "ghost_region",
+        "module": "preamp",
+        "expectedPanelControlCount": 0,
+        "status": "confirmed",
+        "evidence": {"ref": "solar42N_manual_v15", "lineStart": 300, "lineEnd": 300,
+                     "panelSite": "ghost"},
+    })
+    problems, _ = gate.check(spec, ghostreg)
+    if not has(problems, "declared but with no panelControls"):
+        raise SystemExit("declared region with no widgets not flagged (declaredRegionIds-actualRegionIds): "
+                         "%r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
-          "--require-full is per-ID (gap + rogue), not a fake per-module green; the three-entity "
-          "split, independent region subtotals, binding invariants, capability-declared "
-          "present-but-empty, impl⊆target, fixed-chain freeze, ORCHE provisional, terminal-owner "
-          "and dangling-fixed-endpoint are all gated.")
+          "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
+          "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
+          "maskSize coupling, binding operation→action semantics, structured closed-set context, "
+          "joystick-axis targeting, ALWAYS-ON no-new-rogue, capability-declared present-but-empty "
+          "(parameters/patchableJacks/internalEndpoints), empty-region declared-actual, binding "
+          "invariants, impl⊆target, fixed-chain freeze, ORCHE provisional, terminal-owner and "
+          "dangling-fixed-endpoint are all gated.")
     return 0
 
 
