@@ -28,11 +28,13 @@ lunar-core ──→ lightweight snapshots/events ──→ adapters/UI
   **非标量的设备状态不进参数库** —— `vector`（逐音板调音、按钮值）、`record`（序列步、键盘 preset A–D）、
   `mask`（音阶开关）走 DeviceState 的结构化字段（见 §6），不表示为 ParameterDescriptor。
   registry 完整性门禁据此把它们判为**结构性 gap（Root A: "must gap"）**。
-  **这不是待办事项：把它们拍扁成标量才是错的。** 冻结目标 357 参数中有 8 项属于此类，
-  因此 landed 参数上限为 349，`gap = 8` 是设计结论，不得被"清零"。
+  **这不是待办事项：把它们拍扁成标量才是错的。** 冻结目标 357 参数中**有 8 项属于此类**。
 - ⚠️ 另有一类 gap：目标声明为 `selector-toggle` 但**未给出 positions（值域）**，
   手册只描述行为不枚举取值时即属此类。**在拿到值域证据前必须保持 gap，不得臆造 positions，
   也不得改判为 continuous 来绕过。**
+- 两类合计：冻结目标 357 中 **12 项必须保持 gap**（8 非标量 ＋ 4 无值域 selector），
+  因此 **landed 参数上限 = 345**，最终 `kParameterIdSpace = 412`。
+  **这 12 项不是欠账**；把 gap 推向 0 意味着拍扁结构或臆造值域，两者都是错的。
 - `JackDescriptor`：方向、推荐信号用途/范围、normalized route；用途是提示和保护数值范围，不是阻止跨类型实验连接。
 - `NormalizedRoute`：正式图边；插线覆盖，拔线恢复，不允许散落在模块代码里的 `if jack empty` 特判。
 - `PatchGraph`：连接事实；屏幕 cable 只是它的 visualization，不是连接状态本身。
