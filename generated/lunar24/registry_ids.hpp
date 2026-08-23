@@ -291,7 +291,16 @@ enum class ParameterId : std::uint32_t {
     program_time_2_z = 318,
     program_time_3_x = 319,
     program_time_3_y = 320,
-    program_time_3_z = 321
+    program_time_3_z = 321,
+    program_vibrotrem_1_x = 322,
+    program_vibrotrem_1_y = 323,
+    program_vibrotrem_1_z = 324,
+    program_vibrotrem_2_x = 325,
+    program_vibrotrem_2_y = 326,
+    program_vibrotrem_2_z = 327,
+    program_vibrotrem_3_x = 328,
+    program_vibrotrem_3_y = 329,
+    program_vibrotrem_3_z = 330
 };
 
 enum class JackId : std::uint32_t {
@@ -413,13 +422,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 255;
+inline constexpr std::uint32_t kParameterCount = 264;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 322;
+inline constexpr std::uint64_t kParameterIdSpace = 331;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -712,6 +721,15 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_time_3_x: return "program.time.3.x";
     case ParameterId::program_time_3_y: return "program.time.3.y";
     case ParameterId::program_time_3_z: return "program.time.3.z";
+    case ParameterId::program_vibrotrem_1_x: return "program.vibrotrem.1.x";
+    case ParameterId::program_vibrotrem_1_y: return "program.vibrotrem.1.y";
+    case ParameterId::program_vibrotrem_1_z: return "program.vibrotrem.1.z";
+    case ParameterId::program_vibrotrem_2_x: return "program.vibrotrem.2.x";
+    case ParameterId::program_vibrotrem_2_y: return "program.vibrotrem.2.y";
+    case ParameterId::program_vibrotrem_2_z: return "program.vibrotrem.2.z";
+    case ParameterId::program_vibrotrem_3_x: return "program.vibrotrem.3.x";
+    case ParameterId::program_vibrotrem_3_y: return "program.vibrotrem.3.y";
+    case ParameterId::program_vibrotrem_3_z: return "program.vibrotrem.3.z";
   }
   return "(unknown Parameter)";
 }

@@ -4062,10 +4062,10 @@ def main():
     if not has(problems, "MISSING landed descriptor param 'program.cathedral.3.z'"):
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
-    # (ll) cathedral.2/.3, magic.2/.3 and time.1/.2/.3 must NOT be re-openable as an honest gap: with
-    #      those programs' params landed, the --require-full residual must exclude every one of those
-    #      ids. It widens exactly across the 12 keyboard complex + 90 other program XYZ params (102
-    #      total).
+    # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3 and vibrotrem.1/.2/.3 must NOT be re-openable as an
+    #      honest gap: with those programs' params landed, the --require-full residual must exclude every
+    #      one of those ids. It widens exactly across the 12 keyboard complex + 81 other program XYZ
+    #      params (93 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4075,12 +4075,12 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 102:
-        raise SystemExit("residual honest-gap total %d != 102 (12 keyboard complex + 90 program XYZ); "
-                         "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 must have landed and closed "
-                         "exactly 21" % len(_gap_ids))
-    if len(_kb) != 12 or len(_prog) != 90:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/90: %r" % (len(_kb), len(_prog),
+    if len(_gap_ids) != 93:
+        raise SystemExit("residual honest-gap total %d != 93 (12 keyboard complex + 81 program XYZ); "
+                         "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 must have "
+                         "landed and closed exactly 30" % len(_gap_ids))
+    if len(_kb) != 12 or len(_prog) != 81:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/81: %r" % (len(_kb), len(_prog),
                                                                                 _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
@@ -4088,11 +4088,14 @@ def main():
                  "program.magic.3.x", "program.magic.3.y", "program.magic.3.z",
                  "program.time.1.x", "program.time.1.y", "program.time.1.z",
                  "program.time.2.x", "program.time.2.y", "program.time.2.z",
-                 "program.time.3.x", "program.time.3.y", "program.time.3.z"):
+                 "program.time.3.x", "program.time.3.y", "program.time.3.z",
+                 "program.vibrotrem.1.x", "program.vibrotrem.1.y", "program.vibrotrem.1.z",
+                 "program.vibrotrem.2.x", "program.vibrotrem.2.y", "program.vibrotrem.2.z",
+                 "program.vibrotrem.3.x", "program.vibrotrem.3.y", "program.vibrotrem.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 90 "
-                             "other program XYZ gaps are preserved, NOT cathedral.2/3, magic.2/3 or "
-                             "time.1/2/3): %r" % (_sid, _gap_ids))
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 81 "
+                             "other program XYZ gaps are preserved, NOT cathedral.2/3, magic.2/3, "
+                             "time.1/2/3 or vibrotrem.1/2/3): %r" % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
@@ -4251,7 +4254,92 @@ def main():
     if not has(problems, "MISSING landed descriptor param 'program.time.3.z'"):
         raise SystemExit("time.3.z terminator delete (family last) not enforced: %r" % problems)
 
-    print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
+    # (mc)-(mj) VIBROTREM Program 1/2/3 X/Y/Z descriptor lock (Codex msg 2a7c2e94). The nine program
+    #      vibrotrem.1/.2/.3 x/y/z params (ids 322-330) are landed descriptor facts locked by the exact-
+    #      compare — id renumber, owner / cross-owner leak, per-line evidence drift and a fieldEvidence
+    #      overclaim must all fail normal. ROLE is also locked (a program x/y/z param's role must equal
+    #      its stable-id .x/.y/.z suffix), and ALL three terminator shapes across the whole VIBROTREM
+    #      family (first vibrotrem.1.x / middle vibrotrem.2.y / last vibrotrem.3.z) are a landed/
+    #      mustComplete drop, not a gap. KEY DIFF vs the other program slices: no depth/rate/reverb
+    #      physical unit/range/default is derived from the Tremolo/Vibrato/Chorus names or the
+    #      Depth/Rate/Reverb labels — the software-normalized 0..1 placeholders are NOT dressed up as
+    #      parameterized values.
+
+    # (mc) id renumber: vibrotrem.1.x is id 322; renumbering (322 -> 999) must fail.
+    mc_bad = copy.deepcopy(spec)
+    reg_param(mc_bad, "program.vibrotrem.1.x")["id"] = 999
+    problems, _ = gate.check(mc_bad, manifest)
+    if not has(problems, "implementation param 'program.vibrotrem.1.x'"):
+        raise SystemExit("vibrotrem.1.x param id renumber (322 -> 999) not enforced: %r" % problems)
+
+    # (md) owner / cross-owner leak: vibrotrem.1.x must stay owned by program.vibrotrem.1; moving it
+    #      under program.vibrotrem.2's array makes the generated owner program.vibrotrem.2, which the
+    #      landed fact rejects.
+    md_bad = copy.deepcopy(spec)
+    _v1 = next(pr for pr in md_bad["programs"] if pr.get("stable_id") == "program.vibrotrem.1")
+    _v2 = next(pr for pr in md_bad["programs"] if pr.get("stable_id") == "program.vibrotrem.2")
+    _x = [p for p in _v1["parameters"] if p["stable_id"] == "program.vibrotrem.1.x"][0]
+    _v1["parameters"] = [p for p in _v1["parameters"] if p["stable_id"] != "program.vibrotrem.1.x"]
+    _v2.setdefault("parameters", []).append(_x)
+    problems, _ = gate.check(md_bad, manifest)
+    if not has(problems, "implementation param 'program.vibrotrem.1.x'"):
+        raise SystemExit("vibrotrem.1.x cross-owner leak (-> program.vibrotrem.2) not enforced: %r"
+                         % problems)
+
+    # (me) ROLE drift: vibrotrem.1.x being role y (valid but wrong position) must fail (role gate).
+    me_bad = copy.deepcopy(spec)
+    reg_param(me_bad, "program.vibrotrem.1.x")["role"] = "y"
+    problems, _ = gate.check(me_bad, manifest)
+    if not has(problems, "stable-id position"):
+        raise SystemExit("vibrotrem.1.x role drift (x -> y) not enforced by the role gate: %r"
+                         % problems)
+
+    # (mf) per-line descriptorEvidence drift: vibrotrem.1.x cites L1233; moving it (1233 -> 1234) is a
+    #      target drift and must fail.
+    mf_bad = copy.deepcopy(spec)
+    reg_param(mf_bad, "program.vibrotrem.1.x")["evidence"]["line"] = 1234
+    problems, _ = gate.check(mf_bad, manifest)
+    if not has(problems, "implementation param 'program.vibrotrem.1.x'"):
+        raise SystemExit("vibrotrem.1.x descriptorEvidence.line drift (1233 -> 1234) not enforced: %r"
+                         % problems)
+
+    # (mg) fieldEvidence overclaim: a placeholder range must not be elevated to confirmed (the KEY
+    #      DIFF — no physical depth/rate/reverb unit/range/default is being asserted here).
+    mg_bad = copy.deepcopy(spec)
+    reg_param(mg_bad, "program.vibrotrem.1.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(mg_bad, manifest)
+    if not has(problems, "implementation param 'program.vibrotrem.1.x'"):
+        raise SystemExit("vibrotrem.1.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+
+    # (mh) FIRST terminator delete across the family: dropping vibrotrem.1.x is a landed/mustComplete
+    #      drop.
+    mh_bad = copy.deepcopy(spec)
+    _v1 = next(pr for pr in mh_bad["programs"] if pr.get("stable_id") == "program.vibrotrem.1")
+    _v1["parameters"] = [p for p in _v1["parameters"] if p["stable_id"] != "program.vibrotrem.1.x"]
+    problems, _ = gate.check(mh_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.vibrotrem.1.x'"):
+        raise SystemExit("vibrotrem.1.x terminator delete (family first) not enforced: %r" % problems)
+
+    # (mi) MIDDLE terminator delete across the family: dropping vibrotrem.2.y is likewise a landed/
+    #      mustComplete drop.
+    mi_bad = copy.deepcopy(spec)
+    _v2 = next(pr for pr in mi_bad["programs"] if pr.get("stable_id") == "program.vibrotrem.2")
+    _v2["parameters"] = [p for p in _v2["parameters"] if p["stable_id"] != "program.vibrotrem.2.y"]
+    problems, _ = gate.check(mi_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.vibrotrem.2.y'"):
+        raise SystemExit("vibrotrem.2.y terminator delete (family middle) not enforced: %r" % problems)
+
+    # (mj) LAST terminator delete across the family: dropping vibrotrem.3.z is likewise a landed/
+    #      mustComplete drop.
+    mj_bad = copy.deepcopy(spec)
+    _v3 = next(pr for pr in mj_bad["programs"] if pr.get("stable_id") == "program.vibrotrem.3")
+    _v3["parameters"] = [p for p in _v3["parameters"] if p["stable_id"] != "program.vibrotrem.3.z"]
+    problems, _ = gate.check(mj_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.vibrotrem.3.z'"):
+        raise SystemExit("vibrotrem.3.z terminator delete (family last) not enforced: %r" % problems)
+
+    print("OK: completeness gate rejects each defect for its intended reason;baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
           "maskSize coupling, binding operation→action semantics, structured closed-set context, "

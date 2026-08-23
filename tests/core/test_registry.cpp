@@ -113,7 +113,15 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 255u); // Phase B TIME Programs 1/2/3 X/Y/Z slice (Codex msg
+  CHECK_EQ(core::kParameterCount, 264u); // Phase B VIBROTREM Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 2a7c2e94): +9 program params (vibrotrem.1/.2/.3 x/y/z
+                                         // depth/rate/reverb, ids 322-330, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no frequency/time values
+                                         // derived from the Tremolo/Vibrato/Chorus names or the
+                                         // Depth/Rate/Reverb labels).
+                                         // Prior: Phase B TIME Programs 1/2/3 X/Y/Z slice (Codex msg
                                          // 7cafb3d6): +9 program params (time.1/.2/.3 x/y/z
                                          // feedback/delay/reverb + feedback/delay/mod depth +
                                          // feedback/delay-vibrato-rate/mod depth, ids 313-321,
@@ -150,8 +158,8 @@ static void frozen_counts() {
                                          // (Codex msg 28e00d92) +19 (ids 201-219), dual-effector
                                          // slice +8 (ids 193-200), voice-mixer slice +20
                                          // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
-                                         // carry 228, programs 9 (27 program params). Left as honest
-                                         // gaps the 12 keyboard complex params and the 90 other
+                                         // carry 228, programs 12 (36 program params). Left as honest
+                                         // gaps the 12 keyboard complex params and the 81 other
                                          // program X/Y/Z params
                                          // (seq_steps, quantise_scale_editor,
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,
