@@ -2009,6 +2009,102 @@ def main():
         raise SystemExit("joystick offset evidence fallback (joystick.offset_x line 452 -> 449) not "
                         "enforced: %r" % problems)
 
+    # (cl)-(cu) preamp + envelope follower slice (Codex msg ebd65910): the two newly-landed modules
+    # and their 3 software-normalized params (preamp.gain, env_follower.attack/release) + 3 jacks
+    # (preamp.ext_source_in audio input, env_follower.env_out 0..+10V CV, env_follower.gate_out 0..+8V
+    # gate) fall under the SAME landed-module / landed-param / landed-jack gates. Cover per-kind
+    # deletion + id renumber + the key evidence/range drift a reviewer cares about: the module id,
+    # the audio input signalType, the gate output / envelope output nominal range, the placeholder
+    # gain fieldEvidence, and the envelope/gate evidence line. No normalized route is owned by either
+    # module, so no dangling-endpoint strip is needed.
+
+    # (cl) renumber a landed preamp module id.
+    cl_bad = copy.deepcopy(spec)
+    for m in cl_bad["modules"]:
+        if m.get("stable_id") == "preamp":
+            m["id"] = 99
+    problems, _ = gate.check(cl_bad, manifest)
+    if not has(problems, "id 99 !="):
+        raise SystemExit("preamp module id renumber (preamp 9 -> 99) not enforced: %r" % problems)
+
+    # (cm) delete the preamp module fact (module still landed).
+    cm_bad = copy.deepcopy(manifest)
+    del cm_bad["target"]["landedModuleFacts"]["modules"]["preamp"]
+    problems, _ = gate.check(spec, cm_bad)
+    if not has(problems, "absent from target.landedModuleFacts"):
+        raise SystemExit("preamp module-fact delete (fact dropped, module still present) not "
+                        "enforced: %r" % problems)
+
+    # (cn) delete the whole env_follower module -> a fact naming an absent module must FAIL. env_follower
+    #      owns no normalized route, so nothing else needs stripping.
+    cn_bad = copy.deepcopy(spec)
+    cn_bad["modules"] = [m for m in cn_bad["modules"] if m.get("stable_id") != "env_follower"]
+    problems, _ = gate.check(cn_bad, manifest)
+    if not has(problems, "MISSING landed module 'env_follower'"):
+        raise SystemExit("env_follower module delete not enforced: %r" % problems)
+
+    # (co) renumber a landed env_follower param id.
+    co_bad = copy.deepcopy(spec)
+    reg_param(co_bad, "env_follower.attack")["id"] = 999
+    problems, _ = gate.check(co_bad, manifest)
+    if not has(problems, "landed descriptor"):
+        raise SystemExit("env_follower param id renumber (env_follower.attack 158 -> 999) not "
+                        "enforced: %r" % problems)
+
+    # (cp) delete a landed env_follower param.
+    cp_bad = copy.deepcopy(spec)
+    for m in cp_bad["modules"]:
+        if m.get("stable_id") == "env_follower":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "env_follower.release"]
+    problems, _ = gate.check(cp_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param"):
+        raise SystemExit("env_follower param delete (env_follower.release) not enforced: %r" % problems)
+
+    # (cq) delete a landed env_follower jack.
+    cq_bad = copy.deepcopy(spec)
+    for m in cq_bad["modules"]:
+        if m.get("stable_id") == "env_follower":
+            m["jacks"] = [j for j in m.get("jacks", [])
+                          if j.get("stable_id") != "env_follower.env_out"]
+    problems, _ = gate.check(cq_bad, manifest)
+    if not has(problems, "MISSING landed descriptor jack"):
+        raise SystemExit("env_follower jack delete (env_follower.env_out) not enforced: %r" % problems)
+
+    # (cr) output range drift: the env_follower.env_out 0..+10V CV nominal range must not widen.
+    cr_bad = copy.deepcopy(spec)
+    reg_jack(cr_bad, "env_follower.env_out")["nominalMax"] = 11
+    problems, _ = gate.check(cr_bad, manifest)
+    if not has(problems, "implementation jack 'env_follower.env_out'"):
+        raise SystemExit("env_follower output range drift (env_out nominalMax 10 -> 11) not enforced: "
+                        "%r" % problems)
+
+    # (cs) param fieldEvidence drift: a software-normalized placeholder range must not be elevated to
+    #      confirmed (it stays unverified until a real hardware gain range is sourced).
+    cs_bad = copy.deepcopy(spec)
+    reg_param(cs_bad, "preamp.gain")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(cs_bad, manifest)
+    if not has(problems, "implementation param 'preamp.gain'"):
+        raise SystemExit("preamp.gain fieldEvidence drift (range unverified->confirmed) not "
+                        "enforced: %r" % problems)
+
+    # (ct) output evidence drift: the env_follower.gate_out 0..+8V citation line must not move.
+    ct_bad = copy.deepcopy(spec)
+    reg_jack(ct_bad, "env_follower.gate_out")["evidence"]["line"] = 999
+    problems, _ = gate.check(ct_bad, manifest)
+    if not has(problems, "descriptorEvidence.line=999"):
+        raise SystemExit("env_follower output evidence drift (gate_out line) not enforced: "
+                        "%r" % problems)
+
+    # (cu) audio-input signalType drift: preamp.ext_source_in is a confirmed AUDIO input; silently
+    #      reclassifying it as CV must FAIL.
+    cu_bad = copy.deepcopy(spec)
+    reg_jack(cu_bad, "preamp.ext_source_in")["signalType"] = "cv"
+    problems, _ = gate.check(cu_bad, manifest)
+    if not has(problems, "implementation jack 'preamp.ext_source_in'"):
+        raise SystemExit("preamp audio input signalType drift (ext_source_in audio -> cv) not "
+                        "enforced: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

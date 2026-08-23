@@ -21,7 +21,9 @@ enum class ModuleId : std::uint32_t {
     envelope_b = 5,
     lfo_a = 6,
     lfo_b = 7,
-    joystick = 8
+    joystick = 8,
+    preamp = 9,
+    env_follower = 10
 };
 
 enum class ParameterId : std::uint32_t {
@@ -109,6 +111,9 @@ enum class ParameterId : std::uint32_t {
     joystick_y = 154,
     joystick_offset_x = 155,
     joystick_offset_y = 156,
+    preamp_gain = 157,
+    env_follower_attack = 158,
+    env_follower_release = 159,
     program_cathedral_1_x = 24,
     program_cathedral_1_y = 25,
     program_cathedral_1_z = 26,
@@ -149,7 +154,10 @@ enum class JackId : std::uint32_t {
     lfo_a_cv_out = 29,
     lfo_b_cv_out = 30,
     joystick_x_out = 31,
-    joystick_y_out = 32
+    joystick_y_out = 32,
+    preamp_ext_source_in = 33,
+    env_follower_env_out = 34,
+    env_follower_gate_out = 35
 };
 
 enum class ProgramId : std::uint32_t {
@@ -203,15 +211,15 @@ enum class RouteId : std::uint32_t {
     route_keyboard_gate_to_eg_b = 5
 };
 
-inline constexpr std::uint32_t kModuleCount = 9;
-inline constexpr std::uint32_t kParameterCount = 90;
-inline constexpr std::uint32_t kJackCount = 32;
+inline constexpr std::uint32_t kModuleCount = 11;
+inline constexpr std::uint32_t kParameterCount = 93;
+inline constexpr std::uint32_t kJackCount = 35;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
-inline constexpr std::uint64_t kModuleIdSpace = 9;
-inline constexpr std::uint64_t kParameterIdSpace = 157;
-inline constexpr std::uint64_t kJackIdSpace = 33;
+inline constexpr std::uint64_t kModuleIdSpace = 11;
+inline constexpr std::uint64_t kParameterIdSpace = 160;
+inline constexpr std::uint64_t kJackIdSpace = 36;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
 
@@ -230,6 +238,8 @@ inline constexpr std::string_view module_id_string(ModuleId id) {
     case ModuleId::lfo_a: return "lfo_a";
     case ModuleId::lfo_b: return "lfo_b";
     case ModuleId::joystick: return "joystick";
+    case ModuleId::preamp: return "preamp";
+    case ModuleId::env_follower: return "env_follower";
   }
   return "(unknown Module)";
 }
@@ -320,6 +330,9 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::joystick_y: return "joystick.y";
     case ParameterId::joystick_offset_x: return "joystick.offset_x";
     case ParameterId::joystick_offset_y: return "joystick.offset_y";
+    case ParameterId::preamp_gain: return "preamp.gain";
+    case ParameterId::env_follower_attack: return "env_follower.attack";
+    case ParameterId::env_follower_release: return "env_follower.release";
     case ParameterId::program_cathedral_1_x: return "program.cathedral.1.x";
     case ParameterId::program_cathedral_1_y: return "program.cathedral.1.y";
     case ParameterId::program_cathedral_1_z: return "program.cathedral.1.z";
@@ -364,6 +377,9 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::lfo_b_cv_out: return "lfo_b.cv_out";
     case JackId::joystick_x_out: return "joystick.x_out";
     case JackId::joystick_y_out: return "joystick.y_out";
+    case JackId::preamp_ext_source_in: return "preamp.ext_source_in";
+    case JackId::env_follower_env_out: return "env_follower.env_out";
+    case JackId::env_follower_gate_out: return "env_follower.gate_out";
   }
   return "(unknown Jack)";
 }

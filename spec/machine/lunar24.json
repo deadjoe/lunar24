@@ -3239,6 +3239,187 @@
           }
         }
       ]
+    },
+    {
+      "id": 9,
+      "stable_id": "preamp",
+      "name": "Preamp",
+      "category": "processing",
+      "description": "Contact-mic preamplifier: a software-normalized gain placeholder (unit norm 0..1) plus one external audio input. The internal mic_in/audio_out endpoints defer to the FixedEndpoint stage.",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 518,
+        "lineEnd": 549
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 157,
+          "stable_id": "preamp.gain",
+          "name": "GAIN",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 543
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ],
+      "jacks": [
+        {
+          "id": 33,
+          "stable_id": "preamp.ext_source_in",
+          "name": "EXT SOURCE IN",
+          "direction": "input",
+          "signalType": "audio",
+          "polarity": "unknown",
+          "nominalMin": -1.0,
+          "nominalMax": 1.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 549
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "stable_id": "env_follower",
+      "name": "Envelope follower",
+      "category": "control",
+      "description": "Envelope follower: software-normalized attack/release placeholders (unit norm 0..1) driving an envelope CV output (0..+10V) and a gate output (0..+8V). The internal audio_in endpoint defers to the FixedEndpoint stage.",
+      "evidence": {
+        "ref": "solar42N_manual_v15",
+        "lineStart": 551,
+        "lineEnd": 558
+      },
+      "status": "confirmed",
+      "parameters": [
+        {
+          "id": 158,
+          "stable_id": "env_follower.attack",
+          "name": "ATTACK",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 551
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 159,
+          "stable_id": "env_follower.release",
+          "name": "RELEASE",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5,
+          "step": 0.0,
+          "smoothing": "none",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 551
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ],
+      "jacks": [
+        {
+          "id": 34,
+          "stable_id": "env_follower.env_out",
+          "name": "ENV OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 10.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 160
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 35,
+          "stable_id": "env_follower.gate_out",
+          "name": "GATE OUT",
+          "direction": "output",
+          "signalType": "gate",
+          "polarity": "unipolar",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 161
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        }
+      ]
     }
   ],
   "normalizedRoutes": [
