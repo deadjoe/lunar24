@@ -85,6 +85,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import generate_registry
+import p0_regions_build
 
 SPEC_PATH = os.path.join(ROOT, "spec", "machine", "lunar24.json")
 MANIFEST_PATH = os.path.join(ROOT, "spec", "machine", "p0_inventory_manifest.json")
@@ -97,7 +98,26 @@ PARAM_KINDS = {"continuous", "selector-toggle", "state-field"}
 SHAPES = {"scalar", "vector", "record", "mask"}
 ACTION_KINDS = {"trigger", "encoder-rotate", "encoder-press", "encoder-long-press",
                 "init", "save", "load", "initialise"}
-VALID_OPS = {"set", "press", "release", "rotate", "long_press"}
+# Binding semantics split (msg 9d8b5f43 item #1): a binding is THREE fields — the physical source
+# edge (`sourceOperation`), what it targets (`targetKind`=parameter|action), and the effect
+# (`targetOperation`). A single `operation` can no longer conflate "the encoder rotated" with
+# "write this parameter", so the gate can enforce the EXACT per-widget source-op set and reject
+# duplicate semantic tuples.
+SOURCE_OPS = {"change", "rotate", "press", "release", "long_press"}
+TGT_KINDS = {"parameter", "action"}
+TGT_OPS = {"set", "adjust", "toggle", "invoke"}
+# Per-widget-kind closed source-op set; the bindings wired for a widget must EQUAL it (not a subset,
+# so deleting an encoder press edge or adding an undeclared release edge both fail).
+WIDGET_SRC = {"continuous": {"change"}, "selector-toggle": {"change"},
+              "momentary-touch": {"press", "release"},
+              "rotary-encoder": {"rotate", "press", "long_press"}}
+# Closed condition keys (msg 9d8b5f43 item #2): a compound gesture is expressed by a closed
+# condition (heldControl board, menu item, preset slot, record index/field, mask index), not by a
+# single opaque op.
+COND_KEYS = {"heldControl", "menuItem", "presetSlot", "recordField", "recordIndex", "maskIndex"}
+PRESET_SLOTS = {"preset_a", "preset_b", "preset_c", "preset_d"}
+CMD_ADDR_KINDS = {"record", "mask"}
+SEQ_STEP_FIELDS = {"note", "value", "gate"}
 CTX_TYPES = {"global", "program", "keyboard-menu", "keyboard-mode"}
 KB_MENUS = {"behaviour", "mode", "arp", "sequencer", "portamento", "vibrato", "pressure",
             "quantiser", "clock", "calibration", "button-editor", "presets"}
@@ -159,8 +179,54 @@ def validate_record_schemas(record_schemas, param_sids):
     """Validate each record schema BODY, not just that its name is referenced (Codex a23a9618
     item #1). A record is only closed when every `element`/`of` resolves to a real schema of the
     right kind, no array element is an inline anonymous map, and a preset's excludes do not
-    contradict the params it actually stores."""
+    contradict the params it actually stores. msg 9d8b5f43 item #3 adds: no direct/indirect record
+    cycle; duplicate field names rejected; each field type's key-set precise; array/record sizes
+    positive and non-bool; and the preset referenced-set + excludes must EXACTLY partition the
+    keyboard state (no overlap, no miss)."""
     out = []
+
+    # ---- record-graph cycle detection (direct or indirect) ----
+    def record_refs(nm):
+        sch = record_schemas.get(nm) or {}
+        if not isinstance(sch, dict) or sch.get("kind") != "record":
+            return []
+        refs = []
+        for f in sch.get("fields") or []:
+            if not isinstance(f, dict):
+                continue
+            if f.get("type") == "record":
+                of = f.get("of")
+                if record_schemas.get(of, {}).get("kind") == "record":
+                    refs.append(of)
+            elif f.get("type") == "array":
+                elem = f.get("element") or {}
+                of = elem.get("of")
+                if elem.get("type") == "record" and record_schemas.get(of, {}).get("kind") == "record":
+                    refs.append(of)
+        return refs
+
+    WHITE, GREY, BLACK = 0, 1, 2
+    color = {nm: WHITE for nm in record_schemas}
+
+    def _dfs(nm):
+        color[nm] = GREY
+        for r in record_refs(nm):
+            if color.get(r) == GREY:
+                return r
+            if color.get(r) == WHITE:
+                c = _dfs(r)
+                if c is not None:
+                    return c
+        color[nm] = BLACK
+        return None
+
+    for nm in record_schemas:
+        if record_schemas.get(nm, {}).get("kind") == "record" and color.get(nm) == WHITE:
+            c = _dfs(nm)
+            if c is not None:
+                out.append(f"record schema {nm!r}: record graph has a cycle involving {c!r}")
+                break
+
     for name, sch in record_schemas.items():
         if not isinstance(sch, dict):
             out.append(f"record schema {name!r} must be an object")
@@ -180,6 +246,10 @@ def validate_record_schemas(record_schemas, param_sids):
         fields = sch.get("fields") or []
         if not fields:
             out.append(f"record schema {name!r}: record needs a non-empty fields list")
+        field_names = [f.get("name") for f in fields if isinstance(f, dict)]
+        dupnames = sorted({n for n in set(field_names) if field_names.count(n) > 1})
+        if dupnames:
+            out.append(f"record schema {name!r}: duplicate field names {dupnames}")
         excludes = set(sch.get("excludes") or [])
         for xsid in excludes:
             if xsid not in param_sids:
@@ -191,6 +261,17 @@ def validate_record_schemas(record_schemas, param_sids):
                 out.append(f"record schema {name!r}: field {fn!r} type {ftype!r} is not a valid "
                            f"record field type")
                 continue
+            # Each field type carries a precise key-set: primitive fields take only name+type, record
+            # adds `of`, array adds `count`+`element`. A stray key masks a wrong shape.
+            allowed = {"name", "type"}
+            if ftype == "record":
+                allowed |= {"of"}
+            elif ftype == "array":
+                allowed |= {"count", "element"}
+            extra = sorted({k for k in f if k not in allowed})
+            if extra:
+                out.append(f"record schema {name!r}: field {fn!r} has keys {extra} not allowed "
+                           f"for type {ftype!r}")
             if ftype == "record":
                 of = f.get("of")
                 if of not in record_schemas or record_schemas[of].get("kind") not in RECORD_KINDS:
@@ -206,8 +287,10 @@ def validate_record_schemas(record_schemas, param_sids):
                                        f"stores)")
             elif ftype == "array":
                 count = f.get("count")
-                if not isinstance(count, int) or count <= 0:
-                    out.append(f"record schema {name!r}: field {fn!r} needs positive int count")
+                # positive int AND not bool: isinstance(True,int) is True and 0/-1 are ints.
+                if not (type(count) is int and count > 0):
+                    out.append(f"record schema {name!r}: field {fn!r} needs positive int count "
+                               f"(got {count!r}, bool excluded)")
                 elem = f.get("element")
                 if not isinstance(elem, dict) or not elem.get("type"):
                     out.append(f"record schema {name!r}: array field {fn!r} element must be a "
@@ -223,6 +306,25 @@ def validate_record_schemas(record_schemas, param_sids):
                 elif etype not in RECORD_PRIMITIVES:
                     out.append(f"record schema {name!r}: array field {fn!r} element type "
                                f"{etype!r} not in {sorted(RECORD_PRIMITIVES)}")
+        # Precise partition: a record that references a params-kind set AND defines `excludes` must
+        # have those two EXACTLY cover the keyboard param domain — no overlap (a param both stored
+        # and excluded) and no miss (a stored param silently dropped from both). msg 9d8b5f43 item
+        # #3.
+        param_ref_fields = [f for f in fields
+                            if isinstance(f, dict) and f.get("type") == "record"
+                            and record_schemas.get(f.get("of"), {}).get("kind") == "params"]
+        if excludes and param_ref_fields:
+            included = set()
+            for f in param_ref_fields:
+                included |= set((record_schemas[f["of"]].get("params") or []))
+            keyboard_domain = {p for p in param_sids if p.startswith("keyboard.")}
+            if included & excludes:
+                out.append(f"record schema {name!r}: params {sorted(included & excludes)} both stored "
+                           f"and excluded (overlap)")
+            missing = keyboard_domain - included - excludes
+            if missing:
+                out.append(f"record schema {name!r}: params {sorted(missing)} neither stored nor "
+                           f"excluded (keyboard-state partition has a miss)")
     return out
 
 
@@ -292,6 +394,13 @@ def check(spec, manifest, require_full=False):
             problems.append(f"manifest module {m.get('stable_id')!r}: incomplete evidence "
                             f"(need status in {sorted(VALID_STATUS)} + ref + panelSite/section/line)")
     module_ids = {m["stable_id"] for m in modules if m.get("stable_id")}
+    # msg 9d8b5f43 item #3: the capability frozen table must be EXACTLY the module-ID set. No
+    # DEFAULT_CAP fallback exists in the generator; here the gate independently verifies the
+    # hand-written CAPABILITIES keys == module stable_ids, and that every module has a real entry.
+    cap_keys = set(p0_regions_build.CAPABILITIES)
+    if cap_keys != module_ids:
+        problems.append(f"capability table {sorted(cap_keys)} != module stable_ids "
+                        f"{sorted(module_ids)} (must be exactly equal, no DEFAULT_CAP fallback)")
 
     # ---- programs: 39 verbatim identities, full 13x3 grid, ORCHE anomaly -----
     grid = {}
@@ -342,13 +451,22 @@ def check(spec, manifest, require_full=False):
         shape = it.get("shape")
         if shape not in SHAPES:
             problems.append(f"manifest parameter {sid!r}: shape {shape!r} not in {sorted(SHAPES)}")
-        if shape == "vector" and not isinstance(it.get("cardinality"), int):
-            problems.append(f"manifest parameter {sid!r}: shape=vector needs int cardinality")
+        # Positive-int cardinality/maskSize, and NOT bool: isinstance(True,int) is True and 0/-1 are
+        # ints, so all three would pass a bare `isinstance(int)` (Codex 9d8b5f43 item #3). Use strict
+        # `type(x) is int` so bool and non-positive are rejected.
+        if shape == "vector":
+            card = it.get("cardinality")
+            if not (type(card) is int and card > 0):
+                problems.append(f"manifest parameter {sid!r}: shape=vector needs positive int "
+                                f"cardinality (got {card!r})")
         if shape == "record" and it.get("recordType") not in record_schemas:
             problems.append(f"manifest parameter {sid!r}: shape=record needs a declared "
                             f"recordType (have {sorted(record_schemas)})")
-        if shape == "mask" and not isinstance(it.get("maskSize"), int):
-            problems.append(f"manifest parameter {sid!r}: shape=mask needs int maskSize")
+        if shape == "mask":
+            ms = it.get("maskSize")
+            if not (type(ms) is int and ms > 0):
+                problems.append(f"manifest parameter {sid!r}: shape=mask needs positive int "
+                                f"maskSize (got {ms!r})")
         if shape != "vector" and it.get("cardinality") is not None:
             problems.append(f"manifest parameter {sid!r}: cardinality only valid for shape=vector")
         if shape != "record" and it.get("recordType") is not None:
@@ -439,20 +557,41 @@ def check(spec, manifest, require_full=False):
         if b.get("from") not in pc_sids:
             problems.append(f"manifest controlBinding {sid}: from {b.get('from')!r} is not a "
                             f"declared panelControl")
-        op = b.get("operation") or "set"
-        if op not in VALID_OPS:
-            problems.append(f"manifest controlBinding {sid}: operation {op!r} not in "
-                            f"{sorted(VALID_OPS)}")
-        if op in {"press", "release", "rotate", "long_press"}:
+        if "operation" in b:
+            # The legacy conflated field is rejected outright: it cannot express the split, and the
+            # whole point of the split is that the gate no longer carries an `op`-based coupling.
+            problems.append(f"manifest controlBinding {sid}: legacy conflated 'operation' field "
+                            f"present (must use sourceOperation+targetKind+targetOperation)")
+            continue
+        src = b.get("sourceOperation")
+        if src not in SOURCE_OPS:
+            problems.append(f"manifest controlBinding {sid}: sourceOperation {src!r} not in "
+                            f"{sorted(SOURCE_OPS)}")
+        tkind = b.get("targetKind")
+        if tkind not in TGT_KINDS:
+            problems.append(f"manifest controlBinding {sid}: targetKind {tkind!r} not in "
+                            f"{sorted(TGT_KINDS)}")
+        top = b.get("targetOperation")
+        if top not in TGT_OPS:
+            problems.append(f"manifest controlBinding {sid}: targetOperation {top!r} not in "
+                            f"{sorted(TGT_OPS)}")
+        # An action can only be INVOKED; a parameter can only be set/adjust/toggled, never invoked.
+        if tkind == "action" and top != "invoke":
+            problems.append(f"manifest controlBinding {sid}: targetKind=action must use "
+                            f"targetOperation=invoke (got {top!r})")
+        if tkind == "parameter" and top == "invoke":
+            problems.append(f"manifest controlBinding {sid}: targetKind=parameter cannot carry "
+                            f"targetOperation=invoke")
+        if tkind == "action":
             if b.get("to") not in action_sids:
-                problems.append(f"manifest controlBinding {sid}: {op} target {b.get('to')!r} "
+                problems.append(f"manifest controlBinding {sid}: action target {b.get('to')!r} "
                                 f"is not a declared action")
             else:
                 binding_to_action[b.get("to")] = True
         else:
             if b.get("to") not in param_sids:
-                problems.append(f"manifest controlBinding {sid}: to {b.get('to')!r} is not a "
-                                f"declared parameter")
+                problems.append(f"manifest controlBinding {sid}: parameter target {b.get('to')!r} "
+                                f"is not a declared parameter")
             else:
                 binding_to_param[b.get("to")] = True
         ctx = b.get("context")
@@ -506,41 +645,94 @@ def check(spec, manifest, require_full=False):
             elif not (1 <= b["index"] <= card):
                 problems.append(f"manifest controlBinding {sid}: index {b['index']!r} outside "
                                 f"cardinality 1..{card} of {b.get('to')!r}")
+        cond = b.get("condition")
+        if cond is not None:
+            if not isinstance(cond, dict) or not cond:
+                problems.append(f"manifest controlBinding {sid}: condition must be a non-empty "
+                                f"object of closed keys")
+            else:
+                for k, v in cond.items():
+                    if k not in COND_KEYS:
+                        problems.append(f"manifest controlBinding {sid}: condition key {k!r} not in "
+                                        f"{sorted(COND_KEYS)}")
+                    elif k == "presetSlot" and v not in PRESET_SLOTS:
+                        problems.append(f"manifest controlBinding {sid}: condition presetSlot "
+                                        f"{v!r} not in {sorted(PRESET_SLOTS)}")
+        ca = b.get("commandAddress")
+        if ca is not None:
+            if not isinstance(ca, dict) or ca.get("kind") not in CMD_ADDR_KINDS:
+                problems.append(f"manifest controlBinding {sid}: commandAddress must be an object "
+                                f"with kind in {sorted(CMD_ADDR_KINDS)}")
+            else:
+                ir = ca.get("indexRange")
+                if not (isinstance(ir, list) and len(ir) == 2 and type(ir[0]) is int and
+                        type(ir[1]) is int and 0 <= ir[0] <= ir[1]):
+                    problems.append(f"manifest controlBinding {sid}: commandAddress needs a valid "
+                                    f"indexRange [min,max] of non-negative ints")
+                elif ca["kind"] == "record" and (not ca.get("fields") or
+                                                 not set(ca["fields"]) <= SEQ_STEP_FIELDS):
+                    problems.append(f"manifest controlBinding {sid}: record commandAddress needs "
+                                    f"fields within {sorted(SEQ_STEP_FIELDS)}")
         if not provenance_ok(b):
             problems.append(f"manifest controlBinding {sid}: incomplete evidence")
         binding_from_pc[b.get("from")] = binding_from_pc.get(b.get("from"), 0) + 1
-        ops_by_pc.setdefault(b.get("from"), set()).add(op)
+        if src in SOURCE_OPS:
+            ops_by_pc.setdefault(b.get("from"), set()).add(src)
         if b.get("axis") is not None:
             axes_by_pc.setdefault(b.get("from"), set()).add(b["axis"])
 
-    # ---- per-widget completeness: declared ops/axes == actually wired (Codex a23a9618 item #3) ---
-    # The declaration is not enough; deleting an encoder press binding or an axis binding must fail.
+    # ---- reject duplicate semantic tuples (msg 9d8b5f43 item #1) ----------------
+    # Two bindings describing the SAME (from,to,source,targetKind,targetOp,axis,index,condition,
+    # commandAddress) are un-executable — both would fire. Surface them rather than let one win.
+    seen_tup = {}
+    for b in bindings:
+        tup = (b.get("from"), b.get("to"), b.get("sourceOperation"), b.get("targetKind"),
+               b.get("targetOperation"), b.get("axis"), b.get("index"),
+               json.dumps(b.get("condition"), sort_keys=True) if b.get("condition") else None,
+               json.dumps(b.get("commandAddress"), sort_keys=True) if b.get("commandAddress") else None)
+        if tup in seen_tup:
+            problems.append(f"duplicate controlBinding semantic tuple at {b.get('stable_id')!r}"
+                            f" (also {seen_tup[tup]!r})")
+        else:
+            seen_tup[tup] = b.get("stable_id")
+
+    # ---- per-widget completeness: wired source ops == declared source ops (msg 9d8b5f43 item #1) --
+    # EQUALITY, not subset: deleting an encoder press edge OR adding an undeclared release edge must
+    # both fail. The declared set is the closed kind→source-op map (WIDGET_SRC); the encoder's own
+    # `operations` list, if present, must agree with it.
     for c in panel_controls:
         sid = c.get("stable_id")
-        wired_ops = ops_by_pc.get(sid, set())
-        if c.get("kind") == "rotary-encoder":
-            declared_ops = {o.get("name") for o in c.get("operations") or []}
-            for o in declared_ops:
-                if o not in wired_ops:
-                    problems.append(f"panelControl {sid}: declared operation {o!r} has no "
-                                    f"controlBinding (a declared encoder op must be wired)")
-        if c.get("kind") == "momentary-touch":
-            # A momentary contact must express BOTH down (press) and up (release) edges (Codex
-            # a23a9618 option A). The release threshold is a sensor judgement, not this edge.
-            for need in ("press", "release"):
-                if need not in wired_ops:
-                    problems.append(f"panelControl {sid}: momentary-touch missing {need!r} edge "
-                                    f"(needs both press and release down/up)")
+        kind = c.get("kind")
+        declared_src = WIDGET_SRC.get(kind)
+        if declared_src is not None:
+            explicit = c.get("operations")
+            if explicit is not None:
+                expl_src = {o.get("name") for o in explicit}
+                if expl_src != declared_src:
+                    problems.append(f"panelControl {sid}: declared operations {sorted(expl_src)} "
+                                    f"do not match kind {kind!r} {sorted(declared_src)}")
+            wired_src = ops_by_pc.get(sid, set())
+            for o in sorted(declared_src - wired_src):
+                problems.append(f"panelControl {sid}: declared source operation {o!r} has no "
+                                f"controlBinding (declared source ops must equal wired)")
+            for o in sorted(wired_src - declared_src):
+                problems.append(f"panelControl {sid}: wired source operation {o!r} is not declared "
+                                f"by kind {kind!r} (wired source ops must equal declared)")
         declared_axes = c.get("axes") or []
         wired_axes = axes_by_pc.get(sid, set())
         for ax in declared_axes:
             if ax not in wired_axes:
                 problems.append(f"panelControl {sid}: declared axis {ax!r} has no controlBinding")
+        for ax in sorted(wired_axes - set(declared_axes)):
+            problems.append(f"panelControl {sid}: wired axis {ax!r} is not declared by the widget")
 
     # every persisted parameter must be reachable via a widget (no orphan state); every
     # continuous/selector-toggle panelControl must drive a persisted parameter; every event-only
-    # widget must carry at least one action binding.
-    orphan_params = sorted(param_sids - set(binding_to_param))
+    # widget must carry at least one action binding. ACTION-MANAGED params (preset payloads) are
+    # written only by presets_* actions, so they are exempt from the widget-reachability rule (msg
+    # 9d8b5f43 item #2).
+    action_managed_sids = {p.get("stable_id") for p in parameters if p.get("actionManaged")}
+    orphan_params = sorted(param_sids - set(binding_to_param) - action_managed_sids)
     if orphan_params:
         problems.append(f"parameters with no controlBinding (orphan persisted state): "
                         f"{orphan_params}")

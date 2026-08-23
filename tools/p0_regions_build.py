@@ -78,6 +78,42 @@ ACT_INITIALISE = "initialise"
 ACTION_KINDS = {ACT_TRIGGER, ACT_ENC_ROTATE, ACT_ENC_PRESS, ACT_ENC_LONG,
                 ACT_INIT, ACT_SAVE, ACT_LOAD, ACT_INITIALISE}
 
+# Binding semantics split into SOURCE (the physical input gesture) and TARGET (what it does to
+# the destination) — Codex 7th-review (msg 9d8b5f43) item #1. A single `operation` cannot mean both
+# "the encoder rotated" and "write this parameter", so we carry the three separately.
+SRC_CHANGE = "change"      # continuous knob / regulator drag
+SRC_ROTATE = "rotate"      # encoder rotate event
+SRC_PRESS = "press"        # momentary down / gate-on edge
+SRC_RELEASE = "release"    # momentary up / gate-off edge
+SRC_LONG = "long_press"    # encoder held press
+SOURCE_OPS = {SRC_CHANGE, SRC_ROTATE, SRC_PRESS, SRC_RELEASE, SRC_LONG}
+
+TK_PARAM = "parameter"
+TK_ACTION = "action"
+TARGET_KINDS = {TK_PARAM, TK_ACTION}
+
+TO_SET = "set"             # write the value
+TO_ADJUST = "adjust"       # increment/decrement a continuous regulator
+TO_TOGGLE = "toggle"       # flip a discrete selector state
+TO_INVOKE = "invoke"       # fire an event-only action
+TARGET_OPS = {TO_SET, TO_ADJUST, TO_TOGGLE, TO_INVOKE}
+
+# The physical source operations a widget KIND can produce. The gate enforces that every binding
+# FROM a widget uses one of these AND that the set actually wired equals the declared set, so a
+# newly-invented source edge (e.g. an encoder `release`) is rejected.
+WIDGET_SRC = {
+    K_CONT: {SRC_CHANGE},
+    K_SEL: {SRC_CHANGE},
+    K_MOM: {SRC_PRESS, SRC_RELEASE},
+    K_RENC: {SRC_ROTATE, SRC_PRESS, SRC_LONG},
+}
+
+# Closed condition keys for compound workflows (msg 9d8b5f43 item #2). Each locates / guards a
+# sub-action. The gate validates the value against the closed grammar per context.
+COND_KEYS = {"heldControl", "menuItem", "presetSlot", "recordField", "recordIndex", "maskIndex"}
+PRESET_SLOTS = ("preset_a", "preset_b", "preset_c", "preset_d")
+SEQ_STEP_FIELDS = ("note", "value", "gate")
+
 
 def ev(line_start, line_end=None, site=None):
     e = {"ref": REF, "lineStart": line_start}
@@ -168,8 +204,7 @@ class Ledger:
     def emit(self, leaf, kind, count=1, param_kind=None, label=None,
              param_owner=None, param_leaf=None, context=None,
              panel_text=None, positions=None, axes=None, operations=None,
-             shape=None, cardinality=None, record_type=None, mask_size=None,
-             binding_op="set"):
+             shape=None, cardinality=None, record_type=None, mask_size=None):
         """Expand `count` identical widgets; each gets a persisted param + binding unless
         `param_kind` is None (an event-only widget: momentary touch / trigger / encoder)."""
         owner = self._cur["owner"]
@@ -185,11 +220,15 @@ class Ledger:
             self.add_param(psid, po, param_kind, self._cur["rid"], evid, semantic=label,
                            shape=shape, cardinality=cardinality, record_type=record_type,
                            mask_size=mask_size)
-            self.bind(wid, psid, context or ctx_global(), op=binding_op, evidence=evid)
+            # A continuous regulator/nudge: source edge = change, targets a parameter, effect =
+            # adjust (continuous) or a plain write (discrete selector). Action effects use `invoke`.
+            tgt_op = TO_ADJUST if kind == K_CONT else TO_SET
+            self.bind(wid, psid, context or ctx_global(), source=SRC_CHANGE, kind=TK_PARAM,
+                      target_op=tgt_op, evidence=evid)
 
     def add_param(self, sid, owner, kind, region, evidence, semantic=None,
                   shape=None, cardinality=None, record_type=None, mask_size=None,
-                  status="confirmed"):
+                  action_managed=False, status="confirmed"):
         p = {"stable_id": sid, "owner": owner, "kind": kind, "region": region,
              "shape": shape or SH_SCALAR, "status": status, "evidence": evidence}
         if semantic:
@@ -200,21 +239,39 @@ class Ledger:
             p["recordType"] = record_type
         if mask_size is not None:
             p["maskSize"] = mask_size
+        if action_managed:
+            p["actionManaged"] = True
         self.params.append(p)
         return sid
 
-    def bind(self, from_pc, to_sid, context, op="set", axis=None, index=None,
-             status="confirmed", evidence=None):
-        # A binding is uniquely identified by (from, to, index): the same encoder can drive a
-        # shared vector at N distinct held indices, so an indexed write must not collide its id.
-        to_key = "%s[%d]" % (to_sid, index) if index is not None else to_sid
-        b = {"stable_id": "bnd.%s->%s" % (from_pc, to_key), "from": from_pc, "to": to_sid,
-             "operation": op, "context": context, "status": status,
+    def bind(self, from_pc, to_sid, context, source=None, kind=None, target_op=None,
+             axis=None, index=None, condition=None, command_address=None, status="confirmed",
+             evidence=None):
+        # Binding semantics are a THREE-WAY split (msg 9d8b5f43 item #1): the physical source edge
+        # (`source`), what it targets (`kind` = parameter|action), and the effect on that target
+        # (`target_op` = set|adjust|toggle|invoke). A single `operation` can no longer conflate "the
+        # encoder rotated" with "write this parameter".
+        #
+        # unique id: (from, to, index, condition). The same encoder drives a shared vector at N held
+        # indices (index), and the same sub-page action is selected by N slots (condition), so neither
+        # an indexed write nor a slot-parameterised action may collide its id.
+        key = to_sid
+        if index is not None:
+            key += "[%s]" % index
+        if condition:
+            key += "{%s}" % ",".join("%s=%s" % (k, condition[k]) for k in sorted(condition))
+        b = {"stable_id": "bnd.%s->%s" % (from_pc, key), "from": from_pc, "to": to_sid,
+             "sourceOperation": source or SRC_CHANGE, "targetKind": kind or TK_PARAM,
+             "targetOperation": target_op or TO_SET, "context": context, "status": status,
              "evidence": evidence or self._cur.get("evidence")}
         if axis is not None:
             b["axis"] = axis
         if index is not None:
             b["index"] = index
+        if command_address is not None:
+            b["commandAddress"] = command_address
+        if condition:
+            b["condition"] = condition
         self.bindings.append(b)
         return b
 
@@ -418,8 +475,10 @@ def build():
                 semantic="joystick X axis CV")
     L.add_param("joystick.y", "joystick", K_CONT, "joystick", ev(446, 470, "下排 joystick"),
                 semantic="joystick Y axis CV")
-    L.bind("joystick.joy", "joystick.x", ctx_global(), op="set", axis="x")
-    L.bind("joystick.joy", "joystick.y", ctx_global(), op="set", axis="y")
+    L.bind("joystick.joy", "joystick.x", ctx_global(), source=SRC_CHANGE, kind=TK_PARAM,
+           target_op=TO_SET, axis="x")
+    L.bind("joystick.joy", "joystick.y", ctx_global(), source=SRC_CHANGE, kind=TK_PARAM,
+           target_op=TO_SET, axis="y")
     L.emit("offset_x", K_CONT, 1, K_CONT, panel_text=P["offset_x"])
     L.emit("offset_y", K_CONT, 1, K_CONT, panel_text=P["offset_y"])
     L.close()
@@ -449,33 +508,44 @@ def build():
         # (Codex a23a9618 confirms option A). Core contract distinguishes gate_on/off.
         ap = L.add_action("%s.press" % w, "keyboard", "note plate %d press" % i, ACT_TRIGGER,
                           "keyboard_phys", kb_evid)
-        L.bind(w, ap, ctx_global(), op="press", evidence=kb_evid)
+        L.bind(w, ap, ctx_global(), source=SRC_PRESS, kind=TK_ACTION, target_op=TO_INVOKE,
+               evidence=kb_evid)
         ar = L.add_action("%s.release" % w, "keyboard", "note plate %d release" % i, ACT_TRIGGER,
                           "keyboard_phys", kb_evid)
-        L.bind(w, ar, ctx_global(), op="release", evidence=kb_evid)
+        L.bind(w, ar, ctx_global(), source=SRC_RELEASE, kind=TK_ACTION, target_op=TO_INVOKE,
+               evidence=kb_evid)
     for i in range(1, 9):
         w = "keyboard.pushbutton_%d" % i
         L._place(L._mk_widget("pushbutton_%d" % i, K_MOM, "FUNC BUTTON %d" % i, None, None, None))
         ap = L.add_action("%s.press" % w, "keyboard", "function button %d press" % i, ACT_TRIGGER,
                           "keyboard_phys", kb_evid)
-        L.bind(w, ap, ctx_global(), op="press", evidence=kb_evid)
+        L.bind(w, ap, ctx_global(), source=SRC_PRESS, kind=TK_ACTION, target_op=TO_INVOKE,
+               evidence=kb_evid)
         ar = L.add_action("%s.release" % w, "keyboard", "function button %d release" % i, ACT_TRIGGER,
                           "keyboard_phys", kb_evid)
-        L.bind(w, ar, ctx_global(), op="release", evidence=kb_evid)
+        L.bind(w, ar, ctx_global(), source=SRC_RELEASE, kind=TK_ACTION, target_op=TO_INVOKE,
+               evidence=kb_evid)
     L._place(L._mk_widget("encoder", K_RENC, "ENCODER", None, None,
                           [{"name": "rotate"}, {"name": "press"}, {"name": "long_press"}]))
     for nm, kind in [("rotate", ACT_ENC_ROTATE), ("press", ACT_ENC_PRESS),
                      ("long_press", ACT_ENC_LONG)]:
         a = L.add_action("keyboard.encoder.%s" % nm, "keyboard", "encoder %s" % nm, kind,
                          "keyboard_phys", kb_evid)
-        L.bind("keyboard.encoder", a, ctx_global(), op=nm, evidence=kb_evid)
-    for i in range(1, 13):
-        # HOLD plate i then turn the encoder -> edit plate i's element in the shared plate_tune
-        # vector. This is the "held index + turn encoder" gesture (Codex a23a9618 item #2): the
-        # binding is a `set` write into element i (a parameter, not the encoder's rotate event),
-        # and carries an explicit `index` so the gate's index count is no longer zero.
-        L.bind("keyboard.encoder", "keyboard.plate_tune", ctx_global(), op="set", index=i,
+        L.bind("keyboard.encoder", a, ctx_global(), source=nm, kind=TK_ACTION, target_op=TO_INVOKE,
                evidence=kb_evid)
+    # Held-index encoders: HOLD plate i then turn the encoder -> set element i of plate_tune, and
+    # HOLD button j then turn the encoder -> set element j of pushbutton_value. Each carries an
+    # explicit `index` plus a closed `heldControl` condition, and a semantic (source,target) triple:
+    # rotate -> parameter set on the held element (Codex 9d8b5f43 item #1/#2 — the gesture writes a
+    # parameter, not the encoder's own rotate event, and the held plate/button is the condition).
+    for i in range(1, 13):
+        L.bind("keyboard.encoder", "keyboard.plate_tune", ctx_global(), source=SRC_ROTATE,
+               kind=TK_PARAM, target_op=TO_SET, index=i,
+               condition={"heldControl": "keyboard.plate_%d" % i}, evidence=kb_evid)
+    for j in range(1, 9):
+        L.bind("keyboard.encoder", "keyboard.pushbutton_value", ctx_global(), source=SRC_ROTATE,
+               kind=TK_PARAM, target_op=TO_SET, index=j,
+               condition={"heldControl": "keyboard.pushbutton_%d" % j}, evidence=kb_evid)
     L.close()
 
     # DRONE VOICES 1-6 pushbutton triggers (module 'voices') : 6 momentary, NO persisted state,
@@ -487,10 +557,12 @@ def build():
         L._place(L._mk_widget("button_%d" % i, K_MOM, "DRONE %d" % i, None, None, None))
         ap = L.add_action("%s.press" % w, "voices", "drone voice %d trigger" % i, ACT_TRIGGER,
                           "drone_voices", vc_evid)
-        L.bind(w, ap, ctx_global(), op="press", evidence=vc_evid)
+        L.bind(w, ap, ctx_global(), source=SRC_PRESS, kind=TK_ACTION, target_op=TO_INVOKE,
+               evidence=vc_evid)
         ar = L.add_action("%s.release" % w, "voices", "drone voice %d release" % i, ACT_TRIGGER,
                           "drone_voices", vc_evid)
-        L.bind(w, ar, ctx_global(), op="release", evidence=vc_evid)
+        L.bind(w, ar, ctx_global(), source=SRC_RELEASE, kind=TK_ACTION, target_op=TO_INVOKE,
+               evidence=vc_evid)
     L.close()
 
     return L
@@ -588,6 +660,20 @@ KB_PRESET_ACTIONS = [
 ]
 
 
+# Closed editing-address schema for the sequencer + scale-mask editors (Codex 9d8b5f43 item #2):
+# these are NOT one opaque `set` over a whole editor object — the binding declares HOW the write is
+# located (step index + field for the seq record, mask degree for the scale mask) so the target is
+# addressable rather than "the whole editor".
+KSTATE_COMMAND_ADDRESS = {
+    "seq_steps": {"kind": "record", "indexRange": [0, 15], "fields": list(SEQ_STEP_FIELDS)},
+    "quantise_scale_editor": {"kind": "mask", "indexRange": [0, 11]},
+}
+
+# Preset payloads are ACTION-MANAGED storage: they are written only by presets_load / presets_save
+# / presets_initialise, never by a direct encoder `set` on the payload (Codex 9d8b5f43 item #2).
+ACTION_MANAGED_KSTATE = {"preset_a", "preset_b", "preset_c", "preset_d"}
+
+
 def add_keyboard_state(L):
     """Add the keyboard logical state, binding each to its editing widget.
 
@@ -601,24 +687,37 @@ def add_keyboard_state(L):
         evd = ev(ls, le, kb_site)
         L.add_param(sid, "keyboard", kind, "keyboard_state", evd, semantic=label,
                     shape=shape, cardinality=extras.get("cardinality"),
-                    record_type=extras.get("recordType"), mask_size=extras.get("maskSize"))
-        # Each persisted keyboard state field is edited via the shared encoder under its menu.
-        L.bind("keyboard.encoder", sid, ctx_menu(menu), op="set", evidence=evd)
+                    record_type=extras.get("recordType"), mask_size=extras.get("maskSize"),
+                    action_managed=(leaf in ACTION_MANAGED_KSTATE))
+        # Presets are action-managed (written only by presets_* actions), not encoder-settable.
+        if leaf in ACTION_MANAGED_KSTATE:
+            continue
+        # The shared keyboard encoder is a ROTARY: it edits a menu value by turning (source=rotate,
+        # not `change` — change is the continuous-knob gesture), stepping a discrete value (set) or
+        # nudging a continuous one (adjust).
+        tgt_op = TO_ADJUST if kind == K_CONT else TO_SET
+        ca = KSTATE_COMMAND_ADDRESS.get(leaf)
+        L.bind("keyboard.encoder", sid, ctx_menu(menu), source=SRC_ROTATE, kind=TK_PARAM,
+               target_op=tgt_op, command_address=ca, evidence=evd)
     for leaf, name, kind, ls, le in KB_CAL_ACTIONS:
         evd = ev(ls, le, kb_site)
         a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
-        # "Menu actions need no physical entry" is a false reading: the calibration boot mode is
-        # entered, then the encoder long-press selects INIT/SAVE (Codex a23a9618 item #2/#3). So
-        # BOTH are bound, each under keyboard-mode 'calibration' via encoder long-press — the
-        # release-threshold here is the boot-mode gate, not a substitute for these events.
-        L.bind("keyboard.encoder", a, ctx_mode("calibration"), op="long_press", evidence=evd)
-    # PRESETS sub-page (Codex a23a9618 item #2): LOAD / SAVE / INITIALISE are real physical entries,
-    # not decorative menu labels — each is a distinct action bound to the shared encoder under the
-    # 'presets' menu so the sub-page context set is closed (a menu action still has a control edge).
+        # The calibration menu is a cursor-based sub-page: long-press the encoder on the HIGHLIGHTED
+        # calibration item to execute it. INIT and SAVE are two different highlighted items, so each
+        # carries a closed `menuItem` condition — without it the two bindings would be identical and
+        # could not be told apart (Codex 9d8b5f43 item #2: "校准选中项 + long-press").
+        L.bind("keyboard.encoder", a, ctx_menu("calibration"), source=SRC_LONG, kind=TK_ACTION,
+               target_op=TO_INVOKE, condition={"menuItem": leaf}, evidence=evd)
+    # PRESETS sub-page: LOAD / SAVE / INITIALISE act on a SELECTED slot (A-D), so each is bound
+    # once per slot under a closed `presetSlot` condition — the slot is the disambiguator, not a
+    # hard-assigned press/long_press/rotate with no selection (Codex 9d8b5f43 item #2).
     for leaf, name, kind, op in KB_PRESET_ACTIONS:
         evd = ev(1040, 1045, kb_site)
         a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
-        L.bind("keyboard.encoder", a, ctx_menu("presets"), op=op, evidence=evd)
+        src = {"press": SRC_PRESS, "long_press": SRC_LONG, "rotate": SRC_ROTATE}[op]
+        for slot in PRESET_SLOTS:
+            L.bind("keyboard.encoder", a, ctx_menu("presets"), source=src, kind=TK_ACTION,
+                   target_op=TO_INVOKE, condition={"presetSlot": slot}, evidence=evd)
 
 
 # p23/p24 semantic labels per (cartridge, program). X/Y/Z knob meaning for each of the 39
@@ -711,7 +810,8 @@ def add_program_params(L, manifest):
             psid = "%s.%s" % (own, axis)           # program.<cart>.slot.<axis> persisted state
             sem = labels[slot][idx] if labels else None
             L.add_param(psid, own, K_CONT, "program_params", e, semantic=sem, status=status)
-            L.bind(widget, psid, ctx_program(own), op="set", status=status, evidence=e)
+            L.bind(widget, psid, ctx_program(own), source=SRC_CHANGE, kind=TK_PARAM,
+                   target_op=TO_ADJUST, status=status, evidence=e)
 
 
 def _compact(o):
@@ -801,20 +901,26 @@ CAPABILITIES = {
     "keyboard":     {"parameters": True, "patchableJacks": True, "internalEndpoints": False, "controls": True},
     "voices":       {"parameters": False, "patchableJacks": False, "internalEndpoints": True, "controls": True},
 }
-DEFAULT_CAP = {"parameters": True, "patchableJacks": True, "internalEndpoints": False,
-               "controls": True}
-
-
 def inject_capabilities(modules, _endpoints):
     """Assign the INDEPENDENT hand-authored capability table (never derived from endpoints).
 
     The `_endpoints` argument is retained for call-site compatibility only; capabilities are the
     frozen ground fact. The gate cross-checks capability vs what was actually transcribed, so a
-    missing endpoint transcription cannot silently co-turn a capability off.
+    missing endpoint transcription cannot silently co-turn a capability off. There is NO default
+    fallback: a module whose stable_id is absent from CAPABILITIES (or a CAPABILITIES entry with no
+    matching module) fails directly — the table must be EXACTLY the module-ID set (msg 9d8b5f43
+    item #3).
     """
+    module_ids = {m.get("stable_id") for m in modules}
+    missing = {m.get("stable_id") for m in modules} - set(CAPABILITIES)
+    extra = set(CAPABILITIES) - module_ids
+    if missing:
+        raise ValueError("modules missing from CAPABILITIES: %s" % sorted(missing))
+    if extra:
+        raise ValueError("CAPABILITIES entries with no module: %s" % sorted(extra))
     for m in modules:
         sid = m.get("stable_id")
-        m["capabilities"] = CAPABILITIES.get(sid, dict(DEFAULT_CAP))
+        m["capabilities"] = CAPABILITIES[sid]
 
 
 # Top-level record payload schemas for the non-scalar keyboard records (Codex c7089521 item

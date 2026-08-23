@@ -326,7 +326,7 @@ def main():
     badvec["target"]["parameters"][0]["shape"] = "vector"
     badvec["target"]["parameters"][0]["cardinality"] = None
     problems, _ = gate.check(spec, badvec)
-    if not has(problems, "shape=vector needs int cardinality"):
+    if not has(problems, "shape=vector needs positive int cardinality"):
         raise SystemExit("vector parameter without a cardinality not flagged: %r" % problems)
 
     # 35. shape=record without a declared recordType.
@@ -342,7 +342,7 @@ def main():
     badmask["target"]["parameters"][0]["shape"] = "mask"
     badmask["target"]["parameters"][0]["maskSize"] = None
     problems, _ = gate.check(spec, badmask)
-    if not has(problems, "shape=mask needs int maskSize"):
+    if not has(problems, "shape=mask needs positive int maskSize"):
         raise SystemExit("mask parameter without a maskSize not flagged: %r" % problems)
 
     # 37. shape extras on the WRONG shape (cardinality on a scalar).
@@ -352,12 +352,13 @@ def main():
     if not has(problems, "cardinality only valid for shape=vector"):
         raise SystemExit("cardinality smuggled onto a scalar not flagged: %r" % problems)
 
-    # 38. press operation targeting a PARAMETER (must be an action).
+    # 38. press source operation on a continuous widget is not a declared source op (the
+    #     kind→source-op map is EQUALITY not a subset; a press on a continuous slider is bogus).
     pressparam = copy.deepcopy(manifest)
-    pressparam["target"]["controlBindings"][0]["operation"] = "press"
+    pressparam["target"]["controlBindings"][0]["sourceOperation"] = "press"
     problems, _ = gate.check(spec, pressparam)
-    if not has(problems, "is not a declared action"):
-        raise SystemExit("press binding targeting a parameter not flagged: %r" % problems)
+    if not has(problems, "wired source operation 'press' is not declared"):
+        raise SystemExit("press source op on a continuous widget not flagged: %r" % problems)
 
     # 39. duplicate action -> 重件.
     dupa = copy.deepcopy(manifest)
@@ -513,7 +514,7 @@ def main():
         if b["stable_id"] != "bnd.keyboard.plate_1->keyboard.plate_1.release"
     ]
     problems, _ = gate.check(spec, norelease)
-    if not has(problems, "momentary-touch missing 'release' edge"):
+    if not has(problems, "declared source operation 'release' has no controlBinding"):
         raise SystemExit("plate with the release edge removed not flagged (needs both press/release): %r" % problems)
 
     # 54. declared encoder op not wired: the widget declares press but every press binding from it
@@ -521,16 +522,16 @@ def main():
     nopress = copy.deepcopy(manifest)
     nopress["target"]["controlBindings"] = [
         b for b in nopress["target"]["controlBindings"]
-        if not (b["from"] == "keyboard.encoder" and b["operation"] == "press")
+        if not (b["from"] == "keyboard.encoder" and b["sourceOperation"] == "press")
     ]
     problems, _ = gate.check(spec, nopress)
-    if not has(problems, "declared operation 'press' has no controlBinding"):
+    if not has(problems, "declared source operation 'press' has no controlBinding"):
         raise SystemExit("encoder press op declared but unwired not flagged: %r" % problems)
 
     # 55. index outside cardinality: a held-index binding must stay within the vector cardinality.
     badidx = copy.deepcopy(manifest)
     for b in badidx["target"]["controlBindings"]:
-        if b["stable_id"] == "bnd.keyboard.encoder->keyboard.plate_tune[1]":
+        if b["stable_id"] == "bnd.keyboard.encoder->keyboard.plate_tune[1]{heldControl=keyboard.plate_1}":
             b["index"] = 99
     problems, _ = gate.check(spec, badidx)
     if not has(problems, "outside cardinality 1..12"):
@@ -591,6 +592,147 @@ def main():
     problems, _ = gate.check(spec, deleps)
     if not has(problems, "declares capability internalEndpoints but the target transcribes no internal endpoint"):
         raise SystemExit("deleting an internal endpoint did not leave its frozen capability present-but-empty: %r" % problems)
+
+    # ---- msg 9d8b5f43 (seventh review) validations --------------------------
+    # 62. wired source ops must EQUAL the closed kind→source-op map, not be merely a subset. An encoder
+    #     is {rotate,press,long_press}; adding an undeclared release edge must fail.
+    addrel = copy.deepcopy(manifest)
+    encb = copy.deepcopy([b for b in addrel["target"]["controlBindings"]
+                          if b["from"] == "keyboard.encoder"][0])
+    encb["stable_id"] = "bnd.keyboard.encoder.release.extra"
+    encb["sourceOperation"] = "release"
+    addrel["target"]["controlBindings"].append(encb)
+    problems, _ = gate.check(spec, addrel)
+    if not has(problems, "wired source operation 'release' is not declared"):
+        raise SystemExit("encoder release edge not rejected by kind→source-op equality: %r" % problems)
+
+    # 63. duplicate semantic tuple (msg 9d8b5f43 item #1): two bindings with the identical
+    #     (from,to,source,targetKind,targetOp,axis,index,condition,commandAddress) are unexecutable.
+    duptup = copy.deepcopy(manifest)
+    db = copy.deepcopy(duptup["target"]["controlBindings"][0])
+    db["stable_id"] = "bnd.drone_1.tune_1.dup"  # distinct id, identical semantic tuple
+    duptup["target"]["controlBindings"].append(db)
+    problems, _ = gate.check(spec, duptup)
+    if not has(problems, "duplicate controlBinding semantic tuple"):
+        raise SystemExit("duplicate semantic tuple not flagged: %r" % problems)
+
+    # 64. condition must carry only closed keys (msg 9d8b5f43 item #2): a 'heldPlate' typo is a
+    #     masked predicate, not an allowed refinement.
+    badcond = copy.deepcopy(manifest)
+    for b in badcond["target"]["controlBindings"]:
+        if b.get("condition"):
+            b["condition"] = dict(b["condition"])
+            b["condition"]["heldPlate"] = "keyboard.plate_1"
+            break
+    problems, _ = gate.check(spec, badcond)
+    if not has(problems, "condition key 'heldPlate' not in"):
+        raise SystemExit("condition with an unclosed key not flagged: %r" % problems)
+
+    # 65. condition presetSlot is a closed set (preset_a..d); an out-of-range slot is rejected.
+    badslot = copy.deepcopy(manifest)
+    for b in badslot["target"]["controlBindings"]:
+        if isinstance(b.get("condition"), dict) and b["condition"].get("presetSlot"):
+            b["condition"] = dict(b["condition"])
+            b["condition"]["presetSlot"] = "preset_e"
+            break
+    problems, _ = gate.check(spec, badslot)
+    if not has(problems, "condition presetSlot 'preset_e' not in"):
+        raise SystemExit("presetSlot outside the closed set not flagged: %r" % problems)
+
+    # 66. commandAddress kind is a closed record|mask locator (msg 9d8b5f43 item #2); an opaque
+    #     'set' is gone and a bogus kind is rejected.
+    badca = copy.deepcopy(manifest)
+    for b in badca["target"]["controlBindings"]:
+        if b.get("commandAddress"):
+            b["commandAddress"] = {"kind": "index", "indexRange": [0, 15], "fields": ["note"]}
+            break
+    problems, _ = gate.check(spec, badca)
+    if not has(problems, "commandAddress must be an object with kind in"):
+        raise SystemExit("commandAddress with an unclosed kind not flagged: %r" % problems)
+
+    # 67. commandAddress indexRange must be a [min,max] of non-negative ints; a descending range is
+    #     malformed.
+    badir = copy.deepcopy(manifest)
+    for b in badir["target"]["controlBindings"]:
+        if b.get("commandAddress"):
+            b["commandAddress"] = {"kind": "record", "indexRange": [5, 2], "fields": ["note"]}
+            break
+    problems, _ = gate.check(spec, badir)
+    if not has(problems, "commandAddress needs a valid indexRange"):
+        raise SystemExit("commandAddress descending indexRange not flagged: %r" % problems)
+
+    # 68. record commandAddress fields are a closed set (note/value/gate); an unknown field can't be
+    #     addressed.
+    badfe = copy.deepcopy(manifest)
+    for b in badfe["target"]["controlBindings"]:
+        if b.get("commandAddress"):
+            b["commandAddress"] = {"kind": "record", "indexRange": [0, 15], "fields": ["velocity"]}
+            break
+    problems, _ = gate.check(spec, badfe)
+    if not has(problems, "record commandAddress needs fields within"):
+        raise SystemExit("record commandAddress with an unclosed field not flagged: %r" % problems)
+
+    # 69. record graph must be acyclic (msg 9d8b5f43 item #3): a direct field referencing its own
+    #     schema is a self-cycle.
+    cyc = copy.deepcopy(manifest)
+    cyc["target"]["recordSchemas"]["keyboard_seq"]["fields"][0]["element"]["of"] = "keyboard_seq"
+    problems, _ = gate.check(spec, cyc)
+    if not has(problems, "record graph has a cycle"):
+        raise SystemExit("record self-cycle not flagged: %r" % problems)
+
+    # 70. duplicate record field names rejected (msg 9d8b5f43 item #3).
+    dupf = copy.deepcopy(manifest)
+    dupf["target"]["recordSchemas"]["keyboard_seq"]["fields"].append(
+        {"name": "steps", "type": "record", "of": "keyboard_step"})
+    problems, _ = gate.check(spec, dupf)
+    if not has(problems, "duplicate field names ['steps']"):
+        raise SystemExit("duplicate record field name not flagged: %r" % problems)
+
+    # 71. array count must be a positive int, not bool/0/-1 (msg 9d8b5f43 item #3).
+    badcnt = copy.deepcopy(manifest)
+    badcnt["target"]["recordSchemas"]["keyboard_seq"]["fields"][0]["count"] = 0
+    problems, _ = gate.check(spec, badcnt)
+    if not has(problems, "needs positive int count"):
+        raise SystemExit("array count 0 not rejected as non-positive: %r" % problems)
+
+    # 72. vector cardinality / mask maskSize must be a positive int, not bool/0/-1 (msg 9d8b5f43
+    #     item #3): isinstance(True,int) is True, so bool must be excluded by strict typing.
+    badcard = copy.deepcopy(manifest)
+    for it in badcard["target"]["parameters"]:
+        if it["stable_id"] == "keyboard.plate_tune":
+            it["cardinality"] = True
+    problems, _ = gate.check(spec, badcard)
+    if not has(problems, "shape=vector needs positive int cardinality"):
+        raise SystemExit("vector cardinality bool not rejected: %r" % problems)
+    badmsk = copy.deepcopy(manifest)
+    for it in badmsk["target"]["parameters"]:
+        if it["stable_id"] == "keyboard.quantise_scale_editor":
+            it["maskSize"] = -1
+    problems, _ = gate.check(spec, badmsk)
+    if not has(problems, "shape=mask needs positive int maskSize"):
+        raise SystemExit("mask maskSize -1 not rejected as non-positive: %r" % problems)
+
+    # 73. preset referenced-set + excludes must EXACTLY partition the keyboard state (msg 9d8b5f43
+    #     item #3): deleting a stored param from BOTH sets leaves a partition miss.
+    miss = copy.deepcopy(manifest)
+    miss["target"]["recordSchemas"]["keyboard_params_minus_clock"]["params"].remove("keyboard.behaviour")
+    problems, _ = gate.check(spec, miss)
+    if not has(problems, "neither stored nor excluded"):
+        raise SystemExit("keyboard-state partition miss not flagged: %r" % problems)
+
+    # 74. capability frozen table must be EXACTLY the module-ID set (msg 9d8b5f43 item #3); a target
+    #     module with no CAPABILITIES entry is not silently DEFAULT_CAP'd.
+    capmis = copy.deepcopy(manifest)
+    capmis["target"]["modules"].append({
+        "stable_id": "mutant", "name": "Mutant", "category": "util",
+        "capabilities": {"parameters": False, "patchableJacks": False,
+                         "internalEndpoints": False, "controls": False},
+        "status": "confirmed",
+        "evidence": {"ref": "solar42N_manual_v15", "lineStart": 1, "lineEnd": 1, "panelSite": "mutant"},
+    })
+    problems, _ = gate.check(spec, capmis)
+    if not has(problems, "!= module stable_ids"):
+        raise SystemExit("capability table != module-ID set not flagged: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
