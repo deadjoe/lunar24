@@ -1,10 +1,10 @@
 {
   "meta": {
     "machine": "lunar24",
-    "purpose": "Full-machine P0 registry target. INDEPENDENTLY TRANSCRIBED from the panel map (design/04 §1) and the manual-derived module/program inventories (design/01 §3-§4, design/05 §1) — NOT generated from the registry. Every item carries source/panel-site/manual-line provenance so completeness is auditable, not self-proving.",
+    "purpose": "Full-machine P0 registry target. INDEPENDENTLY TRANSCRIBED from the panel map (design/04 §1) and the manual-derived inventories (design/01 §3-§4, §6, design/04 §1-§2, design/05 §1) — NOT generated from the registry, so completeness is auditable not self-proving. Every item carries evidence (source + panel-site or manual line/ref) and an explicit status; unknowns are marked provisional/unverified, never guessed.",
     "transcription": {
-      "author": "manual + panel 独立抄录 (design/01 §3-§4, design/04 §1, design/05 §1)",
-      "note": "各 module 的详细 manual line 粒度是阶段 B 的内容工作；这里对尚未逐项核到行的条目用 design-doc 抄录产证 + 面板分区（panelSite）作证据，状态 provisional，避免虚构行号。"
+      "author": "manual + panel 独立抄录 (design/01 §3-§4+§6, design/04 §1-§2, design/05 §1)",
+      "note": "Per-module control lists (params/jacks) are a dedicated transcript pass; until then the gate reports them as an explicit open target (paramsJackTargets untranscribed) so --require-full cannot false-green. module page/line refs that are individually line-confirmed are 'confirmed'; module entries still enumerated from design/01 §3 (not yet line-locked) are 'provisional'. Program identities are listed EXPLICITLY (stable_id is a fixed choice, never re-derived from the cassette name)."
     },
     "source": "solar42N_manual_v15"
   },
@@ -20,7 +20,7 @@
       { "stable_id": "drone_6",      "name": "DRONE 6",  "category": "source",      "panelSite": "右中 DRONE 6",    "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "right-mid drone new (Papa Srapa)" } },
       { "stable_id": "envelope_a",   "name": "Envelope A","category": "source",     "panelSite": "中部 ENV A/B",   "status": "confirmed",    "evidence": { "ref": "solar42N_manual_v15", "lineStart": 385, "lineEnd": 408 } },
       { "stable_id": "envelope_b",   "name": "Envelope B","category": "source",     "panelSite": "中部 ENV A/B",   "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "mid ENV A/B" } },
-      { "stable_id": "mixer",        "name": "Voice mixer","category": "processing","panelSite": "中部 VOICE MIXER","status": "provisional","evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "mid voice mixer 10ch" } },
+      { "stable_id": "mixer",        "name": "Voice mixer","category": "processing","panelSite": "中部 VOICE MIXER","status": "provisional","evidence": { "ref": "design/01 §1 + design/04 §1", "panelSite": "mid voice mixer 10ch" } },
       { "stable_id": "vcf",          "name": "Dual 12dB Polivoks VCF","category": "processing","panelSite": "中上 DUAL VCF","status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1118, "lineEnd": 1157 } },
       { "stable_id": "effector",     "name": "Dual effector","category": "processing","panelSite": "中上 DUAL EFFECTOR","status": "provisional","evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "mid-top dual effector" } },
       { "stable_id": "lfo_a",        "name": "LFO A",    "category": "control",     "panelSite": "下排 LFO A",     "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom LFO A" } },
@@ -32,34 +32,67 @@
       { "stable_id": "keyboard",     "name": "Sensor keyboard","category": "performance","panelSite": "底部 12 触摸片","status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 559, "lineEnd": 634 } },
       { "stable_id": "voices",       "name": "Drone voices 1-6","category": "performance","panelSite": "右下 DRONE VOICES","status": "provisional","evidence": { "ref": "design/01 §3 + design/04 §1", "panelSite": "bottom-right drone voices 1-6" } }
     ],
-    "cartridges": [
-      { "cassette": "CATHEDRAL",     "programs": ["Shimmer", "Oct up delay", "Space reverb"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "MAGIC",         "programs": ["Pitch delay", "Reverse pitch", "Bell"],      "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "TIME",          "programs": ["Delay reverb", "Delay chorus", "Delay vibrato"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "VIBROTREM",     "programs": ["Tremolo", "Vibrato", "Chorus"],              "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "FILTER",        "programs": ["Auto Wah", "HP-LP", "Notch"],                 "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "VIBE",          "programs": ["Phaser", "Flanger", "Resonance"],             "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "PITCH SHIFTER", "programs": ["SynthTaver", "Octaver", "Pitch Harmonizer"],  "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "INFINITY",      "programs": ["Resonance Reverb", "O.D.D", "Resonance Delay"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "STRING RINGER", "programs": ["Synthetic Ring", "Ring Mod", "S&H Ring Mod"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "SYNTEX-1",      "programs": ["Vibe Synth", "Pulse Synth", "Acid Synth"],    "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "DIGITAL",       "programs": ["Filter DAC", "LFO DAC", "Envelope crusher"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "GENERATOR",     "programs": ["FM tone", "Ramp", "Voice"],                   "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
-      { "cassette": "ORCHE",         "programs": ["One-shot Long", "One-shot Short", "Free-run Loop"], "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } }
+    "programs": [
+      { "stable_id": "program.cathedral.1",      "cartridge": "CATHEDRAL",     "slot": 1, "name": "Shimmer",         "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.cathedral.2",      "cartridge": "CATHEDRAL",     "slot": 2, "name": "Oct up delay",    "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.cathedral.3",      "cartridge": "CATHEDRAL",     "slot": 3, "name": "Space reverb",   "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.magic.1",          "cartridge": "MAGIC",         "slot": 1, "name": "Pitch delay",     "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.magic.2",          "cartridge": "MAGIC",         "slot": 2, "name": "Reverse pitch",   "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.magic.3",          "cartridge": "MAGIC",         "slot": 3, "name": "Bell",           "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.time.1",           "cartridge": "TIME",          "slot": 1, "name": "Delay reverb",   "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.time.2",           "cartridge": "TIME",          "slot": 2, "name": "Delay chorus",   "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.time.3",           "cartridge": "TIME",          "slot": 3, "name": "Delay vibrato",  "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.vibrotrem.1",      "cartridge": "VIBROTREM",     "slot": 1, "name": "Tremolo",        "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.vibrotrem.2",      "cartridge": "VIBROTREM",     "slot": 2, "name": "Vibrato",        "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.vibrotrem.3",      "cartridge": "VIBROTREM",     "slot": 3, "name": "Chorus",         "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.filter.1",         "cartridge": "FILTER",        "slot": 1, "name": "Auto Wah",       "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.filter.2",         "cartridge": "FILTER",        "slot": 2, "name": "HP-LP",          "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.filter.3",         "cartridge": "FILTER",        "slot": 3, "name": "Notch",          "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.vibe.1",           "cartridge": "VIBE",          "slot": 1, "name": "Phaser",         "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.vibe.2",           "cartridge": "VIBE",          "slot": 2, "name": "Flanger",        "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.vibe.3",           "cartridge": "VIBE",          "slot": 3, "name": "Resonance",      "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.pitch_shifter.1",  "cartridge": "PITCH SHIFTER", "slot": 1, "name": "SynthTaver",     "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.pitch_shifter.2",  "cartridge": "PITCH SHIFTER", "slot": 2, "name": "Octaver",        "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.pitch_shifter.3",  "cartridge": "PITCH SHIFTER", "slot": 3, "name": "Pitch Harmonizer","status": "confirmed","evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.infinity.1",       "cartridge": "INFINITY",      "slot": 1, "name": "Resonance Reverb","status": "confirmed","evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.infinity.2",       "cartridge": "INFINITY",      "slot": 2, "name": "O.D.D",          "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.infinity.3",       "cartridge": "INFINITY",      "slot": 3, "name": "Resonance Delay","status": "confirmed","evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.string_ringer.1",  "cartridge": "STRING RINGER", "slot": 1, "name": "Synthetic Ring", "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.string_ringer.2",  "cartridge": "STRING RINGER", "slot": 2, "name": "Ring Mod",       "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.string_ringer.3",  "cartridge": "STRING RINGER", "slot": 3, "name": "S&H Ring Mod",   "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.syntex_1.1",       "cartridge": "SYNTEX-1",      "slot": 1, "name": "Vibe Synth",     "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.syntex_1.2",       "cartridge": "SYNTEX-1",      "slot": 2, "name": "Pulse Synth",    "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.syntex_1.3",       "cartridge": "SYNTEX-1",      "slot": 3, "name": "Acid Synth",     "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.digital.1",        "cartridge": "DIGITAL",       "slot": 1, "name": "Filter DAC",     "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.digital.2",        "cartridge": "DIGITAL",       "slot": 2, "name": "LFO DAC",        "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.digital.3",        "cartridge": "DIGITAL",       "slot": 3, "name": "Envelope crusher","status": "confirmed","evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.generator.1",      "cartridge": "GENERATOR",     "slot": 1, "name": "FM tone",        "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.generator.2",      "cartridge": "GENERATOR",     "slot": 2, "name": "Ramp",           "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.generator.3",      "cartridge": "GENERATOR",     "slot": 3, "name": "Voice",          "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.orche.1",          "cartridge": "ORCHE",         "slot": 1, "name": "One-shot Long",  "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.orche.2",          "cartridge": "ORCHE",         "slot": 2, "name": "One-shot Short", "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } },
+      { "stable_id": "program.orche.3",          "cartridge": "ORCHE",         "slot": 3, "name": "Free-run Loop",  "status": "confirmed", "evidence": { "ref": "design/01 §4 + design/05 §1 + manual p23-24", "panelSite": "dual effector cartridge" } }
     ],
     "normalizedRoutes": [
-      { "stable_id": "route.keyboard_v_oct_to_vco",   "sourceJack": "keyboard.v_oct_out", "sinkJack": "vco_a.v_oct_in", "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 573, "lineEnd": 573 } },
-      { "stable_id": "route.keyboard_v_oct_to_vco_b", "sourceJack": "keyboard.v_oct_out", "sinkJack": "vco_b.v_oct_in", "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §2", "description": "keyboard V/oct fan-out to VCO B (A handled by the base route above)" } },
+      { "stable_id": "route.keyboard_v_oct_to_vco",   "sourceJack": "keyboard.v_oct_out",     "sinkJack": "vco_a.v_oct_in",   "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 573, "lineEnd": 573 } },
+      { "stable_id": "route.keyboard_v_oct_to_vco_b", "sourceJack": "keyboard.v_oct_out",     "sinkJack": "vco_b.v_oct_in",   "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 574, "lineEnd": 578 } },
       { "stable_id": "route.keyboard_gate_to_eg",     "sourceJack": "keyboard.gate_left_main_out", "sinkJack": "envelope_a.gate_in", "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 576, "lineEnd": 576 } },
-      { "stable_id": "route.vcf_cv_l_to_cv_r",        "sourceJack": "vcf.cv_l_in", "sinkJack": "vcf.cv_r_in", "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1142, "lineEnd": 1142 } },
-      { "stable_id": "route.vco_a_cv_to_vco_b",       "sourceJack": "vco_a.vco_out", "sinkJack": "vco_b.cv_in", "status": "provisional", "evidence": { "ref": "design/01 §3 + design/04 §2", "description": "VCO A output normalised to VCO B CV input (CV AMT sets depth)" } }
+      { "stable_id": "route.keyboard_gate_to_eg_b",   "sourceJack": "keyboard.gate_left_main_out", "sinkJack": "envelope_b.gate_in", "status": "provisional", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 574, "lineEnd": 578 } },
+      { "stable_id": "route.vcf_cv_l_to_cv_r",        "sourceJack": "vcf.cv_l_in",            "sinkJack": "vcf.cv_r_in",       "status": "confirmed", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 1142, "lineEnd": 1142 } },
+      { "stable_id": "route.vco_b_vco_out_to_cv_in",  "sourceJack": "vco_b.vco_out",          "sinkJack": "vco_b.cv_in",       "status": "provisional", "evidence": { "ref": "solar42N_manual_v15", "lineStart": 410, "lineEnd": 414, "note": "VCO B-region vco_b.vco_out carries the VCO A signal normalised into vco_b.cv_in; CV AMT sets depth" } }
     ],
-    "categories": {
-      "modules": "count of target modules",
-      "parameters": "sum of all Parameter entries across every module and program (operable controls + params)",
-      "jacks": "sum of all Jack entries across every module",
-      "normalizedAndFixedRoutes": "normalized-route + fixed-cable route entries",
-      "programIdentities": "13 cartridges × 3 slots = 39 program identities (identity list only — NOT 39 effects implemented)"
+    "fixedRoutes": [
+      { "stable_id": "route.fixed.vco_a_to_dry_a",        "sourceJack": "vco_a.dry_out",  "sinkJack": "out.dry_a",   "kind": "audio", "status": "confirmed", "evidence": { "ref": "design/01", "section": "§1", "panelSite": "design/04 §3 DRY OUT L", "note": "VCO A —> MIX/PAN and DRY OUT left (bypass)" } },
+      { "stable_id": "route.fixed.vco_b_to_dry_b",        "sourceJack": "vco_b.dry_out",  "sinkJack": "out.dry_b",   "kind": "audio", "status": "confirmed", "evidence": { "ref": "design/01", "section": "§1", "panelSite": "design/04 §3 DRY OUT R", "note": "VCO B —> MIX/PAN and DRY OUT right (bypass)" } },
+      { "stable_id": "route.fixed.drones_to_mixer",       "sourceJack": "drone_bank.drone_out", "sinkJack": "mixer.drone_in", "kind": "audio", "status": "provisional", "evidence": { "ref": "design/01", "section": "§1", "note": "6 drone voices —> 10ch voice mixer" } },
+      { "stable_id": "route.fixed.mixer_to_vcf",          "sourceJack": "mixer.sum_out",   "sinkJack": "vcf.audio_in",  "kind": "audio", "status": "provisional", "evidence": { "ref": "design/01", "section": "§1", "note": "mixer —> Dual Polivoks VCF" } },
+      { "stable_id": "route.fixed.effector_to_wet_out",   "sourceJack": "effector.audio_out", "sinkJack": "out.wet_lr", "kind": "audio", "status": "provisional", "evidence": { "ref": "design/01", "section": "§1", "note": "—> DIST —> Dual Effector —> WET OUT L/R. VCF-output and DIST/Effector feed+output audio jacks are Phase-C audio-topology registrations; not asserted here to avoid inventing not-yet-modeled jacks." } },
+      { "stable_id": "route.fixed.piezzo_to_preamp",      "sourceJack": "piezzo.mic_out",  "sinkJack": "preamp.mic_in", "kind": "audio", "status": "provisional", "evidence": { "ref": "design/01", "section": "§1", "panelSite": "design/02 §2 PIEZZO", "note": "PIEZZO mic —> PREAMP" } },
+      { "stable_id": "route.fixed.preamp_to_env_follower","sourceJack": "preamp.audio_out", "sinkJack": "env_follower.audio_in", "kind": "audio", "status": "provisional", "evidence": { "ref": "design/01", "section": "§1", "panelSite": "design/04 §3 ENV FOLLOWER", "note": "PREAMP —> ENV FOLLOWER" } }
+    ],
+    "paramsJackTargets": {
+      "note": "Per-module control (parameter/jack) target list is a dedicated transcript pass so it can be independently sourced and evidence-backed; until published, the gate reports a module whose params/jacks are not enumerated here as an EXPLICIT OPEN GAP (so --require-full cannot false-green), and additionally rejects any target module that appears in the registry but is EMPTY (has no params or jacks).",
+      "entries": {}
     }
   },
   "mustComplete": [

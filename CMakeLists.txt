@@ -78,8 +78,10 @@ add_test(NAME registry_complete_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_registry_complete.py)
 
-# The gate must reject 重件 / no-evidence / short-cartridge / NON-REGRESSION /
-# --require-full for their intended reasons, not by accident.
+# The gate must reject 重件 (per-category duplicate) / incomplete evidence /
+# dangling-or-misdirected route endpoint / present-but-empty module /
+# mustComplete-not-equal-landed-set / NON-REGRESSION / --require-full for their
+# intended reasons, not by accident.
 add_test(NAME registry_complete_negative
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_registry_complete_negative.py)
