@@ -8,9 +8,13 @@ accident. We mutate a copy of the real manifest/spec and assert the resulting
 `problems` list contains the matching diagnostic, and that the un-mutated baseline
 passes. Covers the tightened checks added to close the Phase-A false-green:
 
-  重件 (duplicate module / program / route), incomplete or back-formation evidence,
-  a cartridge row missing a slot, a dangling or misdirected route endpoint,
-  a present-but-empty module, mustComplete != the landed set, and `--require-full`.
+  重件 (duplicate module / program / route / param / endpoint),
+  incomplete or back-formation evidence, a cartridge row missing a slot,
+  a dangling or misdirected route endpoint, a present-but-empty module,
+  mustComplete != the landed set, --require-full, AND the second-review (msg 143d0038)
+  gates: implementation ⊆ independent target, the frozen complete fixed chain
+  (required fixed route missing), ORCHE slot 2/3 provisional enforcement,
+  terminal-owned endpoints validated, and a dangling-fixed-endpoint no-continue.
 
 Usage:
   python3 tests/core/test_registry_complete_negative.py
@@ -91,9 +95,9 @@ def main():
     if not has(problems, "dangling"):
         raise SystemExit("dangling route endpoint not flagged: %r" % problems)
 
-    # 7. misdirected fixed route (source is an input jack -> must be output)
+    # 7. misdirected fixed route (source is an input endpoint -> must be output)
     misdir = copy.deepcopy(manifest)
-    misdir["target"]["fixedRoutes"][0]["sourceJack"] = "vco_a.cv_in"
+    misdir["target"]["fixedRoutes"][0]["source"] = "vcf.cv_l_in"  # vcf.cv_l_in is an INPUT
     problems, _ = gate.check(spec, misdir)
     if not has(problems, "expected output"):
         raise SystemExit("misdirected fixed-route source not flagged: %r" % problems)
@@ -129,8 +133,67 @@ def main():
     if not has(problems, "program identity gaps"):
         raise SystemExit("--require-full did not report the program-identity gap: %r" % problems)
 
+    # 12. implementation ⊆ independent target: a registry PROGRAM not in the manifest is an error
+    #     (was silently green before the hard gate).
+    rogue = copy.deepcopy(spec)
+    rogue["programs"].append(copy.deepcopy(rogue["programs"][0]))
+    rogue["programs"][-1]["id"] = 99
+    rogue["programs"][-1]["stable_id"] = "program.rogue"
+    rogue["programs"][-1]["cartridge"] = "ROGUE"
+    # Programs also carry the X/Y/Z knob parameters; re-id them so they don't collide
+    # with the module param id space (the registry validates a globally-unique param id).
+    for i, parm in enumerate(rogue["programs"][-1]["parameters"]):
+        parm["id"] = 200 + i
+        parm["stable_id"] = "program.rogue.%s" % parm["stable_id"].split(".")[-1]
+    problems, _ = gate.check(rogue, manifest)
+    if not has(problems, "impl ⊄ target"):
+        raise SystemExit("registry item absent from the independent target not flagged: %r" % problems)
+
+    # 13. frozen fixed chain: removing a required fixed route trips --require-full even though
+    #     other routes are defined (no false-green on the fixed topology).
+    cut = copy.deepcopy(manifest)
+    cut["target"]["fixedRoutes"] = [r for r in cut["target"]["fixedRoutes"]
+                                    if r["stable_id"] != "fixed.eff_l_to_wet_l"]
+    problems, _ = gate.check(spec, cut, require_full=True)
+    if not has(problems, "required fixed routes missing"):
+        raise SystemExit("missing required fixed route did not trip --require-full: %r" % problems)
+
+    # 14. ORCHE slot 2/3 must be provisional (manual prints 'Program 1' for all three).
+    orche = copy.deepcopy(manifest)
+    for p in orche["target"]["programs"]:
+        if p.get("cartridge") == "ORCHE" and p.get("slot") == 2:
+            p["status"] = "confirmed"
+    problems, _ = gate.check(spec, orche)
+    if not has(problems, "ORCHE slot 2 must be provisional"):
+        raise SystemExit("ORCHE slot 2 not forced provisional: %r" % problems)
+
+    # 15. terminal-owned endpoints are validated: dropping the 'out' terminal makes its
+    #     endpoint owners illegal (terminals are real owners, not free-floating names).
+    noterm = copy.deepcopy(manifest)
+    noterm["target"]["terminals"] = [t for t in noterm["target"]["terminals"]
+                                     if t["stable_id"] != "out"]
+    problems, _ = gate.check(spec, noterm)
+    if not has(problems, "not a target module or terminal"):
+        raise SystemExit("endpoint with a dropped terminal owner not flagged: %r" % problems)
+
+    # 16. dangling fixed-route endpoint is an error (no `continue` on absent endpoint):
+    #     removing an endpoint referenced by a fixed route must be caught.
+    drop = copy.deepcopy(manifest)
+    drop["target"]["paramsJackTargets"] = {
+        "params": drop["target"]["paramsJackTargets"]["params"],
+        "endpoints": [e for e in drop["target"]["paramsJackTargets"]["endpoints"]
+                      if e["stable_id"] != "effector.l_out"],
+    }
+    problems, _ = gate.check(spec, drop)
+    if not has(problems, "fixed.eff_l_to_wet_l"):
+        raise SystemExit("dangling fixed-route endpoint (no continue) not flagged: %r" % problems)
+    if not has(problems, "dangling"):
+        raise SystemExit("dangling fixed-route endpoint not reported as dangling: %r" % problems)
+
     print("OK: registry completeness gate rejects each defect for its intended reason; "
-          "baseline passes; --require-full trips on the known gaps.")
+          "baseline passes; --require-full trips on the known gaps; impl ⊆ target, "
+          "fixed-chain freeze, ORCHE provisional, terminal-owner and dangling-fixed-endpoint "
+          "are all gated.")
     return 0
 
 

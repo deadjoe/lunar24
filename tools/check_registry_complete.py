@@ -5,47 +5,47 @@
 
 The registry (spec/machine/lunar24.json) is the IMPLEMENTATION. The manifest
 (spec/machine/p0_inventory_manifest.json) is the INDEPENDENT full-machine TARGET
-transcribed from the panel map (design/04 §1) and the manual-derived inventories
-(design/01 §3-§4, design/05 §1) — NOT generated from the registry, so completeness
-is auditable rather than self-proving (Codex constraint #1).
+transcribed from the manual (solar42N_manual_v15) and the panel map (design/04 §1) —
+NOT generated from the registry, so completeness is auditable rather than
+self-proving (Codex constraint #1).
 
-The gate does:
+The manifest TARGET inventory is per-item, per-category, never synthesised into one
+number (constraint #2):
 
-  1. CONSISTENCY INVARIANTS (always enforced, green on every commit):
-     - real provenance shape, not "any non-empty ref": each target item must carry
-       a status (confirmed/provisional) AND a source `ref` AND either a panel-site
-       or a manual line range, else it is rejected as un-provenanced;
-     - no duplicate stable_id within ANY category (module / program / normalized
-       route / fixed route) — a duplicate is 重件, never silently folded by a set;
-     - route endpoint/direction validation: a manifest route whose endpoint module
-       is present in the registry must reference a real, correctly-directed jack.
-       A dangling endpoint (e.g. `vco_a.vco_out` where the module lacks that jack)
-       is a problem — it can no longer pass as green;
-     - every target module present in the registry must be non-empty (>=1 param,
-       >=1 jack), so "module present but blank" cannot false-green;
-     - every `mustComplete` item names a coherent manifest target AND exists in the
-       registry — the NON-REGRESSION guard (constraint #3);
-     - `mustComplete` must EQUAL the registry's currently-landed target keys. This
-       is the auto-sync contract (item #5): future additions must be extended into
-       `mustComplete` in the same commit, so the baseline can never drift silently.
+  target.modules[]                        — every module (id/name/category/evidence)
+  target.programs[]                       — every program identity, VERBATIM (39)
+  target.paramsJackTargets.params[]       — every parameter (stable_id/owner/evidence/status)
+  target.paramsJackTargets.endpoints[]    — every jack OR internal endpoint
+                                          (stable_id/owner/direction/patchable/evidence/status)
+  target.normalizedRoutes[]               — patchable normalizations (source.endpoint -> sink.endpoint)
+  target.fixedRoutes[]                    — fixed internal edges (module.endpoint -> module.endpoint, kind)
+  target.requiredFixedRoutes[]            — the architecturally-complete fixed chain
+                                          (so `--require-full` cannot green a grouped summary)
 
-  2. CATEGORY-WISE COVERAGE REPORT (constraint #2): target / present / gap per
-     category — modules / program identities / normalized routes / fixed routes /
-     parameters / jacks. Numbers are NEVER collapsed into one percentage that could
-     hide a gap. Param and jack *target* counts come from an explicit
-     `target.paramsJackTargets.entries` transcript pass; until each module is
-     enumerated there it is reported as an EXPLICIT OPEN GAP (not a fabricated
-     count), so `--require-full` stays red rather than falsely green.
+The gate checks:
 
-  With `--require-full` the gate additionally requires every target module, program
-  identity and normalized route to be present, every present target module to have
-  a transcribed (or at least non-empty) param/jack target, and all per-module
-  param/jack counts declared in `entries` to match the registry. The CI runs this
-  mode so the PR #2 exact head enables it for real (constraint #3). Fixed routes
-  have no registry RouteId equivalent (they are Phase-C audio-topology); they are
-  validated for provenance + endpoint/direction coherence and reported as a target
-  category, never silently dropped — but `--require-full` does not demand a
-  registry row, because the registry does not model them as routes.
+  1. CONSISTENCY INVARIANTS (always on):
+     - real provenance shape (status + ref + panelSite/section/line), not any non-empty ref;
+     - no duplicate stable_id within ANY category (重件), including program grid cartridges;
+     - every param/endpoint `owner` is a target module; every direction is input|output;
+     - normalized/fixed route endpoints must resolve in the MANIFEST inventory (no `continue`
+       on an absent module) and be correctly directed (fixed audio: source=output, sink=input);
+       internal endpoints (patchable=false) may only appear as fixed/route targets, not as
+       patchable normalizations;
+     - present-but-empty module (registry has no param or no endpoint) is an error;
+     - mustComplete == exactly the registry's landed target keys (auto-sync);
+     - implementation ⊆ independent target: every registry module/program/route must be a
+       manifest target — a registry item absent from the target is an error, never silently green.
+
+  2. CATEGORY-WISE COVERAGE (never one %): modules / program identities / params /
+     jacks+internal endpoints / normalized routes / fixed routes. Params and endpoints are
+     reported target-vs-present; a module with zero transcribed params or endpoints is an
+     open gap (not a fabricated count).
+
+  With `--require-full` the gate additionally requires every module/program identity to be
+  present in the registry, every module to have a fully-transcribed (non-empty) param and
+  endpoint inventory, and EVERY required fixed route to be defined. CI runs this mode so the
+  PR #2 exact head enables it for real (constraint #3).
 
 Usage:
   python3 tools/check_registry_complete.py [--require-full]
@@ -65,6 +65,9 @@ SPEC_PATH = os.path.join(ROOT, "spec", "machine", "lunar24.json")
 MANIFEST_PATH = os.path.join(ROOT, "spec", "machine", "p0_inventory_manifest.json")
 
 VALID_STATUS = {"confirmed", "provisional"}
+VALID_DIR = {"input", "output"}
+VALID_KIND = {"audio", "control", "gate"}
+PROGRAM_SLOTS = (1, 2, 3)
 
 
 def load_json(path):
@@ -75,23 +78,25 @@ def load_json(path):
 def provenance_ok(entry):
     """A transcribed item must have a REAL provenance shape, not any non-empty ref.
 
-    Requires: a status in {confirmed, provisional}; an evidence object with a
-    non-empty `ref` naming a source; AND a location — a `panelSite`, a manual line
-    range (`lineStart`/`lineEnd`), or a section marker (e.g. "§1" for a design doc).
+    Requires a status in {confirmed, provisional}; an evidence object with a non-empty
+    `ref` naming a source; AND a location (panelSite / lineStart / lineEnd / section).
     An evidence of just `{"ref": "x"}` is insufficient and is rejected.
     """
     if entry.get("status") not in VALID_STATUS:
         return False
     ev = entry.get("evidence") or {}
-    ref = ev.get("ref")
-    if not ref:
+    if not ev.get("ref"):
         return False
     location = ev.get("panelSite") or ev.get("lineStart") or ev.get("lineEnd") or ev.get("section")
     return bool(location)
 
 
-def parse_endpoint(jack):
-    """Split a manifest `module.jack` endpoint into (module, full_jack_stable_id)."""
+def resolve_endpoint(endpoint, inventory):
+    """Return the inventory entry for a `module.endpoint` id, or None if absent/unknown."""
+    return inventory.get(endpoint)
+
+
+def split_endpoint(jack):
     mod, _, name = jack.partition(".")
     return mod, jack
 
@@ -110,17 +115,21 @@ def check(spec, manifest, require_full=False):
     tgt = manifest.get("target") or {}
 
     modules = tgt.get("modules", [])
+    terminals = tgt.get("terminals", [])   # internal I/O termination blocks (ext_in/piezzo/distortion/out)
     programs = tgt.get("programs", [])
+    pjt = tgt.get("paramsJackTargets") or {}
+    params = pjt.get("params", [])
+    endpoints = pjt.get("endpoints", [])
     norm_routes = tgt.get("normalizedRoutes", [])
     fixed_routes = tgt.get("fixedRoutes", [])
-    pj_entries = (tgt.get("paramsJackTargets") or {}).get("entries", {})
+    required_fixed = tgt.get("requiredFixedRoutes", [])
     must_complete = manifest.get("mustComplete", [])
 
     # ---- per-category duplicate detection (重件) ------------------------------
     def dup_check(items, cat, sid_key="stable_id"):
         seen = {}
         for it in items:
-            sid = it.get(sid_key)
+            sid = it.get(sid_key) if isinstance(it, dict) else None
             text = sid if sid else "<missing-id>"
             if text in seen:
                 problems.append(f"{cat} duplicate stable_id {text!r} (重件)")
@@ -128,135 +137,167 @@ def check(spec, manifest, require_full=False):
 
     dup_check(modules, "module")
     dup_check(programs, "program")
+    dup_check(params, "param")
+    dup_check(endpoints, "endpoint")
     dup_check(norm_routes, "normalized route")
     dup_check(fixed_routes, "fixed route")
 
-    # ---- module / program / route shape + provenance -------------------------
+    # ---- module shape + provenance -----------------------------------------
     for m in modules:
         if not (m.get("stable_id") and m.get("name") and m.get("category")):
             problems.append(f"manifest module {m.get('stable_id')!r}: needs stable_id+name+category")
         if not provenance_ok(m):
             problems.append(f"manifest module {m.get('stable_id')!r}: incomplete evidence "
-                            f"(need status in {sorted(VALID_STATUS)} + ref + panelSite/line range)")
+                            f"(need status in {sorted(VALID_STATUS)} + ref + panelSite/section/line)")
+    module_ids = {m["stable_id"] for m in modules if m.get("stable_id")}
 
+    # ---- programs: 39 verbatim identities, full 13x3 grid, ORCHE anomaly -----
+    grid = {}
+    dup_slot = False
     for p in programs:
-        if not (p.get("stable_id") and p.get("slot") in (1, 2, 3) and p.get("name")):
+        if not (p.get("stable_id") and p.get("slot") in PROGRAM_SLOTS and p.get("name")):
             problems.append(f"manifest program {p.get('stable_id')!r}: needs stable_id+slot(1..3)+name")
         if not p.get("cartridge"):
             problems.append(f"manifest program {p.get('stable_id')!r}: missing cartridge name")
         if not provenance_ok(p):
             problems.append(f"manifest program {p.get('stable_id')!r}: incomplete evidence")
-
-    # Every (cartridge, slot) must appear exactly once -> a full 13x3 grid.
-    grid = {}
-    dup_slot = False
-    for p in programs:
-        cart = p.get("cartridge")
-        slot = p.get("slot")
-        key = (cart, slot)
+        key = (p.get("cartridge"), p.get("slot"))
         if key in grid:
             dup_slot = True
         grid[key] = p.get("stable_id")
+    # ORCHE anomaly: manual prints all three as "Program 1" — slot 2/3 are interpretation.
+    orche = [p for p in programs if p.get("cartridge") == "ORCHE"]
+    if len(orche) == 3:
+        for p in orche:
+            if p.get("slot") in (2, 3):
+                if p.get("status") != "provisional":
+                    problems.append(f"ORCHE slot {p.get('slot')} must be provisional "
+                                    f"(manual prints Program 1 for all three)")
     if not dup_slot and programs:
-        # ensure each cartridge has all three slots and no partial row.
         carts = {p.get("cartridge") for p in programs}
         for c in sorted(carts):
-            for slot in (1, 2, 3):
+            for slot in PROGRAM_SLOTS:
                 if (c, slot) not in grid:
-                    problems.append(f"manifest cartridge {c!r}: must list all {3} slots (missing slot {slot})")
+                    problems.append(f"manifest cartridge {c!r}: must list all {len(PROGRAM_SLOTS)} slots "
+                                    f"(missing slot {slot})")
 
-    for r in norm_routes + fixed_routes:
-        if not (r.get("stable_id") and r.get("sourceJack") and r.get("sinkJack")):
-            problems.append(f"manifest route {r.get('stable_id')!r}: needs stable_id+sourceJack+sinkJack")
-        if not provenance_ok(r):
-            problems.append(f"manifest route {r.get('stable_id')!r}: incomplete evidence")
+    # ---- params + endpoints: per-item, owned by a target module -------------
+    for it in params:
+        if not (it.get("stable_id") and it.get("owner")):
+            problems.append(f"manifest param {it.get('stable_id')!r}: needs stable_id+owner")
+        if it.get("owner") not in module_ids:
+            problems.append(f"manifest param {it.get('stable_id')!r}: owner {it.get('owner')!r} "
+                            f"not a target module")
+        if not provenance_ok(it):
+            problems.append(f"manifest param {it.get('stable_id')!r}: incomplete evidence")
 
-    # ---- registry-derived present sets + jack direction map ------------------
+    # Internal I/O termination blocks (fixed topology endpoints live on these, not on a panel
+    # module): verified for provenance, and their ids are legal endpoint owners alongside modules.
+    terminal_ids = set()
+    for term in terminals:
+        if not (term.get("stable_id") and term.get("name")):
+            problems.append(f"manifest terminal {term.get('stable_id')!r}: needs stable_id+name")
+        if not provenance_ok(term):
+            problems.append(f"manifest terminal {term.get('stable_id')!r}: incomplete evidence")
+        terminal_ids.add(term.get("stable_id"))
+    allowed_owners = module_ids | terminal_ids
+
+    inventory = {}          # endpoint stable_id -> entry
+    for e in endpoints:
+        if not (e.get("stable_id") and e.get("owner") and e.get("direction") in VALID_DIR):
+            problems.append(f"manifest endpoint {e.get('stable_id')!r}: needs stable_id+owner+direction(input|output)")
+        if e.get("owner") not in allowed_owners:
+            problems.append(f"manifest endpoint {e.get('stable_id')!r}: owner {e.get('owner')!r} is not a target module or terminal")
+        if not provenance_ok(e):
+            problems.append(f"manifest endpoint {e.get('stable_id')!r}: incomplete evidence")
+        inventory[e.get("stable_id")] = e
+    internal_endpoints = {sid for sid, e in inventory.items() if not e.get("patchable")}
+
+    # ---- route endpoint/direction validation against the MANIFEST inventory --
+    def validate_routes(routes, enforce_direction, allowed_internal):
+        for r in routes:
+            sid = r.get("stable_id")
+            expect = (("source", "output"), ("sink", "input")) if enforce_direction \
+                     else (("source", None), ("sink", None))
+            for role, want_dir in expect:
+                ep = r.get(role) or r.get(role + "Jack")
+                if not ep:
+                    continue
+                entry = inventory.get(ep)
+                if entry is None:
+                    problems.append(f"manifest route {sid}: {role} {ep!r} not in endpoint inventory "
+                                    f"(dangling)")
+                    continue
+                if not allowed_internal and ep in internal_endpoints:
+                    problems.append(f"manifest route {sid}: {role} {ep!r} is an internal "
+                                    f"(non-patchable) endpoint — cannot be used in this route class")
+                if enforce_direction and entry["direction"] != want_dir:
+                    problems.append(f"manifest route {sid}: {role} {ep!r} is {entry['direction']}, "
+                                    f"expected {want_dir}")
+
+    validate_routes(norm_routes, enforce_direction=False, allowed_internal=False)
+    validate_routes(fixed_routes, enforce_direction=True, allowed_internal=True)
+
+    # fixed route kind must be audio|control|gate and must reference allowed endpoints.
+    for r in fixed_routes:
+        if r.get("kind") not in VALID_KIND:
+            problems.append(f"fixed route {r.get('stable_id')!r}: kind must be one of {sorted(VALID_KIND)}")
+
+    # ---- present-but-empty module (always-on) ------------------------------
+    param_owners = {p["_stable_owner"] for p in reg.parameters}
+    jack_owners = {j["_module_stable"] for j in reg.jacks}
+    for mod in sorted({m["stable_id"] for m in reg.modules}):
+        if mod not in param_owners:
+            problems.append(f"module {mod!r} in registry but has NO parameters")
+        if mod not in jack_owners:
+            problems.append(f"module {mod!r} in registry but has NO jacks")
+
+    # ---- implementation ⊆ independent target (no registry item outside target) --
+    target_program_ids = {p["stable_id"] for p in programs if p.get("stable_id")}
+    target_norm_routes = {r["stable_id"] for r in norm_routes if r.get("stable_id")}
     present_modules = {m["stable_id"] for m in reg.modules}
     present_programs = {p["stable_id"] for p in reg.programs}
     present_routes = {r["stable_id"] for r in reg.routes}
-    jack_dirs = {j["stable_id"]: j["direction"] for j in reg.jacks}
-    param_mods = {m["_stable_owner"] for m in reg.parameters}
-    jack_mods = {j["_module_stable"] for j in reg.jacks}
 
-    # ---- route endpoint/direction validation --------------------------------
-    # Normalized routes: a patch may tap an input jack as source (e.g. CV L -> CV R),
-    # so direction is NOT enforced, but a dangling endpoint (module present, jack
-    # absent) is a hard error. Fixed (audio) routes: source must be output, sink input.
-    def validate_endpoints(routes, enforce_direction):
-        for r in routes:
-            sid = r.get("stable_id")
-            expect = (("sourceJack", "output"), ("sinkJack", "input")) if enforce_direction \
-                     else (("sourceJack", None), ("sinkJack", None))
-            for role, want_dir in expect:
-                jk = r.get(role)
-                if not jk:
-                    continue
-                mod = jk.partition(".")[0]
-                if mod not in present_modules:
-                    continue  # module not yet in registry -> provisional, cannot check
-                d = jack_dirs.get(jk)
-                if d is None:
-                    problems.append(f"manifest route {sid}: {role} {jk!r} dangling "
-                                    f"(module {mod!r} present but jack not registered)")
-                elif enforce_direction and d != want_dir:
-                    problems.append(f"manifest route {sid}: {role} {jk!r} is {d}, "
-                                    f"expected {want_dir}")
+    for mod in sorted(present_modules - module_ids):
+        problems.append(f"implementation module {mod!r} not in independent target (impl ⊄ target)")
+    for prog in sorted(present_programs - target_program_ids):
+        problems.append(f"implementation program {prog!r} not in independent target (impl ⊄ target)")
+    for route in sorted(present_routes - target_norm_routes):
+        problems.append(f"implementation route {route!r} not in independent target (impl ⊄ target)")
 
-    validate_endpoints(norm_routes, enforce_direction=False)
-    validate_endpoints(fixed_routes, enforce_direction=True)
-
-    # ---- non-empty module gate (always-on) -----------------------------------
-    for mod in sorted(present_modules):
-        if mod not in param_mods:
-            problems.append(f"module {mod!r} present in registry but has NO parameters")
-        if mod not in jack_mods:
-            problems.append(f"module {mod!r} present in registry but has NO jacks")
-
-    # ---- mustComplete: coherence + non-regression + == landed set ------------
-    target_modules = {m["stable_id"] for m in modules if m.get("stable_id")}
-    target_program_ids = {p["stable_id"] for p in programs if p.get("stable_id")}
-    target_norm_routes = {r["stable_id"] for r in norm_routes if r.get("stable_id")}
-
-    target_all = (set(f"module:{x}" for x in target_modules)
+    # ---- mustComplete coherence + non-regression + == landed set ------------
+    target_all = (set(f"module:{x}" for x in module_ids)
                   | set(f"program:{x}" for x in target_program_ids)
                   | set(f"route:{x}" for x in target_norm_routes))
     present_keys = (set(f"module:{x}" for x in present_modules)
                     | set(f"program:{x}" for x in present_programs)
                     | set(f"route:{x}" for x in present_routes))
-
     for key in must_complete:
         if key not in target_all:
-            problems.append(f"mustComplete item {key!r} is not a manifest target "
-                            f"(manifest itself is incoherent)")
+            problems.append(f"mustComplete item {key!r} is not a manifest target")
         if key not in present_keys:
             problems.append(f"NON-REGRESSION: mustComplete item {key!r} dropped from the registry")
-
-    # item #5: mustComplete must exactly equal the currently-landed target keys.
     landed = set(must_complete) & target_all
     if landed != (present_keys & target_all):
-        missing_sync = sorted((present_keys & target_all) - landed)
+        miss = sorted((present_keys & target_all) - landed)
         stray = sorted(landed - (present_keys & target_all))
-        problems.append("mustComplete != registry landed target keys: "
-                        f"add={missing_sync} remove={stray} "
+        problems.append(f"mustComplete != registry landed target keys: add={miss} remove={stray} "
                         f"(future additions must be synced into mustComplete)")
 
-    # ---- category coverage ---------------------------------------------------
+    # ---- per-module transcription gap (params/endpoints) -------------------
+    param_owners_target = {p["owner"] for p in params}
+    endpoint_owners_target = {e["owner"] for e in endpoints}
+    modules_missing_params = sorted(module_ids - param_owners_target)
+    modules_missing_endpoints = sorted(module_ids - endpoint_owners_target)
+    # A module's inventory is TRANSCRIBED if the target names ANY param OR endpoint for it:
+    # `voices` (momentary drone keys) legitimately has zero params but does have gate/audio
+    # endpoints; `mixer` has no patchable jacks but has PAN/VOL params + internal audio
+    # endpoints. So an untranscribed module is one with NO param AND NO endpoint in the target.
+    modules_no_inventory = sorted(module_ids - (param_owners_target | endpoint_owners_target))
+
     def cover(target, present):
         return {"target": len(target), "present": len(target & present), "gap": sorted(target - present)}
-
-    present_param_target_mods = {m: 1 for m in pj_entries}
-    pj_untranscribed = sorted(target_modules - set(pj_entries.keys()))
-    # count-level check for transcribed modules (supports future entries)
-    for mod, want in pj_entries.items():
-        got_p = len([p for p in reg.parameters if p["_stable_owner"] == mod])
-        got_j = len([j for j in reg.jacks if j["_module_stable"] == mod])
-        exp_p = want.get("params") if isinstance(want, dict) else want.get("params")
-        if exp_p is not None and got_p != exp_p:
-            problems.append(f"params target for {mod!r}: manifest {exp_p}, registry {got_p}")
-        exp_j = (want.get("jacks") if isinstance(want, dict) else want.get("jacks"))
-        if exp_j is not None and got_j != exp_j:
-            problems.append(f"jacks target for {mod!r}: manifest {exp_j}, registry {got_j}")
 
     coverage = {
         "registry": {
@@ -264,35 +305,26 @@ def check(spec, manifest, require_full=False):
             "jacks": len(reg.jacks), "routes": len(reg.routes), "programs": len(reg.programs),
         },
         "manifest": {
-            "modules": len(modules), "programs": len(programs),
+            "modules": len(modules), "terminals": len(terminals), "programs": len(programs),
+            "paramsTranscribed": len(params), "endpointsTranscribed": len(endpoints),
             "normalizedRoutes": len(norm_routes), "fixedRoutes": len(fixed_routes),
-            "paramsJackTargetsTranscribed": len(pj_entries),
-            "mustComplete": len(must_complete),
+            "requiredFixedRoutes": len(required_fixed), "mustComplete": len(must_complete),
         },
-        "modules": cover(target_modules, present_modules),
+        "modules": cover(module_ids, present_modules),
         "programIdentities": cover(target_program_ids, present_programs),
         "normalizedRoutes": cover(target_norm_routes, present_routes),
-        "fixedRoutes": {
-            "target": len(fixed_routes),
-            "present": 0,
-            "note": "Phase-C audio topology (no registry RouteId equivalent); validated "
-                    "for provenance + endpoint/direction coherence only",
-            "gap": sorted(r["stable_id"] for r in fixed_routes if r.get("stable_id")),
-        },
-        "parameters": {
-            "targetModules": len(target_modules),
-            "transcribed": len(pj_entries),
-            "present": len(reg.parameters),
-            "presentModules": sorted(param_mods),
-            "untranscribed": pj_untranscribed,
-        },
-        "jacks": {
-            "targetModules": len(target_modules),
-            "transcribed": len(pj_entries),
-            "present": len(reg.jacks),
-            "presentModules": sorted(jack_mods),
-            "untranscribed": pj_untranscribed,
-        },
+        "params": {"target": len(params), "transcribed": len(params), "present": len(reg.parameters),
+                   "missingModules": modules_missing_params},
+        "endpoints": {"target": len(endpoints), "transcribed": len(endpoints), "present": len(reg.jacks),
+                      "missingModules": modules_missing_endpoints,
+                      "untranscribedModules": modules_no_inventory,
+                      "internal": sorted(internal_endpoints)},
+        "fixedRoutes": {"target": len(fixed_routes), "defined": len(fixed_routes),
+                        "required": required_fixed,
+                        "gap": sorted(set(required_fixed) - {r["stable_id"] for r in fixed_routes}),
+                        "note": "internal (non-patchable) P0 topology — no registry RouteId "
+                                "equivalent; validated for provenance + endpoint/direction "
+                                "coherence and required completeness under --require-full"},
     }
 
     if require_full:
@@ -303,9 +335,11 @@ def check(spec, manifest, require_full=False):
             not_full.append("program identity gaps=%s" % coverage["programIdentities"]["gap"])
         if coverage["normalizedRoutes"]["gap"]:
             not_full.append("normalized-route gaps=%s" % coverage["normalizedRoutes"]["gap"])
-        if pj_untranscribed:
-            not_full.append("params/jacks target untranscribed for modules=%s "
-                            "(enumerate in target.paramsJackTargets.entries)" % pj_untranscribed)
+        if modules_no_inventory:
+            not_full.append("module inventories untranscribed (no param/endpoint in target) "
+                            "for modules=%s" % modules_no_inventory)
+        if coverage["fixedRoutes"]["gap"]:
+            not_full.append("required fixed routes missing=%s" % coverage["fixedRoutes"]["gap"])
         if not_full:
             problems.append("--require-full: " + "; ".join(not_full))
 
@@ -318,22 +352,22 @@ def format_report(coverage):
     lines.append("registry: %(modules)d modules / %(params)d params / %(jacks)d jacks / "
                  "%(routes)d routes / %(programs)d programs" % reg)
     m = coverage["manifest"]
-    lines.append("manifest: %(modules)d modules / %(programs)d programs / "
-                 "%(normalizedRoutes)d normalized / %(fixedRoutes)d fixed routes / "
-                 "%(paramsJackTargetsTranscribed)d param-jack targets / %(mustComplete)d mustComplete" % m)
+    lines.append("manifest: %(modules)d modules / %(terminals)d terminals / %(programs)d programs / "
+                 "%(paramsTranscribed)d params / %(endpointsTranscribed)d endpoints / "
+                 "%(normalizedRoutes)d normalized / %(fixedRoutes)d fixed / "
+                 "%(requiredFixedRoutes)d required-fixed / %(mustComplete)d mustComplete" % m)
     lines.append("")
     lines.append("coverage (target / present / gap):")
     lines.append("  modules          : %(target)d / %(present)d / gaps=%(gap)s" % coverage["modules"])
     lines.append("  program identities: %(target)d / %(present)d / gaps=%(gap)s" % coverage["programIdentities"])
     lines.append("  normalized routes: %(target)d / %(present)d / gaps=%(gap)s" % coverage["normalizedRoutes"])
+    lines.append("  params           : target=%(target)d present=%(present)d missingModules=%(missingModules)s"
+                 % coverage["params"])
+    ep = coverage["endpoints"]
+    lines.append("  endpoints        : target=%(target)d present=%(present)d missingModules=%(missingModules)s "
+                 "untranscribed=%(untranscribedModules)s internal=%(internal)s" % ep)
     fx = coverage["fixedRoutes"]
-    lines.append("  fixed routes     : %(target)d / %(present)d / gap=%(gap)s  (%(note)s)" % fx)
-    p = coverage["parameters"]
-    lines.append("  parameters       : targetModules=%(targetModules)d transcribed=%(transcribed)d "
-                 "present=%(present)d untranscribed=%(untranscribed)s" % p)
-    j = coverage["jacks"]
-    lines.append("  jacks            : targetModules=%(targetModules)d transcribed=%(transcribed)d "
-                 "present=%(present)d untranscribed=%(untranscribed)s" % j)
+    lines.append("  fixed routes     : defined=%(defined)d required=%(required)s gap=%(gap)s  (%(note)s)" % fx)
     lines.append("")
     lines.append("note: 39 program identities is an identity/existence list, NOT 39 implemented effects.")
     return lines
@@ -342,8 +376,8 @@ def format_report(coverage):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--require-full", action="store_true",
-                    help="fail unless every target module/program identity/route is present "
-                         "and all params/jacks targets are transcribed")
+                    help="fail unless every target module/program/route is present, every module's "
+                         "params+endpoints are transcribed, and every required fixed route is defined")
     args = ap.parse_args()
 
     problems, coverage = check(load_json(SPEC_PATH), load_json(MANIFEST_PATH),
@@ -357,7 +391,7 @@ def main():
         print("\n".join(lines))
         return 1
     lines.append("")
-    lines.append("OK: manifest self-coherent; mustComplete == landed set and non-regressing.")
+    lines.append("OK: manifest self-coherent; mustComplete == landed set; impl ⊆ target; non-regressing.")
     print("\n".join(lines))
     return 0
 
