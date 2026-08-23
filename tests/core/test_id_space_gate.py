@@ -41,12 +41,20 @@ BANKS = (
 )
 
 
-def _const(path, name):
+def _const_decl(path, name):
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
-    m = re.search(rf"\b{name}\s*=\s*(\d+)", text)
+    for ln in text.splitlines():
+        if re.search(rf"\b{name}\s*=", ln):
+            return ln.strip()
+    raise SystemExit(f"constant {name} not found in {path}")
+
+
+def _const(path, name):
+    decl = _const_decl(path, name)
+    m = re.search(r"= (\d+)", decl)
     if not m:
-        raise SystemExit(f"constant {name} not found in {path}")
+        raise SystemExit(f"constant {name} has no numeric value in {path}")
     return int(m.group(1))
 
 
@@ -70,6 +78,13 @@ def main():
         # so a stale generated header is caught by this test, not by the build).
         if space_emitted != space_from_spec:
             bad.append(f"{space_name} emitted {space_emitted} != derived {space_from_spec}")
+        # id-space is declared uint64_t (never uint32_t): one-past the largest
+        # legal u32 id is 0x100000000, which a uint32_t literal cannot hold. The
+        # type lock proves the full u32 id domain stays representable.
+        decl = _const_decl(IDS_HPP, space_name)
+        if "std::uint64_t" not in decl:
+            bad.append(f"{space_name} must be std::uint64_t so one-past-of-max-u32-id "
+                       f"stays representable (got {decl!r})")
         # the bank must cover the id-space (a sparse id is a hole, not a shrunk count).
         if cap < space_emitted:
             bad.append(f"{cap_name} ({cap}) < id-space {space_emitted}")
@@ -91,10 +106,25 @@ def main():
     if space_sp <= param_cap:
         raise SystemExit("hazard spec did not push id-space past the bank (test is stale)")
 
+    # --- 0xFFFFFFFF upper-bound regression -----------------------------
+    # The largest legal u32 id. one-past-the-last = 0x100000000, which does not
+    # fit uint32_t. The generator must emit it as a uint64_t literal so the
+    # header stays well-formed; only the capacity static_assert rejects this
+    # spec (the one-past outruns the bank) — never a malformed/overflowed literal.
+    boundary = json.loads(json.dumps(spec))
+    boundary["modules"][0]["parameters"][0]["id"] = 0xFFFFFFFF
+    reg_b = generate_registry.Registry(boundary)  # validates OK: 0xFFFFFFFF is a legal u32 id
+    space_b = generate_registry._id_space(reg_b.parameter_ids)
+    if space_b != 0x100000000:
+        raise SystemExit(f"boundary id-space should be 2^32 ({space_b} != 0x100000000)")
+    if space_b <= param_cap:
+        raise SystemExit("boundary id-space should exceed the param bank (capacity gate must reject it)")
+
     print(f"OK: id-space <= bank (parameter {_const(IDS_HPP, 'kParameterIdSpace')}, "
           f"jack {_const(IDS_HPP, 'kJackIdSpace')}, route {_const(IDS_HPP, 'kRouteIdSpace')}); "
           f"hazard spec id={sparse_id} -> id-space {space_sp} > param bank {param_cap} (would trip "
-          f"the generated static_assert)")
+          f"the generated static_assert); boundary id=0xFFFFFFFF -> id-space {space_b} (uint64, "
+          f"exceeds bank {param_cap} -> rejected by the capacity gate, not a malformed literal)")
     return 0
 
 

@@ -304,11 +304,17 @@ def gen_ids(reg):
     # Serialized id SPACE (one-past-the-last id). A state/storage bank is indexed
     # by these ids, so the count alone is not enough: a sparse id (a hole between
     # two ids) makes the id-space larger than the count and must still be covered.
-    out.append("inline constexpr std::uint32_t kModuleIdSpace = %d;" % _id_space(reg.module_ids))
-    out.append("inline constexpr std::uint32_t kParameterIdSpace = %d;" % _id_space(reg.parameter_ids))
-    out.append("inline constexpr std::uint32_t kJackIdSpace = %d;" % _id_space(reg.jack_ids))
-    out.append("inline constexpr std::uint32_t kProgramIdSpace = %d;" % _id_space(reg.program_ids))
-    out.append("inline constexpr std::uint32_t kRouteIdSpace = %d;" % _id_space(reg.route_ids))
+    # id-space is a literal, not a runtime max+1, so it can never overflow at the
+    # host — but one-past of the MAX allowed u32 id (0xFFFFFFFF) is 0x100000000,
+    # which does not fit a uint32_t. Emitted as uint64_t so the full u32 id domain
+    # stays representable; the capacity static_assert still rejects an id-space
+    # that outruns its bank, now as a clear compile error rather than a malformed
+    # literal.
+    out.append("inline constexpr std::uint64_t kModuleIdSpace = %d;" % _id_space(reg.module_ids))
+    out.append("inline constexpr std::uint64_t kParameterIdSpace = %d;" % _id_space(reg.parameter_ids))
+    out.append("inline constexpr std::uint64_t kJackIdSpace = %d;" % _id_space(reg.jack_ids))
+    out.append("inline constexpr std::uint64_t kProgramIdSpace = %d;" % _id_space(reg.program_ids))
+    out.append("inline constexpr std::uint64_t kRouteIdSpace = %d;" % _id_space(reg.route_ids))
     out.append("")
 
     # Compile-time gate: every state bank must be large enough for the ids it is

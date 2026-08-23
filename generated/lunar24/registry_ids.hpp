@@ -92,11 +92,11 @@ inline constexpr std::uint32_t kJackCount = 19;
 inline constexpr std::uint32_t kProgramCount = 2;
 inline constexpr std::uint32_t kRouteCount = 3;
 
-inline constexpr std::uint32_t kModuleIdSpace = 5;
-inline constexpr std::uint32_t kParameterIdSpace = 30;
-inline constexpr std::uint32_t kJackIdSpace = 19;
-inline constexpr std::uint32_t kProgramIdSpace = 2;
-inline constexpr std::uint32_t kRouteIdSpace = 3;
+inline constexpr std::uint64_t kModuleIdSpace = 5;
+inline constexpr std::uint64_t kParameterIdSpace = 30;
+inline constexpr std::uint64_t kJackIdSpace = 19;
+inline constexpr std::uint64_t kProgramIdSpace = 2;
+inline constexpr std::uint64_t kRouteIdSpace = 3;
 
 static_assert(kDeviceParamCapacity >= kParameterIdSpace, "parameter bank too small for ParameterId space");
 static_assert(kDevicePatchCapacity >= kJackIdSpace, "patch bank too small for JackId space");
