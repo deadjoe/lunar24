@@ -444,8 +444,6 @@ def check(spec, manifest, require_full=False):
     landed_facts = tgt.get("landedDescriptorFacts") or {}
     landed_params = landed_facts.get("parameters") or {}
     landed_jacks = landed_facts.get("jacks") or {}
-    landed_fact_keys = set(f"parameter:{x}" for x in landed_params) | \
-                       set(f"jack:{x}" for x in landed_jacks)
 
     modules = tgt.get("modules", [])
     terminals = tgt.get("terminals", [])
@@ -1363,19 +1361,23 @@ def check(spec, manifest, require_full=False):
                             f"transcribes no panelControl")
 
     # ---- mustComplete coherence + non-regression + == landed set ------------
-    # landedDescriptorFacts are synchronized into mustComplete (parameter:/jack: keys) by
-    # the builder so the identical landed-equality mechanism uniformly guards every slice.
+    # Landed-equality covers the FULL actual registry (every landed module / program identity /
+    # normalized route / parameter / patchable jack), not just the descriptor-fact slice: the
+    # manifest mustComplete is the single auditable list of exactly what the registry currently
+    # holds, so deleting ANY entity (old or new) is caught as a drop, and adding any is a gap
+    # until it is synced into mustComplete.
     present_reg_params = {p["stable_id"] for p in reg.parameters}
     present_reg_jacks = {j["stable_id"] for j in reg.jacks}
     target_all = (set(f"module:{x}" for x in module_ids)
                   | set(f"program:{x}" for x in target_program_ids)
                   | set(f"route:{x}" for x in target_norm_routes)
-                  | landed_fact_keys)
+                  | set(f"parameter:{p['stable_id']}" for p in parameters)
+                  | set(f"jack:{e['stable_id']}" for e in endpoints if e.get("patchable")))
     present_keys = (set(f"module:{x}" for x in present_modules)
                     | set(f"program:{x}" for x in present_programs)
                     | set(f"route:{x}" for x in present_routes)
-                    | {f"parameter:{x}" for x in present_reg_params if x in landed_params}
-                    | {f"jack:{x}" for x in present_reg_jacks if x in landed_jacks})
+                    | set(f"parameter:{x}" for x in present_reg_params)
+                    | set(f"jack:{x}" for x in present_reg_jacks))
     for key in must_complete:
         if key not in target_all:
             problems.append(f"mustComplete item {key!r} is not a manifest target")

@@ -1501,6 +1501,30 @@ def main():
     if not has(problems, "MISSING landed descriptor jack"):
         raise SystemExit("landed mods-gap MISSING seen-jack (vco_a.wave_out) not enforced: %r" % problems)
 
+    # (an) drop an OLD (pre-slice) param that the full 146-item mustComplete still covers -> the
+    #      NON-REGRESSION landed-equality gate must FAIL normal. vco_a.morph is NOT a landed
+    #      descriptor fact, so the MISSING-landed-descriptor gate is silent here; only the
+    #      full-landed-set mustComplete covers it, which is exactly why a drop must still be caught
+    #      (Codex 8165f8c2 Root 2: mustComplete == the whole current registry, old entities included).
+    an_bad = copy.deepcopy(spec)
+    for m in an_bad["modules"]:
+        if m.get("stable_id") == "vco_a":
+            m["parameters"] = [p for p in m.get("parameters", [])
+                               if p.get("stable_id") != "vco_a.morph"]
+    problems, _ = gate.check(an_bad, manifest)
+    if not has(problems, "NON-REGRESSION"):
+        raise SystemExit("old-param drop (vco_a.morph) not enforced by mustComplete: %r" % problems)
+
+    # (ao) drop an OLD (pre-slice) jack that the full mustComplete still covers -> must FAIL normal.
+    ao_bad = copy.deepcopy(spec)
+    for m in ao_bad["modules"]:
+        if m.get("stable_id") == "vco_a":
+            m["jacks"] = [j for j in m.get("jacks", [])
+                          if j.get("stable_id") != "vco_a.cv_in"]
+    problems, _ = gate.check(ao_bad, manifest)
+    if not has(problems, "NON-REGRESSION"):
+        raise SystemExit("old-jack drop (vco_a.cv_in) not enforced by mustComplete: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"
