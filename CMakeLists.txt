@@ -42,6 +42,13 @@ add_test(NAME registry_regen_zero_diff
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_registry.py --check)
 
+# The inventory-manifest builder must also reproduce the committed manifest exactly
+# (Codex msg 064cfa6e): a hand-edited manifest that the builder would erase/rewrite
+# is a drift bug, not a silent "fix".
+add_test(NAME manifest_regen_zero_diff
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/p0_regions_build.py --check)
+
 # Static gates: every authored code file carries a leading SPDX Apache-2.0 header
 # (recursive scan), and core public headers stay framework-free (forbidden-include
 # scan restricted to the core boundary).

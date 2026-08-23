@@ -1765,7 +1765,7 @@
   },
   "mustComplete": ["module:vco_a", "module:vco_b", "module:vcf", "module:keyboard", "module:envelope_a", "program:program.cathedral.1", "program:program.magic.1", "route:route.keyboard_v_oct_to_vco", "route:route.keyboard_gate_to_eg", "route:route.vcf_cv_l_to_cv_r"],
   "migrationAllowlist": {
-    "note": "Monotonically-shrinking migration allowlist for pre-correction registry rogue ids. The gate is ALWAYS-ON: any registry param/jack not in the target and not in this list is a NEW rogue and fails even without --require-full. --require-full requires the list empty AND no rogue. Computed from the actual registry, never hand-set.",
+    "note": "Permanently-empty migration allowlist. Migration is complete and it is LOCKED EMPTY (Codex msg 064cfa6e): never computed from the implementation, so the manifest does not reverse-depend on lunar24.json and stays a one-way target->overlay source. Any registry param/jack not in the target is a NEW rogue and fails the always-on gate; the legacy ceiling backstop also forbids re-whitelisting a re-introduced pre-correction id outside the target.",
     "parameters": [],
     "jacks": []
   }

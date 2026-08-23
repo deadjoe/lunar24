@@ -106,7 +106,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -135,7 +135,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -186,7 +186,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -736,7 +736,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -764,7 +764,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -856,7 +856,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -888,7 +888,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -920,7 +920,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -951,7 +951,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -984,7 +984,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -1071,7 +1071,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -1129,7 +1129,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -1162,7 +1162,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -1247,7 +1247,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -1386,7 +1386,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -1474,7 +1474,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -1630,7 +1630,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",
@@ -1850,7 +1850,7 @@
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "unit": "confirmed",
+            "unit": "provisional",
             "default": "provisional",
             "step": "provisional",
             "smoothing": "provisional",

@@ -37,6 +37,7 @@ evidence is re-pointed to the manual (Codex item #4).
 Usage:  python3 tools/p0_regions_build.py   (rewrites the manifest in place)
 """
 
+import difflib
 import json
 import os
 import sys
@@ -44,8 +45,6 @@ import sys
 REF = "solar42N_manual_v15"
 MANIFEST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "spec", "machine", "p0_inventory_manifest.json")
-SPEC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                    "spec", "machine", "lunar24.json")
 
 # Physical-widget kinds (panelControls) vs logical-value kinds (parameters).
 K_CONT = "continuous"
@@ -1158,30 +1157,6 @@ RECORD_SCHEMAS = {
     },
 }
 
-# Grandfather the PRE-CORRECTION registry rogue ids (Codex c7089521 item #5). The allowlist is
-# COMPUTED here, not hard-coded, so a rebuild reproduces the manifest exactly rather than popping a
-# stale hand-entered list (Codex 644ea86e reproducibility): it is exactly the set of registry
-# Parameter/Jack ids NOT in the freshly-built target. As Phase B re-ids the id-space toward the
-# target the list SHRINKS to empty, and --require-full requires it empty AND no rogue. The gate's
-# independent legacy ceiling (LEGACY_ROGUE_*_CEILING in check_registry_complete.py) still forbids
-# any try to mask a genuinely-NEW rogue: an allow entry for an id outside that ceiling fails there.
-def _registry_rogues(L, endpoints):
-    """Return ({param rogues}, {jack rogues}) = registry ids not in the freshly-built target."""
-    with open(SPEC, encoding="utf-8") as fh:
-        reg = json.load(fh)
-    reg_param_sids = set()
-    reg_jack_sids = set()
-    for mo in reg.get("modules", []):
-        reg_jack_sids |= {j.get("stable_id") for j in mo.get("jacks", [])}
-        reg_param_sids |= {p.get("stable_id") for p in mo.get("parameters", [])}
-    for pr in reg.get("programs", []):
-        reg_param_sids |= {p.get("stable_id") for p in pr.get("parameters", [])}
-
-    target_param_sids = {p["stable_id"] for p in L.params}
-    target_patchable = {e["stable_id"] for e in endpoints if e.get("patchable")}
-    return sorted(reg_param_sids - target_param_sids), sorted(reg_jack_sids - target_patchable)
-
-
 def main():
     with open(MANIFEST, encoding="utf-8") as fh:
         m = json.load(fh)
@@ -1218,18 +1193,40 @@ def main():
                  "jacks."),
         "endpoints": pjt.get("endpoints", []),
     }
-    allow_params, allow_jacks = _registry_rogues(L, pjt.get("endpoints", []))
+    # Migration is complete (Codex msg 064cfa6e): the allowlist is LOCKED EMPTY and never computed
+    # from the implementation, so the manifest stays a one-way target->overlay source and any
+    # registry id not in the target is a NEW rogue (always-on fail, plus the legacy-ceiling
+    # backstop). A re-introduced pre-correction id outside the target cannot be silently re-allowed.
     m["migrationAllowlist"] = {
-        "note": "Monotonically-shrinking migration allowlist for pre-correction registry rogue ids. "
-                "The gate is ALWAYS-ON: any registry param/jack not in the target and not in this "
-                "list is a NEW rogue and fails even without --require-full. --require-full requires "
-                "the list empty AND no rogue. Computed from the actual registry, never hand-set.",
-        "parameters": allow_params,
-        "jacks": allow_jacks,
+        "note": "Permanently-empty migration allowlist. Migration is complete and it is LOCKED EMPTY "
+                "(Codex msg 064cfa6e): never computed from the implementation, so the manifest does "
+                "not reverse-depend on lunar24.json and stays a one-way target->overlay source. Any "
+                "registry param/jack not in the target is a NEW rogue and fails the always-on gate; "
+                "the legacy ceiling backstop also forbids re-whitelisting a re-introduced "
+                "pre-correction id outside the target.",
+        "parameters": [],
+        "jacks": [],
     }
 
+    out = _dump(m)
+    if "--check" in sys.argv:
+        # Non-writing reproducibility guard (Codex msg 064cfa6e): a hand-edited manifest that the
+        # builder would erase/rewrite is caught here so it can never silently drift from the last
+        # builder run. Mirrors generate_registry.py --check and is wired into CTest.
+        with open(MANIFEST, encoding="utf-8") as fh:
+            on_disk = fh.read()
+        if on_disk == out:
+            print("manifest in sync with builder output")
+            return 0
+        print("ERROR: p0_inventory_manifest.json would be rewritten by p0_regions_build.py",
+              file=sys.stderr)
+        for line in difflib.unified_diff(on_disk.splitlines(), out.splitlines(),
+                                         "on-disk", "rebuilt", lineterm="", n=1):
+            print("  " + line, file=sys.stderr)
+        return 1
+
     with open(MANIFEST, "w", encoding="utf-8") as fh:
-        fh.write(_dump(m))
+        fh.write(out)
 
     print("panelControls:", len(tgt["panelControls"]),
           "parameters:", len(tgt["parameters"]),
