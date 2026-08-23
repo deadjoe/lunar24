@@ -67,6 +67,7 @@ MANIFEST_PATH = os.path.join(ROOT, "spec", "machine", "p0_inventory_manifest.jso
 VALID_STATUS = {"confirmed", "provisional"}
 VALID_DIR = {"input", "output"}
 VALID_KIND = {"audio", "control", "gate"}
+VALID_CONTROL_KIND = {"continuous", "selector-toggle", "momentary-touch-event"}
 PROGRAM_SLOTS = (1, 2, 3)
 
 
@@ -117,6 +118,8 @@ def check(spec, manifest, require_full=False):
     modules = tgt.get("modules", [])
     terminals = tgt.get("terminals", [])   # internal I/O termination blocks (ext_in/piezzo/distortion/out)
     programs = tgt.get("programs", [])
+    controls = tgt.get("controls", [])                        # one row per visible/operable item
+    control_regions = tgt.get("controlRegions", [])           # panel region subtotals
     pjt = tgt.get("paramsJackTargets") or {}
     params = pjt.get("params", [])
     endpoints = pjt.get("endpoints", [])
@@ -137,6 +140,7 @@ def check(spec, manifest, require_full=False):
 
     dup_check(modules, "module")
     dup_check(programs, "program")
+    dup_check(controls, "control")
     dup_check(params, "param")
     dup_check(endpoints, "endpoint")
     dup_check(norm_routes, "normalized route")
@@ -180,14 +184,15 @@ def check(spec, manifest, require_full=False):
                 if (c, slot) not in grid:
                     problems.append(f"manifest cartridge {c!r}: must list all {len(PROGRAM_SLOTS)} slots "
                                     f"(missing slot {slot})")
+    program_stable_ids = {p["stable_id"] for p in programs if p.get("stable_id")}
 
-    # ---- params + endpoints: per-item, owned by a target module -------------
+    # ---- params + endpoints: per-item, owned by a target module (or program) --
     for it in params:
         if not (it.get("stable_id") and it.get("owner")):
             problems.append(f"manifest param {it.get('stable_id')!r}: needs stable_id+owner")
-        if it.get("owner") not in module_ids:
+        if it.get("owner") not in module_ids and it.get("owner") not in program_stable_ids:
             problems.append(f"manifest param {it.get('stable_id')!r}: owner {it.get('owner')!r} "
-                            f"not a target module")
+                            f"not a target module or program")
         if not provenance_ok(it):
             problems.append(f"manifest param {it.get('stable_id')!r}: incomplete evidence")
 
@@ -243,6 +248,70 @@ def check(spec, manifest, require_full=False):
         if r.get("kind") not in VALID_KIND:
             problems.append(f"fixed route {r.get('stable_id')!r}: kind must be one of {sorted(VALID_KIND)}")
 
+    # ---- controls: per-item operable surface + Persistence subset -------------
+    # controls[] is the independent per-region ledger of EVERY visible/operable item
+    # (continuous | selector-toggle | momentary-touch-event). params[] must equal the
+    # persistable subset of controls[]; a Parameter is not a parallel category but a
+    # shrink of the control surface (Codex msg 66a83ca0 item #1).
+    for c in controls:
+        sid = c.get("stable_id")
+        if not (sid and c.get("owner")):
+            problems.append(f"manifest control {sid!r}: needs stable_id+owner")
+            continue
+        if c.get("owner") not in allowed_owners and c.get("owner") not in program_stable_ids:
+            problems.append(f"manifest control {sid!r}: owner {c.get('owner')!r} is not a target "
+                            f"module, terminal, or program")
+        if c.get("kind") not in VALID_CONTROL_KIND:
+            problems.append(f"manifest control {sid!r}: kind {c.get('kind')!r} must be one of "
+                            f"{sorted(VALID_CONTROL_KIND)}")
+        if not isinstance(c.get("persistable"), bool):
+            problems.append(f"manifest control {sid!r}: persistable must be a bool")
+        if not c.get("region"):
+            problems.append(f"manifest control {sid!r}: missing region")
+        if not provenance_ok(c):
+            problems.append(f"manifest control {sid!r}: incomplete evidence")
+
+    # Region subtotal == inventory: each region's declared count equals the controls it owns,
+    # and the subtotals sum to the full controls[] set (no total-patching).
+    region_counts = {}
+    for c in controls:
+        region_counts[c.get("region")] = region_counts.get(c.get("region"), 0) + 1
+    by_rid = {}
+    for r in control_regions:
+        rid = r.get("id")
+        by_rid[rid] = r
+        if not (rid and r.get("module") and isinstance(r.get("count"), int)):
+            problems.append(f"control region {rid!r}: needs id+module+count")
+            continue
+        if r.get("module") not in allowed_owners and r.get("module") not in program_stable_ids:
+            problems.append(f"control region {rid!r}: module {r.get('module')!r} is not a target "
+                            f"module, terminal, or program")
+        if not provenance_ok(r):
+            problems.append(f"control region {rid!r}: incomplete evidence")
+        if region_counts.get(rid, 0) != r["count"]:
+            problems.append(f"control region {rid!r}: subtotal {r['count']} != inventory "
+                            f"{region_counts.get(rid, 0)}")
+    if not by_rid and controls:
+        problems.append("controls[] present but no controlRegions[] subtotals")
+    elif by_rid:
+        undeclared = sorted(set(region_counts) - set(by_rid))
+        vacant = sorted(set(by_rid) - set(region_counts))
+        if undeclared:
+            problems.append(f"control regions with no declared subtotal: {undeclared}")
+        if vacant:
+            problems.append(f"declared control regions with no inventory: {vacant}")
+    total_counted = sum(r["count"] for r in control_regions if isinstance(r.get("count"), int))
+    if controls and total_counted != len(controls):
+        problems.append(f"controlRegions subtotal {total_counted} != controls[] length {len(controls)}")
+
+    # Parameter == persistable subset of controls[].
+    persistable_sids = {c["stable_id"] for c in controls if c.get("persistable")}
+    param_sids = {p["stable_id"] for p in params}
+    if param_sids != persistable_sids:
+        extra = sorted(param_sids - persistable_sids)
+        missing = sorted(persistable_sids - param_sids)
+        problems.append(f"params[] != persistable control subset (extra={extra} missing={missing})")
+
     # ---- present-but-empty module (always-on) ------------------------------
     param_owners = {p["_stable_owner"] for p in reg.parameters}
     jack_owners = {j["_module_stable"] for j in reg.jacks}
@@ -288,13 +357,17 @@ def check(spec, manifest, require_full=False):
     # ---- per-module transcription gap (params/endpoints) -------------------
     param_owners_target = {p["owner"] for p in params}
     endpoint_owners_target = {e["owner"] for e in endpoints}
+    control_owners_target = {c["owner"] for c in controls}
     modules_missing_params = sorted(module_ids - param_owners_target)
     modules_missing_endpoints = sorted(module_ids - endpoint_owners_target)
-    # A module's inventory is TRANSCRIBED if the target names ANY param OR endpoint for it:
-    # `voices` (momentary drone keys) legitimately has zero params but does have gate/audio
-    # endpoints; `mixer` has no patchable jacks but has PAN/VOL params + internal audio
-    # endpoints. So an untranscribed module is one with NO param AND NO endpoint in the target.
-    modules_no_inventory = sorted(module_ids - (param_owners_target | endpoint_owners_target))
+    # A module's inventory is TRANSCRIBED if the target names ANY param, endpoint, OR control
+    # for it: `voices` (momentary drone keys) legitimately has zero persistable params but has
+    # gate/audio endpoints AND 6 momentary trigger controls; `mixer` has no patchable jacks but
+    # has PAN/VOL controls + internal audio endpoints. So an untranscribed module is one with
+    # NO param AND NO endpoint AND NO control in the target.
+    modules_no_inventory = sorted(module_ids - (param_owners_target | endpoint_owners_target
+                                                | control_owners_target))
+    modules_no_controls = sorted(module_ids - control_owners_target)
 
     def cover(target, present):
         return {"target": len(target), "present": len(target & present), "gap": sorted(target - present)}
@@ -306,6 +379,7 @@ def check(spec, manifest, require_full=False):
         },
         "manifest": {
             "modules": len(modules), "terminals": len(terminals), "programs": len(programs),
+            "controls": len(controls), "controlRegions": len(control_regions),
             "paramsTranscribed": len(params), "endpointsTranscribed": len(endpoints),
             "normalizedRoutes": len(norm_routes), "fixedRoutes": len(fixed_routes),
             "requiredFixedRoutes": len(required_fixed), "mustComplete": len(must_complete),
@@ -313,6 +387,8 @@ def check(spec, manifest, require_full=False):
         "modules": cover(module_ids, present_modules),
         "programIdentities": cover(target_program_ids, present_programs),
         "normalizedRoutes": cover(target_norm_routes, present_routes),
+        "controls": {"transcribed": len(controls), "persistable": len(persistable_sids),
+                     "regions": len(control_regions)},
         "params": {"target": len(params), "transcribed": len(params), "present": len(reg.parameters),
                    "missingModules": modules_missing_params},
         "endpoints": {"target": len(endpoints), "transcribed": len(endpoints), "present": len(reg.jacks),
@@ -336,8 +412,11 @@ def check(spec, manifest, require_full=False):
         if coverage["normalizedRoutes"]["gap"]:
             not_full.append("normalized-route gaps=%s" % coverage["normalizedRoutes"]["gap"])
         if modules_no_inventory:
-            not_full.append("module inventories untranscribed (no param/endpoint in target) "
+            not_full.append("module inventories untranscribed (no param/endpoint/control in target) "
                             "for modules=%s" % modules_no_inventory)
+        if modules_no_controls:
+            not_full.append("control regions untranscribed (no control in target) "
+                            "for modules=%s" % modules_no_controls)
         if coverage["fixedRoutes"]["gap"]:
             not_full.append("required fixed routes missing=%s" % coverage["fixedRoutes"]["gap"])
         if not_full:
@@ -353,6 +432,7 @@ def format_report(coverage):
                  "%(routes)d routes / %(programs)d programs" % reg)
     m = coverage["manifest"]
     lines.append("manifest: %(modules)d modules / %(terminals)d terminals / %(programs)d programs / "
+                 "%(controls)d controls / %(controlRegions)d control-regions / "
                  "%(paramsTranscribed)d params / %(endpointsTranscribed)d endpoints / "
                  "%(normalizedRoutes)d normalized / %(fixedRoutes)d fixed / "
                  "%(requiredFixedRoutes)d required-fixed / %(mustComplete)d mustComplete" % m)
@@ -361,6 +441,9 @@ def format_report(coverage):
     lines.append("  modules          : %(target)d / %(present)d / gaps=%(gap)s" % coverage["modules"])
     lines.append("  program identities: %(target)d / %(present)d / gaps=%(gap)s" % coverage["programIdentities"])
     lines.append("  normalized routes: %(target)d / %(present)d / gaps=%(gap)s" % coverage["normalizedRoutes"])
+    ct = coverage["controls"]
+    lines.append("  controls         : transcribed=%(transcribed)d persistable=%(persistable)d "
+                 "regions=%(regions)d" % ct)
     lines.append("  params           : target=%(target)d present=%(present)d missingModules=%(missingModules)s"
                  % coverage["params"])
     ep = coverage["endpoints"]

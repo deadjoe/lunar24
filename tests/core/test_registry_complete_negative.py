@@ -190,10 +190,86 @@ def main():
     if not has(problems, "dangling"):
         raise SystemExit("dangling fixed-route endpoint not reported as dangling: %r" % problems)
 
+    # 17. duplicate control stable_id -> 重件 (ledger must stay per-item; no synthesis).
+    dupc = copy.deepcopy(manifest)
+    dupc["target"]["controls"].append(copy.deepcopy(dupc["target"]["controls"][0]))
+    problems, _ = gate.check(spec, dupc)
+    if not has(problems, "control duplicate stable_id"):
+        raise SystemExit("duplicate control not flagged as 重件: %r" % problems)
+
+    # 18. control owner outside module|terminal|program -> rejected.
+    badown = copy.deepcopy(manifest)
+    badown["target"]["controls"][0]["owner"] = "not_a_module"
+    problems, _ = gate.check(spec, badown)
+    if not has(problems, "not a target module, terminal, or program"):
+        raise SystemExit("control owner outside module|terminal|program not flagged: %r" % problems)
+
+    # 19. control with an invalid kind -> rejected (kind enum is closed).
+    badkind = copy.deepcopy(manifest)
+    badkind["target"]["controls"][0]["kind"] = "slider"
+    problems, _ = gate.check(spec, badkind)
+    if not has(problems, "must be one of"):
+        raise SystemExit("invalid control kind not flagged: %r" % problems)
+
+    # 20. control with non-bool persistable -> rejected (Parameter is a clean subset).
+    badpers = copy.deepcopy(manifest)
+    badpers["target"]["controls"][0]["persistable"] = "yes"
+    problems, _ = gate.check(spec, badpers)
+    if not has(problems, "persistable must be a bool"):
+        raise SystemExit("non-bool persistable not flagged: %r" % problems)
+
+    # 21. region subtotal != inventory (the binding ledger check; no total-patching).
+    badsub = copy.deepcopy(manifest)
+    badsub["target"]["controlRegions"][0]["count"] += 1
+    problems, _ = gate.check(spec, badsub)
+    if not has(problems, "!= inventory"):
+        raise SystemExit("region subtotal != inventory not flagged: %r" % problems)
+    if not has(problems, "controlRegions subtotal"):
+        raise SystemExit("region subtotal sum mismatch not flagged: %r" % problems)
+
+    # 22. params[] != persistable control subset -> Parameter is NOT a shrink of controls[].
+    drift = copy.deepcopy(manifest)
+    keeper = [c for c in drift["target"]["controls"] if c["persistable"]][0]["stable_id"]
+    drift["target"]["paramsJackTargets"]["params"] = [
+        p for p in drift["target"]["paramsJackTargets"]["params"]
+        if p["stable_id"] != keeper]
+    problems, _ = gate.check(spec, drift)
+    if not has(problems, "params[] != persistable control subset"):
+        raise SystemExit("params != persistable subset not flagged: %r" % problems)
+
+    # 23. controls[] with no controlRegions[] subtotals -> rejected (can't hide behind a total).
+    noregions = copy.deepcopy(manifest)
+    noregions["target"]["controlRegions"] = []
+    problems, _ = gate.check(spec, noregions)
+    if not has(problems, "no controlRegions[] subtotals"):
+        raise SystemExit("controls[] without region subtotals not flagged: %r" % problems)
+
+    # 24. control region whose module is not a valid owner -> rejected.
+    badregmod = copy.deepcopy(manifest)
+    badregmod["target"]["controlRegions"][0]["module"] = "not_a_module"
+    problems, _ = gate.check(spec, badregmod)
+    if not has(problems, "is not a target module, terminal, or program"):
+        raise SystemExit("control region module outside allowed owners not flagged: %r" % problems)
+
+    # 25. ref-only control evidence -> rejected (ledger rows need real provenance).
+    badcvev = copy.deepcopy(manifest)
+    badcvev["target"]["controls"][0]["evidence"] = {"ref": "x"}
+    problems, _ = gate.check(spec, badcvev)
+    if not has(problems, "incomplete evidence"):
+        raise SystemExit("ref-only control evidence not flagged: %r" % problems)
+
+    # 26. ref-only control-region evidence -> rejected (region subtotals are transcribed too).
+    badrgev = copy.deepcopy(manifest)
+    badrgev["target"]["controlRegions"][0]["evidence"] = {"ref": "x"}
+    problems, _ = gate.check(spec, badrgev)
+    if not has(problems, "incomplete evidence"):
+        raise SystemExit("ref-only control-region evidence not flagged: %r" % problems)
+
     print("OK: registry completeness gate rejects each defect for its intended reason; "
           "baseline passes; --require-full trips on the known gaps; impl ⊆ target, "
           "fixed-chain freeze, ORCHE provisional, terminal-owner and dangling-fixed-endpoint "
-          "are all gated.")
+          "are all gated; the control ledger enforces per-item 重件, owner/kind/persistable "
+          "shapes, region-subtotal==inventory, and Parameter==persistable-driven subset.")
     return 0
 
 
