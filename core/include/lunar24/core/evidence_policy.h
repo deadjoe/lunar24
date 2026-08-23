@@ -28,8 +28,9 @@ namespace lunar24::core {
 //
 // The three signal-class facts (recommended signal use, polarity, AC/DC coupling)
 // each carry their own provenance too. They are NOT inferred from a stable-id
-// suffix: where the manual/panel does not evidence the value, the descriptor must
-// carry the `unknown` enum value with `unverified` provenance (Codex 2026-08-23).
+// suffix. unknown-enum biconditional (Codex 587f5e72): value == `unknown` ⇔ provenance
+// == `unverified` — a concrete value never carries `unverified` (that would be a guess
+// presented as a fact), and an `unknown` is never confirmed/provisional.
 struct FieldEvidence {
   EvidenceStatus nominalRange = EvidenceStatus::unverified;    // nominal voltage range
   EvidenceStatus toleratedRange = EvidenceStatus::unverified;  // absolute tolerant limit
@@ -72,9 +73,10 @@ struct ParameterFieldEvidence {
 
 // Per-field evidence status for a ProgramDescriptor (Codex 2026-08-23). A
 // program's effect `family` and its `selfOscillating` three-state are independent
-// audited facts: a `family` or `selfOscillating` recorded as `unknown` MUST carry
-// `unverified` provenance, and a concrete value is only reported where the manual /
-// effector-family catalog evidences it.
+// audited facts, governed by the same unknown-enum biconditional (587f5e72):
+// `family`/`selfOscillating` == `unknown` ⇔ provenance == `unverified`, and a concrete
+// value (a real family, no/yes) carries only confirmed/provisional provenance. Both
+// keys are mandatory and each must hold a legal status.
 struct ProgramFieldEvidence {
   EvidenceStatus family = EvidenceStatus::unverified;            // effect family (reverb, pitched_delay, ...)
   EvidenceStatus selfOscillating = EvidenceStatus::unverified;   // self-oscillation assertion

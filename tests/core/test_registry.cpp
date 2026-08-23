@@ -68,19 +68,30 @@ static bool valid_prog_fe(const core::ProgramFieldEvidence& pfe) {
   return valid_status(pfe.family) && valid_status(pfe.selfOscillating);
 }
 
-// unknown-enum contract: an enum value of `unknown` MUST carry unverified field
-// provenance (an unknown is never a confirmed/provisional fact).
-static bool unknown_implies_unverified(core::SignalType v, core::EvidenceStatus ev) {
-  return v != core::SignalType::unknown || ev == core::EvidenceStatus::unverified;
+// unknown-enum biconditional (Codex 587f5e72): value==unknown ⇔ evidence==unverified.
+// Forward: an `unknown` value is never a confirmed/provisional fact. Reverse: a concrete
+// value (audio/cv/gate/clock/unipolar/bipolar/ac/dc/no/yes, or a family) can carry only
+// confirmed/provisional provenance — never `unverified`, which would present a guess as a
+// fact. Both directions are enforced, not just unknown→unverified.
+static bool unknown_evidence_consistent(core::SignalType v, core::EvidenceStatus ev) {
+  return v == core::SignalType::unknown ? ev == core::EvidenceStatus::unverified
+                                        : ev != core::EvidenceStatus::unverified;
 }
-static bool unknown_implies_unverified(core::Polarity v, core::EvidenceStatus ev) {
-  return v != core::Polarity::unknown || ev == core::EvidenceStatus::unverified;
+static bool unknown_evidence_consistent(core::Polarity v, core::EvidenceStatus ev) {
+  return v == core::Polarity::unknown ? ev == core::EvidenceStatus::unverified
+                                      : ev != core::EvidenceStatus::unverified;
 }
-static bool unknown_implies_unverified(core::Coupling v, core::EvidenceStatus ev) {
-  return v != core::Coupling::unknown || ev == core::EvidenceStatus::unverified;
+static bool unknown_evidence_consistent(core::Coupling v, core::EvidenceStatus ev) {
+  return v == core::Coupling::unknown ? ev == core::EvidenceStatus::unverified
+                                      : ev != core::EvidenceStatus::unverified;
 }
-static bool unknown_implies_unverified(core::SelfOscillating v, core::EvidenceStatus ev) {
-  return v != core::SelfOscillating::unknown || ev == core::EvidenceStatus::unverified;
+static bool unknown_evidence_consistent(core::SelfOscillating v, core::EvidenceStatus ev) {
+  return v == core::SelfOscillating::unknown ? ev == core::EvidenceStatus::unverified
+                                             : ev != core::EvidenceStatus::unverified;
+}
+static bool unknown_evidence_consistent(std::string_view family, core::EvidenceStatus ev) {
+  return family == "unknown" ? ev == core::EvidenceStatus::unverified
+                             : ev != core::EvidenceStatus::unverified;
 }
 
 static void frozen_counts() {
@@ -133,7 +144,9 @@ static void program_ranges_within_params() {
     CHECK(!p.name.empty());
     CHECK(valid_so(p.selfOscillating));
     CHECK(valid_prog_fe(p.fieldEvidence));  // per-field provenance (family, selfOscillating)
-    CHECK(unknown_implies_unverified(p.selfOscillating, p.fieldEvidence.selfOscillating));
+    // unknown ⇔ unverified biconditional for both program facts (not just one-way).
+    CHECK(unknown_evidence_consistent(p.family, p.fieldEvidence.family));
+    CHECK(unknown_evidence_consistent(p.selfOscillating, p.fieldEvidence.selfOscillating));
     next += p.paramCount;
   }
   CHECK(next == core::kParameterCount);
@@ -200,11 +213,12 @@ static void jacks_are_valid() {
     CHECK(valid_status(j.status));
     CHECK(valid_fe(j.fieldEvidence));       // per-field provenance split (07 §3, §10)
     CHECK(!j.evidence.source.empty());
-    // unknown-enum contract (Codex 2026-08-23): a signal-class enum value of
-    // `unknown` must carry unverified field provenance — never confirmed/provisional.
-    CHECK(unknown_implies_unverified(j.signalType, j.fieldEvidence.signalType));
-    CHECK(unknown_implies_unverified(j.polarity, j.fieldEvidence.polarity));
-    CHECK(unknown_implies_unverified(j.coupling, j.fieldEvidence.coupling));
+    // unknown-enum biconditional (Codex 587f5e72): value==unknown ⇔ evidence==unverified.
+    // Both directions enforced — an unknown must be unverified AND a concrete value must be
+    // confirmed/provisional (never unverified).
+    CHECK(unknown_evidence_consistent(j.signalType, j.fieldEvidence.signalType));
+    CHECK(unknown_evidence_consistent(j.polarity, j.fieldEvidence.polarity));
+    CHECK(unknown_evidence_consistent(j.coupling, j.fieldEvidence.coupling));
   }
 }
 

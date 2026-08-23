@@ -1433,16 +1433,25 @@ def check(spec, manifest, require_full=False):
                 elif fe[fk] not in FE_STATUS:
                     problems.append(f"parameter {p['stable_id']}: fieldEvidence.{fk} bad status "
                                     f"{fe[fk]!r}")
-    # ---- unknown-enum / evidence contract (Codex 2026-08-23) ---------------------
+    # ---- unknown-enum / evidence contract (Codex 2026-08-23, 587f5e72) -----------
     # Signal class (signalType/polarity/coupling) and program family/selfOscillating are
-    # their own audited facts. An `unknown` value MUST carry `unverified` provenance (an
-    # unknown can't be a confirmed/provisional fact). Unlike a selector parameter — whose
-    # CONSUMED value must be documented — a jack keeps a best-current concrete value with
-    # unverified provenance when the manual is silent; the value is a guess, not a fact.
+    # their own audited facts. The rule is a BICONDITIONAL: value == unknown ⇔ evidence ==
+    # unverified. Forward: an `unknown` value can never be a confirmed/provisional fact.
+    # Reverse: a concrete value (audio/cv/gate/clock/unipolar/bipolar/ac/dc/reverb/...) can
+    # never carry `unverified` provenance — it is either a documented hardware fact
+    # (confirmed) or a software-normalized mapping (provisional), never a guess. Both
+    # directions are rejected below.
     JACK_FE_SIGNAL = ("signalType", "polarity", "coupling")
     SIG_TYPES = {"audio", "cv", "gate", "clock", "unknown"}
     POL_TYPES = {"unipolar", "bipolar", "unknown"}
     COUP_TYPES = {"ac", "dc", "unknown"}
+
+    def unknown_evidence_consistent(value, st):
+        """unknown ⇔ unverified; a concrete value requires confirmed/provisional."""
+        if value == "unknown":
+            return st == "unverified"
+        return st != "unverified"
+
     for j in reg.jacks:
         fe = j.get("fieldEvidence")
         if not isinstance(fe, dict):
@@ -1456,27 +1465,35 @@ def check(spec, manifest, require_full=False):
             st = fe.get(fk)
             if st not in FE_STATUS:
                 problems.append(f"jack {j['stable_id']}: fieldEvidence.{fk} bad status {st!r}")
-            elif j.get(fk) == "unknown" and st != "unverified":
+            elif not unknown_evidence_consistent(j.get(fk), st):
                 problems.append(
-                    f"jack {j['stable_id']}: {fk}=unknown MUST carry fieldEvidence.{fk}=unverified "
-                    f"(not {st!r}); an unknown value is never a confirmed/provisional fact")
+                    f"jack {j['stable_id']}: {fk}={j.get(fk)!r} with fieldEvidence.{fk}={st!r} "
+                    f"violates the unknown ⇔ unverified biconditional (an unknown value needs "
+                    f"unverified provenance; a concrete value needs confirmed/provisional, "
+                    f"never unverified)")
     SO_TYPES = {"unknown", "no", "yes"}
     for prog in reg.programs:
         pfe = prog.get("fieldEvidence")
         if not isinstance(pfe, dict):
             problems.append(f"program {prog['stable_id']}: missing fieldEvidence audit object")
             continue
-        if prog.get("family") == "unknown" and pfe.get("family") != "unverified":
-            problems.append(
-                f"program {prog['stable_id']}: family=unknown MUST carry fieldEvidence.family="
-                f"unverified (not {pfe.get('family')!r})")
+        # both keys must be present, each with a legal status
+        for pk in ("family", "selfOscillating"):
+            pst = pfe.get(pk)
+            if pst not in FE_STATUS:
+                problems.append(f"program {prog['stable_id']}: fieldEvidence.{pk} missing or bad "
+                                f"status {pst!r}")
         if prog.get("selfOscillating") not in SO_TYPES:
             problems.append(f"program {prog['stable_id']}: selfOscillating "
                             f"{prog.get('selfOscillating')!r} not in {sorted(SO_TYPES)}")
-        if prog.get("selfOscillating") == "unknown" and pfe.get("selfOscillating") != "unverified":
-            problems.append(
-                f"program {prog['stable_id']}: selfOscillating=unknown MUST carry fieldEvidence."
-                f"selfOscillating=unverified (not {pfe.get('selfOscillating')!r})")
+        for pk in ("family", "selfOscillating"):
+            st = pfe.get(pk)
+            if st in FE_STATUS and not unknown_evidence_consistent(prog.get(pk), st):
+                problems.append(
+                    f"program {prog['stable_id']}: {pk}={prog.get(pk)!r} with fieldEvidence.{pk}="
+                    f"{st!r} violates the unknown ⇔ unverified biconditional (an unknown value "
+                    f"needs unverified provenance; a concrete value needs confirmed/provisional, "
+                    f"never unverified)")
     sz = {}
     for p in parameters:
         sz[p.get("shape", "scalar")] = sz.get(p.get("shape", "scalar"), 0) + 1

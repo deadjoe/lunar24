@@ -1284,7 +1284,7 @@ def main():
     w_jack["signalType"] = "unknown"
     w_jack["fieldEvidence"]["signalType"] = "confirmed"
     problems, _ = gate.check(w_bad, manifest)
-    if not has(problems, "signalType=unknown MUST carry fieldEvidence.signalType=unverified"):
+    if not has(problems, "violates the unknown ⇔ unverified biconditional"):
         raise SystemExit("unknown-enum jack contract not enforced (unknown+confirmed passed): %r"
                          % problems)
 
@@ -1295,7 +1295,7 @@ def main():
     x_prog["selfOscillating"] = "unknown"
     x_prog["fieldEvidence"]["selfOscillating"] = "confirmed"
     problems, _ = gate.check(x_bad, manifest)
-    if not has(problems, "selfOscillating=unknown MUST carry fieldEvidence.selfOscillating=unverified"):
+    if not has(problems, "violates the unknown ⇔ unverified biconditional"):
         raise SystemExit("unknown-enum program contract not enforced (selfOscillating unknown+confirmed "
                          "passed): %r" % problems)
 
@@ -1306,6 +1306,56 @@ def main():
     problems, _ = gate.check(y_bad, manifest)
     if not has(problems, "coupling"):
         raise SystemExit("jack coupling not validated against the closed enum set: %r" % problems)
+
+    # (z) Codex 587f5e72 REVERSE direction — a CONCRETE signal-class value with UNVERIFIED provenance
+    #     must also fail (the old vco_b.vco_out=cv+unverified shape): a concrete value is either a
+    #     documented hardware fact (confirmed) or a normalized mapping (provisional), never a guess.
+    z_bad = copy.deepcopy(spec)
+    z_jack = reg_jack(z_bad, "vco_b.vco_out")
+    z_jack["signalType"] = "audio"
+    z_jack["fieldEvidence"]["signalType"] = "unverified"
+    problems, _ = gate.check(z_bad, manifest)
+    if not has(problems, "violates the unknown ⇔ unverified biconditional"):
+        raise SystemExit("biconditional REVERSE not enforced (concrete+unverified jack passed): %r"
+                         % problems)
+
+    # (aa) Codex 587f5e72 bypass 1 — a program concrete family with UNVERIFIED provenance must fail.
+    aa_bad = copy.deepcopy(spec)
+    aa_prog = reg_prog(aa_bad, "program.cathedral.1")
+    aa_prog["family"] = "reverb"
+    aa_prog["fieldEvidence"]["family"] = "unverified"
+    problems, _ = gate.check(aa_bad, manifest)
+    if not has(problems, "violates the unknown ⇔ unverified biconditional"):
+        raise SystemExit("biconditional REVERSE for program family not enforced (concrete+unverified "
+                         "family passed): %r" % problems)
+
+    # (ab) Codex 587f5e72 bypass 2 — deleting the family evidence key entirely must fail (both
+    #      ProgramFieldEvidence keys are required, each with a legal status).
+    ab_bad = copy.deepcopy(spec)
+    ab_prog = reg_prog(ab_bad, "program.cathedral.1")
+    del ab_prog["fieldEvidence"]["family"]
+    problems, _ = gate.check(ab_bad, manifest)
+    if not has(problems, "fieldEvidence.family missing or bad status"):
+        raise SystemExit("ProgramFieldEvidence.family key absence not enforced: %r" % problems)
+
+    # (ac) forward direction for program family — family=unknown must not carry a confirmed fact.
+    ac_bad = copy.deepcopy(spec)
+    ac_prog = reg_prog(ac_bad, "program.cathedral.1")
+    ac_prog["family"] = "unknown"
+    ac_prog["fieldEvidence"]["family"] = "confirmed"
+    problems, _ = gate.check(ac_bad, manifest)
+    if not has(problems, "violates the unknown ⇔ unverified biconditional"):
+        raise SystemExit("family=unknown+confirmed not enforced: %r" % problems)
+
+    # (ad) forward direction with PROVISIONAL (not just confirmed) — an unknown value never carries a
+    #      non-unverified provenance, provisional included.
+    ad_bad = copy.deepcopy(spec)
+    ad_prog = reg_prog(ad_bad, "program.cathedral.1")
+    ad_prog["selfOscillating"] = "unknown"
+    ad_prog["fieldEvidence"]["selfOscillating"] = "provisional"
+    problems, _ = gate.check(ad_bad, manifest)
+    if not has(problems, "violates the unknown ⇔ unverified biconditional"):
+        raise SystemExit("selfOscillating=unknown+provisional not enforced: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "

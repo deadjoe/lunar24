@@ -546,7 +546,7 @@
           "stable_id": "vco_b.vco_out",
           "name": "VCO out (VCO B only)",
           "direction": "output",
-          "signalType": "cv",
+          "signalType": "audio",
           "polarity": "bipolar",
           "nominalMin": -5.0,
           "nominalMax": 5.0,
@@ -561,7 +561,7 @@
             "threshold": "unverified",
             "saturation": "unverified",
             "transfer": "unverified",
-            "signalType": "unverified",
+            "signalType": "confirmed",
             "polarity": "confirmed",
             "coupling": "unverified"
           }
