@@ -73,7 +73,10 @@ ACT_ENC_PRESS = "encoder-press"
 ACT_ENC_LONG = "encoder-long-press"
 ACT_INIT = "init"
 ACT_SAVE = "save"
-ACTION_KINDS = {ACT_TRIGGER, ACT_ENC_ROTATE, ACT_ENC_PRESS, ACT_ENC_LONG, ACT_INIT, ACT_SAVE}
+ACT_LOAD = "load"
+ACT_INITIALISE = "initialise"
+ACTION_KINDS = {ACT_TRIGGER, ACT_ENC_ROTATE, ACT_ENC_PRESS, ACT_ENC_LONG,
+                ACT_INIT, ACT_SAVE, ACT_LOAD, ACT_INITIALISE}
 
 
 def ev(line_start, line_end=None, site=None):
@@ -101,6 +104,10 @@ def ctx_program(program_id):
 
 def ctx_menu(menu):
     return {"type": "keyboard-menu", "menu": menu}
+
+
+def ctx_mode(mode):
+    return {"type": "keyboard-mode", "mode": mode}
 
 
 class Ledger:
@@ -198,7 +205,10 @@ class Ledger:
 
     def bind(self, from_pc, to_sid, context, op="set", axis=None, index=None,
              status="confirmed", evidence=None):
-        b = {"stable_id": "bnd.%s->%s" % (from_pc, to_sid), "from": from_pc, "to": to_sid,
+        # A binding is uniquely identified by (from, to, index): the same encoder can drive a
+        # shared vector at N distinct held indices, so an indexed write must not collide its id.
+        to_key = "%s[%d]" % (to_sid, index) if index is not None else to_sid
+        b = {"stable_id": "bnd.%s->%s" % (from_pc, to_key), "from": from_pc, "to": to_sid,
              "operation": op, "context": context, "status": status,
              "evidence": evidence or self._cur.get("evidence")}
         if axis is not None:
@@ -434,15 +444,24 @@ def build():
     for i in range(1, 13):
         w = "keyboard.plate_%d" % i
         L._place(L._mk_widget("plate_%d" % i, K_MOM, "NOTE PLATE %d" % i, None, None, None))
-        a = L.add_action("%s.press" % w, "keyboard", "note plate %d press" % i, ACT_TRIGGER,
-                         "keyboard_phys", kb_evid)
-        L.bind(w, a, ctx_global(), op="press", evidence=kb_evid)
+        # A touchplate is a MOMENTARY contact: BOTH a press (down / gate-on) and a release
+        # (up / gate-off) edge — the release threshold is a sensor judgement, not this event
+        # (Codex a23a9618 confirms option A). Core contract distinguishes gate_on/off.
+        ap = L.add_action("%s.press" % w, "keyboard", "note plate %d press" % i, ACT_TRIGGER,
+                          "keyboard_phys", kb_evid)
+        L.bind(w, ap, ctx_global(), op="press", evidence=kb_evid)
+        ar = L.add_action("%s.release" % w, "keyboard", "note plate %d release" % i, ACT_TRIGGER,
+                          "keyboard_phys", kb_evid)
+        L.bind(w, ar, ctx_global(), op="release", evidence=kb_evid)
     for i in range(1, 9):
         w = "keyboard.pushbutton_%d" % i
         L._place(L._mk_widget("pushbutton_%d" % i, K_MOM, "FUNC BUTTON %d" % i, None, None, None))
-        a = L.add_action("%s.press" % w, "keyboard", "function button %d press" % i, ACT_TRIGGER,
-                         "keyboard_phys", kb_evid)
-        L.bind(w, a, ctx_global(), op="press", evidence=kb_evid)
+        ap = L.add_action("%s.press" % w, "keyboard", "function button %d press" % i, ACT_TRIGGER,
+                          "keyboard_phys", kb_evid)
+        L.bind(w, ap, ctx_global(), op="press", evidence=kb_evid)
+        ar = L.add_action("%s.release" % w, "keyboard", "function button %d release" % i, ACT_TRIGGER,
+                          "keyboard_phys", kb_evid)
+        L.bind(w, ar, ctx_global(), op="release", evidence=kb_evid)
     L._place(L._mk_widget("encoder", K_RENC, "ENCODER", None, None,
                           [{"name": "rotate"}, {"name": "press"}, {"name": "long_press"}]))
     for nm, kind in [("rotate", ACT_ENC_ROTATE), ("press", ACT_ENC_PRESS),
@@ -450,6 +469,13 @@ def build():
         a = L.add_action("keyboard.encoder.%s" % nm, "keyboard", "encoder %s" % nm, kind,
                          "keyboard_phys", kb_evid)
         L.bind("keyboard.encoder", a, ctx_global(), op=nm, evidence=kb_evid)
+    for i in range(1, 13):
+        # HOLD plate i then turn the encoder -> edit plate i's element in the shared plate_tune
+        # vector. This is the "held index + turn encoder" gesture (Codex a23a9618 item #2): the
+        # binding is a `set` write into element i (a parameter, not the encoder's rotate event),
+        # and carries an explicit `index` so the gate's index count is no longer zero.
+        L.bind("keyboard.encoder", "keyboard.plate_tune", ctx_global(), op="set", index=i,
+               evidence=kb_evid)
     L.close()
 
     # DRONE VOICES 1-6 pushbutton triggers (module 'voices') : 6 momentary, NO persisted state,
@@ -459,9 +485,12 @@ def build():
     for i in range(1, 7):
         w = "voices.button_%d" % i
         L._place(L._mk_widget("button_%d" % i, K_MOM, "DRONE %d" % i, None, None, None))
-        a = L.add_action("%s.press" % w, "voices", "drone voice %d trigger" % i, ACT_TRIGGER,
-                         "drone_voices", vc_evid)
-        L.bind(w, a, ctx_global(), op="press", evidence=vc_evid)
+        ap = L.add_action("%s.press" % w, "voices", "drone voice %d trigger" % i, ACT_TRIGGER,
+                          "drone_voices", vc_evid)
+        L.bind(w, ap, ctx_global(), op="press", evidence=vc_evid)
+        ar = L.add_action("%s.release" % w, "voices", "drone voice %d release" % i, ACT_TRIGGER,
+                          "drone_voices", vc_evid)
+        L.bind(w, ar, ctx_global(), op="release", evidence=vc_evid)
     L.close()
 
     return L
@@ -549,6 +578,15 @@ KB_CAL_ACTIONS = [
     ("calibration_save", "SAVE CALIBRATION SETTINGS (press+hold 1s)", ACT_SAVE, 1050, 1093),
 ]
 
+# Keyboard PRESETS sub-page actions (Codex item #2): load / save / initialise. `op` is the
+# physical edge on the shared encoder that reaches the sub-page entry (press / long_press /
+# rotate), so each entry has a control binding rather than being an unreachable decoration.
+KB_PRESET_ACTIONS = [
+    ("presets_load", "LOAD PRESET", ACT_LOAD, "press"),
+    ("presets_save", "SAVE PRESET", ACT_SAVE, "long_press"),
+    ("presets_initialise", "INITIALISE PRESET", ACT_INITIALISE, "rotate"),
+]
+
 
 def add_keyboard_state(L):
     """Add the keyboard logical state, binding each to its editing widget.
@@ -568,9 +606,19 @@ def add_keyboard_state(L):
         L.bind("keyboard.encoder", sid, ctx_menu(menu), op="set", evidence=evd)
     for leaf, name, kind, ls, le in KB_CAL_ACTIONS:
         evd = ev(ls, le, kb_site)
-        # Menu-invoked action; intentionally unbound (no single panel widget maps 1:1), which is
-        # allowed for actions (only persisted PARAMETERS must be bound).
-        L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
+        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
+        # "Menu actions need no physical entry" is a false reading: the calibration boot mode is
+        # entered, then the encoder long-press selects INIT/SAVE (Codex a23a9618 item #2/#3). So
+        # BOTH are bound, each under keyboard-mode 'calibration' via encoder long-press — the
+        # release-threshold here is the boot-mode gate, not a substitute for these events.
+        L.bind("keyboard.encoder", a, ctx_mode("calibration"), op="long_press", evidence=evd)
+    # PRESETS sub-page (Codex a23a9618 item #2): LOAD / SAVE / INITIALISE are real physical entries,
+    # not decorative menu labels — each is a distinct action bound to the shared encoder under the
+    # 'presets' menu so the sub-page context set is closed (a menu action still has a control edge).
+    for leaf, name, kind, op in KB_PRESET_ACTIONS:
+        evd = ev(1040, 1045, kb_site)
+        a = L.add_action("keyboard.%s" % leaf, "keyboard", name, kind, "keyboard_state", evd)
+        L.bind("keyboard.encoder", a, ctx_menu("presets"), op=op, evidence=evd)
 
 
 # p23/p24 semantic labels per (cartridge, program). X/Y/Z knob meaning for each of the 39
@@ -724,54 +772,100 @@ def _dump(m):
 # parameters=False: it is momentary-touch only. Terminals are NOT modules; their endpoints are
 # the terminal I/O. Codex msg 06ef6b70 item #3; c7089521 item #5 splits `jacks` into
 # `patchableJacks` vs `internalEndpoints` (mixer / voices have no normal patchable jack).
+#
+# Codex a23a9618 (sixth review) item #5: capabilities must be an INDEPENDENT hand-authored table,
+# NOT derived from the endpoint inventory — if an endpoint is missing from the transcript the
+# capability stays TRUE (as it is on the panel) and the gate's present-but-empty check catches the
+# transcription gap. The frozen table below is the ground fact; it is never re-derived from
+# endpoints.
 CAPABILITIES = {
-    "voices": {"parameters": False, "patchableJacks": True, "internalEndpoints": False,
-               "controls": True},
+    "vco_a":        {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "vco_b":        {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "drone_1":      {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "drone_2":      {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "drone_3":      {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "drone_4":      {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "drone_5":      {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "drone_6":      {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "envelope_a":   {"parameters": True, "patchableJacks": True, "internalEndpoints": False, "controls": True},
+    "envelope_b":   {"parameters": True, "patchableJacks": True, "internalEndpoints": False, "controls": True},
+    "mixer":        {"parameters": True, "patchableJacks": False, "internalEndpoints": True, "controls": True},
+    "vcf":          {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "effector":     {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "lfo_a":        {"parameters": True, "patchableJacks": True, "internalEndpoints": False, "controls": True},
+    "lfo_b":        {"parameters": True, "patchableJacks": True, "internalEndpoints": False, "controls": True},
+    "sequencer":    {"parameters": True, "patchableJacks": True, "internalEndpoints": False, "controls": True},
+    "joystick":     {"parameters": True, "patchableJacks": True, "internalEndpoints": False, "controls": True},
+    "preamp":       {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "env_follower": {"parameters": True, "patchableJacks": True, "internalEndpoints": True,  "controls": True},
+    "keyboard":     {"parameters": True, "patchableJacks": True, "internalEndpoints": False, "controls": True},
+    "voices":       {"parameters": False, "patchableJacks": False, "internalEndpoints": True, "controls": True},
 }
 DEFAULT_CAP = {"parameters": True, "patchableJacks": True, "internalEndpoints": False,
                "controls": True}
 
 
-def inject_capabilities(modules, endpoints):
-    """Derive patchableJacks / internalEndpoints from the hand-transcribed endpoint inventory.
+def inject_capabilities(modules, _endpoints):
+    """Assign the INDEPENDENT hand-authored capability table (never derived from endpoints).
 
-    A module declares `patchableJacks` if it owns >=1 patchable endpoint and
-    `internalEndpoints` if it owns >=1 non-patchable endpoint; both are facts about what was
-    actually transcribed for that module, so the gate can check present-but-empty per capability
-    instead of blanket "every module must have a jack".
+    The `_endpoints` argument is retained for call-site compatibility only; capabilities are the
+    frozen ground fact. The gate cross-checks capability vs what was actually transcribed, so a
+    missing endpoint transcription cannot silently co-turn a capability off.
     """
-    from collections import defaultdict
-    patch = defaultdict(bool)
-    internal = defaultdict(bool)
-    for e in endpoints:
-        if e.get("patchable"):
-            patch[e.get("owner")] = True
-        else:
-            internal[e.get("owner")] = True
     for m in modules:
         sid = m.get("stable_id")
-        cap = dict(CAPABILITIES.get(sid, DEFAULT_CAP))
-        cap["patchableJacks"] = bool(patch.get(sid))
-        cap["internalEndpoints"] = bool(internal.get(sid))
-        m["capabilities"] = cap
+        m["capabilities"] = CAPABILITIES.get(sid, dict(DEFAULT_CAP))
 
 
-# Top-level record payload schemas for the two non-scalar keyboard records (Codex c7089521
-# item #1/#2). Declared once; the 4 presets reference the single keyboard_preset record and
-# explicitly exclude clock_bpm.
+# Top-level record payload schemas for the non-scalar keyboard records (Codex c7089521 item
+# #1/#2). A record type is only closed once every `of`/`element` reference resolves to a real
+# schema and its body is validated, so `keyboard_seq.element` and `keyboard_preset.payload.of` both
+# point at defined types (Codex a23a9618 item #1) — no inline anonymous maps, no dangling strings.
+
+# The preset payload is the FUNCTIONAL keyboard param set: everything a preset stores, EXCLUDING
+# clock BPM, the calibration block, and presets A-D themselves (the latter avoids self-recursion
+# and erroneous storage of a preset inside a preset).
+KEYBOARD_NON_PRESET = {
+    "clock_bpm",
+    "calibration_v_oct", "calibration_pressure", "dac_vref",
+    "touch_threshold", "release_threshold", "pressure_min", "pressure_max",
+    "mpr121_charge", "mpr121_discharge", "debounce", "encoder_direction",
+    "preset_a", "preset_b", "preset_c", "preset_d",
+}
+
+
+def _preset_params():
+    return ["keyboard.%s" % leaf for leaf, *_ in KEYBOARD_STATE_ROWS
+            if leaf not in KEYBOARD_NON_PRESET]
+
+
 RECORD_SCHEMAS = {
+    "keyboard_step": {
+        "note": "One sequencer step: the closed element type of keyboard_seq.steps.",
+        "kind": "record",
+        "fields": [{"name": "note", "type": "number"},
+                   {"name": "value", "type": "voltage"},
+                   {"name": "gate", "type": "bool"}],
+    },
     "keyboard_seq": {
-        "note": "Sequencer step data: up to 16 steps of note/value + gate. The seq_editor menu "
-                "is NOT a parameter; the state is this record.",
+        "note": "Sequencer step data (seq_editor), up to 16 steps of note/value + gate. element is "
+                "a CLOSED reference to keyboard_step, not an inline anonymous map.",
+        "kind": "record",
         "fields": [{"name": "steps", "type": "array", "count": 16,
-                    "element": {"note": "number", "value": "voltage", "gate": "bool"}}],
+                    "element": {"name": "step", "type": "record", "of": "keyboard_step"}}],
+    },
+    "keyboard_params_minus_clock": {
+        "note": "The functional keyboard param-set a preset stores: all keyboard parameters "
+                "EXCLUDING clock_bpm, the calibration block, and presets A-D (avoids recursion + "
+                "erroneous storage). Closed param-set type referenced by keyboard_preset.payload.",
+        "kind": "params",
+        "params": _preset_params(),
     },
     "keyboard_preset": {
-        "note": "Keyboard parameter payload for presets A-D: contains all keyboard parameters "
-                "EXCLUDING clock BPM (manual L1040-1045).",
-        "fields": [{"name": "payload", "type": "record",
-                    "of": "keyboard_params_minus_clock"}],
-        "excludes": ["keyboard.clock_bpm"],
+        "note": "Keyboard parameter payload for presets A-D (manual L1040-1045).",
+        "kind": "record",
+        "fields": [{"name": "payload", "type": "record", "of": "keyboard_params_minus_clock"}],
+        "excludes": ["keyboard.%s" % leaf for leaf in sorted(KEYBOARD_NON_PRESET)],
     },
 }
 

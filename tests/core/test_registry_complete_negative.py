@@ -505,6 +505,93 @@ def main():
         raise SystemExit("declared region with no widgets not flagged (declaredRegionIds-actualRegionIds): "
                          "%r" % problems)
 
+    # 53. momentary-touch missing release edge: a plate must express BOTH down (press) and up
+    #     (release) edges (Codex a23a9618 option A). Dropping the release binding must fail.
+    norelease = copy.deepcopy(manifest)
+    norelease["target"]["controlBindings"] = [
+        b for b in norelease["target"]["controlBindings"]
+        if b["stable_id"] != "bnd.keyboard.plate_1->keyboard.plate_1.release"
+    ]
+    problems, _ = gate.check(spec, norelease)
+    if not has(problems, "momentary-touch missing 'release' edge"):
+        raise SystemExit("plate with the release edge removed not flagged (needs both press/release): %r" % problems)
+
+    # 54. declared encoder op not wired: the widget declares press but every press binding from it
+    #     is deleted (the encoder fires press for both encoder.press and the presets_load action).
+    nopress = copy.deepcopy(manifest)
+    nopress["target"]["controlBindings"] = [
+        b for b in nopress["target"]["controlBindings"]
+        if not (b["from"] == "keyboard.encoder" and b["operation"] == "press")
+    ]
+    problems, _ = gate.check(spec, nopress)
+    if not has(problems, "declared operation 'press' has no controlBinding"):
+        raise SystemExit("encoder press op declared but unwired not flagged: %r" % problems)
+
+    # 55. index outside cardinality: a held-index binding must stay within the vector cardinality.
+    badidx = copy.deepcopy(manifest)
+    for b in badidx["target"]["controlBindings"]:
+        if b["stable_id"] == "bnd.keyboard.encoder->keyboard.plate_tune[1]":
+            b["index"] = 99
+    problems, _ = gate.check(spec, badidx)
+    if not has(problems, "outside cardinality 1..12"):
+        raise SystemExit("held-index binding outside the vector cardinality not flagged: %r" % problems)
+
+    # 56. array element must be a closed typed element, not an inline anonymous map.
+    anonelem = copy.deepcopy(manifest)
+    sc = anonelem["target"]["recordSchemas"]["keyboard_seq"]
+    sc["fields"][0]["element"] = {"name": "step"}  # drop type -> anonymous
+    problems, _ = gate.check(spec, anonelem)
+    if not has(problems, "closed typed element (got anonymous map)"):
+        raise SystemExit("array element reduced to an anonymous map not flagged: %r" % problems)
+
+    # 57. record field 'of' pointing at an undefined schema.
+    badoff = copy.deepcopy(manifest)
+    badoff["target"]["recordSchemas"]["keyboard_preset"]["fields"][0]["of"] = "bogus"
+    problems, _ = gate.check(spec, badoff)
+    if not has(problems, "is not a defined record/params schema"):
+        raise SystemExit("record field referencing an undefined schema not flagged: %r" % problems)
+
+    # 58. preset excludes must not overlap the referenced param-set (can't both store & exclude).
+    overlap = copy.deepcopy(manifest)
+    overlap["target"]["recordSchemas"]["keyboard_preset"]["excludes"].append("keyboard.behaviour")
+    problems, _ = gate.check(spec, overlap)
+    if not has(problems, "overlap the referenced param-set"):
+        raise SystemExit("preset excludes overlapping its own param-set not flagged: %r" % problems)
+
+    # 59. allowlist expanded to mask a NEW rogue: growing the migration allowlist beyond the
+    #     independent legacy ceiling may not re-green a new registry rogue (monotonic, item #4).
+    maskrogue = copy.deepcopy(spec)
+    vco_card = [mm for mm in maskrogue["modules"] if mm["stable_id"] == "vco_a"][0]
+    rogue = copy.deepcopy(vco_card["parameters"][0])
+    rogue["id"] = 901
+    rogue["stable_id"] = "vco_a.rogue_allowmask"
+    vco_card["parameters"].append(rogue)
+    maskman = copy.deepcopy(manifest)
+    maskman["migrationAllowlist"]["parameters"].append("vco_a.rogue_allowmask")
+    problems, _ = gate.check(maskrogue, maskman)
+    if not has(problems, "migration allowlist parameters NOT in legacy ceiling"):
+        raise SystemExit("allowlist masked a new rogue outside the legacy ceiling, not flagged: %r" % problems)
+
+    # 60. STALE allow entry: a real target param (never a rogue) on the allowlist is stale.
+    staleallow = copy.deepcopy(manifest)
+    staleallow["migrationAllowlist"]["parameters"].append("keyboard.behaviour")
+    problems, _ = gate.check(spec, staleallow)
+    if not has(problems, "stale migration allowlist parameters"):
+        raise SystemExit("allowlist entry for a non-rogue id not flagged as stale: %r" % problems)
+
+    # 61. capability internalEndpoints is INDEPENDENT of the endpoint inventory: deleting vco_a's
+    #     non-patchable endpoint must NOT co-flip its capability off. If capabilities were
+    #     reverse-derived, dropping the endpoint would clear the cap and the gate would stay green;
+    #     a frozen cap must keep failing.
+    deleps = copy.deepcopy(manifest)
+    deleps["target"]["paramsJackTargets"]["endpoints"] = [
+        e for e in deleps["target"]["paramsJackTargets"]["endpoints"]
+        if e["stable_id"] != "vco_a.audio_out"
+    ]
+    problems, _ = gate.check(spec, deleps)
+    if not has(problems, "declares capability internalEndpoints but the target transcribes no internal endpoint"):
+        raise SystemExit("deleting an internal endpoint did not leave its frozen capability present-but-empty: %r" % problems)
+
     print("OK: completeness gate rejects each defect for its intended reason; baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "
           "split, independent region subtotals, explicit parameter shape + cardinality/recordType/"

@@ -96,13 +96,39 @@ PANEL_KINDS = {"continuous", "selector-toggle", "momentary-touch", "rotary-encod
 PARAM_KINDS = {"continuous", "selector-toggle", "state-field"}
 SHAPES = {"scalar", "vector", "record", "mask"}
 ACTION_KINDS = {"trigger", "encoder-rotate", "encoder-press", "encoder-long-press",
-                "init", "save"}
-VALID_OPS = {"set", "press", "rotate", "long_press"}
+                "init", "save", "load", "initialise"}
+VALID_OPS = {"set", "press", "release", "rotate", "long_press"}
 CTX_TYPES = {"global", "program", "keyboard-menu", "keyboard-mode"}
 KB_MENUS = {"behaviour", "mode", "arp", "sequencer", "portamento", "vibrato", "pressure",
             "quantiser", "clock", "calibration", "button-editor", "presets"}
-KB_MODES = {"single", "twin", "split"}
+# keyboard-mode modes: single/twin/split PLUS the calibration boot mode (a real Mode the user can
+# enter; Codex a23a9618 item #2/#3 — calibration init/save live under it, not as an unbound menu).
+KB_MODES = {"single", "twin", "split", "calibration"}
 VALID_AXES = {"x", "y"}
+# For each context type, the ONVALID key set under which the binding is valid (a closed context is
+# only closed when the key set is precise, not just the type name — Codex a23a9618 item #3).
+# 'program' requires 'program'; 'keyboard-menu' requires 'menu'; 'keyboard-mode' requires 'mode';
+# 'global' forbids any context-specific selector (it is the unqualified default).
+CTX_KEYS = {
+    "global": set(),
+    "program": {"program"},
+    "keyboard-menu": {"menu"},
+    "keyboard-mode": {"mode"},
+}
+# Independent legacy-rogue CEILING (Codex a23a9618 item #4): the frozen grandfather set of the
+# pre-correction registry rogue ids, transcribed once here and NEVER grown from the manifest. The
+# migration allowlist must be a subset of this ceiling (so a brand-new rogue cannot be masked by
+# inventing an allow entry) AND equal to the ceiling-rogues still actually present in the registry
+# (so a stale allow entry for a now-fixed id fails). The two together make it shrink-only.
+LEGACY_ROGUE_PARAM_CEILING = {
+    "envelope_a.attack", "envelope_a.release", "keyboard.pressure_signal",
+    "program.cathedral.1.decay", "program.cathedral.1.octave_down",
+    "program.cathedral.1.octave_up", "program.magic.1.delay", "program.magic.1.feedback",
+    "program.magic.1.pitch", "vcf.l.dist", "vcf.l.freq", "vcf.l.gain", "vcf.l.mod",
+    "vcf.l.res", "vcf.mode", "vcf.r.freq", "vco_a.fm_amt", "vco_a.oct_high",
+    "vco_a.oct_low", "vco_a.shape", "vco_a.sub", "vco_a.wave", "vco_b.shape", "vco_b.wave",
+}
+LEGACY_ROGUE_JACK_CEILING = {"vcf.audio_in"}
 # Parameter regions that hold LOGICAL state (program X/Y/Z, keyboard menu/state) but are NOT
 # panel regions: they contribute no expectedPanelControlCount entry to controlRegions[].
 STATE_REGIONS = {"program_params", "keyboard_state"}
@@ -123,6 +149,81 @@ def provenance_ok(entry):
         return False
     location = ev.get("panelSite") or ev.get("lineStart") or ev.get("lineEnd") or ev.get("section")
     return bool(location)
+
+
+RECORD_PRIMITIVES = {"number", "voltage", "int", "bool", "label"}
+RECORD_KINDS = {"record", "params"}
+
+
+def validate_record_schemas(record_schemas, param_sids):
+    """Validate each record schema BODY, not just that its name is referenced (Codex a23a9618
+    item #1). A record is only closed when every `element`/`of` resolves to a real schema of the
+    right kind, no array element is an inline anonymous map, and a preset's excludes do not
+    contradict the params it actually stores."""
+    out = []
+    for name, sch in record_schemas.items():
+        if not isinstance(sch, dict):
+            out.append(f"record schema {name!r} must be an object")
+            continue
+        kind = sch.get("kind")
+        if kind not in RECORD_KINDS:
+            out.append(f"record schema {name!r}: kind {kind!r} not in {sorted(RECORD_KINDS)}")
+            continue
+        if kind == "params":
+            plist = sch.get("params") or []
+            if not plist:
+                out.append(f"record schema {name!r}: params list must be non-empty")
+            for psid in plist:
+                if psid not in param_sids:
+                    out.append(f"record schema {name!r}: param {psid!r} is not a declared parameter")
+            continue
+        fields = sch.get("fields") or []
+        if not fields:
+            out.append(f"record schema {name!r}: record needs a non-empty fields list")
+        excludes = set(sch.get("excludes") or [])
+        for xsid in excludes:
+            if xsid not in param_sids:
+                out.append(f"record schema {name!r}: exclude {xsid!r} is not a declared parameter")
+        for f in fields:
+            fn = f.get("name")
+            ftype = f.get("type")
+            if not fn or (ftype not in RECORD_PRIMITIVES and ftype not in {"array", "record"}):
+                out.append(f"record schema {name!r}: field {fn!r} type {ftype!r} is not a valid "
+                           f"record field type")
+                continue
+            if ftype == "record":
+                of = f.get("of")
+                if of not in record_schemas or record_schemas[of].get("kind") not in RECORD_KINDS:
+                    out.append(f"record schema {name!r}: field {fn!r} of={of!r} is not a defined "
+                               f"record/params schema")
+                else:
+                    ref = record_schemas[of]
+                    if ref.get("kind") == "params":
+                        overlap = set(ref.get("params") or []) & excludes
+                        if overlap:
+                            out.append(f"record schema {name!r}: excludes {sorted(overlap)} overlap "
+                                       f"the referenced param-set {of!r} (cannot exclude a param it "
+                                       f"stores)")
+            elif ftype == "array":
+                count = f.get("count")
+                if not isinstance(count, int) or count <= 0:
+                    out.append(f"record schema {name!r}: field {fn!r} needs positive int count")
+                elem = f.get("element")
+                if not isinstance(elem, dict) or not elem.get("type"):
+                    out.append(f"record schema {name!r}: array field {fn!r} element must be a "
+                               f"closed typed element (got anonymous map) — no inline anonymous "
+                               f"element shape")
+                    continue
+                etype = elem.get("type")
+                if etype == "record":
+                    of = elem.get("of")
+                    if of not in record_schemas or record_schemas[of].get("kind") not in RECORD_KINDS:
+                        out.append(f"record schema {name!r}: array field {fn!r} element of={of!r} "
+                                   f"is not a defined record/params schema")
+                elif etype not in RECORD_PRIMITIVES:
+                    out.append(f"record schema {name!r}: array field {fn!r} element type "
+                               f"{etype!r} not in {sorted(RECORD_PRIMITIVES)}")
+    return out
 
 
 def check(spec, manifest, require_full=False):
@@ -264,6 +365,9 @@ def check(spec, manifest, require_full=False):
             problems.append(f"manifest parameter {sid!r}: incomplete evidence")
         param_sids.add(sid)
 
+    # ---- record schema bodies: the reference is not enough, the body must be closed (item #1) ---
+    problems.extend(validate_record_schemas(record_schemas, param_sids))
+
     # ---- panelControls: one row per real physical widget --------------------
     pc_sids = set()
     pc_by_id = {}
@@ -302,6 +406,7 @@ def check(spec, manifest, require_full=False):
 
     # ---- actions: stable event identity for event-only widgets -------------
     action_sids = set()
+    act_kinds = {}   # action kind -> count (independent of the parameter-shape `sz` counter)
     for a in actions:
         sid = a.get("stable_id")
         if not (sid and a.get("owner") and a.get("name")):
@@ -309,6 +414,7 @@ def check(spec, manifest, require_full=False):
         if a.get("kind") not in ACTION_KINDS:
             problems.append(f"manifest action {sid!r}: kind {a.get('kind')!r} not in "
                             f"{sorted(ACTION_KINDS)}")
+        act_kinds[a.get("kind")] = act_kinds.get(a.get("kind"), 0) + 1
         if a.get("owner") not in (allowed_owners | program_stable_ids):
             problems.append(f"manifest action {sid!r}: owner {a.get('owner')!r} is not a target "
                             f"module, terminal, or program")
@@ -323,6 +429,8 @@ def check(spec, manifest, require_full=False):
     binding_from_pc = {}
     binding_to_param = {}
     binding_to_action = {}
+    ops_by_pc = {}    # from -> set of operations actually wired (post-op validation)
+    axes_by_pc = {}   # from -> set of axes actually wired (axis bindings only)
     for b in bindings:
         sid = b.get("stable_id")
         if not (sid and b.get("from") and b.get("to")):
@@ -335,7 +443,7 @@ def check(spec, manifest, require_full=False):
         if op not in VALID_OPS:
             problems.append(f"manifest controlBinding {sid}: operation {op!r} not in "
                             f"{sorted(VALID_OPS)}")
-        if op in {"press", "rotate", "long_press"}:
+        if op in {"press", "release", "rotate", "long_press"}:
             if b.get("to") not in action_sids:
                 problems.append(f"manifest controlBinding {sid}: {op} target {b.get('to')!r} "
                                 f"is not a declared action")
@@ -356,15 +464,26 @@ def check(spec, manifest, require_full=False):
             if ctype not in CTX_TYPES:
                 problems.append(f"manifest controlBinding {sid}: context type {ctype!r} not in "
                                 f"{sorted(CTX_TYPES)}")
-            elif ctype == "program" and ctx.get("program") not in program_stable_ids:
-                problems.append(f"manifest controlBinding {sid}: program context references "
-                                f"unknown ProgramId {ctx.get('program')!r}")
-            elif ctype == "keyboard-menu" and ctx.get("menu") not in KB_MENUS:
-                problems.append(f"manifest controlBinding {sid}: keyboard-menu context menu "
-                                f"{ctx.get('menu')!r} not in {sorted(KB_MENUS)}")
-            elif ctype == "keyboard-mode" and ctx.get("mode") not in KB_MODES:
-                problems.append(f"manifest controlBinding {sid}: keyboard-mode context mode "
-                                f"{ctx.get('mode')!r} not in {sorted(KB_MODES)}")
+            else:
+                # The context is only closed when the KEY SET is precise for its type, not just the
+                # type name (Codex a23a9618 item #3): 'global' carries no selector, program carries
+                # only 'program', menu only 'menu', mode only 'mode'. An extra selector key is a
+                # masked-context bug regardless of whether the type name is legal.
+                actual_ctx_keys = {k for k in ctx if k != "type"}
+                needed_ctx_keys = CTX_KEYS[ctype]
+                if actual_ctx_keys != needed_ctx_keys:
+                    problems.append(f"manifest controlBinding {sid}: context type {ctype!r} must "
+                                    f"carry exactly {sorted(needed_ctx_keys)} (got "
+                                    f"{sorted(actual_ctx_keys)})")
+                if ctype == "program" and ctx.get("program") not in program_stable_ids:
+                    problems.append(f"manifest controlBinding {sid}: program context references "
+                                    f"unknown ProgramId {ctx.get('program')!r}")
+                elif ctype == "keyboard-menu" and ctx.get("menu") not in KB_MENUS:
+                    problems.append(f"manifest controlBinding {sid}: keyboard-menu context menu "
+                                    f"{ctx.get('menu')!r} not in {sorted(KB_MENUS)}")
+                elif ctype == "keyboard-mode" and ctx.get("mode") not in KB_MODES:
+                    problems.append(f"manifest controlBinding {sid}: keyboard-mode context mode "
+                                    f"{ctx.get('mode')!r} not in {sorted(KB_MODES)}")
         if b.get("axis") is not None:
             fromw = pc_by_id.get(b.get("from")) or {}
             axes = fromw.get("axes") or []
@@ -375,9 +494,48 @@ def check(spec, manifest, require_full=False):
             if expect_to and b.get("to") != expect_to:
                 problems.append(f"manifest controlBinding {sid}: axis {b['axis']!r} must target "
                                 f"{expect_to!r}, not {b.get('to')!r}")
+        if b.get("index") is not None:
+            # A held-index binding ("hold plate i then turn encoder") must land on a VECTOR
+            # parameter and stay inside its cardinality (Codex a23a9618 item #2). An index on a
+            # scalar/record is a malformed binding.
+            to_param = next((p for p in parameters if p.get("stable_id") == b.get("to")), None)
+            card = (to_param or {}).get("cardinality")
+            if (to_param or {}).get("shape") != "vector" or not isinstance(card, int):
+                problems.append(f"manifest controlBinding {sid}: index {b['index']!r} requires "
+                                f"the target {b.get('to')!r} to be a vector parameter")
+            elif not (1 <= b["index"] <= card):
+                problems.append(f"manifest controlBinding {sid}: index {b['index']!r} outside "
+                                f"cardinality 1..{card} of {b.get('to')!r}")
         if not provenance_ok(b):
             problems.append(f"manifest controlBinding {sid}: incomplete evidence")
         binding_from_pc[b.get("from")] = binding_from_pc.get(b.get("from"), 0) + 1
+        ops_by_pc.setdefault(b.get("from"), set()).add(op)
+        if b.get("axis") is not None:
+            axes_by_pc.setdefault(b.get("from"), set()).add(b["axis"])
+
+    # ---- per-widget completeness: declared ops/axes == actually wired (Codex a23a9618 item #3) ---
+    # The declaration is not enough; deleting an encoder press binding or an axis binding must fail.
+    for c in panel_controls:
+        sid = c.get("stable_id")
+        wired_ops = ops_by_pc.get(sid, set())
+        if c.get("kind") == "rotary-encoder":
+            declared_ops = {o.get("name") for o in c.get("operations") or []}
+            for o in declared_ops:
+                if o not in wired_ops:
+                    problems.append(f"panelControl {sid}: declared operation {o!r} has no "
+                                    f"controlBinding (a declared encoder op must be wired)")
+        if c.get("kind") == "momentary-touch":
+            # A momentary contact must express BOTH down (press) and up (release) edges (Codex
+            # a23a9618 option A). The release threshold is a sensor judgement, not this edge.
+            for need in ("press", "release"):
+                if need not in wired_ops:
+                    problems.append(f"panelControl {sid}: momentary-touch missing {need!r} edge "
+                                    f"(needs both press and release down/up)")
+        declared_axes = c.get("axes") or []
+        wired_axes = axes_by_pc.get(sid, set())
+        for ax in declared_axes:
+            if ax not in wired_axes:
+                problems.append(f"panelControl {sid}: declared axis {ax!r} has no controlBinding")
 
     # every persisted parameter must be reachable via a widget (no orphan state); every
     # continuous/selector-toggle panelControl must drive a persisted parameter; every event-only
@@ -562,6 +720,27 @@ def check(spec, manifest, require_full=False):
         problems.append(f"patchable jack registry-rogue NOT migration-allowed (NEW): {new_jack_rogue}")
     rogue_params_migrate = sorted((reg_param_sids - param_sids) & allow_params)
     rogue_jacks_migrate = sorted((reg_jack_sids - tgt_patchable) & allow_jacks)
+    # Item #4 (monotonic allowlist): the manifest allowlist is trusted only up to the independent
+    # ceiling. Any allow entry OUTSIDE the ceiling is an attempt to mask a new rogue; any allow
+    # entry for an id that is no longer a registry rogue is stale. Both fail.
+    allow_param_not_ceiling = sorted(allow_params - LEGACY_ROGUE_PARAM_CEILING)
+    if allow_param_not_ceiling:
+        problems.append(f"migration allowlist parameters NOT in legacy ceiling (cannot mask a "
+                        f"new rogue): {allow_param_not_ceiling}")
+    allow_jack_not_ceiling = sorted(allow_jacks - LEGACY_ROGUE_JACK_CEILING)
+    if allow_jack_not_ceiling:
+        problems.append(f"migration allowlist jacks NOT in legacy ceiling (cannot mask a new "
+                        f"rogue): {allow_jack_not_ceiling}")
+    still_param = sorted((reg_param_sids - param_sids) & LEGACY_ROGUE_PARAM_CEILING)
+    still_jack = sorted((reg_jack_sids - tgt_patchable) & LEGACY_ROGUE_JACK_CEILING)
+    stale_param = sorted(allow_params - set(still_param))
+    if stale_param:
+        problems.append(f"stale migration allowlist parameters (id no longer a registry rogue): "
+                        f"{stale_param}")
+    stale_jack = sorted(allow_jacks - set(still_jack))
+    if stale_jack:
+        problems.append(f"stale migration allowlist jacks (id no longer a registry rogue): "
+                        f"{stale_jack}")
     sz = {}
     for p in parameters:
         sz[p.get("shape", "scalar")] = sz.get(p.get("shape", "scalar"), 0) + 1
@@ -589,7 +768,7 @@ def check(spec, manifest, require_full=False):
                      "unboundPersist": unbound_persist, "actionBindings": len(binding_to_action),
                      "unboundActionEvents": unbound_action_events},
         "actions": {"target": len(action_sids), "transcribed": len(action_sids),
-                    "kinds": sz, "bound": sorted(binding_to_action),
+                    "kinds": act_kinds, "bound": sorted(binding_to_action),
                     "unbound": sorted(action_sids - set(binding_to_action))},
         "parameters": {"target": len(param_sids), "transcribed": len(param_sids),
                        "present": len(reg_param_sids), "missingModules": modules_missing_params,
