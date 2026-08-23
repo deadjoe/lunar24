@@ -113,7 +113,17 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 273u); // Phase B FILTER Programs 1/2/3 X/Y/Z slice (Codex msg
+  CHECK_EQ(core::kParameterCount, 282u); // Phase B VIBE Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 1176d4f3): +9 program params (vibe.1/.2/.3 x/y/z
+                                         // depth/rate/reverb + depth/rate/reverb +
+                                         // resonance/rate/mod depth, ids 340-348, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no frequency/time/
+                                         // feedback values derived from the Phaser/Flanger/
+                                         // Resonance-flanger program names or the Depth/Rate/
+                                         // Reverb/Resonance/Mod-depth labels).
+                                         // Prior: Phase B FILTER Programs 1/2/3 X/Y/Z slice (Codex msg
                                          // 8f5f8a22): +9 program params (filter.1/.2/.3 x/y/z
                                          // filter amount/envelope/reverb + hp cutoff/lp cutoff/
                                          // resonance + cut 1/cut 2/resonance, ids 331-339, neutral
@@ -169,8 +179,8 @@ static void frozen_counts() {
                                          // (Codex msg 28e00d92) +19 (ids 201-219), dual-effector
                                          // slice +8 (ids 193-200), voice-mixer slice +20
                                          // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
-                                         // carry 228, programs 15 (45 program params). Left as honest
-                                         // gaps the 12 keyboard complex params and the 72 other
+                                         // carry 228, programs 18 (54 program params). Left as honest
+                                         // gaps the 12 keyboard complex params and the 63 other
                                          // program X/Y/Z params
                                          // (seq_steps, quantise_scale_editor,
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,

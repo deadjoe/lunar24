@@ -4062,10 +4062,10 @@ def main():
     if not has(problems, "MISSING landed descriptor param 'program.cathedral.3.z'"):
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
-    # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3 and filter.1/.2/.3 must NOT be
-    #      re-openable as an honest gap: with those programs' params landed, the --require-full residual
-    #      must exclude every one of those ids. It widens exactly across the 12 keyboard complex + 72
-    #      other program XYZ params (84 total).
+    # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3 and vibe.1/.2/.3
+    #      must NOT be re-openable as an honest gap: with those programs' params landed, the
+    #      --require-full residual must exclude every one of those ids. It widens exactly across the
+    #      12 keyboard complex + 63 other program XYZ params (75 total).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4075,12 +4075,12 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 84:
-        raise SystemExit("residual honest-gap total %d != 84 (12 keyboard complex + 72 program XYZ); "
+    if len(_gap_ids) != 75:
+        raise SystemExit("residual honest-gap total %d != 75 (12 keyboard complex + 63 program XYZ); "
                          "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + filter.1/.2/.3 "
-                         "must have landed and closed exactly 39" % len(_gap_ids))
-    if len(_kb) != 12 or len(_prog) != 72:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/72: %r" % (len(_kb), len(_prog),
+                         "+ vibe.1/.2/.3 must have landed and closed exactly 48" % len(_gap_ids))
+    if len(_kb) != 12 or len(_prog) != 63:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/63: %r" % (len(_kb), len(_prog),
                                                                                 _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
@@ -4094,11 +4094,15 @@ def main():
                  "program.vibrotrem.3.x", "program.vibrotrem.3.y", "program.vibrotrem.3.z",
                  "program.filter.1.x", "program.filter.1.y", "program.filter.1.z",
                  "program.filter.2.x", "program.filter.2.y", "program.filter.2.z",
-                 "program.filter.3.x", "program.filter.3.y", "program.filter.3.z"):
+                 "program.filter.3.x", "program.filter.3.y", "program.filter.3.z",
+                 "program.vibe.1.x", "program.vibe.1.y", "program.vibe.1.z",
+                 "program.vibe.2.x", "program.vibe.2.y", "program.vibe.2.z",
+                 "program.vibe.3.x", "program.vibe.3.y", "program.vibe.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 72 "
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 63 "
                              "other program XYZ gaps are preserved, NOT cathedral.2/3, magic.2/3, "
-                             "time.1/2/3, vibrotrem.1/2/3 or filter.1/2/3): %r" % (_sid, _gap_ids))
+                             "time.1/2/3, vibrotrem.1/2/3, filter.1/2/3 or vibe.1/2/3): %r"
+                             % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
@@ -4427,6 +4431,86 @@ def main():
     problems, _ = gate.check(mr_bad, manifest)
     if not has(problems, "MISSING landed descriptor param 'program.filter.3.z'"):
         raise SystemExit("filter.3.z terminator delete (family last) not enforced: %r" % problems)
+
+    # (ms)-(mz) VIBE Program 1/2/3 X/Y/Z descriptor lock (Codex msg 1176d4f3). The nine program
+    #      vibe.1/.2/.3 x/y/z params (ids 340-348) are landed descriptor facts locked by the exact-
+    #      compare — id renumber, owner / cross-owner leak, per-line evidence drift and a fieldEvidence
+    #      overclaim must all fail normal. ROLE is also locked (a program x/y/z param's role must equal
+    #      its stable-id .x/.y/.z suffix), and a terminator delete is a landed/mustComplete drop. KEY
+    #      DIFF vs filter/vibrotrem: the PLACEHOLDER values (unit=norm, 0..1, default 0) are chosen so
+    #      that NO Phaser/Flanger/Resonance-flanger frequency, time or feedback unit, range or default
+    #      is asserted — no values are derived from the Depth/Rate/Reverb/Resonance/Mod-depth labels.
+
+    # (ms) id renumber: vibe.1.x is id 340; renumbering (340 -> 999) must fail.
+    ms_bad = copy.deepcopy(spec)
+    reg_param(ms_bad, "program.vibe.1.x")["id"] = 999
+    problems, _ = gate.check(ms_bad, manifest)
+    if not has(problems, "implementation param 'program.vibe.1.x'"):
+        raise SystemExit("vibe.1.x param id renumber (340 -> 999) not enforced: %r" % problems)
+
+    # (mt) owner / cross-owner leak: vibe.1.x must stay owned by program.vibe.1; moving it
+    #      under program.vibe.2's array makes the generated owner program.vibe.2, which the landed
+    #      fact rejects.
+    mt_bad = copy.deepcopy(spec)
+    _v1 = next(pr for pr in mt_bad["programs"] if pr.get("stable_id") == "program.vibe.1")
+    _v2 = next(pr for pr in mt_bad["programs"] if pr.get("stable_id") == "program.vibe.2")
+    _x = [p for p in _v1["parameters"] if p["stable_id"] == "program.vibe.1.x"][0]
+    _v1["parameters"] = [p for p in _v1["parameters"] if p["stable_id"] != "program.vibe.1.x"]
+    _v2.setdefault("parameters", []).append(_x)
+    problems, _ = gate.check(mt_bad, manifest)
+    if not has(problems, "implementation param 'program.vibe.1.x'"):
+        raise SystemExit("vibe.1.x cross-owner leak (-> program.vibe.2) not enforced: %r" % problems)
+
+    # (mu) ROLE drift: vibe.1.x being role y (valid but wrong position) must fail (role gate).
+    mu_bad = copy.deepcopy(spec)
+    reg_param(mu_bad, "program.vibe.1.x")["role"] = "y"
+    problems, _ = gate.check(mu_bad, manifest)
+    if not has(problems, "stable-id position"):
+        raise SystemExit("vibe.1.x role drift (x -> y) not enforced by the role gate: %r" % problems)
+
+    # (mv) per-line descriptorEvidence drift: vibe.1.x cites L1233; moving it (1233 -> 1234) is a
+    #      target drift and must fail.
+    mv_bad = copy.deepcopy(spec)
+    reg_param(mv_bad, "program.vibe.1.x")["evidence"]["line"] = 1234
+    problems, _ = gate.check(mv_bad, manifest)
+    if not has(problems, "implementation param 'program.vibe.1.x'"):
+        raise SystemExit("vibe.1.x descriptorEvidence.line drift (1233 -> 1234) not enforced: %r"
+                         % problems)
+
+    # (mw) fieldEvidence overclaim: a placeholder range must not be elevated to confirmed (the KEY
+    #      DIFF — no physical frequency/time/feedback unit/range/default is being asserted here).
+    mw_bad = copy.deepcopy(spec)
+    reg_param(mw_bad, "program.vibe.1.x")["fieldEvidence"]["range"] = "confirmed"
+    problems, _ = gate.check(mw_bad, manifest)
+    if not has(problems, "implementation param 'program.vibe.1.x'"):
+        raise SystemExit("vibe.1.x fieldEvidence overclaim (range unverified->confirmed) not "
+                         "enforced: %r" % problems)
+
+    # (mx) FIRST terminator delete across the family: dropping vibe.1.x is a landed/mustComplete drop.
+    mx_bad = copy.deepcopy(spec)
+    _v1 = next(pr for pr in mx_bad["programs"] if pr.get("stable_id") == "program.vibe.1")
+    _v1["parameters"] = [p for p in _v1["parameters"] if p["stable_id"] != "program.vibe.1.x"]
+    problems, _ = gate.check(mx_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.vibe.1.x'"):
+        raise SystemExit("vibe.1.x terminator delete (family first) not enforced: %r" % problems)
+
+    # (my) MIDDLE terminator delete across the family: dropping vibe.2.y is likewise a landed/
+    #      mustComplete drop.
+    my_bad = copy.deepcopy(spec)
+    _v2 = next(pr for pr in my_bad["programs"] if pr.get("stable_id") == "program.vibe.2")
+    _v2["parameters"] = [p for p in _v2["parameters"] if p["stable_id"] != "program.vibe.2.y"]
+    problems, _ = gate.check(my_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.vibe.2.y'"):
+        raise SystemExit("vibe.2.y terminator delete (family middle) not enforced: %r" % problems)
+
+    # (mz) LAST terminator delete across the family: dropping vibe.3.z is likewise a landed/
+    #      mustComplete drop.
+    mz_bad = copy.deepcopy(spec)
+    _v3 = next(pr for pr in mz_bad["programs"] if pr.get("stable_id") == "program.vibe.3")
+    _v3["parameters"] = [p for p in _v3["parameters"] if p["stable_id"] != "program.vibe.3.z"]
+    problems, _ = gate.check(mz_bad, manifest)
+    if not has(problems, "MISSING landed descriptor param 'program.vibe.3.z'"):
+        raise SystemExit("vibe.3.z terminator delete (family last) not enforced: %r" % problems)
 
     print("OK: completeness gate rejects each defect for its intended reason;baseline passes; "
           "--require-full is per-ID (gap + rogue), not a fake per-module green; the four-entity "

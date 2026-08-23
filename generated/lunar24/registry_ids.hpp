@@ -309,7 +309,16 @@ enum class ParameterId : std::uint32_t {
     program_filter_2_z = 336,
     program_filter_3_x = 337,
     program_filter_3_y = 338,
-    program_filter_3_z = 339
+    program_filter_3_z = 339,
+    program_vibe_1_x = 340,
+    program_vibe_1_y = 341,
+    program_vibe_1_z = 342,
+    program_vibe_2_x = 343,
+    program_vibe_2_y = 344,
+    program_vibe_2_z = 345,
+    program_vibe_3_x = 346,
+    program_vibe_3_y = 347,
+    program_vibe_3_z = 348
 };
 
 enum class JackId : std::uint32_t {
@@ -431,13 +440,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 273;
+inline constexpr std::uint32_t kParameterCount = 282;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 340;
+inline constexpr std::uint64_t kParameterIdSpace = 349;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -748,6 +757,15 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_filter_3_x: return "program.filter.3.x";
     case ParameterId::program_filter_3_y: return "program.filter.3.y";
     case ParameterId::program_filter_3_z: return "program.filter.3.z";
+    case ParameterId::program_vibe_1_x: return "program.vibe.1.x";
+    case ParameterId::program_vibe_1_y: return "program.vibe.1.y";
+    case ParameterId::program_vibe_1_z: return "program.vibe.1.z";
+    case ParameterId::program_vibe_2_x: return "program.vibe.2.x";
+    case ParameterId::program_vibe_2_y: return "program.vibe.2.y";
+    case ParameterId::program_vibe_2_z: return "program.vibe.2.z";
+    case ParameterId::program_vibe_3_x: return "program.vibe.3.x";
+    case ParameterId::program_vibe_3_y: return "program.vibe.3.y";
+    case ParameterId::program_vibe_3_z: return "program.vibe.3.z";
   }
   return "(unknown Parameter)";
 }
