@@ -113,8 +113,27 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 336u); // Phase B GENERATOR Programs 1/2/3 X/Y/Z slice (Claude msg
-                                         // 760ec3d7): +9 program params (generator.1/.2/.3 x/y/z
+  CHECK_EQ(core::kParameterCount, 345u); // Phase B ORCHE Programs 1/2/3 X/Y/Z slice (Claude msg
+                                         // fa41d75a): +9 program params (orche.1/.2/.3 x/y/z
+                                         // delay time/feedback amount/trigger threshold + delay
+                                         // time/feedback amount/trigger threshold + delay time/
+                                         // feedback amount/delay mod lfo/rnd, ids 403-411, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no ms/dB/ratio/level
+                                         // values derived from the Program 1/2/3 names or the
+                                         // Delay time/Feedback amount/Trigger threshold/Delay mod
+                                         // LFO/RND labels; all three ORCHE programs print "Program 1"
+                                         // on the manual (L1306), so the three instances map by
+                                         // column order — the printed name is NOT distinct per
+                                         // program; the nine params share L1307/L1308/L1309 (X=Delay
+                                         // time, Y=Feedback amount, Z=Trigger threshold | Trigger
+                                         // threshold | Delay mod LFO/RND); orche.1 mirrors the frozen
+                                         // target status confirmed, orche.2/3 provisional; ORCHE is
+                                         // the Reverse delay (one-shot) family — the registry
+                                         // metadata does NOT implement its DSP).
+                                         // Prior: Phase B GENERATOR Programs 1/2/3 X/Y/Z slice
+                                         // (Claude msg 760ec3d7): +9 program params (generator.1/.2/.3 x/y/z
                                          // pitch 1/pitch 2/fm 2-1 + lfo rate/pitch/pitch mod +/-
                                          // + cutoff/pitch/lp/hp, ids 394-402, neutral software-
                                          // normalized 0..1 placeholders, all six-field fieldEvidence

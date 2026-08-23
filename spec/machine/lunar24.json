@@ -11495,7 +11495,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 403,
+          "stable_id": "program.orche.1.x",
+          "role": "x",
+          "name": "Delay time",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1307
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 404,
+          "stable_id": "program.orche.1.y",
+          "role": "y",
+          "name": "Feedback amount",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1308
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 405,
+          "stable_id": "program.orche.1.z",
+          "role": "z",
+          "name": "Trigger threshold",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1309
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 37,
@@ -11514,7 +11591,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 406,
+          "stable_id": "program.orche.2.x",
+          "role": "x",
+          "name": "Delay time",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1307
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 407,
+          "stable_id": "program.orche.2.y",
+          "role": "y",
+          "name": "Feedback amount",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1308
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 408,
+          "stable_id": "program.orche.2.z",
+          "role": "z",
+          "name": "Trigger threshold",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1309
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     },
     {
       "id": 38,
@@ -11533,7 +11687,84 @@
       "fieldEvidence": {
         "family": "provisional",
         "selfOscillating": "unverified"
-      }
+      },
+      "parameters": [
+        {
+          "id": 409,
+          "stable_id": "program.orche.3.x",
+          "role": "x",
+          "name": "Delay time",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1307
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 410,
+          "stable_id": "program.orche.3.y",
+          "role": "y",
+          "name": "Feedback amount",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1308
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        },
+        {
+          "id": 411,
+          "stable_id": "program.orche.3.z",
+          "role": "z",
+          "name": "Delay mod LFO/RND",
+          "unit": "norm",
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0,
+          "step": 0.0,
+          "smoothing": "seconds",
+          "persistence": "deviceState",
+          "evidence": {
+            "line": 1309
+          },
+          "status": "provisional",
+          "fieldEvidence": {
+            "unit": "unverified",
+            "default": "unverified",
+            "step": "unverified",
+            "smoothing": "unverified",
+            "persistence": "unverified",
+            "range": "unverified"
+          }
+        }
+      ]
     }
   ]
 }

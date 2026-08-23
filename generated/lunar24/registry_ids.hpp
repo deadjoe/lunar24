@@ -372,7 +372,16 @@ enum class ParameterId : std::uint32_t {
     program_generator_2_z = 399,
     program_generator_3_x = 400,
     program_generator_3_y = 401,
-    program_generator_3_z = 402
+    program_generator_3_z = 402,
+    program_orche_1_x = 403,
+    program_orche_1_y = 404,
+    program_orche_1_z = 405,
+    program_orche_2_x = 406,
+    program_orche_2_y = 407,
+    program_orche_2_z = 408,
+    program_orche_3_x = 409,
+    program_orche_3_y = 410,
+    program_orche_3_z = 411
 };
 
 enum class JackId : std::uint32_t {
@@ -494,13 +503,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 336;
+inline constexpr std::uint32_t kParameterCount = 345;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 403;
+inline constexpr std::uint64_t kParameterIdSpace = 412;
 inline constexpr std::uint64_t kJackIdSpace = 65;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -874,6 +883,15 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::program_generator_3_x: return "program.generator.3.x";
     case ParameterId::program_generator_3_y: return "program.generator.3.y";
     case ParameterId::program_generator_3_z: return "program.generator.3.z";
+    case ParameterId::program_orche_1_x: return "program.orche.1.x";
+    case ParameterId::program_orche_1_y: return "program.orche.1.y";
+    case ParameterId::program_orche_1_z: return "program.orche.1.z";
+    case ParameterId::program_orche_2_x: return "program.orche.2.x";
+    case ParameterId::program_orche_2_y: return "program.orche.2.y";
+    case ParameterId::program_orche_2_z: return "program.orche.2.z";
+    case ParameterId::program_orche_3_x: return "program.orche.3.x";
+    case ParameterId::program_orche_3_y: return "program.orche.3.y";
+    case ParameterId::program_orche_3_z: return "program.orche.3.z";
   }
   return "(unknown Parameter)";
 }

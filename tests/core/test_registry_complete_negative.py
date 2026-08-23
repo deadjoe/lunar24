@@ -4063,10 +4063,11 @@ def main():
         raise SystemExit("cathedral.3.z terminator delete (last) not enforced: %r" % problems)
 
     # (ll) cathedral.2/.3, magic.2/.3, time.1/.2/.3, vibrotrem.1/.2/.3, filter.1/.2/.3, vibe.1/.2/.3,
-    #      pitch_shifter.1/.2/.3, infinity.1/.2/.3, string_ringer.1/.2/.3, syntex_1.1/.2/.3 and
-    #      digital.1/.2/.3 must NOT be re-openable as an honest gap: with those programs' params landed,
-    #      the --require-full residual must exclude every one of those ids. It widens exactly across the
-    #      12 keyboard complex + 9 other program XYZ params (21 total).
+    #      pitch_shifter.1/.2/.3, infinity.1/.2/.3, string_ringer.1/.2/.3, syntex_1.1/.2/.3,
+    #      digital.1/.2/.3, generator.1/.2/.3 and orche.1/.2/.3 must NOT be re-openable as an honest
+    #      gap: with those programs' params landed, the --require-full residual must exclude every one
+    #      of those ids. It widens exactly across the 12 keyboard complex params (12 total; orche is
+    #      now landed/closed).
     _res_full, _ = gate.check(spec, manifest, require_full=True)
     _gap_lines = [_p for _p in _res_full if "parameter target-not-implemented" in _p]
     if len(_gap_lines) != 1:
@@ -4076,16 +4077,17 @@ def main():
     _gap_ids = [x.strip().strip("'").strip('"') for x in _body.split(",")] if _body.strip() else []
     _kb = [x for x in _gap_ids if x.startswith("keyboard.")]
     _prog = [x for x in _gap_ids if x.startswith("program.")]
-    if len(_gap_ids) != 21:
-        raise SystemExit("residual honest-gap total %d != 21 (12 keyboard complex + 9 program XYZ); "
+    if len(_gap_ids) != 12:
+        raise SystemExit("residual honest-gap total %d != 12 (all 12 keyboard complex; "
                          "cathedral.2/.3 + magic.2/.3 + time.1/.2/.3 + vibrotrem.1/.2/.3 + "
                          "filter.1/.2/.3 + vibe.1/.2/.3 + pitch_shifter.1/.2/.3 + infinity.1/.2/.3 + "
                          "string_ringer.1/.2/.3 + syntex_1.1/.2/.3 + digital.1/.2/.3 + generator.1/.2/.3 "
-                         "must all be "
-                         "landed/closed (not re-openable as a gap): %r" % _gap_ids)
-    if len(_kb) != 12 or len(_prog) != 9:
-        raise SystemExit("residual split keyboard=%d program=%d != 12/9: %r" % (len(_kb), len(_prog),
-                                                                               _gap_ids))
+                         "+ orche.1/.2/.3 are all "
+                         "landed/closed (not re-openable as a gap)); got %d: %r"
+                         % (len(_gap_ids), _gap_ids))
+    if len(_kb) != 12 or len(_prog) != 0:
+        raise SystemExit("residual split keyboard=%d program=%d != 12/0 (orche landed/closed): %r"
+                         % (len(_kb), len(_prog), _gap_ids))
     for _sid in ("program.cathedral.2.x", "program.cathedral.2.y", "program.cathedral.2.z",
                  "program.cathedral.3.x", "program.cathedral.3.y", "program.cathedral.3.z",
                  "program.magic.2.x", "program.magic.2.y", "program.magic.2.z",
@@ -4119,13 +4121,17 @@ def main():
                  "program.digital.3.x", "program.digital.3.y", "program.digital.3.z",
                  "program.generator.1.x", "program.generator.1.y", "program.generator.1.z",
                  "program.generator.2.x", "program.generator.2.y", "program.generator.2.z",
-                 "program.generator.3.x", "program.generator.3.y", "program.generator.3.z"):
+                 "program.generator.3.x", "program.generator.3.y", "program.generator.3.z",
+                 "program.orche.1.x", "program.orche.1.y", "program.orche.1.z",
+                 "program.orche.2.x", "program.orche.2.y", "program.orche.2.z",
+                 "program.orche.3.x", "program.orche.3.y", "program.orche.3.z"):
         if _sid in _gap_ids:
-            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: the 9 "
-                             "remaining program XYZ gaps (orche) are preserved, NOT "
+            raise SystemExit("landed program param %s re-opened as an honest gap (mandate: only the "
+                             "12 keyboard complex are honest gaps, NOT "
                              "cathedral.2/3, magic.2/3, time.1/2/3, vibrotrem.1/2/3, filter.1/2/3, "
                              "vibe.1/2/3, pitch_shifter.1/2/3, infinity.1/2/3, string_ringer.1/2/3, "
-                             "syntex_1.1/2/3, digital.1/2/3 or generator.1/2/3): %r" % (_sid, _gap_ids))
+                             "syntex_1.1/2/3, digital.1/2/3, generator.1/2/3 or orche.1/2/3): %r"
+                             % (_sid, _gap_ids))
     for _sid in ("program.cathedral.1.x", "program.cathedral.1.y", "program.cathedral.1.z",
                  "program.magic.1.x", "program.magic.1.y", "program.magic.1.z"):
         if _sid in _gap_ids:
