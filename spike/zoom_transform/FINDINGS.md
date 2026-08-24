@@ -131,31 +131,108 @@ the identity level genuinely cannot expose a pure multiply-by-zoom bug.
 retina) → drawScale 2× too big → content overflows → alarms with 1. **good=0,
 bad(>0)=1 (PASS).**
 
-## Real-render confirmation (the renderer genuinely honors the 2×)
+## Real-render confirmation (off-screen FBO == 4800×3102 both axes; on-screen host CLAMPS)
 
 The harness is pure math; the following checks the *actual* renderer — mirroring
-①b's live-render discipline.
+①b's live-render discipline. This 2026-08-25 run supersedes the earlier
+"real-render confirmation" that measured only the on-screen PNG.
 
-1. Temporarily set `Examples/IPlugVisualizer/config.h` to
-   `PLUG_WIDTH 2400` / `PLUG_HEIGHT 1551` (= design size).
-2. Rebuilt the IPlugVisualizer app and ran
-   `--screenshot /tmp/zoom_2400.png --no-io`; measured the PNG.
-3. Measurement: **4800 × 2820**. The **width is exactly 4800 = 2× 2400** — a clean
-   retina-2× proof at the design width: the renderer multiplies the design
-   coordinate by the 2× screen scale, confirming the "2× explicit" transform is
-   what executes, not just what is modeled.
-4. **Height caveat, reported honestly:** 2820 is **not** 1551×2=3102. The logical
-   height came out 1410 (=2820/2) rather than 1551. Reason: the 1551-tall design
-   exceeds the hosting window/screen's maximum height, so the OS/window clamps
-   the height (while width, which can exceed the screen, is preserved at the full
-   2400). This is a window-management clamp, **not** a transform defect — the
-   width-2× datum is the decisive one for the retina requirement, and the full
-   maths is proven by the harness.
-5. `config.h` has been **reverted to the ①b baseline** `PLUG_WIDTH 600` /
-   `PLUG_HEIGHT 300`. The build directory and the auto-deployed
-   `/Users/joe/Applications/IPlugVisualizer.app` remain at the 2400 size from the
-   measurement run — both are gitignored/disposable spike artifacts, not tracked
-   source.
+### Off-screen framebuffer backing (the decisive datum)
+
+The renderer draws into an off-screen framebuffer (`mMainFrameBuffer`, a NanoVG
+Metal-backed image), then blits to the window. Reading that framebuffer's Metal
+texture proves the *actual* backing size the transform produces. Instrumented
+`IGraphicsNanoVG.cpp::DrawResize()` with an env-gated readback of
+`mnvgImageHandle(mVG, mMainFrameBuffer->image)` → `id<MTLTexture>` width/height,
+and ran with `config.h PLUG_WIDTH 2400 / PLUG_HEIGHT 1551`
+(`LUNAR_DUMP_FBO=1`). Logged:
+
+```
+LUNAR_FBO_TEXTURE: 4800x3102 (requested 4800x3102; logical 2400x1551)
+LUNAR_FBO_TEXTURE: 4800x3102 (requested 4800x3102; logical 2400x1551)
+LUNAR_FBO_TEXTURE: 4800x2756 (requested 4800x2756; logical 2400x1378)
+```
+
+- **First two (initial DrawResize): backing = 4800×3102 = 2400×1551 × 2.** This is
+  the off-screen framebuffer at the full design size, **both axes exact** — the
+  design→backing transform produces 4800×3102 (not clamped). The "2× retina
+  explicit" rule is what **executes**: the FBO is 2× the logical design on X and Y.
+- **Third (a resize event): backing = 4800×2756 (logical 2400×1378).** The live
+  window was clamped by the OS to height ≤ the screen's visible area, and
+  `DrawResize()` re-allocated the FBO to follow the window (width stays 2400,
+  height shrinks 1551→1378).
+
+So the off-screen framebuffer *is* full-height at the design size on both axes;
+clamping only appears after the OS/screen height limit bites.
+
+### On-screen window (the host CLAMPS, it does NOT fit-to-window)
+
+`--screenshot /tmp/zoom_2400.png --no-io` produced a **4800 × 2820** PNG. That is
+the on-screen window: logical 2400×1410 (2×), i.e. the window height is clamped
+to the screen's visible logical height 1410 (= NSScreen visible frame
+`2560×1440 @ scale 2.0`, minus the 30pt menu bar → 1410), not 1551. Width stays
+the full 2400.
+
+**This is a genuine CLAMP, not a fit-to-window, and it is a real defect against
+the design intent.** The mandate says fit-to-window (`GetScaleForScreen(w,h) =
+min(w/designW, h/designH)`, in logical px) — the whole panel should be visible,
+scaled to fit. But the real macOS host never calls that fit: it renders the panel
+at design scale (drawScale = design) and lets the window-manager CLAMP the height
+to the screen. Result: at the design's full scale, the bottom of the panel is
+**cut off** (1551−1410 = 141 logical px = 282 backing px lost at the screen
+bottom) instead of being scaled to fit. A fit-to-window would show the entire
+1551-tall panel scaled down; the actual host crops it.
+
+- **The transform itself is correct** — the off-screen FBO is exactly 4800×3102,
+  and the fit scale math (Req E) proves a fit would overflow if the retina were
+  dropped. The defect is in the **host's window height clamping**, which iPlug2
+  on macOS does not reconcile with a fit-to-window path when the design exceeds
+  the screen. This is the "host clamps while design intends fit" case @Claude
+  flagged as a candidate real defect; the measurement confirms it is real, not a
+  transform artifact. On the actual Studio Display (the P1 device target) the
+  same 2400×1551 design will exceed the visible height there too, so this is a
+  defect the P1 host must either fit or make scrollable — not leave cropped.
+
+### How the measurement was made (reproducible)
+
+1. Set `Examples/IPlugVisualizer/config.h` to `PLUG_WIDTH 2400` / `PLUG_HEIGHT 1551`.
+2. Added the env-gated readback in `IGraphicsNanoVG.cpp::DrawResize()` (guarded by
+   `getenv("LUNAR_DUMP_FBO")`, and `#include <cstdlib>`), compiled via the
+   `igraphics_smoke` build (Unix Makefiles, NANOVG/METAL, IPlugVisualizer only).
+3. Ran `LUNAR_DUMP_FBO=1 ./IPlugVisualizer --screenshot /tmp/zoom_2400.png --no-io`;
+   read the `LUNAR_FBO_TEXTURE:` lines from stderr and `sips`'d the PNG.
+4. `config.h` has been **reverted to the ①b baseline** `PLUG_WIDTH 600` /
+   `PLUG_HEIGHT 300`. The build dir and auto-deployed
+   `/Users/joe/Applications/IPlugVisualizer.app` are gitignored disposable spike
+   artifacts, not tracked source.
+
+### ⚠️ Architecture discipline (MUST carry forward — same as ①b / igraphics_smoke)
+
+The off-screen FBO readback (`IGraphicsNanoVG.cpp`) and the 2400×1551 measurement
+(`config.h`) were implemented by editing pinned iPlug2 source files. **This is
+PROOF-ONLY, it is NOT the implementation plan.** In the real product those files
+are someone else's repository code; editing them would be a **secret fork of
+iPlug2** — on the next pin-commit update our changes silently vanish, and no gate
+reports what was lost.
+
+**Real host bootstrap — including fit-to-window / window sizing, which is where
+task #15 lives — must be in OUR OWN code.** iPlug2 stays an **unmodified fixed
+commit**, used only as a library, not edited. The spike's modification approach
+**≠** implementation approach.
+
+Note the distinction here: "env-gated / inert by default" is **not the same as
+"not present"**. The readback was still an edit to a pinned file; once the pin is
+bumped it disappears silently and no gate reports it. The correct end state is
+that the edit is **removed**, not merely disabled — so the readback block has been
+reverted, not just left inert.
+
+### What this answers for the mandate
+
+- **Req A (forward applies 2× retina) is confirmed real, not just modeled**: the
+  off-screen FBO is 4800×3102 = 2400×1551 × 2 on both axes.
+- **The "fit-to-window" intent is NOT honored on macOS when design > screen**:
+  the host clamps height (crops the panel bottom) rather than scaling to fit.
+  This is a defect recorded for the P1 host layer.
 
 ## Negative-control evidence (the mandate's "every BAD control must ALARM" rule)
 
