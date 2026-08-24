@@ -52,6 +52,16 @@ import os
 import sys
 import tempfile
 
+# Windows' default stdout encoding (cp1252) cannot encode the Unicode symbols this
+# test prints (e.g., ⊆, →), crashing as UnicodeEncodeError on windows-latest. Force
+# UTF-8 so stdout encoding is identical on every runner (Linux/macOS default to
+# UTF-8, so this is a no-op there).
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
