@@ -251,6 +251,81 @@ static void multi_round_no_drift() {
   CHECK_EQ(g.cableCount(), 0u);
 }
 
+// --------------------------------------------------------------------
+// P2-④ guard: signal type is ADVISORY, never a connection filter. A real output
+// drives any real input; type/range mismatch is a hint to the dsp layer, not a
+// reason to reject the cable. PatchGraph::connect already rejects only by
+// direction — here we PROVE cross-type succeeds, and that a TypeGuard that would
+// reject it is the degeneracy @Claude names.
+// --------------------------------------------------------------------
+
+static void cross_type_connect_succeeds() {
+  // Four jacks with deliberately mismatched (and, for 3, non-adjoining) types.
+  core::JackDescriptor jacks[4] = {
+      mk_jack(core::JackId{201}, core::PinDirection::output, 1u),  // cv out
+      mk_jack(core::JackId{202}, core::PinDirection::input, 1u),   // gate in
+      mk_jack(core::JackId{203}, core::PinDirection::output, 1u),  // gate out
+      mk_jack(core::JackId{204}, core::PinDirection::input, 1u),   // cv in
+  };
+  jacks[0].signalType = core::SignalType::cv;
+  jacks[1].signalType = core::SignalType::gate;
+  jacks[2].signalType = core::SignalType::gate;
+  jacks[3].signalType = core::SignalType::cv;
+
+  core::PatchGraph g(jacks, 4u, nullptr, 0u);
+
+  // cv out -> gate in: accepted despite the type mismatch.
+  CHECK_TRUE(g.connect(core::JackId{201}, core::JackId{202}));
+  CHECK_TRUE(g.cableConnected(core::JackId{201}, core::JackId{202}));
+  // gate out -> cv in: accepted too.
+  CHECK_TRUE(g.connect(core::JackId{203}, core::JackId{204}));
+  CHECK_TRUE(g.cableConnected(core::JackId{203}, core::JackId{204}));
+
+  // The one thing PatchGraph still rejects is a direction violation — type is not
+  // consulted at all. An input-driven-from-input stays rejected.
+  CHECK_FALSE(g.connect(core::JackId{202}, core::JackId{204}));
+  CHECK_FALSE(g.connect(core::JackId{201}, core::JackId{203}));
+}
+
+// A hypothetical TypeGuard connect that hard-filters by signal type — the exact
+// reading of "signal type is advisory" that would be WRONG. It must reject the
+// CV->gate cable. Its refusal on a {cv,gate} pair is the red symptom: a real
+// connect that adopted this rule would break cross-type patching.
+static bool type_guard_connect(const core::JackDescriptor* jacks,
+                               core::JackId source, core::JackId sink) {
+  const core::JackDescriptor* s = nullptr;
+  const core::JackDescriptor* k = nullptr;
+  for (std::uint32_t i = 0; i < 4u; ++i) {
+    if (jacks[i].id == source) s = &jacks[i];
+    if (jacks[i].id == sink) k = &jacks[i];
+  }
+  if (!s || !k) return false;
+  if (s->direction != core::PinDirection::output) return false;
+  if (k->direction != core::PinDirection::input) return false;
+  if (s->signalType != k->signalType) return false;  // <-- the degenerate filter
+  return true;
+}
+
+static void type_guard_would_reject() {
+  core::JackDescriptor jacks[4] = {
+      mk_jack(core::JackId{201}, core::PinDirection::output, 1u),
+      mk_jack(core::JackId{202}, core::PinDirection::input, 1u),
+      mk_jack(core::JackId{203}, core::PinDirection::output, 1u),
+      mk_jack(core::JackId{204}, core::PinDirection::input, 1u),
+  };
+  jacks[0].signalType = core::SignalType::cv;
+  jacks[1].signalType = core::SignalType::gate;
+  jacks[2].signalType = core::SignalType::gate;
+  jacks[3].signalType = core::SignalType::cv;
+
+  // A type-guarded connect REFUSES the very CV->gate, gate->CV cables that the
+  // real PatchGraph accepts. Its false here is the degenerate-behaviour symptom:
+  // if PatchGraph silently adopted a type filter, cross_type_connect_succeeds
+  // would go red, so the detector's teeth are real.
+  CHECK_FALSE(type_guard_connect(jacks, core::JackId{201}, core::JackId{202}));
+  CHECK_FALSE(type_guard_connect(jacks, core::JackId{203}, core::JackId{204}));
+}
+
 int main() {
   registry_cardinality_is_data();
   normalized_route_formal_edges();
@@ -258,5 +333,7 @@ int main() {
   max_cables_is_data_not_assumption();
   order_independence();
   multi_round_no_drift();
+  cross_type_connect_succeeds();
+  type_guard_would_reject();
   return ::test::finish("patch_graph");
 }
