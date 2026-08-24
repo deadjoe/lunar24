@@ -1,4 +1,10 @@
 # disposable iPlug2 clone + prebuilt deps (never committed to Lunar24)
-iPlug2/
+third_party/
 deps_extract/
 *.zip
+
+# ①b smoke build output (never committed to Lunar24)
+build/
+
+# slice-2 built binary (never committed to Lunar24)
+audio_thread_invariants/audio_thread_invariants
