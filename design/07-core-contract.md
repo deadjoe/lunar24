@@ -26,7 +26,11 @@ lunar-core ──→ lightweight snapshots/events ──→ adapters/UI
 - `ParameterDescriptor`：真实单位、范围、默认值、平滑策略和持久化语义。
 - ⚠️ `ParameterDescriptor` 是**标量**：单一数值 ＋ 单位/范围/默认/平滑/持久化。
   **非标量的设备状态不进参数库** —— `vector`（逐音板调音、按钮值）、`record`（序列步、键盘 preset A–D）、
-  `mask`（音阶开关）走 DeviceState 的结构化字段（见 §6），不表示为 ParameterDescriptor。
+  `mask`（音阶开关）**归属** DeviceState 的结构化字段（见 §6），不表示为 ParameterDescriptor。
+  ⚠️ **现状**：其中 preset A–D 的容器已在 `DeviceStateV1`（`keyboard_presets`，当前仅载 id 与压感两项）；
+  `plate_tune` / `pushbutton_value` / `quantise_scale_editor` / `seq_steps` **尚未建模**，
+  按 `device_state.h` 的 PROVISIONAL 注记，**由 P4 键盘子系统设计时补全**。
+  **"归属 DeviceState"是设计归属，不是"已经实现"——不得据此认为它们已被处理。**
   registry 完整性门禁据此把它们判为**结构性 gap（Root A: "must gap"）**。
   **这不是待办事项：把它们拍扁成标量才是错的。** 冻结目标 357 参数中**有 8 项属于此类**。
 - ⚠️ 另有一类 gap：目标声明为 `selector-toggle` 但**未给出 positions（值域）**，
@@ -37,6 +41,11 @@ lunar-core ──→ lightweight snapshots/events ──→ adapters/UI
   **这 12 项不是欠账**；把 gap 推向 0 意味着拍扁结构或臆造值域，两者都是错的。
 - `JackDescriptor`：方向、推荐信号用途/范围、normalized route；用途是提示和保护数值范围，不是阻止跨类型实验连接。
 - `NormalizedRoute`：正式图边；插线覆盖，拔线恢复，不允许散落在模块代码里的 `if jack empty` 特判。
+- `FixedEndpointId / FixedRouteId`：固定（内部、非面板可插线）拓扑的稳定身份。**决策 B：只做一致性命中
+  （coherence-only），不建独立运行时数值空间** —— 内部端点以 `module.port` 身份存在、固定路由以
+  `fixed.<...>` 身份存在；完整性门禁只保证每条 fixed route 的 source/sink 指到已声明的内部端点、
+  且 `requiredFixedRoutes` 集逐条存在，不额外分配一个类比 JackId 的 FixedEndpoint 数值空间。
+  只有面板**可插线** jack 才有 JackId；内部固定端点只有身份、无 JackId。
 - `PatchGraph`：连接事实；屏幕 cable 只是它的 visualization，不是连接状态本身。
 - `ControlEvent`：带 block 内 sample offset 的外部离散事件或参数命令。
 - `AudioBlockView`：框架无关、预分配的输入/四逻辑输出 buffer view。

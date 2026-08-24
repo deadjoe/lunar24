@@ -1731,6 +1731,11 @@
       "keyboard_step": {
         "note": "One sequencer step: the closed element type of keyboard_seq.steps.",
         "kind": "record",
+        "evidence": {
+          "ref": "solar42N_manual_v15",
+          "lineStart": 893,
+          "lineEnd": 902
+        },
         "fields": [
           {"name": "note", "type": "number"},
           {"name": "value", "type": "voltage"},
@@ -1740,6 +1745,11 @@
       "keyboard_seq": {
         "note": "Sequencer step data (seq_editor), up to 16 steps of note/value + gate. element is a CLOSED reference to keyboard_step, not an inline anonymous map.",
         "kind": "record",
+        "evidence": {
+          "ref": "solar42N_manual_v15",
+          "lineStart": 866,
+          "lineEnd": 910
+        },
         "fields": [
           {"name": "steps", "type": "array", "count": 16, "element": {"name": "step", "type": "record", "of": "keyboard_step"}}
         ]
@@ -1747,15 +1757,62 @@
       "keyboard_params_minus_clock": {
         "note": "The functional keyboard param-set a preset stores: all keyboard parameters EXCLUDING clock_bpm, the calibration block, and presets A-D (avoids recursion + erroneous storage). Closed param-set type referenced by keyboard_preset.payload.",
         "kind": "params",
+        "evidence": {
+          "ref": "solar42N_manual_v15",
+          "lineStart": 1040,
+          "lineEnd": 1045
+        },
         "params": ["keyboard.behaviour", "keyboard.mode", "keyboard.arp_hold", "keyboard.arp_clock", "keyboard.arp_direction", "keyboard.arp_variation", "keyboard.arp_interval", "keyboard.arp_rhythm", "keyboard.arp_length", "keyboard.seq_run", "keyboard.seq_length", "keyboard.seq_clock", "keyboard.seq_direction", "keyboard.seq_cv_output", "keyboard.seq_rhythm", "keyboard.seq_rhythm_length", "keyboard.seq_steps", "keyboard.portamento_speed", "keyboard.portamento_legato", "keyboard.vibrato_speed", "keyboard.vibrato_depth", "keyboard.vibrato_delay", "keyboard.vibrato_pressure", "keyboard.pressure_output", "keyboard.pressure_rise", "keyboard.pressure_fall", "keyboard.quantise_scale_editor", "keyboard.quantise_load_scale", "keyboard.root_note", "keyboard.plate_tune", "keyboard.pushbutton_value"]
       },
       "keyboard_preset": {
-        "note": "Keyboard parameter payload for presets A-D (manual L1040-1045).",
+        "note": "Keyboard parameter payload for presets A-D (the 4 PRESETS slots a preset stores).",
         "kind": "record",
+        "evidence": {
+          "ref": "solar42N_manual_v15",
+          "lineStart": 1040,
+          "lineEnd": 1045
+        },
         "fields": [
           {"name": "payload", "type": "record", "of": "keyboard_params_minus_clock"}
         ],
         "excludes": ["keyboard.calibration_pressure", "keyboard.calibration_v_oct", "keyboard.clock_bpm", "keyboard.dac_vref", "keyboard.debounce", "keyboard.encoder_direction", "keyboard.mpr121_charge", "keyboard.mpr121_discharge", "keyboard.preset_a", "keyboard.preset_b", "keyboard.preset_c", "keyboard.preset_d", "keyboard.pressure_max", "keyboard.pressure_min", "keyboard.release_threshold", "keyboard.touch_threshold"]
+      }
+    },
+    "rootAGapDisposition": {
+      "note": "Disposition of the 8 non-scalar (Root A 'must gap') keyboard-complex params. Each is declared non-scalar and is therefore closed out of the scalar Parameter registry (never flattened into a scalar - that would be the design violation). This records where the value structurally belongs (a DeviceState structured field per design/07 §6, or a declared recordSchema) and whether it is already MODELLED (the container lives in DeviceStateV1) or DEFERRED-TO-P4 (still to be modelled by the P4 keyboard subsystem). The gate FAILS if any computed Root-A gap id is missing its disposition, if a disposition item is malformed, or if a disposition names an id that is not a current Root-A gap (two-way check, so it cannot drift stale).",
+      "items": {
+        "keyboard.plate_tune": {
+          "belongsTo": "deviceState",
+          "status": "deferred-to-P4"
+        },
+        "keyboard.pushbutton_value": {
+          "belongsTo": "deviceState",
+          "status": "deferred-to-P4"
+        },
+        "keyboard.quantise_scale_editor": {
+          "belongsTo": "deviceState",
+          "status": "deferred-to-P4"
+        },
+        "keyboard.seq_steps": {
+          "belongsTo": "recordSchema:keyboard_seq",
+          "status": "deferred-to-P4"
+        },
+        "keyboard.preset_a": {
+          "belongsTo": "recordSchema:keyboard_preset",
+          "status": "modelled"
+        },
+        "keyboard.preset_b": {
+          "belongsTo": "recordSchema:keyboard_preset",
+          "status": "modelled"
+        },
+        "keyboard.preset_c": {
+          "belongsTo": "recordSchema:keyboard_preset",
+          "status": "modelled"
+        },
+        "keyboard.preset_d": {
+          "belongsTo": "recordSchema:keyboard_preset",
+          "status": "modelled"
+        }
       }
     },
     "landedDescriptorFacts": {

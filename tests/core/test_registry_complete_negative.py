@@ -4102,6 +4102,61 @@ def main():
         raise SystemExit("parameter-gap reason split %d/%d != 8 Root-A / 4 positionless"
                          % (len(_ra), len(_pl)))
 
+    # (ma)-(md) record-schema evidence gate (Claude msg 43ab2322 item ③): each recordSchema must
+    #      carry a structured evidence{ref,lineStart,lineEnd}; a prose-only `note` is NOT a citation.
+    #      Dropping the evidence object, malforming its bounds, or adding a stray evidence key must
+    #      all fail for their own reason.
+    ma_bad = copy.deepcopy(manifest)
+    del ma_bad["target"]["recordSchemas"]["keyboard_step"]["evidence"]
+    problems, _ = gate.check(spec, ma_bad)
+    if not has(problems, "requires a structured evidence object"):
+        raise SystemExit("record schema with no evidence object not flagged: %r" % problems)
+
+    mb_bad = copy.deepcopy(manifest)
+    mb_bad["target"]["recordSchemas"]["keyboard_seq"]["evidence"]["lineEnd"] = 0
+    problems, _ = gate.check(spec, mb_bad)
+    if not has(problems, "lineStart <= lineEnd"):
+        raise SystemExit("record schema malformed evidence bounds (lineEnd=0) not flagged: %r"
+                         % problems)
+
+    mc_bad = copy.deepcopy(manifest)
+    mc_bad["target"]["recordSchemas"]["keyboard_preset"]["evidence"]["bogus"] = 1
+    problems, _ = gate.check(spec, mc_bad)
+    if not has(problems, "evidence keys"):
+        raise SystemExit("record schema stray evidence key not flagged: %r" % problems)
+
+    # (me)-(mh) Root-A gap disposition gate (Claude msg 43ab2322 item ②): the 8 non-scalar gaps must
+    #      each point to where the value belongs + a status (modelled | deferred-to-P4), and the set
+    #      must match the computed Root-A gap EXACTLY. Dropping an entry, status drift, a belongsTo
+    #      to a non-declared recordSchema, and a stale/extra id must all fail.
+    me_bad = copy.deepcopy(manifest)
+    del me_bad["target"]["rootAGapDisposition"]["items"]["keyboard.seq_steps"]
+    problems, _ = gate.check(spec, me_bad)
+    if not has(problems, "Root-A gap ids missing a disposition"):
+        raise SystemExit("a Root-A gap id with no disposition entry not flagged: %r" % problems)
+
+    mf_bad = copy.deepcopy(manifest)
+    mf_bad["target"]["rootAGapDisposition"]["items"]["keyboard.plate_tune"]["status"] = "landed"
+    problems, _ = gate.check(spec, mf_bad)
+    if not has(problems, "has invalid status"):
+        raise SystemExit("root-A disposition status drift (deferred-to-P4 -> landed) not flagged: "
+                         "%r" % problems)
+
+    mg_bad = copy.deepcopy(manifest)
+    mg_bad["target"]["rootAGapDisposition"]["items"]["keyboard.preset_a"]["belongsTo"] = \
+        "recordSchema:not_a_schema"
+    problems, _ = gate.check(spec, mg_bad)
+    if not has(problems, "names no declared recordSchema"):
+        raise SystemExit("root-A disposition belongsTo a non-declared recordSchema not flagged: %r"
+                         % problems)
+
+    mh_bad = copy.deepcopy(manifest)
+    mh_bad["target"]["rootAGapDisposition"]["items"]["vco_a.oct_sel"] = \
+        {"belongsTo": "deviceState", "status": "deferred-to-P4"}
+    problems, _ = gate.check(spec, mh_bad)
+    if not has(problems, "not a current Root-A gap"):
+        raise SystemExit("stale/rogue root-A disposition id not flagged: %r" % problems)
+
     # (lm)-(lt) MAGIC Program 2/3 X/Y/Z descriptor lock (Codex msg 62370964). The six program
     #      magic.2/.3 x/y/z params (ids 307-312) are landed descriptor facts locked by the exact-
     #      compare — id renumber, owner / cross-owner leak, per-line evidence drift and a fieldEvidence

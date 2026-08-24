@@ -1131,6 +1131,7 @@ RECORD_SCHEMAS = {
     "keyboard_step": {
         "note": "One sequencer step: the closed element type of keyboard_seq.steps.",
         "kind": "record",
+        "evidence": {"ref": "solar42N_manual_v15", "lineStart": 893, "lineEnd": 902},
         "fields": [{"name": "note", "type": "number"},
                    {"name": "value", "type": "voltage"},
                    {"name": "gate", "type": "bool"}],
@@ -1139,6 +1140,7 @@ RECORD_SCHEMAS = {
         "note": "Sequencer step data (seq_editor), up to 16 steps of note/value + gate. element is "
                 "a CLOSED reference to keyboard_step, not an inline anonymous map.",
         "kind": "record",
+        "evidence": {"ref": "solar42N_manual_v15", "lineStart": 866, "lineEnd": 910},
         "fields": [{"name": "steps", "type": "array", "count": 16,
                     "element": {"name": "step", "type": "record", "of": "keyboard_step"}}],
     },
@@ -1147,11 +1149,13 @@ RECORD_SCHEMAS = {
                 "EXCLUDING clock_bpm, the calibration block, and presets A-D (avoids recursion + "
                 "erroneous storage). Closed param-set type referenced by keyboard_preset.payload.",
         "kind": "params",
+        "evidence": {"ref": "solar42N_manual_v15", "lineStart": 1040, "lineEnd": 1045},
         "params": _preset_params(),
     },
     "keyboard_preset": {
-        "note": "Keyboard parameter payload for presets A-D (manual L1040-1045).",
+        "note": "Keyboard parameter payload for presets A-D (the 4 PRESETS slots a preset stores).",
         "kind": "record",
+        "evidence": {"ref": "solar42N_manual_v15", "lineStart": 1040, "lineEnd": 1045},
         "fields": [{"name": "payload", "type": "record", "of": "keyboard_params_minus_clock"}],
         "excludes": ["keyboard.%s" % leaf for leaf in sorted(KEYBOARD_NON_PRESET)],
     },

@@ -336,13 +336,32 @@ def validate_record_schemas(record_schemas, param_sids, param_record_types=None)
             out.append(f"record schema {name!r}: kind {kind!r} not in {sorted(RECORD_KINDS)}")
             continue
         # Exact top-level key-set (Codex 9th-review item #2c): a params schema carries only
-        # kind/note/params, a record only kind/note/fields/excludes. A stray key masks a wrong shape
-        # and must be rejected, not ignored.
-        top_allowed = {"kind", "note"} | ({"params"} if kind == "params" else {"fields", "excludes"})
+        # kind/note/evidence/params, a record only kind/note/evidence/fields/excludes. A stray key
+        # masks a wrong shape and must be rejected, not ignored.
+        top_allowed = {"kind", "note", "evidence"} | ({"params"} if kind == "params"
+                                                      else {"fields", "excludes"})
         top_extra = sorted({k for k in sch if k not in top_allowed})
         if top_extra:
             out.append(f"record schema {name!r}: top-level keys {top_extra} not allowed for kind "
                        f"{kind!r} (exact key-set is {sorted(top_allowed)})")
+        # Structured evidence (Claude msg 43ab2322 item ③): a recordSchema must carry a
+        # ref/lineStart/lineEnd citation to the manual; a prose-only `note` is NOT an evidence
+        # citation. Missing or malformed evidence fails, never passes on the note.
+        ev = sch.get("evidence")
+        if not isinstance(ev, dict) or not ev:
+            out.append(f"record schema {name!r}: requires a structured evidence object "
+                       f"(ref/lineStart/lineEnd) — prose `note` is not an evidence citation")
+        else:
+            ev_extra = sorted({k for k in ev if k not in {"ref", "lineStart", "lineEnd"}})
+            if ev_extra:
+                out.append(f"record schema {name!r}: evidence keys {ev_extra} not allowed "
+                           f"(exact key-set is ref/lineStart/lineEnd)")
+            if not isinstance(ev.get("ref"), str) or not ev.get("ref"):
+                out.append(f"record schema {name!r}: evidence.ref must be a non-empty source string")
+            _ls = ev.get("lineStart"); _le = ev.get("lineEnd")
+            if not (type(_ls) is int and type(_le) is int and _ls > 0 and _le > 0 and _le >= _ls):
+                out.append(f"record schema {name!r}: evidence needs positive lineStart <= lineEnd "
+                           f"(got lineStart={_ls!r} lineEnd={_le!r})")
         if kind == "params":
             plist = sch.get("params") or []
             if not plist:
@@ -444,6 +463,63 @@ def validate_record_schemas(record_schemas, param_sids, param_record_types=None)
             if missing:
                 out.append(f"record schema {name!r}: params {sorted(missing)} neither stored nor "
                            f"excluded (keyboard-state partition has a miss)")
+    return out
+
+
+def validate_root_a_disposition(disposition, root_a_items, record_schemas):
+    """Validate the Root-A gap disposition (Claude msg 43ab2322 item ②). Each computed non-scalar
+    (Root A) gap id must point to its 归属 — a DeviceState structured field (per design/07 §6), or a
+    declared recordSchema — and carry a status in {modelled, deferred-to-P4}. The declared set must
+    match the computed Root-A gap set EXACTLY, so a disposition cannot drift stale. Missing /
+    malformed / false item → problem."""
+    out = []
+    if not isinstance(disposition, dict):
+        out.append("root-A gap disposition must be an object with an 'items' map "
+                   "(each Root-A gap id → {belongsTo, status})")
+        return out
+    items = disposition.get("items")
+    if not isinstance(items, dict):
+        out.append("root-A gap disposition missing its 'items' map")
+        return out
+    declared = set(items)
+    root_a = set(root_a_items)
+    if declared != root_a:
+        missing = sorted(root_a - declared)
+        extra = sorted(declared - root_a)
+        if missing:
+            out.append("Root-A gap ids missing a disposition (every non-scalar Root-A gap must "
+                       "point to where it belongs): %s" % missing)
+        if extra:
+            out.append("root-A disposition names ids that are not a current Root-A gap "
+                       "(stale/rogue disposition): %s" % extra)
+    for sid, d in items.items():
+        if not isinstance(d, dict):
+            out.append("root-A disposition for %r must be an object {belongsTo, status}" % sid)
+            continue
+        d_extra = sorted({k for k in d if k not in {"belongsTo", "status"}})
+        if d_extra:
+            out.append("root-A disposition for %r has keys %s not allowed "
+                       "(exactly belongsTo/status)" % (sid, d_extra))
+        st = d.get("status")
+        if st not in {"modelled", "deferred-to-P4"}:
+            out.append("root-A disposition for %r has invalid status %r (must be "
+                       "modelled|deferred-to-P4)" % (sid, st))
+        bt = d.get("belongsTo")
+        if not isinstance(bt, str) or not bt:
+            out.append("root-A disposition for %r needs a non-empty belongsTo string" % sid)
+        elif bt.startswith("recordSchema:"):
+            rs = bt[len("recordSchema:"):]
+            if rs not in record_schemas:
+                out.append("root-A disposition for %r belongsTo %r names no declared recordSchema "
+                           "(keyboard_seq/keyboard_preset…)" % (sid, bt))
+        elif bt != "deviceState":
+            out.append("root-A disposition for %r belongsTo %r is not a supported 归属 "
+                       "(recordSchema:<std> or deviceState)" % (sid, bt))
+        if st == "modelled" and not (isinstance(bt, str) and bt.startswith("recordSchema:")
+                                     and bt[len("recordSchema:"):] in record_schemas):
+            out.append("root-A disposition for %r says modelled but belongsTo %r is not a declared "
+                       "recordSchema (modelled means the container schema exists in the manifest)"
+                       % (sid, bt))
     return out
 
 
@@ -1848,6 +1924,14 @@ def check(spec, manifest, require_full=False):
                    and not (param_by_sid.get(sid) or {}).get("positions")]
     _param_other = [sid for sid in _param_gap
                     if sid not in _param_root_a and sid not in _param_posl]
+
+    # Root-A gap disposition coherence (Claude msg 43ab2322 item ②): the 8 non-scalar gaps must each
+    # point to where the value structurally belongs (a DeviceState field or a declared recordSchema)
+    # and state its status (modelled | deferred-to-P4); the declared set must match the computed
+    # Root-A gap set EXACTLY (two-way), so it cannot drift stale. Always-on: it is a manifest-
+    # internal coherence check, independent of the completeness level.
+    problems.extend(validate_root_a_disposition(tgt.get("rootAGapDisposition"), _param_root_a,
+                                                record_schemas))
 
     coverage = {
         "registry": {
