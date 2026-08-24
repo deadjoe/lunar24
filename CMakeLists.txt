@@ -56,6 +56,14 @@ add_test(NAME core_headers_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_core_headers.py)
 
+# The produced tree must never depend on the disposable P1 spike/ dir: core/ and
+# generated/ are framework-free and spike-free, so a later "delete spike/ and
+# ship" cannot break the build. The boundary is one-directional (spike/ may
+# reference anything; core/ + generated/ may not reference spike/).
+add_test(NAME spike_clean_gate
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_spike_clean.py)
+
 # Negative registry fixtures must each be REJECTED by the validator FOR THEIR
 # INTENDED REASON (a message-asserting wrapper, so a fixture that fails for an
 # accidental reason no longer passes).

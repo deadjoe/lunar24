@@ -78,7 +78,10 @@ negistor 的单元差异、慢漂移和非线性是核心音色，不得用干�
 - 压力测试 UI 拖动/MIDI burst，确保音频线程无锁、无分配、无爆音。
 - 实测 immutable graph/state 的 audio-thread handle 与 non-audio reclamation；不能让 `shared_ptr` 最后一次 release/destructor 偷跑到 callback。
 
-**退出条件**：两平台同时通过。否则只在此处回退到 miniaudio+RtMidi+SDL3，不让框架风险进入 DSP 主体。
+**退出条件**：macOS 上①–⑤全部通过；Windows 侧**本阶段只验 CI 能编译**（`windows-latest`），
+**真机音频/MIDI 行为暂不验证**（bearbone 2026-08-24 决定：Windows 调试先不考虑）。
+⚠️ Windows 真机验证**挂起未完成**，补回时点：**首个面向 Windows 的可分发构建之前**，不得再往后推。
+若①在 macOS 即失败，按原计划在此处回退 miniaudio+RtMidi+SDL3，不让框架风险进入 DSP 主体。
 
 ### P2 — 固定控制时基与路由图
 
