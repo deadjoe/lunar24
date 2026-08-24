@@ -192,6 +192,13 @@ struct KeyboardPreset {
   std::uint32_t id = 0u;            // stable sys-selected preset id, never renumbered
   std::uint8_t pressureBehaviour = 0u;  // manual 'Behaviour' (PROVISIONAL decode)
   std::uint8_t pressureOutput = 0u;     // manual 'Pressure output' (PROVISIONAL decode)
+  // The wire record is the schema-declared kKeyboardPresetRecordBytes (8), which
+  // carries a 2-byte `reserved` field at offset 6 (see kKeyboardPresetFields). A
+  // future / different version may write state there; a re-encode must preserve it
+  // verbatim rather than zero it, so the struct mirrors the full record. Keeping it
+  // here makes the DeviceStateV1 <-> schema serializer a stateless, exact bijection
+  // (P2-⑤ @Claude Q2: reserved bytes are preserved, never destroyed).
+  std::uint8_t reserved[kKeyboardPresetRecordBytes - 6u] = {};
 };
 
 // Dual-effector selection. Each slot selects a single processor idiom by its
