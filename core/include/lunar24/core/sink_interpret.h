@@ -9,20 +9,24 @@
 // threshold produces gate behaviour. It is never isolated off by a signal-type
 // match. This is the P2-④ deliverable.
 //
-// The shaper is stateful and per-sample (audio-rate). A hysteresis latch holds the
-// gate high until the input drops below (threshold - hysteresis) and low until it
-// rises above (threshold + hysteresis), so a signal dithering near the threshold
-// does not retrigger. An inverting (bipolar) gate sink presents the NEGATED gate,
-// swapping high/low and therefore rising/falling. Because everything is per-sample
-// and the only state is the latch, the edge lands at a deterministic ABSOLUTE
-// sample independent of how the host partitions blocks — which is exactly why a
-// block-lazy implementation (re-evaluate only at a block boundary) must fail the
-// partition-invariance check.
+// The gate level is a pure threshold comparison against the sink's
+// gateThresholdVolts with a hysteresis band: the gate rises once the input clears
+// (threshold + hysteresis) and stays high until it drops below (threshold -
+// hysteresis), so a signal dithering near the threshold does not retrigger. The
+// path deliberately does NOT consult Polarity: that field describes the signal
+// RAIL (unipolar 0..+V, bipolar -V..+V), not a gate direction, and the hardware
+// gate jacks are all 0..10V single-polarity — there is no evidence of an inverting
+// gate. Per design discipline ("字段被读了不是目标，行为符合证据才是") a field with no
+// role on a path is honestly left unused, never granted an invented behaviour
+// (see enums.h). Because everything is per-sample and the only state is the latch,
+// the edge lands at a deterministic ABSOLUTE sample independent of how the host
+// partitions blocks — which is exactly why a block-lazy implementation
+// (re-evaluate only at a block boundary) must fail the partition-invariance check.
 //
 // Framework-free, no heap, no locks. One GateClockSinkState per sink edge; the
 // caller owns the bank (keyed by sink JackId). The actual gate/clock numbers
-// (gateThresholdVolts, hysteresisVolts, polarity) come from the JackDescriptor —
-// the only source of truth, never a hardcoded value.
+// (gateThresholdVolts, hysteresisVolts) come from the JackDescriptor — the only
+// source of truth, never a hardcoded value.
 
 #pragma once
 
@@ -56,19 +60,11 @@ inline void sink_gate_reset(GateClockSinkState& st) {
 }
 
 // Interpret one continuous input sample `inputVolts` at a gate/clock sink. The
-// sink descriptor supplies gateThresholdVolts / hysteresisVolts / polarity. The
-// return value is the post-inversion gate level and the transition from the
-// previous sample. This is the sink-side "continuous CV -> gate" shaper.
-//
-// Modelling note (since the machine's `Polarity` describes the signal rail, not
-// an explicit gate-direction flag, and this is the only inversion-bearing field
-// a JackDescriptor carries): a `bipolar` sink is treated as an inverting gate —
-// its output gate is the negation of the raw level, so high/low and rising/falling
-// both swap versus a `unipolar` sink on the same input. `unknown` polarity is
-// treated as non-inverting (unipolar behaviour): no evidence, no inversion. The
-// polarity-effective test drives an explicit unipolar vs bipolar pair to prove the
-// field is genuinely consulted, and its negative control (a shaper that ignores
-// polarity) must go red.
+// sink descriptor supplies gateThresholdVolts / hysteresisVolts. The return value
+// is the gate level and the transition from the previous sample — the sink-side
+// "continuous CV -> gate" shaper. The gate is a straight threshold comparison
+// (with hysteresis); Polarity is deliberately not consulted (no evidence of an
+// inverting gate; see the module comment).
 inline SinkSample sink_gate_interpret(const JackDescriptor& sink, GateClockSinkState& st,
                                       double inputVolts) {
   const double thr = sink.gateThresholdVolts;
@@ -77,16 +73,14 @@ inline SinkSample sink_gate_interpret(const JackDescriptor& sink, GateClockSinkS
   // Raw hysteresis latch: rise clears the upper edge, hold stays while above the
   // lower edge, fall drops below the lower edge. A signal dithering inside the
   // band cannot retrigger.
-  bool rawHigh;
   if (!st.high)
-    rawHigh = inputVolts >= (thr + hyst);
+    st.high = inputVolts >= (thr + hyst);
   else
-    rawHigh = inputVolts > (thr - hyst);
-  st.high = rawHigh;
+    st.high = inputVolts > (thr - hyst);
 
-  // Polarity: an inverting (bipolar) gate presents the negated gate.
-  const bool inverted = (sink.polarity == Polarity::bipolar);
-  const bool out = inverted ? !rawHigh : rawHigh;
+  // The gate level is the raw latch, unmodified: no polarity inversion on this
+  // path (the field describes the rail, not a gate direction we can act on here).
+  const bool out = st.high;
 
   // Edge = output transition between the previous sample and this one.
   GateEdge edge = GateEdge::none;

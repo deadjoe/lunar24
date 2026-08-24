@@ -13,13 +13,13 @@
 //   * hysteresis works — a signal dithering in the threshold band does NOT
 //     retrigger. The negative (a shaper that ignores hysteresis) retriggers on
 //     the very same input.
-//   * polarity works — an inverting (bipolar) sink yields opposite gate behaviour
-//     (high/low and rising/falling swap) on the same input. The negative (a
-//     shaper that treats polarity as a no-op) fails to invert.
 //   * edge is sample-accurate and partition-invariant — the rising edge lands on
 //     the same absolute sample under 64/128/256 AND the mixed non-uniform
 //     partition (legacy P2-① partition). The negative (a block-lazy shaper that
 //     re-evaluates only at a block boundary) lets the edge drift.
+//   * Polarity is deliberately NOT exercised here: the field describes the signal
+//     rail, not a gate direction, and there is no evidence of an inverting gate —
+//     so the shaper reads only threshold/hysteresis (see sink_interpret.h).
 
 #include "mini_test.h"
 
@@ -137,80 +137,6 @@ static void single_threshold_retriggers() {
     if (i >= 2 && i <= 7 && s.edge != core::GateEdge::none) ++inBand;
   }
   CHECK(inBand > 1);  // multiple false triggers without hysteresis
-}
-
-// --------------------------------------------------------------------
-// @Claude guard: polarity "proves it works".
-// --------------------------------------------------------------------
-
-// A clean low -> high -> low gate.
-static const std::vector<double> kGate = {3.0, 6.0, 6.0, 3.0};
-
-static void polarity_inverts_gate() {
-  auto uni = gate_jack(core::SignalType::gate, core::Polarity::unipolar, 5.0, 0.5);
-  auto bi = gate_jack(core::SignalType::gate, core::Polarity::bipolar, 5.0, 0.5);
-  auto u = run_all(uni, kGate);
-  auto b = run_all(bi, kGate);
-
-  // unipolar: [low, high, high, low], edges [none, rising, none, falling]
-  CHECK_FALSE(u[0].gateHigh);
-  CHECK(u[1].gateHigh);
-  CHECK(u[2].gateHigh);
-  CHECK_FALSE(u[3].gateHigh);
-  CHECK_EQ(u[1].edge, core::GateEdge::rising);
-  CHECK_EQ(u[3].edge, core::GateEdge::falling);
-
-  // bipolar (inverting): exactly the opposite — high/low and rising/falling swap.
-  CHECK(b[0].gateHigh);
-  CHECK_FALSE(b[1].gateHigh);
-  CHECK_FALSE(b[2].gateHigh);
-  CHECK(b[3].gateHigh);
-  CHECK_EQ(b[1].edge, core::GateEdge::falling);
-  CHECK_EQ(b[3].edge, core::GateEdge::rising);
-
-  // For every sample, the two polarities yield complementary gates.
-  for (std::size_t i = 0; i < u.size(); ++i) {
-    CHECK_EQ(u[i].gateHigh, !b[i].gateHigh);
-  }
-}
-
-// A shaper that treats polarity as a no-op (always out = rawHigh) — the
-// "读了字段却当摆设" degradation @Claude names. On a bipolar sink it must fail
-// to invert.
-static core::SinkSample no_polarity_interpret(const core::JackDescriptor& jk,
-                                              core::GateClockSinkState& st,
-                                              double v) {
-  double thr = jk.gateThresholdVolts;
-  double hyst = jk.hysteresisVolts >= 0.0 ? jk.hysteresisVolts : 0.0;
-  bool raw = st.high ? (v > thr - hyst) : (v >= thr + hyst);
-  st.high = raw;
-  bool out = raw;  // ignores polarity
-  core::GateEdge edge = core::GateEdge::none;
-  if (st.primed) {
-    if (!st.prevOut && out) edge = core::GateEdge::rising;
-    else if (st.prevOut && !out) edge = core::GateEdge::falling;
-  }
-  st.prevOut = out;
-  st.primed = true;
-  return core::SinkSample{out, edge};
-}
-
-static void polarity_as_noop_is_caught() {
-  auto bi = gate_jack(core::SignalType::gate, core::Polarity::bipolar, 5.0, 0.5);
-  core::GateClockSinkState st;
-  std::vector<core::SinkSample> seq;
-  for (double v : kGate) seq.push_back(no_polarity_interpret(bi, st, v));
-  // The no-op shaper produced the UNIPOLAR (non-inverted) sequence: [low,high,high,low].
-  // On a bipolar sink the CORRECT shaper would have inverted it. So ignoring
-  // polarity yields a result that is NOT inverted for sample 0 (gateHigh true is
-  // the expected inverted output — a no-op gives false).
-  CHECK_FALSE(seq[0].gateHigh);
-  CHECK(seq[1].gateHigh);
-  // And compare against the real shaper: the no-op does NOT swap vs unipolar.
-  auto uni = gate_jack(core::SignalType::gate, core::Polarity::unipolar, 5.0, 0.5);
-  auto u = run_all(uni, kGate);
-  for (std::size_t i = 0; i < u.size(); ++i)
-    CHECK_EQ(u[i].gateHigh, seq[i].gateHigh);  // no-op == unipolar (bug symptom)
 }
 
 // --------------------------------------------------------------------
@@ -340,8 +266,6 @@ static void cv_into_gate_sink_is_interpreted() {
 int main() {
   hysteresis_holds_through_band_jitter();
   single_threshold_retriggers();
-  polarity_inverts_gate();
-  polarity_as_noop_is_caught();
   edge_absolute_sample_partition_invariant();
   block_lazy_edge_moves();
   cv_into_gate_sink_is_interpreted();
