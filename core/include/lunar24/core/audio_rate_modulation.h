@@ -21,7 +21,15 @@ namespace lunar24::core {
 // length.
 class AudioRateModulation {
  public:
-  AudioRateModulation(double period_seconds = 0.01, double sample_rate = 48000.0) {
+  // No implicit 48k default (design/07 §5: core is configured by the live host
+  // sample rate). A modulation whose rate has NOT been set yet (sample_rate_ stays
+  // 0.0) is inert: recompute() leaves phaseStep_ at 0, so the phase never advances
+  // and next() emits a constant. Making the rate a required constructor argument —
+  // and the members default to 0.0, not 48000 — turns an omitted rate into either a
+  // compile error (two-arg form needs it) or an inert DC (default form), never a
+  // silently doubled frequency.
+  AudioRateModulation() = default;
+  AudioRateModulation(double period_seconds, double sample_rate) {
     setPeriodSeconds(period_seconds);
     setSampleRate(sample_rate);
   }
@@ -46,6 +54,8 @@ class AudioRateModulation {
 
   void reset(double phase = 0.0) { phase_ = phase; }
 
+  double sampleRate() const { return sample_rate_; }
+
  private:
   static double triangle(double p) {  // p in [0,1)
     return (p < 0.5) ? (4.0 * p - 1.0) : (3.0 - 4.0 * p);
@@ -57,7 +67,7 @@ class AudioRateModulation {
                      : 0.0;
   }
 
-  double sample_rate_ = 48000.0;
+  double sample_rate_ = 0.0;  // unset -> phaseStep_ 0 (inert), never a wrong-rate wave
   double period_seconds_ = 0.01;
   double phaseStep_ = 0.0;
   double phase_ = 0.0;

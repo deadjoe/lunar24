@@ -450,6 +450,107 @@ static void smoothing_is_wall_clock_invariant() {
   CHECK(std::abs(m44 - m96) > 1e-3);
 }
 
+// ---------------------------------------------------------------------------
+// Audio-rate cross-sample-rate check (the analogue of the smoothing one, but on
+// measured FREQUENCY instead of wall-clock reach time). The old design hardcoded
+// 48000 as the default rate; a host running 96k that omitted the rate got a phase
+// step computed from 48k, so a "1 kHz" triangle actually ran at 2 kHz — silently,
+// with tests still green (the only audio-rate call site always passed 48000, and
+// the cross-sample-rate path was built on smoothing, which did not need it).
+// ---------------------------------------------------------------------------
+
+// Measure the actual frequency of an AudioRateModulation by counting rising
+// zero-crossings of its triangle over a fixed WALL-CLOCK window (0.05 s), so the
+// sample count scales with fs rather than being a fixed number. A good audio-rate
+// source with period P reads ~1/P Hz at ANY fs. The measurement is quantized by the
+// crossing window (resolution = 1/window = 20 Hz), so tolerate a narrow band.
+static double audio_rate_measured_hz(double period_seconds, double fs) {
+  core::AudioRateModulation m(period_seconds, fs);
+  double prev = m.next();
+  std::uint64_t crossings = 0;
+  const std::uint64_t n = static_cast<std::uint64_t>(fs * 0.05);
+  for (std::uint64_t i = 1; i < n; ++i) {
+    const double cur = m.next();
+    if (prev < 0.0 && cur >= 0.0) ++crossings;  // one rising zero-cross per period
+    prev = cur;
+  }
+  return static_cast<double>(crossings) / (static_cast<double>(n) / fs);
+}
+
+// The original "hardcoded 48k default" defect reproduced as a negative control: the
+// phase advance uses a FIXED 48k rate (step = 1/(48000·P)) whatever the host fs.
+// The wave then completes the same number of samples per period at every fs, so the
+// measured frequency scales with fs (48k→1000 Hz, 96k→2000 Hz). This is exactly what
+// the constructor/member `48000.0` default produced before the fix.
+static double buggy_audio_rate_measured_hz(double period_seconds, double fs) {
+  double phase = 0.0;
+  const double step = 1.0 / (48000.0 * period_seconds);  // BUG: fixed 48k
+  auto tri = [](double p) { return (p < 0.5) ? (4.0 * p - 1.0) : (3.0 - 4.0 * p); };
+  double prev = tri(phase);
+  std::uint64_t crossings = 0;
+  const std::uint64_t n = static_cast<std::uint64_t>(fs * 0.05);
+  for (std::uint64_t i = 1; i < n; ++i) {
+    phase += step;
+    if (phase >= 1.0) phase -= 1.0;
+    const double cur = tri(phase);
+    if (prev < 0.0 && cur >= 0.0) ++crossings;
+    prev = cur;
+  }
+  return static_cast<double>(crossings) / (static_cast<double>(n) / fs);
+}
+
+// Hz measurements can be off by the crossing-window resolution (20 Hz), so compare
+// RELATIVE spread, not absolute ms. A genuine 2x defect (48k default at a 96k
+// session) is ~100% off and is caught by this generous 8% band; legitimate
+// quantisation noise (~2-4%) passes.
+static bool audio_cross_sr_consistent(double h44, double h48, double h96) {
+  const double mean = (h44 + h48 + h96) / 3.0;
+  const double max_dev =
+      std::max(std::abs(h44 - mean),
+               std::max(std::abs(h48 - mean), std::abs(h96 - mean)));
+  return max_dev / mean < 0.08;
+}
+
+static void audio_rate_is_wall_clock_invariant() {
+  constexpr double kPeriod = 0.001;       // a 1 kHz triangle
+  constexpr double kTargetHz = 1000.0;
+
+  // GOOD: the same period_seconds read the same Hz at 44.1k / 48k / 96k.
+  const double h44 = audio_rate_measured_hz(kPeriod, 44100.0);
+  const double h48 = audio_rate_measured_hz(kPeriod, 48000.0);
+  const double h96 = audio_rate_measured_hz(kPeriod, 96000.0);
+  CHECK(h44 > kTargetHz - 60.0 && h44 < kTargetHz + 60.0);
+  CHECK(h48 > kTargetHz - 60.0 && h48 < kTargetHz + 60.0);
+  CHECK(h96 > kTargetHz - 60.0 && h96 < kTargetHz + 60.0);
+  CHECK(audio_cross_sr_consistent(h44, h48, h96));
+
+  // The original 48k-default defect (detector bites): a fixed-48k phase step makes
+  // the measured Hz track fs, so the cross-rate check is red and 96k is 2x 48k.
+  const double m44 = buggy_audio_rate_measured_hz(kPeriod, 44100.0);
+  const double m48 = buggy_audio_rate_measured_hz(kPeriod, 48000.0);
+  const double m96 = buggy_audio_rate_measured_hz(kPeriod, 96000.0);
+  CHECK_FALSE(audio_cross_sr_consistent(m44, m48, m96));
+  CHECK(std::abs(m96 - m48) > 600.0);  // 2000 vs 1000
+}
+
+static void unconfigured_rate_is_inert_not_wrong() {
+  // A default-constructed modulation (rate unset = 0.0, matching
+  // ParameterSmoother's unset 0.0) must be INERT, not a lurching 48k: phaseStep_
+  // stays 0 so the phase never advances and next() is a constant, not a wrong-rate
+  // wave. There is no implicit sample rate anywhere in core (requirement 3).
+  core::AudioRateModulation unset;
+  const double a = unset.next();
+  const double b = unset.next();
+  CHECK(a == b);                       // never advances -> constant DC
+  CHECK_EQ(unset.sampleRate(), 0.0);   // no hidden 48000
+  // Reconfiguring activates it: rate now set, phase steps, output changes.
+  unset.setSampleRate(48000.0);
+  unset.setPeriodSeconds(0.001);
+  const double c = unset.next();
+  const double d = unset.next();
+  CHECK(c != d);
+}
+
 int main() {
   buffer_on_invariant();
   boundary_block_edges();
@@ -460,5 +561,7 @@ int main() {
   per_block_staircase_is_not_sample_accurate();
   audio_rate_must_not_be_smoothed();
   smoothing_is_wall_clock_invariant();
+  audio_rate_is_wall_clock_invariant();
+  unconfigured_rate_is_inert_not_wrong();
   return ::test::finish("time semantics");
 }

@@ -17,3 +17,6 @@ device_behavior/device_behavior_asan.dSYM/
 
 # slice-4 built binary (never committed to Lunar24)
 zoom_transform/zoom_transform
+
+# P2-① disposable stress binary (never committed to Lunar24)
+stress_test/stress_test
