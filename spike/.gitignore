@@ -12,3 +12,5 @@ audio_thread_invariants/audio_thread_invariants
 # slice-3 built binaries (never committed to Lunar24)
 device_behavior/device_probe
 device_behavior/device_behavior
+device_behavior/device_behavior_asan
+device_behavior/device_behavior_asan.dSYM/

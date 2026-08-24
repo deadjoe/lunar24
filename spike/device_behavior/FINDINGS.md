@@ -71,10 +71,13 @@ Raw output (2026-08-24):
 
 ```
 Req 2 — channel mapping must be CATCHABLE-when-wrong (real SINK echoes back)
-  8-out device: canonical faults=0, wet-swap faults=2, dryB-collision faults=2, 2-out faults=0
-  mapping checker catches a swap (WET L/R)       good=0   bad=2    PASS
-  mapping checker catches DRY B on wrong phys    good=0   bad=2    PASS
-  mapping checker silent on 2-out clamp (DRY not emitted) actual(expect 0)=0    PASS
+  8-out: lower canonical=0 lowerSwap=2 dryBCollision=2 | upperCorrect(4-7)=0 upperSwap=2 crossHalf=1 | 2out=0
+  mapping checker catches a swap (WET L/R, lower) good=0   bad=2    PASS
+  mapping checker catches DRY B on wrong phys (collision) good=0   bad=2    PASS
+  mapping correct on UPPER half phys 4-7 (full 8 face) actual(expect 0)=0    PASS
+  upper-half swap (phys 4-5) is caught           good=0   bad=2    PASS
+  cross-half wrong mapping (WET_L below) is caught good=0   bad=1    PASS
+  mapping silent on 2-out clamp (DRY not emitted) actual(expect 0)=0    PASS
 
 Req 3 — 'Core only sees four logical outputs' is a SENSOR
   8-out device: core_sees=4 (expect 4); if the raw 8 were leaked, the same
@@ -102,11 +105,23 @@ Req 5 — MIDI/input uses slice-②'s FIXED constexpr series (no randomness)
 
 Each detector is proven to **alarm**, not just silently pass:
 
-- **Req 2, swap WET L/R** (`map={1,0,2,3}`): physical 0 now carries the 550 Hz
-  WET_R (identity break vs. intended WET_L on 0), physical 1 carries the 440 Hz
-  WET_L → **2 faults**. Good (canonical) = 0. Checker is real.
-- **Req 2, DRY B onto wrong physical channel** (`map={0,1,2,2}`): physical 2 is
+- **Req 2, swap WET L/R — lower half** (`wired={1,0,2,3}` vs `intent {0,1,2,3}`):
+  physical 0 now carries the 550 Hz WET_R (identity break vs. intended WET_L on
+  0), physical 1 carries the 440 Hz WET_L → **2 faults**. Good (canonical) = 0.
+  Checker is real.
+- **Req 2, DRY B onto wrong physical channel** (`wired={0,1,2,2}`): physical 2 is
   claimed by both DRY_A and DRY_B → collision → **2 faults**. Good = 0.
+- **Req 2, correct on the UPPER half** (`wired=intent={4,5,6,7}` on devchans=8):
+  L/R/A/B land on physical 4–7 and each verifies correctly → **0 faults**. This
+  is the real 8-out face — the pre-fix 4-wide arrays could neither reach nor
+  check channels 4–7.
+- **Req 2, upper-half swap** (`wired={5,4,6,7}` vs `intent {4,5,6,7}`): physical 4
+  carries WET_R when intent says WET_L, physical 5 carries WET_L when intent says
+  WET_R → **2 faults**. A mapping error confined to the upper half is caught.
+- **Req 2, cross-half wrong mapping** (`wired={0,5,6,7}` vs `intent {4,5,6,7}`):
+  logical0 (WET_L) lands on physical 0, but intent places it on physical 4 →
+  physical 4 carries silence (none) when it must carry WET_L → **1 fault**. A
+  wrong-half substitution is caught.
 - **Req 2, 2-out clamp**: WET L/R emitted, DRY A/B clamped out (no physical 2/3);
   0 faults — verifies the device-native clamp leaves DRY off the wire on a 2-out.
 - **Req 3, leak device count into Core**: raw 8 leaked in place of `min(4,8)` →
@@ -120,6 +135,58 @@ Each detector is proven to **alarm**, not just silently pass:
   (worker, heap allowed there) and publishes via a lock-free atomic pointer; the
   RT callback only does an atomic load → heap/mutex/file/log = 0 across the whole
   device-change cycle. This is ②'s deferred-reclaim rule applied to hot-swap.
+
+## ③ tail items closed (2026-08-24, @Claude 09eaf9f7 review)
+
+Two items had to land before ③ could be marked done:
+
+### (a) Stack-buffer-overflow in `check_mapping` — FIXED
+
+@Claude proved with ASan (not by inspection) that the read-back arrays were
+**4-wide** but the loop guard was `p < devchans` (=8), so a fully legal wiring
+`{4,5,6,7}` at devchans=8 overflowed `want[p]` / `phys[p]`. The pre-fix test set
+only ever used physical 0–3 (an in-place permutation + clamp), so the upper four
+channels were neither written nor verified — a "detector that never reaches the
+cell" variation of the ② `free(leak)` DCE trap.
+
+Fix: arrays sized to `kMaxPhys = 16` (≥ the real 8-out face); the read-back loop
+guard is now `p < devchans && p < kMaxPhys` (the old `&& p < 4` truncation is
+gone). `check_mapping` now takes an **independent intent** array separate from
+the wired map — that separation is what lets the checker go red (if wired==intent
+the round-trip is self-consistent and correctly silent, but a swap leaves a
+physical channel carrying the wrong logical).
+
+New cases prove the upper face and the cross-half alarms:
+`wired=intent={4,5,6,7}` → 0 faults (correct on physical 4–7);
+`wired={5,4,6,7}` vs intent → 2 faults (upper-half swap);
+`wired={0,5,6,7}` vs intent → 1 fault (cross-half, WET_L lands below when
+intent places it on physical 4).
+
+Verification: `clang++ -fsanitize=address,undefined` build of the same source
+runs the full suite to exit 0 — **no sanitizer hit** — where the old code aborted
+on the `{4,5,6,7}` wiring. All 17 checks still PASS under the non-sanitized build.
+
+### (b) P3-exit debt: real CoreAudio output-stream per-channel verification
+
+- **What is deferred:** REAL (open-stream + write) per-channel verification of
+  the CoreAudio **output stream** — i.e. driving an actual `AudioBufferList` on
+  the real 8-out device and reading back the per-channel result.
+- **Why (the reason this is a debt, not a rounding error):** the current modeled
+  read-back uses a **per-channel planar** model (`phys[p][i]`, one array per
+  channel). The real device (Studio Display, from `device_probe`) reports
+  **8 channels in 1 buffer = interleaved** `AudioBufferList`. A bug in stride /
+  interleave math — the most common real-world wiring error — is therefore
+  **structurally invisible** to the per-channel model: it can produce a correct
+  per-channel classifier yet a wrong interleaved stream. The model touches the
+  wrong layer for interleave.
+- **When it is repaid:** **before P3 exit — no further.** The P3 exit condition
+  reads "the four logical outputs land correctly on physical outputs." Against a
+  modeled (planar) sink that sentence cannot be honestly claimed; it is only
+  honest once real `AudioBufferList` output-stream per-channel behavior is
+  verified on the real 8-out (and 2-out) device. Repaying it is a **P3-blocking**
+  task, and this entry is its standing marker.
+- Windows equivalent: suspended (bearbone 8-24), same as the rest of P1 — not
+  chargeable to a Windows debt specifically.
 
 ## How each requirement is met
 

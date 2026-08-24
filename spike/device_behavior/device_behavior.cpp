@@ -141,7 +141,12 @@ enum Logical { NONE = -1, WET_L = 0, WET_R = 1, DRY_A = 2, DRY_B = 3 };
 constexpr double kFs = 48000.0;
 constexpr int kFrames = 256;
 constexpr double kPi = 3.14159265358979323846;
-constexpr int kCanonPhysicalToLogical[4] = {0, 1, 2, 3};  // physical p -> intended logical
+// Physical-channel span the adapter may address. The real >4 device on this
+// machine is 8-out (Studio Display), so a valid wiring can point a logical at
+// physical 4..7. Sizing the read-back arrays to kMaxPhys (>= 8) is what lets
+// those upper channels be written AND verified — the earlier 4-wide arrays were
+// a stack-buffer-overflow waiting for a `{4,5,6,7}` wiring at devchans=8.
+constexpr int kMaxPhys = 16;
 
 // Generate a DISTINGUISHABLE signal for a logical output into out[n].
 static void gen_signal(int logical, float* out, int n) {
@@ -181,31 +186,48 @@ static int classify(const float* b, int n) {
   return NONE;
 }
 
-// verify a wiring: logical->physical map, onto a device with devchans outputs.
-// Returns the number of DETECTED mapping faults (collisions + identity breaks).
-// A wrong mapping must return >0.
-static int check_mapping(const int map[4], int devchans) {
-  float phys[4][kFrames];
-  for (int p = 0; p < 4; ++p) for (int i = 0; i < kFrames; ++i) phys[p][i] = 0.0f;
+// Verify a wiring against an INDEPENDENT intent, onto a device with devchans
+// outputs. Signal content is generated per the `wired` map (what was actually
+// written to each physical channel) and "read back" per physical channel. A
+// physical channel that INTENT says should carry logical L is faulted if it does
+// not actually carry L. Also faults on a collision (two logicals on one physical
+// channel). Returns the number of detected faults; a wrong mapping must return >0.
+//
+// wired[o]  = physical channel logical o was written to (actual).
+// intent[o] = physical channel logical o SHOULD be on (the assignment we intend).
+//   Using an intent separate from wired is what lets the checker go red: if the
+//   two agree the round-trip is self-consistent and silent, but a swap (wired
+//   differs from intent) leaves a physical channel carrying the wrong logical.
+//
+// Arrays are sized kMaxPhys (>= the real 8-out face), so logicals addressed to
+// physical 4..7 are both writable and verifiable — the earlier 4-wide arrays
+// overflowed on a legal `{4,5,6,7}` wiring at devchans=8.
+static int check_mapping(const int wired[4], const int intent[4], int devchans) {
+  float phys[kMaxPhys][kFrames];
+  for (int p = 0; p < kMaxPhys; ++p) for (int i = 0; i < kFrames; ++i) phys[p][i] = 0.0f;
 
-  int want[4] = {-1, -1, -1, -1};     // physical -> logical, -1 = unused
+  int used[kMaxPhys];                     // used[p] = logical the wired map puts here
+  for (int p = 0; p < kMaxPhys; ++p) used[p] = -1;
   for (int o = 0; o < 4; ++o) {
-    int p = map[o];
+    int p = wired[o];
     if (p < 0 || p >= devchans) continue;      // clamped out by device-native
-    if (want[p] != -1) return 1 + (want[p] != o);  // collision: !only one logical per phys
-    want[p] = o;
+    if (p >= kMaxPhys) return 1;
+    if (used[p] != -1) return 1 + (used[p] != o);  // collision: only one logical per phys
+    used[p] = o;
   }
-  // Write each logical into its physical channel (sum if a collision slipped through).
+  // Write each logical into its physical channel.
   for (int o = 0; o < 4; ++o) {
-    int p = map[o];
-    if (p < 0 || p >= devchans) continue;
+    int p = wired[o];
+    if (p < 0 || p >= devchans || p >= kMaxPhys) continue;
     gen_signal(o, phys[p], kFrames);
   }
   int faults = 0;
-  for (int p = 0; p < devchans && p < 4; ++p) {
-    if (want[p] == -1) continue;            // physical channel not used
+  for (int p = 0; p < devchans && p < kMaxPhys; ++p) {
+    int li = -1;                          // intended logical on this physical channel
+    for (int o = 0; o < 4; ++o) if (intent[o] == p) li = o;
+    if (li == -1) continue;               // intent doesn't claim this physical channel
     int got = classify(phys[p], kFrames);
-    if (got != kCanonPhysicalToLogical[p]) faults++;   // identity break vs intended
+    if (got != li) faults++;              // physical carries the wrong logical
   }
   return faults;
 }
@@ -247,19 +269,28 @@ int main() {
   // ---------------- Req 2: mapping catchable-when-wrong --------------------
   {
     std::printf("Req 2 — channel mapping must be CATCHABLE-when-wrong (real SINK echoes back)\n");
-    const int good[4] = {0, 1, 2, 3};        // canonical
-    const int swap[4] = {1, 0, 2, 3};        // WET L/R swapped
-    const int wrong[4] = {0, 1, 2, 2};       // DRY B onto DRY A's physical channel
+    const int good[4]  = {0, 1, 2, 3};       // intent+wired: L/R/A/B on phys 0-3
+    const int upper[4] = {4, 5, 6, 7};       // intent+wired: L/R/A/B on phys 4-7 (the real 8-out upper face)
+    const int swap[4]  = {1, 0, 2, 3};       // wired: WET L/R swapped (lower half)
+    const int wrong[4] = {0, 1, 2, 2};       // wired: DRY B onto DRY A's physical channel (collision)
+    const int upSwap[4]= {5, 4, 6, 7};       // wired: WET L/R swapped in the UPPER half (phys 4-5) vs intent
+    const int cross[4] = {0, 5, 6, 7};       // wired: logical0 (WET_L) wrongly on phys 0, intent says phys 4 (cross-half)
     const int dev8 = 8, dev2 = 2;
-    long g8 = check_mapping(good, dev8);
-    long s8 = check_mapping(swap, dev8);
-    long w8 = check_mapping(wrong, dev8);
-    long ok2 = check_mapping(good, dev2);
-    std::printf("  8-out device: canonical faults=%ld, wet-swap faults=%ld, dryB-collision faults=%ld, 2-out faults=%ld\n",
-                g8, s8, w8, ok2);
-    verdict_pair("mapping checker catches a swap (WET L/R)", g8, s8);
-    verdict_pair("mapping checker catches DRY B on wrong phys", g8, w8);
-    verdict_zero("mapping checker silent on 2-out clamp (DRY not emitted)", ok2);
+    long g8   = check_mapping(good,  good,  dev8);   // 8-out, correct lower
+    long s8   = check_mapping(swap,  good,  dev8);   // swap in lower (phys 0-1)
+    long w8   = check_mapping(wrong, good,  dev8);   // DRY B collision
+    long hh   = check_mapping(upper, upper, dev8);   // correct, on phys 4-7 (upper face)
+    long hu   = check_mapping(upSwap, upper, dev8);  // swap in upper (phys 4-5)
+    long hc   = check_mapping(cross,  upper, dev8);  // cross-half: WET_L lands below when intent says above
+    long ok2  = check_mapping(good,  good,  dev2);   // 2-out clamp
+    std::printf("  8-out: lower canonical=%ld lowerSwap=%ld dryBCollision=%ld | upperCorrect(4-7)=%ld upperSwap=%ld crossHalf=%ld | 2out=%ld\n",
+                g8, s8, w8, hh, hu, hc, ok2);
+    verdict_pair("mapping checker catches a swap (WET L/R, lower)", g8, s8);
+    verdict_pair("mapping checker catches DRY B on wrong phys (collision)", g8, w8);
+    verdict_zero("mapping correct on UPPER half phys 4-7 (full 8 face)", hh);
+    verdict_pair("upper-half swap (phys 4-5) is caught", hh, hu);
+    verdict_pair("cross-half wrong mapping (WET_L below) is caught", hh, hc);
+    verdict_zero("mapping silent on 2-out clamp (DRY not emitted)", ok2);
   }
   std::printf("\n");
 
