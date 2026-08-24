@@ -122,3 +122,4 @@ endfunction()
 
 lunar_add_test(test_core_contract tests/core/test_core_contract.cpp)
 lunar_add_test(test_registry tests/core/test_registry.cpp)
+lunar_add_test(test_time_semantics tests/core/test_time_semantics.cpp)
