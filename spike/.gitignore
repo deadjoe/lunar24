@@ -1,0 +1,4 @@
+# disposable iPlug2 clone + prebuilt deps (never committed to Lunar24)
+iPlug2/
+deps_extract/
+*.zip
