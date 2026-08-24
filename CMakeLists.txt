@@ -77,6 +77,18 @@ add_test(NAME registry_id_stability
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_id_stability.py)
 
+# Cross-edit JackId stability (P2-② add-on 1): the current stable_id -> numeric
+# JackId map is frozen as a committed baseline and a freshly-built registry must
+# reproduce it exactly. A mid-registry insert that renumbers an existing JackId
+# shifts the map, so this goes red; the negative control proves the shift-detector
+# actually fires.
+add_test(NAME jack_id_baseline
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_jack_id_baseline.py)
+add_test(NAME jack_id_baseline_negative
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_jack_id_baseline_negative.py)
+
 # Id-space / state-bank gate: the banks are indexed by the serialized id, so they
 # must be sized for the id-space (one-past-the-last id), not the count — a sparse
 # id (a hole) is caught here and by the generated static_assert.
@@ -123,3 +135,4 @@ endfunction()
 lunar_add_test(test_core_contract tests/core/test_core_contract.cpp)
 lunar_add_test(test_registry tests/core/test_registry.cpp)
 lunar_add_test(test_time_semantics tests/core/test_time_semantics.cpp)
+lunar_add_test(test_patch_graph tests/core/test_patch_graph.cpp)
