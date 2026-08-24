@@ -14,3 +14,6 @@ device_behavior/device_probe
 device_behavior/device_behavior
 device_behavior/device_behavior_asan
 device_behavior/device_behavior_asan.dSYM/
+
+# slice-4 built binary (never committed to Lunar24)
+zoom_transform/zoom_transform
