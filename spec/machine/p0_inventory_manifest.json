@@ -8907,7 +8907,8 @@
           "coupling": "unknown",
           "status": "confirmed",
           "descriptorEvidence": {
-            "line": 387
+            "lineStart": 386,
+            "lineEnd": 387
           },
           "fieldEvidence": {
             "nominalRange": "unverified",
