@@ -59,9 +59,19 @@ preset 身份维持**槽索引派生**（A=0…D=3，顺序有据 L1040-1045、�
 **连带**：preset 含 `mode` ⇒ **preset 也要装两侧**，schema v2→v3、`totalBytesHint` 再涨（约束同 P4-② Decision A）。
 ⚠️ **P4-④ 做 arp/seq 时必须按侧实例化**（L724 证明 arp 每侧不同），**不得做成全局单例**，否则又是重写。
 
-⚠️ **证据纪律提醒**：手册**没有**"twin 共享参数"这句话（全文 grep `share the same parameters` 零命中）；
-TWIN 实际原文（L667-669）只说 "separates into two distinct controllers, each equipped with 6 note plates"。
-"twin 共享"是**从 split 那句反推的推断**，不是引文。**推断必须标成推断——`evidence_refs_gate` 只验行非空/在范围内，验不了相关性。**
+✅ **更正（2026-08-26，msg `e7ad49ec`）**：我先前记"手册没有 twin 共享参数这句话"是**错的**——**原文存在**，
+只是被竖排 `AMBIENT` 列头劈碎、且 "parameters" 断成 `parame-`/`ters`，所以**短语 grep 永远命中不了**。
+原始碎片：L675 "…While the two sides" ／ L679 "share" ／ L681 "same parame-" ／ L677 "ters, they can be played independently."
+⇒ twin=共享一 bank、split=每侧独立，**有原文直接支持**，不是反推。
+
+🚨 **由此立的硬规矩（比这一句重要）**：在这份 `pdftotext -layout` 手册上，
+**短语 grep 只能用来"找到"，绝不能用来"证否"**；要证否**必须分区通读原始行**。
+理由：句子跨列碎裂、单词还会被连字符断开，`grep` 的"零命中"是假阴性。
+
+⚠️ **受此影响、需重核的两条承重结论（在重核完成前降级为"依据不足"，决定维持现状）**：
+1. 「手册无 mult／可堆叠插孔证据」→ 曾据此裁定用户 cable **每 output ≤1**（P2-②）
+2. 「手册无反相门证据」→ 曾据此删除 polarity 反相（P2-④）
+两条都是用"搜不到"当证据，而该方法已被证明在本文档上会漏。**重核方式＝读 jack/面板段与 gate 段原始行，不用短语 grep。**
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
