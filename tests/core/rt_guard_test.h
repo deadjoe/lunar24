@@ -69,7 +69,19 @@ inline void rt_check_log(const char*) {
 // Global operator new/delete overrides. These are the probe for invariant 1:
 // they intercept EVERY allocation in this TU, so even a buried one is caught.
 // They only mark; they never count as an error on their own.
+//
+// GCC 14's -Wmismatched-new-delete (new in that release) flags the deallocation
+// side of this deliberate global malloc/free pair as a "mismatch": the pointer
+// crosses the operator-new -> operator-delete function boundary, so the analyzer
+// cannot see it traces back to the matching std::malloc inside operator new. The
+// pair IS correct (malloc/free), so the warning is spurious and is suppressed here.
+// A genuine new-without-delete is caught by ASan, and an RT-window allocation is
+// caught by g_heap_in_rt — the actual point of this probe.
 // ---------------------------------------------------------------------------
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
 void* operator new(std::size_t n) {
   if (rt::g_rt_window) rt::g_heap_in_rt.fetch_add(1, std::memory_order_relaxed);
   if (void* p = std::malloc(n)) return p;
@@ -94,5 +106,8 @@ void* operator new[](std::size_t n, const std::nothrow_t&) noexcept {
 }
 void operator delete(void* p, const std::nothrow_t&) noexcept { std::free(p); }
 void operator delete[](void* p, const std::nothrow_t&) noexcept { std::free(p); }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 #endif  // LUNAR24_TESTS_CORE_RT_GUARD_TEST_H
