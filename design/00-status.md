@@ -26,11 +26,21 @@
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
-| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／▶ ②keyboard 声音行为+4 preset（mandate `880f8f94`）／③底部显示+encoder 菜单（未开） |
+| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／▶ ②**preset 状态**（schema 扩容 + A–D + load/save/init + 4 个非标量建模；裁决 `6a366ebb`）／③逐音行为／④arp·seq·clock／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
 门禁基线：本机 ctest **31/31**；CI build-and-test **4/4 绿**；
 `full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
+
+## 2b. 已裁决的冻结-P0 变更（2026-08-26）
+
+**`DeviceStateV1.keyboard_presets` 由 8 字节壳扩容为承载 `keyboard_params_minus_clock` 全 payload。**
+理由：冻结 manifest 已把 preset 定义成该 **31 参数** record（evidence L1040-1045），而 `device_state.h` 那个壳
+自己写着「the remaining keyboard-owned state lands when the keyboard subsystem is designed」——就是现在。
+把 payload 放到子系统自持（方案 B）会把一个概念劈成两套持久化 ⇒ 两个真相来源，且 P2-⑤ 只覆盖一半。
+
+约束：**只追加不重排**／schema version +1／`totalBytesHint` 重算／**id-stability 必须仍绿（红＝动了既有布局，停下找人）**／regen zero-diff。
+连带：P0 deferred-to-P4 的四个非标量（`seq_steps`／`quantise_scale_editor`／`plate_tune`／`pushbutton_value`）在此建模。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
