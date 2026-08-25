@@ -128,6 +128,15 @@ add_test(NAME evidence_refs_negative
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_evidence_refs_negative.py)
 
+# Evidence-layout drift-guard: the committed fingerprint must reproduce the live
+# manual exactly (regen==commit). Registered so it is visible on every runner —
+# on a dev machine it really checks; on CI the manual is gitignored and it SKIPs
+# loudly (never a silent absent guard). Same register-and-loudly-skip principle
+# @Claude mandated for the real CoreAudio output test below.
+add_test(NAME evidence_layout_guard
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/build_evidence_layout.py --check)
+
 # Strict warnings, applied PRIVATE to a Lunar-owned compiled target only. Never
 # set globally: a future third-party build unit (iPlug2, P1+) must not be forced
 # warning-clean by a global add_compile_options, and lunar_core (header-only
@@ -161,3 +170,14 @@ lunar_add_test(test_vco tests/core/test_vco.cpp)
 lunar_add_test(test_preamp_envelope tests/core/test_preamp_envelope.cpp)
 lunar_add_test(test_mix_filter_distortion tests/core/test_mix_filter_distortion.cpp)
 lunar_add_test(test_device_layout tests/core/test_device_layout.cpp)
+
+# P3-⑥ Debt 1 (platform half): the four logic outputs against the REAL machine's
+# output layout, read via the framework authority (AudioBufferList). Apple-only: the
+# .cpp is #ifdef __APPLE__-guarded so the non-macOS matrix never compiles it, and even
+# on macOS it loud-skips (no default device / <4 outs) rather than faking a pass. This
+# is registered but never exercises on CI (headless, no device) — recorded in FINDINGS.
+if(APPLE)
+  lunar_add_test(test_coreaudio_output tests/core/test_coreaudio_output.cpp)
+  target_link_libraries(test_coreaudio_output PRIVATE
+    "-framework CoreAudio" "-framework CoreFoundation")
+endif()

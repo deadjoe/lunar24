@@ -424,5 +424,51 @@ msg 9baf5612 as noted during P3-③).
   unsupported there) — @Claude asked this be recorded. Use
   `ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`.
 
-*This file is a documentation artifact of P3-⑤, not a runtime input to the core
+# P3-⑥ Exit-Debt Record (Debt 1 real CoreAudio + drift-guard registration)
+
+P3-⑤ head `262d0cd`; @Claude P3 出口裁决 = **NOT MET** (msg 954a0763): the five DSP slices are
+complete, but two exit debts plus four 取证项 remain. This section records each debt drawn
+down as it lands.
+
+## 1. Debt 1 (platform half) — real CoreAudio output layout, four logicals per-channel
+
+`tests/core/test_coreaudio_output.cpp`, registered in ctest as `test_coreaudio_output`
+(Apple-only `if(APPLE)` block; CoreAudio/CoreFoundation linked only there; the `.cpp` is
+`#ifdef __APPLE__`-guarded so the non-macOS matrix never compiles it). It reads the **real**
+default output device's `kAudioDevicePropertyStreamConfiguration` (`AudioBufferList` — the
+same authority `spike/device_behavior/device_probe.cpp` uses), projects the four logicals
+(WET L/R + DRY A/B) onto that real layout via `OutputMapping::canonical()`, renders, reads
+back, and asserts exact-match purity.
+
+- **ORACLE is a default, not a constant**: the wiring under test is
+  `OutputMapping::canonical()` = `{WET_L=0, WET_R=1, DRY_A=2, DRY_B=3}` (the P1-③ default,
+  preserved from the previous Debt-1 adjudication). `device_layout.h` documents it as data a
+  caller may override; there is no hardcoded branch.
+- **Read-back semantics (declared boundary)**: the assertion validates the ADAPTER-FILLED
+  buffer memory under the real layout — it is an in-memory stride/interleave check. It does
+  NOT prove the driver delivered those slots to the intended physical jack; that is out of
+  scope here. We never open an audible live stream nor push a hardware echo.
+- **Loud skip, never silent**: three distinct skip reasons, each printing count/reason —
+  (a) no default output device; (b) default device has <4 out channels; (c) not building on
+  macOS (`#ifdef __APPLE__` + `if(APPLE)`). On CI (headless, no device) it SKIPs — and **this
+  test never covers CI**. It is registered so the skip is VISIBLE, per @Claude's
+  register-and-LOUDLY-skip principle.
+- **Verified on the author machine**: default output = Studio Display Speakers, **8 channels,
+  1 buffer = interleaved**. GOOD layout-aware read-back = 0 faults; NEGATIVE (re-read the same
+  buffer as planar / channel-major) = **4 faults → RED** — i.e. the "treat interleaved as
+  planar" bug Debt 1 exists to catch is detectable, not merely decorrelated. (`logical_signal`
+  recomputes the same value; a transposed block is bit-mismatched.)
+
+## 2. Evidence-layout drift-guard registered (per @Claude correction, msg db43f6a4)
+
+`build_evidence_layout.py --check` was originally a dev-only script, NOT registered. @Claude
+corrected that the "CI has no manual → skip-everywhere drift guard" rationale mis-applied
+their own principle: the real CoreAudio test is also skipped on CI, yet is **registered +
+loudly skipped**, because "don't register = invisible". The same shape is now applied to the
+drift-guard: `evidence_layout_guard` is registered in ctest; manual present (dev) → real
+regen==commit drift check (hard red on mismatch); manual absent (CI) → **loud skip** printing
+"manual absent, drift-guard not applicable in this environment" and returning success. A CI
+reader now SEES the guard is present but inert there.
+
+*This file is a documentation artifact of the P3 slices, not a runtime input to the core
 library.*

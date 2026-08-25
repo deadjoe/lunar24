@@ -13,13 +13,22 @@ derived form that CI grounding uses.
 
 Usage:
   python3 tools/build_evidence_layout.py          # write the committed fingerprint
-  python3 tools/build_evidence_layout.py --check  # fail if the committed file differs (regen==commit)
+  python3 tools/build_evidence_layout.py --check  # drift-guard: fail if committed differs from live
 
-DEV-ONLY. This needs the manual text on disk, so it is intentionally NOT wired into
-ctest (CI has no manual — a skip-everywhere drift guard would be the same disease the
-gate is fixing). The freshness guard against a drifting manual lives in
-evidence_refs_gate's LIVE mode; this tool is the regenerate-and-commit counterpart that
-keeps the checked-in fingerprint reproducible.
+REGISTERED IN CTEST (evidence_layout_guard). This needs the manual text on disk, and the
+manual is gitignored — so the check's meaning is environment-dependent, exactly the shape
+@Claude mandated for the real CoreAudio output test:
+
+  * manual present (a dev machine) -> really compare the freshly-derived fingerprint
+    against the committed one (regen==commit discipline; a drift is a hard red);
+  * manual absent (CI)            -> SKIP loudly, printing that it cannot protect this
+    environment, and return success.
+
+Registering it rather than leaving it a dev-only script is precisely the point @Claude
+drew: an unregistered check that "someone runs by hand" is actually never run, and a CI
+skip that is never registered is invisible. Registering makes the CI skip VISIBLE — a
+reader sees the guard is present but inert here. A silent absent guard is the same
+disease the gate is fixing.
 """
 
 import argparse
@@ -48,16 +57,38 @@ def build():
     return {"version": 1, "sources": sources}
 
 
+def sources_present():
+    """True when every source's manual text is on disk.
+
+    The manual is gitignored, so this is false only in a no-manual environment (CI).
+    It gates whether the drift-guard can actually compute a fingerprint to compare:
+    on CI there is no live text to regenerate from, so the guard must loudly skip
+    rather than crash or fake a pass.
+    """
+    return all(os.path.exists(os.path.join(ROOT, rel)) for rel in gate.SOURCE_FILES.values())
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
                     help="compare the committed file against a fresh build instead of writing")
     args = ap.parse_args()
 
-    data = build()
-    text = json.dumps(data, indent=2) + "\n"
-
     if args.check:
+        if not sources_present():
+            # Registered in ctest so the SKIP is visible, never silent. On CI there is
+            # no manual to regenerate from — this guard cannot compare fingerprint-vs-live
+            # there, and a FileNotFoundError crash would take the whole test down. Same
+            # register-and-loudly-skip shape as the real CoreAudio output test.
+            print("[SKIP] evidence-layout drift-guard: source manual absent in this "
+                  "environment (CI): the manual is gitignored, so the drift-guard cannot "
+                  "compare the committed fingerprint against the live text here. Registered "
+                  "so it is visible it is NOT protecting this environment.")
+            return 0
+
+        data = build()
+        text = json.dumps(data, indent=2) + "\n"
+
         if not os.path.exists(OUT):
             print(f"FAIL: committed {os.path.basename(OUT)} missing; run build_evidence_layout.py "
                   f"(no --check) to write it")
@@ -71,6 +102,8 @@ def main():
         print(f"OK: committed evidence layout matches live manual ({n_blank} blank lines)")
         return 0
 
+    data = build()
+    text = json.dumps(data, indent=2) + "\n"
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as fh:
         fh.write(text)
