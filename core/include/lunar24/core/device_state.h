@@ -108,11 +108,19 @@ struct DeviceStorageSchema {
 // the preset carried the full keyboard_params_minus_clock payload (31 params) —
 // the 8-byte shell (id/behaviour/output + 2-byte pad) is PRESERVED verbatim and
 // 29 fields are appended, never reordered.
-inline constexpr std::uint32_t kKeyboardPresetRecordBytes = 247u;
+//
+// P4-③ (per-side, msg 60df2e43 + e7ad49ec): split runs two independent half-banks,
+// and the frozen manifest gives the SAME keyboard_params_minus_clock params to both
+// sides (behaviour is the only global). So each preset now carries TWO banks: the
+// left half stays exactly where the v2 layout put it (offsets 5, 8..246) — never
+// reordered — and a right half is appended as a contiguous 240-byte region at
+// offsets 247..486. wire: 247 + 240 = 487 bytes.
+inline constexpr std::uint32_t kKeyboardSideBankBytes = 240u;      // 30 per-side params (frozen 31 minus behaviour)
+inline constexpr std::uint32_t kKeyboardPresetRecordBytes = 487u;  // 247 (v2, left) + 240 (right)
 inline constexpr std::uint32_t kKeyboardSettingsRecordBytes = 2u;  // pressure behaviour(1) + pressure output(1)
 inline constexpr std::uint32_t kSequencerPhysicalBytes = 16u;    // reserved until the sequencer lands
 inline constexpr std::uint32_t kKeyboardSeqRecordBytes = kKeyboardSeqBytes;  // 16 steps x 6 bytes
-inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 2u;
+inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 3u;
 inline constexpr std::uint32_t kDeviceStorageInitialRevision = 0u;
 
 // One KeyboardSeqStep's machine-readable interior (component of a seq record).
@@ -166,6 +174,40 @@ inline constexpr StorageRecordField kKeyboardPresetFields[] = {
     {"root_note",             StorageFieldType::f32, StorageEncoding::binary, 163u, 4u,  2u},
     {"plate_tune",            StorageFieldType::u8,  StorageEncoding::binary, 167u, 48u, 2u},
     {"pushbutton_value",      StorageFieldType::u8,  StorageEncoding::binary, 215u, 32u, 2u},
+    // P4-③ per-side RIGHT half-bank (contiguous 240B region, offsets 247..486,
+    // versionFrom=3). The frozen manifest gives both sides the same 30 params
+    // (keyboard_params_minus_clock minus the global 'behaviour'), so the right
+    // bank is the same field set with an "_r" suffix and a base offset of 247.
+    {"pressure_output_r",       StorageFieldType::u8,  StorageEncoding::binary, 247u, 1u,  3u},
+    {"mode_r",                  StorageFieldType::u8,  StorageEncoding::binary, 248u, 1u,  3u},
+    {"arp_hold_r",              StorageFieldType::u8,  StorageEncoding::binary, 249u, 1u,  3u},
+    {"arp_clock_r",             StorageFieldType::u8,  StorageEncoding::binary, 250u, 1u,  3u},
+    {"arp_direction_r",         StorageFieldType::u8,  StorageEncoding::binary, 251u, 1u,  3u},
+    {"arp_variation_r",         StorageFieldType::u8,  StorageEncoding::binary, 252u, 1u,  3u},
+    {"arp_interval_r",          StorageFieldType::f32, StorageEncoding::binary, 253u, 4u,  3u},
+    {"arp_rhythm_r",            StorageFieldType::u8,  StorageEncoding::binary, 257u, 1u,  3u},
+    {"arp_length_r",            StorageFieldType::f32, StorageEncoding::binary, 258u, 4u,  3u},
+    {"seq_run_r",               StorageFieldType::u8,  StorageEncoding::binary, 262u, 1u,  3u},
+    {"seq_length_r",            StorageFieldType::f32, StorageEncoding::binary, 263u, 4u,  3u},
+    {"seq_clock_r",             StorageFieldType::u8,  StorageEncoding::binary, 267u, 1u,  3u},
+    {"seq_direction_r",         StorageFieldType::u8,  StorageEncoding::binary, 268u, 1u,  3u},
+    {"seq_cv_output_r",         StorageFieldType::u8,  StorageEncoding::binary, 269u, 1u,  3u},
+    {"seq_rhythm_r",            StorageFieldType::u8,  StorageEncoding::binary, 270u, 1u,  3u},
+    {"seq_rhythm_length_r",     StorageFieldType::f32, StorageEncoding::binary, 271u, 4u,  3u},
+    {"seq_steps_r",             StorageFieldType::u8,  StorageEncoding::binary, 275u, 96u, 3u},
+    {"portamento_speed_r",      StorageFieldType::f32, StorageEncoding::binary, 371u, 4u,  3u},
+    {"portamento_legato_r",     StorageFieldType::u8,  StorageEncoding::binary, 375u, 1u,  3u},
+    {"vibrato_speed_r",         StorageFieldType::f32, StorageEncoding::binary, 376u, 4u,  3u},
+    {"vibrato_depth_r",         StorageFieldType::f32, StorageEncoding::binary, 380u, 4u,  3u},
+    {"vibrato_delay_r",         StorageFieldType::f32, StorageEncoding::binary, 384u, 4u,  3u},
+    {"vibrato_pressure_r",      StorageFieldType::f32, StorageEncoding::binary, 388u, 4u,  3u},
+    {"pressure_rise_r",         StorageFieldType::f32, StorageEncoding::binary, 392u, 4u,  3u},
+    {"pressure_fall_r",         StorageFieldType::f32, StorageEncoding::binary, 396u, 4u,  3u},
+    {"quantise_scale_editor_r", StorageFieldType::u16, StorageEncoding::binary, 400u, 2u,  3u},
+    {"quantise_load_scale_r",   StorageFieldType::u8,  StorageEncoding::binary, 402u, 1u,  3u},
+    {"root_note_r",             StorageFieldType::f32, StorageEncoding::binary, 403u, 4u,  3u},
+    {"plate_tune_r",            StorageFieldType::u8,  StorageEncoding::binary, 407u, 48u, 3u},
+    {"pushbutton_value_r",      StorageFieldType::u8,  StorageEncoding::binary, 455u, 32u, 3u},
 };
 inline constexpr StorageRecordField kKeyboardSettingsFields[] = {
     {"pressure_behaviour", StorageFieldType::u8, StorageEncoding::binary, 0u, 1u, 1u},
@@ -173,7 +215,8 @@ inline constexpr StorageRecordField kKeyboardSettingsFields[] = {
 };
 
 // The map-able record layouts referenced by the keyboard records below.
-inline constexpr StorageRecordLayout kKeyboardPresetLayout{kKeyboardPresetFields, 33u};
+// P4-③: the preset layout grew 33 -> 63 sub-fields (the 30 right-bank "_r" fields).
+inline constexpr StorageRecordLayout kKeyboardPresetLayout{kKeyboardPresetFields, 63u};
 inline constexpr StorageRecordLayout kKeyboardSettingsLayout{kKeyboardSettingsFields, 2u};
 
 inline constexpr StorageField kDeviceStorageFields[] = {
@@ -219,13 +262,15 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // `cable_source` u32 grows +8 (2 x 4 = 8) = +10 bytes. It rose 3841 -> 4979
 // for P4-② (Decision A, msg 6a366ebb): the keyboard preset grew 8 -> 247 bytes
 // (4 presets: 4 x 239 = 956) and the five live keyboard non-scalar fields were
-// appended (96 + 2 + 48 + 32 + 4 = 182).
+// appended (96 + 2 + 48 + 32 + 4 = 182). It rose 4979 -> 5939 for P4-③ (per-side,
+// msg 60df2e43 + e7ad49ec): each preset grew 247 -> 487 bytes (4 x 240 = 960),
+// the right half-bank being appended as a contiguous 240-byte region.
 inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageSchemaVersion,
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    4979u,
+    5939u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).
@@ -268,7 +313,7 @@ struct KeyboardSeq {
 // native presets carries its own keyboard-owned state — the frozen
 // keyboard_params_minus_clock payload (31 params), which the manual names
 // 'Behaviour' and 'Pressure output' among. The wire record width is the
-// schema-declared kKeyboardPresetRecordBytes (247), never sizeof here; the C++
+// schema-declared kKeyboardPresetRecordBytes (487), never sizeof here; the C++
 // struct is a framework-free working copy the serializer maps field-by-field.
 //
 // P4-② (Decision A): the 8-byte shell (id@0 / pressure_behaviour@4 /
@@ -277,13 +322,21 @@ struct KeyboardSeq {
 // preserve it verbatim rather than zero it (P2-⑤ @Claude Q2). The `seqSteps`,
 // `plateTune`, `pushbuttonValue` members mirror the composite wire regions
 // (offsets 35/167/215) as structured working copies.
+//
+// P4-③ (per-side): the LEFT half-bank stays exactly where v2 put it (the members
+// from `pressureOutput` down to `pushbuttonValue` — offsets 5/8..246, never
+// reordered), and the RIGHT half-bank is the same 30 fields with an "R" suffix
+// (offsets 247..486). C++ member naming uses CamelCase + a trailing "R"
+// (e.g. `seqStepsR`) matching the wire "_r" suffix. The single global
+// `pressureBehaviour` is NOT copied per-side (it is the single/twin/split
+// selector); everything else about the two halves is identical in kind.
 struct KeyboardPreset {
   std::uint32_t id = 0u;            // stable sys-selected preset id, never renumbered
-  std::uint8_t pressureBehaviour = 0u;  // manual 'Behaviour' (PROVISIONAL decode)
+  std::uint8_t pressureBehaviour = 0u;  // manual 'Behaviour' — GLOBAL single/twin/split selector
   std::uint8_t pressureOutput = 0u;     // manual 'Pressure output' (PROVISIONAL decode)
   std::uint8_t reserved[2] = {};        // bytes 6-7 of the shell, preserved verbatim
 
-  // Appended keyboard_params_minus_clock payload (offsets 8..246).
+  // LEFT half-bank (appended keyboard_params_minus_clock payload, offsets 8..246).
   std::uint8_t mode = 0u;
   std::uint8_t arpHold = 0u;
   std::uint8_t arpClock = 0u;        // no-domain selector (no ParameterId)
@@ -313,6 +366,38 @@ struct KeyboardPreset {
   float rootNote = 0.0f;
   float plateTune[kKeyboardPlateTuneCount] = {};      // wire: 48-byte region at 167
   float pushbuttonValue[kKeyboardPushbuttonCount] = {};  // wire: 32-byte region at 215
+
+  // RIGHT half-bank (P4-③, contiguous region at offsets 247..486) — same 30 fields.
+  std::uint8_t pressureOutputR = 0u;
+  std::uint8_t modeR = 0u;
+  std::uint8_t arpHoldR = 0u;
+  std::uint8_t arpClockR = 0u;
+  std::uint8_t arpDirectionR = 0u;
+  std::uint8_t arpVariationR = 0u;
+  float arpIntervalR = 0.0f;
+  std::uint8_t arpRhythmR = 0u;
+  float arpLengthR = 0.0f;
+  std::uint8_t seqRunR = 0u;
+  float seqLengthR = 0.0f;
+  std::uint8_t seqClockR = 0u;
+  std::uint8_t seqDirectionR = 0u;
+  std::uint8_t seqCvOutputR = 0u;
+  std::uint8_t seqRhythmR = 0u;
+  float seqRhythmLengthR = 0.0f;
+  KeyboardSeq seqStepsR;             // wire: 96-byte region at offset 275
+  float portamentoSpeedR = 0.0f;
+  std::uint8_t portamentoLegatoR = 0u;
+  float vibratoSpeedR = 0.0f;
+  float vibratoDepthR = 0.0f;
+  float vibratoDelayR = 0.0f;
+  float vibratoPressureR = 0.0f;
+  float pressureRiseR = 0.0f;
+  float pressureFallR = 0.0f;
+  std::uint16_t quantiseScaleEditorR = 0u;  // 12-bit scale-editor mask (u16)
+  std::uint8_t quantiseLoadScaleR = 0u;
+  float rootNoteR = 0.0f;
+  float plateTuneR[kKeyboardPlateTuneCount] = {};
+  float pushbuttonValueR[kKeyboardPushbuttonCount] = {};
 };
 
 // Dual-effector selection. Each slot selects a single processor idiom by its

@@ -203,6 +203,71 @@ inline void write_keyboard_preset(std::uint8_t* q, const StorageRecordField& rf,
     for (std::uint32_t t = 0; t < kKeyboardPlateTuneCount; ++t) put_f32(q + o + t * 4u, p.plateTune[t]);
   } else if (n == "pushbutton_value") {
     for (std::uint32_t b = 0; b < kKeyboardPushbuttonCount; ++b) put_f32(q + o + b * 4u, p.pushbuttonValue[b]);
+  } else if (n == "pressure_output_r") {
+    put_u8(q + o, p.pressureOutputR);
+  } else if (n == "mode_r") {
+    put_u8(q + o, p.modeR);
+  } else if (n == "arp_hold_r") {
+    put_u8(q + o, p.arpHoldR);
+  } else if (n == "arp_clock_r") {
+    put_u8(q + o, p.arpClockR);
+  } else if (n == "arp_direction_r") {
+    put_u8(q + o, p.arpDirectionR);
+  } else if (n == "arp_variation_r") {
+    put_u8(q + o, p.arpVariationR);
+  } else if (n == "arp_interval_r") {
+    put_f32(q + o, p.arpIntervalR);
+  } else if (n == "arp_rhythm_r") {
+    put_u8(q + o, p.arpRhythmR);
+  } else if (n == "arp_length_r") {
+    put_f32(q + o, p.arpLengthR);
+  } else if (n == "seq_run_r") {
+    put_u8(q + o, p.seqRunR);
+  } else if (n == "seq_length_r") {
+    put_f32(q + o, p.seqLengthR);
+  } else if (n == "seq_clock_r") {
+    put_u8(q + o, p.seqClockR);
+  } else if (n == "seq_direction_r") {
+    put_u8(q + o, p.seqDirectionR);
+  } else if (n == "seq_cv_output_r") {
+    put_u8(q + o, p.seqCvOutputR);
+  } else if (n == "seq_rhythm_r") {
+    put_u8(q + o, p.seqRhythmR);
+  } else if (n == "seq_rhythm_length_r") {
+    put_f32(q + o, p.seqRhythmLengthR);
+  } else if (n == "seq_steps_r") {
+    for (std::uint32_t s = 0; s < kKeyboardSeqStepCount; ++s) {
+      std::uint8_t* sp = q + o + s * kKeyboardSeqStepBytes;
+      put_u8(sp + 0u, p.seqStepsR.steps[s].note);
+      put_f32(sp + 1u, p.seqStepsR.steps[s].value);
+      put_u8(sp + 5u, p.seqStepsR.steps[s].gate);
+    }
+  } else if (n == "portamento_speed_r") {
+    put_f32(q + o, p.portamentoSpeedR);
+  } else if (n == "portamento_legato_r") {
+    put_u8(q + o, p.portamentoLegatoR);
+  } else if (n == "vibrato_speed_r") {
+    put_f32(q + o, p.vibratoSpeedR);
+  } else if (n == "vibrato_depth_r") {
+    put_f32(q + o, p.vibratoDepthR);
+  } else if (n == "vibrato_delay_r") {
+    put_f32(q + o, p.vibratoDelayR);
+  } else if (n == "vibrato_pressure_r") {
+    put_f32(q + o, p.vibratoPressureR);
+  } else if (n == "pressure_rise_r") {
+    put_f32(q + o, p.pressureRiseR);
+  } else if (n == "pressure_fall_r") {
+    put_f32(q + o, p.pressureFallR);
+  } else if (n == "quantise_scale_editor_r") {
+    put_u16(q + o, p.quantiseScaleEditorR);
+  } else if (n == "quantise_load_scale_r") {
+    put_u8(q + o, p.quantiseLoadScaleR);
+  } else if (n == "root_note_r") {
+    put_f32(q + o, p.rootNoteR);
+  } else if (n == "plate_tune_r") {
+    for (std::uint32_t t = 0; t < kKeyboardPlateTuneCount; ++t) put_f32(q + o + t * 4u, p.plateTuneR[t]);
+  } else if (n == "pushbutton_value_r") {
+    for (std::uint32_t b = 0; b < kKeyboardPushbuttonCount; ++b) put_f32(q + o + b * 4u, p.pushbuttonValueR[b]);
   }
 }
 
@@ -282,6 +347,71 @@ inline void read_keyboard_preset(const std::uint8_t* q, const StorageRecordField
     for (std::uint32_t t = 0; t < kKeyboardPlateTuneCount; ++t) p->plateTune[t] = get_f32(q + o + t * 4u);
   } else if (n == "pushbutton_value") {
     for (std::uint32_t b = 0; b < kKeyboardPushbuttonCount; ++b) p->pushbuttonValue[b] = get_f32(q + o + b * 4u);
+  } else if (n == "pressure_output_r") {
+    p->pressureOutputR = get_u8(q + o);
+  } else if (n == "mode_r") {
+    p->modeR = get_u8(q + o);
+  } else if (n == "arp_hold_r") {
+    p->arpHoldR = get_u8(q + o);
+  } else if (n == "arp_clock_r") {
+    p->arpClockR = get_u8(q + o);
+  } else if (n == "arp_direction_r") {
+    p->arpDirectionR = get_u8(q + o);
+  } else if (n == "arp_variation_r") {
+    p->arpVariationR = get_u8(q + o);
+  } else if (n == "arp_interval_r") {
+    p->arpIntervalR = get_f32(q + o);
+  } else if (n == "arp_rhythm_r") {
+    p->arpRhythmR = get_u8(q + o);
+  } else if (n == "arp_length_r") {
+    p->arpLengthR = get_f32(q + o);
+  } else if (n == "seq_run_r") {
+    p->seqRunR = get_u8(q + o);
+  } else if (n == "seq_length_r") {
+    p->seqLengthR = get_f32(q + o);
+  } else if (n == "seq_clock_r") {
+    p->seqClockR = get_u8(q + o);
+  } else if (n == "seq_direction_r") {
+    p->seqDirectionR = get_u8(q + o);
+  } else if (n == "seq_cv_output_r") {
+    p->seqCvOutputR = get_u8(q + o);
+  } else if (n == "seq_rhythm_r") {
+    p->seqRhythmR = get_u8(q + o);
+  } else if (n == "seq_rhythm_length_r") {
+    p->seqRhythmLengthR = get_f32(q + o);
+  } else if (n == "seq_steps_r") {
+    for (std::uint32_t s = 0; s < kKeyboardSeqStepCount; ++s) {
+      const std::uint8_t* sp = q + o + s * kKeyboardSeqStepBytes;
+      p->seqStepsR.steps[s].note = get_u8(sp + 0u);
+      p->seqStepsR.steps[s].value = get_f32(sp + 1u);
+      p->seqStepsR.steps[s].gate = get_u8(sp + 5u);
+    }
+  } else if (n == "portamento_speed_r") {
+    p->portamentoSpeedR = get_f32(q + o);
+  } else if (n == "portamento_legato_r") {
+    p->portamentoLegatoR = get_u8(q + o);
+  } else if (n == "vibrato_speed_r") {
+    p->vibratoSpeedR = get_f32(q + o);
+  } else if (n == "vibrato_depth_r") {
+    p->vibratoDepthR = get_f32(q + o);
+  } else if (n == "vibrato_delay_r") {
+    p->vibratoDelayR = get_f32(q + o);
+  } else if (n == "vibrato_pressure_r") {
+    p->vibratoPressureR = get_f32(q + o);
+  } else if (n == "pressure_rise_r") {
+    p->pressureRiseR = get_f32(q + o);
+  } else if (n == "pressure_fall_r") {
+    p->pressureFallR = get_f32(q + o);
+  } else if (n == "quantise_scale_editor_r") {
+    p->quantiseScaleEditorR = get_u16(q + o);
+  } else if (n == "quantise_load_scale_r") {
+    p->quantiseLoadScaleR = get_u8(q + o);
+  } else if (n == "root_note_r") {
+    p->rootNoteR = get_f32(q + o);
+  } else if (n == "plate_tune_r") {
+    for (std::uint32_t t = 0; t < kKeyboardPlateTuneCount; ++t) p->plateTuneR[t] = get_f32(q + o + t * 4u);
+  } else if (n == "pushbutton_value_r") {
+    for (std::uint32_t b = 0; b < kKeyboardPushbuttonCount; ++b) p->pushbuttonValueR[b] = get_f32(q + o + b * 4u);
   }
 }
 

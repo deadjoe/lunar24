@@ -328,8 +328,9 @@ static void device_storage_schema() {
   CHECK_EQ(p.pressureOutput, 2u);
   CHECK_EQ(p.reserved[0], 0xEAu);
   CHECK_EQ(p.reserved[1], 0xF5u);
-  CHECK_EQ(core::kKeyboardPresetRecordBytes, 247u);  // 8-byte shell + 29 appended fields
-  CHECK_EQ(static_cast<std::uint32_t>(core::kKeyboardPresetLayout.fieldCount), 33u);
+  CHECK_EQ(core::kKeyboardPresetRecordBytes, 487u);  // 247 (v2 left) + 240 (right half-bank)
+  CHECK_EQ(static_cast<std::uint32_t>(core::kKeyboardPresetLayout.fieldCount), 63u);
+  CHECK_EQ(core::kKeyboardPresetRecordBytes, 247u + core::kKeyboardSideBankBytes);
 
   // The live keyboard state carries the non-scalars (design/07 §6) as structured
   // fields, never flattened into a scalar descriptor.

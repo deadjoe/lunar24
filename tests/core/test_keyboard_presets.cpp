@@ -78,25 +78,39 @@ static void preset_payload_is_params_except_tempo() {
   for (std::uint32_t j = 0; j < core::kKeyboardPresetLayout.fieldCount; ++j) {
     const std::string_view n = core::kKeyboardPresetLayout.fields[j].name;
     if (n == "id" || n == "reserved") continue;  // shell bytes, not a parameter
-    // Every preset parameter must be one of the frozen payload's 31.
+    // Every preset parameter must be one of the frozen payload's 31, OR the
+    // right-half "_r" variant of one of them (P4-③ per-side). "pressure_behaviour"
+    // is the GLOBAL single/twin/split selector, so it is the one frozen field with
+    // no per-side "_r" form.
+    std::string_view base = n;
+    bool isRight = false;
+    if (n.size() > 2u && n.substr(n.size() - 2u) == "_r") {
+      base = n.substr(0u, n.size() - 2u);
+      isRight = true;
+    }
     bool expected = false;
     for (std::uint32_t e = 0; e < kExpectedParamCount; ++e) {
-      if (n == kExpectedParamFields[e]) { expected = true; break; }
+      if (base == kExpectedParamFields[e]) { expected = true; break; }
     }
     CHECK(expected);  // a preset param field that is not in the frozen 31 -> red
-    if (n == "clock_bpm") seenTempo = true;
+    if (isRight) CHECK(base != std::string_view("pressure_behaviour"));
+    if (base == std::string_view("clock_bpm")) seenTempo = true;
     ++paramFieldCount;
   }
-  CHECK_EQ(paramFieldCount, kExpectedParamCount);  // exactly 31 params, no more
+  // 31 base params (incl. the global behaviour) + 30 right-half "_r" variants.
+  CHECK_EQ(paramFieldCount, 61u);
   // Negative control: tempo/clock must NOT be storable in a preset, and the
   // frozen manifest excludes it (recordSchemas.keyboard_preset.excludes has
   // keyboard.clock_bpm). If a tempo field is ever added to the preset, this
   // fires red.
   CHECK_FALSE(seenTempo);
 
-  // The shell (id + reserved) plus the 31 params = the full 33-sub-field layout.
-  CHECK_EQ(core::kKeyboardPresetLayout.fieldCount, 33u);
-  CHECK_EQ(core::kKeyboardPresetRecordBytes, 247u);
+  // The shell (id + reserved) + 31 base params + 30 right params = 63 sub-fields.
+  CHECK_EQ(core::kKeyboardPresetLayout.fieldCount, 63u);
+  CHECK_EQ(core::kKeyboardPresetRecordBytes, 487u);
+  // Structural invariant: the right half-bank is a contiguous kKeyboardSideBankBytes
+  // region appended after the v2 247-byte record (0..246 untouched).
+  CHECK_EQ(core::kKeyboardPresetRecordBytes, 247u + core::kKeyboardSideBankBytes);
 }
 
 // Populate every field of a preset with distinct, non-trivial values so a
@@ -142,6 +156,46 @@ static void fill_preset(core::KeyboardPreset& p) {
     p.plateTune[i] = 0.1f * static_cast<float>(i);
   for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
     p.pushbuttonValue[i] = 0.2f * static_cast<float>(i);
+
+  // RIGHT half-bank (P4-③ per-side): distinct values so the round-trip proves the
+  // two halves survive independently. A serializer that ignored "_r", or mapped a
+  // right field onto the left offset, would fail the equality below.
+  p.pressureOutputR = 21u;
+  p.modeR = 3u + 100u;
+  p.arpHoldR = 4u + 100u;
+  p.arpClockR = 5u + 100u;
+  p.arpDirectionR = 6u + 100u;
+  p.arpVariationR = 7u + 100u;
+  p.arpIntervalR = 0.5f + 100.0f;
+  p.arpRhythmR = 8u + 100u;
+  p.arpLengthR = 0.75f + 100.0f;
+  p.seqRunR = 9u + 100u;
+  p.seqLengthR = 1.0f + 100.0f;
+  p.seqClockR = 10u + 100u;
+  p.seqDirectionR = 11u + 100u;
+  p.seqCvOutputR = 12u + 100u;
+  p.seqRhythmR = 13u + 100u;
+  p.seqRhythmLengthR = 1.25f + 100.0f;
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    p.seqStepsR.steps[i].note = static_cast<std::uint8_t>(i + 10u);
+    p.seqStepsR.steps[i].value = 0.25f * static_cast<float>(i) + 0.5f;
+    p.seqStepsR.steps[i].gate = static_cast<std::uint8_t>((i + 1u) % 2u);
+  }
+  p.portamentoSpeedR = 0.125f + 100.0f;
+  p.portamentoLegatoR = 1u + 100u;
+  p.vibratoSpeedR = 0.375f + 100.0f;
+  p.vibratoDepthR = 0.5f + 100.0f;
+  p.vibratoDelayR = 0.625f + 100.0f;
+  p.vibratoPressureR = 0.875f + 100.0f;
+  p.pressureRiseR = 0.9f + 100.0f;
+  p.pressureFallR = 0.95f + 100.0f;
+  p.quantiseScaleEditorR = 0x1Au;
+  p.quantiseLoadScaleR = 1u + 100u;
+  p.rootNoteR = 4.5f + 100.0f;
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i)
+    p.plateTuneR[i] = 0.1f * static_cast<float>(i) + 1.0f;
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
+    p.pushbuttonValueR[i] = 0.2f * static_cast<float>(i) + 1.0f;
 }
 
 static bool presets_equal(const core::KeyboardPreset& a, const core::KeyboardPreset& b) {
@@ -169,6 +223,30 @@ static bool presets_equal(const core::KeyboardPreset& a, const core::KeyboardPre
     if (a.plateTune[i] != b.plateTune[i]) return false;
   for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
     if (a.pushbuttonValue[i] != b.pushbuttonValue[i]) return false;
+  // RIGHT half-bank (P4-③ per-side).
+  if (a.pressureOutputR != b.pressureOutputR || a.modeR != b.modeR ||
+      a.arpHoldR != b.arpHoldR || a.arpClockR != b.arpClockR ||
+      a.arpDirectionR != b.arpDirectionR || a.arpVariationR != b.arpVariationR ||
+      a.arpIntervalR != b.arpIntervalR || a.arpRhythmR != b.arpRhythmR ||
+      a.arpLengthR != b.arpLengthR || a.seqRunR != b.seqRunR ||
+      a.seqLengthR != b.seqLengthR || a.seqClockR != b.seqClockR ||
+      a.seqDirectionR != b.seqDirectionR || a.seqCvOutputR != b.seqCvOutputR ||
+      a.seqRhythmR != b.seqRhythmR || a.seqRhythmLengthR != b.seqRhythmLengthR ||
+      a.portamentoSpeedR != b.portamentoSpeedR || a.portamentoLegatoR != b.portamentoLegatoR ||
+      a.vibratoSpeedR != b.vibratoSpeedR || a.vibratoDepthR != b.vibratoDepthR ||
+      a.vibratoDelayR != b.vibratoDelayR || a.vibratoPressureR != b.vibratoPressureR ||
+      a.pressureRiseR != b.pressureRiseR || a.pressureFallR != b.pressureFallR ||
+      a.quantiseScaleEditorR != b.quantiseScaleEditorR ||
+      a.quantiseLoadScaleR != b.quantiseLoadScaleR || a.rootNoteR != b.rootNoteR)
+    return false;
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i)
+    if (a.seqStepsR.steps[i].note != b.seqStepsR.steps[i].note ||
+        a.seqStepsR.steps[i].value != b.seqStepsR.steps[i].value ||
+        a.seqStepsR.steps[i].gate != b.seqStepsR.steps[i].gate) return false;
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i)
+    if (a.plateTuneR[i] != b.plateTuneR[i]) return false;
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
+    if (a.pushbuttonValueR[i] != b.pushbuttonValueR[i]) return false;
   return true;
 }
 
@@ -206,6 +284,32 @@ static void full_payload_round_trip() {
   // The reserve bytes are preserved verbatim, not zeroed (P2-⑤ @Claude Q2).
   CHECK_EQ(dst.keyboardPresets[1].reserved[0], 0xEAu);
   CHECK_EQ(dst.keyboardPresets[1].reserved[1], 0xF5u);
+}
+
+// P4-③ absolute anchor: the round-trip is necessary-but-not-sufficient (a
+// serializer that writes AND reads a field at the same WRONG offset passes it).
+// Pin the right half-bank to concrete wire offsets so a "consistent but wrong"
+// mapping goes red. The v2 region (0..246) stays byte-identical.
+static void right_bank_wire_offset_anchor() {
+  core::KeyboardPreset p;
+  fill_preset(p);
+  std::uint8_t buf[core::kKeyboardPresetRecordBytes] = {};
+  core::write_keyboard_presets(buf, p, core::kKeyboardPresetLayout);
+
+  // Right half-bank begins at 247. First field pressure_output_r@247, mode_r@248.
+  CHECK_EQ(buf[247], p.pressureOutputR);
+  CHECK_EQ(buf[248], p.modeR);
+  // seq_steps_r: 96-byte region at offset 275 (first step's note).
+  CHECK_EQ(buf[275], static_cast<std::uint8_t>(p.seqStepsR.steps[0].note));
+  // pushbutton_value_r: 32 bytes at offset 455, ending at byte 486 = last record byte.
+  CHECK_EQ(core::get_f32(buf + 455u + 7u * 4u), p.pushbuttonValueR[7]);
+  CHECK_EQ(core::kKeyboardPresetRecordBytes, 487u);
+  // The v2 left region must be untouched: mode@8 and the last left pushbutton byte@246.
+  CHECK_EQ(buf[8], p.mode);
+  // Left pushbutton_value is a 32-byte f32[8] region at offset 215; its last byte is
+  // the MSB of pushbuttonValue[7]'s IEEE754 representation. Compare via get_f32, the
+  // same way the serializer round-trips it.
+  CHECK_EQ(core::get_f32(buf + 215u + 7u * 4u), p.pushbuttonValue[7]);
 }
 
 // Test #3: load / save / initialise exist; initialise returns to the factory
@@ -285,6 +389,7 @@ int main() {
   preset_id_pinned_to_slot();
   preset_payload_is_params_except_tempo();
   full_payload_round_trip();
+  right_bank_wire_offset_anchor();
   load_save_initialise();
   live_state_holds_non_scalars();
   return ::test::finish("keyboard presets (P4-②)");
