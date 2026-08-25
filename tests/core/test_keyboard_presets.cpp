@@ -49,6 +49,27 @@ static void only_four_presets() {
   CHECK_FALSE(core::preset_slot_is_valid(0xFFFFu));
 }
 
+// @Claude P4-2 pin: `preset.id == slot` must hold for the factory profile and after
+// initialise_preset. The id field today carries no independent information — it always
+// equals the slot index — so it is pinned as an invariant, not silently left as a
+// "seems meaningful" field. Negative: if initial_keyboard_preset ever returns a
+// divergent id (independent numeric identity), this fires red and forces an explicit
+// decision instead of two silent identity concepts.
+static void preset_id_pinned_to_slot() {
+  for (std::uint32_t slot = 0; slot < core::kDeviceKeyboardPresetCount; ++slot) {
+    CHECK_EQ(core::initial_keyboard_preset(slot).id, slot);
+  }
+  core::DeviceStateV1 st;
+  for (std::uint32_t slot = 0; slot < core::kDeviceKeyboardPresetCount; ++slot) {
+    CHECK(core::initialise_preset(st, slot));
+    CHECK_EQ(st.keyboardPresets[slot].id, slot);
+  }
+  // The occupied-reset case must also keep id == slot (no drift after a real use).
+  st.keyboardPresets[3].id = 7u;  // a divergent value written to a populated preset
+  CHECK(core::initialise_preset(st, 3u));
+  CHECK_EQ(st.keyboardPresets[3].id, 3u);
+}
+
 // Test #2: the preset record carries exactly the 31 keyboard params (minus tempo).
 // Negative: storing tempo (clock_bpm) in a preset is forbidden and must be caught.
 static void preset_payload_is_params_except_tempo() {
@@ -261,6 +282,7 @@ static void live_state_holds_non_scalars() {
 
 int main() {
   only_four_presets();
+  preset_id_pinned_to_slot();
   preset_payload_is_params_except_tempo();
   full_payload_round_trip();
   load_save_initialise();
