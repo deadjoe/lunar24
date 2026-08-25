@@ -56,3 +56,77 @@ Notes on classification:
 *This file is a documentation artifact of P2-⑤, not a runtime input to the core
 library. It lives at the repo root alongside the source that it debts-forward to
 the next phase.*
+
+---
+
+# P3-② Measurement Record (aliasing + noise band)
+
+Slice: P3-② — new drone voice block (Schmitt relaxation oscillator, FM/AM voice,
+noise source, sample-and-hold). Author: @Pi (implementer). Mandate + adjudication:
+@Claude. These are **measurements only**: @Claude ("抗混叠本片不修但要测记 FINDINGS")
+and ("可听带内噪声功率…本片只测量,不要求现在修"). The *fix / bandwidth-normalization
+decision* is deferred to P3 exit to be made on this evidence, not patched silently now.
+
+**Test**: `tests/core/test_drone_mod.cpp` (CTest #21; judges shared with P3-① in
+`drone_test_common.h`). Measured by Goertzel single-frequency DFT (`goertzel_mag`)
+and by band-fraction on the measured total variance (`noise_sample_var`).
+
+## 1. Schmitt aliasing (folded 3rd harmonic)
+
+| sr | fundamental f0 | first folded harmonic | folded alias freq | level rel. fundamental |
+|----|----------------|-----------------------|-------------------|------------------------|
+| 8000 Hz | 1858.78 Hz | 3rd (= 5576.3 Hz > Nyquist 4000) | 2423.65 Hz | **−16.24 dB** |
+
+Chosen seed (1..32) selected for the loudest clean mid-band fold. A symmetric
+triangle has odd harmonics at 1/n²; the 3rd at 1/9 of the fundamental is −19.05 dB,
+and here it measures −16.24 dB (the discrete oscillator is not perfectly symmetric).
+**Reading for P3 exit**: the folded-harmonic level is small but not negligible when
+the pitch is a large fraction of Nyquist; for typical audio sr (44.1..96 kHz) the
+drone band (20..2000 Hz) is far below Nyquist, so harmonic folding there is a
+non-issue — it only becomes audible in the contrived low-sr case shown.
+
+## 2. FM aliasing (high deviation)
+
+| sr | carrier fc | fDev | peak inst. freq | probe mirror | energy at mirror, hi vs lo fDev |
+|----|-----------|------|-----------------|--------------|---------------------------------|
+| 48000 Hz | 821.21 Hz | 30000 Hz | 30821.21 Hz (> Nyquist 24000) | 17178.79 Hz | **+37.87 dB** |
+
+The mirror is where the peak overshoot reflects (`fold_to_baseband(fc+fDev)`).
+Rendering the same seed with a tiny fDev (no overshoot) gives almost no energy at
+that probe; the +37.87 dB delta at high fDev is the aliasing-added energy. (AM
+depth set to 0 to isolate FM.) **Reading for P3 exit**: FM aliasing is a real, large
+effect when `fDev` is a substantial fraction of the sample rate — the instantaneous
+frequency genuinely crosses Nyquist and folds back. This is the case the P3-exit
+antialiasing decision must handle.
+
+## 3. Audible-band noise power vs sample rate
+
+White noise (amplitude 0.5), per-sample uniform. Total variance = **0.083273**
+(sr-invariant — the generator is amplitude-scaled, not bandwidth-scaled). The
+one-sided spectrum is flat up to Nyquist, so the fraction inside 20 Hz..20 kHz is
+`19980 / (sr/2)`:
+
+| sr | Nyquist | audible fraction | audible-band power |
+|----|---------|------------------|--------------------|
+| 44100 Hz | 22050 | 0.906 | 0.075456 |
+| 48000 Hz | 24000 | 0.833 | 0.069331 |
+| 88200 Hz | 44100 | 0.453 | 0.037738 |
+| 96000 Hz | 48000 | 0.416 | 0.034662 |
+
+**Deviation = 3.38 dB** across 44.1 → 96 kHz (falls as sr rises). The deviation is
+> 1 dB, so it is genuinely measurable, and it is the expected physical effect: a
+fixed per-sample amplitude spreads the same total power over a wider band at higher
+sr, so a fixed audible band captures less of it. **Reading for P3 exit**: the honest
+choice is between band-limiting/oversampling the noise (constant audible power) or
+normalizing by bandwidth (constant PSD); the numbers here are the evidence for that
+decision.
+
+---
+
+*Honest side-note: the Schmitt relaxation oscillator's discrete frequency is
+`sr / (2·ceil(sr/(2·vT·freqBase·(1+tolerance))))` — it quantizes to integer ramp
+samples and is never more than one sub-sample per half-swing below the continuous
+`chargeRate/(4·vT)`. This is inherent to a relaxation oscillator, not the
+fixed-increment trap; it stays sr-invariant to within that bound, whereas a fixed
+per-sample step scales with sr. Documented in `schmitt_osc.h` and bounded at 5% by
+the cross-sample-rate must-test.*

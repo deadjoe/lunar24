@@ -36,32 +36,25 @@
 #include <cstring>
 #include <vector>
 
+#include "drone_test_common.h"
+
 #include <lunar24/core/drone_bank.h>
 
 namespace core = lunar24::core;
 
 namespace {
 
-constexpr double kPi = 3.14159265358979323846;
-constexpr double kTwoPi = 6.28318530717958647692;
 constexpr double kEpsFreq = 1e-6;    // exact-ish freq equality tolerance.
 constexpr double kDriftRateBound = 0.01;  // Hz/sample: far above the real ~0.0016,
                                           // far below per-sample white noise.
 
-// Positive-going zero-crossing frequency of a single-voice buffer (Hz).
-static double measure_freq_hz(const std::vector<double>& buf, double sr) {
-  if (buf.size() < 2) return 0.0;
-  long up = 0;
-  for (std::size_t i = 1; i < buf.size(); ++i)
-    if (buf[i - 1] <= 0.0 && buf[i] > 0.0) ++up;
-  return static_cast<double>(up) * sr / static_cast<double>(buf.size() - 1);
-}
-
-static double wrap_pi(double a) {
-  while (a <= -kPi) a += kTwoPi;
-  while (a > kPi) a -= kTwoPi;
-  return a;
-}
+// Shared judges (measure_freq_hz / wrap_pi / same_render / goertzel_mag /
+// noise_sample_var) live in drone_test_common.h so P3-① and P3-② use the SAME
+// code (@Claude: "判据只有一份"). Pull them in unqualified so the call sites
+// below stay unchanged — a change to a detector picks up in both slices at once.
+using drone_test::measure_freq_hz;
+using drone_test::wrap_pi;
+using drone_test::same_render;
 
 static core::DroneBank make_bank(std::uint64_t seed, double sr,
                                  std::size_t voices, bool drift) {
@@ -78,12 +71,6 @@ static std::vector<double> render_single(core::DroneBank& bank, std::size_t n) {
     out[i] = vbuf[0];
   }
   return out;
-}
-
-// Have two banks produce the same per-sample buffer?
-static bool same_render(const std::vector<double>& a, const std::vector<double>& b) {
-  if (a.size() != b.size()) return false;
-  return std::memcmp(a.data(), b.data(), a.size() * sizeof(double)) == 0;
 }
 
 // ---------------------------------------------------------------- 1. free-run ----
