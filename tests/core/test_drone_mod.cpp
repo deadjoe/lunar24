@@ -599,6 +599,129 @@ static bool test_noise_audible_band_power() {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// ABSOLUTE-REFERENCE ANCHORS (@Claude 3241ca5e: the two drone_mod paths that had
+// no anchor — FmAmVoice + NoiseSource). Each pins the implementation to OUR OWN
+// DECLARED implementation contract, NOT a hardware fact (the polarity--rule:
+// never invent an unevidenced hardware number as an anchor). If hardware evidence
+// later says the distribution differs, the DECLARATION changes and these anchors
+// follow. See FINDINGS.md §4. Each carries a negative so the judge is provably
+// able to go red (never an anchor that cannot fail).
+// ---------------------------------------------------------------------------
+
+// Positive-going zero-crossing interval frequency of a SINGLE cycle; the shortest
+// interval over the buffer is the peak instantaneous frequency (Hz). Local to this
+// test (not a shared judge) — it is FM-specific and coarse (interval-quantized).
+static double peak_inst_freq_hz(const std::vector<double>& buf, double sr) {
+  long last = -1, best = -1;
+  for (std::size_t i = 1; i < buf.size(); ++i) {
+    if (buf[i - 1] <= 0.0 && buf[i] > 0.0) {
+      if (last >= 0) {
+        const long d = static_cast<long>(i) - last;
+        if (best < 0 || d < best) best = d;
+      }
+      last = static_cast<long>(i);
+    }
+  }
+  return best > 0 ? sr / static_cast<double>(best) : 0.0;
+}
+
+// NEGATIVE: the phase advance hardcodes a 48 kHz sample rate instead of using the
+// real one. Correct at 48 kHz (so a single-rate test would "pass"), wrong at every
+// other rate and partition-invariant — the exact class the carrier anchor exists
+// to catch.
+static std::vector<double> render_fm_am_srhardcoded(std::uint64_t seed, double /*sr*/,
+                                                    double fDevHz, double depth,
+                                                    std::size_t n) {
+  const double kHard = 48000.0;
+  core::SeededRandom rng(seed);
+  const double fc = 20.0 + rng.nextUnit(0.0, 1.0) * 1980.0;
+  const double fmod = 0.5 + rng.nextUnit(0.0, 1.0) * 20.0;
+  const double baseAmp = 0.05 + rng.nextUnit(0.0, 1.0) * 0.95;
+  std::vector<double> out(n);
+  double phaseC = 0.0, phaseM = 0.0;
+  for (std::size_t i = 0; i < n; ++i) {
+    const double mod = std::sin(phaseM);
+    out[i] = baseAmp * (1.0 + depth * mod) * std::sin(phaseC);
+    phaseC += 2.0 * drone_test::kPi * (fc + fDevHz * mod) / kHard;
+    if (phaseC >= 2.0 * drone_test::kPi) phaseC -= 2.0 * drone_test::kPi;
+    phaseM += 2.0 * drone_test::kPi * fmod / kHard;
+    if (phaseM >= 2.0 * drone_test::kPi) phaseM -= 2.0 * drone_test::kPi;
+  }
+  return out;
+}
+
+// FmAmVoice anchor, half A — carrier == carrierHz() at every rate (the exact closed
+// form @Claude named). depth=0, fDev=0 => a pure sine at fc; measure_freq_hz pins
+// it absolutely. A hardcoded-48k phase advance breaks at 44.1/88.2/96 kHz.
+static bool test_fm_am_carrier_cross_sr() {
+  const std::uint64_t seed = 0xC0FFEEu;
+  const double fDev = 0.0, depth = 0.0;
+  for (const double sr : kRates) {
+    core::FmAmVoice v(seed, sr, fDev, depth);
+    const auto buf = render_fm_am(v, 4u * static_cast<std::size_t>(sr));
+    const double meas = measure_freq_hz(buf, sr);
+    CHECK(std::fabs(meas - v.carrierHz()) < 1.5);  // exact closed form: fundamental==fc
+  }
+  // Negative: the sr-hardcoded renderer is wrong at non-48k, and the anchor sees it.
+  {
+    const double sr = 44100.0;  // a rate where the hardcode is wrong by >1 octave-free
+    const auto bad = render_fm_am_srhardcoded(seed, sr, fDev, depth,
+                                              4u * static_cast<std::size_t>(sr));
+    const double meas = measure_freq_hz(bad, sr);
+    CHECK_FALSE(std::fabs(meas - core::FmAmVoice(seed, sr, fDev, depth).carrierHz()) < 1.5);
+  }
+  return true;
+}
+
+// FmAmVoice anchor, half B — the FM deviation is actually realized: with fDev>0 the
+// peak instantaneous frequency must reach ~carrierHz+fDev, not stay at the carrier
+// (a depth/fDev- scaling error is partition-invariant, so no consistency judge sees
+// it). Coarse by construction (interval-quantized), so it runs at a large, accurate
+// fDev and asserts a bounded band rather than an exact value.
+static bool test_fm_am_deviation_realized() {
+  const std::uint64_t seed = 0xC0FFEEu;
+  const double sr = 48000.0, fDev = 500.0, depth = 0.0;
+  core::FmAmVoice v(seed, sr, fDev, depth);
+  const auto buf = render_fm_am(v, 8u * static_cast<std::size_t>(sr));
+  const double peak = peak_inst_freq_hz(buf, sr);
+  const double fc = v.carrierHz();
+  // Modulator peak => instHz=fc+fDev; band [fc+0.75fDev, fc+1.25fDev] catches a
+  // collapsed (0x) or doubled (2x) deviation without false-failing on the ±0.7 Hz
+  // interval quantization that a large fDev allows.
+  CHECK(peak > fc + 0.75 * fDev);
+  CHECK(peak < fc + 1.25 * fDev);
+  return true;
+}
+
+// NoiseSource anchor: each per-sample value is uniform in [-amp,+amp), so the
+// sample variance must equal amp^2/3 (sr-independent; a wrong-but-consistent
+// amplitude scaling is partition-invariant). This validates our declared
+// implementation contract — not a hardware spec — per @Claude 3241ca5e.
+static bool test_noise_variance_contract() {
+  const std::uint64_t seed = 0x21Cu;
+  const double amp = 0.5;
+  const double expect = amp * amp / 3.0;
+  for (const double sr : kRates) {
+    (void)sr;  // the value is sr-independent BY CONTRACT; the sweep confirms no sr-dependence crept in
+    core::NoiseSource ns(seed, amp);
+    std::vector<double> buf(40000);
+    for (std::size_t i = 0; i < buf.size(); ++i) ns.tick(&buf[i]);
+    const double var = noise_sample_var(buf);
+    CHECK(std::fabs(var - expect) < 0.02 * expect);
+  }
+  // Negative: an amplitude-halved source has variance (amp/2)^2/3 = 25% of expected.
+  {
+    core::SeededRandom rng(seed);
+    const double halved = amp * 0.5;
+    std::vector<double> buf(40000);
+    for (std::size_t i = 0; i < buf.size(); ++i) buf[i] = (rng.nextUnit() * 2.0 - 1.0) * halved;
+    const double var = noise_sample_var(buf);
+    CHECK_FALSE(std::fabs(var - expect) < 0.02 * expect);
+  }
+  return true;
+}
+
 int main() {
   test_schmitt_cross_sr();
   test_schmitt_buffer_independence();
@@ -606,6 +729,9 @@ int main() {
   test_sandhold_cross_sr_duration();
   test_sandhold_buffer_independence();
   test_fm_am_buffer_determinism();
+  test_fm_am_carrier_cross_sr();
+  test_fm_am_deviation_realized();
+  test_noise_variance_contract();
   test_schmitt_aliasing();
   test_fm_aliasing();
   test_noise_audible_band_power();

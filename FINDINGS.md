@@ -539,15 +539,30 @@ relative sr-dependence *provability* check (`devDb>1` proves the band is sr-depe
 wrong-but-consistent amplitude still satisfies). So `drone_mod` is not fully protected at module level:
 **2 of its 4 consistency paths (NoiseSource, FmAmVoice) carry no absolute reference.**
 
-**Result: 7 record-only; 2 gaps → NoiseSource + FmAmVoice.**
+**Result: 7 record-only; 2 gaps → NoiseSource + FmAmVoice.** Both anchors now LANDED (head `HEADPENDING`,
+on @Claude's exempt GO 3241ca5e — the polarity line: take the anchor from *our own declared
+implementation contract*, never an unevidenced hardware fact). If hardware evidence later shows the
+distribution differs, the declaration changes and these anchors follow.
 
-Minimal closing-form anchors proposed (not yet landed — confirm scope with @Claude first):
-- **FmAmVoice**: a cross-sr assert that the measured fundamental (Goertzel) equals `fc` Hz (and peak
-  `fc+fDev`) at each of the 4 rates — catches any sr-scaling / depth-scaling error that is otherwise
-  partition-invariant (the real off-by-one-class risk).
-- **NoiseSource**: assert absolute sample variance matches the closed-form of the documented amplitude
-  distribution (e.g. `A²/3` for uniform `±A`) at each rate — this depends on NoiseSource's pinned
-  distribution semantics, so confirm that first.
+- **FmAmVoice, `test_fm_am_carrier_cross_sr`** (exact closed form @Claude named): `depth=0, fDev=0` ⇒ a
+  pure sine at `carrierHz()`; `measure_freq_hz` pins it absolutely. Asserted `|meas − fc| < 1.5 Hz` at
+  every one of the 4 rates. The cross-rate sweep is the point: a hardcoded-48 kHz phase advance is
+  *partition-invariant* and invisible to every consistency judge, but shows up as the wrong carrier at
+  44.1/88.2/96 kHz (measured — a 48 k-hardcode reads ~+140 Hz off at 44.1 k, ≫ tolerance). Negative:
+  `render_fm_am_srhardcoded` (phase advance fixed to 48000) → carrier at 44.1 k is `fc·44100/48000` ⇒
+  CHECK_FALSE holds (the judge reddens).
+- **FmAmVoice, `test_fm_am_deviation_realized`** (bounded, not exact): with `fDev>0` the *peak*
+  instantaneous frequency (shortest zero-crossing interval) must reach `[fc+0.75·fDev, fc+1.25·fDev]`,
+  not stay at the carrier. Run at `fDev=500` where the interval-quantized estimator is tight (±0.7 Hz
+  measured); it is coarse by construction (catches a collapsed-0× or doubled-2× deviation, per
+  @Claude's "wrong-but-consistent" class), so it asserts a band rather than an exact value.
+- **NoiseSource, `test_noise_variance_contract`**: each value is uniform `[−amp,+amp)` ⇒ sample variance
+  must equal `amp²/3` (measured: +0.036 % relative, essentially exact). Asserted `< 2 %` relative at all
+  4 rates (the value is sr-independent *by contract*; the sweep confirms no sr-dependence crept in).
+  Negative: an amp-halved renderer has variance `(amp/2)²/3 = 25 %` of expected ⇒ CHECK_FALSE holds.
+  **Clarification per @Claude 3241ca5e**: this asserts *our declared implementation contract*
+  (uniform distribution), NOT the hardware noise spec — that distinction is the removal of the earlier
+  "needs distribution pinned" blocker.
 
 *This file is a documentation artifact of the P3 slices, not a runtime input to the core
 library.*
