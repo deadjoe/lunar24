@@ -863,7 +863,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 1118,
-        "lineEnd": 1157
+        "lineEnd": 1153
       },
       "status": "confirmed",
       "parameters": [
@@ -1206,7 +1206,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 559,
-        "lineEnd": 634
+        "lineEnd": 631
       },
       "status": "confirmed",
       "parameters": [
@@ -1256,7 +1256,7 @@
           "evidence": {
             "ref": "solar42N_manual_v15",
             "lineStart": 809,
-            "lineEnd": 818,
+            "lineEnd": 817,
             "panelSite": "底部 12 触摸片"
           },
           "status": "confirmed",
@@ -1287,7 +1287,7 @@
           "persistence": "deviceState",
           "evidence": {
             "ref": "solar42N_manual_v15",
-            "lineStart": 822,
+            "lineStart": 821,
             "lineEnd": 857,
             "panelSite": "底部 12 触摸片"
           },
@@ -1318,7 +1318,7 @@
           "persistence": "deviceState",
           "evidence": {
             "ref": "solar42N_manual_v15",
-            "lineStart": 822,
+            "lineStart": 821,
             "lineEnd": 857,
             "panelSite": "底部 12 触摸片"
           },
@@ -1351,7 +1351,7 @@
           "persistence": "deviceState",
           "evidence": {
             "ref": "solar42N_manual_v15",
-            "lineStart": 822,
+            "lineStart": 821,
             "lineEnd": 857,
             "panelSite": "底部 12 触摸片"
           },
@@ -1384,7 +1384,7 @@
           "persistence": "deviceState",
           "evidence": {
             "ref": "solar42N_manual_v15",
-            "lineStart": 822,
+            "lineStart": 821,
             "lineEnd": 857,
             "panelSite": "底部 12 触摸片"
           },
@@ -1411,7 +1411,7 @@
           "persistence": "deviceState",
           "evidence": {
             "ref": "solar42N_manual_v15",
-            "lineStart": 822,
+            "lineStart": 821,
             "lineEnd": 857,
             "panelSite": "底部 12 触摸片"
           },
@@ -2900,7 +2900,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 425,
-        "lineEnd": 443
+        "lineEnd": 441
       },
       "status": "confirmed",
       "parameters": [
@@ -3019,7 +3019,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 425,
-        "lineEnd": 445
+        "lineEnd": 441
       },
       "status": "confirmed",
       "parameters": [
@@ -3137,8 +3137,8 @@
       "description": "Position-locking joystick: X/Y axes + two voltage offset regulators -> two patchable CV outputs (nominal -10..+10V). P0 captures the panel state params as software-normalized placeholders and the two bipolar CV outputs.",
       "evidence": {
         "ref": "solar42N_manual_v15",
-        "lineStart": 447,
-        "lineEnd": 478
+        "lineStart": 446,
+        "lineEnd": 477
       },
       "status": "confirmed",
       "parameters": [
@@ -3481,8 +3481,8 @@
       "description": "5-stage sequential voltage source: an internal clock (PULSER) with an external clock/trigger input, a STAGES selector for 3/4/5 steps, and five continuously adjustable step-CV outputs (0..+5V) plus five step-gate switches (off/on), a CLOCK OUT, and a CV/GATE out. Voltage/polarity/coupling on the clock jacks is not documented (kept unknown/unverified); CV/GATE outputs carry the legend ranges.",
       "evidence": {
         "ref": "solar42N_manual_v15",
-        "lineStart": 480,
-        "lineEnd": 505
+        "lineStart": 483,
+        "lineEnd": 510
       },
       "status": "confirmed",
       "parameters": [
@@ -4730,7 +4730,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 106,
-        "lineEnd": 118
+        "lineEnd": 117
       },
       "status": "confirmed",
       "parameters": [],
@@ -4745,7 +4745,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 288,
-        "lineEnd": 320
+        "lineEnd": 318
       },
       "status": "confirmed",
       "parameters": [
@@ -5337,7 +5337,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 288,
-        "lineEnd": 320
+        "lineEnd": 318
       },
       "status": "confirmed",
       "parameters": [
@@ -5929,7 +5929,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 288,
-        "lineEnd": 320
+        "lineEnd": 318
       },
       "status": "confirmed",
       "parameters": [
@@ -6521,7 +6521,7 @@
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 288,
-        "lineEnd": 320
+        "lineEnd": 318
       },
       "status": "confirmed",
       "parameters": [
