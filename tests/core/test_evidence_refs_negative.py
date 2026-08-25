@@ -107,18 +107,42 @@ def test_real_flip_to_blank_goes_red():
     return []
 
 
+def test_absent_mode_blank_detection():
+    # The CI path grounds refs against the committed LAYOUT, not live text. A ref whose
+    # boundary falls on a blank line (per the committed blankLines) must be caught even
+    # though the manual text is not on disk. Drive check() with a LayoutSource built from
+    # SYN_MANUAL's fingerprint — the same code CI exercises. SYN_MANUAL lines 2 and 5 are
+    # blank.
+    bl = gate.blank_lines(SYN_MANUAL)
+    layout = {"lineCount": len(SYN_MANUAL), "blankLines": bl}
+    src_map = {"solar42N_manual_v15": gate.LayoutSource(layout)}
+
+    problems = gate.check('X EvidenceRef{"solar42N_manual_v15", 1u, 2u} Y', src_map)
+    if not has(problems, "lineEnd 2 is a blank line"):
+        return [f"absent-mode: ref ending on blank line 2 not flagged: {problems[:3]}"]
+    problems = gate.check('X EvidenceRef{"solar42N_manual_v15", 5u, 6u} Y', src_map)
+    if not has(problems, "lineStart 5 is a blank line"):
+        return [f"absent-mode: ref starting on blank line 5 not flagged: {problems[:3]}"]
+    problems = gate.check('X EvidenceRef{"solar42N_manual_v15", 1u, 3u} Y', src_map)
+    if problems:
+        return [f"absent-mode: clean ref should pass but got {problems[:3]}"]
+    return []
+
+
 def main():
     failures = []
     failures += test_defects()
     failures += test_real_baseline_passes()
     failures += test_real_flip_to_blank_goes_red()
+    failures += test_absent_mode_blank_detection()
     if failures:
         print("FAIL: EvidenceRef negative control")
         for f in failures:
             print(f"  {f}")
         return 1
     print("OK: EvidenceRef gate negative control — each defect rejected for its intended reason; "
-          "real registry baseline passes; a single ref flipped to a blank line makes the gate go red")
+          "real registry baseline passes; a single ref flipped to a blank line makes the gate "
+          "go red; absent-mode (CI) LayoutSource catches a blank boundary without live text")
     return 0
 
 
