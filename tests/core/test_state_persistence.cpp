@@ -175,28 +175,29 @@ static std::uint32_t storage_offset_of(const char* name) {
 struct MemFs {
   std::vector<std::uint8_t> live;
   std::vector<std::uint8_t> temp;
-  bool inPlace = false;      // write directly to the live file (negative)
+  const char* tempPath = "t";   // the temp path the save logic is told to use
+  const char* livePath = "live";  // the live path the save logic is told to use
   bool failPartway = false;  // write partial data then fail
   bool failReplace = false;  // rename fails (fault between temp & rename)
 };
 
+// The mock is PATH-AWARE: it routes to the temp or live buffer by comparing the
+// `path` string the production code passed against the configured temp/live path.
+// This is what makes the atomic-replace mutation test honest — a real bug that
+// writes to `livePath` (no temp isolation) is caught, and a caller passing the
+// same path for temp and live really does corrupt the live file. Dropping `path`
+// (the old `(void)path;` + an `inPlace` flag) proved only that the mock could
+// reroute, never that the production temp->rename order held.
 static bool fs_write(void* ctx, const char* path, const std::uint8_t* bytes,
                      std::size_t n) {
-  (void)path;
   MemFs* m = static_cast<MemFs*>(ctx);
-  if (m->inPlace) {
-    if (m->failPartway) {
-      m->live.assign(bytes, bytes + n / 2u);
-      return false;
-    }
-    m->live.assign(bytes, bytes + n);
-    return true;
-  }
+  std::vector<std::uint8_t>& dst =
+      (std::strcmp(path, m->livePath) == 0) ? m->live : m->temp;
   if (m->failPartway) {
-    m->temp.assign(bytes, bytes + n / 2u);
+    dst.assign(bytes, bytes + n / 2u);
     return false;
   }
-  m->temp.assign(bytes, bytes + n);
+  dst.assign(bytes, bytes + n);
   return true;
 }
 static bool fs_flush(void*, const char*) { return true; }
@@ -244,7 +245,10 @@ static void atomic_replace_never_exposes_half_file() {
 
 // The negative: an in-place direct write (no temp+rename) corrupts the live file
 // on a mid-write failure — exactly no crash-safe guarantee, and the reason the
-// temp-flush-rename order is mandatory.
+// temp-flush-rename order is mandatory. This is a REAL degradation, not a mock
+// reroute: the caller passes the SAME path for temp and live, so there is no
+// isolated temp to protect the live file — whatever the mock writes to that path
+// is the live state.
 static void in_place_write_corrupts_live() {
   core::DeviceStateV1 old, next;
   fill_state(old);
@@ -257,12 +261,12 @@ static void in_place_write_corrupts_live() {
 
   MemFs fs;
   fs.live = oldBytes;
-  fs.inPlace = true;       // write directly to live
   fs.failPartway = true;   // ... and stop halfway
   core::FileOps ops{fs_write, fs_flush, fs_replace, fs_discard};
 
+  // temp == live: no isolation. A mid-write fault exposes a half file as live.
   core::SaveResult r = core::save_state_atomic(nextBytes.data(), nextBytes.size(),
-                                               "t", "live", ops, &fs);
+                                               "live", "live", ops, &fs);
   CHECK(r == core::SaveResult::temp_write_failed);
   // live is now truncated/corrupt (a half file). If the product used this path, a
   // crash here would leave the live file unusable -> the atomic order is required.
