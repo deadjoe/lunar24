@@ -513,5 +513,41 @@ a `real_path` edge actually realized the declared delay. This slice closes that,
 To be settled at P3 exit by @Claude (after CI green): whether this counts as the debt closed; the
 row above is marked **Landed** pending that adjudication.
 
+## 4. P3-exit addendum — consistency-only judges mapped to absolute-anchor coverage (@Claude ea18b0da)
+
+Directive: for each of the 9 pure-consistency/no-absolute-anchor judges I listed, note whether the
+**same component** also carries a judge with an absolute reference. If yes → record only; if no → that
+component needs an anchor. The anchoring grain is **path/component-specific**, not file-specific (the
+real_path off-by-one survived because *that path* had no anchor, even though `test_graph_compiler.cpp`
+had many other checks).
+
+| # | consistency-only judge (file:line) | component | absolute-anchor judge on same component? | verdict |
+|---|---|---|---|---|
+| 1 | `test_drone_bank.cpp:246` `test_buffer_size_independence` | drone_bank | ✅ zero-crossing measured Hz vs analytic (`:181`) + `test_drift_rate_bounded` | record-only |
+| 2 | `test_drone_mod.cpp:338` `test_schmitt_buffer_independence` | SchmittOsc | ✅ `test_schmitt_cross_sr` — Hz == `effectiveFreqHz()` (<1e-9) at all 4 rates | record-only |
+| 3 | `test_drone_mod.cpp:400` `test_noise_reproducible_buffer` | NoiseSource | ❌ **no true absolute anchor** — the cited "dB" test (`test_noise_audible_band_power`) is *relative* (`devDb>1`) + measure-only; no absolute amplitude pin | **needs anchor** |
+| 4 | `test_drone_mod.cpp:465` `test_sandhold_buffer_independence` | SAndHold | ✅ `test_sandhold_cross_sr_duration` — hold **in seconds** (absolute) | record-only |
+| 5 | `test_drone_mod.cpp:494,498` `test_fm_am_buffer_determinism` | FmAmVoice | ❌ **no absolute anchor** — no cross-sr Hz/seconds/dB assert; `test_fm_aliasing` is measure-only (prints dB, no boundary assert) | **needs anchor** |
+| 6 | `test_mix_filter_distortion.cpp:415` `⑦ cross-buffer one-vs-17` | voice_mixer/PolivoksVCF/distortion/wet_dry | ✅ `:419-433` `dist=0` → `output==input` exact per-fs + `:290` res ratio (0.1022 red vs 1.02 healthy) | record-only |
+| 7 | `test_preamp_envelope.cpp:302` `⑤ cross-buffer` | preamp/envelope_follower | ✅ #1 real-spread vs 3.5ms / #3 var0 vs junk / #4 silence-tail vs floor | record-only |
+| 8 | `test_vco.cpp:480` single-vs-partitioned | VCO A/B | ✅ V/oct per-step `f(V+1)/f(V)==2` | record-only |
+| 9 | `test_graph_compiler.cpp:492-493` `plans_bit_identical` across order | GraphCompiler | ✅ feedback set **sufficient & non-redundant** | record-only |
+
+**Honest correction to the @Claude's grouping of `drone_mod` as anchored**: S&H "in seconds" (row 4)
+IS a true absolute anchor, but the noise "dB" (row 3) is NOT an absolute amplitude anchor — it is a
+relative sr-dependence *provability* check (`devDb>1` proves the band is sr-dependent, which a
+wrong-but-consistent amplitude still satisfies). So `drone_mod` is not fully protected at module level:
+**2 of its 4 consistency paths (NoiseSource, FmAmVoice) carry no absolute reference.**
+
+**Result: 7 record-only; 2 gaps → NoiseSource + FmAmVoice.**
+
+Minimal closing-form anchors proposed (not yet landed — confirm scope with @Claude first):
+- **FmAmVoice**: a cross-sr assert that the measured fundamental (Goertzel) equals `fc` Hz (and peak
+  `fc+fDev`) at each of the 4 rates — catches any sr-scaling / depth-scaling error that is otherwise
+  partition-invariant (the real off-by-one-class risk).
+- **NoiseSource**: assert absolute sample variance matches the closed-form of the documented amplitude
+  distribution (e.g. `A²/3` for uniform `±A`) at each rate — this depends on NoiseSource's pinned
+  distribution semantics, so confirm that first.
+
 *This file is a documentation artifact of the P3 slices, not a runtime input to the core
 library.*
