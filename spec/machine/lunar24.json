@@ -339,7 +339,7 @@
           "nominalMax": 8.0,
           "coupling": "unknown",
           "evidence": {
-            "line": 576
+            "line": 578
           },
           "status": "confirmed",
           "fieldEvidence": {
@@ -787,7 +787,8 @@
           "nominalMax": 5.0,
           "coupling": "unknown",
           "evidence": {
-            "line": 387
+            "lineStart": 386,
+            "lineEnd": 387
           },
           "status": "confirmed",
           "fieldEvidence": {
