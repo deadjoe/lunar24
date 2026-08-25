@@ -295,7 +295,8 @@ adjudication: @Claude (msg edf0c9e0 / GO 187d8313). The five behaviour must-test
 (① res-doesn't-lose-lows, ② DIST≠GAIN, ③ L/R state independent, ⑤ LP/BP two-state,
 ⑥ four logic outputs) and the two measurement must-tests (④ route re-presented,
 ⑦ cross-sr/cross-buffer + aliasing) run in `tests/core/test_mix_filter_distortion.cpp`
-(CTest #26, 35 checks). This record captures the **measurements** the mandate asked me
+(CTest #26, 36 checks — 35 original + the ① peak-normalised negative added on
+@Claude's review). This record captures the **measurements** the mandate asked me
 to make and the provisional choices the mandate asked me to label — none are patched
 silently.
 
@@ -311,8 +312,11 @@ marked provisional.
 ## 1. Resonance does not lose lows — the mandate's premise, measured
 
 @Claude's ① framing ("标准 SVF/梯波高共振必然丢低频") is a **premise to verify, not a
-fact**. I built three candidate LP models and measured |H(100 Hz)| — a deep-bass
-probe, 1 decade below the 1 kHz cutoff — as resonance rose from 0 to max:
+fact** — and my refutation (it is FALSE for the stable linear topologies) was later
+**confirmed by @Claude's own re-derivation** (2-pole LP DC gain = 1 independent of Q,
+so his originally-specified negative could never fire). I built three candidate LP
+models and measured |H(100 Hz)| — a deep-bass probe, 1 decade below the 1 kHz
+cutoff — as resonance rose from 0 to max:
 
 | Topology | |H(100 Hz)| res=0 | res=1 | ratio | verdict |
 |----------|--------|------------|-------|-------|---------|
@@ -320,14 +324,26 @@ probe, 1 decade below the 1 kHz cutoff — as resonance rose from 0 to max:
 | 2-pole ladder (Moog-ish) | — | — | ~1.89 | (**boosts**) | passes bass |
 | **Chamberlin SVF (chosen)** | 0.9888 | 1.0100 | **1.0214** | (**held**) | passes bass |
 | Buggy "LP→BP tilt" (negative) | — | — | **0.1022** | (**loses**) | **RED** |
+| **Peak-normalised 2-pole** (`1/Q`, @Claude review) | 1.4141 | 0.2020 | **0.1428** | (**loses**) | **RED** |
 
 The measured curve: **all three stable linear topologies preserve or BOOST the low
 band** — none loses it. The stable linear topologies cannot lose low end at high
-resonance; the reliable loss is a **mode tilt** (implementer letting the resonance
-route the output toward bandpass, which rejects the bass). That tilting case
-measures at ratio **0.1022** — a genuine red. Threshold **0.5** cleanly separates
-the healthy 1.02 from the broken 0.10, and was set from the measured curve, not
-before it (per the mandate "阈值定多少你先量真实曲线再定，别先定阈值再凑").
+resonance; the reliable losses are real, representable errors, not the imposed
+premise. Two negatives now stand, each a genuine degradation an implementer could
+actually produce (per @Claude's review rule: a negative must represent a real error
+someone might write, not a construct built to trip the flag):
+
+- **mode tilt** (resonance routing the LP output toward bandpass, which rejects the
+  bass) — ratio **0.1022**.
+- **peak-normalised 2-pole** (dividing the whole 2-pole output by Q to keep the
+  resonant peak from clipping — the common real implementation) — ratio **0.1428**.
+  Sampled at high Q: base **Q=0.707 (=1.4141)**, max **Q=5 (=0.2020)**. Not near
+  Q=2, where the bass |H(100 Hz)| ≈ 0.5044 just grazes an absolute threshold
+  (@Claude's explicit warning).
+
+Threshold **0.5** separates all healthy cases from both red cases (1.02 vs 0.10 /
+0.14 in ratio terms), and was set from the measured curve, not before it (per the
+mandate "阈值定多少你先量真实曲线再定，别先定阈值再凑").
 
 **Reading for the gate**: the definitional "not lose lows" is satisfied by the
 Chamberlin SVF's unity-DC-lowpass (res feedback `damp` does not enter the DC term).
@@ -371,7 +387,7 @@ msg 9baf5612 as noted during P3-③).
 
 | Item | Evidence strength | Record |
 |------|-------------------|--------|
-| BP-LP default | **Discrepancy kept visible** | Frozen registry literal `default: 0.0` → `positions[0]="bp"` (filter defaults to BP). The adjudicator's GO cited "default 1". The frozen-registry literal is authoritative and is followed (`setMode` maps bp→0/lp→1); the discrepancy is deliberately recorded, not silently resolved. |
+| BP-LP default | **Resolved — registry literal confirmed** | Frozen registry literal `default: 0.0` → `positions[0]="bp"` (filter defaults to BP). @Claude initially read the `ParameterDescriptor` field order as `min,max,initial,step` and believed "default 1"; on re-reading the actual order (`min,max,step,initial`) **they retracted** and confirmed `initial=0` is correct. The manual gives no default pose; the frozen-registry literal is authoritative and is followed (`setMode` maps bp→0/lp→1). Difference surfaced, value corrected at source — not silently absorbed. |
 | PAN taper (mixer.ch1_..ch10_pan) | Provisional | Equal-power two-way pan (`theta=0.5πp; cos/sin`), an industry convention keeping power constant across the throw. No pan law / dB in the manual (L1105-1110) — all six mixer fieldEvidence are unverified. |
 | VOL taper (mixer.ch1_..ch10_vol) | Provisional | Plain linear amplitude gain (vol in [0,1]). No manual dB taper; the host UI maps the taper. |
 | WET/DRY headroom | Declared-boundary | design/07 voltage table: DRY V4/V5 max 1 V, WET max 2 V — a 2:1 ratio. The peak/RMS/pk-pk basis is unknown, so **no −6.02 dB constant is invented**; `kWetToDryRatio=2.0` is recorded as a boundary, not a dB figure. |
@@ -381,6 +397,32 @@ msg 9baf5612 as noted during P3-③).
 | DIST nonlinear rail | Provisional | tanh soft-clip, `kSaturationVoltage=2 V` (aligned to WET nominal max). No manual curve/rail. |
 | GAIN drive shaping | Provisional | Signal-driven per-channel drive (`drive → gain·\|x\|` smoothed, `kDriveFold=8`, `kSmoothSeconds=0.005`) so a hot channel saturates only its own non-linearity. No manual values. |
 | LINK overrides plugged CV R | **Provisional, UN-EVIDENCED, 待取证** | The interaction "LINK on + CV R plugged" has NO manual ruling. Provisional default: LINK (active switch) overrides the resolved CV R. Added to the P3-exit 待取证 list per @Claude GO (a). |
+
+## 5. Reviewer corrections (@Claude review of the 262d0cd head)
+
+@Claude adjudicated P3-⑤ (CTest 26/26). Two of their own points were re-derived and
+**corrected** on their side (both in the implementer's favour); one required a
+**test change**:
+
+- **bp_lp default**: @Claude misread the `ParameterDescriptor` field order
+  (`min,max,step,initial`) as `min,max,initial,step` and held "default 1". On
+  re-reading they **retracted** and confirmed the frozen-registry literal
+  `initial=0` → `positions[0]="bp"` is correct. The implementer's choice to surface
+  the difference rather than silently follow @Claude's phrase is the correct
+  behaviour both ways: a wrong word from the director must not be laundered into the
+  code as "director-approved".
+- **① premise was false**: @Claude re-derived the 2-pole LP — DC gain = 1 independent
+  of Q — so their originally-specified "standard SVF" negative could never fire. The
+  implementer's measurement + report shut off an empty judgement.
+- **New negative required**: @Claude held that the ① tilt negative is "人造" (built to
+  trip the flag) and required a **peak-normalised 2-pole** (a) as a real-error
+  negative, sampled at **high Q** (not near Q=2, where bass ≈ 0.5044 grazes an
+  absolute threshold). Added to test #1: base Q=0.707 → 1.4141, max Q=5 → 0.2020,
+  ratio **0.1428 < 0.5** → RED. Faithful to @Claude's rule: a negative must represent
+  an error a real implementer could actually write.
+- **`detect_leaks=1` on macOS arm64 SIGABRTs** the whole ASan run (leak detection is
+  unsupported there) — @Claude asked this be recorded. Use
+  `ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`.
 
 *This file is a documentation artifact of P3-⑤, not a runtime input to the core
 library.*

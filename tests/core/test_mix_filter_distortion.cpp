@@ -9,10 +9,15 @@
 // drone_test_common.h (判据只有一份).
 //
 //  ①  resonance must not lose lows (DEFINITIONAL, manual L1120-1122). res 0->max,
-//     the low band must hold a minimum. Negative: a resonance that tilts toward
-//     bandpass (an implementer letting resonance eat the bass in LP mode) -> red.
-//     Threshold is 0.5, set from the measured curve (clean SVF low-band ratio
-//     ~1.02, the buggy tilt ~0.10) — never chosen before the curve.
+//     the low band must hold a minimum. Threshold is 0.5, set from the measured
+//     curve (clean SVF low-band ratio ~1.02) — never chosen before the curve.
+//     Negatives BOTH fire red, and each is a real degradation a implementer could
+//     actually produce, not a construct:
+//       (tilt) a resonance that tilts toward bandpass in LP mode -> ratio ~0.10;
+//       (peak-normalised) a 2-pole LP whose whole output is divided by Q -> the
+//       standard common way to keep the resonant peak from clipping, but it drops
+//       the bass by 1/Q @ high Q (@Claude's (a); sampled at Q=5, NOT near Q=2 where
+//       |H(100 Hz)| ≈ 0.5044 just grazes an absolute threshold).
 //  ②  DIST != GAIN. dist=0 -> output is always dry, INDEPENDENT of gain. Negative:
 //     coupling the two (gain changing the mix) -> red.
 //  ③  L/R nonlinear state independent. Negative: a shared drive -> red.
@@ -88,6 +93,57 @@ double abs_gain(double sr, double probe_hz, const std::function<PolivoksFilter()
   return drone_test::goertzel_mag(buf, probe_hz, sr) / (static_cast<double>(meas) / 2.0);
 }
 
+// The same settle+Goertzel detector, but applied to an arbitrary single-sample
+// mono processor (not a PolivoksFilter). Used by ①'s negative controls so the
+// "no-lose-lows" judge is exercised END-TO-END on a genuinely different filter
+// topology rather than an analytic shortcut — a real buggy implementation must
+// trip the same Goertzel + ratio check the healthy branch passes.
+double mono_abs_gain(double sr, double probe_hz, const std::function<double(double)>& y) {
+  const std::size_t settle = static_cast<std::size_t>(0.5 * sr);
+  const std::size_t meas = static_cast<std::size_t>(0.5 * sr);
+  std::vector<double> buf(meas);
+  for (std::size_t i = 0; i < settle + meas; ++i) {
+    const double x = std::sin(drone_test::kTwoPi * probe_hz * (static_cast<double>(i) / sr));
+    const double out = y(x);
+    if (i >= settle) buf[i - settle] = out;
+  }
+  return drone_test::goertzel_mag(buf, probe_hz, sr) / (static_cast<double>(meas) / 2.0);
+}
+
+// A peak-normalised 2-pole lowpass (RBJ biquad LP with its WHOLE output divided by
+// Q) — a real, common way to keep a resonant peak from clipping. Same 12 dB order,
+// same type as the healthy filter under test, but it divides the bass by Q, so at
+// high Q the lows genuinely drop (fc=1 k, |H(100 Hz)| @ Q=5 = 0.2020). This is
+// @Claude's negative-control (a): it is an error a real implementer would write,
+// not a construct built to trip the flag. @Claude's numbers (Q=0.707 -> 1.4144,
+// Q=2 -> 0.5044, Q=5 -> 0.2020, Q=10 -> 0.1010) are the standard 2-pole LP
+// magnitude divided by Q, reproduced by the biquad below.
+class PeakNormalisedTwoPole {
+ public:
+  PeakNormalisedTwoPole(double sr, double fc, double q) : q_(q) {
+    const double w0 = drone_test::kTwoPi * fc / sr;
+    const double cw = std::cos(w0), sw = std::sin(w0);
+    const double alpha = sw / (2.0 * q);
+    const double a0 = 1.0 + alpha;
+    b0_ = ((1.0 - cw) / 2.0) / a0;
+    b1_ = (1.0 - cw) / a0;
+    b2_ = ((1.0 - cw) / 2.0) / a0;
+    a1_ = (-2.0 * cw) / a0;
+    a2_ = (1.0 - alpha) / a0;
+  }
+  double tick(double x) {
+    const double y = b0_ * x + b1_ * x1_ + b2_ * x2_ - a1_ * y1_ - a2_ * y2_;
+    x2_ = x1_; x1_ = x;
+    y2_ = y1_; y1_ = y;
+    return y / q_;  // peak-normalise: divide the whole thing by Q.
+  }
+
+ private:
+  double q_;
+  double b0_ = 0.0, b1_ = 0.0, b2_ = 0.0, a1_ = 0.0, a2_ = 0.0;
+  double x1_ = 0.0, x2_ = 0.0, y1_ = 0.0, y2_ = 0.0;
+};
+
 // ----------------------------------------------------------------------------
 // ① resonance does not lose lows (definitional)
 // ----------------------------------------------------------------------------
@@ -102,8 +158,8 @@ void test_resonance_does_not_lose_lows() {
   CHECK(clean_ratio > 0.5);        // res rise never drops the low band.
   CHECK(clean_ratio < 3.0);        // and it is a boost, not a blow-up.
 
-  // Negative: a resonance that TILTS the output toward bandpass as it rises — the
-  // classic "implementer let resonance eat the bass in LP mode."
+  // Negative (tilt): a resonance that TILTS the output toward bandpass as it rises —
+  // the classic "implementer let resonance eat the bass in LP mode."
   const auto buggy_lp = [&](double res) -> double {
     const double lp = abs_gain(sr, probe, [=] { return make_filter(sr, res, false); });
     const double bp = abs_gain(sr, probe, [=] { return make_filter(sr, res, true); });
@@ -112,6 +168,23 @@ void test_resonance_does_not_lose_lows() {
   const double buggy_ratio = buggy_lp(1.0) / buggy_lp(0.0);
   std::printf("① negative (tilt): ratio %.4f\n", buggy_ratio);
   CHECK(buggy_ratio < 0.5);  // the "no-lose-lows" judge fires on this.
+
+  // Negative (a) @Claude: a REAL peak-normalised 2-pole — same 12 dB order/type as
+  // the healthy filter, a common implementation, and it genuinely loses lows at high
+  // resonance (the whole output is divided by Q). @Claude's requirement: negatives
+  // must represent an error a real implementer could make, not a construct built to
+  // trip the flag. Sample at HIGH Q — near Q=2 the bass |H(100 Hz)| ≈ 0.5044 just
+  // grazes an absolute threshold, so the ratio must be taken at Q=5 where it is 0.2020.
+  const auto peak_norm = [&](double q) {
+    PeakNormalisedTwoPole p(sr, 1000.0, q);
+    return mono_abs_gain(sr, probe, [&](double x) { return p.tick(x); });
+  };
+  const double pn_base = peak_norm(0.7071067811865476);  // res=0 -> Butterworth Q.
+  const double pn_max = peak_norm(5.0);                  // res=max -> high resonance.
+  const double pn_ratio = pn_max / pn_base;
+  std::printf("① negative (peak-normalised): Q0.707 %.4f, Q5 %.4f, ratio %.4f\n",
+              pn_base, pn_max, pn_ratio);
+  CHECK(pn_ratio < 0.5);  // the "no-lose-lows" judge fires on a real peak-normalised LP too.
 }
 
 // ----------------------------------------------------------------------------
