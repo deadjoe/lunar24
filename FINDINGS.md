@@ -67,6 +67,10 @@ noise source, sample-and-hold). Author: @Pi (implementer). Mandate + adjudicatio
 and ("可听带内噪声功率…本片只测量,不要求现在修"). The *fix / bandwidth-normalization
 decision* is deferred to P3 exit to be made on this evidence, not patched silently now.
 
+**Provenance rule (生效于本记录, @Claude P3-② 补充)**: 每个混叠数字都必须标注参数
+出处。无手册/规格出处者一律显式标 "未取证合成极值"; 真实范围未取的记为
+"待取证项", 须在用它做设计决策之前先解决。别让一个没出处的数字变成驱动设计的事实。
+
 **Test**: `tests/core/test_drone_mod.cpp` (CTest #21; judges shared with P3-① in
 `drone_test_common.h`). Measured by Goertzel single-frequency DFT (`goertzel_mag`)
 and by band-fraction on the measured total variance (`noise_sample_var`).
@@ -77,9 +81,11 @@ and by band-fraction on the measured total variance (`noise_sample_var`).
 |----|----------------|-----------------------|-------------------|------------------------|
 | 8000 Hz | 1858.78 Hz | 3rd (= 5576.3 Hz > Nyquist 4000) | 2423.65 Hz | **−16.24 dB** |
 
-Chosen seed (1..32) selected for the loudest clean mid-band fold. A symmetric
-triangle has odd harmonics at 1/n²; the 3rd at 1/9 of the fundamental is −19.05 dB,
-and here it measures −16.24 dB (the discrete oscillator is not perfectly symmetric).
+**参数出处** — f0=1858.78 Hz 是**合成测试频率**, 非硬性规格频率: 由
+`pick_schmitt_alias`(sr=8000, 扫 seed 1..32)选出"干净中带折叠"里最大的 f0, 专供量
+折叠波形功率。Schmitt 真实设计域=20..2000 Hz(seed 推定), 此 f0 落在该域上端, 其
+3 次谐波才因此折叠——这是**极端处的行为探针**, 不是"这台琴会发出的声音"。三角波
+奇次谐波按 1/n² 衰减, 3rd 应为基波 −19.05 dB, 实测 −16.24 dB(离散振荡器不完全对称)。
 **Reading for P3 exit**: the folded-harmonic level is small but not negligible when
 the pitch is a large fraction of Nyquist; for typical audio sr (44.1..96 kHz) the
 drone band (20..2000 Hz) is far below Nyquist, so harmonic folding there is a
@@ -94,7 +100,19 @@ non-issue — it only becomes audible in the contrived low-sr case shown.
 The mirror is where the peak overshoot reflects (`fold_to_baseband(fc+fDev)`).
 Rendering the same seed with a tiny fDev (no overshoot) gives almost no energy at
 that probe; the +37.87 dB delta at high fDev is the aliasing-added energy. (AM
-depth set to 0 to isolate FM.) **Reading for P3 exit**: FM aliasing is a real, large
+depth set to 0 to isolate FM.)
+
+**参数出处** — ⚠️ **fDev = 30 kHz 是未取证的合成极值 (UNEVIDENCED SYNTHETIC
+EXTREME)**, 不是手册支持的数值范围。手册只说 drone 侧 FM 是开关("FM switched on
+in the down position", 深度由电路定死、数值未知); VCO 侧写 "linear FM input with
+attenuator", 同样**没有数值范围**。fc=821.21 Hz 由 seed=0xF4 推导; depth=0 用于隔离
+AM。故 +37.87 dB 是一个**人为构造的最坏情况**(HARD-CASE bound), 不是"这台琴会
+发出的声音"。⚠️ **FM 深度真实范围 = 待取证项**: P3 出口做抗混叠决策**之前必须先
+解决**——要么取到真实范围(避免为不存在的 case 过度设计), 要么按硬界极值继续并保持
+此出处标注(避免低估)。这是 polarity 那条规矩的推广: **别让一个没出处的数字变成
+驱动设计的事实。**
+
+**Reading for P3 exit**: FM aliasing is a real, large
 effect when `fDev` is a substantial fraction of the sample rate — the instantaneous
 frequency genuinely crosses Nyquist and folds back. This is the case the P3-exit
 antialiasing decision must handle.
@@ -112,6 +130,9 @@ one-sided spectrum is flat up to Nyquist, so the fraction inside 20 Hz..20 kHz i
 | 48000 Hz | 24000 | 0.833 | 0.069331 |
 | 88200 Hz | 44100 | 0.453 | 0.037738 |
 | 96000 Hz | 48000 | 0.416 | 0.034662 |
+
+**参数出处** — amplitude=0.5(标准化增益, seed=0x21C), 用于本测量; 带内功率随幅度
+平方缩放, 比值(3.38 dB)与幅度无关。
 
 **Deviation = 3.38 dB** across 44.1 → 96 kHz (falls as sr rises). The deviation is
 > 1 dB, so it is genuinely measurable, and it is the expected physical effect: a
