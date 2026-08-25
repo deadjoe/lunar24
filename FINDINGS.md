@@ -151,3 +151,78 @@ samples and is never more than one sub-sample per half-swing below the continuou
 fixed-increment trap; it stays sr-invariant to within that bound, whereas a fixed
 per-sample step scales with sr. Documented in `schmitt_osc.h` and bounded at 5% by
 the cross-sample-rate must-test.*
+
+---
+
+# P3-③ VCO Measurement Record (V/OCT, sub, sync, morph, aliasing)
+
+Slice: P3-③ — the triangle-core AS3340 VCO (VCO A / VCO B: one shared DSP core,
+VCO A has a SYNC input, VCO B does not; A's output is normalised into B's CV input
+via P2-②'s NormalizedRoute, *re-presented not re-coded* here). Author: @Pi
+(implementer). Mandate + adjudication: @Claude. These are **measurements only**:
+hard-sync splatter and narrow-pulse folding are recorded here and deferred to P3
+exit by evidence, not patched silently. The V/OCT / sub / sync / morph must-tests
+are behaviour assertions with red-negatives; their PASS/FAIL runs in
+`test_vco.cpp`.
+
+**Provenance rule (already declared above)** applies to every number here, and
+additionally: the VCO's waveform set and control ranges carry their own evidence
+labelling (below), because the registry is the frozen implementation basis and
+several of its entries are *not* manual-confirmed.
+
+## 1. Hard-sync splatter (VCO A's sync input, A-mode)
+
+| sr | f_slave | f_master (sync clock) | probe | energy added by sync |
+|----|---------|-----------------------|-------|----------------------|
+| 48000 Hz | 500 Hz | 600 Hz | 600 Hz | **+69.09 dB** (synced vs clean) |
+
+Sync = the slave saw restarts every `M = round(48000/600) = 80` samples (a rising
+master edge). The probe (600 Hz) lies on the master's harmonic comb but is NOT a
+harmonic of the clean 500 Hz saw, so the clean render has negligible energy there
+and the synced render carries a strong line: **69.09 dB** above the clean floor.
+
+**参数出处** — f_slave=500, f_master=600 are **synthetic test frequencies**, not
+hard specs (the manual gives no sync-ratio figure). The probe=600 Hz is a probe on
+the master comb, deliberately chosen to sit where the clean saw has no harmonic, so
+the delta is a clean measure of the splatter the hard sync ADDS. Reading for P3
+exit: hard sync genuinely injects broadband energy (it restarts the phase, so the
+slave's output is no longer a pure saw); this is the aliasing-adjacent effect the
+antialiasing decision must consider, and 69 dB is a **HARD-CASE bound**, not
+audience-level.   | label: 合成测试点, 非硬规格.
+
+## 2. Narrow-pulse folding (SHAPE = pulse width, extreme duty)
+
+| sr | f0 (pulse) | duty | fold order | folded alias f | level rel. fundamental |
+|----|-----------|------|------------|----------------|-----------------------|
+| 48000 Hz | 1800 Hz | 0.10 | 15th | 21000 Hz | **−14.32 dB** |
+
+A pulse's harmonics extend to ~1/duty; at duty 0.10 the 15th harmonic (27000 Hz)
+exceeds Nyquist (24000 Hz) and folds to 21000 Hz.
+
+**参数出处** — f0=1800 Hz, duty=0.10 are **synthetic test points** (the manual gives
+no pulse-width / duty value; SHAPE is "put pulse width with a CV input and a
+restorer"). The folded level −14.32 dB is measured by Goertzel at the alias vs the
+fundamental. Reading for P3 exit: narrow pulses (extreme duty) carry high
+harmonics that fold when the pitch is a large fraction of Nyquist; at typical audio
+sr (44.1..96 kHz) and a VCO band ≪ Nyquist this is a non-issue, and it only becomes
+audible in the contrived low-sr case.   | label: 合成测试点, 非硬规格.
+
+## 3. Evidence labelling carried into `vco.h` (implementer's open items)
+
+These are **not silently resolved** — they are recorded here and remain open
+(@Claude: "冲突要留着可见, 不要被实现悄悄消化掉").
+
+| Item | Evidence strength | Record |
+|------|-------------------|--------|
+| V/OCT (v_oct_in 0..8 V) | **Confirmed** (direction/type/transfer all confirmed) | `f = fBase·2^vOct`; 1 V = 1 octave, full 8-octave range. |
+| oct_sel 3 positions "low"/"0"/"+3" | **Provisional** (names evidenced; counts not) | "low" count = −1 octave is a **standing guess**, not fact. |
+| tune range −1..+1 | **Unverified + IN CONFLICT** | Registry reads −1..+1 (two octaves); manual literal "tune knob … over ONE octave". Implemented per registry (oct, −1..+1). **Must-resolve** before it drives design. |
+| sub_sel 2 positions "0"/"-1" | Provisional | Default index 1 = "-1" (one octave down). |
+| CV input lin/exp | Provisional | Generic CV input transfer UNKNOWN (−5..+5); `2^cv` (exp) vs `(1+cv)` (lin) are **provisional modeling choices**. |
+| SHAPE (pw) 0..1 | Unverified | Duty for the pulse waveform. |
+| Traditional 4 waveforms (saw/tri/sine/pulse) | **Inference** (AS3340 convention) | Manual says "6 waveforms, two morphing" and never enumerates the four. Recording as inference, not manual evidence. |
+| Two morphing (saw↔inv-saw, sine↔tri) | Manual-evidenced | Per the manual's own parenthetical. |
+| Sub is phase-locked | Design | Sub derived from the same unwrapped pitch accumulator (`frac(cumPitch/2)`) — exactly −1 octave, **phase-locked**. The OPPOSITE of DroneBank's independent voices. |
+
+*This file is a documentation artifact of P3-③, not a runtime input to the core
+library.*
