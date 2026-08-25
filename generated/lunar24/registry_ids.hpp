@@ -399,6 +399,8 @@ enum class JackId : std::uint32_t {
     vco_b_dry_out = 9,
     vco_b_wave_out = 21,
     vco_b_pwm_in = 22,
+    vco_b_fm_in = 65,
+    vco_b_vca_ctl = 66,
     vcf_cv_l_in = 10,
     vcf_cv_r_in = 11,
     keyboard_v_oct_out = 13,
@@ -504,13 +506,13 @@ enum class RouteId : std::uint32_t {
 
 inline constexpr std::uint32_t kModuleCount = 21;
 inline constexpr std::uint32_t kParameterCount = 345;
-inline constexpr std::uint32_t kJackCount = 64;
+inline constexpr std::uint32_t kJackCount = 66;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
 inline constexpr std::uint64_t kParameterIdSpace = 412;
-inline constexpr std::uint64_t kJackIdSpace = 65;
+inline constexpr std::uint64_t kJackIdSpace = 67;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
 
@@ -912,6 +914,8 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::vco_b_dry_out: return "vco_b.dry_out";
     case JackId::vco_b_wave_out: return "vco_b.wave_out";
     case JackId::vco_b_pwm_in: return "vco_b.pwm_in";
+    case JackId::vco_b_fm_in: return "vco_b.fm_in";
+    case JackId::vco_b_vca_ctl: return "vco_b.vca_ctl";
     case JackId::vcf_cv_l_in: return "vcf.cv_l_in";
     case JackId::vcf_cv_r_in: return "vcf.cv_r_in";
     case JackId::keyboard_v_oct_out: return "keyboard.v_oct_out";

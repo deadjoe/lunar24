@@ -153,12 +153,16 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // array grows +1 and the `cable_source` u32 array grows +4. It rose 3511 -> 3831
 // in the parameter-capacity freeze (Codex msg deab14b7) when kDeviceParamCapacity
 // went 384 -> 424: the `parameters` f64 array grows +40 (40 x 8 = 320 bytes).
+// It rose 3831 -> 3841 for the vco_b registry correction (task #24, append-only
+// per @Claude "只追加，绝不重排" — manual L411 mirror rule vco_b.fm_in/vca_ctl)
+// when kDevicePatchCapacity went 65 -> 67: `input_cable` u8 grows +2 and
+// `cable_source` u32 grows +8 (2 x 4 = 8) = +10 bytes.
 inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageSchemaVersion,
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    3831u,
+    3841u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).

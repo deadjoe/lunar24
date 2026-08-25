@@ -281,7 +281,11 @@ static void frozen_counts() {
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,
                                          // seq_clock, arp_rhythm, seq_rhythm + remaining module
                                          // ranges)
-  CHECK_EQ(core::kJackCount, 64u);       // Phase B DRONE 6 voice slice (Codex msg b121ba1b):
+  CHECK_EQ(core::kJackCount, 66u);       // vco_b registry correction (task #24, append-only per
+                                         // @Claude "只追加，绝不重排"): +2 jacks from the manual
+                                         // L411 mirror rule — vco_b.fm_in (id 65) + vco_b.vca_ctl
+                                         // (id 66). Appended, never renumbering an existing id.
+                                         // Prior: Phase B DRONE 6 voice slice (Codex msg b121ba1b):
                                          // +5 patchable jacks (drone_6.cv_out output/cv id 60 — 0..12 is
                                          // only a numeric placeholder, range/polarity stay
                                          // unverified/unknown — KEY DIFF: manual L158 "ENV VOICES

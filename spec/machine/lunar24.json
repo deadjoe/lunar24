@@ -799,6 +799,56 @@
             "polarity": "unverified",
             "coupling": "unverified"
           }
+        },
+        {
+          "id": 65,
+          "stable_id": "vco_b.fm_in",
+          "name": "FM",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 388
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 66,
+          "stable_id": "vco_b.vca_ctl",
+          "name": "VCA CV",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": 0.0,
+          "nominalMax": 8.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 578
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
         }
       ]
     },

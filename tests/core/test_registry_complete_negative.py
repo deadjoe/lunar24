@@ -134,11 +134,13 @@ def main():
     # The panel's single CV jack (panel label "CV", manual L56) is the SAME physical input the
     # manual prose calls "the input of CV MOD" (L297-300). The target must transcribe it ONCE,
     # as the canonical <owner>.cv_mod_in — the old <owner>.cv_in is a banned duplicate. Pin the
-    # endpoint total (111) and patchable count (64) and the canonical per-owner patchable set.
+    # endpoint total (113) and patchable count (66) and the canonical per-owner patchable set.
+    # The 113/66 (was 111/64) reflects the vco_b registry correction (task #24, append-only per
+    # @Claude): +2 patchable endpoints (vco_b.fm_in, vco_b.vca_ctl) from the manual L411 mirror rule.
     _eps = manifest["target"]["paramsJackTargets"]["endpoints"]
     _patch = [e for e in _eps if e.get("patchable")]
-    if len(_eps) != 111 or len(_patch) != 64:
-        raise SystemExit("frozen endpoint counts drift: total=%d patchable=%d (want 111/64)"
+    if len(_eps) != 113 or len(_patch) != 66:
+        raise SystemExit("frozen endpoint counts drift: total=%d patchable=%d (want 113/66)"
                          % (len(_eps), len(_patch)))
     _CANON = {"cv_mod_in", "gate_in", "env_out"}
     for _n in (1, 2, 4, 5):
