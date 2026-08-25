@@ -46,6 +46,23 @@
 preset 身份维持**槽索引派生**（A=0…D=3，顺序有据 L1040-1045、数值编码是我们的，标 PROVISIONAL），
 并要求断言 `preset.id == slot` 钉住该冗余——**永远等于下标的字段最易被后人当成有独立含义**。
 
+## 2c. split per-side 裁决（2026-08-26，msg `60df2e43`）
+
+**split 下整份 keyboard 参数 bank 每侧一份**（唯一全局项＝`behaviour`，即 single/twin/split 选择器本身——
+决定"是否存在两侧"的开关不可能每侧一份）。证据（**行号已逐条 `sed -n` 核过**）：
+- **L710**：split ＝ "two sides, **each having separate parameters**"（无限定词）
+- **L724**：例子 ＝ "having an **arpeggiator on the left side** and a simple keyboard on the right side"
+- **L806**：split 下每侧可各自 **mode**
+
+取窄子集＝我们自己挑哪些参数共享，**无证据支持**；原文无限定、例子横跨 mode 与 arp ⇒ 整份 bank 每侧一份是贴合证据的最小假设。
+
+**连带**：preset 含 `mode` ⇒ **preset 也要装两侧**，schema v2→v3、`totalBytesHint` 再涨（约束同 P4-② Decision A）。
+⚠️ **P4-④ 做 arp/seq 时必须按侧实例化**（L724 证明 arp 每侧不同），**不得做成全局单例**，否则又是重写。
+
+⚠️ **证据纪律提醒**：手册**没有**"twin 共享参数"这句话（全文 grep `share the same parameters` 零命中）；
+TWIN 实际原文（L667-669）只说 "separates into two distinct controllers, each equipped with 6 note plates"。
+"twin 共享"是**从 split 那句反推的推断**，不是引文。**推断必须标成推断——`evidence_refs_gate` 只验行非空/在范围内，验不了相关性。**
+
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
 按"查不出来是合法结论"处理：实现按冻结 registry 走，冲突标 UNEVIDENCED 留在 FINDINGS，
