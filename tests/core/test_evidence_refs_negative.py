@@ -21,6 +21,7 @@ Usage:
   python3 tests/core/test_evidence_refs_negative.py
 """
 
+import json
 import os
 import sys
 
@@ -39,6 +40,31 @@ import check_evidence_refs as gate
 
 REGISTRY = os.path.join(ROOT, "generated", "lunar24", "registry.hpp")
 MANUAL = os.path.join(ROOT, "design", "reference", "solar42N_manual_text.txt")
+LAYOUT = os.path.join(ROOT, "generated", "lunar24", "evidence_layout.json")
+
+
+def real_source():
+    """The real manual as a check() source — live text if present, else committed layout.
+
+    The manual is gitignored, so it exists on the dev machine but not on CI (this test
+    then must not open it). Two-mode matches the gate: ground against the real text when
+    it is there, against the committed fingerprint when it is not. On CI that means we
+    still exercise the REAL registry baseline + a real blank-flip, via the committed
+    blankLines — the exact absent-manual path the gate uses there.
+    """
+    if os.path.exists(MANUAL):
+        return gate.parse_manual(open(MANUAL, encoding="utf-8").read())
+    layout = json.load(open(LAYOUT, encoding="utf-8"))["sources"]["solar42N_manual_v15"]
+    return gate.LayoutSource(layout)
+
+
+def real_blank_lines():
+    """The real manual's blank line numbers — live if present, else from the committed layout."""
+    if os.path.exists(MANUAL):
+        lines = gate.parse_manual(open(MANUAL, encoding="utf-8").read())
+        return [i + 1 for i, ln in enumerate(lines) if ln.strip() == ""]
+    layout = json.load(open(LAYOUT, encoding="utf-8"))["sources"]["solar42N_manual_v15"]
+    return [int(b) for b in layout["blankLines"]]
 
 # A tiny deterministic manual with known blank lines (index 0-based -> line n+1).
 SYN_MANUAL = ["line one", "", "line three", "line four", "", "line six"]
@@ -73,8 +99,7 @@ def test_defects():
 
 def test_real_baseline_passes():
     reg_text = open(REGISTRY, encoding="utf-8").read()
-    manual_lines = gate.parse_manual(open(MANUAL, encoding="utf-8").read())
-    problems = gate.check(reg_text, {"solar42N_manual_v15": manual_lines})
+    problems = gate.check(reg_text, {"solar42N_manual_v15": real_source()})
     if problems:
         return [f"real registry should pass but flagged {len(problems)} problem(s): {problems[:3]}"]
     return []
@@ -82,14 +107,14 @@ def test_real_baseline_passes():
 
 def test_real_flip_to_blank_goes_red():
     reg_text = open(REGISTRY, encoding="utf-8").read()
-    manual_lines = gate.parse_manual(open(MANUAL, encoding="utf-8").read())
 
     # Find a real blank manual line that is IN RANGE and comes AFTER the first ref's
     # own lineStart, so flipping that ref's lineEnd yields the "blank" diagnostic rather
-    # than an out-of-range / a>b one. First ref is {lineStart=376, lineEnd=422}.
+    # than an out-of-range / a>b one. First ref is {lineStart=376, lineEnd=422}. Works
+    # from the live text (dev) or the committed blankLines (CI absent-manual path).
     first_start = int(gate.collect_refs(reg_text)[0][1])
     blank_after_start = next(
-        (idx + 1 for idx, ln in enumerate(manual_lines) if idx + 1 > first_start and ln.strip() == ""),
+        (b for b in real_blank_lines() if b > first_start),
         None,
     )
     if blank_after_start is None:
@@ -101,7 +126,7 @@ def test_real_flip_to_blank_goes_red():
         return f'EvidenceRef{{"{m.group(1)}", {m.group(2)}u, {blank_after_start}u}}'
 
     mutated = gate.REF_RE.sub(flip_first_end, reg_text, count=1)
-    problems = gate.check(mutated, {"solar42N_manual_v15": manual_lines})
+    problems = gate.check(mutated, {"solar42N_manual_v15": real_source()})
     if not has(problems, f"lineEnd {blank_after_start} is a blank line"):
         return [f"flipped ref should flag blank lineEnd {blank_after_start} but got {problems[:3]}"]
     return []
