@@ -36,7 +36,7 @@ This file and `state_persistence.h` never assert "crash-safe".
 |---|------|------|-------|-----------------|--------|
 | 1 | Host window height clamps so the 2× test render does not fit-to-window (P1 ④) | Owed debt | @Pi | P5 exit — real window sizing / full UI | Open |
 | 2 | Real CoreAudio output-stream per-channel (interleaved) verification | Owed debt | @Pi | P3 exit — a real host callback feeding events into core merges into this | Open |
-| 3 | `real_path` not routed through the executor in P2-③ (mixed-partition judge on the audio path) | Owed debt | @Pi | P3 exit — real modules exist; judge = ① (mixed partition) | Open |
+| 3 | `real_path` not routed through the executor in P2-③ (mixed-partition judge on the audio path) | Owed debt | @Pi | P3 exit — real modules exist; judge = ① (mixed partition) | **Landed** — executor consume-rule + judge/negatives in core & tests; final adjudication @Claude at P3 exit |
 | 4 | Power-loss persistence not verified (only order + interruption visibility proven) | **Declared boundary** (NOT a task, not a defect) | Team | — | Knocked-down unverified, recorded in the honest boundary above |
 | 5 | Windows real-machine audio/MIDI verification | Owed debt | @Pi | First Windows distributable build | Open |
 
@@ -469,6 +469,49 @@ drift-guard: `evidence_layout_guard` is registered in ctest; manual present (dev
 regen==commit drift check (hard red on mismatch); manual absent (CI) → **loud skip** printing
 "manual absent, drift-guard not applicable in this environment" and returning success. A CI
 reader now SEES the guard is present but inert there.
+
+## 3. Debt 2 — `real_path` actually routed through the executor
+
+`tests/core/test_executor_realpath.cpp` (registered in ctest as `test_executor_realpath`), plus the
+executor **consume-rule** codified into `core/include/lunar24/core/graph_compiler.h` (the
+`CompiledRegion` doc block). This is the P3-⑥ exit debt from @Claude's mandate (msg 954a0763),
+landed on his full GO (msg de1a60e8).
+
+The P2-③ `GraphCompiler` *decides* `real_path` vs `z_inverse`; the gap was that no executor routing
+a `real_path` edge actually realized the declared delay. This slice closes that, and lands the
+"read it from a delay line" rule as core contract.
+
+- **The consume-rule (core contract, graph_compiler.h)**:
+  > For a `real_path` feedback edge with `delaySamples==D`, the executor MUST read the value it
+  > delivers to the consuming module from a **per-edge delay line of depth D** (the line holding
+  > the loop-forward values traversing that edge), handing the sending module the value from D
+  > samples ago. It MUST NOT read the source module's last-written output. Reading the last output
+  > is off-by-one for any D>1 (source ran after the consumer, so the consumer reads the previous
+  > pass's value → loop delay D+1, not D).
+
+- **Judge = invariance is necessary, not sufficient** (the methodological point @Claude raised).
+  Two halves, both asserted in `test_executor_realpath.cpp`:
+  - *Partition invariance* across the mixed non-uniform partition `(64,100,37,128,7,256,91)`
+    (design/07 §4 line 107). Fires only on a block-lazy / one-buffer break.
+  - *Absolute reference*: the realized loop delay must equal `delaySamples` exactly — NOT merely
+    "the same under every partition". A wrong-but-consistent executor passes invariance and is
+    caught only here.
+
+- **Negatives (both kept, per @Claude "两个都留")**:
+  - negative-1 (block-lazy / one-buffer) is **partition-VARIANT** → the partition judge fires.
+  - negative-2 (read `moduleOut[source]` for a `real_path` edge) is **partition-INVARIANT but
+    off-by-one** (loop 4 vs 3; first divergence at n=3) → only the absolute reference fires. This
+    is the exact bug the P2-③ `MiniExec` scaffold commits.
+
+- **MiniExec boundary (explicit @Claude requirement)**: the existing P2-③ `MiniExec` reads a
+  `real_path` feedback via `moduleOut[source]` (last-written output), which is **off-by-one**.
+  That read method does **NOT** enter the core contract — `MiniExec` is P2-③ test scaffolding, and
+  its `real_path` consumption is what the negative-2 test now proves wrong. The `test_graph_compiler.cpp`
+  `MiniExec` is left as-is (it is a plan-compiler test, not an executor) and the authoritative
+  executor rule lives in the `graph_compiler.h` contract + `test_executor_realpath.cpp`.
+
+To be settled at P3 exit by @Claude (after CI green): whether this counts as the debt closed; the
+row above is marked **Landed** pending that adjudication.
 
 *This file is a documentation artifact of the P3 slices, not a runtime input to the core
 library.*

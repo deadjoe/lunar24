@@ -92,6 +92,35 @@ struct CompiledRegion {
   std::vector<CompiledFeedbackEdge> feedback;    // cyclic region only
 };
 
+// --- Executor consume-rule for real_path feedback (design/07 §4, P3-⑥ Debt 2) ---
+//
+// `FeedbackDelay::real_path` on an edge with `delaySamples==D` means the specific
+// on-cycle path already carries D samples of genuine causal delay; the compiler
+// grants it NO extra z^-1. An EXECUTOR consuming the plan MUST honor that declared
+// delay by realizing exactly D samples of latency on the feedback return path.
+//
+// RULE: for a real_path feedback edge the executor must read the value it delivers
+// to the consuming module from a PER-EDGE delay line of depth D — the line that
+// holds the loop-forward values traversing that edge — and hand the sending module
+// the value from D samples ago. It must NOT read the source module's "last written
+// output" buffer. Reading the source's last output is off-by-one for any D>1: the
+// source ran after the consumer in the per-sample pass, so the consumer reads the
+// previous pass's value (loop delay D+1, not D). Reading the last output is exactly
+// how the P2-③ MiniExec test scaffold consumes real_path, and it is wrong; it is
+// test scaffolding, not part of this contract.
+//
+// The judge has two halves, and partition invariance is NECESSARY but not SUFFICIENT:
+//   * Partition invariance — the mixed non-uniform partition (64,100,37,128,7,256,91)
+//     must reproduce the sequential per-sample sequence (design/07 §4 line 107). This
+//     fires only on a one-buffer / block-lazy break.
+//   * An ABSOLUTE reference — the realized loop delay must equal `delaySamples`
+//     exactly, not merely be "the same under every partition". A wrong-but-consistent
+//     executor (off-by-one delay, or a spuriously waived z^-1) passes invariance and
+//     is caught only by the absolute anchor.
+// tests/core/test_executor_realpath.cpp encodes this as the correct executor plus two
+// negatives (block-lazy partition-variant; moduleOut off-by-one with a reference
+// compare that fires at n=delaySamples).
+
 // Immutable execution plan. The audio thread holds a non-owning handle/epoch to
 // this; a new plan is built off a non-audio thread and published lock-free, and
 // an old plan is reclaimed off the audio thread (design/07 §5).
