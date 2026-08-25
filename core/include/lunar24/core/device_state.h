@@ -104,26 +104,76 @@ struct DeviceStorageSchema {
 
 // Fixed widths for the storage record, independent of C++ layout. PROVISIONAL
 // until the full P0 inventory proves them, and never a memcpy target.
-inline constexpr std::uint32_t kKeyboardPresetRecordBytes = 8u;  // id(4) + behaviour(1) + output(1) + pad(2)
+// P4-② (Decision A, msg 6a366ebb): kKeyboardPresetRecordBytes grew 8 -> 247 when
+// the preset carried the full keyboard_params_minus_clock payload (31 params) —
+// the 8-byte shell (id/behaviour/output + 2-byte pad) is PRESERVED verbatim and
+// 29 fields are appended, never reordered.
+inline constexpr std::uint32_t kKeyboardPresetRecordBytes = 247u;
 inline constexpr std::uint32_t kKeyboardSettingsRecordBytes = 2u;  // pressure behaviour(1) + pressure output(1)
 inline constexpr std::uint32_t kSequencerPhysicalBytes = 16u;    // reserved until the sequencer lands
-inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 1u;
+inline constexpr std::uint32_t kKeyboardSeqRecordBytes = kKeyboardSeqBytes;  // 16 steps x 6 bytes
+inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 2u;
 inline constexpr std::uint32_t kDeviceStorageInitialRevision = 0u;
 
-// A KeyboardPreset's machine-readable interior (offset within the 8-byte record).
+// One KeyboardSeqStep's machine-readable interior (component of a seq record).
+// Packed note(u8) + value(f32) + gate(u8) = 6 bytes, fixed-width; the interior is
+// described so a future serializer can name-encode a step. versionFrom=2 because
+// the seq record first appears in schema version 2.
+inline constexpr StorageRecordField kKeyboardSeqStepFields[] = {
+    {"note",  StorageFieldType::u8,  StorageEncoding::binary, 0u, 1u, 2u},
+    {"value", StorageFieldType::f32, StorageEncoding::binary, 1u, 4u, 2u},
+    {"gate",  StorageFieldType::u8,  StorageEncoding::binary, 5u, 1u, 2u},
+};
+inline constexpr StorageRecordLayout kKeyboardSeqStepLayout{kKeyboardSeqStepFields, 3u};
+
+// A KeyboardPreset's machine-readable interior. The 8-byte shell (id / behaviour
+// / output / reserved-pad) is unchanged; the 29 remaining fields of the frozen
+// keyboard_params_minus_clock payload are appended, never reordered. Composite
+// fields (seq_steps, plate_tune, pushbutton_value) are declared as their fixed
+// wire byte-region here; the serializer maps them to/from the structured
+// working-copy members by name.
 inline constexpr StorageRecordField kKeyboardPresetFields[] = {
-    {"id",                 StorageFieldType::u32, StorageEncoding::binary, 0u, 4u, 1u},
-    {"pressure_behaviour", StorageFieldType::u8,  StorageEncoding::binary, 4u, 1u, 1u},
-    {"pressure_output",    StorageFieldType::u8,  StorageEncoding::binary, 5u, 1u, 1u},
-    {"reserved",           StorageFieldType::u8,  StorageEncoding::binary, 6u, 2u, 1u},
+    {"id",                    StorageFieldType::u32, StorageEncoding::binary, 0u,   4u,  1u},
+    {"pressure_behaviour",    StorageFieldType::u8,  StorageEncoding::binary, 4u,   1u,  1u},
+    {"pressure_output",       StorageFieldType::u8,  StorageEncoding::binary, 5u,   1u,  1u},
+    {"reserved",              StorageFieldType::u8,  StorageEncoding::binary, 6u,   2u,  1u},
+    {"mode",                  StorageFieldType::u8,  StorageEncoding::binary, 8u,   1u,  2u},
+    {"arp_hold",              StorageFieldType::u8,  StorageEncoding::binary, 9u,   1u,  2u},
+    {"arp_clock",             StorageFieldType::u8,  StorageEncoding::binary, 10u,  1u,  2u},
+    {"arp_direction",         StorageFieldType::u8,  StorageEncoding::binary, 11u,  1u,  2u},
+    {"arp_variation",         StorageFieldType::u8,  StorageEncoding::binary, 12u,  1u,  2u},
+    {"arp_interval",          StorageFieldType::f32, StorageEncoding::binary, 13u,  4u,  2u},
+    {"arp_rhythm",            StorageFieldType::u8,  StorageEncoding::binary, 17u,  1u,  2u},
+    {"arp_length",            StorageFieldType::f32, StorageEncoding::binary, 18u,  4u,  2u},
+    {"seq_run",               StorageFieldType::u8,  StorageEncoding::binary, 22u,  1u,  2u},
+    {"seq_length",            StorageFieldType::f32, StorageEncoding::binary, 23u,  4u,  2u},
+    {"seq_clock",             StorageFieldType::u8,  StorageEncoding::binary, 27u,  1u,  2u},
+    {"seq_direction",         StorageFieldType::u8,  StorageEncoding::binary, 28u,  1u,  2u},
+    {"seq_cv_output",         StorageFieldType::u8,  StorageEncoding::binary, 29u,  1u,  2u},
+    {"seq_rhythm",            StorageFieldType::u8,  StorageEncoding::binary, 30u,  1u,  2u},
+    {"seq_rhythm_length",     StorageFieldType::f32, StorageEncoding::binary, 31u,  4u,  2u},
+    {"seq_steps",             StorageFieldType::u8,  StorageEncoding::binary, 35u,  96u, 2u},
+    {"portamento_speed",      StorageFieldType::f32, StorageEncoding::binary, 131u, 4u,  2u},
+    {"portamento_legato",     StorageFieldType::u8,  StorageEncoding::binary, 135u, 1u,  2u},
+    {"vibrato_speed",         StorageFieldType::f32, StorageEncoding::binary, 136u, 4u,  2u},
+    {"vibrato_depth",         StorageFieldType::f32, StorageEncoding::binary, 140u, 4u,  2u},
+    {"vibrato_delay",         StorageFieldType::f32, StorageEncoding::binary, 144u, 4u,  2u},
+    {"vibrato_pressure",      StorageFieldType::f32, StorageEncoding::binary, 148u, 4u,  2u},
+    {"pressure_rise",         StorageFieldType::f32, StorageEncoding::binary, 152u, 4u,  2u},
+    {"pressure_fall",         StorageFieldType::f32, StorageEncoding::binary, 156u, 4u,  2u},
+    {"quantise_scale_editor", StorageFieldType::u16, StorageEncoding::binary, 160u, 2u,  2u},
+    {"quantise_load_scale",   StorageFieldType::u8,  StorageEncoding::binary, 162u, 1u,  2u},
+    {"root_note",             StorageFieldType::f32, StorageEncoding::binary, 163u, 4u,  2u},
+    {"plate_tune",            StorageFieldType::u8,  StorageEncoding::binary, 167u, 48u, 2u},
+    {"pushbutton_value",      StorageFieldType::u8,  StorageEncoding::binary, 215u, 32u, 2u},
 };
 inline constexpr StorageRecordField kKeyboardSettingsFields[] = {
     {"pressure_behaviour", StorageFieldType::u8, StorageEncoding::binary, 0u, 1u, 1u},
     {"pressure_output",    StorageFieldType::u8, StorageEncoding::binary, 1u, 1u, 1u},
 };
 
-// The map-able record layouts referenced by the two keyboard records below.
-inline constexpr StorageRecordLayout kKeyboardPresetLayout{kKeyboardPresetFields, 4u};
+// The map-able record layouts referenced by the keyboard records below.
+inline constexpr StorageRecordLayout kKeyboardPresetLayout{kKeyboardPresetFields, 33u};
 inline constexpr StorageRecordLayout kKeyboardSettingsLayout{kKeyboardSettingsFields, 2u};
 
 inline constexpr StorageField kDeviceStorageFields[] = {
@@ -141,6 +191,16 @@ inline constexpr StorageField kDeviceStorageFields[] = {
     {"effector_left_program",    StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u, {}},
     {"effector_right_program",   StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u, {}},
     {"sequencer_physical",       StorageFieldKind::reserved, StorageFieldType::u8, StorageEncoding::binary, kSequencerPhysicalBytes, 0u, 1u, {}},
+    // P4-② live keyboard non-scalar + no-domain-selector state (appended, never
+    // reordered). The current run-time values of the Deferred-to-P4 non-scalars
+    // (design/07 §6) and the four no-domain clock/rhythm selectors (which have no
+    // ParameterId — the frozen id-space gapped them) live here, separate from the
+    // four saved preset slots.
+    {"keyboard_seq_current",     StorageFieldKind::record,  StorageFieldType::u8,  StorageEncoding::binary, kKeyboardSeqStepCount, kKeyboardSeqStepBytes, 2u, kKeyboardSeqStepLayout},
+    {"keyboard_scale_editor",    StorageFieldKind::scalar,  StorageFieldType::u16, StorageEncoding::binary, 1u,  0u, 2u, {}},
+    {"keyboard_plate_tune",      StorageFieldKind::array,   StorageFieldType::f32, StorageEncoding::binary, kKeyboardPlateTuneCount, 0u, 2u, {}},
+    {"keyboard_pushbutton",      StorageFieldKind::array,   StorageFieldType::f32, StorageEncoding::binary, kKeyboardPushbuttonCount, 0u, 2u, {}},
+    {"keyboard_clock_selectors", StorageFieldKind::array,   StorageFieldType::u8,  StorageEncoding::binary, 4u,  0u, 2u, {}},
 };
 
 inline constexpr std::uint32_t kDeviceStorageFieldCount =
@@ -156,13 +216,16 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // It rose 3831 -> 3841 for the vco_b registry correction (task #24, append-only
 // per @Claude "只追加，绝不重排" — manual L411 mirror rule vco_b.fm_in/vca_ctl)
 // when kDevicePatchCapacity went 65 -> 67: `input_cable` u8 grows +2 and
-// `cable_source` u32 grows +8 (2 x 4 = 8) = +10 bytes.
+// `cable_source` u32 grows +8 (2 x 4 = 8) = +10 bytes. It rose 3841 -> 4979
+// for P4-② (Decision A, msg 6a366ebb): the keyboard preset grew 8 -> 247 bytes
+// (4 presets: 4 x 239 = 956) and the five live keyboard non-scalar fields were
+// appended (96 + 2 + 48 + 32 + 4 = 182).
 inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageSchemaVersion,
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    3841u,
+    4979u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).
@@ -185,24 +248,71 @@ struct KeyboardSettings {
   std::uint8_t pressureOutput = 0;     // PROVISIONAL decode
 };
 
+// One step of the keyboard's 16-step sequencer run (design/06 — the 5-step
+// sequencer extends to a 16-step run). note is a semitone, value a CV in volts,
+// gate a boolean. Fixed-width 6-byte wire record (see kKeyboardSeqStepFields).
+struct KeyboardSeqStep {
+  std::uint8_t note = 0;
+  float value = 0.0f;
+  std::uint8_t gate = 0;
+};
+
+// The full 16-step sequencer run, as structured keyboard-state. One KeyboardSeq
+// is kKeyboardSeqBytes (96) on the wire.
+struct KeyboardSeq {
+  KeyboardSeqStep steps[kKeyboardSeqStepCount] = {};
+};
+
 // A KeyboardPreset is owned by the keyboard subsystem only; it is never
 // serialized as a whole-device preset. Each of the kDeviceKeyboardPresetCount
-// native presets carries its own keyboard-owned state. The manual names
-// 'Behaviour' and 'Pressure output' as the two parameters steering the PRESSURE
-// jack, so a preset holds them; the remaining keyboard-owned state lands when
-// the keyboard subsystem is designed (PROVISIONAL decode). The wire record width
-// is the schema-declared kKeyboardPresetRecordBytes, never sizeof here.
+// native presets carries its own keyboard-owned state — the frozen
+// keyboard_params_minus_clock payload (31 params), which the manual names
+// 'Behaviour' and 'Pressure output' among. The wire record width is the
+// schema-declared kKeyboardPresetRecordBytes (247), never sizeof here; the C++
+// struct is a framework-free working copy the serializer maps field-by-field.
+//
+// P4-② (Decision A): the 8-byte shell (id@0 / pressure_behaviour@4 /
+// pressure_output@5 / reserved@6) is PRESERVED and 29 fields are appended, never
+// reordered. `reserved` stays a 2-byte region at offset 6; a re-encode must
+// preserve it verbatim rather than zero it (P2-⑤ @Claude Q2). The `seqSteps`,
+// `plateTune`, `pushbuttonValue` members mirror the composite wire regions
+// (offsets 35/167/215) as structured working copies.
 struct KeyboardPreset {
   std::uint32_t id = 0u;            // stable sys-selected preset id, never renumbered
   std::uint8_t pressureBehaviour = 0u;  // manual 'Behaviour' (PROVISIONAL decode)
   std::uint8_t pressureOutput = 0u;     // manual 'Pressure output' (PROVISIONAL decode)
-  // The wire record is the schema-declared kKeyboardPresetRecordBytes (8), which
-  // carries a 2-byte `reserved` field at offset 6 (see kKeyboardPresetFields). A
-  // future / different version may write state there; a re-encode must preserve it
-  // verbatim rather than zero it, so the struct mirrors the full record. Keeping it
-  // here makes the DeviceStateV1 <-> schema serializer a stateless, exact bijection
-  // (P2-⑤ @Claude Q2: reserved bytes are preserved, never destroyed).
-  std::uint8_t reserved[kKeyboardPresetRecordBytes - 6u] = {};
+  std::uint8_t reserved[2] = {};        // bytes 6-7 of the shell, preserved verbatim
+
+  // Appended keyboard_params_minus_clock payload (offsets 8..246).
+  std::uint8_t mode = 0u;
+  std::uint8_t arpHold = 0u;
+  std::uint8_t arpClock = 0u;        // no-domain selector (no ParameterId)
+  std::uint8_t arpDirection = 0u;
+  std::uint8_t arpVariation = 0u;
+  float arpInterval = 0.0f;
+  std::uint8_t arpRhythm = 0u;       // no-domain selector
+  float arpLength = 0.0f;
+  std::uint8_t seqRun = 0u;
+  float seqLength = 0.0f;
+  std::uint8_t seqClock = 0u;        // no-domain selector
+  std::uint8_t seqDirection = 0u;
+  std::uint8_t seqCvOutput = 0u;
+  std::uint8_t seqRhythm = 0u;       // no-domain selector
+  float seqRhythmLength = 0.0f;
+  KeyboardSeq seqSteps;              // wire: 96-byte region at offset 35
+  float portamentoSpeed = 0.0f;
+  std::uint8_t portamentoLegato = 0u;
+  float vibratoSpeed = 0.0f;
+  float vibratoDepth = 0.0f;
+  float vibratoDelay = 0.0f;
+  float vibratoPressure = 0.0f;
+  float pressureRise = 0.0f;
+  float pressureFall = 0.0f;
+  std::uint16_t quantiseScaleEditor = 0u;  // 12-bit scale-editor mask (u16)
+  std::uint8_t quantiseLoadScale = 0u;
+  float rootNote = 0.0f;
+  float plateTune[kKeyboardPlateTuneCount] = {};      // wire: 48-byte region at 167
+  float pushbuttonValue[kKeyboardPushbuttonCount] = {};  // wire: 32-byte region at 215
 };
 
 // Dual-effector selection. Each slot selects a single processor idiom by its
@@ -223,7 +333,7 @@ struct SequencerSettings {
 };
 
 struct DeviceStateV1 {
-  std::uint32_t schemaVersion = 1;
+  std::uint32_t schemaVersion = kDeviceStorageSchemaVersion;
   std::uint32_t identityModelVersion = 1;
   UnitIdentitySeed identitySeed;
   CalibrationState calibration;
@@ -244,6 +354,18 @@ struct DeviceStateV1 {
   // Keyboard current settings + its native four presets.
   KeyboardSettings keyboardSettings;
   KeyboardPreset keyboardPresets[kDeviceKeyboardPresetCount] = {};
+
+  // Keyboard's own LIVE non-scalar + no-domain-selector state (design/07 §6:
+  // non-scalars belong in DeviceState structured fields, never flattened into a
+  // scalar ParameterDescriptor). These are the run-time values, separate from the
+  // four saved preset slots above. The four no-domain clock/rhythm selectors have
+  // no ParameterId (the frozen id-space gapped them — no evidenced value domain),
+  // so their current value lives here, not in parameters[].
+  KeyboardSeq keyboardSeqCurrent;
+  std::uint16_t keyboardScaleEditor = 0;   // 12-bit scale-editor mask
+  float keyboardPlateTune[kKeyboardPlateTuneCount] = {};
+  float keyboardPushbutton[kKeyboardPushbuttonCount] = {};
+  std::uint8_t keyboardClockSelectors[4] = {};  // {arp_clock, arp_rhythm, seq_clock, seq_rhythm}
 
   // Dual-effector cartridge/program selection (left and right slots).
   EffectorSelection leftEffector;

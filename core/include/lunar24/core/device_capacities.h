@@ -54,4 +54,14 @@ inline constexpr std::size_t kDeviceRouteCapacity = 32;
 // The keyboard subsystem owns exactly four native presets.
 inline constexpr std::size_t kDeviceKeyboardPresetCount = 4;
 
+// Keyboard-owned fixed widths (design/07 §6 non-scalars, and the preset's own
+// count/width facts). PROVISIONAL until the keyboard subsystem's full P0
+// inventory proves them; the wire widths live in the separately-declared schema.
+inline constexpr std::size_t kKeyboardSeqStepCount = 16;   // 16 five-step-run steps
+inline constexpr std::size_t kKeyboardSeqStepBytes = 6;    // note u8 + value f32 + gate u8, packed
+inline constexpr std::size_t kKeyboardSeqBytes = kKeyboardSeqStepCount * kKeyboardSeqStepBytes;  // 96
+inline constexpr std::size_t kKeyboardPlateTuneCount = 12; // vector, 1 per plate key
+inline constexpr std::size_t kKeyboardPushbuttonCount = 8; // vector, 1 per pushbutton row
+inline constexpr std::size_t kKeyboardScaleMaskBytes = 2;  // quantise scale editor: 12-bit mask -> u16
+
 }  // namespace lunar24::core

@@ -172,6 +172,7 @@ lunar_add_test(test_mix_filter_distortion tests/core/test_mix_filter_distortion.
 lunar_add_test(test_device_layout tests/core/test_device_layout.cpp)
 lunar_add_test(test_executor_realpath tests/core/test_executor_realpath.cpp)
 lunar_add_test(test_input_equivalence tests/core/test_input_equivalence.cpp)
+lunar_add_test(test_keyboard_presets tests/core/test_keyboard_presets.cpp)
 
 # P3-⑥ Debt 1 (platform half): the four logic outputs against the REAL machine's
 # output layout, read via the framework authority (AudioBufferList). Apple-only: the
