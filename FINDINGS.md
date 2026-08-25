@@ -226,3 +226,58 @@ These are **not silently resolved** — they are recorded here and remain open
 
 *This file is a documentation artifact of P3-③, not a runtime input to the core
 library.*
+
+---
+
+# P3-④ Measurement Record (preamp aliasing + evidence labels)
+
+Slice: P3-④ — the PREAMP (`core/include/lunar24/core/preamp.h`) and the ENVELOPE
+FOLLOWER (`core/include/lunar24/core/envelope_follower.h`). Author: @Pi
+(implementer). Mandate + adjudication: @Claude. These are **measurements only**:
+preamp soft-saturation aliasing is recorded here and deferred to P3 exit by
+evidence, not patched silently. The other four must-tests (A/R in seconds, EXT
+unconnected → no noise/DC/NaN, silence-converges, cross-sr/cross-buffer) are
+behaviour assertions with red-negatives; their PASS/FAIL runs in
+`tests/core/test_preamp_envelope.cpp` (CTest #25).
+
+**Provenance rule (declared above)** applies to every number here. The manual
+(L518-558) evidences the preamp stage and the envelope follower, sets the CONFIRMED
+output ranges (env CV 0…10 V, GATE 0…8 V), and shows a clipping indicator, but gives
+NO saturation curve, NO gain taper, NO A/R time values, and NO gate-detector trigger
+level. Every non-manual value below is marked provisional.
+
+**Test**: `tests/core/test_preamp_envelope.cpp` (judges shared with P3-①/②/③ in
+`drone_test_common.h`). Aliasing measured by Goertzel (`goertzel_mag`).
+
+## 1. Preamp soft-saturation aliasing
+
+| sr | f0 (sine) | gain norm | fold order | folded alias f | level rel. fundamental |
+|----|-----------|-----------|------------|----------------|-----------------------|
+| 48000 Hz | 10000 Hz | 1.0 (x100, +40 dB) | 3rd | 18000 Hz | **−10.01 dB** |
+
+**参数出处** — f0=10 kHz, amp=1.0, gain norm=1.0 (x100) are **synthetic test
+points**: the manual gives no measurement frequency or gain-taper (gain is a
+normalized 0..1 knob; 40 dB is a confirmed ceiling, the in-between curve and the
+amp rail `kSaturationVoltage=10 V` are provisional modeling choices). The tanh
+soft-knee is the clipping-indicator nonlinearity; at x100 a 1 V sine drives the rail
+hard, so the 3rd harmonic (30000 Hz) exceeds Nyquist (24000 Hz) and folds to
+18000 Hz. **−10.01 dB** = folded-3rd amplitude relative to the fundamental, picked
+up exactly on a bin where the un-distorted fundamental has no energy. Reading for
+P3 exit: the preamp's OWN nonlinearity folds measurable harmonics near Nyquist at
+high gain — a within-module antialiasing case the P3-exit antialiasing decision must
+weigh alongside the drone-mod and VCO ones.   | label: 合成测试点, 非硬规格.
+
+## 2. Evidence labelled into `preamp.h` / `envelope_follower.h` (open items)
+
+These are **provisional modeling choices**, recorded so the implementation is not
+mistaken for manual evidence (@Claude: "冲突要留着可见, 不要被实现悄悄消化掉").
+
+| Item | Evidence strength | Record |
+|------|-------------------|--------|
+| preamp.gain taper (norm 0..1) | Provisional | Linear-in-amplitude knob: 0=mute (manual L527 "set GAIN to minimum"), 1=+40 dB (manual L544 ceiling). In-between curve is a modeling choice, not manual. |
+| preamp soft-saturation rail | Provisional | tanh soft-knee to ±10 V (`kSaturationVoltage`). A clipping indicator exists (L538-539) but no curve/rail is in the manual. |
+| env_follower attack/release norm → seconds | Provisional (control/UI) | Core works in SECONDS (design/07 §5); the registry's normalized knob is a UI mapping resolved outside this header. |
+| gate-detector threshold + hysteresis | Provisional | Manual gives "gate detector activity" (L557-558) and the CONFIRMED 0..+8 V range, but no trigger level. `kGateThreshold=0.5`, `kGateHysteresis=0.05` are modeling choices. |
+
+*This file is a documentation artifact of P3-④, not a runtime input to the core
+library.*
