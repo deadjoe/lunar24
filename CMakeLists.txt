@@ -113,6 +113,21 @@ add_test(NAME registry_complete_negative
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_registry_complete_negative.py)
 
+# Every EvidenceRef emitted into the generated registry must be grounded: its
+# lineStart/lineEnd must stay inside the cited document AND land on non-blank lines.
+# This is a MECHANICAL grounding check — it does NOT verify a ref's relevance (that
+# is an adjudicator judgement, deliberately out of scope here).
+add_test(NAME evidence_refs_gate
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_evidence_refs.py)
+
+# The gate must reject each EvidenceRef defect (out-of-range, lineStart>lineEnd,
+# blank boundary, unknown source) for its intended reason, and go red when a single
+# ref is flipped to point at a blank line — not stumble onto it by accident.
+add_test(NAME evidence_refs_negative
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_evidence_refs_negative.py)
+
 # Strict warnings, applied PRIVATE to a Lunar-owned compiled target only. Never
 # set globally: a future third-party build unit (iPlug2, P1+) must not be forced
 # warning-clean by a global add_compile_options, and lunar_core (header-only
