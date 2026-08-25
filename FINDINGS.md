@@ -281,3 +281,106 @@ mistaken for manual evidence (@Claude: "冲突要留着可见, 不要被实现�
 
 *This file is a documentation artifact of P3-④, not a runtime input to the core
 library.*
+
+---
+
+# P3-⑤ Measurement Record (resonance curve, distortion aliasing, evidence labels)
+
+Slice: P3-⑤ — the WET/DRY chain: the ten-channel panoramic mixer
+(`core/include/lunar24/core/voice_mixer.h`), the dual 12 dB Polivoks VCF
+(`core/include/lunar24/core/polivoks_vcf.h`), the post-filter DISTORTION
+(`core/include/lunar24/core/distortion.h`), and their composition
+(`core/include/lunar24/core/wet_dry.h`). Author: @Pi (implementer). Mandate +
+adjudication: @Claude (msg edf0c9e0 / GO 187d8313). The five behaviour must-tests
+(① res-doesn't-lose-lows, ② DIST≠GAIN, ③ L/R state independent, ⑤ LP/BP two-state,
+⑥ four logic outputs) and the two measurement must-tests (④ route re-presented,
+⑦ cross-sr/cross-buffer + aliasing) run in `tests/core/test_mix_filter_distortion.cpp`
+(CTest #26, 35 checks). This record captures the **measurements** the mandate asked me
+to make and the provisional choices the mandate asked me to label — none are patched
+silently.
+
+**Provenance rule (declared above)** applies to every number here. Manual lines
+L1099-1153 evidence the mixer, the Polivoks VCF and the distortion stage. The
+CONFIRMED editorial core is: 10-channel PAN/VOL mixer (L1099-1113); the Polivoks
+definitional "you will not lose low frequencies when increasing resonance" (L1120-1122);
+CV L normalled to CV R (L1142-1143); DIST/GAIN on the same panel as independent
+control (L1151-1153). The manual gives NO pan law, NO gain taper, NO saturation
+curve/rail, NO CV V/oct, and NO cutoff Hz range. Every non-manual value below is
+marked provisional.
+
+## 1. Resonance does not lose lows — the mandate's premise, measured
+
+@Claude's ① framing ("标准 SVF/梯波高共振必然丢低频") is a **premise to verify, not a
+fact**. I built three candidate LP models and measured |H(100 Hz)| — a deep-bass
+probe, 1 decade below the 1 kHz cutoff — as resonance rose from 0 to max:
+
+| Topology | |H(100 Hz)| res=0 | res=1 | ratio | verdict |
+|----------|--------|------------|-------|-------|---------|
+| RBJ biquad LP (bilinear) | — | — | ~1.0 | (**flat**) | passes bass |
+| 2-pole ladder (Moog-ish) | — | — | ~1.89 | (**boosts**) | passes bass |
+| **Chamberlin SVF (chosen)** | 0.9888 | 1.0100 | **1.0214** | (**held**) | passes bass |
+| Buggy "LP→BP tilt" (negative) | — | — | **0.1022** | (**loses**) | **RED** |
+
+The measured curve: **all three stable linear topologies preserve or BOOST the low
+band** — none loses it. The stable linear topologies cannot lose low end at high
+resonance; the reliable loss is a **mode tilt** (implementer letting the resonance
+route the output toward bandpass, which rejects the bass). That tilting case
+measures at ratio **0.1022** — a genuine red. Threshold **0.5** cleanly separates
+the healthy 1.02 from the broken 0.10, and was set from the measured curve, not
+before it (per the mandate "阈值定多少你先量真实曲线再定，别先定阈值再凑").
+
+**Reading for the gate**: the definitional "not lose lows" is satisfied by the
+Chamberlin SVF's unity-DC-lowpass (res feedback `damp` does not enter the DC term).
+The ① threshold is **0.5** (green ≥0.5, red <0.5). Note the resonance boost appears
+at the cutoff (|H(1 kHz)| grows 0.5→~10 as res→max), which is the manual's "boost
+the frequency near cutoff point" (L1140) — the low band is held while the cutoff
+peak rises, exactly the Polivoks editorial.
+
+## 2. Post-filter distortion aliasing (⑦, measure → record, do NOT fix)
+
+| sr | f0 (sine) | dist | gain | fold order | folded alias f | level rel. fundamental |
+|----|-----------|------|------|------------|----------------|-----------------------|
+| 48000 Hz | 10000 Hz | 1.0 | 1.0 | 3rd | 18000 Hz | **−12.52 dB** |
+
+**参数出处** — f0=10 kHz, amp=1.0, dist=1 (fully wet), gain=1 are **synthetic test
+points**: the manual gives no measurement frequency and no saturation curve/rail
+(the tanh rail `kSaturationVoltage=2 V` and the signal-driven `kDriveFold=8` are
+provisional modeling choices). The strongly-driven tanh produces odd harmonics; the
+3rd (30 kHz) exceeds Nyquist (24 kHz) and folds to 18 kHz. **−12.52 dB** = folded-3rd
+amplitude relative to the fundamental (a rational probe, integer bin). Reading for
+P3 exit: the post-filter distortion's OWN nonlinearity folds measurable harmonics
+near Nyquist at dist/gain=1 — a within-module antialiasing case the P3-exit
+antialiasing decision must weigh. **Not fixed here**, labeled provenance per the
+mandate ("distortion aliasing measured + recorded in FINDINGS (not fixed, label
+provenance)"). (Direct comparison: the P3-④ preamp nonlinearity measured −10.01 dB
+at the same f0; the post-filter distortion −12.52 dB.)
+
+## 3. Declared coverage boundary — the 6 cathedral/magic `.1` leaves
+
+Six program leaves — cathedral.1 x/y/z, magic.1 x/z (y is fixed, not movable) — are
+recorded in `lunar24.json`/`registry.hpp`/`mustComplete`/`base program_params`
+(L480-510) but lack an **independent transcribe cross-check** in `landedDescriptorFacts`.
+This is a **declared coverage boundary** (a documented gap in the cross-check
+evidence for exactly six source-system leaves), NOT a debt and NOT an un-annotated
+omission: `landedDescriptorFacts` is a declaration set, not a full enumeration, and
+the `mustComplete == landed` gate (L1691) closes it. Recorded here so the boundary is
+explicit rather than silently absorbed (parallel to @Claude's ".1-leaf" instruction,
+msg 9baf5612 as noted during P3-③).
+
+## 4. Evidence labelled into the P3-⑤ headers (open items)
+
+| Item | Evidence strength | Record |
+|------|-------------------|--------|
+| BP-LP default | **Discrepancy kept visible** | Frozen registry literal `default: 0.0` → `positions[0]="bp"` (filter defaults to BP). The adjudicator's GO cited "default 1". The frozen-registry literal is authoritative and is followed (`setMode` maps bp→0/lp→1); the discrepancy is deliberately recorded, not silently resolved. |
+| PAN taper (mixer.ch1_..ch10_pan) | Provisional | Equal-power two-way pan (`theta=0.5πp; cos/sin`), an industry convention keeping power constant across the throw. No pan law / dB in the manual (L1105-1110) — all six mixer fieldEvidence are unverified. |
+| VOL taper (mixer.ch1_..ch10_vol) | Provisional | Plain linear amplitude gain (vol in [0,1]). No manual dB taper; the host UI maps the taper. |
+| WET/DRY headroom | Declared-boundary | design/07 voltage table: DRY V4/V5 max 1 V, WET max 2 V — a 2:1 ratio. The peak/RMS/pk-pk basis is unknown, so **no −6.02 dB constant is invented**; `kWetToDryRatio=2.0` is recorded as a boundary, not a dB figure. |
+| VCF cutoff norm→Hz | Provisional | log map 20 Hz..20 kHz, capped at sr/8 for SVF stability. No Hz range in the manual. |
+| VCF CV V/oct | Provisional | `kCvVoltsPerOctave=1.0`; cutoff shifted by 2^(mod·cv/oct). No CV range / V-oct figure in the manual. |
+| VCF resonance damp curve (res→damp) | Provisional | `damp = 2.0 → 0.1` across res 0→1 (max res kept >0, no self-oscillation). No manual figure. |
+| DIST nonlinear rail | Provisional | tanh soft-clip, `kSaturationVoltage=2 V` (aligned to WET nominal max). No manual curve/rail. |
+| GAIN drive shaping | Provisional | Signal-driven per-channel drive (`drive → gain·\|x\|` smoothed, `kDriveFold=8`, `kSmoothSeconds=0.005`) so a hot channel saturates only its own non-linearity. No manual values. |
+| LINK overrides plugged CV R | **Provisional, UN-EVIDENCED, 待取证** | The interaction "LINK on + CV R plugged" has NO manual ruling. Provisional default: LINK (active switch) overrides the resolved CV R. Added to the P3-exit 待取证 list per @Claude GO (a). |
+
+*This file is a documentation artifact of P3-⑤, not a runtime input to the core
+library.*
