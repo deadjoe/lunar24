@@ -26,7 +26,7 @@
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
-| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ ▶ 逐音行为（下一片）／④arp·seq·clock／⑤显示+encoder+校准 |
+| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ ▶ 逐音行为（下一片；标量 bank 表示 = A/B 待 @Claude 裁）／④arp·seq·clock／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
 门禁基线：本机 ctest **33/33**（含 ASan+UBSan detect_leaks=0）；CI build-and-test **4/4 绿**；
@@ -100,6 +100,17 @@ schema v2→v3、`totalBytesHint` 4979→5939。绝对基址锚（`buf[247]`、`
 `KeyboardSide{Left,Right}`、`side_bank(mode,side)->0/1`、`sides_share_bank(mode)`、`read_side_scalar(bank,mode,side,id)`（读参唯一咽喉，
 `id` 透传不变——即"无 `_r` id"）、`mode_from_behaviour(u8)`（PROVISIONAL：只验 totality+unknown→Single，不把 0/1/2 当证据）。负控证明：
 临时让 Split 忽略 side → 测试 3/277 真红。
+
+✅ **live-state 非标量 `_r` 已落**（schema **v3→v4**、`totalBytesHint` **5939→6121**，commit `06fc722`，@Claude L1 裁决 695564a7）：
+`DeviceStateV1` 五个 live 非标量/无-域选择器各加 `_r` 右岸镜像（`keyboardSeqCurrentR`/`keyboardScaleEditorR`/`keyboardPlateTuneR`/
+`keyboardPushbuttonR`/`keyboardClockSelectorsR`，+182B）；对应 `kDeviceStorageFields` 追加 5 条（versionFrom=4，**只追加不重排**）；
+encode/decode 各加分支。测试：`fill_state`/`states_identical` 现覆盖全部 live 字段（左/右**不同值**，防共享-field 病），并新增绝对尾锚
+`live_side_bank_is_tail_and_independent`（`_r` 块始于 field-table offset、尾触 `totalBytesHint`==6121、182B 连续性 + 左/右独立性）。负控：
+把 `keyboard_seq_current_r` 编码成左 field → 6 处真红（本测试 4 + 既有 round-trip 2），撤后全绿。ctest **33/33 绿**（executable 数不变，内部 check 35→50）。
+
+🔑 **开放 A/B（待 @Claude 裁，未动）—— live 标量 bank 的表示**：live keyboard 标量目前住在机器-wide `parameters[ParameterId]`。split-right 需要 bank[1]。两表示：
+- **A 镜像全数组**：加 `double parametersRight[kDeviceParamCapacity]`。bank[0]=parameters（左/共享），bank[1]=parametersRight。id 直索引零映射，但 +3392B、~394 个非-keyboard 槽"可被编辑"（其实从不读）、易误读"右份有整套参数"。
+- **B 紧凑 keyboard 标量 bank（我推荐）**：加 `float keyboardScalarRight[N]`（N=keyboard_params 中**带 ParameterId 的标量**，即 mode/arp×/seq×/portamento×/vibrato×/pressure×/quantise_load_scale/root_note/pressure_output，≈22）+ 一张 `ParameterId→index` 映射。bank[0]=`parameters[ParameterId]`（左/共享，**不变，无双重真相**），bank[1]=`keyboardScalarRight`。精确（只有 keyboard 参数按侧）、便宜、符合 L1"左在原 bit / 右在 `_r`"与 preset 的紧凑侧 bank。待定：`pressure_output` 是否也按侧（preset 已按侧 pressure_output@5+`_r`@247，但 live `KeyboardSettings` 目前把 output 当全局壳值）。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
