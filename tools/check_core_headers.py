@@ -7,17 +7,21 @@ Two gates, both hard enough that they cannot false-pass:
 
   1. License gate — every AUTHORED CODE file in the tree (C/C++ headers+sources,
      Python, CMakeLists.txt), wherever it lives, must carry the Apache-2.0 SPDX
-     block in its LEADING header lines. The scan is RECURSIVE over the whole
-     tracked source (core/, generated/, tests/, tools/, design/*.py, the root
-     CMakeLists.txt) so a script dropped in a subdirectory, or a new CMake file,
-     is caught and not silently skipped. A "header present somewhere in the file"
+     block in its LEADING header lines. A "header present somewhere in the file"
      check is not enough; generated files are verified by exact emission too.
   2. Forbidden-include gate — only the core PUBLIC headers (they define the
      framework-free boundary) may be scanned for framework / platform /
      filesystem includes; the rest of the tree is NOT restricted that way.
 
-Third-party / vendored dirs (third_party/) and build/ are never scanned as
-authored. Non-code files (docs, JSON, YAML, LICENSE) are not license-gated.
+SCAN SCOPE IS GIT-DERIVED, not a hand-maintained directory list. The source tree's
+authoritative definition is "a file the project tracks"; untracked build scratch
+(build/, build-asan/, a future build-cov/) is definitionally NOT source, so a
+gitignore'd directory can never make the gate go scan CMake-generated files. The
+old hand-maintained SKIP_DIRS list retired for this reason — it drifted from
+.gitignore (build-asan: gitignored but not skipped, so it was scanned and red only
+locally, never on CI). A future vendored lib follows the same rule: tracked ->
+authored (must carry a header), untracked -> not source. Non-code files (docs,
+JSON, YAML, LICENSE, .github/) are not license-gated.
 
 Usage:
   python3 tools/check_core_headers.py          # scans, exits non-zero on violation
@@ -25,14 +29,11 @@ Usage:
 """
 
 import os
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CORE_INC = os.path.join(ROOT, "core", "include", "lunar24", "core")
-
-# Directories that are never part of the authored source (vendored / generated
-# build scratch). A future vendored third-party lib lands here and stays uncounted.
-SKIP_DIRS = {".git", "build", "third_party"}
 
 # A file is code (license-gated) by extension, or by being a CMakeLists. These are
 # the comment-capable source types the gate claims to cover — C-family sources
@@ -83,20 +84,35 @@ def _is_code(name):
 
 
 def collect_files():
-    # Recursive over the whole tree. License-scan every code file; the forbidden-
+    # Scan scope is GIT-DERIVED: only files the project actually tracks. This is the
+    # authoritative "source code" definition, so untracked build scratch (build/,
+    # build-asan/, ...) is never scanned no matter what a .gitignore or a future
+    # build-dir name does. License-scan every tracked code file; the forbidden-
     # include scan applies ONLY to core public headers (the framework-free line).
     real_core = os.path.realpath(CORE_INC)
     files = []  # (display, abs_path, do_forbidden_scan)
-    for base, dirs, names in os.walk(ROOT):
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
-        for n in sorted(names):
-            if not _is_code(n):
-                continue
-            p = os.path.join(base, n)
-            if not os.path.isfile(p):
-                continue
-            do_forbidden = os.path.realpath(p).startswith(real_core)
-            files.append((os.path.relpath(p, ROOT), p, do_forbidden))
+    proc = subprocess.run(
+        ["git", "-C", ROOT, "ls-files", "-z"],
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise SystemExit(
+            f"check_core_headers: cannot read tracked-file list from git "
+            f"(returncode {proc.returncode}): {err}"
+        )
+    for rel_bytes in proc.stdout.split(b"\0"):
+        if not rel_bytes:
+            continue
+        rel = os.fsdecode(rel_bytes)
+        if not _is_code(os.path.basename(rel)):
+            continue
+        p = os.path.join(ROOT, rel)
+        if not os.path.isfile(p):
+            continue
+        do_forbidden = os.path.realpath(p).startswith(real_core)
+        files.append((rel, p, do_forbidden))
+    files.sort(key=lambda t: t[0])
     return files
 
 
