@@ -7,17 +7,34 @@
 // superseded (retired) snapshot is reclaimed by a worker on a NON-audio thread,
 // never inside the audio callback.
 //
-// This is the P2-⑤ Half 1 deliverable, a heap-free, lock-free port of the proven
-// P1-② audio-thread-invariants mechanism: the RT thread must never drop the last
-// reference to a retired snapshot, because a snapshot may own a non-trivial
-// destructor that must not run in the callback. The detector that proves this is
-// a test concern (RtGuard, tests/, never core/), so this header stays framework-
-// and probe-free.
+// This is the P2-⑤ Half 1 deliverable (audit-repair ① — GH#3 A02). The defect
+// being repaired: the reader could NOT pin a slot. It read `current()` then
+// `snapshot(cur)` with no guarantee against a concurrent publish(B)→retire(A)→
+// recycleOne() resetting A underneath it — the audio thread read a destroyed
+// object. See tests/core/test_state_publish.cpp for the deterministic repro.
+//
+// PIN CONTRACT (the repair): the audio reader brackets its read with
+// pinCurrent()/unpin(). A pinned slot is retired out of the reclaim path:
+// recycleOne() DEFERS — returns false — rather than reset a slot any reader
+// still holds. Only after every reader unpins does a later recycleOne() reclaim
+// it. pinCurrent() and recycleOne() race on one atomic (the slot state seesaw
+// between "current + N readers" and "retiring"): only ONE wins, the loser
+// retries/deferts. There is no ABA because any recycle passes through kWriting
+// (< 0), so a reader's CAS(expect >= 0) must fail.
+//
+// DELIBERATE STALE-GENERATION ACCEPTANCE (a decision, not a bug): if a reader
+// loads current_=A, and A is then retired → recycled → REUSED as the new current
+// before the reader's pin CAS executes, pinCurrent() succeeds (A is `current`
+// again, state >= 0) and the reader reads the NEWER generation's content, not
+// the snapshot it first saw. For audio that is benign — fresher state, never
+// torn data — but it is an intentional semantic, not an accident: do not "fix"
+// it by stalling the recycle, which would break the lock-free progress
+// guarantee.
 //
 // RT contract:
-//   * publish()/retire()/current() are lock-free (atomics only) and never allocate.
-//   * A snapshot's destructor runs ONLY in recycleOne(), which is the worker's
-//     job — the audio thread must never call recycleOne().
+//   * publish()/retire()/current()/pinCurrent()/unpin() are lock-free (atomics
+//     only) and never allocate. recycleOne() is the worker's job, never the
+//     audio thread.
 //   * No heap, no mutex, no file, no log on any path reachable in a callback.
 //
 // Framework-free, no heap, no locks, header-only. `Snapshot` must be
@@ -33,7 +50,8 @@ namespace lunar24::core {
 // A fixed-capacity pool of preallocated snapshot slots. The current slot is
 // published atomically; the previously-current slot is handed back to the caller
 // to retire(), which parks it on a bounded SPSC reclaim ring drained by
-// recycleOne() off the audio thread.
+// recycleOne() off the audio thread. The reader pins the current slot (so a
+// recycle cannot reclaim it out from under a read) before it uses it.
 template <typename Snapshot, std::uint32_t kSlots>
 class StateSnapshotPool {
  public:
@@ -50,7 +68,7 @@ class StateSnapshotPool {
     head_.store(0, std::memory_order_relaxed);
     tail_.store(0, std::memory_order_relaxed);
     for (std::uint32_t i = 0; i < kSlots; ++i) {
-      slotState_[i].store(SlotState::idle, std::memory_order_relaxed);
+      slotState_[i].store(kIdle, std::memory_order_relaxed);
       ring_[i].store(kNoSlot, std::memory_order_relaxed);
     }
   }
@@ -62,8 +80,8 @@ class StateSnapshotPool {
   // thread; nothing in this path allocates or locks.
   Snapshot* acquire() {
     for (std::uint32_t i = 0; i < kSlots; ++i) {
-      SlotState expect = SlotState::idle;
-      if (slotState_[i].compare_exchange_strong(expect, SlotState::writing,
+      int expect = kIdle;
+      if (slotState_[i].compare_exchange_strong(expect, kWriting,
                                                 std::memory_order_acq_rel)) {
         return &snapshots_[i];
       }
@@ -71,20 +89,48 @@ class StateSnapshotPool {
     return nullptr;
   }
 
-  // Atomically publish `slot` as the current snapshot. The previously-current
-  // slot (if any) is superseded and returned so the caller can retire() it for
-  // off-RT reclamation. Returns kNoSlot if there was no prior current.
+  // Atomically publish `slot` as the current snapshot, transitioning it
+  // writing→current-with-0-readers. The previously-current slot (if any) is
+  // superseded and returned so the caller can retire() it for off-RT
+  // reclamation. Returns kNoSlot if there was no prior current.
   std::uint32_t publish(std::uint32_t slot) {
     std::uint32_t prior = current_.exchange(slot, std::memory_order_acq_rel);
-    slotState_[slot].store(SlotState::current, std::memory_order_release);
+    slotState_[slot].store(0, std::memory_order_release);  // current + 0 readers
     return prior;
   }
 
   // --- reader (audio) thread ---
-  // The current published slot index, or kNoSlot if none. Non-owning.
+  // The current published slot index, or kNoSlot if none. INFORMATIONAL — a safe
+  // concurrent read MUST go through pinCurrent()/snapshot()/unpin(), never a bare
+  // `snapshot(current())`, which is exactly the GH#3 A02 the repair removes.
   std::uint32_t current() const { return current_.load(std::memory_order_acquire); }
-  // Read the snapshot in `slot` (valid only while slot == current()).
+  // Pin the current snapshot for reading: returns the pinned slot index (>= 0) or
+  // kNoSlot if there is none. While a slot is pinned, recycleOne() will not
+  // reclaim it. Retries on a fresh current_ if the target slot stopped being
+  // current (a retire began); this never pins a slot being reclaimed.
+  std::uint32_t pinCurrent() {
+    for (;;) {
+      std::uint32_t cur = current_.load(std::memory_order_acquire);
+      if (cur == kNoSlot) return kNoSlot;
+      int s = slotState_[cur].load(std::memory_order_acquire);
+      if (s < 0) continue;  // writing/retiring/idle — not current; re-read current_
+      // s >= 0: current with s readers. CAS s → s+1 to pin. A concurrent
+      // recycle CASes 0 → kRetiring; both start from the same state on the same
+      // atomic, so only one wins — if the recycle took 0 first we read a != 0 here
+      // and retry; if we took it, the recycle defers.
+      if (slotState_[cur].compare_exchange_strong(s, s + 1, std::memory_order_acq_rel))
+        return cur;
+      // CAS failed only because the slot left `current`-with-`s`-readers (a
+      // recycle retired it, or another reader re-counted). Re-evaluate.
+    }
+  }
+  // Read the snapshot in `slot`. Valid only while `slot` is pinned (pinCurrent())
+  // on the concurrent path; a single-threaded caller may read the current slot.
   const Snapshot& snapshot(std::uint32_t slot) const { return snapshots_[slot]; }
+  // Release a pin taken by pinCurrent(); call exactly once per successful pin.
+  void unpin(std::uint32_t slot) {
+    slotState_[slot].fetch_sub(1, std::memory_order_release);
+  }
 
   // --- SPSC reclaim (producer = the thread that retires a slot) ---
   // Park a retired slot for off-audio-thread reclamation. Single producer at a
@@ -100,16 +146,22 @@ class StateSnapshotPool {
   }
 
   // --- SPSC reclaim (consumer = the reclaim worker) ---
-  // Recycle one retired slot: reset its Snapshot (the destructor + default ctor
-  // run HERE, on the caller's thread — never on the audio thread). Returns true
-  // if a slot was recycled.
+  // Recycle ONE retired slot: reset its Snapshot (the destructor + default ctor
+  // run HERE, on the caller's thread — never on the audio thread). DEFERS —
+  // returns false — if a reader is still pinned on the slot, so the destructor is
+  // never run on a slot a reader is reading; the slot stays in the ring for a
+  // later attempt. Returns true if a slot was actually recycled.
   bool recycleOne() {
     std::uint32_t t = tail_.load(std::memory_order_relaxed);
     std::uint32_t h = head_.load(std::memory_order_acquire);
     if (t >= h) return false;  // empty
     std::uint32_t slot = ring_[t % kSlots].load(std::memory_order_relaxed);
+    int expect = 0;  // current + 0 readers
+    if (!slotState_[slot].compare_exchange_strong(expect, kRetiring,
+                                                  std::memory_order_acq_rel))
+      return false;  // a reader is pinned (count>0) — defer, never reset it
     snapshots_[slot] = Snapshot{};                                  // off-RT release
-    slotState_[slot].store(SlotState::idle, std::memory_order_release);
+    slotState_[slot].store(kIdle, std::memory_order_release);
     tail_.store(t + 1, std::memory_order_release);
     return true;
   }
@@ -121,10 +173,19 @@ class StateSnapshotPool {
   }
 
  private:
-  enum class SlotState : std::uint8_t { idle, writing, current };
+  // slotState_ per-slot state. Negative values are state codes; a NON-NEGATIVE
+  // value means the slot is CURRENT and carries the count of readers pinned on
+  // it (>= 0). Exactly one meaning holds at a time:
+  //   kIdle      (-3): free, not yet acquired
+  //   kWriting   (-2): a control thread is writing a fresh snapshot
+  //   kRetiring  (-1): a recycle was decided; NEW readers must not pin
+  //   N          (>=0): current slot with N active readers pinned
+  static constexpr int kIdle = -3;
+  static constexpr int kWriting = -2;
+  static constexpr int kRetiring = -1;
 
   Snapshot snapshots_[kSlots];
-  std::atomic<SlotState> slotState_[kSlots];
+  std::atomic<int> slotState_[kSlots];
   std::atomic<std::uint32_t> ring_[kSlots];
   std::atomic<std::uint32_t> current_;
   std::atomic<std::uint32_t> head_;
