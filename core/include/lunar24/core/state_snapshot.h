@@ -127,6 +127,12 @@ class StateSnapshotPool {
   // Read the snapshot in `slot`. Valid only while `slot` is pinned (pinCurrent())
   // on the concurrent path; a single-threaded caller may read the current slot.
   const Snapshot& snapshot(std::uint32_t slot) const { return snapshots_[slot]; }
+  // The slot index of a snapshot pointer returned by acquire(). Needed to publish
+  // (or retire) a slot by the pointer a caller actually holds; a pointer that was
+  // not returned by acquire() is undefined.
+  std::uint32_t slotOf(const Snapshot* s) const {
+    return static_cast<std::uint32_t>(s - snapshots_);
+  }
   // Release a pin taken by pinCurrent(); call exactly once per successful pin.
   void unpin(std::uint32_t slot) {
     slotState_[slot].fetch_sub(1, std::memory_order_release);

@@ -198,6 +198,21 @@ lunar_add_test(test_patch_graph tests/core/test_patch_graph.cpp)
 lunar_add_test(test_graph_compiler tests/core/test_graph_compiler.cpp)
 lunar_add_test(test_sink_interpret tests/core/test_sink_interpret.cpp)
 lunar_add_test(test_state_publish tests/core/test_state_publish.cpp)
+
+# #37 close-out: the TSan-only memory-model PROBE. It has no CTest assertion and is
+# meaningful only as a ThreadSanitizer detector — a correct pool exits 0, a pool
+# whose recycleOne guard is removed or whose memory_order is weakened races and
+# exits non-zero. It must NEVER run in the normal build (it has no happens-before
+# edge between reader and recycler, so it would be a meaningless busy loop there);
+# it is compiled and registered ONLY under -fsanitize=thread. The deterministic
+# test_state_publish.cpp above is the primary observable-behaviour judge; this
+# probe is the memory-model guard that stays green only while the pin/retire
+# ordering holds (guards against future removal of the guard / weakening of the
+# memory_order). Both stay.
+if(CMAKE_CXX_FLAGS MATCHES "fsanitize=thread")
+  lunar_add_test(test_state_publish_tsan tests/core/test_state_publish_tsan.cpp)
+endif()
+
 lunar_add_test(test_state_persistence tests/core/test_state_persistence.cpp)
 lunar_add_test(test_drone_bank tests/core/test_drone_bank.cpp)
 lunar_add_test(test_drone_mod tests/core/test_drone_mod.cpp)
