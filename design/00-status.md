@@ -39,7 +39,7 @@ PR #2 将是干净合并（无冲突）。
 | **P5 整张面板** | ▶ **下一阶段**；⚠️ **task #15 保持 open 直到 P5 出口**（见下）；task #15（宿主 height clamp 非 fit-to-window，面板底 141 逻辑 px 不可达）——它直接决定「控制清单 100% 有可见控件」真假 |
 | P6 dual effector | 未开始 |
 
-门禁基线：本机 ctest **37/37**（+ASan 22/22 内存错误零）；CI build-and-test **4/4 绿**；
+门禁基线：本机 ctest **38/38**（+ASan 22/22 内存错误零）；CI build-and-test **4/4 绿**；
 `full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
 
 ## 2b. 已裁决的冻结-P0 变更（2026-08-26）
@@ -303,6 +303,18 @@ A/R 秒=registry norm 是 UI mapping。**校准多点 0/2/5/8V 分段不可表�
 **真正可达与否要等 P5 宿主真开窗才成立**。
 **理由＝我们栽过的那一次**：P2-③ 的 `real_path` 决策层验过、执行器没兑现，off-by-one 一直活到债到期才被抓。
 **决策模块正确 ≠ 消费方照做。**
+
+✅ **前驱片已落（`ccdb3b2`）**：`core/.../host_window_fit.h` + 27 检查。我用比他负控更贴近现实的突变验过——
+把 `min(sx,sy)` 改成**只取 `sx`**（宽度 fit、高度交给 WM 裁，现实中最易写出的版本）→ **exit 1、10 条 FAIL**。
+`141 = 1551−1410` 是算出来的非硬编码；retina 保持独立乘子未折进 drawScale（④ 那个 bug 的根因）。
+
+▶ **P5-① mandate 已发（msg `07af6c26`）＝自撰宿主层 + 真窗口消费 fit**，也是 **#15 的真正偿还**：
+   按 ①b 自写 bootstrap（SWELLAppController/setDelegate/ONLOAD+LOADED/建窗），iPlug2 保持未修改固定 commit；
+   host 代码**不进 core/**（framework-free 门禁须继续绿），新起顶层目录并说明门禁如何覆盖。
+   必测：①宿主必须消费 `compute_host_window_fit`（绕开→红）；
+   ②**#15 偿还判据＝真实窗口下面板底部那行控件底边在可见逻辑高之内**（这条过了 #15 才关）；
+   ③跨 7 档缩放+fit 下逻辑坐标不变（复用 ④ 判据）；④iPlug2 pin 未被修改要有**机械检查**非自觉。
+   范围外：控件绘制/命中区、色彩材质、品牌图形（P5-② 之后）。
 
 ⇒ **写进将来的 P5 mandate**：宿主层**必须消费**该模块定窗高；**负控＝宿主自己算尺寸绕开它 → 必须红**；
 **#15 在"真实窗口下底部那一行控件可达"被实测证明后才关闭**。
