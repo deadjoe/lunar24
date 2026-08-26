@@ -4,7 +4,7 @@
 **这份文件的用途**：@Claude（工程总监）随时可能因额度中断。中断时 @Pi **不要停**——
 从这里读出"什么已批准、什么在做、什么必须等人"，按预授权继续。
 
-**最后更新**：2026-08-26 · head `4da397c` · 分支 `feat/p0-full-registry` · `origin/main` = `baf1e11`（PR #1 合入点）；本分支严格领先、merge-base==origin/main · 无 PR#2
+**最后更新**：2026-08-26 · head `4e8b1d4` · 分支 `feat/p0-full-registry` · `origin/main` = `baf1e11`（PR #1 合入点）；本分支严格领先、merge-base==origin/main · 无 PR#2
 
 ## 1. 预授权（@Pi 不必等 GO）
 
@@ -35,7 +35,7 @@ PR #2 将是干净合并（无冲突）。
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
-| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f；未提交）／④arp·seq·clock／⑤显示+encoder+校准 |
+| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f；未提交）→ **存储 schema 参数解析门禁 + 无域 selector 落 homes** ✅（见 §2g，head `4e8b1d4`）／④arp·seq·clock／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
 门禁基线：本机 ctest **34/34**（含 ASan+UBSan detect_leaks=0）；CI build-and-test **4/4 绿**；
@@ -197,6 +197,30 @@ main 未动，无 PR#2。**下一片 P4-④**：arp/seq 按侧实例化（设计
 
 ⚠️ 我的措辞教训：我说 `arp_clock`「在按侧集内」——**对 manifest 成立、对 registry 不成立**，
 而我没把两者分开说。**"在不在"必须指明在哪个产物里。**
+
+**✅ 门禁洞已闭合 + 无域 selector 落 homes（head `4e8b1d4`，@Claude msg `82a77317` 定案=manifest 声明 home、门禁一条通用规则）：**
+
+- **新增 manifest `positionlessSelectorDisposition`**（冻结改动，**只追加**）：4 个无域 selector
+  （arp_clock/arp_rhythm/seq_clock/seq_rhythm）各标 `{belongsTo: deviceState, status: deferred-to-P4}`。
+  值域 **UN-EVIDENCED**（B 方案，未凭空造档位），仅控件存在性有据（L827/L875）；值结构性落在
+  DeviceState 字节数组 `keyboardClockSelectors[4]`。`mustComplete` 保持 345 不动、无 id 空间改动、
+  无既有条目改动、regen zero-diff（只追加，门禁成立）。
+- **门禁**：`validate_root_a_disposition` 重构为**一条通用** `validate_gap_disposition(disposition, computed, label, schemas)`，
+  参数化 `label` —— 门禁**永不硬编码某个容器/字段名**（它是数据，不是门禁逻辑；msg `82a77317`）。
+  原 Root-A 项与新的 positionless 项走**同一条规则**：声明的 gap 集合与计算 gap 集合**双向精确匹配**，
+  缺/盗/坏全红。
+- **新 always-on `validate_schema_param_resolution`**：storage schema 的 `params`（或 record 的 `excludes`）
+  成员，必须解析到**真实 registry 参数**或**声明 home**。声明 home 集 = 遍历 manifest 所有以 `Disposition`
+  结尾的 key 取 items（**数据**），绝非从门禁对参数形状的分类重推。两者皆非 → **真悬空引用**
+  （纸上声明、未实现、未归家），消息即此。
+- **负控（mandate #4 真红）**：`mi` 删 home 声明但**留 schema 引用** → 解析判据红（`resolves to neither a registry
+  parameter nor a declared home`）；`mj` 往 disposition 塞 stale id → 双向判据红（`not a current positionless-selector gap`）；
+  `mk` 把 status 打成 `landed` → 非法状态红。已实测 mi 确因**解析**判据红（另一条"缺 disposition"判据也红，但断言钉的是解析那根针）。
+- **量**：恰好 **4 个**真悬空（正是这 4 个无域 selector）；8 个 Root-A 全绿（经 Root-A disposition 归家，无误报）⇒ 不用扩 registry。
+
+**门禁**：本机 ctest **34/34**、ASan 21/21 detect_leaks=0、negative exit 0、regen zero-diff、id-stability、core_headers 88、
+spike_clean 42、evidence_refs、evidence_layout、registry_negative 5 夹具全绿；`--require-full` **按设计红**（12 个声明 gap，
+PR#2 merge 门，非回归）。main 未动，无 PR#2。**下一片 P4-④ arp/seq 按侧实例化**（§2c `60df2e43`：L724 证明 arp 每侧不同，不得全局单例）。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
