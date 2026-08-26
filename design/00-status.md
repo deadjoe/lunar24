@@ -38,7 +38,7 @@ PR #2 将是干净合并（无冲突）。
 | **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f，commit `4da397c`）→ **存储 schema 参数解析门禁 + 无域 selector 落 homes** ✅（见 §2g，head `4e8b1d4`）→ **arp·seq 按侧引擎** ✅（见 §2h，code head `4c129d2`）／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
-门禁基线：本机 ctest **35/35**（+ASan 22/22 内存错误零）；CI build-and-test **4/4 绿**；
+门禁基线：本机 ctest **37/37**（+ASan 22/22 内存错误零）；CI build-and-test **4/4 绿**；
 `full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
 
 ## 2b. 已裁决的冻结-P0 变更（2026-08-26）
@@ -259,6 +259,33 @@ main 未动，无 PR#2。**下一片 P4-④**：显示+encoder+校准（⑤）�
 任何 `.gitignore`/build 目录名都不可能再让门禁去扫生成物。`SKIP_DIRS` 整表退休——同一漂移类（build-asan 咬人）不可能再发生；与 manifest home 集用 `validate_gap_disposition`
 同一"权威来源而非手写清单"原则。从干净状态复验：ctest 35/35、门禁扫 **90** 个 tracked authored file（88→90，+arp_sequencer.h＋test_arp_sequencer.cpp）全绿；
 负控仍真红（tracked 无 SPDX 的 `_neg_gate.h` → 1 文件 fail，撤后绿）——重做未削弱对"应覆盖文件"的检查。
+
+## 2i. P4-⑤ 显示+encoder菜单+输入归一化/输出校准（P4 最后一片，@Claude GO msg `87862933`）
+
+**四新头 + 两测试**：`keyboard_display.h`（Decis ① 纯数据显示模型）、`keyboard_input_normalization.h`+`keyboard_output_calibration.h`（Decis ③ 两层分测）、
+`keyboard_menu.h`（Decis ④ 全菜单项），测试 `test_keyboard_calibration.cpp`（48 检查，CTest #35）+ `test_keyboard_menu.cpp`（778 检查，CTest #36）。
+ctest **37/37**（executable 35→36，+2）。
+
+**层分成两层（Decis ③，写进注释）**：**输入归一化＝FRONT**（`translate()` 咽喉前，把因源而异的 raw 收敛成**唯一内部 pressure**——出口判据唯一允许差异之处，因为差异在归一化前被吃掉）；
+**输出校准＝BACK**（咽喉后，把已收敛的内部值缩放到物理插孔电压）。**一前一后、不在同一层**——日后若有人以为"校准"能解释源间差异，那是错误：源间差异必须在咽喉处消掉。
+**两测试独立**：FRONT 测 hysteresis（touch 650/release 690 双阈值，证据backs）+raw→pressure 线性映射；BACK 测 trim band（±kOutputCalTrimRange）单调 + pressure clamp 0..8V。绝不混层。
+
+**Decis ② MPR121/debounce 不建模**：仍存进 parameters[]（能改、能存、随 preset 往返），但**无运行时效果**——与 4 个无域 selector 同等待遇，说明写进注释+FINDINGS。
+
+**Decis ④ 菜单全做（不只有 preset+校准）**：`kMenuItems[]` 覆盖 Main/Arp/Seq/Preset/Calibration 五页。**reachability 测试**断言 22 个 per-side 标量全可达、
+12 个无面板旋钮的全局（clock_bpm+校准/debounce/encoder 130-140）全可达、4 个无域 selector（slot 0-3）全可达、Main 页能进 Arp/Seq/Preset 子菜单、
+Calibration 页非空（hold-while-boot 门）。只做"preset+校准"会把一整批无旋钮参数（vibrato/portamento/arp×/seq×）留成无可达路径，P5 完整性门一验就炸——测试钉死这一点。
+
+**side 咽喉写路由（Decis ④ 负控真红）**：`write_item_value` 对 PerSideScalar 一律走 `write_side_scalar_value`（**同 MIDI/live 路径**），split 右岸绝写全局 `parameters[id]`。
+**正控 `menu_path_and_midi_path_converge_split_right`**：菜单写 arp_hold=3.3（split right）与 MIDI 写同值 → 都落 `keyboardScalarRight[idx]`、`parameters[id]` 为 0 → **两表面收敛**（这就是出口判据要看到的）。
+**负控 `wrong_bank_menu_write_diverges_and_is_detected`**：若菜单写全局而非当前侧 bank（@Claude 点名错误）→ `parameters[id]`=5 而 `keyboardScalarRight[idx]`=0 → 与 MIDI 路径**分叉**，测试断言分叉可检出（buggy 路径 != correct 路径）。
+**门禁洞点**：`menu_item_is_scalar` 原本把 ARPEGGIATOR/SEQUENCER 两个子菜单行（都带占位 id 0/sub 0）误判为标量 → 无重复控件守卫红（1/855）→ 修法=子菜单行非标量（`if(i.submenu) return false`），撤后全绿。
+**教训**：子菜单入口不是可编辑标量，duplicate-control 守卫必须跳过它，否则两行同占位 id 被误报为双控件。
+
+**FINDINGS（不猜填）**：pressure 映射曲线=linear 占位、输出 trim=仿射占位、encoder step 每项=占位（注明 PROVISIONAL）、dac_vref 只作 context 传递（无证据电压域效果就不改电压）、
+A/R 秒=registry norm 是 UI mapping。**校准多点 0/2/5/8V 分段不可表示**：冻结 registry 每输出只有一个标量（calibration_v_oct/pressure），不扩参数则 4 点分段装不下 → FINDINGS。
+**门禁**：本机 ctest **37/37**、core_headers **90** tracked file 全绿（+keyboard_display/menu/input_normalization/output_calibration.h + 两测试）、regen zero-diff / id-stability / evidence_refs / evidence_layout / spike_clean 全绿；
+`--require-full` 按设计红（12 个声明 gap，PR#2 merge 门，非回归）。main 未动，无 PR#2。**P4 全片收官**，等 @Claude P4 出口裁决。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
