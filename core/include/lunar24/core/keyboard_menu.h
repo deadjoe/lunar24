@@ -335,7 +335,8 @@ inline double read_item_value(const DeviceStateV1& state, const KeyboardMenuItem
     case MenuStore::GlobalSettings:
     case MenuStore::PresetAction:
     case MenuStore::CalibrationAction:
-      return 0.0;  // no single scalar value to read
+    default:
+      return 0.0;  // no single scalar value to read (or an out-of-declared-enum value)
   }
 }
 
@@ -439,7 +440,7 @@ class KeyboardMenuNav {
     KeyboardDisplay d;
     d.segment = static_cast<std::uint8_t>(page_);
     d.cursorRow = cursorRow_;
-    d.rowCount = menu_page_row_count(page_);
+    d.rowCount = static_cast<std::uint8_t>(menu_page_row_count(page_));
     d.editing = editing_;
     d.isCalibration = calibration_;
     d.title = title;
