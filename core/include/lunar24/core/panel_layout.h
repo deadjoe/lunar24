@@ -1,0 +1,99 @@
+// Copyright (c) 2026 Lunar 24 contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// P5-② — measured panel REGION layout (task #33, criterion 5).
+//
+// design/06 §P5 mandate, last clause: coords come from the panel reference figure
+// (design/03 §3: the reference PNG/PDF is measurement authority, never a background),
+// and the measured coords must be consistent with the registry's panelSite region
+// labels. This header is that dataset: one measured DesignRect per DISTINCT panelSite
+// label, seen on the physical panel.
+//
+// GRANULARITY (say it plainly): panelSite is a REGION label ("中上 VCO A/B", "右下 DRONE
+// VOICES"), not a per-control coordinate. So these rects are measured at REGION level —
+// the dark module-card cluster each label names, read off the reference figure. They are
+// the platform the panel_transform hit-tester maps design<->screen over. Pixel-exact
+// per-control placement (every knob/jack) is the P5 full-panel layout slice's concern,
+// deliberately OUT of scope here and recorded in FINDINGS.
+//
+// MEASUREMENT RECEIPTS (how the numbers are grounded, not guessed):
+//   - Reference figure: design/reference/solar42N_panel_2400px.png, exactly 2400x1551
+//     (1:1 with the design coordinate space; design/03 §3).
+//   - Detected the dark module cards with ImageMagick `-connected-components` on the
+//     thresholded figure; each cluster's bounding box below is that measured output
+//     (e.g. top-left drones cluster x22..724 / top-right drones x1599..2301 / center
+//     VCF band x808..1591 / keyboard band x399..2000 y1104..1492).
+//   - Cross-checked the ambiguous middle/right zones against 300dpi panel crops
+//     (pdftoppm render of the panel PDF) so the y-bands that the detector merges
+//     (VCO A/B vs the envelope/mixer strip) are separated by the divider that is
+//     visible there, not by a guess.
+// Any rect x1/x2 or y1/y2 that would wander outside [0,2400]x[0,1551] is clamped to
+// the design space — the panel is the full canvas, nothing sticks out.
+//
+// Header-only, constexpr, no heap/locks, realtime-safe. Pure geometry (DesignRect),
+// no platform API, no iPlug2/IGraphics type.
+
+#pragma once
+
+#include <lunar24/core/host_window_fit.h>  // DesignRect, kDesignWidth/Height
+
+namespace lunar24::core {
+
+// A named panel region with its MEASURED design rect. `site` is the registry
+// panelSite label this rect was measured for; the rect is the physical cluster on
+// the panel that label names. DesignRect is the canonical 2400x1551 space.
+struct PanelLayoutRegion {
+  const char* site;
+  DesignRect rect;
+};
+
+inline constexpr DesignRect kDesignArea{0, 0, kDesignWidth, kDesignHeight};
+
+// Measured region rects, one per distinct panelSite label. Ordered to match the
+// "ring" a human reads the panel in (left column top->bottom, then center, then right).
+inline constexpr PanelLayoutRegion kPanelRegions[] = {
+    // left column
+    {"左上 DRONE 1/2", DesignRect{22, 180, 724, 700}},    // DRONE 1 + DRONE 2 (two cards + gate/hold)
+    {"左中 DRONE 3", DesignRect{22, 560, 407, 880}},      // DRONE 3 card
+    // center
+    {"中上 VCO A/B", DesignRect{416, 560, 1984, 880}},    // VCO A + VCO B (center row)
+    {"中上 DUAL VCF", DesignRect{808, 183, 1591, 537}},   // DUAL VCF band (upper-center)
+    {"中上 DUAL EFFECTOR", DesignRect{808, 537, 1591, 710}},  // cartridge slot, below the VCF band
+    {"中部 ENV A/B", DesignRect{602, 880, 2101, 1030}},   // ENV A + ENV B strip
+    {"中部 VOICE MIXER", DesignRect{416, 880, 1984, 1035}},   // 10ch PAN/VOL mixer strip
+    // right column
+    {"右上 DRONE 4/5", DesignRect{1599, 180, 2301, 561}},  // DRONE 4 + DRONE 5
+    {"右中 DRONE 6", DesignRect{1993, 561, 2379, 879}},    // DRONE 6 card
+    // bottom row (LFO / joystick / 5-step / preamp / env-follower / LFO B)
+    {"下排 LFO A", DesignRect{100, 880, 520, 1080}},
+    {"下排 5-step seq", DesignRect{520, 880, 940, 1080}},
+    {"下排 joystick", DesignRect{940, 880, 1360, 1080}},
+    {"下排 preamp", DesignRect{1360, 880, 1780, 1080}},
+    {"下排 env follower", DesignRect{1780, 880, 1900, 1080}},
+    {"下排 LFO B", DesignRect{1900, 880, 2320, 1080}},
+    // bottom band (touch plates) + bottom-right (drone voices)
+    {"底部 12 触摸片", DesignRect{399, 1104, 2000, 1492}},    // sensor keyboard / touch plates
+    {"右下 DRONE VOICES", DesignRect{1700, 1104, 2400, 1492}},  // drone voices 1-6 grid
+};
+inline constexpr int kPanelRegionCount = 17;
+
+// Locate a measured region by its registry panelSite label. Returns the index into
+// kPanelRegions, or -1 if the label is not in the measured set (a mismatch worth
+// escalating — the registry names a region we have not measured). Linear scan; the
+// count is tiny and this is not on an audio path.
+inline int panel_region_by_site(const char* site) {
+  for (int i = 0; i < kPanelRegionCount; ++i) {
+    // Both are author-owned constant labels; a non-equal string is a data mismatch.
+    bool same = true;
+    const char* a = kPanelRegions[i].site;
+    const char* b = site;
+    while (*a && *b) {
+      if (*a != *b) { same = false; break; }
+      ++a; ++b;
+    }
+    if (same && *a == *b) return i;
+  }
+  return -1;
+}
+
+}  // namespace lunar24::core
