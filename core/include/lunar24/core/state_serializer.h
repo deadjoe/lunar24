@@ -499,6 +499,16 @@ inline bool encode_device_state(const DeviceStateV1& state, std::uint8_t* out,
       for (std::uint32_t k = 0; k < f.count; ++k) put_f32(out + off + k * 4u, state.keyboardPushbutton[k]);
     } else if (n == "keyboard_clock_selectors") {
       for (std::uint32_t k = 0; k < f.count; ++k) put_u8(out + off + k, state.keyboardClockSelectors[k]);
+    } else if (n == "keyboard_seq_current_r") {
+      write_keyboard_seq(out + off, state.keyboardSeqCurrentR);
+    } else if (n == "keyboard_scale_editor_r") {
+      put_u16(out + off, state.keyboardScaleEditorR);
+    } else if (n == "keyboard_plate_tune_r") {
+      for (std::uint32_t k = 0; k < f.count; ++k) put_f32(out + off + k * 4u, state.keyboardPlateTuneR[k]);
+    } else if (n == "keyboard_pushbutton_r") {
+      for (std::uint32_t k = 0; k < f.count; ++k) put_f32(out + off + k * 4u, state.keyboardPushbuttonR[k]);
+    } else if (n == "keyboard_clock_selectors_r") {
+      for (std::uint32_t k = 0; k < f.count; ++k) put_u8(out + off + k, state.keyboardClockSelectorsR[k]);
     }
     off += storage_field_bytes(f);
   }
@@ -561,6 +571,16 @@ inline bool decode_device_state(const std::uint8_t* in, std::size_t size,
       for (std::uint32_t k = 0; k < f.count; ++k) state.keyboardPushbutton[k] = get_f32(in + off + k * 4u);
     } else if (n == "keyboard_clock_selectors") {
       for (std::uint32_t k = 0; k < f.count; ++k) state.keyboardClockSelectors[k] = get_u8(in + off + k);
+    } else if (n == "keyboard_seq_current_r") {
+      read_keyboard_seq(in + off, &state.keyboardSeqCurrentR);
+    } else if (n == "keyboard_scale_editor_r") {
+      state.keyboardScaleEditorR = get_u16(in + off);
+    } else if (n == "keyboard_plate_tune_r") {
+      for (std::uint32_t k = 0; k < f.count; ++k) state.keyboardPlateTuneR[k] = get_f32(in + off + k * 4u);
+    } else if (n == "keyboard_pushbutton_r") {
+      for (std::uint32_t k = 0; k < f.count; ++k) state.keyboardPushbuttonR[k] = get_f32(in + off + k * 4u);
+    } else if (n == "keyboard_clock_selectors_r") {
+      for (std::uint32_t k = 0; k < f.count; ++k) state.keyboardClockSelectorsR[k] = get_u8(in + off + k);
     }
     off += storage_field_bytes(f);
   }

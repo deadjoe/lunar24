@@ -120,7 +120,7 @@ inline constexpr std::uint32_t kKeyboardPresetRecordBytes = 487u;  // 247 (v2, l
 inline constexpr std::uint32_t kKeyboardSettingsRecordBytes = 2u;  // pressure behaviour(1) + pressure output(1)
 inline constexpr std::uint32_t kSequencerPhysicalBytes = 16u;    // reserved until the sequencer lands
 inline constexpr std::uint32_t kKeyboardSeqRecordBytes = kKeyboardSeqBytes;  // 16 steps x 6 bytes
-inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 3u;
+inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 4u;
 inline constexpr std::uint32_t kDeviceStorageInitialRevision = 0u;
 
 // One KeyboardSeqStep's machine-readable interior (component of a seq record).
@@ -244,6 +244,14 @@ inline constexpr StorageField kDeviceStorageFields[] = {
     {"keyboard_plate_tune",      StorageFieldKind::array,   StorageFieldType::f32, StorageEncoding::binary, kKeyboardPlateTuneCount, 0u, 2u, {}},
     {"keyboard_pushbutton",      StorageFieldKind::array,   StorageFieldType::f32, StorageEncoding::binary, kKeyboardPushbuttonCount, 0u, 2u, {}},
     {"keyboard_clock_selectors", StorageFieldKind::array,   StorageFieldType::u8,  StorageEncoding::binary, 4u,  0u, 2u, {}},
+    // P4-③ right-bank mirrors of the five live fields above (L1, versionFrom=4).
+    // Appended, never reordered. Same shape/size as the left field; consumed only
+    // under split, when the right-side performance surface reads its own bank.
+    {"keyboard_seq_current_r",    StorageFieldKind::record, StorageFieldType::u8,  StorageEncoding::binary, kKeyboardSeqStepCount, kKeyboardSeqStepBytes, 4u, kKeyboardSeqStepLayout},
+    {"keyboard_scale_editor_r",   StorageFieldKind::scalar, StorageFieldType::u16, StorageEncoding::binary, 1u,  0u, 4u, {}},
+    {"keyboard_plate_tune_r",     StorageFieldKind::array,  StorageFieldType::f32, StorageEncoding::binary, kKeyboardPlateTuneCount, 0u, 4u, {}},
+    {"keyboard_pushbutton_r",     StorageFieldKind::array,  StorageFieldType::f32, StorageEncoding::binary, kKeyboardPushbuttonCount, 0u, 4u, {}},
+    {"keyboard_clock_selectors_r",StorageFieldKind::array,  StorageFieldType::u8,  StorageEncoding::binary, 4u,  0u, 4u, {}},
 };
 
 inline constexpr std::uint32_t kDeviceStorageFieldCount =
@@ -264,13 +272,16 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // (4 presets: 4 x 239 = 956) and the five live keyboard non-scalar fields were
 // appended (96 + 2 + 48 + 32 + 4 = 182). It rose 4979 -> 5939 for P4-③ (per-side,
 // msg 60df2e43 + e7ad49ec): each preset grew 247 -> 487 bytes (4 x 240 = 960),
-// the right half-bank being appended as a contiguous 240-byte region.
+// the right half-bank being appended as a contiguous 240-byte region. It rose
+// 5939 -> 6121 for P4-③ live-state L1 (design/00 §2d, msg 695564a7): the five
+// live non-scalar / no-domain-selector fields gained a right-bank `_r` mirror
+// (the same 96 + 2 + 48 + 32 + 4 = 182 bytes again, appended, versionFrom=4).
 inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageSchemaVersion,
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    5939u,
+    6121u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).
@@ -451,6 +462,20 @@ struct DeviceStateV1 {
   float keyboardPlateTune[kKeyboardPlateTuneCount] = {};
   float keyboardPushbutton[kKeyboardPushbuttonCount] = {};
   std::uint8_t keyboardClockSelectors[4] = {};  // {arp_clock, arp_rhythm, seq_clock, seq_rhythm}
+
+  // P4-③ RIGHT half-bank mirror of the five live non-scalar / no-domain-selector
+  // fields above (design/00 §2d L1: the v2 field is the left/base, the right bank
+  // appends `_r` — the whole 182-byte copy is NOT a separate struct, which would be
+  // a second source of truth). Under single/twin these are never read (both sides
+  // use the left bank); under split the right-side performance surface reads these.
+  // The five no-domain selectors and the non-scalars intentionally NEVER carry a
+  // ParameterId, so they cannot be a per-side *scalar* bank — they are mirrored
+  // whole, exactly like the preset right half-bank.
+  KeyboardSeq keyboardSeqCurrentR;
+  std::uint16_t keyboardScaleEditorR = 0;   // 12-bit scale-editor mask
+  float keyboardPlateTuneR[kKeyboardPlateTuneCount] = {};
+  float keyboardPushbuttonR[kKeyboardPushbuttonCount] = {};
+  std::uint8_t keyboardClockSelectorsR[4] = {};  // {arp_clock, arp_rhythm, seq_clock, seq_rhythm}
 
   // Dual-effector cartridge/program selection (left and right slots).
   EffectorSelection leftEffector;

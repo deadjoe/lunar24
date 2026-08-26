@@ -74,6 +74,34 @@ static void fill_state(core::DeviceStateV1& s) {
   }
   s.keyboardSettings.pressureBehaviour = 7u;
   s.keyboardSettings.pressureOutput = 9u;
+
+  // Live keyboard non-scalar + no-domain selectors (LEFT bank). Left {..L} and the
+  // P4-③ RIGHT `_r` mirror use DISTINCT values so a serializer that collapses the
+  // two banks (or drops the `_r` tail) breaks the fidelity check rather than
+  // passing on a value that happens to coincide.
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    s.keyboardSeqCurrent.steps[i].note = static_cast<std::uint8_t>(1u + i);
+    s.keyboardSeqCurrent.steps[i].value = 0.25f + static_cast<float>(i);
+    s.keyboardSeqCurrent.steps[i].gate = (i % 2u) ? 1u : 0u;
+    s.keyboardSeqCurrentR.steps[i].note = static_cast<std::uint8_t>(100u + i);
+    s.keyboardSeqCurrentR.steps[i].value = 10.5f + static_cast<float>(i);
+    s.keyboardSeqCurrentR.steps[i].gate = (i % 3u) ? 1u : 0u;
+  }
+  s.keyboardScaleEditor = 0x0B3Fu;
+  s.keyboardScaleEditorR = 0xC40Du;
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i) {
+    s.keyboardPlateTune[i] = 0.5f + static_cast<float>(i);
+    s.keyboardPlateTuneR[i] = 50.5f + static_cast<float>(i);
+  }
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i) {
+    s.keyboardPushbutton[i] = 0.75f + static_cast<float>(i);
+    s.keyboardPushbuttonR[i] = 75.5f + static_cast<float>(i);
+  }
+  for (std::uint32_t i = 0; i < 4u; ++i) {
+    s.keyboardClockSelectors[i] = static_cast<std::uint8_t>(10u + i);
+    s.keyboardClockSelectorsR[i] = static_cast<std::uint8_t>(90u + i);
+  }
+
   s.leftEffector.program = core::ProgramId{0x010203u};
   s.rightEffector.program = core::ProgramId{0x040506u};
   for (std::uint32_t i = 0; i < core::kSequencerPhysicalBytes; ++i)
@@ -89,6 +117,16 @@ static std::uint64_t dbits(double d) {
   std::uint64_t u;
   std::memcpy(&u, &d, 8u);
   return u;
+}
+
+// Bit-exact compare of one 16-step KeyboardSeq (note u8, value f32, gate u8).
+static bool seq_identical(const core::KeyboardSeq& a, const core::KeyboardSeq& b) {
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    if (a.steps[i].note != b.steps[i].note) return false;
+    if (fbits(a.steps[i].value) != fbits(b.steps[i].value)) return false;
+    if (a.steps[i].gate != b.steps[i].gate) return false;
+  }
+  return true;
 }
 
 // Bit-exact field compare. Deliberately NOT memcmp (padding) so it compares the
@@ -118,6 +156,22 @@ static bool states_identical(const core::DeviceStateV1& a, const core::DeviceSta
   }
   if (a.keyboardSettings.pressureBehaviour != b.keyboardSettings.pressureBehaviour) return false;
   if (a.keyboardSettings.pressureOutput != b.keyboardSettings.pressureOutput) return false;
+  if (!seq_identical(a.keyboardSeqCurrent, b.keyboardSeqCurrent)) return false;
+  if (!seq_identical(a.keyboardSeqCurrentR, b.keyboardSeqCurrentR)) return false;
+  if (a.keyboardScaleEditor != b.keyboardScaleEditor) return false;
+  if (a.keyboardScaleEditorR != b.keyboardScaleEditorR) return false;
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i) {
+    if (fbits(a.keyboardPlateTune[i]) != fbits(b.keyboardPlateTune[i])) return false;
+    if (fbits(a.keyboardPlateTuneR[i]) != fbits(b.keyboardPlateTuneR[i])) return false;
+  }
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i) {
+    if (fbits(a.keyboardPushbutton[i]) != fbits(b.keyboardPushbutton[i])) return false;
+    if (fbits(a.keyboardPushbuttonR[i]) != fbits(b.keyboardPushbuttonR[i])) return false;
+  }
+  for (std::uint32_t i = 0; i < 4u; ++i) {
+    if (a.keyboardClockSelectors[i] != b.keyboardClockSelectors[i]) return false;
+    if (a.keyboardClockSelectorsR[i] != b.keyboardClockSelectorsR[i]) return false;
+  }
   if (a.leftEffector.program != b.leftEffector.program) return false;
   if (a.rightEffector.program != b.rightEffector.program) return false;
   for (std::uint32_t i = 0; i < core::kSequencerPhysicalBytes; ++i)
@@ -431,6 +485,50 @@ static void rtfs_discard(void* ctx, const char*) {
   static_cast<RtFs*>(ctx)->out.clear();
 }
 
+// P4-③ live `_r` mirror contract (design/00 §2d L1): the five right-bank live
+// fields are (1) an APPENDED block that never reorders, and (2) INDEPENDENT of the
+// left bank.
+//
+//   * Absolute tail anchor — the `_r` block begins exactly at the field-table
+//     offset walked the same way the encoder walks it, and its end lands exactly
+//     on totalBytesHint (the record tail). "Reordering" or "mid-insert" a `_r`
+//     field shifts these and reds.
+//   * Left/right independence — fill_state gives the two banks DISTINCT values, so
+//     a serializer that maps `_r` to the left field (or omits it) makes the
+//     decoded right bank read the LEFT value and this check reds.
+static void live_side_bank_is_tail_and_independent() {
+  // --- tail anchor: the `_r` block is a contiguous 182-byte tail of the record ---
+  const std::uint32_t seqROff = storage_offset_of("keyboard_seq_current_r");
+  const std::uint32_t clockROff = storage_offset_of("keyboard_clock_selectors_r");
+  CHECK(seqROff != 0u);   // a real offset, not the "not found" fallback
+  CHECK(clockROff != 0u);
+  CHECK(seqROff + 96u == storage_offset_of("keyboard_scale_editor_r"));   // seq_r then scale_r
+  CHECK(clockROff + 4u == core::kDeviceStorageSchema.totalBytesHint);     // clock_r is the record tail
+  // The whole right bank = tail_end - tail_start, and it is exactly the 182 bytes
+  // that the five left live fields occupied (96 + 2 + 48 + 32 + 4).
+  CHECK(core::kDeviceStorageSchema.totalBytesHint - seqROff == 182u);
+  CHECK(storage_offset_of("keyboard_clock_selectors_r")
+        - storage_offset_of("keyboard_seq_current_r") == 182u - 4u);
+
+  // --- wire-anchor: a distinctive seq_r step lands at the absolute offset ---
+  core::DeviceStateV1 s;
+  fill_state(s);
+  std::vector<std::uint8_t> bytes(core::kDeviceStorageSchema.totalBytesHint);
+  CHECK(core::encode_device_state(s, bytes.data(), bytes.size()));
+  CHECK(core::get_u8(bytes.data() + seqROff) == s.keyboardSeqCurrentR.steps[0].note);
+  CHECK(core::get_f32(bytes.data() + seqROff + 1u) == s.keyboardSeqCurrentR.steps[0].value);
+  CHECK(core::get_u16(bytes.data() + storage_offset_of("keyboard_scale_editor_r"))
+        == s.keyboardScaleEditorR);
+
+  // --- independence: round-trip keeps left and right distinct ---
+  core::DeviceStateV1 back;
+  CHECK(core::decode_device_state(bytes.data(), bytes.size(), &back));
+  CHECK(states_identical(s, back));
+  CHECK(back.keyboardSeqCurrent.steps[0].value == 0.25f);   // left bank
+  CHECK(back.keyboardSeqCurrentR.steps[0].value == 10.5f);  // right bank (distinct)
+  CHECK(back.keyboardClockSelectors[0] != back.keyboardClockSelectorsR[0]);
+}
+
 static void persistence_never_on_audio_thread() {
   core::DeviceStateV1 s;
   fill_state(s);
@@ -463,6 +561,7 @@ int main() {
   tail_dropping_debounce_is_caught();
   round_trip_fidelity();
   omitted_field_breaks_round_trip();
+  live_side_bank_is_tail_and_independent();
   persistence_never_on_audio_thread();
   return ::test::finish("state_persistence");
 }
