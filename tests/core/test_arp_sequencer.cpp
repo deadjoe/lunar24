@@ -20,11 +20,16 @@
 // advancement on the clock, the per-side independence, and the mandate-#4 divergence
 // — not invented exact curves.
 //
-// Per @Claude (mandate #4) the negative is the real bypass path: the choke point
-// protected here is the SIDE READ (read_side_scalar / side_bank resolution). The
-// genuine mistake it prevents is reading the global/shared bank for a split-RIGHT
-// side (forgetting the right bank). A rogue reader that ignores the resolved side
-// reads bank 0 and must produce a divergent arp/seq control stream.
+// Per @Claude (mandate #4) the negative is the real bypass path. Two are pinned here:
+//   * the SIDE READ (read_side_scalar / side_bank resolution) — the genuine mistake it
+//     prevents is reading the global/shared bank for a split-RIGHT side (forgetting the
+//     right bank); a rogue reader that ignores the resolved side reads bank 0 and must
+//     produce a divergent arp/seq control stream (side_drop, below);
+//   * the NO-GLOBAL-SINGLETON hold — the two sides must not share mutable state. The
+//     independence test holds DIFFERENT pitches on both sides (both in arpeggiator mode,
+//     so both write the chord buffer); if the chord buffer were static/shared, left would
+//     read the right side's pitch and emit the wrong note (see per_side_instantiation_
+//     independent, Leg B).
 
 #include "mini_test.h"
 
@@ -241,32 +246,75 @@ static void seq_continuous_cv_always_gates() {
 // ----------------------------------------------- per-side, no global singleton --
 
 static void per_side_instantiation_independent() {
-  // Two sides of the same device: LEFT arpeggiates, RIGHT is a plain keyboard. Each
-  // owns its own ArpSeq instance with its own settings (no shared global).
-  core::ArpSeqParams left = base_params();
-  left.mode = 1;  // arpeggiator
-  left.arpDirection = 0;
-  core::ArpSeqParams right = base_params();
-  right.mode = 0;  // keyboard
+  // Two sides of the same device. Each owns its own ArpSeq instance (no shared global).
+  // Two independent legs, because they test two different properties:
+  //
+  //   Leg A (mode routing, L724 visual): LEFT arpeggiates, RIGHT is a plain keyboard.
+  //     Different *settings* -> different output. This is the "split twin: one side
+  //     arpeggiates, the other plays a keyboard" routing concern.
+  //   Leg B (STATE isolation, the global-singleton negative): the two instances must
+  //     not share any mutable state. This is what makes a `static` hold buffer visible
+  //     (@Claude's mutation: `double chord_[..]` -> `static inline` so ALL ArpSeq share
+  //     ONE chord buffer). Both sides must WRITE that buffer and they must hold
+  //     DIFFERENT pitches. If both held the same pitch a shared buffer would write the
+  //     same value at index 0 and the corruption would be masked — the classic "test
+  //     the property with an input that can't expose it" falseness. With left holding C
+  //     and right holding G, a shared buffer makes left read G on its next clock and
+  //     emit G+interval instead of C+interval (red).
+  {
+    // Leg A: LEFT arpeggiator, RIGHT keyboard passthrough.
+    core::ArpSeqParams left = base_params();
+    left.mode = 1;  // arpeggiator
+    left.arpDirection = 0;
+    core::ArpSeqParams right = base_params();
+    right.mode = 0;  // keyboard
 
-  core::ArpSeq sl, sr;
-  sl.configure(left, 48000);
-  sr.configure(right, 48000);
+    core::ArpSeq sl, sr;
+    sl.configure(left, 48000);
+    sr.configure(right, 48000);
 
-  Recorder rl, rr;
-  note_on(sl, rl, 0.0 / 12.0);
-  note_on(sr, rr, 0.0 / 12.0);
-  clock_edge(sl, rl);
-  clock_edge(sr, rr);
+    Recorder rl, rr;
+    note_on(sl, rl, 0.0 / 12.0);
+    note_on(sr, rr, 0.0 / 12.0);
+    clock_edge(sl, rl);
+    clock_edge(sr, rr);
 
-  CHECK_EQ(rl.count(core::ControlEventKind::pitch), 1u);   // left arpeggiates
-  CHECK_EQ(rl.count(core::ControlEventKind::gate_on), 1u);
-  CHECK_EQ(rr.count(core::ControlEventKind::pitch), 1u);   // right: plate pitch passthrough
-  CHECK_EQ(rr.count(core::ControlEventKind::gate_on), 1u);
-  // The right keyboard mode forwarded the plate pitch (0 V) — DIFFERENT from the left
-  // arp interval-shifted note. Verifies the two instances are genuinely independent.
-  CHECK_TRUE(rl.near(rl.pitchAt(0), core::arp_interval_semitones(left.arpInterval) / 12.0));
-  CHECK_TRUE(rr.near(rr.pitchAt(0), 0.0));
+    CHECK_EQ(rl.count(core::ControlEventKind::pitch), 1u);   // left arpeggiates
+    CHECK_EQ(rl.count(core::ControlEventKind::gate_on), 1u);
+    CHECK_EQ(rr.count(core::ControlEventKind::pitch), 1u);   // right: plate pitch passthrough
+    CHECK_EQ(rr.count(core::ControlEventKind::gate_on), 1u);
+    CHECK_TRUE(rl.near(rl.pitchAt(0), core::arp_interval_semitones(left.arpInterval) / 12.0));
+    CHECK_TRUE(rr.near(rr.pitchAt(0), 0.0));
+  }
+  {
+    // Leg B: BOTH arpeggiators, holding DIFFERENT pitches, so a shared hold buffer is
+    // corrupted by the second side and the first side's next note is wrong. This is the
+    // negative that catches a global (static) chord buffer.
+    core::ArpSeqParams left = base_params();
+    left.mode = 1;  // arpeggiator (writes the chord buffer)
+    left.arpDirection = 0;
+    core::ArpSeqParams right = base_params();
+    right.mode = 1;  // arpeggiator (writes the chord buffer)
+    right.arpDirection = 0;
+
+    core::ArpSeq sl, sr;
+    sl.configure(left, 48000);
+    sr.configure(right, 48000);
+
+    Recorder rl, rr;
+    note_on(sl, rl, 0.0 / 12.0);   // LEFT holds C (0 V)
+    note_on(sr, rr, 7.0 / 12.0);   // RIGHT holds G (+7 semitones) — DIFFERENT pitch
+    clock_edge(sl, rl);
+    clock_edge(sr, rr);
+
+    const double i0 = core::arp_interval_semitones(left.arpInterval) / 12.0;
+    // LEFT (correct) = C + interval; RIGHT (correct) = G + interval.
+    CHECK_TRUE(rl.near(rl.pitchAt(0), 0.0 + i0));
+    CHECK_TRUE(rr.near(rr.pitchAt(0), 7.0 / 12.0 + i0));
+    // The two streams differ — a shared chord buffer makes left read chord_[0]==G and
+    // emit G+interval instead of C+interval, so the equal-pitch values are the tell.
+    CHECK_TRUE(!rl.near(rl.pitchAt(0), rr.pitchAt(0)));
+  }
 }
 
 // ------------------------------------------------- mandate #4: side-drop bypass --

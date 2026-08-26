@@ -243,6 +243,12 @@ Single/Twin/Split 值选器（→ keyboard_mode.h `mode_from_behaviour`）。`ar
 **负控 `side_drop`**：左 bank mode=0（keyboard）右 bank mode=2（sequencer）+ 更长 step；conforming reader 解右 bank、rogue 读 bank0 →
 mode/seq_len/gate 计数四处真红，撤后全绿。
 
+**无全局单例负控（@Claude msg fae330d9 指出原负控同音高=测不到全局单例）**：原 `per_side_instantiation_independent` 两侧 `note_on`
+用**同一音高**（都 0/12），`chord_` 若静态共享则两侧 index0 写同值、污染不可见（44 checks 全绿）。**修法=拆两腿**：
+Leg A 保留 "左 arp 右键盘直通" 的模式路由；**Leg B 两侧都 arpeggiator、持不同音**（左 C=0V 右 G=+7 半音）→ 共享 `chord_` 时右写 index0 变 G、
+左下一 clock 读出 G 发 G+interval（正确应 C+interval）→ **@Claude 突变 `chord_` static inline → 2/47 真红**（`rl.near(rl.pitchAt(0), 0.0+i0)` 312、
+`!rl.near(...,rr...)` 316），撤后 47 绿。**教训（本片第三次同类"用不能暴露错误的输入去测=没测"）**：状态隔离测试须让两侧**同时写入**且持**不同**值。
+
 **门禁**：本机 ctest **35/35**（executable 34→35，+test_arp_sequencer）、ASan **22/22** 内存错误零（macOS 无 LeakSanitizer）、
 regen zero-diff / id-stability / core_headers / spike_clean / evidence_refs / evidence_layout 全绿；`--require-full` 按设计红（12 个声明 gap，PR#2 merge 门，非回归）。
 main 未动，无 PR#2。**下一片 P4-④**：显示+encoder+校准（⑤）。
