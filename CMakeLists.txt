@@ -211,6 +211,29 @@ lunar_add_test(test_state_publish tests/core/test_state_publish.cpp)
 # memory_order). Both stay.
 if(CMAKE_CXX_FLAGS MATCHES "fsanitize=thread")
   lunar_add_test(test_state_publish_tsan tests/core/test_state_publish_tsan.cpp)
+  set_tests_properties(test_state_publish_tsan PROPERTIES
+    ENVIRONMENT "TSAN_OPTIONS=abort_on_error=0:exitcode=66")
+
+  # #37 close-out selftest: the SAME probe rebuilt with its pin guard short-circuited
+  # (-DLUNAR24_PROBE_SELFTEST in state_snapshot.h). It MUST report a TSan data race
+  # (exit 66) — the proof that the committed probe can actually fail. A detector that
+  # has never been shown to fire is not a detector. CTest inverts the expected
+  # non-zero exit via the expect_exit wrapper, so a race actually firing passes; a
+  # probe that stops detecting (exit 0) or a crash (any other code) fails, so a dead
+  # detector is caught rather than staying green. The selftest source is built as its
+  # own target because lunar_add_test does not accept compile definitions.
+  add_executable(test_state_publish_tsan_selftest
+    tests/core/test_state_publish_tsan.cpp)
+  target_link_libraries(test_state_publish_tsan_selftest PRIVATE lunar_core)
+  target_compile_definitions(test_state_publish_tsan_selftest PRIVATE
+    LUNAR24_PROBE_SELFTEST)
+  lunar_enable_warnings(test_state_publish_tsan_selftest)
+  add_test(NAME test_state_publish_tsan_selftest
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/expect_exit.py 66
+      $<TARGET_FILE:test_state_publish_tsan_selftest>)
+  set_tests_properties(test_state_publish_tsan_selftest PROPERTIES
+    ENVIRONMENT "TSAN_OPTIONS=abort_on_error=0:exitcode=66")
 endif()
 
 lunar_add_test(test_state_persistence tests/core/test_state_persistence.cpp)

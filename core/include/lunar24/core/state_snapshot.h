@@ -162,6 +162,18 @@ class StateSnapshotPool {
     std::uint32_t h = head_.load(std::memory_order_acquire);
     if (t >= h) return false;  // empty
     std::uint32_t slot = ring_[t % kSlots].load(std::memory_order_relaxed);
+#ifdef LUNAR24_PROBE_SELFTEST
+    // SELFTEST hook (probe-only): compile-time short-circuit of the pin guard that
+    // reproduces the PRE-FIX defect so the committed probe can PROVE it detects the
+    // race. recycleOne resets the slot unconditionally — even over a reader that is
+    // still pinned — which is exactly the write the guard must prevent. This block
+    // is off in the production build (no -DLUNAR24_PROBE_SELFTEST), so it never
+    // weakens the shipped pool; only the TSan selftest TU defines it.
+    snapshots_[slot] = Snapshot{};                                  // off-RT release
+    slotState_[slot].store(kIdle, std::memory_order_release);
+    tail_.store(t + 1, std::memory_order_release);
+    return true;
+#else
     int expect = 0;  // current + 0 readers
     if (!slotState_[slot].compare_exchange_strong(expect, kRetiring,
                                                   std::memory_order_acq_rel))
@@ -170,6 +182,7 @@ class StateSnapshotPool {
     slotState_[slot].store(kIdle, std::memory_order_release);
     tail_.store(t + 1, std::memory_order_release);
     return true;
+#endif
   }
 
   // Test helper: how many retired slots are parked but not yet reclaimed.

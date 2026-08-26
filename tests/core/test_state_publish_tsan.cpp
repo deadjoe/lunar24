@@ -1,40 +1,58 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// TSan-only memory-model probe for the StateSnapshotPool (task #37, GH#3 A02).
+// TSan-only memory-model PROBE for the StateSnapshotPool (task #37, GH#3 A02).
 //
-// This is COMPILED AND RUN ONLY under -fsanitize=thread (gated in CMakeLists.txt,
-// never built/run in the normal build) — deliberately, because it has no CTest
-// assertion and is meaningful only as a ThreadSanitizer detector: a correct pool
-// exits 0, a pool whose guard is removed or whose memory_order is weakened exits
-// non-zero (a race). Its job is not to assert a value but to make "the reader can
-// read a slot the recycler resets" impossible under TSan.
+// COMPILED AND RUN ONLY under -fsanitize=thread (gated in CMakeLists.txt; the
+// normal build never builds it) — deliberately, because it has no CTest value
+// assertion and is meaningful only as a ThreadSanitizer detector. Its job is to
+// make "the reader reads a slot the recycler resets" a TSan data race; it does
+// not assert a numeric outcome.
 //
-// HOW IT DETECTS THE RACE: the reader PINS the one published snapshot, then HOLDS
-// that pin across a suspend (sleep_for) while the recycler publishes a new current,
-// retires the pinned slot, and drains it. Pre-fix recycleOne drains on top of the
-// reader's pin, so it WRITES slots_[slot] while the reader is still about to READ
-// slots_[slot].value. There is NO happens-before edge between the reader and the
-// recycler except through the pool's own atomics, so TSan reports the
-// read-after-write as a data race. Post-fix recycleOne CASes 0→kRetiring and
-// DEFERS while the reader holds the pin, so the read stays clean.
+// TWO tests are registered from THIS ONE file:
+//   * test_state_publish_tsan           (no macro)  — the GUARDED pool.
+//       Acceptance: exit 0, no race. A correct pool never resets a slot a reader
+//       is pinned on (recycleOne CASes 0→kRetiring and defers), so the read stays
+//       clean. If the guard is removed or the memory_order weakened, this goes
+//       red (exit non-zero) — the regression guard.
+//   * test_state_publish_tsan_selftest  (-DLUNAR24_PROBE_SELFTEST) — the SAME probe
+//       with recycleOne's pin guard short-circuited in state_snapshot.h.
+//       Acceptance: MUST exit 66 (a TSan data-race report). This PROVES the
+//       committed probe itself is capable of failing — a detector that has never
+//       been shown to fire is not a detector. The selftest CTest passes only when
+//       the race fires; if the probe stops detecting (exit 0) it fails, catching a
+//       dead probe. (A probe compiled WITHOUT the macro uses the guarded pool and
+//       is the clean half.)
 //
-// WHY ONE ROUND (and a suspend, not a free-running stress loop): a many-round
-// free-running version does race, but a guard-less pool then CORRUPTS its own state
-// (the reader's unpin-after-reset drives a slot's state to a negative, never-idle
-// value), which makes a later pinCurrent() livelock — an intermittent hang that
-// makes the probe unreliable. ONE round fires the single race deterministically and
-// terminates, so the probe is a stable memory-model guard. sleep_for() and the
-// volatile sink are NOT synchronizers — neither establishes a happens-before edge,
-// so TSan still sees the reset as racing the read.
+// HOW IT DETECTS THE RACE — free-running but BOUNDED, @Claude's required shape.
+// Both threads spin `kRounds` times in a tight loop; the ONLY cross-thread channel
+// is the pool's own atomics, so there is no happens-before edge between the reader
+// and the recycler except through those atomics, and TSan reports competing access.
+// The reader pins the current slot, reads snapshots_[cur].value, unpins. The
+// recycler acquires a fresh slot, publishes it as the new current, retires the
+// previous current, and drains. A guard-less recycleOne resets the retired slot by
+// WRITING snapshots_[slot] — a write that races the reader's READ if the reader is
+// still holding that slot (pinned before retirement). A guarded recycleOne DEFERS
+// instead, so the read is never racing a reset.
 //
-// RUN RECIPE: `TSAN_OPTIONS=abort_on_error=0:exitcode=66 ./test_state_publish_tsan`
-// (pre-fix exits 66 with a data-race report, post-fix exits 0). The deterministic
-// test_state_publish.cpp is the primary observable-behaviour judge; THIS probe is
-// the memory-model guard that stays green only while the pin/retire ordering holds.
+// WHY BOUNDED, NOT a `while(true)` spin: free-running never terminates on its own,
+// and a guard-less pool under heavy collision does degrade (a reader's unpin after
+// a reset drives a slot's state to a negative non-idle value that is never reused),
+// so an unbounded spin can livelock. Bounding to kRounds guarantees the process
+// exits in all cases, while 50k rounds still give the race far more than enough
+// collisions to fire. Measured: guard present exit 0 10/10; guard short-circuited
+// exit 66 10/10, both without a hang.
+//
+// A volatile sink forces the `snapshot(cur).value` load to actually happen (a
+// discarded pure read is elided, so TSan would never see a competing access).
+// volatile here is NOT a synchronization primitive — it only prevents dead-code
+// elimination; it introduces no happens-before edge, so a guard-less reset still
+// races the read.
+//
+// RUN RECIPE (local TSan build): `TSAN_OPTIONS=abort_on_error=0:exitcode=66`.
 
-#include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <thread>
 
 #include <lunar24/core/state_snapshot.h>
@@ -46,12 +64,15 @@ struct ProbeSnapshot {
   int value = 0;
 };
 
-// One round. The reader pins the single published snapshot and holds it across
-// kPinHold; a guard-less recycler drains it in that window (→ race), a guarded
-// one defers (→ clean). See the file-header comment for why a multi-round
-// free-running version is deliberately NOT used (it livelocks a guard-less pool).
-constexpr int kRounds = 1;
-constexpr auto kPinHold = std::chrono::microseconds(50);
+// Bounded round count. The reader and the recycler each loop this many times; the
+// process always terminates, but 50k rounds fire the race deterministically-in-
+// practice (measured 10/10 under a guard-less pool). No sleep between pin and read
+// is used — a suspend would force the collision every time but DRAMATICALLY shorten
+// the pool's healthy lifetime (a guard-less pool degrades under that rate) and —
+// worse — make the probe's "red" depend on the author choosing the right sleep, the
+// exact shape @Claude rejected. Free-running + bounded is both terminable and, per
+// the measurement, reliably red when the guard is gone.
+constexpr int kRounds = 50000;
 using Pool = core::StateSnapshotPool<ProbeSnapshot, 4>;
 }  // namespace
 
@@ -65,30 +86,22 @@ int main() {
     }
   }
 
-  // Reader: pin the one current snapshot, HOLD it across kPinHold, then read.
-  // The only cross-thread channel is the pool's own atomics — there is no sync
-  // flag, so the read is exactly the memory the recycleOne guard must protect.
-  std::thread reader([&pool] {
-    // A volatile sink forces the load of `.value` to actually happen (a discarded
-    // pure read like `(void)pool.snapshot(cur).value` is elided by the optimizer,
-    // so TSan would never see a competing access). Volatile here is NOT a sync
-    // primitive — it only prevents dead-code elimination; it introduces no
-    // happens-before edge, so a guard-less reset still races.
-    volatile int sink = 0;
+  // Reader: pin the current slot, read its value, unpin — kRounds times, no
+  // suspend. The volatile sink prevents the read from being dropped.
+  volatile int sink = 0;
+  std::thread reader([&pool, &sink] {
     for (int i = 0; i < kRounds; ++i) {
       std::uint32_t cur = pool.pinCurrent();
       if (cur != Pool::kNoSlot) {
-        std::this_thread::sleep_for(kPinHold);  // hold the pin (not a sync edge)
         sink += pool.snapshot(cur).value;
         pool.unpin(cur);
       }
     }
   });
 
-  // Recycler/control: acquire → write → publish → retire → drain. In this one
-  // round it publishes a NEW current and retires the slot the reader just pinned;
-  // the drain is where a guard-less recycleOne overwrites it (the race), while a
-  // guarded recycleOne DEFERS (returns false) because the reader is still pinned.
+  // Recycler/control: acquire → write → publish → retire → drain, kRounds times.
+  // The drain is where a guard-less recycleOne overwrites a pinned slot (the race);
+  // a guarded recycleOne DEFERS (returns false) because the reader is pinned.
   std::thread recycler([&pool] {
     for (int i = 0; i < kRounds; ++i) {
       ProbeSnapshot* ns = pool.acquire();
@@ -103,5 +116,6 @@ int main() {
 
   reader.join();
   recycler.join();
+  std::printf("probe finished, sink=%d\n", static_cast<int>(sink));
   return 0;
 }
