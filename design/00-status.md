@@ -112,6 +112,20 @@ encode/decode 各加分支。测试：`fill_state`/`states_identical` 现覆盖�
 - **A 镜像全数组**：加 `double parametersRight[kDeviceParamCapacity]`。bank[0]=parameters（左/共享），bank[1]=parametersRight。id 直索引零映射，但 +3392B、~394 个非-keyboard 槽"可被编辑"（其实从不读）、易误读"右份有整套参数"。
 - **B 紧凑 keyboard 标量 bank（我推荐）**：加 `float keyboardScalarRight[N]`（N=keyboard_params 中**带 ParameterId 的标量**，即 mode/arp×/seq×/portamento×/vibrato×/pressure×/quantise_load_scale/root_note/pressure_output，≈22）+ 一张 `ParameterId→index` 映射。bank[0]=`parameters[ParameterId]`（左/共享，**不变，无双重真相**），bank[1]=`keyboardScalarRight`。精确（只有 keyboard 参数按侧）、便宜、符合 L1"左在原 bit / 右在 `_r`"与 preset 的紧凑侧 bank。待定：`pressure_output` 是否也按侧（preset 已按侧 pressure_output@5+`_r`@247，但 live `KeyboardSettings` 目前把 output 当全局壳值）。
 
+## 2e. live 标量 bank 裁决（2026-08-26）
+
+**选 B（紧凑 keyboard 标量 bank），不选 A（镜像整个 `parameters[]`）。**
+理由不是省字节：A 会让右岸凭空多出 ~394 个**非 keyboard** 参数槽（VCO/滤波/效果器…），
+**这台琴分裂的是键盘不是整机** ⇒ A 存了一个不存在的东西，与 polarity 反相／bp_lp morph 同族。
+
+**`pressure_output` 按侧**（它在冻结的 31 参清单内，`behaviour` 是唯一全局项）。
+
+🔑 **由此立的不变量（比逐个参数拍板管用）**：
+**同一参数在 preset 里按侧，在 live 里就必须按侧；反之亦然。**
+否则 `load preset → live` 会丢掉右侧值，save/load 变成有损——而无损正是 P2-⑤ 持久化要保证的。
+**负控＝某参数 live 全局而 preset 按侧 → preset→live→preset 往返丢右侧值 → 红。**
+⇒ 以后新参数的按侧与否由这条自动对齐，不必逐个上报裁决。
+
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
 按"查不出来是合法结论"处理：实现按冻结 registry 走，冲突标 UNEVIDENCED 留在 FINDINGS，
