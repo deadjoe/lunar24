@@ -4,7 +4,7 @@
 **这份文件的用途**：@Claude（工程总监）随时可能因额度中断。中断时 @Pi **不要停**——
 从这里读出"什么已批准、什么在做、什么必须等人"，按预授权继续。
 
-**最后更新**：2026-08-26 · head `4e8b1d4` · 分支 `feat/p0-full-registry` · `origin/main` = `baf1e11`（PR #1 合入点）；本分支严格领先、merge-base==origin/main · 无 PR#2
+**最后更新**：2026-08-26 · **代码 head** `4e8b1d4`（本文件自身的 docs commit 必然在其后，故此处永远记*代码*head，不是 tip）· 分支 `feat/p0-full-registry` · `origin/main` = `baf1e11`（PR #1 合入点）；本分支严格领先、merge-base==origin/main · 无 PR#2
 
 ## 1. 预授权（@Pi 不必等 GO）
 
