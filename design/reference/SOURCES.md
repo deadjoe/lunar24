@@ -1,11 +1,8 @@
 # 参考资料索引（Lunar 24）
 
 ## ⚠️ 原始 PDF 的真实位置
-bearbone 说在 `~/Downloads/Solar 42N/`，**实际不在那里**。真实路径是：
-- `/Users/joe/Downlads/solar42N_instruct_08_04_v15.pdf` —— 用户手册，**28 页**，75.9 MB
-- `/Users/joe/Downlads/Solar42_panel_42n_04 copy.pdf` —— 面板高清图，**1 页**，3.6 MB
-
-**注意目录名是 `Downlads`（少一个 o），不是 `Downloads`。** 新下载的资料也放这里，文件名写清楚。
+- `/Users/joe/Downloads/Solar_42N/solar42N_instruct_08_04_v15.pdf` —— 用户手册，**28 页**，75.9 MB
+- `/Users/joe/Downloads/Solar_42N/Solar42_panel_42n_04 copy.pdf` —— 面板高清图，**1 页**，3.6 MB
 
 ## 本目录已生成的衍生件
 - `solar42N_manual_text.txt` —— 手册全文（`pdftotext -layout` 提取，102,532 字符）
