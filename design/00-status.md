@@ -35,10 +35,10 @@ PR #2 将是干净合并（无冲突）。
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
-| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f；未提交）→ **存储 schema 参数解析门禁 + 无域 selector 落 homes** ✅（见 §2g，head `4e8b1d4`）／④arp·seq·clock／⑤显示+encoder+校准 |
+| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f，commit `4da397c`）→ **存储 schema 参数解析门禁 + 无域 selector 落 homes** ✅（见 §2g，head `4e8b1d4`）→ **arp·seq 按侧引擎** ✅（见 §2h，code head `4c129d2`）／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
-门禁基线：本机 ctest **34/34**（含 ASan+UBSan detect_leaks=0）；CI build-and-test **4/4 绿**；
+门禁基线：本机 ctest **35/35**（+ASan 22/22 内存错误零）；CI build-and-test **4/4 绿**；
 `full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
 
 ## 2b. 已裁决的冻结-P0 变更（2026-08-26）
@@ -221,6 +221,31 @@ main 未动，无 PR#2。**下一片 P4-④**：arp/seq 按侧实例化（设计
 **门禁**：本机 ctest **34/34**、ASan 21/21 detect_leaks=0、negative exit 0、regen zero-diff、id-stability、core_headers 88、
 spike_clean 42、evidence_refs、evidence_layout、registry_negative 5 夹具全绿；`--require-full` **按设计红**（12 个声明 gap，
 PR#2 merge 门，非回归）。main 未动，无 PR#2。**下一片 P4-④ arp/seq 按侧实例化**（§2c `60df2e43`：L724 证明 arp 每侧不同，不得全局单例）。
+
+## 2h. P4-④ arp/seq 按侧引擎（code head `4c129d2`，@Claude mandate `8b19b72a`）
+
+**新头 `core/include/lunar24/core/arp_sequencer.h`** + **测试 `tests/core/test_arp_sequencer.cpp`**（44 检查，CTest #34）。
+§2g 接入点落地：arp/seq **夹在 `translate()` 之后、`KeyboardBehaviour` 之前**，是**事件转换器**——吃 canonical `ControlEvent`、出 canonical `ControlEvent`，**绝不出音频**；
+**无全局单例**（每侧一个 `ArpSeq`，L724 证据：split 时左可 arp 右可键盘）。
+
+**模式 mux = `keyboard.mode`（id 101）**：`[keyboard/arpeggiator/sequencer]`，**≠** id 100 `keyboard.behaviour` 的
+Single/Twin/Split 值选器（→ keyboard_mode.h `mode_from_behaviour`）。`arp_seq_mode()` 防御解码，未知原值→keyboard（不凭空 arp/seq，同 P4-③ 纪律）。
+
+**引擎**：
+- **全局 tempo 共享**（`clock_bpm` id 129）；每侧分频档位**读原值但不数值应用**（UN-RESOLVED=FINDINGS；§2g 已把 4 个无域 selector 声明 home 归 DeviceState）。
+- 每 incoming `clock` 边推进**一步**，**名义 1:1**。分频比/rhythm 图案 UN-RESOLVED（手册 L827 ARP CLOCK／L875 SEQ CLOCK 只给"multiplication/division ratio"不给档位，同 TUNE/oct_sel 先例）。
+- **arp**：press 板（`pitch` 事件；gate_on 不携音高身份）建 chord（LIFO 栈，gate_off 弹出）；一 clock 一音；**note 排序 pitch-ordered PROVISIONAL**（手册"sequence number of pressed plates"UN-RESOLVED）；HOLD 跨 release 保持 chord。
+- **seq**：每 clock 推进一步，转调=持板基音（C=0V），`seq_len`（2..16，PROVISIONAL）回绕；`seq_cv_output` 定 gate 模式（gated→跟随 step gate 位／continuous→运行即常高）。
+- **值映射 PROVISIONAL linear 上限**（design/00 §5"先量后签"，非证据）：arp interval 1..12／arp_len 1..8／seq_len 2..16／rhythm_len 1..8。
+
+**side 读咽喉（mandate #4 负控真红）**：`read_arp_seq_params` 经 `read_side_scalar` 读每侧标量（mode/arp×/seq×），
+非标量 side paths（steps+clock selectors）走 `side_bank()` 镜像——**product-side 咽喉**，钉死"split 右岸读全局/左 bank"真错误。
+**负控 `side_drop`**：左 bank mode=0（keyboard）右 bank mode=2（sequencer）+ 更长 step；conforming reader 解右 bank、rogue 读 bank0 →
+mode/seq_len/gate 计数四处真红，撤后全绿。
+
+**门禁**：本机 ctest **35/35**（executable 34→35，+test_arp_sequencer）、ASan **22/22** 内存错误零（macOS 无 LeakSanitizer）、
+regen zero-diff / id-stability / core_headers / spike_clean / evidence_refs / evidence_layout 全绿；`--require-full` 按设计红（12 个声明 gap，PR#2 merge 门，非回归）。
+main 未动，无 PR#2。**下一片 P4-④**：显示+encoder+校准（⑤）。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
