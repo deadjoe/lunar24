@@ -177,6 +177,27 @@ vibrato、note quantiser（scale+root）。**合同：读参一律经 `read_side
 **门禁**：本机 ctest **34/34**（executable 33→34，+test_keyboard_behaviour）、ASan+UBSan detect_leaks=0（46 检查 OK）、CI build-and-test 同源；full-coverage 按设计红（PR#2 merge 门，非回归）。
 main 未动，无 PR#2。**下一片 P4-④**：arp/seq 按侧实例化（设计/00 §2c `60df2e43`：L724 证明 arp 每侧不同，不得全局单例）。
 
+## 2g. P4-④ 裁决 + 一个门禁洞（2026-08-26，msg `30f82596`）
+
+**接入点**：arp/seq 夹在 `translate()` **之后**、`KeyboardBehaviour` **之前**
+（`translate()` 输入是原始 `PerformanceInput`、arp/seq 产出 canonical `ControlEvent`，
+"再进 translate()"类型上不通、概念成环）。⇒ translate() 仍是唯一"原始输入→事件"咽喉，
+直弹音与 arp 音走同一行为链。
+
+**时钟**：**全局 tempo（`clock_bpm`，preset 明确排除它）＋ 每侧分频**。
+分频控件的**存在**有据（L827 ARP CLOCK／L875 SEQ CLOCK「clock multiplication/division ratio」），
+但**档位值域手册一个都没列** ⇒ 按 8 音阶先例：**控件存在、值域 UNRESOLVED**，不扩 registry 凭空定义档位（选 B）。
+
+🔴 **门禁洞（比 A/B 更要紧）**：冻结 manifest 的 `keyboard_params_minus_clock` 引用
+`keyboard.arp_clock` / `keyboard.seq_clock` / `keyboard.arp_rhythm`，而这三个 **在 spec/registry 里不存在**
+（四个同类名字只有 `keyboard_seq_rhythm` 落了）；`check_registry_complete` 只比 `mustComplete == landed`，
+**不校验 storage schema 引用的 stable_id 是否解析得到真参数** ⇒ 照样全绿。
+⇒ **要加门禁**：遍历所有 storage schema 的参数引用，断言每个 stable_id 都解析到 registry 参数；
+负控＝故意引不存在的 id → 必须红。**先让门禁看见它，再决定是补参数还是改引用（先量再决定范围）。**
+
+⚠️ 我的措辞教训：我说 `arp_clock`「在按侧集内」——**对 manifest 成立、对 registry 不成立**，
+而我没把两者分开说。**"在不在"必须指明在哪个产物里。**
+
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
 按"查不出来是合法结论"处理：实现按冻结 registry 走，冲突标 UNEVIDENCED 留在 FINDINGS，
