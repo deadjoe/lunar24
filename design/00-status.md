@@ -35,8 +35,9 @@ PR #2 将是干净合并（无冲突）。
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
-| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f，commit `4da397c`）→ **存储 schema 参数解析门禁 + 无域 selector 落 homes** ✅（见 §2g，head `4e8b1d4`）→ **arp·seq 按侧引擎** ✅（见 §2h，code head `4c129d2`）／⑤显示+encoder+校准 |
-| P5 面板 / P6 dual effector | 未开始 |
+| **P4 演奏系统与输入适配** | ✅ **出口 MET（2026-08-26）**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f，commit `4da397c`）→ **存储 schema 参数解析门禁 + 无域 selector 落 homes** ✅（见 §2g，head `4e8b1d4`）→ **arp·seq 按侧引擎** ✅（见 §2h，code head `4c129d2`）／⑤显示+encoder+校准 |
+| **P5 整张面板** | ▶ **下一阶段**；⚠️ **开工前须还 task #15**（宿主 height clamp 非 fit-to-window，面板底 141 逻辑 px 不可达）——它直接决定「控制清单 100% 有可见控件」真假 |
+| P6 dual effector | 未开始 |
 
 门禁基线：本机 ctest **37/37**（+ASan 22/22 内存错误零）；CI build-and-test **4/4 绿**；
 `full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
