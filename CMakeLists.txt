@@ -30,6 +30,19 @@ target_include_directories(lunar_core INTERFACE
 target_compile_features(lunar_core INTERFACE cxx_std_17)
 
 # ---------------------------------------------------------------------------
+# lunar_host: the host (window) layer. NOT framework-free at the GUI bootstrap (its
+# main.cpp will drive iPlug2's SWELL), so it lives OUTSIDE core/ — which keeps the
+# core framework-free gate green. Its public geometry header
+# host/include/host/window_layout.h is PURE (links only lunar_core) and is the ONE
+# place the host consumes core::compute_host_window_fit. The GUI main.cpp is separate
+# and is registered as its own (non-core) target later.
+# ---------------------------------------------------------------------------
+add_library(lunar_host INTERFACE)
+target_include_directories(lunar_host INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/host/include")
+target_link_libraries(lunar_host INTERFACE lunar_core)
+target_compile_features(lunar_host INTERFACE cxx_std_17)
+
+# ---------------------------------------------------------------------------
 # Tests: the "regenerate == commit" and "gate" checks run as CTest.
 # ---------------------------------------------------------------------------
 enable_testing()
@@ -189,6 +202,9 @@ lunar_add_test(test_arp_sequencer tests/core/test_arp_sequencer.cpp)
 lunar_add_test(test_keyboard_calibration tests/core/test_keyboard_calibration.cpp)
 lunar_add_test(test_keyboard_menu tests/core/test_keyboard_menu.cpp)
 lunar_add_test(test_host_window_fit tests/core/test_host_window_fit.cpp)
+lunar_add_test(test_host_window_layout tests/host/test_host_window_layout.cpp)
+target_link_libraries(test_host_window_layout PRIVATE lunar_host)
+target_include_directories(test_host_window_layout PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
 # P3-⑥ Debt 1 (platform half): the four logic outputs against the REAL machine's
 # output layout, read via the framework authority (AudioBufferList). Apple-only: the
