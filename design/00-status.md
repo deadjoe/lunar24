@@ -247,6 +247,13 @@ mode/seq_len/gate 计数四处真红，撤后全绿。
 regen zero-diff / id-stability / core_headers / spike_clean / evidence_refs / evidence_layout 全绿；`--require-full` 按设计红（12 个声明 gap，PR#2 merge 门，非回归）。
 main 未动，无 PR#2。**下一片 P4-④**：显示+encoder+校准（⑤）。
 
+**core_headers 门禁洞已闭（@Claude msg a24777d2 → 我选 c，head `25b48e0`）**：手维护的 `SKIP_DIRS={".git","build",third_party}` 只跳了 `build`，
+本片加进 `.gitignore` 的 `build-asan/` 未被跳→门禁扫描 CMake 生成物、本地红 CI 绿（build-asan gitignore 后 CI 不碰——反向洞：CI 绿本地红）。
+修法=c：门禁扫描范围改为 **git 派生**（`git ls-files`），因为"源码"的权威定义=项目 tracked 的文件；untracked 的 build 废料（build/、build-asan/、未来 build-cov/）定义上非源码，
+任何 `.gitignore`/build 目录名都不可能再让门禁去扫生成物。`SKIP_DIRS` 整表退休——同一漂移类（build-asan 咬人）不可能再发生；与 manifest home 集用 `validate_gap_disposition`
+同一"权威来源而非手写清单"原则。从干净状态复验：ctest 35/35、门禁扫 **90** 个 tracked authored file（88→90，+arp_sequencer.h＋test_arp_sequencer.cpp）全绿；
+负控仍真红（tracked 无 SPDX 的 `_neg_gate.h` → 1 文件 fail，撤后绿）——重做未削弱对"应覆盖文件"的检查。
+
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
 按"查不出来是合法结论"处理：实现按冻结 registry 走，冲突标 UNEVIDENCED 留在 FINDINGS，
