@@ -4,7 +4,7 @@
 **这份文件的用途**：@Claude（工程总监）随时可能因额度中断。中断时 @Pi **不要停**——
 从这里读出"什么已批准、什么在做、什么必须等人"，按预授权继续。
 
-**最后更新**：2026-08-26 · head `3b903b9` · 分支 `feat/p0-full-registry` · main `1945878` 未动 · 无 PR#2
+**最后更新**：2026-08-26 · head `f195fb9` · 分支 `feat/p0-full-registry` · main `1945878` 未动 · 无 PR#2 · ⏸ 逐音行为已落（未提交，见 §2f）
 
 ## 1. 预授权（@Pi 不必等 GO）
 
@@ -26,7 +26,7 @@
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
-| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ ▶ 逐音行为（下一片；读参一律经 `read_side_scalar`）／④arp·seq·clock／⑤显示+encoder+校准 |
+| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f；未提交）／④arp·seq·clock／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
 门禁基线：本机 ctest **33/33**（含 ASan+UBSan detect_leaks=0）；CI build-and-test **4/4 绿**；
@@ -137,6 +137,36 @@ encode/decode 各加分支。测试：`fill_state`/`states_identical` 现覆盖�
 同时验逆+整体往返无损）。**负控（改名后真红 2/191）**：`load_live_side_bank` 临时跳过 `i==17`（pressure_output 右岸）
 → 该参 preset 按侧而 live 全局 → 往返丢右侧值（绝对锚 404 + presets_equal 417 红），撤后 191 全绿。ctest 33/33（ASan+UBSan detect_leaks=0）、
 regression 4/4、regen zero-diff / id-stability / core_headers / spike_clean / evidence_refs / evidence_layout 全绿。main 未动，无 PR#2。
+
+## 2f. 逐音行为（P4-③ 核心产出 · 未提交，@Claude Go `37db4aa5`）
+
+**新头 `core/include/lunar24/core/keyboard_behaviour.h`** —— 待 @Claude 复验。四个逐音行为：pressure output modes/rise-fall、portamento、
+vibrato、note quantiser（scale+root）。**合同：读参一律经 `read_side_scalar`（侧别咽喉），非标量 scale editor 走同一 `side_bank()` 解析的 `_r` 镜像；
+全链路 `translate()` 喂 ControlEvent；只出控制信号（CV/gate/clock），绝不出音频。** translate() 无状态、行为有状态 ⇒ 新增一个**有状态组合引擎**
+`KeyboardBehaviour`，吃掉 translate() 的 canonical ControlEvent、产出每样本 pitch/pressure/gate 控制信号——它**从不自己用原始输入造 ControlEvent**，
+所以"单一解释咽喉"（design/07 §1）结构性成立。
+
+**证据与实现：**
+- quantiser =**离散、确定**（design/07 §3 语义 1）：`quantize_pitch(pitch, scale_mask, root)`，all-off→微音程直通，否则按 12-TET 就近吸附。
+  `preset_scale_mask(0..18)` 覆盖 19 栏：7 modes/pentatonic×2/whole-tone/semitones 为**无歧义 12-TET 集合**；**8 个风格 scale（blues-major/minor、
+  folk、japanese、gamelan、gypsy、arabian、flamenco）手册只命名不列音程 ⇒ UNRESOLVED（`kScaleUnresolved`），拒绝猜填。**
+- root_note：norm 0..1→semitone 0..11（C..H）。**PROVISIONAL step 划分**（手册只给 C..H 名义，无数值）。
+- portamento/vibrato：复用 `ParameterSmoother`（design/07 §3 不重造秒级 smoother）；legato=单音跳变/≥2 音滑行（手册 L910-923）。
+- pressure OUTPUT 五模式（Pressure/Asr/Ad/Loop/Random，手册 L951-965）：Pressure=跟随+边缘 slew；Asr/Ad/Loop=ADSR；Random=确定性 LCG。
+- **PROVISIONAL 边界（勿当证据）**：norm→秒/量的线性映射（`kPortamentoMaxSeconds=2.5`/`kVibratoMaxHz=15`/`kVibratoMaxDepthCv=2/12`/
+  `kVibratoMaxDelaySec=2.5`/`kPressureMaxSeconds=2.5`）是**文档化线性上限**，待测后签（design/00 §5 "先量后签"）；ASR/AD/LOOP 的 sustain+peak=按下时 pressure 电平
+  （手册只列模式不列段电平）；`root_note_semitone` split 名义。
+
+**测试 `tests/core/test_keyboard_behaviour.cpp`**（46 检查，后加 scale-editor 绝对锚）。结构/不变式为主，不编精确曲线：
+- quantiser **绝对锚**：Ionian@C → 精确 CV、微音程直通、chromatic 就近、root 平移。
+- portamento：legato 判定 + 结构滑行 + **跨采样率不变式**（48k/96k 同 wall-clock 同值）。
+- vibrato：周期结构 + delay ramp + pressure 深度缩放 + gate off 停。
+- pressure：五模式路由、slew 无过冲、ASR/AD/Loop 形状、Random 确定性（同 seed 同值/新按新值）。
+- **mandate-#4 负控（真红 3/46）**：`read_behaviour_params` 临时丢弃侧别（Split 右→一律读左 bank 0）→ `pressureRise` / `cpres≈0` / 发散三检查真红，撤后全绿。
+  即"右岸音符读了全局 parameters[]"这一真实错误被咽喉钉死。附加绝对锚：scale editor 回调收到 `side_bank(Split,Right)==1`。
+
+**门禁**：本机 ctest **34/34**（executable 33→34，+test_keyboard_behaviour）、ASan+UBSan detect_leaks=0（46 检查 OK）、CI build-and-test 同源；full-coverage 按设计红（PR#2 merge 门，非回归）。
+main 未动，无 PR#2。**下一片 P4-④**：arp/seq 按侧实例化（设计/00 §2c `60df2e43`：L724 证明 arp 每侧不同，不得全局单例）。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 

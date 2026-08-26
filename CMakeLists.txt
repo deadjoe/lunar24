@@ -174,6 +174,7 @@ lunar_add_test(test_executor_realpath tests/core/test_executor_realpath.cpp)
 lunar_add_test(test_input_equivalence tests/core/test_input_equivalence.cpp)
 lunar_add_test(test_keyboard_presets tests/core/test_keyboard_presets.cpp)
 lunar_add_test(test_keyboard_mode tests/core/test_keyboard_mode.cpp)
+lunar_add_test(test_keyboard_behaviour tests/core/test_keyboard_behaviour.cpp)
 
 # P3-⑥ Debt 1 (platform half): the four logic outputs against the REAL machine's
 # output layout, read via the framework authority (AudioBufferList). Apple-only: the
