@@ -26,10 +26,10 @@
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
-| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v2、247B/槽、totalBytesHint 4979；裁决 `6a366ebb`，复验 `df7c9202`）／▶ ③逐音行为（下一片）／③逐音行为／④arp·seq·clock／⑤显示+encoder+校准 |
+| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ ▶ 逐音行为（下一片）／④arp·seq·clock／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
-门禁基线：本机 ctest **32/32**；CI build-and-test **4/4 绿**；
+门禁基线：本机 ctest **33/33**（含 ASan+UBSan detect_leaks=0）；CI build-and-test **4/4 绿**；
 `full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
 
 ## 2b. 已裁决的冻结-P0 变更（2026-08-26）
@@ -95,6 +95,11 @@ schema v2→v3、`totalBytesHint` 4979→5939。绝对基址锚（`buf[247]`、`
 **30 个没有物理控件的参数**，与面板证据直接矛盾、P5 台账必然对不上。
 ⇒ 模型＝**ParameterId 标识"哪个参数"（对应那一个旋钮），侧别标识"哪一份值"**。
 ⇒ **P4-③ 读参必须带侧别上下文**，不得直接读全局 `parameters[]`；`keyboard_mode` 地基先把该上下文定出来。
+
+✅ 地基已落 `core/include/lunar24/core/keyboard_mode.h`（commit `e43411e`）：`KeyboardMode{Single,Twin,Split}`／
+`KeyboardSide{Left,Right}`、`side_bank(mode,side)->0/1`、`sides_share_bank(mode)`、`read_side_scalar(bank,mode,side,id)`（读参唯一咽喉，
+`id` 透传不变——即"无 `_r` id"）、`mode_from_behaviour(u8)`（PROVISIONAL：只验 totality+unknown→Single，不把 0/1/2 当证据）。负控证明：
+临时让 Split 忽略 side → 测试 3/277 真红。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
