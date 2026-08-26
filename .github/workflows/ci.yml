@@ -58,6 +58,13 @@ jobs:
   # signal that gates opening/merging PR #2.
   full-coverage:
     name: full coverage (--require-full)
+    # This is a PR-merge gate (target main), NOT a feature-branch regression
+    # alarm: it is necessarily RED until the whole panel is transcribed (P5 未铺完
+    # => 尚未 100%). Running it on every push to feat/** would email a bogus
+    # failure on every commit and train everyone to ignore CI exactly when a real
+    # break lands. Gate it to pull_request so feature CI is green = true signal,
+    # while the merge gate still blocks at PR time.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
