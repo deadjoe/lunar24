@@ -309,9 +309,21 @@
       "y1": 1491
     }
   ],
+  "content_override": {
+    "底部 12 触摸片": {
+      "edges": {
+        "x0": 1.0,
+        "x1": 1.0,
+        "y0": 1.0,
+        "y1": 1.0
+      },
+      "reason": "filled sensor keyboard block: four edges measure ~1.00 dark but are the block's own outline, not a hollow card border"
+    }
+  },
+  "content_override_count": 1,
   "height": 1551,
   "method": "connected-components card outlines + divider detection",
   "source": "design/reference/solar42N_panel_2400px.png",
-  "version": 1,
+  "version": 2,
   "width": 2400
 }

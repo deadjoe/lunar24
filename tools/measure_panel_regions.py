@@ -183,6 +183,26 @@ def classify(raw, s):
     return rule, (L, R, T, B)
 
 
+# @Claude's LOCKED content_override (msg 5a998f09): the ONLY region that measures as an
+# all-dark box but is labelled content. The 12-touch-plate is a FILLED sensor keyboard
+# block — its four edges measure ~1.00 dark, but they are the block's OWN outline, not a
+# hollow card border, so the uniform-edge rule's "frame" would mislabel it. @Claude ruled:
+#  * the override must record its measured four-edge fracs + rationale as a FIELD in the
+#    generated artifact (below, in panel_regions.json), not just prose in a comment;
+#  * the override COUNT must be asserted, so adding a new escape hatch forces the
+#    assertion to change — a visible review delta — instead of slipping through silently.
+# This is the one place a machine-measured "frame" can be overridden to content; it is
+# deliberately tiny and locked.
+CONTENT_OVERRIDE = {
+    "底部 12 触摸片": {
+        "reason": "filled sensor keyboard block: four edges measure ~1.00 dark but are the block's own outline, not a hollow card border",
+    },
+}
+OVERRIDE_COUNT = 1
+assert len(CONTENT_OVERRIDE) == OVERRIDE_COUNT, \
+    "content_override count drifted: every addition must change OVERRIDE_COUNT in review"
+
+
 def measure(blobs, raw):
     # Seed boxes locate each module on the panel (coarse). The measured bbox comes
     # from the card-outline blobs; the few modules that share a card are split at a
@@ -287,28 +307,20 @@ def measure(blobs, raw):
     out["中部 ENV A"] = (dxa + 1, envAtop, envA_border, vcoAbot)
     out["中部 ENV B"] = (credit_right + 1, envBtop, dxb, vcoBbot)
 
-    # @Claude ruled the 12-touch-plate is a CONTENT region ("无卡框 → 绑内容包围盒", 触摸片
-    # 1104): it is a filled sensor BLOCK, not a hollow card outline, so its bounding-box
-    # edge dark-frac alone reads ~1.00 and would mislabel it frame. The frame/content
-    # discriminator is whether the region is a hollow CARD OUTLINE; a filled sensor area
-    # is content even though every edge is dark. DRONE VOICES (edges ~0.72, already
-    # content) is unaffected but recorded for the same reason. These follow @Claude's
-    # explicit classification; everything else is image-measured below.
-    content_override = {"底部 12 触摸片"}
-
     # Classify every region (frame iff all four measured edges are dark borders >=
     # FRAME_MIN; else content) and keep the per-edge measurements as the receipt. This is
-    # the machine choosing the rule from the image — the origin @Claude demanded.
+    # the machine choosing the rule from the image — the origin @Claude demanded. The
+    # touch plate still measures as an all-dark box; @Claude's locked CONTENT_OVERRIDE may
+    # force it to content (the filled-block exception, one and only one).
     rules, edges = {}, {}
     for site, rect in out.items():
         rule, e = classify(raw, rect)
-        # the touch plate still measures as an all-dark box; @Claude's content rule wins.
-        if site in content_override:
+        if site in CONTENT_OVERRIDE:
             rule = "content"
         rules[site] = rule
         edges[site] = e
 
-    return out, rules, edges
+    return out, rules, edges, CONTENT_OVERRIDE
 
 
 def hdr_text(anchors, rules):
@@ -350,7 +362,7 @@ def main(argv):
     work = tempfile.mkdtemp(prefix="mpr_")
     raw = load_gray(work)
     blobs = card_blobs(work)
-    anchors, rules, edges = measure(blobs, raw)
+    anchors, rules, edges, overrides = measure(blobs, raw)
     check = "--check" in argv
 
     # @Claude's frame self-validate gate (msg dc7f808a): a mark of "frame" must be TRUE.
@@ -376,10 +388,20 @@ def main(argv):
     if check:
         print(f"frame self-validate OK ({nframe} frame anchors re-measured on the figure)")
 
-    doc = dict(version=1,
+    # @Claude's override lock (msg 5a998f09): the forced-content override is emitted AS
+    # A FIELD (its measured four-edge fracs + rationale) and its COUNT is a sibling field,
+    # so a new escape hatch is a visible artifact delta, never a silent pass. The single
+    # assertion lives at module scope (assert len(CONTENT_OVERRIDE) == OVERRIDE_COUNT).
+    over_rec = {s: dict(edges=dict(x0=edges[s][0], x1=edges[s][1],
+                                   y0=edges[s][2], y1=edges[s][3]),
+                        reason=overrides[s]["reason"])
+                for s in sorted(overrides)}
+    doc = dict(version=2,
                source="design/reference/solar42N_panel_2400px.png",
                width=W, height=H,
                method="connected-components card outlines + divider detection",
+               content_override_count=len(overrides),
+               content_override=over_rec,
                anchors=[dict(site=s, rule=rules[s], x0=a[0], y0=a[1], x1=a[2], y1=a[3],
                              edges=dict(x0=edges[s][0], x1=edges[s][1],
                                         y0=edges[s][2], y1=edges[s][3]))
