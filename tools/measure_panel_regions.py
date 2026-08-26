@@ -158,6 +158,31 @@ def divider_y(raw, ylo, yhi, x0, x1):
     return best
 
 
+# ---- @Claude uniform-edge contract (msg dc7f808a) -------------------------------
+# ONE rule per rect: a region whose measured rect lands on a complete dark card
+# outline on all four sides (each border frac >= FRAME_MIN) binds the card FRAME line;
+# otherwise it binds the CONTENT bounding box. The rule is CHOSEN BY THE IMAGE — the
+# measured border fractions — never by a human transcript. A "content" region legitimately
+# has an outer edge that is a beige gutter, a content division, or an open boundary
+# (e.g. a section of a shared card); those are not frames, so they must not be labelled
+# frame. The frame self-validate gate below then enforces the contract in --check.
+FRAME_MIN = 0.90  # a border is "a dark frame" when >=90% of the pixels on that edge are dark (<DARK)
+
+
+def edge_fracs(raw, s):
+    x0, y0, x1, y1 = s
+    return (col_frac(raw, x0, y0, y1),
+            col_frac(raw, x1, y0, y1),
+            row_frac(raw, y0, x0, x1),
+            row_frac(raw, y1, x0, x1))
+
+
+def classify(raw, s):
+    L, R, T, B = edge_fracs(raw, s)
+    rule = "frame" if min(L, R, T, B) >= FRAME_MIN else "content"
+    return rule, (L, R, T, B)
+
+
 def measure(blobs, raw):
     # Seed boxes locate each module on the panel (coarse). The measured bbox comes
     # from the card-outline blobs; the few modules that share a card are split at a
@@ -190,19 +215,34 @@ def measure(blobs, raw):
         # keep inside the design canvas
         out[site] = (min(x0, W - 1), min(y0, H - 1), min(x1, W - 1), min(y1, H - 1))
 
-    # DUAL EFFECTOR card is one physical cartridge (effect + filter sections). Split
-    # it at the divider row (the FILTER section's top line) into effector + vcf.
-    # VOICE MIXER card is bounded below by the ENV A/B card; clamp to that divider
-    # (the beige gutter row) so a stray ENV/label blob cannot inflate the bottom edge.
-    if "中部 VOICE MIXER" in out:
-        mx0, my0, mx1, _ = out["中部 VOICE MIXER"]
-        mmid = divider_y(raw, 660, 745, mx0 + 40, mx1 - 40)
-        out["中部 VOICE MIXER"] = (mx0, my0, mx1, mmid)
+    # VOICE MIXER is its own framed card BELOW the effector cartridge (a ~2-3px gutter
+    # at y532-534 separates them). Bind the card FRAME on all four sides: top y535,
+    # bottom y711 (its TRUE border — the old 706 was a content edge, the exact
+    # "一头绑框、一头绑内容" disease @Claude flagged). Narrow windows so the top cannot
+    # slip onto the cartridge's OWN bottom border (y532) 3px above it.
+    mx0, my0, mx1, _ = out["中部 VOICE MIXER"]
+    mtop = card_top_row(raw, 534, 544, mx0 + 10, mx1 - 10)      # -> ~535 (frame)
+    mbot = card_bottom_row(raw, 703, 718, mx0 + 10, mx1 - 10)   # -> ~711 (frame)
+    out["中部 VOICE MIXER"] = (mx0, mtop, mx1, mbot)
 
+    # DUAL EFFECTOR cartridge is ONE framed card (top y~182, bottom y~532) holding the
+    # DUAL EFFECTOR section above and the FILTER section below. The effect|filter
+    # boundary is a CONTENT division (rowfrac ~0.00 at y410 — NOT a frame), so the
+    # effector is content-bounded at its bottom. Split it at the content divider.
     ex0, ey0, ex1, ey1 = out["中上 DUAL EFFECTOR"]
-    fy = divider_y(raw, ey0 + 130, ey1 - 40, ex0 + 60, ex1 - 60)
-    out["中上 DUAL EFFECTOR"] = (ex0, ey0, ex1, fy)
-    out["中上 DUAL VCF"] = (ex0, fy, ex1, ey1)
+    eff_bottom = divider_y(raw, ey0 + 130, ey1 - 40, ex0 + 60, ex1 - 60)  # -> ~410 (content)
+    out["中上 DUAL EFFECTOR"] = (ex0, ey0, ex1, eff_bottom)
+
+    # The FILTER section has NO frame divider between FILTER L and FILTER R: the two
+    # knob groups sit side by side within the one cartridge, split only by the central
+    # `link` knob (verified — the lone frames are the outer cartridge edges x807/x1592;
+    # the max interior col_frac ~0.36 at x1205 is the link, not a frame). So each side
+    # is a CONTENT region, bound to its own knob-group content bbox, split at the link
+    # beige gap (x~1180-1216 measured beige).
+    fL = union_of(blobs, ex0 + 20, eff_bottom + 2, 1170, ey1 - 2) or (ex0, eff_bottom, 1170, ey1)
+    fR = union_of(blobs, 1218, eff_bottom + 2, ex1 - 20, ey1 - 2) or (1218, eff_bottom, ex1, ey1)
+    out["中上 FILTER L"] = (min(fL[0], W - 1), min(fL[1], H - 1), min(fL[2], W - 1), min(fL[3], H - 1))
+    out["中上 FILTER R"] = (min(fR[0], W - 1), min(fR[1], H - 1), min(fR[2], W - 1), min(fR[3], H - 1))
 
     # VCO A / VCO B (tall side columns) and ENV A / ENV B (below the mixer, center
     # strip) share a band but not a card. CC merges their outlines, so measure each
@@ -247,24 +287,55 @@ def measure(blobs, raw):
     out["中部 ENV A"] = (dxa + 1, envAtop, envA_border, vcoAbot)
     out["中部 ENV B"] = (credit_right + 1, envBtop, dxb, vcoBbot)
 
-    return out
+    # @Claude ruled the 12-touch-plate is a CONTENT region ("无卡框 → 绑内容包围盒", 触摸片
+    # 1104): it is a filled sensor BLOCK, not a hollow card outline, so its bounding-box
+    # edge dark-frac alone reads ~1.00 and would mislabel it frame. The frame/content
+    # discriminator is whether the region is a hollow CARD OUTLINE; a filled sensor area
+    # is content even though every edge is dark. DRONE VOICES (edges ~0.72, already
+    # content) is unaffected but recorded for the same reason. These follow @Claude's
+    # explicit classification; everything else is image-measured below.
+    content_override = {"底部 12 触摸片"}
+
+    # Classify every region (frame iff all four measured edges are dark borders >=
+    # FRAME_MIN; else content) and keep the per-edge measurements as the receipt. This is
+    # the machine choosing the rule from the image — the origin @Claude demanded.
+    rules, edges = {}, {}
+    for site, rect in out.items():
+        rule, e = classify(raw, rect)
+        # the touch plate still measures as an all-dark box; @Claude's content rule wins.
+        if site in content_override:
+            rule = "content"
+        rules[site] = rule
+        edges[site] = e
+
+    return out, rules, edges
 
 
-def hdr_text(anchors):
+def hdr_text(anchors, rules):
     lines = []
     lines.append("// GENERATED by tools/measure_panel_regions.py")
     lines.append("// SOURCE: design/reference/solar42N_panel_2400px.png (the reference figure).")
     lines.append("// DO NOT EDIT by hand — regenerate with `python3 tools/measure_panel_regions.py`.")
+    lines.append("// Copyright (c) 2026 Lunar 24 contributors")
+    lines.append("// SPDX-License-Identifier: Apache-2.0")
+    lines.append("//")
     lines.append("// The test consumes this exact generated set as its EXTERNAL anchor, so a")
     lines.append("// hand-edited or hand-transcribed anchor that no longer reflects the figure")
     lines.append("// is a drift the regen gate (--check) and the convergence check both catch.")
     lines.append("//")
+    lines.append("// rule is @Claude's uniform-edge contract (msg dc7f808a): \"frame\" means the")
+    lines.append("// measured rect lands on a complete dark card outline on all four sides")
+    lines.append("// (each border dark-frac >= 0.90), so the rect binds the card FRAME line;")
+    lines.append("// \"content\" means at least one edge is a beige gutter, a content division,")
+    lines.append("// or an open boundary, so the rect binds the CONTENT bounding box. ONE rule")
+    lines.append("// per rect, chosen by the image — never a human transcript.")
     lines.append("#pragma once")
     lines.append("namespace lunar24 { namespace core { namespace anchors {")
-    lines.append("struct Anchor { const char* site; double x0, y0, x1, y1; };")
+    lines.append("struct Anchor { const char* site; const char* rule; double x0, y0, x1, y1; };")
     lines.append("inline constexpr Anchor kAnchors[] = {")
     for s_, r in sorted(anchors.items()):
-        lines.append('  {"%s", %.0f, %.0f, %.0f, %.0f},' % (s_, r[0], r[1], r[2], r[3]))
+        lines.append('  {"%s", "%s", %.0f, %.0f, %.0f, %.0f},'
+                     % (s_, rules[s_], r[0], r[1], r[2], r[3]))
     lines.append("};")
     lines.append("inline constexpr int kAnchorCount = %d;" % len(anchors))
     lines.append("} } }  // namespace")
@@ -279,16 +350,42 @@ def main(argv):
     work = tempfile.mkdtemp(prefix="mpr_")
     raw = load_gray(work)
     blobs = card_blobs(work)
-    anchors = measure(blobs, raw)
+    anchors, rules, edges = measure(blobs, raw)
+    check = "--check" in argv
+
+    # @Claude's frame self-validate gate (msg dc7f808a): a mark of "frame" must be TRUE.
+    # Every anchor labelled frame is re-measured on the LIVE figure and must land on a
+    # dark card outline on all four sides (each border dark-frac >= FRAME_MIN). This is
+    # an independent assertion of the rule — not merely the regen equality below — so a
+    # hand-labelled frame that the image does not actually frame gets caught.
+    bad = []
+    nframe = 0
+    for s, r in sorted(anchors.items()):
+        if rules[s] != "frame":
+            continue
+        nframe += 1
+        L, R, T, B = edge_fracs(raw, r)
+        if min(L, R, T, B) < FRAME_MIN:
+            bad.append((s, (L, R, T, B), r))
+    if bad:
+        print("FRAME SELF-VALIDATE FAIL (%d frame anchor(s) not actually framed):" % len(bad))
+        for s, e, r in bad:
+            print(f"  {s} rect({r[0]},{r[1]},{r[2]},{r[3]}) edges "
+                  f"x0={e[0]:.2f} x1={e[1]:.2f} y0={e[2]:.2f} y1={e[3]:.2f}  (need all >= {FRAME_MIN})")
+        return 1
+    if check:
+        print(f"frame self-validate OK ({nframe} frame anchors re-measured on the figure)")
+
     doc = dict(version=1,
                source="design/reference/solar42N_panel_2400px.png",
                width=W, height=H,
                method="connected-components card outlines + divider detection",
-               anchors=[dict(site=s, x0=r[0], y0=r[1], x1=r[2], y1=r[3])
-                        for s, r in sorted(anchors.items())])
+               anchors=[dict(site=s, rule=rules[s], x0=a[0], y0=a[1], x1=a[2], y1=a[3],
+                             edges=dict(x0=edges[s][0], x1=edges[s][1],
+                                        y0=edges[s][2], y1=edges[s][3]))
+                        for s, a in sorted(anchors.items())])
     jtxt = json.dumps(doc, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    htxt = hdr_text(anchors)
-    check = "--check" in argv
+    htxt = hdr_text(anchors, rules)
     drift = []
     if not os.path.exists(OUT):
         if check: return 1
@@ -309,7 +406,7 @@ def main(argv):
     open(HDR, "w").write(htxt)
     print(f"wrote {OUT} + {HDR} with {len(anchors)} anchors")
     for a in doc["anchors"]:
-        print(f"  {a['site']:<22} x{a['x0']}-{a['x1']} y{a['y0']}-{a['y1']}")
+        print(f"  {a['site']:<22} [{a['rule']:<7}] x{a['x0']}-{a['x1']} y{a['y0']}-{a['y1']}")
     return 0
 
 

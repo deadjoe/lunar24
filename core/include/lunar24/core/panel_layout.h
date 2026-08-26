@@ -49,10 +49,12 @@ struct PanelLayoutRegion {
 
 inline constexpr DesignRect kDesignArea{0, 0, kDesignWidth, kDesignHeight};
 
-// One measured rect per DISTINCT panelSite label (21 — the registry keeps DRONE 1 and
+// One measured rect per DISTINCT panelSite label (22 — the registry keeps DRONE 1 and
 // DRONE 2, DRONE 4 and DRONE 5, VCO A / VCO B and ENV A / ENV B as separate sites, so
-// they are separate regions here too). Ordered the way a human reads the panel: left
-// column, center strip, right column, bottom row, bottom band.
+// they are separate regions here too; and @Claude's 2026-08-26 ruling splits the filter
+// section into FILTER L and FILTER R, two side-by-side knob groups, because FILTER L and
+// FILTER R are two independent cards separated by the `link` knob). Ordered the way a
+// human reads the panel: left column, center strip, right column, bottom row, bottom band.
 //
 // ⚠️ 2026-08-26 re-measurement (task #36): the previous rects were a large-scale
 // mismatch with the figure, and their EXTERNAL anchor was a hand-written set copied
@@ -65,14 +67,27 @@ inline constexpr DesignRect kDesignArea{0, 0, kDesignWidth, kDesignHeight};
 // regen gate (--check) proves the committed artifact reproduces the image, and a
 // hand-edited region here no longer converges — so a wrong value reds itself.
 //
-// Two corrections over the FIGURE TRUTH (material to the region semantics, kept inline
-// and reported to @Claude):
-//   * The center-top band is ONE physical cartridge (x@~807-1592, y@~181-531) holding
-//     BOTH the "DUAL EFFECTOR" section (top, y181-410) and the "FILTER L/R" (DUAL VCF)
-//     section (bottom, y410-532). @Claude's §2k "DUAL VCF {808,537,1591,710}" is not
-//     the filter — that band is the 10ch VOICE MIXER; the real filter section is
-//     y410-532 inside the effector card. Split at the figure's divider row.
-//   * Below the mixer card (y535-706), ENV A and ENV B flank the black
+// @Claude's uniform-edge contract (msg dc7f808a): each generated anchor carries ONE rule
+// label, chosen by the image, never by a human — "frame" binds a complete dark card
+// outline on all four sides (each border dark-frac >= 0.90), "content" binds the content
+// bounding box because at least one edge is a beige gutter / content division / open
+// boundary. A single rect never mixes one-edge-frame with one-edge-content. The generator
+// re-measures every "frame" anchor on the live figure and rejects a frame that is not
+// actually framed (the frame self-validate gate).
+//
+// Corrections over the FIGURE TRUTH (material to the region semantics, kept inline and
+// reported to @Claude):
+//   * The center-top band is ONE physical cartridge (x@~807-1592, y@~181-532) holding
+//     BOTH the "DUAL EFFECTOR" section (top, y181-410) and the "FILTER L/R" section
+//     (bottom, y410-511), split at the figure's content divider row (y410 — a content
+//     boundary, not a frame). @Claude's §2k "DUAL VCF {808,537,1591,710}" is not the
+//     filter — that band is the 10ch VOICE MIXER; the real filter section is y410-511
+//     inside the effector card. FILTER L and FILTER R are the two halves of that section
+//     separated by the `link` knob; the figure has NO card frame between them, so each
+//     binds its own knob-group content bbox and is labelled "content".
+//   * The 10ch VOICE MIXER is its own framed card BELOW the cartridge (a ~2-3px gutter
+//     separates it): TOP y535 and BOTTOM y711 are its card frame, labelled "frame".
+//   * Below the mixer card (y535-711), ENV A and ENV B flank the black
 //     "VOICE MIXER / ELTA MUSIC" credit card: ENV A y~711-880, ENV B y~715-880.
 inline constexpr PanelLayoutRegion kPanelRegions[] = {
     // left column
@@ -82,10 +97,11 @@ inline constexpr PanelLayoutRegion kPanelRegions[] = {
     // center strip — VCO A | VOICE MIXER | VCO B, with the DUAL EFFECTOR cartridge
     // (effect on top + FILTER L/R below) above the mixer, then ENV A | ENV B below.
     {"中上 VCO A", DesignRect{414, 559, 805, 880}},        // tall left column of the mid band
-    {"中部 VOICE MIXER", DesignRect{807, 535, 1592, 706}},  // 10ch PAN/VOL strip (narrow)
+    {"中部 VOICE MIXER", DesignRect{807, 535, 1592, 711}},  // 10ch PAN/VOL strip (narrow, TOP y535 + BOTTOM y711 are its card frame)
     {"中上 VCO B", DesignRect{1597, 560, 1985, 880}},      // tall right column of the mid band
     {"中上 DUAL EFFECTOR", DesignRect{807, 181, 1592, 410}},  // cartridge/X/Y/Z/BLEND/MASTER (top of the one cartridge)
-    {"中上 DUAL VCF", DesignRect{807, 410, 1592, 532}},    // FILTER L/R, FREQ/RES (below the effector, same cartridge)
+    {"中上 FILTER L", DesignRect{854, 438, 1149, 511}},    // FREQ/RES/CV L/DIST knob group (left half of the filter section)
+    {"中上 FILTER R", DesignRect{1246, 438, 1543, 511}},   // GAIN/CV R/FREQ/RES knob group (right half of the filter section)
     {"中部 ENV A", DesignRect{806, 711, 1146, 880}},        // envelope A (hold/A-D-S-R/gate)
     {"中部 ENV B", DesignRect{1249, 715, 1596, 880}},       // envelope B
     // right column
@@ -103,7 +119,7 @@ inline constexpr PanelLayoutRegion kPanelRegions[] = {
     {"底部 12 触摸片", DesignRect{399, 1104, 1999, 1491}},    // sensor keyboard / touch plates
     {"右下 DRONE VOICES", DesignRect{2126, 1126, 2304, 1469}},  // drone voices 1-6 grid
 };
-inline constexpr int kPanelRegionCount = 21;
+inline constexpr int kPanelRegionCount = 22;
 
 // Locate a measured region by its registry panelSite label. Returns the index into
 // kPanelRegions, or -1 if the label is not in the measured set (a mismatch worth
