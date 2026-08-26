@@ -150,6 +150,18 @@ add_test(NAME evidence_layout_guard
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/build_evidence_layout.py --check)
 
+# Panel-region anchor drift-guard (task #36, msg 9c660e3d): the region anchors are
+# MACHINE-generated from the panel reference figure (tools/measure_panel_regions.py),
+# never transcribed by hand. Re-running the generator must reproduce the committed
+# panel_regions.json AND panel_anchors.generated.h byte-identically, so the C++ test
+# consumes a set that provably comes from the image. On CI the PNG is gitignored, so
+# the tool SKIPs loudly (never a silent absent guard) — same register-and-loudly-skip
+# shape as evidence_layout_guard. The anchor-mutation NEGATIVE lives in the C++ test
+# (test_panel_layout NEGATIVE 1): a single edited anchor value must red it.
+add_test(NAME panel_regions_guard
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/measure_panel_regions.py --check)
+
 # The host (host/) depends on iPlug2 as an UNMODIFIED fixed-commit library. This gate
 # verifies the local clone is pinned to exactly that commit AND its working tree is
 # clean (a locally-edited pin is a secret fork). The clone is a local, non-vendored

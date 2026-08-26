@@ -49,50 +49,61 @@ struct PanelLayoutRegion {
 
 inline constexpr DesignRect kDesignArea{0, 0, kDesignWidth, kDesignHeight};
 
-// Measured region rects, one per distinct panelSite label. Ordered to match the
-// "ring" a human reads the panel in (left column top->bottom, then center, then right).
-// Measured region rects, one per DISTINCT panelSite label (19 — the registry keeps
-// VCO A / VCO B and ENV A / ENV B as separate sites, so they are separate regions
-// here too). Ordered the way a human reads the panel: left column, center strip,
-// right column, bottom row, bottom band.
+// One measured rect per DISTINCT panelSite label (21 — the registry keeps DRONE 1 and
+// DRONE 2, DRONE 4 and DRONE 5, VCO A / VCO B and ENV A / ENV B as separate sites, so
+// they are separate regions here too). Ordered the way a human reads the panel: left
+// column, center strip, right column, bottom row, bottom band.
 //
-// ⚠️ 2026-08-26 re-measurement (task #36, 裁决 0843a838): the previous rects for the
-// mid strip + bottom row were a large-scale mismatch with the figure. Corrected below
-// with @Claude's separated-column detection (design/00-status.md §2k): the 10ch VOICE
-// MIXER is the narrow center strip y560-700 (NOT the bottom row), ENV A/B sit y700-880
-// as two separate sites, VCO A / VCO B are the tall side columns y560-880, and the
-// bottom-row six cards are y880-1030 (y-bottom was wrongly 1080) in the true physical
-// order LFO A→JOYSTICK→5-STEP→PREAMP→ENV-FOLL→LFO B. The two center-top bands were
-// also top/bottom-swapped vs the figure title bar ("DUAL EFFECTOR" is on top, "FILTER
-// L/R" below), so their labels are reassigned here.
+// ⚠️ 2026-08-26 re-measurement (task #36): the previous rects were a large-scale
+// mismatch with the figure, and their EXTERNAL anchor was a hand-written set copied
+// from the same numbers — two same-source quantities validating each other, the exact
+// disease @Claude flagged (00-status §2k). These rects are now pinned to a
+// MACHINE-GENERATED anchor set: the panel reference figure is measured by
+// tools/measure_panel_regions.py into generated/lunar24/panel_anchors.generated.h +
+// panel_regions.json, and test_panel_layout consumes THAT set. The anchor origin is
+// the reference image; neither @Pi nor @Claude hand-transcribes it. A kept-in-sync
+// regen gate (--check) proves the committed artifact reproduces the image, and a
+// hand-edited region here no longer converges — so a wrong value reds itself.
+//
+// Two corrections over the FIGURE TRUTH (material to the region semantics, kept inline
+// and reported to @Claude):
+//   * The center-top band is ONE physical cartridge (x@~807-1592, y@~181-531) holding
+//     BOTH the "DUAL EFFECTOR" section (top, y181-410) and the "FILTER L/R" (DUAL VCF)
+//     section (bottom, y410-532). @Claude's §2k "DUAL VCF {808,537,1591,710}" is not
+//     the filter — that band is the 10ch VOICE MIXER; the real filter section is
+//     y410-532 inside the effector card. Split at the figure's divider row.
+//   * Below the mixer card (y535-706), ENV A and ENV B flank the black
+//     "VOICE MIXER / ELTA MUSIC" credit card: ENV A y~711-880, ENV B y~715-880.
 inline constexpr PanelLayoutRegion kPanelRegions[] = {
     // left column
-    {"左上 DRONE 1/2", DesignRect{22, 180, 724, 700}},    // DRONE 1 + DRONE 2 (two cards + gate/hold)
-    {"左中 DRONE 3", DesignRect{22, 560, 407, 880}},      // DRONE 3 card
-    // center strip — VCO A | VOICE MIXER | VCO B across y560-880, flanked by the
-    // DUAL EFFECTOR (top) / DUAL VCF (below) cartridges, then ENV A | ENV B.
-    {"中上 VCO A", DesignRect{415, 560, 805, 880}},        // tall left column of the mid band
-    {"中部 VOICE MIXER", DesignRect{807, 560, 1592, 700}},  // 10ch PAN/VOL strip (narrow, top of mid band)
-    {"中上 VCO B", DesignRect{1598, 560, 1985, 880}},      // tall right column of the mid band
-    {"中上 DUAL EFFECTOR", DesignRect{808, 183, 1591, 537}},  // cartridge/X/Y/Z/MOD (top center-top band)
-    {"中上 DUAL VCF", DesignRect{808, 537, 1591, 710}},    // FILTER L/R, FREQ/RES (below the effector)
-    {"中部 ENV A", DesignRect{807, 700, 1146, 880}},        // envelope A (hold/A-D-S-R/gate)
-    {"中部 ENV B", DesignRect{1248, 700, 1591, 880}},       // envelope B
+    {"左上 DRONE 1", DesignRect{20, 258, 408, 560}},       // DRONE 1 card
+    {"左上 DRONE 2", DesignRect{414, 258, 803, 560}},      // DRONE 2 card
+    {"左中 DRONE 3", DesignRect{20, 566, 408, 881}},       // DRONE 3 card
+    // center strip — VCO A | VOICE MIXER | VCO B, with the DUAL EFFECTOR cartridge
+    // (effect on top + FILTER L/R below) above the mixer, then ENV A | ENV B below.
+    {"中上 VCO A", DesignRect{414, 559, 805, 880}},        // tall left column of the mid band
+    {"中部 VOICE MIXER", DesignRect{807, 535, 1592, 706}},  // 10ch PAN/VOL strip (narrow)
+    {"中上 VCO B", DesignRect{1597, 560, 1985, 880}},      // tall right column of the mid band
+    {"中上 DUAL EFFECTOR", DesignRect{807, 181, 1592, 410}},  // cartridge/X/Y/Z/BLEND/MASTER (top of the one cartridge)
+    {"中上 DUAL VCF", DesignRect{807, 410, 1592, 532}},    // FILTER L/R, FREQ/RES (below the effector, same cartridge)
+    {"中部 ENV A", DesignRect{806, 711, 1146, 880}},        // envelope A (hold/A-D-S-R/gate)
+    {"中部 ENV B", DesignRect{1249, 715, 1596, 880}},       // envelope B
     // right column
-    {"右上 DRONE 4/5", DesignRect{1599, 180, 2301, 561}},  // DRONE 4 + DRONE 5
-    {"右中 DRONE 6", DesignRect{1993, 561, 2379, 879}},    // DRONE 6 card
+    {"右上 DRONE 4", DesignRect{1597, 258, 1985, 561}},    // DRONE 4 card
+    {"右上 DRONE 5", DesignRect{1991, 258, 2380, 561}},    // DRONE 5 card
+    {"右中 DRONE 6", DesignRect{1991, 566, 2380, 880}},    // DRONE 6 card
     // bottom row, true physical order LFO A → JOYSTICK → 5-STEP → PREAMP → ENV-FOLL → LFO B
-    {"下排 LFO A", DesignRect{19, 880, 292, 1030}},
-    {"下排 joystick", DesignRect{296, 880, 596, 1030}},
-    {"下排 5-step seq", DesignRect{600, 880, 1546, 1030}},
-    {"下排 preamp", DesignRect{1549, 880, 1723, 1030}},
-    {"下排 env follower", DesignRect{1727, 880, 2103, 1030}},
-    {"下排 LFO B", DesignRect{2104, 880, 2377, 1030}},
+    {"下排 LFO A", DesignRect{19, 884, 292, 1030}},
+    {"下排 joystick", DesignRect{296, 884, 596, 1030}},
+    {"下排 5-step seq", DesignRect{600, 884, 1545, 1030}},
+    {"下排 preamp", DesignRect{1548, 884, 1723, 1030}},
+    {"下排 env follower", DesignRect{1727, 884, 2101, 1030}},
+    {"下排 LFO B", DesignRect{2103, 884, 2379, 1030}},
     // bottom band (touch plates) + bottom-right (drone voices)
-    {"底部 12 触摸片", DesignRect{399, 1104, 2000, 1492}},    // sensor keyboard / touch plates
-    {"右下 DRONE VOICES", DesignRect{1700, 1104, 2400, 1492}},  // drone voices 1-6 grid
+    {"底部 12 触摸片", DesignRect{399, 1104, 1999, 1491}},    // sensor keyboard / touch plates
+    {"右下 DRONE VOICES", DesignRect{2126, 1126, 2304, 1469}},  // drone voices 1-6 grid
 };
-inline constexpr int kPanelRegionCount = 19;
+inline constexpr int kPanelRegionCount = 21;
 
 // Locate a measured region by its registry panelSite label. Returns the index into
 // kPanelRegions, or -1 if the label is not in the measured set (a mismatch worth
