@@ -26,7 +26,7 @@
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
-| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ ▶ 逐音行为（下一片；标量 bank 表示 = A/B 待 @Claude 裁）／④arp·seq·clock／⑤显示+encoder+校准 |
+| **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ ▶ 逐音行为（下一片；读参一律经 `read_side_scalar`）／④arp·seq·clock／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
 门禁基线：本机 ctest **33/33**（含 ASan+UBSan detect_leaks=0）；CI build-and-test **4/4 绿**；
@@ -125,6 +125,18 @@ encode/decode 各加分支。测试：`fill_state`/`states_identical` 现覆盖�
 否则 `load preset → live` 会丢掉右侧值，save/load 变成有损——而无损正是 P2-⑤ 持久化要保证的。
 **负控＝某参数 live 全局而 preset 按侧 → preset→live→preset 往返丢右侧值 → 红。**
 ⇒ 以后新参数的按侧与否由这条自动对齐，不必逐个上报裁决。
+
+✅ **已落地（2026-08-26，含本节裁决）：live 标量 bank（B）+ preset/live 按侧不变量**。
+`schema v4→v5`、`totalBytesHint 6121→6297`（22×8=176B）。新头 `core/include/lunar24/core/keyboard_side_bank.h`：
+`kKeyboardScalarParameterIds[22]`（mode…root_note，**不含 behavior=100** 与 4 个无-域 selector）、
+`keyboard_scalar_index(id)->0..21/-1`（**不新增 `_r` ParameterId**）、`read/write_preset_scalar_pair`（按 id 开关 preset 两侧字段）、
+`load/save_live_side_bank`（22 个 id 驱动 preset→live→preset 双岸往返）。f64 与 `parameters[]` 同型，`read_side_scalar` 可一种 Value。
+`pressure_output` 按侧（labelled，负控即以此触发）。测试：`test_state_persistence`（fill/states_identical 覆盖 keyboardScalarRight
+左/右不同值+绝对尾锚迁到 `keyboard_scalar_right` 为新 record tail）+`test_keyboard_presets` 新增
+`live_scalar_bank_preset_live_round_trip`（绝对锚=bank0`parameters[id]`→左、bank1`keyboardScalarRight[idx]`→右，mode 与 pressure_output 双锚+idx-map
+同时验逆+整体往返无损）。**负控（改名后真红 2/191）**：`load_live_side_bank` 临时跳过 `i==17`（pressure_output 右岸）
+→ 该参 preset 按侧而 live 全局 → 往返丢右侧值（绝对锚 404 + presets_equal 417 红），撤后 191 全绿。ctest 33/33（ASan+UBSan detect_leaks=0）、
+regression 4/4、regen zero-diff / id-stability / core_headers / spike_clean / evidence_refs / evidence_layout 全绿。main 未动，无 PR#2。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 

@@ -509,6 +509,8 @@ inline bool encode_device_state(const DeviceStateV1& state, std::uint8_t* out,
       for (std::uint32_t k = 0; k < f.count; ++k) put_f32(out + off + k * 4u, state.keyboardPushbuttonR[k]);
     } else if (n == "keyboard_clock_selectors_r") {
       for (std::uint32_t k = 0; k < f.count; ++k) put_u8(out + off + k, state.keyboardClockSelectorsR[k]);
+    } else if (n == "keyboard_scalar_right") {
+      for (std::uint32_t k = 0; k < f.count; ++k) put_f64(out + off + k * 8u, state.keyboardScalarRight[k]);
     }
     off += storage_field_bytes(f);
   }
@@ -581,6 +583,8 @@ inline bool decode_device_state(const std::uint8_t* in, std::size_t size,
       for (std::uint32_t k = 0; k < f.count; ++k) state.keyboardPushbuttonR[k] = get_f32(in + off + k * 4u);
     } else if (n == "keyboard_clock_selectors_r") {
       for (std::uint32_t k = 0; k < f.count; ++k) state.keyboardClockSelectorsR[k] = get_u8(in + off + k);
+    } else if (n == "keyboard_scalar_right") {
+      for (std::uint32_t k = 0; k < f.count; ++k) state.keyboardScalarRight[k] = get_f64(in + off + k * 8u);
     }
     off += storage_field_bytes(f);
   }

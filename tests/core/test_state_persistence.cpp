@@ -101,6 +101,11 @@ static void fill_state(core::DeviceStateV1& s) {
     s.keyboardClockSelectors[i] = static_cast<std::uint8_t>(10u + i);
     s.keyboardClockSelectorsR[i] = static_cast<std::uint8_t>(90u + i);
   }
+  // P4-③ live per-side SCALAR right bank (Decis B): distinctive values well clear of
+  // the left `parameters[]` pattern (which is i*0.5, topping out ~211.5), so a
+  // serializer that maps the right bank onto the left bank breaks the fidelity check.
+  for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i)
+    s.keyboardScalarRight[i] = 1000.0 + static_cast<double>(i) * 0.25;
 
   s.leftEffector.program = core::ProgramId{0x010203u};
   s.rightEffector.program = core::ProgramId{0x040506u};
@@ -172,6 +177,8 @@ static bool states_identical(const core::DeviceStateV1& a, const core::DeviceSta
     if (a.keyboardClockSelectors[i] != b.keyboardClockSelectors[i]) return false;
     if (a.keyboardClockSelectorsR[i] != b.keyboardClockSelectorsR[i]) return false;
   }
+  for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i)
+    if (dbits(a.keyboardScalarRight[i]) != dbits(b.keyboardScalarRight[i])) return false;
   if (a.leftEffector.program != b.leftEffector.program) return false;
   if (a.rightEffector.program != b.rightEffector.program) return false;
   for (std::uint32_t i = 0; i < core::kSequencerPhysicalBytes; ++i)
@@ -485,32 +492,35 @@ static void rtfs_discard(void* ctx, const char*) {
   static_cast<RtFs*>(ctx)->out.clear();
 }
 
-// P4-③ live `_r` mirror contract (design/00 §2d L1): the five right-bank live
-// fields are (1) an APPENDED block that never reorders, and (2) INDEPENDENT of the
-// left bank.
+// P4-③ live `_r` + scalar right-bank contract (design/00 §2d L1 + §2e Decis B). The
+// right bank — the five `_r` live fields plus the 22-scalar keyboardScalarRight bank
+// — is (1) an APPENDED block that never reorders, and (2) INDEPENDENT of the left
+// bank.
 //
-//   * Absolute tail anchor — the `_r` block begins exactly at the field-table
-//     offset walked the same way the encoder walks it, and its end lands exactly
-//     on totalBytesHint (the record tail). "Reordering" or "mid-insert" a `_r`
+//   * Absolute tail anchor — the right bank begins exactly at the field-table offset
+//     walked the same way the encoder walks it, and its end lands exactly on
+//     totalBytesHint (the record tail). "Reordering" or "mid-inserting" a right-bank
 //     field shifts these and reds.
 //   * Left/right independence — fill_state gives the two banks DISTINCT values, so
-//     a serializer that maps `_r` to the left field (or omits it) makes the
-//     decoded right bank read the LEFT value and this check reds.
+//     a serializer that maps the right bank onto the left field (or omits it) makes
+//     the decoded right bank read the LEFT value and this check reds.
 static void live_side_bank_is_tail_and_independent() {
-  // --- tail anchor: the `_r` block is a contiguous 182-byte tail of the record ---
+  // --- tail anchor: the right bank is a contiguous append ending at the record tail ---
   const std::uint32_t seqROff = storage_offset_of("keyboard_seq_current_r");
   const std::uint32_t clockROff = storage_offset_of("keyboard_clock_selectors_r");
-  CHECK(seqROff != 0u);   // a real offset, not the "not found" fallback
+  const std::uint32_t scalarROff = storage_offset_of("keyboard_scalar_right");
+  CHECK(seqROff != 0u);   // real offsets, not the "not found" fallback
   CHECK(clockROff != 0u);
+  CHECK(scalarROff != 0u);
   CHECK(seqROff + 96u == storage_offset_of("keyboard_scale_editor_r"));   // seq_r then scale_r
-  CHECK(clockROff + 4u == core::kDeviceStorageSchema.totalBytesHint);     // clock_r is the record tail
-  // The whole right bank = tail_end - tail_start, and it is exactly the 182 bytes
-  // that the five left live fields occupied (96 + 2 + 48 + 32 + 4).
-  CHECK(core::kDeviceStorageSchema.totalBytesHint - seqROff == 182u);
-  CHECK(storage_offset_of("keyboard_clock_selectors_r")
-        - storage_offset_of("keyboard_seq_current_r") == 182u - 4u);
+  CHECK(clockROff + 4u == scalarROff);                                    // clock_r then scalar_r
+  CHECK(scalarROff + 176u == core::kDeviceStorageSchema.totalBytesHint);  // scalar_r is the record tail
+  // The whole right bank = tail_end - tail_start = the five `_r` live fields (182)
+  // plus the 22-scalar right bank (22 x 8 = 176) = 358.
+  CHECK(core::kDeviceStorageSchema.totalBytesHint - seqROff == 358u);
+  CHECK(clockROff - seqROff == 182u - 4u);
 
-  // --- wire-anchor: a distinctive seq_r step lands at the absolute offset ---
+  // --- wire-anchor: a distinctive seq_r step and scalar value land at their offsets ---
   core::DeviceStateV1 s;
   fill_state(s);
   std::vector<std::uint8_t> bytes(core::kDeviceStorageSchema.totalBytesHint);
@@ -519,6 +529,9 @@ static void live_side_bank_is_tail_and_independent() {
   CHECK(core::get_f32(bytes.data() + seqROff + 1u) == s.keyboardSeqCurrentR.steps[0].value);
   CHECK(core::get_u16(bytes.data() + storage_offset_of("keyboard_scale_editor_r"))
         == s.keyboardScaleEditorR);
+  CHECK(core::get_f64(bytes.data() + scalarROff) == s.keyboardScalarRight[0]);
+  CHECK(core::get_f64(bytes.data() + scalarROff + 21u * 8u)
+        == s.keyboardScalarRight[core::kKeyboardScalarRightCount - 1u]);
 
   // --- independence: round-trip keeps left and right distinct ---
   core::DeviceStateV1 back;
@@ -527,6 +540,9 @@ static void live_side_bank_is_tail_and_independent() {
   CHECK(back.keyboardSeqCurrent.steps[0].value == 0.25f);   // left bank
   CHECK(back.keyboardSeqCurrentR.steps[0].value == 10.5f);  // right bank (distinct)
   CHECK(back.keyboardClockSelectors[0] != back.keyboardClockSelectorsR[0]);
+  CHECK(back.keyboardScalarRight[0] == 1000.0);              // right scalar bank survived
+  CHECK(back.keyboardScalarRight[core::kKeyboardScalarRightCount - 1u]
+        == 1000.0 + 21.0 * 0.25);
 }
 
 static void persistence_never_on_audio_thread() {

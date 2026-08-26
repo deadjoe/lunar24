@@ -120,7 +120,14 @@ inline constexpr std::uint32_t kKeyboardPresetRecordBytes = 487u;  // 247 (v2, l
 inline constexpr std::uint32_t kKeyboardSettingsRecordBytes = 2u;  // pressure behaviour(1) + pressure output(1)
 inline constexpr std::uint32_t kSequencerPhysicalBytes = 16u;    // reserved until the sequencer lands
 inline constexpr std::uint32_t kKeyboardSeqRecordBytes = kKeyboardSeqBytes;  // 16 steps x 6 bytes
-inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 4u;
+// P4-③ (per-side scalar bank, @Claude msg c0d9e9be — Decis B): the LIVE right-bank
+// scalar count. The 22 keyboard scalars that carry a ParameterId and are per-side
+// (the frozen 30 keyboard_params_minus_clock minus behaviour, minus the four
+// no-domain clock/rhythm selectors, minus the four non-scalars — their right side
+// is the `_r` mirror block, already at schema v4). The LEFT/shared side reads
+// parameters[ParameterId]; the RIGHT side reads keyboardScalarRight[index(id)].
+inline constexpr std::uint32_t kKeyboardScalarRightCount = 22u;
+inline constexpr std::uint32_t kDeviceStorageSchemaVersion = 5u;
 inline constexpr std::uint32_t kDeviceStorageInitialRevision = 0u;
 
 // One KeyboardSeqStep's machine-readable interior (component of a seq record).
@@ -252,6 +259,13 @@ inline constexpr StorageField kDeviceStorageFields[] = {
     {"keyboard_plate_tune_r",     StorageFieldKind::array,  StorageFieldType::f32, StorageEncoding::binary, kKeyboardPlateTuneCount, 0u, 4u, {}},
     {"keyboard_pushbutton_r",     StorageFieldKind::array,  StorageFieldType::f32, StorageEncoding::binary, kKeyboardPushbuttonCount, 0u, 4u, {}},
     {"keyboard_clock_selectors_r",StorageFieldKind::array,  StorageFieldType::u8,  StorageEncoding::binary, 4u,  0u, 4u, {}},
+    // P4-③ live per-side SCALAR bank (Decis B, versionFrom=5). Appended, never
+    // reordered. The 22 keyboard scalars that carry a ParameterId, flattened into
+    // one f64 array indexed by keyKeyboardScalarIndexOf(id). bank[0] (left/shared)
+    // stays in `parameters[ParameterId]` — this is ONLY the right bank. Choosing
+    // f64 (not f32) keeps it type-consistent with `parameters[]` so the side-bank
+    // reader can return one Value type for both banks.
+    {"keyboard_scalar_right",       StorageFieldKind::array,  StorageFieldType::f64, StorageEncoding::binary, kKeyboardScalarRightCount, 0u, 5u, {}},
 };
 
 inline constexpr std::uint32_t kDeviceStorageFieldCount =
@@ -276,12 +290,14 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // 5939 -> 6121 for P4-③ live-state L1 (design/00 §2d, msg 695564a7): the five
 // live non-scalar / no-domain-selector fields gained a right-bank `_r` mirror
 // (the same 96 + 2 + 48 + 32 + 4 = 182 bytes again, appended, versionFrom=4).
+// It rose 6121 -> 6297 for P4-③ per-side scalar bank (Decis B, msg c0d9e9be): the
+// 22 keyboard scalars' right bank is appended as one f64 array (22 x 8 = 176 bytes).
 inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageSchemaVersion,
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    6121u,
+    6297u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).
@@ -476,6 +492,15 @@ struct DeviceStateV1 {
   float keyboardPlateTuneR[kKeyboardPlateTuneCount] = {};
   float keyboardPushbuttonR[kKeyboardPushbuttonCount] = {};
   std::uint8_t keyboardClockSelectorsR[4] = {};  // {arp_clock, arp_rhythm, seq_clock, seq_rhythm}
+
+  // P4-③ LIVE per-side SCALAR bank (Decis B, @Claude msg c0d9e9be). The 22 keyboard
+  // scalars that carry a ParameterId have their RIGHT-side value here; the LEFT /
+  // shared side value lives in `parameters[ParameterId]` (bank 0) untouched, so
+  // there is never a second copy that could drift. Indexed by ParameterId via
+  // keyboard_side_bank.h's kKeyboardScalarParameterIds / keyboard_scalar_index;
+  // f64 matches `parameters[]` so a side-bank reader returns one Value type. Never
+  // a scalar ParameterId grows for the right — split is two banks under one id.
+  double keyboardScalarRight[kKeyboardScalarRightCount] = {};
 
   // Dual-effector cartridge/program selection (left and right slots).
   EffectorSelection leftEffector;

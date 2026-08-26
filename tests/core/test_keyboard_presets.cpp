@@ -15,7 +15,9 @@
 
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/keyboard_presets.h>
+#include <lunar24/core/keyboard_side_bank.h>
 #include <lunar24/core/state_serializer.h>
+#include <lunar24/registry_ids.hpp>
 
 namespace core = lunar24::core;
 
@@ -364,6 +366,57 @@ static void load_save_initialise() {
   CHECK_FALSE(core::save_preset(st, 4u, st.keyboardSettings, liveSeq, 0u, plate, push, sel));
 }
 
+// P4-③ §2e invariant (design/00, @Claude msg c0d9e9be): a keyboard scalar is
+// per-side in the preset IFF it is per-side in live. Bank[0] (left/shared) stays in
+// `parameters[ParameterId]`; bank[1] (right) lives in `keyboardScalarRight[index]`.
+// Preset -> live -> preset must be lossless on every per-side scalar, and the two
+// banks must hold DISTINCT values — split is two banks under ONE id (the id space
+// never grows for the right; the index map, not a new id, addresses the right bank).
+//
+//   * Absolute anchor — live bank[0] and bank[1] hold the correct, separate left /
+//     right values (this separates "two banks under one id" from "one global value
+//     on both sides"). Anchored on keyboard_mode and on pressure_output, the one
+//     @Claude specifically ruled per-side in §2e.
+//   * Round-trip — preset -> live -> preset on the whole preset is lossless.
+//   * Index map — exact both ways: every per-side scalar maps to its own slot, and
+//     the global selector keyboard_behaviour maps to -1 (no right bank).
+//
+// (The negative control is run out-of-band: drop a right-bank transfer in
+// load_live_side_bank and this test reds — the round-trip loses the right value.)
+static void live_scalar_bank_preset_live_round_trip() {
+  core::KeyboardPreset orig;
+  fill_preset(orig);
+
+  core::DeviceStateV1 live;
+  core::load_live_side_bank(orig, live);
+
+  // Absolute anchor: bank[0] = parameters[id] holds LEFT, bank[1] = keyboardScalarRight
+  // holds RIGHT, and they are distinct (fill_preset sets mode=3 vs modeR=103).
+  const auto mode_id = static_cast<core::IdValue>(core::ParameterId::keyboard_mode);
+  const std::int32_t mode_idx = core::keyboard_scalar_index(core::ParameterId::keyboard_mode);
+  CHECK_EQ(live.parameters[mode_id], static_cast<double>(orig.mode));
+  CHECK_EQ(live.keyboardScalarRight[mode_idx], static_cast<double>(orig.modeR));
+  CHECK(live.parameters[mode_id] != live.keyboardScalarRight[mode_idx]);
+  // pressure_output is per-side too (a live scalar, not a global shell value).
+  const auto po_id = static_cast<core::IdValue>(core::ParameterId::keyboard_pressure_output);
+  const std::int32_t po_idx = core::keyboard_scalar_index(core::ParameterId::keyboard_pressure_output);
+  CHECK_EQ(live.parameters[po_id], static_cast<double>(orig.pressureOutput));
+  CHECK_EQ(live.keyboardScalarRight[po_idx], static_cast<double>(orig.pressureOutputR));
+  CHECK(live.parameters[po_id] != live.keyboardScalarRight[po_idx]);
+
+  // Index map is exact both ways.
+  for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i)
+    CHECK_EQ(core::keyboard_scalar_index(core::kKeyboardScalarParameterIds[i]),
+             static_cast<std::int32_t>(i));
+  CHECK_EQ(core::keyboard_scalar_index(core::ParameterId::keyboard_behaviour), -1);
+
+  // Round-trip: preset -> live -> preset is lossless on the whole preset (the
+  // non-scalar `_r` fields are an untouched copy, so they are preserved too).
+  core::KeyboardPreset back = orig;
+  core::save_live_side_bank(live, back);
+  CHECK(presets_equal(back, orig));
+}
+
 static void live_state_holds_non_scalars() {
   // design/07 §6: the non-scalars live as structured DeviceState fields, never
   // flattened into a scalar ParameterDescriptor. Assert the four kinds are all
@@ -392,5 +445,6 @@ int main() {
   right_bank_wire_offset_anchor();
   load_save_initialise();
   live_state_holds_non_scalars();
+  live_scalar_bank_preset_live_round_trip();
   return ::test::finish("keyboard presets (P4-②)");
 }
