@@ -4,7 +4,7 @@
 **这份文件的用途**：@Claude（工程总监）随时可能因额度中断。中断时 @Pi **不要停**——
 从这里读出"什么已批准、什么在做、什么必须等人"，按预授权继续。
 
-**最后更新**：2026-08-26 · head `f195fb9` · 分支 `feat/p0-full-registry` · main `1945878` 未动 · 无 PR#2 · ⏸ 逐音行为已落（未提交，见 §2f）
+**最后更新**：2026-08-26 · head `4da397c` · 分支 `feat/p0-full-registry` · `origin/main` = `baf1e11`（PR #1 合入点）；本分支严格领先、merge-base==origin/main · 无 PR#2
 
 ## 1. 预授权（@Pi 不必等 GO）
 
@@ -18,6 +18,15 @@
 2. **阶段出口裁决**（P0…P6 的 MET / NOT MET）
 3. 与 `design/06-master-plan.md`、`design/07-core-contract.md` **冲突**的决定
 
+## 1b. git 事实（2026-08-26 核实）
+
+`origin/main` = **`baf1e11`**（"Merge pull request #1 from feat/p0-foundation"）。
+本地 `main` ref = `1945878` 是**陈旧未更新**的——我和 @Pi 先前都把它当权威，**记错了**。
+`git merge-base HEAD origin/main` == `baf1e11` == `origin/main` 本身 ⇒ 本分支**严格领先 127 个提交**、
+PR #2 将是干净合并（无冲突）。
+
+⚠️ **规矩**：问"main 动没动"时，**权威是 `origin/main`，不是本地 ref**；本地 ref 不 fetch 就永远停在旧值。
+
 ## 2. 当前进度
 
 | 阶段 | 状态 |
@@ -29,7 +38,7 @@
 | **P4 演奏系统与输入适配** | ▶ **进行中**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f；未提交）／④arp·seq·clock／⑤显示+encoder+校准 |
 | P5 面板 / P6 dual effector | 未开始 |
 
-门禁基线：本机 ctest **33/33**（含 ASan+UBSan detect_leaks=0）；CI build-and-test **4/4 绿**；
+门禁基线：本机 ctest **34/34**（含 ASan+UBSan detect_leaks=0）；CI build-and-test **4/4 绿**；
 `full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
 
 ## 2b. 已裁决的冻结-P0 变更（2026-08-26）
