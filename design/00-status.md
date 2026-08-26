@@ -36,7 +36,7 @@ PR #2 将是干净合并（无冲突）。
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ✅ 出口 MET（2026-08-25） |
 | **P4 演奏系统与输入适配** | ✅ **出口 MET（2026-08-26）**：①统一输入状态机+三路等价 ✅（task #28，已复验）／②**preset 状态** ✅（schema v3、487B/槽、totalBytesHint 5939；裁决 `6a366ebb`，复验 `df7c9202`）／③ **keyboard_mode 侧别上下文地基** ✅（commit `e43411e`）→ live-state 非标量 `_r` 右岸 ✅（schema **v4**、totalBytesHint **6121**，commit `06fc722`）→ **live 标量 bank（B）+ 不变量** ✅（schema **v5**、totalBytesHint **6297**，见 §2e）→ **逐音行为** ✅（见 §2f，commit `4da397c`）→ **存储 schema 参数解析门禁 + 无域 selector 落 homes** ✅（见 §2g，head `4e8b1d4`）→ **arp·seq 按侧引擎** ✅（见 §2h，code head `4c129d2`）／⑤显示+encoder+校准 |
-| **P5 整张面板** | ▶ **下一阶段**；⚠️ **开工前须还 task #15**（宿主 height clamp 非 fit-to-window，面板底 141 逻辑 px 不可达）——它直接决定「控制清单 100% 有可见控件」真假 |
+| **P5 整张面板** | ▶ **下一阶段**；⚠️ **task #15 保持 open 直到 P5 出口**（见下）；task #15（宿主 height clamp 非 fit-to-window，面板底 141 逻辑 px 不可达）——它直接决定「控制清单 100% 有可见控件」真假 |
 | P6 dual effector | 未开始 |
 
 门禁基线：本机 ctest **37/37**（+ASan 22/22 内存错误零）；CI build-and-test **4/4 绿**；
@@ -287,6 +287,25 @@ Calibration 页非空（hold-while-boot 门）。只做"preset+校准"会把一�
 A/R 秒=registry norm 是 UI mapping。**校准多点 0/2/5/8V 分段不可表示**：冻结 registry 每输出只有一个标量（calibration_v_oct/pressure），不扩参数则 4 点分段装不下 → FINDINGS。
 **门禁**：本机 ctest **37/37**、core_headers **90** tracked file 全绿（+keyboard_display/menu/input_normalization/output_calibration.h + 两测试）、regen zero-diff / id-stability / evidence_refs / evidence_layout / spike_clean 全绿；
 `--require-full` 按设计红（12 个声明 gap，PR#2 merge 门，非回归）。main 未动，无 PR#2。**P4 全片收官**，等 @Claude P4 出口裁决。
+
+## 2j. task #15 的还款方式（2026-08-26，msg `52a001a3`）
+
+⚠️ **我原 mandate 的前提是错的**：我说"改宿主 height clamp"，但**仓库里没有任何产品 host/建窗源码**
+（`git ls-files` 只有 core/、generated/、spike/、tests/）。那 141px 是当初靠**改 pinned iPlug2** 在 spike 里量出来的，
+而改上游正是被禁止的实现路径。**没有宿主可改。**
+
+**决定**：不为修一个 clamp 提前搭 host 层（那等于把 P5 的活乱序做）。改为先落
+**框架无关几何模块**（`core/.../host_window_fit.h` + 测试）：输入 design 空间＋可用逻辑区域＋retina
+⇒ 输出 fit drawScale 与"某控件 design 矩形是否垂直可达"；**141 不得写死**（它是本机 visibleFrame 算出来的，
+写死＝把这台机器当规格）；负控＝退回 clamp（drawScale=design 让 WM 裁）→ 底部控件越界 → **必须红**。
+
+🔑 **但这一片不关闭 #15**。模块交付的是**决策逻辑＋可达性谓词**；债的原文是"底部 141 逻辑 px 不可达"，
+**真正可达与否要等 P5 宿主真开窗才成立**。
+**理由＝我们栽过的那一次**：P2-③ 的 `real_path` 决策层验过、执行器没兑现，off-by-one 一直活到债到期才被抓。
+**决策模块正确 ≠ 消费方照做。**
+
+⇒ **写进将来的 P5 mandate**：宿主层**必须消费**该模块定窗高；**负控＝宿主自己算尺寸绕开它 → 必须红**；
+**#15 在"真实窗口下底部那一行控件可达"被实测证明后才关闭**。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 
