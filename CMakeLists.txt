@@ -198,6 +198,7 @@ lunar_add_test(test_patch_graph tests/core/test_patch_graph.cpp)
 lunar_add_test(test_graph_compiler tests/core/test_graph_compiler.cpp)
 lunar_add_test(test_sink_interpret tests/core/test_sink_interpret.cpp)
 lunar_add_test(test_state_publish tests/core/test_state_publish.cpp)
+lunar_add_test(test_machine_runtime tests/core/test_machine_runtime.cpp)
 
 # #37 close-out: the TSan-only memory-model PROBE. It has no CTest assertion and is
 # meaningful only as a ThreadSanitizer detector — a correct pool exits 0, a pool
