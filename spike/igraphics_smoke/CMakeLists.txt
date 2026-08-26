@@ -16,7 +16,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(iPlug2GraphicsSmoke VERSION 0.0.1)
 
-set(IPLUG2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/iPlug2"
+set(IPLUG2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/iPlug2"
     CACHE PATH "iPlug2 root directory"
     FORCE)
 

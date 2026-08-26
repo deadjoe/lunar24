@@ -35,3 +35,9 @@ secrets/
 # public. Source URL + checksums + extraction notes live in design/reference/SOURCES.md.
 design/reference/*.png
 design/reference/solar42N_manual_text.txt
+
+# Third-party library PIN. iPlug2 is the host UI/editor library; it is checked out
+# locally from an upstream clone at a FIXED commit and never vendored or edited here.
+# A local edit to this pin is a secret fork, and the working tree must stay clean —
+# that integrity is enforced by tools/check_iplug_pin_clean.py (registered as a CTest).
+third_party/iPlug2/

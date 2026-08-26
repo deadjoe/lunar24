@@ -137,6 +137,16 @@ add_test(NAME evidence_layout_guard
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/build_evidence_layout.py --check)
 
+# The host (host/) depends on iPlug2 as an UNMODIFIED fixed-commit library. This gate
+# verifies the local clone is pinned to exactly that commit AND its working tree is
+# clean (a locally-edited pin is a secret fork). The clone is a local, non-vendored
+# dependency, so on CI it is absent and the gate SKIPs loudly — never a silent absent
+# guard. Same register-and-loudly-skip shape as evidence_layout_guard and the CoreAudio
+# output test above.
+add_test(NAME iplug_pin_clean_gate
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_iplug_pin_clean.py)
+
 # Strict warnings, applied PRIVATE to a Lunar-owned compiled target only. Never
 # set globally: a future third-party build unit (iPlug2, P1+) must not be forced
 # warning-clean by a global add_compile_options, and lunar_core (header-only
