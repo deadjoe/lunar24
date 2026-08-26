@@ -1,7 +1,6 @@
 {
   "vco_a.cv_in": 0,
   "vco_a.v_oct_in": 1,
-  "vco_a.fm_in": 2,
   "vco_a.sync_in": 3,
   "vco_a.vca_ctl": 4,
   "vco_a.dry_out": 5,
@@ -13,7 +12,6 @@
   "vco_b.dry_out": 9,
   "vco_b.wave_out": 21,
   "vco_b.pwm_in": 22,
-  "vco_b.fm_in": 65,
   "vco_b.vca_ctl": 66,
   "vcf.cv_l_in": 10,
   "vcf.cv_r_in": 11,

@@ -279,9 +279,12 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // in the parameter-capacity freeze (Codex msg deab14b7) when kDeviceParamCapacity
 // went 384 -> 424: the `parameters` f64 array grows +40 (40 x 8 = 320 bytes).
 // It rose 3831 -> 3841 for the vco_b registry correction (task #24, append-only
-// per @Claude "只追加，绝不重排" — manual L411 mirror rule vco_b.fm_in/vca_ctl)
-// when kDevicePatchCapacity went 65 -> 67: `input_cable` u8 grows +2 and
-// `cable_source` u32 grows +8 (2 x 4 = 8) = +10 bytes. It rose 3841 -> 4979
+// per @Claude "只追加，绝不重排" — manual L411 mirror rule — and the later fm_in
+// revert, task #32) when kDevicePatchCapacity reached 67: `input_cable` u8 grows
+// +2 and `cable_source` u32 grows +8 (2 x 4 = 8) = +10 bytes. The +10 is keyed to
+// the id-space (67 = max id 66 + 1, where 66 is vco_b.vca_ctl), not to the count
+// of vco_b appends: vco_b.fm_in (id 65) was removed as over-recorded, but the
+// capacity stays 67 because the id-space is unchanged. It rose 3841 -> 4979
 // for P4-② (Decision A, msg 6a366ebb): the keyboard preset grew 8 -> 247 bytes
 // (4 presets: 4 x 239 = 956) and the five live keyboard non-scalar fields were
 // appended (96 + 2 + 48 + 32 + 4 = 182). It rose 4979 -> 5939 for P4-③ (per-side,

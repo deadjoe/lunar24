@@ -281,10 +281,16 @@ static void frozen_counts() {
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,
                                          // seq_clock, arp_rhythm, seq_rhythm + remaining module
                                          // ranges)
-  CHECK_EQ(core::kJackCount, 66u);       // vco_b registry correction (task #24, append-only per
-                                         // @Claude "只追加，绝不重排"): +2 jacks from the manual
-                                         // L411 mirror rule — vco_b.fm_in (id 65) + vco_b.vca_ctl
-                                         // (id 66). Appended, never renumbering an existing id.
+  CHECK_EQ(core::kJackCount, 64u);       // vco_b registry correction (task #24, append-only per
+                                         // @Claude "只追加，绝不重排"): +1 jack for the manual L411
+                                         // mirror rule — vco_b.vca_ctl (id 66). The other
+                                         // mirror-rule candidate vco_b.fm_in (id 65) was REMOVED as
+                                         // over-recorded (task #32, frozen-P0 removal): manual L388
+                                         // "linear FM input with attenuator" is the cv jack + the cv
+                                         // amt attenuator + the lin/exp switch, NOT a dedicated
+                                         // fm_in. So the frozen count is back to 64 (it briefly
+                                         // was 66 during the +2 append). Appended/removed, never
+                                         // renumbering an existing id.
                                          // Prior: Phase B DRONE 6 voice slice (Codex msg b121ba1b):
                                          // +5 patchable jacks (drone_6.cv_out output/cv id 60 — 0..12 is
                                          // only a numeric placeholder, range/polarity stay

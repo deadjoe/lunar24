@@ -277,31 +277,6 @@
           }
         },
         {
-          "id": 2,
-          "stable_id": "vco_a.fm_in",
-          "name": "FM",
-          "direction": "input",
-          "signalType": "cv",
-          "polarity": "unknown",
-          "nominalMin": -5.0,
-          "nominalMax": 5.0,
-          "coupling": "unknown",
-          "evidence": {
-            "line": 388
-          },
-          "status": "confirmed",
-          "fieldEvidence": {
-            "nominalRange": "unverified",
-            "toleratedRange": "unverified",
-            "threshold": "unverified",
-            "saturation": "unverified",
-            "transfer": "unverified",
-            "signalType": "confirmed",
-            "polarity": "unverified",
-            "coupling": "unverified"
-          }
-        },
-        {
           "id": 3,
           "stable_id": "vco_a.sync_in",
           "name": "Sync (VCO A only)",
@@ -789,31 +764,6 @@
           "evidence": {
             "lineStart": 386,
             "lineEnd": 387
-          },
-          "status": "confirmed",
-          "fieldEvidence": {
-            "nominalRange": "unverified",
-            "toleratedRange": "unverified",
-            "threshold": "unverified",
-            "saturation": "unverified",
-            "transfer": "unverified",
-            "signalType": "confirmed",
-            "polarity": "unverified",
-            "coupling": "unverified"
-          }
-        },
-        {
-          "id": 65,
-          "stable_id": "vco_b.fm_in",
-          "name": "FM",
-          "direction": "input",
-          "signalType": "cv",
-          "polarity": "unknown",
-          "nominalMin": -5.0,
-          "nominalMax": 5.0,
-          "coupling": "unknown",
-          "evidence": {
-            "line": 388
           },
           "status": "confirmed",
           "fieldEvidence": {

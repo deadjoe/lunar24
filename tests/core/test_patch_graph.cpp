@@ -127,9 +127,9 @@ static void user_cable_cardinality_default_one() {
   // into a second input atomically replaces the first.
   CHECK_TRUE(g.connect(core::JackId::lfo_a_cv_out, core::JackId::vco_a_cv_in));
   CHECK_TRUE(g.cableConnected(core::JackId::lfo_a_cv_out, core::JackId::vco_a_cv_in));
-  CHECK_TRUE(g.connect(core::JackId::lfo_a_cv_out, core::JackId::vco_a_fm_in));
+  CHECK_TRUE(g.connect(core::JackId::lfo_a_cv_out, core::JackId::vco_b_pwm_in));
   CHECK_FALSE(g.cableConnected(core::JackId::lfo_a_cv_out, core::JackId::vco_a_cv_in));
-  CHECK_TRUE(g.cableConnected(core::JackId::lfo_a_cv_out, core::JackId::vco_a_fm_in));
+  CHECK_TRUE(g.cableConnected(core::JackId::lfo_a_cv_out, core::JackId::vco_b_pwm_in));
   CHECK_EQ(g.countOutOf(core::JackId::lfo_a_cv_out), 1u);
 
   // Input cardinality: vco_a.cv_in (maxCables 1) accepts one source; a second

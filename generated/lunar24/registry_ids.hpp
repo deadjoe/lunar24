@@ -387,7 +387,6 @@ enum class ParameterId : std::uint32_t {
 enum class JackId : std::uint32_t {
     vco_a_cv_in = 0,
     vco_a_v_oct_in = 1,
-    vco_a_fm_in = 2,
     vco_a_sync_in = 3,
     vco_a_vca_ctl = 4,
     vco_a_dry_out = 5,
@@ -399,7 +398,6 @@ enum class JackId : std::uint32_t {
     vco_b_dry_out = 9,
     vco_b_wave_out = 21,
     vco_b_pwm_in = 22,
-    vco_b_fm_in = 65,
     vco_b_vca_ctl = 66,
     vcf_cv_l_in = 10,
     vcf_cv_r_in = 11,
@@ -506,7 +504,7 @@ enum class RouteId : std::uint32_t {
 
 inline constexpr std::uint32_t kModuleCount = 21;
 inline constexpr std::uint32_t kParameterCount = 345;
-inline constexpr std::uint32_t kJackCount = 66;
+inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
@@ -902,7 +900,6 @@ inline constexpr std::string_view jack_id_string(JackId id) {
   switch (id) {
     case JackId::vco_a_cv_in: return "vco_a.cv_in";
     case JackId::vco_a_v_oct_in: return "vco_a.v_oct_in";
-    case JackId::vco_a_fm_in: return "vco_a.fm_in";
     case JackId::vco_a_sync_in: return "vco_a.sync_in";
     case JackId::vco_a_vca_ctl: return "vco_a.vca_ctl";
     case JackId::vco_a_dry_out: return "vco_a.dry_out";
@@ -914,7 +911,6 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::vco_b_dry_out: return "vco_b.dry_out";
     case JackId::vco_b_wave_out: return "vco_b.wave_out";
     case JackId::vco_b_pwm_in: return "vco_b.pwm_in";
-    case JackId::vco_b_fm_in: return "vco_b.fm_in";
     case JackId::vco_b_vca_ctl: return "vco_b.vca_ctl";
     case JackId::vcf_cv_l_in: return "vcf.cv_l_in";
     case JackId::vcf_cv_r_in: return "vcf.cv_r_in";
