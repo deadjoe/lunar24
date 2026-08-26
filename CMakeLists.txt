@@ -216,3 +216,16 @@ if(APPLE)
   target_link_libraries(test_coreaudio_output PRIVATE
     "-framework CoreAudio" "-framework CoreFoundation")
 endif()
+
+# ---------------------------------------------------------------------------
+# P5-① host STANDALONE (host/): a self-authored iPlug2 APP bootstrap that opens a
+# real macOS window. Guarded to macOS + the pinned iPlug2 clone being present.
+# iPlug2 is gitignored/absent on CI (so this is a no-op there — same
+# register-and-loudly-skip shape as the iPlug pin gate), and it is never built on
+# the cross-platform Linux/Windows test matrix (an OBJCXX/framework target).
+# Its target is Lunar24Host (host/CMakeLists.txt); the host geometry is the pure
+# lunar_host/lunar_core headers it links.
+# ---------------------------------------------------------------------------
+if(APPLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/iPlug2")
+  add_subdirectory(host)
+endif()
