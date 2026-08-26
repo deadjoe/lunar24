@@ -4169,6 +4169,44 @@ def main():
     if not has(problems, "not a current Root-A gap"):
         raise SystemExit("stale/rogue root-A disposition id not flagged: %r" % problems)
 
+    # (mi)-(ml) Storage-schema reference resolution gate (Claude msg 30f82596 + 82a77317). A frozen
+    # record/params schema ref must resolve to a REAL registry parameter OR a DECLARED home (read from
+    # the manifest's disposition blocks as data, never re-derived from gate logic). A ref that is
+    # neither must fail. Since the only non-implemented target params are the declared homes, the
+    # negative must force a ref to a genuine dangling id: delete one declared home from its
+    # positionless disposition AND leave the schema still referencing it, so it is neither a registry
+    # param nor a declared home. (Root-A dropping one entry is covered by (me) two-way; the dangling
+    # negative here uses posl to prove the RESOLUTION rule independently of which category declared it.)
+    mi_bad = copy.deepcopy(manifest)
+    del mi_bad["target"]["positionlessSelectorDisposition"]["items"]["keyboard.seq_clock"]
+    # keyboard_params_minus_clock.params still references keyboard.seq_clock (we did NOT remove the
+    # ref), so after un-homing it, that ref is neither a registry param nor a declared home → the
+    # resolution gate below must go red. (The disposition two-way check will ALSO fire "missing a
+    # disposition" — that is a second, valid signal; the assertion here pins the RESOLUTION needle.)
+    problems, _ = gate.check(spec, mi_bad)
+    if not has(problems, "resolves to neither a registry parameter nor a declared home"):
+        raise SystemExit("a schema ref to a genuine dangling id (not registry, not declared home) "
+                         "not flagged: %r" % problems)
+
+    # (mj) positionless-selector disposition must be two-way, exactly like Root-A: a stale/extra id
+    # naming a non-positionless-selector param must fail.
+    mj_bad = copy.deepcopy(manifest)
+    mj_bad["target"]["positionlessSelectorDisposition"]["items"]["keyboard.quantise_scale_editor"] = \
+        {"belongsTo": "deviceState", "status": "deferred-to-P4"}
+    problems, _ = gate.check(spec, mj_bad)
+    if not has(problems, "not a current positionless-selector gap"):
+        raise SystemExit("stale/rogue positionless-selector disposition id not flagged: %r"
+                         % problems)
+
+    # (mk) malformed/dead status in the positionless disposition must fail (same rule as Root-A).
+    mk_bad = copy.deepcopy(manifest)
+    mk_bad["target"]["positionlessSelectorDisposition"]["items"]["keyboard.arp_clock"]["status"] = \
+        "landed"
+    problems, _ = gate.check(spec, mk_bad)
+    if not has(problems, "has invalid status"):
+        raise SystemExit("positionless-selector disposition status drift not flagged: %r"
+                         % problems)
+
     # (lm)-(lt) MAGIC Program 2/3 X/Y/Z descriptor lock (Codex msg 62370964). The six program
     #      magic.2/.3 x/y/z params (ids 307-312) are landed descriptor facts locked by the exact-
     #      compare — id renumber, owner / cross-owner leak, per-line evidence drift and a fieldEvidence

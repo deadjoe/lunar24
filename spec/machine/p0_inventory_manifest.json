@@ -1817,6 +1817,27 @@
         }
       }
     },
+    "positionlessSelectorDisposition": {
+      "note": "Disposition of the 4 no-value-domain ('positionless') selector-toggle params in the keyboard clock/rhythm menus (manual L822-910). Each is a selector-toggle whose frozen target omits an evidence-backed `positions` list, so its value domain is UN-EVIDENCED and is deliberately NOT invented (B approach, Claude msg 30f82596). The controls' existence is evidenced (manual L827/L875); only the option list is unresolved and stays as FINDINGS. Their value structurally belongs in a DeviceState byte array (keyboardClockSelectors[4], device_state.h), and is DEFERRED-TO-P4 (modelled by the P4 keyboard subsystem, not a scalar registry parameter). The gate FAILS if any computed positionless-selector gap id is missing its disposition, if a disposition item is malformed, or if a disposition names an id that is not a current positionless-selector gap (two-way check, so it cannot drift stale).",
+      "items": {
+        "keyboard.arp_clock": {
+          "belongsTo": "deviceState",
+          "status": "deferred-to-P4"
+        },
+        "keyboard.arp_rhythm": {
+          "belongsTo": "deviceState",
+          "status": "deferred-to-P4"
+        },
+        "keyboard.seq_clock": {
+          "belongsTo": "deviceState",
+          "status": "deferred-to-P4"
+        },
+        "keyboard.seq_rhythm": {
+          "belongsTo": "deviceState",
+          "status": "deferred-to-P4"
+        }
+      }
+    },
     "landedDescriptorFacts": {
       "note": "Closed identity/evidence facts for the Phase B mods-gap slice (Codex msg 17cc9a4a). Their presence IS the declaration that these params/jacks have landed, so a registry missing one fails NORMAL rather than reopening a gap. descriptorEvidence.line is at WIDGET granularity (matching the per-widget evidence.line the registry cites); the parent region-span `evidence` is untouched. fieldEvidence is the 8-key exact projection of the same fields.",
       "parameters": {

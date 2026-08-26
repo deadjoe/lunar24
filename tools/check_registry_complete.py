@@ -476,60 +476,104 @@ def validate_record_schemas(record_schemas, param_sids, param_record_types=None)
     return out
 
 
-def validate_root_a_disposition(disposition, root_a_items, record_schemas):
-    """Validate the Root-A gap disposition (Claude msg 43ab2322 item ②). Each computed non-scalar
-    (Root A) gap id must point to its 归属 — a DeviceState structured field (per design/07 §6), or a
-    declared recordSchema — and carry a status in {modelled, deferred-to-P4}. The declared set must
-    match the computed Root-A gap set EXACTLY, so a disposition cannot drift stale. Missing /
-    malformed / false item → problem."""
+def validate_gap_disposition(disposition, computed_items, label, record_schemas):
+    """Validate a gap disposition block (Root A: Claude msg 43ab2322 item ②; positionless selectors:
+    Claude msg 82a77317). Each computed gap id in the category must point to where the value belongs
+    (a DeviceState structured field per design/07 §6, or a declared recordSchema) and carry a status in
+    {modelled, deferred-to-P4}. The declared set must match the computed gap set EXACTLY, so a
+    disposition cannot drift stale. Missing / malformed / false item → problem.
+
+    ONE generic rule for every disposition — the gate must never hardcode a specific container or
+    field name (it is data, not gate logic; Claude msg 82a77317). A schema reference resolves to a
+    REAL registry parameter OR to a declared home; the declared-home set (what is allowed to appear in
+    a recordSchema params/excludes list) is read from the manifest's disposition blocks, not from any
+    computed categorisation. `label` is only there so the emitted message names which category is
+    being audited."""
     out = []
     if not isinstance(disposition, dict):
-        out.append("root-A gap disposition must be an object with an 'items' map "
-                   "(each Root-A gap id → {belongsTo, status})")
+        out.append("%s gap disposition must be an object with an 'items' map "
+                   "(each %s gap id → {belongsTo, status})" % (label, label))
         return out
     items = disposition.get("items")
     if not isinstance(items, dict):
-        out.append("root-A gap disposition missing its 'items' map")
+        out.append("%s gap disposition missing its 'items' map" % label)
         return out
     declared = set(items)
-    root_a = set(root_a_items)
-    if declared != root_a:
-        missing = sorted(root_a - declared)
-        extra = sorted(declared - root_a)
+    comp = set(computed_items)
+    if declared != comp:
+        missing = sorted(comp - declared)
+        extra = sorted(declared - comp)
         if missing:
-            out.append("Root-A gap ids missing a disposition (every non-scalar Root-A gap must "
-                       "point to where it belongs): %s" % missing)
+            out.append("%s gap ids missing a disposition (every %s gap must point to "
+                       "where it belongs): %s" % (label, label, missing))
         if extra:
-            out.append("root-A disposition names ids that are not a current Root-A gap "
-                       "(stale/rogue disposition): %s" % extra)
+            out.append("%s disposition names ids that are not a current %s gap "
+                       "(stale/rogue disposition): %s" % (label, label, extra))
     for sid, d in items.items():
         if not isinstance(d, dict):
-            out.append("root-A disposition for %r must be an object {belongsTo, status}" % sid)
+            out.append("%s disposition for %r must be an object {belongsTo, status}" % (label, sid))
             continue
         d_extra = sorted({k for k in d if k not in {"belongsTo", "status"}})
         if d_extra:
-            out.append("root-A disposition for %r has keys %s not allowed "
-                       "(exactly belongsTo/status)" % (sid, d_extra))
+            out.append("%s disposition for %r has keys %s not allowed "
+                       "(exactly belongsTo/status)" % (label, sid, d_extra))
         st = d.get("status")
         if st not in {"modelled", "deferred-to-P4"}:
-            out.append("root-A disposition for %r has invalid status %r (must be "
-                       "modelled|deferred-to-P4)" % (sid, st))
+            out.append("%s disposition for %r has invalid status %r (must be "
+                       "modelled|deferred-to-P4)" % (label, sid, st))
         bt = d.get("belongsTo")
         if not isinstance(bt, str) or not bt:
-            out.append("root-A disposition for %r needs a non-empty belongsTo string" % sid)
+            out.append("%s disposition for %r needs a non-empty belongsTo string" % (label, sid))
         elif bt.startswith("recordSchema:"):
             rs = bt[len("recordSchema:"):]
             if rs not in record_schemas:
-                out.append("root-A disposition for %r belongsTo %r names no declared recordSchema "
-                           "(keyboard_seq/keyboard_preset…)" % (sid, bt))
+                out.append("%s disposition for %r belongsTo %r names no declared recordSchema "
+                           "(keyboard_seq/keyboard_preset…)" % (label, sid, bt))
         elif bt != "deviceState":
-            out.append("root-A disposition for %r belongsTo %r is not a supported 归属 "
-                       "(recordSchema:<std> or deviceState)" % (sid, bt))
+            out.append("%s disposition for %r belongsTo %r is not a supported 归属 "
+                       "(recordSchema:<std> or deviceState)" % (label, sid, bt))
         if st == "modelled" and not (isinstance(bt, str) and bt.startswith("recordSchema:")
                                      and bt[len("recordSchema:"):] in record_schemas):
-            out.append("root-A disposition for %r says modelled but belongsTo %r is not a declared "
+            out.append("%s disposition for %r says modelled but belongsTo %r is not a declared "
                        "recordSchema (modelled means the container schema exists in the manifest)"
-                       % (sid, bt))
+                       % (label, sid, bt))
+    return out
+
+
+def validate_schema_param_resolution(record_schemas, reg_param_sids, declared_homes):
+    """Claude msg 30f82596: a frozen storage schema must not reference a parameter that resolves to
+    nothing. The earlier params-list body check (validate_record_schemas) validates each ref against
+    the MANIFEST target parameter set, so a stable_id the manifest declares but the registry does not
+    implement passes there — a preset record could then claim to store a parameter that, on the
+    implementation side, does not exist, and no gate would reconcile the two. This check closes that
+    gap: a params-set member (or a record 'excludes' member) is satisfied only when the stable_id is
+    a REAL registry parameter, or a DECLARED HOME (the disposition blocks name where each gap's value
+    structurally lives — Root-A non-scalar home or positionless-selector home — so the gap is
+    intentional and its value is NOT a scalar param). A ref that is neither is a TRUE dangling ref
+    (declared on paper, unimplemented, un-homed).
+
+    `declared_homes` is read from the manifest's disposition blocks (data), never from gate logic:
+    the gate must not hardcode a specific container or field name (Claude msg 82a77317). Always-on:
+    independent of the completeness level, like the disposition checks. The negative control
+    (tests/core/test_registry_complete_negative.py) inserts a ref that is neither a registry parameter
+    nor a declared home and asserts it goes red for THIS reason."""
+    out = []
+    for name, sch in record_schemas.items():
+        if not isinstance(sch, dict):
+            continue
+        kind = sch.get("kind")
+        if kind == "params":
+            refs = [(p, "params") for p in (sch.get("params") or [])]
+        elif kind == "record":
+            refs = [(p, "excludes") for p in (sch.get("excludes") or [])]
+        else:
+            continue
+        for sid, where in refs:
+            if sid in reg_param_sids or sid in declared_homes:
+                continue
+            out.append(f"record schema {name!r}: {where} reference {sid!r} resolves to neither a "
+                       f"registry parameter nor a declared home — true dangling ref "
+                       f"(declared on paper, unimplemented, un-homed)")
     return out
 
 
@@ -1935,13 +1979,30 @@ def check(spec, manifest, require_full=False):
     _param_other = [sid for sid in _param_gap
                     if sid not in _param_root_a and sid not in _param_posl]
 
-    # Root-A gap disposition coherence (Claude msg 43ab2322 item ②): the 8 non-scalar gaps must each
-    # point to where the value structurally belongs (a DeviceState field or a declared recordSchema)
-    # and state its status (modelled | deferred-to-P4); the declared set must match the computed
-    # Root-A gap set EXACTLY (two-way), so it cannot drift stale. Always-on: it is a manifest-
-    # internal coherence check, independent of the completeness level.
-    problems.extend(validate_root_a_disposition(tgt.get("rootAGapDisposition"), _param_root_a,
-                                                record_schemas))
+    # Gap disposition coherence — Root A (Claude msg 43ab2322 item ②) and the positionless selectors
+    # (Claude msg 82a77317): each computed gap in a category must point to where the value structurally
+    # belongs (a DeviceState field or a declared recordSchema) and state its status (modelled |
+    # deferred-to-P4); the declared set must match the computed gap set EXACTLY (two-way), so it cannot
+    # drift stale. One generic rule per category; never a hardcoded container/field name. Always-on.
+    problems.extend(validate_gap_disposition(tgt.get("rootAGapDisposition"), _param_root_a,
+                                             "Root-A", record_schemas))
+    problems.extend(validate_gap_disposition(tgt.get("positionlessSelectorDisposition"), _param_posl,
+                                             "positionless-selector", record_schemas))
+
+    # Storage-schema reference resolution (Claude msg 30f82596): every ref a frozen record/params
+    # schema makes (params-set member, or record 'excludes' member) must resolve to a real registry
+    # parameter OR a DECLARED HOME. The declared-home set is read from the manifest's disposition
+    # blocks — DATA, not gate logic (Claude msg 82a77317): the gate never names a container/field, it
+    # just accepts whatever the manifest declares as a legitimate home (Root-A + positionless). A ref
+    # that is neither is a declaration/implementation split nobody reconciles. Always-on.
+    _declared_homes = set()
+    for _disp_key in sorted(k for k in tgt if k.endswith("Disposition")):
+        _disp = tgt.get(_disp_key) or {}
+        _items = _disp.get("items") if isinstance(_disp, dict) else None
+        if isinstance(_items, dict):
+            _declared_homes |= set(_items)
+    problems.extend(validate_schema_param_resolution(record_schemas, reg_param_sids,
+                                                     _declared_homes))
 
     coverage = {
         "registry": {
