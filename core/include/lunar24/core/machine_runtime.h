@@ -32,9 +32,9 @@
 // The voice-input jack -> parameter mapping (which patch jack is "VCO B v_oct" vs
 // "VCF cv_l", ...) is a REGISTRY semantic, not a compile_graph fact. The runtime
 // holds it as an explicit binding table the host fills from the registry; it is
-// deliberately NOT hardcoded to numeric ids here. (In the scoped milestone the
-// drone 20->6 grouping and the full control-module executor are PROVISIONAL —
-// design points 1 & 2, recorded in the #38 thread and awaiting adjudication.)
+// deliberately NOT hardcoded to numeric ids here. (The drone CLASSIC/NEW split is
+// design/01 §3-CONFIRMED — see aggregateDrone_; the full control-module executor
+// is the standing P3/P4 work, separate from this #38 runtime.)
 //
 // RT CONTRACT (criterion ⑤): processFrame()/processBlock() allocate nothing, take
 // no lock, touch no file/log. All state is preallocated; vectors live only in
@@ -169,9 +169,8 @@ class SynthRuntime {
     double chIn[kNumChannels] = {};
     chIn[VoiceMixer::kChannelVcoA] = a;
     chIn[VoiceMixer::kChannelVcoB] = b;
-    // Drone: provisional 20->6 grouping (design point 1) — each drone channel sums
-    // a fixed slice of the seeded bank. Documented PROVISIONAL; the exact map is a
-    // standing open item.
+    // Drone: design/01 §3 CLASSIC/NEW split — voices 1/2/4/5 each carry 5 of the
+    // bank's 20 oscillators; voices 3/6 are NEW (not in this bank) and stay silent.
     double drone[DroneBank::kMaxVoices] = {};
     drone_.tick(drone);
     aggregateDrone_(drone, chIn);
@@ -219,25 +218,29 @@ class SynthRuntime {
     return j < kMaxEdges ? cvOut_[j] : 0.0;
   }
 
-  // PROVISIONAL 20->6 drone grouping: six drone channels (DRONE1/2/3, DRONE4/5/6)
-  // each take a contiguous slice of the seeded bank and sum it. A documented
-  // placeholder until the voice->channel mapping is adjudicated (design point 1).
+  // Drone grouping — design/01 §3 (CONFIRMED, not provisional): six drone voices,
+  // 1/2/4/5 = "CLASSIC" (5 oscillators each, i.e. the DroneBank's 20 voices),
+  // 3/6 = "NEW" (Papa Srapa noise, P3-②, NOT part of the DroneBank). The 20 flat
+  // bank oscillators split 5-per-CLASSIC-voice. The bank-index -> channel ordering
+  // is the bank's own layout (its voices are unlabeled, so this is a deterministic
+  // index convention ascending by channel), NOT a manual fact; the DESIGN-CONFIRMED
+  // claim here is the CLASSIC/NEW split, not the within-bank ordering.
   static void aggregateDrone_(const double* drone, double* chIn) {
-    // drone[] holds voiceCount_ samples (up to kMaxVoices=20) for the seeded bank;
-    // channel k uses voices on a slice. Slices are sized /6 and wrappers clamp.
-    const int kDroneChannels = 6;
-    const int droneBaseSlots[6] = {VoiceMixer::kChannelDrone1, VoiceMixer::kChannelDrone2,
-                                   VoiceMixer::kChannelDrone3, VoiceMixer::kChannelDrone4,
-                                   VoiceMixer::kChannelDrone5, VoiceMixer::kChannelDrone6};
-    // Placeholder: each channel sums a fixed slice (voice count / 6 each). The
-    // precise per-channel voice assignment is the open design point.
-    for (int c = 0; c < kDroneChannels; ++c) {
+    // drone[] holds voiceCount_ (= kMaxVoices=20) samples for the seeded bank.
+    // DRONE1 <- voices 0..4, DRONE2 <- 5..9, DRONE4 <- 10..14, DRONE5 <- 15..19.
+    const int classicChannels[5] = {VoiceMixer::kChannelDrone1, VoiceMixer::kChannelDrone2,
+                                    VoiceMixer::kChannelDrone4, VoiceMixer::kChannelDrone5};
+    for (int c = 0; c < 4; ++c) {
       double s = 0.0;
-      const int begin = c * 20 / kDroneChannels;
-      const int end = (c + 1) * 20 / kDroneChannels;
+      const int begin = c * 5;
+      const int end = begin + 5;
       for (int v = begin; v < end; ++v) s += drone[v];
-      chIn[droneBaseSlots[c]] = s;
+      chIn[classicChannels[c]] = s;
     }
+    // NEW drone voices (3 and 6) are not sourced from the DroneBank — leave their
+    // mixer channels silent (a later P3-② NEW voice implementation drives them).
+    chIn[VoiceMixer::kChannelDrone3] = 0.0;
+    chIn[VoiceMixer::kChannelDrone6] = 0.0;
   }
 
   const JackDescriptor* jacks_ = nullptr;

@@ -22,8 +22,11 @@
 //   ④ sr/buffer invariance + reproducibility — a fixed seed + fixed inputs gives
 //      bit-identical output across runs and independent of block partition, at
 //      every configured sample rate.
-//   ⑤ RT-safe — no allocation, no lock on the render path (by construction),
-//      verified as: rendering never recompiles/mutates the plan, output is finite.
+//   ⑤ RT-safe — no allocation, no lock on the render path. Verified two ways:
+//      an ALLOCATOR-COUNT probe (operator new/new[] in this TU are counted; the
+//      render loop must leave the count at zero, and the probe is itself proven
+//      non-vacuous by a deliberate allocation inside the window), and the plan-stable
+//      check (rendering never recompiles/mutates the plan). Output stays finite.
 //
 // Synthetic descriptor tables drive the runtime exactly as the registry would in
 // production; the runtime itself is the unmodified product surface. Where a
@@ -34,10 +37,33 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <new>
 #include <vector>
 
 #include <lunar24/core/enums.h>
 #include <lunar24/core/machine_runtime.h>
+
+// #38 criterion ⑤ (rule 5) allocator-count probe. The product render path must
+// allocate nothing, so every operator new/new[] in THIS test binary is counted and
+// the render loop must leave the count at zero. We replace only the unaligned
+// operators (a deliberate-alloc vector goes through unaligned new, and the render
+// path allocates nothing at all — aligned or not — so the unaligned set fully
+// covers both the real measurement and the deliberate negative). Forwarding to
+// malloc/free keeps the default delete (which frees) compatible.
+std::size_t g_allocCount = 0;
+
+void* operator new(std::size_t n) {
+  ++g_allocCount;
+  void* p = std::malloc(n ? n : 1);
+  if (!p) throw std::bad_alloc();
+  return p;
+}
+void* operator new[](std::size_t n) { return ::operator new(n); }
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete[](void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 namespace core = lunar24::core;
 using core::JackId;
@@ -298,8 +324,39 @@ int main() {
     const std::uint32_t m0 = rt.graphModuleCount();
     const std::uint32_t e0 = rt.edgeCount();
     const bool valid0 = rt.graphValid();
+
+    // ALLOCATOR-COUNT (@Claude rule 5). The graph/plan was built by rebuild() OFF
+    // the audio thread; the render loop is the ON-thread measurement window, so the
+    // count is zeroed immediately before it. First prove the probe is non-vacuous:
+    // a deliberate allocation inside the window IS seen (a counter that never fires
+    // is not a detector). Without this, a probe that always reported 0 would pass
+    // trivially and a future allocation in the render path would go unnoticed.
+    g_allocCount = 0;
+    {
+      // A `new char[N]` expression with a non-escaping pointer is scalar-replaced
+      // onto the stack under -O2 ([expr.new] permits omitting a replaceable
+      // allocation whose result never escapes), so a counter fed by `new[]` would
+      // never fire and the probe would be vacuously green. Call the replaceable
+      // allocation function DIRECTLY — a plain call the optimizer must perform,
+      // because its global-store side effect (g_allocCount++) is externally visible.
+      void* mem = ::operator new(8);
+      auto* junk = static_cast<char*>(mem);
+      junk[0] = 0x42;
+      const bool detected = g_allocCount > 0;
+      const char peek = junk[0];
+      ::operator delete(mem);
+      check(detected && peek == 0x42,
+            "probe detects a deliberate allocation (non-vacuous)");
+    }
+
+    // The real RT claim: rendering 100k frames allocates nothing. Zeroed again so
+    // the deliberate allocation above (and any harness setup) is excluded.
+    g_allocCount = 0;
     core::RuntimeOutput last{};
     for (std::size_t i = 0; i < 100000; ++i) last = rt.processFrame(0.0, /*driveGraph=*/true);
+    const std::size_t allocDuringRender = g_allocCount;
+    check(allocDuringRender == 0, "100k frames allocate nothing on the render path");
+
     bool planStable = (rt.graphModuleCount() == m0) && (rt.edgeCount() == e0) &&
                       (rt.graphValid() == valid0);
     check(planStable, "100k frames do not recompile/mutate the plan (no alloc in render)");
