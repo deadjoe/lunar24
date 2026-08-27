@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <vector>
@@ -57,6 +58,20 @@ namespace lunar24::core {
 struct GraphModule {
   ModuleId id;
   const ModuleExecutionContract* contract;
+};
+
+// A fixed internal route (design/07 §4 Decision B): internal fixed endpoints are
+// `module.port` identity with NO JackId and no separate numeric runtime space;
+// they are coherence-only. The compiler consumes fixed edges ONLY for module
+// membership and module->module dependency edges — so a fixed edge contributes
+// ordering (and, inside a cyclic SCC, membership) but it is NOT a path-delay-credit
+// break edge of its own: it has no JackId, so no contract path. The product fixed
+// chain is a DAG; a cycle that crosses a fixed leg + a pluggable cable is broken on
+// the PLUGGABLE (JackId) edge, whose contract decides the delay.
+struct FixedEdge {
+  ModuleId sourceModule;  // owning module of the source port (module.port identity).
+  ModuleId sinkModule;    // owning module of the sink port.
+  const char* name;       // "fixed.<name>", the deterministic cross-category order key.
 };
 
 enum class RegionKind : std::uint8_t { acyclic, cyclic };
@@ -183,22 +198,37 @@ inline void decide_feedback_delay(const ModuleExecutionContract* c, JackId inPor
 
 // Compile a patch snapshot into an execution plan. `jacks` maps a JackId to its
 // owning module; `edges` is the canonical effective-edge set from PatchGraph;
-// `modules` supplies each module's prepared scheduling contract.
+// `modules` supplies each module's prepared scheduling contract; `fixedEdges` is
+// the fixed internal route set (design/07 §4 Decision B), merged into the SAME
+// plan as the pluggable JackId edges (single source of truth, @Claude ruling 2).
+//
+// Cross-category deterministic total order (the break-edge selection; the fixed
+// chain is never a break object — it has no JackId, so no contract decision):
+//   category first (pluggable=0 < fixed=1); then within category — pluggable by
+//   (sourceJack, sinkJack) numeric ascending; fixed by "fixed.<name>" lexicographic.
+// The same topology built from a different insertion order yields the identical
+// feedback set (criterion ⑥c: insertion-order independence).
 //
 // Returns cycle_unsafe_module (with an empty graph) if any cyclic region includes
 // a module that is not allowed in a cyclic SCC. This is a control-thread call;
 // it is the caller's responsibility to keep it off the audio thread.
 inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t jackCount,
                                    const PatchEdge* edges, std::uint32_t edgeCount,
-                                   const GraphModule* modules, std::uint32_t moduleCount) {
+                                   const GraphModule* modules, std::uint32_t moduleCount,
+                                   const FixedEdge* fixedEdges = nullptr,
+                                   std::uint32_t fixedEdgeCount = 0) {
   CompileResult result;
 
   // ---- 0. Distinct modules touched by the graph --------------------------
   std::vector<ModuleId> mods;
-  mods.reserve(edgeCount * 2);
+  mods.reserve(edgeCount * 2 + fixedEdgeCount * 2);
   for (std::uint32_t i = 0; i < edgeCount; ++i) {
     mods.push_back(detail::jack_module(jacks, jackCount, edges[i].source));
     mods.push_back(detail::jack_module(jacks, jackCount, edges[i].sink));
+  }
+  for (std::uint32_t i = 0; i < fixedEdgeCount; ++i) {
+    mods.push_back(fixedEdges[i].sourceModule);
+    mods.push_back(fixedEdges[i].sinkModule);
   }
   std::sort(mods.begin(), mods.end(), [](ModuleId a, ModuleId b) { return detail::mid(a) < detail::mid(b); });
   mods.erase(std::unique(mods.begin(), mods.end()), mods.end());
@@ -213,28 +243,55 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
       if (modules[k].id == mods[i]) { cts[i] = modules[k].contract; break; }
 
   // ---- 1. Inter-module graph --------------------------------------------
-  struct AutoEdge { std::uint32_t src, snk; JackId sj, tj; };
+  // cat: 0 = pluggable (JackId cable), 1 = fixed (module.port, no JackId; sj/tj
+  // are the JackId{0} sentinel). fname is the cross-category fixed order key.
+  struct AutoEdge {
+    std::uint32_t src, snk; JackId sj, tj; std::uint32_t cat; const char* fname;
+  };
   std::vector<AutoEdge> crossed;
   std::vector<std::vector<AutoEdge>> selfLoops(M);
-  crossed.reserve(edgeCount);
+  crossed.reserve(edgeCount + fixedEdgeCount);
   for (std::uint32_t i = 0; i < edgeCount; ++i) {
     ModuleId sm = detail::jack_module(jacks, jackCount, edges[i].source);
     ModuleId tm = detail::jack_module(jacks, jackCount, edges[i].sink);
     std::uint32_t si = detail::lower_bound_module(mods.data(), M, sm);
     std::uint32_t ti = detail::lower_bound_module(mods.data(), M, tm);
-    AutoEdge e{si, ti, edges[i].source, edges[i].sink};
+    AutoEdge e{si, ti, edges[i].source, edges[i].sink, 0u, nullptr};
     if (si == ti)
       selfLoops[si].push_back(e);
     else
       crossed.push_back(e);
   }
-  // Adjacency per source node, sorted by (sourceJack, sinkJack) -> deterministic.
+  // Fixed internal routes: module index -> module index, no JackId. A fixed
+  // self-loop (sourceModule==sinkModule) is a coherence-registry error, not a
+  // breakable signal cycle — skip it (the ledger is DAG by design; a loop here
+  // would be a manifest defect surfaced by the registry gate, not the compiler).
+  for (std::uint32_t i = 0; i < fixedEdgeCount; ++i) {
+    ModuleId sm = fixedEdges[i].sourceModule;
+    ModuleId tm = fixedEdges[i].sinkModule;
+    std::uint32_t si = detail::lower_bound_module(mods.data(), M, sm);
+    std::uint32_t ti = detail::lower_bound_module(mods.data(), M, tm);
+    if (si == ti) continue;
+    crossed.push_back(AutoEdge{si, ti, JackId{0}, JackId{0}, 1u, fixedEdges[i].name});
+  }
+  // Deterministic adjacency per source node, across BOTH categories: category
+  // first (pluggable=0 < fixed=1), then the within-category key. This makes the
+  // break-edge set independent of insertion order (criterion ⑥c).
+  auto edgeLess = [](const AutoEdge& a, const AutoEdge& b) {
+    if (a.cat != b.cat) return a.cat < b.cat;
+    if (a.cat == 0) {
+      if (a.sj != b.sj) return detail::jid(a.sj) < detail::jid(b.sj);
+      return detail::jid(a.tj) < detail::jid(b.tj);
+    }
+    const int c = std::strcmp(a.fname, b.fname);
+    if (c != 0) return c < 0;
+    return a.src < b.src;  // names are unique in the ledger; stable tiebreak
+  };
   std::vector<std::vector<std::uint32_t>> adj(M);
   for (std::uint32_t i = 0; i < crossed.size(); ++i) adj[crossed[i].src].push_back(i);
   for (auto& a : adj)
     std::sort(a.begin(), a.end(), [&](std::uint32_t x, std::uint32_t y) {
-      if (crossed[x].sj != crossed[y].sj) return detail::jid(crossed[x].sj) < detail::jid(crossed[y].sj);
-      return detail::jid(crossed[x].tj) < detail::jid(crossed[y].tj);
+      return edgeLess(crossed[x], crossed[y]);
     });
 
   // ---- 2. Tarjan SCC (deterministic: node index order + sorted adjacency) --
@@ -344,8 +401,7 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
         if (inScc[crossed[i].src] && inScc[crossed[i].snk]) sadj[crossed[i].src].push_back(i);
       for (std::uint32_t v : members)
         std::sort(sadj[v].begin(), sadj[v].end(), [&](std::uint32_t x, std::uint32_t y) {
-          if (crossed[x].sj != crossed[y].sj) return detail::jid(crossed[x].sj) < detail::jid(crossed[y].sj);
-          return detail::jid(crossed[x].tj) < detail::jid(crossed[y].tj);
+          return edgeLess(crossed[x], crossed[y]);
         });
 
       std::vector<int> stIndex(M, -1);
@@ -384,8 +440,11 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
       for (std::uint32_t v : members)
         if (stIndex[v] < 0) fdfs(v);
 
+      // Pluggable (JackId) edges only: a fixed edge has no JackId, so it carries
+      // no break-creditable signal edge — it contributes membership/ordering, not
+      // a region edge. Its presence is what makes the SCC cyclic.
       for (std::uint32_t i = 0; i < crossed.size(); ++i)
-        if (inScc[crossed[i].src] && inScc[crossed[i].snk])
+        if (inScc[crossed[i].src] && inScc[crossed[i].snk] && crossed[i].cat == 0)
           region.edges.push_back(CompiledEdge{crossed[i].sj, crossed[i].tj});
       for (std::uint32_t v : members)
         for (const AutoEdge& sl : selfLoops[v])

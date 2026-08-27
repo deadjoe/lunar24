@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <new>
 #include <vector>
 
@@ -73,16 +74,32 @@ namespace {
 
 // Synthetic module + jack identity (tests pass synthetic tables, as test_patch_graph
 // does). The runtime and compile_graph only read jack id + owning module.
+// Modules 1-4 are the CONTROL patchables (CV source, VCO A, VCO B, VCF); 5-10 are
+// the FIXED-chain modules merged into the same plan (drone, ext-in, preamp,
+// env_follower, mixer, distortion).
 constexpr ModuleId kM_CvSrc{1};
 constexpr ModuleId kM_VcoA{2};
 constexpr ModuleId kM_VcoB{3};
 constexpr ModuleId kM_Vcf{4};
+constexpr ModuleId kM_Drone{5};
+constexpr ModuleId kM_ExtIn{6};
+constexpr ModuleId kM_Preamp{7};
+constexpr ModuleId kM_EnvFol{8};
+constexpr ModuleId kM_Mixer{9};
+constexpr ModuleId kM_Dist{10};
 
 constexpr JackId kJ_CvOut{10};    // CV source output (output jack, M_CvSrc)
 constexpr JackId kJ_VcoAVoct{11}; // VCO A v_oct input (M_VcoA)
 constexpr JackId kJ_VcoBVoct{12}; // VCO B v_oct input (M_VcoB)
 constexpr JackId kJ_VcfCvL{13};   // VCF cv_l input (M_Vcf)
 constexpr JackId kJ_VcfCvR{14};   // VCF cv_r input (M_Vcf)
+// The env_follower cycle cable jack ids. kM_Preamp{7} < kM_EnvFol{8} so the planned
+// per-sample order (preamp then env_follower) makes the PLUGGABLE env_out cable the
+// cycle's break edge, exactly as the fixed leg (preamp->env_follower) carries the
+// module ordering and the cable JackId carries the contract credit (z_inverse on a
+// one-pole smoother).
+constexpr JackId kJ_EnvFolOut{15};   // env_follower env_out jack (cycle break source)
+constexpr JackId kJ_PreampExtIn{16}; // preamp ext_source_in jack (cycle break sink)
 
 core::JackDescriptor mkJack(JackId id, ModuleId mod, core::PinDirection dir) {
   core::JackDescriptor d{};
@@ -99,15 +116,10 @@ const core::JackDescriptor kJacks[] = {
     mkJack(kJ_VcoBVoct, kM_VcoB, core::PinDirection::input),
     mkJack(kJ_VcfCvL, kM_Vcf, core::PinDirection::input),
     mkJack(kJ_VcfCvR, kM_Vcf, core::PinDirection::input),
+    mkJack(kJ_EnvFolOut, kM_EnvFol, core::PinDirection::output),
+    mkJack(kJ_PreampExtIn, kM_Preamp, core::PinDirection::input),
 };
-constexpr std::uint32_t kJackCount = 5;
-
-// Prepared contracts are not consulted for this acyclic graph (no cyclic region),
-// so nullptr is correct and sufficient; the table still declares every module the
-// graph can touch so jack_module always resolves to a declared module.
-const core::GraphModule kModules[] = {
-    {kM_CvSrc, nullptr}, {kM_VcoA, nullptr}, {kM_VcoB, nullptr}, {kM_Vcf, nullptr}};
-constexpr std::uint32_t kModuleCount = 4;
+constexpr std::uint32_t kJackCount = 7;
 
 constexpr std::uint64_t kSeed = 0x4C554E41ull;  // "LUNA" — fixed, reproducible.
 constexpr std::size_t kBlock = 256;
@@ -115,16 +127,84 @@ constexpr double kSr = 48000.0;
 constexpr double kBaseHz = 220.0;
 constexpr double kPatchV = 4.0;  // +4 V on a v_oct jack -> x16 pitch.
 
+// Env_follower (a one-pole smoother) declares a direct-through env path, so a cycle
+// through it is z_inverse (one extra sample). The inPort is JackId{0} — the FIXED
+// endpoint sentinel: the fixed preamp->env_follower leg has no JackId, and the
+// compiler hands that sentinel to decide_feedback_delay as the cycle's re-entrant
+// input port. The outPort is the env_out jack (the pluggable break source).
+core::ModuleExecutionContract envFolContract() {
+  core::ModuleExecutionContract c;
+  c.sampleRate = kSr;
+  c.allowedInCyclicSCC = true;
+  c.pathDelayCount = 1;
+  c.pathDelays[0].inPort = core::JackId{0};
+  c.pathDelays[0].outPort = kJ_EnvFolOut;
+  c.pathDelays[0].canDirectThrough = true;
+  c.pathDelays[0].minCausalDelaySamples = 0.0;
+  c.hasDirectThroughPath = true;
+  return c;
+}
+// Preamp is also in the cyclic SCC (it must be allowedInCyclicSCC); it is not the
+// module that decides the break delay, so it declares no path here (no direct-
+// through path, consistent with hasDirectThroughPath==false).
+core::ModuleExecutionContract preampContract() {
+  core::ModuleExecutionContract c;
+  c.sampleRate = kSr;
+  c.allowedInCyclicSCC = true;
+  return c;
+}
+
+// Acyclic modules (VCO, drone, ext-in, mixer, VCF, distortion, CV source) need no
+// contract — the compiler rejects only modules in a cyclic SCC that lack one.
+const core::ModuleExecutionContract kEnvFolC = envFolContract();
+const core::ModuleExecutionContract kPreampC = preampContract();
+const core::GraphModule kModules[] = {
+    {kM_CvSrc, nullptr},   {kM_VcoA, nullptr},     {kM_VcoB, nullptr},
+    {kM_Vcf, nullptr},     {kM_Drone, nullptr},    {kM_ExtIn, nullptr},
+    {kM_Preamp, &kPreampC},{kM_EnvFol, &kEnvFolC},{kM_Mixer, nullptr},
+    {kM_Dist, nullptr}};
+constexpr std::uint32_t kModuleCount = 10;
+
+// Fixed internal routes (design/07 §4 Decision B), merged into the same plan as the
+// pluggable control cables. Only module->module dependency routes go to the
+// compiler — device-output routes (vco_a_to_dry_a, dist_to_wet) are terminal taps
+// consumed by the runtime's role outputs, not execution-plan edges. Note preamp ->
+// env_follower is included so a patched env_out cable forms the real 2-node cycle.
+const core::FixedEdge kFixedEdges[] = {
+    {kM_Drone, kM_Mixer, "drone_to_mixer"},
+    {kM_ExtIn, kM_Mixer, "ext_audio_to_mixer"},
+    {kM_VcoA, kM_Mixer, "vco_a_to_mixer"},
+    {kM_VcoB, kM_Mixer, "vco_b_to_mixer"},
+    {kM_Preamp, kM_Mixer, "preamp_to_mixer"},
+    {kM_Preamp, kM_EnvFol, "preamp_to_env_follower"},
+    {kM_Mixer, kM_Vcf, "mixer_to_vcf_l"},
+    {kM_Mixer, kM_Vcf, "mixer_to_vcf_r"},
+    {kM_Vcf, kM_Dist, "vcf_l_to_dist_l"},
+    {kM_Vcf, kM_Dist, "vcf_r_to_dist_r"},
+};
+constexpr std::uint32_t kFixedEdgeCount = 10;
+
 // Build a fresh runtime in a known, reproducible initial state (both VCOs start at
 // phase 0, so a patched-vs-unpatched comparison starts from the same point). sr is
 // a constructor parameter (the voice sources pin their rate at creation), so a run
 // at a different sample rate is a fresh runtime built for that rate.
 core::SynthRuntime makeRuntime(double sr = kSr) {
   core::SynthRuntime rt(kJacks, kJackCount, nullptr, 0, kModules, kModuleCount, kSeed,
-                        sr);
+                        sr, kFixedEdges, kFixedEdgeCount);
   rt.setVcoBaseHz(kBaseHz);
   rt.setVoctBindings(kJ_VcoAVoct, kJ_VcoBVoct);
   rt.setVcfCvBindings(kJ_VcfCvL, kJ_VcfCvR);
+  rt.setPreampExtIn(kJ_PreampExtIn);
+  rt.setEnvFolOut(kJ_EnvFolOut);
+  rt.bindFixedRole(kM_VcoA, core::FixedChainRole::kVcoA);
+  rt.bindFixedRole(kM_VcoB, core::FixedChainRole::kVcoB);
+  rt.bindFixedRole(kM_Drone, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(kM_ExtIn, core::FixedChainRole::kExtIn);
+  rt.bindFixedRole(kM_Preamp, core::FixedChainRole::kPreamp);
+  rt.bindFixedRole(kM_EnvFol, core::FixedChainRole::kEnvFollower);
+  rt.bindFixedRole(kM_Mixer, core::FixedChainRole::kMixer);
+  rt.bindFixedRole(kM_Vcf, core::FixedChainRole::kVcf);
+  rt.bindFixedRole(kM_Dist, core::FixedChainRole::kDistortion);
   return rt;
 }
 
@@ -361,6 +441,177 @@ int main() {
                       (rt.graphValid() == valid0);
     check(planStable, "100k frames do not recompile/mutate the plan (no alloc in render)");
     check(finite(last), "render output stays finite under sustained frames");
+  }
+
+  // ---- ⑥ ruling 2: fixed chain + pluggable edges share ONE plan --------------
+  std::printf("(6) ruling 2: fixed chain + pluggable edges share one plan\n");
+  {
+    // (a) SHARED PLAN. The fixed-chain modules (preamp/env_follower/mixer/vcf/dist)
+    // must appear in the SAME compiled plan as the pluggable control edge, and the
+    // runtime must dispatch them in the plan's order (mixer before vcf before dist).
+    core::SynthRuntime rt = makeRuntime();
+    rt.setControlVoltage(kJ_CvOut, 0.0);
+    bool ok = rt.connect(kJ_CvOut, kJ_VcoBVoct) && rt.rebuild();
+    check(ok, "rebuild() ok with the fixed chain wired");
+    const core::CompiledGraph& g = rt.graph();
+    auto planHasModule = [&](ModuleId id) -> bool {
+      for (const auto& r : g.regions)
+        for (ModuleId m : r.modules)
+          if (m == id) return true;
+      return false;
+    };
+    check(planHasModule(kM_Preamp) && planHasModule(kM_EnvFol) &&
+              planHasModule(kM_Mixer) && planHasModule(kM_Vcf) && planHasModule(kM_Dist),
+          "fixed-chain modules (preamp/env_follower/mixer/vcf/dist) are in the plan");
+    check(planHasModule(kM_CvSrc),
+          "the pluggable control CV source shares the same plan (merged, one source of truth)");
+    auto rolePos = [&rt](core::FixedChainRole r) -> int {
+      for (std::uint32_t i = 0; i < rt.chainExecCount(); ++i)
+        if (rt.chainExecRoleAt(i) == r) return static_cast<int>(i);
+      return -1;
+    };
+    const int mixer = rolePos(core::FixedChainRole::kMixer);
+    const int vcf = rolePos(core::FixedChainRole::kVcf);
+    const int dist = rolePos(core::FixedChainRole::kDistortion);
+    check(mixer >= 0 && vcf >= 0 && dist >= 0,
+          "runtime binds and dispatches the mixer/vcf/dist roles");
+    check(mixer >= 0 && vcf >= 0 && dist >= 0 && mixer < vcf && vcf < dist,
+          "chain runs mixer -> vcf -> dist in the plan's order (no hard-coded SignalPath)");
+
+    // Execution ordering probe: with a VCO running, WET must be non-trivial. If a
+    // mutation ran the mixer before the VCO (ignoring plan order), the VCO channel
+    // would be zeroed at mix time and WET would collapse to ~0.
+    double maxWet = 0.0;
+    core::RuntimeOutput last{};
+    for (std::size_t i = 0; i < kBlock * 2; ++i) {
+      last = rt.processFrame(0.0, /*driveGraph=*/true);
+      if (std::fabs(last.wetL) > maxWet) maxWet = std::fabs(last.wetL);
+    }
+    check(maxWet > 1e-3, "WET is non-trivial (full chain ran in plan order)");
+    check(finite(last), "chain output finite");
+  }
+
+  // (b) REAL CYCLE (topology): patching env_out -> preamp.ext_source_in against the
+  // fixed preamp -> env_follower edge must yield ONE 2-node cyclic SCC, broken on the
+  // PLUGGABLE cable with a z^-1 (one-pole smoother: canDirectThrough -> z_inverse).
+  {
+    core::SynthRuntime cyc = makeRuntime();
+    bool ok = cyc.connect(kJ_EnvFolOut, kJ_PreampExtIn) && cyc.rebuild();
+    check(ok, "rebuild() ok with the env cable patched");
+    const core::CompiledGraph& cg = cyc.graph();
+    bool sawCyclic = false;
+    bool hasPreamp = false, hasEnv = false, twoModules = false, oneBreak = false;
+    core::CompiledFeedbackEdge breakFe{};
+    for (const auto& r : cg.regions) {
+      if (r.kind != core::RegionKind::cyclic) continue;
+      sawCyclic = true;
+      for (ModuleId m : r.modules) { if (m == kM_Preamp) hasPreamp = true; if (m == kM_EnvFol) hasEnv = true; }
+      twoModules = (r.modules.size() == 2u);
+      oneBreak = (r.feedback.size() == 1u);
+      if (!r.feedback.empty()) breakFe = r.feedback[0];
+    }
+    check(sawCyclic, "patched env cable forms a cyclic region (cycle detected)");
+    check(hasPreamp && hasEnv && twoModules,
+          "cyclic SCC is exactly preamp <-> env_follower (2 nodes)");
+    check(oneBreak && cg.regions.size() >= 1,
+          "the cycle selects exactly one break edge");
+    check(breakFe.sourceJack == kJ_EnvFolOut && breakFe.sinkJack == kJ_PreampExtIn,
+          "break edge is the PLUGGABLE env_out -> ext_source_in cable (has the JackId)");
+    check(breakFe.delay == core::FeedbackDelay::z_inverse &&
+              std::fabs(breakFe.delaySamples - 1.0) < 1e-6,
+          "break is z_inverse / delaySamples==1 (one-pole smoother -> z^-1)");
+
+    // Execution discriminator (will-red if env_follower is NOT restored): with the
+    // cycle patched, the preamp is fed the delayed envelope, NOT the raw ext signal,
+    // so the chain output must DIFFER from an unpatched runtime driven by the same
+    // source. If env_follower were gone the cycle would not form and the two would
+    // render identically.
+    std::vector<double> src(kBlock);
+    for (std::size_t i = 0; i < kBlock; ++i) src[i] = 0.5 * std::sin(2.0 * 3.14159265358979 * (100.0 / kSr) * static_cast<double>(i));
+    core::SynthRuntime cycA = makeRuntime();
+    cycA.connect(kJ_EnvFolOut, kJ_PreampExtIn);
+    cycA.rebuild();
+    core::SynthRuntime cycB = makeRuntime();  // unpatched: preamp reads ext directly
+    cycB.rebuild();
+    std::vector<core::RuntimeOutput> outA(kBlock), outB(kBlock);
+    cycA.processBlock(src.data(), kBlock, outA.data(), /*driveGraph=*/true);
+    cycB.processBlock(src.data(), kBlock, outB.data(), /*driveGraph=*/true);
+    double diff = 0.0;
+    for (std::size_t i = 0; i < kBlock; ++i) diff += std::fabs(outA[i].wetL - outB[i].wetL);
+    check(diff > 1e-6,
+          "patching the env cable changes the preamp path (cycle reaches the preamp)");
+
+    // PARTITION INVARIANCE with the cycle (block-lazy negative): the cyclic region
+    // runs per-sample, so any block partition reproduces the same sequence.
+    core::SynthRuntime whole = makeRuntime();
+    whole.connect(kJ_EnvFolOut, kJ_PreampExtIn);
+    whole.rebuild();
+    core::SynthRuntime part = makeRuntime();
+    part.connect(kJ_EnvFolOut, kJ_PreampExtIn);
+    part.rebuild();
+    std::vector<core::RuntimeOutput> outFull(kBlock), outPart(kBlock);
+    whole.processBlock(src.data(), kBlock, outFull.data(), true);
+    const std::size_t chunks[] = {64, 100, 37, 55};
+    std::size_t off = 0, ci = 0;
+    while (off < kBlock) {
+      const std::size_t n = std::min(chunks[ci % 4], kBlock - off);
+      part.processBlock(src.data() + off, n, outPart.data() + off, true);
+      off += n; ++ci;
+    }
+    bool invariant = true;
+    for (std::size_t i = 0; i < kBlock; ++i)
+      if (!sameOutput(outFull[i], outPart[i])) { invariant = false; break; }
+    check(invariant, "cycle render is partition-invariant (per-sample, not block-lazy)");
+    bool finiteAll = true;
+    for (std::size_t i = 0; i < kBlock; ++i) if (!finite(outFull[i])) finiteAll = false;
+    check(finiteAll, "cycle render stays finite (no NaN from the break)");
+  }
+
+  // (c) BREAK-EDGE INSERTION-ORDER INDEPENDENCE: the same topology built with the
+  // cables connected in a different order yields the identical break-edge set.
+  {
+    auto feedbackSig = [](const core::CompiledGraph& g, std::string& sig) {
+      sig.clear();
+      for (const auto& r : g.regions) {
+        if (r.kind != core::RegionKind::cyclic) continue;
+        for (const auto& fe : r.feedback)
+          sig += std::to_string(static_cast<std::uint32_t>(fe.sourceJack)) + "," +
+                 std::to_string(static_cast<std::uint32_t>(fe.sinkJack)) + "," +
+                 std::to_string(fe.delaySamples) + ";";
+      }
+    };
+    core::SynthRuntime orderA = makeRuntime();
+    orderA.connect(kJ_CvOut, kJ_VcoBVoct);
+    orderA.connect(kJ_EnvFolOut, kJ_PreampExtIn);
+    orderA.rebuild();
+    core::SynthRuntime orderB = makeRuntime();
+    orderB.connect(kJ_EnvFolOut, kJ_PreampExtIn);
+    orderB.connect(kJ_CvOut, kJ_VcoBVoct);
+    orderB.rebuild();
+    std::string sigA, sigB;
+    feedbackSig(orderA.graph(), sigA);
+    feedbackSig(orderB.graph(), sigB);
+    check(sigA == sigB && sigA.find("15,16,1") != std::string::npos,
+          "break-edge set is insertion-order independent (deterministic z^-1 on the cable)");
+  }
+
+  // (d) EFFECTOR 4-ROUTE DECLARED OMISSION (P6 out of scope): the fixed routes must
+  // NOT include dist->eff / eff->wet, so WET is taken at the distortion output.
+  {
+    bool effectorRoute = false;
+    for (const core::FixedEdge& fe : kFixedEdges) {
+      if (std::strstr(fe.name, "to_eff") || std::strstr(fe.name, "eff_to") ||
+          std::strstr(fe.name, "dist_l_to_eff") || std::strstr(fe.name, "dist_r_to_eff"))
+        effectorRoute = true;
+    }
+    check(!effectorRoute,
+          "effector 4 routes are a declared omission (dist->eff, eff->wet absent)");
+    // WET is the distortion output, not a tap after an omitted effector.
+    core::SynthRuntime wetRt = makeRuntime();
+    wetRt.rebuild();
+    core::RuntimeOutput o = runFrames(wetRt, kBlock, /*driveGraph=*/true);
+    check(std::isfinite(o.wetL) && std::isfinite(o.wetR),
+          "WET L/R finite from the distortion (out-of-P6 effector not wired)");
   }
 
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
