@@ -887,6 +887,30 @@ schmitt_osc(2) polivoks_vcf(2) envelope_follower(1) patch_graph(1)
 ⇒ **立规矩：发现某个模块未被产品消费时，立刻对同类做一次全量引用普查，一次给全清单**，
 不要挤牙膏式加要求——那对实施者像是需求在漂移，实际是我查得不全。
 
+### #45 拓扑裁决：NEW 声部不是"三源求和"（2026-08-27，msg `3e21f284`）
+
+@Pi 拟按「Schmitt + FmAmVoice + NoiseSource 三源求和」做。**查手册后否掉**（`solar42N_manual_text.txt` L344-366）：
+
+> The "sound machine" circuit consists of **two Trigger-Schmidt oscillators**. One ... **low frequency ...
+> square wave modulator** (RATE CONTROL, RATE SWITCH and **CV OUT**), while **the other oscillator operates
+> in the audio frequency range** (C0–E7) ... **used for tone generation** (PITCH KNOBS, RANGE SWITCH).
+> Switches ... **four different combinations**: ①FM off/AM off ②FM on ③AM on ④FM+AM
+> ⑤ clean noise = FM/AM off + **PITCH zero + MOD/DIVIDER max + NOISE max**
+> The white noise ... **additionally fed to the Sample and Hold generator through IN jack**;
+> **clock socket** needs an external LFO/modulator.
+
+**正确拓扑**：**每声部两个 Schmitt**（LF 方波调制器［RATE/switch/**CV OUT**］＋音频振荡器［PITCH/RANGE］）；
+**FM/AM 是两个开关**，决定 LF 如何作用于音频振荡器 ⇒ **`FmAmVoice` 表达的是两振荡器间的调制关系，不是并联声源**；
+**NOISE 独立相加**（第⑤条把 PITCH 归零、NOISE 拉满即得纯噪声 ⇒ 噪声与音调相加）；
+**S&H 不进音频**：噪声经 IN 入 S&H、clock 需外部源，输出为 `07` 的 −5…+5 V **CV**。
+
+**要点**：runtime 现只有一个 `SchmittOsc`，**需要两个**；FM/AM 走 registry 参数，**四组合必须都可达**；
+**LF 的 CV OUT 是真实输出**；**第⑤条不是第五种模式**，只是一组旋钮取值，**不要建 mode 枚举**。
+
+**判据**：四组合输出两两不同（**FM/AM 开关做成无效 ⇒ 必红**）；PITCH=0+NOISE 满 ⇒ 统计接近纯噪声；
+S&H 不出现在音频通道、给 clock 后按其速率阶梯变化、**未接 clock 不自走**；
+手册未给的（RATE 范围／FM-AM 深度／RANGE 档位／S&H 标定）**全部 provisional**。
+
 ### 由此定的三条通用规矩（对所有审计修复）
 1. **先写复现测试让它红，再修**。没先红的修复不认——无法区分"修好了"与"根本没触发过"。
 2. **验收跑产品路径**，不接受测试内自建的第二套执行器/适配器。
