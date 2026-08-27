@@ -790,74 +790,20 @@ int main() {
     }
   }
 
-  // ---- ⑨ #44: NEW drone voices come from their sources (not hard-zero, not classic)
-  // @Claude (msg 5f515f1d): the runtime previously hard-zeroed NEW drone 3/6
-  // (chIn[kChannelDrone3]=0.0; chIn[kChannelDrone6]=0.0) and never instantiated
-  // SchmittOsc/NoiseSource in the product path — the same "零件对 ≠ 机器用了它" gap
-  // as #39, and why P3 could not be restored. #44 wires them in. The criterion: each
-  // NEW drone channel equals a same-seed STANDALONE source (SchmittOsc for 3,
-  // NoiseSource for 6) and is NOT 0.0 and NOT a classic copy. A wiring-revert (back
-  // to 0.0) must red here. Same lockstep-oracle pattern as ⑦: standalone ref ticked
-  // once per frame against the EXECUTED channel the mixer consumes.
+  // ---- ⑪ #45: FM/AM are SWITCHES, four combos -> four distinct drone-3 outputs ----
+  // @Claude (msg 3e21f284, manual L344-366): the NEW voice has TWO Schmitt oscillators,
+  // NOT one. An LF Schmitt is a square-wave MODULATOR (RATE); an audio-frequency Schmitt
+  // does the tone (PITCH/RANGE). FM/AM are not a third source — they are two SWITCHES
+  // routing the LF square onto the audio oscillator, giving four combos (drone / FM /
+  // AM / FM+AM). The criterion: the four combos produce pairwise-distinct drone3Channel
+  // streams (all FRESH runtimes on the same seed, so the noise stem cancels in the diff
+  // and only the switched modulation survives). A wiring-revert (FM/AM become no-ops)
+  // collides all four to one stream and must red.
   {
     constexpr std::size_t kN = 1024;
-    core::SchmittOsc ref3(kSeed, kSr);  // same seed/sr as the runtime's schmitt3_.
-    core::NoiseSource ref6(kSeed, core::SynthRuntime::kNewDroneNoiseAmp);
-    core::SynthRuntime rt = makeRuntime();
-    rt.rebuild();
-
-    std::vector<double> prod3(kN), src3(kN), prod6(kN), src6(kN), classic1(kN);
-    for (std::size_t i = 0; i < kN; ++i) {
-      double v3 = 0.0, v6 = 0.0;
-      rt.processFrame(0.0, /*driveGraph=*/true);
-      ref3.tick(&v3);
-      ref6.tick(&v6);
-      prod3[i] = rt.drone3Channel();   // the value the PRODUCT path fed to the mixer.
-      src3[i] = v3;
-      prod6[i] = rt.drone6Channel();
-      src6[i] = v6;
-      classic1[i] = rt.droneChannel(0);  // classic drone 1 (the "wrong" copy target).
-    }
-
-    double d3 = 0.0, d6 = 0.0, p3max = -1e30, p3min = 1e30, p6peak = 0.0, c3 = 0.0;
-    for (std::size_t i = 0; i < kN; ++i) {
-      d3 = std::max(d3, std::fabs(prod3[i] - src3[i]));
-      d6 = std::max(d6, std::fabs(prod6[i] - src6[i]));
-      p3max = std::max(p3max, prod3[i]);
-      p3min = std::min(p3min, prod3[i]);
-      p6peak = std::max(p6peak, std::fabs(prod6[i]));
-      c3 = std::max(c3, std::fabs(prod3[i] - classic1[i]));
-    }
-    check(d3 < 1e-9,
-          "drone 3 channel == same-seed standalone SchmittOsc (from the source, not 0.0)");
-    check(d6 < 1e-9,
-          "drone 6 channel == same-seed standalone NoiseSource (from the source, not 0.0)");
-    check((p3max - p3min) > 1e-3,
-          "drone 3 channel VARIES (a hard-zero or constant bypass is flat; non-vacuous)");
-    check(p6peak > 1e-3,
-          "drone 6 channel non-silent (a hard-zero 0.0 is silent; non-vacuous)");
-    check(c3 > 1e-3,
-          "drone 3 channel is NOT a classic DroneBank copy (differs from classic voice 1)");
-  }
-
-  // ---- ⑩ #44: NEW drone panel controls reach their sources (knob -> source) ------
-  // Same "dead binding" discipline as ⑧ (@Claude msg 5f515f1d, requirement 3): a NEW
-  // knob the runtime receives but discards (setter no-ops, never forwards to the
-  // source) leaves the product channel unchanged and must red. Each control is set on
-  // a FRESH runtime and the EXECUTED NEW channel (drone3Channel/drone6Channel) is
-  // compared. Only the controls that drive a source the product path executes are
-  // wired (PITCH on the Schmitt, NOISE amplitude on the noise source); the others
-  // stay PROVISIONAL in 00-status.
-  {
-    constexpr std::size_t kN = 512;
-    auto renderD3 = [](core::SynthRuntime& rt) {
+    auto render3 = [](core::SynthRuntime& rt) {
       std::vector<double> seq(kN);
       for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.drone3Channel(); }
-      return seq;
-    };
-    auto renderD6 = [](core::SynthRuntime& rt) {
-      std::vector<double> seq(kN);
-      for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.drone6Channel(); }
       return seq;
     };
     auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
@@ -865,34 +811,140 @@ int main() {
       for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
       return d;
     };
-    auto peak = [](const std::vector<double>& a) {
-      double m = 0.0;
-      for (double x : a) m = std::max(m, std::fabs(x));
-      return m;
+    auto makeCombo = [&](bool fm, bool am) {
+      core::SynthRuntime rt = makeRuntime();  // FRESH runtime, same seed.
+      rt.rebuild();
+      rt.setDrone3Fm(fm); rt.setDrone3Am(am);
+      return render3(rt);
     };
+    const auto none = makeCombo(false, false);  // "drone" (both switches off).
+    const auto fmOnly = makeCombo(true, false);
+    const auto amOnly = makeCombo(false, true);
+    const auto fmAm = makeCombo(true, true);
+    double peakNone = 0.0;
+    for (double x : none) peakNone = std::max(peakNone, std::fabs(x));
+    check(peakNone > 1e-3,
+          "drone combo (both FM/AM off) sounds (non-vacuous; the audio oscillator is live)");
+    check(peakDiff(none, fmOnly) > 1e-5,
+          "FM switch routes the LF square onto the audio oscillator (drone vs FM differ)");
+    check(peakDiff(none, amOnly) > 1e-5,
+          "AM switch routes the LF square onto the audio oscillator (drone vs AM differ)");
+    check(peakDiff(none, fmAm) > 1e-5,
+          "FM+AM combo differs from drone (both switches engaged)");
+    check(peakDiff(fmOnly, amOnly) > 1e-5,
+          "FM-only vs AM-only differ (the two switches are distinct routes)");
+    check(peakDiff(fmOnly, fmAm) > 1e-5,
+          "adding AM on FM changes the output (FM-only vs FM+AM differ)");
+    check(peakDiff(amOnly, fmAm) > 1e-5,
+          "adding FM on AM changes the output (AM-only vs FM+AM differ)");
+  }
 
-    // PITCH on drone 3 (Schmitt oscillator): +12 st doubles the frequency.
-    {
-      core::SynthRuntime base = makeRuntime(); base.rebuild();
-      const auto b = renderD3(base);
-      core::SynthRuntime set = makeRuntime(); set.rebuild(); set.setDrone3Pitch(12.0);
-      const auto t = renderD3(set);
-      check(peak(b) > 1e-3 && peak(t) > 1e-3,
-            "drone 3 PITCH comparison sounds (non-vacuous)");
-      check(peakDiff(b, t) > 1e-6,
-            "drone 3 PITCH knob reaches the Schmitt source (product channel changes)");
+  // ---- ⑫ #45: PITCH=0 + NOISE full -> drone 3 channel is pure noise (tone gated) ----
+  // The manual "PITCH to zero => clean noise" recipe (@Claude criterion ②): the PITCH-
+  // at-floor silence gate (schmitt_osc.h kSilenceSt) kills the audio oscillator, so the
+  // drone channel is EXACTLY the noise stem. The oracle is the same-seed standalone
+  // NoiseSource the runtime derives via newVoiceSeed/newSourceSeed, lockstep for exact
+  // equality — the strongest form of "the product path really gated the tone off", which
+  // a half-implemented recipe (tone still leaking) would red.
+  {
+    constexpr std::size_t kN = 1024;
+    const auto voiceSeed3 = core::SynthRuntime::newVoiceSeed(kSeed, 0);
+    const auto noiseSeed3 = core::SynthRuntime::newSourceSeed(voiceSeed3, core::SynthRuntime::kNewSrcNoise);
+    const double amp = core::SynthRuntime::kNewDroneNoiseAmp;  // full (default) noise mix.
+    core::NoiseSource refNoise(noiseSeed3, amp);
+    core::SynthRuntime low = makeRuntime();   low.rebuild();
+    core::SynthRuntime high = makeRuntime();  high.rebuild();
+    low.setDrone3Pitch(0.0);   low.setDrone3Noise(amp);   // PITCH to zero, NOISE full.
+    high.setDrone3Pitch(0.5);  high.setDrone3Noise(amp);  // tone ON for contrast.
+
+    std::vector<double> prod(kN), src(kN), hi(kN);
+    for (std::size_t i = 0; i < kN; ++i) {
+      double n = 0.0;
+      low.processFrame(0.0, true);
+      refNoise.tick(&n);
+      prod[i] = low.drone3Channel();
+      src[i] = n;
+      high.processFrame(0.0, true);
+      hi[i] = high.drone3Channel();
     }
-    // NOISE amplitude on drone 6 (noise source): a fresh runtime defaulting to
-    // kNewDroneNoiseAmp, then raised to a different level.
+    double d = 0.0, pk = 0.0, toneDiff = 0.0;
+    for (std::size_t i = 0; i < kN; ++i) {
+      d = std::max(d, std::fabs(prod[i] - src[i]));
+      pk = std::max(pk, std::fabs(prod[i]));
+      toneDiff = std::max(toneDiff, std::fabs(prod[i] - hi[i]));
+    }
+    check(d < 1e-9,
+          "PITCH=0 + NOISE full -> drone 3 channel == same-seed NoiseSource (tone fully gated off)");
+    check(pk > 1e-3,
+          "PITCH=0 + NOISE full -> drone 3 channel is non-silent (the noise is audible)");
+    check(toneDiff > 1e-3,
+          "raising PITCH back on re-adds the tone (the recipe really removed it; non-vacuous)");
+  }
+
+  // ---- ⑬ #45: S&H is a CV OUT (not in the audio channel); unclocked it doesn't self-run
+  // @Claude criterion ③: the Sample & Hold runs noise->IN with the LF/mod source as its
+  // clock and yields a -5..+5 V CV OUT of the voice (manual), so it is NOT summed into
+  // the mixer channel. Clocked it steps at the clock rate; unclocked (constant clock) it
+  // captures nothing and does NOT self-run. The product path never sums sampleHold*Cv
+  // into chIn_, so clocking the S&H must leave drone3Channel byte-identical while the
+  // CV itself moves.
+  {
+    constexpr std::size_t kN = 1024;
+    std::vector<double> clk0(kN, 0.0), clkSq(kN);
+    for (std::size_t i = 0; i < kN; ++i) clkSq[i] = (i / 100) % 2 == 0 ? 0.0 : 1.0;  // 100-frame period.
+    auto render3 = [&](core::SynthRuntime& rt, const std::vector<double>& clk) {
+      rt.rebuild();
+      std::vector<double> ch(kN), cv(kN);
+      for (std::size_t i = 0; i < kN; ++i) {
+        rt.setDrone3ShClock(clk[i]);
+        rt.processFrame(0.0, true);
+        ch[i] = rt.drone3Channel();
+        cv[i] = rt.sampleHold3Cv();
+      }
+      return std::make_pair(ch, cv);
+    };
+    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
+      double d = 0.0;
+      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
+      return d;
+    };
+    auto countSteps = [](const std::vector<double>& v) {
+      std::size_t n = 0;
+      if (v.empty()) return n;
+      double prev = v[0];
+      for (std::size_t i = 1; i < v.size(); ++i) {
+        if (std::fabs(v[i] - prev) > 1e-9) ++n;
+        prev = v[i];
+      }
+      return n;
+    };
+    // (a) unclocked: constant clock 0.0 -> captures nothing -> CV stays at the initial
+    // held value (0.0); the channel keeps sounding but the CV does NOT self-run.
     {
-      core::SynthRuntime base = makeRuntime(); base.rebuild();
-      const auto b = renderD6(base);
-      core::SynthRuntime set = makeRuntime(); set.rebuild(); set.setDrone6NoiseAmp(0.8);
-      const auto t = renderD6(set);
-      check(peak(b) > 1e-3 && peak(t) > 1e-3,
-            "drone 6 NOISE comparison sounds (non-vacuous)");
-      check(peakDiff(b, t) > 1e-6,
-            "drone 6 NOISE knob reaches the noise source (product channel changes)");
+      core::SynthRuntime rt = makeRuntime();
+      auto [ch, cv] = render3(rt, clk0);
+      static_cast<void>(ch);
+      double cvMax = 0.0;
+      for (double x : cv) cvMax = std::max(cvMax, std::fabs(x));
+      check(cvMax < 1e-12,
+            "unclocked S&H does NOT self-run (sampleHold3Cv stays at the initial held value)");
+    }
+    // (b) clocked vs unclocked: clocking the S&H leaves drone3Channel byte-identical
+    // (S&H is NOT in the audio channel) but makes sampleHold3Cv step at the clock edges.
+    {
+      core::SynthRuntime rtC = makeRuntime();
+      auto clocked = render3(rtC, clkSq);
+      core::SynthRuntime rtU = makeRuntime();
+      auto unclocked = render3(rtU, clk0);
+      check(peakDiff(clocked.first, unclocked.first) < 1e-12,
+            "S&H is NOT in the audio channel (clocking it leaves drone3Channel byte-identical)");
+      const std::size_t steps = countSteps(clocked.second);
+      check(steps >= 4,
+            "clocked S&H steps at the clock rate (sampleHold3Cv changes at the clock edges)");
+      double cvPeak = 0.0;
+      for (double x : clocked.second) cvPeak = std::max(cvPeak, std::fabs(x));
+      check(cvPeak > 1e-3,
+            "clocked S&H CV is a bounded nonzero level (the noise samples it captures)");
     }
   }
 

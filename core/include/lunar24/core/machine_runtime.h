@@ -86,10 +86,12 @@
 #include <lunar24/core/drone_bank.h>
 #include <lunar24/core/drone_noise.h>
 #include <lunar24/core/envelope_follower.h>
+#include <lunar24/core/fm_am.h>
 #include <lunar24/core/graph_compiler.h>
 #include <lunar24/core/patch_graph.h>
 #include <lunar24/core/polivoks_vcf.h>
 #include <lunar24/core/preamp.h>
+#include <lunar24/core/sample_hold.h>
 #include <lunar24/core/schmitt_osc.h>
 #include <lunar24/core/vco.h>
 #include <lunar24/core/voice_mixer.h>
@@ -138,6 +140,44 @@ class SynthRuntime {
   // level is not in the manual; exposed so the product path can bind a NOISE knob
   // and a test can compare the executed channel to a same-seed NoiseSource.
   static constexpr double kNewDroneNoiseAmp = 0.5;
+  // NEW-voice (Papa Srapa) FM/AM modulation amounts, taken from the FmAmVoice that
+  // expresses the LF-square->audio modulation relationship. PROVISIONAL: the manual
+  // gives no depth, these are seed/circuit constants to be tuned on sound.
+  static constexpr double kNewDroneFmDev = 120.0;   // FM peak deviation (Hz).
+  static constexpr double kNewDroneDepth = 0.5;     // AM index [0,1).
+  // NEW-voice S&H hold period (seconds) — the clocked form the product path uses
+  // actually takes the speed from the external clock; this is the standalone
+  // self-timed fallback. PROVISIONAL.
+  static constexpr double kNewDroneShSeconds = 0.05;
+  // LF square modulator default frequency (RATE). PROVISIONAL (RATE range not in
+  // the manual); the RATE control overrides it.
+  static constexpr double kNewDroneLfFreqHz = 6.0;
+  // Voice-6 (drone 6) seed mix, so the two Papa Srapa voices are independent.
+  static constexpr std::uint64_t kNewSndSeed6Xor = 0x9E3779B97F4A7C15ULL;
+  // Per-source sub-seed mix so the audio/LF/FmAm/noise stems within one voice are
+  // independent draws from the shared voice seed.
+  static constexpr std::uint64_t kNewSourceSeedMix = 0x2595DB9F3D276D2BULL;
+  // PITCH-position -> semitone mapping (0 = tone off / pure-noise recipe, 1 = max
+  // pitch). PROVISIONAL (pitch range = C0..E7 per manual, not numerically bound).
+  static constexpr double kNewPitchMinSt = 0.0;
+  static constexpr double kNewPitchMaxSt = 24.0;
+  // Source indices for newVoiceSeed/newSourceSeed derivation.
+  static constexpr int kNewSrcAudio = 0;
+  static constexpr int kNewSrcLf = 1;
+  static constexpr int kNewSrcFm = 2;
+  static constexpr int kNewSrcNoise = 3;
+
+  // Deterministic, documented sub-seed derivation for the NEW (Papa Srapa) voices so
+  // a test oracle can construct the SAME standalone modules. Voice 0 = drone 3,
+  // voice 1 = drone 6; source kNewSrcAudio/Lf/Fm/Noise selects the stem. A fixed seed
+  // is reproducible; the two voices are independent (different root), and the four
+  // stems within a voice draw distinct randomness.
+  static std::uint64_t newVoiceSeed(std::uint64_t root, int voice) {
+    return voice == 1 ? (root ^ kNewSndSeed6Xor) : root;
+  }
+  static std::uint64_t newSourceSeed(std::uint64_t voiceSeed, int source) {
+    return voiceSeed ^ (kNewSourceSeedMix * static_cast<std::uint64_t>(source + 1));
+  }
 
   // A single break-edge delay line. The SOURCE module writes the loop-forward value
   // (e.g. env_follower's env_out), the CONSUMING module reads the value from
@@ -174,8 +214,8 @@ class SynthRuntime {
         vcB_(sampleRate),
         preamp_(sampleRate),
         drone_(seed_, sampleRate),
-        schmitt3_(seed_, sampleRate),      // NEW drone 3 (Papa Srapa Schmitt).
-        noise6_(seed_, kNewDroneNoiseAmp), // NEW drone 6 (Papa Srapa noise).
+        pv3_(newVoiceSeed(seed_, 0), sampleRate),  // NEW drone 3 (Papa Srapa voice).
+        pv6_(newVoiceSeed(seed_, 1), sampleRate),  // NEW drone 6 (Papa Srapa voice).
         envFol_(sampleRate),
         distortion_(sampleRate) {
     vcf_.setSampleRate(sampleRate);
@@ -243,14 +283,26 @@ class SynthRuntime {
       drone_.setVolt(static_cast<std::size_t>(voiceGroup), semitonesDown);
   }
 
-  // NEW drone voice controls (design/01 §3, #44 panel-binding half) — knob ->
-  // source. Only the ones that drive a source the product path actually executes are
-  // wired here (PITCH on the Schmitt oscillator, NOISE amplitude on the noise source);
-  // the rest (LFO rate/mod/divider, hi/low, S&H, GATE/HOLD, ATT/RLS, env out, clock)
-  // have no dedicated runtime source yet and stay PROVISIONAL (see 00-status). These
-  // forward directly to the NEW sources, read every frame by step_(kDrone).
-  void setDrone3Pitch(double semitones) { schmitt3_.setPitchSemitones(semitones); }
-  void setDrone6NoiseAmp(double amp) { noise6_.setAmplitude(amp); }
+  // NEW drone voice controls (design/01 §3, #45 panel-binding half) — knob ->
+  // source, one set per Papa Srapa voice (drone 3, drone 6). PITCH is a 0..1
+  // position (0 = tone off => the "clean noise" recipe; 1 = max pitch). RATE drives
+  // the LF square modulator; FM/AM are the two factory switches; NOISE is the mix
+  // amount; SH_CLOCK drives the Sample & Hold clock (a constant = unclocked, so it
+  // does not self-run). The rest (RANGE, MOD, DIVIDER, GATE/HOLD, ATT/RLS, env out)
+  // have no dedicated runtime source yet and stay PROVISIONAL (see 00-status).
+  // These forward directly to the NEW sources, read every frame by step_(kDrone).
+  void setDrone3Pitch(double pct) { pv3_.setPitch(pct); }
+  void setDrone3Rate(double hz) { pv3_.setRate(hz); }
+  void setDrone3Fm(bool on) { pv3_.setFm(on); }
+  void setDrone3Am(bool on) { pv3_.setAm(on); }
+  void setDrone3Noise(double amp) { pv3_.setNoise(amp); }
+  void setDrone3ShClock(double clk) { pv3_.setShClock(clk); }
+  void setDrone6Pitch(double pct) { pv6_.setPitch(pct); }
+  void setDrone6Rate(double hz) { pv6_.setRate(hz); }
+  void setDrone6Fm(bool on) { pv6_.setFm(on); }
+  void setDrone6Am(bool on) { pv6_.setAm(on); }
+  void setDrone6Noise(double amp) { pv6_.setNoise(amp); }
+  void setDrone6ShClock(double clk) { pv6_.setShClock(clk); }
 
   // Patch-graph mutation (criterion ②). Each mutation marks the plan stale; the
   // NEXT Process* rebuilds it.
@@ -330,8 +382,70 @@ class SynthRuntime {
   // / NoiseSource is the oracle for what the product path produces.
   double drone3Channel() const { return chIn_[VoiceMixer::kChannelDrone3]; }
   double drone6Channel() const { return chIn_[VoiceMixer::kChannelDrone6]; }
+  // S&H CV outputs (design/01 §3, #45). The Sample & Hold is NOT in the audio
+  // channel — it is a CV source out of the voice (manual: "you will get -5 to +5
+  // volts"). It feeds nothing in the fixed chain yet (no patch jack), so it is a
+  // diagnostic read of the held level the product path computed last frame. An
+  // unclocked S&H does not self-run (see sample_hold.h): a constant clock level
+  // captures nothing, so these stay at the last held value.
+  double sampleHold3Cv() const { return sh3Cv_; }
+  double sampleHold6Cv() const { return sh6Cv_; }
 
  private:
+  // NEW (Papa Srapa) composite voice — the @Claude-corrected topology (msg 3e21f284,
+  // from manual L344-366): a voice has TWO Schmitt oscillators, not one. An LF Schmitt
+  // is used as a SQUARE-WAVE modulator (RATE/RATE-SWITCH/CV OUT); an audio-frequency
+  // Schmitt does the tone (PITCH/RANGE, C0-E7). FM and AM are SWITCHES (not a third
+  // source): they route the LF square onto the audio oscillator in four combinations
+  // (drone / FM / AM / FM+AM). Noise adds independently into the mixer channel. The
+  // S&H runs noise->IN with the LF/mod source as its clock and yields a -5..+5 V CV
+  // OUT of the voice (never summed into the audio channel); unclocked it does NOT
+  // self-run. All four stems draw independent sub-seeds from the shared voice seed so
+  // a test oracle can rebuild the same standalone modules.
+  struct PapaVoice {
+    PapaVoice(std::uint64_t voiceSeed, double sr)
+        : audio(newSourceSeed(voiceSeed, kNewSrcAudio), sr),
+          lf(newSourceSeed(voiceSeed, kNewSrcLf), sr),
+          fm(newSourceSeed(voiceSeed, kNewSrcFm), sr, kNewDroneFmDev, kNewDroneDepth),
+          noise(newSourceSeed(voiceSeed, kNewSrcNoise), kNewDroneNoiseAmp),
+          sh(sr, kNewDroneShSeconds) {
+      lf.setFreqHz(kNewDroneLfFreqHz);
+    }
+    void setPitch(double pct) {
+      audio.setPitchSemitones(pct <= 0.0 ? SchmittOsc::kSilenceSt
+                                         : kNewPitchMinSt + pct * (kNewPitchMaxSt - kNewPitchMinSt));
+    }
+    void setRate(double hz) { lf.setFreqHz(hz); }
+    void setFm(bool on) { fmOn_ = on; }
+    void setAm(bool on) { amOn_ = on; }
+    void setNoise(double amp) { noise.setAmplitude(amp); }
+    void setShClock(double clk) { shClock_ = clk; }
+    // The S&H level the product path computed last frame (CV out of the voice).
+    double lastShCv() const { return shCv_; }
+    void tick(double* out) {
+      double lv = 0.0;
+      lf.tick(&lv);
+      audio.setMod(lf.square());
+      audio.setFmDevHz(fmOn_ ? fm.fDevHz() : 0.0);
+      audio.setAmDepth(amOn_ ? fm.depth() : 0.0);
+      double a = 0.0;
+      audio.tick(&a);
+      double n = 0.0;
+      noise.tick(&n);
+      sh.tick(n, shClock_, &shCv_);
+      *out = a + n;  // noise adds; S&H CV is NOT summed here.
+    }
+    SchmittOsc audio;   // audio-frequency oscillator (PITCH/RANGE) -> tone.
+    SchmittOsc lf;      // LF oscillator used as a square-wave modulator (RATE).
+    FmAmVoice fm;       // expresses the LF->audio modulation relationship (FM/AM).
+    NoiseSource noise;  // independent noise mix (NOISE amount).
+    SAndHold sh;        // noise->in, LF/mod->clock; CV out, not in the audio channel.
+    bool fmOn_ = false;
+    bool amOn_ = false;
+    double shClock_ = 0.0;
+    double shCv_ = 0.0;
+  };
+
   // Drone panel-control range/linearization helpers (the classic grouping).
   bool inDroneRange_(int voiceGroup, int gen) const {
     return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices && gen >= 0 &&
@@ -435,15 +549,18 @@ class SynthRuntime {
         double drone[DroneBank::kMaxVoices] = {};
         drone_.tick(drone);
         aggregateDrone_(drone, chIn_);          // classic 1/2/4/5 (divided into 5-gen groups).
-        // NEW voices (design/01 §3): drone 3 = Papa Srapa Schmitt oscillator, drone
-        // 6 = Papa Srapa noise source. Previously hard-zeroed (the mute the #44
-        // acceptance reds). Each is a peer source, seeded like drone_.
+        // NEW voices (design/01 §3, #45): drone 3/6 are Papa Srapa composite voices
+        // (two Schmitt oscillators + a noise source + a sample & hold), a peer source
+        // seeded like drone_. The composite's audio is the audio-Schmitt + noise; the
+        // S&H CV is NOT summed into the channel (it is a CV out of the voice).
         double n3 = 0.0;
-        schmitt3_.tick(&n3);
+        pv3_.tick(&n3);
         chIn_[VoiceMixer::kChannelDrone3] = n3;
+        sh3Cv_ = pv3_.lastShCv();
         double n6 = 0.0;
-        noise6_.tick(&n6);
+        pv6_.tick(&n6);
         chIn_[VoiceMixer::kChannelDrone6] = n6;
+        sh6Cv_ = pv6_.lastShCv();
         break;
       }
       case FixedChainRole::kExtIn:
@@ -493,8 +610,8 @@ class SynthRuntime {
   // Drone grouping — design/01 §3 (CONFIRMED, not provisional): six drone voices,
   // 1/2/4/5 = "CLASSIC" (5 oscillators each, i.e. the DroneBank's 20 voices),
   // 3/6 = "NEW" (Papa Srapa, P3-②, NOT part of the DroneBank). The 20 flat bank
-  // oscillators split 5-per-CLASSIC-voice, ascending by channel. NEW channels 3/6
-  // are set by step_ separately from schmitt3_/noise6_ (not zeroed here).
+  // oscillators split 5-per-CLASSIC-voice, ascending by channel. NEW 3/6 are the
+  // PapaVoice composites set by step_ (pv3_/pv6_), separately from the bank.
   static void aggregateDrone_(const double* drone, double* chIn) {
     const int classicChannels[4] = {VoiceMixer::kChannelDrone1, VoiceMixer::kChannelDrone2,
                                     VoiceMixer::kChannelDrone4, VoiceMixer::kChannelDrone5};
@@ -558,6 +675,8 @@ class SynthRuntime {
   double preampOut_ = 0.0;
   double envOut_ = 0.0;
   double extSource_ = 0.0;
+  double sh3Cv_ = 0.0;  // NEW drone 3 Sample & Hold CV out (not in the audio channel).
+  double sh6Cv_ = 0.0;  // NEW drone 6 Sample & Hold CV out (not in the audio channel).
 
   // Voice sources + fixed chain DSP. The runtime no longer uses SignalPath: the
   // mixer/vcf/dist roll into the plan-driven order instead of a hard-coded chain.
@@ -565,8 +684,8 @@ class SynthRuntime {
   Vco vcB_;
   Preamp preamp_;
   DroneBank drone_;
-  SchmittOsc schmitt3_;          // NEW drone 3 (Papa Srapa Schmitt oscillator).
-  NoiseSource noise6_;           // NEW drone 6 (Papa Srapa noise source).
+  PapaVoice pv3_;                // NEW drone 3 (Papa Srapa composite voice).
+  PapaVoice pv6_;                // NEW drone 6 (Papa Srapa composite voice).
   EnvelopeFollower envFol_;
   VoiceMixer mixer_;
   PolivoksFilter vcf_;
