@@ -567,6 +567,43 @@ int main() {
     check(finiteAll, "cycle render stays finite (no NaN from the break)");
   }
 
+  // (b2) EXECUTOR RECONCILE + DELAY-LENGTH GUARD (07 §4 "z⁻¹ 退化成整块延迟" 的防护, 也是
+  //       P2-③ real_path "执行器不认编译器账" 的同一病灶)。判据读**运行时真实反馈延迟**
+  //       `feedback_[i].delaySamples`(执行器真正用的那个), 不是编译器的
+  //       `region.feedback[].delaySamples`。突变把执行器延迟换成整块(本应是编译器判定的
+  //       1)⇒ 这里必须红。
+  {
+    core::SynthRuntime rc = makeRuntime();
+    rc.connect(kJ_EnvFolOut, kJ_PreampExtIn);
+    rc.rebuild();
+    const core::CompiledGraph& rg = rc.graph();
+    // 编译器为该环计划的 delaySamples(按 region.feedback 的 plan 序收集)。
+    std::vector<double> planDelay;
+    for (const auto& r : rg.regions)
+      if (r.kind == core::RegionKind::cyclic)
+        for (const auto& fe : r.feedback) planDelay.push_back(fe.delaySamples);
+    const std::uint32_t n = (planDelay.size() < rc.feedbackCount())
+                                ? static_cast<std::uint32_t>(planDelay.size())
+                                : rc.feedbackCount();
+    bool obeysPlan = (rc.feedbackCount() == planDelay.size());
+    bool oneSample = true;
+    for (std::uint32_t i = 0; i < n; ++i) {
+      const double rt = rc.feedbackAt(i).delaySamples;  // 执行器真实值
+      if (std::fabs(rt - planDelay[i]) > 1e-9) obeysPlan = false;
+      if (std::fabs(rt - 1.0) > 1e-9) oneSample = false;
+    }
+    check(obeysPlan,
+          "executor delaySamples == compiler plan delay for every break edge (执行器对账)");
+    check(oneSample,
+          "executor ring is exactly z^-1 / 1 sample deep (非退化的整块延迟)");
+    // 跑满一整块(静音 ext)确认执行器对延迟链的消费是确定且有限的(=64.0 时该值仍由
+    // delaySamples 驱动, 对账与 1-deep 两条已在最上面红; 这里只做行为侧兜底)。
+    std::vector<double> quiet(kBlock, 0.0);
+    std::vector<core::RuntimeOutput> outc(kBlock);
+    rc.processBlock(quiet.data(), kBlock, outc.data(), /*driveGraph=*/true);
+    check(std::isfinite(outc[kBlock - 1].wetL), "reconciled cycle output finite for a full block");
+  }
+
   // (c) BREAK-EDGE INSERTION-ORDER INDEPENDENCE: the same topology built with the
   // cables connected in a different order yields the identical break-edge set.
   {
