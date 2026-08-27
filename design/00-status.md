@@ -911,6 +911,25 @@ schmitt_osc(2) polivoks_vcf(2) envelope_follower(1) patch_graph(1)
 S&H 不出现在音频通道、给 clock 后按其速率阶梯变化、**未接 clock 不自走**；
 手册未给的（RATE 范围／FM-AM 深度／RANGE 档位／S&H 标定）**全部 provisional**。
 
+### #45 通过 + **P3 的门就此划死**（2026-08-27，msg `1d3375b3`，head `427d28b`）
+
+**突变复验**：FM/AM 开关做成无效 ⇒ **红 6 条**；`*out = a + n + shCv_`（S&H 误入音频）⇒ **红 1 条**（正是那条）；恢复 45/45。
+**结构与手册一致**（LF 方波经 `setMod` 调制音频振荡器；FM/AM 是开关；`*out = a + n`，S&H 不求和）。
+**并已验组合①确为"连续 drone"**：`fmDevHz_=0` 使 FM 项归零、`amDepth_=0` 使 AM 因子恰为 1.0
+⇒ `setMod` 无条件调用**不会漏调制进来**。
+
+**P3 卡在出口原文第一句「可演奏」**：`machine_runtime.h` 中 **`ControlEvent` 引用数 = 0**
+⇒ 机器只能靠**直接调 C++ setter** 驱动，**没有带时间的事件通路**。
+⇒ **task #46**：`ControlEvent` 分发进产品运行时，**消费 `EventTimebase`，不得在 runtime 重写排序**
+（重写即 P2-③ `real_path` 的病）。判据：同批事件在 **64/128/256 buffer** 下落在**同一 sample 位置**；
+**忽略 sampleOffset ⇒ 必红**。
+
+#### 🚧 P3 的门＝两条，不再加项
+**P3 出口 = 声音链完整（已达）+ `ControlEvent` 可驱动（#46）。**
+另三个零引用模块（`ParameterSmoother`、`AudioRateModulation`、`StateSnapshotPool`/`StateSaveDebounce`）**单独排期，
+不计入 P3 的门**——**P3 出口原文没要求它们**；P2 出口写的是「**自动测试证明**」三域，属模块级证明，已达成。
+**不拿没写在出口条件里的东西挡实施者**（避免上一轮"一次挖一个洞"给人需求漂移的观感）。
+
 ### 由此定的三条通用规矩（对所有审计修复）
 1. **先写复现测试让它红，再修**。没先红的修复不认——无法区分"修好了"与"根本没触发过"。
 2. **验收跑产品路径**，不接受测试内自建的第二套执行器/适配器。
