@@ -60,6 +60,9 @@ class SchmittOsc {
  public:
   // Threshold window: the ramp swings between -kWindowVolts and +kWindowVolts.
   static constexpr double kWindowVolts = 0.5;
+  // PITCH at or below this (semitones) gates the tone off — the "PITCH to zero =>
+  // clean noise" recipe. Provisional (the manual gives no numeric pitch floor).
+  static constexpr double kSilenceSt = -60.0;
 
   // sampleRate must be > 0. Derives freqBase + a static tolerance from `seed`.
   SchmittOsc(std::uint64_t seed, double sampleRate)
@@ -80,14 +83,50 @@ class SchmittOsc {
   // frequency scales by 2^(st/12) at every sample rate. The rate-unit property
   // (dt = 1/sr scaling, NOT a fixed per-sample step) is preserved — a pure fixed
   // multiplier cannot break the cross-sample-rate invariance.
+  //
+  // PITCH-at-floor silence: at or below kSilenceSt the oscillator is gated silent
+  // (toneGate_ = 0). The manual's "PITCH to zero => clean noise sound" recipe needs
+  // the tone gone so the added noise is all that remains behind the signal. The
+  // runtime maps the panel PITCH position (0..1) so its minimum lands here.
   void setPitchSemitones(double semitones) {
+    if (semitones <= kSilenceSt) { toneGate_ = 0.0; return; }
+    toneGate_ = 1.0;
     pitchScale_ = std::pow(2.0, semitones / 12.0);
   }
 
+  // NEW-voice FM/AM modulation (design/01 §3, #45). One external modulation source
+  // (set via setMod, typically the LF square) drives BOTH kinds of modulation, the
+  // two "factory" FM/AM switches choosing which are engaged (see the 4-combo
+  // acceptance):
+  //   * FM — fmDevHz is the PEAK deviation in Hz: the instant frequency swings by
+  //     +/-fmDevHz as mod sweeps -1..+1 (freq = chargeRate/(4vT) => an absolute
+  //     fDevHz adds 4*vT*fDevHz*mod to the per-second charge rate).
+  //   * AM — amDepth in [0,1) is the amplitude index: amp = (1 + amDepth*mod).
+  // With fmDevHz = amDepth = 0 and the gate on, tick() is bit-identical to the
+  // pre-#45 oscillator, so every existing SchmittOsc test stays green.
+  void setMod(double m) { mod_ = m; }
+  void setFmDevHz(double hz) { fmDevHz_ = (hz < 0.0 ? 0.0 : hz); }
+  void setAmDepth(double ad) { amDepth_ = (ad < 0.0 ? 0.0 : (ad > 1.0 ? 1.0 : ad)); }
+  // Override the nominal frequency (Hz) from a control such as RATE. Resets the
+  // pitch scale to neutral so the target frequency is absolute.
+  void setFreqHz(double hz) {
+    const double f = hz < 0.0 ? 0.0 : hz;
+    chargeRate_ = 4.0 * f * kWindowVolts;
+    pitchScale_ = 1.0;
+  }
+
+  // The LF oscillator is "used as a square wave modulator" (manual, Papa Srapa):
+  // a +/-1 bipolar square at the oscillator frequency, taken from the ramp sign.
+  // This is what the audio oscillator consumes as its mod source.
+  double square() const { return ramp_ >= 0.0 ? 1.0 : -1.0; }
+
   // Advance one sample and write the oscillator waveform into *out. Realtime-safe.
   void tick(double* out) {
+    if (toneGate_ <= 0.0) { *out = 0.0; return; }  // PITCH-at-floor: tone silent.
     // dt-scaled rate. NEVER a fixed per-sample step (see file comment).
-    ramp_ += direction_ * chargeRate_ * pitchScale_ / sampleRate_;
+    const double instRate = chargeRate_ * pitchScale_ +
+                            4.0 * kWindowVolts * fmDevHz_ * mod_;
+    ramp_ += direction_ * (instRate > 0.0 ? instRate : 0.0) / sampleRate_;
     if (ramp_ >= kWindowVolts) {
       ramp_ = kWindowVolts;  // clamp so the next half-period starts exactly at +vT.
       direction_ = -1.0;
@@ -95,7 +134,9 @@ class SchmittOsc {
       ramp_ = -kWindowVolts;
       direction_ = 1.0;
     }
-    *out = ramp_;
+    // AM index: amp = ramp * (1 + amDepth*mod), clamped at 0 (never inverts).
+    const double am = 1.0 + amDepth_ * mod_;
+    *out = ramp_ * (am > 0.0 ? am : 0.0);
   }
 
   double freqBaseHz() const { return freqBaseHz_; }
@@ -108,6 +149,10 @@ class SchmittOsc {
   double tolerance_;
   double chargeRate_;   // per-second ramp rate; freq = chargeRate/(4*vT).
   double pitchScale_ = 1.0;  // PITCH semitone factor (2^(st/12)); neutral = 1.0.
+  double fmDevHz_ = 0.0;     // FM peak deviation in Hz (0 = no FM).
+  double amDepth_ = 0.0;     // AM index [0,1] (0 = no AM).
+  double mod_ = 0.0;         // external modulation source, set per frame via setMod.
+  double toneGate_ = 1.0;    // 0 = PITCH-at-floor silence, 1 = on.
   double ramp_;
   double direction_;  // +1 charging up, -1 charging down.
 };

@@ -39,10 +39,25 @@ class SAndHold {
         elapsed_(0.0),
         held_(initial) {}
 
-  // Consume one input sample and write the held level into *out. When the timer
-  // elapses, capture the current input and (critically) subtract the full period so
-  // the next trigger is exactly holdSeconds later — no per-block or per-sample
-  // cumulative drift, so partitioning the render can never shift a grab.
+  // Clock-triggered form — what the product path uses. The manual (Papa Srapa):
+  // "send any LFO or modulator source to the clock socket, which will set the speed
+  // of operation." A new value is captured on a RISING edge of `clock` (a level
+  // thresholded at kClockOn); between edges the output is held. An UNCLOCKED clock
+  // (constant level, never crossing the threshold) re-captures nothing, so the
+  // output does NOT self-run — the "未接 clock 时不自走" acceptance. The seconds-based
+  // self-timed form below is kept for the module's legacy standalone tests.
+  void tick(double input, double clock, double* out) {
+    const bool rising = (clock >= kClockOn) && (prevClock_ < kClockOn);
+    if (rising) held_ = input;
+    prevClock_ = clock;
+    *out = held_;
+  }
+
+  // Consume one input sample and write the held level into *out (legacy self-timed
+  // form). When the timer elapses, capture the current input and (critically)
+  // subtract the full period so the next trigger is exactly holdSeconds later — no
+  // per-block or per-sample cumulative drift, so partitioning the render can never
+  // shift a grab.
   void tick(double input, double* out) {
     elapsed_ += 1.0 / sampleRate_;
     if (elapsed_ >= holdSeconds_) {
@@ -55,10 +70,14 @@ class SAndHold {
   double holdSeconds() const { return holdSeconds_; }
 
  private:
+  // Clock edge threshold (a clock level >= kClockOn counts as "high").
+  static constexpr double kClockOn = 0.5;
+
   double sampleRate_;
   double holdSeconds_;
   double elapsed_;
   double held_;
+  double prevClock_ = 0.0;  // last clock level, for rising-edge detection.
 };
 
 }  // namespace lunar24::core
