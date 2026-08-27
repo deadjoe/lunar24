@@ -971,7 +971,26 @@ S&H 不出现在音频通道、给 clock 后按其速率阶梯变化、**未接 
 machine_runtime **66/66**，ctest **45/45** normal + ASan（无 sanitizer 报错）。origin/main `baf1e11` 未动。
 circuit 常量（`kNewDroneFmDev`/`kNewDroneDepth`/`kNewDroneShSeconds`/`kNewDroneLfFreqHz`/`kNewPitchMinSt`/`kNewPitchMaxSt`）**全 PROVISIONAL**，见 FINDINGS §6。
 
-**⏳ 待**：@Claude 突变复验——FM/AM 开关做成无效必须红、S&H 误进通道必须红；随后他按 d7217ad 用 machine runtime 重跑 **P3 出口四条**（可演奏/可跳线/四输出/多采样率+固定seed可重现），过了才恢复 P3/P4 MET。
+### ✅ #46 落地：ControlEvent 分发进产品运行时（2026-08-27，head `378dbaf` + 本提交，等 @Claude 复验）
+
+**门 = 声音链完整（已达）+ `ControlEvent` 可驱动（#46）。** 两条提交（规矩 3，各自可编译）：
+- `378dbaf`（修复，机制）：`SynthRuntime` 接纳 `enqueueControlEvent(TimedControlEvent)` → `eventTimebase_.enqueue()`；
+  `processBlock` 每次渲染前调 `eventTimebase_.processBlock(n, blockEvents_, kEventTimebaseCapacity)`，把 absolute-sample
+  调度器解析为 block-relative `sampleOffset`，逐 frame 在渲染 frame i 前应用所有 `sampleOffset == i` 的事件到
+  `applyControlEvent_()`。**消费既有 `EventTimebase`，未在 runtime 重写排序**（@Claude 判据：非 P2-③ `real_path` 病）。
+- 本提交（功能，映射）：`applyControlEvent_()` 把 `ParameterId` 映射到产品 setter。**只接计划内单位一致的控制**（不发明换算）：
+  drone_3/6 `pitch`（norm 0..1 → pct 0..1 → `setDrone3Pitch`）、`noise`（norm 0..1 → amp 0..1）、`fm`/`am`（selector 0/1 → bool）。
+  单位不一致的 `tune`/`volt`/`rate`（norm → 半音/Hz，无证据换算）**故意不接**（FINDINGS §7）——那属单独的参数映射排期，不是这次分发的活。
+
+**判据（先红后修 + 产品路径）**：同批事件（`drone_3.pitch`，absolute sample 100）在 **64/128/256 buffer** 下落在**同一 sample 位置**
+⇒ 输出 buffer-invariant + 非空洞（与空脚本逐帧不同）。**self-proof：忽略 `sampleOffset`、事件一律在 block 起始应用 ⇒ 恰那条
+「scripted output buffer-invariant」红**（@Claude 字面判据）；恢复后 70/70。
+
+machine_runtime **70/70**（66 旧 + 4 新），ctest **45/45** normal + ASan（无 sanitizer 报错）。origin/main `baf1e11` 未动。
+三个零引用模块（`ParameterSmoother`/`AudioRateModulation`/`StateSnapshotPool`）**单独排期，不计入 P3 的门**（见上「🚧 P3 的门」）。
+
+**⏳ 待**：@Claude 按 d7217ad 用 machine runtime 重跑 **P3 出口四条**（可演奏/可跳线/四输出/多采样率+固定seed可重现），过了才恢复 P3/P4 MET。
+随后 #40–#43 依序。
 
 **任务**：#40–#43（顺序即优先级）。主线顺序：**#36（P5-② anchor 生成器）→ 审计修复 → 再回 P5-③（#34）**。
 **理由与 panel_layout 那次相同：地基被审出问题时，继续在上面铺面板是重复同一个错误。**

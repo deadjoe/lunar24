@@ -474,17 +474,27 @@ class SynthRuntime {
     double shCv_ = 0.0;
   };
 
-  // #46 ControlEvent dispatch hook. The runtime consumes EventTimebase (fix commit);
-  // the parameter->setter bindings that make it DRIVE the sound land in the follow-up
-  // feature commit (drone_3/6 pitch/noise/fm/am, the unit-agreeing controls). Until
-  // then this is the time path with nothing bound — no parameter is disconnected, it
-  // is simply not yet mapped to a setter (map is additive per unit-consistency).
+  // #46 ControlEvent dispatch. Consumes a parameter ControlEvent that EventTimebase
+  // resolved to a block-relative sampleOffset and applies it to the matching product
+  // control at that sample. Only controls whose registry unit AGREES with the setter
+  // unit are wired here (no invented conversion): drone_3/6 pitch (norm 0..1 -> pct
+  // 0..1), noise (norm 0..1 -> amp 0..1), fm/am (selector 0/1 -> bool). Controls whose
+  // registry unit differs from the setter (tune/volt/rate: norm -> semitones/Hz) would
+  // need an UNEVIDENCED scale, so they are deliberately NOT wired here (FINDINGS §7) —
+  // that is the separately-scheduled parameter-mapping work, not this dispatch pass.
   void applyControlEvent_(const ControlEvent& e) {
     if (e.kind != ControlEventKind::parameter) return;
     const double v = static_cast<double>(e.value);
-    (void)v;
     switch (e.parameter) {
-      default: break;  // no unit-agreeing setter (yet) — not dispatched.
+      case ParameterId::drone_3_pitch: setDrone3Pitch(v); break;
+      case ParameterId::drone_3_noise: setDrone3Noise(v); break;
+      case ParameterId::drone_3_fm:    setDrone3Fm(v != 0.0); break;
+      case ParameterId::drone_3_am:    setDrone3Am(v != 0.0); break;
+      case ParameterId::drone_6_pitch: setDrone6Pitch(v); break;
+      case ParameterId::drone_6_noise: setDrone6Noise(v); break;
+      case ParameterId::drone_6_fm:    setDrone6Fm(v != 0.0); break;
+      case ParameterId::drone_6_am:    setDrone6Am(v != 0.0); break;
+      default: break;  // no unit-agreeing setter (or not a wired control): not dispatched.
     }
   }
 

@@ -648,3 +648,44 @@ fixed-seed) is pending @Claude's mutation re-verify of #45, per the hard MET-res
 The `FmAmVoice` role is fully within the voice now (expresses the LF→audio modulation
 relationship); it is no longer a parallel source, so any downstream reference to it as a standalone
 "source" should be re-read per this ruling.
+
+## 7. #46 (GH#4, A07) ControlEvent dispatch into the product runtime — LANDED, unit-mismatch wired controls deliberately out of scope
+
+@Claude's #46 directive (msg `e9ee9a2a`): `machine_runtime.h`'s `ControlEvent` reference count is
+**0** — the machine was only drivable by direct C++ setters; there was no time-bearing event path.
+The requirement: wire ControlEvent dispatch into the product runtime by **consuming the existing
+`EventTimebase`** (absolute-sample scheduler) and **NOT rewriting a sort in the runtime** — the latter
+is the P2-③ `real_path` disease (a second executor / off-patch ordering). Gate criterion: the same
+batch of events at 64/128/256 buffer sizes acts at the **same sample position**; ignoring
+`sampleOffset` **must red**.
+
+Two commits (audit rule 3: fix and feature separate, each buildable on its own):
+- `378dbaf` (fix, mechanism): `SynthRuntime` gains `enqueueControlEvent(TimedControlEvent)` →
+  `eventTimebase_.enqueue()`; `processBlock` calls `eventTimebase_.processBlock(n, blockEvents_,
+  kEventTimebaseCapacity)` before rendering, resolving absolute sample → block-relative
+  `sampleOffset`, and applies every event with `sampleOffset == i` to `applyControlEvent_()` before
+  rendering frame `i`. Consumes the canonical `EventTimebase`; no re-sort, no second executor.
+- (feature, mapping): `applyControlEvent_()` maps `ParameterId` → product setter. See the
+  unit-mismatch exclusion below.
+
+**What is structural (CONFIRMED, on the product path):**
+- The batch of `drone_3.pitch` events (absolute sample 100) yields a byte-identical output across
+  block sizes 64/128/256 (buffer-invariant), and differs from the empty-script baseline (non-vacuous).
+- self-proof, @Claude's literal criterion: making `applyControlEvent_` run at block start regardless
+  of `sampleOffset` reds exactly the "scripted output is buffer-invariant across 64/128/256" check.
+- `makeRuntime()` alone does NOT render — `rt.rebuild()` is required before `processBlock` (else
+  `chainExecCount_`=0 and all outputs stay 0, making any no-event baseline trivially match).
+
+**Deliberately OUT of scope (unit-mismatch, not missing wiring — the P3 gate does not require it):**
+Only controls whose registry unit AGREES with the setter unit are wired here (no invented
+conversion): drone_3/6 `pitch` (norm 0..1 → pct 0..1), `noise` (norm 0..1 → amp 0..1), `fm`/`am`
+(selector 0/1 → bool). The `tune`/`volt`/`rate` controls (norm → semitones/Hz) and the VCO have **no
+evidenced conversion** to a setter unit; wiring them would require an UNEVIDENCED scale. They are
+deliberately NOT wired in this dispatch pass — that is the separately-scheduled parameter-mapping
+work, not this one. The `EventTimebase` dispatch mechanism is complete and unit-agnostic; the
+exclusion is purely about which controls are bound, and it does not affect the gate criterion.
+
+**Open at this commit:** three zero-reference modules (`ParameterSmoother`, `AudioRateModulation`,
+`StateSnapshotPool`/`StateSaveDebounce`) are scheduled separately and are NOT part of the P3 gate
+(P3 exit text does not require them). P3 exit re-run (playable/patchable/four-output/multi-sample-rate
++ fixed-seed) is pending @Claude's verify of #46.

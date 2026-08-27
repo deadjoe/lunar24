@@ -221,6 +221,16 @@ bool sameOutput(const core::RuntimeOutput& a, const core::RuntimeOutput& b) {
   return a.wetL == b.wetL && a.wetR == b.wetR && a.dryA == b.dryA && a.dryB == b.dryB;
 }
 
+// Compare two frame-for-frame blocks of runtime output (the #46 buffer-invariance
+// check over a full block run). Bit-exact: the per-frame DSP is deterministic and
+// runs the same op sequence whether frames are grouped 64/128/256, so equal means
+// the event acted at the SAME sample.
+bool sameSeq(const core::RuntimeOutput* a, const core::RuntimeOutput* b, std::size_t n) {
+  for (std::size_t i = 0; i < n; ++i)
+    if (!sameOutput(a[i], b[i])) return false;
+  return true;
+}
+
 int g_checks = 0;
 int g_fail = 0;
 
@@ -946,6 +956,70 @@ int main() {
       check(cvPeak > 1e-3,
             "clocked S&H CV is a bounded nonzero level (the noise samples it captures)");
     }
+  }
+
+  // ---- #46: ControlEvent dispatch consumes EventTimebase (buffer-invariant) ----
+  std::printf("(46) ControlEvent dispatch is buffer-invariant + non-vacuous\n");
+  {
+    constexpr std::size_t kTotFrames = 256;
+    constexpr std::size_t kEventSample = 100;   // absolute sample the pitch lands on.
+    constexpr std::size_t kBlocks[3] = {64, 128, 256};
+    static const double kSilence[kTotFrames] = {};  // extSource = 0, as runFrames() uses.
+
+    // A single drone_3.pitch = 0.5 event at absolute sample kEventSample. The runtime's
+    // default pitch is silence, so a nonzero pitch turns the tone on THERE.
+    auto pitchEvent = [&]() {
+      core::ControlEvent ev;
+      ev.kind = core::ControlEventKind::parameter;
+      ev.parameter = core::ParameterId::drone_3_pitch;
+      ev.value = 0.5;
+      ev.source = 1;
+      ev.producerSequence = 1;
+      core::TimedControlEvent te;
+      te.event = ev;
+      te.sample = kEventSample;
+      return te;
+    };
+
+    // Render kTotFrames in `block`-frame chunks and write them into `seq`.
+    auto blockRender = [&](core::SynthRuntime& rt, std::size_t block, core::RuntimeOutput* seq) {
+      for (std::size_t b = 0; b < kTotFrames; b += block) rt.processBlock(kSilence, block, seq + b);
+    };
+
+    // Every render must go through rebuild() so the fixed chain actually executes
+    // (makeRuntime() binds roles and the chain order is derived on rebuild; without
+    // it the outputs stay at 0, which would make any comparison vacuous).
+    auto makeRunning = [&]() { core::SynthRuntime rt = makeRuntime(); rt.rebuild(); return rt; };
+
+    // Baseline: no event — must itself be buffer-invariant.
+    core::RuntimeOutput base[3][kTotFrames] = {};
+    for (int bi = 0; bi < 3; ++bi) {
+      core::SynthRuntime rt = makeRunning();
+      blockRender(rt, kBlocks[bi], base[bi]);
+    }
+    check(sameSeq(base[0], base[1], kTotFrames) && sameSeq(base[1], base[2], kTotFrames),
+          "no-event baseline output is buffer-invariant");
+
+    // Admission accepts the driven event (once).
+    {
+      core::SynthRuntime scratch = makeRunning();
+      check(scratch.enqueueControlEvent(pitchEvent()),
+            "enqueueControlEvent accepts a drone_3.pitch timed control event");
+    }
+
+    // Scripted: one pitch event; the block partition (64/128/256) must not move the
+    // frame it fires at (buffer-invariance, criterion ④), AND it must change the output
+    // vs the empty script (not vacuous — "component present != machine uses it").
+    core::RuntimeOutput ev[3][kTotFrames] = {};
+    for (int bi = 0; bi < 3; ++bi) {
+      core::SynthRuntime rt = makeRunning();
+      static_cast<void>(rt.enqueueControlEvent(pitchEvent()));
+      blockRender(rt, kBlocks[bi], ev[bi]);
+    }
+    check(sameSeq(ev[0], ev[1], kTotFrames) && sameSeq(ev[1], ev[2], kTotFrames),
+          "scripted output is buffer-invariant across 64/128/256 (event acts at the SAME sample)");
+    check(!sameSeq(ev[0], base[0], kTotFrames),
+          "event script differs from the empty script (dispatch is exercised, not vacuous)");
   }
 
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
