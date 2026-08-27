@@ -84,11 +84,13 @@
 
 #include <lunar24/core/distortion.h>
 #include <lunar24/core/drone_bank.h>
+#include <lunar24/core/drone_noise.h>
 #include <lunar24/core/envelope_follower.h>
 #include <lunar24/core/graph_compiler.h>
 #include <lunar24/core/patch_graph.h>
 #include <lunar24/core/polivoks_vcf.h>
 #include <lunar24/core/preamp.h>
+#include <lunar24/core/schmitt_osc.h>
 #include <lunar24/core/vco.h>
 #include <lunar24/core/voice_mixer.h>
 
@@ -132,6 +134,10 @@ class SynthRuntime {
   static constexpr std::uint32_t kMaxFeedbackDelay = 1024;
   // Classic drone voices in the bank (drone 1/2/4/5), each a 5-generator group.
   static constexpr int kClassicDroneVoices = DroneBank::kClassicVoices;
+  // NEW drone voice 6 (Papa Srapa NoiseSource) amplitude. PROVISIONAL: the noise
+  // level is not in the manual; exposed so the product path can bind a NOISE knob
+  // and a test can compare the executed channel to a same-seed NoiseSource.
+  static constexpr double kNewDroneNoiseAmp = 0.5;
 
   // A single break-edge delay line. The SOURCE module writes the loop-forward value
   // (e.g. env_follower's env_out), the CONSUMING module reads the value from
@@ -168,6 +174,8 @@ class SynthRuntime {
         vcB_(sampleRate),
         preamp_(sampleRate),
         drone_(seed_, sampleRate),
+        schmitt3_(seed_, sampleRate),      // NEW drone 3 (Papa Srapa Schmitt).
+        noise6_(seed_, kNewDroneNoiseAmp), // NEW drone 6 (Papa Srapa noise).
         envFol_(sampleRate),
         distortion_(sampleRate) {
     vcf_.setSampleRate(sampleRate);
@@ -308,6 +316,11 @@ class SynthRuntime {
     if (classicIndex < 0 || classicIndex >= 4) return 0.0;
     return chIn_[classic[classicIndex]];
   }
+  // NEW drone voices (design/01 §3): 3/6 are Papa Srapa, NOT in the DroneBank. Read
+  // the EXECUTED channel value the mixer consumes — a same-seed standalone SchmittOsc
+  // / NoiseSource is the oracle for what the product path produces.
+  double drone3Channel() const { return chIn_[VoiceMixer::kChannelDrone3]; }
+  double drone6Channel() const { return chIn_[VoiceMixer::kChannelDrone6]; }
 
  private:
   // Drone panel-control range/linearization helpers (the classic grouping).
@@ -412,7 +425,16 @@ class SynthRuntime {
       case FixedChainRole::kDrone: {
         double drone[DroneBank::kMaxVoices] = {};
         drone_.tick(drone);
-        aggregateDrone_(drone, chIn_);
+        aggregateDrone_(drone, chIn_);          // classic 1/2/4/5 (divided into 5-gen groups).
+        // NEW voices (design/01 §3): drone 3 = Papa Srapa Schmitt oscillator, drone
+        // 6 = Papa Srapa noise source. Previously hard-zeroed (the mute the #44
+        // acceptance reds). Each is a peer source, seeded like drone_.
+        double n3 = 0.0;
+        schmitt3_.tick(&n3);
+        chIn_[VoiceMixer::kChannelDrone3] = n3;
+        double n6 = 0.0;
+        noise6_.tick(&n6);
+        chIn_[VoiceMixer::kChannelDrone6] = n6;
         break;
       }
       case FixedChainRole::kExtIn:
@@ -461,8 +483,9 @@ class SynthRuntime {
 
   // Drone grouping — design/01 §3 (CONFIRMED, not provisional): six drone voices,
   // 1/2/4/5 = "CLASSIC" (5 oscillators each, i.e. the DroneBank's 20 voices),
-  // 3/6 = "NEW" (Papa Srapa noise, P3-②, NOT part of the DroneBank). The 20 flat
-  // bank oscillators split 5-per-CLASSIC-voice, ascending by channel.
+  // 3/6 = "NEW" (Papa Srapa, P3-②, NOT part of the DroneBank). The 20 flat bank
+  // oscillators split 5-per-CLASSIC-voice, ascending by channel. NEW channels 3/6
+  // are set by step_ separately from schmitt3_/noise6_ (not zeroed here).
   static void aggregateDrone_(const double* drone, double* chIn) {
     const int classicChannels[4] = {VoiceMixer::kChannelDrone1, VoiceMixer::kChannelDrone2,
                                     VoiceMixer::kChannelDrone4, VoiceMixer::kChannelDrone5};
@@ -473,8 +496,6 @@ class SynthRuntime {
       for (int v = begin; v < end; ++v) s += drone[v];
       chIn[classicChannels[c]] = s;
     }
-    chIn[VoiceMixer::kChannelDrone3] = 0.0;
-    chIn[VoiceMixer::kChannelDrone6] = 0.0;
   }
 
   struct FixedRoleBinding {
@@ -535,6 +556,8 @@ class SynthRuntime {
   Vco vcB_;
   Preamp preamp_;
   DroneBank drone_;
+  SchmittOsc schmitt3_;          // NEW drone 3 (Papa Srapa Schmitt oscillator).
+  NoiseSource noise6_;           // NEW drone 6 (Papa Srapa noise source).
   EnvelopeFollower envFol_;
   VoiceMixer mixer_;
   PolivoksFilter vcf_;

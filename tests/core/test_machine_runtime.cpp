@@ -790,6 +790,56 @@ int main() {
     }
   }
 
+  // ---- ⑨ #44: NEW drone voices come from their sources (not hard-zero, not classic)
+  // @Claude (msg 5f515f1d): the runtime previously hard-zeroed NEW drone 3/6
+  // (chIn[kChannelDrone3]=0.0; chIn[kChannelDrone6]=0.0) and never instantiated
+  // SchmittOsc/NoiseSource in the product path — the same "零件对 ≠ 机器用了它" gap
+  // as #39, and why P3 could not be restored. #44 wires them in. The criterion: each
+  // NEW drone channel equals a same-seed STANDALONE source (SchmittOsc for 3,
+  // NoiseSource for 6) and is NOT 0.0 and NOT a classic copy. A wiring-revert (back
+  // to 0.0) must red here. Same lockstep-oracle pattern as ⑦: standalone ref ticked
+  // once per frame against the EXECUTED channel the mixer consumes.
+  {
+    constexpr std::size_t kN = 1024;
+    core::SchmittOsc ref3(kSeed, kSr);  // same seed/sr as the runtime's schmitt3_.
+    core::NoiseSource ref6(kSeed, core::SynthRuntime::kNewDroneNoiseAmp);
+    core::SynthRuntime rt = makeRuntime();
+    rt.rebuild();
+
+    std::vector<double> prod3(kN), src3(kN), prod6(kN), src6(kN), classic1(kN);
+    for (std::size_t i = 0; i < kN; ++i) {
+      double v3 = 0.0, v6 = 0.0;
+      rt.processFrame(0.0, /*driveGraph=*/true);
+      ref3.tick(&v3);
+      ref6.tick(&v6);
+      prod3[i] = rt.drone3Channel();   // the value the PRODUCT path fed to the mixer.
+      src3[i] = v3;
+      prod6[i] = rt.drone6Channel();
+      src6[i] = v6;
+      classic1[i] = rt.droneChannel(0);  // classic drone 1 (the "wrong" copy target).
+    }
+
+    double d3 = 0.0, d6 = 0.0, p3max = -1e30, p3min = 1e30, p6peak = 0.0, c3 = 0.0;
+    for (std::size_t i = 0; i < kN; ++i) {
+      d3 = std::max(d3, std::fabs(prod3[i] - src3[i]));
+      d6 = std::max(d6, std::fabs(prod6[i] - src6[i]));
+      p3max = std::max(p3max, prod3[i]);
+      p3min = std::min(p3min, prod3[i]);
+      p6peak = std::max(p6peak, std::fabs(prod6[i]));
+      c3 = std::max(c3, std::fabs(prod3[i] - classic1[i]));
+    }
+    check(d3 < 1e-9,
+          "drone 3 channel == same-seed standalone SchmittOsc (from the source, not 0.0)");
+    check(d6 < 1e-9,
+          "drone 6 channel == same-seed standalone NoiseSource (from the source, not 0.0)");
+    check((p3max - p3min) > 1e-3,
+          "drone 3 channel VARIES (a hard-zero or constant bypass is flat; non-vacuous)");
+    check(p6peak > 1e-3,
+          "drone 6 channel non-silent (a hard-zero 0.0 is silent; non-vacuous)");
+    check(c3 > 1e-3,
+          "drone 3 channel is NOT a classic DroneBank copy (differs from classic voice 1)");
+  }
+
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;
 }
