@@ -856,6 +856,37 @@ chIn[kChannelDrone3] = 0.0;   chIn[kChannelDrone6] = 0.0;
 
 **这正是把「重跑出口四条」写成硬条件的价值**——否则我会凭「#39 过了」直接把 P3 判回去，**重蹈 8/26 判早那次。**
 
+### 🔍 全量普查：还有多少模块在盘上但产品不用（2026-08-27，msg `58420e56`）
+
+**#44 通过**（drone 3/6 改回 `0.0` → 红 8 条；**只**把 drone3 换成 classic 复制 → 红 3 条，
+含 `is NOT a classic DroneBank copy` ⇒ **"有声音但来源错"也抓得住**）。
+
+**随后我数了 `core/` 每个类在 `machine_runtime.h` 的引用数**：
+
+**引用 = 0（产品路径完全没用到）**
+```
+P3： fm_am(FmAmVoice)      sample_hold(SAndHold)      ← 06 P3第2条明写 NEW drone 要 FM/AM 与 S&H
+     audio_rate_modulation  parameter_smoothing  event_timebase
+P4： input_state_machine  keyboard_behaviour  keyboard_input_normalization
+     keyboard_menu  arp_sequencer
+其他：state_snapshot(StateSnapshotPool)   state_persistence
+```
+**已接**：voice_mixer(17) vco(10) drone_bank(10) preamp(6) drone_noise(4) distortion(4)
+schmitt_osc(2) polivoks_vcf(2) envelope_follower(1) patch_graph(1)
+
+**结论**
+1. **P3 仍不能恢复**：NEW 声部只做了一半（Schmitt+noise 接上，**FM/AM 与 S&H 引用=0**）⇒ **task #45**。
+2. **P4 更远**：`InputStateMachine`/keyboard 三件/`ArpSeq` **全为 0** ⇒
+   「三路输入进同一 state machine」在产品里**根本没有那台 state machine**。
+3. ⚠️ **`StateSnapshotPool` 引用=0**：#37 修的 audio 线程竞态**修得对，但产品运行时不用它发布状态**
+   ⇒ **该竞态在当前运行时是「尚未发生」，不是「已经解决」**。不要误读成音频线程状态发布已安全。
+
+### ⚠️ 我的方法错误（记下来）
+**compile_graph 零消费者、drone 3/6 哑、FM/AM+S&H+P4 —— 我是一次挖一个洞报的。**
+**第一次发现「模块在盘上但产品不用」时就该做这次全量普查**，而不是等它们一个个冒出来。
+⇒ **立规矩：发现某个模块未被产品消费时，立刻对同类做一次全量引用普查，一次给全清单**，
+不要挤牙膏式加要求——那对实施者像是需求在漂移，实际是我查得不全。
+
 ### 由此定的三条通用规矩（对所有审计修复）
 1. **先写复现测试让它红，再修**。没先红的修复不认——无法区分"修好了"与"根本没触发过"。
 2. **验收跑产品路径**，不接受测试内自建的第二套执行器/适配器。
