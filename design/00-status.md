@@ -684,6 +684,29 @@ mixer/VCF/dist 是内部端点（非可插拔 jack）正确，**但不得因此�
 「可插拔边接进固定链形成的环」的破环决策**分裂在两处**。**顺序与破环只能有一个真相源。**
 ⇒ 判据①负控加一条：**固定内部链不在编译图边集里 → 红**。
 
+#### ⚠️ 上面那句措辞被 @Pi 顶回，我收回（2026-08-27，裁决 msg `28c633c6`）
+`07:44-48` **决策 B** 原文：「**只做一致性命中（coherence-only），不建独立运行时数值空间**……
+**只有面板可插线 jack 才有 JackId；内部固定端点只有身份、无 JackId。**」
+而 `compile_graph` 的 `PatchEdge` 端点是 **JackId** ⇒ **「固定链进编译图」照字面做就得给固定端点发 JackId＝推翻决策 B。**
+**是我措辞不清，责任在我；@Pi 拿文档顶回来完全正确。**
+
+**改裁 B**：
+- 固定端点**保持 `module.port` / `fixed.<...>` 身份，不占 JackId 数值空间**（`kJackCount=64`/`kJackIdSpace=67` 不动）。
+- **`compile_graph`/`PatchGraph` 增加一条非-JackId 的固定边入径**，与可插拔 JackId 边**合成同一份编译计划**，编译器统一定序+破环。
+- **A（给内部端点发 JackId）不选**：既推翻 07 决策 B，又违反 `04 §2`「只暴露原面板真实存在的插孔」——**`fm_in` 那次就是多记一个不存在的孔。**
+
+**统一到一份 plan 的理由不因 A/B 改变**：registry 里可插拔 jack 的终点**落在固定链模块上**
+（`vcf.cv_l_in`、`vcf.cv_r_in`、`preamp.ext_source_in`）⇒ 用户一根
+`env_follower.env_out → preamp.ext_source_in` 就能**把固定链模块拖进含环 SCC**；
+`07 §4` 要求**含环 SCC 逐 sample、无环按 block**，此时 SignalPath 仍按 block 跑 mixer/VCF/dist ⇒ **两处各排一次序**。
+
+**负控（用 @Pi 改写的那条 + 一条端到端真实环）**：
+「固定链的定序/破环与可插拔图**不共享同一 plan** → 红」；
+且接出真实环后断言 ①SCC 标 cyclic ②执行器逐 sample ③环被 causal edge 或 `z⁻¹` 切断，**执行器仍按 block 跑 → 红**。
+
+**范围**：复用现有 DSP，**只把排序职责从 SignalPath 移交 compiler**，不重写已通过判据的 DSP，不动冻结 registry，不碰 P6。
+
+
 #### 采纳的其余三条
 binding table 从 registry 填、不硬编码数值 id；**sr 作为构造参数**（删掉改不动 VCO/DroneBank 的 `setSampleRate`——
 **留一个无效 setter 比没有更危险**）；**加 allocator-count 负控**验判据⑤零分配
