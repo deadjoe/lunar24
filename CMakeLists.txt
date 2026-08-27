@@ -239,6 +239,7 @@ endif()
 
 lunar_add_test(test_state_persistence tests/core/test_state_persistence.cpp)
 lunar_add_test(test_drone_bank tests/core/test_drone_bank.cpp)
+lunar_add_test(test_drone_classic tests/core/test_drone_classic.cpp)
 lunar_add_test(test_drone_mod tests/core/test_drone_mod.cpp)
 lunar_add_test(test_vco tests/core/test_vco.cpp)
 lunar_add_test(test_preamp_envelope tests/core/test_preamp_envelope.cpp)

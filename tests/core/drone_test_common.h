@@ -92,4 +92,35 @@ inline double noise_sample_var(const std::vector<double>& buf) {
   return acc / static_cast<double>(buf.size());
 }
 
+// Largest sample-to-sample step (|s[n]-s[n-1]|). A DISCONTINUOUS waveform (sawtooth)
+// has one step ~2x its peak level (the wrap), while any continuous waveform (sine)
+// has a step bounded by 2*pi*peak*f/sr << peak. Used to prove the classic drone wave
+// is a real sawtooth, not a sine (A04).
+inline double max_adjacent_step(const std::vector<double>& buf) {
+  if (buf.size() < 2) return 0.0;
+  double m = 0.0;
+  for (std::size_t i = 1; i < buf.size(); ++i)
+    m = std::max(m, std::abs(buf[i] - buf[i - 1]));
+  return m;
+}
+
+// Spread (max-min in samples) between consecutive positive-going zero-crossings.
+// A fixed-frequency oscillator yields ~uniform intervals (spread ~0); a frequency-
+// modulated one yields unequal intervals (spread > 0). This isolates MUTUAL FM from
+// the steady transpose of the VOLT knob (transpose shifts the interval length, not
+// its uniformity). For a real (unbounded-output) signal a NaN/empty buffer gives 0.
+inline double zero_crossing_interval_spread(const std::vector<double>& buf) {
+  std::vector<std::size_t> ups;
+  for (std::size_t i = 1; i < buf.size(); ++i)
+    if (buf[i - 1] <= 0.0 && buf[i] > 0.0) ups.push_back(i);
+  if (ups.size() < 2) return 0.0;
+  double lo = 1e30, hi = -1e30;
+  for (std::size_t k = 1; k < ups.size(); ++k) {
+    const double d = static_cast<double>(ups[k] - ups[k - 1]);
+    lo = std::min(lo, d);
+    hi = std::max(hi, d);
+  }
+  return hi - lo;
+}
+
 }  // namespace drone_test

@@ -566,3 +566,35 @@ distribution differs, the declaration changes and these anchors follow.
 
 *This file is a documentation artifact of the P3 slices, not a runtime input to the core
 library.*
+
+## 5. #39 (GH#5, A04) classic drone — structure LANDED, circuit constants PROVISIONAL (design/07 §3)
+
+The CLASSIC SOLAR 50 drone structure is now real in `drone_bank.h` (sawtooth waveform, a
+real non-identity negistor transfer, low/medium/high per-generator roles, per-generator
+MUTE/TUNE/MOD, a shared VOLT transpose, and mutual-FM past the VOLT halfturn). **Structure
+is present and asserted by `test_drone_classic.cpp`; the circuit constants are NOT measured
+and are carried as PROVISIONAL — flagged here, never pretended to a datasheet.** The
+"结构保真 ≠ 发明常数" rule applies: these are our own declared implementation constants, to be
+re-measured on the physical unit before signature (design/00-status A04 region).
+
+| constant | value | evidence | notes |
+|---|---|---|---|
+| sawtooth transfer | `2·(phase/2π)−1` | manual: "5 simple sawtooth oscillators" | structure — asserted (waveform discontinuity test) |
+| negistor nonlinearity | `x − x³/3` (monotonic on [−1,1], saturating) | manual: "negistor oscillator... single transistor" | PROVISIONAL — a principled monotonic saturation proxy, not a measured V-I curve; non-identity (the A04 point) |
+| role bands | low 30–120 Hz, med 140–380 Hz, high 420–1800 Hz | manual: "approximate data... 1st&2nd low, 3rd medium, 4th&5th high" | PROVISIONAL — band ORDER is structural (low<med<high, asserted); the Hz edges are not |
+| TUNE law | `2^(semitones/12)` | manual: "TUNE" | PROVISIONAL |
+| VOLT transpose | `2^(−semitones/12)` down | manual: "transposes all five down" | PROVISIONAL |
+| VOLT halfturn | 30 semitones down (`kVvoltMid`) | manual: "after half the stroke" | PROVISIONAL — the physical half-stroke position is unmapped |
+| mutual-FM depth | `4·(volt−kVvoltMid)` Hz, 5-ring pairing | manual: "generators start to modulate each other" | PROVISIONAL — depth law invented; STRUCTURE (FM activates past half) is asserted |
+| MOD | `modAmount·modCv` Hz (button on => CV/photo detune) | manual: "CV MOD input + photo-sensitive detector" | PROVISIONAL — the CV/photo→Hz law and the photoresistor curve are unmapped |
+
+**What is asserted (structure, mutation-proof):** waveform discontinuity (sawtooth, not sine),
+non-identity nonlinearity, low<med<high role order, per-generator MUTE (silent gen), TUNE octave,
+shared VOLT transpose (whole 5-gen group moves), mutual-FM period spread past halfturn. Self-proof:
+mutating `nonlinearity`→identity ⇒ 3 red; `sawtooth`→sine ⇒ 1 red; disabling mutual-FM ⇒ 2 red.
+
+**Open at this commit:** the runtime panel *binding* of these controls (a panel knob reaching
+`drone_.setMute/setTune/setMod/setVolt`) is the connecting surface, not yet wired. The DSP
+structure is landed and consumed by the runtime audio path (`aggregateDrone_` → `drone_.tick`),
+so the classic drone audio is now genuinely nonlinear; the A04 "panel binding" completion is the
+next sub-step of #39.
