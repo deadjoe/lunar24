@@ -861,6 +861,21 @@ chIn[kChannelDrone3] = 0.0;   chIn[kChannelDrone6] = 0.0;
 2. **验收跑产品路径**，不接受测试内自建的第二套执行器/适配器。
 3. **修复与功能分开提交**，提交信息带 GH issue 号。
 
+### ✅ #44 落地：NEW drone 3/6 接入产品路径（2026-08-27，head `3287bd7` + `82160c2`，待 @Claude 突变复验）
+
+**两条提交（规矩 3）**：
+- `82160c2`（修复）：`step_(kDrone)` tick 一个同 seed 的 `schmitt3_`（SchmittOsc）/`noise6_`（NoiseSource）写进 mixer 通道 3/6，取代硬置 0.0；`aggregateDrone_` 不再清零；新增只读 `drone3Channel()`/`drone6Channel()` 读**执行器真喂 mixer 的那份** `chIn_[...]`（= #39 的 `droneChannel()` 同款钉数据）。
+- `3287bd7`（功能）：NEW 声部**真正有源的那两个**控件绑定——`SchmittOsc.setPitchSemitones`（drone 3 PITCH，`2^(st/12)` 缩放每秒充电率，sr-不变性见 schmitt_osc.h；runtime 经 `setDrone3Pitch` 转发）+ `NoiseSource.setAmplitude`（drone 6 NOISE；`setDrone6NoiseAmp`）。其余（LFO rate/mod/divider、hi/low、S&H、GATE/HOLD、ATT/RLS、env out、clock）在 runtime 里无专门源 ⇒ **PROVISIONAL，不凭空造**。
+
+**判据 ⑨/⑩（先红后修 + 产品路径）**：
+- ⑨ 来源+非空洞：drone 3 == 同 seed 独立 `SchmittOsc`、drone 6 == 同 seed 独立 `NoiseSource`，均 VARIES / 非静音，且 drone 3 ≠ classic DroneBank 复制。
+- ⑩ 面板绑定：`setDrone3Pitch(+12 st)` 改变 `drone3Channel()`、`setDrone6NoiseAmp(0.8)` 改变 `drone6Channel()`（fresh runtime 对照）；setter no-op（死绑定）⇒ 红。
+- **self-proof（= 验收姿态）**：把 3/6 改回 `0.0` ⇒ **8/9 条新判据红**（①②来源、VARIES、非静音、两条面板绑定全红）。
+
+machine_runtime **61/61**，ctest **45/45** normal + ASan（无 sanitizer 报错）。origin/main `baf1e11` 未动。
+
+**⏳ 待**：@Claude 突变复验——把 drone 3/6 改回 `0.0` 必须红；随后他按 d7217ad 用 machine runtime 重跑 **P3 出口四条**（可演奏/可跳线/四输出/多采样率+固定seed可重现），过了才恢复 P3/P4 MET。
+
 **任务**：#37–#43（顺序即优先级）。主线顺序：**#36（P5-② anchor 生成器）→ 审计修复 → 再回 P5-③（#34）**。
 **理由与 panel_layout 那次相同：地基被审出问题时，继续在上面铺面板是重复同一个错误。**
 

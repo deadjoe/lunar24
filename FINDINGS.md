@@ -598,3 +598,31 @@ mutating `nonlinearity`→identity ⇒ 3 red; `sawtooth`→sine ⇒ 1 red; disab
 structure is landed and consumed by the runtime audio path (`aggregateDrone_` → `drone_.tick`),
 so the classic drone audio is now genuinely nonlinear; the A04 "panel binding" completion is the
 next sub-step of #39.
+
+## 6. #44 (GH#4, A05) NEW drone 3/6 — product-path wiring LANDED, circuit constants PROVISIONAL
+
+Two commits (audit rule 3: fix and feature separate):
+- `82160c2` (fix): `step_(kDrone)` ticks a same-seed `schmitt3_` (SchmittOsc) and `noise6_`
+  (NoiseSource) into mixer channels 3/6, replacing the prior hard-zero; `aggregateDrone_` no
+  longer zeroes them. New read-only `drone3Channel()`/`drone6Channel()` expose the EXECUTED
+  value the mixer consumes (the same data `droneChannel()` reads for the classic voices).
+- `3287bd7` (feature): `SchmittOsc.setPitchSemitones()` (drone 3 PITCH, `2^(st/12)` scales the
+  per-second charge rate — a pure fixed multiplier, so the `dt=1/sr` rate-unit sr-invariance is
+  preserved) and `NoiseSource.setAmplitude()` (drone 6 NOISE level, still `/sr`-independent);
+  the runtime forwards via `setDrone3Pitch()` / `setDrone6NoiseAmp()`.
+
+**What is structural (CONFIRMED, asserted):** drone 3 == standalone SchmittOsc, drone 6 ==
+standalone NoiseSource (same seed), both VARY / non-silent, drone 3 ≠ classic DroneBank copy;
+`setDrone3Pitch`/`setDrone6NoiseAmp` each change their product channel on a fresh runtime. A
+wiring revert to hard-zero `0.0` reds 8 of the 9 new checks.
+
+**PROVISIONAL (no source in the runtime; recorded here, not silently faked):**
+| constant / control | value or statement | evidence | PROVISIONAL because |
+|---|---|---|---|
+| `kNewDroneNoiseAmp` (drone 6 level) | `0.5` | none in manual | noise level not documented |
+| NEW panel: LFO rate/mod/divider, hi/low, S&H, GATE/HOLD, ATT/RLS, env out, clock | not wired | design/01 §3 lists them | no dedicated source in the runtime; binding deferred until sourced |
+| drone 3/6 sonic constants (role bands, FM depth on the NEW voice, etc.) | — | — | not in the manual; measure on the physical unit before signature |
+
+**Open at this commit:** the NEW-voice panel is only partially bound (PITCH, NOISE wired; the rest
+PROVISIONAL). P3 exit re-run (playable/patchable/four-output/multi-sample-rate+fixed-seed) is
+pending @Claude's mutation re-verify of #44, per the hard MET-restore condition.
