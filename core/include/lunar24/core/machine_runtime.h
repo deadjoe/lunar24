@@ -130,6 +130,8 @@ class SynthRuntime {
   static constexpr std::uint32_t kMaxFixedModules = 32;
   static constexpr std::uint32_t kMaxFeedback = 16;
   static constexpr std::uint32_t kMaxFeedbackDelay = 1024;
+  // Classic drone voices in the bank (drone 1/2/4/5), each a 5-generator group.
+  static constexpr int kClassicDroneVoices = DroneBank::kClassicVoices;
 
   // A single break-edge delay line. The SOURCE module writes the loop-forward value
   // (e.g. env_follower's env_out), the CONSUMING module reads the value from
@@ -209,6 +211,30 @@ class SynthRuntime {
     if (j < kMaxEdges) cvOut_[j] = volts;
   }
 
+  // DRONE panel controls (#39 panel-binding half): knob -> bank. `voiceGroup` is
+  // 0..3 (classic drone voices 1/2/4/5), `gen` is 0..4. The runtime owns the
+  // classic-grouping mapping (bank voice index = voiceGroup*5 + gen); a shared VOLT
+  // applies to all 5 generators of the group. These forward directly to the bank —
+  // the executed product path reads them every frame. Out-of-range is a no-op.
+  void setDroneMute(int voiceGroup, int gen, bool on) {
+    if (inDroneRange_(voiceGroup, gen)) drone_.setMute(flatGen_(voiceGroup, gen), on);
+  }
+  void setDroneTune(int voiceGroup, int gen, double semitones) {
+    if (inDroneRange_(voiceGroup, gen)) drone_.setTune(flatGen_(voiceGroup, gen), semitones);
+  }
+  void setDroneMod(int voiceGroup, int gen, double amount) {
+    if (inDroneRange_(voiceGroup, gen)) drone_.setMod(flatGen_(voiceGroup, gen), amount);
+  }
+  // The MOD external CV/photo detune input (modCv). MOD is audible as
+  // modAmount*modCv, so a nonzero CV must be present for the amount knob to detune.
+  void setDroneModCv(int voiceGroup, int gen, double cv) {
+    if (inDroneRange_(voiceGroup, gen)) drone_.setModCv(flatGen_(voiceGroup, gen), cv);
+  }
+  void setDroneVolt(int voiceGroup, double semitonesDown) {
+    if (voiceGroup >= 0 && voiceGroup < kClassicDroneVoices)
+      drone_.setVolt(static_cast<std::size_t>(voiceGroup), semitonesDown);
+  }
+
   // Patch-graph mutation (criterion ②). Each mutation marks the plan stale; the
   // NEXT Process* rebuilds it.
   bool connect(JackId source, JackId sink) {
@@ -270,7 +296,30 @@ class SynthRuntime {
   std::uint32_t feedbackCount() const { return feedbackCount_; }
   const FeedbackLine& feedbackAt(std::uint32_t i) const { return feedback_[i]; }
 
+  // Diagnostic: the drone channel the PRODUCT path computed for the last processed
+  // frame and fed to the mixer (@Claude rule: "钉在真正被执行的那份数据上" — this is
+  // the executed value, not a test-side re-derivation). `classicIndex` is 0..3,
+  // mapping to VoiceMixer::kChannelDrone1/2/4/5 (the CLASSIC drone voices 1/2/4/5);
+  // out-of-range returns 0. Read-only: the audio path already produces this value
+  // each frame via the kDrone step.
+  double droneChannel(int classicIndex) const {
+    static constexpr int classic[4] = {VoiceMixer::kChannelDrone1, VoiceMixer::kChannelDrone2,
+                                       VoiceMixer::kChannelDrone4, VoiceMixer::kChannelDrone5};
+    if (classicIndex < 0 || classicIndex >= 4) return 0.0;
+    return chIn_[classic[classicIndex]];
+  }
+
  private:
+  // Drone panel-control range/linearization helpers (the classic grouping).
+  bool inDroneRange_(int voiceGroup, int gen) const {
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices && gen >= 0 &&
+           gen < static_cast<int>(DroneBank::kGensPerVoice);
+  }
+  std::size_t flatGen_(int voiceGroup, int gen) const {
+    return static_cast<std::size_t>(voiceGroup) * DroneBank::kGensPerVoice +
+           static_cast<std::size_t>(gen);
+  }
+
   // Fixed-role -> id lookup (linear over the small binding table).
   FixedChainRole roleOf_(ModuleId id) const {
     for (std::uint32_t i = 0; i < roleBindingCount_; ++i)

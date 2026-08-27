@@ -651,6 +651,145 @@ int main() {
           "WET L/R finite from the distortion (out-of-P6 effector not wired)");
   }
 
+  // ---- ⑦ #39: product-path drone is nonlinear AND from the bank ----------------
+  // @Claude (msg b3bfb888): test_drone_classic proved the DroneBank CLASS in
+  // isolation, but NO criterion proved the machine's SOUND contains it — "零件对 ≠
+  // 机器用了它". A mutation that bypasses the bank at the PRODUCT path (drone[q]=0.5)
+  // must red here. The product path computes the drone channel in step_(kDrone) ->
+  // aggregateDrone_ and feeds it to the mixer; we read that EXECUTED value via
+  // droneChannel() — the same data the mixer consumes, not a test-side re-derivation.
+  // A same-seed standalone DroneBank is the oracle for what the bank produces.
+  {
+    constexpr std::size_t kN = 1024;
+    // Same seed / sr / voiceCount / drift the runtime constructs for its own drone_
+    // (makeRuntime passes kSeed, kSr; the runtime's drone_(seed_, sampleRate) uses
+    // the default voiceCount=20 and driftEnabled=true).
+    core::DroneBank ref(kSeed, kSr, core::DroneBank::kMaxVoices, /*driftEnabled=*/true);
+    core::SynthRuntime rt = makeRuntime();
+    rt.rebuild();
+
+    double buf[core::DroneBank::kMaxVoices] = {};
+    std::vector<double> prod(kN), actual(kN), lin(kN);
+    for (std::size_t i = 0; i < kN; ++i) {
+      double saw[5], nl[5];
+      for (int g = 0; g < 5; ++g) {
+        const double ph = ref.phaseOf(g);  // phase the bank uses THIS frame.
+        saw[g] = core::DroneBank::sawtooth(ph);
+        nl[g] = core::DroneBank::nonlinearity(saw[g]);
+      }
+      ref.tick(buf);                       // advances the bank; buf[g]=amp*nonlin(saw).
+      double a = 0.0, l = 0.0;
+      for (int g = 0; g < 5; ++g) {
+        const double nlg = buf[g];         // executed gen output = amp*nonlin(saw).
+        a += nlg;
+        // Recover the per-gen amplitude and compute the PURE-sawtooth LINEAR (no
+        // nonlinearity) superposition forecast. Guard saw==0 => nonlin==0 (0/0): at
+        // saw==0 the linear term is 0*anything = 0.
+        const double amp = (std::abs(nl[g]) > 1e-12) ? nlg / nl[g] : 0.0;
+        l += amp * saw[g];
+      }
+      actual[i] = a;
+      lin[i] = l;
+      rt.processFrame(0.0, /*driveGraph=*/true);
+      prod[i] = rt.droneChannel(0);        // the value the PRODUCT path fed to the mixer.
+    }
+
+    // FROM-BANK + non-vacuous: the product drone channel equals the bank's
+    // classic-voice-0 sum (same seed => identical). A drone[q]=0.5 constant bypass
+    // makes prod flat (2.5) — it would NOT match the varying bank sum and red here.
+    double maxDiff = 0.0, prodMax = -1e30, prodMin = 1e30;
+    for (std::size_t i = 0; i < kN; ++i) {
+      maxDiff = std::max(maxDiff, std::fabs(prod[i] - actual[i]));
+      prodMax = std::max(prodMax, prod[i]);
+      prodMin = std::min(prodMin, prod[i]);
+    }
+    check(maxDiff < 1e-9,
+          "product drone channel == bank sum (drone comes from the bank, not bypassed)");
+    check((prodMax - prodMin) > 1e-3,
+          "product drone channel VARIES (a constant drone[q]=0.5 bypass is flat; non-vacuous)");
+
+    // NONLINEARITY: the product drone channel differs from the pure-sawtooth LINEAR
+    // superposition forecast. An identity nonlinearity would collapse prod to lin and
+    // red here.
+    double gap = 0.0, absProd = 0.0;
+    for (std::size_t i = 0; i < kN; ++i) {
+      gap = std::max(gap, std::fabs(prod[i] - lin[i]));
+      absProd = std::max(absProd, std::fabs(prod[i]));
+    }
+    check(gap > 1e-3 && gap > 0.01 * absProd,
+          "product drone channel != pure-sawtooth LINEAR superposition (nonlinearity is in the signal)");
+  }
+
+  // ---- ⑧ #39: drone panel controls reach the bank (knob -> bank) ----------------
+  // @Claude (msg b3bfb888): "再 wire 面板绑定（旋钮→bank），并配会红判据：动一个
+  // 旋钮参数，产品路径输出必须随之改变；不改 → 红。" A dark knob that the runtime
+  // receives but discards (setter no-ops, never forwards to drone_.setX) is a dead
+  // binding — the product output must NOT change, and this criterion reds. Each
+  // control is set on a FRESH runtime (phase identical to its neutral twin) and the
+  // product drone channel (droneChannel(0)) is compared.
+  {
+    constexpr std::size_t kN = 512;
+    auto renderDrone = [](core::SynthRuntime& rt) {
+      std::vector<double> seq(kN);
+      for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.droneChannel(0); }
+      return seq;
+    };
+    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
+      double d = 0.0;
+      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
+      return d;
+    };
+    auto peak = [](const std::vector<double>& a) {
+      double m = 0.0;
+      for (double x : a) m = std::max(m, std::fabs(x));
+      return m;
+    };
+    auto neutral = [&]() {
+      core::SynthRuntime rt = makeRuntime();
+      rt.rebuild();
+      return renderDrone(rt);
+    };
+
+    // TUNE: +12 st on classic voice 0 gen 0.
+    {
+      const auto base = neutral();
+      core::SynthRuntime set = makeRuntime(); set.rebuild(); set.setDroneTune(0, 0, 12.0);
+      const auto tuned = renderDrone(set);
+      check(peak(base) > 1e-3 && peak(tuned) > 1e-3,
+            "drone TUNE comparison sounds (non-vacuous)");
+      check(peakDiff(base, tuned) > 1e-6,
+            "drone TUNE knob reaches the bank (product drone channel changes)");
+    }
+    // MUTE: mute gen 0 of classic voice 0 (default uncovered) vs uncovered.
+    {
+      const auto base = neutral();
+      core::SynthRuntime set = makeRuntime(); set.rebuild(); set.setDroneMute(0, 0, true);
+      const auto muted = renderDrone(set);
+      check(peakDiff(base, muted) > 1e-6,
+            "drone MUTE knob reaches the bank (product drone channel changes)");
+    }
+    // MOD: modulate gen 0 of classic voice 0. MOD = modAmount*modCv, so the CV must
+    // be nonzero to be audible; build two equal-CV runtimes differing only in amount.
+    {
+      core::SynthRuntime noMod = makeRuntime(); noMod.rebuild();
+      noMod.setDroneModCv(0, 0, 3.0); noMod.setDroneMod(0, 0, 0.0);
+      const auto m0 = renderDrone(noMod);
+      core::SynthRuntime mod = makeRuntime(); mod.rebuild();
+      mod.setDroneModCv(0, 0, 3.0); mod.setDroneMod(0, 0, 1.0);
+      const auto m1 = renderDrone(mod);
+      check(peakDiff(m0, m1) > 1e-6,
+            "drone MOD knob reaches the bank (product drone channel changes at fixed CV)");
+    }
+    // VOLT: shared transpose of the whole classic voice 0 group (+12 st down).
+    {
+      const auto base = neutral();
+      core::SynthRuntime set = makeRuntime(); set.rebuild(); set.setDroneVolt(0, 12.0);
+      const auto down = renderDrone(set);
+      check(peakDiff(base, down) > 1e-6,
+            "drone VOLT knob reaches the bank (product drone channel changes)");
+    }
+  }
+
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;
 }
