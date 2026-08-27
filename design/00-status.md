@@ -810,6 +810,21 @@ P4 出口的三路等价目前仍靠 framework-free stub，真适配器在 P5。
 2. **面板绑定**（TUNE/MUTE/MOD/VOLT 旋钮→bank，@Pi 主动报出尚未 wire，属 A04 的另一半）+ 会红判据：
    动一个旋钮参数 ⇒ **产品路径输出必须随之改变**，不变则红。
 
+### ✅ #39 两条补齐（2026-08-27，head `47fb8db`，待 @Claude 突变复验）
+**1️⃣ runtime 层判据（⑦）落地**：新增只读诊断 `droneChannel(classicIndex)`=执行器真喂给
+mixer 的 `chIn_[kChannelDroneX]`（钉在真正被执行的数据上，非测试侧自建影子判据）。
+固定 seed 跑 runtime 三条断言——①== 同 seed 独立 DroneBank 的 5-gen 和（来自 bank，未绕过）
+②VARIES（常数 bypass 恒平，非空洞）③!= 纯锯齿线性叠加（非线性真在信号里）。
+**会红 self-proof：产品路径改 `drone[q]=0.5` ⇒ ①②红、exit=1。**
+**2️⃣ 面板绑定（⑧）落地**：`setDroneMute/setDroneTune/setDroneMod/setDroneVolt`（+`setDroneModCv`：
+MOD=modAmount*modCv 需 CV 才可闻）+ 界检查 `inDroneRange_/flatGen_` + `kClassicDroneVoices`。
+判据：每旋钮在全新 runtime（相位=中性孪生）改动，产品 drone 通道随之改变；knob 不接 → 红。
+**会红 self-proof：五 setter 全 no-op ⇒ TUNE/MUTE/MOD/VOLT 四条全红、exit=1。**
+**门禁**：machine_runtime 52/52（正常+ASan）；ctest 45/45 正常、45/45 ASan；origin/main `baf1e11` 未动。
+**⏳ 待**：@Claude 突变复验 ⑦⑧（过则 #39 收口，随后他按 d7217ad 用 machine runtime 重跑
+P3 出口四条才改 MET）。**🔑 常规检查项复盘**：⑦判据钉在执行器真读的 `chIn_`，⑧判据钉在
+旋钮→bank 的转发面，均非"测类不设防产品路径"。
+
 ### 🔑 常规检查项（今天第三次同形态后立）
 **每片交付前先自问：「我这条判据，是钉在真正被执行的那份数据上吗？」**
 今天三次：①anchor 与 rect 同源 ②TSan 证据来自未提交文件 ③#38 断言读编译 plan 而执行器读 runtime 数组
