@@ -82,10 +82,12 @@
 #include <cstdint>
 #include <utility>
 
+#include <lunar24/core/control_event.h>
 #include <lunar24/core/distortion.h>
 #include <lunar24/core/drone_bank.h>
 #include <lunar24/core/drone_noise.h>
 #include <lunar24/core/envelope_follower.h>
+#include <lunar24/core/event_timebase.h>
 #include <lunar24/core/fm_am.h>
 #include <lunar24/core/graph_compiler.h>
 #include <lunar24/core/patch_graph.h>
@@ -95,6 +97,7 @@
 #include <lunar24/core/schmitt_osc.h>
 #include <lunar24/core/vco.h>
 #include <lunar24/core/voice_mixer.h>
+#include <lunar24/registry_ids.hpp>
 
 namespace lunar24::core {
 
@@ -259,6 +262,15 @@ class SynthRuntime {
     if (j < kMaxEdges) cvOut_[j] = volts;
   }
 
+  // #46 admission point for timed control events. A ControlEvent enters core here
+  // keyed by its ABSOLUTE sample; EventTimebase resolves the block-relative
+  // sampleOffset at render time. This is the ONE time-based event path the runtime
+  // carries — it CONSUMES the canonical EventTimebase rather than re-sorting events
+  // at the host boundary (no second executor / off-patch ordering, the P2-③
+  // "real_path" repair). Returns false only if the fixed event queue is full (the
+  // audio thread is never blocked — design/07 §5).
+  bool enqueueControlEvent(const TimedControlEvent& e) { return eventTimebase_.enqueue(e); }
+
   // DRONE panel controls (#39 panel-binding half): knob -> bank. `voiceGroup` is
   // 0..3 (classic drone voices 1/2/4/5), `gen` is 0..4. The runtime owns the
   // classic-grouping mapping (bank voice index = voiceGroup*5 + gen); a shared VOLT
@@ -349,9 +361,25 @@ class SynthRuntime {
 
   // Block render: advance `n` frames. The per-frame DSP makes this equal a
   // per-block run of the same sequence (partition-invariance, criterion ④).
+  //
+  // #46: the block FIRST drains due control events from EventTimebase (each resolved
+  // to a block-relative sampleOffset), then applies each at the exact frame it was
+  // scheduled for, so the same event set acts at the SAME absolute sample under any
+  // 64/128/256 (or mixed) block partition. Events are handed out sorted by absolute
+  // sample; EventTimebase owns the ordering, this loop only matches offset -> frame.
   void processBlock(const double* extSource, std::size_t n, RuntimeOutput* out,
                     bool driveGraph = true) {
-    for (std::size_t i = 0; i < n; ++i) out[i] = processFrame(extSource[i], driveGraph);
+    const std::uint32_t nEvents =
+        eventTimebase_.processBlock(static_cast<std::uint32_t>(n), blockEvents_,
+                                    kEventTimebaseCapacity);
+    std::uint32_t ei = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+      while (ei < nEvents && blockEvents_[ei].event.sampleOffset == i) {
+        applyControlEvent_(blockEvents_[ei].event);
+        ++ei;
+      }
+      out[i] = processFrame(extSource[i], driveGraph);
+    }
   }
 
   // Inspectors (read-only product/diagnostic surface).
@@ -445,6 +473,20 @@ class SynthRuntime {
     double shClock_ = 0.0;
     double shCv_ = 0.0;
   };
+
+  // #46 ControlEvent dispatch hook. The runtime consumes EventTimebase (fix commit);
+  // the parameter->setter bindings that make it DRIVE the sound land in the follow-up
+  // feature commit (drone_3/6 pitch/noise/fm/am, the unit-agreeing controls). Until
+  // then this is the time path with nothing bound — no parameter is disconnected, it
+  // is simply not yet mapped to a setter (map is additive per unit-consistency).
+  void applyControlEvent_(const ControlEvent& e) {
+    if (e.kind != ControlEventKind::parameter) return;
+    const double v = static_cast<double>(e.value);
+    (void)v;
+    switch (e.parameter) {
+      default: break;  // no unit-agreeing setter (yet) — not dispatched.
+    }
+  }
 
   // Drone panel-control range/linearization helpers (the classic grouping).
   bool inDroneRange_(int voiceGroup, int gen) const {
@@ -665,6 +707,13 @@ class SynthRuntime {
   std::uint32_t chainExecCount_ = 0;
   FeedbackLine feedback_[kMaxFeedback];
   std::uint32_t feedbackCount_ = 0;
+
+  // #46 timed control-event state (preallocated, RT-safe). EventTimebase owns the
+  // absolute-sample pending queue; blockEvents_ is the per-block delivery scratch the
+  // render loop drains each block. Both are fixed-capacity (design/07 §5: no heap, no
+  // lock).
+  EventTimebase eventTimebase_;
+  TimedControlEvent blockEvents_[kEventTimebaseCapacity] = {};
 
   // Per-frame render state (preallocated, RT-safe).
   double chIn_[VoiceMixer::kNumChannels] = {};
