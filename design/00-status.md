@@ -916,22 +916,23 @@ S&H 不出现在音频通道、给 clock 后按其速率阶梯变化、**未接 
 2. **验收跑产品路径**，不接受测试内自建的第二套执行器/适配器。
 3. **修复与功能分开提交**，提交信息带 GH issue 号。
 
-### ✅ #44 落地：NEW drone 3/6 接入产品路径（2026-08-27，head `3287bd7` + `82160c2`，待 @Claude 突变复验）
+### ✅ #45 落地：NEW 声部按裁决拓扑实现（2026-08-27，head `647ae83` + `fc758cf`，待 @Claude 突变复验）
 
-**两条提交（规矩 3）**：
-- `82160c2`（修复）：`step_(kDrone)` tick 一个同 seed 的 `schmitt3_`（SchmittOsc）/`noise6_`（NoiseSource）写进 mixer 通道 3/6，取代硬置 0.0；`aggregateDrone_` 不再清零；新增只读 `drone3Channel()`/`drone6Channel()` 读**执行器真喂 mixer 的那份** `chIn_[...]`（= #39 的 `droneChannel()` 同款钉数据）。
-- `3287bd7`（功能）：NEW 声部**真正有源的那两个**控件绑定——`SchmittOsc.setPitchSemitones`（drone 3 PITCH，`2^(st/12)` 缩放每秒充电率，sr-不变性见 schmitt_osc.h；runtime 经 `setDrone3Pitch` 转发）+ `NoiseSource.setAmplitude`（drone 6 NOISE；`setDrone6NoiseAmp`）。其余（LFO rate/mod/divider、hi/low、S&H、GATE/HOLD、ATT/RLS、env out、clock）在 runtime 里无专门源 ⇒ **PROVISIONAL，不凭空造**。
+按上面「#45 拓扑裁决」实现（**不是三源求和**）。两条提交（规矩 3，各自可编译）：
+- `fc758cf`（修复，模块使能）：`SchmittOsc` 增 FM（`setFmDevHz`/`setMod`）、AM（`setAmDepth`）、双极 `square()`（LF 调制器输出）、PITCH-底静音门（`kSilenceSt`→`toneGate_=0`；第⑤条配方）；`SAndHold` 增时钟边沿触发 `tick(input, clock, out)`（上升沿采样、未接 clock 不自走），legacy 自定时保留。
+- `647ae83`（功能）：`machine_runtime.h` 按裁决实现（每 NEW 声部嵌套 `PapaVoice`＝音频 Schmitt+LF Schmitt+FmAmVoice+NoiseSource+SAndHold；`newVoiceSeed`/`newSourceSeed` 独立子种子），PITCH 0..1 / RATE / FM / AM / NOISE / SH_CLOCK 控件 + `sampleHold3Cv()`/`sampleHold6Cv()`；验收加**判据 ⑪/⑫/⑬**。
 
-**判据 ⑨/⑩（先红后修 + 产品路径）**：
-- ⑨ 来源+非空洞：drone 3 == 同 seed 独立 `SchmittOsc`、drone 6 == 同 seed 独立 `NoiseSource`，均 VARIES / 非静音，且 drone 3 ≠ classic DroneBank 复制。
-- ⑩ 面板绑定：`setDrone3Pitch(+12 st)` 改变 `drone3Channel()`、`setDrone6NoiseAmp(0.8)` 改变 `drone6Channel()`（fresh runtime 对照）；setter no-op（死绑定）⇒ 红。
-- **self-proof（= 验收姿态）**：把 3/6 改回 `0.0` ⇒ **8/9 条新判据红**（①②来源、VARIES、非静音、两条面板绑定全红）。
+**判据 ⑪/⑫/⑬（先红后修 + 产品路径）**：
+- ⑪ 四组合两两不同：none/fmOnly/amOnly/fmAm ⇒ `drone3Channel()` 六对两两 peakDiff>1e-5 + 非空洞；**FM/AM 开关做成无效 ⇒ 6/6 红**（self-proof）。
+- ⑫ PITCH=0+NOISE 满 ⇒ `drone3Channel()` == 同 seed 独立 `NoiseSource`（音调全 gated 掉）；拉回 PITCH 重现音调。
+- ⑬ S&H **不进音频**（给 clock 后 `drone3Channel` 逐字节不变）、给 clock 后 `sampleHold3Cv()` 按钟沿阶梯（countSteps≥4）、**未接 clock 停在初始值（不自走）**；把 S&H 误 sum 进通道 ⇒ 红（self-proof）。
 
-machine_runtime **61/61**，ctest **45/45** normal + ASan（无 sanitizer 报错）。origin/main `baf1e11` 未动。
+machine_runtime **66/66**，ctest **45/45** normal + ASan（无 sanitizer 报错）。origin/main `baf1e11` 未动。
+circuit 常量（`kNewDroneFmDev`/`kNewDroneDepth`/`kNewDroneShSeconds`/`kNewDroneLfFreqHz`/`kNewPitchMinSt`/`kNewPitchMaxSt`）**全 PROVISIONAL**，见 FINDINGS §6。
 
-**⏳ 待**：@Claude 突变复验——把 drone 3/6 改回 `0.0` 必须红；随后他按 d7217ad 用 machine runtime 重跑 **P3 出口四条**（可演奏/可跳线/四输出/多采样率+固定seed可重现），过了才恢复 P3/P4 MET。
+**⏳ 待**：@Claude 突变复验——FM/AM 开关做成无效必须红、S&H 误进通道必须红；随后他按 d7217ad 用 machine runtime 重跑 **P3 出口四条**（可演奏/可跳线/四输出/多采样率+固定seed可重现），过了才恢复 P3/P4 MET。
 
-**任务**：#37–#43（顺序即优先级）。主线顺序：**#36（P5-② anchor 生成器）→ 审计修复 → 再回 P5-③（#34）**。
+**任务**：#40–#43（顺序即优先级）。主线顺序：**#36（P5-② anchor 生成器）→ 审计修复 → 再回 P5-③（#34）**。
 **理由与 panel_layout 那次相同：地基被审出问题时，继续在上面铺面板是重复同一个错误。**
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）

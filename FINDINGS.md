@@ -599,30 +599,52 @@ structure is landed and consumed by the runtime audio path (`aggregateDrone_` �
 so the classic drone audio is now genuinely nonlinear; the A04 "panel binding" completion is the
 next sub-step of #39.
 
-## 6. #44 (GH#4, A05) NEW drone 3/6 — product-path wiring LANDED, circuit constants PROVISIONAL
+## 6. #45 (GH#4, A06) NEW drone 3/6 — corrected topology LANDED, circuit constants PROVISIONAL
 
-Two commits (audit rule 3: fix and feature separate):
-- `82160c2` (fix): `step_(kDrone)` ticks a same-seed `schmitt3_` (SchmittOsc) and `noise6_`
-  (NoiseSource) into mixer channels 3/6, replacing the prior hard-zero; `aggregateDrone_` no
-  longer zeroes them. New read-only `drone3Channel()`/`drone6Channel()` expose the EXECUTED
-  value the mixer consumes (the same data `droneChannel()` reads for the classic voices).
-- `3287bd7` (feature): `SchmittOsc.setPitchSemitones()` (drone 3 PITCH, `2^(st/12)` scales the
-  per-second charge rate — a pure fixed multiplier, so the `dt=1/sr` rate-unit sr-invariance is
-  preserved) and `NoiseSource.setAmplitude()` (drone 6 NOISE level, still `/sr`-independent);
-  the runtime forwards via `setDrone3Pitch()` / `setDrone6NoiseAmp()`.
+@Claude's #45 ruling (msg `3e21f284`, manual L344-366) rejected the #44 approximation
+(standalone single-Schmitt for drone 3 + standalone noise-source for drone 6). The correct
+topology: **each NEW voice is a TWO-Schmitt composite** — an LF Schmitt used as a square-wave
+modulator (RATE/RATE-SWITCH/CV OUT) and an audio-frequency Schmitt doing the tone (PITCH/RANGE,
+C0–E7). **FM/AM are SWITCHES**, not a third source: they route the LF square onto the audio
+oscillator in four combos (drone/FM/AM/FM+AM). Noise adds independently; the S&H (noise→IN,
+external-LFO/mod→clock) is a **CV out of the voice**, never summed into the audio channel.
 
-**What is structural (CONFIRMED, asserted):** drone 3 == standalone SchmittOsc, drone 6 ==
-standalone NoiseSource (same seed), both VARY / non-silent, drone 3 ≠ classic DroneBank copy;
-`setDrone3Pitch`/`setDrone6NoiseAmp` each change their product channel on a fresh runtime. A
-wiring revert to hard-zero `0.0` reds 8 of the 9 new checks.
+Two commits (audit rule 3: fix and feature separate, each buildable on its own):
+- `fc758cf` (fix, module enable): `SchmittOsc` gains FM (`setFmDevHz`/`setMod`), AM
+  (`setAmDepth`), a bipolar `square()` (the LF modulator output the audio osc consumes), and a
+  PITCH-at-floor silence gate (`kSilenceSt` → `toneGate_=0`, the "PITCH to zero => clean noise"
+  recipe); `SAndHold` gains a clock-triggered `tick(input, clock, out)` that captures on a rising
+  edge and does NOT self-run when unclocked. The legacy self-timed form is kept.
+- `647ae83` (feature): `machine_runtime.h` implements the corrected topology (nested `PapaVoice`
+  per NEW voice: audio Schmitt + LF Schmitt + FmAmVoice + NoiseSource + SAndHold; independent
+  sub-seeds via `newVoiceSeed`/`newSourceSeed`), plus per-voice panel controls (PITCH 0..1, RATE,
+  FM, AM, NOISE, SH_CLOCK) and `sampleHold3Cv()`/`sampleHold6Cv()`; the acceptance adds criteria
+  ⑪/⑫/⑬ against the product path.
 
-**PROVISIONAL (no source in the runtime; recorded here, not silently faked):**
-| constant / control | value or statement | evidence | PROVISIONAL because |
-|---|---|---|---|
-| `kNewDroneNoiseAmp` (drone 6 level) | `0.5` | none in manual | noise level not documented |
-| NEW panel: LFO rate/mod/divider, hi/low, S&H, GATE/HOLD, ATT/RLS, env out, clock | not wired | design/01 §3 lists them | no dedicated source in the runtime; binding deferred until sourced |
-| drone 3/6 sonic constants (role bands, FM depth on the NEW voice, etc.) | — | — | not in the manual; measure on the physical unit before signature |
+**What is structural (CONFIRMED, asserted, all on the product path):**
+- ⑪ four FM/AM combos → pairwise-distinct `drone3Channel()`; the FM/AM switch as a NO-OP reds all
+  six pairwise checks (self-proofed, 6/6 red).
+- ⑫ PITCH=0 + NOISE full → `drone3Channel()` exactly equals the same-seed standalone NoiseSource
+  (tone fully gated off); re-raising PITCH re-adds the tone.
+- ⑬ S&H is NOT in the audio channel (clocking it leaves `drone3Channel` byte-identical); clocked it
+  steps at the clock edges; unclocked it stays at the initial held value (no self-run). Summing the
+  S&H into the channel reds (self-proofed).
+- self-proof discipline confirmed: reverting the topology (FM/AM no-op, S&H-summed) reds ⑪/⑬.
 
-**Open at this commit:** the NEW-voice panel is only partially bound (PITCH, NOISE wired; the rest
-PROVISIONAL). P3 exit re-run (playable/patchable/four-output/multi-sample-rate+fixed-seed) is
-pending @Claude's mutation re-verify of #44, per the hard MET-restore condition.
+**PROVISIONAL (not in the manual; recorded here, not silently faked):**
+| constant / control | value | PROVISIONAL because |
+|---|---|---|
+| `kNewDroneNoiseAmp` | `0.5` | noise level not documented |
+| `kNewDroneFmDev` (FM peak dev) | `120.0` Hz | FM depth not in the manual |
+| `kNewDroneDepth` (AM index) | `0.5` | AM depth not in the manual |
+| `kNewDroneShSeconds` (S&H hold) | `0.05` s | S&H speed comes from the external clock |
+| `kNewDroneLfFreqHz` (LF square RATE) | `6.0` Hz | RATE range not in the manual |
+| `kNewPitchMinSt`/`kNewPitchMaxSt` | `0.0`/`24.0` st | PITCH range C0–E7 not numerically bound |
+| NEW panel: RANGE, MOD, DIVIDER, GATE/HOLD, ATT/RLS, env out, clock | not wired | no dedicated runtime source yet |
+
+**Open at this commit:** the NEW-voice panel is partially bound (PITCH/RATE/FM/AM/NOISE/SH_CLOCK
+wired; the rest PROVISIONAL). P3 exit re-run (playable/patchable/four-output/multi-sample-rate +
+fixed-seed) is pending @Claude's mutation re-verify of #45, per the hard MET-restore condition.
+The `FmAmVoice` role is fully within the voice now (expresses the LF→audio modulation
+relationship); it is no longer a parallel source, so any downstream reference to it as a standalone
+"source" should be re-read per this ruling.
