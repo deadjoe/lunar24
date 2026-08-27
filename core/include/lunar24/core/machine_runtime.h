@@ -243,6 +243,15 @@ class SynthRuntime {
       drone_.setVolt(static_cast<std::size_t>(voiceGroup), semitonesDown);
   }
 
+  // NEW drone voice controls (design/01 §3, #44 panel-binding half) — knob ->
+  // source. Only the ones that drive a source the product path actually executes are
+  // wired here (PITCH on the Schmitt oscillator, NOISE amplitude on the noise source);
+  // the rest (LFO rate/mod/divider, hi/low, S&H, GATE/HOLD, ATT/RLS, env out, clock)
+  // have no dedicated runtime source yet and stay PROVISIONAL (see 00-status). These
+  // forward directly to the NEW sources, read every frame by step_(kDrone).
+  void setDrone3Pitch(double semitones) { schmitt3_.setPitchSemitones(semitones); }
+  void setDrone6NoiseAmp(double amp) { noise6_.setAmplitude(amp); }
+
   // Patch-graph mutation (criterion ②). Each mutation marks the plan stale; the
   // NEXT Process* rebuilds it.
   bool connect(JackId source, JackId sink) {

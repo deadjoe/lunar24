@@ -75,10 +75,19 @@ class SchmittOsc {
     direction_ = 1.0;  // charge from 0 toward +vT first; sign flips on threshold.
   }
 
+  // NEW-voice PITCH control (design/01 §3, provisional mapping). Scales the per-
+  // second charge rate by 2^(st/12); because freq = chargeRate/(4*vT), the measured
+  // frequency scales by 2^(st/12) at every sample rate. The rate-unit property
+  // (dt = 1/sr scaling, NOT a fixed per-sample step) is preserved — a pure fixed
+  // multiplier cannot break the cross-sample-rate invariance.
+  void setPitchSemitones(double semitones) {
+    pitchScale_ = std::pow(2.0, semitones / 12.0);
+  }
+
   // Advance one sample and write the oscillator waveform into *out. Realtime-safe.
   void tick(double* out) {
     // dt-scaled rate. NEVER a fixed per-sample step (see file comment).
-    ramp_ += direction_ * chargeRate_ / sampleRate_;
+    ramp_ += direction_ * chargeRate_ * pitchScale_ / sampleRate_;
     if (ramp_ >= kWindowVolts) {
       ramp_ = kWindowVolts;  // clamp so the next half-period starts exactly at +vT.
       direction_ = -1.0;
@@ -97,7 +106,8 @@ class SchmittOsc {
   double sampleRate_;
   double freqBaseHz_;
   double tolerance_;
-  double chargeRate_;  // per-second ramp rate; freq = chargeRate/(4*vT).
+  double chargeRate_;   // per-second ramp rate; freq = chargeRate/(4*vT).
+  double pitchScale_ = 1.0;  // PITCH semitone factor (2^(st/12)); neutral = 1.0.
   double ramp_;
   double direction_;  // +1 charging up, -1 charging down.
 };

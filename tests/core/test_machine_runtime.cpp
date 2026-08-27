@@ -840,6 +840,62 @@ int main() {
           "drone 3 channel is NOT a classic DroneBank copy (differs from classic voice 1)");
   }
 
+  // ---- ⑩ #44: NEW drone panel controls reach their sources (knob -> source) ------
+  // Same "dead binding" discipline as ⑧ (@Claude msg 5f515f1d, requirement 3): a NEW
+  // knob the runtime receives but discards (setter no-ops, never forwards to the
+  // source) leaves the product channel unchanged and must red. Each control is set on
+  // a FRESH runtime and the EXECUTED NEW channel (drone3Channel/drone6Channel) is
+  // compared. Only the controls that drive a source the product path executes are
+  // wired (PITCH on the Schmitt, NOISE amplitude on the noise source); the others
+  // stay PROVISIONAL in 00-status.
+  {
+    constexpr std::size_t kN = 512;
+    auto renderD3 = [](core::SynthRuntime& rt) {
+      std::vector<double> seq(kN);
+      for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.drone3Channel(); }
+      return seq;
+    };
+    auto renderD6 = [](core::SynthRuntime& rt) {
+      std::vector<double> seq(kN);
+      for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.drone6Channel(); }
+      return seq;
+    };
+    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
+      double d = 0.0;
+      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
+      return d;
+    };
+    auto peak = [](const std::vector<double>& a) {
+      double m = 0.0;
+      for (double x : a) m = std::max(m, std::fabs(x));
+      return m;
+    };
+
+    // PITCH on drone 3 (Schmitt oscillator): +12 st doubles the frequency.
+    {
+      core::SynthRuntime base = makeRuntime(); base.rebuild();
+      const auto b = renderD3(base);
+      core::SynthRuntime set = makeRuntime(); set.rebuild(); set.setDrone3Pitch(12.0);
+      const auto t = renderD3(set);
+      check(peak(b) > 1e-3 && peak(t) > 1e-3,
+            "drone 3 PITCH comparison sounds (non-vacuous)");
+      check(peakDiff(b, t) > 1e-6,
+            "drone 3 PITCH knob reaches the Schmitt source (product channel changes)");
+    }
+    // NOISE amplitude on drone 6 (noise source): a fresh runtime defaulting to
+    // kNewDroneNoiseAmp, then raised to a different level.
+    {
+      core::SynthRuntime base = makeRuntime(); base.rebuild();
+      const auto b = renderD6(base);
+      core::SynthRuntime set = makeRuntime(); set.rebuild(); set.setDrone6NoiseAmp(0.8);
+      const auto t = renderD6(set);
+      check(peak(b) > 1e-3 && peak(t) > 1e-3,
+            "drone 6 NOISE comparison sounds (non-vacuous)");
+      check(peakDiff(b, t) > 1e-6,
+            "drone 6 NOISE knob reaches the noise source (product channel changes)");
+    }
+  }
+
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;
 }

@@ -46,6 +46,12 @@ class NoiseSource {
     *out = (rng_.nextUnit() * 2.0 - 1.0) * amplitude_;
   }
 
+  // NEW-voice NOISE control (design/01 §3, provisional). The noise IS an amplitude
+  // source, so this knob sets its level. The per-sample uniform distribution and
+  // the /sr-independent (amplitude*nominal) scale are unchanged; only the scale
+  // factor is adjustable. amp < 0 is taken as |amp| (an amplitude, not a sign).
+  void setAmplitude(double amp) { amplitude_ = amp < 0.0 ? -amp : amp; }
+
   double amplitude() const { return amplitude_; }
 
  private:
