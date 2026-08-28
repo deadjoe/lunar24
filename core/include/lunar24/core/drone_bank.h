@@ -47,6 +47,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -85,13 +86,59 @@ class DroneBank {
     double volt;         // shared VOLT transpose of the whole 5-gen group (semitones).
   };
 
+  // ---- CLASSIC group gate/ATT/RLS/HOLD envelope + dynamic variation (batch 4A) ----
+  // Each classic voice is a 5-generator GROUP with an INDEPENDENT gate/ATT/RLS/HOLD
+  // envelope that VCA-gates the group's final audio. The oscillators keep free-running:
+  // the envelope NEVER resets phase (design/07 §7 — envelope out, oscillators run on).
+  // GATE/HOLD in the registry is a panel control; ATT/RLS are a NORMALIZED 0..1. This
+  // is the single, named, PROVISIONAL monotonic map from that norm to a time range, so
+  // the time constants are not scattered as magic numbers. HOLD is PROVISIONAL policy:
+  // on => keep the group gate target open; off => restore the real gate state (the
+  // exact hardware state/transfer is unverified; see FINDINGS).
+  static constexpr std::size_t kMaxGroups = kClassicVoices;  // 4 classic voices.
+  static constexpr double kAttNormMinSeconds = 0.001;        // provisional, monotonic.
+  static constexpr double kAttNormMaxSeconds = 1.0;
+  static constexpr double kRlsNormMinSeconds = 0.001;
+  static constexpr double kRlsNormMaxSeconds = 1.0;
+  static constexpr double kDefaultAttNorm = 0.0;             // neutral fast default.
+  static constexpr double kDefaultRlsNorm = 0.0;
+  // PROVISIONAL per-generator deterministic jitter amplitude (Hz). Kept small so it is
+  // a dynamic-variation term, never the dominant pitch, and never perturbs the
+  // structure tests' period-uniformity checks. NOT std::random and NOT a fixed sine: a
+  // counter-based deterministic hash (see jitterUnit_).
+  static constexpr double kOscNoiseAmpHz = 0.02;  // provisional: small jitter (Hz).
+
+  // Per-classic-group envelope state. `level` is the 0..1 VCA gain applied to the
+  // group's summed audio every sample. ORDINARY default is OPEN (gate on, level 1) so a
+  // neutral bank still sounds — the pre-batch structure tests probe the frequency model;
+  // the host closes the gate to silence a voice. All time values are the PROVISIONAL
+  // norm-mapped seconds (never a claimed hardware constant).
+  struct GroupEnv {
+    bool gate = true;     // external gate input (open by default).
+    bool hold = false;    // PROVISIONAL HOLD: on => keep the gate target open.
+    double attSeconds = kAttNormMinSeconds;  // mapped from norm at set.
+    double rlsSeconds = kRlsNormMinSeconds;
+    double level = 1.0;   // current VCA gain 0..1 (open at start).
+  };
+
   // sampleRate must be > 0. voiceCount is clamped to [1, kMaxVoices].
   // driftEnabled=false makes the whole dynamic drift model inert (tolerance only).
   DroneBank(std::uint64_t seed, double sampleRate,
             std::size_t voiceCount = kMaxVoices, bool driftEnabled = true)
       : sampleRate_(sampleRate),
         voiceCount_(voiceCount == 0 ? 1 : (voiceCount > kMaxVoices ? kMaxVoices : voiceCount)),
-        driftEnabled_(driftEnabled) {
+        driftEnabled_(driftEnabled),
+        seed_(seed) {
+    groupCount_ = (voiceCount_ + kGensPerVoice - 1) / kGensPerVoice;
+    for (std::size_t g = 0; g < kMaxGroups; ++g) {
+      groupEnv_[g].gate = true;
+      groupEnv_[g].hold = false;
+      groupEnv_[g].attSeconds = mapAttSeconds(kDefaultAttNorm);
+      groupEnv_[g].rlsSeconds = mapRlsSeconds(kDefaultRlsNorm);
+      groupEnv_[g].level = 1.0;  // neutral default OPEN (pre-batch tests expect sound).
+      modCvG_[g] = 0.0;
+    }
+    environmentHz_ = 0.0;
     SeededRandom rng(seed);
     for (std::size_t i = 0; i < voiceCount_; ++i) {
       Voice& v = voices_[i];
@@ -139,11 +186,48 @@ class DroneBank {
     for (std::size_t i = gs; i < end; ++i) voices_[i].volt = semitonesDown;
   }
 
+  // ---- CLASSIC group gate/ATT/RLS/HOLD + shared CV MOD + environment (batch 4A) ----
+  void setGroupGate(int group, bool on) { if (inGroup_(group)) groupEnv_[group].gate = on; }
+  void setGroupHold(int group, bool on) { if (inGroup_(group)) groupEnv_[group].hold = on; }
+  // ATT/RLS come from the registry as a normalized 0..1 control. The ONLY mapping in
+  // the bank is mapAttSeconds/mapRlsSeconds (named, PROVISIONAL, monotonic): tests
+  // clamp the norm and assert the monotonic + speed trend, never a hardware value.
+  void setGroupAtt(int group, double norm) { if (inGroup_(group)) groupEnv_[group].attSeconds = mapAttSeconds(norm); }
+  void setGroupRls(int group, double norm) { if (inGroup_(group)) groupEnv_[group].rlsSeconds = mapRlsSeconds(norm); }
+  // Shared CV MOD / photo-detector input for the whole group (driven from the runtime's
+  // cv_mod_in patch jack). Applied only to generators whose MOD button is on (the
+  // existing modAmount gate); MOD-off generators ignore CV and environment (design/07 §7).
+  void setGroupModCv(int group, double cv) { if (inGroup_(group)) modCvG_[group] = cv; }
+  // Shared/correlated environment term a desktop host can provide (design/07 §7). It
+  // detunes MOD-on generators together; MOD-off generators are unchanged.
+  void setEnvironment(double hz) { environmentHz_ = hz; }
+
   // Advance every generator by one sample and write its sample into out[i]
   // (0 if muted). out must have room for voiceCount_ values. Realtime-safe.
   void tick(double* out) {
+    // Advance each classic group's gate/ATT/RLS/HOLD VCA gain toward its target
+    // (open = gate||hold — the PROVISIONAL HOLD keeps the target open while held). The
+    // oscillators keep free-running; the envelope only scales the group's final audio
+    // below, never resetting phase (design/07 §7). Linear + monotonic, so a larger
+    // ATT/RLS makes the corresponding stage slower.
+    const double dt = 1.0 / sampleRate_;
+    for (std::size_t g = 0; g < groupCount_; ++g) {
+      GroupEnv& e = groupEnv_[g];
+      const double target = (e.gate || e.hold) ? 1.0 : 0.0;
+      double& lvl = e.level;
+      if (lvl < target) {
+        lvl += dt / e.attSeconds;
+        if (lvl > target) lvl = target;
+      } else if (lvl > target) {
+        lvl -= dt / e.rlsSeconds;
+        if (lvl < target) lvl = target;
+      }
+    }
+
     for (std::size_t i = 0; i < voiceCount_; ++i) {
       Voice& v = voices_[i];
+      const std::size_t g = i / kGensPerVoice;   // classic group (0..3).
+      const double gLvl = groupEnv_[g].level;    // group VCA gain 0..1.
       v.driftNow = driftEnabled_
                        ? v.freqBaseHz *
                              (v.driftA1 * std::sin(driftPhase1_(v)) +
@@ -153,8 +237,13 @@ class DroneBank {
       const double voltScale = std::pow(2.0, -v.volt / 12.0);     // VOLT transposes down.
       const double base = v.freqBaseHz * tuneScale * voltScale;
       double effFreq = base * (1.0 + v.tolerance) + v.driftNow;
-      // MOD: button on => CV/photo detune scales the pitch; button off => stable.
-      effFreq += v.modAmount * v.modCv;
+      // MOD: button on => the shared CV MOD (group) or per-gen CV detunes; off => stable.
+      effFreq += v.modAmount * (v.modCv + modCvG_[g]);
+      // Environment: shared/correlated term detunes MOD-on generators together; MOD-off
+      // generators are unchanged (design/07 §7 — the MOD-off generator ignores CV/env).
+      if (v.modAmount > 0.0) effFreq += environmentHz_;
+      // Oscillator-specific small deterministic jitter (per-gen, seed-stable, hash-based).
+      effFreq += kOscNoiseAmpHz * jitterUnit_(seed_, static_cast<double>(i), blockSample_);
       // Mutual FM: active only past half the VOLT stroke (manual). Pair generators
       // within a voice by a 5-ring. Provisional depth law.
       if (v.volt > kVvoltMid && fmDepth_(v.volt) > 0.0) {
@@ -163,8 +252,8 @@ class DroneBank {
       if (effFreq < 0.0) effFreq = 0.0;
 
       const double s = v.muted ? 0.0 : v.amplitude * nonlinearity(sawtooth(v.phase));
-      out[i] = s;
-      lastSample_[i] = s;
+      lastSample_[i] = s;   // RAW pre-group-VCA: mutual-FM peers use the oscillator value.
+      out[i] = s * gLvl;    // the group's envelope/VCA gates the final audio.
       v.phase += twoPi_ * effFreq / sampleRate_;
       v.phase = std::fmod(v.phase, twoPi_);
       if (v.phase < 0.0) v.phase += twoPi_;
@@ -189,6 +278,22 @@ class DroneBank {
   double tuneOf(std::size_t i) const { return voices_[i].tune; }
   double voltOf(std::size_t i) const { return voices_[i].volt; }
   double modAmountOf(std::size_t i) const { return voices_[i].modAmount; }
+
+  // ---- batch 4A envelope / dynamic-variation inspectors (read-only executed state) ----
+  std::size_t groupCount() const { return groupCount_; }
+  // Current group VCA gain 0..1 (the value the product multiplies the group's audio by).
+  double groupEnvLevel(int group) const { return inGroup_(group) ? groupEnv_[group].level : 0.0; }
+  bool groupGate(int group) const { return inGroup_(group) && groupEnv_[group].gate; }
+  bool groupHold(int group) const { return inGroup_(group) && groupEnv_[group].hold; }
+  double groupAttSeconds(int group) const { return inGroup_(group) ? groupEnv_[group].attSeconds : 0.0; }
+  double groupRlsSeconds(int group) const { return inGroup_(group) ? groupEnv_[group].rlsSeconds : 0.0; }
+  // The last-applied per-generator deterministic jitter (Hz) the product added to this
+  // generator's frequency. Product-executed value (like driftOf/phaseOf), never a
+  // shadow mirror. Not std::random and not a fixed sine (see jitterUnit_).
+  double noiseJitterHz(std::size_t i) const { return i < voiceCount_ ? jitterUnit_(seed_, static_cast<double>(i), blockSample_) * kOscNoiseAmpHz : 0.0; }
+  double environmentHzTerm() const { return environmentHz_; }
+  double groupModCv(int group) const { return inGroup_(group) ? modCvG_[group] : 0.0; }
+  int groupOfGen(std::size_t i) const { return static_cast<int>(i / kGensPerVoice); }
 
   // The product waveform + nonlinearity, exposed read-only so a test can probe the
   // exact transfer the audio path applies every sample (no test-only copy). This is
@@ -227,12 +332,57 @@ class DroneBank {
     return twoPi_ * v.driftF2Hz * t + v.driftPh2;
   }
 
+  // ---- batch 4A: group gate/ATT/RLS/HOLD + CV MOD + environment helpers ----
+  bool inGroup_(int group) const {
+    return group >= 0 && static_cast<std::size_t>(group) < groupCount_;
+  }
+  static double clamp01_(double x) {
+    if (x < 0.0) return 0.0;
+    if (x > 1.0) return 1.0;
+    return x;
+  }
+  // Centralized, PROVISIONAL, monotonic norm→seconds mappings (design/07: no hardware
+  // value claimed; a larger normalized knob always yields a longer stage). ATT and RLS
+  // share the same shape but separate ranges so the two stages never share state.
+  static double mapAttSeconds(double norm) {
+    return kAttNormMinSeconds + clamp01_(norm) * (kAttNormMaxSeconds - kAttNormMinSeconds);
+  }
+  static double mapRlsSeconds(double norm) {
+    return kRlsNormMinSeconds + clamp01_(norm) * (kRlsNormMaxSeconds - kRlsNormMinSeconds);
+  }
+  // Splitmix64-style finalizer (pure, stateless). Same construction SeededRandom uses,
+  // but applied as a PURE function of (seed, generator, absolute-sample) rather than a
+  // stateful per-sample stream — so the small jitter is block-partition deterministic,
+  // never a shared value across generators, and zero-mean over a cycle (does not bias a
+  // generator's average pitch). This keeps the P3-① "no hidden randomness" discipline.
+  static std::uint64_t mix64_(std::uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+  }
+  // Per-generator, per-sample jitter in [-1, 1). `blockSample` is the integer sample
+  // counter (always integral in practice), so it keys a unique hash per sample.
+  static double jitterUnit_(std::uint64_t seed, double gen, double blockSample) {
+    const std::uint64_t h =
+        mix64_(seed ^ (static_cast<std::uint64_t>(blockSample) * 0x9E3779B97F4A7C15ULL) ^
+               (static_cast<std::uint64_t>(gen) * 0xD6E8FEB86659FD93ULL));
+    return (static_cast<double>(h >> 11) * (1.0 / 9007199254740992.0)) * 2.0 - 1.0;
+  }
+
   double sampleRate_;
   std::size_t voiceCount_;
   bool driftEnabled_;
   double blockSample_ = 0.0;
   Voice voices_[kMaxVoices];
   double lastSample_[kMaxVoices];
+
+  // ---- batch 4A state (classic group gate/ATT/RLS/HOLD + CV MOD + environment) ----
+  std::uint64_t seed_ = 0;
+  std::size_t groupCount_ = 0;
+  GroupEnv groupEnv_[kMaxGroups];
+  double modCvG_[kMaxGroups];
+  double environmentHz_ = 0.0;
 };
 
 }  // namespace lunar24::core

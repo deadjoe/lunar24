@@ -316,6 +316,64 @@ class SynthRuntime {
   void setDrone6Noise(double amp) { pv6_.setNoise(amp); }
   void setDrone6ShClock(double clk) { pv6_.setShClock(clk); }
 
+  // ---- CLASSIC group GATE/HOLD/ATT/RLS + CV MOD + environment (batch 4A, GH#5) ----
+  // Panel/control entries for the 4 CLASSIC drone voices (voiceGroup 0..3 == drone
+  // 1/2/4/5). Each forwards to the DroneBank, whose gate/ATT/RLS/HOLD envelope the
+  // product path reads every frame in step_(kDrone). ATT/RLS take the registry's
+  // NORMALIZED 0..1 control (the bank does the single monotonic norm->seconds map).
+  void setDroneGroupGate(int voiceGroup, bool on) { drone_.setGroupGate(voiceGroup, on); }
+  void setDroneGroupHold(int voiceGroup, bool on) { drone_.setGroupHold(voiceGroup, on); }
+  void setDroneGroupAtt(int voiceGroup, double norm) { drone_.setGroupAtt(voiceGroup, norm); }
+  void setDroneGroupRls(int voiceGroup, double norm) { drone_.setGroupRls(voiceGroup, norm); }
+  // Per-group shared CV MOD input (0..1 scale is unified upstream). The bank applies it
+  // only to generators whose MOD button is on (MOD-off generators are unresponsive to
+  // CV AND environment — design/07 §7).
+  void setDroneGroupModCv(int voiceGroup, double cv) { drone_.setGroupModCv(voiceGroup, cv); }
+  // Shared/correlated environment term a desktop host can provide (design/07 §7). It
+  // detunes the MOD-on generators of every classic group together; MOD-off unchanged.
+  void setDroneEnvironment(double hz) { drone_.setEnvironment(hz); }
+
+  // Registry CV binding for the 4 CLASSIC drone groups (order 0..3 == drone 1/2/4/5):
+  // env_out jacks the product WRITES virtual volts to, cv_mod_in jacks the product READS
+  // as the group's shared CV MOD (via the control layer). Unbound (JackId{0}) groups are
+  // ignored. @Codex 方案2b: descriptor-driven provisional volts; the test binds the four
+  // REAL generated-registry jacks (descriptors stay source-of-evidence, unchanged).
+  void setDroneEnvOutBindings(JackId g0, JackId g1, JackId g2, JackId g3) {
+    envOutJack_[0] = g0; envOutJack_[1] = g1; envOutJack_[2] = g2; envOutJack_[3] = g3;
+  }
+  void setDroneCvModInBindings(JackId g0, JackId g1, JackId g2, JackId g3) {
+    cvModInJack_[0] = g0; cvModInJack_[1] = g1; cvModInJack_[2] = g2; cvModInJack_[3] = g3;
+  }
+
+  // ---- batch 4A read-only inspectors (executed value, never a shadow mirror) ----
+  // Internal normalized group envelope level 0..1 (what step_(kDrone) multiplied the
+  // group's audio by last frame; == DroneBank::groupEnvLevel).
+  double droneEnvLevel(int voiceGroup) const {
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices
+               ? drone_.groupEnvLevel(voiceGroup)
+               : 0.0;
+  }
+  // The virtual volts the PRODUCT actually wrote into the runtime CV source bank for the
+  // group's env_out jack last frame (== the value at cvOut_[envOutJack], not a rewrite).
+  // An unbound group's env_out is never written, so this reads 0 (not a stale jack 0).
+  double droneEnvOutVolts(int voiceGroup) const {
+    if (voiceGroup < 0 || voiceGroup >= kClassicDroneVoices) return 0.0;
+    const JackId envOut = envOutJack_[voiceGroup];
+    return envOut == JackId{0} ? 0.0 : cvAt_(envOut);
+  }
+  // Fail-closed bound/validity: true only if the group's env_out jack is bound AND its
+  // descriptor exists with a FINITE, non-inverted range. A group that is NOT valid is
+  // never written (step_ leaves cvOut_ untouched) — the readback stays 0.
+  bool droneEnvOutBound(int voiceGroup) const {
+    if (voiceGroup < 0 || voiceGroup >= kClassicDroneVoices) return false;
+    const JackId envOut = envOutJack_[voiceGroup];
+    if (envOut == JackId{0}) return false;  // never bound: JackId{0} is the unbound sentinel
+    const JackDescriptor* d = findJackDescriptor_(envOut);
+    return d != nullptr && validRange_(d);
+  }
+  // General read of a control generator's resolved CV output (the whole CV source bank).
+  double controlVoltageAt(JackId jack) const { return cvAt_(jack); }
+
   // Patch-graph mutation (criterion ②). Each mutation marks the plan stale; the
   // NEXT Process* rebuilds it.
   bool connect(JackId source, JackId sink) {
@@ -634,6 +692,11 @@ class SynthRuntime {
         vcf_.setCvL(cvAt_(src));
       } else if (snk == vcfCvR_) {
         vcf_.setCvR(cvAt_(src));
+      } else if (const int g = cvModInGroupOf_(snk); g >= 0) {
+        // CLASSIC drone group's shared CV MOD (batch 4A): a bound cv_mod_in jack feeds
+        // the group's shared modCv. The bank applies it only to MOD-on generators, so a
+        // MOD-off generator stays unresponsive (design/07 §7).
+        drone_.setGroupModCv(g, cvAt_(src));
       }
     }
   }
@@ -661,6 +724,23 @@ class SynthRuntime {
         double drone[DroneBank::kMaxVoices] = {};
         drone_.tick(drone);
         aggregateDrone_(drone, chIn_);          // classic 1/2/4/5 (divided into 5-gen groups).
+        // batch 4A (GH#5): the CLASSIC group's gate/ATT/RLS/HOLD envelope is INSIDE
+        // drone_.tick() (the bank advances the per-group VCA and scales the group audio
+        // this frame). Write each group's ENV OUT into the CV source bank here, per
+        // @Codex 方案2b — descriptor-driven provisional volts: `nominalMin + level *
+        // (nominalMax - nominalMin)`, range read ONLY from the bound JackDescriptor.
+        // Fail-closed: an unbound or invalid (missing/non-finite/inverted-range)
+        // descriptor group is never written, so cvOut_ for that jack stays untouched.
+        for (int g = 0; g < kClassicDroneVoices; ++g) {
+          const JackId envOut = envOutJack_[g];
+          if (envOut == JackId{0}) continue;
+          const JackDescriptor* d = findJackDescriptor_(envOut);
+          if (!validRange_(d)) continue;
+          const double lvl = drone_.groupEnvLevel(static_cast<std::size_t>(g));
+          const std::uint32_t j = static_cast<std::uint32_t>(envOut);
+          if (j < kMaxEdges)
+            cvOut_[j] = d->nominalMin + lvl * (d->nominalMax - d->nominalMin);
+        }
         // NEW voices (design/01 §3, #45): drone 3/6 are Papa Srapa composite voices
         // (two Schmitt oscillators + a noise source + a sample & hold), a peer source
         // seeded like drone_. The composite's audio is the audio-Schmitt + noise; the
@@ -719,6 +799,28 @@ class SynthRuntime {
     return j < kMaxEdges ? cvOut_[j] : 0.0;
   }
 
+  // Look up a registered JackDescriptor by id (linear over the small registry). Returns
+  // nullptr when absent — fail-closed callers never assume a jack is registered.
+  const JackDescriptor* findJackDescriptor_(JackId id) const {
+    for (std::uint32_t i = 0; i < jackCount_; ++i)
+      if (jacks_[i].id == id) return &jacks_[i];
+    return nullptr;
+  }
+  // A DESCRIPTOR has a usable (finite, non-inverted) nominal range. Only then is the
+  // descriptor-driven ENV OUT transfer safe to compute (方案2b fail-closed: never write
+  // a NaN/garbage/inverted-range voltage into the CV source bank).
+  static bool validRange_(const JackDescriptor* d) {
+    return d != nullptr && std::isfinite(d->nominalMin) && std::isfinite(d->nominalMax) &&
+           d->nominalMax >= d->nominalMin;
+  }
+  // Index (0..3) of the classic group whose cv_mod_in jack is `sink`, or -1 if none.
+  int cvModInGroupOf_(JackId sink) const {
+    if (sink == JackId{0}) return -1;  // never bound: JackId{0} is the unbound sentinel
+    for (int g = 0; g < kClassicDroneVoices; ++g)
+      if (cvModInJack_[g] == sink) return g;
+    return -1;
+  }
+
   // Drone grouping — design/01 §3 (CONFIRMED, not provisional): six drone voices,
   // 1/2/4/5 = "CLASSIC" (5 oscillators each, i.e. the DroneBank's 20 voices),
   // 3/6 = "NEW" (Papa Srapa, P3-②, NOT part of the DroneBank). The 20 flat bank
@@ -767,6 +869,11 @@ class SynthRuntime {
   JackId vcfCvR_{0};
   JackId preampExtIn_{0};
   JackId envFolOut_{0};
+  // CLASSIC drone group CV bindings (batch 4A): env_out jacks the product writes virtual
+  // volts to (per group), cv_mod_in jacks the product reads as the group's shared CV MOD.
+  // Unbound = JackId{0} sentinel.
+  JackId envOutJack_[DroneBank::kClassicVoices] = {JackId{0}, JackId{0}, JackId{0}, JackId{0}};
+  JackId cvModInJack_[DroneBank::kClassicVoices] = {JackId{0}, JackId{0}, JackId{0}, JackId{0}};
 
   // Fixed-chain role binding (registry semantics).
   FixedRoleBinding roleBindings_[kMaxFixedModules] = {};
