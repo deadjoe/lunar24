@@ -282,7 +282,7 @@ void registry_self_loop_feedback_capacity() {
   core::ModuleExecutionContract cyc[core::kModuleCount];
   core::GraphModule mods[core::kModuleCount];
   for (std::uint32_t i = 0; i < core::kModuleCount; ++i) {
-    cyc[i] = {};
+    cyc[i] = core::ModuleExecutionContract{};  // GCC-visible value-init (MSVC/AppleClang accept `= {}`; GCC rejects it)
     cyc[i].sampleRate = kSr;
     cyc[i].allowedInCyclicSCC = true;  // every module is cycle-safe in this test
     mods[i].id = reg::kModules[i].id;
