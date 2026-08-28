@@ -46,26 +46,14 @@
 #include <lunar24/core/enums.h>
 #include <lunar24/core/machine_runtime.h>
 
-// #38 criterion ⑤ (rule 5) allocator-count probe. The product render path must
-// allocate nothing, so every operator new/new[] in THIS test binary is counted and
-// the render loop must leave the count at zero. We replace only the unaligned
-// operators (a deliberate-alloc vector goes through unaligned new, and the render
-// path allocates nothing at all — aligned or not — so the unaligned set fully
-// covers both the real measurement and the deliberate negative). Forwarding to
-// malloc/free keeps the default delete (which frees) compatible.
-std::size_t g_allocCount = 0;
-
-void* operator new(std::size_t n) {
-  ++g_allocCount;
-  void* p = std::malloc(n ? n : 1);
-  if (!p) throw std::bad_alloc();
-  return p;
-}
-void* operator new[](std::size_t n) { return ::operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+// Allocator-count probe (#38 criterion ⑤, rule 5): the replaceable operator new/delete
+// pair and its counter now live in tests/core/test_machine_runtime_allocator.cpp (this
+// target only). Isolated to that TU so GCC's -Wmismatched-new-delete does not misjudge
+// the malloc/free implementation as a new/delete mismatch at the ::operator new / ::operator
+// delete call sites below; the ::operator new(8) call here resolves to the replaced
+// operator at link time, so the deliberate-allocation negative test still fires and the
+// render loop must leave the count at zero.
+extern std::size_t g_allocCount;
 
 namespace core = lunar24::core;
 using core::JackId;
@@ -740,7 +728,11 @@ int main() {
   // product drone channel (droneChannel(0)) is compared.
   {
     constexpr std::size_t kN = 512;
-    auto renderDrone = [](core::SynthRuntime& rt) {
+    // MSVC C3493 rejects a block-local constexpr used in an empty-capture `[]` lambda
+    // (no default capture mode), while Clang's -Wunused-lambda-capture rejects naming it
+    // explicitly ([kN], since a constexpr need not be captured). A default capture is the
+    // form both accept, exactly as the S&H lambda below uses.
+    auto renderDrone = [&](core::SynthRuntime& rt) {
       std::vector<double> seq(kN);
       for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.droneChannel(0); }
       return seq;
@@ -812,7 +804,9 @@ int main() {
   // collides all four to one stream and must red.
   {
     constexpr std::size_t kN = 1024;
-    auto render3 = [](core::SynthRuntime& rt) {
+    // MSVC C3493: a block-local constexpr in an empty-capture `[]` lambda is rejected
+    // (no default capture mode); a default capture is the form both MSVC and Clang accept.
+    auto render3 = [&](core::SynthRuntime& rt) {
       std::vector<double> seq(kN);
       for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.drone3Channel(); }
       return seq;
