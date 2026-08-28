@@ -18,6 +18,14 @@ namespace lunar24::core {
 // ordering (design/07 §3) — it is NOT a pointer or an address.
 using ControlSourceId = std::uint32_t;
 
+// Opaque identity of ONE note/touch press (design/07 §1, GH#8). A press on the
+// same source+channel is assigned a fresh monotonically-increasing id by the
+// input adapter; together with (source, channel) it statically distinguishes two
+// overlapping notes from the same producer. It is a release/held-state identity,
+// NEVER a pitch value — pitch stays a 1 V/oct virtual volt. It is not a pointer
+// or a MIDI note number.
+using NoteId = std::uint32_t;
+
 // Dispatch lane. Continuous events (knob/joystick/CC) may coalesce under queue
 // pressure; critical edges (note/gate/clock/sync/reset) must never be dropped
 // silently. The lane is DERIVED from kind (design/07 §3), so it can never
@@ -81,6 +89,8 @@ struct ControlEvent {
   SignalSample value = SignalSample{0};    // target in virtual volts / index / bool
   std::uint32_t sampleOffset = 0;          // within the current block
   ControlSourceId source = 0;              // stable producer id
+  std::uint8_t channel = 0;                // source sub-id (MIDI channel etc.)
+  NoteId noteId = 0;                       // note/touch press identity (GH#8)
   std::uint64_t producerSequence = 0;      // stable tiebreak for same-source ordering
 
   ControlLane lane() const { return control_event_lane(kind); }

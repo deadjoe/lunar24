@@ -110,6 +110,42 @@ class EventTimebase {
     return true;
   }
 
+  // Admit a WHOLE TRANSACTION (GH#8: a note-on's 2 continuous + 1 critical set)
+  // atomically: either EVERY event lands in its lane, or NONE do and neither lane
+  // nor pending is changed, with a fixed diagnostic recorded. This is the blocking
+  // all-or-none admission for a note — the per-lane pressure policies (parameter
+  // coalesce, critical reconcile) are deliberately NOT used to "rescue" a partial
+  // transaction, because a hidden partial note is the bug GH#8 exists to kill.
+  //
+  // `count` events are summed into their lane's required slots; if EITHER lane
+  // cannot take the whole batch it is rejected in full. Returns true only when all
+  // were admitted.
+  bool enqueueBatch(const TimedControlEvent* evts, std::uint32_t count) {
+    std::uint32_t contNeed = 0, critNeed = 0;
+    for (std::uint32_t i = 0; i < count; ++i) {
+      if (evts[i].lane() == ControlLane::critical) ++critNeed;
+      else ++contNeed;
+    }
+    if (contPending_ + contNeed > kEventTimebaseCapacity) {
+      ++batchRejected_;
+      ++continuousOverflow_;  // the failing lane is visible in the existing diag
+      return false;
+    }
+    if (critPending_ + critNeed > kEventCriticalCapacity) {
+      ++batchRejected_;
+      ++criticalOverflow_;
+      return false;
+    }
+    for (std::uint32_t i = 0; i < count; ++i) {
+      if (evts[i].lane() == ControlLane::critical)
+        critPending_ = insert_sorted(crit_, critPending_, evts[i]);
+      else
+        contPending_ = insert_sorted(cont_, contPending_, evts[i]);
+    }
+    ++batchAdmitted_;
+    return true;
+  }
+
   // Process one block of `frames` starting at the accumulated absolute position.
   // Copies each due event into `out` (up to `capacity`) with its block-relative
   // offset resolved into event.sampleOffset; event.sample stays the absolute
@@ -209,6 +245,10 @@ class EventTimebase {
   std::uint32_t dispatchCapacity() const { return dispatchCapacity_; }
   // Late deliveries (absolute sample in an already-passed block).
   std::uint32_t lateCount() const { return lateCount_; }
+  // Whole transactions (note-on batches) atomically admitted.
+  std::uint32_t batchAdmitted() const { return batchAdmitted_; }
+  // Whole transactions rejected in full (either lane lacked all its slots).
+  std::uint32_t batchRejected() const { return batchRejected_; }
   // Canonical reset failsafe emissions from a reconcile request.
   std::uint32_t reconcileCount() const { return reconcileCount_; }
   // True if a reconcile reset is still queued (awaiting output space).
@@ -274,6 +314,8 @@ class EventTimebase {
   std::uint32_t dispatchCapacity_ = 0;
   std::uint32_t lateCount_ = 0;
   std::uint32_t reconcileCount_ = 0;
+  std::uint32_t batchAdmitted_ = 0;
+  std::uint32_t batchRejected_ = 0;
   bool reconcileRequested_ = false;
 };
 

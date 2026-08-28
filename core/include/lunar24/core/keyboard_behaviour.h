@@ -338,6 +338,9 @@ class PortamentoGlide {
     else smoother_.reset(pitch_cv);  // single note, legato: jump (no glide)
   }
   void setTarget(double pitch_cv) { smoother_.setTarget(pitch_cv); }
+  // GH#8 reset: clear the glide back to 0 so a later note in the SAME sample can
+  // re-open afresh (design/07 §3 phase 0 reset precedes a same-sample re-note-on).
+  void reset() { smoother_.reset(0.0); }
   double tick() { return smoother_.next(); }
   double current() const { return smoother_.current(); }
 
@@ -416,58 +419,188 @@ class KeyboardBehaviour {
 
   void handleControlEvent(const ControlEvent& ev) {
     switch (ev.kind) {
+      case ControlEventKind::pitch:
+        handlePitch_(ev, quantize_pitch(ev.value, scaleMask_, rootSemitone_));
+        break;
+      case ControlEventKind::pressure:
+        handlePressure_(ev);
+        break;
       case ControlEventKind::gate_on:
-        ++activeNotes_;
-        multiTouch_ = activeNotes_ >= 2;
-        nextPitchIsNewNote_ = true;
-        pressure_.gate(true);
-        vibrato_.gate(true);
+        handleGateOn_(ev);
         break;
       case ControlEventKind::gate_off:
-        if (activeNotes_ > 0) --activeNotes_;
-        pressure_.gate(false);
-        vibrato_.gate(false);
+        handleGateOff_(ev);
         break;
-      case ControlEventKind::pitch: {
-        const double target = quantize_pitch(ev.value, scaleMask_, rootSemitone_);
-        if (nextPitchIsNewNote_) {
-          portamento_.noteOn(target, multiTouch_);
-          nextPitchIsNewNote_ = false;
-        } else {
-          portamento_.setTarget(target);
-        }
-        break;
-      }
-      case ControlEventKind::pressure:
-        livePressure_ = ev.value;
+      case ControlEventKind::reset:
+        resetAll_();
         break;
       default:
-        break;  // parameter / clock / sync / reset are not per-note behaviour
+        break;  // parameter / clock / sync are not per-note behaviour
     }
   }
 
   // Advance one sample. pitch_cv is the glided (then vibrato-modulated) pitch CV;
   // pressure_cv is the pressure-output envelope; gate is the live gate state.
+  // GH#8: the glide MUST advance via portamento_.tick() every sample — using
+  // current() (the old path) left the glide frozen at its starting value.
   void tick(double* pitch_cv, double* pressure_cv) {
-    const double glide = portamento_.current();
+    const double glide = portamento_.tick();
     const double vib = vibrato_.tick(livePressure_);
     *pitch_cv = glide + vib;
     *pressure_cv = pressure_.tick(livePressure_);
   }
-  bool gate() const { return activeNotes_ > 0; }
+  bool gate() const { return engagedCount_() > 0; }
   double rootSemitone() const { return static_cast<double>(rootSemitone_); }
   std::uint16_t scaleMask() const { return scaleMask_; }
 
   // Random-mode seed: forwarded so a test makes the Random output deterministic.
   void setRandomSeed(std::uint32_t s) { pressure_.setRandomSeed(s); }
 
+  // GH#8 over-capacity note/identity rejections (deterministic + observable).
+  std::uint32_t overCapacity() const { return overCapacity_; }
+
  private:
+  // One note/touch press of a side's keyboard. `engaged` means a gate_on has
+  // latched it (the voice is sounding it or has it held-under); a not-engaged
+  // record is a pre-latch pitch/pressure that arrived in phase 1 before its
+  // phase-4 gate_on. Identity = (source, channel, noteId) — the three fields a
+  // press carries through the whole pipeline (GH#8).
+  struct HeldNote {
+    ControlSourceId source = 0;
+    std::uint8_t channel = 0;
+    NoteId noteId = 0;
+    double pitch = 0.0;        // quantized CV
+    double pressure = 0.0;
+    bool hasPitch = false;
+    bool engaged = false;
+    std::uint32_t order = 0;   // gate-on activation order (fallback selection)
+  };
+  static constexpr std::uint32_t kMaxHeld = 12;  // the touch plates
+
+  HeldNote* findNote_(ControlSourceId s, std::uint8_t ch, NoteId id) {
+    for (std::uint32_t i = 0; i < kMaxHeld; ++i)
+      if (notes_[i].source == s && notes_[i].channel == ch && notes_[i].noteId == id)
+        return &notes_[i];
+    return nullptr;
+  }
+  // Reserve a wholly-free slot (not latched and not holding a pending pitch).
+  // Returns null on over-capacity: the note is REJECTED (counted, observable),
+  // never allowed to overwrite an older held note (which would leave a stuck gate).
+  HeldNote* createNote_(ControlSourceId s, std::uint8_t ch, NoteId id) {
+    for (std::uint32_t i = 0; i < kMaxHeld; ++i)
+      if (!notes_[i].engaged && !notes_[i].hasPitch) {
+        notes_[i] = HeldNote{};
+        notes_[i].source = s;
+        notes_[i].channel = ch;
+        notes_[i].noteId = id;
+        return &notes_[i];
+      }
+    ++overCapacity_;
+    return nullptr;
+  }
+  std::uint32_t engagedCount_() const {
+    std::uint32_t c = 0;
+    for (std::uint32_t i = 0; i < kMaxHeld; ++i) if (notes_[i].engaged) ++c;
+    return c;
+  }
+  int highestOrderEngaged_() const {
+    int best = -1;
+    std::uint32_t bestOrder = 0;
+    for (std::uint32_t i = 0; i < kMaxHeld; ++i)
+      if (notes_[i].engaged && (best < 0 || notes_[i].order > bestOrder)) {
+        best = static_cast<int>(i);
+        bestOrder = notes_[i].order;
+      }
+    return best;
+  }
+
+  void handlePitch_(const ControlEvent& ev, double q) {
+    HeldNote* note = findNote_(ev.source, ev.channel, ev.noteId);
+    if (note) {
+      // Re-pitch a known note: update its stored pitch; if it is the SOUNDING
+      // note, glide to the new target (a held chord member being re-pitched).
+      note->pitch = q;
+      note->hasPitch = true;
+      if (note->engaged && currentIndex_ >= 0 && &notes_[currentIndex_] == note)
+        portamento_.setTarget(q);
+      return;
+    }
+    HeldNote* created = createNote_(ev.source, ev.channel, ev.noteId);
+    if (!created) return;  // over-capacity (already counted in createNote_)
+    created->pitch = q;
+    created->hasPitch = true;
+  }
+  void handlePressure_(const ControlEvent& ev) {
+    HeldNote* note = findNote_(ev.source, ev.channel, ev.noteId);
+    if (!note) return;  // defensive: a pressure always follows its pitch/gate
+    note->pressure = ev.value;
+    if (note->engaged && currentIndex_ >= 0 && &notes_[currentIndex_] == note)
+      livePressure_ = ev.value;  // only the SOUNDING note drives the live pressure
+  }
+  void handleGateOn_(const ControlEvent& ev) {
+    HeldNote* note = findNote_(ev.source, ev.channel, ev.noteId);
+    if (!note) {
+      // No prior pitch (a direct test may latch first); use the default pitch.
+      note = createNote_(ev.source, ev.channel, ev.noteId);
+      if (!note) return;
+    }
+    note->engaged = true;
+    note->order = ++orderCounter_;
+    currentIndex_ = static_cast<int>(note - notes_);  // newest note becomes current
+    std::uint32_t engaged = 0;
+    for (std::uint32_t i = 0; i < kMaxHeld; ++i) if (notes_[i].engaged) ++engaged;
+    multiTouch_ = engaged >= 2;
+    // The pitch already arrived in phase 1; latch with it (NOT "wait for the
+    // next pitch after gate-on" — the old nextPitchIsNewNote_ protocol).
+    portamento_.noteOn(note->pitch, multiTouch_);
+    livePressure_ = note->pressure;
+    pressure_.gate(true);
+    vibrato_.gate(true);
+  }
+  void handleGateOff_(const ControlEvent& ev) {
+    HeldNote* note = findNote_(ev.source, ev.channel, ev.noteId);
+    if (!note || !note->engaged) return;  // unknown/idempotent release
+    note->engaged = false;
+    if (currentIndex_ >= 0 && &notes_[currentIndex_] == note) {
+      // The SOUNDING note was released: deterministically return to the still-held
+      // note with the largest activation order (the last note seen). Any other
+      // release leaves pitch/gate/modulation untouched (GH#8 partial-release rule).
+      const int fb = highestOrderEngaged_();
+      if (fb >= 0) {
+        currentIndex_ = fb;
+        livePressure_ = notes_[fb].pressure;
+        portamento_.setTarget(notes_[fb].pitch);
+      } else {
+        currentIndex_ = -1;
+        livePressure_ = 0.0;
+      }
+    }
+    *note = HeldNote{};  // free the slot (pitch is no longer a voice state)
+    if (engagedCount_() == 0) {
+      // Only the LAST release closes pressure/vibrato (partial release holds them).
+      pressure_.gate(false);
+      vibrato_.gate(false);
+    }
+  }
+  void resetAll_() {
+    for (std::uint32_t i = 0; i < kMaxHeld; ++i) notes_[i] = HeldNote{};
+    currentIndex_ = -1;
+    orderCounter_ = 0;
+    multiTouch_ = false;
+    livePressure_ = 0.0;
+    pressure_.gate(false);
+    vibrato_.gate(false);
+    portamento_.reset();
+  }
+
   double fs_ = 0.0;
   std::uint16_t scaleMask_ = kMicrotonalScaleMask;
   std::uint8_t rootSemitone_ = 0;
-  std::uint32_t activeNotes_ = 0;
+  HeldNote notes_[kMaxHeld];
+  int currentIndex_ = -1;      // index of the SOUNDING note, or -1 when none
+  std::uint32_t orderCounter_ = 0;
   bool multiTouch_ = false;
-  bool nextPitchIsNewNote_ = false;
+  std::uint32_t overCapacity_ = 0;
   double livePressure_ = 0.0;
   PressureOutlet pressure_;
   PortamentoGlide portamento_;

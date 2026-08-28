@@ -41,9 +41,10 @@
 //     sequence number of pressed plates". The plate -> sequence-number table is not
 //     evidenced, so the chord is ordered by PITCH as a PROVISIONAL fallback and the
 //     plate-sequence ordering is left UN-RESOLVED (FINDINGS).
-//   * note_off carries NO pitch identity in the control stream (translate() emits
-//     gate_off only), so the arp chord is maintained as a STACK: note_on pushes,
-//     gate_off pops (LIFO). PROVISIONAL release ordering.
+//   * note_off / gate_off carries the SAME press identity as its note_on (GH#8), so
+//     the arp chord is a fixed table of held-plate identities: note_on adds by identity,
+//     gate_off deletes the EXACT matching identity (never a LIFO pop, so releasing a
+//     middle/most-recent chord member in any order leaves the others intact).
 //   * norm -> semitone/step maps (interval 1..12, arp length 1..8, seq length 2..16,
 //     seq rhythm length 1..8) are documented linear ceilings (manual bounds the
 //     ranges; no curve is evidenced). PROVISIONAL; the bpm -> step-Hz law is NOT
@@ -202,6 +203,8 @@ class ArpSeq {
     seqBase_ = 0.0;   // track last state so reset also clears the running note
     seqBaseValid_ = false;
     runningGate_ = false;
+    lastArpNoteId_ = 0;
+    arpNoteId_ = 0;   // constructed notes get a fresh identity counter after reset
   }
 
   // mode() exposes the decoded mode so a caller can decide whether to drive a voice
@@ -230,37 +233,100 @@ class ArpSeq {
  private:
   static constexpr std::uint32_t kMaxChord = 12;  // the touch plates
 
-  // -- note-on/off chord (STACK) helpers ------------------------------------------
-  void chordPush(double pitch_cv) {
-    if (chordSize_ < kMaxChord) chord_[chordSize_++] = pitch_cv;
-  }
-  void chordPop() { if (chordSize_ > 0) --chordSize_; }
+  // One held plate of the chord, kept BY IDENTITY (source, channel, noteId) so a
+  // release can delete EXACTLY the matching note — GH#8 kills the old LIFO stack where
+  // releasing a middle note popped the last one instead (and a shared identity let two
+  // overlapping notes from the same producer collide).
+  struct ChordNote {
+    ControlSourceId source = 0;
+    std::uint8_t channel = 0;
+    NoteId noteId = 0;
+    double pitch = 0.0;
+  };
+  std::uint32_t chordSize() const { return chordSize_; }
   bool chordEmpty() const { return chordSize_ == 0; }
+  // GH#8 over-capacity determinism: a pushed plate that finds the chord full is
+  // REJECTED (counted, observable), never an out-of-bounds or silent overwrite.
+  std::uint32_t chordOverflow() const { return chordOverflow_; }
 
-  // Forward a constructed event, preserving the transport fields of the source.
+  // Add (or re-pitch) a held plate by identity. A re-pitch of a note already in the
+  // chord updates that note's pitch rather than appending a second record.
+  void chordPush(const ControlEvent& ev) {
+    for (std::uint32_t i = 0; i < chordSize_; ++i)
+      if (chord_[i].source == ev.source && chord_[i].channel == ev.channel &&
+          chord_[i].noteId == ev.noteId) {
+        chord_[i].pitch = static_cast<double>(ev.value);  // re-pitch the held plate
+        return;
+      }
+    if (chordSize_ >= kMaxChord) { ++chordOverflow_; return; }  // reject, observable
+    ChordNote& n = chord_[chordSize_++];
+    n.source = ev.source;
+    n.channel = ev.channel;
+    n.noteId = ev.noteId;
+    n.pitch = static_cast<double>(ev.value);
+  }
+  // Delete the chord member matching the release identity (precise, no LIFO).
+  void chordDelete(const ControlEvent& ev) {
+    for (std::uint32_t i = 0; i < chordSize_; ++i)
+      if (chord_[i].source == ev.source && chord_[i].channel == ev.channel &&
+          chord_[i].noteId == ev.noteId) {
+        for (std::uint32_t j = i; j + 1 < chordSize_; ++j) chord_[j] = chord_[j + 1];
+        --chordSize_;
+        return;
+      }
+  }
+
+  // Forward a constructed event, preserving the source's transport fields AND the
+  // GH#8 press identity. `noteId` carries the identity the downstream KeyboardBehaviour
+  // keys its note state by.
   template <typename Sink>
-  void emit_(Sink& sink, ControlEventKind kind, double value, const ControlEvent& src) {
+  void emit_(Sink& sink, ControlEventKind kind, double value, const ControlEvent& src,
+             NoteId noteId) {
     ControlEvent e{};
     e.kind = kind;
     e.value = static_cast<SignalSample>(value);
     e.sampleOffset = src.sampleOffset;
     e.source = src.source;
+    e.channel = src.channel;
+    e.noteId = noteId;
     e.producerSequence = src.producerSequence;
     sink(e);
   }
-
-  // One new note for KeyboardBehaviour: release the previous, then strike the new
-  // with its pitch. (KeyboardBehaviour treats a gate_on as "next pitch is a new note".)
   template <typename Sink>
-  void emitNote(Sink& sink, double pitch_cv, bool previousGate, const ControlEvent& src) {
-    if (previousGate) emit_(sink, ControlEventKind::gate_off, 0.0, src);
-    emit_(sink, ControlEventKind::gate_on, 1.0, src);
-    emit_(sink, ControlEventKind::pitch, pitch_cv, src);
-    runningGate_ = true;
+  void emitPitch_(Sink& sink, double pitch, NoteId id, const ControlEvent& src) {
+    emit_(sink, ControlEventKind::pitch, pitch, src, id);
   }
   template <typename Sink>
+  void emitGateOn_(Sink& sink, NoteId id, const ControlEvent& src) {
+    emit_(sink, ControlEventKind::gate_on, 1.0, src, id);
+  }
+  template <typename Sink>
+  void emitGateOff_(Sink& sink, NoteId id, const ControlEvent& src) {
+    emit_(sink, ControlEventKind::gate_off, 0.0, src, id);
+  }
+  template <typename Sink>
+  void emitReset_(Sink& sink, const ControlEvent& src) {
+    emit_(sink, ControlEventKind::reset, 0.0, src, src.noteId);
+  }
+
+  // One new constructed note for KeyboardBehaviour: release the previously-sounding
+  // constructed note (GH#8 identity), then state the new pitch and latch its gate.
+  // Canonical dependency order (design/07 §3): the pitch target arrives (phase 1)
+  // before the gate-on that latches it (phase 4) — never the old "wait for the next
+  // pitch after gate-on" protocol. Each constructed note gets a fresh synthetic id.
+  template <typename Sink>
+  void emitNote(Sink& sink, double pitch_cv, bool previousGate, const ControlEvent& src) {
+    NoteId id = ++arpNoteId_;
+    if (previousGate) emitGateOff_(sink, lastArpNoteId_, src);
+    emitPitch_(sink, pitch_cv, id, src);
+    emitGateOn_(sink, id, src);
+    lastArpNoteId_ = id;
+    runningGate_ = true;
+  }
+  // Close the currently-sounding constructed note (if any) and clear the running gate.
+  template <typename Sink>
   void emitRelease(Sink& sink, bool previousGate, const ControlEvent& src) {
-    if (previousGate) emit_(sink, ControlEventKind::gate_off, 0.0, src);
+    if (previousGate) emitGateOff_(sink, lastArpNoteId_, src);
     runningGate_ = false;
   }
 
@@ -269,14 +335,16 @@ class ArpSeq {
   void handleArp(const ControlEvent& ev, Sink& sink) {
     switch (ev.kind) {
       case ControlEventKind::pitch:
-        // A pressed plate arrives as a note_on -> pitch event (gate_on carries only
-        // the gate level, no note identity). Build the chord from the pitch values.
-        chordPush(ev.value);
+        // A pressed plate arrives as a pitch event carrying its press IDENTITY
+        // (source/channel/noteId); the gate_on only carries the level and pressure is
+        // not a chord member. Build the chord from pitch + identity.
+        chordPush(ev);
         break;
       case ControlEventKind::gate_off:
-        // No pitch identity on release; a stack pop is the PROVISIONAL ordering.
-        if (params_.arpHold != 0) break;  // HOLD: the chord persists through release
-        chordPop();
+        // Precise delete by the release identity (GH#8: no LIFO). HOLD persists the
+        // chord through a release.
+        if (params_.arpHold != 0) break;
+        chordDelete(ev);
         if (chordEmpty()) emitRelease(sink, runningGate_, ev);
         break;
       case ControlEventKind::clock:
@@ -284,8 +352,10 @@ class ArpSeq {
         break;
       case ControlEventKind::sync:
       case ControlEventKind::reset:
+        // A sync/reset clears the engine AND delivers a canonical reset downstream so
+        // the KeyboardBehaviour truly re-arms (gate/pressure/vibrato/portamento).
         reset();
-        emitRelease(sink, runningGate_, ev);
+        emitReset_(sink, ev);
         break;
       default:
         break;  // gate_on / pressure / parameter are not chord members
@@ -316,7 +386,7 @@ class ArpSeq {
     }
     const double semitone = static_cast<double>(arp_interval_semitones(params_.arpInterval));
     const double octave = static_cast<double>(params_.arpVariation);  // x0/x1/x2/x3 octaves
-    return chord_[idx] + (semitone + octave * 12.0) / 12.0;  // CV: 1 V/oct
+    return chord_[idx].pitch + (semitone + octave * 12.0) / 12.0;  // CV: 1 V/oct
   }
 
   // -- sequencer ---------------------------------------------------------------- --
@@ -326,14 +396,21 @@ class ArpSeq {
       case ControlEventKind::pitch:
         // The pressing plates from note_on -> pitch form the transposition base
         // (manual L818: the sequencer is "transposed by the active note plate values").
-        chordPush(ev.value);
-        seqBase_ = chord_[0];  // base = first held plate (PROVISIONAL)
+        // Base = first held plate by insertion order (PROVISIONAL), tracked by identity.
+        chordPush(ev);
+        seqBase_ = chord_[0].pitch;
         seqBaseValid_ = true;
         break;
       case ControlEventKind::gate_off:
-        chordPop();
+        chordDelete(ev);  // precise delete by identity, not a pop
         if (params_.seqRun != 0) {  // keyboard mode: stop when no plate held
-          if (chordEmpty()) { seqBaseValid_ = false; emitRelease(sink, runningGate_, ev); }
+          if (chordEmpty()) {
+            seqBaseValid_ = false;
+            emitRelease(sink, runningGate_, ev);
+          } else {
+            // Deterministic base = first REMAINING held plate, never a popped wrong note.
+            seqBase_ = chord_[0].pitch;
+          }
         }
         break;
       case ControlEventKind::clock:
@@ -342,7 +419,7 @@ class ArpSeq {
       case ControlEventKind::sync:
       case ControlEventKind::reset:
         reset();
-        emitRelease(sink, runningGate_, ev);
+        emitReset_(sink, ev);
         break;
       default:
         break;
@@ -377,13 +454,16 @@ class ArpSeq {
 
   ArpSeqParams params_{};
   double fs_ = 0.0;
-  double chord_[kMaxChord] = {};
+  ChordNote chord_[kMaxChord];
   std::uint32_t chordSize_ = 0;
+  std::uint32_t chordOverflow_ = 0;
   std::uint32_t arpIndex_ = 0;
   std::uint32_t seqIndex_ = 0;
   double seqBase_ = 0.0;
   bool seqBaseValid_ = false;
   bool runningGate_ = false;
+  NoteId arpNoteId_ = 0;      // synthetic identity for each constructed note
+  NoteId lastArpNoteId_ = 0;  // the currently-sounding constructed note's id
 };
 
 }  // namespace lunar24::core

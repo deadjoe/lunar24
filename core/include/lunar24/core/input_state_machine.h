@@ -58,6 +58,7 @@ struct PerformanceInput {
   std::uint16_t controller = 0;            // cc number for kind==cc
   std::uint8_t channel = 0;                // source sub-id (MIDI channel etc.)
   ControlSourceId source = 0;              // stable producer id (pointer/key/midi)
+  NoteId noteId = 0;                       // note/touch press identity (GH#8)
   std::uint64_t seq = 0;                   // deterministic same-source tiebreak
 };
 
@@ -95,29 +96,38 @@ class InputStateMachine {
 inline std::uint32_t InputStateMachine::translate(const PerformanceInput& in,
                                                   ControlEvent* out,
                                                   std::uint32_t capacity) const {
+  // GH#8: note_on is a WHOLE TRANACTION. It emits exactly three events (pitch for
+  // the target, pressure for the velocity fold, gate_on to latch the voice). It is
+  // all-or-none: if the caller's out buffer cannot hold all three, return 0 and
+  // write NOTHING — never a partial note (a latch without its target, or a pitch
+  // without a gate). Every other kind needs exactly one event, so a capacity of 0
+  // on those also returns 0 with no partial write.
+  std::uint32_t need = (in.kind == PerfInputKind::note_on) ? 3u : 1u;
+  if (capacity < need) return 0;
+
   std::uint32_t n = 0;
   auto push = [&](ControlEventKind kind, SignalSample value,
                   ParameterId parameter = ParameterId{0}) {
-    if (n >= capacity) return;
     out[n].kind = kind;
     out[n].parameter = parameter;
     out[n].value = value;
     out[n].sampleOffset = 0;  // resolved by EventTimebase at dispatch
     out[n].source = in.source;
+    out[n].channel = in.channel;
+    out[n].noteId = in.noteId;   // the SAME press identity every event of this note carries
     out[n].producerSequence = in.seq;
     ++n;
   };
 
   switch (in.kind) {
     case PerfInputKind::note_on:
-      // A sounding keyboard voice needs the note latched, so gate goes high in
-      // the same sample the pitch lands. pitch is a 1 V/oct-equivalent CV
-      // (design/07 §3); velocity folds into the original's single pressure
-      // dimension. Critical edges dispatch last (phase 4), so the gate latches
-      // high AFTER the pitch target is set in this sample — deterministic.
-      push(ControlEventKind::gate_on, SignalSample{1});
+      // Canonical dependency order (design/07 §3): the pitch/pressure target is
+      // stated first (phase 1), then the gate latches high (phase 4) using the
+      // pitch already arrived. pitch is a 1 V/oct-equivalent CV; velocity folds
+      // into the original's single pressure dimension.
       push(ControlEventKind::pitch, in.pitch);
       push(ControlEventKind::pressure, in.value);
+      push(ControlEventKind::gate_on, SignalSample{1});
       break;
     case PerfInputKind::note_off:
       push(ControlEventKind::gate_off, SignalSample{0});

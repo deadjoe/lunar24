@@ -72,26 +72,32 @@ struct Recorder {
   bool near(double a, double b) const { return std::fabs(a - b) < 1e-6; }
 };
 
-// Feed the events translate() would emit for a note_on chord member: gate_on (no note
-// identity) then the pitch (the note value that the arp builds its chord from).
-void note_on(core::ArpSeq& s, Recorder& r, double pitch) {
-  core::ControlEvent g{};
-  g.kind = core::ControlEventKind::gate_on;
-  g.value = core::SignalSample{1.0};
-  g.source = 1;
-  s.handleControlEvent(g, r);
+// Feed the events translate() would emit for a note_on chord member: the pitch (the
+// note value the arp builds its chord from) and the gate_on, BOTH carrying the same
+// GH#8 press identity (source/channel/noteId). `id` distinguishes overlapping notes
+// from the same producer — two plates pressed together MUST carry different ids or the
+// identity chord would treat the second as a re-pitch of the first.
+void note_on(core::ArpSeq& s, Recorder& r, double pitch, core::NoteId id) {
   core::ControlEvent p{};
   p.kind = core::ControlEventKind::pitch;
   p.value = static_cast<core::SignalSample>(pitch);
   p.source = 1;
+  p.noteId = id;
   s.handleControlEvent(p, r);
+  core::ControlEvent g{};
+  g.kind = core::ControlEventKind::gate_on;
+  g.value = core::SignalSample{1.0};
+  g.source = 1;
+  g.noteId = id;
+  s.handleControlEvent(g, r);
 }
 
-void note_off(core::ArpSeq& s, Recorder& r) {
+void note_off(core::ArpSeq& s, Recorder& r, core::NoteId id) {
   core::ControlEvent g{};
   g.kind = core::ControlEventKind::gate_off;
   g.value = core::SignalSample{0.0};
   g.source = 1;
+  g.noteId = id;
   s.handleControlEvent(g, r);
 }
 
@@ -134,10 +140,10 @@ static void mode_mux_and_keyboard_passthrough() {
   CHECK_TRUE(s.mode() == core::ArpSeqMode::Keyboard);
 
   Recorder r;
-  note_on(s, r, 0.25);
+  note_on(s, r, 0.25, 1);
   clock_edge(s, r);
   clock_edge(s, r);
-  note_off(s, r);
+  note_off(s, r, 1);
   // The sink saw every event the engine was handed, none transformed.
   CHECK_EQ(r.n, 5u);  // gate_on+pitch, clock, clock, gate_off
   CHECK_EQ(r.count(core::ControlEventKind::gate_on), 1u);
@@ -158,8 +164,9 @@ static void arp_emits_one_note_per_clock() {
 
   Recorder r;
   // Two-plate chord: C (0.25 V) and G (0.5 V) — 3 octaves... use nearby pitches.
-  note_on(s, r, 0.0 / 12.0);   // C
-  note_on(s, r, 4.0 / 12.0);   // E
+  // Distinct noteIds (1, 2) mark two overlapping presses of the same source.
+  note_on(s, r, 0.0 / 12.0, 1);   // C
+  note_on(s, r, 4.0 / 12.0, 2);   // E
   CHECK_EQ(r.n, 0u);           // arp mode does NOT sound the chord directly
 
   clock_edge(s, r);  // 1st note
@@ -169,9 +176,10 @@ static void arp_emits_one_note_per_clock() {
   CHECK_EQ(r.count(core::ControlEventKind::gate_on), 3u);
   CHECK_EQ(r.count(core::ControlEventKind::gate_off), 2u);  // between consecutive notes
 
-  // First emitted pair is gate_on+pitch over chord[0]; no leading gate_off.
-  CHECK_TRUE(r.ev[0].kind == core::ControlEventKind::gate_on);
-  CHECK_TRUE(r.ev[1].kind == core::ControlEventKind::pitch);
+  // First emitted pair is pitch+gate_on over chord[0] (canonical dependency order:
+  // the pitch target arrives before the gate that latches it); no leading gate_off.
+  CHECK_TRUE(r.ev[0].kind == core::ControlEventKind::pitch);
+  CHECK_TRUE(r.ev[1].kind == core::ControlEventKind::gate_on);
   // Forward direction over chord [C, E]: C+i, E+i, C+i (wraps).
   const double i0 = static_cast<double>(core::arp_interval_semitones(p.arpInterval));
   CHECK_TRUE(r.near(r.pitchAt(0), 0.0 / 12.0 + i0 / 12.0));
@@ -188,8 +196,8 @@ static void arp_hold_keeps_chord_through_release() {
   s.configure(p, 48000);
 
   Recorder r;
-  note_on(s, r, 0.0 / 12.0);
-  note_off(s, r);  // released, but HOLD keeps the chord
+  note_on(s, r, 0.0 / 12.0, 1);
+  note_off(s, r, 1);  // released, but HOLD keeps the chord
   CHECK_EQ(r.count(core::ControlEventKind::gate_off), 0u);  // no release emitted
   clock_edge(s, r);  // still arpeggiates
   CHECK_EQ(r.count(core::ControlEventKind::pitch), 1u);
@@ -212,8 +220,8 @@ static void seq_advances_steps_and_gates() {
   CHECK_TRUE(s.mode() == core::ArpSeqMode::Sequencer);
 
   Recorder r;
-  note_on(s, r, 0.0 / 12.0);  // transposition base C
-  CHECK_EQ(r.n, 0u);           // seq does not sound the plate directly
+  note_on(s, r, 0.0 / 12.0, 1);  // transposition base C
+  CHECK_EQ(r.n, 0u);             // seq does not sound the plate directly
 
   clock_edge(s, r);  // step 0
   clock_edge(s, r);  // step 1
@@ -237,7 +245,7 @@ static void seq_continuous_cv_always_gates() {
   s.configure(p, 48000);
 
   Recorder r;
-  note_on(s, r, 0.0 / 12.0);
+  note_on(s, r, 0.0 / 12.0, 1);
   clock_edge(s, r);  // step 0, continuous -> still emits gate_on
   CHECK_EQ(r.count(core::ControlEventKind::gate_on), 1u);
   CHECK_EQ(r.count(core::ControlEventKind::pitch), 1u);
@@ -274,8 +282,8 @@ static void per_side_instantiation_independent() {
     sr.configure(right, 48000);
 
     Recorder rl, rr;
-    note_on(sl, rl, 0.0 / 12.0);
-    note_on(sr, rr, 0.0 / 12.0);
+    note_on(sl, rl, 0.0 / 12.0, 1);
+    note_on(sr, rr, 0.0 / 12.0, 1);
     clock_edge(sl, rl);
     clock_edge(sr, rr);
 
@@ -302,8 +310,8 @@ static void per_side_instantiation_independent() {
     sr.configure(right, 48000);
 
     Recorder rl, rr;
-    note_on(sl, rl, 0.0 / 12.0);   // LEFT holds C (0 V)
-    note_on(sr, rr, 7.0 / 12.0);   // RIGHT holds G (+7 semitones) — DIFFERENT pitch
+    note_on(sl, rl, 0.0 / 12.0, 1);   // LEFT holds C (0 V)
+    note_on(sr, rr, 7.0 / 12.0, 1);   // RIGHT holds G (+7 semitones) — DIFFERENT pitch
     clock_edge(sl, rl);
     clock_edge(sr, rr);
 
@@ -364,8 +372,8 @@ static void side_drop_produces_divergent_stream() {
   Recorder rc, rr;
   // A held plate + three clock edges. Conforming = sequencer (emits steps); rogue =
   // keyboard (pass-through, emits nothing extra but the plate pitch once).
-  note_on(cs, rc, 0.0 / 12.0);
-  note_on(rs, rr, 0.0 / 12.0);
+  note_on(cs, rc, 0.0 / 12.0, 1);
+  note_on(rs, rr, 0.0 / 12.0, 1);
   clock_edge(cs, rc);
   clock_edge(cs, rc);
   clock_edge(cs, rc);
