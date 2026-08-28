@@ -10,7 +10,7 @@ changed.
 
 | ID | Severity | Finding | Disposition |
 |---|---|---|---|
-| A12 | High | `SynthRuntime` silently truncates a valid compiled feedback plan after 16 edges while leaving `graphValid()==true` | New GitHub issue |
+| A12 | High | `SynthRuntime` silently truncates a valid compiled feedback plan after 16 edges while leaving `graphValid()==true` | [#13](https://github.com/deadjoe/lunar24/issues/13) |
 | A03 | High | The runtime test uses synthetic jacks/modules/fixed edges and manual role binding; no canonical whole-machine factory or host consumer exists | Add to #4 acceptance |
 | A03 | Medium | `wet_dry::SignalPath`/`WetDryOutput` duplicate the composition and output record now implemented by `SynthRuntime`; only isolated tests consume the old path | Consolidate under #4, without a separate refactor project |
 | A03/A09 | Medium | `device_layout::logical_signal()` and `render_device_output()` generate synthetic test signals rather than adapt `RuntimeOutput`; the real host/CI path remains untested | Add to #4/#10 acceptance |
