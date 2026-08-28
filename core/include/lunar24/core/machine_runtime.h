@@ -412,7 +412,7 @@ class SynthRuntime {
                     bool driveGraph = true) {
     const std::uint32_t nEvents =
         eventTimebase_.processBlock(static_cast<std::uint32_t>(n), blockEvents_,
-                                    kEventTimebaseCapacity);
+                                    kEventDispatchCapacity);
     std::uint32_t ei = 0;
     for (std::size_t i = 0; i < n; ++i) {
       while (ei < nEvents && blockEvents_[ei].event.sampleOffset == i) {
@@ -782,9 +782,11 @@ class SynthRuntime {
   // #46 timed control-event state (preallocated, RT-safe). EventTimebase owns the
   // absolute-sample pending queue; blockEvents_ is the per-block delivery scratch the
   // render loop drains each block. Both are fixed-capacity (design/07 §5: no heap, no
-  // lock).
+  // lock). Sizing to kEventDispatchCapacity avoids the product creating its own
+  // output-capacity pressure: the buffer always covers a full continuous + critical
+  // burst plus the single reconcile failsafe.
   EventTimebase eventTimebase_;
-  TimedControlEvent blockEvents_[kEventTimebaseCapacity] = {};
+  TimedControlEvent blockEvents_[kEventDispatchCapacity] = {};
 
   // Per-frame render state (preallocated, RT-safe).
   double chIn_[VoiceMixer::kNumChannels] = {};

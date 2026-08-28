@@ -50,6 +50,17 @@ static core::TimedControlEvent mk_timed(core::ControlEventKind k, std::uint64_t 
   return t;
 }
 
+// A continuous parameter event carrying a stable ParameterId (design/07 §3: the one
+// thing that may coalesce under pressure — only parameter targets, only the latest).
+static core::TimedControlEvent mk_param(std::uint32_t pid, core::SignalSample value,
+                                        std::uint32_t source, std::uint64_t seq,
+                                        std::uint64_t sample) {
+  core::TimedControlEvent t = mk_timed(core::ControlEventKind::parameter, sample, value,
+                                       source, seq);
+  t.event.parameter = core::ParameterId{pid};
+  return t;
+}
+
 // The dispatch-invariant comparison: absolute sample + kind + source + sequence.
 // The block-relative sampleOffset is intentionally NOT compared — it is a
 // partition-dependent view, whereas §5 requires the absolute sample to be stable.
@@ -551,6 +562,100 @@ static void unconfigured_rate_is_inert_not_wrong() {
   CHECK(c != d);
 }
 
+// ---------------------------------------------------------------------------
+// design/07 §3 pressure policy (GH#2): the critical lane must be independent of
+// continuous pressure; only parameter events coalesce (by stable ParameterId, under
+// pressure, never across kinds); critical overflow yields a deterministic reset +
+// flush; and an undersized dispatch buffer delays rather than drops an edge.
+// ---------------------------------------------------------------------------
+
+// A (negative control): continuous lane full must NOT block the critical lane.
+// A critical edge is admitted on its own reservation and still delivered.
+static void critical_reserved_when_continuous_full() {
+  core::EventTimebase tb;
+  core::TimedControlEvent out[core::kEventTimebaseCapacity];
+  // Fill the continuous lane to its cap with far-future parameters (distinct ids so
+  // no earlier coalesce is possible and nothing is due yet).
+  for (std::uint32_t i = 0; i < core::kEventTimebaseCapacity; ++i)
+    CHECK(tb.enqueue(mk_param(i, core::SignalSample{0.0f}, 1u, i, 100000ull + i)));
+  CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);  // continuous lane full
+  // An edge on the critical reservation is still admitted and delivered.
+  CHECK(tb.enqueue(mk_timed(core::ControlEventKind::gate_on, 5ull, core::SignalSample{0.0f},
+                            9u, 0u)));
+  const std::uint32_t n = tb.processBlock(100u, out, core::kEventTimebaseCapacity);
+  CHECK_EQ(n, 1u);
+  CHECK(out[0].event.kind == core::ControlEventKind::gate_on);
+  CHECK_EQ(out[0].sample, 5ull);
+  CHECK_EQ(tb.criticalOverflow(), 0u);
+}
+
+// B (negative control): under continuous pressure only `parameter` coalesces, by
+// stable ParameterId into the latest target; pitch/pressure never coalesce.
+static void parameter_only_coalescing_under_pressure() {
+  core::EventTimebase tb;
+  core::TimedControlEvent out[core::kEventTimebaseCapacity];
+  for (std::uint32_t i = 0; i < core::kEventTimebaseCapacity; ++i)
+    CHECK(tb.enqueue(mk_param(i, core::SignalSample{0.0f}, 1u, i, 100000ull + i)));
+  CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);
+  // A same-ParameterId parameter under pressure coalesces into the LATEST target.
+  CHECK(tb.enqueue(mk_param(7u, core::SignalSample{0.75f}, 8u, 999u, 200000ull)));
+  CHECK(tb.parameterCoalesced() >= 1u);
+  CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);      // coalesced, still at cap
+  CHECK_EQ(tb.continuousOverflow(), 0u);
+  // A continuous-but-non-parameter event (pitch) NEVER coalesces under pressure.
+  CHECK_FALSE(tb.enqueue(mk_timed(core::ControlEventKind::pitch, 300000ull,
+                                  core::SignalSample{0.4f}, 2u, 1u)));
+  CHECK(tb.continuousOverflow() >= 1u);
+  CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);
+}
+
+// C (negative control): a genuine critical overflow raises a deterministic failsafe —
+// the next safe boundary emits a canonical reset FIRST, then clears the lost-trust
+// critical batch (no authoritative performance state exists yet, so this is the
+// design/07 fallback; downstream gate identity is still #8/#4).
+static void critical_overflow_reconciles_with_failsafe() {
+  core::EventTimebase tb;
+  core::TimedControlEvent out[core::kEventTimebaseCapacity];
+  for (std::uint32_t i = 0; i < core::kEventCriticalCapacity; ++i)
+    CHECK(tb.enqueue(mk_timed(core::ControlEventKind::gate_on, 100000ull + i,
+                              core::SignalSample{0.0f}, 1u, i)));
+  CHECK_EQ(tb.pending(), core::kEventCriticalCapacity);
+  // One more edge overflows the critical lane: rejected, counted, one reconcile set.
+  CHECK_FALSE(tb.enqueue(mk_timed(core::ControlEventKind::sync, 100000ull +
+                                core::kEventCriticalCapacity, core::SignalSample{0.0f}, 2u, 0u)));
+  CHECK(tb.criticalOverflow() >= 1u);
+  CHECK(tb.reconcilePending());
+  // Next safe boundary: reset FIRST at offset 0, then flush the unsafed batch.
+  const std::uint32_t n = tb.processBlock(4096u, out, core::kEventTimebaseCapacity);
+  CHECK(n >= 1u);
+  CHECK(out[0].event.kind == core::ControlEventKind::reset);
+  CHECK_EQ(out[0].event.sampleOffset, 0u);
+  CHECK(tb.reconcileCount() >= 1u);
+  CHECK(tb.criticalFlushed() >= core::kEventCriticalCapacity);
+  CHECK_FALSE(tb.reconcilePending());
+}
+
+// D (negative control): an undersized dispatch buffer must DELAY a critical edge,
+// never drop it — capacity==1 with two same-sample edges keeps the second pending
+// and delivers it at offset 0 on the next block.
+static void output_capacity_never_drops_critical() {
+  core::EventTimebase tb;
+  core::TimedControlEvent out[core::kEventTimebaseCapacity];
+  tb.enqueue(mk_timed(core::ControlEventKind::gate_on, 5ull, core::SignalSample{0.0f}, 1u, 0u));
+  tb.enqueue(mk_timed(core::ControlEventKind::clock, 5ull, core::SignalSample{0.0f}, 2u, 0u));
+  const std::uint32_t n = tb.processBlock(16u, out, 1u);  // capacity 1
+  CHECK_EQ(n, 1u);
+  CHECK(tb.dispatchCapacity() >= 1u);
+  CHECK_EQ(tb.pending(), 1u);  // the second critical is NOT dropped
+  // Next block delivers the leftover edge as a late event at offset 0.
+  const std::uint32_t m = tb.processBlock(16u, out, core::kEventTimebaseCapacity);
+  CHECK_EQ(m, 1u);
+  CHECK_EQ(out[0].event.sampleOffset, 0u);
+  CHECK_EQ(out[0].sample, 5ull);
+  CHECK_EQ(tb.pending(), 0u);
+  CHECK(tb.lateSeen());
+}
+
 int main() {
   buffer_on_invariant();
   boundary_block_edges();
@@ -563,5 +668,9 @@ int main() {
   smoothing_is_wall_clock_invariant();
   audio_rate_is_wall_clock_invariant();
   unconfigured_rate_is_inert_not_wrong();
+  critical_reserved_when_continuous_full();      // A
+  parameter_only_coalescing_under_pressure();    // B
+  critical_overflow_reconciles_with_failsafe();  // C
+  output_capacity_never_drops_critical();        // D
   return ::test::finish("time semantics");
 }
