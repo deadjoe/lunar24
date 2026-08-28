@@ -36,13 +36,21 @@
 //
 // DETERMINISM: the derivation is a pure function of (seed, version, side). It uses
 // the project's deterministic SeededRandom (splitmix64), NEVER std::random, so the
-// same seed/version yields a bit-identical profile on every platform and the L/R
-// domains draw from domain-salted (non-shared) streams.
+// same seed/version yields a bit-identical profile on every toolchain here, and the
+// L/R domains draw from domain-salted (non-shared) streams. The per-side range map
+// goes through an explicit single-rounded std::fma (detail::mapRange), so the
+// derived doubles do NOT depend on whether an optimizing compiler contracts
+// `lo + unit*(hi-lo)` into an FMA (fast contraction) or keeps the multiply+add
+// separate (two roundings): one explicit rounding is the unique result on every
+// toolchain in this project's CI. NOTE: this is only a claim about this code forcing
+// a single rounding choice — not that all conceivable floating-point environments
+// round every expression identically (that is not true in general).
 //
 // Framework-free, header-only, no heap, no locks, realtime-safe.
 
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 
 #include "lunar24/core/seeded_random.h"
@@ -112,6 +120,16 @@ inline bool isSupportedIdentityVersion(std::uint32_t version) {
 
 namespace detail {
 
+// Deterministic range-map of a unit value (in [0,1)) into [lo, hi). It forces a
+// single explicit rounding via std::fma, so the result is the unique value
+// regardless of whether a compiler fuses `lo + unit*(hi-lo)` into one FMA (fast
+// contraction) or keeps two roundings — the two-step form is NOT integer/bit
+// stable across toolchains, so we never depend on the compiler's choice. This is
+// the single place all three profile fields are mapped into their ranges.
+inline double mapRange(double unit, double lo, double hi) {
+  return std::fma(unit, hi - lo, lo);
+}
+
 // Deterministic bit-mix of (seed, version, side): different version / side inject
 // a different stream, so the L/R domains never collide and version really
 // participates (not just the gate below).
@@ -131,11 +149,11 @@ inline SideIdentityProfile deriveSideProfile(std::uint64_t seed, std::uint32_t v
   SeededRandom rng(mixIdentityInput(seed, version, side));
   SideIdentityProfile p;
   // vcfDrive: input-stage saturation strength.
-  p.vcfDrive = rng.nextUnit(kProfileVcfDriveMin, kProfileVcfDriveMax);
+  p.vcfDrive = mapRange(rng.nextUnit(), kProfileVcfDriveMin, kProfileVcfDriveMax);
   // distDrive: extra post-filter distortion fold offset.
-  p.distDrive = rng.nextUnit(kProfileDistDriveMin, kProfileDistDriveMax);
+  p.distDrive = mapRange(rng.nextUnit(), kProfileDistDriveMin, kProfileDistDriveMax);
   // pathGain: near-unity, asymmetric around 1.0.
-  p.pathGain = 1.0 + rng.nextUnit(-kProfilePathGainSpread, kProfilePathGainSpread);
+  p.pathGain = 1.0 + mapRange(rng.nextUnit(), -kProfilePathGainSpread, kProfilePathGainSpread);
   return p;
 }
 
