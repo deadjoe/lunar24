@@ -108,13 +108,30 @@ class DroneBank {
   // counter-based deterministic hash (see jitterUnit_).
   static constexpr double kOscNoiseAmpHz = 0.02;  // provisional: small jitter (Hz).
 
+  // Centralized dynamic-variation MODEL VERSION (batch 4A convergence, @Codex 52d3c620).
+  // This is not decorative: every tolerance/drift constant AND the per-sample jitter are
+  // derived from it via deriveSeed_ (below), so bumping the version is a real, spec-visible
+  // regeneration of the whole dynamic model — not a no-op. Persistence stays #12.
+  static constexpr std::uint64_t kDynamicModelVersion = 1;
+  // Independent stream/domain tags: the oscillator-constants stream and the per-sample
+  // jitter stream must not alias, so a single (seed, unit) can't collide across domains.
+  // They are arbitrary non-zero constants, not meanings.
+  static constexpr std::uint64_t kStreamOsc = 0x4F534356ULL;    // "OSCV"
+  static constexpr std::uint64_t kStreamJitter = 0x4A495454ULL; // "JITT"
+
+  // Named PROVISIONAL default for the group gate: a host that never touches the gate
+  // hears the voice (the pre-batch structure tests probe the raw bank). The default is
+  // NOT hardware evidence — the behaviour tests set the gate explicitly before asserting
+  // the envelope/open transition (@Codex 52d3c620 point 6). Keep it explicit + named.
+  static constexpr bool kDefaultGroupGateOpen = true;
+
   // Per-classic-group envelope state. `level` is the 0..1 VCA gain applied to the
   // group's summed audio every sample. ORDINARY default is OPEN (gate on, level 1) so a
   // neutral bank still sounds — the pre-batch structure tests probe the frequency model;
   // the host closes the gate to silence a voice. All time values are the PROVISIONAL
   // norm-mapped seconds (never a claimed hardware constant).
   struct GroupEnv {
-    bool gate = true;     // external gate input (open by default).
+    bool gate = kDefaultGroupGateOpen;  // external gate input (named provisional default).
     bool hold = false;    // PROVISIONAL HOLD: on => keep the gate target open.
     double attSeconds = kAttNormMinSeconds;  // mapped from norm at set.
     double rlsSeconds = kRlsNormMinSeconds;
@@ -131,7 +148,7 @@ class DroneBank {
         seed_(seed) {
     groupCount_ = (voiceCount_ + kGensPerVoice - 1) / kGensPerVoice;
     for (std::size_t g = 0; g < kMaxGroups; ++g) {
-      groupEnv_[g].gate = true;
+      groupEnv_[g].gate = kDefaultGroupGateOpen;  // named provisional default (not evidence).
       groupEnv_[g].hold = false;
       groupEnv_[g].attSeconds = mapAttSeconds(kDefaultAttNorm);
       groupEnv_[g].rlsSeconds = mapRlsSeconds(kDefaultRlsNorm);
@@ -139,26 +156,32 @@ class DroneBank {
       modCvG_[g] = 0.0;
     }
     environmentHz_ = 0.0;
-    SeededRandom rng(seed);
     for (std::size_t i = 0; i < voiceCount_; ++i) {
       Voice& v = voices_[i];
       const Role role = roleOfIndex_(i);
       v.role = role;
+      // Each generator is its own derivation UNIT: a per-unit stream seeded from
+      // (base seed, unit index, kStreamOsc) mixed with kDynamicModelVersion. Same seed +
+      // same unit => identical constants; a different unit or version => a different
+      // stream (deriveSeed_ avalanches, and the streams are independent from the jitter
+      // stream below by domain). The per-voice draw keeps the structure tests' ROLE
+      // bands and value ranges unchanged (provisional bands/orders are structural).
+      SeededRandom vrng(deriveSeed_(seed, static_cast<std::uint64_t>(i), kStreamOsc));
       // Role band (provisional; manual says only "approximate data"). The ORDER
       // is what is structural: low < medium < high, guaranteed by the bands.
       switch (role) {
-        case Role::kLow:    v.freqBaseHz = 30.0 + rng.nextUnit(0.0, 1.0) * 90.0; break;   // 30-120
-        case Role::kMedium: v.freqBaseHz = 140.0 + rng.nextUnit(0.0, 1.0) * 240.0; break; // 140-380
-        case Role::kHigh:   v.freqBaseHz = 420.0 + rng.nextUnit(0.0, 1.0) * 1380.0; break;// 420-1800
+        case Role::kLow:    v.freqBaseHz = 30.0 + vrng.nextUnit(0.0, 1.0) * 90.0; break;   // 30-120
+        case Role::kMedium: v.freqBaseHz = 140.0 + vrng.nextUnit(0.0, 1.0) * 240.0; break; // 140-380
+        case Role::kHigh:   v.freqBaseHz = 420.0 + vrng.nextUnit(0.0, 1.0) * 1380.0; break;// 420-1800
       }
-      v.tolerance = rng.nextUnit(0.0, 0.02);
-      v.amplitude = rng.nextUnit(0.05, 1.0);
-      v.driftF1Hz = rng.nextUnit(0.01, 0.3);
-      v.driftF2Hz = rng.nextUnit(0.01, 0.3);
-      v.driftA1 = rng.nextUnit(0.0005, 0.01);
-      v.driftA2 = rng.nextUnit(0.0005, 0.01);
-      v.driftPh1 = rng.nextUnit(0.0, 6.283185307179586);
-      v.driftPh2 = rng.nextUnit(0.0, 6.283185307179586);
+      v.tolerance = vrng.nextUnit(0.0, 0.02);
+      v.amplitude = vrng.nextUnit(0.05, 1.0);
+      v.driftF1Hz = vrng.nextUnit(0.01, 0.3);
+      v.driftF2Hz = vrng.nextUnit(0.01, 0.3);
+      v.driftA1 = vrng.nextUnit(0.0005, 0.01);
+      v.driftA2 = vrng.nextUnit(0.0005, 0.01);
+      v.driftPh1 = vrng.nextUnit(0.0, 6.283185307179586);
+      v.driftPh2 = vrng.nextUnit(0.0, 6.283185307179586);
       v.phase = 0.0;
       v.driftNow = driftEnabled_
                        ? v.freqBaseHz * (v.driftA1 * std::sin(v.driftPh1) + v.driftA2 * std::sin(v.driftPh2))
@@ -170,6 +193,7 @@ class DroneBank {
       v.modCv = 0.0;
       v.volt = 0.0;
       lastSample_[i] = 0.0;
+      lastJitterHz_[i] = 0.0;  // "no jitter applied yet" (nothing has been ticked).
     }
   }
 
@@ -194,8 +218,9 @@ class DroneBank {
   // clamp the norm and assert the monotonic + speed trend, never a hardware value.
   void setGroupAtt(int group, double norm) { if (inGroup_(group)) groupEnv_[group].attSeconds = mapAttSeconds(norm); }
   void setGroupRls(int group, double norm) { if (inGroup_(group)) groupEnv_[group].rlsSeconds = mapRlsSeconds(norm); }
-  // Shared CV MOD / photo-detector input for the whole group (driven from the runtime's
-  // cv_mod_in patch jack). Applied only to generators whose MOD button is on (the
+  // Shared CV MOD / photo-detector input for the whole group, in RAW virtual volts from the
+  // runtime's CV source bank (the value resolved at the group's cv_mod_in patch jack), NOT a
+  // normalized 0..1 upstream scale. Applied only to generators whose MOD button is on (the
   // existing modAmount gate); MOD-off generators ignore CV and environment (design/07 §7).
   void setGroupModCv(int group, double cv) { if (inGroup_(group)) modCvG_[group] = cv; }
   // Shared/correlated environment term a desktop host can provide (design/07 §7). It
@@ -243,7 +268,12 @@ class DroneBank {
       // generators are unchanged (design/07 §7 — the MOD-off generator ignores CV/env).
       if (v.modAmount > 0.0) effFreq += environmentHz_;
       // Oscillator-specific small deterministic jitter (per-gen, seed-stable, hash-based).
-      effFreq += kOscNoiseAmpHz * jitterUnit_(seed_, static_cast<double>(i), blockSample_);
+      // Save the value actually applied THIS SAMPLE first, so the inspector reads exactly
+      // what entered the frequency accumulation (lastJitterHz_), never the next sample's
+      // recompute (the OLD inspector read blockSample_ after it was incremented, i.e. the
+      // wrong sample — see the jitter-source negative control).
+      lastJitterHz_[i] = kOscNoiseAmpHz * jitterUnit_(seed_, static_cast<double>(i), blockSample_);
+      effFreq += lastJitterHz_[i];
       // Mutual FM: active only past half the VOLT stroke (manual). Pair generators
       // within a voice by a 5-ring. Provisional depth law.
       if (v.volt > kVvoltMid && fmDepth_(v.volt) > 0.0) {
@@ -287,10 +317,12 @@ class DroneBank {
   bool groupHold(int group) const { return inGroup_(group) && groupEnv_[group].hold; }
   double groupAttSeconds(int group) const { return inGroup_(group) ? groupEnv_[group].attSeconds : 0.0; }
   double groupRlsSeconds(int group) const { return inGroup_(group) ? groupEnv_[group].rlsSeconds : 0.0; }
-  // The last-applied per-generator deterministic jitter (Hz) the product added to this
-  // generator's frequency. Product-executed value (like driftOf/phaseOf), never a
-  // shadow mirror. Not std::random and not a fixed sine (see jitterUnit_).
-  double noiseJitterHz(std::size_t i) const { return i < voiceCount_ ? jitterUnit_(seed_, static_cast<double>(i), blockSample_) * kOscNoiseAmpHz : 0.0; }
+  // The LAST-APPLIED per-generator deterministic jitter (Hz) the product added to this
+  // generator's frequency (0 before the first tick). Product-executed value (like
+  // driftOf/phaseOf), never a shadow mirror, and specifically never recomputed from the
+  // (already-incremented) sample counter. Not std::random and not a fixed sine (see
+  // jitterUnit_).
+  double noiseJitterHz(std::size_t i) const { return i < voiceCount_ ? lastJitterHz_[i] : 0.0; }
   double environmentHzTerm() const { return environmentHz_; }
   double groupModCv(int group) const { return inGroup_(group) ? modCvG_[group] : 0.0; }
   int groupOfGen(std::size_t i) const { return static_cast<int>(i / kGensPerVoice); }
@@ -353,20 +385,36 @@ class DroneBank {
   // Splitmix64-style finalizer (pure, stateless). Same construction SeededRandom uses,
   // but applied as a PURE function of (seed, generator, absolute-sample) rather than a
   // stateful per-sample stream — so the small jitter is block-partition deterministic,
-  // never a shared value across generators, and zero-mean over a cycle (does not bias a
-  // generator's average pitch). This keeps the P3-① "no hidden randomness" discipline.
+  // never a shared value across generators, and has STATISTICAL EXPECTATION center ≈ 0
+  // (does not bias a generator's average pitch). It is NOT exactly zero-mean per cycle:
+  // each unit's value is a hash of (seed, version, unit, domain, sample), so over one
+  // cycle the mean is ~0 but not identical to zero, and it is a deterministic hash, not
+  // a sine or a sampled random. This keeps the P3-① "no hidden randomness" discipline.
   static std::uint64_t mix64_(std::uint64_t x) {
     x += 0x9E3779B97F4A7C15ULL;
     x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
     x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
     return x ^ (x >> 31);
   }
+  // Derive a fresh, independent stream seed from (base seed, unit, domain) folded with the
+  // model version. Distinct (unit, domain, version) triples give distinct streams; the same
+  // triple is reproducible, so a bank and a same-seed peer stay bit-identical. This is what
+  // makes kDynamicModelVersion genuinely participate (a version bump regenerates every
+  // derived tolerance/drift AND the whole jitter field) rather than being a dead constant.
+  static std::uint64_t deriveSeed_(std::uint64_t base, std::uint64_t unit,
+                                   std::uint64_t domain) {
+    return mix64_(base ^ (unit * 0x9E3779B97F4A7C15ULL) ^
+                  (domain * 0xD6E8FEB86659FD93ULL) ^
+                  (kDynamicModelVersion * 0xA24BAED4963EE407ULL));
+  }
   // Per-generator, per-sample jitter in [-1, 1). `blockSample` is the integer sample
-  // counter (always integral in practice), so it keys a unique hash per sample.
+  // counter (always integral in practice), so it keys a unique hash per sample. The
+  // jitter runs on its OWN domain stream (kStreamJitter), independent of the oscillator
+  // constants, and folds the model version in via deriveSeed_.
   static double jitterUnit_(std::uint64_t seed, double gen, double blockSample) {
     const std::uint64_t h =
-        mix64_(seed ^ (static_cast<std::uint64_t>(blockSample) * 0x9E3779B97F4A7C15ULL) ^
-               (static_cast<std::uint64_t>(gen) * 0xD6E8FEB86659FD93ULL));
+        mix64_(deriveSeed_(seed, static_cast<std::uint64_t>(gen), kStreamJitter) ^
+               (static_cast<std::uint64_t>(blockSample) * 0x94D049BB133111EBULL));
     return (static_cast<double>(h >> 11) * (1.0 / 9007199254740992.0)) * 2.0 - 1.0;
   }
 
@@ -376,6 +424,7 @@ class DroneBank {
   double blockSample_ = 0.0;
   Voice voices_[kMaxVoices];
   double lastSample_[kMaxVoices];
+  double lastJitterHz_[kMaxVoices] = {};  // last-APPLIED per-gen jitter (see noiseJitterHz).
 
   // ---- batch 4A state (classic group gate/ATT/RLS/HOLD + CV MOD + environment) ----
   std::uint64_t seed_ = 0;

@@ -325,9 +325,10 @@ class SynthRuntime {
   void setDroneGroupHold(int voiceGroup, bool on) { drone_.setGroupHold(voiceGroup, on); }
   void setDroneGroupAtt(int voiceGroup, double norm) { drone_.setGroupAtt(voiceGroup, norm); }
   void setDroneGroupRls(int voiceGroup, double norm) { drone_.setGroupRls(voiceGroup, norm); }
-  // Per-group shared CV MOD input (0..1 scale is unified upstream). The bank applies it
-  // only to generators whose MOD button is on (MOD-off generators are unresponsive to
-  // CV AND environment — design/07 §7).
+  // Per-group shared CV MOD input: RAW virtual volts from the runtime CV source bank (the
+  // value the control layer resolved for the group's cv_mod_in jack), NOT a normalized
+  // 0..1 upstream scale. The bank applies it only to generators whose MOD button is on
+  // (MOD-off generators are unresponsive to CV AND environment — design/07 §7).
   void setDroneGroupModCv(int voiceGroup, double cv) { drone_.setGroupModCv(voiceGroup, cv); }
   // Shared/correlated environment term a desktop host can provide (design/07 §7). It
   // detunes the MOD-on generators of every classic group together; MOD-off unchanged.
@@ -335,14 +336,36 @@ class SynthRuntime {
 
   // Registry CV binding for the 4 CLASSIC drone groups (order 0..3 == drone 1/2/4/5):
   // env_out jacks the product WRITES virtual volts to, cv_mod_in jacks the product READS
-  // as the group's shared CV MOD (via the control layer). Unbound (JackId{0}) groups are
-  // ignored. @Codex 方案2b: descriptor-driven provisional volts; the test binds the four
-  // REAL generated-registry jacks (descriptors stay source-of-evidence, unchanged).
-  void setDroneEnvOutBindings(JackId g0, JackId g1, JackId g2, JackId g3) {
-    envOutJack_[0] = g0; envOutJack_[1] = g1; envOutJack_[2] = g2; envOutJack_[3] = g3;
+  // as the group's shared CV MOD (via the control layer). @Codex 方案2b: descriptor-driven
+  // provisional volts; the test binds the four REAL generated-registry jacks (descriptors
+  // stay source-of-evidence, unchanged).
+  //
+  // ATOMIC FAIL-CLOSED ADMISSION (batch 4A convergence, @Codex 52d3c620): each setter first
+  // validates ALL FOUR jacks against the COMMON rule (descriptor exists, id indexes cvOut_
+  // (< kMaxEdges), owning module is exactly this group's classic voice drone_1/2/4/5) plus
+  // the per-kind rule (ENV OUT: direction=output, signal=cv, finite & non-inverted range;
+  // CV MOD: direction=input, signal=cv). If ANY fails the WHOLE cohort is rejected: every
+  // group is left UNBOUND (bound-state false, jack cleared to JackId{0}, no partial and no
+  // stale readback). Returns true only when all four were admitted and are now live.
+  bool setDroneEnvOutBindings(JackId g0, JackId g1, JackId g2, JackId g3) {
+    const JackId ids[4] = {g0, g1, g2, g3};
+    for (int g = 0; g < kClassicDroneVoices; ++g)
+      if (!envOutBindingValid_(g, ids[g])) { releaseEnvOut_(); return false; }
+    for (int g = 0; g < kClassicDroneVoices; ++g) {
+      envOutJack_[g] = ids[g];
+      envOutBound_[g] = true;
+    }
+    return true;
   }
-  void setDroneCvModInBindings(JackId g0, JackId g1, JackId g2, JackId g3) {
-    cvModInJack_[0] = g0; cvModInJack_[1] = g1; cvModInJack_[2] = g2; cvModInJack_[3] = g3;
+  bool setDroneCvModInBindings(JackId g0, JackId g1, JackId g2, JackId g3) {
+    const JackId ids[4] = {g0, g1, g2, g3};
+    for (int g = 0; g < kClassicDroneVoices; ++g)
+      if (!cvModInBindingValid_(g, ids[g])) { releaseCvModIn_(); return false; }
+    for (int g = 0; g < kClassicDroneVoices; ++g) {
+      cvModInJack_[g] = ids[g];
+      cvModInBound_[g] = true;
+    }
+    return true;
   }
 
   // ---- batch 4A read-only inspectors (executed value, never a shadow mirror) ----
@@ -361,15 +384,13 @@ class SynthRuntime {
     const JackId envOut = envOutJack_[voiceGroup];
     return envOut == JackId{0} ? 0.0 : cvAt_(envOut);
   }
-  // Fail-closed bound/validity: true only if the group's env_out jack is bound AND its
-  // descriptor exists with a FINITE, non-inverted range. A group that is NOT valid is
-  // never written (step_ leaves cvOut_ untouched) — the readback stays 0.
+  // Fail-closed bound/validity: true only after a SUCCESSFUL atomic admission (the
+  // explicit post-admission flag). A group that was never bound, or whose cohort was
+  // rejected, is UNBOUND — step_ never writes it, so the readback stays 0. This reflects
+  // real post-admission state, not "is JackId{0}" (that sentinel would false-positive
+  // against the real vco_a.cv_in jack id 0).
   bool droneEnvOutBound(int voiceGroup) const {
-    if (voiceGroup < 0 || voiceGroup >= kClassicDroneVoices) return false;
-    const JackId envOut = envOutJack_[voiceGroup];
-    if (envOut == JackId{0}) return false;  // never bound: JackId{0} is the unbound sentinel
-    const JackDescriptor* d = findJackDescriptor_(envOut);
-    return d != nullptr && validRange_(d);
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices && envOutBound_[voiceGroup];
   }
   // General read of a control generator's resolved CV output (the whole CV source bank).
   double controlVoltageAt(JackId jack) const { return cvAt_(jack); }
@@ -729,16 +750,18 @@ class SynthRuntime {
         // this frame). Write each group's ENV OUT into the CV source bank here, per
         // @Codex 方案2b — descriptor-driven provisional volts: `nominalMin + level *
         // (nominalMax - nominalMin)`, range read ONLY from the bound JackDescriptor.
-        // Fail-closed: an unbound or invalid (missing/non-finite/inverted-range)
-        // descriptor group is never written, so cvOut_ for that jack stays untouched.
+        // Fail-closed: only a group that ADMITTED a live env_out binding is written; a
+        // group whose cohort was rejected is unbound (envOutBound_ false), so cvOut_ for
+        // that jack stays untouched (0). The per-group value here is descriptor-driven:
+        // nominalMin + level*(nominalMax - nominalMin), range read ONLY from the bound
+        // JackDescriptor (@Codex 方案2b). This is the SOURCE-BANK write the tests read back.
         for (int g = 0; g < kClassicDroneVoices; ++g) {
+          if (!envOutBound_[g]) continue;
           const JackId envOut = envOutJack_[g];
-          if (envOut == JackId{0}) continue;
           const JackDescriptor* d = findJackDescriptor_(envOut);
-          if (!validRange_(d)) continue;
           const double lvl = drone_.groupEnvLevel(static_cast<std::size_t>(g));
           const std::uint32_t j = static_cast<std::uint32_t>(envOut);
-          if (j < kMaxEdges)
+          if (d != nullptr && j < kMaxEdges)
             cvOut_[j] = d->nominalMin + lvl * (d->nominalMax - d->nominalMin);
         }
         // NEW voices (design/01 §3, #45): drone 3/6 are Papa Srapa composite voices
@@ -814,11 +837,59 @@ class SynthRuntime {
            d->nominalMax >= d->nominalMin;
   }
   // Index (0..3) of the classic group whose cv_mod_in jack is `sink`, or -1 if none.
+  // Only groups admitting a live cv_mod_in binding match; a released cohort's jacks are
+  // all JackId{0} so they never match (no stale read).
   int cvModInGroupOf_(JackId sink) const {
     if (sink == JackId{0}) return -1;  // never bound: JackId{0} is the unbound sentinel
     for (int g = 0; g < kClassicDroneVoices; ++g)
-      if (cvModInJack_[g] == sink) return g;
+      if (cvModInBound_[g] && cvModInJack_[g] == sink) return g;
     return -1;
+  }
+
+  // The ONE classic voice that classic drone group `g` (0..3 == drone 1/2/4/5) must own.
+  // A jack whose module is not exactly this is a wrong-owner binding → admission fails.
+  static ModuleId classicDroneOwner(int g) {
+    switch (g) {
+      case 0: return ModuleId::drone_1;
+      case 1: return ModuleId::drone_2;
+      case 2: return ModuleId::drone_4;
+      case 3: return ModuleId::drone_5;
+      default: return ModuleId::drone_1;  // g is always [0, kClassicDroneVoices); defensive.
+    }
+  }
+  // Common admission rule for a classic drone group binding: descriptor exists, id indexes
+  // cvOut_ (< kMaxEdges), and the owning module is exactly this group's classic voice.
+  bool commonBindingValid_(int g, JackId id) const {
+    const std::uint32_t j = static_cast<std::uint32_t>(id);
+    if (j >= kMaxEdges) return false;      // id can't index cvOut_ (out-of-capacity).
+    const JackDescriptor* d = findJackDescriptor_(id);
+    if (d == nullptr) return false;        // not a registered jack (missing id).
+    return d->module == classicDroneOwner(g);  // wrong-owner fails here.
+  }
+  // ENV OUT extra rule: an OUTPUT cv jack with a finite, non-inverted nominal range.
+  bool envOutBindingValid_(int g, JackId id) const {
+    if (!commonBindingValid_(g, id)) return false;
+    const JackDescriptor* d = findJackDescriptor_(id);
+    return d->direction == PinDirection::output && d->signalType == SignalType::cv &&
+           validRange_(d);
+  }
+  // CV MOD extra rule: an INPUT cv jack.
+  bool cvModInBindingValid_(int g, JackId id) const {
+    if (!commonBindingValid_(g, id)) return false;
+    const JackDescriptor* d = findJackDescriptor_(id);
+    return d->direction == PinDirection::input && d->signalType == SignalType::cv;
+  }
+  void releaseEnvOut_() {
+    for (int g = 0; g < kClassicDroneVoices; ++g) {
+      envOutJack_[g] = JackId{0};
+      envOutBound_[g] = false;
+    }
+  }
+  void releaseCvModIn_() {
+    for (int g = 0; g < kClassicDroneVoices; ++g) {
+      cvModInJack_[g] = JackId{0};
+      cvModInBound_[g] = false;
+    }
   }
 
   // Drone grouping — design/01 §3 (CONFIRMED, not provisional): six drone voices,
@@ -871,9 +942,13 @@ class SynthRuntime {
   JackId envFolOut_{0};
   // CLASSIC drone group CV bindings (batch 4A): env_out jacks the product writes virtual
   // volts to (per group), cv_mod_in jacks the product reads as the group's shared CV MOD.
-  // Unbound = JackId{0} sentinel.
+  // The EXPLICIT envOutBound_/cvModInBound_ flags are the authoritative post-admission
+  // state (a JackId{0} sentinel alone is NOT the bound test — id 0 is a real vco_a.cv_in
+  // jack). A failed atomic admission clears the jack to JackId{0} AND the bound flag.
   JackId envOutJack_[DroneBank::kClassicVoices] = {JackId{0}, JackId{0}, JackId{0}, JackId{0}};
   JackId cvModInJack_[DroneBank::kClassicVoices] = {JackId{0}, JackId{0}, JackId{0}, JackId{0}};
+  bool envOutBound_[DroneBank::kClassicVoices] = {false, false, false, false};
+  bool cvModInBound_[DroneBank::kClassicVoices] = {false, false, false, false};
 
   // Fixed-chain role binding (registry semantics).
   FixedRoleBinding roleBindings_[kMaxFixedModules] = {};

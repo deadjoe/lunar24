@@ -378,7 +378,24 @@ static void test_classic_noise_per_gen() {
   core::DroneBank a1 = make_bank(seedA, sr, 5, false);
   core::DroneBank a2 = make_bank(seedA, sr, 5, false);
   core::DroneBank b = make_bank(seedB, sr, 5, false);
-  // Deterministic: same seed => identical jitter per generator.
+  // noiseJitterHz() returns the LAST-APPLIED jitter (the value that entered the frequency
+  // accumulation during the most recent tick; 0 before any tick). So tick each bank exactly
+  // one sample first, then read the value that actually went into effFreq that sample.
+  // This is the point-4 semantic fix: the inspector must NOT recompute the NEXT sample's
+  // jitter from an already-incremented counter.
+  {
+    std::vector<double> vbuf(a1.voiceCount());
+    a1.tick(vbuf.data());
+  }
+  {
+    std::vector<double> vbuf(a2.voiceCount());
+    a2.tick(vbuf.data());
+  }
+  {
+    std::vector<double> vbuf(b.voiceCount());
+    b.tick(vbuf.data());
+  }
+  // Deterministic: same seed => identical applied jitter per generator.
   CHECK(a1.noiseJitterHz(0) == a2.noiseJitterHz(0));
   // Small: the amplitude is a bounded PROVISIONAL term, never a dominant pitch.
   for (std::size_t i = 0; i < 5; ++i) CHECK(std::abs(a1.noiseJitterHz(i)) <= core::DroneBank::kOscNoiseAmpHz + 1e-12);
@@ -392,6 +409,40 @@ static void test_classic_noise_per_gen() {
   for (std::size_t i = 0; i < 5; ++i)
     if (a1.noiseJitterHz(i) != b.noiseJitterHz(i)) differsAcrossSeed = true;
   CHECK(differsAcrossSeed);
+}
+
+// Point-4 output-pinned jitter detector (@Codex 52d3c620): the inspector must be tied to
+// what the audio ACTUALLY applied, not merely self-consistent with its own recompute. For
+// a single generator with drift off, mod off, tune/volt normal (no mutual-FM, no env), the
+// per-sample phase advance is exactly twoPi*effFreq/sr and effFreq = effectiveFreqHz + jitter.
+// So phaseOf(0) after exactly one tick lets us RECOVER the frequency the oscillator actually
+// used, and it must equal effectiveFreqHz(0) + noiseJitterHz(0). If jitter is stripped from
+// the frequency accumulation (audio unjittered) while the inspector still returns non-zero
+// lastJitterHz_, this add-back is off by ~kOscNoiseAmpHz and reds the check — unlike a pure
+// inspector-vs-inspector test, which cannot see a removal.
+static void test_classic_noise_pinned_to_phase() {
+  const std::uint64_t seed = 0xEC7E00ABULL;
+  const double sr = 48000.0;
+  const double twoPi = 2.0 * drone_test::kPi;
+  core::DroneBank bank = make_bank(seed, sr, 5, false);  // drift off: driftNow stays exactly 0
+  bank.setMod(0, 0.0);   // no mod/env (the env term adds only when modAmount > 0)
+  bank.setTune(0, 0.0);  // base stays freqBaseHz (effectiveFreqHz reconstruction is exact)
+  bank.setVolt(0, 0.0);  // no mutual-FM (needs volt > kVvoltMid)
+  std::vector<double> vbuf(bank.voiceCount());
+  const double p0 = bank.phaseOf(0);
+  bank.tick(vbuf.data());
+  const double p1 = bank.phaseOf(0);
+  double adv = p1 - p0;   // per-sample phase advance == twoPi*effFreq/sr (small, wraps rarely)
+  if (adv < 0.0) adv += twoPi;
+  const double measured = (adv / twoPi) * sr;  // == the frequency the oscillator ACTUALLY used
+  const double expected = bank.effectiveFreqHz(0) + bank.noiseJitterHz(0);
+  // noiseJitterHz matches the frequency the generator actually advanced by (phase-pinned).
+  CHECK(std::fabs(measured - expected) < 1e-9);
+  // RED NEGATIVE (detector is not vacuous): if jitter were stripped from the frequency
+  // accumulation while the inspector still returned a non-zero lastJitterHz_, measured would
+  // trail expected by ~kOscNoiseAmpHz (0.02 Hz) — four orders above the 1e-9 floor. So the
+  // detector really discriminates a jitter-removal it can see, not a self-consistent inspector.
+  CHECK_FALSE(measured < expected - 0.01);
 }
 
 // ------------------------------------------------- 14. correlated ENVIRONMENT --
@@ -445,6 +496,7 @@ int main() {
   test_classic_group_isolation();
   test_classic_group_mod_cv();
   test_classic_noise_per_gen();
+  test_classic_noise_pinned_to_phase();
   test_classic_env_correlated();
   return ::test::finish("drone_classic");
 }

@@ -39,6 +39,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <new>
 #include <string>
 #include <vector>
@@ -354,7 +355,37 @@ const core::FixedEdge kClassicDroneEdge[] = {
 // execution order is just [kDrone] — enough to observe droneChannel() (the pre-VCA channel
 // data the mixer consumes) and the batch-4A ENV OUT writes. This BASE does NOT bind
 // env_out / cv_mod_in, so its groups are unbound (the fail-closed tests use it).
-core::SynthRuntime makeRegistryDroneBase() {
+// Look up a registered JackDescriptor by id (linear over the small registry). The binding
+// validation AND the descriptor-driven ENV OUT oracle below read nominalMin/Max from these
+// REAL generated descriptors — this test never hard-codes a ±9.9/±10 voltage.
+const core::JackDescriptor* registryJack(lunar24::registry::JackId id) {
+  namespace reg = lunar24::registry;
+  for (std::uint32_t i = 0; i < reg::kJackCount; ++i)
+    if (reg::kJacks[i].id == static_cast<core::JackId>(id)) return &reg::kJacks[i];
+  return nullptr;
+}
+
+// A jack id in [0, kMaxEdges) that is NOT a registered registry jack. The registry is sparse
+// (64 registered ids < 128 capacity slots, so a hole always exists). Used for the "missing
+// id" fail-closed negative, where findJackDescriptor_ returns nullptr while the id is still
+// within the cvOut_ indexable range — the two must be distinguished.
+core::JackId unusedRegistryId() {
+  namespace reg = lunar24::registry;
+  bool used[core::SynthRuntime::kMaxEdges] = {false};
+  for (std::uint32_t i = 0; i < reg::kJackCount; ++i) {
+    const std::uint32_t j = static_cast<std::uint32_t>(reg::kJacks[i].id);
+    if (j < core::SynthRuntime::kMaxEdges) used[j] = true;
+  }
+  for (std::uint32_t n = 0; n < core::SynthRuntime::kMaxEdges; ++n)
+    if (!used[n]) return static_cast<core::JackId>(n);
+  return core::JackId{0};  // unreachable: 64 registered ids leave holes below 128
+}
+
+// Classic-drone runtime over an ARBITRARY jacks table. The real registry uses
+// makeRegistryDroneBase(); the NaN/inverted-range negative passes a jacks table where the
+// drone_1_env_out nominal range is pathological, so the descriptor-driven admission must
+// refuse it (validRange_). The module table is shared + static (see the storage comment).
+core::SynthRuntime makeRegistryDroneJacks(const core::JackDescriptor* jacks, std::uint32_t jack_n) {
   namespace reg = lunar24::registry;
   // SynthRuntime stores BOTH modules_ and each mods[i].contract as caller-owned pointers
   // (machine_runtime.h:848/850) and keeps them for its whole lifetime. This helper returns
@@ -375,41 +406,65 @@ core::SynthRuntime makeRegistryDroneBase() {
     mods[i].id = reg::kModules[i].id;
     mods[i].contract = &cyc[i];
   }
-  core::SynthRuntime rt(reg::kJacks, core::kJackCount, nullptr, 0, mods, core::kModuleCount,
-                        kSeed, kSr, kClassicDroneEdge, 1);
+  core::SynthRuntime rt(jacks, jack_n, nullptr, 0, mods, core::kModuleCount, kSeed, kSr,
+                        kClassicDroneEdge, 1);
   rt.bindFixedRole(core::ModuleId::drone_1, core::FixedChainRole::kDrone);
   static_cast<void>(rt.rebuild());
   return rt;
 }
 
+// The unbound BASE (jacks = the real registry; env_out / cv_mod_in NOT bound). The
+// fail-closed tests use this to prove no-binding == unbound and negatives reject cohorts.
+core::SynthRuntime makeRegistryDroneBase() {
+  namespace reg = lunar24::registry;
+  return makeRegistryDroneJacks(reg::kJacks, reg::kJackCount);
+}
+
 // The product-wired CLASSIC runtime: base + the four REAL generated-registry env_out and
-// cv_mod_in jacks, in the order 0..3 == drone 1/2/4/5.
+// cv_mod_in jacks, in the order 0..3 == drone 1/2/4/5. The two atomic setters MUST return
+// true (point 1: the product's four real jacks pass admission) — discarding the bool would
+// hide a silent admission failure.
 core::SynthRuntime makeRegistryDroneRuntime() {
   namespace reg = lunar24::registry;
   core::SynthRuntime rt = makeRegistryDroneBase();
-  rt.setDroneEnvOutBindings(reg::JackId::drone_1_env_out, reg::JackId::drone_2_env_out,
-                            reg::JackId::drone_4_env_out, reg::JackId::drone_5_env_out);
-  rt.setDroneCvModInBindings(reg::JackId::drone_1_cv_mod_in, reg::JackId::drone_2_cv_mod_in,
-                             reg::JackId::drone_4_cv_mod_in, reg::JackId::drone_5_cv_mod_in);
+  check(rt.setDroneEnvOutBindings(reg::JackId::drone_1_env_out, reg::JackId::drone_2_env_out,
+                                  reg::JackId::drone_4_env_out, reg::JackId::drone_5_env_out),
+        "all four real registry ENV OUT jacks pass atomic admission (setter returns true)");
+  check(rt.setDroneCvModInBindings(reg::JackId::drone_1_cv_mod_in, reg::JackId::drone_2_cv_mod_in,
+                                   reg::JackId::drone_4_cv_mod_in, reg::JackId::drone_5_cv_mod_in),
+        "all four real registry CV MOD jacks pass atomic admission (setter returns true)");
   return rt;
 }
 
 // Gate the classic group OFF, let it release, then verify the product path: near-silent
-// channel, ENV OUT dropped to ~nominalMin, and a neighbor group left untouched. Then gate
-// ONLY group 0 back ON and verify it recovers with an attack while group 1 stays silent,
-// with ENV OUT tracking the envelope back up to ~nominalMax.
+// channel, ENV OUT dropped to the row's own nominalMin, and a neighbor group left untouched.
+// Then gate ONLY group 0 back ON and verify it recovers with an attack while group 1 stays
+// silent, with ENV OUT tracking the envelope up to the row's own nominalMax.
+//
+// @Codex 52d3c620 point-3 oracle: remove every ±9.9/±10 hard-code. The oracle reads
+// nominalMin/Max from the four REAL generated JackDescriptor (registryJack). drone_1/2 range
+// + polarity are CONFIRMED (Polarity::bipolar, range candidate confirmed) but their TRANSFER
+// is provisional; drone_4/5 range + polarity + transfer are all UNVERIFIED (Polarity::unknown,
+// range candidate unverified). So below the numeric oracle is computed from each row's OWN
+// descriptor via min + level*(max-min); the confirmed rows pin the exact endpoint, and no
+// signed-magnitude hardware claim is made for the unverified rows — only identity + within-range.
 void registry_drone_gate_envout() {
   namespace reg = lunar24::registry;
+  static const core::JackId envJacks[4] = {reg::JackId::drone_1_env_out,
+                                           reg::JackId::drone_2_env_out,
+                                           reg::JackId::drone_4_env_out,
+                                           reg::JackId::drone_5_env_out};
   core::SynthRuntime rt = makeRegistryDroneRuntime();
   for (int g = 0; g < 4; ++g) {
     rt.setDroneGroupAtt(g, 0.0);  // fast attack (neutral)
     rt.setDroneGroupRls(g, 0.0);  // fast release (neutral)
+    if (!registryJack(envJacks[g])) return;  // a missing descriptor = test defect, stop cleanly
   }
   check(rt.droneEnvOutBound(0) && rt.droneEnvOutBound(1) && rt.droneEnvOutBound(2) &&
             rt.droneEnvOutBound(3),
         "all 4 classic groups' real registry ENV OUT descriptors are valid (fail-closed passes)");
 
-  // Pass 1: every gate closed -> release completes -> near-silence + ENV OUT -> -10V.
+  // Pass 1: every gate closed -> release completes -> near-silence + ENV OUT at each row min.
   for (int g = 0; g < 4; ++g) rt.setDroneGroupGate(g, false);
   constexpr std::size_t kRelFr = 12000;
   const std::size_t kRelSettle = 3000;  // skip the (fast) release transient before peaking
@@ -421,14 +476,22 @@ void registry_drone_gate_envout() {
       if (v > peak) peak = v;
     }
   }
-  const double envMin = rt.droneEnvOutVolts(0);
   check(peak < 1e-3, "gate-off + release-done => droneChannel(0) is near-silent");
-  check(envMin < -9.9, "gate-off ENV OUT volts ~ nominalMin (-10V) at released level");
-  check(rt.controlVoltageAt(reg::JackId::drone_1_env_out) == envMin,
+  // Per-group descriptor oracle. level==0 after full release, so envOut == min + 0 = nominalMin.
+  for (int g = 0; g < 4; ++g) {
+    const core::JackDescriptor* d = registryJack(envJacks[g]);
+    if (!d) return;
+    const double v = rt.droneEnvOutVolts(g);
+    check(v == d->nominalMin,
+          "group released ENV OUT volts == OWN descriptor nominalMin (min + level*(max-min), level=0)");
+    check(v >= d->nominalMin && v <= d->nominalMax,
+          "group released ENV OUT volts is within OWN descriptor nominal range");
+  }
+  check(rt.controlVoltageAt(reg::JackId::drone_1_env_out) == rt.droneEnvOutVolts(0),
         "droneEnvOutVolts reads the SAME CV source bank entry controlVoltageAt reads");
 
   // Pass 2: only group 0 re-gated ON -> recovers with an attack; neighbor group 1 stays
-  // silent (isolation). ENV OUT rises back toward nominalMax as the level climbs.
+  // silent (isolation). ENV OUT rises to nominalMax as the level climbs to exactly 1.0.
   rt.setDroneGroupGate(0, true);
   constexpr std::size_t kAtkFr = 12000;
   double after = 0.0, nbr = 0.0;
@@ -439,11 +502,17 @@ void registry_drone_gate_envout() {
     const double v1 = std::fabs(rt.droneChannel(1));
     if (v1 > nbr) nbr = v1;
   }
+  const core::JackDescriptor* d0 = registryJack(envJacks[0]);
+  if (!d0) return;
   const double envHi = rt.droneEnvOutVolts(0);
   check(after > 0.05, "gate-on recovers the group (attack brings droneChannel back)");
   check(nbr < 1e-3, "neighbor group 1 stays silent when only group 0 is re-gated on");
-  check(envHi > 9.9, "gate-on ENV OUT volts ~ nominalMax (+10V) at open level");
-  check(envHi > envMin, "ENV OUT volts rises with the gate (level tracks the envelope)");
+  check(envHi == d0->nominalMax,
+        "open ENV OUT volts == OWN descriptor nominalMax (min + level*(max-min) with level=1)");
+  check(envHi >= d0->nominalMin && envHi <= d0->nominalMax,
+        "open ENV OUT volts is within OWN descriptor nominal range");
+  check(envHi > d0->nominalMin,
+        "ENV OUT volts rise with the gate (level tracks the envelope monotonically)");
 }
 
 // The shared CV MOD is consumed through the CONTROL layer: patching a CV source into a
@@ -503,9 +572,14 @@ void registry_drone_reproducible() {
   check(a.env == b.env, "same-seed classic drone ENV OUT volts is bit-identical across fresh runtimes");
 }
 
-// Fail-closed: a runtime whose env_out / cv_mod_in are NEVER bound reports every group as
-// NOT bound and reads 0 volts (not a stale jack), because the JackId{0} sentinel would
-// otherwise collide with a real registry jack (vco_a.cv_in is nominally -5..+5).
+// Fail-closed admission (@Codex 52d3c620 points 1+2). Two halves:
+//   (a) NEVER-bound: every group is unbound + reads 0 (the JackId{0} sentinel would otherwise
+//       collide with the real vco_a.cv_in jack id 0 — the explicit bound-state flag fixes that).
+//   (b) ATOMIC cohort rejection: after a VALID cohort is admitted, ANY bad member (missing id,
+//       out-of-capacity id, wrong owning module, wrong direction, pathological range for ENV)
+//       makes the setter reject the WHOLE cohort and return false, clearing EVERY group — no
+//       partial binding, no stale readback. The CV-MOD "no stale read" is proven behaviourally:
+//       after a rejected cohort, patching CV into the group's cv_mod_in jack leaves it inert.
 void registry_drone_envout_fail_closed() {
   namespace reg = lunar24::registry;
   core::SynthRuntime base = makeRegistryDroneBase();
@@ -516,23 +590,142 @@ void registry_drone_envout_fail_closed() {
   check(!base.droneEnvOutBound(4) && base.droneEnvOutVolts(4) == 0.0,
         "out-of-range group index fails closed (bound=false, volts=0)");
 
-  // A jack id that is NOT in the registry array is fail-closed even though it was "bound":
-  // findJackDescriptor_ returns nullptr, so the descriptor-driven write is never emitted.
-  core::SynthRuntime bad = makeRegistryDroneBase();
-  bad.setDroneEnvOutBindings(static_cast<core::JackId>(999u),
-                             static_cast<core::JackId>(999u),
-                             static_cast<core::JackId>(999u),
-                             static_cast<core::JackId>(999u));
-  check(!bad.droneEnvOutBound(0),
-        "jack id missing from the registry fails closed (bound=false)");
-  check(bad.droneEnvOutVolts(0) == 0.0,
-        "jack id missing from the registry reads 0 volts");
+  static const core::JackId validEnv[4] = {reg::JackId::drone_1_env_out,
+                                           reg::JackId::drone_2_env_out,
+                                           reg::JackId::drone_4_env_out,
+                                           reg::JackId::drone_5_env_out};
+  static const core::JackId validCvMod[4] = {reg::JackId::drone_1_cv_mod_in,
+                                             reg::JackId::drone_2_cv_mod_in,
+                                             reg::JackId::drone_4_cv_mod_in,
+                                             reg::JackId::drone_5_cv_mod_in};
+
+  enum class Kind { EnvOut, CvMod };
+  struct Neg {
+    Kind kind;
+    const char* name;
+    core::JackId ids[4];
+  };
+  const core::JackId missing = unusedRegistryId();
+  const core::JackId overCap = static_cast<core::JackId>(999);  // >= kMaxEdges (128)
+  const Neg negs[] = {
+      {Kind::EnvOut, "missing registry id",
+       {missing, missing, missing, missing}},
+      {Kind::EnvOut, "out-of-capacity id",
+       {overCap, overCap, overCap, overCap}},
+      {Kind::EnvOut, "wrong owning module",
+       {reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out,
+        reg::JackId::lfo_a_cv_out}},
+      {Kind::EnvOut, "wrong direction (input jack for ENV OUT)",
+       {reg::JackId::drone_1_cv_mod_in, reg::JackId::drone_1_cv_mod_in,
+        reg::JackId::drone_1_cv_mod_in, reg::JackId::drone_1_cv_mod_in}},
+      {Kind::CvMod, "wrong owning module",
+       {reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out,
+        reg::JackId::lfo_a_cv_out}},
+      {Kind::CvMod, "wrong direction (output jack for CV MOD)",
+       {reg::JackId::drone_1_env_out, reg::JackId::drone_1_env_out, reg::JackId::drone_1_env_out,
+        reg::JackId::drone_1_env_out}},
+  };
+  for (const Neg& n : negs) {
+    core::SynthRuntime rt = makeRegistryDroneBase();
+    const bool okPre = (n.kind == Kind::EnvOut)
+                           ? rt.setDroneEnvOutBindings(validEnv[0], validEnv[1], validEnv[2], validEnv[3])
+                           : rt.setDroneCvModInBindings(validCvMod[0], validCvMod[1], validCvMod[2], validCvMod[3]);
+    char pre[192];
+    std::snprintf(pre, sizeof pre, "'%s': a valid cohort is admitted first (so refusal must clear it too)", n.name);
+    check(okPre, pre);
+    const bool ok = (n.kind == Kind::EnvOut)
+                        ? rt.setDroneEnvOutBindings(n.ids[0], n.ids[1], n.ids[2], n.ids[3])
+                        : rt.setDroneCvModInBindings(n.ids[0], n.ids[1], n.ids[2], n.ids[3]);
+    char refused[192];
+    std::snprintf(refused, sizeof refused, "'%s': the bad cohort is rejected (setter returns false)", n.name);
+    check(!ok, refused);
+    if (n.kind == Kind::EnvOut) {
+      for (int g = 0; g < 4; ++g) {
+        char m1[192];
+        std::snprintf(m1, sizeof m1, "'%s': group %d unbound (NO partial binding after refusal)", n.name, g);
+        char m2[192];
+        std::snprintf(m2, sizeof m2, "'%s': group %d reads 0 volts (NO stale readback after refusal)", n.name, g);
+        check(!rt.droneEnvOutBound(g), m1);
+        check(rt.droneEnvOutVolts(g) == 0.0, m2);
+      }
+    }
+  }
+
+  // ENV OUT pathological-range negatives (validRange_): a NaN or inverted nominal range must
+  // be refused, so a garbage voltage is never written into the CV source bank. The jacks table
+  // is a static COPY of the real registry with drone_1_env_out corrupted (SynthRuntime keeps
+  // the pointer, so the table must outlive the runtime).
+  struct RangeCase {
+    const char* name;
+    double min;
+    double max;
+  };
+  const RangeCase ranges[] = {
+      {"NaN nominalMin", std::numeric_limits<double>::quiet_NaN(), 10.0},
+      {"inverted range (max < min)", 10.0, -10.0},
+  };
+  for (const RangeCase& rc : ranges) {
+    static core::JackDescriptor bad[core::SynthRuntime::kMaxEdges];
+    for (std::uint32_t i = 0; i < reg::kJackCount; ++i) bad[i] = reg::kJacks[i];
+    for (std::uint32_t i = 0; i < reg::kJackCount; ++i) {
+      if (bad[i].id == static_cast<core::JackId>(reg::JackId::drone_1_env_out)) {
+        bad[i].nominalMin = rc.min;
+        bad[i].nominalMax = rc.max;
+        break;
+      }
+    }
+    {
+      core::SynthRuntime rt = makeRegistryDroneJacks(bad, reg::kJackCount);
+      const bool ok = rt.setDroneEnvOutBindings(validEnv[0], validEnv[1], validEnv[2], validEnv[3]);
+      char refused[192];
+      std::snprintf(refused, sizeof refused, "ENV range '%s' is rejected by admission (validRange_)", rc.name);
+      check(!ok, refused);
+      char unbound[192];
+      std::snprintf(unbound, sizeof unbound, "ENV range '%s': every group unbound + reads 0 (no NaN/inverted write)", rc.name);
+      check(!rt.droneEnvOutBound(0) && !rt.droneEnvOutBound(1) && rt.droneEnvOutVolts(0) == 0.0 &&
+                rt.droneEnvOutVolts(1) == 0.0,
+            unbound);
+    }
+  }
+
+  // CV MOD "no stale read": reject a BAD cohort after admitting a VALID one, then patch CV into
+  // the group's cv_mod_in jack. Two FRESH runtimes run the identical pre-admit + reject + connect
+  // sequence with CV=0 vs CV=4; since the only difference is the CV that a live stale sink would
+  // consume, identical channels prove the rejected cohort cleared the group (no old jack kept
+  // consuming the CV layer). A cohort that was NOT cleared would see CV=4 detune group 0 -> red.
+  const auto inertTrace = [](double cv) {
+    core::SynthRuntime rt = makeRegistryDroneBase();
+    check(rt.setDroneCvModInBindings(validCvMod[0], validCvMod[1], validCvMod[2], validCvMod[3]),
+          "CV MOD stale-read: valid cohort pre-admitted");
+    check(!rt.setDroneCvModInBindings(reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out,
+                                      reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out),
+          "CV MOD stale-read: the bad cohort is rejected");
+    static_cast<void>(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_1_cv_mod_in));
+    static_cast<void>(rt.rebuild());
+    rt.setControlVoltage(reg::JackId::lfo_a_cv_out, cv);
+    std::vector<double> tr(kCvModFrames);
+    for (std::size_t i = 0; i < kCvModFrames; ++i) {
+      rt.processFrame(0.0);
+      tr[i] = rt.droneChannel(0);
+    }
+    return tr;
+  };
+  const std::vector<double> stale0 = inertTrace(0.0);
+  const std::vector<double> stale4 = inertTrace(4.0);
+  check(stale0 == stale4,
+        "CV MOD: after a rejected cohort the group is inert to a patched CV (no stale sink consumed)");
 }
 
-// Block-partition invariance of the batch-4A ENV OUT path: with a held gate the envelope
+// Block-partition invariance of the batch-4A ENV OUT path: with a HELD gate the envelope
 // level is a deterministic per-frame function, so the ENV OUT volts every classic group
 // writes into the CV source bank last frame is identical under 64/128/256 partitions.
+// The gate is set EXPLICITLY open (point 6: the behavior test never leans on the provisional
+// default gate state as hardware evidence) and the terminal value is compared to the real
+// descriptor's nominalMax, not a hard-coded ±9.9.
 void registry_drone_envout_partition() {
+  namespace reg = lunar24::registry;
+  const core::JackDescriptor* d0 = registryJack(reg::JackId::drone_1_env_out);
+  if (!d0) return;
   constexpr std::size_t kBlocks[3] = {64, 128, 256};
   constexpr std::size_t kTot = 256;
   static const double kSilence[kTot] = {};
@@ -542,6 +735,7 @@ void registry_drone_envout_partition() {
     core::SynthRuntime rt = makeRegistryDroneRuntime();
     rt.setDroneGroupAtt(0, 0.0);
     rt.setDroneGroupRls(0, 0.0);
+    rt.setDroneGroupGate(0, true);  // explicit held gate (not the provisional default)
     for (std::size_t b = 0; b < kTot; b += kBlocks[bi])
       rt.processBlock(kSilence + b, kBlocks[bi], dummy + b);
     finalEnv[bi] = rt.droneEnvOutVolts(0);
@@ -549,7 +743,10 @@ void registry_drone_envout_partition() {
   }
   check(finalEnv[0] == finalEnv[1] && finalEnv[1] == finalEnv[2],
         "classic drone ENV OUT volts is block-partition invariant (64/128/256)");
-  check(finalEnv[0] > 9.9, "gate-open ENV OUT volts saturates near nominalMax (+10V)");
+  check(finalEnv[0] == d0->nominalMax,
+        "held-gate open ENV OUT volts == OWN descriptor nominalMax (level==1, min+level*(max-min))");
+  check(finalEnv[0] >= d0->nominalMin && finalEnv[0] <= d0->nominalMax,
+        "held-gate open ENV OUT volts within OWN descriptor nominal range");
   check(finalCh[0] == finalCh[1] && finalCh[1] == finalCh[2],
         "classic drone channel is block-partition invariant (64/128/256)");
 }
