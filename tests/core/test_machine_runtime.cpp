@@ -114,6 +114,7 @@ constexpr std::uint32_t kJackCount = 7;
 
 constexpr std::uint64_t kSeed = 0x4C554E41ull;  // "LUNA" — fixed, reproducible.
 constexpr std::size_t kBlock = 256;
+constexpr std::size_t kCvModFrames = 4096;  // CV MOD trace length (registry_drone_cv_mod)
 constexpr double kSr = 48000.0;
 constexpr double kBaseHz = 220.0;
 constexpr double kPatchV = 4.0;  // +4 V on a v_oct jack -> x16 pitch.
@@ -360,10 +361,15 @@ core::SynthRuntime makeRegistryDroneBase() {
   // the runtime by value, so these arrays MUST have static storage duration — a stack-local
   // array would dangle on the next rebuild(). The reassignment below is idempotent (the same
   // registry-derived values every call), so re-running it on static storage is harmless.
+  //
+  // NB: static storage is zero-initialized at load and GraphModule::contract is const (the
+  // compiler/runtime only ever reads the contract), so an element is never re-value-init'ed
+  // here. A `cyc[i] = ModuleExecutionContract{}` aggregate copy (the contract embeds a
+  // pathDelays[16] array) ICEs GCC's gimplifier (gimple_add_tmp_var) when the destination has
+  // static storage duration; a plain per-field set is portable across every toolchain.
   static core::ModuleExecutionContract cyc[core::kModuleCount];
   static core::GraphModule mods[core::kModuleCount];
   for (std::uint32_t i = 0; i < core::kModuleCount; ++i) {
-    cyc[i] = core::ModuleExecutionContract{};  // GCC-visible value-init (see GH#13 note)
     cyc[i].sampleRate = kSr;
     cyc[i].allowedInCyclicSCC = true;  // every module is cycle-safe in this test
     mods[i].id = reg::kModules[i].id;
@@ -445,15 +451,16 @@ void registry_drone_gate_envout() {
 // control), while a MOD-off group is inert to the same CV (design/07 §7).
 void registry_drone_cv_mod() {
   namespace reg = lunar24::registry;
-  constexpr std::size_t kN = 4096;
+  // The lambda must not capture any function-local variable (MSVC C3493: a constexpr local
+  // still needs a default capture mode). kCvModFrames is a file-scope constant, so `[]` stays.
   const auto modTrace = [](double cv, double depth) {
     core::SynthRuntime rt = makeRegistryDroneRuntime();
     for (int g = 0; g < 5; ++g) rt.setDroneMod(0, g, depth);
     static_cast<void>(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_1_cv_mod_in));
     static_cast<void>(rt.rebuild());
     rt.setControlVoltage(reg::JackId::lfo_a_cv_out, cv);
-    std::vector<double> tr(kN);
-    for (std::size_t i = 0; i < kN; ++i) {
+    std::vector<double> tr(kCvModFrames);
+    for (std::size_t i = 0; i < kCvModFrames; ++i) {
       rt.processFrame(0.0);
       tr[i] = rt.droneChannel(0);
     }
