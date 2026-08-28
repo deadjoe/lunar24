@@ -351,6 +351,9 @@ class SynthRuntime {
     const JackId ids[4] = {g0, g1, g2, g3};
     for (int g = 0; g < kClassicDroneVoices; ++g)
       if (!envOutBindingValid_(g, ids[g])) { releaseEnvOut_(); return false; }
+    // All four valid: atomically release the old cohort first (which deterministically
+    // zeroes its env_out CV source slots), then commit the new cohort. See releaseEnvOut_.
+    releaseEnvOut_();
     for (int g = 0; g < kClassicDroneVoices; ++g) {
       envOutJack_[g] = ids[g];
       envOutBound_[g] = true;
@@ -361,6 +364,9 @@ class SynthRuntime {
     const JackId ids[4] = {g0, g1, g2, g3};
     for (int g = 0; g < kClassicDroneVoices; ++g)
       if (!cvModInBindingValid_(g, ids[g])) { releaseCvModIn_(); return false; }
+    // All four valid: atomically release the old cohort first (which resets the retained
+    // shared MOD of every group to 0), then commit the new cohort. See releaseCvModIn_.
+    releaseCvModIn_();
     for (int g = 0; g < kClassicDroneVoices; ++g) {
       cvModInJack_[g] = ids[g];
       cvModInBound_[g] = true;
@@ -376,13 +382,24 @@ class SynthRuntime {
                ? drone_.groupEnvLevel(voiceGroup)
                : 0.0;
   }
+  // The group's shared CV MOD value the DroneBank is actually applying (== DroneBank::
+  // groupModCv, the executed modCvG_, never a shadow mirror). A CV MOD cohort that was
+  // released after consuming a patched CV must leave 0 here — the @Codex 7a42d10a #2
+  // release-reset is directly observable. Unbound/out-of-range -> 0.
+  double droneGroupModCv(int voiceGroup) const {
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices
+               ? drone_.groupModCv(voiceGroup)
+               : 0.0;
+  }
   // The virtual volts the PRODUCT actually wrote into the runtime CV source bank for the
   // group's env_out jack last frame (== the value at cvOut_[envOutJack], not a rewrite).
   // An unbound group's env_out is never written, so this reads 0 (not a stale jack 0).
   double droneEnvOutVolts(int voiceGroup) const {
     if (voiceGroup < 0 || voiceGroup >= kClassicDroneVoices) return 0.0;
-    const JackId envOut = envOutJack_[voiceGroup];
-    return envOut == JackId{0} ? 0.0 : cvAt_(envOut);
+    // Authoritative bound flag decides, NOT a JackId{0} sentinel (id 0 is a real
+    // vco_a.cv_in jack). A never-bound / release-cohort group is unbound ⇒ never written.
+    if (!envOutBound_[voiceGroup]) return 0.0;
+    return cvAt_(envOutJack_[voiceGroup]);
   }
   // Fail-closed bound/validity: true only after a SUCCESSFUL atomic admission (the
   // explicit post-admission flag). A group that was never bound, or whose cohort was
@@ -840,7 +857,9 @@ class SynthRuntime {
   // Only groups admitting a live cv_mod_in binding match; a released cohort's jacks are
   // all JackId{0} so they never match (no stale read).
   int cvModInGroupOf_(JackId sink) const {
-    if (sink == JackId{0}) return -1;  // never bound: JackId{0} is the unbound sentinel
+    // Decided solely by the explicit cvModInBound_ flag (NOT a JackId{0} sentinel, which
+    // is a real vco_a.cv_in jack id). A group bound to a legitimately-valid jack id 0
+    // must match and consume the patched CV.
     for (int g = 0; g < kClassicDroneVoices; ++g)
       if (cvModInBound_[g] && cvModInJack_[g] == sink) return g;
     return -1;
@@ -881,12 +900,22 @@ class SynthRuntime {
   }
   void releaseEnvOut_() {
     for (int g = 0; g < kClassicDroneVoices; ++g) {
+      // Deterministically clear the old env_out CV source slot so a released cohort
+      // leaves NO stale voltage consumable through the patch graph (@Codex 7a42d10a #1).
+      if (envOutBound_[g]) {
+        const std::uint32_t j = static_cast<std::uint32_t>(envOutJack_[g]);
+        if (j < kMaxEdges) cvOut_[j] = 0.0;
+      }
       envOutJack_[g] = JackId{0};
       envOutBound_[g] = false;
     }
   }
   void releaseCvModIn_() {
     for (int g = 0; g < kClassicDroneVoices; ++g) {
+      // Reset each group's SHARED MOD to 0 so a released cohort keeps no applied
+      // modulation (@Codex 7a42d10a #2): DroneBank::modCvG_ would otherwise retain the
+      // last driven value and keep modulating even after the binding is released.
+      drone_.setGroupModCv(g, 0.0);
       cvModInJack_[g] = JackId{0};
       cvModInBound_[g] = false;
     }

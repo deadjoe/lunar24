@@ -365,6 +365,16 @@ const core::JackDescriptor* registryJack(lunar24::registry::JackId id) {
   return nullptr;
 }
 
+// A descriptor an oracle REQUIRES must be present. Faithful to @Codex 7a42d10a point 4: a
+// missing generated descriptor is a TEST defect, NOT a silent skip — count a fault (the
+// binary returns non-zero) and let the caller bail before dereferencing. Every call site
+// still null-checks before use; this only makes the skip audible instead of quiet.
+const core::JackDescriptor* reqRegistryJack(lunar24::registry::JackId id) {
+  const core::JackDescriptor* d = registryJack(id);
+  check(d != nullptr, "generated registry holds the required jack descriptor");
+  return d;
+}
+
 // A jack id in [0, kMaxEdges) that is NOT a registered registry jack. The registry is sparse
 // (64 registered ids < 128 capacity slots, so a hole always exists). Used for the "missing
 // id" fail-closed negative, where findJackDescriptor_ returns nullptr while the id is still
@@ -458,7 +468,7 @@ void registry_drone_gate_envout() {
   for (int g = 0; g < 4; ++g) {
     rt.setDroneGroupAtt(g, 0.0);  // fast attack (neutral)
     rt.setDroneGroupRls(g, 0.0);  // fast release (neutral)
-    if (!registryJack(envJacks[g])) return;  // a missing descriptor = test defect, stop cleanly
+    if (!reqRegistryJack(envJacks[g])) return;  // fault-counting: missing descriptor = test defect
   }
   check(rt.droneEnvOutBound(0) && rt.droneEnvOutBound(1) && rt.droneEnvOutBound(2) &&
             rt.droneEnvOutBound(3),
@@ -479,7 +489,7 @@ void registry_drone_gate_envout() {
   check(peak < 1e-3, "gate-off + release-done => droneChannel(0) is near-silent");
   // Per-group descriptor oracle. level==0 after full release, so envOut == min + 0 = nominalMin.
   for (int g = 0; g < 4; ++g) {
-    const core::JackDescriptor* d = registryJack(envJacks[g]);
+    const core::JackDescriptor* d = reqRegistryJack(envJacks[g]);
     if (!d) return;
     const double v = rt.droneEnvOutVolts(g);
     check(v == d->nominalMin,
@@ -502,7 +512,7 @@ void registry_drone_gate_envout() {
     const double v1 = std::fabs(rt.droneChannel(1));
     if (v1 > nbr) nbr = v1;
   }
-  const core::JackDescriptor* d0 = registryJack(envJacks[0]);
+  const core::JackDescriptor* d0 = reqRegistryJack(envJacks[0]);
   if (!d0) return;
   const double envHi = rt.droneEnvOutVolts(0);
   check(after > 0.05, "gate-on recovers the group (attack brings droneChannel back)");
@@ -633,21 +643,46 @@ void registry_drone_envout_fail_closed() {
     char pre[192];
     std::snprintf(pre, sizeof pre, "'%s': a valid cohort is admitted first (so refusal must clear it too)", n.name);
     check(okPre, pre);
-    const bool ok = (n.kind == Kind::EnvOut)
-                        ? rt.setDroneEnvOutBindings(n.ids[0], n.ids[1], n.ids[2], n.ids[3])
-                        : rt.setDroneCvModInBindings(n.ids[0], n.ids[1], n.ids[2], n.ids[3]);
-    char refused[192];
-    std::snprintf(refused, sizeof refused, "'%s': the bad cohort is rejected (setter returns false)", n.name);
-    check(!ok, refused);
     if (n.kind == Kind::EnvOut) {
+      // @Codex 7a42d10a #1 (source-bank criterion): ONE frame AFTER the valid cohort is
+      // admitted, the kDrone step writes each group's ENV OUT volts into cvOut_[envOutJack].
+      // Capture that per group NOW (before the bad cohort is offered), then reject. A released
+      // cohort must zero the ORIGINAL valid source slots — the old releaseEnvOut_ only cleared
+      // id/flag and left cvOut_ alive, so the stale ENV OUT voltage stayed consumable.
+      rt.processFrame(0.0);
+      double beforeVal[4];
+      for (int g = 0; g < 4; ++g) beforeVal[g] = rt.controlVoltageAt(validEnv[g]);
+      for (int g = 0; g < 4; ++g) {
+        char mw[192];
+        std::snprintf(mw, sizeof mw,
+                      "'%s': a valid cohort actually wrote non-zero ENV OUT volts into cvOut_ "
+                      "(so release is meaningful, not vacuous)",
+                      n.name);
+        check(beforeVal[g] != 0.0, mw);
+      }
+      const bool ok = rt.setDroneEnvOutBindings(n.ids[0], n.ids[1], n.ids[2], n.ids[3]);
+      char refused[192];
+      std::snprintf(refused, sizeof refused, "'%s': the bad cohort is rejected (setter returns false)", n.name);
+      check(!ok, refused);
       for (int g = 0; g < 4; ++g) {
         char m1[192];
         std::snprintf(m1, sizeof m1, "'%s': group %d unbound (NO partial binding after refusal)", n.name, g);
         char m2[192];
         std::snprintf(m2, sizeof m2, "'%s': group %d reads 0 volts (NO stale readback after refusal)", n.name, g);
+        char m3[192];
+        std::snprintf(m3, sizeof m3,
+                      "'%s': ORIGINAL valid source-bank slot %d cleared to 0 (releaseEnvOut_ "
+                      "zeroes cvOut_, no stale ENV OUT voltage survives)",
+                      n.name, g);
         check(!rt.droneEnvOutBound(g), m1);
         check(rt.droneEnvOutVolts(g) == 0.0, m2);
+        check(rt.controlVoltageAt(validEnv[g]) == 0.0, m3);
       }
+    } else {
+      const bool ok = rt.setDroneCvModInBindings(n.ids[0], n.ids[1], n.ids[2], n.ids[3]);
+      char refused[192];
+      std::snprintf(refused, sizeof refused, "'%s': the bad cohort is rejected (setter returns false)", n.name);
+      check(!ok, refused);
     }
   }
 
@@ -688,32 +723,124 @@ void registry_drone_envout_fail_closed() {
     }
   }
 
-  // CV MOD "no stale read": reject a BAD cohort after admitting a VALID one, then patch CV into
-  // the group's cv_mod_in jack. Two FRESH runtimes run the identical pre-admit + reject + connect
-  // sequence with CV=0 vs CV=4; since the only difference is the CV that a live stale sink would
-  // consume, identical channels prove the rejected cohort cleared the group (no old jack kept
-  // consuming the CV layer). A cohort that was NOT cleared would see CV=4 detune group 0 -> red.
-  const auto inertTrace = [](double cv) {
+  // CV MOD "no stale read" (@Codex 7a42d10a #2): a rejected cohort must UN-APPLY the shared
+  // mod CV it had been consuming. The OLD test rejected BEFORE any frame, so the 4V never
+  // entered the group (modCvG_ stayed 0 either way) — it was FAKE-GREEN. Here we first CONSUME
+  // the joined CV (one processFrame drives modCvG_[0] via applyControlCv_), THEN reject, and
+  // require the group's ACTUAL shared modCv to return to 0. Old releaseCvModIn_ only cleared
+  // id/flag and left modCvG_ at 4 => the probe stays 4 => red.
+  //
+  // Why droneGroupModCv(0) (direct inspector) and NOT a full droneChannel(0) vector compare:
+  // consuming a CV detunes the oscillator, and after release the phase has already advanced one
+  // frame, so even a correct release leaves the post-reject vector phase-diverged from the never-
+  // consumed baseline — a false signal that exactly the two traces differ.
+  const auto cvmodProbe = [](double cv) {
     core::SynthRuntime rt = makeRegistryDroneBase();
+    for (int g = 0; g < 5; ++g) rt.setDroneMod(0, g, 1.0);  // MOD-on => shared CV is audible
     check(rt.setDroneCvModInBindings(validCvMod[0], validCvMod[1], validCvMod[2], validCvMod[3]),
           "CV MOD stale-read: valid cohort pre-admitted");
-    check(!rt.setDroneCvModInBindings(reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out,
-                                      reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out),
-          "CV MOD stale-read: the bad cohort is rejected");
     static_cast<void>(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_1_cv_mod_in));
     static_cast<void>(rt.rebuild());
     rt.setControlVoltage(reg::JackId::lfo_a_cv_out, cv);
-    std::vector<double> tr(kCvModFrames);
-    for (std::size_t i = 0; i < kCvModFrames; ++i) {
-      rt.processFrame(0.0);
-      tr[i] = rt.droneChannel(0);
-    }
-    return tr;
+    rt.processFrame(0.0);  // CONSUME: applyControlCv_ drives modCvG_[0] to `cv` for real.
+    const double beforeReject = rt.droneGroupModCv(0);  // group 0's executed shared modCv
+    check(!rt.setDroneCvModInBindings(reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out,
+                                      reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out),
+          "CV MOD stale-read: the bad cohort is rejected");
+    const double afterReject = rt.droneGroupModCv(0);
+    return std::make_pair(beforeReject, afterReject);
   };
-  const std::vector<double> stale0 = inertTrace(0.0);
-  const std::vector<double> stale4 = inertTrace(4.0);
-  check(stale0 == stale4,
-        "CV MOD: after a rejected cohort the group is inert to a patched CV (no stale sink consumed)");
+  const auto p4 = cvmodProbe(4.0);
+  const auto p0 = cvmodProbe(0.0);
+  check(p4.first == 4.0,
+        "CV MOD stale-read: a consumed 4V actually ENTERED the group while bound (modCvG_=4 — "
+        "proves the CV was applied, not the vacuous 0-before case that was previously fake-green)");
+  check(p4.second == 0.0,
+        "CV MOD stale-read: rejecting the cohort zeroes the retained modCv (releaseCvModIn_ "
+        "drives setGroupModCv(0) — no stale modulation lingers)");
+  check(p0.first == 0.0, "CV MOD stale-read: 0V consume leaves modCv at 0");
+  check(p0.second == 0.0, "CV MOD stale-read: 0V consume + reject still leaves modCv at 0");
+}
+
+// @Codex 7a42d10a #3 (sentinel removal): the old code used JackId{0} as an "unbound" sentinel,
+// which collides with the REAL vco_a.cv_in jack id 0 and would wrongly treat a group
+// LEGITIMATELY bound to jack id 0 as unbound. The fix decides only by the explicit bound-state
+// flags. Pin group 0 to a legal jack id 0 via a synthetic cohort (copies of the real drone
+// descriptors with drone_1's id re-pointed to 0, so no vco_a id-0 collision remains) and verify
+// BOTH directions really work: ENV OUT writes/reads cvOut_[0], CV MOD input id 0 is consumed.
+void registry_drone_envout_id0_sentinel() {
+  namespace reg = lunar24::registry;
+  const core::JackDescriptor* e0 = reqRegistryJack(reg::JackId::drone_1_env_out);
+  const core::JackDescriptor* e1 = reqRegistryJack(reg::JackId::drone_2_env_out);
+  const core::JackDescriptor* e2 = reqRegistryJack(reg::JackId::drone_4_env_out);
+  const core::JackDescriptor* e3 = reqRegistryJack(reg::JackId::drone_5_env_out);
+  const core::JackDescriptor* c1 = reqRegistryJack(reg::JackId::drone_1_cv_mod_in);
+  const core::JackDescriptor* c2 = reqRegistryJack(reg::JackId::drone_2_cv_mod_in);
+  const core::JackDescriptor* c4 = reqRegistryJack(reg::JackId::drone_4_cv_mod_in);
+  const core::JackDescriptor* c5 = reqRegistryJack(reg::JackId::drone_5_cv_mod_in);
+  const core::JackDescriptor* lfo = reqRegistryJack(reg::JackId::lfo_a_cv_out);
+  if (!e0 || !e1 || !e2 || !e3 || !c1 || !c2 || !c4 || !c5 || !lfo) return;  // faults already counted
+
+  // ENV OUT half: group 0's env_out jack is id 0 (a real vco_a collision id). The write must
+  // land in cvOut_[0] and droneEnvOutVolts(0) must read it — NOT return 0 from a sentinel guard.
+  static core::JackDescriptor id0Env[4];
+  id0Env[0] = *e0;
+  id0Env[0].id = core::JackId{0};
+  id0Env[1] = *e1;
+  id0Env[2] = *e2;
+  id0Env[3] = *e3;
+  {
+    core::SynthRuntime rt = makeRegistryDroneJacks(id0Env, 4);
+    check(rt.setDroneEnvOutBindings(core::JackId{0}, reg::JackId::drone_2_env_out,
+                                    reg::JackId::drone_4_env_out, reg::JackId::drone_5_env_out),
+          "ENV OUT: cohort with group-0 jack id 0 is ADMITTED (id 0 is not auto-rejected)");
+    check(rt.droneEnvOutBound(0) && rt.droneEnvOutBound(1) && rt.droneEnvOutBound(2) &&
+              rt.droneEnvOutBound(3),
+          "ENV OUT: all four groups bound after the id-0 cohort (bound-state flag, not sentinel)");
+    rt.processFrame(0.0);
+    check(rt.controlVoltageAt(core::JackId{0}) != 0.0,
+          "ENV OUT: the id-0 jack's ENV OUT source slot is actually written (cvOut_[0] is live)");
+    check(rt.droneEnvOutVolts(0) == rt.controlVoltageAt(core::JackId{0}),
+          "ENV OUT: droneEnvOutVolts(0) reads the id-0 slot (old sentinel guard returned 0)");
+  }
+
+  // CV MOD half: group 0's cv_mod_in jack is id 0. A patched 4V must be consumed by the group
+  // (cvModInGroupOf_ resolves id 0); the old sentinel guard dropped id 0 silently -> the group
+  // stayed at modCv 0. @Codex 7a42d10a #3.
+  //
+  // NOTE on the fixed VOCT/VCF sinks: SynthRuntime's voctA_/voctB_/vcfCvL_/vcfCvR_ default to
+  // JackId{0} (= vco_a's cv_in jack). applyControlCv_ checks `snk == voctA_` (etc.) BEFORE the
+  // drone-group branch, so in a REGISTRY WHERE id 0 IS the drone group's cv_mod_in (this
+  // synthetic table re-points drone_1_cv_mod_in to id 0), the id-0 cable would be routed to
+  // VCO A's otave instead of the drone group. That is genuine product wiring, not the #3
+  // bug, so here we must NOT let vco_a shadow the drone group: point the fixed sinks off id 0.
+  // A catch-22 of the sentinel bug is that "group 0 bound to a real id-0 jack" in a standard
+  // registry IS vco_a.cv_in — only a registry whose id-0 jack is the drone cv_mod_in exercises
+  // the drone branch for id 0, which is exactly the synthetic cohort the directive calls for.
+  static core::JackDescriptor id0Cv[5];
+  id0Cv[0] = *lfo;  // source jack must be present for patch_.connect to resolve it
+  id0Cv[1] = *c1;
+  id0Cv[1].id = core::JackId{0};
+  id0Cv[2] = *c2;
+  id0Cv[3] = *c4;
+  id0Cv[4] = *c5;
+  const auto id0CvTrace = [](double cv) {
+    core::SynthRuntime st = makeRegistryDroneJacks(id0Cv, 5);
+    st.setVoctBindings(core::JackId{900}, core::JackId{901});  // off id 0: don't shadow the drone
+    st.setVcfCvBindings(core::JackId{902}, core::JackId{903}); // off id 0: don't shadow the drone
+    check(st.setDroneCvModInBindings(core::JackId{0}, reg::JackId::drone_2_cv_mod_in,
+                                     reg::JackId::drone_4_cv_mod_in, reg::JackId::drone_5_cv_mod_in),
+          "CV MOD: id-0 cohort admitted (group-0 cv_mod_in is jack id 0)");
+    static_cast<void>(st.connect(reg::JackId::lfo_a_cv_out, core::JackId{0}));
+    static_cast<void>(st.rebuild());
+    st.setControlVoltage(reg::JackId::lfo_a_cv_out, cv);
+    st.processFrame(0.0);  // consume: applyControlCv_ drives group 0's shared modCv
+    return st.droneGroupModCv(0);  // the group's executed shared modCv (0 if the CV was dropped)
+  };
+  check(id0CvTrace(0.0) == 0.0, "id-0 CV MOD: 0V leaves the group's shared modCv at 0");
+  check(id0CvTrace(4.0) == 4.0,
+        "id-0 CV MOD: 4V is CONSUMED by group 0 (cvModInGroupOf_ resolves a real jack id 0, "
+        "not -1 — the old sentinel guard silently dropped it)");
 }
 
 // Block-partition invariance of the batch-4A ENV OUT path: with a HELD gate the envelope
@@ -724,7 +851,7 @@ void registry_drone_envout_fail_closed() {
 // descriptor's nominalMax, not a hard-coded ±9.9.
 void registry_drone_envout_partition() {
   namespace reg = lunar24::registry;
-  const core::JackDescriptor* d0 = registryJack(reg::JackId::drone_1_env_out);
+  const core::JackDescriptor* d0 = reqRegistryJack(reg::JackId::drone_1_env_out);
   if (!d0) return;
   constexpr std::size_t kBlocks[3] = {64, 128, 256};
   constexpr std::size_t kTot = 256;
@@ -1551,6 +1678,9 @@ int main() {
 
   std::printf("(16) GH#5 classic drone ENV OUT block-partition invariance\n");
   registry_drone_envout_partition();
+
+  std::printf("(17) GH#5 classic drone JackId{0} sentinel removed (legal id 0 cohort)\n");
+  registry_drone_envout_id0_sentinel();
 
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;
