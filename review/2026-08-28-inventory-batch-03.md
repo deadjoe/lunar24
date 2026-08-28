@@ -41,8 +41,8 @@ path, not a runnable product path.
 
 | ID | Severity | Finding | Disposition |
 |---|---|---|---|
-| A10 | High | The master plan declares LFO A/B, Envelope A/B, joystick, and the physical five-step sequencer, but assigns none to a P0–P8 implementation phase | New GitHub issue |
-| A11 | High | Decoded `DeviceStateV1` and keyboard preset scalar fields are never applied to the product runtime | New GitHub issue |
+| A10 | High | The master plan declares LFO A/B, Envelope A/B, joystick, and the physical five-step sequencer, but assigns none to a P0–P8 implementation phase | [#11](https://github.com/deadjoe/lunar24/issues/11) |
+| A11 | High | Decoded `DeviceStateV1` and keyboard preset scalar fields are never applied to the product runtime | [#12](https://github.com/deadjoe/lunar24/issues/12) |
 | A03 | High | The standalone host does not instantiate `SynthRuntime` or a real `DeviceAdapter`; the composed core runtime remains test-only at the application boundary | Add exact-head evidence to #4 |
 | A04 | High | Classic drone gate/HOLD/ATT/RLS/CV/envelope-out and parts of the dynamic model remain absent | Already retained as #5 partial |
 | A05 | High | VCF identity/calibration and level-dependent nonlinear behavior remain absent | Already retained as #6 open |
