@@ -553,6 +553,19 @@ void test_gh6_identity_profile() {
                        p2.right.pathGain != p0.right.pathGain;
   std::printf("GH#6 profile seed=99 vs 42: differs %s\n", differs ? "yes" : "NO");
   CHECK(differs);
+
+  // GOLDEN (seed=42, version=1): pin the exact derived side-profile bit values so
+  // "version genuinely participates" regresses. If mixIdentityInput() ever stops
+  // mixing `version` (or the L/R domain salt), the derived (seed,1u) profile changes
+  // and these hexfloat pins fail RED — a seed-change test alone would NOT catch it.
+  // Hexfloat literals are exact IEEE-754, cross-platform and cross-compiler stable.
+  const auto g = lunar24::core::deriveVcfIdentityProfile(42u, 1u);
+  CHECK(g.left.vcfDrive == 0x1.68791caaac8c7p-1);
+  CHECK(g.left.distDrive == 0x1.f22c6f3665ba6p-2);
+  CHECK(g.left.pathGain == 0x1.f692cff66ba71p-1);
+  CHECK(g.right.vcfDrive == 0x1.4a7896cd1df2bp-1);
+  CHECK(g.right.distDrive == 0x1.28d00a1e248fep-1);
+  CHECK(g.right.pathGain == 0x1.00c57c3f50f29p+0);
 }
 
 // ----------------------------------------------------------------------------

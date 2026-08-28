@@ -937,9 +937,16 @@ void gh6_config_entry() {
   core::CalibrationState calib{};
   calib.vcfLeftTrim = 1.0f;
   calib.vcfRightTrim = 1.0f;
+  // The entry is consumed from a REAL DeviceStateV1 triple — identityModelVersion,
+  // identitySeed.seed, calibration — never bare constants wearing a state label.
+  core::DeviceStateV1 state{};
+  state.identityModelVersion = 1u;
+  state.identitySeed.seed = kSeed;
+  state.calibration = calib;
   core::SynthRuntime rt = makeRuntime();
   rt.rebuild();
-  check(rt.configureVcfIdentity(1u, kSeed, calib),
+  check(rt.configureVcfIdentity(state.identityModelVersion, state.identitySeed.seed,
+                                state.calibration),
         "config entry accepts v1 identityModelVersion + finite positive trims (DeviceStateV1 triple)");
   check(rt.vcfIdentityConfigured(), "vcfIdentityConfigured() is true after a valid config");
 
@@ -1016,6 +1023,25 @@ void gh6_fail_closed() {
   negc.vcfRightTrim = 1.0f;
   check(!rt.configureVcfIdentity(1u, kSeed, negc), "negative left trim is rejected");
 
+  // RIGHT-side admission is independently gated too — the "ignore one-side calib"
+  // negative control must be pinned in-repo on BOTH sides, not left alone.
+  core::CalibrationState nanR{};
+  nanR.vcfLeftTrim = 1.0f;
+  nanR.vcfRightTrim = std::numeric_limits<float>::quiet_NaN();
+  check(!rt.configureVcfIdentity(1u, kSeed, nanR), "NaN right trim is rejected");
+  core::CalibrationState infR{};
+  infR.vcfLeftTrim = 1.0f;
+  infR.vcfRightTrim = std::numeric_limits<float>::infinity();
+  check(!rt.configureVcfIdentity(1u, kSeed, infR), "Inf right trim is rejected");
+  core::CalibrationState zeroR{};
+  zeroR.vcfLeftTrim = 1.0f;
+  zeroR.vcfRightTrim = 0.0f;
+  check(!rt.configureVcfIdentity(1u, kSeed, zeroR), "zero right trim is rejected");
+  core::CalibrationState negR{};
+  negR.vcfLeftTrim = 1.0f;
+  negR.vcfRightTrim = -1.0f;
+  check(!rt.configureVcfIdentity(1u, kSeed, negR), "negative right trim is rejected");
+
   // The old complete profile is fully intact after EVERY rejection (no half-profile).
   check(rt.distortionDrive(0) == dL0 && rt.distortionRail(0) == rL0 &&
             rt.vcfPathStagingGain(0) == stL0,
@@ -1041,6 +1067,10 @@ void gh6_fail_closed() {
       r.configureVcfIdentity(1u, kSeed, infc);
       r.configureVcfIdentity(1u, kSeed, zeroc);
       r.configureVcfIdentity(1u, kSeed, negc);
+      r.configureVcfIdentity(1u, kSeed, nanR);
+      r.configureVcfIdentity(1u, kSeed, infR);
+      r.configureVcfIdentity(1u, kSeed, zeroR);
+      r.configureVcfIdentity(1u, kSeed, negR);
     }
     std::vector<double> wl(kN), wr(kN);
     core::RuntimeOutput o{};
@@ -1081,6 +1111,21 @@ void gh6_lr_isolation() {
         "changing the LEFT trim moves the L wet path");
   check(vecBitIdentical(a.wetR, b.wetR),
         "changing the LEFT trim leaves R wet path bit-identical (calibration isolation)");
+
+  // RIGHT-side mirror: changing the RIGHT trim moves only R; L stays bit-identical.
+  // This is the in-repo oracle that pins "ignore one-side calibration" on the RIGHT side too.
+  core::CalibrationState calC{};
+  calC.vcfLeftTrim = 1.0f;
+  calC.vcfRightTrim = 1.0f;
+  core::CalibrationState calD{};
+  calD.vcfLeftTrim = 1.0f;
+  calD.vcfRightTrim = 0.4f;
+  const auto c = renderIdentityWet(kSeed, calC);
+  const auto d = renderIdentityWet(kSeed, calD);
+  check(vecPeakDiff(c.wetR, d.wetR) > 1e-4,
+        "changing the RIGHT trim moves the R wet path");
+  check(vecBitIdentical(c.wetL, d.wetL),
+        "changing the RIGHT trim leaves L wet path bit-identical (calibration isolation)");
 
   // The executed R staging gain must come from the R (NOT the L) domain — a steal-L-to-R
   // mutation sets vcfPathStagingGain(1) == prof.left.pathGain and reds here.
