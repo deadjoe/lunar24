@@ -47,7 +47,15 @@ namespace lunar24::core {
 // (nonlinear) state.
 class Distortion {
  public:
-  explicit Distortion(double sampleRate) { setSampleRate(sampleRate); }
+  explicit Distortion(double sampleRate) {
+    // Default per-channel drive/rail = the shared PROVISIONAL constants, so a bare
+    // Distortion is unchanged; the GH#6 profile overrides them per side.
+    channelL_.driveFold = kDriveFold;
+    channelR_.driveFold = kDriveFold;
+    channelL_.rail = kSaturationVoltage;
+    channelR_.rail = kSaturationVoltage;
+    setSampleRate(sampleRate);
+  }
 
   void setSampleRate(double sr) {
     if (sr > 0.0) sr_ = sr;
@@ -67,6 +75,15 @@ class Distortion {
   // Process one RIGHT-channel sample with the right's own state.
   double tickR(double x) { return tick_(channelR_, x); }
 
+  // GH#6: per-channel distortion drive/rail micro-difference, supplied by the same
+  // identity profile as the VCF drive. L and R are independent; the drive_ scales
+  // the folding strength and rail_ is the saturation ceiling for that channel. If
+  // never set, each channel keeps the shared PROVISIONAL defaults below.
+  void setChannelDrive(int ch, double drive) { channel_(ch).driveFold = drive < 0.0 ? 0.0 : drive; }
+  void setChannelRail(int ch, double rail) { channel_(ch).rail = rail > 0.0 ? rail : kSaturationVoltage; }
+  double channelDrive(int ch) const { return channel_(ch).driveFold; }
+  double channelRail(int ch) const { return channel_(ch).rail; }
+
   // PROVISIONAL distortion rail (no manual curve/rail). Chosen to sit at the WET
   // OUT nominal max (design/07 WET max 2 V); the exact rail is un-evidenced.
   static constexpr double kSaturationVoltage = 2.0;
@@ -79,19 +96,25 @@ class Distortion {
  private:
   struct Channel {
     double driveState = 0.0;  // per-channel filter state (the nonlinearity state).
+    double driveFold = 0.0;   // GH#6 per-channel folding strength (set in ctor).
+    double rail = 0.0;        // GH#6 per-channel saturation ceiling (set in ctor).
   };
+
+  Channel& channel_(int ch) { return ch == 1 ? channelR_ : channelL_; }
+  const Channel& channel_(int ch) const { return ch == 1 ? channelR_ : channelL_; }
 
   // dist=0 -> output is exactly the dry term `x` (gain has NO effect).
   // gain=0 -> the distorted term reduces to ~x (unity small-signal), so dist no
   // longer changes the level. Independent axes. The nonlinear state is a
   // SIGNAL-DRIVEN per-channel drive (gain_ × |x| smoothed), so a hot channel
-  // saturates only its own non-linearity (must-test #3).
+  // saturates only its own non-linearity (must-test #3). GH#6: the folding strength
+  // and rail are per-channel (driveFold/rail) so a level-dependent path micro-diff
+  // can be applied independently on L and R.
   double tick_(Channel& c, double x) {
     const double driveTarget = gain_ * std::fabs(x);
     c.driveState += coeff_ * (driveTarget - c.driveState);
-    const double fold = 1.0 + kDriveFold * c.driveState;
-    const double wet = kSaturationVoltage *
-        std::tanh(fold * x / kSaturationVoltage);
+    const double fold = 1.0 + c.driveFold * c.driveState;
+    const double wet = c.rail * std::tanh(fold * x / c.rail);
     return (1.0 - dist_) * x + dist_ * wet;
   }
 

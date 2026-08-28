@@ -80,9 +80,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <utility>
 
 #include <lunar24/core/control_event.h>
+#include <lunar24/core/device_state.h>
 #include <lunar24/core/distortion.h>
 #include <lunar24/core/drone_bank.h>
 #include <lunar24/core/drone_noise.h>
@@ -95,6 +97,7 @@
 #include <lunar24/core/preamp.h>
 #include <lunar24/core/sample_hold.h>
 #include <lunar24/core/schmitt_osc.h>
+#include <lunar24/core/unit_identity_profile.h>
 #include <lunar24/core/vco.h>
 #include <lunar24/core/voice_mixer.h>
 #include <lunar24/registry_ids.hpp>
@@ -240,6 +243,68 @@ class SynthRuntime {
   // env_follower cycle) and which is the env_follower's env_out (the break source).
   void setPreampExtIn(JackId j) { preampExtIn_ = j; }
   void setEnvFolOut(JackId j) { envFolOut_ = j; }
+
+  // MANUAL (panel-control) setters for the WET chain — the actual knobs a host applies
+  // from the DeviceState parameters. These are the USER's knob positions and are kept
+  // independent from the identity profile: the profile (configureVcfIdentity) carries
+  // the per-machine L/R micro-difference, while these set the shared user controls. A
+  // host can (and does) set them before/after config without disturbing the identity.
+  void setVcfFreq(int ch, double freq) { vcf_.setFreq(ch, freq); }
+  void setVcfRes(int ch, double res)   { vcf_.setRes(ch, res); }
+  void setVcfMode(int ch, bool bp)     { vcf_.setMode(ch, bp); }
+  void setDistortion(double dist, double gain) {
+    distortion_.setDist(dist);
+    distortion_.setGain(gain);
+  }
+
+  // ---------------------------------------------------------------------------
+  // GH#6: atomic VCF identity / calibration config entry.
+  // ---------------------------------------------------------------------------
+  // Consumes the existing DeviceStateV1 identity+calibration triple directly:
+  // identityModelVersion + identitySeed.seed + calibration. In ONE call it
+  // derives the per-L/R identity profile (unit_identity_profile.h) and configures
+  // the WHOLE VCF→distortion→gain staging path — VCF input-stage drive, Distortion
+  // drive/rail micro-diff from the SAME profile, and the near-unity path-gain
+  // staging micro-diff. The calibration trim is applied ONCE, at the clear
+  // VCF→distortion staging point, so it genuinely changes the level the post-filter
+  // distortion folds (design/07 §7: the whole level-dependent path is calibrated;
+  // L/R calibration/nonlinear state are independent).
+  //
+  // FAIL-CLOSED (fixed policy: "keep old complete profile"): if the version is
+  // unsupported or either calibration trim is not finite/positive, this returns
+  // false and makes NO change — the previously-applied complete profile stays fully
+  // intact (no half-profile, no residue, no partial update). The caller must treat
+  // a false return as "the request is rejected"; nothing is applied.
+  bool configureVcfIdentity(std::uint32_t identityModelVersion, std::uint64_t seed,
+                            const CalibrationState& calibration) {
+    if (!isSupportedIdentityVersion(identityModelVersion)) return false;
+    const float lT = calibration.vcfLeftTrim;
+    const float rT = calibration.vcfRightTrim;
+    if (!(std::isfinite(lT) && lT > 0.0f)) return false;
+    if (!(std::isfinite(rT) && rT > 0.0f)) return false;
+
+    // Derive the complete profile (v1 supported path). Atomic: only after the
+    // validation above AND a successful derivation do we mutate any state below.
+    const VcfIdentityProfile profile = deriveVcfIdentityProfile(seed, identityModelVersion);
+
+    // VCF input-stage drive (independent per L/R).
+    vcf_.setInputDrive(PolivoksFilter::kChannelLeft, profile.left.vcfDrive);
+    vcf_.setInputDrive(PolivoksFilter::kChannelRight, profile.right.vcfDrive);
+    // Distortion drive/rail micro-diff from the SAME profile.
+    distortion_.setChannelDrive(0, Distortion::kDriveFold * (1.0 + profile.left.distDrive));
+    distortion_.setChannelRail(0, Distortion::kSaturationVoltage *
+                                      (1.0 + kDistRailStiffness * profile.left.distDrive));
+    distortion_.setChannelDrive(1, Distortion::kDriveFold * (1.0 + profile.right.distDrive));
+    distortion_.setChannelRail(1, Distortion::kSaturationVoltage *
+                                      (1.0 + kDistRailStiffness * profile.right.distDrive));
+    // Path staging micro-diff (near-unity) × calibration trim, applied once at the
+    // VCF→distortion staging point. Independent per L/R.
+    vcfPathStageL_ = static_cast<double>(lT) * profile.left.pathGain;
+    vcfPathStageR_ = static_cast<double>(rT) * profile.right.pathGain;
+
+    identityConfigured_ = true;
+    return true;
+  }
 
   // FIXED-CHAIN ROLE BINDING (registry semantic). Maps a compiled module id to the
   // fixed-chain role it plays. Unbound modules are skipped by the chain render.
@@ -411,6 +476,21 @@ class SynthRuntime {
   }
   // General read of a control generator's resolved CV output (the whole CV source bank).
   double controlVoltageAt(JackId jack) const { return cvAt_(jack); }
+
+  // ---- GH#6 read-only inspectors (executed value, never a shadow mirror) ----
+  // Read back the profile the runtime is ACTUALLY executing, straight from the live
+  // DSP (PolivoksFilter::inputDrive, Distortion::channelDrive/Rail, and the staging
+  // gain step_(kDistortion) multiplies). An inspector that reports a value the DSP
+  // does not run is a test-shadow and is caught by the config-oracle (only-change-
+  // inspector is red).
+  bool vcfIdentityConfigured() const { return identityConfigured_; }
+  double vcfInputDrive(int ch) const { return vcf_.inputDrive(ch); }
+  double distortionDrive(int ch) const { return distortion_.channelDrive(ch); }
+  double distortionRail(int ch) const { return distortion_.channelRail(ch); }
+  // The near-unity staging gain the distortion sees its input scaled by: the
+  // calibration trim × the profile path-gain micro-diff, applied at the VCF→dist.
+  // point. L/R independent (calibration-state independence, design/07 §7).
+  double vcfPathStagingGain(int ch) const { return ch == 0 ? vcfPathStageL_ : vcfPathStageR_; }
 
   // Patch-graph mutation (criterion ②). Each mutation marks the plan stale; the
   // NEXT Process* rebuilds it.
@@ -826,8 +906,11 @@ class SynthRuntime {
         vcf_.process(mixL_, mixR_, vcfL_, vcfR_);
         break;
       case FixedChainRole::kDistortion:
-        wetL_ = distortion_.tickL(vcfL_);
-        wetR_ = distortion_.tickR(vcfR_);
+        // GH#6: the calibration trim × identity path-gain micro-diff is applied ONCE
+        // here — the clear VCF→distortion staging point — BEFORE the post-filter fold.
+        // It genuinely changes the level the Distortion folds (level-dependent path).
+        wetL_ = distortion_.tickL(vcfL_ * vcfPathStageL_);
+        wetR_ = distortion_.tickR(vcfR_ * vcfPathStageR_);
         break;
       case FixedChainRole::kNone:
         break;
@@ -1006,6 +1089,12 @@ class SynthRuntime {
   double mixL_ = 0.0, mixR_ = 0.0;
   double vcfL_ = 0.0, vcfR_ = 0.0;
   double preampOut_ = 0.0;
+
+  // GH#6 VCF→distortion staging gains (calibration trim × identity path-gain micro).
+  // Default 1.0 (no staging adjustment) so the runtime is bit-identical to the
+  // pre-GH#6 hardware path until configureVcfIdentity is called. Independent per L/R.
+  double vcfPathStageL_ = 1.0, vcfPathStageR_ = 1.0;
+  bool identityConfigured_ = false;
   double envOut_ = 0.0;
   double extSource_ = 0.0;
   double sh3Cv_ = 0.0;  // NEW drone 3 Sample & Hold CV out (not in the audio channel).

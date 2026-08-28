@@ -88,6 +88,16 @@ class PolivoksFilter {
   void setLink(bool on) { link_ = on; }
   bool link() const { return link_; }
 
+  // GH#6: per-channel VCF input-stage saturation drive (the input-level driven
+  // nonlinearity of design/07 §7). 0 = exact passthrough; >0 folds a large input
+  // toward a LOWER normalised gain while the small-signal slope stays 1, so the
+  // channel is linear near zero and level-dependent at high input. L and R drives
+  // are fully independent (a profile supplies the per-side value).
+  void setInputDrive(int ch, double drive) {
+    if (idx_(ch)) channel_[ch].inputDrive = drive < 0.0 ? 0.0 : drive;
+  }
+  double inputDrive(int ch) const { return idx_(ch) ? channel_[ch].inputDrive : 0.0; }
+
   // Resolved CV voltages at the two jacks (the graph has already applied the
   // route.vcf_cv_l_to_cv_r normalling for the unplugged case).
   void setCvL(double volts) { cvL_ = volts; }
@@ -114,6 +124,10 @@ class PolivoksFilter {
   // PROVISIONAL stability cap: the Chamberlin SVF is capped at sr/8 (kept well away
   // from Nyquist so the resonance floor stays stable). Not a manual spec.
   static constexpr double kCutoffCapRatio = 1.0 / 8.0;
+  // PROVISIONAL input-stage drive floor: with a drive > 0 the fold saturates toward
+  // +-1/drive; a small (< ~0.15) drive is numerically near-linear across the whole
+  // nominal range, so the GH#6 profile chooses drives in [0.6, 1.0] to make the
+  // level dependence measurable. 0 = passthrough (no nonlinearity). No manual value.
 
  private:
   struct Channel {
@@ -121,6 +135,7 @@ class PolivoksFilter {
     double mode = 0.0;   // 0.0=bp, 1.0=lp (positions[0/1]).
     double low = 0.0, band = 0.0;
     double sr = 0.0;
+    double inputDrive = 0.0;  // GH#6 per-channel input-stage drive (L/R independent).
   };
 
   static bool idx_(int ch) { return ch == 0 || ch == 1; }
@@ -146,8 +161,18 @@ class PolivoksFilter {
     return fc;
   }
 
+  // GH#6 input-stage nonlinearity: odd, monotone, bounded (|y| <= 1/drive), and with
+  // a unit small-signal slope. A large input folds toward a LOWER normalised gain,
+  // so low/high amplitude sweep differ (the input-level dependence) while small
+  // signals stay ~linear. drive==0 is an exact passthrough (no fold).
+  double inputStage_(const Channel& c, double x) const {
+    if (c.inputDrive <= 0.0) return x;
+    return std::tanh(c.inputDrive * x) / c.inputDrive;
+  }
+
   double tick_(Channel& c, double x) {
     if (c.sr != sr_) { c.sr = sr_; }
+    x = inputStage_(c, x);  // GH#6: level-dependent, per-channel input nonlinearity.
     const double fc = effCutoffHz_(c, cvEffFor_(c));
     const double f = 2.0 * std::sin(3.14159265358979323846 * fc / sr_);
     // Chamberlin state-variable filter: lowpass has unity DC gain independent of

@@ -878,6 +878,258 @@ void registry_drone_envout_partition() {
         "classic drone channel is block-partition invariant (64/128/256)");
 }
 
+// ----------------------------------------------------------------------------
+// GH#6 — VCF identity / calibration config entry on the product runtime.
+// Design/07 §7: the whole VCF→distortion→gain level-dependent path is calibrated by a
+// versioned (seed, version, calibration) profile; L/R calibration/nonlinear state are
+// independent. The oracle below asserts the EXECUTED state (via the no-alloc
+// inspectors), the WET-path distinguishability, the trim->distortion level coupling,
+// L/R isolation, fail-closed admission, and bit-identical reproducibility — all on the
+// real SynthRuntime (makeRuntime), never a test shadow.
+// ----------------------------------------------------------------------------
+
+bool vecBitIdentical(const std::vector<double>& a, const std::vector<double>& b) {
+  if (a.size() != b.size()) return false;
+  for (std::size_t i = 0; i < a.size(); ++i)
+    if (a[i] != b[i]) return false;
+  return true;
+}
+double vecPeakDiff(const std::vector<double>& a, const std::vector<double>& b) {
+  std::size_t n = a.size() < b.size() ? a.size() : b.size();
+  double d = 0.0;
+  for (std::size_t i = 0; i < n; ++i) {
+    const double v = std::fabs(a[i] - b[i]);
+    if (v > d) d = v;
+  }
+  return d;
+}
+
+// Render the WET path of a fresh, product-wired runtime configured with the identity
+// triple. The runtime drives itself from the bound VCOs (silence ext), so the chain
+// (mixer -> vcf -> dist) produces a real WET signal; the identity config mutates the
+// executed VCF input drive / distortion drive-rail / staging gain inside that path.
+struct IdentityWet {
+  std::vector<double> wetL, wetR;
+};
+IdentityWet renderIdentityWet(std::uint64_t seed, const core::CalibrationState& calib,
+                              double dist = 0.0, double gain = 0.0, bool configured = true) {
+  constexpr std::size_t kN = 1024;
+  core::SynthRuntime rt = makeRuntime();
+  rt.rebuild();
+  if (configured) rt.configureVcfIdentity(1u, seed, calib);
+  rt.setDistortion(dist, gain);
+  IdentityWet w;
+  w.wetL.resize(kN);
+  w.wetR.resize(kN);
+  core::RuntimeOutput o{};
+  for (std::size_t i = 0; i < kN; ++i) {
+    o = rt.processFrame(0.0, /*driveGraph=*/true);
+    w.wetL[i] = o.wetL;
+    w.wetR[i] = o.wetR;
+  }
+  return w;
+}
+
+// Requirement 4 oracle — the config entry is real and atomic, the executed profile is
+// observable, the WET path is distinguishable pre/post config, and with dist/gain OPEN
+// a trim change genuinely moves the level the distortion folds.
+void gh6_config_entry() {
+  core::CalibrationState calib{};
+  calib.vcfLeftTrim = 1.0f;
+  calib.vcfRightTrim = 1.0f;
+  core::SynthRuntime rt = makeRuntime();
+  rt.rebuild();
+  check(rt.configureVcfIdentity(1u, kSeed, calib),
+        "config entry accepts v1 identityModelVersion + finite positive trims (DeviceStateV1 triple)");
+  check(rt.vcfIdentityConfigured(), "vcfIdentityConfigured() is true after a valid config");
+
+  // Inspectors report the EXECUTED state (re-derived profile, not a test shadow).
+  const auto prof = core::deriveVcfIdentityProfile(kSeed, 1u);
+  check(rt.vcfInputDrive(0) == prof.left.vcfDrive, "executed VCF L input drive == derived L vcfDrive");
+  check(rt.vcfInputDrive(1) == prof.right.vcfDrive, "executed VCF R input drive == derived R vcfDrive");
+  check(rt.distortionDrive(0) == core::Distortion::kDriveFold * (1.0 + prof.left.distDrive),
+        "executed Distortion L drive == kDriveFold*(1 + L distDrive)");
+  check(rt.distortionRail(0) == core::Distortion::kSaturationVoltage *
+                                    (1.0 + core::kDistRailStiffness * prof.left.distDrive),
+        "executed Distortion L rail == kSaturationVoltage*(1 + k*L distDrive)");
+  check(rt.distortionDrive(1) == core::Distortion::kDriveFold * (1.0 + prof.right.distDrive),
+        "executed Distortion R drive == kDriveFold*(1 + R distDrive)");
+  check(rt.distortionRail(1) == core::Distortion::kSaturationVoltage *
+                                    (1.0 + core::kDistRailStiffness * prof.right.distDrive),
+        "executed Distortion R rail == kSaturationVoltage*(1 + k*R distDrive)");
+  check(rt.vcfPathStagingGain(0) == prof.left.pathGain, "executed staging gain L == derived L pathGain");
+  check(rt.vcfPathStagingGain(1) == prof.right.pathGain, "executed staging gain R == derived R pathGain");
+
+  // WET path distinguishable: configured vs unconfigured fresh runtimes differ (the
+  // staging gain + VCF fold are genuinely exercised, not a no-op).
+  const auto wetC = renderIdentityWet(kSeed, calib);
+  const auto wetU = renderIdentityWet(kSeed, calib, 0.0, 0.0, /*configured=*/false);
+  check(vecPeakDiff(wetC.wetL, wetU.wetL) > 1e-4,
+        "config ON vs OFF: WET path is distinguishable (staging + VCF fold applied)");
+
+  // dist/gain OPEN + trim change: the level the distortion actually folds really moves.
+  core::CalibrationState trimA{};
+  trimA.vcfLeftTrim = 1.0f;
+  trimA.vcfRightTrim = 1.0f;
+  core::CalibrationState trimB{};
+  trimB.vcfLeftTrim = 0.4f;
+  trimB.vcfRightTrim = 1.0f;
+  const auto a = renderIdentityWet(kSeed, trimA, /*dist=*/1.0, /*gain=*/1.0);
+  const auto b = renderIdentityWet(kSeed, trimB, /*dist=*/1.0, /*gain=*/1.0);
+  check(vecPeakDiff(a.wetL, b.wetL) > 1e-4,
+        "with dist/gain open, changing the L trim changes the distortion-seen level (WET differs)");
+}
+
+// Requirement 4 fail-closed — a bad (version / NaN / Inf / <=0 trim) config is rejected
+// with NO change under the fixed "keep old complete profile" policy.
+void gh6_fail_closed() {
+  core::CalibrationState ok{};
+  ok.vcfLeftTrim = 1.0f;
+  ok.vcfRightTrim = 1.0f;
+
+  // Apply a valid config first so the old complete profile is observable pre-reject.
+  core::SynthRuntime rt = makeRuntime();
+  rt.rebuild();
+  check(rt.configureVcfIdentity(1u, kSeed, ok), "baseline valid config applied");
+  const double dL0 = rt.distortionDrive(0), rL0 = rt.distortionRail(0), stL0 = rt.vcfPathStagingGain(0);
+  const double dR0 = rt.distortionDrive(1), rR0 = rt.distortionRail(1), stR0 = rt.vcfPathStagingGain(1);
+  const double vL0 = rt.vcfInputDrive(0), vR0 = rt.vcfInputDrive(1);
+
+  core::CalibrationState badTrim{};
+  badTrim.vcfLeftTrim = 1.0f;
+  badTrim.vcfRightTrim = 1.0f;
+  check(!rt.configureVcfIdentity(2u, kSeed, badTrim), "unknown version (v2) is rejected");
+  core::CalibrationState nan{};
+  nan.vcfLeftTrim = std::numeric_limits<float>::quiet_NaN();
+  nan.vcfRightTrim = 1.0f;
+  check(!rt.configureVcfIdentity(1u, kSeed, nan), "NaN left trim is rejected");
+  core::CalibrationState infc{};
+  infc.vcfLeftTrim = std::numeric_limits<float>::infinity();
+  infc.vcfRightTrim = 1.0f;
+  check(!rt.configureVcfIdentity(1u, kSeed, infc), "Inf left trim is rejected");
+  core::CalibrationState zeroc{};
+  zeroc.vcfLeftTrim = 0.0f;
+  zeroc.vcfRightTrim = 1.0f;
+  check(!rt.configureVcfIdentity(1u, kSeed, zeroc), "zero left trim is rejected");
+  core::CalibrationState negc{};
+  negc.vcfLeftTrim = -1.0f;
+  negc.vcfRightTrim = 1.0f;
+  check(!rt.configureVcfIdentity(1u, kSeed, negc), "negative left trim is rejected");
+
+  // The old complete profile is fully intact after EVERY rejection (no half-profile).
+  check(rt.distortionDrive(0) == dL0 && rt.distortionRail(0) == rL0 &&
+            rt.vcfPathStagingGain(0) == stL0,
+        "rejections leave the L profile fully intact (no partial update)");
+  check(rt.distortionDrive(1) == dR0 && rt.distortionRail(1) == rR0 &&
+            rt.vcfPathStagingGain(1) == stR0,
+        "rejections leave the R profile fully intact (no partial update)");
+  check(rt.vcfInputDrive(0) == vL0 && rt.vcfInputDrive(1) == vR0,
+        "rejections leave the VCF input drives intact");
+  check(rt.vcfIdentityConfigured(), "failure path keeps identity configured (old state preserved)");
+
+  // Behavioral no-residue: two fresh runtimes, one with a valid config, one that fires
+  // EVERY rejection after the valid config. The rejections must be no-ops -> WET is
+  // bit-identical (a residue would move the rendered path).
+  const auto renderRT = [&](bool fireRejects) {
+    constexpr std::size_t kN = 1024;
+    core::SynthRuntime r = makeRuntime();
+    r.rebuild();
+    r.configureVcfIdentity(1u, kSeed, ok);
+    if (fireRejects) {
+      r.configureVcfIdentity(2u, kSeed, badTrim);
+      r.configureVcfIdentity(1u, kSeed, nan);
+      r.configureVcfIdentity(1u, kSeed, infc);
+      r.configureVcfIdentity(1u, kSeed, zeroc);
+      r.configureVcfIdentity(1u, kSeed, negc);
+    }
+    std::vector<double> wl(kN), wr(kN);
+    core::RuntimeOutput o{};
+    for (std::size_t i = 0; i < kN; ++i) {
+      o = r.processFrame(0.0, /*driveGraph=*/true);
+      wl[i] = o.wetL;
+      wr[i] = o.wetR;
+    }
+    return std::make_pair(wl, wr);
+  };
+  const auto clean = renderRT(false);
+  const auto rejected = renderRT(true);
+  check(vecBitIdentical(clean.first, rejected.first),
+        "no residue: firing every rejection leaves WET L bit-identical");
+  check(vecBitIdentical(clean.second, rejected.second),
+        "no residue: firing every rejection leaves WET R bit-identical");
+}
+
+// Requirement 4 L/R isolation — changing the LEFT calibration trim moves only the L
+// path; R is bit-identical. And the L/R profile domains are genuinely distinct (a
+// "share/steal L profile to R" mutation is caught by the staging-gain inspectors).
+void gh6_lr_isolation() {
+  const auto prof = core::deriveVcfIdentityProfile(kSeed, 1u);
+  check(prof.left.pathGain != prof.right.pathGain,
+        "seed yields distinct L/R pathGain (independent, non-colliding domains)");
+  check(prof.left.vcfDrive != prof.right.vcfDrive || prof.left.distDrive != prof.right.distDrive,
+        "seed yields distinct L/R (vcfDrive / distDrive)");
+
+  core::CalibrationState calA{};
+  calA.vcfLeftTrim = 1.0f;
+  calA.vcfRightTrim = 1.0f;
+  core::CalibrationState calB{};
+  calB.vcfLeftTrim = 0.4f;
+  calB.vcfRightTrim = 1.0f;
+  const auto a = renderIdentityWet(kSeed, calA);
+  const auto b = renderIdentityWet(kSeed, calB);
+  check(vecPeakDiff(a.wetL, b.wetL) > 1e-4,
+        "changing the LEFT trim moves the L wet path");
+  check(vecBitIdentical(a.wetR, b.wetR),
+        "changing the LEFT trim leaves R wet path bit-identical (calibration isolation)");
+
+  // The executed R staging gain must come from the R (NOT the L) domain — a steal-L-to-R
+  // mutation sets vcfPathStagingGain(1) == prof.left.pathGain and reds here.
+  core::SynthRuntime rt = makeRuntime();
+  rt.rebuild();
+  rt.configureVcfIdentity(1u, kSeed, calA);
+  check(rt.vcfPathStagingGain(1) == prof.right.pathGain,
+        "R staging gain is the RIGHT domain (steal-L-to-R would red)");
+  check(rt.vcfInputDrive(1) == prof.right.vcfDrive,
+        "R VCF drive is the RIGHT domain (steal-L-to-R would red)");
+}
+
+// Requirement 4 reproducibility + seed participation — same seed/version/calib over two
+// fresh instances AND over block partition is bit-identical; a different seed gives a
+// fixed WET difference (the version/seed really participates, not just a gate).
+void gh6_bit_identical() {
+  core::CalibrationState calib{};
+  calib.vcfLeftTrim = 0.9f;
+  calib.vcfRightTrim = 1.1f;
+  const auto a = renderIdentityWet(kSeed, calib);
+  const auto b = renderIdentityWet(kSeed, calib);
+  check(vecBitIdentical(a.wetL, b.wetL) && vecBitIdentical(a.wetR, b.wetR),
+        "same seed/version/calib -> two fresh instances produce bit-identical WET");
+
+  // Block-partition invariance: a 256-frame processBlock render == 256 per-frame renders.
+  constexpr std::size_t kTot = 256;
+  static const double kSilence[kTot] = {};
+  core::RuntimeOutput whole[kTot], part[kTot];
+  {
+    core::SynthRuntime rt = makeRuntime();
+    rt.rebuild();
+    rt.configureVcfIdentity(1u, kSeed, calib);
+    rt.processBlock(kSilence, kTot, whole, /*driveGraph=*/true);
+  }
+  {
+    core::SynthRuntime rt = makeRuntime();
+    rt.rebuild();
+    rt.configureVcfIdentity(1u, kSeed, calib);
+    for (std::size_t i = 0; i < kTot; ++i) part[i] = rt.processFrame(0.0, true);
+  }
+  check(sameSeq(whole, part, kTot),
+        "identity render is block-partition invariant (processBlock == per-frame)");
+
+  // Different seed -> a fixed WET difference (the seed genuinely participates).
+  const auto c = renderIdentityWet(kSeed + 1, calib);
+  check(vecPeakDiff(a.wetL, c.wetL) > 1e-4 || vecPeakDiff(a.wetR, c.wetR) > 1e-4,
+        "different seed -> fixed WET difference (seed participates in the profile)");
+}
+
 }  // namespace
 
 int main() {
@@ -1681,6 +1933,18 @@ int main() {
 
   std::printf("(17) GH#5 classic drone JackId{0} sentinel removed (legal id 0 cohort)\n");
   registry_drone_envout_id0_sentinel();
+
+  std::printf("(18) GH#6 VCF identity / calibration config entry on the product runtime\n");
+  gh6_config_entry();
+
+  std::printf("(19) GH#6 fail-closed version / trim admission (keep old complete profile)\n");
+  gh6_fail_closed();
+
+  std::printf("(20) GH#6 L/R calibration + profile domain isolation\n");
+  gh6_lr_isolation();
+
+  std::printf("(21) GH#6 reproducibility + seed participation (bit-identical, partition-invariant)\n");
+  gh6_bit_identical();
 
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;

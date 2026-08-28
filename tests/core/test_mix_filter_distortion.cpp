@@ -42,6 +42,7 @@
 #include "drone_test_common.h"
 #include "lunar24/core/distortion.h"
 #include "lunar24/core/polivoks_vcf.h"
+#include "lunar24/core/unit_identity_profile.h"
 #include "lunar24/core/voice_mixer.h"
 #include "lunar24/core/wet_dry.h"
 #include "lunar24/registry.hpp"
@@ -454,6 +455,162 @@ void test_cross_sr_cross_buffer() {
   CHECK(db > -60.0);   // a REAL measured component (far above numerical zero).
 }
 
+// ----------------------------------------------------------------------------
+// GH#6  VCF input-stage level nonlinearity (design/07 §7)
+// ----------------------------------------------------------------------------
+// Normalised FUNDAMENTAL gain of the VCF L channel at a given input amplitude. The
+// filter's own (input-independent) frequency response cancels in the low/high RATIO,
+// leaving the GH#6 input-stage level dependence. settle + Goertzel over the tail,
+// divided by amplitude (a unit-input unity-gain filter gives 1).
+double vcf_amp_sweep_gain(double sr, double cutoff_norm, double probe_hz, double amp,
+                          double drive) {
+  PolivoksFilter f;
+  f.setSampleRate(sr);
+  f.setFreq(0, cutoff_norm);
+  f.setRes(0, 0.0);
+  f.setMode(0, false);  // lowpass.
+  f.setInputDrive(0, drive);
+  const std::size_t settle = static_cast<std::size_t>(0.5 * sr);
+  const std::size_t meas = static_cast<std::size_t>(0.5 * sr);
+  std::vector<double> buf(meas);
+  for (std::size_t i = 0; i < settle + meas; ++i) {
+    const double x =
+        amp * std::sin(drone_test::kTwoPi * probe_hz * (static_cast<double>(i) / sr));
+    double l = 0.0, r = 0.0;
+    f.process(x, 0.0, l, r);
+    if (i >= settle) buf[i - settle] = l;
+  }
+  return drone_test::goertzel_mag(buf, probe_hz, sr) / (static_cast<double>(meas) / 2.0) / amp;
+}
+
+// Requirement 4 oracle: a large VCF input is folded toward a LOWER normalised gain
+// than a small one (the input-level dependence); drive==0 is exact passthrough. A
+// linear input stage (bypass) gives ratio ~1.0 -> the high<low*0.8 check goes red.
+void test_gh6_vcf_input_stage_level_nonlinearity() {
+  const double sr = 48000.0, probe = 300.0;
+  const double cn = norm_for_hz(1000.0);
+  const double drive = 0.8;
+  const double low = vcf_amp_sweep_gain(sr, cn, probe, 0.15, drive);
+  const double high = vcf_amp_sweep_gain(sr, cn, probe, 3.0, drive);
+  std::printf("GH#6 VCF input stage: low-amp %.4f, high-amp %.4f, ratio %.4f\n",
+              low, high, high / low);
+  CHECK(high < low * 0.8);   // level dependence: big input folds below the small one.
+  CHECK(low > 0.3);          // small signal still has a real fundamental.
+  CHECK(high > 0.05);        // and the folded high signal is not dead.
+
+  // drive==0 is exact passthrough -> low/high are bit-identical (fully linear). This
+  // pins the nonlinearity on the drive, so a bypass mutation (stage returns x) trips
+  // the high<low*0.8 check AND this check would flag a stray fold at drive=0.
+  const double low0 = vcf_amp_sweep_gain(sr, cn, probe, 0.15, 0.0);
+  const double high0 = vcf_amp_sweep_gain(sr, cn, probe, 3.0, 0.0);
+  std::printf("GH#6 VCF input stage (drive=0, linear): ratio %.4f\n", high0 / low0);
+  CHECK(std::fabs(low0 - high0) < 1e-9);
+}
+
+// ----------------------------------------------------------------------------
+// GH#6  identity profile derivation (unit_identity_profile.h)
+// ----------------------------------------------------------------------------
+void test_gh6_identity_profile() {
+  // Only v1 is supported; unknown versions are rejected (fail-closed, never derived).
+  CHECK(lunar24::core::isSupportedIdentityVersion(1u));
+  CHECK(!lunar24::core::isSupportedIdentityVersion(2u));
+  CHECK(!lunar24::core::isSupportedIdentityVersion(0u));
+
+  const auto p0 = lunar24::core::deriveVcfIdentityProfile(42u, 1u);
+  const auto p1 = lunar24::core::deriveVcfIdentityProfile(42u, 1u);
+  std::printf("GH#6 profile seed=42 v1: L(vcf%.4f d%.4f g%.4f) R(vcf%.4f d%.4f g%.4f)\n",
+              p0.left.vcfDrive, p0.left.distDrive, p0.left.pathGain,
+              p0.right.vcfDrive, p0.right.distDrive, p0.right.pathGain);
+
+  // Deterministic: same seed/version gives a bit-identical profile on every call.
+  CHECK(p0.left.vcfDrive == p1.left.vcfDrive);
+  CHECK(p0.left.distDrive == p1.left.distDrive);
+  CHECK(p0.left.pathGain == p1.left.pathGain);
+  CHECK(p0.right.vcfDrive == p1.right.vcfDrive);
+  CHECK(p0.right.distDrive == p1.right.distDrive);
+  CHECK(p0.right.pathGain == p1.right.pathGain);
+
+  // L/R domains are INDEPENDENT: the two sides differ (domain-salted stream). A
+  // "share profile" mutation would not always make these equal, but the runtime
+  // test's steal-left->right oracle pins the isolation (see test_machine_runtime).
+  const bool lr_diff = p0.left.vcfDrive != p0.right.vcfDrive ||
+                       p0.left.distDrive != p0.right.distDrive ||
+                       p0.left.pathGain != p0.right.pathGain;
+  CHECK(lr_diff);
+
+  // PROVISIONAL ranges, centralised here (see unit_identity_profile.h header).
+  CHECK(p0.left.vcfDrive >= 0.6 && p0.left.vcfDrive < 1.0);
+  CHECK(p0.right.vcfDrive >= 0.6 && p0.right.vcfDrive < 1.0);
+  CHECK(p0.left.distDrive >= 0.0 && p0.left.distDrive < 0.6);
+  CHECK(p0.left.pathGain >= 0.98 && p0.left.pathGain <= 1.02);
+  CHECK(p0.right.pathGain >= 0.98 && p0.right.pathGain <= 1.02);
+
+  // A different seed yields a different profile (at least one field differs).
+  const auto p2 = lunar24::core::deriveVcfIdentityProfile(99u, 1u);
+  const bool differs = p2.left.vcfDrive != p0.left.vcfDrive ||
+                       p2.right.vcfDrive != p0.right.vcfDrive ||
+                       p2.left.pathGain != p0.left.pathGain ||
+                       p2.right.pathGain != p0.right.pathGain;
+  std::printf("GH#6 profile seed=99 vs 42: differs %s\n", differs ? "yes" : "NO");
+  CHECK(differs);
+}
+
+// ----------------------------------------------------------------------------
+// GH#6  Distortion L/R drive/rail micro-diff (independent per side)
+// ----------------------------------------------------------------------------
+void test_gh6_distortion_lr_microdiff() {
+  const double sr = 48000.0;
+  const std::size_t n = static_cast<std::size_t>(0.1 * sr);
+  const double amp = 3.0, f = 300.0;
+
+  Distortion d(sr);
+  d.setDist(1.0);
+  d.setGain(1.0);
+  d.setChannelDrive(0, 12.0);  // strong fold on L.
+  d.setChannelRail(0, 3.0);
+  d.setChannelDrive(1, 4.0);   // weak fold on R.
+  d.setChannelRail(1, 2.0);
+
+  // Inspectors reflect the executed per-side config.
+  CHECK(d.channelDrive(0) == 12.0);
+  CHECK(d.channelRail(0) == 3.0);
+  CHECK(d.channelDrive(1) == 4.0);
+  CHECK(d.channelRail(1) == 2.0);
+
+  // Feed the SAME signal to L and R; the stronger L fold saturates harder (lower
+  // normalised gain) than the weak-fold R — the micro-difference is real.
+  std::vector<double> ol(n), or_(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    const double x = amp * std::sin(drone_test::kTwoPi * f * (static_cast<double>(i) / sr));
+    ol[i] = d.tickL(x);
+    or_[i] = d.tickR(x);
+  }
+  const double gl =
+      drone_test::goertzel_mag(ol, f, sr) / (static_cast<double>(n) / 2.0) / amp;
+  const double gr =
+      drone_test::goertzel_mag(or_, f, sr) / (static_cast<double>(n) / 2.0) / amp;
+  std::printf("GH#6 Distortion L/R microdiff: L-fit %.4f, R-fit %.4f\n", gl, gr);
+  CHECK(gl != gr);
+  CHECK(std::fabs(gl - gr) > 0.01);
+
+  // Per-side CONFIG independence: R's output depends only on R's drive/rail, NOT on
+  // L's. Two instances with identical R settings but DIFFERENT L settings render
+  // bit-identical R.
+  Distortion d2(sr);
+  d2.setDist(1.0);
+  d2.setGain(1.0);
+  d2.setChannelDrive(0, 0.0);   // L differs from d's strong-fold L.
+  d2.setChannelRail(0, 10.0);
+  d2.setChannelDrive(1, 4.0);   // R matches d's R.
+  d2.setChannelRail(1, 2.0);
+  std::vector<double> or2(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    const double x = amp * std::sin(drone_test::kTwoPi * f * (static_cast<double>(i) / sr));
+    or2[i] = d2.tickR(x);
+  }
+  CHECK(drone_test::same_render(or_, or2));  // R independent of L's config.
+}
+
 }  // namespace
 
 int main() {
@@ -464,5 +621,8 @@ int main() {
   test_lp_bp_two_state();
   test_four_logic_outputs();
   test_cross_sr_cross_buffer();
+  test_gh6_vcf_input_stage_level_nonlinearity();
+  test_gh6_identity_profile();
+  test_gh6_distortion_lr_microdiff();
   return test::finish("mix_filter_distortion");
 }
