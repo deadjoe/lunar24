@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <string>
 #include <vector>
 
 #include <lunar24/core/enums.h>

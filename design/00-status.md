@@ -89,7 +89,7 @@ Codex 报此类"偏离"时，先查是否属于**已声明边界**（§4）或 p
 | **P5 整张面板** | ▶ **进行中**：①自撰宿主+真窗消费 fit ✅（task #31）／②唯一可逆 transform ✅ **完全达成**（⑤ 于 task #36 用生成器锚重做，head `f1630a2`，ctest 43/43）／③按区域铺控件 **暂停**（task #34，等 #36） |
 | P6 dual effector | 未开始 |
 
-门禁基线：本机 ctest **38/38**（+ASan 22/22 内存错误零）；CI build-and-test **4/4 绿**；
+门禁基线：本机 ctest **38/38**（+ASan 22/22 内存错误零）——**仅本地快照，非托管判据**；**hosted CI 以 exact 推送 head 为准**。截至 2026-08-28，`feat/p0-full-registry` 远端多次 hosted build 失败（`test_machine_runtime.cpp` 缺 `<string>` 致 Linux/Windows build 断），exact head `11e3bb2` 尚无 hosted run，故**当前不判 hosted green**；
 `full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
 
 ## 2b. 已裁决的冻结-P0 变更（2026-08-26）
