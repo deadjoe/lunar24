@@ -744,6 +744,87 @@ static void recompile_not_on_audio_thread() {
   CHECK_TRUE(rt::g_heap_in_rt.load() > 0L);  // recompile in RT is DETECTED (red)
 }
 
+// ----------------------------------------------------------------------------
+// GH#7: a cycle whose break edge is reachable through BOTH a delayed and a
+// parallel direct input is ALGEBRAIC, so the break edge must be z^-1. The old
+// compiler only consulted the single DFS entrance edge (the delayed input) and
+// wrongly credited a real 3-sample path. Note: module B carries the "sum" and
+// "half" transfer semantics only for the mini interpreter; the compiler decision
+// here is purely contract-driven, so reusing module ids {1}/{2} is fine.
+// ----------------------------------------------------------------------------
+static void parallel_direct_path_gets_z_inverse() {
+  constexpr core::ModuleId mA{1}, mB{2};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{103}, mA, core::PinDirection::output),  // A_out1 -> B delayed
+      mk_jack(core::JackId{104}, mA, core::PinDirection::output),  // A_out2 -> B direct
+      mk_jack(core::JackId{105}, mA, core::PinDirection::input),   // A_in  <- B_out
+      mk_jack(core::JackId{203}, mB, core::PinDirection::input),   // B delayed
+      mk_jack(core::JackId{204}, mB, core::PinDirection::input),   // B direct
+      mk_jack(core::JackId{205}, mB, core::PinDirection::output),  // B_out
+  };
+  // A: passes both outputs through direct. B: delayed path is 3 samples, NOT
+  // direct-through; the parallel direct path IS direct-through. The B->A break
+  // edge must be z^-1 because the direct branch keeps the cycle algebraic.
+  ContractBuilder ba;
+  ba.path(core::JackId{105}, core::JackId{103}, 0.0, true);
+  ba.path(core::JackId{105}, core::JackId{104}, 0.0, true);
+  ContractBuilder bb;
+  bb.path(core::JackId{203}, core::JackId{205}, 3.0, false);
+  bb.path(core::JackId{204}, core::JackId{205}, 0.0, true);  // parallel DIRECT -> algebraic
+  const core::GraphModule mods[] = {mod(mA, &ba.c), mod(mB, &bb.c)};
+  const core::PatchEdge edges[] = {
+      {core::JackId{103}, core::JackId{203}},  // A_out1 -> B delayed
+      {core::JackId{104}, core::JackId{204}},  // A_out2 -> B direct
+      {core::JackId{205}, core::JackId{105}},  // B_out  -> A_in (closes the loop)
+  };
+
+  core::CompileResult res =
+      core::compile_graph(jacks, 6, edges, 3, mods, 2);
+  CHECK_TRUE(res.status == core::CompileStatus::ok);
+
+  const core::CompiledRegion* cyc = nullptr;
+  for (const auto& r : res.graph.regions)
+    if (r.kind == core::RegionKind::cyclic) { cyc = &r; break; }
+  CHECK_TRUE(cyc != nullptr);
+  CHECK_EQ(cyc->feedback.size(), 1u);
+  const auto& fe = cyc->feedback[0];
+  CHECK_TRUE(fe.sourceJack == core::JackId{205});
+  CHECK_TRUE(fe.sinkJack == core::JackId{105});
+  // MUST be z^-1: the reachable parallel direct input makes the minimum cycle
+  // delay zero, so design/07 §4 forbids crediting the delayed-only real path.
+  CHECK_TRUE(fe.delay == core::FeedbackDelay::z_inverse);
+  CHECK_EQ(fe.delaySamples, 1.0);
+}
+
+// ----------------------------------------------------------------------------
+// GH#7: compile_graph() must enforce module_contract_is_valid() as a real
+// admission gate. A present-but-malformed contract (a canDirectThrough path
+// carrying a >0 min delay — which the validator must reject) is rejected with a
+// fixed invalid_module_contract status and an empty graph, never silently
+// admitted just because the module sits in an acyclic region.
+// ----------------------------------------------------------------------------
+static void malformed_contract_rejected_at_compile_entry() {
+  constexpr core::ModuleId mA{1}, mB{2};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{103}, mA, core::PinDirection::output),  // A_out
+      mk_jack(core::JackId{105}, mA, core::PinDirection::input),   // A_in
+      mk_jack(core::JackId{203}, mB, core::PinDirection::input),   // B_in
+      mk_jack(core::JackId{205}, mB, core::PinDirection::output),  // B_out
+  };
+  ContractBuilder ba; ba.path(core::JackId{105}, core::JackId{103}, 0.0, true);
+  // Contradiction: cannotDirectThrough && minDelay>0 AND canDirectThrough —
+  // module_contract_is_valid rejects this path.
+  ContractBuilder bb; bb.path(core::JackId{203}, core::JackId{205}, 1.0, true);
+  const core::GraphModule mods[] = {mod(mA, &ba.c), mod(mB, &bb.c)};
+  const core::PatchEdge edges[] = {{core::JackId{103}, core::JackId{203}}};  // A -> B, acyclic
+
+  core::CompileResult res =
+      core::compile_graph(jacks, 4, edges, 1, mods, 2);
+  CHECK_TRUE(res.status == core::CompileStatus::invalid_module_contract);
+  CHECK_EQ(res.graph.moduleCount, 0u);
+  CHECK_EQ(res.graph.regions.size(), 0u);
+}
+
 int main() {
   z_inverse_is_one_sample_not_one_block();
   acyclic_not_misjudged_and_cyclic_not_missed();
@@ -756,5 +837,7 @@ int main() {
   multiple_independent_sccs();
   runtime_topology_change_redecomposes();
   recompile_not_on_audio_thread();
+  parallel_direct_path_gets_z_inverse();
+  malformed_contract_rejected_at_compile_entry();
   return ::test::finish("graph_compiler");
 }

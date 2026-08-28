@@ -144,7 +144,11 @@ struct CompiledGraph {
   std::uint32_t moduleCount = 0;                 // number of distinct modules compiled
 };
 
-enum class CompileStatus : std::uint8_t { ok, cycle_unsafe_module };
+enum class CompileStatus : std::uint8_t {
+  ok,                      // a plan was produced
+  cycle_unsafe_module,     // a cyclic SCC contains a module not allowed in one
+  invalid_module_contract, // a present module contract fails module_contract_is_valid
+};
 
 struct CompileResult {
   CompileStatus status = CompileStatus::ok;
@@ -194,6 +198,42 @@ inline void decide_feedback_delay(const ModuleExecutionContract* c, JackId inPor
   }
 }
 
+// Cycle-aware path-delay decision for one feedback break edge (GH#7). The break
+// edge closes a cycle that may re-enter the SOURCE module (v) through ANY of v's
+// in-SCC input ports, each with its own declared delay. design/07 §4: a real delay
+// may replace z^-1 only when the specific cycle's minimum reachable delay is
+// positive; ANY reachable direct branch makes that minimum zero. So we take the
+// minimum over every reachable in-SCC input->outPort path: if any is direct-through
+// or has an unproven delay, the cycle is algebraic and the edge must be given a
+// z^-1. Only when EVERY reachable path is provably real (>=1 sample, no direct) do
+// we grant real_path, with the smallest such delay. A parallel direct input must
+// therefore keep the edge z^-1 even when the single DFS entrance edge happened to
+// arrive on a delayed input.
+inline void decide_feedback_delay_cycle(const ModuleExecutionContract* c, JackId outPort,
+                                        const std::vector<JackId>& inPorts,
+                                        CompiledFeedbackEdge& fe) {
+  fe.delay = FeedbackDelay::z_inverse;
+  fe.delaySamples = 1.0;
+  if (c == nullptr || inPorts.empty()) return;
+  double minDelay = std::numeric_limits<double>::infinity();
+  for (JackId inPort : inPorts) {
+    bool found = false;
+    for (std::uint32_t i = 0; i < c->pathDelayCount; ++i) {
+      const ModulePathDelay& p = c->pathDelays[i];
+      if (p.inPort == inPort && p.outPort == outPort) {
+        found = true;
+        if (p.canDirectThrough || p.minCausalDelaySamples < 1.0)
+          return;  // a reachable cycle path is algebraic (min 0) -> z^-1
+        if (p.minCausalDelaySamples < minDelay) minDelay = p.minCausalDelaySamples;
+        break;
+      }
+    }
+    if (!found) return;  // cannot prove this path's delay -> conservative z^-1
+  }
+  fe.delay = FeedbackDelay::real_path;
+  fe.delaySamples = minDelay;
+}
+
 }  // namespace detail
 
 // Compile a patch snapshot into an execution plan. `jacks` maps a JackId to its
@@ -241,6 +281,20 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
   for (std::uint32_t i = 0; i < M; ++i)
     for (std::uint32_t k = 0; k < moduleCount; ++k)
       if (modules[k].id == mods[i]) { cts[i] = modules[k].contract; break; }
+
+  // ---- 0b. Module-contract admission gate (GH#7) -------------------------
+  // compile_graph() must enforce module_contract_is_valid() as a REAL admission
+  // gate, not trust the caller. A present-but-malformed contract is rejected here
+  // with invalid_module_contract and an empty graph. A MISSING (null) contract is
+  // not this gate's concern — it is only rejected when it sits in a cyclic SCC, by
+  // the cycle_unsafe_module check below (design/07: a not-cycle-safe module must
+  // never be silently admitted).
+  for (std::uint32_t i = 0; i < M; ++i)
+    if (cts[i] != nullptr && !module_contract_is_valid(*cts[i])) {
+      result.status = CompileStatus::invalid_module_contract;
+      result.graph = CompiledGraph{};
+      return result;
+    }
 
   // ---- 1. Inter-module graph --------------------------------------------
   // cat: 0 = pluggable (JackId cable), 1 = fixed (module.port, no JackId; sj/tj
@@ -397,16 +451,29 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
       std::vector<char> inScc(M, 0);
       for (std::uint32_t v : members) inScc[v] = 1;
       std::vector<std::vector<std::uint32_t>> sadj(M);
-      for (std::uint32_t i = 0; i < crossed.size(); ++i)
-        if (inScc[crossed[i].src] && inScc[crossed[i].snk]) sadj[crossed[i].src].push_back(i);
-      for (std::uint32_t v : members)
+      // GH#7: for each module in the SCC, the input jacks fed by an in-SCC cross
+      // edge. A delay credit for a break edge leaving module v is only safe if
+      // EVERY such reachable input->outPort path is provably real (>=1 sample, no
+      // direct-through); a parallel direct input makes the cycle algebraic.
+      std::vector<std::vector<JackId>> sccInPorts(M);
+      for (std::uint32_t i = 0; i < crossed.size(); ++i) {
+        if (!inScc[crossed[i].src] || !inScc[crossed[i].snk]) continue;
+        sadj[crossed[i].src].push_back(i);
+        sccInPorts[crossed[i].snk].push_back(crossed[i].tj);
+      }
+      for (std::uint32_t v : members) {
         std::sort(sadj[v].begin(), sadj[v].end(), [&](std::uint32_t x, std::uint32_t y) {
           return edgeLess(crossed[x], crossed[y]);
         });
+        std::sort(sccInPorts[v].begin(), sccInPorts[v].end(),
+                  [](JackId a, JackId b) { return detail::jid(a) < detail::jid(b); });
+        sccInPorts[v].erase(std::unique(sccInPorts[v].begin(), sccInPorts[v].end()),
+                            sccInPorts[v].end());
+      }
 
       std::vector<int> stIndex(M, -1);
       std::vector<char> onSccStack(M, 0);
-      std::vector<std::uint32_t> stk, parentEdge(M, std::numeric_limits<std::uint32_t>::max());
+      std::vector<std::uint32_t> stk;
       int dIdx = 0;
       std::function<void(std::uint32_t)> fdfs = [&](std::uint32_t v) {
         stIndex[v] = dIdx++;
@@ -422,15 +489,15 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
         for (std::uint32_t ei : sadj[v]) {
           std::uint32_t w = crossed[ei].snk;
           if (stIndex[w] < 0) {
-            parentEdge[w] = ei;
             fdfs(w);
           } else if (onSccStack[w]) {
             CompiledFeedbackEdge fe;
             fe.sourceJack = crossed[ei].sj;
             fe.sinkJack = crossed[ei].tj;
-            // Cycle re-enters the SOURCE module v via the tree edge that reached it.
-            JackId inPort = crossed[parentEdge[v]].tj;
-            detail::decide_feedback_delay(cts[v], inPort, crossed[ei].sj, fe);
+            // The break edge closes a cycle that may re-enter module v through ANY
+            // of its in-SCC input ports. Decide the delay over the whole reachable
+            // cycle-path set, not just the single DFS tree edge (GH#7).
+            detail::decide_feedback_delay_cycle(cts[v], crossed[ei].sj, sccInPorts[v], fe);
             region.feedback.push_back(fe);
           }
         }
