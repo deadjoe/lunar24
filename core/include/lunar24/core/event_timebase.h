@@ -121,19 +121,23 @@ class EventTimebase {
   // cannot take the whole batch it is rejected in full. Returns true only when all
   // were admitted.
   bool enqueueBatch(const TimedControlEvent* evts, std::uint32_t count) {
+    // An empty batch is no transaction at all — reject without counting it as either
+    // admitted or rejected (never inflate the observed transaction counters).
+    if (count == 0) return false;
     std::uint32_t contNeed = 0, critNeed = 0;
     for (std::uint32_t i = 0; i < count; ++i) {
       if (evts[i].lane() == ControlLane::critical) ++critNeed;
       else ++contNeed;
     }
     if (contPending_ + contNeed > kEventTimebaseCapacity) {
+      // Whole-batch pre-admission reject: the queue was never mutated, so the #2
+      // per-event overflow/reconcile diagnostics MUST NOT change (a partial note
+      // rescued into those counters is exactly the GH#8 bug). Only batchRejected++.
       ++batchRejected_;
-      ++continuousOverflow_;  // the failing lane is visible in the existing diag
       return false;
     }
     if (critPending_ + critNeed > kEventCriticalCapacity) {
       ++batchRejected_;
-      ++criticalOverflow_;
       return false;
     }
     for (std::uint32_t i = 0; i < count; ++i) {

@@ -283,6 +283,19 @@ class PressureOutlet {
   }
   double current() const { return current_; }
   void setRandomSeed(std::uint32_t s) { rand_.seed(s); }
+  // GH#8 reset: HARD-clear every piece of envelope state (stage/current/held/captured),
+  // distinct from gate(false) which only starts an ASR release and would leave a
+  // non-zero current_ decaying with the (possibly non-zero) fall time. A reset makes the
+  // output REALLY zero on the next tick, so a same-sample re-note opens afresh (design/07
+  // §3 phase 0 reset precedes the re-note). No heap, no allocation.
+  void reset() {
+    stage_ = Stage::Idle;
+    current_ = 0.0;
+    livePressure_ = 0.0;
+    held_ = false;
+    captured_ = false;
+    sustain_ = peak_ = random_ = 0.0;
+  }
 
  private:
   enum class Stage : std::uint8_t { Idle, Attack, Sustain, Release, Decay };
@@ -372,6 +385,13 @@ class Vibrato {
     } else if (!high) {
       running_ = false;  // vibrato follows the note; gate-off stops it
     }
+  }
+  // GH#8 reset: hard-clear the LFO run/phase so a same-sample re-note opens afresh
+  // (design/07 §3 phase 0 reset). No heap, no allocation.
+  void reset() {
+    running_ = false;
+    phase_ = 0.0;
+    delayElapsed_ = 0.0;
   }
   // Returns a pitch-CV delta (volts) at this sample.
   double tick(double pressure) {
@@ -588,8 +608,12 @@ class KeyboardBehaviour {
     orderCounter_ = 0;
     multiTouch_ = false;
     livePressure_ = 0.0;
-    pressure_.gate(false);
-    vibrato_.gate(false);
+    // GH#8: the reset is a HARD clear, not a gate-off. gate(false) would leave the
+    // pressure envelope decaying (non-zero with a non-zero fall) and the vibrato phase
+    // half-turned — a reset must make the output really zero on the first tick after,
+    // so a same-sample re-note reopens afresh (design/07 §3 phase 0).
+    pressure_.reset();
+    vibrato_.reset();
     portamento_.reset();
   }
 

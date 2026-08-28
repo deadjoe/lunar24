@@ -118,6 +118,18 @@ struct ReplayHarness {
     kb.tick(&p, &c);
     return c;
   }
+  // Tick `n` samples and return the peak-to-peak of the pitch output. Nonzero while
+  // the vibrato LFO is modulating (pitch = glide + sine); ~0 once a release has gated
+  // the vibrato off AND the glide is settled (pitch = constant glide).
+  double pitchRange(std::uint32_t n) {
+    double p = 0.0, c = 0.0, mn = 1e30, mx = -1e30;
+    for (std::uint32_t i = 0; i < n; ++i) {
+      kb.tick(&p, &c);
+      if (p < mn) mn = p;
+      if (p > mx) mx = p;
+    }
+    return mx - mn;
+  }
 };
 
 core::PerformanceInput noteOn(double pitch, core::NoteId id, std::uint64_t sample) {
@@ -156,20 +168,31 @@ core::ControlEvent resetEvent() {
   r.source = 9;
   return r;
 }
+core::ControlEvent syncEvent() {
+  core::ControlEvent s{};
+  s.kind = core::ControlEventKind::sync;
+  s.value = core::SignalSample{0.0};
+  s.source = 9;
+  return s;
+}
 
 // A KeyboardBehaviourParams with a real (nonzero) portamento so the glide/fallback
 // assertions are time-based and robust; microtonal scale (pitch CV passes through);
 // Pressure output with instant rise/fall (so pressure is exact and gate-sensitive).
-core::KeyboardBehaviourParams kb_params(double portamentoSpeed = 0.04) {
+core::KeyboardBehaviourParams kb_params(double portamentoSpeed = 0.04,
+                                        std::uint8_t pressureOutput = 0,
+                                        double rise = 0.0, double fall = 0.0,
+                                        double vibratoSpeed = 0.0,
+                                        double vibratoDepth = 0.0) {
   core::KeyboardBehaviourParams p{};
   p.scaleEditor = core::kMicrotonalScaleMask;  // no quantise: pitch CV passes through
-  p.pressureOutput = 0;                        // Pressure
-  p.pressureRise = 0.0;                        // instant rise
-  p.pressureFall = 0.0;                        // instant fall (last release -> 0)
+  p.pressureOutput = pressureOutput;           // 0 Pressure, 1 ASR
+  p.pressureRise = rise;                       // instant rise by default
+  p.pressureFall = fall;                       // instant fall by default
   p.portamentoSpeed = portamentoSpeed;         // 0.04 -> tau = 0.1 s
   p.portamentoLegato = 0;                      // always glide
-  p.vibratoSpeed = 0.0;
-  p.vibratoDepth = 0.0;  // off: pitch_cv == glide only
+  p.vibratoSpeed = vibratoSpeed;
+  p.vibratoDepth = vibratoDepth;
   return p;
 }
 
@@ -265,18 +288,23 @@ static void overlap_release_current_falls_back() {
 // --------------------------------------------------------------------- reset path --
 
 static void reset_clears_and_renotes() {
-  ReplayHarness h(kb_params(), arp_params(0));
+  // ASR pressure output (mode 1) with a NON-ZERO fall: the reset must be a HARD clear,
+  // not a gate(false) that would leave the envelope decaying (non-zero after one tick).
+  ReplayHarness h(kb_params(0.04, 1, 0.0, 0.3), arp_params(0));
   h.schedule(noteOn(1.0, 1, 0));
   h.render(64);
   CHECK_TRUE(h.kb.gate());
   CHECK_TRUE(near(h.glideSettle(96000), 1.0, 5e-4));
+  CHECK_TRUE(h.pressureNow() > 0.99);  // ASR attack -> sustain ≈ live pressure (1.0)
 
-  // A raw reset edge through the timebase full-clears gate/pressure/portamento.
+  // A raw reset edge through the timebase full-clears gate/pressure/portamento. The
+  // pressure has a non-zero fall, so gate(false)-only would still be ~1.0 after one tick;
+  // the hard reset makes it REALLY 0 on the first tick.
   h.sendRaw(resetEvent(), 64);
   h.render(64);
   CHECK_TRUE(!h.kb.gate());
   CHECK_TRUE(h.glideSettle(96000) < 1e-3);  // portamento reset to 0
-  CHECK_TRUE(h.pressureNow() < 1e-3);      // pressure closed
+  CHECK_TRUE(h.pressureNow() < 1e-3);      // HARD pressure clear, first tick (not decay)
 
   // A later same-source note re-opens afresh at its own pitch.
   h.schedule(noteOn(0.25, 2, 128));
@@ -396,6 +424,66 @@ static void translate_and_batch_all_or_none() {
     CHECK_TRUE(!tb.enqueueBatch(nb.data(), 3));  // no critical room
     CHECK_EQ(tb.pending(), before);
   }
+  // A rejected whole-batch transaction must NOT disturb the #2 pressure diagnostics:
+  // it was rejected at admission (queue never mutated), so continuousOverflow /
+  // criticalOverflow / reconcile / pending are all UNCHANGED — only batchRejected+1.
+  // (The old code bumped the failing lane's overflow without a reconcile, breaking the
+  // #2 "overflow implies reconcile" invariant — GH#8 must not re-introduce that.)
+  {
+    core::EventTimebase tb;
+    for (std::uint32_t i = 0; i < 64; ++i) {  // 64 distinct params fill continuous exactly
+      core::TimedControlEvent e{};
+      e.event.kind = core::ControlEventKind::parameter;
+      e.event.parameter = static_cast<core::ParameterId>(i + 1);
+      e.sample = i;
+      tb.enqueue(e);
+    }
+    CHECK_EQ(tb.continuousOverflow(), 0u);  // 64 fit exactly (no per-event overflow)
+    const std::uint32_t cont = tb.continuousOverflow(), crit = tb.criticalOverflow();
+    const bool rec = tb.reconcilePending();
+    const std::uint32_t pend = tb.pending();
+    std::array<core::TimedControlEvent, 3> nb{};
+    nb[0].event.kind = core::ControlEventKind::pitch;   nb[0].sample = 100;
+    nb[1].event.kind = core::ControlEventKind::pressure; nb[1].sample = 100;
+    nb[2].event.kind = core::ControlEventKind::gate_on;  nb[2].sample = 100;
+    CHECK_TRUE(!tb.enqueueBatch(nb.data(), 3));  // continuous full -> reject
+    CHECK_EQ(tb.batchRejected(), 1u);
+    CHECK_EQ(tb.continuousOverflow(), cont);   // UNCHANGED (no ++continuousOverflow_)
+    CHECK_EQ(tb.criticalOverflow(), crit);     // UNCHANGED
+    CHECK_EQ(tb.reconcilePending(), rec);      // UNCHANGED (no spurious reconcile)
+    CHECK_EQ(tb.pending(), pend);              // nothing was enqueued
+  }
+  {
+    core::EventTimebase tb;
+    for (std::uint32_t i = 0; i < 64; ++i) {  // 64 gate_ons fill critical exactly
+      core::TimedControlEvent e{};
+      e.event.kind = core::ControlEventKind::gate_on;
+      e.event.noteId = static_cast<core::NoteId>(i + 1);
+      e.sample = i;
+      tb.enqueue(e);
+    }
+    CHECK_EQ(tb.criticalOverflow(), 0u);      // 64 fit exactly (no per-event overflow)
+    CHECK_TRUE(!tb.reconcilePending());
+    const std::uint32_t crit = tb.criticalOverflow();
+    const std::uint32_t pend = tb.pending();
+    std::array<core::TimedControlEvent, 3> nb{};
+    nb[0].event.kind = core::ControlEventKind::pitch;   nb[0].sample = 100;
+    nb[1].event.kind = core::ControlEventKind::pressure; nb[1].sample = 100;
+    nb[2].event.kind = core::ControlEventKind::gate_on;  nb[2].sample = 100;
+    CHECK_TRUE(!tb.enqueueBatch(nb.data(), 3));  // critical full -> reject
+    CHECK_EQ(tb.batchRejected(), 1u);
+    CHECK_EQ(tb.criticalOverflow(), crit);     // UNCHANGED
+    CHECK_TRUE(!tb.reconcilePending());        // UNCHANGED (false, no spurious reconcile)
+    CHECK_EQ(tb.pending(), pend);
+  }
+  // An empty batch is no transaction: neither admitted nor rejected must be counted.
+  {
+    core::EventTimebase tb;
+    core::TimedControlEvent empty{};
+    CHECK_TRUE(!tb.enqueueBatch(&empty, 0));
+    CHECK_EQ(tb.batchAdmitted(), 0u);
+    CHECK_EQ(tb.batchRejected(), 0u);
+  }
   // An empty timebase admits the whole transaction and dispatches it in the canonical
   // dependency order (pitch, pressure, gate_on) — never a reordered partial note.
   {
@@ -466,6 +554,90 @@ static void over_capacity_rejections_observable() {
   CHECK_TRUE(h.kb.gate());  // the notes that fit still sound
 }
 
+// ------------------------------------------------- arp note-switch canonical order --
+
+static void arp_note_switch_is_canonical_pitch_then_gateoff_then_gateon() {
+  ReplayHarness h(kb_params(), arp_params(1));  // arpeggiator
+  h.schedule(noteOn(0.5, 1, 0));  // A held
+  h.schedule(noteOn(1.5, 2, 0));  // B held
+  h.render(64);
+  CHECK_TRUE(!h.kb.gate());  // arp intercepts the plates; nothing sounds directly
+
+  // First clock -> the initial constructed note (no previous gate to release).
+  h.schedule(clockAt(64));
+  h.render(64);
+  CHECK_TRUE(h.kb.gate());
+
+  // Second clock (previousGate=true): the note switch MUST be emitted as
+  // pitch -> gate_off(previous) -> gate_on(new) — the canonical dependency (design/07
+  // §3), NOT the old gate_off(previous)->pitch->gate_on. ArpSeq sits AFTER the timebase,
+  // so this order is emitted directly and is never re-sorted by the comparator.
+  h.schedule(clockAt(128));
+  h.render(64);
+  CHECK_EQ(h.logSize, 5u);  // 2 (clock 1) + 3 (clock 2) constructed events
+  CHECK_TRUE(h.log[2].kind == core::ControlEventKind::pitch && h.log[2].noteId == 2u);
+  CHECK_TRUE(h.log[3].kind == core::ControlEventKind::gate_off && h.log[3].noteId == 1u);
+  CHECK_TRUE(h.log[4].kind == core::ControlEventKind::gate_on && h.log[4].noteId == 2u);
+  // No reordering bug could leave the gate_off BEFORE the new pitch.
+  CHECK_TRUE(h.log[3].kind != core::ControlEventKind::pitch);
+  CHECK_TRUE(h.log[2].kind != core::ControlEventKind::gate_off);
+}
+
+// --------------------------------------------------------- sync is NOT a reset --
+
+static void arp_sync_releases_run_not_reset() {
+  ReplayHarness h(kb_params(), arp_params(1));  // arpeggiator
+  h.schedule(noteOn(0.5, 1, 0));
+  h.render(64);
+  h.schedule(clockAt(64));  // arp sounds synthetic id 1
+  h.render(64);
+  CHECK_TRUE(h.kb.gate());
+
+  // A sync restarts the arp/seq run: it must release the currently-sounding synthetic
+  // note (a gate-off), NOT send a canonical reset (which would hard-clear the downstream
+  // KeyboardBehaviour's pressure/vibrato/portamento — a reset's job, not a sync's).
+  h.sendRaw(syncEvent(), 128);
+  h.render(64);
+  CHECK_TRUE(!h.kb.gate());
+  CHECK_TRUE(h.log[h.logSize - 1].kind == core::ControlEventKind::gate_off);
+  CHECK_EQ(h.log[h.logSize - 1].noteId, 1u);  // the running synthetic note was released
+  for (std::uint32_t i = 0; i < h.logSize; ++i)
+    CHECK_TRUE(h.log[i].kind != core::ControlEventKind::reset);  // no reset forwarded
+}
+
+// ------------------------------------------- vibrato overlap: last release closes it --
+
+// A NON-ZERO vibrato: the pitch output must keep oscillating while any note is held,
+// through a non-last release, and stop only on the LAST release. (A gate(false)-on-every-
+// release mutation would stop the vibrato after the first release while another note is
+// still held — that is the GH#8 partial-release bug this detector exists to catch.)
+static void vibrato_overlap_last_release_stops() {
+  ReplayHarness h(kb_params(0.04, 0, 0.0, 0.0, 0.5, 0.5), arp_params(0));
+  h.schedule(noteOn(1.0, 1, 0));  // A
+  h.schedule(noteOn(1.0, 2, 0));  // B (same pitch -> no glide motion once settled)
+  h.render(64);
+  CHECK_TRUE(h.kb.gate());
+
+  // Settle the glide to 1.0 (both notes at the same pitch, so portamento is done), then
+  // confirm the vibrato is modulating the pitch. The window MUST span a whole LFO cycle
+  // (7.5 Hz -> 6400 samples) — a 200-sample window covers only ~11° of the cycle and
+  // measures a phase-dependent sliver, not the true peak-to-peak.
+  h.glideSettle(96000);
+  CHECK_TRUE(h.pitchRange(12800) > 0.05);  // vibrato running (2 notes held)
+
+  // Release the NON-current note A (B is still held): vibrato MUST continue.
+  h.schedule(noteOff(1, 64));
+  h.render(64);
+  CHECK_TRUE(h.kb.gate());
+  CHECK_TRUE(h.pitchRange(12800) > 0.05);  // still vibrating: B is not the last release
+
+  // Release B (the LAST note): vibrato STOPS and the pitch returns to the constant glide.
+  h.schedule(noteOff(2, 128));
+  h.render(64);
+  CHECK_TRUE(!h.kb.gate());
+  CHECK_TRUE(h.pitchRange(12800) < 1e-3);  // gated off: no modulation on a dead voice
+}
+
 int main() {
   note_on_carries_identity_and_first_note_latches();
   overlap_release_non_current_holds();
@@ -476,5 +648,8 @@ int main() {
   arp_release_uses_held_identity();
   seq_base_release_uses_remaining();
   over_capacity_rejections_observable();
+  arp_note_switch_is_canonical_pitch_then_gateoff_then_gateon();
+  arp_sync_releases_run_not_reset();
+  vibrato_overlap_last_release_stops();
   return ::test::finish("test_keyboard_pipeline");
 }

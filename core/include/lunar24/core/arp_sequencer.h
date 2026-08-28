@@ -309,17 +309,19 @@ class ArpSeq {
     emit_(sink, ControlEventKind::reset, 0.0, src, src.noteId);
   }
 
-  // One new constructed note for KeyboardBehaviour: release the previously-sounding
-  // constructed note (GH#8 identity), then state the new pitch and latch its gate.
-  // Canonical dependency order (design/07 §3): the pitch target arrives (phase 1)
-  // before the gate-on that latches it (phase 4) — never the old "wait for the next
-  // pitch after gate-on" protocol. Each constructed note gets a fresh synthetic id.
+  // One new constructed note for KeyboardBehaviour. ArpSeq sits AFTER the timebase,
+  // so the comparator does NOT re-sort what this emits — the dependency order must be
+  // RIGHT here. Canonical dependency (design/07 §3): the NEW pitch target arrives first
+  // (phase 1), then the release of the previously-sounding constructed note (phase 2,
+  // GH#8 identity), then the gate-on that latches the new note (phase 4). Never the old
+  // "gate-on then wait for the next pitch" protocol, and never gate_off-before-pitch.
+  // Each constructed note gets a fresh synthetic id.
   template <typename Sink>
   void emitNote(Sink& sink, double pitch_cv, bool previousGate, const ControlEvent& src) {
     NoteId id = ++arpNoteId_;
-    if (previousGate) emitGateOff_(sink, lastArpNoteId_, src);
-    emitPitch_(sink, pitch_cv, id, src);
-    emitGateOn_(sink, id, src);
+    emitPitch_(sink, pitch_cv, id, src);              // phase 1: new pitch target
+    if (previousGate) emitGateOff_(sink, lastArpNoteId_, src);  // phase 2: release old
+    emitGateOn_(sink, id, src);                        // phase 4: latch the new note
     lastArpNoteId_ = id;
     runningGate_ = true;
   }
@@ -328,6 +330,19 @@ class ArpSeq {
   void emitRelease(Sink& sink, bool previousGate, const ControlEvent& src) {
     if (previousGate) emitGateOff_(sink, lastArpNoteId_, src);
     runningGate_ = false;
+  }
+
+  // A sync restarts the arp/seq run: reset the run state AND release the currently
+  // sounding synthetic note (a gate-off, GH#8 identity), WITHOUT sending a canonical
+  // reset. design/07 §3 keeps sync and reset distinct — a plain sync must NOT clear the
+  // downstream KeyboardBehaviour's pressure/vibrato/portamento (that is a reset's job).
+  // Capture running/id BEFORE reset() clears them.
+  template <typename Sink>
+  void releaseRun_(Sink& sink, const ControlEvent& ev) {
+    const bool prev = runningGate_;
+    const NoteId pid = lastArpNoteId_;
+    reset();
+    if (prev) emitGateOff_(sink, pid, ev);
   }
 
   // -- arpeggiator ----------------------------------------------------------------
@@ -351,9 +366,13 @@ class ArpSeq {
         stepArp(sink, ev);
         break;
       case ControlEventKind::sync:
+        // A plain sync restarts the run + releases the current synthetic note (gate-off),
+        // NEVER a canonical reset (design/07 §3 keeps sync and reset distinct).
+        releaseRun_(sink, ev);
+        break;
       case ControlEventKind::reset:
-        // A sync/reset clears the engine AND delivers a canonical reset downstream so
-        // the KeyboardBehaviour truly re-arms (gate/pressure/vibrato/portamento).
+        // A reset clears the engine AND delivers a canonical reset downstream so the
+        // KeyboardBehaviour truly re-arms (gate/pressure/vibrato/portamento).
         reset();
         emitReset_(sink, ev);
         break;
@@ -417,6 +436,10 @@ class ArpSeq {
         stepSeq(sink, ev);
         break;
       case ControlEventKind::sync:
+        // A plain sync restarts the run + releases the current synthetic note (gate-off),
+        // NEVER a canonical reset (design/07 §3 keeps sync and reset distinct).
+        releaseRun_(sink, ev);
+        break;
       case ControlEventKind::reset:
         reset();
         emitReset_(sink, ev);
