@@ -298,19 +298,68 @@ static void reset_clears_and_renotes() {
   CHECK_TRUE(h.pressureNow() > 0.99);  // ASR attack -> sustain ≈ live pressure (1.0)
 
   // A raw reset edge through the timebase full-clears gate/pressure/portamento. The
-  // pressure has a non-zero fall, so gate(false)-only would still be ~1.0 after one tick;
-  // the hard reset makes it REALLY 0 on the first tick.
+  // pressure has a non-zero fall, so gate(false)-only would still be ~1.0 on the FIRST
+  // tick after; the hard reset makes it REALLY 0 on that same tick.
   h.sendRaw(resetEvent(), 64);
   h.render(64);
   CHECK_TRUE(!h.kb.gate());
-  CHECK_TRUE(h.glideSettle(96000) < 1e-3);  // portamento reset to 0
-  CHECK_TRUE(h.pressureNow() < 1e-3);      // HARD pressure clear, first tick (not decay)
+  // FIRST tick after reset, BEFORE any long settle: the hard clear must already be
+  // observable here. (glideSettle()/pitchRange() advance the envelope; sampling after
+  // them sees the 0.3s fall decayed to ~0 regardless — the vacuous gap @Codex flagged.)
+  {
+    double p = 0.0, c = 0.0;
+    h.kb.tick(&p, &c);
+    CHECK_TRUE(c < 1e-3);      // HARD pressure clear on the first tick (not a decay)
+    CHECK_TRUE(p < 1e-3);      // portamento reset to 0 on the first tick
+    CHECK_TRUE(!h.kb.gate());
+  }
+  CHECK_TRUE(h.glideSettle(96000) < 1e-3);  // portamento fully settled at 0
+  CHECK_TRUE(h.pressureNow() < 1e-3);       // and stays closed after a long settle
 
   // A later same-source note re-opens afresh at its own pitch.
   h.schedule(noteOn(0.25, 2, 128));
   h.render(64);
   CHECK_TRUE(h.kb.gate());
   CHECK_TRUE(near(h.glideSettle(96000), 0.25, 5e-4));
+}
+
+// Phase-0 reset precedes a same-sample re-note (design/07 §3): the reset edge and a new
+// note-on land on the SAME absolute sample through the real timebase. The reset must be
+// emitted FIRST (phase 0), and the new note must open FRESH — its first tick's pitch and
+// pressure are the NEW note's (from a cleared 0), not the old note's settled value.
+static void same_sample_reset_renote_fresh_reopen() {
+  // ASR with NON-zero rise AND fall: the re-note's attack is a clean rise from 0,
+  // distinguishable from a half-released old envelope.
+  ReplayHarness h(kb_params(0.04, 1, 0.5, 0.3), arp_params(0));
+  h.schedule(noteOn(1.0, 1, 0));  // old note at 1.0
+  h.render(64);
+  CHECK_TRUE(h.kb.gate());
+  CHECK_TRUE(near(h.glideSettle(96000), 1.0, 5e-4));  // old note settled (pitch & pressure up)
+
+  // Same absolute sample 64, through the real timebase: a reset AND a new note-on. The
+  // reset (phase 0) sorts BEFORE the new note's pitch/pressure/gate_on (phase 1/4).
+  h.sendRaw(resetEvent(), 64);
+  h.schedule(noteOn(0.25, 2, 64));
+  h.render(64);
+
+  // Canonical same-sample order: reset -> pitch(new) -> pressure(new) -> gate_on(new).
+  CHECK_EQ(h.logSize, 7u);
+  CHECK_TRUE(h.log[3].kind == core::ControlEventKind::reset);
+  CHECK_TRUE(h.log[4].kind == core::ControlEventKind::pitch     && h.log[4].noteId == 2u);
+  CHECK_TRUE(h.log[5].kind == core::ControlEventKind::pressure  && h.log[5].noteId == 2u);
+  CHECK_TRUE(h.log[6].kind == core::ControlEventKind::gate_on   && h.log[6].noteId == 2u);
+
+  // The new gate is open, and it opened FRESH: the first tick reaches the NEW note's
+  // pitch/pressure from a cleared 0 (small), not the old note's settled 1.0. Portamento
+  // glides up from reset-0 toward 0.25; ASR pressure attacks fresh from reset-0.
+  CHECK_TRUE(h.kb.gate());
+  {
+    double p = 0.0, c = 0.0;
+    h.kb.tick(&p, &c);
+    CHECK_TRUE(p < 0.01);  // gliding up from reset-0, not jumping from the old 1.0
+    CHECK_TRUE(c < 0.01);  // attacking fresh from reset-0, not decaying from old sustain
+  }
+  CHECK_TRUE(near(h.glideSettle(96000), 0.25, 5e-4));  // the NEW note's pitch is reached
 }
 
 // ------------------------------------------ portamento glide + buffer invariance --
@@ -643,6 +692,7 @@ int main() {
   overlap_release_non_current_holds();
   overlap_release_current_falls_back();
   reset_clears_and_renotes();
+  same_sample_reset_renote_fresh_reopen();
   portamento_monotone_and_block_invariant();
   translate_and_batch_all_or_none();
   arp_release_uses_held_identity();
