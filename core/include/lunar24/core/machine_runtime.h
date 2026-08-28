@@ -327,22 +327,63 @@ class SynthRuntime {
     return false;
   }
 
+  // Why rebuild() succeeded or refused. The bool return alone cannot distinguish
+  // "feedback plan exceeded capacity" (GH#13) from "graph rejected" — this keeps a
+  // fixed, no-log/no-alloc, inspectable reason.
+  enum class RebuildStatus : std::uint8_t {
+    ok,                          // plan published, runtime lines built
+    graph_unchanged,             // cached, not dirty -> nothing recomputed
+    edge_capacity,               // effective edges >= kMaxEdges
+    compile_cycle_unsafe,        // compile_graph -> cycle_unsafe_module
+    compile_invalid_contract,    // compile_graph -> invalid_module_contract
+    feedback_capacity_exceeded,  // full compiled feedback plan > kMaxFeedback
+  };
+
   // Off-audio-thread build: recompute the effective edges and recompile the
   // control graph (criterion ① — the product path that consumes compile_graph).
   // The fixed internal routes are passed in and merged into the SAME plan. Returns
-  // false if the graph is rejected (cycle_unsafe_module) or exceeds a fixed
-  // capacity. Must not run on the audio thread.
+  // false if the graph is rejected (cycle_unsafe_module / invalid_module_contract)
+  // or exceeds a fixed capacity. GH#13: an over-capacity COMPILED feedback plan is
+  // rejected here, BEFORE any graph_ / graphValid_ / runtime-line publishing, so it
+  // is never silently truncated to kMaxFeedback; lastRebuildStatus() gives the
+  // exact reason. Must not run on the audio thread.
   bool rebuild() {
-    if (!graphDirty_ && graphValid_) return true;
+    if (!graphDirty_ && graphValid_) { rebuildStatus_ = RebuildStatus::graph_unchanged; return true; }
     edgeCount_ = patch_.effectiveEdges(edges_, kMaxEdges);
-    if (edgeCount_ >= kMaxEdges) { graphValid_ = false; return false; }
+    if (edgeCount_ >= kMaxEdges) {
+      graphValid_ = false;
+      rebuildStatus_ = RebuildStatus::edge_capacity;
+      return false;
+    }
     CompileResult r = compile_graph(jacks_, jackCount_, edges_, edgeCount_,
                                     modules_, moduleCount_, fixedEdges_, fixedEdgeCount_);
-    if (r.status != CompileStatus::ok) { graphValid_ = false; return false; }
+    if (r.status != CompileStatus::ok) {
+      graphValid_ = false;
+      rebuildStatus_ = r.status == CompileStatus::cycle_unsafe_module
+                           ? RebuildStatus::compile_cycle_unsafe
+                           : RebuildStatus::compile_invalid_contract;
+      return false;
+    }
+    // GH#13 capacity preflight: the FULL compiled feedback plan must fit before we
+    // publish anything. Rejecting here leaves graph_/feedback_ untouched, so no
+    // partial "16/18" outcome can ever be reported as valid.
+    if (countFeedback_(r.graph) > kMaxFeedback) {
+      graphValid_ = false;
+      rebuildStatus_ = RebuildStatus::feedback_capacity_exceeded;
+      return false;
+    }
     graph_ = r.graph;
     graphValid_ = true;
     graphDirty_ = false;
-    rebuildChainExec_();
+    rebuildStatus_ = RebuildStatus::ok;
+    if (!rebuildChainExec_()) {
+      // Provably unreachable given the preflight above, but fail closed: never leave
+      // a half-built runtime line set behind a valid flag.
+      graphValid_ = false;
+      feedbackCount_ = 0;
+      rebuildStatus_ = RebuildStatus::feedback_capacity_exceeded;
+      return false;
+    }
     return true;
   }
 
@@ -384,6 +425,7 @@ class SynthRuntime {
 
   // Inspectors (read-only product/diagnostic surface).
   bool graphValid() const { return graphValid_; }
+  RebuildStatus lastRebuildStatus() const { return rebuildStatus_; }
   std::uint32_t graphModuleCount() const { return graph_.moduleCount; }
   const CompiledGraph& graph() const { return graph_; }
   std::uint32_t edgeCount() const { return edgeCount_; }
@@ -529,9 +571,24 @@ class SynthRuntime {
     return n > kMaxFeedbackDelay ? kMaxFeedbackDelay : n;
   }
 
+  // GH#13: total feedback edges across the whole compiled plan (all cyclic
+  // regions). Used as a capacity preflight in rebuild() so an over-capacity plan is
+  // rejected BEFORE publishing — never silently truncated to kMaxFeedback.
+  static std::uint32_t countFeedback_(const CompiledGraph& g) {
+    std::uint32_t n = 0;
+    for (const CompiledRegion& region : g.regions)
+      if (region.kind == RegionKind::cyclic) n +=
+          static_cast<std::uint32_t>(region.feedback.size());
+    return n;
+  }
+
   // Derive the RT-safe fixed-chain order + delay lines from the compiled plan.
   // Called only from rebuild() (off the audio thread); the audio path only reads.
-  void rebuildChainExec_() {
+  // Returns false (fail-closed) if the plan would exceed the fixed delay-line
+  // storage — the plan is then NOT partially published, matching the capacity
+  // preflight in rebuild(). The preflight guarantees this is never reached, but a
+  // provably-no-truncation contract is a hard rule here, not a comment.
+  bool rebuildChainExec_() {
     chainExecCount_ = 0;
     feedbackCount_ = 0;
     for (const CompiledRegion& region : graph_.regions) {
@@ -544,7 +601,9 @@ class SynthRuntime {
     for (const CompiledRegion& region : graph_.regions) {
       if (region.kind != RegionKind::cyclic) continue;
       for (const CompiledFeedbackEdge& fe : region.feedback) {
-        if (feedbackCount_ >= kMaxFeedback) continue;  // never truncate silently
+        // GH#13: NEVER truncate. If the compiled plan does not fit, return false so
+        // the caller can mark the rebuild failed instead of publishing a 16/18 lie.
+        if (feedbackCount_ >= kMaxFeedback) return false;
         FeedbackLine& l = feedback_[feedbackCount_];
         l.sourceJack = fe.sourceJack;
         l.sinkJack = fe.sinkJack;
@@ -556,6 +615,7 @@ class SynthRuntime {
         ++feedbackCount_;
       }
     }
+    return true;
   }
 
   void applyControlCv_() {
@@ -693,6 +753,7 @@ class SynthRuntime {
   CompiledGraph graph_;
   bool graphValid_ = false;
   bool graphDirty_ = false;
+  RebuildStatus rebuildStatus_ = RebuildStatus::ok;
 
   // Effective-edge + CV state (framework-free fixed capacity).
   PatchEdge edges_[kMaxEdges];

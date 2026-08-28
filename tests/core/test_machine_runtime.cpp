@@ -45,6 +45,8 @@
 
 #include <lunar24/core/enums.h>
 #include <lunar24/core/machine_runtime.h>
+#include <lunar24/registry.hpp>
+#include <lunar24/registry_ids.hpp>
 
 // Allocator-count probe (#38 criterion ⑤, rule 5): the replaceable operator new/delete
 // pair and its counter now live in tests/core/test_machine_runtime_allocator.cpp (this
@@ -232,6 +234,98 @@ void check(bool cond, const char* label) {
 bool finite(const core::RuntimeOutput& o) {
   return std::isfinite(o.wetL) && std::isfinite(o.wetR) && std::isfinite(o.dryA) &&
          std::isfinite(o.dryB);
+}
+
+// ----------------------------------------------------------------------------
+// GH#13: feedback capacity. The generated machine registry exposes EXACTLY 18
+// legal, mutually non-occupying module-local self-loops (an output jack and a
+// DIFFERENT input jack of the same module; each jack used once — verified count:
+// vco_a 2 + vco_b 3 + keyboard 2 + envelope_a 1 + envelope_b 1 + sequencer 1 +
+// drone_1/2/4/5 1 each + drone_3 2 + drone_6 2 = 18). kMaxFeedback=16, so a
+// compiled plan carrying all 18 must be deterministically REJECTED in rebuild() —
+// never published as "true + 16/18" by silent truncation — while a ≤16 plan must
+// be accepted with feedbackCount == compiled plan count.
+// ----------------------------------------------------------------------------
+void registry_self_loop_feedback_capacity() {
+  namespace reg = lunar24::registry;
+  struct Loop {
+    core::JackId src;
+    core::JackId snk;
+  };
+  static const Loop loops[] = {
+      {core::JackId::vco_a_dry_out, core::JackId::vco_a_cv_in},
+      {core::JackId::vco_a_wave_out, core::JackId::vco_a_v_oct_in},
+      {core::JackId::vco_b_vco_out, core::JackId::vco_b_cv_in},
+      {core::JackId::vco_b_dry_out, core::JackId::vco_b_v_oct_in},
+      {core::JackId::vco_b_wave_out, core::JackId::vco_b_pwm_in},
+      {core::JackId::keyboard_v_oct_out, core::JackId::keyboard_clock_in},
+      {core::JackId::keyboard_gate_left_main_out, core::JackId::keyboard_reset_in},
+      {core::JackId::envelope_a_env_out, core::JackId::envelope_a_gate_in},
+      {core::JackId::envelope_b_env_out, core::JackId::envelope_b_gate_in},
+      {core::JackId::sequencer_clock_out, core::JackId::sequencer_ext_clock_in},
+      {core::JackId::drone_1_env_out, core::JackId::drone_1_cv_mod_in},
+      {core::JackId::drone_2_env_out, core::JackId::drone_2_cv_mod_in},
+      {core::JackId::drone_4_env_out, core::JackId::drone_4_cv_mod_in},
+      {core::JackId::drone_5_env_out, core::JackId::drone_5_cv_mod_in},
+      {core::JackId::drone_3_cv_out, core::JackId::drone_3_gate_in},
+      {core::JackId::drone_3_env_out, core::JackId::drone_3_clock_in},
+      {core::JackId::drone_6_cv_out, core::JackId::drone_6_gate_in},
+      {core::JackId::drone_6_env_out, core::JackId::drone_6_clock_in},
+  };
+  static constexpr std::uint32_t kLoopCount =
+      static_cast<std::uint32_t>(sizeof(loops) / sizeof(loops[0]));
+  static_assert(kLoopCount == 18, "registry self-loop count must be 18");
+
+  // Registry-backed runtime over the real generated tables; every module gets a
+  // cycle-safe (empty, valid) contract so the self-loops are admitted, and NO fixed
+  // edges / routes, so the compiled plan is purely the patch's self-loops.
+  core::ModuleExecutionContract cyc[core::kModuleCount];
+  core::GraphModule mods[core::kModuleCount];
+  for (std::uint32_t i = 0; i < core::kModuleCount; ++i) {
+    cyc[i] = {};
+    cyc[i].sampleRate = kSr;
+    cyc[i].allowedInCyclicSCC = true;  // every module is cycle-safe in this test
+    mods[i].id = reg::kModules[i].id;
+    mods[i].contract = &cyc[i];
+  }
+
+  // 18 > 16: all connect legally, but rebuild() must reject the over-capacity plan.
+  {
+    core::SynthRuntime rt(reg::kJacks, core::kJackCount, nullptr, 0, mods,
+                          core::kModuleCount, kSeed, kSr, nullptr, 0);
+    bool allConnect = true;
+    for (const Loop& lp : loops) allConnect = allConnect && rt.connect(lp.src, lp.snk);
+    check(allConnect, "all 18 registry module-local self-loops connect legally");
+    check(!rt.rebuild(), "rebuild() rejects an 18-edge feedback plan (> kMaxFeedback)");
+    check(!rt.graphValid(), "graphValid() is false after an over-capacity rebuild");
+    check(rt.lastRebuildStatus() ==
+              core::SynthRuntime::RebuildStatus::feedback_capacity_exceeded,
+          "inspectable status is feedback_capacity_exceeded (not a bare bool)");
+    check(rt.feedbackCount() == 0, "no partial feedback set is left behind");
+    check(rt.feedbackCount() != 16, "never reports a silent true + 16/18");
+  }
+
+  // 16 == kMaxFeedback boundary: within capacity, accepted, feedbackCount equals the
+  // compiled plan count.
+  {
+    core::SynthRuntime rt(reg::kJacks, core::kJackCount, nullptr, 0, mods,
+                          core::kModuleCount, kSeed, kSr, nullptr, 0);
+    bool boundaryConnect = true;
+    for (std::uint32_t i = 0; i < 16; ++i)
+      boundaryConnect = boundaryConnect && rt.connect(loops[i].src, loops[i].snk);
+    check(boundaryConnect, "16 boundary self-loops connect legally");
+    check(rt.rebuild(), "rebuild() accepts a 16-edge feedback plan (== kMaxFeedback)");
+    check(rt.graphValid(), "graphValid() is true at the capacity boundary");
+    check(rt.lastRebuildStatus() == core::SynthRuntime::RebuildStatus::ok,
+          "inspectable status is ok at the boundary");
+    std::uint32_t planCount = 0;
+    for (const auto& r : rt.graph().regions)
+      if (r.kind == core::RegionKind::cyclic)
+        planCount += static_cast<std::uint32_t>(r.feedback.size());
+    check(rt.feedbackCount() == planCount, "feedbackCount equals compiled plan count");
+    check(planCount == 16 && rt.feedbackCount() == 16,
+          "boundary accepts exactly the 16 compiled feedback lines");
+  }
 }
 
 }  // namespace
@@ -1016,6 +1110,9 @@ int main() {
     check(!sameSeq(ev[0], base[0], kTotFrames),
           "event script differs from the empty script (dispatch is exercised, not vacuous)");
   }
+
+  std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
+  registry_self_loop_feedback_capacity();
 
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;
