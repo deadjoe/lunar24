@@ -189,6 +189,246 @@ static void test_classic_mutual_fm() {
   CHECK_FALSE(spread_above < 10.0 * (spread_below + 5.0));
 }
 
+// ------------------------------------------------- 8. group GATE envelope --------
+// batch 4A (GH#5): the 4 classic voices each have a gate/ATT/RLS/HOLD envelope that
+// gates the GROUP's summed audio (not the individual generators). Gate rises/open =>
+// monotonic ATTACK toward the open target; falls => monotonic RELEASE toward 0; a
+// larger ATT/RLS norm malls = a SLOWER stage. The oscillators free-run (phase is never
+// reset by the envelope; see the phase-no-reset test). STATIC vs CONSTANT: the time
+// map is the single PROVISIONAL norm->seconds law (mapAttSeconds/mapRlsSeconds), so we
+// assert the MONOTONIC + speed TREND, never a claimed hardware value.
+
+// Count samples until the group level RISES to >= `target` (attack).
+static std::size_t samples_to_level(core::DroneBank& bank, int group, double target) {
+  std::size_t n = 0;
+  double buf[core::DroneBank::kMaxVoices] = {};
+  while (bank.groupEnvLevel(group) < target && n < 200000) {
+    bank.tick(buf);
+    ++n;
+  }
+  return n;
+}
+// Count samples until the group level FALLS to <= `target` (release).
+static std::size_t samples_to_drop(core::DroneBank& bank, int group, double target) {
+  std::size_t n = 0;
+  double buf[core::DroneBank::kMaxVoices] = {};
+  while (bank.groupEnvLevel(group) > target && n < 200000) {
+    bank.tick(buf);
+    ++n;
+  }
+  return n;
+}
+
+// Drive the group to a CLOSED state (level near 0) so a later open has room to attack.
+static void close_group(core::DroneBank& bank, int group) {
+  double buf[core::DroneBank::kMaxVoices] = {};
+  bank.setGroupGate(group, false);
+  for (int i = 0; i < 500; ++i) bank.tick(buf);  // default RLS is fast -> level ~0.
+}
+
+static void test_classic_group_attack_release_monotonic() {
+  const std::uint64_t seed = 0xEC7E0001ULL;
+  const double sr = 48000.0;
+  // FAST attack (norm 0 -> kAttNormMinSeconds) vs SLOW attack (norm 1 -> kAttNormMaxSeconds).
+  core::DroneBank fast = make_bank(seed, sr, 5, false);
+  fast.setGroupAtt(0, 0.0);
+  close_group(fast, 0);
+  fast.setGroupGate(0, true);
+  // Level must be monotone (non-decreasing) during the attack.
+  double prev = fast.groupEnvLevel(0);
+  std::size_t fastReach = 0;
+  {
+    double buf[core::DroneBank::kMaxVoices] = {};
+    while (fastReach < 200000 && fast.groupEnvLevel(0) < 0.9) {
+      fast.tick(buf);
+      CHECK(fast.groupEnvLevel(0) >= prev - 1e-12);  // monotone rise.
+      prev = fast.groupEnvLevel(0);
+      ++fastReach;
+    }
+  }
+  core::DroneBank slow = make_bank(seed, sr, 5, false);
+  slow.setGroupAtt(0, 1.0);
+  close_group(slow, 0);
+  slow.setGroupGate(0, true);
+  const std::size_t slowReach = samples_to_level(slow, 0, 0.9);
+  CHECK(fastReach > 0 && fastReach < 1000);             // fast attack is quick.
+  CHECK(slowReach > fastReach * 20);                    // slow attack is much slower.
+  CHECK(fast.groupEnvLevel(0) >= 0.9);                  // both reached the open target.
+  CHECK(slow.groupEnvLevel(0) >= 0.9);
+  // RELEASE monotone + speed trend: RLS norm larger => slower decay toward 0.
+  core::DroneBank rlsFast = make_bank(seed, sr, 5, false);
+  rlsFast.setGroupRls(0, 0.0);
+  rlsFast.setGroupGate(0, true);   // fully open.
+  for (int i = 0; i < 500; ++i) { double buf[core::DroneBank::kMaxVoices] = {}; rlsFast.tick(buf); }
+  rlsFast.setGroupGate(0, false);
+  const std::size_t rlsFastReach = samples_to_drop(rlsFast, 0, 0.05);
+  core::DroneBank rlsSlow = make_bank(seed, sr, 5, false);
+  rlsSlow.setGroupRls(0, 1.0);
+  rlsSlow.setGroupGate(0, true);
+  for (int i = 0; i < 500; ++i) { double buf[core::DroneBank::kMaxVoices] = {}; rlsSlow.tick(buf); }
+  rlsSlow.setGroupGate(0, false);
+  const std::size_t rlsSlowReach = samples_to_drop(rlsSlow, 0, 0.95);
+  CHECK(rlsFastReach < 1000);                           // fast release is quick.
+  CHECK(rlsSlowReach > rlsFastReach * 20);              // slow release is much slower.
+  CHECK(rlsFast.groupEnvLevel(0) < 0.05);               // release-done => near 0.
+}
+
+// ------------------------------------------------- 9. HOLD (provisional) --------
+static void test_classic_group_hold() {
+  const std::uint64_t seed = 0xEC7E0002ULL;
+  const double sr = 48000.0;
+  core::DroneBank bank = make_bank(seed, sr, 5, false);
+  // Hold ON: even with the gate CLOSED, the envelope target stays OPEN (level stays 1).
+  bank.setGroupHold(0, true);
+  bank.setGroupGate(0, false);
+  double buf[core::DroneBank::kMaxVoices] = {};
+  for (int i = 0; i < 1000; ++i) bank.tick(buf);
+  CHECK(bank.groupEnvLevel(0) > 0.99);   // held open despite gate=off.
+  CHECK(bank.groupHold(0));
+  // Hold OFF: the real gate is restored and the stage releases.
+  core::DroneBank bank2 = make_bank(seed, sr, 5, false);
+  bank2.setGroupHold(0, true);
+  bank2.setGroupGate(0, false);
+  bank2.setGroupHold(0, false);
+  for (int i = 0; i < 1000; ++i) { double b[core::DroneBank::kMaxVoices] = {}; bank2.tick(b); }
+  CHECK(bank2.groupEnvLevel(0) < 0.01);  // released once HOLD is off.
+  CHECK_FALSE(bank2.groupHold(0));
+}
+
+// ------------------------------------------------- 10. phase NO-RESET ----------
+// The envelope gates only the group's final audio; it NEVER resets the free-running
+// oscillator phase. A no-reset bank must render IDENTICALLY to an always-open bank
+// outside the gated window, and near-silent inside it.
+static void test_classic_group_phase_no_reset() {
+  const std::uint64_t seed = 0xEC7E0003ULL;
+  const double sr = 48000.0;
+  const std::size_t pre = 48000, gate = 48000, post = 48000;
+  const std::size_t n = pre + gate + post;
+  // Bank A: gate never touched (level stays 1, open) — the reference free-run.
+  core::DroneBank a = make_bank(seed, sr, 5, false);
+  const auto aBuf = render_channel(a, 0, n);
+  // Bank B: open `pre`, close (gate off) `gate`, open `post`.
+  core::DroneBank b = make_bank(seed, sr, 5, false);
+  double buf[core::DroneBank::kMaxVoices] = {};
+  for (std::size_t i = 0; i < pre; ++i) b.tick(buf);
+  b.setGroupGate(0, false);
+  std::vector<double> bMid(gate);
+  for (std::size_t i = 0; i < gate; ++i) { b.tick(buf); bMid[i] = buf[0]; }
+  b.setGroupGate(0, true);
+  std::vector<double> bTail(post);
+  for (std::size_t i = 0; i < post; ++i) { b.tick(buf); bTail[i] = buf[0]; }
+  // (a) inside the gated window B is near-silent (the envelope truly gates it). Measure
+  // only AFTER the fast release has completed (skip the ~release-time transient).
+  double peakGate = 0.0;
+  for (std::size_t i = gate - 4000; i < gate; ++i) peakGate = std::max(peakGate, std::abs(bMid[i]));
+  CHECK(peakGate < 1e-3);
+  // (b) after the short attack ramp, B's tail is bit-identical to A: the phase kept
+  // free-running through the close, so a fresh open continues in place (no reset).
+  for (std::size_t i = 1000; i < post; ++i) CHECK(bTail[i] == aBuf[pre + gate + i]);
+}
+
+// ------------------------------------------------- 11. four-group ISOLATION ----
+static void test_classic_group_isolation() {
+  const std::uint64_t seed = 0xEC7E0004ULL;
+  const double sr = 48000.0;
+  core::DroneBank bank = make_bank(seed, sr, 20, false);  // 4 classic voices.
+  // Close group 0 only; groups 1..3 must keep sounding (no crosstalk).
+  close_group(bank, 0);
+  double buf[core::DroneBank::kMaxVoices] = {};
+  for (int i = 0; i < 500; ++i) bank.tick(buf);
+  double peak0 = 0.0, peak1 = 0.0;
+  for (int i = 0; i < 500; ++i) {
+    bank.tick(buf);
+    peak0 = std::max(peak0, std::abs(buf[0]));
+    peak1 = std::max(peak1, std::abs(buf[5]));   // first gen of group 1.
+  }
+  CHECK(peak0 < 1e-3);        // closed group is silent.
+  CHECK(peak1 > 1e-3);        // neighbour group still sounds.
+  CHECK(bank.groupCount() == 4);
+}
+
+// ------------------------------------------------- 12. shared CV MOD -----------
+// The group's shared CV MOD detunes ONLY generators whose MOD button is on; a MOD-off
+// generator is unresponsive (design/07 §7). Modelled as modAmount * (perGenCv + groupCv).
+static void test_classic_group_mod_cv() {
+  const std::uint64_t seed = 0xEC7E0005ULL;
+  const double sr = 48000.0;
+  const std::size_t n = 48000;
+  // MOD-on gen (index 0), MOD-off gen (index 1).
+  core::DroneBank off = make_bank(seed, sr, 5, false);
+  off.setMod(0, 1.0);
+  off.setGroupModCv(0, 0.0);
+  const double g0_off = drone_test::measure_freq_hz(render_channel(off, 0, n), sr);
+  core::DroneBank on = make_bank(seed, sr, 5, false);
+  on.setMod(0, 1.0);
+  on.setGroupModCv(0, 4.0);   // shared CV MOD = 4 -> MOD-on gen turns by +4 Hz.
+  const double g0_on = drone_test::measure_freq_hz(render_channel(on, 0, n), sr);
+  CHECK(g0_on > g0_off + 3.0 && g0_on < g0_off + 5.0);   // MOD-on gen detuned up.
+  // MOD-off gen (index 1) — same seed/gen/sample count => jitter identical => unchanged.
+  const double g1_off = drone_test::measure_freq_hz(render_channel(off, 1, n), sr);
+  const double g1_on = drone_test::measure_freq_hz(render_channel(on, 1, n), sr);
+  CHECK(std::abs(g1_on - g1_off) < 1e-6);   // MOD-off is unresponsive to the shared CV.
+}
+
+// ------------------------------------------------- 13. small per-gen NOISE -----
+static void test_classic_noise_per_gen() {
+  const std::uint64_t seedA = 0xEC7E0006ULL;
+  const std::uint64_t seedB = 0xEC7E0007ULL;
+  const double sr = 48000.0;
+  core::DroneBank a1 = make_bank(seedA, sr, 5, false);
+  core::DroneBank a2 = make_bank(seedA, sr, 5, false);
+  core::DroneBank b = make_bank(seedB, sr, 5, false);
+  // Deterministic: same seed => identical jitter per generator.
+  CHECK(a1.noiseJitterHz(0) == a2.noiseJitterHz(0));
+  // Small: the amplitude is a bounded PROVISIONAL term, never a dominant pitch.
+  for (std::size_t i = 0; i < 5; ++i) CHECK(std::abs(a1.noiseJitterHz(i)) <= core::DroneBank::kOscNoiseAmpHz + 1e-12);
+  // NOT one shared value: the 5 generators differ (per-gen hash, not a common scalar).
+  bool anyDiffers = false;
+  for (std::size_t i = 1; i < 5; ++i)
+    if (a1.noiseJitterHz(i) != a1.noiseJitterHz(0)) anyDiffers = true;
+  CHECK(anyDiffers);
+  // Different seed => a fixed, different value.
+  bool differsAcrossSeed = false;
+  for (std::size_t i = 0; i < 5; ++i)
+    if (a1.noiseJitterHz(i) != b.noiseJitterHz(i)) differsAcrossSeed = true;
+  CHECK(differsAcrossSeed);
+}
+
+// ------------------------------------------------- 14. correlated ENVIRONMENT --
+static void test_classic_env_correlated() {
+  const std::uint64_t seed = 0xEC7E0008ULL;
+  const double sr = 48000.0;
+  const std::size_t n = 48000;
+  // MOD-on gen0 with env 0 vs +5: detunes UP by the environment term (common trend).
+  core::DroneBank e0 = make_bank(seed, sr, 5, false);
+  e0.setMod(0, 1.0);
+  e0.setEnvironment(0.0);
+  const double f0_e0 = drone_test::measure_freq_hz(render_channel(e0, 0, n), sr);
+  core::DroneBank e5 = make_bank(seed, sr, 5, false);
+  e5.setMod(0, 1.0);
+  e5.setEnvironment(5.0);
+  const double f0_e5 = drone_test::measure_freq_hz(render_channel(e5, 0, n), sr);
+  CHECK(f0_e5 > f0_e0 + 4.0 && f0_e5 < f0_e0 + 6.0);   // MOD-on gen1 up by ~5 Hz.
+  // A SECOND MOD-on gen (index 3) shows the same up-trend => provable common trend.
+  core::DroneBank e0b = make_bank(seed, sr, 5, false);
+  e0b.setMod(3, 1.0);
+  e0b.setEnvironment(0.0);
+  const double f3_e0 = drone_test::measure_freq_hz(render_channel(e0b, 3, n), sr);
+  core::DroneBank e5b = make_bank(seed, sr, 5, false);
+  e5b.setMod(3, 1.0);
+  e5b.setEnvironment(5.0);
+  const double f3_e5 = drone_test::measure_freq_hz(render_channel(e5b, 3, n), sr);
+  CHECK(f3_e5 > f3_e0 + 4.0 && f3_e5 < f3_e0 + 6.0);   // MOD-on gen2 up by ~5 Hz too.
+  // MOD-off gen (index 1) — unchanged by the environment (jitter identical same-seed).
+  core::DroneBank e0c = make_bank(seed, sr, 5, false);
+  e0c.setEnvironment(0.0);
+  const double f1_e0 = drone_test::measure_freq_hz(render_channel(e0c, 1, n), sr);
+  core::DroneBank e5c = make_bank(seed, sr, 5, false);
+  e5c.setEnvironment(5.0);
+  const double f1_e5 = drone_test::measure_freq_hz(render_channel(e5c, 1, n), sr);
+  CHECK(std::abs(f1_e5 - f1_e0) < 1e-6);   // MOD-off generator stays put.
+}
+
 }  // namespace
 
 int main() {
@@ -199,5 +439,12 @@ int main() {
   test_classic_tune();
   test_classic_volt_shared();
   test_classic_mutual_fm();
+  test_classic_group_attack_release_monotonic();
+  test_classic_group_hold();
+  test_classic_group_phase_no_reset();
+  test_classic_group_isolation();
+  test_classic_group_mod_cv();
+  test_classic_noise_per_gen();
+  test_classic_env_correlated();
   return ::test::finish("drone_classic");
 }

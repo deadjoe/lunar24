@@ -328,6 +328,225 @@ void registry_self_loop_feedback_capacity() {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Batch 4A (GH#5): the CLASSIC drone gate/ATT/RLS/HOLD envelope + CV MOD + ENV OUT are
+// consumed by the REAL runtime, and specifically the ENV OUT write is descriptor-driven
+// against the GENERATED registry's four real env_out jacks (@Codex 方案2b, msg e0f3ed09).
+// The runtime under test is the same Registry-backing executor; a bare `reg::kModules`
+// contract wrapper mirrors the GH#13 setup so the compiled plan is exactly the classic
+// drone -> mixer fixed leg. The order 0..3 == drone 1/2/4/5; the single kDrone role owns
+// the collapsed bank that produces all four classic channels.
+// ----------------------------------------------------------------------------
+
+// The single fixed classic-drone leg (drone_1 -> mixer). SynthRuntime stores `fixedEdges`
+// by pointer and keeps it for the runtime's whole lifetime, so this must have static storage
+// duration — it is returned by value out of makeRegistryDroneBase(), and a stack-local copy
+// would dangle on the next rebuild(). (The product host passes persistent registry-backed
+// arrays; this is the test-side equivalent.)
+const core::FixedEdge kClassicDroneEdge[] = {
+    {core::ModuleId::drone_1, core::ModuleId::mixer, "drone_1_to_mixer"},
+};
+
+// Registry-backed runtime with the CLASSIC drone_1 bound to the kDrone role and a single
+// fixed edge (drone_1 -> mixer) so it lands in the compiled plan. The DroneBank collapses
+// all four classic voices into this one kDrone step; the mixer holds no role, so the
+// execution order is just [kDrone] — enough to observe droneChannel() (the pre-VCA channel
+// data the mixer consumes) and the batch-4A ENV OUT writes. This BASE does NOT bind
+// env_out / cv_mod_in, so its groups are unbound (the fail-closed tests use it).
+core::SynthRuntime makeRegistryDroneBase() {
+  namespace reg = lunar24::registry;
+  // SynthRuntime stores BOTH modules_ and each mods[i].contract as caller-owned pointers
+  // (machine_runtime.h:848/850) and keeps them for its whole lifetime. This helper returns
+  // the runtime by value, so these arrays MUST have static storage duration — a stack-local
+  // array would dangle on the next rebuild(). The reassignment below is idempotent (the same
+  // registry-derived values every call), so re-running it on static storage is harmless.
+  static core::ModuleExecutionContract cyc[core::kModuleCount];
+  static core::GraphModule mods[core::kModuleCount];
+  for (std::uint32_t i = 0; i < core::kModuleCount; ++i) {
+    cyc[i] = core::ModuleExecutionContract{};  // GCC-visible value-init (see GH#13 note)
+    cyc[i].sampleRate = kSr;
+    cyc[i].allowedInCyclicSCC = true;  // every module is cycle-safe in this test
+    mods[i].id = reg::kModules[i].id;
+    mods[i].contract = &cyc[i];
+  }
+  core::SynthRuntime rt(reg::kJacks, core::kJackCount, nullptr, 0, mods, core::kModuleCount,
+                        kSeed, kSr, kClassicDroneEdge, 1);
+  rt.bindFixedRole(core::ModuleId::drone_1, core::FixedChainRole::kDrone);
+  static_cast<void>(rt.rebuild());
+  return rt;
+}
+
+// The product-wired CLASSIC runtime: base + the four REAL generated-registry env_out and
+// cv_mod_in jacks, in the order 0..3 == drone 1/2/4/5.
+core::SynthRuntime makeRegistryDroneRuntime() {
+  namespace reg = lunar24::registry;
+  core::SynthRuntime rt = makeRegistryDroneBase();
+  rt.setDroneEnvOutBindings(reg::JackId::drone_1_env_out, reg::JackId::drone_2_env_out,
+                            reg::JackId::drone_4_env_out, reg::JackId::drone_5_env_out);
+  rt.setDroneCvModInBindings(reg::JackId::drone_1_cv_mod_in, reg::JackId::drone_2_cv_mod_in,
+                             reg::JackId::drone_4_cv_mod_in, reg::JackId::drone_5_cv_mod_in);
+  return rt;
+}
+
+// Gate the classic group OFF, let it release, then verify the product path: near-silent
+// channel, ENV OUT dropped to ~nominalMin, and a neighbor group left untouched. Then gate
+// ONLY group 0 back ON and verify it recovers with an attack while group 1 stays silent,
+// with ENV OUT tracking the envelope back up to ~nominalMax.
+void registry_drone_gate_envout() {
+  namespace reg = lunar24::registry;
+  core::SynthRuntime rt = makeRegistryDroneRuntime();
+  for (int g = 0; g < 4; ++g) {
+    rt.setDroneGroupAtt(g, 0.0);  // fast attack (neutral)
+    rt.setDroneGroupRls(g, 0.0);  // fast release (neutral)
+  }
+  check(rt.droneEnvOutBound(0) && rt.droneEnvOutBound(1) && rt.droneEnvOutBound(2) &&
+            rt.droneEnvOutBound(3),
+        "all 4 classic groups' real registry ENV OUT descriptors are valid (fail-closed passes)");
+
+  // Pass 1: every gate closed -> release completes -> near-silence + ENV OUT -> -10V.
+  for (int g = 0; g < 4; ++g) rt.setDroneGroupGate(g, false);
+  constexpr std::size_t kRelFr = 12000;
+  const std::size_t kRelSettle = 3000;  // skip the (fast) release transient before peaking
+  double peak = 0.0;
+  for (std::size_t i = 0; i < kRelFr; ++i) {
+    rt.processFrame(0.0);
+    if (i >= kRelSettle) {
+      const double v = std::fabs(rt.droneChannel(0));
+      if (v > peak) peak = v;
+    }
+  }
+  const double envMin = rt.droneEnvOutVolts(0);
+  check(peak < 1e-3, "gate-off + release-done => droneChannel(0) is near-silent");
+  check(envMin < -9.9, "gate-off ENV OUT volts ~ nominalMin (-10V) at released level");
+  check(rt.controlVoltageAt(reg::JackId::drone_1_env_out) == envMin,
+        "droneEnvOutVolts reads the SAME CV source bank entry controlVoltageAt reads");
+
+  // Pass 2: only group 0 re-gated ON -> recovers with an attack; neighbor group 1 stays
+  // silent (isolation). ENV OUT rises back toward nominalMax as the level climbs.
+  rt.setDroneGroupGate(0, true);
+  constexpr std::size_t kAtkFr = 12000;
+  double after = 0.0, nbr = 0.0;
+  for (std::size_t i = 0; i < kAtkFr; ++i) {
+    rt.processFrame(0.0);
+    const double v0 = std::fabs(rt.droneChannel(0));
+    if (v0 > after) after = v0;
+    const double v1 = std::fabs(rt.droneChannel(1));
+    if (v1 > nbr) nbr = v1;
+  }
+  const double envHi = rt.droneEnvOutVolts(0);
+  check(after > 0.05, "gate-on recovers the group (attack brings droneChannel back)");
+  check(nbr < 1e-3, "neighbor group 1 stays silent when only group 0 is re-gated on");
+  check(envHi > 9.9, "gate-on ENV OUT volts ~ nominalMax (+10V) at open level");
+  check(envHi > envMin, "ENV OUT volts rises with the gate (level tracks the envelope)");
+}
+
+// The shared CV MOD is consumed through the CONTROL layer: patching a CV source into a
+// classic cv_mod_in jack detunes the MOD-on group (the product path resolved the joined
+// control), while a MOD-off group is inert to the same CV (design/07 §7).
+void registry_drone_cv_mod() {
+  namespace reg = lunar24::registry;
+  constexpr std::size_t kN = 4096;
+  const auto modTrace = [](double cv, double depth) {
+    core::SynthRuntime rt = makeRegistryDroneRuntime();
+    for (int g = 0; g < 5; ++g) rt.setDroneMod(0, g, depth);
+    static_cast<void>(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_1_cv_mod_in));
+    static_cast<void>(rt.rebuild());
+    rt.setControlVoltage(reg::JackId::lfo_a_cv_out, cv);
+    std::vector<double> tr(kN);
+    for (std::size_t i = 0; i < kN; ++i) {
+      rt.processFrame(0.0);
+      tr[i] = rt.droneChannel(0);
+    }
+    return tr;
+  };
+  const std::vector<double> modOn0 = modTrace(0.0, 1.0);
+  const std::vector<double> modOn4 = modTrace(4.0, 1.0);
+  check(modOn0 != modOn4,
+        "shared CV MOD detunes the MOD-on group (the runtime consumed the joined CV)");
+
+  const std::vector<double> modOff0 = modTrace(0.0, 0.0);
+  const std::vector<double> modOff4 = modTrace(4.0, 0.0);
+  check(modOff0 == modOff4,
+        "MOD-off group is inert to shared CV (CV does not move a MOD-off generator)");
+}
+
+// Same-seed reproducibility: two FRESH runtimes over the same seed + an identical gate
+// schedule give a bit-identical drone channel AND ENV OUT volts stream (no hidden
+// per-instance randomness; the small noise is a pure hash of seed/absolute-sample).
+void registry_drone_reproducible() {
+  const auto trace = [](core::SynthRuntime rt) {
+    struct Tr {
+      std::vector<double> ch, env;
+    };
+    Tr t;
+    constexpr std::size_t N = 12000;
+    t.ch.reserve(N);
+    t.env.reserve(N);
+    for (std::size_t i = 0; i < N; ++i) {
+      rt.setDroneGroupGate(0, i < 2000);  // open 0..2000, released after
+      rt.processFrame(0.0);
+      t.ch.push_back(rt.droneChannel(0));
+      t.env.push_back(rt.droneEnvOutVolts(0));
+    }
+    return t;
+  };
+  const auto a = trace(makeRegistryDroneRuntime());
+  const auto b = trace(makeRegistryDroneRuntime());
+  check(a.ch == b.ch, "same-seed classic drone channel is bit-identical across fresh runtimes");
+  check(a.env == b.env, "same-seed classic drone ENV OUT volts is bit-identical across fresh runtimes");
+}
+
+// Fail-closed: a runtime whose env_out / cv_mod_in are NEVER bound reports every group as
+// NOT bound and reads 0 volts (not a stale jack), because the JackId{0} sentinel would
+// otherwise collide with a real registry jack (vco_a.cv_in is nominally -5..+5).
+void registry_drone_envout_fail_closed() {
+  namespace reg = lunar24::registry;
+  core::SynthRuntime base = makeRegistryDroneBase();
+  check(!base.droneEnvOutBound(0) && !base.droneEnvOutBound(3),
+        "unbound env_out group fails closed (bound=false for the JackId{0} sentinel)");
+  check(base.droneEnvOutVolts(0) == 0.0 && base.droneEnvOutVolts(3) == 0.0,
+        "unbound env_out group reads 0 volts, never a stale jack");
+  check(!base.droneEnvOutBound(4) && base.droneEnvOutVolts(4) == 0.0,
+        "out-of-range group index fails closed (bound=false, volts=0)");
+
+  // A jack id that is NOT in the registry array is fail-closed even though it was "bound":
+  // findJackDescriptor_ returns nullptr, so the descriptor-driven write is never emitted.
+  core::SynthRuntime bad = makeRegistryDroneBase();
+  bad.setDroneEnvOutBindings(static_cast<core::JackId>(999u),
+                             static_cast<core::JackId>(999u),
+                             static_cast<core::JackId>(999u),
+                             static_cast<core::JackId>(999u));
+  check(!bad.droneEnvOutBound(0),
+        "jack id missing from the registry fails closed (bound=false)");
+  check(bad.droneEnvOutVolts(0) == 0.0,
+        "jack id missing from the registry reads 0 volts");
+}
+
+// Block-partition invariance of the batch-4A ENV OUT path: with a held gate the envelope
+// level is a deterministic per-frame function, so the ENV OUT volts every classic group
+// writes into the CV source bank last frame is identical under 64/128/256 partitions.
+void registry_drone_envout_partition() {
+  constexpr std::size_t kBlocks[3] = {64, 128, 256};
+  constexpr std::size_t kTot = 256;
+  static const double kSilence[kTot] = {};
+  double finalEnv[3] = {}, finalCh[3] = {};
+  core::RuntimeOutput dummy[kTot];
+  for (int bi = 0; bi < 3; ++bi) {
+    core::SynthRuntime rt = makeRegistryDroneRuntime();
+    rt.setDroneGroupAtt(0, 0.0);
+    rt.setDroneGroupRls(0, 0.0);
+    for (std::size_t b = 0; b < kTot; b += kBlocks[bi])
+      rt.processBlock(kSilence + b, kBlocks[bi], dummy + b);
+    finalEnv[bi] = rt.droneEnvOutVolts(0);
+    finalCh[bi] = rt.droneChannel(0);
+  }
+  check(finalEnv[0] == finalEnv[1] && finalEnv[1] == finalEnv[2],
+        "classic drone ENV OUT volts is block-partition invariant (64/128/256)");
+  check(finalEnv[0] > 9.9, "gate-open ENV OUT volts saturates near nominalMax (+10V)");
+  check(finalCh[0] == finalCh[1] && finalCh[1] == finalCh[2],
+        "classic drone channel is block-partition invariant (64/128/256)");
+}
+
 }  // namespace
 
 int main() {
@@ -1113,6 +1332,21 @@ int main() {
 
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();
+
+  std::printf("(12) GH#5 classic drone group gate/env — product path (batch 4A)\n");
+  registry_drone_gate_envout();
+
+  std::printf("(13) GH#5 classic drone shared CV MOD — joined control consumed\n");
+  registry_drone_cv_mod();
+
+  std::printf("(14) GH#5 classic drone same-seed reproducibility\n");
+  registry_drone_reproducible();
+
+  std::printf("(15) GH#5 classic drone ENV OUT fail-closed\n");
+  registry_drone_envout_fail_closed();
+
+  std::printf("(16) GH#5 classic drone ENV OUT block-partition invariance\n");
+  registry_drone_envout_partition();
 
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;
