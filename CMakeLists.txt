@@ -201,6 +201,17 @@ lunar_add_test(test_state_publish tests/core/test_state_publish.cpp)
 lunar_add_test(test_machine_runtime tests/core/test_machine_runtime.cpp
                tests/core/test_machine_runtime_allocator.cpp)
 
+# task#55 (GH#5) Windows-only CI diagnostic, stack A/B, do NOT remove without the
+# intent documented below. This test repeatedly stack-constructs ~149 KB of
+# fixed-capacity SynthRuntime fixtures from one large harness, so Windows' 1 MB
+# default process stack is a TEST-HARNESS budget, not a product runtime contract
+# (the product target, and every other test, is untouched). Reserve 4 MB for this
+# one test executable, and only under MSVC, so the change cannot affect any other
+# target or platform.
+if(MSVC)
+  target_link_options(test_machine_runtime PRIVATE /STACK:4194304)
+endif()
+
 # #37 close-out: the TSan-only memory-model PROBE. It has no CTest assertion and is
 # meaningful only as a ThreadSanitizer detector — a correct pool exits 0, a pool
 # whose recycleOne guard is removed or whose memory_order is weakened races and
