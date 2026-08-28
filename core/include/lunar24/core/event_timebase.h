@@ -14,11 +14,11 @@
 //
 // design/07 §3 separates a CONTROL-LANE (note/gate/clock/sync/reset) from a
 // CONTINUOUS lane (parameter/pitch/pressure). The two lanes must never share an
-// arbitrary drop policy: critical edges may coalesce only under pressure and only
-// into a deterministic failsafe, never silently vanish. This implementation keeps
-// two fixed-capacity, no-heap sorted queues (one per lane) and merges them at
-// dispatch in the global absolute order, so the §3 phase ordering and the §5
-// buffer invariance are both preserved.
+// arbitrary drop policy: critical edges are never coalesced — on genuine overflow
+// they raise a single reconcile failsafe (a canonical reset) rather than vanishing
+// silently. This implementation keeps two fixed-capacity, no-heap sorted queues
+// (one per lane) and merges them at dispatch in the global absolute order, so the
+// §3 phase ordering and the §5 buffer invariance are both preserved.
 
 #pragma once
 
@@ -42,13 +42,15 @@ struct TimedControlEvent {
 
 // Bounded, no-heap pending queues (design/07 §5: no allocation on the audio
 // thread). The continuous lane is sized for the declared max MIDI/CC burst of a
-// single block; the critical lane has its OWN declared capacity (aligned with the
-// max tested gate/clock/sync/reset burst) so note/clock edges are never crowded
-// out by parameter pressure. kEventDispatchCapacity is the product's per-block
-// output buffer: enough for every continuous + critical event of one block plus a
-// single reconcile failsafe.
+// single block. The critical lane has its OWN declared capacity, preserved at the
+// original single-queue value of 64 (independent of continuous pressure) so
+// note/clock edges are never crowded out by parameter pressure. This is the prior
+// burst guarantee kept intact, NOT a value claimed to be backed by new external
+// evidence. kEventDispatchCapacity is the product's per-block output buffer:
+// enough for every continuous + critical event of one block plus a single
+// reconcile failsafe.
 inline constexpr std::uint32_t kEventTimebaseCapacity = 64;  // continuous (parameter/pitch/pressure)
-inline constexpr std::uint32_t kEventCriticalCapacity = 16;  // critical (note/gate/clock/sync/reset)
+inline constexpr std::uint32_t kEventCriticalCapacity = 64;  // critical (note/gate/clock/sync/reset); original 64, independent of continuous
 inline constexpr std::uint32_t kEventDispatchCapacity =
     kEventTimebaseCapacity + kEventCriticalCapacity + 1;  // +1 for the reconcile reset
 

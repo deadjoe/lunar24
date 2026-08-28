@@ -589,24 +589,70 @@ static void critical_reserved_when_continuous_full() {
   CHECK_EQ(tb.criticalOverflow(), 0u);
 }
 
-// B (negative control): under continuous pressure only `parameter` coalesces, by
-// stable ParameterId into the latest target; pitch/pressure never coalesce.
+// B (negative control): under continuous pressure only `parameter` coalesces, and
+// only into the LATEST same-ParameterId target. This is observed on the delivered
+// events (not just the counter): within capacity nothing merges early; under
+// pressure the newest exact event survives and the stale target is gone; a
+// different ParameterId and pitch are both never admitted to a merge.
 static void parameter_only_coalescing_under_pressure() {
-  core::EventTimebase tb;
-  core::TimedControlEvent out[core::kEventTimebaseCapacity];
-  for (std::uint32_t i = 0; i < core::kEventTimebaseCapacity; ++i)
-    CHECK(tb.enqueue(mk_param(i, core::SignalSample{0.0f}, 1u, i, 100000ull + i)));
-  CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);
-  // A same-ParameterId parameter under pressure coalesces into the LATEST target.
-  CHECK(tb.enqueue(mk_param(7u, core::SignalSample{0.75f}, 8u, 999u, 200000ull)));
-  CHECK(tb.parameterCoalesced() >= 1u);
-  CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);      // coalesced, still at cap
-  CHECK_EQ(tb.continuousOverflow(), 0u);
-  // A continuous-but-non-parameter event (pitch) NEVER coalesces under pressure.
-  CHECK_FALSE(tb.enqueue(mk_timed(core::ControlEventKind::pitch, 300000ull,
-                                  core::SignalSample{0.4f}, 2u, 1u)));
-  CHECK(tb.continuousOverflow() >= 1u);
-  CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);
+  // (a) Within capacity: two same-ParameterId parameter events are kept whole and
+  // delivered in sample order — no early coalesce (counter stays 0).
+  {
+    core::EventTimebase tb;
+    core::TimedControlEvent out[core::kEventTimebaseCapacity];
+    CHECK(tb.enqueue(mk_param(7u, core::SignalSample{0.25f}, 1u, 1u, 100ull)));
+    CHECK(tb.enqueue(mk_param(7u, core::SignalSample{0.50f}, 2u, 2u, 101ull)));
+    CHECK_EQ(tb.parameterCoalesced(), 0u);
+    const std::uint32_t n = tb.processBlock(200u, out, core::kEventTimebaseCapacity);
+    CHECK_EQ(n, 2u);
+    CHECK(out[0].event.kind == core::ControlEventKind::parameter);
+    CHECK_EQ(out[0].event.parameter, core::ParameterId{7u});
+    CHECK_EQ(out[0].sample, 100ull);
+    CHECK(out[1].event.kind == core::ControlEventKind::parameter);
+    CHECK_EQ(out[1].event.parameter, core::ParameterId{7u});
+    CHECK_EQ(out[1].sample, 101ull);
+  }
+  // (b) Under pressure: a same-ParameterId coalesces into the newest target. Exact
+  // counter, and the surviving pid-7 IS the incoming event (sample/value/source/
+  // producerSequence all match) — the stale pid-7 target is gone.
+  {
+    core::EventTimebase tb;
+    core::TimedControlEvent out[core::kEventTimebaseCapacity];
+    for (std::uint32_t i = 0; i < core::kEventTimebaseCapacity; ++i)
+      CHECK(tb.enqueue(mk_param(i, core::SignalSample{0.0f}, 1u, i, 100000ull + i)));
+    CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);  // lane full (incl. pid-7)
+    CHECK(tb.enqueue(mk_param(7u, core::SignalSample{0.75f}, 8u, 999u, 200000ull)));
+    CHECK_EQ(tb.parameterCoalesced(), 1u);                 // exactly the stale pid-7 dropped
+    CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);  // coalesced, still at cap
+    const std::uint32_t n = tb.processBlock(300000u, out, core::kEventTimebaseCapacity);
+    CHECK_EQ(n, core::kEventTimebaseCapacity);
+    std::uint32_t pid7 = 0;
+    for (std::uint32_t i = 0; i < n; ++i) {
+      if (out[i].event.kind == core::ControlEventKind::parameter &&
+          out[i].event.parameter == core::ParameterId{7u}) {
+        ++pid7;
+        CHECK_EQ(out[i].sample, 200000ull);
+        CHECK(out[i].event.value == core::SignalSample{0.75f});
+        CHECK_EQ(out[i].event.source, 8u);
+        CHECK_EQ(out[i].event.producerSequence, 999ull);
+      }
+    }
+    CHECK_EQ(pid7, 1u);  // stale pid-7 gone; only the newest survives
+  }
+  // (c) A DIFFERENT ParameterId (no mergeable same-target) and (d) pitch both fail
+  // under pressure: never coalesced, each counted, never silently admitted.
+  {
+    core::EventTimebase tb;
+    for (std::uint32_t i = 0; i < core::kEventTimebaseCapacity; ++i)
+      CHECK(tb.enqueue(mk_param(i, core::SignalSample{0.0f}, 1u, i, 100000ull + i)));
+    CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);
+    CHECK_FALSE(tb.enqueue(mk_param(200u, core::SignalSample{0.5f}, 3u, 400u, 300000ull)));
+    CHECK_EQ(tb.continuousOverflow(), 1u);
+    CHECK_FALSE(tb.enqueue(mk_timed(core::ControlEventKind::pitch, 300001ull,
+                                    core::SignalSample{0.4f}, 2u, 1u)));
+    CHECK_EQ(tb.continuousOverflow(), 2u);
+    CHECK_EQ(tb.pending(), core::kEventTimebaseCapacity);
+  }
 }
 
 // C (negative control): a genuine critical overflow raises a deterministic failsafe —
@@ -620,19 +666,31 @@ static void critical_overflow_reconciles_with_failsafe() {
     CHECK(tb.enqueue(mk_timed(core::ControlEventKind::gate_on, 100000ull + i,
                               core::SignalSample{0.0f}, 1u, i)));
   CHECK_EQ(tb.pending(), core::kEventCriticalCapacity);
-  // One more edge overflows the critical lane: rejected, counted, one reconcile set.
+  // Two more edges overflow the critical lane: both rejected and counted, but only
+  // ONE reconcile request is raised (multiple overflows merge into a single request).
   CHECK_FALSE(tb.enqueue(mk_timed(core::ControlEventKind::sync, 100000ull +
                                 core::kEventCriticalCapacity, core::SignalSample{0.0f}, 2u, 0u)));
-  CHECK(tb.criticalOverflow() >= 1u);
+  CHECK_FALSE(tb.enqueue(mk_timed(core::ControlEventKind::sync, 100000ull +
+                                core::kEventCriticalCapacity + 1u, core::SignalSample{0.0f}, 2u, 1u)));
+  CHECK_EQ(tb.criticalOverflow(), 2u);
   CHECK(tb.reconcilePending());
-  // Next safe boundary: reset FIRST at offset 0, then flush the unsafed batch.
+  // No output space yet: the reset is NOT emitted, nothing is flushed, and both the
+  // unsafed critical batch and the pending request genuinely survive.
+  const std::uint32_t n0 = tb.processBlock(4096u, out, 0u);
+  CHECK_EQ(n0, 0u);
+  CHECK(tb.reconcilePending());
+  CHECK_EQ(tb.criticalFlushed(), 0u);
+  CHECK_EQ(tb.pending(), core::kEventCriticalCapacity);
+  // With space: exactly ONE canonical reset first (offset 0), then the unsafed batch
+  // flushed in full; the request clears and nothing remains pending.
   const std::uint32_t n = tb.processBlock(4096u, out, core::kEventTimebaseCapacity);
-  CHECK(n >= 1u);
+  CHECK_EQ(n, 1u);
   CHECK(out[0].event.kind == core::ControlEventKind::reset);
   CHECK_EQ(out[0].event.sampleOffset, 0u);
   CHECK(tb.reconcileCount() >= 1u);
-  CHECK(tb.criticalFlushed() >= core::kEventCriticalCapacity);
+  CHECK_EQ(tb.criticalFlushed(), core::kEventCriticalCapacity);
   CHECK_FALSE(tb.reconcilePending());
+  CHECK_EQ(tb.pending(), 0u);
 }
 
 // D (negative control): an undersized dispatch buffer must DELAY a critical edge,
