@@ -5,7 +5,7 @@
 // item 6 "patchable control source"). This is a NEW, independent framework-
 // agnostic sound-core unit; it deliberately does NOT inherit or wrap
 // EnvelopeFollower (envelope_follower.h), which is a preamp-related L2 detector/
-// control source with its own rectifying one-pole behaviour and a -10..+10V CV
+// control source with its own rectifying one-pole behaviour and a 0..+10V CV
 // rail. The EG shares only the pure-math seconds->coefficient convention, and is
 // otherwise an independent per-sample ADSR/HOLD/SELF-GEN state machine.
 //
@@ -70,34 +70,55 @@ class EnvelopeGenerator {
   explicit EnvelopeGenerator(double sampleRate) { setSampleRate(sampleRate); }
 
   // --- configuration (NOT cleared by reset()) -----------------------------
+  // Every numeric setter is FAIL-CLOSED: an invalid value (non-finite NaN/±Inf,
+  // or an out-of-domain rate/time) is rejected — it returns false and leaves the
+  // prior configuration intact, so inspector / phase / later output are untouched.
+  // A non-finite input is never silently substituted with a neighbouring value
+  // (that would mask a corrupted source and invent a new control value); the only
+  // transformation applied is a bounds-clamp on a KNOWN-finite sustain.
+  //
   // sampleRate must be set before the generator is ticked. Until then the
   // coefficients are 1.0 (instant) — deterministic, never a NaN; there is NO
   // fixed 48 kHz default (the DSP is honoured identically at 44.1/48/88.2/96k).
-  void setSampleRate(double sr) {
+  bool setSampleRate(double sr) {
+    if (!(std::isfinite(sr) && sr > 0.0)) return false;  // reject NaN/Inf/0/negative
     if (sr_ != sr) {
       sr_ = sr;
       recomputeCoefficients();
     }
+    return true;
   }
-  void setAttackSeconds(double s) {
+  bool setAttackSeconds(double s) {
+    if (!(std::isfinite(s) && s >= 0.0)) return false;   // 0 keeps the instant semantics
     if (attack_ != s) {
       attack_ = s;
       recomputeCoefficients();
     }
+    return true;
   }
-  void setDecaySeconds(double s) {
+  bool setDecaySeconds(double s) {
+    if (!(std::isfinite(s) && s >= 0.0)) return false;
     if (decay_ != s) {
       decay_ = s;
       recomputeCoefficients();
     }
+    return true;
   }
-  void setReleaseSeconds(double s) {
+  bool setReleaseSeconds(double s) {
+    if (!(std::isfinite(s) && s >= 0.0)) return false;
     if (release_ != s) {
       release_ = s;
       recomputeCoefficients();
     }
+    return true;
   }
-  void setSustain(double norm) { sustain_ = clamp01(norm); }
+  // Sustain: reject non-finite (NaN/±Inf) first, THEN bounds-clamp a finite value
+  // to [0,1]. A rejected call leaves the prior sustain and its decay target intact.
+  bool setSustain(double norm) {
+    if (!std::isfinite(norm)) return false;
+    sustain_ = clamp01(norm);
+    return true;
+  }
   void setHold(bool on) { hold_ = on; }
   void setSelfGen(bool on) {
     if (selfGen_ == on) return;
@@ -244,13 +265,18 @@ class EnvelopeGenerator {
   }
 
   // Configuration (persists across reset()).
+  // These are LOCAL SAFE / PROVISIONAL DSP DEFAULTS, NOT the generated registry's
+  // canonical defaults (the registry is a separate source of truth). They exist
+  // only so an unconfigured EG is deterministic and never NaN. Runtime integration
+  // must configure A/D/R/S from canonical state; tests set the values they depend
+  // on explicitly rather than relying on these coinciding with the registry.
   double sr_ = 0.0;
-  double attack_ = 0.01;   // seconds, PROVISIONAL (registry default, unverified)
-  double decay_ = 0.1;     // seconds, PROVISIONAL (registry default, unverified)
-  double release_ = 0.1;   // seconds, PROVISIONAL (registry default, unverified)
-  double sustain_ = 0.5;   // normalized 0..1, PROVISIONAL (registry default)
-  bool hold_ = false;      // HOLD: VCA always open (PROVISIONAL default = off)
-  bool selfGen_ = false;   // SELF-GEN: LFO-like self-oscillation (default = off)
+  double attack_ = 0.01;   // seconds, local safe/provisional DSP default
+  double decay_ = 0.1;     // seconds, local safe/provisional DSP default
+  double release_ = 0.1;   // seconds, local safe/provisional DSP default
+  double sustain_ = 0.5;   // normalized 0..1, local safe/provisional DSP default
+  bool hold_ = false;      // HOLD: VCA always open (local safe/provisional default)
+  bool selfGen_ = false;   // SELF-GEN: LFO-like self-oscillation (local safe default)
 
   // Derived coefficients (recomputed on config/sample-rate change).
   double attackCoeff_ = 1.0;

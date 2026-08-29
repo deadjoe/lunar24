@@ -33,6 +33,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "drone_test_common.h"
@@ -526,6 +527,115 @@ void test_zero_seconds_deterministic() {
   CHECK(eg.phase() == EnvelopeGenerator::Phase::idle);
 }
 
+// ---------------------------------------------------------------------------
+// ⑬  decay-only speed trend (independent of attack/release). A DEDICATED decay
+//   oracle: larger decay seconds -> a later fall below a fixed threshold. The
+//   old nonincreasing + settled-to-sustain checks accept a one-step 1.0->0.5
+//   jump, so this time-bounds the ACTUAL decay fall and won't be satisfied by a
+//   degenerate/instant decay (which @Codex pointed out slipped through unseen).
+//   sustain is pinned to 0.0 so the decay target is far from 1.0 and the release
+//   stage (which would start from the emptied level) cannot mask a bad decay.
+// ---------------------------------------------------------------------------
+void test_decay_speed_trends() {
+  const double sr = 48000.0;
+  std::vector<double> fall;
+  for (double d : {0.02, 0.05, 0.10}) {
+    EnvelopeGenerator eg(sr);
+    eg.setAttackSeconds(0.001);   // fast attack: arm quickly, not part of this oracle
+    eg.setReleaseSeconds(0.02);
+    eg.setSustain(0.0);           // decay target well below 1.0, no release entanglement
+    eg.setDecaySeconds(d);
+    bool armed = false;
+    double t = -1.0;
+    for (std::size_t i = 0; i < 48000; ++i) {
+      eg.tick(true);
+      const double l = eg.level01();
+      if (!armed) {
+        if (l >= 0.95) armed = true;          // attack done -> start the decay clock
+      } else if (l <= 0.3) {
+        t = static_cast<double>(i) / sr;
+        break;
+      }
+    }
+    fall.push_back(t);
+  }
+  CHECK(fall[0] > 0.0);
+  CHECK(fall[0] < fall[1] && fall[1] < fall[2]);   // monotone in seconds: faster fall for small d
+}
+
+// ---------------------------------------------------------------------------
+// ⑭  SELF-GEN disable continuity: turning SELF-GEN off mid-oscillation must NOT
+//   clear the current level, and must deterministically hand back to ADSR/release
+//   per the CURRENT real gate state (no gate -> release from the current level).
+// ---------------------------------------------------------------------------
+void test_selfgen_disable_continuity() {
+  const double sr = 48000.0;
+  EnvelopeGenerator eg(sr);
+  eg.setAttackSeconds(0.02);
+  eg.setReleaseSeconds(0.02);
+  eg.setSustain(0.5);
+  eg.setSelfGen(true);
+  // Drive SELF-GEN with NO gate until a genuine mid-oscillation level (0.1..0.9).
+  std::size_t guard = 0;
+  while (guard++ < 48000 && !(eg.level01() > 0.1 && eg.level01() < 0.9)) eg.tick(false);
+  const double before = eg.level01();
+  CHECK(guard <= 48000);
+  CHECK(before > 0.0 && before < 1.0);
+  eg.setSelfGen(false);
+  CHECK(eg.level01() == before);                          // NOT cleared to 0
+  CHECK(eg.phase() == EnvelopeGenerator::Phase::release); // no gate -> release
+  const double l0 = eg.level01();
+  for (int i = 0; i < 48000; ++i) eg.tick(false);
+  CHECK(eg.level01() < l0);                               // authoritative: decays on release
+}
+
+// ---------------------------------------------------------------------------
+// ⑮  non-finite config FAIL-CLOSED: setSustain(NaN) must be rejected (returns
+//   false), preserve the prior sustain (no silent substitution / invented value),
+//   and never let a NaN reach the output rail.
+// ---------------------------------------------------------------------------
+void test_sustain_nan_rejected() {
+  EnvelopeGenerator eg(48000.0);
+  eg.setSustain(0.3);
+  const bool ok = eg.setSustain(std::nan(""));
+  CHECK(ok == false);                        // rejected, not silently substituted
+  CHECK(eg.sustain() == 0.3);                // prior config preserved
+  CHECK(std::isfinite(eg.sustain()));
+  for (int i = 0; i < 48000; ++i) eg.tick(true);
+  CHECK(std::isfinite(eg.envVolts()));       // output rail never polluted
+  CHECK(eg.level01() >= 0.0 && eg.level01() <= 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// ⑯  non-finite / out-of-domain rate & time FAIL-CLOSED: invalid sample rate and
+//   invalid A/D/R seconds are rejected and leave inspector + config intact.
+// ---------------------------------------------------------------------------
+void test_invalid_rate_time_rejected() {
+  EnvelopeGenerator eg(48000.0);
+  const double sr0 = eg.sampleRate();
+  CHECK(eg.setSampleRate(std::nan("")) == false);
+  CHECK(eg.setSampleRate(0.0) == false);
+  CHECK(eg.setSampleRate(-48000.0) == false);
+  CHECK(eg.setSampleRate(std::numeric_limits<double>::infinity()) == false);
+  CHECK(eg.sampleRate() == sr0);             // preserved
+
+  const double a0 = eg.attackSeconds();
+  const double d0 = eg.decaySeconds();
+  const double r0 = eg.releaseSeconds();
+  CHECK(eg.setAttackSeconds(std::nan("")) == false);
+  CHECK(eg.setAttackSeconds(-1.0) == false);
+  CHECK(eg.setDecaySeconds(std::numeric_limits<double>::infinity()) == false);
+  CHECK(eg.setReleaseSeconds(std::nan("")) == false);
+  CHECK(eg.setReleaseSeconds(-1.0) == false);
+  CHECK(eg.attackSeconds() == a0 && eg.decaySeconds() == d0 && eg.releaseSeconds() == r0);
+
+  // With a valid regen the output stays finite.
+  eg.setAttackSeconds(0.01);
+  eg.setReleaseSeconds(0.02);
+  for (int i = 0; i < 48000; ++i) eg.tick(true);
+  CHECK(std::isfinite(eg.envVolts()));
+}
+
 }  // namespace
 
 int main() {
@@ -541,5 +651,9 @@ int main() {
   test_block_partition_bit_identical();
   test_outputs_finite_and_bounded();
   test_zero_seconds_deterministic();
+  test_decay_speed_trends();
+  test_selfgen_disable_continuity();
+  test_sustain_nan_rejected();
+  test_invalid_rate_time_rejected();
   return test::finish("envelope_generator");
 }
