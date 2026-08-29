@@ -252,6 +252,121 @@ static bool presets_equal(const core::KeyboardPreset& a, const core::KeyboardPre
   return true;
 }
 
+// Set a fully-distinct LIVE left non-scalar + selector matrix (both 16-step seqs are
+// only set on one side here; this is the left half). Values differ from any fill_preset
+// sentinel so a skipped write on save leaves the divergent sentinel and turns red.
+static void set_live_left_non_scalars(core::DeviceStateV1& st, std::uint32_t base) {
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    st.keyboardSeqCurrent.steps[i].note = static_cast<std::uint8_t>(base + 0x20u + i);
+    st.keyboardSeqCurrent.steps[i].value = 0.5f + 0.02f * static_cast<float>(i);
+    st.keyboardSeqCurrent.steps[i].gate = static_cast<std::uint8_t>(i & 1u);
+  }
+  st.keyboardScaleEditor = static_cast<std::uint16_t>(0x1000u + base);
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i)
+    st.keyboardPlateTune[i] = 2.0f + 0.1f * static_cast<float>(i);
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
+    st.keyboardPushbutton[i] = 3.0f + 0.1f * static_cast<float>(i);
+  st.keyboardClockSelectors[0] = static_cast<std::uint8_t>(base + 0x40u);
+  st.keyboardClockSelectors[1] = static_cast<std::uint8_t>(base + 0x41u);
+  st.keyboardClockSelectors[2] = static_cast<std::uint8_t>(base + 0x42u);
+  st.keyboardClockSelectors[3] = static_cast<std::uint8_t>(base + 0x43u);
+}
+
+// The right-half mirror of set_live_left_non_scalars (distinct R values).
+static void set_live_right_non_scalars(core::DeviceStateV1& st, std::uint32_t base) {
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    st.keyboardSeqCurrentR.steps[i].note = static_cast<std::uint8_t>(base + 0x90u + i);
+    st.keyboardSeqCurrentR.steps[i].value = 1.5f + 0.02f * static_cast<float>(i);
+    st.keyboardSeqCurrentR.steps[i].gate = static_cast<std::uint8_t>(i & 1u);
+  }
+  st.keyboardScaleEditorR = static_cast<std::uint16_t>(0x2000u + base);
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i)
+    st.keyboardPlateTuneR[i] = 4.0f + 0.1f * static_cast<float>(i);
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
+    st.keyboardPushbuttonR[i] = 5.0f + 0.1f * static_cast<float>(i);
+  st.keyboardClockSelectorsR[0] = static_cast<std::uint8_t>(base + 0x44u);
+  st.keyboardClockSelectorsR[1] = static_cast<std::uint8_t>(base + 0x45u);
+  st.keyboardClockSelectorsR[2] = static_cast<std::uint8_t>(base + 0x46u);
+  st.keyboardClockSelectorsR[3] = static_cast<std::uint8_t>(base + 0x47u);
+}
+
+// Assert the live keyboard state matches a preset's full per-side matrix (both
+// 16-step seqs note/value/gate, scale editor, plate tune[12], pushbutton[8], the four
+// no-domain selectors) plus the global behaviour selector. Used by the LOAD oracle: a
+// skipped write on any field, on either half, leaves a default or pre-existing live
+// value and turns red.
+static void assert_live_matches_preset_full(const core::DeviceStateV1& live,
+                                            const core::KeyboardPreset& p) {
+  CHECK_EQ(live.keyboardSettings.pressureBehaviour, p.pressureBehaviour);
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    CHECK_EQ(live.keyboardSeqCurrent.steps[i].note, p.seqSteps.steps[i].note);
+    CHECK_EQ(live.keyboardSeqCurrent.steps[i].value, p.seqSteps.steps[i].value);
+    CHECK_EQ(live.keyboardSeqCurrent.steps[i].gate, p.seqSteps.steps[i].gate);
+  }
+  CHECK_EQ(live.keyboardScaleEditor, p.quantiseScaleEditor);
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i)
+    CHECK_EQ(live.keyboardPlateTune[i], p.plateTune[i]);
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
+    CHECK_EQ(live.keyboardPushbutton[i], p.pushbuttonValue[i]);
+  CHECK_EQ(live.keyboardClockSelectors[0], p.arpClock);
+  CHECK_EQ(live.keyboardClockSelectors[1], p.arpRhythm);
+  CHECK_EQ(live.keyboardClockSelectors[2], p.seqClock);
+  CHECK_EQ(live.keyboardClockSelectors[3], p.seqRhythm);
+  // RIGHT half-bank.
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    CHECK_EQ(live.keyboardSeqCurrentR.steps[i].note, p.seqStepsR.steps[i].note);
+    CHECK_EQ(live.keyboardSeqCurrentR.steps[i].value, p.seqStepsR.steps[i].value);
+    CHECK_EQ(live.keyboardSeqCurrentR.steps[i].gate, p.seqStepsR.steps[i].gate);
+  }
+  CHECK_EQ(live.keyboardScaleEditorR, p.quantiseScaleEditorR);
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i)
+    CHECK_EQ(live.keyboardPlateTuneR[i], p.plateTuneR[i]);
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
+    CHECK_EQ(live.keyboardPushbuttonR[i], p.pushbuttonValueR[i]);
+  CHECK_EQ(live.keyboardClockSelectorsR[0], p.arpClockR);
+  CHECK_EQ(live.keyboardClockSelectorsR[1], p.arpRhythmR);
+  CHECK_EQ(live.keyboardClockSelectorsR[2], p.seqClockR);
+  CHECK_EQ(live.keyboardClockSelectorsR[3], p.seqRhythmR);
+}
+
+// The inverse direction of assert_live_matches_preset_full, for the SAVE oracle: assert
+// a preset matches the live keyboard state's full per-side matrix + global behaviour
+// selector, but NOT id/reserved (those are preserved, never written by save). A skipped
+// write on save leaves the target slot's divergent fill_preset sentinel -> red.
+static void assert_preset_matches_live_full(const core::KeyboardPreset& p,
+                                            const core::DeviceStateV1& live) {
+  CHECK_EQ(p.pressureBehaviour, live.keyboardSettings.pressureBehaviour);
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    CHECK_EQ(p.seqSteps.steps[i].note, live.keyboardSeqCurrent.steps[i].note);
+    CHECK_EQ(p.seqSteps.steps[i].value, live.keyboardSeqCurrent.steps[i].value);
+    CHECK_EQ(p.seqSteps.steps[i].gate, live.keyboardSeqCurrent.steps[i].gate);
+  }
+  CHECK_EQ(p.quantiseScaleEditor, live.keyboardScaleEditor);
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i)
+    CHECK_EQ(p.plateTune[i], live.keyboardPlateTune[i]);
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
+    CHECK_EQ(p.pushbuttonValue[i], live.keyboardPushbutton[i]);
+  CHECK_EQ(p.arpClock, live.keyboardClockSelectors[0]);
+  CHECK_EQ(p.arpRhythm, live.keyboardClockSelectors[1]);
+  CHECK_EQ(p.seqClock, live.keyboardClockSelectors[2]);
+  CHECK_EQ(p.seqRhythm, live.keyboardClockSelectors[3]);
+  // RIGHT half-bank.
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    CHECK_EQ(p.seqStepsR.steps[i].note, live.keyboardSeqCurrentR.steps[i].note);
+    CHECK_EQ(p.seqStepsR.steps[i].value, live.keyboardSeqCurrentR.steps[i].value);
+    CHECK_EQ(p.seqStepsR.steps[i].gate, live.keyboardSeqCurrentR.steps[i].gate);
+  }
+  CHECK_EQ(p.quantiseScaleEditorR, live.keyboardScaleEditorR);
+  for (std::uint32_t i = 0; i < core::kKeyboardPlateTuneCount; ++i)
+    CHECK_EQ(p.plateTuneR[i], live.keyboardPlateTuneR[i]);
+  for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
+    CHECK_EQ(p.pushbuttonValueR[i], live.keyboardPushbuttonR[i]);
+  CHECK_EQ(p.arpClockR, live.keyboardClockSelectorsR[0]);
+  CHECK_EQ(p.arpRhythmR, live.keyboardClockSelectorsR[1]);
+  CHECK_EQ(p.seqClockR, live.keyboardClockSelectorsR[2]);
+  CHECK_EQ(p.seqRhythmR, live.keyboardClockSelectorsR[3]);
+}
+
 static void full_payload_round_trip() {
   // Test #5 (reuses the P2-⑤ pathway): a preset is part of DeviceStateV1, which is
   // exactly what encode_device_state / decode_device_state (the P2-⑤ serializer)
@@ -402,9 +517,17 @@ static void full_preset_live_transfer_both_halves() {
 
   core::DeviceStateV1 live;
   live.keyboardPresets[0] = pt;
-  // Pre-existing live values that must be overwritten by the load.
+  // Pre-existing live values the load MUST overwrite: a couple of non-scalars, a plate
+  // entry per side, a right selector, and the mode scalar bank.
   live.keyboardSettings.pressureBehaviour = 7u;
   live.keyboardSettings.pressureOutput = 250u;
+  live.keyboardScaleEditor = 0x7777u;
+  live.keyboardScaleEditorR = 0x8888u;
+  live.keyboardPlateTune[3] = 11.0f;
+  live.keyboardPlateTuneR[3] = 12.0f;
+  live.keyboardPushbutton[1] = 13.0f;
+  live.keyboardPushbuttonR[1] = 14.0f;
+  live.keyboardClockSelectorsR[1] = 99u;
   const auto mode_id = static_cast<core::IdValue>(core::ParameterId::keyboard_mode);
   const auto mode_idx = core::keyboard_scalar_index(core::ParameterId::keyboard_mode);
   live.parameters[mode_id] = 999.0;
@@ -425,20 +548,9 @@ static void full_preset_live_transfer_both_halves() {
     CHECK_EQ(live.keyboardScalarRight[i], r);
     CHECK(live.parameters[static_cast<core::IdValue>(id)] != live.keyboardScalarRight[i]);
   }
-  // LEFT non-scalars + no-domain selectors.
-  CHECK_EQ(live.keyboardSeqCurrent.steps[3].note, pt.seqSteps.steps[3].note);
-  CHECK_EQ(live.keyboardScaleEditor, pt.quantiseScaleEditor);
-  CHECK_EQ(live.keyboardClockSelectors[0], pt.arpClock);
-  CHECK_EQ(live.keyboardClockSelectors[1], pt.arpRhythm);
-  CHECK_EQ(live.keyboardClockSelectors[2], pt.seqClock);
-  CHECK_EQ(live.keyboardClockSelectors[3], pt.seqRhythm);
-  // RIGHT non-scalars + no-domain selectors.
-  CHECK_EQ(live.keyboardSeqCurrentR.steps[3].note, pt.seqStepsR.steps[3].note);
-  CHECK_EQ(live.keyboardScaleEditorR, pt.quantiseScaleEditorR);
-  CHECK_EQ(live.keyboardClockSelectorsR[0], pt.arpClockR);
-  CHECK_EQ(live.keyboardClockSelectorsR[1], pt.arpRhythmR);
-  CHECK_EQ(live.keyboardClockSelectorsR[2], pt.seqClockR);
-  CHECK_EQ(live.keyboardClockSelectorsR[3], pt.seqRhythmR);
+  // The FULL per-side matrix: both 16-step seqs (note/value/gate), scale editor,
+  // plate tune[12], pushbutton[8], and the four no-domain selectors — on BOTH halves.
+  assert_live_matches_preset_full(live, pt);
   // Pressure-output compatibility mirror converges to the canonical LEFT scalar.
   const auto po = static_cast<core::IdValue>(core::ParameterId::keyboard_pressure_output);
   CHECK_EQ(live.keyboardSettings.pressureOutput,
@@ -450,6 +562,9 @@ static void full_preset_live_transfer_both_halves() {
 // and every non-keyboard DeviceStateV1 member untouched.
 static void full_live_save_matches_slot_only() {
   core::DeviceStateV1 st;
+  // Every slot starts as a FILL_PRESET sentinel (distinct non-scalars per side), id and
+  // reserved pinned per slot. We save into slot 1, so ANY field that save forgets to
+  // overwrite leaves slot 1's divergent sentinel and turns red.
   for (std::uint32_t s = 0; s < core::kDeviceKeyboardPresetCount; ++s) {
     core::KeyboardPreset pp;
     fill_preset(pp);
@@ -465,6 +580,8 @@ static void full_live_save_matches_slot_only() {
   st.identityModelVersion = 7u;
   st.routeOverridden[3] = 1u;
 
+  // A fully-distinct live matrix, differing from every slot's sentinel on both halves:
+  // 22 scalars (canonical banks) + both 16-step seqs + plate/push + scale + selectors.
   st.keyboardSettings.pressureBehaviour = 6u;
   st.keyboardSettings.pressureOutput = 77u;  // stale mirror, ignored on save
   for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i) {
@@ -472,14 +589,8 @@ static void full_live_save_matches_slot_only() {
     st.parameters[static_cast<core::IdValue>(id)] = 5.0 + static_cast<double>(i);
     st.keyboardScalarRight[i] = 6.0 + static_cast<double>(i);
   }
-  st.keyboardSeqCurrent.steps[7].note = 30u;
-  st.keyboardSeqCurrentR.steps[7].note = 31u;
-  st.keyboardScaleEditor = 0x2222u;
-  st.keyboardScaleEditorR = 0x3333u;
-  st.keyboardClockSelectors[0] = 8u; st.keyboardClockSelectors[1] = 7u;
-  st.keyboardClockSelectors[2] = 6u; st.keyboardClockSelectors[3] = 5u;
-  st.keyboardClockSelectorsR[0] = 18u; st.keyboardClockSelectorsR[1] = 17u;
-  st.keyboardClockSelectorsR[2] = 16u; st.keyboardClockSelectorsR[3] = 15u;
+  set_live_left_non_scalars(st, 0);
+  set_live_right_non_scalars(st, 0);
 
   CHECK(core::save_live_to_preset(st, 1u));
 
@@ -488,7 +599,6 @@ static void full_live_save_matches_slot_only() {
   CHECK_EQ(s1.id, 1u);
   CHECK_EQ(s1.reserved[0], 0x11u);
   CHECK_EQ(s1.reserved[1], 0x21u);
-  CHECK_EQ(s1.pressureBehaviour, 6u);
   // Live scalar banks land verbatim (canonical, not the 77u mirror).
   for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i) {
     const auto id = core::kKeyboardScalarParameterIds[i];
@@ -497,15 +607,9 @@ static void full_live_save_matches_slot_only() {
     CHECK_EQ(l, st.parameters[static_cast<core::IdValue>(id)]);
     CHECK_EQ(r, st.keyboardScalarRight[i]);
   }
-  // Non-scalars + no-domain selectors, both halves.
-  CHECK_EQ(s1.seqSteps.steps[7].note, 30u);
-  CHECK_EQ(s1.seqStepsR.steps[7].note, 31u);
-  CHECK_EQ(s1.quantiseScaleEditor, 0x2222u);
-  CHECK_EQ(s1.quantiseScaleEditorR, 0x3333u);
-  CHECK_EQ(s1.arpClock, 8u); CHECK_EQ(s1.arpRhythm, 7u);
-  CHECK_EQ(s1.seqClock, 6u); CHECK_EQ(s1.seqRhythm, 5u);
-  CHECK_EQ(s1.arpClockR, 18u); CHECK_EQ(s1.arpRhythmR, 17u);
-  CHECK_EQ(s1.seqClockR, 16u); CHECK_EQ(s1.seqRhythmR, 15u);
+  // The FULL per-side matrix, checked against the distinct live state (NOT a same-slot
+  // round-trip, which would be self-consistent on a double-skip).
+  assert_preset_matches_live_full(s1, st);
 
   // Siblings untouched, and the non-keyboard markers untouched.
   CHECK(presets_equal(st.keyboardPresets[0], before0));
