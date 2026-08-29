@@ -225,31 +225,40 @@ void test_block_partition_bit_identical() {
 
 void test_ab_isolation() {
   const double sr = 48000.0;
-  Lfo a(sr), b(sr), ctl(sr);
+  Lfo a(sr), b(sr);
   a.setBaseHz(5.0); a.setWave(0.0); a.setSpeedMult(LfoSpeedMult::x1);
   b.setBaseHz(5.0); b.setWave(1.0); b.setSpeedMult(LfoSpeedMult::x1);
-  ctl.setBaseHz(5.0); ctl.setWave(1.0); ctl.setSpeedMult(LfoSpeedMult::x1);
 
-  // b and ctl are an untouched, identically-configured twin pair. Arm BOTH to the
-  // same cycle position so the comparison is phase-matched: the phase advance is a
-  // pure function of (sr, baseHz, speedMult), identical for b and ctl, so clocking
-  // them together keeps b and ctl in lockstep. a is NOT clocked here.
-  for (int i = 0; i < 500; ++i) { b.tick(); ctl.tick(); }
+  // Warm up A and B to a known cycle position so a later cross-instance pollution
+  // is observable as a phase change (a brand-new phase of 0 would make many buggy
+  // clears invisible). a and b are distinct instances; clocking one never moves the
+  // other.
+  for (int i = 0; i < 500; ++i) { a.tick(); b.tick(); }
 
-  // Operate on A ONLY: reset + change RATE + advance. If A's reset leaked into any
-  // shared / epoch state that b reads next, b's phase would be corrupted while the
-  // untouched ctl would not be.
+  // FREEZE b's expected next-M trace BEFORE A is touched (Codex re-review 683f5f30):
+  // copy b's value state into a local `expected` and clock it. A correct Lfo treats
+  // `expected` as an independent instance, so this does NOT perturb b — it only
+  // records what b's next M samples would be if nothing pollutes it. Freezing the
+  // expectation BEFORE the A-operation is what defeats the twin-oracle mask: two
+  // live clocks that both observe a later shared bump get zeroed symmetrically and
+  // stay equal, whereas a frozen pre-bump expectation keeps the unpolluted reference.
+  const int M = 500;
+  Lfo expected(b);                    // copy of b's config + phase
+  const auto traceExpected = run_sig(expected, M);
+
+  // Operate on A ONLY: reset + change RATE + advance. A correct Lfo confines this
+  // activity to a. Under a shared-reset/epoch bug A's reset() bumps a shared epoch
+  // and b's next tick clears its own phase — but the frozen `expected` trace (taken
+  // before the bump) still holds the unpolluted phase, so b's real trace diverges.
   a.reset(); a.setBaseHz(80.0); a.setSpeedMult(LfoSpeedMult::x10);
   for (int i = 0; i < 100; ++i) a.tick();
 
-  // Do NOT reset b (that is exactly the mask the old oracle had). Compare b's next
-  // M samples directly against the pristine twin ctl, bit-identical. Under a shared
-  // phase the two would sequentially advance the same cell and diverge; under a
-  // shared-reset epoch b would get zeroed while ctl would not.
-  const int M = 500;
-  const auto traceB = run_sig(b, M);
-  const auto traceCtl = run_sig(ctl, M);
-  CHECK(traceB == traceCtl);
+  // Do NOT reset b. Compare b's real next-M samples against the FROZEN expected
+  // trace, bit-identical. A shared phase (b & expected mutate one cell sequentially,
+  // so b continues from the cell expected already advanced) or a shared-reset epoch
+  // (b's phase cleared by A's reset) both make b's real trace differ from expected.
+  const auto traceActual = run_sig(b, M);
+  CHECK(traceActual == traceExpected);
   // B config untouched, A config changed
   CHECK(b.baseHz() == 5.0 && b.wave() == 1.0 && b.speedMult() == LfoSpeedMult::x1);
   CHECK(a.baseHz() == 80.0 && a.wave() == 0.0 && a.speedMult() == LfoSpeedMult::x10);
