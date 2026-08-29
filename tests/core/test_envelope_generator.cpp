@@ -589,6 +589,34 @@ void test_selfgen_disable_continuity() {
   CHECK(eg.level01() < l0);                               // authoritative: decays on release
 }
 
+// ⑭b  SELF-GEN disable with gate HELD HIGH: on disable the level is preserved (not
+//   cleared) and, because the real gate is high, the generator must enter ATTACK
+//   and keep RISING from the current level (NOT release). A stale "always release"
+//   that ignores the gate must go red here. This closes the held-gate branch the
+//   no-gate ⑭ above did not reach.
+void test_selfgen_held_gate_disable_enters_attack() {
+  const double sr = 48000.0;
+  EnvelopeGenerator eg(sr);
+  eg.setAttackSeconds(0.02);
+  eg.setReleaseSeconds(0.02);
+  eg.setSustain(0.5);
+  eg.setSelfGen(true);
+  // Hold the gate HIGH (tick true) while SELF-GEN runs; stop in a mid (0.2..0.7)
+  // non-endpoint level so a couple of attack ticks clearly exceed it.
+  std::size_t guard = 0;
+  while (guard++ < 48000 && !(eg.level01() > 0.2 && eg.level01() < 0.7)) eg.tick(true);
+  const double before = eg.level01();
+  CHECK(guard <= 48000);
+  CHECK(before > 0.0 && before < 1.0);
+  CHECK(eg.gateLatch());                                  // gate really held high
+  eg.setSelfGen(false);
+  CHECK(eg.level01() == before);                          // NOT cleared to 0
+  CHECK(eg.phase() == EnvelopeGenerator::Phase::attack);  // held gate -> attack, not release
+  const double l0 = eg.level01();
+  for (int i = 0; i < 2; ++i) eg.tick(true);
+  CHECK(eg.level01() > l0);                               // rises from current level (not release)
+}
+
 // ---------------------------------------------------------------------------
 // ⑮  non-finite config FAIL-CLOSED: setSustain(NaN) must be rejected (returns
 //   false), preserve the prior sustain (no silent substitution / invented value),
@@ -653,6 +681,7 @@ int main() {
   test_zero_seconds_deterministic();
   test_decay_speed_trends();
   test_selfgen_disable_continuity();
+  test_selfgen_held_gate_disable_enters_attack();
   test_sustain_nan_rejected();
   test_invalid_rate_time_rejected();
   return test::finish("envelope_generator");
