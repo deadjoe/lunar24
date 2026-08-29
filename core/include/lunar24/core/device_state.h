@@ -323,8 +323,11 @@ struct KeyboardSettings {
   std::uint8_t pressureOutput = 0;     // PROVISIONAL decode
 };
 
-// One step of the keyboard's 16-step sequencer run (design/06 — the 5-step
-// sequencer extends to a 16-step run). note is a semitone, value a CV in volts,
+// One step of the keyboard's own 16-step sequencer run (P4 keyboard performance
+// system; design/06 §4). The physical 5-step sequencer is a SEPARATE P3 control
+// source (ModuleId 11, STAGES 3/4/5) and does NOT extend into this 16-step run —
+// its five stage params live in parameters[], and its transient playhead / gate /
+// envelope phase is not persisted. note is a semitone, value a CV in volts,
 // gate a boolean. Fixed-width 6-byte wire record (see kKeyboardSeqStepFields).
 struct KeyboardSeqStep {
   std::uint8_t note = 0;

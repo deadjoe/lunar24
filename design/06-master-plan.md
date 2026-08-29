@@ -101,12 +101,19 @@ negistor 的单元差异、慢漂移和非线性是核心音色，不得用干�
 3. VCO A/B：AS3340 行为、六波形/morph、PWM/FM/sync/sub；
 4. EXT AUDIO、preamp、envelope follower；
 5. 十路 mixer/pan；双 12 dB Polivoks LP/BP VCF（提高 resonance 不丢低频、CV L normalled 到 CV R）；post-filter distortion（DIST=blend、GAIN=amount）；WET/DRY 输出。左右 calibration/nonlinear state 独立。
+6. 可跳线控制源（L2「控制与路由」中需要模块级即时声源、且 **非 P4 keyboard 演奏系统**的部分；即 GH #11 的完整范围，共 6 个控制源，须满足本阶段退出条件的硬门）：
+   - **Envelope A / Envelope B**：两只独立 ADSR 包络（`envelope_a`/`envelope_b`，带 HOLD 与 SELF-GEN surface、gate 输入 `gate_in`、ENV `env_out` 与 VCA-CV `vca_cv_out` 两路输出）。ENV 0..8V（manual OUTS VOLTAGE SPECIFICATION，confirmed）；VCA-CV 极性/transfer provisional；ATT/DEC/RLS 曲线与真实秒数、HOLD/SELF-GEN transfer unverified（见下证据口径）。
+   - **LFO A / LFO B**：两只独立低频振荡器（`lfo_a`/`lfo_b`，square↔triangle WAVE、RATE、×1/×6/×10 `speed_mult`），公开 CV 单极 0..+10V（manual OUTS SPEC，confirmed，须保留单极性）。精确波形 blend 曲线、频率 transfer、通电相位属 evidence disposition，不作已校真机断言。
+   - **Joystick**：独立 X/Y 与 OFFSET X/Y，两路可跳线输出（`joystick.x_out`/`joystick.y_out`，confirmed −10..+10V）；连续 param→audio-rate CV 源。机械 taper/center/offset transfer unverified。
+   - **物理 5-step sequencer**：独立五段状态机（`sequencer`，ModuleId 11），STAGES 仅 3/4/5；五步 step-CV（0..+5V）与五步 gate enable；内部 PULSER（−10..+10V，manual OUTS SPEC，confirmed）与 external clock in（`ext_clock_in`）；CLOCK OUT（`clock_out`）与 CV/GATE out（`cv_out`/`gate_out`）。clock jack rail/threshold、脉冲宽度、通电 playhead unverified/provisional；不得凭空发明 reset（连通语义见设计/07）。
 
-**退出条件**：除 dual effector 外的整条信号链可演奏、可跳线、四逻辑输出正确；Core 无固定 48 kHz 常数，44.1/48/88.2/96 kHz 与不同 buffer 下行为稳定；固定测试 seed 可重现。
+   > 明确排除：`EnvelopeFollower`（`env_follower`）是 L3 前级侧的音量痕迹检测器，**不是** EG，不归入本节；物理 5-step 是 P3 独立 sequencer，**不得**并入 P4 keyboard 的 16-step（那是两套独立 sequencer）。
+
+**退出条件**：除 dual effector 外的整条信号链可演奏、可跳线、四逻辑输出正确；Core 无固定 48 kHz 常数，44.1/48/88.2/96 kHz 与不同 buffer 下行为稳定；固定测试 seed 可重现。**上述 6 个控制源（Envelope A/B、LFO A/B、Joystick、物理 5-step）必须补齐生产实现与消费**，逐项满足硬门：框架无关、固定/无堆、逐 sample 的生产实现；canonical factory/实例化；被 SynthRuntime/PatchGraph 按 registry JackId 真实消费；公开输出使用 virtual volts；有 forward behavior test 与 negative（旧错红）。仅 class/registry/结构扫描当“有实现”**不计入**。
 
 ### P4 — 完成演奏系统与输入适配
 
-- 实现原 keyboard 的全部声音行为与四个 keyboard presets。
+- 实现原 keyboard 的全部声音行为与四个 keyboard presets。**P4 是 keyboard 自己的 arp/16-step 演奏系统**，包含 keyboard 专用的 16-step sequencer、pressure / portamento / vibrato / quantiser 与 six gate 等发音行为；它通过既有 CV/gate/clock 与 P3 控制源相接，**不拥有、不扩展、不取代物理 5-step**（物理 5-step 是 P3 可跳线控制源下的独立 sequencer，ModuleId 11；两套 sequencer 相互独立，禁止写成 “5→16 extension”）。
 - 指针/电脑键盘/MIDI 全部进入同一 state machine；velocity/aftertouch 只映射原 pressure，MIDI clock 只映射 external clock，CC learn 只指向原控件/CV。
 - 完成底部显示屏＋encoder 菜单与输入归一化校准；只保留原 keyboard 的 4 个 presets。
 
