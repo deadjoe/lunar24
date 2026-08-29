@@ -314,44 +314,69 @@ static void right_bank_wire_offset_anchor() {
   CHECK_EQ(core::get_f32(buf + 215u + 7u * 4u), p.pushbuttonValue[7]);
 }
 
-// Test #3: load / save / initialise exist; initialise returns to the factory
-// value (non-destructively), NOT a whole-device zero. Negative: an initialise
-// that clobbers a sibling slot or the machine state catches a real bug.
+// Test #3: the new COMPLETE transfer (task #57 / GH #12 partial) replaces the old
+// fragment load_preset / save_preset. It moves the slot's whole keyboard-owned
+// payload, so a snapshot into a slot round-trips every per-side scalar bank, the
+// global behaviour selector, the left/right non-scalars, and the left/right
+// no-domain selectors. initialise still returns the SLOT to factory (not a
+// whole-device zero). Negative: an initialise that clobbers a sibling slot or the
+// live state catches a real bug.
 static void load_save_initialise() {
   core::DeviceStateV1 st;
+
+  // Distinctive LIVE keyboard state to snapshot into slot 2.
+  st.keyboardSettings.pressureBehaviour = 5u;
+  st.keyboardSettings.pressureOutput = 44u;  // stale mirror — must NOT leak into slot 2
+  for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i) {
+    const auto id = core::kKeyboardScalarParameterIds[i];
+    st.parameters[static_cast<core::IdValue>(id)] = 5.0 + static_cast<double>(i);
+    st.keyboardScalarRight[i] = 6.0 + static_cast<double>(i);
+  }
+  st.keyboardSeqCurrent.steps[3].note = 42u;
+  st.keyboardSeqCurrent.steps[3].value = 0.5f;
+  st.keyboardSeqCurrent.steps[3].gate = 1u;
+  st.keyboardScaleEditor = 0x1234u;
+  st.keyboardScaleEditorR = 0x4321u;
+  st.keyboardClockSelectors[0] = 1u; st.keyboardClockSelectors[1] = 2u;
+  st.keyboardClockSelectors[2] = 3u; st.keyboardClockSelectors[3] = 4u;
+  st.keyboardClockSelectorsR[0] = 11u; st.keyboardClockSelectorsR[1] = 12u;
+  st.keyboardClockSelectorsR[2] = 13u; st.keyboardClockSelectorsR[3] = 14u;
+
+  CHECK(core::save_live_to_preset(st, 2u));
+
+  // The saved slot carries the live state — every per-side scalar bank, both halves.
+  const auto po = static_cast<core::IdValue>(core::ParameterId::keyboard_pressure_output);
+  CHECK_EQ(st.keyboardPresets[2].pressureBehaviour, 5u);
+  // pressure_output in the slot comes from the CANONICAL left scalar bank, never the
+  // stale mirror 44u (the negative that a wrong "read the shell" save would trip).
+  CHECK_EQ(st.keyboardPresets[2].pressureOutput,
+           static_cast<std::uint8_t>(st.parameters[po]));
+  CHECK_EQ(st.keyboardPresets[2].pressureOutputR,
+           static_cast<std::uint8_t>(st.keyboardScalarRight[core::keyboard_scalar_index(core::ParameterId::keyboard_pressure_output)]));
+  for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i) {
+    const auto id = core::kKeyboardScalarParameterIds[i];
+    double l = 0.0, r = 0.0;
+    core::read_preset_scalar_pair(st.keyboardPresets[2], id, &l, &r);
+    CHECK_EQ(l, st.parameters[static_cast<core::IdValue>(id)]);
+    CHECK_EQ(r, st.keyboardScalarRight[i]);
+  }
+  // Non-scalars + no-domain selectors, both halves, are moved verbatim.
+  CHECK_EQ(st.keyboardPresets[2].seqSteps.steps[3].note, 42u);
+  CHECK_EQ(st.keyboardPresets[2].seqSteps.steps[3].value, 0.5f);
+  CHECK_EQ(st.keyboardPresets[2].quantiseScaleEditor, 0x1234u);
+  CHECK_EQ(st.keyboardPresets[2].quantiseScaleEditorR, 0x4321u);
+  CHECK_EQ(st.keyboardPresets[2].arpClock, 1u);
+  CHECK_EQ(st.keyboardPresets[2].arpRhythm, 2u);
+  CHECK_EQ(st.keyboardPresets[2].seqClock, 3u);
+  CHECK_EQ(st.keyboardPresets[2].seqRhythm, 4u);
+  CHECK_EQ(st.keyboardPresets[2].arpClockR, 11u);
+  CHECK_EQ(st.keyboardPresets[2].arpRhythmR, 12u);
+  CHECK_EQ(st.keyboardPresets[2].seqClockR, 13u);
+  CHECK_EQ(st.keyboardPresets[2].seqRhythmR, 14u);
+
+  // initialise resets the SLOT to factory and must not touch the other three slots,
+  // the live keyboard state, or any non-keyboard DeviceStateV1 member.
   const auto before = st.keyboardPresets;
-
-  // Save current live state into slot 2, then load it back — the owned state
-  // (shell + non-scalars + no-domain selectors) must round-trip.
-  core::KeyboardSeq liveSeq{};
-  liveSeq.steps[3].note = 42u;
-  liveSeq.steps[3].value = 0.5f;
-  liveSeq.steps[3].gate = 1u;
-  float plate[core::kKeyboardPlateTuneCount] = {};
-  plate[7] = 0.75f;
-  float push[core::kKeyboardPushbuttonCount] = {};
-  push[2] = 0.25f;
-  std::uint8_t sel[4] = {1u, 2u, 3u, 4u};  // arp_clock, arp_rhythm, seq_clock, seq_rhythm
-
-  CHECK(core::save_preset(st, 2u, st.keyboardSettings, liveSeq, 0x1234u, plate, push, sel));
-
-  core::KeyboardSettings settings;
-  core::KeyboardSeq loadedSeq;
-  std::uint16_t scaleEditor = 0;
-  float loadedPlate[core::kKeyboardPlateTuneCount] = {};
-  float loadedPush[core::kKeyboardPushbuttonCount] = {};
-  std::uint8_t loadedSel[4] = {};
-  CHECK(core::load_preset(st, 2u, &settings, &loadedSeq, &scaleEditor, loadedPlate, loadedPush, loadedSel));
-  CHECK_EQ(loadedSeq.steps[3].note, 42u);
-  CHECK_EQ(loadedSeq.steps[3].value, 0.5f);
-  CHECK_EQ(loadedSeq.steps[3].gate, 1u);
-  CHECK_EQ(scaleEditor, 0x1234u);
-  CHECK_EQ(loadedPlate[7], 0.75f);
-  CHECK_EQ(loadedPush[2], 0.25f);
-  CHECK(loadedSel[0] == 1u && loadedSel[1] == 2u && loadedSel[2] == 3u && loadedSel[3] == 4u);
-
-  // initialise resets the SLOT to the factory default and must not touch the other
-  // three slots, the live keyboard state, or any other DeviceStateV1 member.
   CHECK(core::initialise_preset(st, 2u));
   CHECK_EQ(st.keyboardPresets[2].id, 2u);  // the slot's stable identity is restored
   CHECK(presets_equal(st.keyboardPresets[0], before[0]));  // sibling A untouched
@@ -359,11 +384,211 @@ static void load_save_initialise() {
   CHECK(presets_equal(st.keyboardPresets[3], before[3]));  // sibling D untouched
   // Negative control: an initialise that wiped the machine (params, live seq,
   // identity) would fail the "non-zeroing" requirement — a real clobber bug.
-  CHECK_EQ(loadedSeq.steps[3].note, 42u);  // live seq is NOT reset by initialising a slot
+  CHECK_EQ(st.keyboardSeqCurrent.steps[3].note, 42u);  // live seq is NOT reset by slot initialise
   CHECK(st.schemaVersion == core::kDeviceStorageSchemaVersion);
 
   // Out-of-range load/save are rejected (no 5th slot).
-  CHECK_FALSE(core::save_preset(st, 4u, st.keyboardSettings, liveSeq, 0u, plate, push, sel));
+  CHECK_FALSE(core::save_live_to_preset(st, 4u));
+  CHECK_FALSE(core::load_preset_to_live(st, 4u));
+}
+
+// A distinct per-field LEFT/RIGHT preset, loaded through the complete public API,
+// must land in the live state on BOTH halves: bank[0] = parameters[id], bank[1] =
+// keyboardScalarRight; the left/right non-scalars and the left/right no-domain
+// selectors too. This is the "prove live both sides match" oracle.
+static void full_preset_live_transfer_both_halves() {
+  core::KeyboardPreset pt;
+  fill_preset(pt);  // each left field differs from its right `_R` counterpart
+
+  core::DeviceStateV1 live;
+  live.keyboardPresets[0] = pt;
+  // Pre-existing live values that must be overwritten by the load.
+  live.keyboardSettings.pressureBehaviour = 7u;
+  live.keyboardSettings.pressureOutput = 250u;
+  const auto mode_id = static_cast<core::IdValue>(core::ParameterId::keyboard_mode);
+  const auto mode_idx = core::keyboard_scalar_index(core::ParameterId::keyboard_mode);
+  live.parameters[mode_id] = 999.0;
+  live.keyboardScalarRight[mode_idx] = 888.0;
+
+  CHECK(core::load_preset_to_live(live, 0u));
+
+  // Global behaviour selector overwritten.
+  CHECK_EQ(live.keyboardSettings.pressureBehaviour, pt.pressureBehaviour);
+  // Both scalar banks, every per-side scalar: left = parameters[id], right =
+  // keyboardScalarRight[idx], and the two are distinct (fill_preset makes each right
+  // a distinct value from its left).
+  for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i) {
+    const auto id = core::kKeyboardScalarParameterIds[i];
+    double l = 0.0, r = 0.0;
+    core::read_preset_scalar_pair(pt, id, &l, &r);
+    CHECK_EQ(live.parameters[static_cast<core::IdValue>(id)], l);
+    CHECK_EQ(live.keyboardScalarRight[i], r);
+    CHECK(live.parameters[static_cast<core::IdValue>(id)] != live.keyboardScalarRight[i]);
+  }
+  // LEFT non-scalars + no-domain selectors.
+  CHECK_EQ(live.keyboardSeqCurrent.steps[3].note, pt.seqSteps.steps[3].note);
+  CHECK_EQ(live.keyboardScaleEditor, pt.quantiseScaleEditor);
+  CHECK_EQ(live.keyboardClockSelectors[0], pt.arpClock);
+  CHECK_EQ(live.keyboardClockSelectors[1], pt.arpRhythm);
+  CHECK_EQ(live.keyboardClockSelectors[2], pt.seqClock);
+  CHECK_EQ(live.keyboardClockSelectors[3], pt.seqRhythm);
+  // RIGHT non-scalars + no-domain selectors.
+  CHECK_EQ(live.keyboardSeqCurrentR.steps[3].note, pt.seqStepsR.steps[3].note);
+  CHECK_EQ(live.keyboardScaleEditorR, pt.quantiseScaleEditorR);
+  CHECK_EQ(live.keyboardClockSelectorsR[0], pt.arpClockR);
+  CHECK_EQ(live.keyboardClockSelectorsR[1], pt.arpRhythmR);
+  CHECK_EQ(live.keyboardClockSelectorsR[2], pt.seqClockR);
+  CHECK_EQ(live.keyboardClockSelectorsR[3], pt.seqRhythmR);
+  // Pressure-output compatibility mirror converges to the canonical LEFT scalar.
+  const auto po = static_cast<core::IdValue>(core::ParameterId::keyboard_pressure_output);
+  CHECK_EQ(live.keyboardSettings.pressureOutput,
+           static_cast<std::uint8_t>(live.parameters[po]));
+}
+
+// A distinct live keyboard set, saved through the complete public API, must land in
+// the SELECTED slot exactly and leave the three siblings, the slot's own id/reserved,
+// and every non-keyboard DeviceStateV1 member untouched.
+static void full_live_save_matches_slot_only() {
+  core::DeviceStateV1 st;
+  for (std::uint32_t s = 0; s < core::kDeviceKeyboardPresetCount; ++s) {
+    core::KeyboardPreset pp;
+    fill_preset(pp);
+    pp.id = s;
+    pp.reserved[0] = static_cast<std::uint8_t>(0x10u + s);
+    pp.reserved[1] = static_cast<std::uint8_t>(0x20u + s);
+    st.keyboardPresets[s] = pp;
+  }
+  const auto before0 = st.keyboardPresets[0];
+  const auto before2 = st.keyboardPresets[2];
+  const auto before3 = st.keyboardPresets[3];
+  // A couple of non-keyboard markers that a stray write would clobber.
+  st.identityModelVersion = 7u;
+  st.routeOverridden[3] = 1u;
+
+  st.keyboardSettings.pressureBehaviour = 6u;
+  st.keyboardSettings.pressureOutput = 77u;  // stale mirror, ignored on save
+  for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i) {
+    const auto id = core::kKeyboardScalarParameterIds[i];
+    st.parameters[static_cast<core::IdValue>(id)] = 5.0 + static_cast<double>(i);
+    st.keyboardScalarRight[i] = 6.0 + static_cast<double>(i);
+  }
+  st.keyboardSeqCurrent.steps[7].note = 30u;
+  st.keyboardSeqCurrentR.steps[7].note = 31u;
+  st.keyboardScaleEditor = 0x2222u;
+  st.keyboardScaleEditorR = 0x3333u;
+  st.keyboardClockSelectors[0] = 8u; st.keyboardClockSelectors[1] = 7u;
+  st.keyboardClockSelectors[2] = 6u; st.keyboardClockSelectors[3] = 5u;
+  st.keyboardClockSelectorsR[0] = 18u; st.keyboardClockSelectorsR[1] = 17u;
+  st.keyboardClockSelectorsR[2] = 16u; st.keyboardClockSelectorsR[3] = 15u;
+
+  CHECK(core::save_live_to_preset(st, 1u));
+
+  const auto& s1 = st.keyboardPresets[1];
+  // Slot 1 identity + reserved preserved (they are NOT live controls).
+  CHECK_EQ(s1.id, 1u);
+  CHECK_EQ(s1.reserved[0], 0x11u);
+  CHECK_EQ(s1.reserved[1], 0x21u);
+  CHECK_EQ(s1.pressureBehaviour, 6u);
+  // Live scalar banks land verbatim (canonical, not the 77u mirror).
+  for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i) {
+    const auto id = core::kKeyboardScalarParameterIds[i];
+    double l = 0.0, r = 0.0;
+    core::read_preset_scalar_pair(s1, id, &l, &r);
+    CHECK_EQ(l, st.parameters[static_cast<core::IdValue>(id)]);
+    CHECK_EQ(r, st.keyboardScalarRight[i]);
+  }
+  // Non-scalars + no-domain selectors, both halves.
+  CHECK_EQ(s1.seqSteps.steps[7].note, 30u);
+  CHECK_EQ(s1.seqStepsR.steps[7].note, 31u);
+  CHECK_EQ(s1.quantiseScaleEditor, 0x2222u);
+  CHECK_EQ(s1.quantiseScaleEditorR, 0x3333u);
+  CHECK_EQ(s1.arpClock, 8u); CHECK_EQ(s1.arpRhythm, 7u);
+  CHECK_EQ(s1.seqClock, 6u); CHECK_EQ(s1.seqRhythm, 5u);
+  CHECK_EQ(s1.arpClockR, 18u); CHECK_EQ(s1.arpRhythmR, 17u);
+  CHECK_EQ(s1.seqClockR, 16u); CHECK_EQ(s1.seqRhythmR, 15u);
+
+  // Siblings untouched, and the non-keyboard markers untouched.
+  CHECK(presets_equal(st.keyboardPresets[0], before0));
+  CHECK(presets_equal(st.keyboardPresets[2], before2));
+  CHECK(presets_equal(st.keyboardPresets[3], before3));
+  CHECK_EQ(st.identityModelVersion, 7u);
+  CHECK_EQ(st.routeOverridden[3], 1u);
+}
+
+// preset -> live -> preset through the complete public API is lossless on the whole
+// keyboard-owned payload, INCLUDING the shell's id/reserved bytes (which the load
+// never reads and the save never writes, so they survive verbatim).
+static void full_preset_live_preset_round_trip_lossless() {
+  core::KeyboardPreset orig;
+  fill_preset(orig);  // id=2, reserved[0]=0xEA, reserved[1]=0xF5
+
+  core::DeviceStateV1 st;
+  st.keyboardPresets[0] = orig;
+  CHECK(core::load_preset_to_live(st, 0u));
+  CHECK(core::save_live_to_preset(st, 0u));
+
+  CHECK(presets_equal(st.keyboardPresets[0], orig));
+}
+
+// An out-of-range slot must return false AND leave both the live keyboard state and
+// the preset bank untouched (no partial write into some other memory).
+static void invalid_slot_returns_false_zero_mutation() {
+  core::DeviceStateV1 st;
+  core::KeyboardPreset known;
+  fill_preset(known);
+  st.keyboardPresets[0] = known;
+  const auto before0 = st.keyboardPresets[0];
+  const auto liveBefore = st.keyboardSettings;
+  const auto seqBefore = st.keyboardSeqCurrent;
+
+  CHECK_FALSE(core::load_preset_to_live(st, 4u));
+  CHECK_FALSE(core::save_live_to_preset(st, 4u));
+  CHECK_FALSE(core::load_preset_to_live(st, 0xFFFFu));
+  CHECK_FALSE(core::save_live_to_preset(st, 0xFFFFu));
+
+  CHECK(presets_equal(st.keyboardPresets[0], before0));
+  CHECK_EQ(st.keyboardSettings.pressureBehaviour, liveBefore.pressureBehaviour);
+  CHECK_EQ(st.keyboardSettings.pressureOutput, liveBefore.pressureOutput);
+  CHECK(st.keyboardSeqCurrent.steps[0].note == seqBefore.steps[0].note);
+  // A genuinely invalid slot index rejected at the gate never writes slot 1 either.
+  CHECK(presets_equal(st.keyboardPresets[1], core::KeyboardPreset{}));
+}
+
+// pressure_output single-truth (design/00 §181, task #57): the canonical live values
+// are the left scalar bank and the right scalar bank; keyboardSettings.pressureOutput
+// is a COMPAT MIRROR that converges to the canonical LEFT on load and must NOT be
+// read on save (a stale mirror must never pollute the preset).
+static void pressure_output_canonicality() {
+  core::KeyboardPreset pt;
+  fill_preset(pt);  // pressureOutput = 9 (left), pressureOutputR = 21 (right)
+
+  // --- load: mirror converges to canonical left ---
+  core::DeviceStateV1 live;
+  live.keyboardPresets[0] = pt;
+  live.keyboardSettings.pressureOutput = 200u;  // stale mirror BEFORE load
+  CHECK(core::load_preset_to_live(live, 0u));
+  const auto po = static_cast<core::IdValue>(core::ParameterId::keyboard_pressure_output);
+  const auto po_idx = core::keyboard_scalar_index(core::ParameterId::keyboard_pressure_output);
+  CHECK_EQ(live.parameters[po], static_cast<double>(pt.pressureOutput));   // canonical left
+  CHECK_EQ(live.keyboardScalarRight[po_idx], static_cast<double>(pt.pressureOutputR));  // canonical right
+  CHECK_EQ(live.keyboardSettings.pressureOutput,
+           static_cast<std::uint8_t>(pt.pressureOutput));  // mirror converged to left
+
+  // --- save: canonical left wins, a conflicting mirror does NOT pollute ---
+  core::KeyboardPreset target;
+  target.pressureOutput = 99u;   // an old divergent preset value, must be overwritten
+  target.pressureOutputR = 88u;
+  target.id = 3u;
+  target.reserved[0] = 0xABu;
+  live.keyboardPresets[1] = target;
+  live.parameters[po] = 30.0;                // canonical LEFT
+  live.keyboardScalarRight[po_idx] = 40.0;   // canonical RIGHT
+  live.keyboardSettings.pressureOutput = 240;  // STALE mirror, conflict with canonical
+  CHECK(core::save_live_to_preset(live, 1u));
+  CHECK_EQ(live.keyboardPresets[1].pressureOutput, 30u);   // from canonical left, NOT 240/99
+  CHECK_EQ(live.keyboardPresets[1].pressureOutputR, 40u);  // from canonical right
+  CHECK_EQ(live.keyboardPresets[1].id, 3u);                // id preserved
+  CHECK_EQ(live.keyboardPresets[1].reserved[0], 0xABu);    // reserved preserved
 }
 
 // P4-③ §2e invariant (design/00, @Claude msg c0d9e9be): a keyboard scalar is
@@ -446,5 +671,10 @@ int main() {
   load_save_initialise();
   live_state_holds_non_scalars();
   live_scalar_bank_preset_live_round_trip();
-  return ::test::finish("keyboard presets (P4-②)");
+  full_preset_live_transfer_both_halves();
+  full_live_save_matches_slot_only();
+  full_preset_live_preset_round_trip_lossless();
+  invalid_slot_returns_false_zero_mutation();
+  pressure_output_canonicality();
+  return ::test::finish("keyboard presets (P4-②, full transfer)");
 }
