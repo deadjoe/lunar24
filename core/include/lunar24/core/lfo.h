@@ -44,8 +44,9 @@ inline constexpr double kLfoOutputPeakVolt = 10.0;
 // Speed multiplier selector x1 / x6 / x10 (registry lfo_*.speed_mult option
 // labels). The registry carries these as PROVISIONAL field evidence — the exact
 // per-position behaviour and default are unverified — so the 1/6/10 factors are a
-// centralized provisional mapping, not a decoded hardware curve. The value 0 is
-// reserved so an out-of-band / invalid selector code can never alias a valid one.
+// centralized provisional mapping, not a decoded hardware curve. x1 is the numeric
+// value 0 (a VALID position); any out-of-band / invalid selector code is rejected
+// by the fail-closed setSpeedMult so it can never alias a valid position.
 enum class LfoSpeedMult : std::uint8_t { x1 = 0, x6 = 1, x10 = 2 };
 
 // Round-trip the selector to its multiplier factor. Returns 1.0 for a value that
@@ -66,15 +67,22 @@ class Lfo {
   explicit Lfo(double sampleRate) { setSampleRate(sampleRate); }
 
   // --- configuration (NOT cleared by reset()) -----------------------------
-  // Every numeric setter is FAIL-CLOSED: an invalid value (non-finite NaN/±Inf,
-  // or an out-of-domain rate) is rejected — it returns false and leaves the prior
-  // configuration intact, so persistence / later output are untouched. A non-finite
+  // Every numeric setter is FAIL-CLOSED across the WHOLE candidate config: a
+  // value that is non-finite, out-of-domain, or would make the effective phase
+  // step (baseHz * speedMult / sampleRate) non-finite is rejected — the setter
+  // returns false and leaves the prior configuration intact, so persistence /
+  // later output are untouched. The effective-step check is the reason a finite
+  // input can still be rejected: huge Hz times a multiplier, or a huge rate over
+  // a tiny sample rate, can overflow to +/-Inf even though each input is finite,
+  // and an infinite phase step would drive the wrapped phase to NaN. A non-finite
   // input is never silently substituted with a neighbouring value; the ONLY
   // transformation applied is a bounds-clamp on a KNOWN-finite wave to [0,1].
   // An invalid speed-multiplier enum is also rejected (fail-closed).
   bool setSampleRate(double sr) {
     if (!(std::isfinite(sr) && sr > 0.0)) return false;  // reject NaN/Inf/0/negative
-    if (sr_ != sr) sr_ = sr;
+    if (sr_ == sr) return true;
+    if (!effectiveStepFinite(sr, baseHz_, speedMult_)) return false;  // keep prior config
+    sr_ = sr;
     return true;
   }
   // baseHz is the LFO rate BEFORE the speed multiplier; the actual oscillation is
@@ -83,19 +91,25 @@ class Lfo {
   // claim the hardware RATE knob reaches 0 (registry: 0.1..20 Hz).
   bool setBaseHz(double hz) {
     if (!(std::isfinite(hz) && hz >= 0.0)) return false;
+    if (baseHz_ == hz) return true;
+    if (!effectiveStepFinite(sr_, hz, speedMult_)) return false;  // keep prior config
     baseHz_ = hz;
     return true;
   }
   // WAVE morph norm: 0 = square, 1 = triangle, between = linear crossfade.
-  // Reject non-finite, THEN bounds-clamp a finite value to [0,1].
+  // Reject non-finite, THEN bounds-clamp a finite value to [0,1]. A wave value
+  // never changes the phase, so it can never make the effective step non-finite.
   bool setWave(double w) {
     if (!std::isfinite(w)) return false;
     wave_ = clamp01(w);
     return true;
   }
-  // Speed multiplier selector. Reject an out-of-band enum value, keep prior config.
+  // Speed multiplier selector. Reject an out-of-band enum value OR a value whose
+  // candidate effective step would be non-finite; keep the prior config.
   bool setSpeedMult(LfoSpeedMult m) {
     if (!validSpeedMult(m)) return false;
+    if (speedMult_ == m) return true;
+    if (!effectiveStepFinite(sr_, baseHz_, m)) return false;  // keep prior config
     speedMult_ = m;
     return true;
   }
@@ -109,7 +123,8 @@ class Lfo {
   // There is NO reset jack on the panel — this is a DSP lifecycle reset only.
   // The post-reset phase (== 0.0) and the first-sample convention are PROVISIONAL
   // / deterministic; they are NOT a claim about the real power-on phase (which is
-  // unmeasured).
+  // unmeasured). reset() touches ONLY this instance's dynamic phase — it never
+  // affects another Lfo, and it leaves all configuration untouched.
   void reset() { phase_ = 0.0; }
 
   // --- per-sample process ----------------------------------------------------
@@ -121,7 +136,16 @@ class Lfo {
   // and bounded to [0,+10]. First-sample convention (provisional/deterministic):
   // phase begins at 0.0 and each tick advances before reading, so the first
   // produced sample is the waveform at phase = (baseHz*speedMult/sr).
+  //
+  // An unconfigured / degenerate Lfo (no valid positive sample rate, or a
+  // non-finite effective phase step — the admission guards reject any config that
+  // could reach that) must never emit NaN. When the timebase is not valid, tick()
+  // does NOT advance the phase (an undefined timebase must not move the cycle
+  // position) and returns a deterministic finite no-modulation value of 0V (the
+  // bottom of the unipolar rail). This is a centralized, documented fallback — it
+  // does NOT invent a hidden 48 kHz default or a hard-coded phase.
   double tick() {
+    if (!timebaseValid()) return 0.0;
     phase_ += (baseHz_ * lfoSpeedMultFactor(speedMult_)) / sr_;
     if (phase_ >= 1.0) phase_ -= std::floor(phase_);
     return (fundamental() + 1.0) * 0.5 * kLfoOutputPeakVolt;
@@ -141,6 +165,22 @@ class Lfo {
   }
   static double clamp01(double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); }
 
+  // Admission check for the WHOLE candidate config: a valid positive timebase and
+  // a FINITE effective phase step. This is what rejects a finite-but-overflowing
+  // combination (huge baseHz * x10 over a small sample rate -> +/-Inf step) so the
+  // phase can never wrap through Inf into NaN. Wave is excluded because it does
+  // not participate in the rate.
+  static bool effectiveStepFinite(double sr, double baseHz, LfoSpeedMult m) {
+    if (!(std::isfinite(sr) && sr > 0.0)) return false;
+    if (!(std::isfinite(baseHz) && baseHz >= 0.0)) return false;
+    if (!validSpeedMult(m)) return false;
+    return std::isfinite((baseHz * lfoSpeedMultFactor(m)) / sr);
+  }
+  bool timebaseValid() const {
+    return std::isfinite(sr_) && sr_ > 0.0 &&
+           std::isfinite((baseHz_ * lfoSpeedMultFactor(speedMult_)) / sr_);
+  }
+
   // Deterministic [-1,+1] fundamental at a cycle position p in [0,1), blended by
   // a morph wave in [0,1]. square: +1 on the first half, -1 on the second. triangle:
   // a linear -1..+1..-1 over the cycle (constant slope, symmetric). wave linearly
@@ -159,7 +199,8 @@ class Lfo {
   // only so an unconfigured Lfo is deterministic and never NaN. Runtime integration
   // must configure sampleRate / baseHz / wave / speedMult from canonical state;
   // tests set the values they depend on explicitly rather than relying on these
-  // coinciding with the registry.
+  // coinciding with the registry. The default sr_ == 0.0 means "unconfigured":
+  // tick() then returns the finite 0V no-modulation fallback (never NaN).
   double sr_ = 0.0;
   double baseHz_ = 1.0;  // Hz, local safe/provisional DSP default
   double wave_ = 0.5;    // normalized morph 0..1, local safe/provisional DSP default

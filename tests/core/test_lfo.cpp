@@ -225,26 +225,31 @@ void test_block_partition_bit_identical() {
 
 void test_ab_isolation() {
   const double sr = 48000.0;
-  Lfo a(sr), b(sr);
+  Lfo a(sr), b(sr), ctl(sr);
   a.setBaseHz(5.0); a.setWave(0.0); a.setSpeedMult(LfoSpeedMult::x1);
   b.setBaseHz(5.0); b.setWave(1.0); b.setSpeedMult(LfoSpeedMult::x1);
+  ctl.setBaseHz(5.0); ctl.setWave(1.0); ctl.setSpeedMult(LfoSpeedMult::x1);
 
-  // advance A a lot; that must not move B's phase (B was never ticked).
-  for (int i = 0; i < 5000; ++i) a.tick();
+  // b and ctl are an untouched, identically-configured twin pair. Arm BOTH to the
+  // same cycle position so the comparison is phase-matched: the phase advance is a
+  // pure function of (sr, baseHz, speedMult), identical for b and ctl, so clocking
+  // them together keeps b and ctl in lockstep. a is NOT clocked here.
+  for (int i = 0; i < 500; ++i) { b.tick(); ctl.tick(); }
 
-  const int M = 500;
-  const auto trace1 = run_sig(b, M);  // B's actual next M samples (still at phase 0)
-
-  // act on A ONLY: reset + change RATE + advance
+  // Operate on A ONLY: reset + change RATE + advance. If A's reset leaked into any
+  // shared / epoch state that b reads next, b's phase would be corrupted while the
+  // untouched ctl would not be.
   a.reset(); a.setBaseHz(80.0); a.setSpeedMult(LfoSpeedMult::x10);
   for (int i = 0; i < 100; ++i) a.tick();
 
-  // B must be completely unaffected: reproduce its trace from a reset and compare
-  // bit-identical. (A shared phase would leave B starting at A's leftover phase, so
-  // trace1 (pre-reset) would differ from trace2.)
-  b.reset();
-  const auto trace2 = run_sig(b, M);
-  CHECK(trace1 == trace2);
+  // Do NOT reset b (that is exactly the mask the old oracle had). Compare b's next
+  // M samples directly against the pristine twin ctl, bit-identical. Under a shared
+  // phase the two would sequentially advance the same cell and diverge; under a
+  // shared-reset epoch b would get zeroed while ctl would not.
+  const int M = 500;
+  const auto traceB = run_sig(b, M);
+  const auto traceCtl = run_sig(ctl, M);
+  CHECK(traceB == traceCtl);
   // B config untouched, A config changed
   CHECK(b.baseHz() == 5.0 && b.wave() == 1.0 && b.speedMult() == LfoSpeedMult::x1);
   CHECK(a.baseHz() == 80.0 && a.wave() == 0.0 && a.speedMult() == LfoSpeedMult::x10);
@@ -292,6 +297,72 @@ void test_invalid_config_fail_closed() {
   CHECK(tctl == ttampered);
 }
 
+void test_unconfigured_and_invalid_ctor_finite() {
+  // An unconfigured Lfo (default ctor) has no sample rate, so naively 0/0 would
+  // produce NaN. The tick() timebase guard must instead emit a deterministic finite
+  // no-modulation value WITHOUT advancing the cycle position, and never invent a
+  // hidden 48 kHz default.
+  Lfo d;
+  CHECK(d.sampleRate() == 0.0);
+  for (int i = 0; i < 8; ++i) {
+    const double v = d.tick();
+    CHECK(std::isfinite(v));
+    CHECK(v >= 0.0 && v <= kLfoOutputPeakVolt + 1e-9);
+    CHECK(v == 0.0);          // finite deterministic fallback
+    CHECK(d.phase() == 0.0);  // ... and the cycle position must NOT advance
+  }
+  // An invalid sample-rate ctor is fail-closed: it installs NO bad timebase, so the
+  // Lfo stays unconfigured (sr==0) and still never emits NaN.
+  Lfo badn(std::nan(""));
+  Lfo badneg_ctor(-44100.0);
+  Lfo badzero(0.0);
+  Lfo badinf(std::numeric_limits<double>::infinity());
+  for (Lfo* lp : {&badn, &badneg_ctor, &badzero, &badinf}) {
+    CHECK(lp->sampleRate() == 0.0);
+    CHECK(std::isfinite(lp->tick()));
+    CHECK(lp->tick() == 0.0);
+  }
+  // reset() on an unconfigured Lfo stays finite/unchanged.
+  d.reset();
+  CHECK(std::isfinite(d.tick()));
+}
+
+void test_finite_input_overflow_fail_closed() {
+  // A finite input can still overflow to a non-finite phase step after the
+  // {speedMult * baseHz / sampleRate} chain. Admission must reject the WHOLE
+  // candidate config BEFORE any such step reaches tick(), keeping the prior config.
+  // huge finite Hz alone, at x1 over a 1.0 sr, is finite (DBL_MAX) -> accepted.
+  Lfo big(1.0);
+  big.setBaseHz(5.0); big.setWave(0.0); big.setSpeedMult(LfoSpeedMult::x1);
+  CHECK(big.setBaseHz(std::numeric_limits<double>::max()) == true);
+  CHECK(big.baseHz() == std::numeric_limits<double>::max());
+  // x1 -> x10 makes the step DBL_MAX*10/1.0 overflow to Inf -> must be REJECTED and
+  // keep the prior x1 config (so the accepted config always has a finite step).
+  CHECK(big.setSpeedMult(LfoSpeedMult::x10) == false);
+  CHECK(big.speedMult() == LfoSpeedMult::x1);
+  CHECK(big.baseHz() == std::numeric_limits<double>::max());
+  for (int i = 0; i < 64; ++i) {  // and the actual trace stays finite, never NaN
+    const double v = big.tick();
+    CHECK(std::isfinite(v));
+    CHECK(v >= 0.0 && v <= kLfoOutputPeakVolt + 1e-9);
+  }
+
+  // tiny positive sample rate is itself admissible (finite, >0), but a huge baseHz
+  // over it makes the step overflow (1e300/1e-300 -> 1e600 -> Inf) -> rejected.
+  Lfo t(1e-300);
+  CHECK(t.sampleRate() == 1e-300);
+  CHECK(t.setBaseHz(1e300) == false);
+  CHECK(t.baseHz() == 1.0);  // prior default preserved
+  CHECK(std::isfinite(t.tick()));
+
+  // the same guard on setSampleRate: too-tiny sr makes baseHz*mult/sr overflow.
+  Lfo u(1.0);
+  u.setBaseHz(5.0); u.setWave(0.0); u.setSpeedMult(LfoSpeedMult::x6);
+  CHECK(u.setSampleRate(1e-320) == false);  // 5*6/1e-320 -> Inf -> reject, keep 1.0
+  CHECK(u.sampleRate() == 1.0);
+  CHECK(std::isfinite(u.tick()));
+}
+
 void test_registry_jack_descriptors() {
   const int ia = find_jack(core::JackId::lfo_a_cv_out);
   const int ib = find_jack(core::JackId::lfo_b_cv_out);
@@ -326,6 +397,8 @@ int main() {
   test_ab_isolation();
   test_reset_preserves_config();
   test_invalid_config_fail_closed();
+  test_unconfigured_and_invalid_ctor_finite();
+  test_finite_input_overflow_fail_closed();
   test_registry_jack_descriptors();
   return test::finish("lfo");
 }
