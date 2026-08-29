@@ -14,8 +14,10 @@
 // Confirmed rails the core depends on: step CV 0..+5 V (unipolar) and GATE 0..+10 V
 // (unipolar), grounded on the real reg::kJacks sequencer.cv_out / sequencer.gate_out
 // descriptors. The CLOCK-OUT is a discrete PULSER rising event (bool) and the EXT
-// CLOCK enters as an already-interpreted gate level (via sink_gate_interpret against
-// the real sequencer.ext_clock_in descriptor) — the core hardcodes no clock volts /
+// CLOCK enters as an already-interpreted canonical rising edge (ss.edge ==
+// GateEdge::rising, produced by sink_gate_interpret against the real
+// sequencer.ext_clock_in descriptor) — the core consumes that edge verbatim and
+// hardcodes no clock volts /
 // threshold / polarity, which are unverified in the registry.
 //
 // @Codex mandate (msg 6ce7adf9) must-tests:
@@ -31,6 +33,8 @@
 //   ⑩ invalid config / index / NaN / Inf is fail-closed (no half-state)
 //   ⑪ construction-time provisional lifecycle; no transient-state persistence
 //   ⑫ registry descriptor honesty (clock fields unverified are NOT implementation constants)
+//   ⑬ external clock consumes the canonical edge (no phantom on first-high / switch)
+//   ⑭ setSampleRate is WHOLE-candidate fail-closed (max->tiny never silently accepted)
 //
 // Negative controls (each narrow old-error RED->revert GREEN) are run separately in
 // a detached worktree: ① CV fixed to 0 / dereferenced from the wrong step, ② gate
@@ -225,7 +229,10 @@ void test_clock_source_no_double_advance() {
     std::vector<int> advance;
     std::vector<int> clockOut;
     for (int sample = 0; sample <= 60; ++sample) {
-      s.tick(sample >= 5);  // external rises once at 5, then stays high (rolling edges)
+      // A single external rising edge at sample 5 (a sustained high is already ONE
+      // canonical edge from the interpreter). It is the OTHER source, so it must
+      // never add an advance while CLOCK=internal.
+      s.tick(sample == 5);
       if (s.gateOut() == kGateNominalVolt) advance.push_back(sample);
       if (s.clockOutRising()) clockOut.push_back(sample);
     }
@@ -300,7 +307,7 @@ void test_external_real_descriptor_sample_accuracy() {
   std::vector<int> advance;
   for (int sample = 0; sample < 20; ++sample) {
     const SinkSample ss = core::sink_gate_interpret(desc, st, volts[sample]);
-    s.tick(ss.gateHigh);
+    s.tick(ss.edge == core::GateEdge::rising);
     if (s.gateOut() == kGateNominalVolt) advance.push_back(sample);
   }
   const int want[3] = {3, 8, 14};
@@ -357,7 +364,7 @@ Trace runTrace(const core::JackDescriptor& desc, const std::vector<double>& volt
     const int chunkEnd = sample + chunkCount;
     for (; sample < chunkEnd && sample < static_cast<int>(volts.size()); ++sample) {
       const SinkSample ss = core::sink_gate_interpret(desc, st, volts[sample]);
-      s.tick(ss.gateHigh);
+      s.tick(ss.edge == core::GateEdge::rising);
       t.cv.push_back(s.cvOut());
       t.gate.push_back(s.gateOut());
       t.clk.push_back(s.clockOutRising() ? 1 : 0);
@@ -539,6 +546,99 @@ void test_registry_descriptor_honesty() {
   CHECK_TRUE(!s.clockOutRising());
 }
 
+// --- ⑬ : external clock consumes the CANONICAL edge — no phantom advance ----------
+//
+// @Codex re-review defect #1: the core must consume sink_gate_interpret()'s already-
+// decided rising edge, NOT re-derive an edge from a raw gate level with its own latch.
+// The interpreter treats a FIRST-high sample as PRIMING (edge=none) and a sustained
+// high as already exactly ONE rising edge. So driving the real descriptor and feeding
+// ss.edge, a sequence must:
+//   (a) not start / not fire a gate on a first-high (or sustained-high) sample;
+//   (b) fire exactly ONE advance (to step 1) on the single low->high rising edge;
+//   (c) not re-advance on the sustained high that follows.
+// A source that re-derives an edge from the level (the old extLatch_ behaviour) would
+// "start" on first-high and phantom-advance — this oracle pins that away.
+
+void test_external_phantom_edge_and_first_sample() {
+  const int extIx = find_jack(core::JackId::sequencer_ext_clock_in);
+  CHECK_TRUE(extIx >= 0);
+  if (extIx < 0) return;
+  const core::JackDescriptor& desc = reg::kJacks[extIx];
+
+  // (a) First-high + sustained-high: edge=none, never starts, never fires a gate.
+  {
+    FiveStepSequencer s = makeSeq(100.0, 10.0, 5);
+    s.setClockSource(FiveStepSequencer::ClockSource::kExternal);
+    GateClockSinkState st{};
+    for (int i = 0; i < 3; ++i) {
+      const SinkSample ss = core::sink_gate_interpret(desc, st, 5.0);  // high from t0
+      CHECK_EQ(ss.edge, core::GateEdge::none);  // priming then sustained: no edge
+      s.tick(ss.edge == core::GateEdge::rising);
+      CHECK_FALSE(s.started());
+      CHECK_EQ(s.gateOut(), 0.0);
+      CHECK_EQ(s.currentStep(), 0);
+    }
+  }
+
+  // (b)+(c) After the sink is primed high then brought low, the single low->high
+  // transition is ONE canonical rising edge -> exactly one advance (step 1, index 0),
+  // gate +10V; the sustained high that follows repeats nothing.
+  {
+    FiveStepSequencer s = makeSeq(100.0, 10.0, 5);
+    s.setClockSource(FiveStepSequencer::ClockSource::kExternal);
+    GateClockSinkState st{};
+    core::sink_gate_interpret(desc, st, 5.0);  s.tick(false);  // priming high (none)
+    core::sink_gate_interpret(desc, st, 5.0);  s.tick(false);  // sustained high
+    core::sink_gate_interpret(desc, st, -5.0); s.tick(false);  // LOW (falling)
+    core::sink_gate_interpret(desc, st, -5.0); s.tick(false);  // held low
+    const SinkSample rising = core::sink_gate_interpret(desc, st, 5.0);  // low->high
+    CHECK_EQ(rising.edge, core::GateEdge::rising);
+    s.tick(rising.edge == core::GateEdge::rising);
+    CHECK_TRUE(s.started());
+    CHECK_EQ(s.currentStep(), 0);
+    CHECK_EQ(s.gateOut(), kGateNominalVolt);
+    CHECK(std::fabs(s.cvOut() - kCv[0]) < 1e-12);
+    const SinkSample held = core::sink_gate_interpret(desc, st, 5.0);  // sustained high
+    CHECK_EQ(held.edge, core::GateEdge::none);
+    s.tick(held.edge == core::GateEdge::rising);
+    CHECK_EQ(s.gateOut(), 0.0);
+    CHECK_EQ(s.currentStep(), 0);
+  }
+}
+
+// --- ⑭ : setSampleRate is WHOLE-candidate fail-closed -----------------------------
+//
+// @Codex re-review defect #2: a valid-but-huge internal rate (hrz=DBL_MAX) at sr=1 is
+// fine, but a denormal-tiny candidate sr makes internalRateHz_/candidateSr overflow to
+// Inf. The setter must reject the WHOLE candidate (keeping the old sr and the full
+// downstream trace), never silently accept it into a stalled clock.
+
+void test_set_sample_rate_whole_candidate_fail_closed() {
+  FiveStepSequencer rejected;
+  CHECK_TRUE(rejected.setSampleRate(1.0));
+  CHECK_TRUE(rejected.setInternalRateHz(std::numeric_limits<double>::max()));
+  // A denormal-tiny candidate sr would make DBL_MAX / sr overflow to Inf.
+  CHECK_FALSE(rejected.setSampleRate(std::numeric_limits<double>::denorm_min()));
+  CHECK_EQ(rejected.sampleRate(), 1.0);  // old sr preserved: no half-state
+
+  // Reference instance with the SAME held config (sr=1, hz=DBL_MAX): the rejected
+  // instance must produce an IDENTICAL per-sample trace (the failed call mutated
+  // nothing).
+  FiveStepSequencer reference;
+  CHECK_TRUE(reference.setSampleRate(1.0));
+  CHECK_TRUE(reference.setInternalRateHz(std::numeric_limits<double>::max()));
+  bool same = true;
+  for (int i = 0; i < 200; ++i) {
+    rejected.tick(false);
+    reference.tick(false);
+    if (rejected.gateOut() != reference.gateOut() ||
+        rejected.cvOut() != reference.cvOut() ||
+        rejected.clockOutRising() != reference.clockOutRising())
+      same = false;
+  }
+  CHECK_TRUE(same);
+}
+
 }  // namespace
 
 int main() {
@@ -553,5 +653,7 @@ int main() {
   test_invalid_config_fail_closed();
   test_constructor_provisional_no_persistence();
   test_registry_descriptor_honesty();
+  test_external_phantom_edge_and_first_sample();
+  test_set_sample_rate_whole_candidate_fail_closed();
   return test::finish("test_five_step_sequencer");
 }

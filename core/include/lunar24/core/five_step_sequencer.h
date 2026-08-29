@@ -26,10 +26,13 @@
 // output and deliberately has no rail constant (the registry marks the two clock
 // jacks' polarity as unknown and its nominal 0..5 volts is unverified, a known
 // unpublished conflict; we never back-derive an input threshold or output rail
-// from it). The EXTERNAL clock input enters as an already-interpreted __gate__
-// level (produced by sink_gate_interpret() against the real sequencer.ext_clock_in
-// JackDescriptor); we detect the rising edge ourselves but never hardcode volts /
-// threshold / hysteresis. Power-on playhead / phase / gate / clock state below is
+// from it). The EXTERNAL clock input enters as an already-interpreted __canonical
+// __rising__ edge (produced by sink_gate_interpret() against the real
+// sequencer.ext_clock_in JackDescriptor: ss.edge == GateEdge::rising). We consume
+// that edge verbatim — we do NOT re-derive an edge from a raw gate level with our own
+// latch (a second edge truth-source that would fabricate a phantom advance on the
+// first-high sample, which the interpreter reports as edge=none priming). We hardcode
+// no volts / threshold / hysteresis. Power-on playhead / phase / gate / clock state below is
 // a single centrally-labelled deterministic PROVISIONAL lifecycle policy, not a
 // claimed known hardware power-on behaviour, and it is never persisted.
 
@@ -64,8 +67,14 @@ class FiveStepSequencer {
   // the held configuration unchanged; no partial / half-mutated state) -----
 
   // Real, positive sample rate in Hz. Required before tick()/setInternalRateHz().
+  // WHOLE-CANDIDATE fail-closed: validates the EXISTING internal rate against the
+  // candidate timebase too (same rule Lfo enforces), not just the candidate alone.
+  // A naive sr that makes internalRateHz_/sr_ non-finite (e.g. hz=DBL_MAX then a
+  // denormal-tiny sr) would otherwise be accepted and silently stall the clock
+  // (effective step = Inf). On rejection the OLD sr is preserved with no half-state.
   bool setSampleRate(double sampleRate) {
     if (!(std::isfinite(sampleRate) && sampleRate > 0.0)) return false;
+    if (!stepFinite_(internalRateHz_, sampleRate)) return false;
     if (sr_ == sampleRate) return true;
     sr_ = sampleRate;
     return true;
@@ -140,10 +149,15 @@ class FiveStepSequencer {
   }
 
   // ----- per-sample audio-domain step -----
-  // externalClockHigh is the ALREADY-INTERPRETED EXT. CLOCK gate level (from
-  // sink_gate_interpret() against the real sequencer.ext_clock_in descriptor).
-  // We detect the rising edge ourselves; a sustained high never repeats a step.
-  void tick(bool externalClockHigh) {
+  // externalClockRising is the ALREADY-INTERPRETED EXT. CLOCK canonical rising edge
+  // (from sink_gate_interpret() against the real sequencer.ext_clock_in descriptor:
+  // ss.edge == GateEdge::rising). We consume it VERBATIM — we do NOT re-derive an
+  // edge from a raw gate level via an internal latch (that second edge truth-source
+  // would fabricate a phantom advance on the first-high sample, which the interpreter
+  // correctly reports as edge=none priming). A sustained high is already just ONE
+  // rising edge from the interpreter, so it can never be repeated here; and a source
+  // switch to an already-high sink feeds edge=none, so no phantom is made.
+  void tick(bool externalClockRising) {
     // The PULSER always runs (independent of the selected clock source) so the
     // CLOCK OUT event is produced even when the sequence is external-triggered.
     bool pulserRising = false;
@@ -155,15 +169,10 @@ class FiveStepSequencer {
       }
     }
 
-    // External rising edge, detected continuously so a source switch never
-    // fabricates an edge from a prior sustained-and-unconsumed high.
-    const bool extRising = externalClockHigh && !extLatch_;
-    extLatch_ = externalClockHigh;
-
     // Advance comes from the SELECTED clock source only; the other source's edge
     // never advances, so concurrent edges cannot double-advance the sequence.
     const bool advance =
-        (clockSource_ == ClockSource::kInternal) ? pulserRising : extRising;
+        (clockSource_ == ClockSource::kInternal) ? pulserRising : externalClockRising;
 
     if (advance) {
       if (started_) {
@@ -210,7 +219,6 @@ class FiveStepSequencer {
   // Construction-time values are the single centrally-labelled deterministic
   // PROVISIONAL lifecycle policy; they are not a claimed known power-on state.
   double pulserPhase_ = 0.0;  // [0,1); forwarded to clock_out rising events
-  bool extLatch_ = false;     // last interpreted external gate level
   int step_ = 0;              // current step index 0..(stageCount_-1)
   bool started_ = false;      // true once the first accepted edge has landed
   double gateSample_ = 0.0;   // one-sample GATE pulse value (0 off-advance)
