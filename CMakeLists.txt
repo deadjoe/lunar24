@@ -210,6 +210,15 @@ lunar_add_test(test_machine_runtime tests/core/test_machine_runtime.cpp
 # target or platform.
 if(MSVC)
   target_link_options(test_machine_runtime PRIVATE /STACK:4194304)
+elseif(APPLE)
+  # task#65 (GH#11) same harness budget on the Apple LINKER (ld64): this one test stack-constructs
+  # many ~149 KB fixed-capacity SynthRuntime fixtures from one large `main`, and under
+  # -fsanitize=address the main-thread guard is tight enough that the inlined fixture
+  # lambdas overflow it (Release/Debug are unaffected). Reserve a larger main-thread
+  # stack for THIS ONE test executable, mirroring the MSVC branch above; scoped so no
+  # other target or platform is affected. -Wl,-stack_size is a standard ld64 flag, so the
+  # guard is Apple-linker (not AppleClang-only) and is independent of the compiler frontend.
+  target_link_options(test_machine_runtime PRIVATE -Wl,-stack_size,0x1000000)
 endif()
 
 # #37 close-out: the TSan-only memory-model PROBE. It has no CTest assertion and is

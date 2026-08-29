@@ -115,6 +115,13 @@ struct RuntimeOutput {
 // The role a fixed-chain module plays in the render. A module bound to kNone (or
 // left unbound) does not participate in the chain — it is a control-only module the
 // plan may still carry for the patch graph. Host binds via bindFixedRole().
+//
+// This enum is retained as the LEGACY dispatch surface for the synthetic test
+// fixture and as the readable form returned by chainExecRoleAt(). The canonical
+// product path drives the executor through ExecutionKind (below), which is the
+// post-B′ representation: distortion is an intra-vcf sub-stage (kVcfPath) and EXT
+// AUDIO is a host terminal, never a chain slot. bindFixedRole maps legacy roles
+// onto their matching ExecutionKind so the synthetic provider keeps working.
 enum class FixedChainRole : std::uint8_t {
   kNone = 0,
   kVcoA,       // VCO A oscillator -> DRY A tap + mixer ch5.
@@ -126,6 +133,43 @@ enum class FixedChainRole : std::uint8_t {
   kMixer,      // 10ch VoiceMixer -> L/R.
   kVcf,        // PolivoksFilter L/R.
   kDistortion, // post-filter Distortion L/R -> WET.
+};
+
+// The canonical execution kind a ModuleId plays in the unified per-module executor
+// (@Codex B′ ruling msg 190173bb). This is the ONE dispatch set the product path
+// uses. Notes:
+//   * @Codex 7C2 (msg 4e600057) forbid ExecutionKind dedup: CompiledRegion.modules
+//     identity is the ModuleId, and the six drones are six independently-wireable
+//     modules. One ExecutionSlot per compiled ModuleId; the SAME kind may repeat;
+//     step(slot.id, kind) selects the instance/group by id (see step_ kDroneBank).
+//   * kVcfPath is one slot for the VCF->distortion chain (distortion is intra-vcf,
+//     never a separate slot in the canonical path); every classic/new drone is its
+//     OWN slot (per-group tick), never "one tick whole bank".
+//   * The kExtIn/kVcf/kDistortion members are legacy-compat kinds the synthetic
+//     fixture maps onto (never produced by the canonical table — ext is a host
+//     terminal there, distortion lives inside kVcfPath).
+enum class ExecutionKind : std::uint8_t {
+  kUnsupported = 0, // declared-deferred / control-only: a strict plan carrying one fail-closes rebuild.
+  kVcoA,
+  kVcoB,
+  kDroneBank,    // one classic drone 1/2/4/5 (DroneBank group) OR NEW drone 3/6 (PapaVoice) per slot.
+  kPreamp,
+  kEnvFollower,
+  kMixer,
+  kVcfPath,      // PolivoksFilter L/R -> calibration staging -> Distortion -> WET (ONE slot).
+  // Legacy-compat kinds (synthetic fixture only; never emitted by the canonical table).
+  kExtIn,
+  kVcf,
+  kDistortion,
+};
+
+// One executable step in the unified per-module executor: a compiled ModuleId plus the
+// execution kind it plays. ONE slot per compiled ModuleId (no ExecutionKind dedup), so
+// the plan order is exactly the module identity order and step(slot.id, kind) picks the
+// instance/group by id (e.g. classic drone_2 -> group 1, drone_3 -> PapaVoice 3).
+struct ExecutionSlot {
+  ModuleId id;
+  ExecutionKind kind;
 };
 
 class SynthRuntime {
@@ -308,14 +352,53 @@ class SynthRuntime {
 
   // FIXED-CHAIN ROLE BINDING (registry semantic). Maps a compiled module id to the
   // fixed-chain role it plays. Unbound modules are skipped by the chain render.
+  // This is a legacy surface: it maps each role onto the matching ExecutionKind so
+  // the synthetic test fixture (which thinks in roles, including a standalone ext_in
+  // and distortion module) keeps driving the same per-module executor. The canonical
+  // product path binds ExecutionKind directly (bindExecutionKind).
   void bindFixedRole(ModuleId id, FixedChainRole role) {
+    bindExecutionKind(id, toExecutionKind_(role));
+  }
+
+  // CANONICAL execution-kind binding (post-B′). Maps a compiled module id to the
+  // ExecutionKind it plays in the unified per-module executor. Unbound (kUnsupported)
+  // modules are skipped by the chain render — but a plan that PULLS a kUnsupported
+  // module into a compiled region FAILS the rebuild (fail-closed, never a silent skip).
+  void bindExecutionKind(ModuleId id, ExecutionKind kind) {
     for (std::uint32_t i = 0; i < roleBindingCount_; ++i) {
-      if (roleBindings_[i].id == id) { roleBindings_[i].role = role; return; }
+      if (roleBindings_[i].id == id) {
+        // Update branch: a kind change is a real plan mutation that must re-preflight. A
+        // successful rebuild followed by a kind flip would otherwise short-circuit to
+        // graph_unchanged and keep the OLD preflight/slots (@Codex 263cb3ca point 2) — the
+        // explicit strict policy is violated. Only dirty on an actual change.
+        if (roleBindings_[i].kind != kind) {
+          roleBindings_[i].kind = kind;
+          graphDirty_ = true;
+        }
+        return;
+      }
     }
     if (roleBindingCount_ < kMaxFixedModules) {
       roleBindings_[roleBindingCount_].id = id;
-      roleBindings_[roleBindingCount_].role = role;
+      roleBindings_[roleBindingCount_].kind = kind;
       ++roleBindingCount_;
+      graphDirty_ = true;  // add branch: never-before-bound id mutates the plan too.
+    }
+  }
+
+  // STRICT BINDING POLICY (@Codex 7C2 msg 4e600057). Canonical strictness must not be
+  // inferred by "is there any executable binding" guesswork — the OWNING definition
+  // explicitly enables it. Off by default (the legacy synthetic fixtures drive a
+  // permissive mode: an unbound module is silently outside the executor's scope). When
+  // ON, rebuild() fail-closes TWO distinct ways: a compiled-region module explicitly
+  // bound to kUnsupported -> unsupported_module, and a compiled-region module with NO
+  // binding at all -> missing_execution_binding. Never a silent skip, never a guessed
+  // gate. The canonical owning definition (MachineRuntimeDefinition, next slice) turns it
+  // on.
+  void setStrictBindings(bool on) {
+    if (on != strictBindings_) {
+      strictBindings_ = on;
+      graphDirty_ = true;  // a permissive plan must be re-preflighted under the new policy.
     }
   }
 
@@ -513,6 +596,8 @@ class SynthRuntime {
     compile_cycle_unsafe,        // compile_graph -> cycle_unsafe_module
     compile_invalid_contract,    // compile_graph -> invalid_module_contract
     feedback_capacity_exceeded,  // full compiled feedback plan > kMaxFeedback
+    unsupported_module,          // strict: a compiled-region module explicitly bound to kUnsupported
+    missing_execution_binding,   // strict: a compiled-region module has NO ExecutionKind binding
   };
 
   // Off-audio-thread build: recompute the effective edges and recompile the
@@ -548,13 +633,39 @@ class SynthRuntime {
       rebuildStatus_ = RebuildStatus::feedback_capacity_exceeded;
       return false;
     }
+    // STRICT binding + slot-capacity preflight, ALL before graph_=r.graph (never a
+    // fail-after-branch). With strict policy ON the owning definition has exactly one
+    // disposition per module, so a plan that routes ANY mis-dispositioned module into a
+    // compiled region must REFUSE. Two distinct fail-closed statuses, per @Codex 7C2:
+    //   * unsupported_module        — explicitly bound to kUnsupported (declared-deferred).
+    //   * missing_execution_binding — NO binding at all. Distinct from the above: there
+    //                                 is no "the binding was inferred" patch in a strict plan.
+    // The slot count is then capped here (the plan must fit the RT-safe arrays), so
+    // rebuildChainExec_ below can never silently drop a slot.
+    if (strictBindings_) {
+      if (hasMissingBinding_(r.graph)) {
+        graphValid_ = false;
+        rebuildStatus_ = RebuildStatus::missing_execution_binding;
+        return false;
+      }
+      if (hasUnsupportedModule_(r.graph)) {
+        graphValid_ = false;
+        rebuildStatus_ = RebuildStatus::unsupported_module;
+        return false;
+      }
+    }
+    if (countExecSlots_(r.graph) > kMaxFixedModules) {
+      graphValid_ = false;
+      rebuildStatus_ = RebuildStatus::edge_capacity;  // plan exceeds the fixed slot array.
+      return false;
+    }
     graph_ = r.graph;
     graphValid_ = true;
     graphDirty_ = false;
     rebuildStatus_ = RebuildStatus::ok;
     if (!rebuildChainExec_()) {
-      // Provably unreachable given the preflight above, but fail closed: never leave
-      // a half-built runtime line set behind a valid flag.
+      // Unreachable given the slot + feedback capacity preflight above, but fail closed:
+      // never leave a half-built runtime line set behind a valid flag.
       graphValid_ = false;
       feedbackCount_ = 0;
       rebuildStatus_ = RebuildStatus::feedback_capacity_exceeded;
@@ -569,10 +680,12 @@ class SynthRuntime {
   // true = run the compiled graph (product path), false = IGNORE it (the NEGATIVE
   // control for criterion ①). Rendering is independent of block partition.
   RuntimeOutput processFrame(double extSource, bool driveGraph = true) {
-    if (driveGraph) applyControlCv_();
     extSource_ = extSource;
     for (int i = 0; i < kNumChannels; ++i) chIn_[i] = 0.0;
-    for (std::uint32_t i = 0; i < chainExecCount_; ++i) step_(chainExecOrder_[i]);
+    // Drive the per-module executor: one resolve->step->publish per slot, in the plan
+    // order with ExecutionKind deduped. driveGraph=false bypasses the CONTROL layer:
+    // slots still run, but no CV sink is resolved from the graph (criterion-① negative).
+    for (std::uint32_t i = 0; i < execSlotCount_; ++i) step_(execSlots_[i], driveGraph);
     return RuntimeOutput{wetL_, wetR_, dryA_, dryB_};
   }
 
@@ -610,6 +723,10 @@ class SynthRuntime {
   FixedChainRole chainExecRoleAt(std::uint32_t i) const { return chainExecOrder_[i]; }
   std::uint32_t feedbackCount() const { return feedbackCount_; }
   const FeedbackLine& feedbackAt(std::uint32_t i) const { return feedback_[i]; }
+  // Per-module executor slots (the canonical surface): count + the (ModuleId, ExecutionKind)
+  // slot at `i`, ONE slot per compiled ModuleId in the plan order (no kind dedup).
+  std::uint32_t execSlotCount() const { return execSlotCount_; }
+  const ExecutionSlot& execSlotAt(std::uint32_t i) const { return execSlots_[i]; }
 
   // Diagnostic: the drone channel the PRODUCT path computed for the last processed
   // frame and fed to the mixer (@Claude rule: "钉在真正被执行的那份数据上" — this is
@@ -726,20 +843,59 @@ class SynthRuntime {
            static_cast<std::size_t>(gen);
   }
 
-  // Fixed-role -> id lookup (linear over the small binding table).
-  FixedChainRole roleOf_(ModuleId id) const {
+  // Fixed-kind -> id lookup (linear over the small binding table).
+  ExecutionKind kindOf_(ModuleId id) const {
     for (std::uint32_t i = 0; i < roleBindingCount_; ++i)
-      if (roleBindings_[i].id == id) return roleBindings_[i].role;
-    return FixedChainRole::kNone;
+      if (roleBindings_[i].id == id) return roleBindings_[i].kind;
+    return ExecutionKind::kUnsupported;
   }
-  int feedbackSinkIndex_(JackId sink) const {
-    for (std::uint32_t i = 0; i < feedbackCount_; ++i)
-      if (feedback_[i].active && feedback_[i].sinkJack == sink) return static_cast<int>(i);
-    return -1;
+  // Source jack of the effective edge feeding `sink`, or no-is-a-sink (`!found`) if
+  // none. The per-slot CV resolver uses this to pull the value a control producer
+  // published for the sink's incoming edge (same-sample when that producer ran earlier
+  // in the plan order).
+  JackId sourceOfSink_(JackId sink, bool& found) const {
+    for (std::uint32_t i = 0; i < edgeCount_; ++i)
+      if (edges_[i].sink == sink) { found = true; return edges_[i].source; }
+    found = false;
+    return JackId{0};
   }
-  int feedbackSourceIndex_(JackId src) const {
+
+  // ---- single resolve/publish pair (the ONE value-movement entry in the executor) ----
+  // Resolve the value a consuming module should read for a SINK jack, by EXACT edge
+  // identity (source,sink) — never by source alone (@Codex 7C2 msg 4e600057: a same-source
+  // NORMAL downstream must not misread a feedback delay line). A sink fed by a SELECTED
+  // feedback edge is read from that edge's own D-sample delay line at the current write
+  // position (graph_compiler.h consume-rule — off-by-one vs live-last-written is the defect
+  // this discriminates); any other fed sink is read from the live CV source bank (the value
+  // a control producer published). An UNFED sink returns `fallback` (e.g. the preamp's
+  // EXT.AUDIO terminal when no cable feeds its ext_source_in).
+  double resolveSinkValue_(JackId sink, double fallback) const {
+    bool found = false;
+    const JackId src = sourceOfSink_(sink, found);
+    if (!found) return fallback;
+    const int fb = feedbackExactIndex_(src, sink);
+    if (fb >= 0) return feedback_[fb].buf[feedback_[fb].writePos];
+    return cvAt_(src);
+  }
+  // Publish the value a source module JUST computed for its output `src`. ALWAYS writes
+  // the live CV source bank (so a normal downstream reads the CURRENT value), AND advances
+  // EVERY feedback line whose sourceJack is `src` (an exact-pair consumer reads the D-sample
+  // delay). @Codex 7C2: publish must not stop at the first source match.
+  void publishSourceValue_(JackId src, double v) {
+    const std::uint32_t j = static_cast<std::uint32_t>(src);
+    if (j < kMaxEdges) cvOut_[j] = v;
+    for (std::uint32_t i = 0; i < feedbackCount_; ++i) {
+      FeedbackLine& l = feedback_[i];
+      if (!l.active || l.sourceJack != src) continue;
+      const std::uint32_t d = clampDelay_(l.delaySamples);
+      l.buf[l.writePos] = v;
+      l.writePos = (l.writePos + 1) % d;
+    }
+  }
+  int feedbackExactIndex_(JackId src, JackId sink) const {
     for (std::uint32_t i = 0; i < feedbackCount_; ++i)
-      if (feedback_[i].active && feedback_[i].sourceJack == src) return static_cast<int>(i);
+      if (feedback_[i].active && feedback_[i].sourceJack == src &&
+          feedback_[i].sinkJack == sink) return static_cast<int>(i);
     return -1;
   }
   std::uint32_t clampDelay_(double d) const {
@@ -757,21 +913,80 @@ class SynthRuntime {
           static_cast<std::uint32_t>(region.feedback.size());
     return n;
   }
+  // Does `id` carry an EXPLICIT ExecutionKind binding (via bindFixedRole /
+  // bindExecutionKind)? A module that was never bound is a MISSING binding under strict
+  // policy; one that WAS bound to kUnsupported is a DECLARED unsupported module.
+  bool hasBinding_(ModuleId id) const {
+    for (std::uint32_t i = 0; i < roleBindingCount_; ++i)
+      if (roleBindings_[i].id == id) return true;
+    return false;
+  }
 
-  // Derive the RT-safe fixed-chain order + delay lines from the compiled plan.
-  // Called only from rebuild() (off the audio thread); the audio path only reads.
-  // Returns false (fail-closed) if the plan would exceed the fixed delay-line
-  // storage — the plan is then NOT partially published, matching the capacity
-  // preflight in rebuild(). The preflight guarantees this is never reached, but a
-  // provably-no-truncation contract is a hard rule here, not a comment.
+  // Strict fail-closed preflight (rebuild_, @Codex 7C2): a compiled-region module with NO
+  // binding at all. Only consulted when strictBindings_ is ON — legacy fixtures drive the
+  // permissive mode where an unbound module is outside the executor's scope.
+  // @Codex 67dc06c6: scan the compiler's OWN module set. compile_graph() already collects
+  // region.modules only from candidate PatchEdge/FixedEdge endpoints, so it is already the
+  // active set — do NOT re-derive "active" here from edges_/fixedEdges_ (that duplicate truth
+  // source drifts from the compiler and false-fails or false-passes; previously moduleActive_).
+  bool hasMissingBinding_(const CompiledGraph& g) const {
+    for (const CompiledRegion& region : g.regions)
+      for (ModuleId id : region.modules)
+        if (!hasBinding_(id)) return true;
+    return false;
+  }
+
+  // Strict fail-closed preflight (rebuild_, @Codex 7C2): a compiled-region module
+  // EXPLICITLY bound to ExecutionKind::kUnsupported. The canonical fixed-chain table binds
+  // the six control sources + effector/voices to kUnsupported (not integrated in this
+  // slice), so patching any of them into the graph is a real semantics violation: REFUSE
+  // with unsupported_module, never silently skip to zero slots. Distinct from
+  // hasMissingBinding_ (an unbound module is not a "kUnsupported" module). Only consulted
+  // when strictBindings_ is ON. @Codex 67dc06c6: same direct scan — an isolated kUnsupported
+  // module is not in region.modules (compile_graph excludes it), so it stays LEGAL, while
+  // the same module once patched into a real edge enters regions and REFUSES. No moduleActive_.
+  bool hasUnsupportedModule_(const CompiledGraph& g) const {
+    for (const CompiledRegion& region : g.regions)
+      for (ModuleId id : region.modules)
+        if (hasBinding_(id) && kindOf_(id) == ExecutionKind::kUnsupported) return true;
+    return false;
+  }
+
+  // Count of execution slots the plan would generate (region modules that are NOT
+  // kUnsupported, i.e. each has a real kind). Used as the slot-capacity preflight so
+  // rebuildChainExec_ never silently drops a slot.
+  std::uint32_t countExecSlots_(const CompiledGraph& g) const {
+    std::uint32_t n = 0;
+    for (const CompiledRegion& region : g.regions)
+      for (ModuleId id : region.modules)
+        if (kindOf_(id) != ExecutionKind::kUnsupported) ++n;
+    return n;
+  }
+
+  // Derive the RT-safe per-module execution slots + delay lines from the compiled
+  // plan. Called only from rebuild() (off the audio thread); the audio path only reads.
+  // The slots are ONE per compiled ModuleId in the plan order (@Codex 7C2: no ExecutionKind
+  // dedup — the six drones are six independently-wireable modules, so each gets its own
+  // slot and step_ dispatches by id). chainExecOrder_ (the legacy FixedChainRole inspector
+  // array) is derived from the slots so the read-only surface still reports the roles in
+  // plan order. Returns false (fail-closed) only if the plan would exceed the fixed
+  // delay-line storage — never partially published (slot capacity is preflighted).
   bool rebuildChainExec_() {
     chainExecCount_ = 0;
+    execSlotCount_ = 0;
     feedbackCount_ = 0;
     for (const CompiledRegion& region : graph_.regions) {
       for (ModuleId id : region.modules) {
-        const FixedChainRole role = roleOf_(id);
-        if (role != FixedChainRole::kNone && chainExecCount_ < kMaxFixedModules)
-          chainExecOrder_[chainExecCount_++] = role;
+        const ExecutionKind kind = kindOf_(id);
+        if (kind == ExecutionKind::kUnsupported) continue;  // refused by strict preflight.
+        // ONE slot per compiled ModuleId, in the plan order — no ExecutionKind dedup.
+        if (execSlotCount_ < kMaxFixedModules) {
+          execSlots_[execSlotCount_].id = id;
+          execSlots_[execSlotCount_].kind = kind;
+          ++execSlotCount_;
+          chainExecOrder_[chainExecCount_] = fixedChainRoleOf_(kind);
+          ++chainExecCount_;
+        }
       }
     }
     for (const CompiledRegion& region : graph_.regions) {
@@ -794,127 +1009,176 @@ class SynthRuntime {
     return true;
   }
 
-  void applyControlCv_() {
-    // Resolve each bound CONTROL voice-input jack from the source jack of its
-    // incoming effective edge (a control generator's output written via
-    // setControlVoltage). A voice-chain jack bound for the env_follower cycle is
-    // NOT a control sink, so the cycle cable is never misapplied as a CV here.
-    for (std::uint32_t i = 0; i < edgeCount_; ++i) {
-      const JackId src = edges_[i].source;
-      const JackId snk = edges_[i].sink;
-      if (snk == voctA_) {
-        vcA_.setVoct(cvAt_(src));
-      } else if (snk == voctB_) {
-        vcB_.setVoct(cvAt_(src));
-      } else if (snk == vcfCvL_) {
-        vcf_.setCvL(cvAt_(src));
-      } else if (snk == vcfCvR_) {
-        vcf_.setCvR(cvAt_(src));
-      } else if (const int g = cvModInGroupOf_(snk); g >= 0) {
-        // CLASSIC drone group's shared CV MOD (batch 4A): a bound cv_mod_in jack feeds
-        // the group's shared modCv. The bank applies it only to MOD-on generators, so a
-        // MOD-off generator stays unresponsive (design/07 §7).
-        drone_.setGroupModCv(g, cvAt_(src));
-      }
-    }
+  // Resolve a CONTROL sink's incoming value — SAME-SAMPLE when the producer ran earlier
+  // in the plan order. `sink` is a voice-input jack (VCO v_oct, VCF cv) or a classic
+  // drone group's cv_mod_in; the value comes from the effective edge that feeds it
+  // (sourceOfSink_) via resolveSinkValue_ (the single exact-edge source-of-truth read).
+  // Returns false (and leaves `out` untouched) when the graph is bypassed (driveGraph=false
+  // — the criterion-① negative, a patched CV then has no effect) or `sink` is not fed.
+  bool resolveControlSink_(JackId sink, double& out, bool driveGraph) const {
+    if (!driveGraph) return false;
+    bool found = false;
+    static_cast<void>(sourceOfSink_(sink, found));
+    if (!found) return false;
+    out = resolveSinkValue_(sink, 0.0);
+    return true;
   }
 
-  // One fixed-chain step, dispatched in the plan's order. Kept as a switch over
-  // the (small, fixed) role set so the render path is allocation-free and bounds
-  // the latencies the compiler assumes.
-  void step_(FixedChainRole role) {
-    switch (role) {
-      case FixedChainRole::kVcoA: {
+  // One per-module step, dispatched in the plan's order. Kept as a switch over the
+  // (small, fixed) ExecutionKind set so the render path is allocation-free and bounds
+  // the latencies the compiler assumes. Every CV/feedback value movement goes through
+  // resolveSinkValue_ / publishSourceValue_ — the ONE source-of-truth pair (@Codex 7C2
+  // req. 3: resolve by exact (src,sink) edge, publish updates live source + ALL its
+  // feedback lines, never a same-source stop-at-first-match). The B′ kVcfPath slot runs
+  // VCF -> calibration staging -> Distortion -> WET inside a single step (distortion is
+  // an intra-vcf sub-stage, never a separate slot in the canonical path); kExtIn remains
+  // only as a legacy-compat kind the synthetic fixture maps onto.
+  // driveGraph=false bypasses the CONTROL layer (criterion-① negative).
+  void step_(const ExecutionSlot& slot, bool driveGraph) {
+    switch (slot.kind) {
+      case ExecutionKind::kVcoA: {
+        double v = 0.0;
+        if (resolveControlSink_(voctA_, v, driveGraph)) vcA_.setVoct(v);
         double a = 0.0;
         vcA_.tick(&a);
         dryA_ = a;
         chIn_[VoiceMixer::kChannelVcoA] = a;
         break;
       }
-      case FixedChainRole::kVcoB: {
+      case ExecutionKind::kVcoB: {
+        double v = 0.0;
+        if (resolveControlSink_(voctB_, v, driveGraph)) vcB_.setVoct(v);
         double b = 0.0;
         vcB_.tick(&b);
         dryB_ = b;
         chIn_[VoiceMixer::kChannelVcoB] = b;
         break;
       }
-      case FixedChainRole::kDrone: {
-        double drone[DroneBank::kMaxVoices] = {};
-        drone_.tick(drone);
-        aggregateDrone_(drone, chIn_);          // classic 1/2/4/5 (divided into 5-gen groups).
-        // batch 4A (GH#5): the CLASSIC group's gate/ATT/RLS/HOLD envelope is INSIDE
-        // drone_.tick() (the bank advances the per-group VCA and scales the group audio
-        // this frame). Write each group's ENV OUT into the CV source bank here, per
-        // @Codex 方案2b — descriptor-driven provisional volts: `nominalMin + level *
-        // (nominalMax - nominalMin)`, range read ONLY from the bound JackDescriptor.
-        // Fail-closed: only a group that ADMITTED a live env_out binding is written; a
-        // group whose cohort was rejected is unbound (envOutBound_ false), so cvOut_ for
-        // that jack stays untouched (0). The per-group value here is descriptor-driven:
-        // nominalMin + level*(nominalMax - nominalMin), range read ONLY from the bound
-        // JackDescriptor (@Codex 方案2b). This is the SOURCE-BANK write the tests read back.
-        for (int g = 0; g < kClassicDroneVoices; ++g) {
-          if (!envOutBound_[g]) continue;
-          const JackId envOut = envOutJack_[g];
-          const JackDescriptor* d = findJackDescriptor_(envOut);
-          const double lvl = drone_.groupEnvLevel(static_cast<std::size_t>(g));
-          const std::uint32_t j = static_cast<std::uint32_t>(envOut);
-          if (d != nullptr && j < kMaxEdges)
-            cvOut_[j] = d->nominalMin + lvl * (d->nominalMax - d->nominalMin);
+      case ExecutionKind::kDroneBank: {
+        // @Codex 7C2 (msg 4e600057): NEVER "one tick whole bank". ONE slot per compiled
+        // ModuleId; step(slot.id, kind) selects the instance/group by id. Each classic
+        // drone module (drone_1/2/4/5) runs exactly ITS OWN group per slot and resolves
+        // its cv_mod BEFORE ticking (same-sample), then publishes ITS env_out. drone 3/6
+        // are separate PapaVoice slots. The legacy synthetic aggregate drone (kM_Drone,
+        // NOT a registry drone_N) falls through to a clearly-marked whole-bank compat path.
+        const int classicGroup = classicGroupOfDrone_(slot.id);
+        if (slot.id == ModuleId::drone_3) {
+          tickPapaVoice_(pv3_, VoiceMixer::kChannelDrone3, sh3Cv_);
+          break;
         }
-        // NEW voices (design/01 §3, #45): drone 3/6 are Papa Srapa composite voices
-        // (two Schmitt oscillators + a noise source + a sample & hold), a peer source
-        // seeded like drone_. The composite's audio is the audio-Schmitt + noise; the
-        // S&H CV is NOT summed into the channel (it is a CV out of the voice).
-        double n3 = 0.0;
-        pv3_.tick(&n3);
-        chIn_[VoiceMixer::kChannelDrone3] = n3;
-        sh3Cv_ = pv3_.lastShCv();
-        double n6 = 0.0;
-        pv6_.tick(&n6);
-        chIn_[VoiceMixer::kChannelDrone6] = n6;
-        sh6Cv_ = pv6_.lastShCv();
-        break;
+        if (slot.id == ModuleId::drone_6) {
+          tickPapaVoice_(pv6_, VoiceMixer::kChannelDrone6, sh6Cv_);
+          break;
+        }
+        if (classicGroup >= 0) {
+          // (1) resolve ONLY this group's shared CV MOD before the tick — never the
+          // one-sample-old value from a post-tick set. MOD-off generators stay inert.
+          if (cvModInBound_[classicGroup]) {
+            double m = 0.0;
+            if (resolveControlSink_(cvModInJack_[classicGroup], m, driveGraph))
+              drone_.setGroupModCv(classicGroup, m);
+          }
+          // (2) tick ONLY this group (advances exactly this group's sample counter).
+          double out5[DroneBank::kGensPerVoice] = {};
+          drone_.tickGroup(classicGroup, out5);
+          // (3) publish this group's channel + ENV OUT through the single write. The
+          // gate/ATT/RLS/HOLD envelope is inside tickGroup; the ENV OUT transfer is
+          // descriptor-driven: nominalMin + level*(nominalMax-nominalMin), range read
+          // ONLY from the bound JackDescriptor (方案2b). A consumer running LATER in the
+          // plan reads the SAME-frame value (oracle ②).
+          double s = 0.0;
+          for (std::size_t i = 0; i < DroneBank::kGensPerVoice; ++i) s += out5[i];
+          chIn_[classicChannel(classicGroup)] = s;
+          if (envOutBound_[classicGroup]) {
+            const JackId envOut = envOutJack_[classicGroup];
+            const JackDescriptor* d = findJackDescriptor_(envOut);
+            const double lvl = drone_.groupEnvLevel(static_cast<std::size_t>(classicGroup));
+            if (d != nullptr)
+              publishSourceValue_(envOut, d->nominalMin + lvl * (d->nominalMax - d->nominalMin));
+          }
+          break;
+        }
+        // LEGACY whole-bank compat path (synthetic fixture ONLY: kM_Drone is one aggregate
+        // module, never a registry drone_N). Kept bit-identical with the old all-voices
+        // tick, but still resolves every bound CV MOD before ticking (resolve -> tick ->
+        // publish). This path never exists in a canonical strict plan (which drives 6
+        // distinct drone slots), so per-group correctness is unaffected.
+        {
+          double drone[DroneBank::kMaxVoices] = {};
+          for (int g = 0; g < kClassicDroneVoices; ++g) {
+            if (!cvModInBound_[g]) continue;
+            double m = 0.0;
+            if (resolveControlSink_(cvModInJack_[g], m, driveGraph)) drone_.setGroupModCv(g, m);
+          }
+          drone_.tick(drone);
+          aggregateDrone_(drone, chIn_);  // classic 1/2/4/5 (divided into 5-gen groups).
+          for (int g = 0; g < kClassicDroneVoices; ++g) {
+            if (!envOutBound_[g]) continue;
+            const JackId envOut = envOutJack_[g];
+            const JackDescriptor* d = findJackDescriptor_(envOut);
+            const double lvl = drone_.groupEnvLevel(static_cast<std::size_t>(g));
+            if (d != nullptr)
+              publishSourceValue_(envOut, d->nominalMin + lvl * (d->nominalMax - d->nominalMin));
+          }
+          tickPapaVoice_(pv3_, VoiceMixer::kChannelDrone3, sh3Cv_);
+          tickPapaVoice_(pv6_, VoiceMixer::kChannelDrone6, sh6Cv_);
+          break;
+        }
       }
-      case FixedChainRole::kExtIn:
+      case ExecutionKind::kExtIn:  // legacy synthetic only; canonical EXT is the host terminal.
         chIn_[VoiceMixer::kChannelExtAudio] = extSource_;
         break;
-      case FixedChainRole::kPreamp: {
-        // The ext_source_in break sink (cycle) reads the delayed env_follower value;
-        // otherwise the preamp's external input is the EXT.AUDIO terminal.
-        const int fb = feedbackSinkIndex_(preampExtIn_);
-        const double in = (fb >= 0) ? feedback_[fb].buf[feedback_[fb].writePos]
-                                    : extSource_;
+      case ExecutionKind::kPreamp: {
+        // The ext_source_in break sink goes through the SINGLE sink resolver: a cycle
+        // reads the delayed env_follower value, a normal edge reads the live source, and
+        // an UNFED sink falls back to the EXT.AUDIO terminal. No feedbackSinkIndex_
+        // special-case (@Codex 7C2 req. 3 — preamp uses the same exact-edge resolver).
+        const double in = resolveSinkValue_(preampExtIn_, extSource_);
         preampOut_ = preamp_.tick(in);
         chIn_[VoiceMixer::kChannelPreamp] = preampOut_;
         break;
       }
-      case FixedChainRole::kEnvFollower: {
+      case ExecutionKind::kEnvFollower: {
         envOut_ = envFol_.tick(preampOut_);
-        const int fb = feedbackSourceIndex_(envFolOut_);
-        if (fb >= 0) {
-          FeedbackLine& l = feedback_[fb];
-          const std::uint32_t d = clampDelay_(l.delaySamples);
-          l.buf[l.writePos] = envOut_;
-          l.writePos = (l.writePos + 1) % d;
-        }
+        publishSourceValue_(envFolOut_, envOut_);  // cycle leg -> its own delay line.
         break;
       }
-      case FixedChainRole::kMixer:
+      case ExecutionKind::kMixer:
         mixer_.tick(chIn_, mixL_, mixR_);
         break;
-      case FixedChainRole::kVcf:
+      case ExecutionKind::kVcfPath: {
+        // B′ merged VCF path (canonical): VCF -> calibration staging -> Distortion -> WET
+        // in ONE slot-only dispatch. The distortion is an intra-vcf sub-stage, so it is
+        // never a separate compiler edge or a second slot.
+        resolveVcfCv_(driveGraph);
         vcf_.process(mixL_, mixR_, vcfL_, vcfR_);
-        break;
-      case FixedChainRole::kDistortion:
-        // GH#6: the calibration trim × identity path-gain micro-diff is applied ONCE
-        // here — the clear VCF→distortion staging point — BEFORE the post-filter fold.
-        // It genuinely changes the level the Distortion folds (level-dependent path).
         wetL_ = distortion_.tickL(vcfL_ * vcfPathStageL_);
         wetR_ = distortion_.tickR(vcfR_ * vcfPathStageR_);
         break;
-      case FixedChainRole::kNone:
+      }
+      case ExecutionKind::kVcf: {  // legacy synthetic standalone VCF.
+        resolveVcfCv_(driveGraph);
+        vcf_.process(mixL_, mixR_, vcfL_, vcfR_);
+        break;
+      }
+      case ExecutionKind::kDistortion: {  // legacy synthetic standalone Distortion.
+        // GH#6: the calibration trim × identity path-gain micro-diff is applied ONCE
+        // here — the clear VCF→distortion staging point — BEFORE the post-filter fold.
+        wetL_ = distortion_.tickL(vcfL_ * vcfPathStageL_);
+        wetR_ = distortion_.tickR(vcfR_ * vcfPathStageR_);
+        break;
+      }
+      case ExecutionKind::kUnsupported:
         break;
     }
+  }
+
+  // Resolve the VCF L/R control CV (needed by both the merged kVcfPath slot and the
+  // legacy standalone kVcf slot).
+  void resolveVcfCv_(bool driveGraph) {
+    double l = 0.0, r = 0.0;
+    if (resolveControlSink_(vcfCvL_, l, driveGraph)) vcf_.setCvL(l);
+    if (resolveControlSink_(vcfCvR_, r, driveGraph)) vcf_.setCvR(r);
   }
 
   double cvAt_(JackId jack) const {
@@ -1021,10 +1285,79 @@ class SynthRuntime {
     }
   }
 
+  // @Codex 7C2 per-id dispatch: map a compiled DroneBank ModuleId to its 0-based CLASSIC
+  // group index (drone_1/2/4/5 -> g0/g1/g2/g3), or -1 for the NEW Papa voices (drone 3/6)
+  // and for any non-registry synthetic id (e.g. legacy kM_Drone {5}, which is envelope_b
+  // in the canonical enum — never a drone_N). A canonical strict plan drives exactly six
+  // distinct drone slots (classicGroupOfDrone_ identifies the four classic ones).
+  static int classicGroupOfDrone_(ModuleId id) {
+    switch (id) {
+      case ModuleId::drone_1: return 0;
+      case ModuleId::drone_2: return 1;
+      case ModuleId::drone_4: return 2;
+      case ModuleId::drone_5: return 3;
+      default:               return -1;
+    }
+  }
+
+  // Classic group index -> VoiceMixer channel (1/2/4/5, ascending by channel).
+  static int classicChannel(int group) {
+    const int classicChannels[4] = {VoiceMixer::kChannelDrone1, VoiceMixer::kChannelDrone2,
+                                    VoiceMixer::kChannelDrone4, VoiceMixer::kChannelDrone5};
+    return classicChannels[group];
+  }
+
+  // NEW-voice (drone 3/6) per-slot tick: advance the PapaVoice, write the channel, and
+  // latch the S&H CV out of the voice (NOT summed into the channel — it is a CV out).
+  void tickPapaVoice_(PapaVoice& pv, int channel, double& shCvOut) {
+    double n = 0.0;
+    pv.tick(&n);
+    chIn_[channel] = n;
+    shCvOut = pv.lastShCv();
+  }
+
   struct FixedRoleBinding {
     ModuleId id;
-    FixedChainRole role;
+    ExecutionKind kind;
   };
+
+  // Legacy FixedChainRole -> ExecutionKind (1:1 for the synthetic fixture's dispatch
+  // kinds). kNone -> kUnsupported. The canonical table never routes through this — it
+  // binds kVcfPath/kDroneBank/post-B′ kinds directly via bindExecutionKind.
+  static ExecutionKind toExecutionKind_(FixedChainRole role) {
+    switch (role) {
+      case FixedChainRole::kVcoA:       return ExecutionKind::kVcoA;
+      case FixedChainRole::kVcoB:       return ExecutionKind::kVcoB;
+      case FixedChainRole::kDrone:      return ExecutionKind::kDroneBank;
+      case FixedChainRole::kExtIn:      return ExecutionKind::kExtIn;
+      case FixedChainRole::kPreamp:     return ExecutionKind::kPreamp;
+      case FixedChainRole::kEnvFollower:return ExecutionKind::kEnvFollower;
+      case FixedChainRole::kMixer:      return ExecutionKind::kMixer;
+      case FixedChainRole::kVcf:        return ExecutionKind::kVcf;
+      case FixedChainRole::kDistortion: return ExecutionKind::kDistortion;
+      case FixedChainRole::kNone:       return ExecutionKind::kUnsupported;
+    }
+    return ExecutionKind::kUnsupported;
+  }
+  // ExecutionKind -> FixedChainRole (for the chainExecRoleAt() inspector). The merged
+  // kVcfPath reads as the VCF role (a synthetic-only inspector never sees it; the
+  // canonical ordering oracle uses the slots directly). kUnsupported reads kNone.
+  static FixedChainRole fixedChainRoleOf_(ExecutionKind kind) {
+    switch (kind) {
+      case ExecutionKind::kVcoA:       return FixedChainRole::kVcoA;
+      case ExecutionKind::kVcoB:       return FixedChainRole::kVcoB;
+      case ExecutionKind::kDroneBank:  return FixedChainRole::kDrone;
+      case ExecutionKind::kExtIn:      return FixedChainRole::kExtIn;
+      case ExecutionKind::kPreamp:     return FixedChainRole::kPreamp;
+      case ExecutionKind::kEnvFollower:return FixedChainRole::kEnvFollower;
+      case ExecutionKind::kMixer:      return FixedChainRole::kMixer;
+      case ExecutionKind::kVcfPath:    return FixedChainRole::kVcf;  // merged reads as VCF.
+      case ExecutionKind::kVcf:        return FixedChainRole::kVcf;
+      case ExecutionKind::kDistortion: return FixedChainRole::kDistortion;
+      case ExecutionKind::kUnsupported:return FixedChainRole::kNone;
+    }
+    return FixedChainRole::kNone;
+  }
 
   const JackDescriptor* jacks_ = nullptr;
   std::uint32_t jackCount_ = 0;
@@ -1066,8 +1399,11 @@ class SynthRuntime {
   FixedRoleBinding roleBindings_[kMaxFixedModules] = {};
   std::uint32_t roleBindingCount_ = 0;
 
-  // Derived (rebuild_, off audio thread): the ordered fixed-chain role sequence +
-  // the break-edge delay lines. Audio path reads these only.
+  // Derived (rebuild_, off audio thread): the per-module execution slots (dedup by
+  // kind, plan order) + the legacy FixedChainRole inspector array + the break-edge
+  // delay lines. Audio path reads these only.
+  ExecutionSlot execSlots_[kMaxFixedModules] = {};
+  std::uint32_t execSlotCount_ = 0;
   FixedChainRole chainExecOrder_[kMaxFixedModules] = {};
   std::uint32_t chainExecCount_ = 0;
   FeedbackLine feedback_[kMaxFeedback];
@@ -1095,6 +1431,12 @@ class SynthRuntime {
   // pre-GH#6 hardware path until configureVcfIdentity is called. Independent per L/R.
   double vcfPathStageL_ = 1.0, vcfPathStageR_ = 1.0;
   bool identityConfigured_ = false;
+  // @Codex 7C2 req. 4: an owning definition must EXPLICITLY enable strict binding policy.
+  // Default OFF = legacy permissive (synthetic fixtures that bind no kind are exempt and
+  // auto-allowed). Only when ON does rebuild() fail-closed with a DISTINCT status:
+  // missing_execution_binding (a compiled-region module has NO kind binding) vs
+  // unsupported_module (explicitly bound to kUnsupported). setStrictBindings() toggles it.
+  bool strictBindings_ = false;
   double envOut_ = 0.0;
   double extSource_ = 0.0;
   double sh3Cv_ = 0.0;  // NEW drone 3 Sample & Hold CV out (not in the audio channel).

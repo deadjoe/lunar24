@@ -64,6 +64,17 @@ using core::ModuleId;
 
 namespace {
 
+// The large-object (SynthRuntime, which embeds the DroneBank + 2 PapaVoice + filters)
+// acceptance tests create a runtime BY VALUE on the stack. Under ASan the usable stack is
+// sharply reduced, and -O1 will happily inline a small test function into main, inflating
+// main's frame past the guard. Keep such tests out of main's frame so each runs (and
+// releases) its own (still large) frame. This is a CI-safety latch, not product semantics.
+#if defined(__GNUC__) || defined(__clang__)
+#define IJU_TEST_NOINLINE __attribute__((noinline))
+#else
+#define IJU_TEST_NOINLINE
+#endif
+
 // Synthetic module + jack identity (tests pass synthetic tables, as test_patch_graph
 // does). The runtime and compile_graph only read jack id + owning module.
 // Modules 1-4 are the CONTROL patchables (CV source, VCO A, VCO B, VCF); 5-10 are
@@ -345,16 +356,23 @@ void registry_self_loop_feedback_capacity() {
 // duration — it is returned by value out of makeRegistryDroneBase(), and a stack-local copy
 // would dangle on the next rebuild(). (The product host passes persistent registry-backed
 // arrays; this is the test-side equivalent.)
+// @Codex 7C2 no-dedup: FOUR classic drone ModuleIds -> FOUR distinct kDroneBank slots (one
+// per compiled ModuleId), each stepping exactly ITS OWN group. One edge per drone -> mixer so
+// the mixer grouping (all four feed the same sink) mirrors the product contract. The single
+// drone_1->mixer edge + whole-bank tick is GONE — there is no "one tick whole bank" anymore.
 const core::FixedEdge kClassicDroneEdge[] = {
     {core::ModuleId::drone_1, core::ModuleId::mixer, "drone_1_to_mixer"},
+    {core::ModuleId::drone_2, core::ModuleId::mixer, "drone_2_to_mixer"},
+    {core::ModuleId::drone_4, core::ModuleId::mixer, "drone_4_to_mixer"},
+    {core::ModuleId::drone_5, core::ModuleId::mixer, "drone_5_to_mixer"},
 };
 
-// Registry-backed runtime with the CLASSIC drone_1 bound to the kDrone role and a single
-// fixed edge (drone_1 -> mixer) so it lands in the compiled plan. The DroneBank collapses
-// all four classic voices into this one kDrone step; the mixer holds no role, so the
-// execution order is just [kDrone] — enough to observe droneChannel() (the pre-VCA channel
-// data the mixer consumes) and the batch-4A ENV OUT writes. This BASE does NOT bind
-// env_out / cv_mod_in, so its groups are unbound (the fail-closed tests use it).
+// Registry-backed runtime with ALL FOUR classic drone ModuleIds bound to the kDrone role and
+// four fixed edges (drone_1/2/4/5 -> mixer) so they all land in the compiled plan. @Codex 7C2
+// no-dedup: each classic drone is ONE kDroneBank slot stepping exactly ITS OWN group. The mixer
+// holds no role, so the slots are just the four drone groups — enough to observe droneChannel()
+// (the pre-VCA channel data each group emits) and the batch-4A ENV OUT writes. This BASE does
+// NOT bind env_out / cv_mod_in, so its groups are unbound (the fail-closed tests use it).
 // Look up a registered JackDescriptor by id (linear over the small registry). The binding
 // validation AND the descriptor-driven ENV OUT oracle below read nominalMin/Max from these
 // REAL generated descriptors — this test never hard-codes a ±9.9/±10 voltage.
@@ -417,8 +435,11 @@ core::SynthRuntime makeRegistryDroneJacks(const core::JackDescriptor* jacks, std
     mods[i].contract = &cyc[i];
   }
   core::SynthRuntime rt(jacks, jack_n, nullptr, 0, mods, core::kModuleCount, kSeed, kSr,
-                        kClassicDroneEdge, 1);
+                        kClassicDroneEdge, 4);
   rt.bindFixedRole(core::ModuleId::drone_1, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(core::ModuleId::drone_2, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(core::ModuleId::drone_4, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(core::ModuleId::drone_5, core::FixedChainRole::kDrone);
   static_cast<void>(rt.rebuild());
   return rt;
 }
@@ -760,6 +781,140 @@ void registry_drone_envout_fail_closed() {
         "drives setGroupModCv(0) — no stale modulation lingers)");
   check(p0.first == 0.0, "CV MOD stale-read: 0V consume leaves modCv at 0");
   check(p0.second == 0.0, "CV MOD stale-read: 0V consume + reject still leaves modCv at 0");
+}
+
+// @Codex 7C2 req. 1 (NO execution-kind dedup): the four classic drone ModuleIds must yield
+// FOUR distinct kDroneBank ExecutionSlots — NEVER one merged "whole bank" slot. Each slot
+// carries its own ModuleId; step(slot.id, kind) runs exactly that drone's group. This is what
+// makes env_follower -> drone_2.cv_mod (drone_2 running before its source) a real #64-compliant
+// per-module order instead of one collapsed bank step.
+IJU_TEST_NOINLINE void registry_drone_no_dedup_slots() {
+  core::SynthRuntime rt = makeRegistryDroneRuntime();
+  check(rt.execSlotCount() == 4,
+        "four classic drone ModuleIds -> four kDroneBank slots (execSlotCount==4, no kind dedup)");
+  bool saw1 = false, saw2 = false, saw4 = false, saw5 = false;
+  for (std::uint32_t i = 0; i < rt.execSlotCount(); ++i) {
+    const core::ExecutionSlot& s = rt.execSlotAt(i);
+    check(s.kind == core::ExecutionKind::kDroneBank,
+          "every classic drone slot is a kDroneBank ExecutionKind");
+    switch (s.id) {
+      case core::ModuleId::drone_1: saw1 = true; break;
+      case core::ModuleId::drone_2: saw2 = true; break;
+      case core::ModuleId::drone_4: saw4 = true; break;
+      case core::ModuleId::drone_5: saw5 = true; break;
+      default:
+        check(false, "classic drone slots carry ONLY the four registry drone_N ModuleIds");
+        break;
+    }
+  }
+  check(saw1 && saw2 && saw4 && saw5,
+        "drone_1/2/4/5 are all present as DISTINCT slots (none collapsed into one bank)");
+}
+
+// @Codex 7C2 req. 4 (EXPLICIT strict binding policy, never inferred): an owning definition
+// enables strictness via setStrictBindings(); only then does rebuild() fail-closed TWO distinct
+// ways — a compiled-region module with NO binding (missing_execution_binding) vs one EXPLICITLY
+// bound to kUnsupported (unsupported_module). Default OFF keeps the permissive synthetic path.
+IJU_TEST_NOINLINE void registry_strict_binding_policy() {
+  // (a) default OFF: the permissive path compiles the registry-drone plan; mixer is unbound
+  //     but permissive mode keeps it outside the executor's scope — never a bind-status failure.
+  {
+    core::SynthRuntime rt = makeRegistryDroneRuntime();
+    check(rt.rebuild(), "strict OFF: permissive rebuild succeeds");
+    const auto st = rt.lastRebuildStatus();
+    check(st != core::SynthRuntime::RebuildStatus::missing_execution_binding &&
+              st != core::SynthRuntime::RebuildStatus::unsupported_module,
+          "strict OFF: permissive rebuild takes no fail-closed binding status");
+  }
+  // (b) strict ON + a compiled region that contains an UNBOUND module (mixer, which no kind
+  //     binding in this fixture) -> REFUSE with missing_execution_binding (distinct from a
+  //     kUnsupported module). setStrictBindings dirties the plan so the prior permissive build
+  //     is re-preflighted.
+  {
+    core::SynthRuntime rt = makeRegistryDroneBase();
+    rt.setStrictBindings(true);
+    check(!rt.rebuild(), "strict ON + unbound region module: rebuild REFUSES");
+    check(rt.lastRebuildStatus() == core::SynthRuntime::RebuildStatus::missing_execution_binding,
+          "strict ON + unbound module -> missing_execution_binding");
+  }
+  // (c) strict ON + EVERY region module bound but one EXPLICITLY kUnsupported -> REFUSE with
+  //     unsupported_module. Binding mixer -> kMixer removes the missing-binding shadow so the
+  //     declared-deferred drone_1 is the one that triggers.
+  {
+    core::SynthRuntime rt = makeRegistryDroneBase();
+    rt.bindExecutionKind(core::ModuleId::mixer, core::ExecutionKind::kMixer);
+    rt.bindExecutionKind(core::ModuleId::drone_1, core::ExecutionKind::kUnsupported);
+    rt.setStrictBindings(true);
+    check(!rt.rebuild(), "strict ON + explicit kUnsupported module: rebuild REFUSES");
+    check(rt.lastRebuildStatus() == core::SynthRuntime::RebuildStatus::unsupported_module,
+          "strict ON + explicitly-deferred module -> unsupported_module (NOT missing_binding)");
+  }
+}
+
+// @Codex 263cb3ca point 1 (ACTIVE-only strict preflight): strictness must judge a module ACTIVE
+// by whether it is an endpoint of THIS candidate's effective PatchEdge or FixedEdge — NOT by
+// merely existing in the inventory / landing in a compiled region. The owning definition binds
+// the six not-yet-integrated control sources to kUnsupported; an ISOLATED one must NOT fail the
+// build, but the SAME module patched into a real edge MUST.
+IJU_TEST_NOINLINE void registry_strict_active_only() {
+  namespace reg = lunar24::registry;
+  {
+    core::SynthRuntime rt = makeRegistryDroneBase();
+    // Every ACTIVE module (drone_1/2/4/5 via the fixed routes + the mixter sink) gets a real kind.
+    rt.bindExecutionKind(core::ModuleId::drone_1, core::ExecutionKind::kDroneBank);
+    rt.bindExecutionKind(core::ModuleId::drone_2, core::ExecutionKind::kDroneBank);
+    rt.bindExecutionKind(core::ModuleId::drone_4, core::ExecutionKind::kDroneBank);
+    rt.bindExecutionKind(core::ModuleId::drone_5, core::ExecutionKind::kDroneBank);
+    rt.bindExecutionKind(core::ModuleId::mixer, core::ExecutionKind::kMixer);
+    // lfo_a: declared-deferred control source bound to kUnsupported but NOT patched into any
+    // effective edge yet -> NOT active -> the strict build must SUCCEED (never a false fail).
+    rt.bindExecutionKind(core::ModuleId::lfo_a, core::ExecutionKind::kUnsupported);
+    rt.setStrictBindings(true);
+    check(rt.rebuild(), "strict ON + isolated kUnsupported lfo_a: rebuild succeeds");
+    check(rt.lastRebuildStatus() == core::SynthRuntime::RebuildStatus::ok,
+          "isolated kUnsupported (inventory-only) -> status ok, NOT unsupported_module");
+    check(rt.execSlotCount() == 5,
+          "isolated kUnsupported contributes no execution slot (4 drones + mixer = 5)");
+
+    // Now PATCH lfo_a.cv_out -> vcf.cv_r_in: lfo_a becomes an effective PatchEdge endpoint, so
+    // it IS active. Bound to kUnsupported, the strict rebuild must REFUSE with the PRECISE
+    // unsupported_module (not graph_unchanged, not missing_binding, never a silent skip).
+    rt.bindExecutionKind(core::ModuleId::vcf, core::ExecutionKind::kVcfPath);  // vcf is not "missing"
+    check(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::vcf_cv_r_in),
+          "lfo_a.cv_out -> vcf.cv_r_in cable connects");
+    check(!rt.rebuild(), "lfo_a now ACTIVE as kUnsupported: rebuild REFUSES");
+    check(rt.lastRebuildStatus() == core::SynthRuntime::RebuildStatus::unsupported_module,
+          "ACTIVE kUnsupported lfo_a -> precise unsupported_module (NOT missing_binding)");
+  }
+}
+
+// @Codex 263cb3ca point 2 (bindExecutionKind must dirty the plan on BOTH add + update): a
+// successful strict rebuild followed by a kind change must re-preflight — otherwise the next
+// rebuild() short-circuits to graph_unchanged and the OLD preflight/slots survive, violating
+// the explicit strict policy. This demonstrates the supported->unsupported flip on the UPDATE
+// branch (the add branch is also dirtied: mixer is bound here via a never-bound id).
+IJU_TEST_NOINLINE void registry_strict_binding_kind_dirty() {
+  {
+    core::SynthRuntime rt = makeRegistryDroneBase();
+    rt.bindExecutionKind(core::ModuleId::drone_1, core::ExecutionKind::kDroneBank);
+    rt.bindExecutionKind(core::ModuleId::drone_2, core::ExecutionKind::kDroneBank);
+    rt.bindExecutionKind(core::ModuleId::drone_4, core::ExecutionKind::kDroneBank);
+    rt.bindExecutionKind(core::ModuleId::drone_5, core::ExecutionKind::kDroneBank);
+    rt.bindExecutionKind(core::ModuleId::mixer, core::ExecutionKind::kMixer);  // ADD branch
+    rt.setStrictBindings(true);
+    check(rt.rebuild(), "strict ON + all active modules bound: first rebuild succeeds");
+    check(rt.lastRebuildStatus() == core::SynthRuntime::RebuildStatus::ok,
+          "first strict rebuild status ok");
+    check(rt.execSlotCount() == 5, "one slot per active module (4 drones + mixer)");
+
+    // Flip drone_1 kDroneBank -> kUnsupported on the UPDATE branch. This must dirty the plan so
+    // the second rebuild() does a REAL preflight and REFUSES with unsupported_module — NOT
+    // graph_unchanged (which would leave the 5 old slots in place).
+    rt.bindExecutionKind(core::ModuleId::drone_1, core::ExecutionKind::kUnsupported);
+    check(!rt.rebuild(), "kind flip after a valid rebuild re-preflights and REFUSES");
+    check(rt.lastRebuildStatus() == core::SynthRuntime::RebuildStatus::unsupported_module,
+          "supported->unsupported kind flip -> unsupported_module (NOT graph_unchanged)");
+  }
 }
 
 // @Codex 7a42d10a #3 (sentinel removal): the old code used JackId{0} as an "unbound" sentinel,
@@ -1969,6 +2124,18 @@ int main() {
 
   std::printf("(14) GH#5 classic drone same-seed reproducibility\n");
   registry_drone_reproducible();
+
+  std::printf("(14b) GH#11 no execution-kind dedup — four classic drone slots\n");
+  registry_drone_no_dedup_slots();
+
+  std::printf("(14c) GH#11 explicit strict binding policy — distinct fail-closed statuses\n");
+  registry_strict_binding_policy();
+
+  std::printf("(14d) GH#11 strict preflight judges ACTIVE edge-endpoints, not inventory presence\n");
+  registry_strict_active_only();
+
+  std::printf("(14e) GH#11 bindExecutionKind dirties the plan on add + update\n");
+  registry_strict_binding_kind_dirty();
 
   std::printf("(15) GH#5 classic drone ENV OUT fail-closed\n");
   registry_drone_envout_fail_closed();

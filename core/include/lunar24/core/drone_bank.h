@@ -229,34 +229,53 @@ class DroneBank {
 
   // Advance every generator by one sample and write its sample into out[i]
   // (0 if muted). out must have room for voiceCount_ values. Realtime-safe.
+  //
+  // tick(all) is now a thin loop over the classic groups: it calls each group's
+  // narrow per-group tick in ascending group order — the same one-ModuleId-at-a-time
+  // order the unified executor will use. Because the groups are independent (mutual-FM
+  // peers stay within a group, no cross-group edge) and each group carries its OWN
+  // sample counter in lockstep, this is bit-identical to a single all-voices tick.
   void tick(double* out) {
-    // Advance each classic group's gate/ATT/RLS/HOLD VCA gain toward its target
-    // (open = gate||hold — the PROVISIONAL HOLD keeps the target open while held). The
-    // oscillators keep free-running; the envelope only scales the group's final audio
-    // below, never resetting phase (design/07 §7). Linear + monotonic, so a larger
-    // ATT/RLS makes the corresponding stage slower.
-    const double dt = 1.0 / sampleRate_;
-    for (std::size_t g = 0; g < groupCount_; ++g) {
-      GroupEnv& e = groupEnv_[g];
-      const double target = (e.gate || e.hold) ? 1.0 : 0.0;
-      double& lvl = e.level;
-      if (lvl < target) {
-        lvl += dt / e.attSeconds;
-        if (lvl > target) lvl = target;
-      } else if (lvl > target) {
-        lvl -= dt / e.rlsSeconds;
-        if (lvl < target) lvl = target;
-      }
-    }
+    for (std::size_t g = 0; g < groupCount_; ++g)
+      tickGroup(static_cast<int>(g), out + g * kGensPerVoice);
+  }
 
-    for (std::size_t i = 0; i < voiceCount_; ++i) {
+  // Tick ONLY classic group `group` (0..3) and write that group's generator samples into
+  // out[0..kGensPerVoice) (fewer for a partial test fixture). This is the per-ModuleId
+  // entry the unified executor uses: each of the four classic drone modules
+  // (drone 1/2/4/5) runs exactly ITS OWN group per slot, following resolve -> tick ->
+  // publish, rather than "one tick whole bank" pretending a single plan node. Each group
+  // owns an independent sample counter (groupSample_), so per-group jitter/drift/env
+  // phase advance exactly as the old single blockSample_ did — bit-identical, in any
+  // group execution order. Realtime-safe.
+  void tickGroup(int group, double* out) {
+    const std::size_t g = static_cast<std::size_t>(group);
+    if (group < 0 || g >= groupCount_) return;
+    // Advance THIS group's gate/ATT/RLS/HOLD VCA gain toward its target (open =
+    // gate||hold — the PROVISIONAL HOLD keeps the target open while held). The
+    // oscillators keep free-running; the envelope only scales the group's final audio
+    // below, never resetting phase (design/07 §7). Linear + monotonic.
+    const double dt = 1.0 / sampleRate_;
+    GroupEnv& e = groupEnv_[g];
+    const double target = (e.gate || e.hold) ? 1.0 : 0.0;
+    double& lvl = e.level;
+    if (lvl < target) {
+      lvl += dt / e.attSeconds;
+      if (lvl > target) lvl = target;
+    } else if (lvl > target) {
+      lvl -= dt / e.rlsSeconds;
+      if (lvl < target) lvl = target;
+    }
+    const double sample = groupSample_[g];   // this group's own sample counter.
+    const double gLvl = e.level;             // group VCA gain 0..1 (advanced above).
+    const std::size_t begin = g * kGensPerVoice;
+    const std::size_t end = std::min(begin + kGensPerVoice, voiceCount_);
+    for (std::size_t i = begin; i < end; ++i) {
       Voice& v = voices_[i];
-      const std::size_t g = i / kGensPerVoice;   // classic group (0..3).
-      const double gLvl = groupEnv_[g].level;    // group VCA gain 0..1.
       v.driftNow = driftEnabled_
                        ? v.freqBaseHz *
-                             (v.driftA1 * std::sin(driftPhase1_(v)) +
-                              v.driftA2 * std::sin(driftPhase2_(v)))
+                             (v.driftA1 * std::sin(driftPhase1_(v, sample)) +
+                              v.driftA2 * std::sin(driftPhase2_(v, sample)))
                        : 0.0;
       const double tuneScale = std::pow(2.0, v.tune / 12.0);      // TUNE (semitones up).
       const double voltScale = std::pow(2.0, -v.volt / 12.0);     // VOLT transposes down.
@@ -270,9 +289,8 @@ class DroneBank {
       // Oscillator-specific small deterministic jitter (per-gen, seed-stable, hash-based).
       // Save the value actually applied THIS SAMPLE first, so the inspector reads exactly
       // what entered the frequency accumulation (lastJitterHz_), never the next sample's
-      // recompute (the OLD inspector read blockSample_ after it was incremented, i.e. the
-      // wrong sample — see the jitter-source negative control).
-      lastJitterHz_[i] = kOscNoiseAmpHz * jitterUnit_(seed_, static_cast<double>(i), blockSample_);
+      // recompute.
+      lastJitterHz_[i] = kOscNoiseAmpHz * jitterUnit_(seed_, static_cast<double>(i), sample);
       effFreq += lastJitterHz_[i];
       // Mutual FM: active only past half the VOLT stroke (manual). Pair generators
       // within a voice by a 5-ring. Provisional depth law.
@@ -282,13 +300,13 @@ class DroneBank {
       if (effFreq < 0.0) effFreq = 0.0;
 
       const double s = v.muted ? 0.0 : v.amplitude * nonlinearity(sawtooth(v.phase));
-      lastSample_[i] = s;   // RAW pre-group-VCA: mutual-FM peers use the oscillator value.
-      out[i] = s * gLvl;    // the group's envelope/VCA gates the final audio.
+      lastSample_[i] = s;          // RAW pre-group-VCA: mutual-FM peers use the oscillator value.
+      out[i - begin] = s * gLvl;   // the group's envelope/VCA gates the final audio.
       v.phase += twoPi_ * effFreq / sampleRate_;
       v.phase = std::fmod(v.phase, twoPi_);
       if (v.phase < 0.0) v.phase += twoPi_;
     }
-    ++blockSample_;
+    ++groupSample_[g];
   }
 
   // Inspectors (tests + read-only DSP supervision).
@@ -355,12 +373,12 @@ class DroneBank {
     return (volt > kVvoltMid) ? kFmDepthMax * (volt - kVvoltMid) : 0.0;
   }
 
-  double driftPhase1_(const Voice& v) const {
-    const double t = blockSample_ / sampleRate_;
+  double driftPhase1_(const Voice& v, double sample) const {
+    const double t = sample / sampleRate_;
     return twoPi_ * v.driftF1Hz * t + v.driftPh1;
   }
-  double driftPhase2_(const Voice& v) const {
-    const double t = blockSample_ / sampleRate_;
+  double driftPhase2_(const Voice& v, double sample) const {
+    const double t = sample / sampleRate_;
     return twoPi_ * v.driftF2Hz * t + v.driftPh2;
   }
 
@@ -421,7 +439,7 @@ class DroneBank {
   double sampleRate_;
   std::size_t voiceCount_;
   bool driftEnabled_;
-  double blockSample_ = 0.0;
+  double groupSample_[kMaxGroups] = {};  // per-classic-group sample counter (bit-exact per-group tick).
   Voice voices_[kMaxVoices];
   double lastSample_[kMaxVoices];
   double lastJitterHz_[kMaxVoices] = {};  // last-APPLIED per-gen jitter (see noiseJitterHz).
