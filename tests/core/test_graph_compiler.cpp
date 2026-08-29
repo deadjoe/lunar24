@@ -825,6 +825,510 @@ static void malformed_contract_rejected_at_compile_entry() {
   CHECK_EQ(res.graph.regions.size(), 0u);
 }
 
+// ----------------------------------------------------------------------------
+// GH#14: independent executable-order verifier. region.modules must be a valid
+// topological order of the region's NON-selected-feedback module dependency edges
+// — i.e. for every pluggable region edge that is NOT a selected feedback (break)
+// edge, the source module must appear at a strictly earlier position than the sink
+// module. Selected feedback edges are deliberately EXCLUDED (they are the
+// cycle-break edges, which run BACKWARD in the chosen execution order). This does
+// NOT re-run the compiler's own topological algorithm; it only checks the reported
+// order is consistent with the dependency facts, so it cannot self-prove a buggy
+// compiler that happens to sort the same way.
+// ----------------------------------------------------------------------------
+static bool executable_order_is_topological(const core::CompiledRegion& r,
+                                            const core::JackDescriptor* jacks,
+                                            std::uint32_t jackCount) {
+  auto posOf = [&](core::ModuleId m) -> int {
+    for (std::size_t i = 0; i < r.modules.size(); ++i)
+      if (r.modules[i] == m) return static_cast<int>(i);
+    return -1;
+  };
+  auto isFeedback = [&](core::JackId s, core::JackId t) -> bool {
+    for (const auto& f : r.feedback)
+      if (f.sourceJack == s && f.sinkJack == t) return true;
+    return false;
+  };
+  auto jackModule = [&](core::JackId j) -> core::ModuleId {
+    for (std::uint32_t i = 0; i < jackCount; ++i)
+      if (jacks[i].id == j) return jacks[i].module;
+    return core::ModuleId{0};
+  };
+  for (const auto& e : r.edges) {
+    if (isFeedback(e.sourceJack, e.sinkJack)) continue;  // break edge excluded
+    const core::ModuleId sm = jackModule(e.sourceJack);
+    const core::ModuleId tm = jackModule(e.sinkJack);
+    const int sp = posOf(sm), tp = posOf(tm);
+    if (sp < 0 || tp < 0) return false;  // both end modules must be in the region
+    if (!(sp < tp)) return false;        // source must precede sink
+  }
+  return true;
+}
+
+// ----------------------------------------------------------------------------
+// GH#14 tie-break independent reference (NOT the compiler's algorithm): exhaustively
+// enumerate every valid topological order of the region's non-feedback pluggable
+// dependency edges and return the LEXICOGRAPHICALLY-smallest one by ModuleId (the
+// design/07 + GH#14 rule: among the currently-ready nodes, pick the smallest
+// ModuleId). count receives the number of distinct valid orders, so a caller can
+// assert a genuine tie (>=2). Because this is a brute-force reference it cannot
+// self-prove a compiler that happens to share the same greedy rule.
+// ----------------------------------------------------------------------------
+static std::vector<core::ModuleId> min_topological_order(
+    const core::CompiledRegion& r, const core::JackDescriptor* jacks,
+    std::uint32_t jackCount, std::uint32_t& count) {
+  count = 0;
+  std::vector<core::ModuleId> ids = r.modules;
+  std::sort(ids.begin(), ids.end(),
+            [](core::ModuleId a, core::ModuleId b) { return num(a) < num(b); });
+  const std::size_t n = ids.size();
+  auto indexOf = [&](core::ModuleId m) -> int {
+    for (std::size_t i = 0; i < n; ++i)
+      if (ids[i] == m) return static_cast<int>(i);
+    return -1;
+  };
+  auto isFeedback = [&](core::JackId s, core::JackId t) {
+    for (const auto& f : r.feedback)
+      if (f.sourceJack == s && f.sinkJack == t) return true;
+    return false;
+  };
+  auto jackModIdx = [&](core::JackId j) -> int {
+    core::ModuleId m{0};
+    for (std::uint32_t i = 0; i < jackCount; ++i)
+      if (jacks[i].id == j) m = jacks[i].module;
+    return indexOf(m);
+  };
+  std::vector<std::vector<std::size_t>> suc(n);
+  std::vector<std::uint32_t> indeg(n, 0);
+  std::vector<char> selfDep(n, 0);
+  for (const auto& e : r.edges) {
+    if (isFeedback(e.sourceJack, e.sinkJack)) continue;
+    const int s = jackModIdx(e.sourceJack), t = jackModIdx(e.sinkJack);
+    if (s < 0 || t < 0) return {};
+    if (s == t) {
+      selfDep[static_cast<std::size_t>(s)] = 1;  // non-feedback self dep => a cycle
+      continue;
+    }
+    suc[static_cast<std::size_t>(s)].push_back(static_cast<std::size_t>(t));
+    ++indeg[static_cast<std::size_t>(t)];
+  }
+  for (std::size_t i = 0; i < n; ++i)
+    if (selfDep[i]) return {};  // a non-feedback self dependency admits no DAG order
+  // Collapse duplicate forward edges (same pair, redundant constraint) so indeg
+  // counts match the logical dependency set the enumerator walks.
+  for (auto& a : suc) {
+    std::sort(a.begin(), a.end());
+    a.erase(std::unique(a.begin(), a.end()), a.end());
+  }
+
+  std::vector<core::ModuleId> best;
+  std::vector<std::size_t> cur;
+  std::vector<char> used(n, 0);
+  std::function<void()> rec = [&]() {
+    if (cur.size() == n) {
+      ++count;
+      std::vector<core::ModuleId> cand;
+      cand.reserve(n);
+      for (std::size_t i : cur) cand.push_back(ids[i]);
+      if (best.empty()) {
+        best = cand;
+      } else {
+        bool less = false;
+        for (std::size_t i = 0; i < n; ++i) {
+          if (cand[i] != best[i]) {
+            less = num(cand[i]) < num(best[i]);
+            break;
+          }
+        }
+        if (less) best = cand;
+      }
+      return;
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+      if (used[i] || indeg[i] != 0) continue;
+      used[i] = 1;
+      cur.push_back(i);
+      for (std::size_t w : suc[i]) --indeg[w];
+      rec();
+      for (std::size_t w : suc[i]) ++indeg[w];
+      cur.pop_back();
+      used[i] = 0;
+    }
+  };
+  rec();
+  return best;
+}
+
+// ----------------------------------------------------------------------------
+// GH#14: cyclic SCC execution order. The compiler must report region.modules in
+// the executable DAG order AFTER the selected feedback edge(s) are removed — NOT
+// the numeric-ascending ModuleId order the old implementation returned.
+//
+// Counterexample: three distinct module ids, cycle 0 -> 2 -> 1 -> 0. The selected
+// (break) edge is 1 -> 0; removing it leaves the feed-forward DAG 0 -> 2 -> 1, so
+// region.modules MUST be {0, 2, 1}. The old numeric sort returned {0, 1, 2} — the
+// bug GH#14 records (this makes the test RED on the old implementation).
+// ----------------------------------------------------------------------------
+static void cyclic_execution_order_counterexample() {
+  constexpr core::ModuleId m0{0}, m1{1}, m2{2};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{101}, m0, core::PinDirection::output),
+      mk_jack(core::JackId{102}, m0, core::PinDirection::input),
+      mk_jack(core::JackId{111}, m1, core::PinDirection::output),
+      mk_jack(core::JackId{112}, m1, core::PinDirection::input),
+      mk_jack(core::JackId{121}, m2, core::PinDirection::output),
+      mk_jack(core::JackId{122}, m2, core::PinDirection::input),
+  };
+  const std::uint32_t kJackCount = sizeof(jacks) / sizeof(jacks[0]);
+
+  // All three legal/prepared/cycle-allowed, each direct-through on its own path.
+  ContractBuilder b0; b0.path(core::JackId{102}, core::JackId{101}, 0.0, true);
+  ContractBuilder b1; b1.path(core::JackId{112}, core::JackId{111}, 0.0, true);
+  ContractBuilder b2; b2.path(core::JackId{122}, core::JackId{121}, 0.0, true);
+  const core::GraphModule mods[] = {mod(m0, &b0.c), mod(m1, &b1.c), mod(m2, &b2.c)};
+
+  // cycle 0 -> 2 -> 1 -> 0 (the 1 -> 0 edge is the loop-closing break candidate).
+  const core::PatchEdge edges[] = {
+      {core::JackId{101}, core::JackId{122}},  // 0 -> 2
+      {core::JackId{121}, core::JackId{112}},  // 2 -> 1
+      {core::JackId{111}, core::JackId{102}},  // 1 -> 0
+  };
+
+  core::CompileResult res = core::compile_graph(jacks, kJackCount, edges, 3, mods, 3);
+  CHECK_TRUE(res.status == core::CompileStatus::ok);
+  CHECK_EQ(res.graph.regions.size(), 1u);
+  const auto& reg = res.graph.regions[0];
+  CHECK_TRUE(reg.kind == core::RegionKind::cyclic);
+  CHECK_EQ(reg.modules.size(), 3u);
+
+  // The single selected break edge must be the 1 -> 0 pluggable edge.
+  CHECK_EQ(reg.feedback.size(), 1u);
+  CHECK_TRUE(reg.feedback[0].sourceJack == core::JackId{111});  // module 1 out
+  CHECK_TRUE(reg.feedback[0].sinkJack == core::JackId{102});    // module 0 in
+
+  // Executable order is the feed-forward DAG after removing that break edge.
+  const core::ModuleId expected[] = {m0, m2, m1};
+  bool orderOk = true;
+  for (std::int32_t i = 0; i < 3; ++i)
+    if (reg.modules[static_cast<std::size_t>(i)] != expected[i]) orderOk = false;
+  CHECK_TRUE(orderOk);
+
+  // Independent topological consistency (does NOT copy the compiler algorithm).
+  CHECK_TRUE(executable_order_is_topological(reg, jacks, kJackCount));
+}
+
+// ----------------------------------------------------------------------------
+// GH#14: tie-break among multiple legal topo orders. The diamond 0->1,0->2,1->3,
+// 2->3,3->0 has TWO valid feed-forward orders once 3->0 is broken ([0,1,2,3] and
+// [0,2,1,3]); the compiler must deterministically pick the one that resolves each
+// ready set by smallest ModuleId -> [0,1,2,3]. Verified against an independent
+// brute-force minimiser (NOT the compiler's greedy rule).
+// ----------------------------------------------------------------------------
+static void cyclic_execution_order_tiebreak() {
+  constexpr core::ModuleId m0{0}, m1{1}, m2{2}, m3{3};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{101}, m0, core::PinDirection::output),
+      mk_jack(core::JackId{102}, m0, core::PinDirection::input),
+      mk_jack(core::JackId{111}, m1, core::PinDirection::output),
+      mk_jack(core::JackId{112}, m1, core::PinDirection::input),
+      mk_jack(core::JackId{121}, m2, core::PinDirection::output),
+      mk_jack(core::JackId{122}, m2, core::PinDirection::input),
+      mk_jack(core::JackId{131}, m3, core::PinDirection::output),
+      mk_jack(core::JackId{132}, m3, core::PinDirection::input),
+  };
+  const std::uint32_t kJackCount = sizeof(jacks) / sizeof(jacks[0]);
+  ContractBuilder b0; b0.path(core::JackId{102}, core::JackId{101}, 0.0, true);
+  ContractBuilder b1; b1.path(core::JackId{112}, core::JackId{111}, 0.0, true);
+  ContractBuilder b2; b2.path(core::JackId{122}, core::JackId{121}, 0.0, true);
+  ContractBuilder b3; b3.path(core::JackId{132}, core::JackId{131}, 0.0, true);
+  const core::GraphModule mods[] = {mod(m0, &b0.c), mod(m1, &b1.c),
+                                    mod(m2, &b2.c), mod(m3, &b3.c)};
+  const core::PatchEdge edges[] = {{core::JackId{101}, core::JackId{112}},
+                                   {core::JackId{101}, core::JackId{122}},
+                                   {core::JackId{111}, core::JackId{132}},
+                                   {core::JackId{121}, core::JackId{132}},
+                                   {core::JackId{131}, core::JackId{102}}};
+  core::CompileResult res = core::compile_graph(jacks, kJackCount, edges, 5, mods, 4);
+  CHECK_TRUE(res.status == core::CompileStatus::ok);
+  CHECK_EQ(res.graph.regions.size(), 1u);
+  const auto& reg = res.graph.regions[0];
+  CHECK_TRUE(reg.kind == core::RegionKind::cyclic);
+  CHECK_EQ(reg.modules.size(), 4u);
+  CHECK_EQ(reg.feedback.size(), 1u);
+  CHECK_TRUE(reg.feedback[0].sourceJack == core::JackId{131});
+  CHECK_TRUE(reg.feedback[0].sinkJack == core::JackId{102});
+
+  // The compiler picks min-ModuleId tie-break: [0,1,2,3], not [0,2,1,3].
+  const core::ModuleId expected[] = {m0, m1, m2, m3};
+  bool orderOk = true;
+  for (std::int32_t i = 0; i < 4; ++i)
+    if (reg.modules[static_cast<std::size_t>(i)] != expected[i]) orderOk = false;
+  CHECK_TRUE(orderOk);
+
+  // Independent brute-force minimiser agrees, AND there is a genuine tie (>=2
+  // valid orders) so this really exercises the tie-break rule.
+  std::uint32_t count = 0;
+  const std::vector<core::ModuleId> minOrder =
+      min_topological_order(reg, jacks, kJackCount, count);
+  CHECK_TRUE(count >= 2u);
+  CHECK_TRUE(minOrder.size() == 4u);
+  bool minMatches = true;
+  for (std::size_t i = 0; i < 4; ++i)
+    if (minOrder[i] != expected[i]) minMatches = false;
+  CHECK_TRUE(minMatches);
+
+  CHECK_TRUE(executable_order_is_topological(reg, jacks, kJackCount));
+}
+
+// ----------------------------------------------------------------------------
+// GH#14 criterion ⑥c extension: the executable order (not just the feedback set)
+// is independent of patch-edge insertion order. Every permutation of the
+// counterexample cycle yields modules {0,2,1} and feedback {1->0}.
+// ----------------------------------------------------------------------------
+static void cyclic_execution_order_insertion_independent() {
+  constexpr core::ModuleId m0{0}, m1{1}, m2{2};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{101}, m0, core::PinDirection::output),
+      mk_jack(core::JackId{102}, m0, core::PinDirection::input),
+      mk_jack(core::JackId{111}, m1, core::PinDirection::output),
+      mk_jack(core::JackId{112}, m1, core::PinDirection::input),
+      mk_jack(core::JackId{121}, m2, core::PinDirection::output),
+      mk_jack(core::JackId{122}, m2, core::PinDirection::input),
+  };
+  const std::uint32_t kJackCount = sizeof(jacks) / sizeof(jacks[0]);
+  ContractBuilder b0; b0.path(core::JackId{102}, core::JackId{101}, 0.0, true);
+  ContractBuilder b1; b1.path(core::JackId{112}, core::JackId{111}, 0.0, true);
+  ContractBuilder b2; b2.path(core::JackId{122}, core::JackId{121}, 0.0, true);
+  const core::GraphModule mods[] = {mod(m0, &b0.c), mod(m1, &b1.c), mod(m2, &b2.c)};
+  const core::PatchEdge base[] = {{core::JackId{101}, core::JackId{122}},  // 0 -> 2
+                                  {core::JackId{121}, core::JackId{112}},  // 2 -> 1
+                                  {core::JackId{111}, core::JackId{102}}}; // 1 -> 0
+  const int perm[6][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2},
+                          {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
+  for (const auto& p : perm) {
+    const core::PatchEdge es[3] = {base[p[0]], base[p[1]], base[p[2]]};
+    core::CompileResult res = core::compile_graph(jacks, kJackCount, es, 3, mods, 3);
+    CHECK_TRUE(res.status == core::CompileStatus::ok);
+    CHECK_EQ(res.graph.regions.size(), 1u);
+    const auto& reg = res.graph.regions[0];
+    CHECK_TRUE(reg.kind == core::RegionKind::cyclic);
+    CHECK_EQ(reg.modules.size(), 3u);
+    const core::ModuleId expected[] = {m0, m2, m1};
+    bool orderOk = true;
+    for (std::int32_t i = 0; i < 3; ++i)
+      if (reg.modules[static_cast<std::size_t>(i)] != expected[i]) orderOk = false;
+    CHECK_TRUE(orderOk);
+    CHECK_EQ(reg.feedback.size(), 1u);
+    CHECK_TRUE(reg.feedback[0].sourceJack == core::JackId{111});
+    CHECK_TRUE(reg.feedback[0].sinkJack == core::JackId{102});
+    CHECK_TRUE(executable_order_is_topological(reg, jacks, kJackCount));
+  }
+}
+
+// ----------------------------------------------------------------------------
+// GH#14: a self-loop is a selected feedback edge and must be excluded from the
+// forward dependency set, even when its module also participates in a cross-cycle.
+// Module 0 self-loops (101->110) and forms a 2-module SCC with module 1
+// (0->1, 1->0). Both the self-loop and the 1->0 cross back-edge are feedback; the
+// only remaining forward edge is 0->1, so the executable order is [0,1].
+// ----------------------------------------------------------------------------
+static void cyclic_execution_order_self_loop_cross() {
+  constexpr core::ModuleId m0{0}, m1{1};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{101}, m0, core::PinDirection::output),
+      mk_jack(core::JackId{102}, m0, core::PinDirection::input),
+      mk_jack(core::JackId{110}, m0, core::PinDirection::input),  // self-loop sink
+      mk_jack(core::JackId{111}, m1, core::PinDirection::output),
+      mk_jack(core::JackId{112}, m1, core::PinDirection::input),
+  };
+  const std::uint32_t kJackCount = sizeof(jacks) / sizeof(jacks[0]);
+  ContractBuilder b0;
+  b0.path(core::JackId{110}, core::JackId{101}, 0.0, true);  // self-loop path
+  b0.path(core::JackId{102}, core::JackId{101}, 0.0, true);  // cross-in path
+  ContractBuilder b1; b1.path(core::JackId{112}, core::JackId{111}, 0.0, true);
+  const core::GraphModule mods[] = {mod(m0, &b0.c), mod(m1, &b1.c)};
+  const core::PatchEdge edges[] = {{core::JackId{101}, core::JackId{110}},  // 0 self
+                                   {core::JackId{101}, core::JackId{112}},  // 0 -> 1
+                                   {core::JackId{111}, core::JackId{102}}}; // 1 -> 0
+  core::CompileResult res = core::compile_graph(jacks, kJackCount, edges, 3, mods, 2);
+  CHECK_TRUE(res.status == core::CompileStatus::ok);
+  CHECK_EQ(res.graph.regions.size(), 1u);
+  const auto& reg = res.graph.regions[0];
+  CHECK_TRUE(reg.kind == core::RegionKind::cyclic);
+  CHECK_EQ(reg.modules.size(), 2u);
+  const core::ModuleId expected[] = {m0, m1};
+  bool orderOk = true;
+  for (std::int32_t i = 0; i < 2; ++i)
+    if (reg.modules[static_cast<std::size_t>(i)] != expected[i]) orderOk = false;
+  CHECK_TRUE(orderOk);
+
+  // Both the self-loop AND the cross back-edge are selected as z^-1 feedback.
+  CHECK_EQ(reg.feedback.size(), 2u);
+  bool sawSelfLoop = false, sawCrossBack = false;
+  for (const auto& f : reg.feedback) {
+    CHECK_TRUE(f.delay == core::FeedbackDelay::z_inverse);
+    if (f.sourceJack == core::JackId{101} && f.sinkJack == core::JackId{110})
+      sawSelfLoop = true;
+    if (f.sourceJack == core::JackId{111} && f.sinkJack == core::JackId{102})
+      sawCrossBack = true;
+  }
+  CHECK_TRUE(sawSelfLoop);
+  CHECK_TRUE(sawCrossBack);
+
+  // A self-loop left in the forward dependency set would violate source<pos<sink
+  // for the same module, so this verifier catches it.
+  CHECK_TRUE(executable_order_is_topological(reg, jacks, kJackCount));
+  CHECK_TRUE(feedback_set_is_sufficient(reg, jacks, kJackCount, kMaxTestId));
+  CHECK_TRUE(feedback_set_non_redundant(reg, jacks, kJackCount, kMaxTestId));
+}
+
+// ----------------------------------------------------------------------------
+// GH#14: a fixed (cat-1) internal edge is NOT selectable as feedback and is NEVER
+// dropped from the forward dependency set. Adding the fixed edge 2->1 to the
+// diamond constrains the topo order (from [0,1,2,3] to [0,2,1,3]) while the
+// feedback stays on the pluggable 3->0 edge (no JackId{0} sentinel enters
+// region.feedback).
+// ----------------------------------------------------------------------------
+static void cyclic_execution_order_mixed_fixed_pluggable() {
+  constexpr core::ModuleId m0{0}, m1{1}, m2{2}, m3{3};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{101}, m0, core::PinDirection::output),
+      mk_jack(core::JackId{102}, m0, core::PinDirection::input),
+      mk_jack(core::JackId{111}, m1, core::PinDirection::output),
+      mk_jack(core::JackId{112}, m1, core::PinDirection::input),
+      mk_jack(core::JackId{121}, m2, core::PinDirection::output),
+      mk_jack(core::JackId{122}, m2, core::PinDirection::input),
+      mk_jack(core::JackId{131}, m3, core::PinDirection::output),
+      mk_jack(core::JackId{132}, m3, core::PinDirection::input),
+  };
+  const std::uint32_t kJackCount = sizeof(jacks) / sizeof(jacks[0]);
+  ContractBuilder b0; b0.path(core::JackId{102}, core::JackId{101}, 0.0, true);
+  ContractBuilder b1; b1.path(core::JackId{112}, core::JackId{111}, 0.0, true);
+  ContractBuilder b2; b2.path(core::JackId{122}, core::JackId{121}, 0.0, true);
+  ContractBuilder b3; b3.path(core::JackId{132}, core::JackId{131}, 0.0, true);
+  const core::GraphModule mods[] = {mod(m0, &b0.c), mod(m1, &b1.c),
+                                    mod(m2, &b2.c), mod(m3, &b3.c)};
+  const core::PatchEdge edges[] = {{core::JackId{101}, core::JackId{112}},
+                                   {core::JackId{101}, core::JackId{122}},
+                                   {core::JackId{111}, core::JackId{132}},
+                                   {core::JackId{121}, core::JackId{132}},
+                                   {core::JackId{131}, core::JackId{102}}};
+  const core::FixedEdge fe[] = {{m2, m1, "fixed.demo_2_to_1"}};
+  core::CompileResult res =
+      core::compile_graph(jacks, kJackCount, edges, 5, mods, 4, fe, 1);
+  CHECK_TRUE(res.status == core::CompileStatus::ok);
+  CHECK_EQ(res.graph.regions.size(), 1u);
+  const auto& reg = res.graph.regions[0];
+  CHECK_TRUE(reg.kind == core::RegionKind::cyclic);
+  CHECK_EQ(reg.modules.size(), 4u);
+
+  // The fixed 2->1 dependency forces 2 to be scheduled before 1 -> [0,2,1,3],
+  // NOT the no-fixed tie-break [0,1,2,3]. A compiler that ignored the fixed edge
+  // in its topo sort would return [0,1,2,3] here (see negative ②).
+  const core::ModuleId expected[] = {m0, m2, m1, m3};
+  bool orderOk = true;
+  for (std::int32_t i = 0; i < 4; ++i)
+    if (reg.modules[static_cast<std::size_t>(i)] != expected[i]) orderOk = false;
+  CHECK_TRUE(orderOk);
+
+  // Feedback is ONLY the pluggable 3->0 edge; the fixed edge's JackId{0}
+  // sentinel must never appear as a selected feedback source/sink.
+  CHECK_EQ(reg.feedback.size(), 1u);
+  CHECK_TRUE(reg.feedback[0].sourceJack == core::JackId{131});
+  CHECK_TRUE(reg.feedback[0].sinkJack == core::JackId{102});
+  for (const auto& f : reg.feedback) {
+    CHECK_FALSE(f.sourceJack == core::JackId{0});
+    CHECK_FALSE(f.sinkJack == core::JackId{0});
+  }
+  CHECK_TRUE(executable_order_is_topological(reg, jacks, kJackCount));
+}
+
+// ----------------------------------------------------------------------------
+// GH#14 defensive fail-closed: if removing the selected feedback edges still
+// leaves a cycle (e.g. a fixed edge completes the loop and is not selectable as
+// feedback), the compiler MUST NOT emit a partial/incorrect order. It returns
+// invalid_execution_order with an empty graph instead of an infinite loop or a
+// wrong region.modules.
+// ----------------------------------------------------------------------------
+static void cyclic_execution_order_fail_closed() {
+  constexpr core::ModuleId m0{0}, m1{1}, m2{2};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{101}, m0, core::PinDirection::output),
+      mk_jack(core::JackId{102}, m0, core::PinDirection::input),
+      mk_jack(core::JackId{111}, m1, core::PinDirection::output),
+      mk_jack(core::JackId{112}, m1, core::PinDirection::input),
+      mk_jack(core::JackId{121}, m2, core::PinDirection::output),
+      mk_jack(core::JackId{122}, m2, core::PinDirection::input),
+  };
+  const std::uint32_t kJackCount = sizeof(jacks) / sizeof(jacks[0]);
+  ContractBuilder b0; b0.path(core::JackId{102}, core::JackId{101}, 0.0, true);
+  ContractBuilder b1; b1.path(core::JackId{112}, core::JackId{111}, 0.0, true);
+  ContractBuilder b2; b2.path(core::JackId{122}, core::JackId{121}, 0.0, true);
+  const core::GraphModule mods[] = {mod(m0, &b0.c), mod(m1, &b1.c), mod(m2, &b2.c)};
+  // Pluggable cycle 0->2, 2->1, 1->0 breaks on the 1->0 cable, but the FIXED edge
+  // 1->0 also exists and is never removed, so a directed cycle survives.
+  const core::PatchEdge edges[] = {{core::JackId{101}, core::JackId{122}},
+                                   {core::JackId{121}, core::JackId{112}},
+                                   {core::JackId{111}, core::JackId{102}}};
+  const core::FixedEdge fe[] = {{m1, m0, "fixed.demo_1_to_0"}};
+  core::CompileResult res =
+      core::compile_graph(jacks, kJackCount, edges, 3, mods, 3, fe, 1);
+  CHECK_TRUE(res.status == core::CompileStatus::invalid_execution_order);
+  CHECK_EQ(res.graph.moduleCount, 0u);
+  CHECK_EQ(res.graph.regions.size(), 0u);
+}
+
+// ----------------------------------------------------------------------------
+// GH#14 parallel-path preservation: a module pair {1,2} may carry BOTH a
+// selected feedback cable (1->2, a back edge) and an independent forward cable
+// (2->1). When the compiler removes the selected feedback edge it must drop ONLY
+// that cable -- the forward 2->1 stays a real dependency and forces 2 before 1.
+// This is the "parallel path" detector: a buggy fix that dropped every
+// same-module-pair edge (the undirected interpretation of "same module pair")
+// would remove 2->1 too and return {0,1,2} (negative ③).
+// ----------------------------------------------------------------------------
+static void cyclic_execution_order_parallel_path() {
+  constexpr core::ModuleId m0{0}, m1{1}, m2{2};
+  const core::JackDescriptor jacks[] = {
+      mk_jack(core::JackId{101}, m0, core::PinDirection::output),
+      mk_jack(core::JackId{102}, m0, core::PinDirection::input),
+      mk_jack(core::JackId{111}, m1, core::PinDirection::output),
+      mk_jack(core::JackId{112}, m1, core::PinDirection::input),
+      mk_jack(core::JackId{121}, m2, core::PinDirection::output),
+      mk_jack(core::JackId{122}, m2, core::PinDirection::input),
+  };
+  const std::uint32_t kJackCount = sizeof(jacks) / sizeof(jacks[0]);
+  ContractBuilder b0; b0.path(core::JackId{102}, core::JackId{101}, 0.0, true);
+  ContractBuilder b1; b1.path(core::JackId{112}, core::JackId{111}, 0.0, true);
+  ContractBuilder b2; b2.path(core::JackId{122}, core::JackId{121}, 0.0, true);
+  const core::GraphModule mods[] = {mod(m0, &b0.c), mod(m1, &b1.c), mod(m2, &b2.c)};
+  // Cycle 0->2->1->0 with module pair {1,2} carrying BOTH a back cable 1->2 and a
+  // forward cable 2->1. Removing the feedback edges (1->0, 1->2) leaves 0->2->1.
+  const core::PatchEdge edges[] = {{core::JackId{101}, core::JackId{122}},
+                                   {core::JackId{121}, core::JackId{112}},
+                                   {core::JackId{111}, core::JackId{102}},
+                                   {core::JackId{111}, core::JackId{122}}};
+  core::CompileResult res =
+      core::compile_graph(jacks, kJackCount, edges, 4, mods, 3);
+  CHECK_TRUE(res.status == core::CompileStatus::ok);
+  CHECK_EQ(res.graph.regions.size(), 1u);
+  const auto& reg = res.graph.regions[0];
+  CHECK_TRUE(reg.kind == core::RegionKind::cyclic);
+  CHECK_EQ(reg.modules.size(), 3u);
+
+  // The forward 2->1 is preserved: 2 schedules before 1 -> {0,2,1}. A buggy fix
+  // that removed every same-module-pair edge would return {0,1,2} (negative ③).
+  const core::ModuleId expected[] = {m0, m2, m1};
+  bool orderOk = true;
+  for (std::int32_t i = 0; i < 3; ++i)
+    if (reg.modules[static_cast<std::size_t>(i)] != expected[i]) orderOk = false;
+  CHECK_TRUE(orderOk);
+
+  // Both back cables 1->0 and 1->2 are selected feedback; the forward 2->1 is not.
+  CHECK_EQ(reg.feedback.size(), 2u);
+  CHECK_TRUE(executable_order_is_topological(reg, jacks, kJackCount));
+}
+
 int main() {
   z_inverse_is_one_sample_not_one_block();
   acyclic_not_misjudged_and_cyclic_not_missed();
@@ -839,5 +1343,12 @@ int main() {
   recompile_not_on_audio_thread();
   parallel_direct_path_gets_z_inverse();
   malformed_contract_rejected_at_compile_entry();
+  cyclic_execution_order_counterexample();
+  cyclic_execution_order_tiebreak();
+  cyclic_execution_order_insertion_independent();
+  cyclic_execution_order_self_loop_cross();
+  cyclic_execution_order_mixed_fixed_pluggable();
+  cyclic_execution_order_fail_closed();
+  cyclic_execution_order_parallel_path();
   return ::test::finish("graph_compiler");
 }

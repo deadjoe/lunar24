@@ -102,7 +102,11 @@ struct CompiledFeedbackEdge {
 // break set independently of the algorithm that chose it).
 struct CompiledRegion {
   RegionKind kind;
-  std::vector<ModuleId> modules;                 // deterministic execution order
+  // Deterministic EXECUTABLE order: the topological order of the region's
+  // (fixed + pluggable) module dependency edges AFTER the selected feedback edges
+  // are removed (GH#14). NOT a numeric ModuleId sort — the old numeric sort was
+  // not the execution order the per-sample loop must follow.
+  std::vector<ModuleId> modules;
   std::vector<CompiledEdge> edges;               // cyclic region only
   std::vector<CompiledFeedbackEdge> feedback;    // cyclic region only
 };
@@ -148,6 +152,8 @@ enum class CompileStatus : std::uint8_t {
   ok,                      // a plan was produced
   cycle_unsafe_module,     // a cyclic SCC contains a module not allowed in one
   invalid_module_contract, // a present module contract fails module_contract_is_valid
+  invalid_execution_order, // after removing the selected feedback edges the region
+                           // is still not a DAG (defensive fail-closed; see GH#14)
 };
 
 struct CompileResult {
@@ -444,9 +450,12 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
       region.modules.push_back(mods[sccs[c][0]]);
     } else {
       region.kind = RegionKind::cyclic;
+      // sccs[c] is the SCC member set. It is sorted numerically ONLY to keep the
+      // existing feedback-edge selection (the fdfs forest below) byte-identical —
+      // it is NOT the execution order, which is computed at the end of this branch
+      // (GH#14, "selected feedback removal 后的 executable order").
       std::vector<std::uint32_t> members = sccs[c];
-      std::sort(members.begin(), members.end());  // canonical per-sample order
-      for (std::uint32_t v : members) region.modules.push_back(mods[v]);
+      std::sort(members.begin(), members.end());
 
       std::vector<char> inScc(M, 0);
       for (std::uint32_t v : members) inScc[v] = 1;
@@ -521,6 +530,56 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
                   if (a.sourceJack != b.sourceJack) return detail::jid(a.sourceJack) < detail::jid(b.sourceJack);
                   return detail::jid(a.sinkJack) < detail::jid(b.sinkJack);
                 });
+
+      // ---- GH#14: deterministic executable order --------------------------
+      // region.modules is the feed-forward DAG order AFTER the selected feedback
+      // edges are removed. Compute it by a deterministic topological sort over
+      // (fixed edges + pluggable edges in this SCC) MINUS the selected feedback
+      // edges. The old numeric ModuleId sort was not the execution order.
+      std::vector<std::vector<std::uint32_t>> execAdj(M);
+      std::vector<std::uint32_t> execIndeg(M, 0);
+      std::vector<char> execIn(M, 0);
+      for (std::uint32_t v : members) execIn[v] = 1;
+      auto isSelectedFeedback = [&region](JackId s, JackId t) {
+        for (const auto& f : region.feedback)
+          if (f.sourceJack == s && f.sinkJack == t) return true;
+        return false;
+      };
+      for (std::uint32_t i = 0; i < crossed.size(); ++i) {
+        const AutoEdge& e = crossed[i];
+        if (!execIn[e.src] || !execIn[e.snk] || e.src == e.snk) continue;
+        // Only the SPECIFIC selected pluggable feedback edge is dropped. A fixed
+        // edge (cat 1, JackId{0} sentinel) is NEVER selectable feedback and stays
+        // in the topo constraints; other parallel pluggable cables between the
+        // same module pair are also kept as dependencies.
+        if (e.cat == 0 && isSelectedFeedback(e.sj, e.tj)) continue;
+        execAdj[e.src].push_back(e.snk);
+        ++execIndeg[e.snk];
+      }
+      // Pluggable self-loops are always selected feedback edges and contribute no
+      // cross-module dependency, so the owning module's order is unaffected by it.
+      std::uint32_t remaining = static_cast<std::uint32_t>(members.size());
+      std::vector<char> execUsed(M, 0);
+      std::vector<std::uint32_t> execOrder;
+      execOrder.reserve(remaining);
+      while (remaining > 0) {
+        // Ready member with the SMALLEST ModuleId (mods[] is already sorted by
+        // ModuleId, so the smallest mods-index == the smallest ModuleId): the
+        // deterministic tie-break mandated by GH#14 / design/07.
+        std::uint32_t pick = M;
+        for (std::uint32_t v : members)
+          if (!execUsed[v] && execIndeg[v] == 0 && (pick == M || v < pick)) pick = v;
+        if (pick == M) {  // a cycle still survives the feedback removal: fail closed
+          result.status = CompileStatus::invalid_execution_order;
+          result.graph = CompiledGraph{};
+          return result;
+        }
+        execUsed[pick] = 1;
+        --remaining;
+        execOrder.push_back(pick);
+        for (std::uint32_t w : execAdj[pick]) --execIndeg[w];
+      }
+      for (std::uint32_t v : execOrder) region.modules.push_back(mods[v]);
     }
     result.graph.regions.push_back(std::move(region));
   }
