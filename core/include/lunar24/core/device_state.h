@@ -325,9 +325,12 @@ struct KeyboardSettings {
 
 // One step of the keyboard's own 16-step sequencer run (P4 keyboard performance
 // system; design/06 §4). The physical 5-step sequencer is a SEPARATE P3 control
-// source (ModuleId 11, STAGES 3/4/5) and does NOT extend into this 16-step run —
-// its five stage params live in parameters[], and its transient playhead / gate /
-// envelope phase is not persisted. note is a semitone, value a CV in volts,
+// source (ModuleId 11, STAGES 3/4/5) and does NOT extend into this 16-step run.
+// Physical 5-step's full persistent state lives in parameters[] (pulser rate,
+// clock selector, stage count, 5×step CV, 5×gate-enable — 13 persistent
+// controls); NOT persisted are only its transient playhead and the currently
+// generated gate / clock phase / output. Gate-ENABLE params are persistent; a
+// transient gate LEVEL is not. note is a semitone, value a CV in volts,
 // gate a boolean. Fixed-width 6-byte wire record (see kKeyboardSeqStepFields).
 struct KeyboardSeqStep {
   std::uint8_t note = 0;

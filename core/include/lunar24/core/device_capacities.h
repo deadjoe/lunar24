@@ -62,8 +62,10 @@ inline constexpr std::size_t kDeviceKeyboardPresetCount = 4;
 // inventory proves them; the wire widths live in the separately-declared schema.
 // Keyboard-owned 16-step sequencer run (P4 keyboard performance system). This is
 // NOT the physical 5-step sequencer, which is a SEPARATE P3 control source
-// (ModuleId 11, STAGES 3/4/5) whose five stage params live in parameters[] and
-// whose transient playhead / gate / envelope phase is not persisted.
+// (ModuleId 11, STAGES 3/4/5) whose full persistent state lives in parameters[]
+// (pulser rate, clock selector, stage count, 5×step CV, 5×gate-enable — 13
+// persistent controls) and only whose transient playhead + currently generated
+// gate / clock phase / output are not persisted.
 inline constexpr std::size_t kKeyboardSeqStepCount = 16;
 inline constexpr std::size_t kKeyboardSeqStepBytes = 6;    // note u8 + value f32 + gate u8, packed
 inline constexpr std::size_t kKeyboardSeqBytes = kKeyboardSeqStepCount * kKeyboardSeqStepBytes;  // 96
