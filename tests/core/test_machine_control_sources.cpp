@@ -569,8 +569,8 @@ static void test_5_seq_ext_clock(void) {
 // ===========================================================================
 // 6. Sequencer stages 3/4/5 advance at exact samples; a sustained source holds; seq
 //    CV feeds a sink (VCF) and gate feeds EG; clock_out stays explicitly unpublished.
-//    The internal PULSER Hz setter is proven at the standalone DSP level (its runtime
-//    accessor is deliberately private), since panel-norm->Hz is a runtime concern.
+//    The internal PULSER Hz is exercised via the runtime's public direct-Hz oracle
+//    (setSequencerInternalRateHz), NOT a panel-norm ParameterId transfer.
 // ===========================================================================
 static void test_6_seq_stages_pulser_unpub(void) {
   // (a) Stages: external clock driving advances at exact frames (8,24,40,56) → wraps at
@@ -623,6 +623,18 @@ static void test_6_seq_stages_pulser_unpub(void) {
     // non-vacuous rather than frame-exact.
     check(vcfL[8] != 0.0 || sameD(s0, 0.0),
           "t6 seq CV is a non-zero joint in the VCF L sink (real consumer)");
+    // gate_out: confirmed 10V, exactly one sample per ENABLED-step advance, 0V at every
+    // disabled step and non-advance frame. Only step_gate_1 (step0) is enabled, so advances
+    // land as: frame 8 → step0 (on), 24 → step1 (off), 40 → step2 (off), 56 → stages=3 wraps
+    // back to step0 (on, a second legitimate pulse) but stages=4/5 → step3 (off). This pins the
+    // exact-sample one-shot, the confirmed 10V rail, and that no gate fires on a disabled or
+    // non-advance frame.
+    bool gateOK = sameD(sqGate[8], 10.0) && sameD(sqGate[24], 0.0) && sameD(sqGate[40], 0.0);
+    gateOK = gateOK && (cases[c].stages == 3 ? sameD(sqGate[56], 10.0) : sameD(sqGate[56], 0.0));
+    for (int i = 0; i < kCap; ++i)
+      if (i != 8 && i != 24 && i != 40 && i != 56) gateOK = gateOK && sameD(sqGate[i], 0.0);
+    check(gateOK,
+          "t6 gate_out is a 10 V exact-sample pulse at each enabled-step advance (0 V at disabled/non-advance)");
     // clock_out explicitly unpublished: the published jack voltage stays 0 through the
     // external advance (the PULSER's clock event is NOT a published CV).
     bool clockUnpub = true;
