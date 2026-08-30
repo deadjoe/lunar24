@@ -97,6 +97,11 @@
 #include <lunar24/core/preamp.h>
 #include <lunar24/core/sample_hold.h>
 #include <lunar24/core/schmitt_osc.h>
+#include <lunar24/core/sink_interpret.h>
+#include <lunar24/core/envelope_generator.h>
+#include <lunar24/core/lfo.h>
+#include <lunar24/core/joystick_cv.h>
+#include <lunar24/core/five_step_sequencer.h>
 #include <lunar24/core/unit_identity_profile.h>
 #include <lunar24/core/vco.h>
 #include <lunar24/core/voice_mixer.h>
@@ -157,6 +162,15 @@ enum class ExecutionKind : std::uint8_t {
   kEnvFollower,
   kMixer,
   kVcfPath,      // PolivoksFilter L/R -> calibration staging -> Distortion -> WET (ONE slot).
+  // Control sources (GH#11 partial @Codex D1): the six always-execute panel
+  // control sources. A/B dispatch is by slot.id inside step_ (never a FixedChainRole),
+  // and they are NEVER a second source loop outside processFrame(). Each is admitted as
+  // an explicit always-execute source in the compile plan even with no cable (per-sample
+  // LFO / EG-SELF-GEN / PULSER phase continuity); clock_out stays unpublished.
+  kEnvelope,   // envelope_a/b: A/R/D/S + HOLD/SELF-GEN, gate_in resolve -> env/vca cv publish.
+  kLfo,        // lfo_a/b: no-input source, tick once/sample, publish cv_out (0..+10V).
+  kJoystick,   // joystick: stateless X/Y+offset, read + publish x/y (±10V).
+  kSequencer,  // five-step seq: ext_clock_in -> rising to core, publish cv/gate (clock_out NOT).
   // Legacy-compat kinds (synthetic fixture only; never emitted by the canonical table).
   kExtIn,
   kVcf,
@@ -203,6 +217,19 @@ inline FeedbackResolve feedbackSinkValue(JackId querySrc, JackId querySink,
   const bool exact = (querySrc == candSrc && querySink == candSink);
   return exact ? FeedbackResolve{true, delayed} : FeedbackResolve{false, live};
 }
+
+// Outcome of one control-value transfer into the six control-source parameters
+// (@Codex BLOCKED #1). Discriminates the three cases that `setControlParamValue`'s old
+// bool collapsed — an applied value, a recognised-but-blocked `sequencer.pulser`, and a
+// malformed value / unknown id. The runtime records the most recent transfer's id+status
+// so the product surface (and a test oracle) can read back the real applied state without
+// a separate shadow param bank.
+enum class ParameterApplyStatus : std::uint8_t {
+  applied,               // unit-domain-valid value admitted and the sound-core setter accepted it.
+  transfer_unavailable,  // recognised but deliberately UNMAPPED (sequencer.pulser): no transfer.
+  invalid_value,         // malformed for its unit domain (out-of-range / non-exact / non-finite): kept old.
+  unsupported_parameter, // not a known control-source param: no transfer.
+};
 
 class SynthRuntime {
  public:
@@ -261,6 +288,31 @@ class SynthRuntime {
     return voiceSeed ^ (kNewSourceSeedMix * static_cast<std::uint64_t>(source + 1));
   }
 
+  // ---- control-source READ surface (public; @Codex BLOCKED #1/#4) ----
+  // The 34-dispatch readback, the most-recent apply status, and the sequencer direct-Hz
+  // surface are PUBLIC so a product path / test oracle can read the REAL applied DSP state
+  // from the six instances (const/no-alloc, never a shadow param bank) and can drive the
+  // sequencer's internal PULSER with a direct DSP-domain Hz (not a ParameterId transfer).
+  ParameterApplyStatus lastApplyStatus() const { return lastApplyStatus_; }
+  ParameterId lastApplyParamId() const { return lastApplyParamId_; }
+
+  // @Codex #3 (BLOCKED): the six control-source instances are surfaced as an INVARIANT,
+  // READ-ONLY view. Configuration goes through the public parameter-event path
+  // (setControlParamValue / enqueueControlEvent) or the single sanctioned DSP-domain
+  // setter setSequencerInternalRateHz(); the mutating non-const accessors were the seam
+  // a test could (and did) use to bypass the runtime dispatch. Const-only readback keeps
+  // the "the DEFINITION owns the sources, the runtime dispatches into them" contract.
+  const EnvelopeGenerator& envelopeA() const { return envGenA_; }
+  const EnvelopeGenerator& envelopeB() const { return envGenB_; }
+  const Lfo& lfoA() const { return lfoA_; }
+  const Lfo& lfoB() const { return lfoB_; }
+  const JoystickCv& joystick() const { return joystick_; }
+  const FiveStepSequencer& sequencer() const { return sequencer_; }
+  // sequencer.pulser is a BLOCKED parameter: the only sanctioned DSP-domain rate setter
+  // (fail-closed; NOT a ParameterId transfer). Report the real applied internal rate Hz.
+  bool setSequencerInternalRateHz(double hz) { return sequencer_.setInternalRateHz(hz); }
+  double sequencerInternalRateHz() const { return sequencer_.internalRateHz(); }
+
   // A single break-edge delay line. The SOURCE module writes the loop-forward value
   // (e.g. env_follower's env_out), the CONSUMING module reads the value from
   // `delaySamples` frames ago via the circular buffer (graph_compiler.h consume-rule).
@@ -299,8 +351,15 @@ class SynthRuntime {
         pv3_(newVoiceSeed(seed_, 0), sampleRate),  // NEW drone 3 (Papa Srapa voice).
         pv6_(newVoiceSeed(seed_, 1), sampleRate),  // NEW drone 6 (Papa Srapa voice).
         envFol_(sampleRate),
-        distortion_(sampleRate) {
+        distortion_(sampleRate),
+        envGenA_(sampleRate),
+        envGenB_(sampleRate),
+        lfoA_(sampleRate),
+        lfoB_(sampleRate) {
     vcf_.setSampleRate(sampleRate);
+    // FiveStepSequencer has only a default ctor (no sampleRate overload), so set the
+    // rate in the body like vcf_. JoystickCv is stateless (no sampleRate at all).
+    sequencer_.setSampleRate(sampleRate);
   }
 
   // Voice source base frequency (the f0 the VCO chain references). Applied to BOTH
@@ -356,6 +415,57 @@ class SynthRuntime {
   // env_follower cycle) and which is the env_follower's env_out (the break source).
   void setPreampExtIn(JackId j) { preampExtIn_ = j; }
   void setEnvFolOut(JackId j) { envFolOut_ = j; }
+
+  // ---- CONTROL-SOURCE BINDINGS (GH#11 partial @Codex D1/D2) ----
+  // Jacks the six always-run control sources READ (resolved through the single sink
+  // resolver) and WRITE (published through the single source bank). Unbound = no resolve /
+  // no publish (legacy synthetic fixture). A/B dispatch in step_ is by slot.id.
+  void setEnvelopeBindings(JackId gateA, JackId envA, JackId vcaA,
+                           JackId gateB, JackId envB, JackId vcaB) {
+    gateInA_ = gateA; envOutA_ = envA; vcaOutA_ = vcaA;
+    gateInB_ = gateB; envOutB_ = envB; vcaOutB_ = vcaB;
+  }
+  void setLfoBindings(JackId aOut, JackId bOut) { lfoAOut_ = aOut; lfoBOut_ = bOut; }
+  void setJoystickBindings(JackId xOut, JackId yOut) { joyXOut_ = xOut; joyYOut_ = yOut; }
+  void setSequencerBindings(JackId extClockIn, JackId cvOut, JackId gateOut) {
+    seqExtClockIn_ = extClockIn; seqCvOut_ = cvOut; seqGateOut_ = gateOut;
+  }
+  // The plan must ALWAYS execute these sources even when they carry no cable (per-sample
+  // LFO / EG-SELF-GEN / PULSER phase continuity). Admission happens INSIDE compile_graph
+  // (same compiler plan — never a plan-external补跑 nor a runtime slot pre-append): the
+  // ids are force-included in the compiler's active-module set, so an unwired source still
+  // becomes an isolated executable region. The owning definition passes the six ids.
+  // Always-execute admission (@Codex BLOCKED #5): atomic/fail-closed. Returns false and
+  // makes NO change when the request is malformed (null ids with count>0, over-capacity, or
+  // a duplicate id) — never a silent truncate and never a deref-crash on ids==null. On a
+  // genuinely NEW list it commits AND marks the plan dirty so a subsequent rebuild()
+  // actually re-compiles (a change must not short-circuit to graph_unchanged). An identical
+  // list is a no-op (returns true, no dirty — the plan already reflects it).
+  bool setAlwaysExecute(const ModuleId* ids, std::uint32_t count) {
+    if (count > kMaxAlwaysExecuteSources) return false;  // over-capacity: no silent truncate.
+    if (count > 0 && ids == nullptr) return false;       // null with count: no deref.
+    for (std::uint32_t i = 0; i < count; ++i) {
+      for (std::uint32_t j = i + 1; j < count; ++j)
+        if (ids[i] == ids[j]) return false;              // duplicate: ambiguous ownership.
+      // @Codex #5: an id that is NOT a real module in the owning definition must be refused
+      // at the admission boundary (before commit/dirty), never accepted and later swallowed
+      // by compile_graph. A ModuleId{999} list used to return true here.
+      bool found = false;
+      for (std::uint32_t k = 0; k < moduleCount_; ++k)
+        if (modules_[k].id == ids[i]) { found = true; break; }
+      if (!found) return false;
+    }
+    if (count == alwaysExecCount_) {                     // same length: no dirty on a no-op.
+      bool same = true;
+      for (std::uint32_t i = 0; i < count; ++i)
+        if (alwaysExecIds_[i] != ids[i]) { same = false; break; }
+      if (same) return true;
+    }
+    alwaysExecCount_ = count;
+    for (std::uint32_t i = 0; i < count; ++i) alwaysExecIds_[i] = ids[i];
+    graphDirty_ = true;
+    return true;
+  }
 
   // MANUAL (panel-control) setters for the WET chain — the actual knobs a host applies
   // from the DeviceState parameters. These are the USER's knob positions and are kept
@@ -677,6 +787,7 @@ class SynthRuntime {
     edge_capacity,               // effective edges >= kMaxEdges
     compile_cycle_unsafe,        // compile_graph -> cycle_unsafe_module
     compile_invalid_contract,    // compile_graph -> invalid_module_contract
+    compile_invalid_always_execute,  // compile_graph -> invalid_always_execute (admission refused)
     feedback_capacity_exceeded,  // full compiled feedback plan > kMaxFeedback
     unsupported_module,          // strict: a compiled-region module explicitly bound to kUnsupported
     missing_execution_binding,   // strict: a compiled-region module has NO ExecutionKind binding
@@ -698,13 +809,20 @@ class SynthRuntime {
       rebuildStatus_ = RebuildStatus::edge_capacity;
       return false;
     }
+    // Always-execute sources are admitted INSIDE compile_graph (same plan) so an unwired
+    // control source is still compiled into an isolated executable region — never a
+    // plan-external pre-append (GH#11). When none are registered (legacy fixtures), the
+    // counts are 0 and the plan is unchanged.
     CompileResult r = compile_graph(jacks_, jackCount_, edges_, edgeCount_,
-                                    modules_, moduleCount_, fixedEdges_, fixedEdgeCount_);
+                                    modules_, moduleCount_, fixedEdges_, fixedEdgeCount_,
+                                    alwaysExecIds_, alwaysExecCount_);
     if (r.status != CompileStatus::ok) {
       graphValid_ = false;
       rebuildStatus_ = r.status == CompileStatus::cycle_unsafe_module
                            ? RebuildStatus::compile_cycle_unsafe
-                           : RebuildStatus::compile_invalid_contract;
+                           : (r.status == CompileStatus::invalid_always_execute
+                                  ? RebuildStatus::compile_invalid_always_execute
+                                  : RebuildStatus::compile_invalid_contract);
       return false;
     }
     // GH#13 capacity preflight: the FULL compiled feedback plan must fit before we
@@ -760,6 +878,15 @@ class SynthRuntime {
       rebuildStatus_ = RebuildStatus::feedback_capacity_exceeded;
       return false;
     }
+    // Deterministic repatch behaviour: a genuinely rebuilt plan resets the runtime-owned
+    // gate/clock interpreter latches (a cable being plugged in must not see a stale
+    // "high" from a prior plan, so the first rising edge is never a phantom advance). A
+    // no-change rebuild (graph_unchanged early-out) does NOT run this, so phase continuity
+    // over a cached rebuild is preserved. (@Codex D3: sink_gate_interpret provisional
+    // canonical sink semantics; real-machine-precision is not claimed.)
+    sink_gate_reset(envA_gate_);
+    sink_gate_reset(envB_gate_);
+    sink_gate_reset(seqClockLatch_);
     return true;
   }
 
@@ -911,17 +1038,222 @@ class SynthRuntime {
   void applyControlEvent_(const ControlEvent& e) {
     if (e.kind != ControlEventKind::parameter) return;
     const double v = static_cast<double>(e.value);
+    lastApplyParamId_ = e.parameter;
     switch (e.parameter) {
-      case ParameterId::drone_3_pitch: setDrone3Pitch(v); break;
-      case ParameterId::drone_3_noise: setDrone3Noise(v); break;
-      case ParameterId::drone_3_fm:    setDrone3Fm(v != 0.0); break;
-      case ParameterId::drone_3_am:    setDrone3Am(v != 0.0); break;
-      case ParameterId::drone_6_pitch: setDrone6Pitch(v); break;
-      case ParameterId::drone_6_noise: setDrone6Noise(v); break;
-      case ParameterId::drone_6_fm:    setDrone6Fm(v != 0.0); break;
-      case ParameterId::drone_6_am:    setDrone6Am(v != 0.0); break;
-      default: break;  // no unit-agreeing setter (or not a wired control): not dispatched.
+      // Existing drone_3/6 path: the setter here is void and already admits the
+      // registry-AGREEING units quoted above, so a handled drone case records `applied`.
+      case ParameterId::drone_3_pitch: setDrone3Pitch(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_3_noise: setDrone3Noise(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_3_fm:    setDrone3Fm(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_3_am:    setDrone3Am(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_pitch: setDrone6Pitch(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_noise: setDrone6Noise(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_fm:    setDrone6Fm(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_am:    setDrone6Am(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      // GH#11 partial (@Codex D3): the 34 evidence-mappable control-source params dispatch
+      // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
+      // value stays fail-closed (keep old) and is reported real-time through the
+      // const/no-alloc readback surface (lastApplyStatus_) — no separate param bank.
+      default: setControlParamValue(e.parameter, v); break;  // records its own precise status.
     }
+  }
+
+  // ---- 34 control-source parameter dispatch (GH#11 partial) ----
+  // Wires the 34 evidence-mappable params to the six real instances via the sound-core
+  // unit-agreeing setters, returning a ParameterApplyStatus that discriminates applied /
+  // blocked (sequencer.pulser) / invalid / unsupported. A malformed value is rejected HERE
+  // (keep old) BEFORE it reaches a setter that might clamp/coerce — e.g. LFO setWave clamps
+  // a finite value to [0,1] and a `v != 0.0` transfer would turn 0.5 into gate-high — so a
+  // value outside the registry unit-domain is reported `invalid_value`, never a silent
+  // coercion. Step params are 1-indexed (sequencer_step_cv_N -> idx N-1).
+  // @Codex D3: `sequencer.pulser` NEVER maps; prior internal Hz stays unchanged.
+  ParameterApplyStatus setControlParamValue(ParameterId id, double v) {
+    lastApplyParamId_ = id;
+    if (!controlSourceParamRecognized_(id)) {
+      lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
+      return lastApplyStatus_;
+    }
+    if (id == ParameterId::sequencer_pulser) {          // the 35th: BLOCKED transfer by design.
+      lastApplyStatus_ = ParameterApplyStatus::transfer_unavailable;
+      return lastApplyStatus_;
+    }
+    if (!controlParamValid_(id, v)) {                   // malformed: keep old, no setter touched.
+      lastApplyStatus_ = ParameterApplyStatus::invalid_value;
+      return lastApplyStatus_;
+    }
+    switch (id) {
+      // Envelope A (6).
+      case ParameterId::envelope_a_a: lastApplyStatus_ = transferStatus_(envGenA_.setAttackSeconds(v));  return lastApplyStatus_;
+      case ParameterId::envelope_a_d: lastApplyStatus_ = transferStatus_(envGenA_.setDecaySeconds(v));    return lastApplyStatus_;
+      case ParameterId::envelope_a_r: lastApplyStatus_ = transferStatus_(envGenA_.setReleaseSeconds(v));  return lastApplyStatus_;
+      case ParameterId::envelope_a_s: lastApplyStatus_ = transferStatus_(envGenA_.setSustain(v));          return lastApplyStatus_;
+      case ParameterId::envelope_a_hold:     envGenA_.setHold(v != 0.0);    lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::envelope_a_self_gen: envGenA_.setSelfGen(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      // Envelope B (6).
+      case ParameterId::envelope_b_a: lastApplyStatus_ = transferStatus_(envGenB_.setAttackSeconds(v));  return lastApplyStatus_;
+      case ParameterId::envelope_b_d: lastApplyStatus_ = transferStatus_(envGenB_.setDecaySeconds(v));    return lastApplyStatus_;
+      case ParameterId::envelope_b_r: lastApplyStatus_ = transferStatus_(envGenB_.setReleaseSeconds(v));  return lastApplyStatus_;
+      case ParameterId::envelope_b_s: lastApplyStatus_ = transferStatus_(envGenB_.setSustain(v));          return lastApplyStatus_;
+      case ParameterId::envelope_b_hold:     envGenB_.setHold(v != 0.0);    lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::envelope_b_self_gen: envGenB_.setSelfGen(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      // LFO A (3) / LFO B (3).
+      case ParameterId::lfo_a_rate: lastApplyStatus_ = transferStatus_(lfoA_.setBaseHz(v));  return lastApplyStatus_;
+      case ParameterId::lfo_a_wave: lastApplyStatus_ = transferStatus_(lfoA_.setWave(v));    return lastApplyStatus_;
+      case ParameterId::lfo_a_speed_mult: {
+        LfoSpeedMult m;
+        lastApplyStatus_ = (speedMultFromIndex_(v, m) && lfoA_.setSpeedMult(m))
+            ? ParameterApplyStatus::applied : ParameterApplyStatus::invalid_value;
+        return lastApplyStatus_;
+      }
+      case ParameterId::lfo_b_rate: lastApplyStatus_ = transferStatus_(lfoB_.setBaseHz(v));  return lastApplyStatus_;
+      case ParameterId::lfo_b_wave: lastApplyStatus_ = transferStatus_(lfoB_.setWave(v));    return lastApplyStatus_;
+      case ParameterId::lfo_b_speed_mult: {
+        LfoSpeedMult m;
+        lastApplyStatus_ = (speedMultFromIndex_(v, m) && lfoB_.setSpeedMult(m))
+            ? ParameterApplyStatus::applied : ParameterApplyStatus::invalid_value;
+        return lastApplyStatus_;
+      }
+      // Joystick (4) — norm 0..1 into the stateless X/Y/offset state.
+      case ParameterId::joystick_x: lastApplyStatus_ = transferStatus_(joystick_.setX(v));        return lastApplyStatus_;
+      case ParameterId::joystick_y: lastApplyStatus_ = transferStatus_(joystick_.setY(v));        return lastApplyStatus_;
+      case ParameterId::joystick_offset_x: lastApplyStatus_ = transferStatus_(joystick_.setOffsetX(v)); return lastApplyStatus_;
+      case ParameterId::joystick_offset_y: lastApplyStatus_ = transferStatus_(joystick_.setOffsetY(v)); return lastApplyStatus_;
+      // Sequencer (12) — step params are 1-indexed (step_cv_N -> index N-1).
+      case ParameterId::sequencer_clock: {
+        SequencerClockSource src;
+        lastApplyStatus_ = (sequencerClockFromIndex_(v, src) && sequencer_.setClockSource(src))
+            ? ParameterApplyStatus::applied : ParameterApplyStatus::invalid_value;
+        return lastApplyStatus_;
+      }
+      case ParameterId::sequencer_stages: {
+        const int n = static_cast<int>(v);
+        lastApplyStatus_ = (n >= 0 && n <= 2 && sequencer_.setStageCount(3 + n))
+            ? ParameterApplyStatus::applied : ParameterApplyStatus::invalid_value;
+        return lastApplyStatus_;
+      }
+      case ParameterId::sequencer_step_cv_1:  lastApplyStatus_ = transferStatus_(sequencer_.setStepCv(0, v)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_cv_2:  lastApplyStatus_ = transferStatus_(sequencer_.setStepCv(1, v)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_cv_3:  lastApplyStatus_ = transferStatus_(sequencer_.setStepCv(2, v)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_cv_4:  lastApplyStatus_ = transferStatus_(sequencer_.setStepCv(3, v)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_cv_5:  lastApplyStatus_ = transferStatus_(sequencer_.setStepCv(4, v)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_gate_1: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(0, v != 0.0)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_gate_2: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(1, v != 0.0)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_gate_3: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(2, v != 0.0)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_gate_4: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(3, v != 0.0)); return lastApplyStatus_;
+      case ParameterId::sequencer_step_gate_5: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(4, v != 0.0)); return lastApplyStatus_;
+      default: break;  // unreachable: unrecognised ids were rejected above.
+    }
+    lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
+    return lastApplyStatus_;
+  }
+
+  // Is `id` one of the 35 recognised control-source params (the 34 mappable + pulser)?
+  // Separates UNKNOWN (-> unsupported_parameter) from KNOWN-but-malformed (-> invalid_value).
+  bool controlSourceParamRecognized_(ParameterId id) const {
+    switch (id) {
+      case ParameterId::envelope_a_a: case ParameterId::envelope_a_d: case ParameterId::envelope_a_r:
+      case ParameterId::envelope_a_s: case ParameterId::envelope_a_hold: case ParameterId::envelope_a_self_gen:
+      case ParameterId::envelope_b_a: case ParameterId::envelope_b_d: case ParameterId::envelope_b_r:
+      case ParameterId::envelope_b_s: case ParameterId::envelope_b_hold: case ParameterId::envelope_b_self_gen:
+      case ParameterId::lfo_a_rate: case ParameterId::lfo_a_wave: case ParameterId::lfo_a_speed_mult:
+      case ParameterId::lfo_b_rate: case ParameterId::lfo_b_wave: case ParameterId::lfo_b_speed_mult:
+      case ParameterId::joystick_x: case ParameterId::joystick_y:
+      case ParameterId::joystick_offset_x: case ParameterId::joystick_offset_y:
+      case ParameterId::sequencer_clock: case ParameterId::sequencer_stages:
+      case ParameterId::sequencer_step_cv_1: case ParameterId::sequencer_step_cv_2:
+      case ParameterId::sequencer_step_cv_3: case ParameterId::sequencer_step_cv_4:
+      case ParameterId::sequencer_step_cv_5:
+      case ParameterId::sequencer_step_gate_1: case ParameterId::sequencer_step_gate_2:
+      case ParameterId::sequencer_step_gate_3: case ParameterId::sequencer_step_gate_4:
+      case ParameterId::sequencer_step_gate_5:
+      case ParameterId::sequencer_pulser:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Product-boundary unit-domain admission (@Codex BLOCKED #1). Rejects a value malformed for
+  // its registry unit BEFORE it reaches a sound-core setter, so the setter's legal clamp /
+  // coercion is never mistaken for a valid transfer. Domains are the registry evidence, not
+  // the DSP tolerance. Finite everywhere; norm [0,1]; boolean exact {0,1}; selector exact
+  // integer; step CV [0,+5V]. Caller guarantees id is recognised AND not pulser.
+  bool controlParamValid_(ParameterId id, double v) const {
+    if (!std::isfinite(v)) return false;
+    switch (id) {
+      // EG time (attack/decay/release) seconds: finite && >= 0.
+      case ParameterId::envelope_a_a: case ParameterId::envelope_a_d: case ParameterId::envelope_a_r:
+      case ParameterId::envelope_b_a: case ParameterId::envelope_b_d: case ParameterId::envelope_b_r:
+        return v >= 0.0;
+      // EG sustain norm [0,1].
+      case ParameterId::envelope_a_s: case ParameterId::envelope_b_s:
+        return v >= 0.0 && v <= 1.0;
+      // EG hold/self-gen boolean: EXACT {0,1} — never `v != 0.0` coercion (0.5 is invalid).
+      case ParameterId::envelope_a_hold: case ParameterId::envelope_a_self_gen:
+      case ParameterId::envelope_b_hold: case ParameterId::envelope_b_self_gen:
+        return v == 0.0 || v == 1.0;
+      // LFO rate Hz: finite && >= 0.
+      case ParameterId::lfo_a_rate: case ParameterId::lfo_b_rate:
+        return v >= 0.0;
+      // LFO WAVE morph norm [0,1] (square->triangle crossfade).
+      case ParameterId::lfo_a_wave: case ParameterId::lfo_b_wave:
+        return v >= 0.0 && v <= 1.0;
+      // LFO speed_mult selector index: EXACT integer {0,1,2}.
+      case ParameterId::lfo_a_speed_mult: case ParameterId::lfo_b_speed_mult: {
+        const int i = static_cast<int>(v);
+        return static_cast<double>(i) == v && i >= 0 && i <= 2;
+      }
+      // Joystick norm [0,1].
+      case ParameterId::joystick_x: case ParameterId::joystick_y:
+      case ParameterId::joystick_offset_x: case ParameterId::joystick_offset_y:
+        return v >= 0.0 && v <= 1.0;
+      // Sequencer clock selector index: EXACT integer {0,1}.
+      case ParameterId::sequencer_clock: {
+        const int i = static_cast<int>(v);
+        return static_cast<double>(i) == v && (i == 0 || i == 1);
+      }
+      // Sequencer stages selector index: EXACT integer {0,1,2}.
+      case ParameterId::sequencer_stages: {
+        const int i = static_cast<int>(v);
+        return static_cast<double>(i) == v && i >= 0 && i <= 2;
+      }
+      // Sequencer step CV volts [0,+5V].
+      case ParameterId::sequencer_step_cv_1: case ParameterId::sequencer_step_cv_2:
+      case ParameterId::sequencer_step_cv_3: case ParameterId::sequencer_step_cv_4:
+      case ParameterId::sequencer_step_cv_5:
+        return v >= 0.0 && v <= 5.0;
+      // Sequencer step gate boolean: EXACT {0,1} — never gate-high on 0.5.
+      case ParameterId::sequencer_step_gate_1: case ParameterId::sequencer_step_gate_2:
+      case ParameterId::sequencer_step_gate_3: case ParameterId::sequencer_step_gate_4:
+      case ParameterId::sequencer_step_gate_5:
+        return v == 0.0 || v == 1.0;
+      default:
+        return false;  // pulser / unknown are handled before reaching here.
+    }
+  }
+
+  // Map a sound-core setter's bool to the status: true -> applied; false -> the value was in
+  // unit-domain but the setter still rejected it (e.g. LFO effective-step non-finite).
+  static ParameterApplyStatus transferStatus_(bool accepted) {
+    return accepted ? ParameterApplyStatus::applied : ParameterApplyStatus::invalid_value;
+  }
+
+  // ---- selector-index mapping helpers (fail-closed keep-old on out-of-band) ----
+  using SequencerClockSource = FiveStepSequencer::ClockSource;
+  // LFO speed_mult selector index 0/1/2 -> {x1, x6, x10}. Out of band -> false (no apply).
+  static bool speedMultFromIndex_(double v, LfoSpeedMult& out) {
+    const int i = static_cast<int>(v);
+    if (i == 1) { out = LfoSpeedMult::x6; return true; }
+    if (i == 2) { out = LfoSpeedMult::x10; return true; }
+    if (i == 0) { out = LfoSpeedMult::x1; return true; }
+    return false;
+  }
+  // sequencer clock selector index 0/1 -> {internal, external}. Out of band -> false.
+  static bool sequencerClockFromIndex_(double v, SequencerClockSource& out) {
+    const int i = static_cast<int>(v);
+    if (i == 0) { out = SequencerClockSource::kInternal; return true; }
+    if (i == 1) { out = SequencerClockSource::kExternal; return true; }
+    return false;
   }
 
   // Drone panel-control range/linearization helpers (the classic grouping).
@@ -1296,6 +1628,59 @@ class SynthRuntime {
         wetR_ = distortion_.tickR(vcfR_ * vcfPathStageR_);
         break;
       }
+      case ExecutionKind::kEnvelope: {  // envelope_a/b — A/B by slot.id.
+        // resolve real gate_in (JackDescriptor + runtime-owned GateClockSinkState) -> gate
+        // level -> tick -> publish env_out (0..+8V confirmed) + vca_cv_out (provisional open
+        // transfer requirement, P3). A single pulse source (threshold 0 on the gate jack)
+        // never rises after the first sample, so the SAME-sample gate→env path is a LEVEL
+        // rule; the rising-edge advance is the domain of the ext-clock (sequencer) below.
+        const bool isB = (slot.id == ModuleId::envelope_b);
+        EnvelopeGenerator& eg = isB ? envGenB_ : envGenA_;
+        const JackId gateIn = isB ? gateInB_ : gateInA_;
+        const JackId envOut = isB ? envOutB_ : envOutA_;
+        const JackId vcaOut = isB ? vcaOutB_ : vcaOutA_;
+        GateClockSinkState& latch = isB ? envB_gate_ : envA_gate_;
+        bool gateHigh = false;
+        double volts = 0.0;
+        if (resolveControlSink_(gateIn, volts, driveGraph)) {
+          const JackDescriptor* d = findJackDescriptor_(gateIn);
+          gateHigh = (d != nullptr) ? sink_gate_interpret(*d, latch, volts).gateHigh : false;
+        }
+        eg.tick(gateHigh);
+        publishSourceValue_(envOut, eg.envVolts());
+        publishSourceValue_(vcaOut, eg.vcaCvVolts());
+        break;
+      }
+      case ExecutionKind::kLfo: {  // lfo_a/b — no-input source, tick once/sample, publish.
+        const bool isB = (slot.id == ModuleId::lfo_b);
+        Lfo& lfo = isB ? lfoB_ : lfoA_;
+        const double v = lfo.tick();
+        publishSourceValue_(isB ? lfoBOut_ : lfoAOut_, v);  // 0..+10V (confirmed).
+        break;
+      }
+      case ExecutionKind::kJoystick: {  // stateless: read X/Y + offset same sample, publish.
+        publishSourceValue_(joyXOut_, joystick_.xOut());  // ±10V (confirmed).
+        publishSourceValue_(joyYOut_, joystick_.yOut());
+        break;
+      }
+      case ExecutionKind::kSequencer: {  // ext_clock_in -> real descriptor rising -> tick.
+        // Resolve the continuous ext_clock_in volts through the REAL jack descriptor gate
+        // interpreter (provisional canonical sink semantics); advance ONLY on a real rising
+        // edge (first sample primes, never a phantom advance). The internal PULSER still
+        // runs every sample (phase continuity); clock_out is kept as-requested DISCRETE
+        // rising (publish is intentionally skipped — evidence-blocked/unpublished).
+        bool clockRising = false;
+        double volts = 0.0;
+        if (resolveControlSink_(seqExtClockIn_, volts, driveGraph)) {
+          const JackDescriptor* d = findJackDescriptor_(seqExtClockIn_);
+          clockRising = (d != nullptr) &&
+                        (sink_gate_interpret(*d, seqClockLatch_, volts).edge == GateEdge::rising);
+        }
+        sequencer_.tick(clockRising);
+        publishSourceValue_(seqCvOut_, sequencer_.cvOut());      // 0..+5V (confirmed).
+        publishSourceValue_(seqGateOut_, sequencer_.gateOut());  // 0/+10V one-sample (provisional pulse).
+        break;
+      }
       case ExecutionKind::kUnsupported:
         break;
     }
@@ -1497,6 +1882,10 @@ class SynthRuntime {
       case ExecutionKind::kVcfPath:    return FixedChainRole::kVcf;  // merged reads as VCF.
       case ExecutionKind::kVcf:        return FixedChainRole::kVcf;
       case ExecutionKind::kDistortion: return FixedChainRole::kDistortion;
+      case ExecutionKind::kEnvelope:   return FixedChainRole::kNone;  // control-only, not a chain role.
+      case ExecutionKind::kLfo:        return FixedChainRole::kNone;
+      case ExecutionKind::kJoystick:   return FixedChainRole::kNone;
+      case ExecutionKind::kSequencer:  return FixedChainRole::kNone;
       case ExecutionKind::kUnsupported:return FixedChainRole::kNone;
     }
     return FixedChainRole::kNone;
@@ -1610,6 +1999,46 @@ class SynthRuntime {
   VoiceMixer mixer_;
   PolivoksFilter vcf_;
   Distortion distortion_;
+
+  // Six control sources (GH#11 partial). The runtime OWNS one stable
+  // instance each (D2); the owning definition binds the registry jacks and the
+  // always-execute admission list. envGenA_/envGenB_/lfoA_/lfoB_ take sampleRate in
+  // the ctor (order matches the init list); joystick_ (stateless) and sequencer_
+  // (default ctor, rate set in the body) are default-initialized here.
+  EnvelopeGenerator envGenA_;
+  EnvelopeGenerator envGenB_;
+  Lfo lfoA_;
+  Lfo lfoB_;
+  JoystickCv joystick_;
+  FiveStepSequencer sequencer_;
+
+  // Envelope A/B published jack ids (gate resolve-input, env out, vca-cv out).
+  JackId gateInA_ = JackId{0}, envOutA_ = JackId{0}, vcaOutA_ = JackId{0};
+  JackId gateInB_ = JackId{0}, envOutB_ = JackId{0}, vcaOutB_ = JackId{0};
+  // LFO / joystick / sequencer published jack ids.
+  JackId lfoAOut_ = JackId{0}, lfoBOut_ = JackId{0};
+  JackId joyXOut_ = JackId{0}, joyYOut_ = JackId{0};
+  JackId seqExtClockIn_ = JackId{0}, seqCvOut_ = JackId{0}, seqGateOut_ = JackId{0};
+
+  // Always-execute admission list (six control-source module ids). Unwired sources
+  // must still execute once per sample, so the compiler force-includes them. Sized
+  // for kMaxAlwaysExecuteSources; tracked by count (ModuleId{0} = vco_a is a REAL
+  // module, so it must NOT double as a terminator).
+  ModuleId alwaysExecIds_[kMaxAlwaysExecuteSources] = {};
+  std::uint32_t alwaysExecCount_ = 0;
+
+  // Most recent control-source transfer outcome (@Codex BLOCKED #1). Set by every
+  // applyControlEvent_ parameter event (and precisely by setControlParamValue). The product
+  // surface / test oracle reads it back; there is no separate param bank to drift.
+  ParameterApplyStatus lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
+  ParameterId lastApplyParamId_ = ParameterId{};   // == enum value 0 (drone_3_pitch) first.
+
+  // ONE fixed/no-heap gate-clock sink latch per JackId (gate in / seq ext clock).
+  // Repatch/rebuild resets the affected latches only; module-internal edges must
+  // NOT be re-imported, and a first-high must not cause a phantom advance.
+  GateClockSinkState envA_gate_;
+  GateClockSinkState envB_gate_;
+  GateClockSinkState seqClockLatch_;
 };
 
 }  // namespace lunar24::core

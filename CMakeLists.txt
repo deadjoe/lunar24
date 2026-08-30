@@ -202,6 +202,8 @@ lunar_add_test(test_machine_runtime tests/core/test_machine_runtime.cpp
                tests/core/test_machine_runtime_allocator.cpp)
 lunar_add_test(test_machine_definition tests/core/test_machine_definition.cpp
                tests/core/test_machine_definition_allocator.cpp)
+lunar_add_test(test_machine_control_sources tests/core/test_machine_control_sources.cpp
+               tests/core/test_machine_control_sources_allocator.cpp)
 
 # task#55 (GH#5) Windows-only CI diagnostic, stack A/B, do NOT remove without the
 # intent documented below. This test repeatedly stack-constructs ~149 KB of

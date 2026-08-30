@@ -169,14 +169,16 @@ inline constexpr MachineDispositionEntry kMachineDisposition[] = {
   {ModuleId::drone_4,       ExecutionKind::kDroneBank},
   {ModuleId::drone_5,       ExecutionKind::kDroneBank},
   {ModuleId::drone_6,       ExecutionKind::kDroneBank},
-  // Declared-deferred / control-only (not wired this slice).
+  // The six control sources are NOW executed (GH#11 partial, D1/D2/D4),
+  // each as an always-execute source in the compiled plan. `keyboard`/`effector`/
+  // `voices` stay declared-deferred (kUnsupported) — no runtime instance yet.
   {ModuleId::keyboard,      ExecutionKind::kUnsupported},
-  {ModuleId::envelope_a,    ExecutionKind::kUnsupported},
-  {ModuleId::envelope_b,    ExecutionKind::kUnsupported},
-  {ModuleId::lfo_a,         ExecutionKind::kUnsupported},
-  {ModuleId::lfo_b,         ExecutionKind::kUnsupported},
-  {ModuleId::joystick,      ExecutionKind::kUnsupported},
-  {ModuleId::sequencer,     ExecutionKind::kUnsupported},
+  {ModuleId::envelope_a,    ExecutionKind::kEnvelope},
+  {ModuleId::envelope_b,    ExecutionKind::kEnvelope},
+  {ModuleId::lfo_a,         ExecutionKind::kLfo},
+  {ModuleId::lfo_b,         ExecutionKind::kLfo},
+  {ModuleId::joystick,      ExecutionKind::kJoystick},
+  {ModuleId::sequencer,     ExecutionKind::kSequencer},
   {ModuleId::effector,      ExecutionKind::kUnsupported},
   {ModuleId::voices,        ExecutionKind::kUnsupported},
 };
@@ -319,6 +321,37 @@ class MachineRuntimeDefinition {
                                      lunar24::registry::JackId::drone_4_cv_mod_in,
                                      lunar24::registry::JackId::drone_5_cv_mod_in);
 
+    // GH#11 partial (D1/D2): the six control sources are NOW real DSP
+    // instances, so the owning definition binds their REGISTRY jacks (the same identity
+    // the rest of the product reads) and always-executes them. Env A/B resolve their
+    // real gate_in and publish env_out + vca_cv_out; LFO A/B publish cv_out; joystick
+    // publishes x_out/y_out; sequencer consumes ext_clock_in (sink latched) and
+    // publishes cv_out + gate_out. sequencer.clock_out stays UNPUBLISHED (core discrete
+    // rising only — audit evidence-blocked/unpublished; never a double-bank shadow).
+    runtime_.setEnvelopeBindings(lunar24::registry::JackId::envelope_a_gate_in,
+                                 lunar24::registry::JackId::envelope_a_env_out,
+                                 lunar24::registry::JackId::envelope_a_vca_cv_out,
+                                 lunar24::registry::JackId::envelope_b_gate_in,
+                                 lunar24::registry::JackId::envelope_b_env_out,
+                                 lunar24::registry::JackId::envelope_b_vca_cv_out);
+    runtime_.setLfoBindings(lunar24::registry::JackId::lfo_a_cv_out,
+                            lunar24::registry::JackId::lfo_b_cv_out);
+    runtime_.setJoystickBindings(lunar24::registry::JackId::joystick_x_out,
+                                 lunar24::registry::JackId::joystick_y_out);
+    runtime_.setSequencerBindings(lunar24::registry::JackId::sequencer_ext_clock_in,
+                                  lunar24::registry::JackId::sequencer_cv_out,
+                                  lunar24::registry::JackId::sequencer_gate_out);
+    // Always-execute the six sources so an unwired LFO/EG-SELF-GEN/PULSER still runs once
+    // per sample (compile_graph force-includes them -> isolated acyclic singleton regions).
+    // ModuleId{0} is vco_a (a REAL module), so this list is NOT null-terminated — the
+    // count is the authoritative bound.
+    {
+      const ModuleId alwaysExec[6] = {ModuleId::envelope_a, ModuleId::envelope_b,
+                                      ModuleId::lfo_a, ModuleId::lfo_b,
+                                      ModuleId::joystick, ModuleId::sequencer};
+      runtime_.setAlwaysExecute(alwaysExec, 6);
+    }
+
     // Canonical strictness on, then build the plan.
     runtime_.setStrictBindings(true);
     (void)runtime_.rebuild();
@@ -423,6 +456,56 @@ class MachineRuntimeDefinition {
       p.canDirectThrough = true;
       p.directThroughExactZeroGain = false;
       c->pathDelayCount = 1;
+      c->hasDirectThroughPath = true;
+    }
+
+    // GH#11 envelope A/B: a user-patched REAL cable into gate_in and the A-published
+    // env_out/vca_cv_out (env_out -> preamp.ext_source_in, vca_cv_out -> drone cv, etc.)
+    // can form an SCC, so each EG is cycle-safe at min0 direct. Both paths are REAL
+    // same-sample transfers (A/R/D/S + HOLD/SELF-GEN are sample-rate side effects, never
+    // a multicycle read). The ENV and VCA-CV outputs share the same gate -> two paths.
+    for (const auto& eg : {ModuleId::envelope_a, ModuleId::envelope_b}) {
+      if (ModuleExecutionContract* c = findContract_(eg)) {
+        c->allowedInCyclicSCC = true;
+        ModulePathDelay& p0 = c->pathDelays[0];
+        p0.inPort = (eg == ModuleId::envelope_a) ? lunar24::registry::JackId::envelope_a_gate_in
+                                                 : lunar24::registry::JackId::envelope_b_gate_in;
+        p0.outPort = (eg == ModuleId::envelope_a) ? lunar24::registry::JackId::envelope_a_env_out
+                                                  : lunar24::registry::JackId::envelope_b_env_out;
+        p0.minCausalDelaySamples = 0.0;
+        p0.canDirectThrough = true;
+        p0.directThroughExactZeroGain = false;
+        ModulePathDelay& p1 = c->pathDelays[1];
+        p1.inPort = p0.inPort;
+        p1.outPort = (eg == ModuleId::envelope_a) ? lunar24::registry::JackId::envelope_a_vca_cv_out
+                                                  : lunar24::registry::JackId::envelope_b_vca_cv_out;
+        p1.minCausalDelaySamples = 0.0;
+        p1.canDirectThrough = true;
+        p1.directThroughExactZeroGain = false;
+        c->pathDelayCount = 2;
+        c->hasDirectThroughPath = true;
+      }
+    }
+    // GH#11 sequencer: ext_clock_in -> cv_out and ext_clock_in -> gate_out are REAL
+    // same-sample direct/min0 (the sink_latch edge -> one-step advance -> publish all in
+    // one sample), so a user-patched cycle through either output is legitimate and
+    // cycle-safe. clock_out is NOT declared here — it is unpublished (core discrete rising
+    // only), deliberately absent from the contract.
+    if (ModuleExecutionContract* c = findContract_(ModuleId::sequencer)) {
+      c->allowedInCyclicSCC = true;
+      ModulePathDelay& p0 = c->pathDelays[0];
+      p0.inPort = lunar24::registry::JackId::sequencer_ext_clock_in;
+      p0.outPort = lunar24::registry::JackId::sequencer_cv_out;
+      p0.minCausalDelaySamples = 0.0;
+      p0.canDirectThrough = true;
+      p0.directThroughExactZeroGain = false;
+      ModulePathDelay& p1 = c->pathDelays[1];
+      p1.inPort = lunar24::registry::JackId::sequencer_ext_clock_in;
+      p1.outPort = lunar24::registry::JackId::sequencer_gate_out;
+      p1.minCausalDelaySamples = 0.0;
+      p1.canDirectThrough = true;
+      p1.directThroughExactZeroGain = false;
+      c->pathDelayCount = 2;
       c->hasDirectThroughPath = true;
     }
 

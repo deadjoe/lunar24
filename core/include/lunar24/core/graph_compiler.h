@@ -154,6 +154,9 @@ enum class CompileStatus : std::uint8_t {
   invalid_module_contract, // a present module contract fails module_contract_is_valid
   invalid_execution_order, // after removing the selected feedback edges the region
                            // is still not a DAG (defensive fail-closed; see GH#14)
+  invalid_always_execute,  // an always-execute admission is malformed (not a real module,
+                           // duplicated, null-with-count, or over-capacity): fail-closed,
+                           // never a silent drop (@Codex BLOCKED #5)
 };
 
 struct CompileResult {
@@ -252,6 +255,13 @@ inline void decide_feedback_delay_cycle(const ModuleExecutionContract* c, JackId
 // chain is never a break object — it has no JackId, so no contract decision):
 //   category first (pluggable=0 < fixed=1); then within category — pluggable by
 //   (sourceJack, sinkJack) numeric ascending; fixed by "fixed.<name>" lexicographic.
+// Shared capacity for the always-execute control-source admission (@Codex BLOCKED #5).
+// ONE named constant, used by BOTH this compiler admission (compile_graph) and
+// SynthRuntime::setAlwaysExecute / the alwaysExecIds_ array — a hand-copied twin
+// (a local `kMaxAlways` mirroring `kMaxFixedModules`) is exactly the drift that let a
+// missing module id through the runtime boundary while the compiler still rejected it.
+inline constexpr std::uint32_t kMaxAlwaysExecuteSources = 32;
+
 // The same topology built from a different insertion order yields the identical
 // feedback set (criterion ⑥c: insertion-order independence).
 //
@@ -262,12 +272,14 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
                                    const PatchEdge* edges, std::uint32_t edgeCount,
                                    const GraphModule* modules, std::uint32_t moduleCount,
                                    const FixedEdge* fixedEdges = nullptr,
-                                   std::uint32_t fixedEdgeCount = 0) {
+                                   std::uint32_t fixedEdgeCount = 0,
+                                   const ModuleId* alwaysExecute = nullptr,
+                                   std::uint32_t alwaysExecuteCount = 0) {
   CompileResult result;
 
   // ---- 0. Distinct modules touched by the graph --------------------------
   std::vector<ModuleId> mods;
-  mods.reserve(edgeCount * 2 + fixedEdgeCount * 2);
+  mods.reserve(edgeCount * 2 + fixedEdgeCount * 2 + alwaysExecuteCount);
   for (std::uint32_t i = 0; i < edgeCount; ++i) {
     mods.push_back(detail::jack_module(jacks, jackCount, edges[i].source));
     mods.push_back(detail::jack_module(jacks, jackCount, edges[i].sink));
@@ -276,6 +288,40 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
     mods.push_back(fixedEdges[i].sourceModule);
     mods.push_back(fixedEdges[i].sinkModule);
   }
+  // GH#11: always-execute sources must RUN even when they carry no cable (per-sample
+  // LFO / EG SELF-GEN / PULSER phase continuity), so they are admitted into the SAME
+  // plan — never a plan-external pre-append. Force-including their ids means an unwired
+  // source still becomes an isolated acyclic singleton region (the SCC loop below
+  // iterates all M modules, so every id here is reached). A null alwaysExecute or
+  // count==0 is a no-op, keeping legacy calls byte-identical. Admission is ATOMIC and
+  // FAIL-CLOSED (@Codex BLOCKED #5): a malformed set — null ids with count>0, over
+  // kMaxAlwaysExecuteSources capacity, a duplicate id, or an id that is NOT a real module in
+  // `modules` — makes the WHOLE compile `invalid_always_execute` with an empty graph
+  // (never a silent drop and never a fabricated contract-less singleton).
+  bool alwaysOk = true;
+  if (alwaysExecuteCount > 0 && alwaysExecute == nullptr) alwaysOk = false;
+  if (alwaysExecuteCount > kMaxAlwaysExecuteSources) alwaysOk = false;
+  std::vector<ModuleId> alwaysIds;
+  if (alwaysOk && alwaysExecute != nullptr) {
+    for (std::uint32_t i = 0; i < alwaysExecuteCount; ++i) {
+      bool found = false;
+      for (std::uint32_t k = 0; k < moduleCount; ++k)
+        if (modules[k].id == alwaysExecute[i]) { found = true; break; }
+      if (!found) { alwaysOk = false; break; }
+      for (std::size_t p = 0; p < alwaysIds.size(); ++p)
+        if (alwaysIds[p] == alwaysExecute[i]) { alwaysOk = false; break; }
+      if (!alwaysOk) break;
+      alwaysIds.push_back(alwaysExecute[i]);
+    }
+  }
+  if (!alwaysOk) {
+    result.status = CompileStatus::invalid_always_execute;
+    result.graph = CompiledGraph{};
+    return result;
+  }
+  // alwaysIds may be empty (no always-source, or null/0 no-op): pushing nothing is fine and
+  // the normal edge-driven plan below proceeds unchanged.
+  for (ModuleId id : alwaysIds) mods.push_back(id);
   std::sort(mods.begin(), mods.end(), [](ModuleId a, ModuleId b) { return detail::mid(a) < detail::mid(b); });
   mods.erase(std::unique(mods.begin(), mods.end()), mods.end());
   const std::uint32_t M = static_cast<std::uint32_t>(mods.size());

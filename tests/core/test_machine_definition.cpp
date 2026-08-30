@@ -143,8 +143,15 @@ int main() {
   // an unknown id.
   check(def.kindOf(core::ModuleId::keyboard) == core::ExecutionKind::kUnsupported,
         "keyboard is deferred (kUnsupported) this slice");
-  check(def.kindOf(core::ModuleId::lfo_a) == core::ExecutionKind::kUnsupported,
-        "lfo_a is deferred (kUnsupported) this slice");
+  // The six control sources are NOW executed (GH#11 partial): each has a real
+  // control kind, not kUnsupported. keyboard/effector/voices remain declared-deferred.
+  check(def.kindOf(core::ModuleId::lfo_a) == core::ExecutionKind::kLfo &&
+            def.kindOf(core::ModuleId::lfo_b) == core::ExecutionKind::kLfo &&
+            def.kindOf(core::ModuleId::envelope_a) == core::ExecutionKind::kEnvelope &&
+            def.kindOf(core::ModuleId::envelope_b) == core::ExecutionKind::kEnvelope &&
+            def.kindOf(core::ModuleId::joystick) == core::ExecutionKind::kJoystick &&
+            def.kindOf(core::ModuleId::sequencer) == core::ExecutionKind::kSequencer,
+        "six control sources are executed (kLfo/kEnvelope/kJoystick/kSequencer)");
   // Every one of the 21 modules has a disposition (no unlisted module).
   // item 5 (@Codex eaaf08cc): the old loop iterated the DENSE index 0..kModuleCount-1 and
   // checked "count matches" — that PASSES a duplicate or an omission, so it proves only a
@@ -500,23 +507,24 @@ int main() {
   }
 
   // ---- oracle: unsupported fail-closed (b4e0e731 §4.4) ---------------------------
-  // lfo_a is declared-deferred (kUnsupported) this slice. Patching a REAL generated LFO
-  // jack into a REAL VCF sink MUST REFUSE at rebuild() with the fixed unsupported_module
-  // status and NO phantom lfo slot — it must NOT return true and silently skip the
-  // unsupported module (the §5 negative ④) nor fake the LFO via setControlVoltage.
+  // keyboard is still declared-deferred (kUnsupported) this slice (the six control sources
+  // are now EXECUTED — see above). Patching a REAL generated keyboard output jack into a
+  // REAL VCF sink MUST REFUSE at rebuild() with the fixed unsupported_module status and NO
+  // phantom keyboard slot — it must NOT return true and silently skip the unsupported
+  // module (the §5 negative ④) nor fake the source via setControlVoltage.
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
     check(d.status() == core::SynthRuntime::RebuildStatus::ok,
           "the clean machine builds ok before the unsupported patch");
-    check(d.runtime().connect(reg::JackId::lfo_a_cv_out, reg::JackId::vcf_cv_l_in),
-          "connect lfo_a.cv_out -> vcf.cv_l_in (real generated jack)");
+    check(d.runtime().connect(reg::JackId::keyboard_v_oct_out, reg::JackId::vcf_cv_l_in),
+          "connect keyboard.v_oct_out -> vcf.cv_l_in (real generated jack)");
     check(!d.runtime().rebuild(), "rebuild REFUSES an unsupported module entering the plan");
     check(d.runtime().lastRebuildStatus() == core::SynthRuntime::RebuildStatus::unsupported_module,
           "refusal status is exactly unsupported_module (not a generic reject)");
-    bool lfoSlotted = false;
+    bool keyboardSlotted = false;
     for (std::uint32_t i = 0; i < d.runtime().execSlotCount(); ++i)
-      if (d.runtime().execSlotAt(i).id == core::ModuleId::lfo_a) lfoSlotted = true;
-    check(!lfoSlotted, "no phantom lfo_a execution slot (unsupported is not silently run)");
+      if (d.runtime().execSlotAt(i).id == core::ModuleId::keyboard) keyboardSlotted = true;
+    check(!keyboardSlotted, "no phantom keyboard execution slot (unsupported is not silently run)");
   }
 
   // ---- oracle: VCF CV L->R normalling (route.vcf_cv_l_to_cv_r, Gap 1 @Codex 864b2d24) ----
