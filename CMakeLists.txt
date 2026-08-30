@@ -200,6 +200,8 @@ lunar_add_test(test_sink_interpret tests/core/test_sink_interpret.cpp)
 lunar_add_test(test_state_publish tests/core/test_state_publish.cpp)
 lunar_add_test(test_machine_runtime tests/core/test_machine_runtime.cpp
                tests/core/test_machine_runtime_allocator.cpp)
+lunar_add_test(test_machine_definition tests/core/test_machine_definition.cpp
+               tests/core/test_machine_definition_allocator.cpp)
 
 # task#55 (GH#5) Windows-only CI diagnostic, stack A/B, do NOT remove without the
 # intent documented below. This test repeatedly stack-constructs ~149 KB of
@@ -210,6 +212,15 @@ lunar_add_test(test_machine_runtime tests/core/test_machine_runtime.cpp
 # target or platform.
 if(MSVC)
   target_link_options(test_machine_runtime PRIVATE /STACK:4194304)
+  # task#65 (GH#11) same Windows test-harness budget for the canonical
+  # MachineRuntimeDefinition test. `test_machine_definition` stack-constructs and
+  # nests several ~161 KB definitions (MachineRuntimeDefinition = 161,168 bytes,
+  # SynthRuntime = 151,920) from one large `main` (static frame 510,592 B) plus a
+  # lambda frame 483,728 B (~994,320 B combined), so Windows' 1 MB default process
+  # stack is a TEST-HARNESS budget, not a product runtime contract (the product
+  # target and every other test/platform is untouched). Reserve 4 MB for this one
+  # test executable, only under MSVC, mirroring test_machine_runtime above.
+  target_link_options(test_machine_definition PRIVATE /STACK:4194304)
 elseif(APPLE)
   # task#65 (GH#11) same harness budget on the Apple LINKER (ld64): this one test stack-constructs
   # many ~149 KB fixed-capacity SynthRuntime fixtures from one large `main`, and under

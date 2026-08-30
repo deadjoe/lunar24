@@ -1,0 +1,475 @@
+// Copyright (c) 2026 Lunar 24 contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// MachineRuntimeDefinition: the production-owned canonical machine builder.
+//
+// This is the answer to the "tests hand-bind product fixtures" anti-pattern (@Codex
+// 7C2 B′ msg cc5043dd point 1): the product machine owns its OWN scheduling
+// contracts, its module table, its fixed internal route set, its ExecutionKind
+// disposition, and the resulting SynthRuntime — and the tests consume the machine
+// through `definition.runtime()` instead of re-wiring the registry by hand.
+//
+// The fixed route set is a DATA TABLE derived from the registry manifest's
+// `requiredFixedRoutes` (28 routes, @Codex correction 1), NOT a hardcoded edge list:
+// the definition owns its `fixedEdges_[]` member and fills it from that table, so
+// every compiler-edge is traceable to an authored manifest route and the
+// 28-route / 11-unique-edge / category accounting is itself auditable.
+//
+// Lifetime invariant: the SynthRuntime stores POINTERS to this definition's
+// contracts_ / modules_ / fixedEdges_ / routes arrays for the runtime's WHOLE
+// lifetime (machine_runtime.h stores modules_ + each mods[i].contract as caller-owned
+// pointers). The definition is therefore NON-COPYABLE and NON-MOVABLE and must be
+// held at a STABLE address for its whole life: a copied or moved definition would
+// leave the runtime pointing at a foreign (or dead) heap/stack location. Tests (and
+// the host) construct it in a fixed-scope lvalue and never move it.
+
+#pragma once
+
+#include <cstdint>
+#include <limits>
+#include <optional>
+
+#include <lunar24/core/graph_compiler.h>
+#include <lunar24/core/machine_runtime.h>
+#include <lunar24/core/module_execution_contract.h>
+#include <lunar24/registry.hpp>
+#include <lunar24/registry_ids.hpp>
+
+namespace lunar24::core {
+
+// ---------------------------------------------------------------------------
+// Fixed-route data table (@Codex correction 1).
+//
+// This mirrors the manifest's `requiredFixedRoutes` (28 routes). Each route is a
+// module->module OR module->terminal OR terminal->module edge that is FIXED (never
+// user-cable cardinality). Only an inter-module edge whose BOTH endpoints are ACTIVE
+// compiled modules contributes to a compiler FixedEdge; the rest are recorded for the
+// accounting (intra-VCF stages, host/DRY terminals, and declared-deferred provider
+// routes) but are NOT compiler edges this slice. The unique edge set is derived from
+// this table (mixer->vcf_l + mixer->vcf_r fold to one `mixer->vcf`), so the definition
+// owns `fixedEdges_[]` rather than a hand-duplicated constexpr list.
+// ---------------------------------------------------------------------------
+enum class FixedRouteCategory : std::uint8_t {
+  kInterModule,    // both endpoints ACTIVE modules -> contributes exactly one FixedEdge
+  kIntraVcfStage,  // vcf -> distortion: handled inside the VCF path (not a compiled module)
+  kHostTerminal,   // host injection (ext_audio -> mixer)
+  kDryTerminal,    // DRY/WET host output terminal (vco -> out.dry, eff -> out.wet)
+  kDeferred,       // endpoint(s) deferred this slice (voice->drone, dist->eff, piezzo->preamp)
+};
+
+// Sentinel ModuleId for a route endpoint that is NOT a compiled module (a host/DRY
+// terminal, an intra-VCF stage, or an external input). Out of the real module range
+// (kModuleCount=21); never a registry identifier.
+inline constexpr ModuleId kFixedRouteNoModule =
+    static_cast<ModuleId>(std::numeric_limits<std::uint32_t>::max());
+
+struct FixedRoute {
+  const char* stableId;       // manifest id, e.g. "fixed.vco_a_to_mixer"
+  FixedRouteCategory category;
+  ModuleId source;            // kFixedRouteNoModule when the source is not a compiled module
+  ModuleId sink;              // kFixedRouteNoModule when the sink is not a compiled module
+  const char* edgeName;       // canonical FixedEdge name for kInterModule routes ("" otherwise)
+};
+
+inline constexpr FixedRoute kFixedRoutes[] = {
+  // 6 inter-module drone -> mixer (ACTIVE).
+  {"fixed.drone_1_to_mixer",   FixedRouteCategory::kInterModule,  ModuleId::drone_1,     ModuleId::mixer,      "fixed.drone_1_to_mixer"},
+  {"fixed.drone_2_to_mixer",   FixedRouteCategory::kInterModule,  ModuleId::drone_2,     ModuleId::mixer,      "fixed.drone_2_to_mixer"},
+  {"fixed.drone_3_to_mixer",   FixedRouteCategory::kInterModule,  ModuleId::drone_3,     ModuleId::mixer,      "fixed.drone_3_to_mixer"},
+  {"fixed.drone_4_to_mixer",   FixedRouteCategory::kInterModule,  ModuleId::drone_4,     ModuleId::mixer,      "fixed.drone_4_to_mixer"},
+  {"fixed.drone_5_to_mixer",   FixedRouteCategory::kInterModule,  ModuleId::drone_5,     ModuleId::mixer,      "fixed.drone_5_to_mixer"},
+  {"fixed.drone_6_to_mixer",   FixedRouteCategory::kInterModule,  ModuleId::drone_6,     ModuleId::mixer,      "fixed.drone_6_to_mixer"},
+  // 1 host-terminal injection (ext_in -> mixer); DRY/WET are host outputs.
+  {"fixed.ext_audio_to_mixer", FixedRouteCategory::kHostTerminal, kFixedRouteNoModule,  ModuleId::mixer,      ""},
+  // 2 inter-module VCO -> mixer.
+  {"fixed.vco_a_to_mixer",     FixedRouteCategory::kInterModule,  ModuleId::vco_a,       ModuleId::mixer,      "fixed.vco_a_to_mixer"},
+  {"fixed.vco_b_to_mixer",     FixedRouteCategory::kInterModule,  ModuleId::vco_b,       ModuleId::mixer,      "fixed.vco_b_to_mixer"},
+  // 1 inter-module preamp -> mixer.
+  {"fixed.preamp_to_mixer",    FixedRouteCategory::kInterModule,  ModuleId::preamp,      ModuleId::mixer,      "fixed.preamp_to_mixer"},
+  // 2 DRY host terminals (vco.dry_out -> out.dry).
+  {"fixed.vco_a_to_dry_a",     FixedRouteCategory::kDryTerminal,  ModuleId::vco_a,       kFixedRouteNoModule,  ""},
+  {"fixed.vco_b_to_dry_b",     FixedRouteCategory::kDryTerminal,  ModuleId::vco_b,       kFixedRouteNoModule,  ""},
+  // 2 inter-module mixer -> vcf (fold to ONE `mixer->vcf` compiler edge).
+  {"fixed.mixer_to_vcf_l",     FixedRouteCategory::kInterModule,  ModuleId::mixer,       ModuleId::vcf,        "fixed.mixer_to_vcf"},
+  {"fixed.mixer_to_vcf_r",     FixedRouteCategory::kInterModule,  ModuleId::mixer,       ModuleId::vcf,        "fixed.mixer_to_vcf"},
+  // 2 intra-VCF stages (vcf -> distortion; distortion is not a separate compiled module).
+  {"fixed.vcf_l_to_dist_l",    FixedRouteCategory::kIntraVcfStage, ModuleId::vcf,        kFixedRouteNoModule,  ""},
+  {"fixed.vcf_r_to_dist_r",    FixedRouteCategory::kIntraVcfStage, ModuleId::vcf,        kFixedRouteNoModule,  ""},
+  // 4 declared-deferred: dist -> eff, eff -> wet (deferred effector/DRY terminal).
+  {"fixed.dist_l_to_eff_l",    FixedRouteCategory::kDeferred,     kFixedRouteNoModule,  ModuleId::effector,   ""},
+  {"fixed.dist_r_to_eff_r",    FixedRouteCategory::kDeferred,     kFixedRouteNoModule,  ModuleId::effector,   ""},
+  {"fixed.eff_l_to_wet_l",     FixedRouteCategory::kDeferred,     ModuleId::effector,   kFixedRouteNoModule,  ""},
+  {"fixed.eff_r_to_wet_r",     FixedRouteCategory::kDeferred,     ModuleId::effector,   kFixedRouteNoModule,  ""},
+  // 1 declared-deferred: piezzo (external input) -> preamp.
+  {"fixed.piezzo_to_preamp",   FixedRouteCategory::kDeferred,     kFixedRouteNoModule,  ModuleId::preamp,     ""},
+  // 1 inter-module preamp -> env_follower (CONTROL, fixed internal route).
+  {"fixed.preamp_to_env_follower", FixedRouteCategory::kInterModule, ModuleId::preamp,  ModuleId::env_follower, "fixed.preamp_to_env_follower"},
+  // 6 declared-deferred: voices.voiceN_gate -> drone_N.gate.
+  {"fixed.voice_1_gate_to_drone_1", FixedRouteCategory::kDeferred, ModuleId::voices,    ModuleId::drone_1,    ""},
+  {"fixed.voice_2_gate_to_drone_2", FixedRouteCategory::kDeferred, ModuleId::voices,    ModuleId::drone_2,    ""},
+  {"fixed.voice_3_gate_to_drone_3", FixedRouteCategory::kDeferred, ModuleId::voices,    ModuleId::drone_3,    ""},
+  {"fixed.voice_4_gate_to_drone_4", FixedRouteCategory::kDeferred, ModuleId::voices,    ModuleId::drone_4,    ""},
+  {"fixed.voice_5_gate_to_drone_5", FixedRouteCategory::kDeferred, ModuleId::voices,    ModuleId::drone_5,    ""},
+  {"fixed.voice_6_gate_to_drone_6", FixedRouteCategory::kDeferred, ModuleId::voices,    ModuleId::drone_6,    ""},
+};
+inline constexpr std::uint32_t kFixedRouteCount =
+    static_cast<std::uint32_t>(sizeof(kFixedRoutes) / sizeof(kFixedRoutes[0]));
+static_assert(kFixedRouteCount == 28,
+              "the fixed-route data table must enumerate all 28 manifest requiredFixedRoutes");
+
+// Number of UNIQUE inter-module fixed compiler edges derived from kFixedRoutes
+// (deduped on (source, sink): mixer->vcf_l and mixer->vcf_r fold to one mixer->vcf).
+inline constexpr std::uint32_t deriveUniqueInterModuleEdgeCount() {
+  std::uint32_t n = 0;
+  for (std::uint32_t i = 0; i < kFixedRouteCount; ++i) {
+    if (kFixedRoutes[i].category != FixedRouteCategory::kInterModule) continue;
+    bool dup = false;
+    for (std::uint32_t j = 0; j < i; ++j) {
+      if (kFixedRoutes[j].category != FixedRouteCategory::kInterModule) continue;
+      if (kFixedRoutes[j].source == kFixedRoutes[i].source &&
+          kFixedRoutes[j].sink == kFixedRoutes[i].sink) {
+        dup = true;
+        break;
+      }
+    }
+    if (!dup) ++n;
+  }
+  return n;
+}
+inline constexpr std::uint32_t kCanonicalFixedEdgeCount = deriveUniqueInterModuleEdgeCount();
+static_assert(kCanonicalFixedEdgeCount == 11,
+              "the 28-route table must fold to exactly 11 unique inter-module compiler edges");
+
+// ---------------------------------------------------------------------------
+// Execution-kind disposition for the 21-module registry inventory (@Codex point 2).
+//
+// Every module has a UNIQUE disposition — there is no "unlisted" module. Two groups:
+//   * ACTIVE — bound to a real dispatch kind (the unified per-module executor steps it).
+//       The six drones are six INDEPENDENT kDroneBank slots (no ExecutionKind dedup,
+//       @Codex 7C2 msg 4e600057).
+//   * DEFERRED / control-only — bound to kUnsupported. A strict plan that PULLS one of
+//       these into a compiled region (via a patched cable or a fixed edge) fail-closes
+//       `unsupported_module`; left isolated (no edge), it is simply not a region member.
+// ---------------------------------------------------------------------------
+struct MachineDispositionEntry {
+  ModuleId id;
+  ExecutionKind kind;
+};
+
+inline constexpr MachineDispositionEntry kMachineDisposition[] = {
+  {ModuleId::vco_a,         ExecutionKind::kVcoA},
+  {ModuleId::vco_b,         ExecutionKind::kVcoB},
+  {ModuleId::vcf,           ExecutionKind::kVcfPath},
+  {ModuleId::mixer,         ExecutionKind::kMixer},
+  {ModuleId::preamp,        ExecutionKind::kPreamp},
+  {ModuleId::env_follower,  ExecutionKind::kEnvFollower},
+  {ModuleId::drone_1,       ExecutionKind::kDroneBank},
+  {ModuleId::drone_2,       ExecutionKind::kDroneBank},
+  {ModuleId::drone_3,       ExecutionKind::kDroneBank},
+  {ModuleId::drone_4,       ExecutionKind::kDroneBank},
+  {ModuleId::drone_5,       ExecutionKind::kDroneBank},
+  {ModuleId::drone_6,       ExecutionKind::kDroneBank},
+  // Declared-deferred / control-only (not wired this slice).
+  {ModuleId::keyboard,      ExecutionKind::kUnsupported},
+  {ModuleId::envelope_a,    ExecutionKind::kUnsupported},
+  {ModuleId::envelope_b,    ExecutionKind::kUnsupported},
+  {ModuleId::lfo_a,         ExecutionKind::kUnsupported},
+  {ModuleId::lfo_b,         ExecutionKind::kUnsupported},
+  {ModuleId::joystick,      ExecutionKind::kUnsupported},
+  {ModuleId::sequencer,     ExecutionKind::kUnsupported},
+  {ModuleId::effector,      ExecutionKind::kUnsupported},
+  {ModuleId::voices,        ExecutionKind::kUnsupported},
+};
+inline constexpr std::uint32_t kMachineDispositionCount =
+    static_cast<std::uint32_t>(sizeof(kMachineDisposition) / sizeof(kMachineDisposition[0]));
+static_assert(kMachineDispositionCount == lunar24::registry::kModuleCount,
+              "every registry module carries exactly one disposition");
+
+// ---------------------------------------------------------------------------
+// Normalized-route disposition table (@Codex correction 2).
+//
+// All 6 normalized registry routes get a UNIQUE disposition, keyed by the stable
+// RouteId (never by array position in kNormalizedRoutes[]). Only the VCO-B self-edge
+// is wired as a compilable edge this slice; the four keyboard/EG routes are deferred
+// and route.vcf_cv_l_to_cv_r is an intra-VCF fallback (not a compilable edge).
+// ---------------------------------------------------------------------------
+enum class RouteDisposition : std::uint8_t { kActive, kDeferred, kIntraVcfFallback };
+
+struct NormalizedRouteDisposition {
+  RouteId id;
+  RouteDisposition disposition;
+};
+
+inline constexpr NormalizedRouteDisposition kRouteDisposition[] = {
+  {RouteId::route_keyboard_v_oct_to_vco,  RouteDisposition::kDeferred},
+  {RouteId::route_keyboard_gate_to_eg,    RouteDisposition::kDeferred},
+  {RouteId::route_vcf_cv_l_to_cv_r,       RouteDisposition::kIntraVcfFallback},
+  {RouteId::route_keyboard_v_oct_to_vco_b, RouteDisposition::kDeferred},
+  {RouteId::route_vco_b_vco_out_to_cv_in, RouteDisposition::kActive},
+  {RouteId::route_keyboard_gate_to_eg_b,  RouteDisposition::kDeferred},
+};
+inline constexpr std::uint32_t kRouteDispositionCount =
+    static_cast<std::uint32_t>(sizeof(kRouteDisposition) / sizeof(kRouteDisposition[0]));
+static_assert(kRouteDispositionCount == lunar24::registry::kRouteCount,
+              "every normalized route carries exactly one disposition");
+
+inline constexpr std::uint32_t countActiveRoutes() {
+  std::uint32_t n = 0;
+  for (std::uint32_t i = 0; i < kRouteDispositionCount; ++i)
+    if (kRouteDisposition[i].disposition == RouteDisposition::kActive) ++n;
+  return n;
+}
+
+// Look up a NormalizedRoute by its stable RouteId (the anti-index fix: never assume the
+// route sits at kNormalizedRoutes[i] for a numeric id).
+inline constexpr NormalizedRoute lookupRoute(RouteId id) {
+  for (const auto& r : lunar24::registry::kNormalizedRoutes) {
+    if (r.id == id) return r;
+  }
+  return NormalizedRoute{};
+}
+
+inline constexpr NormalizedRoute kActiveRoutes[] = {
+    lookupRoute(RouteId::route_vco_b_vco_out_to_cv_in),
+};
+inline constexpr std::uint32_t kActiveRouteCount =
+    static_cast<std::uint32_t>(sizeof(kActiveRoutes) / sizeof(kActiveRoutes[0]));
+static_assert(countActiveRoutes() == kActiveRouteCount,
+              "the active route list must be exactly the kActive routes in the disposition table");
+static_assert(kActiveRoutes[0].sourceJack == lunar24::registry::JackId::vco_b_vco_out &&
+                  kActiveRoutes[0].sinkJack == lunar24::registry::JackId::vco_b_cv_in,
+              "the active route must be the VCO-B self-edge (route.vco_b_vco_out_to_cv_in)");
+
+// ---------------------------------------------------------------------------
+// AUDIT DISPOSITION (item 8, @Codex eaaf08cc): normalized-route evidence conflict.
+// The active route's stable ID + jacks say the edge is vco_b.vco_out -> vco_b.cv_in
+// (VCO B sinks its own VCO output into its generic CV input). The GENERATED registry
+// description for the same route (route.vco_b_vco_out_to_cv_in) writes "the VCO A
+// normalised signal into vco_b.cv_in" — i.e. the DESCRIPTION attributes the source to
+// VCO A while the JACKS implement a VCO-B self-edge. This slice EXECUTES by the IDS
+// (authoritative: RouteId + sourceJack/sinkJack), which describe the real graph fact;
+// the description prose conflict is kept as a provisional/conflicted evidence item and
+// is NOT "fixed" here (the generated registry is source-of-truth for the manifest and
+// must not be silently rewritten). It is recorded for the P3-exit 待取证 list.
+//   * IDS:   vco_b.vco_out (source) -> vco_b.cv_in (sink)   [executed by this slice]
+//   * TEXT:  "carries the VCO A normalised signal into vco_b.cv_in"  [conflicted?]
+//   * STATUS: provisional; executed by IDS; generated text left unchanged.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// MachineRuntimeDefinition
+// ---------------------------------------------------------------------------
+class MachineRuntimeDefinition {
+ public:
+  MachineRuntimeDefinition(const MachineRuntimeDefinition&) = delete;
+  MachineRuntimeDefinition& operator=(const MachineRuntimeDefinition&) = delete;
+  MachineRuntimeDefinition(MachineRuntimeDefinition&&) = delete;
+  MachineRuntimeDefinition& operator=(MachineRuntimeDefinition&&) = delete;
+
+  explicit MachineRuntimeDefinition(std::uint64_t seed, double sampleRate = 48000.0)
+      : runtime_(lunar24::registry::kJacks, lunar24::registry::kJackCount,
+                 kActiveRoutes, kActiveRouteCount,
+                 modules_, kMachineDispositionCount, seed, sampleRate,
+                 fixedEdges_, kCanonicalFixedEdgeCount) {
+    // Populate the owned tables BEFORE any rebuild() reads them. The runtime_'s ctor
+    // only captured the pointers; compile/rebuild happens in rebuild() below, so the
+    // contracts_ / modules_ / fixedEdges_ members must be filled here, from the
+    // constexpr disposition + fixed-route tables (single source, no separate member copy).
+    buildDisposition_(sampleRate);
+    fillFixedEdges_();
+
+    // Bind every module's ExecutionKind (the canonical dispatcher). One slot per
+    // compiled ModuleId, no dedup.
+    for (std::uint32_t i = 0; i < kMachineDispositionCount; ++i) {
+      runtime_.bindExecutionKind(kMachineDisposition[i].id, kMachineDisposition[i].kind);
+    }
+
+    // Canonical Jack bindings (@Codex correction 4): the product machine binds the real
+    // registered jacks that carry V/OCT, VCF CV, preamp/env-follower, and the classic
+    // drone ENV/CV-MOD cohort — so the source bank driving these controls is the same
+    // identity the rest of the product (and the tests) read.
+    runtime_.setVoctBindings(lunar24::registry::JackId::vco_a_v_oct_in,
+                             lunar24::registry::JackId::vco_b_v_oct_in);
+    // Generic CV + VCO output bindings (@Codex correction 4): each VCO's generic cv_in is
+    // a second, INDEPENDENT CV/transfer path from its V/OCT; the VCO-B self-edge
+    // (vco_b.vco_out -> cv_in) sinks into vco_b.cv_in, so the VCO-B slot resolves it
+    // through setCvInput(held mode) and publishes the real vco_b.vco_out. The lin/exp mode
+    // is a runtime decision (explicit below; tests choose it), never a hardcoded law.
+    runtime_.setVcoCvBindings(lunar24::registry::JackId::vco_a_cv_in,
+                              lunar24::registry::JackId::vco_b_cv_in);
+    runtime_.setVcoOutBindings(lunar24::registry::JackId::vco_a_dry_out,
+                               lunar24::registry::JackId::vco_b_vco_out);
+    // NOTE (item 1, @Codex eaaf08cc): the A/B generic-CV lin/exp mode is deliberately
+    // NOT pinned here. Mode is a runtime/test/upper-layer decision — it is NOT canonical
+    // hardware truth (the adjudicated ruling). The canonical builder leaves it at the
+    // runtime's provisional safe default (kExponential) and the canonical oracles that
+    // rely on the generic CV / self-edge must EXPLICITLY select the mode via
+    // setVcoControlModes; never a hardcoded law in the builder.
+    runtime_.setVcfCvBindings(lunar24::registry::JackId::vcf_cv_l_in,
+                              lunar24::registry::JackId::vcf_cv_r_in);
+    runtime_.setPreampExtIn(lunar24::registry::JackId::preamp_ext_source_in);
+    runtime_.setEnvFolOut(lunar24::registry::JackId::env_follower_env_out);
+    // Classic DRONE ENV/CV-MOD cohort (order 0..3 == drone 1/2/4/5).
+    runtime_.setDroneEnvOutBindings(lunar24::registry::JackId::drone_1_env_out,
+                                    lunar24::registry::JackId::drone_2_env_out,
+                                    lunar24::registry::JackId::drone_4_env_out,
+                                    lunar24::registry::JackId::drone_5_env_out);
+    runtime_.setDroneCvModInBindings(lunar24::registry::JackId::drone_1_cv_mod_in,
+                                     lunar24::registry::JackId::drone_2_cv_mod_in,
+                                     lunar24::registry::JackId::drone_4_cv_mod_in,
+                                     lunar24::registry::JackId::drone_5_cv_mod_in);
+
+    // Canonical strictness on, then build the plan.
+    runtime_.setStrictBindings(true);
+    (void)runtime_.rebuild();
+  }
+
+  SynthRuntime& runtime() { return runtime_; }
+  const SynthRuntime& runtime() const { return runtime_; }
+
+  SynthRuntime::RebuildStatus status() const { return runtime_.lastRebuildStatus(); }
+  // Real validity: a successfully compiled graph, whether freshly built (ok) or a
+  // cached no-change rebuild (graph_unchanged). Any rejection/error status is invalid.
+  bool valid() const {
+    return status() == SynthRuntime::RebuildStatus::ok ||
+           status() == SynthRuntime::RebuildStatus::graph_unchanged;
+  }
+
+  std::uint32_t moduleCount() const { return kMachineDispositionCount; }
+  std::uint32_t fixedEdgeCount() const { return kCanonicalFixedEdgeCount; }
+  std::uint32_t fixedRouteCount() const { return kFixedRouteCount; }
+  std::uint32_t activeRouteCount() const { return kActiveRouteCount; }
+
+  // The canonical ExecutionKind a module plays (the OWNING input disposition, from the
+  // table the runtime was built from). Returns nullopt for a ModuleId that is NOT in the
+  // 21-module registry inventory — which is a genuine "no such module", deliberately
+  // DISTINCT from kUnsupported (a real deferred module that IS in the inventory). This
+  // closes the masquerade where a typo'd/unknown id used to read as "explicitly
+  // unsupported" (@Codex correction 5).
+  std::optional<ExecutionKind> kindOf(ModuleId id) const {
+    for (std::uint32_t i = 0; i < kMachineDispositionCount; ++i) {
+      if (kMachineDisposition[i].id == id) return kMachineDisposition[i].kind;
+    }
+    return std::nullopt;
+  }
+
+  // The owned prepared scheduling contract for a module (audit surface: lets a test
+  // confirm the definition owns a real, valid contract for every compiled module).
+  // Returns nullptr for an unknown id — never a valid-looking default sentinel contract.
+  const ModuleExecutionContract* contractOf(ModuleId id) const {
+    for (std::uint32_t i = 0; i < kMachineDispositionCount; ++i) {
+      if (modules_[i].id == id) return modules_[i].contract;
+    }
+    return nullptr;
+  }
+
+ private:
+  ModuleExecutionContract* findContract_(ModuleId id) {
+    for (std::uint32_t i = 0; i < kMachineDispositionCount; ++i) {
+      if (kMachineDisposition[i].id == id) return &contracts_[i];
+    }
+    return nullptr;
+  }
+
+  // Real scheduling contracts (@Codex correction 3). Default: cycle-UNSAFE and carrying
+  // NO declared per-path delay (a fixed-fed module in a user-formed SCC falls back to a
+  // conservative z^-1, per graph_compiler's decide_feedback_delay_cycle). Only the actual
+  // SCC members — VCO-B (its own self-loop), env-follower and preamp (which ACCEPT a
+  // user-patched return SCC, with NO auto-wire) — get explicit cycle-safe contracts.
+  // maxBlockSize / maxResources stay 0 == UNPREPARED/UNSPECIFIED sentinel (no prepare
+  // boundary exists yet; @Codex e35b3eca). These limits are PENDING the GH#11 later
+  // prepare/resource integration; P3 stays NOT MET.
+  void buildDisposition_(double sampleRate) {
+    for (std::uint32_t i = 0; i < kMachineDispositionCount; ++i) {
+      ModuleExecutionContract& c = contracts_[i];
+      c.sampleRate = sampleRate;
+      c.maxBlockSize = 0;           // sentinel: unprepared/unspecified
+      c.intrinsicLatencySamples = 0;
+      c.hasDirectThroughPath = false;
+      c.maxResources = 0;           // sentinel: unprepared/unspecified
+      c.allowedInCyclicSCC = false; // default: a module is NOT cycle-safe until declared
+      c.pathDelayCount = 0;
+      modules_[i].id = kMachineDisposition[i].id;
+      modules_[i].contract = &contracts_[i];
+    }
+
+    // VCO-B self-loop: cv_in -> vco_out direct/min0, cycle-safe. This is the sole default
+    // SCC; the compiler breaks it with a one-sample z^-1 (canDirectThrough -> algebraic).
+    if (ModuleExecutionContract* c = findContract_(ModuleId::vco_b)) {
+      c->allowedInCyclicSCC = true;
+      ModulePathDelay& p = c->pathDelays[0];
+      p.inPort = lunar24::registry::JackId::vco_b_cv_in;
+      p.outPort = lunar24::registry::JackId::vco_b_vco_out;
+      p.minCausalDelaySamples = 0.0;
+      p.canDirectThrough = true;
+      p.directThroughExactZeroGain = false;
+      c->pathDelayCount = 1;
+      c->hasDirectThroughPath = true;
+    }
+
+    // env-follower: fixed-input sentinel -> env_out direct/min0, cycle-safe — it ACCEPTS a
+    // user-patched return SCC (env_out -> preamp.ext_source_in) but the definition does NOT
+    // auto-connect it (@Codex ruling a). env_follower.audio_in is a FIXED endpoint (defers
+    // to the FixedEndpoint stage, not a patchable JackId), so the shared
+    // kFixedEndpointJackSentinel names it; the compiler's own fixed-edge tag is the SAME
+    // value, so a user return cable forming cycle re-entry into env-follower can really
+    // match this path.
+    if (ModuleExecutionContract* c = findContract_(ModuleId::env_follower)) {
+      c->allowedInCyclicSCC = true;
+      ModulePathDelay& p = c->pathDelays[0];
+      p.inPort = kFixedEndpointJackSentinel;
+      p.outPort = lunar24::registry::JackId::env_follower_env_out;
+      p.minCausalDelaySamples = 0.0;
+      p.canDirectThrough = true;
+      p.directThroughExactZeroGain = false;
+      c->pathDelayCount = 1;
+      c->hasDirectThroughPath = true;
+    }
+
+    // preamp: cycle-admission only (ACCEPTS the user return SCC) with NO invented internal
+    // path and NO auto-wire. It has no patchable fixed-in->fixed-out path of its own to
+    // declare, so pathCount stays 0 (@Codex ruling a + 16b770b0).
+    if (ModuleExecutionContract* c = findContract_(ModuleId::preamp)) {
+      c->allowedInCyclicSCC = true;
+    }
+  }
+
+  // Fill the owned fixedEdges_[] from the 28-route data table (@Codex correction 1). Only
+  // inter-module routes whose endpoints are BOTH ACTIVE compiled modules become compiler
+  // edges; mixer->vcf_l and mixer->vcf_r fold to one, so the count is exactly
+  // kCanonicalFixedEdgeCount (11).
+  void fillFixedEdges_() {
+    std::uint32_t n = 0;
+    for (std::uint32_t i = 0; i < kFixedRouteCount; ++i) {
+      if (kFixedRoutes[i].category != FixedRouteCategory::kInterModule) continue;
+      if (kFixedRoutes[i].source == kFixedRouteNoModule ||
+          kFixedRoutes[i].sink == kFixedRouteNoModule) {
+        continue; // a host/DRY terminal is not a compiled edge (defensive; inter-module never sees one)
+      }
+      bool dup = false;
+      for (std::uint32_t j = 0; j < n; ++j) {
+        if (fixedEdges_[j].sourceModule == kFixedRoutes[i].source &&
+            fixedEdges_[j].sinkModule == kFixedRoutes[i].sink) {
+          dup = true;
+          break;
+        }
+      }
+      if (dup) continue;
+      fixedEdges_[n].sourceModule = kFixedRoutes[i].source;
+      fixedEdges_[n].sinkModule = kFixedRoutes[i].sink;
+      fixedEdges_[n].name = kFixedRoutes[i].edgeName;
+      ++n;
+    }
+  }
+
+  // Owned, stable-address storage (non-movable: see the class comment).
+  ModuleExecutionContract contracts_[kMachineDispositionCount];
+  GraphModule modules_[kMachineDispositionCount];
+  FixedEdge fixedEdges_[kCanonicalFixedEdgeCount];
+
+  // The owning executor. Declared AFTER the arrays it points into so the init-list is
+  // well-formed; its ctor only stores the addresses (compile happens in rebuild()).
+  SynthRuntime runtime_;
+};
+
+}  // namespace lunar24::core

@@ -304,7 +304,7 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
 
   // ---- 1. Inter-module graph --------------------------------------------
   // cat: 0 = pluggable (JackId cable), 1 = fixed (module.port, no JackId; sj/tj
-  // are the JackId{0} sentinel). fname is the cross-category fixed order key.
+  // are the kFixedEndpointJackSentinel tag). fname is the cross-category fixed order key.
   struct AutoEdge {
     std::uint32_t src, snk; JackId sj, tj; std::uint32_t cat; const char* fname;
   };
@@ -332,7 +332,8 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
     std::uint32_t si = detail::lower_bound_module(mods.data(), M, sm);
     std::uint32_t ti = detail::lower_bound_module(mods.data(), M, tm);
     if (si == ti) continue;
-    crossed.push_back(AutoEdge{si, ti, JackId{0}, JackId{0}, 1u, fixedEdges[i].name});
+    crossed.push_back(AutoEdge{si, ti, kFixedEndpointJackSentinel, kFixedEndpointJackSentinel,
+                               1u, fixedEdges[i].name});
   }
   // Deterministic adjacency per source node, across BOTH categories: category
   // first (pluggable=0 < fixed=1), then the within-category key. This makes the
@@ -549,9 +550,9 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
         const AutoEdge& e = crossed[i];
         if (!execIn[e.src] || !execIn[e.snk] || e.src == e.snk) continue;
         // Only the SPECIFIC selected pluggable feedback edge is dropped. A fixed
-        // edge (cat 1, JackId{0} sentinel) is NEVER selectable feedback and stays
-        // in the topo constraints; other parallel pluggable cables between the
-        // same module pair are also kept as dependencies.
+        // edge (cat 1, kFixedEndpointJackSentinel tag) is NEVER selectable feedback
+        // and stays in the topo constraints; other parallel pluggable cables between
+        // the same module pair are also kept as dependencies.
         if (e.cat == 0 && isSelectedFeedback(e.sj, e.tj)) continue;
         execAdj[e.src].push_back(e.snk);
         ++execIndeg[e.snk];

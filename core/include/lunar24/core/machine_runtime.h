@@ -172,6 +172,38 @@ struct ExecutionSlot {
   ExecutionKind kind;
 };
 
+// ---------------------------------------------------------------------------
+// Exact-feedback-pair value selection (task#65 correction 6).
+// ---------------------------------------------------------------------------
+// A consuming sink reads its incoming value from exactly ONE of two places, and the
+// discriminator is EXACT (source,sink) edge identity — never source alone:
+//   * a sink whose (src,sink) IS a selected feedback edge reads that edge's OWN
+//     D-sample delay line (the graph_compiler.h consume-rule — off by one vs a
+//     live-last-written read; design/07 §4);
+//   * any other fed sink reads the live source bank (the value a control producer
+//     published THIS frame).
+// The historical defect the primitive pins is SOURCE-ONLY matching (any feedback line
+// whose sourceJack == src, ignoring the sink): it makes a same-source NORMAL downstream
+// read a delay line it does not own, so its value arrives one sample late. The match and
+// the value lookup therefore BOTH live inside this single primitive — it receives the
+// query (src,sink) and a candidate line's (src,sink), decides exact vs not, and returns
+// {matched, value}. The runtime's feedback scan is the only other participant, so this is
+// the executor's ONE delayed-vs-live decision point with no second bank or test seam. It
+// stays pure (no runtime state), so it is directly assertable with distinct `delayed` !=
+// `live` and a D>1-shaped feedback line, and removing the sink comparison makes a
+// same-source/different-sink candidate return matched=true with the delayed value.
+struct FeedbackResolve {
+  bool matched;  // true only when the query (source,sink) exactly equals a line's pair.
+  double value;  // the delayed D-sample read when matched, else the live source value.
+};
+
+inline FeedbackResolve feedbackSinkValue(JackId querySrc, JackId querySink,
+                                         JackId candSrc, JackId candSink, double delayed,
+                                         double live) {
+  const bool exact = (querySrc == candSrc && querySink == candSink);
+  return exact ? FeedbackResolve{true, delayed} : FeedbackResolve{false, live};
+}
+
 class SynthRuntime {
  public:
   static constexpr int kNumChannels = VoiceMixer::kNumChannels;  // 10
@@ -282,6 +314,43 @@ class SynthRuntime {
   // runtime which patch jacks control which voice parameter. Unbound jacks are
   // ignored by the CV resolver.
   void setVoctBindings(JackId aVoct, JackId bVoct) { voctA_ = aVoct; voctB_ = bVoct; }
+  // Generic CV input bindings (vco_a.cv_in / vco_b.cv_in, -5..+5) — a SECOND independent
+  // CV/transfer path on each VCO, SEPARATE from V/OCT (vco_a.v_oct_in / vco_b.v_oct_in).
+  // The VCO-B self-edge (vco_b.vco_out -> cv_in) sinks into vco_b.cv_in, so the canonical
+  // definition binds it here; the step_ kVcoB slot resolves it through setCvInput(v, held
+  // mode) — never through the confirmed V/OCT setVoct path (@Codex 7C2: two independent
+  // bindings/transfers). JackId{0} is a REAL jack (vco_a.cv_in), so the *_Bound_ flag is
+  // the authoritative admission state, not a JackId{0} sentinel (drone ENV/CV-MOD pattern).
+  void setVcoCvBindings(JackId aCv, JackId bCv) {
+    cvInA_ = aCv; cvInB_ = bCv;
+    cvInBoundA_ = true; cvInBoundB_ = true;
+  }
+  // VCO output jacks the product publishes as a source. vco_b.vco_out is the VCO-B
+  // self-edge source, so the canonical definition binds it and the VCO-B slot publishes
+  // it through the ONE write (the self-edge consumer then reads that frame's value at its
+  // own D-sample line). Unbound = no publish (legacy synthetic fixture).
+  void setVcoOutBindings(JackId aOut, JackId bOut) {
+    vcoAOut_ = aOut; vcoBOut_ = bOut;
+    vcoAOutBound_ = true; vcoBOutBound_ = true;
+  }
+  // Runtime-held lin/exp mode for each VCO's GENERIC CV input (cv_in transfer is UNKNOWN;
+  // the scaling law is a PROVISIONAL modeling choice). The mode is a runtime decision the
+  // tests choose explicitly — never a hardcoded law in the executor. Independent per side.
+  void setVcoControlModes(VcoControlMode aMode, VcoControlMode bMode) {
+    cvModeA_ = aMode; cvModeB_ = bMode;
+  }
+  // CV AMT knob depth per VCO (the registry's vco_a_cv_amt / vco_b_cv_amt, "CV AMT",
+  // 0..1, default 1). This is the depth of the GENERIC CV (cv_in) contribution separate
+  // from the confirmed V/OCT law — the mechanism that can neutralize a mod contribution
+  // (e.g. the VCO-B self-edge) to zero WITHOUT removing the route/binding/or executor
+  // slot (the self-edge stays in the graph and still executes; only the contributed
+  // modulation is scaled to zero). Independent per side. Not one of the frozen
+  // six-control-source 35 params; does not change spec/generated semantics.
+  void setVcoCvAmounts(double aAmt, double bAmt) {
+    vcA_.setCvAmt(aAmt);
+    vcB_.setCvAmt(bAmt);
+    cvAmtA_ = aAmt; cvAmtB_ = bAmt;
+  }
   void setVcfCvBindings(JackId cvL, JackId cvR) { vcfCvL_ = cvL; vcfCvR_ = cvR; }
   // Which patch jack is the preamp's external audio input (the break sink of the
   // env_follower cycle) and which is the env_follower's env_out (the break source).
@@ -568,6 +637,19 @@ class SynthRuntime {
   // inspector is red).
   bool vcfIdentityConfigured() const { return identityConfigured_; }
   double vcfInputDrive(int ch) const { return vcf_.inputDrive(ch); }
+  // Real-filter CV readback (route.vcf_cv_l_to_cv_r normalling oracle). These return the
+  // ACTUAL control volts the PolivoksFilter ran this frame (vcf_.cvL()/cvR() — the DSP
+  // state, never a shadow mirror), so a test can pin exactly what the filter executed for
+  // the L source and the normalled/overridden R.
+  double vcfCvReadbackL() const { return vcf_.cvL(); }
+  double vcfCvReadbackR() const { return vcf_.cvR(); }
+  // The resolved input the preamp actually ran this frame — the exact value passed to
+  // preamp_.tick(in) at the ext_source_in break sink (delayed env when a return cable
+  // feeds it, host EXT terminal fallback when unfed). This is the real DSP feed, never a
+  // shadow mirror: under a return cable, the cycle break edge's own D-sample line is FRESH
+  // zeroed at rebuild (buf[k]=0, writePos=0), so the FIRST post-rebuild frame reads 0.0 —
+  // a "reads live" bug would hand the preamp the stale nonzero env instead.
+  double preampResolvedInput() const { return preampInResolved_; }
   double distortionDrive(int ch) const { return distortion_.channelDrive(ch); }
   double distortionRail(int ch) const { return distortion_.channelRail(ch); }
   // The near-unity staging gain the distortion sees its input scaled by: the
@@ -665,8 +747,15 @@ class SynthRuntime {
     rebuildStatus_ = RebuildStatus::ok;
     if (!rebuildChainExec_()) {
       // Unreachable given the slot + feedback capacity preflight above, but fail closed:
-      // never leave a half-built runtime line set behind a valid flag.
+      // never leave a half-built runtime line set behind a valid flag, and never leave a
+      // NEW graph_ alongside PARTIAL exec slots / legacy chain order / feedback lines. A
+      // failed chain rebuild must read as fully invalid (graph cleared, no slots, no
+      // legacy order, no feedback), so a subsequent rebuild() starts from a clean slate.
+      graph_ = CompiledGraph{};
       graphValid_ = false;
+      graphDirty_ = false;
+      execSlotCount_ = 0;
+      chainExecCount_ = 0;
       feedbackCount_ = 0;
       rebuildStatus_ = RebuildStatus::feedback_capacity_exceeded;
       return false;
@@ -682,9 +771,11 @@ class SynthRuntime {
   RuntimeOutput processFrame(double extSource, bool driveGraph = true) {
     extSource_ = extSource;
     for (int i = 0; i < kNumChannels; ++i) chIn_[i] = 0.0;
-    // Drive the per-module executor: one resolve->step->publish per slot, in the plan
-    // order with ExecutionKind deduped. driveGraph=false bypasses the CONTROL layer:
-    // slots still run, but no CV sink is resolved from the graph (criterion-① negative).
+    // Drive the per-module executor: exactly ONE resolve->step->publish per ModuleId, in
+    // the compiled plan (region topo) order, with NO ExecutionKind dedup (the contract is
+    // one ModuleId one slot; deduping by kind would drop a module). driveGraph=false
+    // bypasses the CONTROL layer: slots still run, but no CV sink is resolved from the
+    // graph (criterion-① negative).
     for (std::uint32_t i = 0; i < execSlotCount_; ++i) step_(execSlots_[i], driveGraph);
     return RuntimeOutput{wetL_, wetR_, dryA_, dryB_};
   }
@@ -873,9 +964,19 @@ class SynthRuntime {
     bool found = false;
     const JackId src = sourceOfSink_(sink, found);
     if (!found) return fallback;
-    const int fb = feedbackExactIndex_(src, sink);
-    if (fb >= 0) return feedback_[fb].buf[feedback_[fb].writePos];
-    return cvAt_(src);
+    // The ONE delayed-vs-live decision (@Codex correction 6): a single scan whose only
+    // exact-pair test is the (src,sink) match INSIDE feedbackSinkValue — never source-only.
+    // An exact line returns matched=true with its own D-sample read; the scan returns that
+    // value; nothing matches -> the live source value.
+    const double live = cvAt_(src);
+    for (std::uint32_t i = 0; i < feedbackCount_; ++i) {
+      const FeedbackLine& l = feedback_[i];
+      if (!l.active) continue;
+      const FeedbackResolve r = feedbackSinkValue(src, sink, l.sourceJack, l.sinkJack,
+                                                  l.buf[l.writePos], live);
+      if (r.matched) return r.value;
+    }
+    return live;
   }
   // Publish the value a source module JUST computed for its output `src`. ALWAYS writes
   // the live CV source bank (so a normal downstream reads the CURRENT value), AND advances
@@ -891,12 +992,6 @@ class SynthRuntime {
       l.buf[l.writePos] = v;
       l.writePos = (l.writePos + 1) % d;
     }
-  }
-  int feedbackExactIndex_(JackId src, JackId sink) const {
-    for (std::uint32_t i = 0; i < feedbackCount_; ++i)
-      if (feedback_[i].active && feedback_[i].sourceJack == src &&
-          feedback_[i].sinkJack == sink) return static_cast<int>(i);
-    return -1;
   }
   std::uint32_t clampDelay_(double d) const {
     std::uint32_t n = d < 1.0 ? 1u : static_cast<std::uint32_t>(d + 0.999);
@@ -1037,21 +1132,43 @@ class SynthRuntime {
   void step_(const ExecutionSlot& slot, bool driveGraph) {
     switch (slot.kind) {
       case ExecutionKind::kVcoA: {
+        // V/OCT (v_oct_in): confirmed 1 V/oct exponential pitch input.
         double v = 0.0;
         if (resolveControlSink_(voctA_, v, driveGraph)) vcA_.setVoct(v);
+        // Generic CV (cv_in, -5..+5): independent from V/OCT, mode from the runtime-held
+        // setVcoControlModes (never a hardcoded law). Ignored when unbound.
+        if (cvInBoundA_) {
+          double g = 0.0;
+          if (resolveControlSink_(cvInA_, g, driveGraph)) vcA_.setCvInput(g, cvModeA_);
+        }
         double a = 0.0;
         vcA_.tick(&a);
         dryA_ = a;
         chIn_[VoiceMixer::kChannelVcoA] = a;
+        if (vcoAOutBound_) publishSourceValue_(vcoAOut_, a);
         break;
       }
       case ExecutionKind::kVcoB: {
+        // V/OCT (v_oct_in): confirmed 1 V/oct exponential pitch input.
         double v = 0.0;
         if (resolveControlSink_(voctB_, v, driveGraph)) vcB_.setVoct(v);
+        // Generic CV (cv_in, -5..+5): the VCO-B self-edge (vco_b.vco_out -> cv_in) sinks
+        // into vco_b.cv_in. The exact-pair consumer here reads the self-edge's own D-sample
+        // line (off by one vs live-last-written — the graph_compiler consume-rule); the
+        // mode comes from the runtime-held setVcoControlModes. This is the fitted
+        // setCvInput path, NEVER the confirmed V/OCT setVoct path (@Codex 7C2: the generic
+        // CV is an independent binding/transfer, not a masquerade of the V/OCT law).
+        if (cvInBoundB_) {
+          double g = 0.0;
+          if (resolveControlSink_(cvInB_, g, driveGraph)) vcB_.setCvInput(g, cvModeB_);
+        }
         double b = 0.0;
         vcB_.tick(&b);
         dryB_ = b;
         chIn_[VoiceMixer::kChannelVcoB] = b;
+        // Publish the real vco_b.vco_out so the self-edge (and any normal downstream) read
+        // THIS frame's value through the single write (@Codex correction 4).
+        if (vcoBOutBound_) publishSourceValue_(vcoBOut_, b);
         break;
       }
       case ExecutionKind::kDroneBank: {
@@ -1134,6 +1251,7 @@ class SynthRuntime {
         // an UNFED sink falls back to the EXT.AUDIO terminal. No feedbackSinkIndex_
         // special-case (@Codex 7C2 req. 3 — preamp uses the same exact-edge resolver).
         const double in = resolveSinkValue_(preampExtIn_, extSource_);
+        preampInResolved_ = in;
         preampOut_ = preamp_.tick(in);
         chIn_[VoiceMixer::kChannelPreamp] = preampOut_;
         break;
@@ -1143,9 +1261,19 @@ class SynthRuntime {
         publishSourceValue_(envFolOut_, envOut_);  // cycle leg -> its own delay line.
         break;
       }
-      case ExecutionKind::kMixer:
+      case ExecutionKind::kMixer: {
+        // Canonical host-terminal injection (28-route `ext_audio_to_mixer`, per @Codex
+        // 190173bb / 07bfb061): EXT.AUDIO terminal -> mixer channel EXT.AUDIO (ch4). The
+        // legacy synthetic `kExtIn` slot was correctly REMOVED in the canonical machine,
+        // but its injection must be preserved in the mixer's resolve stage — otherwise a
+        // host ext drive is silently dropped and WET wrongly collapses to the no-drive
+        // result. This is the real execution of the host-terminal route, not new semantics.
+        // The preamp KEEPS its break-ring resolver (delayed env) and is NOT changed to read
+        // the host EXT — cable feeding ext_source_in overrides it, ch4 carries the terminal.
+        chIn_[VoiceMixer::kChannelExtAudio] = extSource_;
         mixer_.tick(chIn_, mixL_, mixR_);
         break;
+      }
       case ExecutionKind::kVcfPath: {
         // B′ merged VCF path (canonical): VCF -> calibration staging -> Distortion -> WET
         // in ONE slot-only dispatch. The distortion is an intra-vcf sub-stage, so it is
@@ -1175,10 +1303,25 @@ class SynthRuntime {
 
   // Resolve the VCF L/R control CV (needed by both the merged kVcfPath slot and the
   // legacy standalone kVcf slot).
+  //
+  // NORMALLING (route.vcf_cv_l_to_cv_r, item 2 @Codex eaaf08cc): the registry route says
+  // "CV L is normally connected to CV R... if there is no CV-signal in the CV R. Plugging
+  // into CV R overrides this." The GRAPH resolving each jack independently leaves R at 0
+  // when it has no cable — that is the unmigrated gap. Here the product executes the
+  // normalling: L fed AND R unplugged => R uses THIS FRAME's already-resolved L; an
+  // explicit R cable (fed) takes precedence. The value written into the DFT-SPSS
+  // PolivoksFilter is observed through the REAL DSP state accessors cvL()/cvR() (never a
+  // shadow mirror), so an oracle can pin exactly what the filter ran.
   void resolveVcfCv_(bool driveGraph) {
     double l = 0.0, r = 0.0;
-    if (resolveControlSink_(vcfCvL_, l, driveGraph)) vcf_.setCvL(l);
-    if (resolveControlSink_(vcfCvR_, r, driveGraph)) vcf_.setCvR(r);
+    const bool lFed = resolveControlSink_(vcfCvL_, l, driveGraph);
+    const bool rFed = resolveControlSink_(vcfCvR_, r, driveGraph);
+    if (lFed) vcf_.setCvL(l);
+    if (rFed) {
+      vcf_.setCvR(r);           // explicit R cable takes precedence over the normalling.
+    } else if (lFed) {
+      vcf_.setCvR(l);           // R unplugged: R follows the already-resolved L this frame.
+    }
   }
 
   double cvAt_(JackId jack) const {
@@ -1381,6 +1524,17 @@ class SynthRuntime {
   // Voice-input bindings (registry semantics). Unbound = JackId{0} sentinel.
   JackId voctA_{0};
   JackId voctB_{0};
+  // Generic CV input + VCO output bindings. Id 0 is a REAL jack (vco_a.cv_in), so a
+  // JackId{0} sentinel is NOT a valid unbound test — the *_Bound_ flags are the
+  // authoritative admission state (same rule as the drone ENV/CV-MOD cohort above).
+  JackId cvInA_{0};           bool cvInBoundA_ = false;
+  JackId cvInB_{0};           bool cvInBoundB_ = false;
+  JackId vcoAOut_{0};         bool vcoAOutBound_ = false;
+  JackId vcoBOut_{0};         bool vcoBOutBound_ = false;
+  VcoControlMode cvModeA_ = VcoControlMode::kExponential;
+  VcoControlMode cvModeB_ = VcoControlMode::kExponential;
+  double cvAmtA_ = 1.0;   // CV AMT depth per VCO (setVcoCvAmounts). Default 1 (no attenuation).
+  double cvAmtB_ = 1.0;
   JackId vcfCvL_{0};
   JackId vcfCvR_{0};
   JackId preampExtIn_{0};
@@ -1399,9 +1553,10 @@ class SynthRuntime {
   FixedRoleBinding roleBindings_[kMaxFixedModules] = {};
   std::uint32_t roleBindingCount_ = 0;
 
-  // Derived (rebuild_, off audio thread): the per-module execution slots (dedup by
-  // kind, plan order) + the legacy FixedChainRole inspector array + the break-edge
-  // delay lines. Audio path reads these only.
+  // Derived (rebuild_, off audio thread): the per-module execution slots — exactly one
+  // slot per compiled ModuleId, in the compiled plan (region topo) order, NO ExecutionKind
+  // dedup — plus the legacy FixedChainRole inspector array and the break-edge delay
+  // lines. Audio path reads these only.
   ExecutionSlot execSlots_[kMaxFixedModules] = {};
   std::uint32_t execSlotCount_ = 0;
   FixedChainRole chainExecOrder_[kMaxFixedModules] = {};
@@ -1422,6 +1577,7 @@ class SynthRuntime {
   double chIn_[VoiceMixer::kNumChannels] = {};
   double wetL_ = 0.0, wetR_ = 0.0;
   double dryA_ = 0.0, dryB_ = 0.0;
+  double preampInResolved_ = 0.0;
   double mixL_ = 0.0, mixR_ = 0.0;
   double vcfL_ = 0.0, vcfR_ = 0.0;
   double preampOut_ = 0.0;

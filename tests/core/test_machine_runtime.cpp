@@ -1,11 +1,26 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// #38 (GH#4 A03) acceptance — the will-red criteria for the MACHINE RUNTIME.
+// ENGINE-LEVEL CONTROLLED FIXTURE (task#65 7C2 GH#11, @Codex A′ msg 96361090).
 //
-// The hard rule (@Claude, msg 43da88a5): every criterion is asserted against the
-// PRODUCT runtime (SynthRuntime) — the executor the host's realtime callback
-// drives — NEVER a test-internal second executor. The runtime under test here is
+// This is NOT the canonical Lunar24 machine/product oracle. It is a controlled-fixture
+// regression suite for the low-level SynthRuntime / GraphCompiler / executor mechanics:
+// GH#13 feedback capacity (18 self-loops), error/refusal statuses, controlled-topology
+// patching, boundary and allocator guards — scenarios that need synthetic descriptor
+// tables or topologies the canonical 21-module product machine does not (and must not)
+// pretend to support.
+//
+// The CANONICAL product acceptance lives in tests/core/test_machine_definition.cpp,
+// which drives the ONE product machine (core::MachineRuntimeDefinition) and carries the
+// product conclusions: the full chain / four outputs / plan order + repatch effect,
+// block-partition + reproducibility, render-path zero allocation, the fixed+pluggable
+// preamp/env cycle exact break + partition invariance, EventTimebase -> drone_3/6 sample
+// timing, classic gate/ENV OUT/CV MOD, and GH#6 VCF identity through the canonical
+// vcf_path. Nothing in THIS file is counted toward product exit.
+//
+// Hard rule (@Claude, msg 43da88a5): each criterion here is asserted against the
+// PRODUCT runtime surface (SynthRuntime) — the executor the host's realtime callback
+// drives — NEVER a test-internal second executor. The runtime under test is
 // core/include/lunar24/core/machine_runtime.h.
 //
 // Five criteria (each with its will-red negative):
@@ -28,11 +43,12 @@
 //      non-vacuous by a deliberate allocation inside the window), and the plan-stable
 //      check (rendering never recompiles/mutates the plan). Output stays finite.
 //
-// Synthetic descriptor tables drive the runtime exactly as the registry would in
-// production; the runtime itself is the unmodified product surface. Where a
-// comparison needs "the same VCO phase", each side uses a FRESH runtime so the two
-// start from the identical deterministic initial state — never a reused runtime,
-// whose phase has already advanced.
+// Synthetic descriptor tables drive the engine exactly as the registry would in
+// production; the runtime under test is the same SynthRuntime surface, but the
+// TOPOLOGY and the conclusions here are engine-level (controlled fixture), not the
+// canonical 21-module product machine. Where a comparison needs "the same VCO phase",
+// each side uses a FRESH runtime so the two start from the identical deterministic
+// initial state — never a reused runtime, whose phase has already advanced.
 
 #include <cmath>
 #include <cstdint>
@@ -1333,7 +1349,7 @@ void gh6_bit_identical() {
 }  // namespace
 
 int main() {
-  std::printf("#38 machine runtime acceptance — product-path executor.\n");
+  std::printf("ENGINE-LEVEL controlled fixture (SynthRuntime/GraphCompiler/executor mechanics).\n");
 
   // ---- ① product path consumes compile_graph() --------------------------------
   std::printf("(1) product path consumes compile_graph()\n");
