@@ -117,6 +117,18 @@ struct RuntimeOutput {
   double dryB = 0.0;  // VCO B, tapped BEFORE the chain.
 };
 
+// The two real external-input terminals of one rendered frame. They are DISTINCT
+// terminals (the GH#4 conflation fix): `extAudio` is the EXT.AUDIO host input and
+// drives ONLY mixer ch4; `preamp` is the PREAMP host input and is ONLY the preamp's
+// `ext_source_in` fallback when that jack is unpatched. There is no shared variable
+// and no implicit copy between them — a caller must set both explicitly (setting the
+// same value on both is an explicit, documented compatibility baseline, never a
+// default). Fixed-size value type: no heap, trivially copyable.
+struct RuntimeInputs {
+  double extAudio = 0.0;  // EXT.AUDIO terminal -> mixer ch4 (virtual volts).
+  double preamp = 0.0;    // PREAMP terminal -> preamp.ext_source_in fallback (volts).
+};
+
 // The role a fixed-chain module plays in the render. A module bound to kNone (or
 // left unbound) does not participate in the chain — it is a control-only module the
 // plan may still carry for the patch graph. Host binds via bindFixedRole().
@@ -891,13 +903,15 @@ class SynthRuntime {
     return true;
   }
 
-  // The product-path render. `extSource` is the EXT.AUDIO voltage (the one
-  // patchable audio input); it drives mixer ch4 and (unless a cable feeds the
-  // preamp's ext_source_in) the preamp. `driveGraph` selects the CONTROL layer:
-  // true = run the compiled graph (product path), false = IGNORE it (the NEGATIVE
-  // control for criterion ①). Rendering is independent of block partition.
-  RuntimeOutput processFrame(double extSource, bool driveGraph = true) {
-    extSource_ = extSource;
+  // The product-path render. `inputs.extAudio` is the EXT.AUDIO voltage (drives mixer
+  // ch4 ONLY); `inputs.preamp` is the PREAMP terminal (the preamp's ext_source_in
+  // fallback ONLY when that jack is unpatched). Two DISTINCT terminals — no shared
+  // variable, no implicit copy (a caller must set both explicitly). `driveGraph`
+  // selects the CONTROL layer: true = run the compiled graph (product path), false =
+  // IGNORE it (the NEGATIVE control for criterion ①). Rendering is independent of
+  // block partition.
+  RuntimeOutput processFrame(RuntimeInputs inputs, bool driveGraph = true) {
+    lastIn_ = inputs;
     for (int i = 0; i < kNumChannels; ++i) chIn_[i] = 0.0;
     // Drive the per-module executor: exactly ONE resolve->step->publish per ModuleId, in
     // the compiled plan (region topo) order, with NO ExecutionKind dedup (the contract is
@@ -916,7 +930,7 @@ class SynthRuntime {
   // scheduled for, so the same event set acts at the SAME absolute sample under any
   // 64/128/256 (or mixed) block partition. Events are handed out sorted by absolute
   // sample; EventTimebase owns the ordering, this loop only matches offset -> frame.
-  void processBlock(const double* extSource, std::size_t n, RuntimeOutput* out,
+  void processBlock(const RuntimeInputs* inputs, std::size_t n, RuntimeOutput* out,
                     bool driveGraph = true) {
     const std::uint32_t nEvents =
         eventTimebase_.processBlock(static_cast<std::uint32_t>(n), blockEvents_,
@@ -927,7 +941,7 @@ class SynthRuntime {
         applyControlEvent_(blockEvents_[ei].event);
         ++ei;
       }
-      out[i] = processFrame(extSource[i], driveGraph);
+      out[i] = processFrame(inputs[i], driveGraph);
     }
   }
 
@@ -1590,14 +1604,14 @@ class SynthRuntime {
         }
       }
       case ExecutionKind::kExtIn:  // legacy synthetic only; canonical EXT is the host terminal.
-        chIn_[VoiceMixer::kChannelExtAudio] = extSource_;
+        chIn_[VoiceMixer::kChannelExtAudio] = lastIn_.extAudio;
         break;
       case ExecutionKind::kPreamp: {
         // The ext_source_in break sink goes through the SINGLE sink resolver: a cycle
         // reads the delayed env_follower value, a normal edge reads the live source, and
         // an UNFED sink falls back to the EXT.AUDIO terminal. No feedbackSinkIndex_
         // special-case (@Codex 7C2 req. 3 — preamp uses the same exact-edge resolver).
-        const double in = resolveSinkValue_(preampExtIn_, extSource_);
+        const double in = resolveSinkValue_(preampExtIn_, lastIn_.preamp);
         preampInResolved_ = in;
         preampOut_ = preamp_.tick(in);
         chIn_[VoiceMixer::kChannelPreamp] = preampOut_;
@@ -1617,7 +1631,7 @@ class SynthRuntime {
         // result. This is the real execution of the host-terminal route, not new semantics.
         // The preamp KEEPS its break-ring resolver (delayed env) and is NOT changed to read
         // the host EXT — cable feeding ext_source_in overrides it, ch4 carries the terminal.
-        chIn_[VoiceMixer::kChannelExtAudio] = extSource_;
+        chIn_[VoiceMixer::kChannelExtAudio] = lastIn_.extAudio;
         mixer_.tick(chIn_, mixL_, mixR_);
         break;
       }
@@ -2000,7 +2014,7 @@ class SynthRuntime {
   // unsupported_module (explicitly bound to kUnsupported). setStrictBindings() toggles it.
   bool strictBindings_ = false;
   double envOut_ = 0.0;
-  double extSource_ = 0.0;
+  RuntimeInputs lastIn_;
   double sh3Cv_ = 0.0;  // NEW drone 3 Sample & Hold CV out (not in the audio channel).
   double sh6Cv_ = 0.0;  // NEW drone 6 Sample & Hold CV out (not in the audio channel).
 
