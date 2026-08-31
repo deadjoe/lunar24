@@ -134,7 +134,7 @@ preset 身份维持**槽索引派生**（A=0…D=3，顺序有据 L1040-1045、�
 2. **无反相门**：依据＝`OUTS VOLTAGE SPECIFICATION`（L151-161）逐条列死各输出电压范围，
    **所有门类输出一律单极正**（EG 0…8V／ENV FOLLOWER GATE 0…+8V／5 STEP SEQ GATE 0…+10V）；
    该表**确实会标双极**（JOYSTICK −10…+10、ENV VOICES −10…+10、PULSER −10…+10、S&H −5…+5）；
-   （⚠️ PULSER 那一项是 **raw 表 token**，其与 `sequencer.clock_out` 的命名/电气对应**尚未核清**——见 §2m 证据口径，**不是**已确认实现范围。），
+   （✅ **2026-08-31 已闭合**：`PULSERL` 行后置 `L` 为 **manual 笔误**——即 PULSER，其周期输出对应 registry `sequencer.clock_out`，**双极 −10…+10V 已确认**；原先"命名/电气对应尚未核清"的 raw-evidence conflict 已解，`clock_out` 计入已确认实现范围。），
    所以"门类全是 0…+V"是有意义的正面事实而非遗漏。
 **诚实边界**：目录/规格表很强但非绝对 ⇒ 记为**"有正面证据支持"，不是"已穷尽证明"**。
 
@@ -1005,7 +1005,7 @@ machine_runtime **70/70**（66 旧 + 4 新），ctest **45/45** normal + ASan（
 
 **两套 sequencer 分离坐实**：物理 5-step（`sequencer`，ModuleId 11，STAGES 3/4/5）与 keyboard 16-step（P4 演奏系统）是**独立的**，禁止写成 "5→16 extension"；design/06 P4 已明写 P4 只经既有 CV/gate/clock 与 P3 控制源相接，不拥有/扩展物理 5-step。相应错误主导注释已在 `device_state.h` 与 `device_capacities.h` 更正（仅注释，不动 schema/wire/ID/布局）。
 
-**证据口径（只写证据允许的验收，未发明硬件常数）**：LFO 公开 CV 单极 0..+10V（manual OUTS SPEC，confirmed，保留单极性）／Envelope ENV 0..8V（confirmed），VCA-CV 极性/transfer provisional，ATT/DEC/RLS 曲线与真实秒数、HOLD/SELF-GEN transfer unverified／Joystick 两路 −10..+10V（confirmed），机械 taper/center/offset unverified／物理 5-step：step-CV 0..+5V（`cv_out`，confirmed）、gate 0..+10V（`gate_out`，confirmed）；PULSER **只控制内部 clock rate**，其 period 输出呈现在 `clock_out`，manual 输出表原始 token `PULSERL: −10..+10V` 与 registry `sequencer.clock_out`（descriptor 0..5、Polarity::unknown、FieldEvidence 全 unverified）的命名/电气对应**尚未核清**，属 raw evidence conflict，**不作已确认实现常数**；`clock_out`/`ext_clock_in` 的 range/polarity/threshold 均 unverified；脉冲宽度、通电 playhead unverified/provisional；不得凭空发明 reset。`EnvelopeFollower` 是 preamp 相关的 **L2 控制与路由**检测器/控制源（实现归属 P3 第 4 项），**不是** Envelope A/B、不作 GH #11 控制源之一。
+**证据口径（只写证据允许的验收，未发明硬件常数）**：LFO 公开 CV 单极 0..+10V（manual OUTS SPEC，confirmed，保留单极性）／Envelope ENV 0..8V（confirmed），VCA-CV 极性/transfer provisional，ATT/DEC/RLS 曲线与真实秒数、HOLD/SELF-GEN transfer unverified／Joystick 两路 −10..+10V（confirmed），机械 taper/center/offset unverified／物理 5-step：step-CV 0..+5V（`cv_out`，confirmed）、gate 0..+10V（`gate_out`，confirmed）。**（2026-08-31 GH#11 收口）**：① `PULSERL` 行后置 `L` = **manual 笔误**（即 PULSER），其周期输出 `sequencer.clock_out` **双极 −10…+10V 已确认**（polarity bipolar / nominal −10..+10，FieldEvidence 定性项 confirmed），原先"命名/电气对应尚未核清"的 raw evidence conflict 由此闭合并计入实现范围；② **PULSER norm→Hz 端点/taper = Provisional**：`hz=0.05·400^n`（`kFiveStepPulserMinRateHz=0.05`、`kFiveStepPulserLogBase=400`），norm∈[0,1]→0.05..20 Hz，norm=0 **不**宣告停止（0.05 Hz≈20s/步），域外/非有限→fail-closed 0.0（非法值 `invalid_value`）；③ **脉冲宽度 = Provisional 单 sample**（每上升沿 `clock_out` 恰一个 +10V，其余 −10V）；④ ⚠️ **`ext_clock_in` 电气/阈值本次收口有意保持不变**（未反推、未改 descriptor 码，仍 unverified）；通电 playhead unverified/provisional；不得凭空发明 reset。`EnvelopeFollower` 是 preamp 相关的 **L2 控制与路由**检测器/控制源（实现归属 P3 第 4 项），**不是** Envelope A/B、不作 GH #11 控制源之一。
 
 ## 3. 未解的证据冲突（provisional，不阻塞实施）
 

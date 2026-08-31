@@ -326,8 +326,9 @@ class MachineRuntimeDefinition {
     // the rest of the product reads) and always-executes them. Env A/B resolve their
     // real gate_in and publish env_out + vca_cv_out; LFO A/B publish cv_out; joystick
     // publishes x_out/y_out; sequencer consumes ext_clock_in (sink latched) and
-    // publishes cv_out + gate_out. sequencer.clock_out stays UNPUBLISHED (core discrete
-    // rising only — audit evidence-blocked/unpublished; never a double-bank shadow).
+    // publishes cv_out + gate_out + clock_out (the CLOCK OUT -10/+10 one-sample virtual-volts
+    // pulse (@Codex 7C3), rail confirmed bipolar, width provisional, derived from the SAME
+    // pulserRising as the discrete clockOutRising() — never a second phase/latch).
     runtime_.setEnvelopeBindings(lunar24::registry::JackId::envelope_a_gate_in,
                                  lunar24::registry::JackId::envelope_a_env_out,
                                  lunar24::registry::JackId::envelope_a_vca_cv_out,
@@ -340,7 +341,8 @@ class MachineRuntimeDefinition {
                                  lunar24::registry::JackId::joystick_y_out);
     runtime_.setSequencerBindings(lunar24::registry::JackId::sequencer_ext_clock_in,
                                   lunar24::registry::JackId::sequencer_cv_out,
-                                  lunar24::registry::JackId::sequencer_gate_out);
+                                  lunar24::registry::JackId::sequencer_gate_out,
+                                  lunar24::registry::JackId::sequencer_clock_out);
     // Always-execute the six sources so an unwired LFO/EG-SELF-GEN/PULSER still runs once
     // per sample (compile_graph force-includes them -> isolated acyclic singleton regions).
     // ModuleId{0} is vco_a (a REAL module), so this list is NOT null-terminated — the
@@ -489,8 +491,11 @@ class MachineRuntimeDefinition {
     // GH#11 sequencer: ext_clock_in -> cv_out and ext_clock_in -> gate_out are REAL
     // same-sample direct/min0 (the sink_latch edge -> one-step advance -> publish all in
     // one sample), so a user-patched cycle through either output is legitimate and
-    // cycle-safe. clock_out is NOT declared here — it is unpublished (core discrete rising
-    // only), deliberately absent from the contract.
+    // cycle-safe. clock_out is published each sample too (@Codex 7C3) — but into the SOURCE
+    // bank (the -10/+10 one-sample virtual-volts pulse), NOT as a path-delay: it is driven by
+    // the free-running internal PULSER, independent of ext_clock_in, so at the intra-module
+    // causality level it is not a function of the input and carries no direct-through edge to
+    // declare (its volts projection never back-derives ext_clock_in's rail/threshold).
     if (ModuleExecutionContract* c = findContract_(ModuleId::sequencer)) {
       c->allowedInCyclicSCC = true;
       ModulePathDelay& p0 = c->pathDelays[0];

@@ -9354,22 +9354,22 @@
           "owner": "sequencer",
           "direction": "output",
           "signalType": "clock",
-          "polarity": "unknown",
-          "min": 0.0,
-          "max": 5.0,
+          "polarity": "bipolar",
+          "min": -10.0,
+          "max": 10.0,
           "coupling": "unknown",
           "status": "confirmed",
           "descriptorEvidence": {
-            "line": 501
+            "line": 159
           },
           "fieldEvidence": {
-            "nominalRange": "unverified",
+            "nominalRange": "confirmed",
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
             "transfer": "unverified",
             "signalType": "confirmed",
-            "polarity": "unverified",
+            "polarity": "confirmed",
             "coupling": "unverified"
           }
         },

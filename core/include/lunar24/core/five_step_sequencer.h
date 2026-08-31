@@ -20,19 +20,20 @@
 // at CLOCK OUT.
 //
 // PROVISIONAL modelling: the internal PULSER normalized->Hz mapping (panel pot 0..1
-// --> Hz, and the registry's nominal 0..5 placeholder) is left to the runtime
-// consumer; this core accepts the internal rate IN HERTZ directly. The CLOCK OUT
-// rail is a discrete PULSER rising event exposed as a bool — it is NOT a volts
-// output and deliberately has no rail constant (the registry marks the two clock
-// jacks' polarity as unknown and its nominal 0..5 volts is unverified, a known
-// unpublished conflict; we never back-derive an input threshold or output rail
-// from it). The EXTERNAL clock input enters as an already-interpreted __canonical
-// __rising__ edge (produced by sink_gate_interpret() against the real
-// sequencer.ext_clock_in JackDescriptor: ss.edge == GateEdge::rising). We consume
-// that edge verbatim — we do NOT re-derive an edge from a raw gate level with our own
+// --> Hz) is a centrally-named SOFTWARE policy (pulserNormToRateHz() above): the core
+// still accepts the internal rate IN HERTZ directly (the DSP-level setter), and the
+// runtime consumer maps the pan-file norm through pulserNormToRateHz(). The CLOCK OUT
+// rail is a CONFIRMED bipolar -10..+10V (kFiveStepClockIdleVolt/kFiveStepClockPeakVolt);
+// the discrete rising bool (clockOutRising()) remains the single edge truth and the
+// volts projection derives from the SAME pulserRising -- never a second phase/latch. The
+// pulse WIDTH is PROVISIONAL one-sample. The EXTERNAL clock input enters as an
+// already-interpreted __canonical __rising__ edge (produced by sink_gate_interpret()
+// against the real sequencer.ext_clock_in JackDescriptor: ss.edge == GateEdge::rising).
+// We consume that edge verbatim — we do NOT re-derive an edge from a raw gate level with our own
 // latch (a second edge truth-source that would fabricate a phantom advance on the
 // first-high sample, which the interpreter reports as edge=none priming). We hardcode
-// no volts / threshold / hysteresis. Power-on playhead / phase / gate / clock state below is
+// no input volts / threshold / hysteresis (the CLOCK OUT output rail never back-derives
+// the input). Power-on playhead / phase / gate / clock state below is
 // a single centrally-labelled deterministic PROVISIONAL lifecycle policy, not a
 // claimed known hardware power-on behaviour, and it is never persisted.
 
@@ -49,6 +50,25 @@ namespace core {
 // the only confirmed electrical facts the core depends on.
 inline constexpr double kFiveStepCvPeakVolt = 5.0;    // 0..+5V CONFIRMED
 inline constexpr double kFiveStepGatePeakVolt = 10.0; // 0..+10V CONFIRMED
+// CLOCK OUT rail (@Codex final ruling 7C3): the sequencer.clock_out OUTPUT is a
+// CONFIRMED bipolar -10..+10V rail (manual out-spec table L159 `PULSERL: -10V…+10V`,
+// L499 prose "this periodic signal is available at the CLOCK OUT jack", and ELTA's
+// official SPECIFICATION "Pulser out -10V…+10V" at eltamusic.com/solar-42f). The PULSE
+// WIDTH is PROVISIONAL (one sample): the manual gives no duty/width, so we model the
+// PULSER rising as a single-sample +10V peak idling at -10V. This rail is used ONLY as
+// an output projection; it NEVER back-derives the sequencer.ext_clock_in input rail,
+// threshold, or coupling (those stay unverified and are interpreted by the canonical
+// sink interpreter only).
+inline constexpr double kFiveStepClockIdleVolt = -10.0;  // CLOCK OUT idle (rail min, CONFIRMED)
+inline constexpr double kFiveStepClockPeakVolt = +10.0;  // CLOCK OUT on rising sample (rail max, CONFIRMED)
+// PROVISIONAL PULSER norm->Hz software model (no hardware endpoint/taper evidence):
+//   hz = kFiveStepPulserMinRateHz * pow(kFiveStepPulserLogBase, norm)
+// norm [0,1] -> [0.05,20] Hz, centre 0.5 -> 1 Hz (usable software range 20 s/step ..
+// 20 step/s, centre 1 Hz — a USED range, not a Solar 42N measurement). norm=0 does NOT
+// declare a stop. Out-of-domain / non-finite -> fail-closed 0 (defensive stop). This is
+// a documented SOFTWARE model, never a claimed real-machine curve.
+inline constexpr double kFiveStepPulserMinRateHz = 0.05;
+inline constexpr double kFiveStepPulserLogBase = 400.0;
 
 // Structural limits (manual L497: stages 3/4/5; module is a 5-step sequencer).
 inline constexpr int kFiveStepMinStages = 3;
@@ -148,6 +168,18 @@ class FiveStepSequencer {
     return stepGate_[i];
   }
 
+  // PROVISIONAL PULSER norm->Hz software model (@Codex final ruling 7C3): the panel PULSER
+  // norm [0,1] maps logarithmically to the internal clock rate. This is the single
+  // centrally-named place the mapping lives (constant + function together), so the runtime
+  // dispatch and any oracle read the SAME policy. Valid norm -> [0.05,20] Hz (centre 0.5 ->
+  // 1 Hz); out-of-domain / non-finite -> 0.0 (a defensive stop, fail-closed). This is a
+  // documented SOFTWARE policy, never a claimed Solar 42N hardware endpoint/curve; norm=0
+  // does NOT declare a stop (it means the slowest software rate).
+  static double pulserNormToRateHz(double norm) {
+    if (!(std::isfinite(norm) && norm >= 0.0 && norm <= 1.0)) return 0.0;
+    return kFiveStepPulserMinRateHz * std::pow(kFiveStepPulserLogBase, norm);
+  }
+
   // ----- per-sample audio-domain step -----
   // externalClockRising is the ALREADY-INTERPRETED EXT. CLOCK canonical rising edge
   // (from sink_gate_interpret() against the real sequencer.ext_clock_in descriptor:
@@ -189,12 +221,17 @@ class FiveStepSequencer {
 
     cvOut_ = stepCv_[step_];      // current step CV (holds through gate-disabled step)
     clockOutRising_ = pulserRising;
+    // CLOCK OUT projection: derived from the SAME pulserRising as clockOutRising_ (single
+    // edge source — no second phase/latch). -10V idle; +10V on the rising sample; the next
+    // sample falls back to -10V (one-sample width, PROVISIONAL; rail confirmed -10..+10V).
+    clockOutVolts_ = pulserRising ? kFiveStepClockPeakVolt : kFiveStepClockIdleVolt;
   }
 
   // ----- outputs -----
   double cvOut() const { return cvOut_; }                 // 0..+5V, current step
   double gateOut() const { return gateSample_; }          // 0..+10V one-sample pulse
   bool clockOutRising() const { return clockOutRising_; } // discrete PULSER event
+  double clockOutVolts() const { return clockOutVolts_; } // -10 idle / +10 on rising (one-sample, PROVISIONAL)
 
  private:
   static bool stepFinite_(double hz, double sr) {
@@ -224,6 +261,7 @@ class FiveStepSequencer {
   double gateSample_ = 0.0;   // one-sample GATE pulse value (0 off-advance)
   double cvOut_ = 0.0;        // current step CV output
   bool clockOutRising_ = false;
+  double clockOutVolts_ = kFiveStepClockIdleVolt;  // -10 idle / +10 on rising (PROVISIONAL width)
 };
 
 }  // namespace core

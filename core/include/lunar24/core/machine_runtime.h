@@ -166,11 +166,11 @@ enum class ExecutionKind : std::uint8_t {
   // control sources. A/B dispatch is by slot.id inside step_ (never a FixedChainRole),
   // and they are NEVER a second source loop outside processFrame(). Each is admitted as
   // an explicit always-execute source in the compile plan even with no cable (per-sample
-  // LFO / EG-SELF-GEN / PULSER phase continuity); clock_out stays unpublished.
+  // LFO / EG-SELF-GEN / PULSER phase continuity).
   kEnvelope,   // envelope_a/b: A/R/D/S + HOLD/SELF-GEN, gate_in resolve -> env/vca cv publish.
   kLfo,        // lfo_a/b: no-input source, tick once/sample, publish cv_out (0..+10V).
   kJoystick,   // joystick: stateless X/Y+offset, read + publish x/y (±10V).
-  kSequencer,  // five-step seq: ext_clock_in -> rising to core, publish cv/gate (clock_out NOT).
+  kSequencer,  // five-step seq: ext_clock_in -> rising to core, publish cv/gate/clock_out.
   // Legacy-compat kinds (synthetic fixture only; never emitted by the canonical table).
   kExtIn,
   kVcf,
@@ -219,14 +219,14 @@ inline FeedbackResolve feedbackSinkValue(JackId querySrc, JackId querySink,
 }
 
 // Outcome of one control-value transfer into the six control-source parameters
-// (@Codex BLOCKED #1). Discriminates the three cases that `setControlParamValue`'s old
-// bool collapsed — an applied value, a recognised-but-blocked `sequencer.pulser`, and a
-// malformed value / unknown id. The runtime records the most recent transfer's id+status
-// so the product surface (and a test oracle) can read back the real applied state without
-// a separate shadow param bank.
+// (@Codex BLOCKED #1). Discriminates the cases that `setControlParamValue`'s old
+// bool collapsed — an applied value, a recognised-but-blocked (currently no param uses
+// `transfer_unavailable` after the 7C3 pulser ruling), and a malformed value / unknown id.
+// The runtime records the most recent transfer's id+status so the product surface (and a
+// test oracle) can read back the real applied state without a separate shadow param bank.
 enum class ParameterApplyStatus : std::uint8_t {
   applied,               // unit-domain-valid value admitted and the sound-core setter accepted it.
-  transfer_unavailable,  // recognised but deliberately UNMAPPED (sequencer.pulser): no transfer.
+  transfer_unavailable,  // recognised but deliberately UNMAPPED (no current param uses this after 7C3).
   invalid_value,         // malformed for its unit domain (out-of-range / non-exact / non-finite): kept old.
   unsupported_parameter, // not a known control-source param: no transfer.
 };
@@ -308,8 +308,9 @@ class SynthRuntime {
   const Lfo& lfoB() const { return lfoB_; }
   const JoystickCv& joystick() const { return joystick_; }
   const FiveStepSequencer& sequencer() const { return sequencer_; }
-  // sequencer.pulser is a BLOCKED parameter: the only sanctioned DSP-domain rate setter
-  // (fail-closed; NOT a ParameterId transfer). Report the real applied internal rate Hz.
+  // sequencer.pulser is a DOMAIN-VALIDATED provisional transfer (@Codex 7C3); the direct
+  // DSP-domain rate setter below remains an independent fail-closed surface (not a
+  // ParameterId transfer). Report the real applied internal rate Hz.
   bool setSequencerInternalRateHz(double hz) { return sequencer_.setInternalRateHz(hz); }
   double sequencerInternalRateHz() const { return sequencer_.internalRateHz(); }
 
@@ -427,8 +428,8 @@ class SynthRuntime {
   }
   void setLfoBindings(JackId aOut, JackId bOut) { lfoAOut_ = aOut; lfoBOut_ = bOut; }
   void setJoystickBindings(JackId xOut, JackId yOut) { joyXOut_ = xOut; joyYOut_ = yOut; }
-  void setSequencerBindings(JackId extClockIn, JackId cvOut, JackId gateOut) {
-    seqExtClockIn_ = extClockIn; seqCvOut_ = cvOut; seqGateOut_ = gateOut;
+  void setSequencerBindings(JackId extClockIn, JackId cvOut, JackId gateOut, JackId clockOut) {
+    seqExtClockIn_ = extClockIn; seqCvOut_ = cvOut; seqGateOut_ = gateOut; seqClockOut_ = clockOut;
   }
   // The plan must ALWAYS execute these sources even when they carry no cable (per-sample
   // LFO / EG-SELF-GEN / PULSER phase continuity). Admission happens INSIDE compile_graph
@@ -1058,23 +1059,24 @@ class SynthRuntime {
     }
   }
 
-  // ---- 34 control-source parameter dispatch (GH#11 partial) ----
-  // Wires the 34 evidence-mappable params to the six real instances via the sound-core
+  // ---- 35 control-source parameter dispatch (GH#11 partial + 7C3) ----
+  // Wires the 35 evidence-mappable params to the six real instances via the sound-core
   // unit-agreeing setters, returning a ParameterApplyStatus that discriminates applied /
-  // blocked (sequencer.pulser) / invalid / unsupported. A malformed value is rejected HERE
-  // (keep old) BEFORE it reaches a setter that might clamp/coerce — e.g. LFO setWave clamps
-  // a finite value to [0,1] and a `v != 0.0` transfer would turn 0.5 into gate-high — so a
-  // value outside the registry unit-domain is reported `invalid_value`, never a silent
-  // coercion. Step params are 1-indexed (sequencer_step_cv_N -> idx N-1).
-  // @Codex D3: `sequencer.pulser` NEVER maps; prior internal Hz stays unchanged.
+  // invalid / unsupported. A malformed value is rejected HERE (keep old) BEFORE it reaches
+  // a setter that might clamp/coerce — e.g. LFO setWave clamps a finite value to [0,1] and a
+  // `v != 0.0` transfer would turn 0.5 into gate-high — so a value outside the registry
+  // unit-domain is reported `invalid_value`, never a silent coercion. Step params are
+  // 1-indexed (sequencer_step_cv_N -> idx N-1).
+  // @Codex final ruling 7C3: `sequencer.pulser` is a DOMAIN-VALIDATED provisional transfer.
+  // The norm [0,1] is admitted and mapped through the centrally-named PULSER software model
+  // (FiveStepSequencer::pulserNormToRateHz) into the core's direct-Hz DSP setter; the
+  // provisional nature is a SOFTWARE policy (0.05..20 Hz, centre 1 Hz), never a claimed
+  // hardware measurement. A malformed value (non-finite / out of [0,1]) is rejected with
+  // keep-old (rate unchanged, invalid_value).
   ParameterApplyStatus setControlParamValue(ParameterId id, double v) {
     lastApplyParamId_ = id;
     if (!controlSourceParamRecognized_(id)) {
       lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
-      return lastApplyStatus_;
-    }
-    if (id == ParameterId::sequencer_pulser) {          // the 35th: BLOCKED transfer by design.
-      lastApplyStatus_ = ParameterApplyStatus::transfer_unavailable;
       return lastApplyStatus_;
     }
     if (!controlParamValid_(id, v)) {                   // malformed: keep old, no setter touched.
@@ -1141,6 +1143,15 @@ class SynthRuntime {
       case ParameterId::sequencer_step_gate_3: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(2, v != 0.0)); return lastApplyStatus_;
       case ParameterId::sequencer_step_gate_4: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(3, v != 0.0)); return lastApplyStatus_;
       case ParameterId::sequencer_step_gate_5: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(4, v != 0.0)); return lastApplyStatus_;
+      // sequencer.pulser (@Codex 7C3): DOMAIN-VALIDATED provisional transfer. Admit the
+      // norm [0,1] (validated above), map through the centrally-named PULSER software model,
+      // and drive the core's direct-Hz DSP setter. The status is `applied` (the provisional
+      // nature is a SOFTWARE policy, not transfer_unavailable). A malformed value already
+      // yielded invalid_value above with the rate unchanged.
+      case ParameterId::sequencer_pulser:
+        lastApplyStatus_ = transferStatus_(sequencer_.setInternalRateHz(
+            FiveStepSequencer::pulserNormToRateHz(v)));
+        return lastApplyStatus_;
       default: break;  // unreachable: unrecognised ids were rejected above.
     }
     lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
@@ -1177,7 +1188,7 @@ class SynthRuntime {
   // its registry unit BEFORE it reaches a sound-core setter, so the setter's legal clamp /
   // coercion is never mistaken for a valid transfer. Domains are the registry evidence, not
   // the DSP tolerance. Finite everywhere; norm [0,1]; boolean exact {0,1}; selector exact
-  // integer; step CV [0,+5V]. Caller guarantees id is recognised AND not pulser.
+  // integer; step CV [0,+5V]; pulser norm [0,1]. Caller guarantees id is recognised.
   bool controlParamValid_(ParameterId id, double v) const {
     if (!std::isfinite(v)) return false;
     switch (id) {
@@ -1227,8 +1238,12 @@ class SynthRuntime {
       case ParameterId::sequencer_step_gate_3: case ParameterId::sequencer_step_gate_4:
       case ParameterId::sequencer_step_gate_5:
         return v == 0.0 || v == 1.0;
+      // sequencer.pulser norm [0,1] (@Codex 7C3): admitted as a domain-valid provisional
+      // value; the eventual Hz is the centrally-named software model, never a transfer_unavailable.
+      case ParameterId::sequencer_pulser:
+        return v >= 0.0 && v <= 1.0;
       default:
-        return false;  // pulser / unknown are handled before reaching here.
+        return false;  // unknown ids are handled before reaching here.
     }
   }
 
@@ -1667,8 +1682,9 @@ class SynthRuntime {
         // Resolve the continuous ext_clock_in volts through the REAL jack descriptor gate
         // interpreter (provisional canonical sink semantics); advance ONLY on a real rising
         // edge (first sample primes, never a phantom advance). The internal PULSER still
-        // runs every sample (phase continuity); clock_out is kept as-requested DISCRETE
-        // rising (publish is intentionally skipped — evidence-blocked/unpublished).
+        // runs every sample (phase continuity) and now publishes CLOCK OUT as its
+        // virtual-volts one-sample -10/+10 pulse (rail confirmed, width provisional); the
+        // discrete rising bool (clockOutRising()) remains the single edge truth.
         bool clockRising = false;
         double volts = 0.0;
         if (resolveControlSink_(seqExtClockIn_, volts, driveGraph)) {
@@ -1679,6 +1695,7 @@ class SynthRuntime {
         sequencer_.tick(clockRising);
         publishSourceValue_(seqCvOut_, sequencer_.cvOut());      // 0..+5V (confirmed).
         publishSourceValue_(seqGateOut_, sequencer_.gateOut());  // 0/+10V one-sample (provisional pulse).
+        publishSourceValue_(seqClockOut_, sequencer_.clockOutVolts());  // -10/+10 one-sample (rail confirmed, width provisional).
         break;
       }
       case ExecutionKind::kUnsupported:
@@ -2018,7 +2035,8 @@ class SynthRuntime {
   // LFO / joystick / sequencer published jack ids.
   JackId lfoAOut_ = JackId{0}, lfoBOut_ = JackId{0};
   JackId joyXOut_ = JackId{0}, joyYOut_ = JackId{0};
-  JackId seqExtClockIn_ = JackId{0}, seqCvOut_ = JackId{0}, seqGateOut_ = JackId{0};
+  JackId seqExtClockIn_ = JackId{0}, seqCvOut_ = JackId{0}, seqGateOut_ = JackId{0},
+         seqClockOut_ = JackId{0};
 
   // Always-execute admission list (six control-source module ids). Unwired sources
   // must still execute once per sample, so the compiler force-includes them. Sized

@@ -3428,7 +3428,7 @@
       "stable_id": "sequencer",
       "name": "5-step sequencer",
       "category": "control",
-      "description": "5-stage sequential voltage source: an internal clock (PULSER) with an external clock/trigger input, a STAGES selector for 3/4/5 steps, and five continuously adjustable step-CV outputs (0..+5V) plus five step-gate switches (off/on), a CLOCK OUT, and a CV/GATE out. Voltage/polarity/coupling on the clock jacks is not documented (kept unknown/unverified); CV/GATE outputs carry the legend ranges.",
+      "description": "5-stage sequential voltage source: an internal clock (PULSER) with an external clock/trigger input, a STAGES selector for 3/4/5 steps, and five continuously adjustable step-CV outputs (0..+5V) plus five step-gate switches (off/on), a CLOCK OUT, and a CV/GATE out. The CLOCK OUT rail is a CONFIRMED bipolar -10..+10V (manual out-spec table PULSERL -10V…+10V + L499 prose + ELTA official SPECIFICATION); its pulse WIDTH is PROVISIONAL (one sample) and the PULSER norm->Hz map is a PROVISIONAL software model. The EXT. CLOCK IN input rail/threshold/coupling stays unverified (never back-derived from the CLOCK OUT output). CV/GATE outputs carry the legend ranges.",
       "evidence": {
         "ref": "solar42N_manual_v15",
         "lineStart": 483,
@@ -3810,22 +3810,22 @@
           "name": "CLOCK OUT",
           "direction": "output",
           "signalType": "clock",
-          "polarity": "unknown",
-          "nominalMin": 0.0,
-          "nominalMax": 5.0,
+          "polarity": "bipolar",
+          "nominalMin": -10.0,
+          "nominalMax": 10.0,
           "coupling": "unknown",
           "evidence": {
-            "line": 501
+            "line": 159
           },
           "status": "confirmed",
           "fieldEvidence": {
-            "nominalRange": "unverified",
+            "nominalRange": "confirmed",
             "toleratedRange": "unverified",
             "threshold": "unverified",
             "saturation": "unverified",
             "transfer": "unverified",
             "signalType": "confirmed",
-            "polarity": "unverified",
+            "polarity": "confirmed",
             "coupling": "unverified"
           }
         },

@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <memory>
 
 #include <lunar24/core/control_event.h>
@@ -568,9 +569,9 @@ static void test_5_seq_ext_clock(void) {
 
 // ===========================================================================
 // 6. Sequencer stages 3/4/5 advance at exact samples; a sustained source holds; seq
-//    CV feeds a sink (VCF) and gate feeds EG; clock_out stays explicitly unpublished.
-//    The internal PULSER Hz is exercised via the runtime's public direct-Hz oracle
-//    (setSequencerInternalRateHz), NOT a panel-norm ParameterId transfer.
+//    CV feeds a sink (VCF) and gate feeds EG; clock_out is now a published rail that idles
+//    at the CONFIRMED -10V while the 1.0 Hz PULSER never rises. The internal PULSER Hz is
+//    also exercised via the runtime's public direct-Hz oracle (setSequencerInternalRateHz);
 // ===========================================================================
 static void test_6_seq_stages_pulser_unpub(void) {
   // (a) Stages: external clock driving advances at exact frames (8,24,40,56) → wraps at
@@ -635,11 +636,13 @@ static void test_6_seq_stages_pulser_unpub(void) {
       if (i != 8 && i != 24 && i != 40 && i != 56) gateOK = gateOK && sameD(sqGate[i], 0.0);
     check(gateOK,
           "t6 gate_out is a 10 V exact-sample pulse at each enabled-step advance (0 V at disabled/non-advance)");
-    // clock_out explicitly unpublished: the published jack voltage stays 0 through the
-    // external advance (the PULSER's clock event is NOT a published CV).
-    bool clockUnpub = true;
-    for (int i = 0; i < kCap; ++i) clockUnpub = clockUnpub && sameD(clockOut[i], 0.0);
-    check(clockUnpub, "t6 sequencer.clock_out is explicitly NEVER published (0 V)");
+    // clock_out is now a PUBLISHED virtual-volts rail (@Codex 7C3). The internal PULSER runs
+    // at the core default 1.0 Hz, so over this 256-sample window it never rises (phase
+    // accumulates 1/48000 per sample, <1.0) and the CLOCK OUT holds the CONFIRMED idle rail.
+    // This pins the idle rail, not a 0V false-green, and proves it is a real published source.
+    bool clockIdle = true;
+    for (int i = 0; i < kCap; ++i) clockIdle = clockIdle && sameD(clockOut[i], -10.0);
+    check(clockIdle, "t6 sequencer.clock_out is published and idles at the CONFIRMED -10V rail (1.0Hz PULSER never rises)");
   }
 
   // (b) Internal PULSER Hz setter (standalone DSP level). At 1500 Hz/48 kHz the pulser
@@ -760,11 +763,13 @@ static void test_7_param_table_partition(void) {
     check(nearD(rt.joystick().x(), 0.5), "t7 invalid -1.0 keeps default x=0.5");
   }
 
-  // (c) sequencer.pulser is EXACTLY blocked: enqueuing a PULSER value must not alter the
-  //     sequencer advance schedule AT ALL. We render a baseline (no seq param) and a PULSER
-  //     run and require them to be bit-identical: if PULSER were mapped to an internal Hz
-  //     rate the second run would advance and diverge. A legitimate joystick→external-clock
-  //     advance at sample 40 is the positive control.
+  // (c) sequencer.pulser is DOMAIN-VALIDATED (@Codex 7C3): the norm [0,1] is admitted through
+  //     the provisional software model (centrally `pulserNormToRateHz`), so an OUT-OF-DOMAIN
+  //     value must be rejected as invalid_value without touching the schedule. We render a
+  //     baseline (no seq param) and a PULSER run with 10000.0 (out of [0,1]) and require them
+  //     to be bit-identical: if PULSER were silently clamped/coerced the second run would
+  //     advance and diverge. A legitimate joystick→external-clock advance at sample 40 is the
+  //     positive control. (A VALID norm transfer is verified separately in test_13.)
   double cvBase[kCap], cvPulser[kCap], cvPos[kCap];
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
@@ -781,7 +786,7 @@ static void test_7_param_table_partition(void) {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::sequencer_step_cv_1, 1.0, 0);
-    applyParam(rt, reg::ParameterId::sequencer_pulser, 10000.0, 0);  // blocked
+    applyParam(rt, reg::ParameterId::sequencer_pulser, 10000.0, 0);  // out of [0,1]
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
       const double z = 0.0;
@@ -789,9 +794,23 @@ static void test_7_param_table_partition(void) {
       cvPulser[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
     }
   }
+  // lastApplyStatus reflects the LAST dispatched param event; in the harness above
+  // step_cv_1 (pid 163) sorts AFTER pulser (pid 160) within the same sample, so the
+  // status would be overwritten. A standalone single-event harness proves the pulser
+  // reject unambiguously (matches test_9).
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    applyParam(rt, reg::ParameterId::sequencer_pulser, 10000.0, 0);  // out of [0,1]
+    core::RuntimeOutput o;
+    const double z = 0.0;
+    rt.processBlock(&z, 1, &o);
+    check(rt.lastApplyStatus() == core::ParameterApplyStatus::invalid_value,
+          "t7 pulser 10000.0 (out of [0,1]) -> invalid_value (no silent clamp)");
+  }
   bool pulserBlocked = true;
   for (int i = 0; i < kCap; ++i) pulserBlocked = pulserBlocked && sameD(cvPulser[i], cvBase[i]);
-  check(pulserBlocked, "t7 PULSER param is a NO-OP on the schedule (exactly blocked)");
+  check(pulserBlocked, "t7 out-of-domain pulser leaves the schedule bit-identical (invalid, never coerced)");
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
@@ -990,9 +1009,10 @@ static void test_negative_controls(void) {
   }
 
   // (6) PULSER-as-Hz or a silent default: the REAL internal-rate mechanism is ADMITTED on
-  //     the standalone DSP (setting Hz → advance within a few frames), while the runtime
-  //     PULSER *param* is a NO-OP (identical to the no-param baseline). This distinguishes
-  //     "PULSER genuinely rejected" from "internal rate silently defaults to something".
+  //     the standalone DSP (setting Hz → advance within a few frames), and the runtime PULSER
+  //     *param* is a DOMAIN-VALIDATED transfer (@Codex 7C3). An OUT-OF-DOMAIN value (10000.0)
+  //     must be rejected as invalid_value and leave the schedule bit-identical — this
+  //     distinguishes "pulser genuinely validates" from "internal rate silently defaults".
   {
     core::FiveStepSequencer seq;
     check(seq.setSampleRate(kSr), "neg6 standalone setSampleRate accepted");
@@ -1029,7 +1049,7 @@ static void test_negative_controls(void) {
     }
     bool noop = true;
     for (int i = 0; i < kCap; ++i) noop = noop && sameD(base[i], puls[i]);
-    check(noop, "neg6 runtime PULSER param is a NO-OP (never maps to the admitted Hz setter)");
+    check(noop, "neg6 out-of-domain runtime PULSER param leaves the schedule bit-identical");
   }
 }
 
@@ -1188,19 +1208,51 @@ static void test_9_param_matrix_apply_status(void) {
     row_apply(kMatrix[i]);
   }
 
-  // The 35th: sequencer_pulser is recognised but has NO product transfer surface → the
-  // runtime reports transfer_unavailable (never a silent false-green "applied").
+  // The 35th: sequencer_pulser is a DOMAIN-VALIDATED provisional transfer (@Codex 7C3). A
+  // VALID norm [0,1] is admitted and mapped through the centrally-named software model into
+  // the direct-Hz setter (monotonic 0.05/1.0/20.0 at norm 0.0/0.5/1.0); an OUT-OF-DOMAIN or
+  // non-finite value is rejected as invalid_value with the RATE UNCHANGED (never a subtle
+  // coercion, never a silent false-green "applied" at the wrong Hz).
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
-    applyParam(rt, reg::ParameterId::sequencer_pulser, 10000.0, 0);
     core::RuntimeOutput o;
     const double z = 0.0;
-    rt.processBlock(&z, 1, &o);
+    applyParam(rt, reg::ParameterId::sequencer_pulser, 0.0, 0); rt.processBlock(&z, 1, &o);
     check(rt.lastApplyParamId() == reg::ParameterId::sequencer_pulser,
           "t9 pulser row lastApplyParamId == pulser");
-    check(rt.lastApplyStatus() == core::ParameterApplyStatus::transfer_unavailable,
-          "t9 pulser is transfer_unavailable (no product Hz surface)");
+    check(rt.lastApplyStatus() == core::ParameterApplyStatus::applied,
+          "t9 pulser norm 0.0 -> applied");
+    check(sameD(rt.sequencerInternalRateHz(), 0.05),
+          "t9 pulser norm 0.0 -> 0.05 Hz (provisional software min)");
+    applyParam(rt, reg::ParameterId::sequencer_pulser, 0.5, 1); rt.processBlock(&z, 1, &o);
+    check(rt.lastApplyStatus() == core::ParameterApplyStatus::applied,
+          "t9 pulser norm 0.5 -> applied");
+    check(sameD(rt.sequencerInternalRateHz(), 1.0),
+          "t9 pulser norm 0.5 -> 1.0 Hz (provisional centre)");
+    applyParam(rt, reg::ParameterId::sequencer_pulser, 1.0, 2); rt.processBlock(&z, 1, &o);
+    check(rt.lastApplyStatus() == core::ParameterApplyStatus::applied,
+          "t9 pulser norm 1.0 -> applied");
+    check(sameD(rt.sequencerInternalRateHz(), 20.0),
+          "t9 pulser norm 1.0 -> 20.0 Hz (provisional software max)");
+    // invalid keep-old: out-of-domain 10000.0, negative, NaN, Inf all leave the rate at 20.0.
+    applyParam(rt, reg::ParameterId::sequencer_pulser, 10000.0, 3); rt.processBlock(&z, 1, &o);
+    check(rt.lastApplyStatus() == core::ParameterApplyStatus::invalid_value &&
+              sameD(rt.sequencerInternalRateHz(), 20.0),
+          "t9 pulser out-of-domain 10000.0 -> invalid_value AND keeps the prior rate");
+    applyParam(rt, reg::ParameterId::sequencer_pulser, -0.5, 4); rt.processBlock(&z, 1, &o);
+    check(rt.lastApplyStatus() == core::ParameterApplyStatus::invalid_value &&
+              sameD(rt.sequencerInternalRateHz(), 20.0),
+          "t9 pulser norm -0.5 -> invalid_value AND keeps the prior rate");
+    applyParam(rt, reg::ParameterId::sequencer_pulser, std::nan(""), 5); rt.processBlock(&z, 1, &o);
+    check(rt.lastApplyStatus() == core::ParameterApplyStatus::invalid_value &&
+              sameD(rt.sequencerInternalRateHz(), 20.0),
+          "t9 pulser NaN -> invalid_value AND keeps the prior rate");
+    applyParam(rt, reg::ParameterId::sequencer_pulser,
+               std::numeric_limits<double>::infinity(), 6); rt.processBlock(&z, 1, &o);
+    check(rt.lastApplyStatus() == core::ParameterApplyStatus::invalid_value &&
+              sameD(rt.sequencerInternalRateHz(), 20.0),
+          "t9 pulser +Inf -> invalid_value AND keeps the prior rate");
   }
 
   // "Invalid keeps old" (@Codex #1): a boundary rejection must NOT mutate the source.
@@ -1267,20 +1319,21 @@ static void test_9_param_matrix_apply_status(void) {
 }
 
 // ===========================================================================
-// 10. (BLOCKED #3) VCA-CV A/B independence + a consolidated 10-output / 3-sink audit.
-//     The six sources publish EXACTLY 10 jacks (EG 4: env A/B + vca_cv A/B; LFO 2; joy 2;
-//     seq 2). sequencer.clock_out is intentionally NOT among them. Each sink readback is
-//     a REAL consumer (`vcfCvReadbackL/R`, `droneChannel`), not a test-side re-derivation.
+// 10. (BLOCKED #3) VCA-CV A/B independence + a consolidated 11-output / 3-sink audit.
+//     The six sources publish EXACTLY 11 jacks (EG 4: env A/B + vca_cv A/B; LFO 2; joy 2;
+//     seq 3: cv + gate + clock_out). Each sink readback is a REAL consumer
+//     (`vcfCvReadbackL/R`, `droneChannel`), not a test-side re-derivation.
 // ===========================================================================
 static void test_10_vca_ab_and_output_audit(void) {
-  // (a) The 10 published output JackIds, all live (finite after a render), and clock_out
-  //     excluded from the set.
-  static const reg::JackId kOut[10] = {
+  // (a) The 11 published output JackIds, all live (finite after a render), and clock_out
+  //     INCLUDED in the set as a genuine virtual-volts rail.
+  static const reg::JackId kOut[11] = {
       reg::JackId::envelope_a_env_out, reg::JackId::envelope_a_vca_cv_out,
       reg::JackId::envelope_b_env_out, reg::JackId::envelope_b_vca_cv_out,
       reg::JackId::lfo_a_cv_out,       reg::JackId::lfo_b_cv_out,
       reg::JackId::joystick_x_out,     reg::JackId::joystick_y_out,
       reg::JackId::sequencer_cv_out,   reg::JackId::sequencer_gate_out,
+      reg::JackId::sequencer_clock_out,
   };
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
@@ -1288,13 +1341,14 @@ static void test_10_vca_ab_and_output_audit(void) {
     core::RuntimeOutput o;
     const double z = 0.0;
     rt.processBlock(&z, 1, &o);
-    for (int i = 0; i < 10; ++i)
+    for (int i = 0; i < 11; ++i)
       check(std::isfinite(rt.controlVoltageAt(kOut[i])),
-            "t10 all ten source outputs are finite/published");
-    // clock_out is NOT published: it stays at the never-written default (a discrete PULSER
-    // event only, carried by clockOutRising()), so it must not be one of the ten.
-    check(rt.controlVoltageAt(reg::JackId::sequencer_clock_out) == 0.0,
-          "t10 sequencer clock_out is NOT a published output (stays default, not false-green)");
+            "t10 all eleven source outputs are finite/published");
+    // clock_out IS published as a virtual-volts rail: at the defective-default 1.0 Hz PULSER
+    // over one block (no rising edge) it idles at the CONFIRMED -10V rail. This is the
+    // canned physical model being exposed, not an empty slot.
+    check(nearD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), -10.0),
+          "t10 sequencer clock_out IS published and idles at the -10V rail (1.0 Hz PULSER)");
   }
 
   // (b) VCA-CV A/B independence: envelope A self-generates while B is idle → vca_cv_a is
@@ -1421,9 +1475,9 @@ static void test_10_vca_ab_and_output_audit(void) {
 // ===========================================================================
 // 11. (BLOCKED #4) Runtime PULSER + internal-rate surface is PUBLIC/callable/readable and
 //     proves a REAL crossing — not a default false-green. clock_out's discrete rising is
-//     read via clockOutRising() (it is not published as a volts jack), and a bank sentinel
-//     at the default 1.0 Hz shows the same window does NOT advance (so the crossing below
-//     is genuinely rate-driven).
+//     read via clockOutRising(), and the SAME edge truth drives the published virtual-volts
+//     rail (+10V / -10V). A bank sentinel at the default 1.0 Hz shows the same window does
+//     NOT advance (so the crossing below is genuinely rate-driven).
 // ===========================================================================
 static void test_11_runtime_pulser_crossing(void) {
   // (a) The runtime Hz setter/readback are callable (closed the private/unreachable gap).
@@ -1439,10 +1493,12 @@ static void test_11_runtime_pulser_crossing(void) {
   }
 
   // (b) A real crossing at runtime: high internal rate advances the sequence every frame
-  //     (published cv_out cycles through the step CVs) while clockOutRising() fires — the
-  //     PULSER is genuinely exercised in the product path. @Codex #3: configure ONLY through
+  //     (published cv_out cycles through the step CVs) AND publishes the clock_out virtual
+  //     volts rail. At 48 kHz internal with a 48 kHz host the free-running PULSER rises on
+  //     EVERY sample, so clockOutRising() is true each frame and clock_out must equal +10V
+  //     exactly then (-10V exactly when it is not rising). @Codex #3: configure ONLY through
   //     the public parameter-event path (the mutating accessors were removed), and @Codex #4:
-  //     plant a NONZERO sentinel in the UNPUBLISHED sequencer_clock_out slot as a canary.
+  //     the volts projection derives from the SAME discrete edge (no second phase/latch).
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
@@ -1451,9 +1507,7 @@ static void test_11_runtime_pulser_crossing(void) {
     applyParam(rt, reg::ParameterId::sequencer_step_cv_2, 2.0, 0);
     applyParam(rt, reg::ParameterId::sequencer_step_cv_3, 3.0, 0);
     check(rt.setSequencerInternalRateHz(48000.0), "t11 set crossing rate 48kHz");
-    const double kSentinel = 1234.5;
-    rt.setControlVoltage(reg::JackId::sequencer_clock_out, kSentinel);
-    bool saw1 = false, saw2 = false, saw3 = false, sawRising = false, sentinelHeld = true;
+    bool saw1 = false, saw2 = false, saw3 = false, sawRising = false, railCoherent = true;
     for (int i = 0; i < 8; ++i) {
       core::RuntimeOutput o;
       const double z = 0.0;
@@ -1462,15 +1516,21 @@ static void test_11_runtime_pulser_crossing(void) {
       if (nearD(cv, 1.0)) saw1 = true;
       if (nearD(cv, 2.0)) saw2 = true;
       if (nearD(cv, 3.0)) saw3 = true;
-      if (rt.sequencer().clockOutRising()) sawRising = true;
-      sentinelHeld = sentinelHeld &&
-                     sameD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), kSentinel);
+      const bool rising = rt.sequencer().clockOutRising();
+      if (rising) {
+        sawRising = true;
+        railCoherent = railCoherent &&
+                       nearD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), 10.0);
+      } else {
+        railCoherent = railCoherent &&
+                       nearD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), -10.0);
+      }
     }
     check(saw1 && saw2 && saw3,
           "t11 runtime PULSER crossing publishes each distinct step CV (real advance)");
     check(sawRising, "t11 clock_out discrete rising observed at runtime (not a false-green 0)");
-    check(sawRising && sentinelHeld,
-          "t11 clock_out sentinel stays bit-identical ACROSS a real crossing (never published)");
+    check(railCoherent,
+          "t11 clock_out volts rail tracks the SAME edge truth (+10V rising / -10V idle)");
   }
 
   // (c) Bank sentinel: at the default 1.0 Hz the SAME window never advances and clock_out
@@ -1791,6 +1851,121 @@ static void test_13_vca_sink_and_gate_latches(void) {
   }
 }
 
+// ===========================================================================
+// 14. (@Codex 7C3 final closure) PULSER provisional transfer + CLOCK OUT bipolar virtual
+//     volts. (a) A VALID pulser norm maps through the public parameter-event path into the
+//     real direct-Hz setter AND the rising-edge count is WALL-CLOCK deterministic: rendering
+//     one real second at ANY sample rate yields the SAME integer rising-edge count, strictly
+//     monotonic in the norm (0/1/20 for norm 0.0/0.5/1.0). (a2) Edge PLACEMENT is
+//     partition-invariant (a big 256-frame block and 256 one-frame steps land the next rising
+//     at the SAME absolute sample). (b) A real PatchGraph sequencer.clock_out ->
+//     envelope_a.gate_in delivers EXACTLY ONE EG gate-high per pulser rising (no double-edge),
+//     and env_out responds. Out-of-domain/NaN/Inf norms are rejected rate+trace-unchanged (t9).
+// ===========================================================================
+static std::uint64_t count_pulser_rises(core::SynthRuntime& rt, std::uint64_t frames) {
+  std::uint64_t rises = 0;
+  for (std::uint64_t i = 0; i < frames; ++i) {
+    core::RuntimeOutput o;
+    const double z = 0.0;
+    rt.processBlock(&z, 1, &o);
+    if (rt.sequencer().clockOutRising()) ++rises;
+  }
+  return rises;
+}
+
+// Step one frame at a time (max `scan` frames) and return the relative index of the first
+// rising samples; UINT64_MAX if none within the window.
+static std::uint64_t next_rise_at_after(core::SynthRuntime& rt, std::uint64_t scan) {
+  for (std::uint64_t i = 0; i < scan; ++i) {
+    core::RuntimeOutput o;
+    const double z = 0.0;
+    rt.processBlock(&z, 1, &o);
+    if (rt.sequencer().clockOutRising()) return i;
+  }
+  return std::numeric_limits<std::uint64_t>::max();
+}
+
+static void test_14_pulser_transfer_and_clock_out(void) {
+  // (a) norm -> Hz + WALL-CLOCK edge-count determinism across 44.1/48/88.2/96 kHz.
+  {
+    const double kSrList[4] = {44100.0, 48000.0, 88200.0, 96000.0};
+    bool mono = true, countOK = true;
+    for (int s = 0; s < 4; ++s) {
+      const double sr = kSrList[s];
+      std::uint64_t c[3];
+      const double norm[3] = {0.0, 0.5, 1.0};
+      double rate[3] = {0.05, 1.0, 20.0};
+      for (int n = 0; n < 3; ++n) {
+        std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, sr);
+        core::SynthRuntime& rt = def->runtime();
+        applyParam(rt, reg::ParameterId::sequencer_pulser, norm[n], 0);
+        core::RuntimeOutput o;
+        const double z = 0.0;
+        rt.processBlock(&z, 1, &o);  // deliver the async param event at frame 0
+        check(sameD(rt.sequencerInternalRateHz(), rate[n]),
+              "t14 norm->rate readback (provisional 0.05/1.0/20.0 Hz)");
+        // ~one real second (== sr frames) after the flush frame, + a 4-frame tail so the
+        // exact-integer phase crossing is captured regardless of float accumulation; the
+        // counts are strongly monotonic (c0<c05<c1) and deterministic across sample rates.
+        c[n] = count_pulser_rises(rt, static_cast<std::uint64_t>(sr) + 4);
+      }
+      mono = mono && (c[0] <= c[1]) && (c[1] <= c[2]) && (c[0] < c[2]);
+      countOK = countOK && c[0] == 0 && c[1] == 1 && c[2] == 20;
+    }
+    check(mono, "t14 rising-edge count is strictly monotonic in the pulser norm (per second)");
+    check(countOK, "t14 WALL-CLOCK determinism: 1.0 s yields 0/1/20 rising at 44.1/48/88.2/96 kHz");
+  }
+
+  // (a2) Edge PLACEMENT partition-invariance: a big 256-frame block and 256 one-frame steps
+  //      must land the NEXT rising at the same absolute sample (per-sample determinism).
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> defA = make_def(kSeed, kSr);
+    core::SynthRuntime& a = defA->runtime();
+    a.setSequencerInternalRateHz(480.0);  // a rising every ~100 samples
+    core::RuntimeOutput oa[kCap];
+    a.processBlock(kZeros, kCap, oa);     // one big 256-frame block
+    const std::uint64_t nextA = next_rise_at_after(a, 256);
+
+    std::unique_ptr<core::MachineRuntimeDefinition> defB = make_def(kSeed, kSr);
+    core::SynthRuntime& b = defB->runtime();
+    b.setSequencerInternalRateHz(480.0);
+    for (int i = 0; i < kCap; ++i) {
+      core::RuntimeOutput ob;
+      const double z = 0.0;
+      b.processBlock(&z, 1, &ob);         // 256 one-frame steps
+    }
+    const std::uint64_t nextB = next_rise_at_after(b, 256);
+    check(nextA != std::numeric_limits<std::uint64_t>::max() && nextA == nextB,
+          "t14 next rising lands at the SAME sample after 256-frame block vs 256 one-frame (partition-invariant)");
+  }
+
+  // (b) PatchGraph sequencer.clock_out -> envelope_a.gate_in: exactly ONE EG gate-high per
+  //     pulser rising (no double-edge), and env_out responds to the live rail.
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    check(rt.connect(reg::JackId::sequencer_clock_out, reg::JackId::envelope_a_gate_in),
+          "t14 wire seq clock_out -> env gate_in");
+    check(rt.rebuild(), "t14 clock_out->gate rebuild");
+    check(rt.setSequencerInternalRateHz(4.0), "t14 set 4 Hz pulser for a countable run");
+    std::uint64_t rises = 0, gateHigh = 0;
+    double maxEnv = 0.0;
+    for (std::uint64_t i = 0; i < static_cast<std::uint64_t>(kSr); ++i) {
+      core::RuntimeOutput o;
+      const double z = 0.0;
+      rt.processBlock(&z, 1, &o);
+      if (rt.sequencer().clockOutRising()) ++rises;
+      if (rt.envelopeA().gateLatch()) ++gateHigh;
+      const double e = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
+      if (e > maxEnv) maxEnv = e;
+    }
+    check(rises >= 1, "t14 the patched CLOCK OUT produces a real pulser run over 1.0 s");
+    check(gateHigh == rises,
+          "t14 EXACTLY ONE EG gate-high per pulser rising (no double-edge)");
+    check(maxEnv > 0.0, "t14 envelope env_out responds to the patched clock_out gate");
+  }
+}
+
 int main(void) {
   test_1_slots_presence_phase();
   test_2_lfo_drone_mod_same_sample();
@@ -1806,6 +1981,7 @@ int main(void) {
   test_11_runtime_pulser_crossing();
   test_12_always_admission_fail_closed();
   test_13_vca_sink_and_gate_latches();
+  test_14_pulser_transfer_and_clock_out();
 
   std::printf("\n[%s] %d checks, %d failed\n", g_fail == 0 ? "PASS" : "FAIL", g_checks,
               g_fail);

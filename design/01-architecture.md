@@ -95,6 +95,8 @@ VCO B ──┬─→ MIX/PAN（进湿链）
 | **LFOs** | **0…+10V** | ENV FOLLOWER CV / GATE | 0…+10V ／ 0…+8V |
 | PULSERL | −10…+10V | | |
 
+> **注（2026-08-31 GH#11 收口）**：`PULSERL` 行后置 `L` 为 manual **笔误**——同名器件即 **PULSER**，其周期输出对应 registry `sequencer.clock_out`，**双极 −10…+10V 已确认**（与上表 token 一致）。此前"命名/电气对应尚未核清"的 raw-evidence conflict 由此闭合。
+
 **电源 DC 12V 1A–2A｜重量 5.4 kg｜尺寸 49.5 × 32 × 2.9 cm（含旋钮高 5.6 cm）**
 
 ### 三条影响声音的结论
