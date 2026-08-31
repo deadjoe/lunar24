@@ -24,6 +24,7 @@
 #include "IPlug_include_in_plug_src.h"
 
 #include <cstdlib>
+#include <type_traits>
 #include <lunar24/core/host_window_fit.h>
 #include <host/window_layout.h>
 
@@ -81,17 +82,37 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
 }
 
 #if IPLUG_DSP
+// GH#4 8B2: the ProcessBlock bridge below casts sample** <-> double** . That relabeling is only
+// valid under iPlug2's DEFAULT `sample = double`. A SAMPLE_TYPE_FLOAT build would reinterpret the
+// buffers with the wrong element type -> UB. This is a compile-time hard gate, not a runtime or
+// generated-check: the host must never silently compile such a bridge. (The wiring gate greps for
+// this guard so removing it fails loudly too.)
+static_assert(std::is_same_v<sample, double>,
+              "Lunar24 host ProcessBlock bridge requires iPlug2 sample == double");
+
+void LunarHostPlugin::OnReset()
+{
+  // GH#4 8B2: the stopped-stream boundary. Rebuild the runtime owner for the REAL device
+  // format the host is about to open. The physical connector counts are read from the host
+  // (NOT hardcoded): the current APP is 1-in/2-out, but the owner's prepare() handles the
+  // general 0/1/2-in & 2/3/4+-out default plans. A failure (e.g. <2 outputs) leaves the
+  // engine not-ready and ProcessBlock fail-silent.
+  engine_.prepare(lunar24::host::kLunarStartupSeed, GetSampleRate(), GetBlockSize(),
+                  NInChansConnected(), NOutChansConnected());
+}
+
 void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
-  // P5-① is the window bootstrap only; no audio is produced. This runs as --no-io
-  // in the probe, so it is never invoked, but satisfying the DSP surface keeps the
-  // class concrete. Silence output deterministically.
-  const int nIn = NInChansConnected();
-  const int nOut = NOutChansConnected();
-  for (int s = 0; s < nFrames; s++) {
-    for (int c = 0; c < nOut; c++) {
-      outputs[c][s] = (nIn > 0) ? inputs[c % nIn][s] : sample(0.0);
-    }
-  }
+  // GH#4 8B2: a PURE delegate to the framework-free owner. The owner either renders through
+  // the production DeviceAdapter::renderBlock (task#71) or returns a dropped status after
+  // writing deterministic silence into the outputs. There is NO frame loop / scale / mapping /
+  // pass-through / second output bank in the host — that would be a wiring defect.
+  //
+  // sample==double, so the pointer casts into the owner's framework-free surface are a
+  // same-representation reinterpret_to_const (double** -> const double* const*): it only
+  // adds const / re-types at the compile-time layer, and the host touches no data itself.
+  engine_.processBlock(reinterpret_cast<const double* const*>(inputs),
+                       reinterpret_cast<double* const*>(outputs),
+                       NInChansConnected(), NOutChansConnected(), nFrames);
 }
 #endif

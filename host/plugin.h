@@ -12,6 +12,8 @@
 
 #include "IPlug_include_in_plug_hdr.h"
 
+#include <host/standalone_audio_engine.h>
+
 using namespace iplug;
 
 class LunarHostPlugin final : public Plugin
@@ -20,6 +22,16 @@ public:
   LunarHostPlugin(const InstanceInfo& info);
 
 #if IPLUG_DSP
+  // GH#4 8B2 lifecycle gate: OnReset() runs at the stopped-stream boundary (CloseAudio
+  // callbacks done -> SetBlockSize/SetSampleRate -> OnReset -> openStream/startStream). It is
+  // the ONE place the host (re)prepares the runtime owner for the REAL device format.
+  void OnReset() override;
   void ProcessBlock(sample** inputs, sample** outputs, int nFrames) override;
 #endif
+
+private:
+  // The framework-free runtime owner, held BY VALUE. It owns the address-stable
+  // MachineRuntimeDefinition (heap) + the single DeviceAdapter (task#71). ProcessBlock is a
+  // PURE delegate to it.
+  lunar24::host::StandaloneAudioEngine engine_;
 };
