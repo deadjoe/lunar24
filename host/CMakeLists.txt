@@ -57,6 +57,45 @@ find_package(iPlug2 REQUIRED)
 set(HOST_APP_NAME "Lunar24Host")
 set(HOST_OUT_DIR "${CMAKE_BINARY_DIR}/out")
 
+# ---------------------------------------------------------------------------
+# GH#4 8B3 (task#73): the two repo-owned overrides that REPLACE the pinned upstream
+# IPlugAPP.cpp / IPlugAPP_host.cpp. They are forks of those TUs at the submodule pin d54f6905 plus
+# ONLY the allowlisted hunks (AppProcess; InitAudio/AudioCallback; the failure-invalidation
+# helper; the plugin.h/stream_plan.h includes). tools/check_host_override_drift.py proves
+# override == upstream + allowlisted hunks, so the host never carries two divergent truths. The
+# upstream IPlugAPP_dialog.cpp / IPlugAPP_main.cpp stay as the pinned submodule files (unchanged).
+# ---------------------------------------------------------------------------
+set(LUNAR_IPLUG_APP_OVERRIDES
+  "${CMAKE_CURRENT_SOURCE_DIR}/iPlug_app_override.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/iPlug_app_host_override.cpp"
+)
+# The upstream TUs these overrides REPLACE — the gate backstops against a stock-TU mix-in.
+set(LUNAR_IPLUG_APP_FORBIDDEN
+  "${IPLUG2_DIR}/IPlug/APP/IPlugAPP.cpp"
+  "${IPLUG2_DIR}/IPlug/APP/IPlugAPP_host.cpp"
+)
+
+# Configure-time source gate (GH#4 8B3): the Lunar24Host target MUST compile the two repo overrides
+# and MUST NOT compile the two upstream TUs. A stock-TU mix-in (upstream IPlugAPP.cpp coming back)
+# or an unlinked override are both silent regressions, so this asserts at configure time from THE
+# source list that is actually fed to target_sources. `_srcs` is that literal list.
+function(lunar_host_assert_channel_overrides target _srcs)
+  foreach(f IN LISTS LUNAR_IPLUG_APP_OVERRIDES)
+    if(NOT "${f}" IN_LIST _srcs)
+      message(FATAL_ERROR
+        "${target}: the GH#4 8B3 channel override ${f} must be compiled (a stock-TU mix-in or an "
+        "unlinked override). Add it to ${target}'s source list.")
+    endif()
+  endforeach()
+  foreach(f IN LISTS LUNAR_IPLUG_APP_FORBIDDEN)
+    if("${f}" IN_LIST _srcs)
+      message(FATAL_ERROR
+        "${target}: the upstream TU ${f} must NOT be compiled — it is replaced by the repo "
+        "override (GH#4 8B3). Remove it from the source list.")
+    endif()
+  endforeach()
+endfunction()
+
 function(lunar_host_common target)
   # plugin.cpp (shared, framework-free-ish C++) links lunar_host -> lunar_core for the
   # geometry headers, plus the selected IGraphics backend. config.h/resource.h resolve
@@ -122,16 +161,21 @@ if(APPLE)
   )
 
   # --- APP-side sources. Stock IPlugAPP_main.cpp is EXCLUDED on purpose. ----
+  # GH#4 8B3 (task#73): IPlugAPP.cpp / IPlugAPP_host.cpp are the REPO OVERRIDES
+  # (forks at submodule pin d54f6905 + allowlisted hunks), not the upstream TUs,
+  # because the app-host must open/negotiate the actual 2/4 channel plan (not the
+  # declared "2-4" max). The gate below asserts membership at configure time.
   set(APP_SRC_LIST
-    "${IPLUG2_DIR}/IPlug/APP/IPlugAPP.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/iPlug_app_override.cpp"
     "${IPLUG2_DIR}/IPlug/APP/IPlugAPP_dialog.cpp"
-    "${IPLUG2_DIR}/IPlug/APP/IPlugAPP_host.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/iPlug_app_host_override.cpp"
   )
   target_sources(${HOST_APP_NAME} PRIVATE
     ${APP_SRC_LIST}
     "${IPLUG2_DIR}/Dependencies/IPlug/RTAudio/RtAudio.cpp"
     "${IPLUG2_DIR}/Dependencies/IPlug/RTMidi/RtMidi.cpp"
   )
+  lunar_host_assert_channel_overrides(${HOST_APP_NAME} "${APP_SRC_LIST}")
 
   # --- SWELL sources (mac) ----------------------------------------------------
   set(SWELL_DIR "${IPLUG2_DIR}/WDL/swell")
@@ -184,22 +228,82 @@ if(APPLE)
 
 elseif(WIN32)
   # -------------------------------------------------------------------------
-  # Windows: pinned iPlug2::APP + iplug_configure_app (stock main.cpp), a repo-owned
-  # window-metrics shim, and the repo-owned main.rc.
+  # Windows: manual assembly that MIRRORS the pinned iPlug2 APP.cmake WIN32 branch,
+  # with the two channel overrides substituted in. GH#4 8B3 (task#73) drops iplug_configure_app
+  # and iPlug2::APP here so the host compiles the repo IPlugAPP.cpp / IPlugAPP_host.cpp
+  # overrides (which open the actual 2/4 plan) instead of the pinned upstream TUs, while
+  # keeping every other WIN32 source/def/lib/artifact identical to APP.cmake (stock
+  # IPlugAPP_dialog.cpp + IPlugAPP_main.cpp, RtAudio/RtMidi, ASIO/DS/MM, WIN32_EXECUTABLE
+  # -> out/...exe). The source-membership gate below asserts the overrides are present and
+  # the upstream TUs are absent at configure time.
   # -------------------------------------------------------------------------
+  set(RTAUDIO_DIR "${IPLUG2_DIR}/Dependencies/IPlug/RTAudio")
+  set(RTMIDI_DIR "${IPLUG2_DIR}/Dependencies/IPlug/RTMidi")
+
+  set(APP_SRC_LIST
+    "${CMAKE_CURRENT_SOURCE_DIR}/iPlug_app_override.cpp"
+    "${IPLUG2_DIR}/IPlug/APP/IPlugAPP_dialog.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/iPlug_app_host_override.cpp"
+    "${IPLUG2_DIR}/IPlug/APP/IPlugAPP_main.cpp"
+  )
+
   add_executable(${HOST_APP_NAME}
     plugin.cpp
     window_metrics_win.cpp
     resources/main.rc
+    ${APP_SRC_LIST}
+    "${RTAUDIO_DIR}/RtAudio.cpp"
+    "${RTMIDI_DIR}/RtMidi.cpp"
+    "${RTAUDIO_DIR}/include/asio.cpp"
+    "${RTAUDIO_DIR}/include/asiodrivers.cpp"
+    "${RTAUDIO_DIR}/include/asiolist.cpp"
+    "${RTAUDIO_DIR}/include/iasiothiscallresolver.cpp"
   )
+  lunar_host_assert_channel_overrides(${HOST_APP_NAME} "${APP_SRC_LIST}")
+
   # Tell the RC compiler where to find resource.h (the .rc includes it by name).
   set_source_files_properties(resources/main.rc PROPERTIES
     COMPILE_FLAGS "/I\"${CMAKE_CURRENT_SOURCE_DIR}\""
   )
 
-  # iPlug2::APP supplies APP_API / IPLUG_EDITOR / IPLUG_DSP, the stock IPlugAPP_main.cpp
-  # (WinMain), RtAudio/RtMidi, ASIO/DS/MM sources, and WIN32_EXECUTABLE -> out/...exe.
-  iplug_configure_app(${HOST_APP_NAME} "${HOST_APP_NAME}")
+  # APP.cmake WIN32 defs / include dirs / libs (the override TUs need the APP headers, and
+  # compile as APP_API/IPLUG_DSP so config.h stays on the APP_API "2-4" branch).
+  target_compile_definitions(${HOST_APP_NAME} PRIVATE
+    APP_API
+    IPLUG_EDITOR=1
+    IPLUG_DSP=1
+    __WINDOWS_DS__
+    __WINDOWS_MM__
+    __WINDOWS_ASIO__
+  )
+  target_include_directories(${HOST_APP_NAME} PRIVATE
+    "${IPLUG2_DIR}/IPlug/APP"
+    "${RTAUDIO_DIR}"
+    "${RTAUDIO_DIR}/include"
+    "${RTMIDI_DIR}"
+  )
+  target_link_libraries(${HOST_APP_NAME} PRIVATE
+    iPlug2::IPlug
+    dsound.lib
+    winmm.lib
+  )
+
+  # APP.cmake WIN32 artifact props: out/<name>.exe, WinMain entry point. GH#4 8B3 (task#73, G6): a
+  # single RUNTIME_OUTPUT_DIRECTORY does NOT guarantee the artifact for a multi-config generator
+  # (Visual Studio picks the per-config dir unless that is also pinned). The pinned iplug_configure_app
+  # sets the per-config DEBUG/RELEASE/RELWITHDEBINFO/MINSIZEREL dirs to the same out/ location, so we
+  # mirror all four here to guarantee build/out/Lunar24Host.exe (the artifact the CI / target gate
+  # asserts). Without them a Debug/Release default (e.g. out/Debug/) would silently move the binary
+  # away from the asserted path.
+  set_target_properties(${HOST_APP_NAME} PROPERTIES
+    OUTPUT_NAME "${HOST_APP_NAME}"
+    RUNTIME_OUTPUT_DIRECTORY "${HOST_OUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${HOST_OUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${HOST_OUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${HOST_OUT_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${HOST_OUT_DIR}"
+    WIN32_EXECUTABLE TRUE
+  )
 
   lunar_host_common(${HOST_APP_NAME})
   lunar_host_owned_warnings(${HOST_APP_NAME} "plugin.cpp" "window_metrics_win.cpp")

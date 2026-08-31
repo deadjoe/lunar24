@@ -30,8 +30,9 @@ oracle statically verifies the SHAPE of the host->engine wiring that the CTest
       iPlug2's default `sample = double`. The bridge must carry a compile-time
       static_assert(std::is_same_v<sample,double>) so a SAMPLE_TYPE_FLOAT build cannot silently
       compile with UB. (Removing the guard / toggling float must fail loudly.)
-  W8  The REAL lifecycle order comes from the pinned IPlug2 APP host (third_party/iPlug2/
-      IPlug/APP/IPlugAPP_host.cpp, submodule @ d54f6905), NOT the repo-owned plugin. Within
+  W8  The REAL lifecycle order comes from the repo IPlugAPP_host override (host/
+      iPlug_app_host_override.cpp — a fork of the pinned submodule IPlugAPP_host.cpp @ d54f6905
+      plus the allowlisted hunks), NOT the repo-owned plugin and NOT the untouched submodule. Within
       InitAudio the statements must run in the mandate's fixed dependency order:
       CloseAudio() done -> SetBlockSize/SetSampleRate -> OnReset() -> openStream -> startStream;
       and CloseAudio() itself must arm the ending trigger (mAudioEnding = true) and spin on
@@ -42,8 +43,44 @@ oracle statically verifies the SHAPE of the host->engine wiring that the CTest
       must actually WRITE mAudioDone=true inside `if (_this->mAudioEnding)` (in the running-audio
       startWait &&!mAudioDone branch) or CloseAudio waits forever even though its own trigger/wait
       order is correct. So W8 also pins the completion write inside AudioCallback — deleting it,
-      or moving it out of the ending-branch guard, must fail loudly. If the submodule is not
-      checked out the order is UNPROVABLE, so this invariant fails rather than silently passing.
+      or moving it out of the ending-branch guard, must fail loudly. If the override is absent the
+      order is UNPROVABLE, so this invariant fails rather than silently passing.
+
+  W9  GH#4 8B3 (task#73): the host opens the ACTUAL negotiated plan, not the declared "2-4" cap.
+      InitAudio must negotiate_stream_plan() and install it via setActualChannelPlan() BEFORE
+      OnReset (engine prepares the real count; AppProcess attaches the same count), open only
+      plan.openIn/plan.openOut (never MaxNChannels — the OOB-on-2-out-device defect), clear the
+      per-open pointer lists (a 2<->4 hot-swap must never accumulate stale pointers), and fail-closed
+      to NOT-READY via the LunarInvalidateAudio helper (0-in/0-out + OnReset) on any negotiation /
+      open / start failure — never "no stream but engine ready". AudioCallback drives AppProcess by
+      the pointer-list sizes (GetSize(), the actual count), never MaxNChannels.
+  W10 GH#4 8B3 (task#73) — the other half of the one-truth mandate. The repo APP-side override
+      (iPlug_app_override.cpp) AppProcess() must NOT re-connect all declared MaxNChannels() every
+      block; it attaches/processes by NChannelsConnected (the actual count the host installed before
+      OnReset). W9 proves the host drives AppProcess by the actual count; W10 proves the app callback
+      doesn't re-assert the declared max on that same path.
+
+  W11 GH#4 8B3 G1 — PLUG_CHANNEL_IO is an EXACT set of legal I/O configs, not a max string. The
+      APP_API branch must declare the six legal combos "0-2 1-2 2-2 0-4 1-4 2-4" (from which iPlug2
+      takes max -> MaxNChannels 2-in/4-out), and the harness must expose is_legal_io() so the
+      parsed-config product criterion is a real invariant. A regression back to the old exact-only
+      "2-4" (or to a max-string) trips RED.
+
+  W12 GH#4 8B3 G2/G8 — InitAudio must feed BOTH selected output channels into negotiate_stream_plan
+      (the output selection consumes R, so L=1,R=3 is rejected, not silently opened) and must
+      fail-closed on a post-open buffer size that is not a multiple of APP_SIGNAL_VECTOR_SIZE (the
+      callback chunks nFrames into 64-blocks; a non-multiple tail would read/write OOB). It must
+      still open the plan count (not MaxNChannels) and CHECK the setActualChannelPlan admission bool.
+
+  W13 GH#4 8B3 G3 — TryToChangeAudio must allow a TRUE output-only open when the input is disabled
+      (never resolve / fall back to an input device, never touch its DeviceInfo/name; the inert 0
+      input ID is passed and InitAudio opens no input stream), and any device-resolve / disappear
+      failure must QUISCE (CloseAudio) + INVALIDATE (LunarInvalidateAudio -> 0/0 + OnReset) so the
+      owner is NOT-READY. The old hard `if (inputID && outputID)` gate must be gone.
+
+  W14 GH#4 8B3 G4 — setActualChannelPlan must be a FAIL-CLOSED admission returning bool: only
+      in{0,1,2} x out{0,2,4} and <= the declared max; an ill-formed plan installs 0/0 and returns
+      false (never a silent clamp/truncate), and the host MUST check the return.
 
 Each invariant is named and reported; a violation exits nonzero. The 8B2 mandate §4/b says a
 behaviour detector comes FIRST (the CTest) and this structural gate is the permanent second
@@ -58,9 +95,17 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_H = (ROOT / "host" / "plugin.h").read_text()
 PLUGIN_CPP = (ROOT / "host" / "plugin.cpp").read_text()
 ENGINE_H = (ROOT / "host" / "include" / "host" / "standalone_audio_engine.h").read_text()
-# The pinned IPlug2 APP host submodule. The repo-owned host cannot prove the real ordering; the
-# order the mandate pins lives here. If the submodule is absent the order is unprovable -> FAIL.
-APP_HOST = ROOT / "third_party" / "iPlug2" / "IPlug" / "APP" / "IPlugAPP_host.cpp"
+# GH#4 8B3 (task#73): the REAL lifecycle order now lives in the REPO ALSO OVERRIDE
+# host/iPlug_app_host_override.cpp — a fork of the pinned submodule IPlugAPP_host.cpp @ d54f6905
+# plus the allowlisted hunks (InitAudio negotiation + failure-invalidation, AudioCallback actual
+# count). That override is the TU the host actually compiles (host/CMakeLists.txt swaps the two
+# upstream APP TUs for it), so the wiring gate MUST read the override, not the untouched submodule
+# (which would verify a file that is no longer compiled). The pin relationship (override == upstream
+# + hunks) is a separate gate: tools/check_host_override_drift.py.
+APP_HOST = ROOT / "host" / "iPlug_app_host_override.cpp"
+APP_OVR = ROOT / "host" / "iPlug_app_override.cpp"
+CONFIG_H = ROOT / "host" / "config.h"
+STREAM_PLAN_H = ROOT / "host" / "include" / "host" / "stream_plan.h"
 
 failures = []
 
@@ -117,6 +162,18 @@ def has(text: str, needle: str) -> bool:
     return needle in text
 
 
+def strip_comments(text: str) -> str:
+    """Remove C/C++ line and block comments.
+
+    Used only for the "never references MaxNChannels" negative checks, where a comment that merely
+    MENTIONS MaxNChannels() would otherwise trip the guard. Naive, but the two host bodies inspected
+    have no `//` inside a string literal (their DBGMSG format strings are `%s`-only), so comment
+    removal here is exact.
+    """
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    return re.sub(r"//[^\n]*", "", text)
+
+
 # W1 — the owner member is present, by value, in the plugin header.
 check("W1 engine_ member present", has(PLUGIN_H, "StandaloneAudioEngine engine_"),
       "plugin.h must hold the owner by value")
@@ -161,16 +218,51 @@ check("W7 sample==double static_assert present",
       has(PLUGIN_CPP, "static_assert(std::is_same_v<sample, double>"),
       "the ProcessBlock bridge must hard-gate sample==double at compile time")
 
-# W8 — the REAL lifecycle order is in the pinned IPlug2 APP host submodule. It is NOT proven by the
-# repo-owned host (W6 only shows the plugin doesn't open a stream). Pin the exact fixed dependency
-# order the mandate demands: CloseAudio() done -> SetBlockSize/SetSampleRate -> OnReset() ->
-# openStream -> startStream, and CloseAudio must itself wait for the callback (while(!mAudioDone)).
+# W11 — GH#4 8B3 G1: PLUG_CHANNEL_IO is an EXACT set of legal I/O configs, not a max string. The APP
+# branch must declare the six legal combos (from which the 2-in/4-out max is DERIVED), and the parser
+# gate (is_legal_io) that ties a negotiated plan back to that declared set must exist in stream_plan.h.
+config_h = CONFIG_H.read_text()
+stream_plan_h = STREAM_PLAN_H.read_text()
+check("W11 config.h declares the six legal APP configs",
+      '#define PLUG_CHANNEL_IO "0-2 1-2 2-2 0-4 1-4 2-4"' in config_h,
+      "the APP branch must list the exact 2/4 legal combos (not a single exact-only string)")
+check("W11 config.h no longer uses the exact-only '2-4'",
+      '#define PLUG_CHANNEL_IO "2-4"' not in config_h,
+      "PLUG_CHANNEL_IO '2-4' was an EXACT config, not a max/policy cap; the six-combo set is the truth")
+check("W11 stream_plan.h exposes is_legal_io", "is_legal_io" in stream_plan_h,
+      "stream_plan.h must define is_legal_io(openIn, openOut) as the parsed-config admission test")
+check("W11 stream_plan.h declares negotiate_stream_plan(6 args)",
+      re.search(r"negotiate_stream_plan\s*\(\s*int [a-zA-Z]+,", stream_plan_h) is not None,
+      "the plan function must take deviceIn, deviceOut, selInL, selInR, selOutL, selOutR (consumes R)")
+
+# W14 — GH#4 8B3 G4: setActualChannelPlan is a FAIL-CLOSED ADMISSION returning bool. Only in{0,1,2} x
+# out{0,2,4} and never over the parsed max; an ill-formed plan installs the 0/0 sentinel and returns
+# false. plugin.cpp must also check against MaxNChannels (the derived cap), not a hardcoded literal.
+plan_cpp = body_balanced(PLUGIN_CPP, r"bool LunarHostPlugin::setActualChannelPlan\s*\([^)]*\)")
+check("W14 setActualChannelPlan returns bool", "bool LunarHostPlugin::setActualChannelPlan" in PLUGIN_CPP,
+      "setActualChannelPlan must return bool (fail-closed admission, G4)")
+check("W14 admission checks in-domain input", "inCh == 2" in plan_cpp and "inCh <= maxIn" in plan_cpp,
+      "input must be 0/1/2 AND <= parsed max, else reject")
+check("W14 admission checks in-domain output", "outCh == 4" in plan_cpp and "outCh <= maxOut" in plan_cpp,
+      "output must be 0/2/4 AND <= parsed max, else reject")
+check("W14 ill-formed plan installs 0/0 sentinel + returns false",
+      re.search(r"inCh = 0;\s*outCh = 0;.*?return false", plan_cpp, re.DOTALL) is not None,
+      "a rejected plan must clear to 0-in/0-out (NOT-READY) and return false")
+check("W14 admission uses MaxNChannels cap", "MaxNChannels(ERoute::kInput)" in plan_cpp
+      and "MaxNChannels(ERoute::kOutput)" in plan_cpp,
+      "the cap must be read from the parsed config (MaxNChannels), never a hardcoded literal")
+
+# W8 — the REAL lifecycle order is in the repo IPlugAPP_host override (the TU the host compiles).
+# It is NOT proven by the repo-owned plugin (W6 only shows the plugin doesn't open a stream). Pin
+# the exact fixed dependency order the mandate demands: CloseAudio() done -> SetBlockSize/
+# SetSampleRate -> OnReset() -> openStream -> startStream, and CloseAudio must itself wait for the
+# callback (while(!mAudioDone)).
 if not APP_HOST.exists():
-    check("W8 submodule APP host present", False,
-          f"pinned IPlug2 APP host not found at {APP_HOST}; lifecycle order is UNPROVABLE here")
+    check("W8 APP host override present", False,
+          f"repo IPlugAPP_host override not found at {APP_HOST}; lifecycle order is UNPROVABLE here")
 else:
     app_host = APP_HOST.read_text()
-    check("W8 submodule APP host present", True, f"read {APP_HOST.relative_to(ROOT)}")
+    check("W8 APP host override present", True, f"read {APP_HOST.relative_to(ROOT)}")
 
     # The mandate's fixed dependency order, inside InitAudio:
     #   CloseAudio() done -> SetBlockSize/SetSampleRate -> OnReset() -> openStream -> startStream.
@@ -235,6 +327,118 @@ else:
     check("W8 completion write gated by ending flag",
           re.search(r"if \(_this->mAudioEnding\)\s*_this->mAudioDone", runbody) is not None,
           "mAudioDone=true must be the body of `if (_this->mAudioEnding)` (deleting or unguarding it fails)")
+
+    # ----- GH#4 8B3 (task#73) wiring: the ACTUAL plan opens the stream, not the declared cap. ----
+    # W9  The host override negotiates the REAL stream plan and installs it BEFORE OnReset. A host
+    #     that opens MaxNChannels (the declared "2-4" cap) on a smaller device reads OOB; a host
+    #     that connects after OnReset prepares the engine for the wrong count. These invariants
+    #     catch: (a) reconnecting all max / NChannelsConnected prefix, (b) calling OnReset before
+    #     setActualChannelPlan, (c) opening the declared cap instead of the negotiated plan.
+    check("W9 override includes stream_plan.h", "#include <host/stream_plan.h>" in app_host,
+          "the host override must include the shared plan header")
+    check("W9 override includes plugin.h", '#include "plugin.h"' in app_host,
+          "the host override must include plugin.h (setActualChannelPlan lives on the plugin)")
+    check("W9 InitAudio negotiates the plan", "negotiate_stream_plan(" in init,
+          "InitAudio must negotiate the actual plan from the device capability")
+    init_code = strip_comments(init)
+    check("W9 InitAudio opens the plan count, not the cap",
+          "MaxNChannels(" not in init_code and "plan.openIn" in init and "plan.openOut" in init,
+          "InitAudio must use plan.openIn/plan.openOut, never MaxNChannels (the declared cap)")
+    pos_plan = init.find("setActualChannelPlan(")
+    pos_reset = init.find("OnReset(")
+    check("W9 actual connections installed before OnReset",
+          0 <= pos_plan < pos_reset,
+          "setActualChannelPlan(plan) must run before OnReset() so the engine prepares the real count")
+    check("W9 pointer lists cleared each open",
+          "mInputBufPtrs.Empty()" in init and "mOutputBufPtrs.Empty()" in init,
+          "the per-open pointer lists must be cleared (2<->4 hot-swap must not accumulate stale ptrs)")
+    # The failure-invalidation helper turns the owner NOT-READY (install 0/0 + OnReset) so there is
+    # never "no stream but engine ready". Pin its existence AND that every failure path uses it.
+    helper = body_balanced(app_host, r"void LunarInvalidateAudio\s*\(")
+    check("W9 failure-invalidation helper present", "setActualChannelPlan(0, 0)" in helper and "OnReset()" in helper,
+          "LunarInvalidateAudio must install a 0-in/0-out plan and call OnReset (owner NOT-READY)")
+    check("W9 InitAudio uses the helper on failure", "LunarInvalidateAudio(GetPlug())" in init,
+          "a negotiation/open/start failure must invalidate to NOT-READY")
+    check("W9 openStream-failure closes + invalidates",
+          re.search(r"if \(status != RtAudioErrorType::RTAUDIO_NO_ERROR\)", init) is not None
+          and "mDAC->closeStream()" in init and "LunarInvalidateAudio(GetPlug())" in init,
+          "a failed openStream must close the stream and invalidate (never 'stream open but engine ready')")
+    # The callback must drive AppProcess by the ACTUAL count (pointer-list sizes), not MaxNChannels.
+    cb_code = strip_comments(cb)
+    check("W9 callback uses pointer-list sizes, not MaxNChannels",
+          "mInputBufPtrs.GetSize()" in cb and "mOutputBufPtrs.GetSize()" in cb and "MaxNChannels(" not in cb_code,
+          "AudioCallback must read the actual open count (the pointer-list size), never MaxNChannels")
+    check("W9 callback AppProcess gets the raw pointer lists",
+          "_this->mIPlug->AppProcess(" in cb,
+          "AppProcess must receive the built pointer lists (attach/process by installed actual count)")
+
+    # ----- GH#4 8B3 (task#73) G2/G8: output selection consumes R + fail-closed callback block. ----
+    # W12  InitAudio must feed BOTH selected output channels into negotiate_stream_plan. The output
+    # selection CONSUMES R (a non-contiguous / duplicate / out-of-range R is rejected, not silently
+    # dropped), so the negotiated call must pass mAudioOutChanR alongside mAudioOutChanL. It must
+    # also fail-closed on a post-open buffer size not a multiple of APP_SIGNAL_VECTOR_SIZE (the
+    # callback chunks every nFrames into 64-blocks; a non-multiple tail would let AppProcess
+    # read/write 64 samples past a channel buffer's end). And it must CHECK the setActualChannelPlan
+    # admission bool (a false = an ill-formed plan must abort the open, not proceed).
+    check("W12 InitAudio passes BOTH selected output channels to negotiate",
+          "mAudioOutChanR" in init and "mAudioOutChanL" in init
+          and re.search(r"negotiate_stream_plan\s*\(\s*deviceInputChans,\s*deviceOutputChans,",
+                        init) is not None,
+          "InitAudio must feed selectedOutL AND selectedOutR into negotiate_stream_plan (output "
+          "selection consumes R, so L=1,R=3 is rejected, not silently opened)")
+    check("W12 InitAudio fail-closes a non-multiple-of-64 block",
+          "mBufferSize % APP_SIGNAL_VECTOR_SIZE" in init and "LunarInvalidateAudio(GetPlug())" in init,
+          "InitAudio must refuse (close + invalidate) a post-open buffer size not a multiple of "
+          "APP_SIGNAL_VECTOR_SIZE, or the 64-chunking callback tail reads/writes OOB")
+    check("W12 InitAudio checks the setActualChannelPlan admission bool",
+          "if (!static_cast<LunarHostPlugin*>(GetPlug())->setActualChannelPlan" in init,
+          "InitAudio must CHECK the setActualChannelPlan bool and abort the open on false (G4)")
+
+    # ----- GH#4 8B3 (task#73) G3: output-only open + device-disappear invalidation. --------------
+    # W13  TryToChangeAudio (not just InitAudio) must allow a TRUE output-only open when the input is
+    # disabled, and any device-resolve / disappear failure must QUISCE (CloseAudio) + INVALIDATE
+    # (0/0 + OnReset). The old hard `if (inputID && outputID)` gate is removed, and the input is
+    # never resolved/fallen back when off.
+    tca = body_balanced(app_host, r"bool IPlugAPPHost::TryToChangeAudio\s*\(")
+    check("W13 TryToChangeAudio body present", tca != "", "IPlugAPP_host.cpp must define TryToChangeAudio()")
+    tca_code = strip_comments(tca)
+    check("W13 TryToChangeAudio computes inputSelected",
+          "const bool inputSelected =" in tca_code
+          and "mAudioInChanL > 0" in tca_code and "mAudioInChanR > 0" in tca_code,
+          "TryToChangeAudio must branch on whether the input is selected")
+    check("W13 TryToChangeAudio allows output-only open",
+          re.search(r"InitAudio\(0,\s*outputID\.value\(\)", tca_code) is not None,
+          "input-off must open output-only (inert 0 input ID), never a forced input")
+    check("W13 TryToChangeAudio no hard inputANDoutput gate",
+          "if (inputID && outputID)" not in tca_code,
+          "the old `if (inputID && outputID)` gate is gone (it blocked a true output-only open)")
+    check("W13 TryToChangeAudio invalidates on device failure",
+          "failedToFindDevice" in tca_code and "CloseAudio();" in tca_code
+          and "LunarInvalidateAudio(GetPlug())" in tca_code,
+          "a device-resolve/disappear failure must quiesce (CloseAudio) + invalidate (0/0 + OnReset)")
+
+# W10  The app override's AppProcess() must NOT re-connect all declared MaxNChannels() every block
+# (the other half of the "one truth" mandate). W9 proves the HOST installs the actual count and
+# drives AppProcess by it; W10 proves the APP-side callback DOESN'T re-assert the declared max each
+# block (which would re-connect 4 output pointers on a 2-out device and over-read the smaller
+# callback buffers). The app TU is a second file the host compiles, so this invariant is checked
+# against iPlug_app_override.cpp itself. The fork's banner comment legitimately NAMES
+# SetChannelConnections (in prose), so the negative check runs on the comment-stripped body.
+if not APP_OVR.exists():
+    check("W10 app override present", False,
+          f"repo iPlug_app_override.cpp not found at {APP_OVR}; AppProcess is UNPROVABLE here")
+else:
+    app_ovr = APP_OVR.read_text()
+    check("W10 app override present", True, f"read {APP_OVR.relative_to(ROOT)}")
+    app_proc = body_balanced(app_ovr, r"void IPlugAPP::AppProcess\s*\(")
+    check("W10 AppProcess body present", app_proc != "", "IPlugAPP.cpp must define AppProcess()")
+    app_proc_code = strip_comments(app_proc)
+    check("W10 AppProcess does NOT re-connect channel max",
+          "SetChannelConnections" not in app_proc_code,
+          "AppProcess must attach/process by the installed actual count, never re-assert MaxNChannels")
+    check("W10 AppProcess attaches by actual connected count",
+          "NChannelsConnected(" in app_proc_code and "AttachBuffers(" in app_proc_code,
+          "AppProcess must AttachBuffers by NChannelsConnected (the count setActualChannelPlan installed)")
 
 
 def main() -> int:

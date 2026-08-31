@@ -184,6 +184,20 @@ add_test(NAME host_windows_target_oracle
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_host_windows_target.py)
 
+# GH#4 8B3 (task#73): the repo IPlugAPP overrides are forks of the pinned submodule TUs that differ
+# ONLY by the allowlisted hunks. This gate proves override == upstream + those hunks, so the host
+# never silently carries two divergent truths. FAILS if the submodule is not at the exact pin.
+add_test(NAME host_override_drift
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_host_override_drift.py)
+
+# G5 negative: the drift gate must flag a mutation INSIDE an allowlisted function (re-connecting all
+# MaxNChannels() in AppProcess — the anti-pattern that would read a 2-out device out of bounds). The
+# old anchor-based gate passed any same-name body; the exact-hash gate must not, or this breaks.
+add_test(NAME host_override_drift_negative
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/host/test_host_override_drift_negative.py)
+
 # Strict warnings, applied PRIVATE to a Lunar-owned compiled target only. Never
 # set globally: a future third-party build unit (iPlug2, P1+) must not be forced
 # warning-clean by a global add_compile_options, and lunar_core (header-only
@@ -326,6 +340,13 @@ lunar_add_test(test_host_engine_oracle
   tests/host/test_host_engine_oracle_allocator.cpp)
 target_link_libraries(test_host_engine_oracle PRIVATE lunar_host)
 target_include_directories(test_host_engine_oracle PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
+# GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
+# negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
+# the stream actually opens. No allocator probe: the negotiation is pure ints.
+lunar_add_test(test_host_stream_plan tests/host/test_host_stream_plan.cpp)
+target_link_libraries(test_host_stream_plan PRIVATE lunar_host)
+target_include_directories(test_host_stream_plan PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
 # GH#4 8B2 wiring-shape oracle (task#72): ProcessBlock/OnReset are iPlug virtuals, not
 # reachable from a unit test, so a python gate is the permanent second line for "is the host

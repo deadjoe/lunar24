@@ -94,11 +94,44 @@ void LunarHostPlugin::OnReset()
 {
   // GH#4 8B2: the stopped-stream boundary. Rebuild the runtime owner for the REAL device
   // format the host is about to open. The physical connector counts are read from the host
-  // (NOT hardcoded): the current APP is 1-in/2-out, but the owner's prepare() handles the
-  // general 0/1/2-in & 2/3/4+-out default plans. A failure (e.g. <2 outputs) leaves the
-  // engine not-ready and ProcessBlock fail-silent.
+  // (NOT hardcoded): with GH#4 8B3 the plan is negotiated from the device capability and
+  // installed via setActualChannelPlan() BEFORE this runs, so NInChansConnected()/
+  // NOutChansConnected() are the actual open counts. A failure (e.g. <2 outputs, or the 0/0
+  // failure sentinel) leaves the engine not-ready and ProcessBlock fail-silent.
   engine_.prepare(lunar24::host::kLunarStartupSeed, GetSampleRate(), GetBlockSize(),
                   NInChansConnected(), NOutChansConnected());
+}
+
+bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
+{
+  // GH#4 8B3 (task#73): disconnect ALL declared max channels first, then connect only
+  // [0,inCh)/[0,outCh). Called at the stopped-stream boundary (InitAudio) BEFORE OnReset, so the
+  // engine prepares for the REAL plan and AppProcess attaches by the same count.
+  //
+  // FAIL-CLOSED ADMISSION: only in{0,1,2} x out{0,2,4}, and never more than the declared max
+  // (MaxNChannels, which config.h derives as 2/4 from the six legal APP configs). setActualChannelPlan
+  // is the product seam between the (already valid) negotiated plan and the iPlug2 channel data, so
+  // it must never silently clamp/truncate an out-of-domain value — e.g. outCh=3, or openOut=4 on a
+  // device that only has a 2-max declared. An ill-formed plan REJECTS: it installs the 0-in/0-out
+  // NOT-READY sentinel and returns false. The host (InitAudio) must check the bool and abort the
+  // open on false, rather than proceeding with a truncated channel set. 0/0 is itself a LEGAL plan
+  // (the sentinel the LunarInvalidateAudio helper installs), so it returns true.
+  const int maxIn = MaxNChannels(ERoute::kInput);
+  const int maxOut = MaxNChannels(ERoute::kOutput);
+  const bool inOk = (inCh == 0 || inCh == 1 || inCh == 2) && inCh <= maxIn;
+  const bool outOk = (outCh == 0 || outCh == 2 || outCh == 4) && outCh <= maxOut;
+  if (!(inOk && outOk)) {
+    inCh = 0;
+    outCh = 0;  // failure sentinel: the owner's <2 output fail-path turns it NOT-READY.
+    SetChannelConnections(ERoute::kInput, 0, maxIn, false);
+    SetChannelConnections(ERoute::kOutput, 0, maxOut, false);
+    return false;
+  }
+  SetChannelConnections(ERoute::kInput, 0, maxIn, false);
+  SetChannelConnections(ERoute::kOutput, 0, maxOut, false);
+  if (inCh > 0) SetChannelConnections(ERoute::kInput, 0, inCh, true);
+  if (outCh > 0) SetChannelConnections(ERoute::kOutput, 0, outCh, true);
+  return true;
 }
 
 void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrames)

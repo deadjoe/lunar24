@@ -33,8 +33,15 @@
 #define BUNDLE_MFR "Lunar24"
 #define BUNDLE_DOMAIN "com"
 
+// GH#4 8B3 (task#73): PLUG_CHANNEL_IO is an EXACT set of legal I/O configs, not a "max capability"
+// string. The APP branch declares the six legal combos the standalone host may open; iPlug2's
+// ParseChannelIOStr takes max over them, so MaxNChannels(input) = 2 and MaxNChannels(output) = 4
+// (the channel DATA can hold up to 4 outputs). The ACTUAL number this stream opens is negotiated
+// from the device capability (host/include/host/stream_plan.h) and installed via
+// LunarHostPlugin::setActualChannelPlan() BEFORE OnReset — a 2-out device opens 2, never a forced
+// 4. Every VALID negotiated plan is one of these six configs (stream_plan.h::is_legal_io).
 #ifdef APP_API
-#define PLUG_CHANNEL_IO "1-2"
+#define PLUG_CHANNEL_IO "0-2 1-2 2-2 0-4 1-4 2-4"
 #else
 #define PLUG_CHANNEL_IO "1-1 2-2"
 #endif

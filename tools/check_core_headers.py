@@ -8,7 +8,11 @@ Two gates, both hard enough that they cannot false-pass:
   1. License gate — every AUTHORED CODE file in the tree (C/C++ headers+sources,
      Python, CMakeLists.txt), wherever it lives, must carry the Apache-2.0 SPDX
      block in its LEADING header lines. A "header present somewhere in the file"
-     check is not enough; generated files are verified by exact emission too.
+     check is not enough; generated files are verified by exact emission too. The
+     ONE exception is the two GH#4 8B3 IPlugAPP forks (see COMPOSITE_FORKS): they
+     are Apache-2.0 Lunar modifications over a retained Zlib upstream iPlug 2 body
+     and must carry the COMPOSITE identifier (Apache-2.0 AND Zlib) plus the
+     upstream iPlug 2 notice + altered-source mark — never Apache-only.
   2. Forbidden-include gate — only the core PUBLIC headers (they define the
      framework-free boundary) may be scanned for framework / platform /
      filesystem includes; the rest of the tree is NOT restricted that way.
@@ -46,6 +50,25 @@ SPDX = "SPDX-License-Identifier: Apache-2.0"
 SPDX_HEADING = "Copyright (c) 2026 Lunar 24 contributors"
 LEADING = 12  # the license block must sit within the first 12 lines
 
+# GH#4 8B3 G7: the two repo IPlugAPP overrides are COMPOSITE — Apache-2.0 Lunar modifications over a
+# Zlib upstream iPlug 2 body (kept, per the zlib "altered source versions must be plainly marked"
+# term, with its notice + an altered-source mark). They MUST carry the composite identifier
+# (Apache-2.0 AND Zlib), NEVER the Apache-only form that would misstate the upstream code's zlib
+# terms, and MUST keep the upstream iPlug 2 notice + the altered-source mark. The standard
+# every-authored-file Apache-2.0 rule still applies to every OTHER file.
+COMPOSITE_FORKS = {
+    "host/iPlug_app_override.cpp": {
+        "spdx": "SPDX-License-Identifier: Apache-2.0 AND Zlib",
+        "notice": "the iPlug 2 developers",
+        "altered": "Lunar 24 modification",
+    },
+    "host/iPlug_app_host_override.cpp": {
+        "spdx": "SPDX-License-Identifier: Apache-2.0 AND Zlib",
+        "notice": "the iPlug 2 developers",
+        "altered": "Lunar 24 modification",
+    },
+}
+
 # Forbidden tokens for core PUBLIC headers. i2 = iPlug2.
 FORBIDDEN = {
     "iplug2", "igraphics", "iplug", "coreaudio", "audiotoolbox", "audiounit",
@@ -61,7 +84,21 @@ def _has_license_block(text):
     return SPDX in head and SPDX_HEADING in head
 
 
-def scan_license(text):
+def scan_license(text, rel=None):
+    spec = COMPOSITE_FORKS.get(rel) if rel else None
+    if spec is not None:
+        head = "\n".join(text.splitlines()[:LEADING])
+        # Composite fork: the leading block MUST carry the composite SPDX (the Apache-only form is
+        # a misstatement here), plus the Lunar copyright; the file MUST keep the upstream iPlug 2
+        # notice and the altered-source mark (the zlib "altered source" term). A fork that reverts
+        # to Apache-only, or drops the upstream banner / altered marker, is rejected.
+        if spec["spdx"] not in head:
+            return f"missing composite SPDX {spec['spdx']!r} leading the file"
+        if SPDX_HEADING not in head:
+            return "missing Lunar contributor copyright line"
+        if spec["notice"] not in text or spec["altered"] not in text:
+            return "composite fork must keep the upstream iPlug 2 notice + altered-source mark"
+        return None
     if not _has_license_block(text):
         return "missing Apache-2.0 SPDX header block leading the file"
     return None
@@ -123,7 +160,7 @@ def main():
         with open(path, "r", encoding="utf-8") as fh:
             text = fh.read()
         problems = []
-        lic = scan_license(text)
+        lic = scan_license(text, rel)
         if lic:
             problems.append(lic)
         if do_forbidden:

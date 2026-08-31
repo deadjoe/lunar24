@@ -27,6 +27,19 @@ public:
   // the ONE place the host (re)prepares the runtime owner for the REAL device format.
   void OnReset() override;
   void ProcessBlock(sample** inputs, sample** outputs, int nFrames) override;
+
+  // GH#4 8B3 (task#73): install the ACTUAL connected channel plan with fail-closed ADMISSION.
+  // A derived class is the ONLY place the real host can drive the protected
+  // IPlugProcessor::SetChannelConnections (the iPlug2 host is not a friend of IPlugProcessor), so
+  // the app host calls this via a static_cast<LunarHostPlugin*> before OnReset(). It disconnects
+  // ALL declared max channels (config.h APP branch "0-2 1-2 2-2 0-4 1-4 2-4" -> MaxNChannels 2/4)
+  // then re-connects only [0,inCh)/[0,outCh), so OnReset()/AppProcess read the REAL count
+  // (NInChansConnected/NOutChansConnected) and a 2-out device never re-asserts the 4-channel max.
+  // An ILLEGAL plan (inCh not in {0,1,2}, outCh not in {0,2,4}, or exceeding the declared max) is
+  // rejected: the host installs a 0-in/0-out sentinel and returns false so the owner is NOT-READY
+  // (never "a device channel plan silently clamped/truncated"). The host MUST check the return.
+  // 0/0 is itself legal (the fail-closed NOT-READY sentinel the invalidation helper installs).
+  bool setActualChannelPlan(int inCh, int outCh);
 #endif
 
 private:

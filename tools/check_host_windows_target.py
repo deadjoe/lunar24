@@ -16,9 +16,11 @@ The negative controls (the mutated-fixture proof that each check can actually tr
 by the throwaway harness in the task evidence, not here.
 
 Invariants (one check per GH#10 risk surface):
-  N1  The WIN32 branch is real: it calls iplug_configure_app and compiles the repo-owned
-      window-metrics shim + resource script (i.e. the target is genuinely assembled, not a
-      mac-only target sitting under a `if(APPLE)`).
+  N1  The WIN32 branch is real: it does NOT call iplug_configure_app / iPlug2::APP (GH#4 8B3
+      replaces them with a manual assembly that mirrors APP.cmake), and it compiles the two
+      channel overrides (via APP_SRC_LIST) + the repo-owned window-metrics shim + resource
+      script (i.e. the target is genuinely assembled, not a mac-only target sitting under a
+      `if(APPLE)`).
   N2  The WIN32 branch must NOT compile the mac bootstrap main.mm (that would drag SWELL,
       Cocoa framework links and a second main() into a Windows build).
   N3  The Windows resource script resources/main.rc is compiled, and the RC compiler is told
@@ -39,6 +41,12 @@ Invariants (one check per GH#10 risk surface):
       submodule (mandate pin: gitlink-correct-but-uninitialized is RED — verified at runtime
       by the fixture harness); (b) ci.yml checkout pulls the submodule recursively so that
       gate has a worktree to inspect.
+  N7  GH#4 8B3 G6: the WIN32 set_target_properties pins all four per-config
+      RUNTIME_OUTPUT_DIRECTORY_<CONFIG> dirs to the same build/out/. A single base
+      RUNTIME_OUTPUT_DIRECTORY does NOT guarantee the artifact for a multi-config generator
+      (Visual Studio prefers the per-config dir until each is also pinned), so a Debug or
+      Release default (build/out/Debug/…) would silently move the .exe away from the asserted
+      build/out/Lunar24Host.exe path. Requiring all four proves build/out/Lunar24Host.exe.
 """
 
 import pathlib
@@ -81,6 +89,18 @@ def strip_comments(code):
     return code
 
 
+def strip_cmake_comments(code):
+    """Drop CMake comment lines (a non-string line that starts with '#' after whitespace).
+
+    Unlike strip_comments (C-style), CMake comments are per-line and the task evidence
+    prose legitimately NAMES a removed directive — e.g. the GH#4 8B3 note in the WIN32 branch
+    explicitly says it "drops iplug_configure_app and iPlug2::APP" — so a presence check for a
+    forbidden token must run on the comment-stripped region or that prose itself trips it.
+    """
+    lines = [ln for ln in code.splitlines() if not ln.lstrip().startswith("#")]
+    return "\n".join(lines)
+
+
 def win_sources(win):
     """Return the source filenames listed in the WIN32 add_executable(...) call.
 
@@ -101,17 +121,27 @@ def oracle(fs):
     win = win_cmake(fs)
     srcs = win_sources(win)
 
-    # N1 — the WIN32 branch is a REAL assembly: iplug_configure_app + the repo-owned shim
-    # and resource script are actually listed as compiled sources.
+    # N1 — the WIN32 branch is a REAL assembly: it does NOT call iplug_configure_app /
+    # iPlug2::APP (GH#4 8B3 drops them for a manual APP.cmake mirror), and it feeds the two
+    # channel overrides (via ${APP_SRC_LIST}) plus the repo-owned shim and resource script to
+    # the actual add_executable source list. The forbidden-token checks run on the comment-
+    # stripped region (see strip_cmake_comments) so the evidence prose naming the removed
+    # iPlug2::APP does not falsely trip them.
+    win_code = strip_cmake_comments(win)
     n1 = (
-        "iplug_configure_app(" in win
+        "iplug_configure_app(" not in win_code
+        and "iPlug2::APP" not in win_code
+        and "iPlug_app_override.cpp" in win_code
+        and "iPlug_app_host_override.cpp" in win_code
+        and "${APP_SRC_LIST}" in win_code
         and "window_metrics_win.cpp" in srcs
         and "resources/main.rc" in srcs
     )
     results.append(check(
         "N1_win_target_real", n1,
-        "WIN32 branch must call iplug_configure_app AND compile window_metrics_win.cpp and "
-        "resources/main.rc"))
+        "WIN32 branch must NOT call iplug_configure_app / iPlug2::APP (GH#4 8B3 manual "
+        "assembly) and must compile the two channel overrides (via APP_SRC_LIST) + "
+        "window_metrics_win.cpp + resources/main.rc"))
 
     # N2 — the mac bootstrap main.mm must NOT be a compiled source in the WIN32 branch.
     n2 = "main.mm" not in srcs
@@ -220,6 +250,19 @@ def oracle(fs):
         "build/assert BOTH the mac bundle executable and the Windows .exe (deterministic "
         "target-presence gate, no silent skip)"))
 
+    # N7 — GH#4 8B3 G6: the WIN32 target pins ALL FOUR per-config RUNTIME_OUTPUT_DIRECTORY_*
+    # dirs to the same build/out/. Without them a multi-config Visual Studio generator prefers
+    # the per-config dir (build/out/Debug/…), so the .exe silently lands elsewhere than the
+    # asserted build/out/Lunar24Host.exe. This inspects the WIN32 target region (set_target_properties)
+    # so the guarantee is proved on any CI OS, not just at hosted link time.
+    n7 = all(f'RUNTIME_OUTPUT_DIRECTORY_{cfg} "${{HOST_OUT_DIR}}"' in win
+             for cfg in ("DEBUG", "RELEASE", "RELWITHDEBINFO", "MINSIZEREL"))
+    results.append(check(
+        "N7_win_per_config_out_dir", n7,
+        "WIN32 set_target_properties must pin RUNTIME_OUTPUT_DIRECTORY_DEBUG/RELEASE/"
+        "RELWITHDEBINFO/MINSIZEREL all to ${HOST_OUT_DIR}, so a multi-config generator emits "
+        "build/out/Lunar24Host.exe (not build/out/<Config>/…)"))
+
     # Root-level: the host is gated to APPLE OR WIN32 with a FATAL, never an EXISTS skip.
     root = read(fs, "CMakeLists.txt")
     n_root = re.search(r"if\(APPLE OR WIN32\)", root) is not None and "iPlug2.cmake" in root
@@ -248,7 +291,8 @@ def main():
             continue
     print(f"host Windows-target oracle: PASS — all {len(results)} invariants satisfied "
           "(WIN32 target is a real assembly; no mac bootstrap; main.rc compiled + /I; "
-          "renderer FORCED; shim defines no APP symbols; CI recursive + artifact assert).")
+          "renderer FORCED; shim defines no APP symbols; CI recursive + artifact assert; "
+          "per-config out dir pinned -> build/out/Lunar24Host.exe).")
     return 0
 
 
