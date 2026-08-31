@@ -108,19 +108,20 @@ bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
   // [0,inCh)/[0,outCh). Called at the stopped-stream boundary (InitAudio) BEFORE OnReset, so the
   // engine prepares for the REAL plan and AppProcess attaches by the same count.
   //
-  // FAIL-CLOSED ADMISSION: only in{0,1,2} x out{0,2,4}, and never more than the declared max
-  // (MaxNChannels, which config.h derives as 2/4 from the six legal APP configs). setActualChannelPlan
-  // is the product seam between the (already valid) negotiated plan and the iPlug2 channel data, so
-  // it must never silently clamp/truncate an out-of-domain value — e.g. outCh=3, or openOut=4 on a
-  // device that only has a 2-max declared. An ill-formed plan REJECTS: it installs the 0-in/0-out
-  // NOT-READY sentinel and returns false. The host (InitAudio) must check the bool and abort the
-  // open on false, rather than proceeding with a truncated channel set. 0/0 is itself a LEGAL plan
-  // (the sentinel the LunarInvalidateAudio helper installs), so it returns true.
+  // FAIL-CLOSED ADMISSION. (inCh == 0 && outCh == 0) is the NOT-READY sentinel (LunarInvalidateAudio
+  // installs it), NOT an iPlug2 IOConfig, so it is allowed as-is. Otherwise the ONLY accepted pairs
+  // are one of the six APP configs declared in PLUG_CHANNEL_IO ("0-2 1-2 2-2 0-4 1-4 2-4") — tested
+  // by the AUTHORITATIVE parsed-config admission IPlugProcessor::LegalIO(in,out), not by a hand-
+  // written mirror. LegalIO returns true iff (in,out) is exactly one of those configs, so it rejects
+  // (1,0)/(2,0) (no config has 0 outputs), (3,2), (2,3), and any out-of-domain pair — a per-direction
+  // in{0,1,2} x out{0,2,4} check would wrongly accept an input-only plan with no outputs. Also cap at
+  // the declared max so setActualChannelPlan never silently clamps/truncates. An ill-formed plan
+  // REJECTS: it installs the 0-in/0-out NOT-READY sentinel and returns false; the host (InitAudio)
+  // must check the bool and abort the open rather than proceeding with a truncated channel set.
   const int maxIn = MaxNChannels(ERoute::kInput);
   const int maxOut = MaxNChannels(ERoute::kOutput);
-  const bool inOk = (inCh == 0 || inCh == 1 || inCh == 2) && inCh <= maxIn;
-  const bool outOk = (outCh == 0 || outCh == 2 || outCh == 4) && outCh <= maxOut;
-  if (!(inOk && outOk)) {
+  const bool sentinel = (inCh == 0 && outCh == 0);
+  if (!sentinel && (!LegalIO(inCh, outCh) || inCh > maxIn || outCh > maxOut)) {
     inCh = 0;
     outCh = 0;  // failure sentinel: the owner's <2 output fail-path turns it NOT-READY.
     SetChannelConnections(ERoute::kInput, 0, maxIn, false);

@@ -35,6 +35,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# GH#4 8B3 (task#73): the codec host check runs this gate under LC_ALL=C LANG=C PYTHONUTF8=0
+# PYTHONCOERCECLOCALE=0, where stdout defaults to ASCII; the module docstring carries an em-dash.
+# Pin the stream codec to UTF-8 so the gate's OUTPUT is as independent of the process locale as its
+# file reads now are (read_text(encoding="utf-8")).
+sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 # The exact pinned submodule SHA the overrides were forked from. If the submodule is not at this
 # SHA, the override==upstream base is undefined, so the drift is unprovable -> FAIL.
 PIN = "d54f69050f517e43b941d88c2a170f0a840b9ee4"
@@ -56,7 +63,7 @@ OVERRIDE = {
 # hash) even though the function name is unchanged.
 EXPECTED_DIFF_HASH = {
     "app": "6161896270765f649cfc964d85134178e8c15519997a3c01f272053610c3495e",
-    "host": "39fa9df37e303d3fad54eff3f7cf22a69fe211adee17f894bd825dc1113a1a6b",
+    "host": "8e46b85646917044c8e8f16bdfff8aee87becdaf04f403cec09defeefa81d36f",
 }
 
 # Function names (as "Class::func") that the curated diff is allowed to touch, per file. A region
@@ -142,8 +149,8 @@ def verify(kind: str):
     if not (up.exists() and ov.exists()):
         return
 
-    up_text = up.read_text()
-    ov_text = ov.read_text()
+    up_text = up.read_text(encoding="utf-8")
+    ov_text = ov.read_text(encoding="utf-8")
     ov_lines = ov_text.splitlines(keepends=True)
     up_lines = up_text.splitlines(keepends=True)
 

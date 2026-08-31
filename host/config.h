@@ -39,7 +39,9 @@
 // (the channel DATA can hold up to 4 outputs). The ACTUAL number this stream opens is negotiated
 // from the device capability (host/include/host/stream_plan.h) and installed via
 // LunarHostPlugin::setActualChannelPlan() BEFORE OnReset — a 2-out device opens 2, never a forced
-// 4. Every VALID negotiated plan is one of these six configs (stream_plan.h::is_legal_io).
+// 4. Every VALID negotiated plan must be admitted by iPlug2's AUTHORITATIVE parsed-config check
+// IPlugProcessor::LegalIO(in,out) (see host/plugin.cpp setActualChannelPlan); stream_plan.h
+// ::is_legal_io is only the framework-free STREAM-POLICY invariant that agrees with it.
 #ifdef APP_API
 #define PLUG_CHANNEL_IO "0-2 1-2 2-2 0-4 1-4 2-4"
 #else

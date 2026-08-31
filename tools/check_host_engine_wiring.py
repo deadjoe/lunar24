@@ -92,9 +92,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_H = (ROOT / "host" / "plugin.h").read_text()
-PLUGIN_CPP = (ROOT / "host" / "plugin.cpp").read_text()
-ENGINE_H = (ROOT / "host" / "include" / "host" / "standalone_audio_engine.h").read_text()
+
+# GH#4 8B3 (task#73): the codec host check runs this gate under LC_ALL=C LANG=C PYTHONUTF8=0
+# PYTHONCOERCECLOCALE=0, where stdout defaults to ASCII. Two detail strings below carry a UTF-8
+# em-dash ("—"); printing them there would raise UnicodeEncodeError. Pin the stream codec to UTF-8
+# so the gate's OUTPUT is as lockstep-independent of the process locale as its file reads now are
+# (read_text(encoding="utf-8")).
+sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+PLUGIN_H = (ROOT / "host" / "plugin.h").read_text(encoding="utf-8")
+PLUGIN_CPP = (ROOT / "host" / "plugin.cpp").read_text(encoding="utf-8")
+ENGINE_H = (ROOT / "host" / "include" / "host" / "standalone_audio_engine.h").read_text(encoding="utf-8")
 # GH#4 8B3 (task#73): the REAL lifecycle order now lives in the REPO ALSO OVERRIDE
 # host/iPlug_app_host_override.cpp — a fork of the pinned submodule IPlugAPP_host.cpp @ d54f6905
 # plus the allowlisted hunks (InitAudio negotiation + failure-invalidation, AudioCallback actual
@@ -221,30 +229,51 @@ check("W7 sample==double static_assert present",
 # W11 — GH#4 8B3 G1: PLUG_CHANNEL_IO is an EXACT set of legal I/O configs, not a max string. The APP
 # branch must declare the six legal combos (from which the 2-in/4-out max is DERIVED), and the parser
 # gate (is_legal_io) that ties a negotiated plan back to that declared set must exist in stream_plan.h.
-config_h = CONFIG_H.read_text()
-stream_plan_h = STREAM_PLAN_H.read_text()
+config_h = CONFIG_H.read_text(encoding="utf-8")
+stream_plan_h = STREAM_PLAN_H.read_text(encoding="utf-8")
 check("W11 config.h declares the six legal APP configs",
       '#define PLUG_CHANNEL_IO "0-2 1-2 2-2 0-4 1-4 2-4"' in config_h,
       "the APP branch must list the exact 2/4 legal combos (not a single exact-only string)")
 check("W11 config.h no longer uses the exact-only '2-4'",
       '#define PLUG_CHANNEL_IO "2-4"' not in config_h,
       "PLUG_CHANNEL_IO '2-4' was an EXACT config, not a max/policy cap; the six-combo set is the truth")
-check("W11 stream_plan.h exposes is_legal_io", "is_legal_io" in stream_plan_h,
-      "stream_plan.h must define is_legal_io(openIn, openOut) as the parsed-config admission test")
+check("W11 stream_plan.h exposes is_legal_io (stream-policy invariant)",
+      "is_legal_io" in stream_plan_h and "IPlugProcessor::LegalIO" in stream_plan_h,
+      "stream_plan.h must define is_legal_io(openIn,openOut) as the framework-free STREAM-POLICY "
+      "invariant and distinctly NAME IPlugProcessor::LegalIO as the AUTHORITATIVE parsed-config "
+      "admission — is_legal_io is not a second parsed-truth source")
 check("W11 stream_plan.h declares negotiate_stream_plan(6 args)",
       re.search(r"negotiate_stream_plan\s*\(\s*int [a-zA-Z]+,", stream_plan_h) is not None,
       "the plan function must take deviceIn, deviceOut, selInL, selInR, selOutL, selOutR (consumes R)")
 
-# W14 — GH#4 8B3 G4: setActualChannelPlan is a FAIL-CLOSED ADMISSION returning bool. Only in{0,1,2} x
-# out{0,2,4} and never over the parsed max; an ill-formed plan installs the 0/0 sentinel and returns
-# false. plugin.cpp must also check against MaxNChannels (the derived cap), not a hardcoded literal.
+# W14 — GH#4 8B3 G4: setActualChannelPlan is a FAIL-CLOSED ADMISSION returning bool. The ONLY
+# accepted non-sentinel pair is one the AUTHORITATIVE parsed-config check IPlugProcessor::LegalIO(in,out)
+# ADMITS (LegalIO returns true iff (in,out) is exactly one of the six declared PLUG_CHANNEL_IO configs),
+# further capped at the declared MaxNChannels so it never silently clamps/truncates. The (0,0) NOT-READY
+# sentinel is special-cased BEFORE LegalIO (it is not an iPlug2 config, so LegalIO would reject it).
+# Because a (1,0)/(2,0) plan has 0 outputs — which no declared config has — and it is not the sentinel,
+# LegalIO rejects it; the old per-domain in{0,1,2} x out{0,2,4} accept (which wrongly admitted them)
+# must be gone. An ill-formed plan installs the 0/0 sentinel and returns false; the host MUST check the
+# bool (W12) and abort the open.
 plan_cpp = body_balanced(PLUGIN_CPP, r"bool LunarHostPlugin::setActualChannelPlan\s*\([^)]*\)")
 check("W14 setActualChannelPlan returns bool", "bool LunarHostPlugin::setActualChannelPlan" in PLUGIN_CPP,
       "setActualChannelPlan must return bool (fail-closed admission, G4)")
-check("W14 admission checks in-domain input", "inCh == 2" in plan_cpp and "inCh <= maxIn" in plan_cpp,
-      "input must be 0/1/2 AND <= parsed max, else reject")
-check("W14 admission checks in-domain output", "outCh == 4" in plan_cpp and "outCh <= maxOut" in plan_cpp,
-      "output must be 0/2/4 AND <= parsed max, else reject")
+check("W14 admission uses the AUTHORITATIVE IPlugProcessor::LegalIO",
+      "LegalIO(inCh, outCh)" in plan_cpp,
+      "the only accepted pair is one the parsed-config admission LegalIO(in,out) ADMITS, "
+      "not a hand-written mirror")
+check("W14 (0,0) NOT-READY sentinel special-cased before LegalIO",
+      "(inCh == 0 && outCh == 0)" in plan_cpp and "sentinel" in plan_cpp,
+      "the (0,0) sentinel is accepted as-is; it is not a legal ioPlug config so it must not be run "
+      "through LegalIO")
+check("W14 (1,0)/(2,0) reject — the old per-domain accept is gone",
+      re.search(r"inCh == 0 \|\| inCh == 1 \|\| inCh == 2", plan_cpp) is None
+      and re.search(r"outCh == 0\s*\|\|", plan_cpp) is None,
+      "no independent per-direction in{0,1,2} x out{0,2,4} accept may remain: it would wrongly admit "
+      "an input-only (1,0)/(2,0) with no outputs")
+check("W14 rejects a count over the parsed max (no silent clamp)",
+      "inCh > maxIn" in plan_cpp and "outCh > maxOut" in plan_cpp,
+      "a count beyond MaxNChannels must reject, never clamp/truncate")
 check("W14 ill-formed plan installs 0/0 sentinel + returns false",
       re.search(r"inCh = 0;\s*outCh = 0;.*?return false", plan_cpp, re.DOTALL) is not None,
       "a rejected plan must clear to 0-in/0-out (NOT-READY) and return false")
@@ -261,7 +290,7 @@ if not APP_HOST.exists():
     check("W8 APP host override present", False,
           f"repo IPlugAPP_host override not found at {APP_HOST}; lifecycle order is UNPROVABLE here")
 else:
-    app_host = APP_HOST.read_text()
+    app_host = APP_HOST.read_text(encoding="utf-8")
     check("W8 APP host override present", True, f"read {APP_HOST.relative_to(ROOT)}")
 
     # The mandate's fixed dependency order, inside InitAudio:
@@ -428,7 +457,7 @@ if not APP_OVR.exists():
     check("W10 app override present", False,
           f"repo iPlug_app_override.cpp not found at {APP_OVR}; AppProcess is UNPROVABLE here")
 else:
-    app_ovr = APP_OVR.read_text()
+    app_ovr = APP_OVR.read_text(encoding="utf-8")
     check("W10 app override present", True, f"read {APP_OVR.relative_to(ROOT)}")
     app_proc = body_balanced(app_ovr, r"void IPlugAPP::AppProcess\s*\(")
     check("W10 AppProcess body present", app_proc != "", "IPlugAPP.cpp must define AppProcess()")

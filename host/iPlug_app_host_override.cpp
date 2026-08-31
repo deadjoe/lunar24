@@ -8,7 +8,7 @@
 // host/iPlug_app_host_override.cpp — a Lunar 24 FORK of the pinned third_party/iPlug2/IPlug/APP/
 // IPlugAPP_host.cpp at submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4 (GH#4 8B3, task#73).
 // The body is the upstream iPlug 2 library (its banner below is retained unchanged); the Lunar
-// modifications are Apache-2.0 and live in InitAudio/AudioCallback, named below the banner.
+// modifications are Apache-2.0 and live in InitAudio/AudioCallback/TryToChangeAudio, named below.
 /*
  ==============================================================================
  
@@ -31,6 +31,10 @@
 //     open so a 2<->4 hot-swap can never accumulate stale pointers.
 //   * AudioCallback() reads nins/nouts from the pointer-list sizes (the ACTUAL count), not from
 //     MaxNChannels().
+//   * TryToChangeAudio() allows a TRUE output-only open (input off -> inert input id, never a
+//     forced input, no hard `if (inputID && outputID)` gate) and on a device lookup/disappear
+//     failure quiesces (CloseAudio) then invalidates to 0-in/0-out + OnReset (owner NOT-READY)
+//     instead of only returning false.
 // Everything else is byte-identical to the upstream pin. tools/check_host_override_drift.py
 // asserts override == upstream + these allowlisted hunks, so the two files are never two
 // divergent host truths.
@@ -752,7 +756,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
   if ((mBufferSize % APP_SIGNAL_VECTOR_SIZE) != 0) {
     mDAC->closeStream();
     LunarInvalidateAudio(GetPlug());
-    DBGMSG("buffer size %u not a multiple of APP_SIGNAL_VECTOR_SIZE (%d); refusing unsafe open.\n",
+    DBGMSG("buffer size %u not a multiple of APP_SIGNAL_VECTOR_SIZE (%u); refusing unsafe open.\n",
            mBufferSize, static_cast<unsigned>(APP_SIGNAL_VECTOR_SIZE));
     return false;
   }

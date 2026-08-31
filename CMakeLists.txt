@@ -357,6 +357,16 @@ add_test(NAME host_engine_wiring_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_host_engine_wiring.py)
 
+# GH#4 8B3 (task#73): codec portability. The hosted CI run surfaced two Windows gate failures
+# caused by Path.read_text() with no encoding= (Windows Py3.14 defaults to cp1252). This gate pins
+# the permanent invariant that every .read_text(...) in the two host gate scripts carries a constant
+# encoding="utf-8", includes a disposable-copy negative (removing any one encoding flips RED), and
+# runs both gates under LC_ALL=C LANG=C PYTHONUTF8=0 PYTHONCOERCECLOCALE=0 to prove their file reads
+# do not depend on the process default encoding. Product / override / pinned drift hash untouched.
+add_test(NAME host_script_codec
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_host_script_codec.py)
+
 # P3-⑥ Debt 1 (platform half): the four logic outputs against the REAL machine's
 # output layout, read via the framework authority (AudioBufferList). Apple-only: the
 # .cpp is #ifdef __APPLE__-guarded so the non-macOS matrix never compiles it, and even

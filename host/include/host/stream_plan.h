@@ -57,16 +57,21 @@ struct StreamPlan {
   StreamPlanStatus status = StreamPlanStatus::Valid;
 };
 
-// The iPlug2 APP declares EXACTLY six legal I/O configs (config.h PLUG_CHANNEL_IO on the APP_API
-// branch): "0-2 1-2 2-2 0-4 1-4 2-4". Every VALID negotiated plan's (openIn,openOut) is one of these
-// six; anything else is not an APP config the declared channel data can hold. The host's fail-closed
-// admission (LunarHostPlugin::setActualChannelPlan) rejects a (openIn,openOut) outside this set.
-// is_legal_io is the product criterion that ties the plan back to the config's parsed legal set:
+// is_legal_io is a STREAM-POLICY invariant, NOT the parsed-config admission. The AUTHORITATIVE
+// "is this (in,out) a plugin config" test is iPlug2's IPlugProcessor::LegalIO(in,out) (IPlugProcessor.h),
+// which parses the APP's declared PLUG_CHANNEL_IO configs ("0-2 1-2 2-2 0-4 1-4 2-4" on the APP_API
+// branch) and returns true iff (in,out) is exactly one of them. This header is FRAMEWORK-FREE (no
+// iPlug2 include) by design, so it cannot call LegalIO; instead is_legal_io states the product policy
+// every VALID negotiated plan must satisfy and that LegalIO must agree with:
 //
-//   MaxNChannels(input)  = max{0,1,2,0,1,2} = 2
-//   MaxNChannels(output) = max{2,2,2,4,4,4} = 4
+//   * a plan with outputs always has 2 or 4 open outputs (the WET stereo pair + the optional DRY pair),
+//   * a plan never opens more than the declared max (MaxNChannels(output)=4, MaxNChannels(input)=2),
+//   * the input side is always 0/1/2 (off / mono / stereo).
 //
-// so a legal (openIn,openOut) is in{0,1,2} x {2,4} and never exceeds the parsed max.
+// The host boundary (LunarHostPlugin::setActualChannelPlan, host/plugin.cpp) is where the two are
+// joined: it does NOT trust this policy alone — it calls the real LegalIO(in,out) and requires it to
+// ADMIT the plan, so a (openIn,openOut) that this policy would accept but LegalIO rejects (e.g. an
+// input-only (1,0)/(2,0) with no outputs, which no declared config has) is correctly rejected.
 inline bool is_legal_io(int openIn, int openOut) {
   return (openIn == 0 || openIn == 1 || openIn == 2) && (openOut == 2 || openOut == 4);
 }

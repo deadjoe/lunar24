@@ -16,7 +16,10 @@
 //   * first-channel end-degrade-to-2 (an 8-out device opened from an end legal pair opens 2),
 //   * non-contiguous / duplicate / out-of-range INPUT selection rejects (no implicit copy),
 //   * input-off (0-in) is a VALID output-only plan, never a failure,
-//   * every VALID plan is one of the six legal APP configs (is_legal_io), never over the cap.
+//   * every VALID plan satisfies the stream-policy invariant is_legal_io (2-or-4 outputs, never
+//     over the declared max). The AUTHORITATIVE parsed-config admission is IPlugProcessor::LegalIO,
+//     applied at the host setActualChannelPlan boundary; this oracle asserts the policy a valid plan
+//     must satisfy (a plan the host later admits must also pass LegalIO).
 //
 // This is a pure function (no allocation, no state), so it needs no allocator probe: the whole
 // negotiation is a branch on ints. Every check is an observable-behaviour assertion on the plan.
@@ -63,9 +66,13 @@ void check(int devIn, int devOut, int selInL, int selInR, int selOutL, int selOu
   CHECK(p.openOut >= 0 && p.openOut <= kMaxOut);
   CHECK(p.firstIn >= 0 && (p.openIn == 0 || p.firstIn + p.openIn <= devIn));
   CHECK(p.firstOut >= 0 && (p.openOut == 0 || p.firstOut + p.openOut <= devOut));
-  // G1 product criterion: every VALID plan is one of the six legal APP configs the iPlug2 APP
-  // declares (config.h PLUG_CHANNEL_IO "0-2 1-2 2-2 0-4 1-4 2-4"). This is what ties the negotiated
-  // plan back to the parsed config: the plan can never open a config the channel data cannot hold.
+  // G1 product criterion: every VALID plan satisfies the is_legal_io stream-policy invariant — an
+  // openable 2-or-4 output run, never over the declared max (config.h PLUG_CHANNEL_IO "0-2 1-2 2-2
+  // 0-4 1-4 2-4" derives the 2-in/4-out channel-data cap). The AUTHORITATIVE parsed-config admission
+  // is IPlugProcessor::LegalIO (applied at the host setActualChannelPlan boundary, host/plugin.cpp),
+  // which is where the plan is also required to be one of those six configs; this oracle asserts the
+  // policy invariant a valid plan must satisfy. It can never exceed the iPlug2 channel data / over-read
+  // a smaller device.
   CHECK(is_legal_io(p.openIn, p.openOut));
 }
 
