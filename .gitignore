@@ -37,8 +37,6 @@ secrets/
 design/reference/*.png
 design/reference/solar42N_manual_text.txt
 
-# Third-party library PIN. iPlug2 is the host UI/editor library; it is checked out
-# locally from an upstream clone at a FIXED commit and never vendored or edited here.
-# A local edit to this pin is a secret fork, and the working tree must stay clean —
-# that integrity is enforced by tools/check_iplug_pin_clean.py (registered as a CTest).
-third_party/iPlug2/
+# iPlug2 is a pinned git submodule (third_party/iPlug2, see .gitmodules + the pin gate
+# in tools/check_iplug_pin_clean.py). It is tracked as a submodule, so it is NOT ignored;
+# submodule working-tree dirt is checked by the pin gate, not by this file.
