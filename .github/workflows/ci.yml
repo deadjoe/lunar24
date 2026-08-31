@@ -32,6 +32,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # GH#10: iPlug2 is a REAL pinned git submodule (third_party/iPlug2) that must be
+          # present on every matrix platform — the iplug_pin_clean_gate CTest is registered
+          # unconditionally and is FAIL-LOUD (no skip-if-absent). Without a recursive
+          # checkout the gitlink is empty and the gate goes RED.
+          submodules: recursive
 
       - name: Install build tools (linux)
         if: runner.os == 'Linux'
@@ -44,6 +50,27 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release --parallel
+
+      # GH#10: explicit ACTUAL-TARGET build of the standalone host, so a silent skip is
+      # impossible. Linux never adds the host target (root CMakeLists gates to APPLE OR
+      # WIN32), so this is mac/win only.
+      - name: Build Lunar24Host (actual target, mac/win)
+        if: runner.os != 'Linux'
+        run: cmake --build build --config Release --target Lunar24Host --parallel
+
+      # Assert the real artifact landed (a bundle executable vs a console .exe). The
+      # .app path is produced by the mac bundle props; the .exe path by iplug_configure_app.
+      - name: Assert Lunar24Host artifact (mac/win)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            test -x build/out/Lunar24Host.app/Contents/MacOS/Lunar24Host \
+              || { echo "FAIL: mac bundle executable missing"; exit 1; }
+          else
+            test -f build/out/Lunar24Host.exe \
+              || { echo "FAIL: Windows executable missing"; exit 1; }
+          fi
 
       - name: Run gate suite (CTest)
         run: ctest --test-dir build --output-on-failure --build-config Release

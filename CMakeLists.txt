@@ -162,15 +162,27 @@ add_test(NAME panel_regions_guard
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/measure_panel_regions.py --check)
 
-# The host (host/) depends on iPlug2 as an UNMODIFIED fixed-commit library. This gate
-# verifies the local clone is pinned to exactly that commit AND its working tree is
-# clean (a locally-edited pin is a secret fork). The clone is a local, non-vendored
-# dependency, so on CI it is absent and the gate SKIPs loudly — never a silent absent
-# guard. Same register-and-loudly-skip shape as evidence_layout_guard and the CoreAudio
-# output test above.
+# The host (host/) depends on iPlug2 as an UNMODIFIED fixed-commit library. Since GH#10
+# iPlug2 is a real pinned git submodule. This gate is FAIL-LOUD: it verifies .gitmodules
+# registers the pinned path+URL, the index gitlink is the exact pin, the submodule is
+# initialized (source present), its HEAD is the pin, and its worktree is clean. A missing,
+# uninitialized, wrong-pin, or dirty submodule FAILS — there is no longer a skip-if-absent
+# path. The CI checkout must pull it recursively (see .github/workflows/ci.yml).
 add_test(NAME iplug_pin_clean_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_iplug_pin_clean.py)
+
+# The Windows Lunar24Host target is compiled by the hosted MSVC runner, not the mac dev
+# machine, so CMake can't be its gate. This oracle statically asserts the shape of the
+# Windows configuration that would otherwise only be proven at hosted link time: the WIN32
+# branch genuinely assembles the target (iplug_configure_app + the repo-owned window-metrics
+# shim + resources/main.rc), does NOT leak the mac bootstrap main.mm, FORCEs the GL2
+# renderer (no mac-cache pollution), compiles the resource script with an /I path, and the
+# shim does not redefine the stock APP symbols. Deterministic and platform-independent, so a
+# structural regression is caught on ANY CI OS, not just Windows.
+add_test(NAME host_windows_target_oracle
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_host_windows_target.py)
 
 # Strict warnings, applied PRIVATE to a Lunar-owned compiled target only. Never
 # set globally: a future third-party build unit (iPlug2, P1+) must not be forced
@@ -311,14 +323,25 @@ if(APPLE)
 endif()
 
 # ---------------------------------------------------------------------------
-# P5-① host STANDALONE (host/): a self-authored iPlug2 APP bootstrap that opens a
-# real macOS window. Guarded to macOS + the pinned iPlug2 clone being present.
-# iPlug2 is gitignored/absent on CI (so this is a no-op there — same
-# register-and-loudly-skip shape as the iPlug pin gate), and it is never built on
-# the cross-platform Linux/Windows test matrix (an OBJCXX/framework target).
-# Its target is Lunar24Host (host/CMakeLists.txt); the host geometry is the pure
-# lunar_host/lunar_core headers it links.
+# P5-① host STANDALONE (host/): the Lunar24Host executable. Two trusted entries share
+# ONE cross-platform target:
+#   * macOS uses a repo-owned, nib-free bootstrap (host/main.mm) + mac SWELL + Metal.
+#   * Windows uses the pinned iPlug2::APP + iplug_configure_app (stock IPlugAPP_main.cpp,
+#     RtAudio/RtMidi, ASIO/DS/MM sources, WIN32_EXECUTABLE) + a repo-owned Win32
+#     window-metrics shim + host/resources/main.rc.
+# GH#10 makes iPlug2 a REAL pinned submodule, so on APPLE/WIN32 the submodule MUST be
+# present and initialized AT CONFIGURE TIME — a missing submodule is a config error
+# (fail-loud), never an EXISTS silent-skip. Linux builds the core only (no host target)
+# and still sees the submodule via the recursive CI checkout + the fail-loud pin gate.
+# The host never touches SynthRuntime/DeviceAdapter (that is GH#4); it only sizes a
+# real window via the geometry choke point.
 # ---------------------------------------------------------------------------
-if(APPLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/iPlug2")
+if(APPLE OR WIN32)
+  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/iPlug2/iPlug2.cmake")
+    message(FATAL_ERROR
+      "Lunar24Host: the pinned iPlug2 submodule is missing at "
+      "third_party/iPlug2. Run `git submodule update --init --recursive` "
+      "(GH#10 requires the submodule for the hosts on macOS and Windows).")
+  endif()
   add_subdirectory(host)
 endif()
