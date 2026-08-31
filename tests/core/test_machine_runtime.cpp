@@ -233,7 +233,7 @@ core::SynthRuntime makeRuntime(double sr = kSr) {
 // live over the run.
 core::RuntimeOutput runFrames(core::SynthRuntime& rt, std::size_t n, bool driveGraph) {
   core::RuntimeOutput last{};
-  for (std::size_t i = 0; i < n; ++i) last = rt.processFrame(0.0, driveGraph);
+  for (std::size_t i = 0; i < n; ++i) last = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, driveGraph);
   return last;
 }
 
@@ -517,7 +517,7 @@ void registry_drone_gate_envout() {
   const std::size_t kRelSettle = 3000;  // skip the (fast) release transient before peaking
   double peak = 0.0;
   for (std::size_t i = 0; i < kRelFr; ++i) {
-    rt.processFrame(0.0);
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0});
     if (i >= kRelSettle) {
       const double v = std::fabs(rt.droneChannel(0));
       if (v > peak) peak = v;
@@ -543,7 +543,7 @@ void registry_drone_gate_envout() {
   constexpr std::size_t kAtkFr = 12000;
   double after = 0.0, nbr = 0.0;
   for (std::size_t i = 0; i < kAtkFr; ++i) {
-    rt.processFrame(0.0);
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0});
     const double v0 = std::fabs(rt.droneChannel(0));
     if (v0 > after) after = v0;
     const double v1 = std::fabs(rt.droneChannel(1));
@@ -577,7 +577,7 @@ void registry_drone_cv_mod() {
     rt.setControlVoltage(reg::JackId::lfo_a_cv_out, cv);
     std::vector<double> tr(kCvModFrames);
     for (std::size_t i = 0; i < kCvModFrames; ++i) {
-      rt.processFrame(0.0);
+      rt.processFrame(core::RuntimeInputs{0.0, 0.0});
       tr[i] = rt.droneChannel(0);
     }
     return tr;
@@ -607,7 +607,7 @@ void registry_drone_reproducible() {
     t.env.reserve(N);
     for (std::size_t i = 0; i < N; ++i) {
       rt.setDroneGroupGate(0, i < 2000);  // open 0..2000, released after
-      rt.processFrame(0.0);
+      rt.processFrame(core::RuntimeInputs{0.0, 0.0});
       t.ch.push_back(rt.droneChannel(0));
       t.env.push_back(rt.droneEnvOutVolts(0));
     }
@@ -686,7 +686,7 @@ void registry_drone_envout_fail_closed() {
       // Capture that per group NOW (before the bad cohort is offered), then reject. A released
       // cohort must zero the ORIGINAL valid source slots — the old releaseEnvOut_ only cleared
       // id/flag and left cvOut_ alive, so the stale ENV OUT voltage stayed consumable.
-      rt.processFrame(0.0);
+      rt.processFrame(core::RuntimeInputs{0.0, 0.0});
       double beforeVal[4];
       for (int g = 0; g < 4; ++g) beforeVal[g] = rt.controlVoltageAt(validEnv[g]);
       for (int g = 0; g < 4; ++g) {
@@ -779,7 +779,7 @@ void registry_drone_envout_fail_closed() {
     static_cast<void>(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_1_cv_mod_in));
     static_cast<void>(rt.rebuild());
     rt.setControlVoltage(reg::JackId::lfo_a_cv_out, cv);
-    rt.processFrame(0.0);  // CONSUME: applyControlCv_ drives modCvG_[0] to `cv` for real.
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0});  // CONSUME: applyControlCv_ drives modCvG_[0] to `cv` for real.
     const double beforeReject = rt.droneGroupModCv(0);  // group 0's executed shared modCv
     check(!rt.setDroneCvModInBindings(reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out,
                                       reg::JackId::lfo_a_cv_out, reg::JackId::lfo_a_cv_out),
@@ -968,7 +968,7 @@ void registry_drone_envout_id0_sentinel() {
     check(rt.droneEnvOutBound(0) && rt.droneEnvOutBound(1) && rt.droneEnvOutBound(2) &&
               rt.droneEnvOutBound(3),
           "ENV OUT: all four groups bound after the id-0 cohort (bound-state flag, not sentinel)");
-    rt.processFrame(0.0);
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0});
     check(rt.controlVoltageAt(core::JackId{0}) != 0.0,
           "ENV OUT: the id-0 jack's ENV OUT source slot is actually written (cvOut_[0] is live)");
     check(rt.droneEnvOutVolts(0) == rt.controlVoltageAt(core::JackId{0}),
@@ -1005,7 +1005,7 @@ void registry_drone_envout_id0_sentinel() {
     static_cast<void>(st.connect(reg::JackId::lfo_a_cv_out, core::JackId{0}));
     static_cast<void>(st.rebuild());
     st.setControlVoltage(reg::JackId::lfo_a_cv_out, cv);
-    st.processFrame(0.0);  // consume: applyControlCv_ drives group 0's shared modCv
+    st.processFrame(core::RuntimeInputs{0.0, 0.0});  // consume: applyControlCv_ drives group 0's shared modCv
     return st.droneGroupModCv(0);  // the group's executed shared modCv (0 if the CV was dropped)
   };
   check(id0CvTrace(0.0) == 0.0, "id-0 CV MOD: 0V leaves the group's shared modCv at 0");
@@ -1026,7 +1026,7 @@ void registry_drone_envout_partition() {
   if (!d0) return;
   constexpr std::size_t kBlocks[3] = {64, 128, 256};
   constexpr std::size_t kTot = 256;
-  static const double kSilence[kTot] = {};
+  static const core::RuntimeInputs kSilence[kTot] = {core::RuntimeInputs{0.0, 0.0}};
   double finalEnv[3] = {}, finalCh[3] = {};
   core::RuntimeOutput dummy[kTot];
   for (int bi = 0; bi < 3; ++bi) {
@@ -1094,7 +1094,7 @@ IdentityWet renderIdentityWet(std::uint64_t seed, const core::CalibrationState& 
   w.wetR.resize(kN);
   core::RuntimeOutput o{};
   for (std::size_t i = 0; i < kN; ++i) {
-    o = rt.processFrame(0.0, /*driveGraph=*/true);
+    o = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
     w.wetL[i] = o.wetL;
     w.wetR[i] = o.wetR;
   }
@@ -1246,7 +1246,7 @@ void gh6_fail_closed() {
     std::vector<double> wl(kN), wr(kN);
     core::RuntimeOutput o{};
     for (std::size_t i = 0; i < kN; ++i) {
-      o = r.processFrame(0.0, /*driveGraph=*/true);
+      o = r.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
       wl[i] = o.wetL;
       wr[i] = o.wetR;
     }
@@ -1323,7 +1323,7 @@ void gh6_bit_identical() {
 
   // Block-partition invariance: a 256-frame processBlock render == 256 per-frame renders.
   constexpr std::size_t kTot = 256;
-  static const double kSilence[kTot] = {};
+  static const core::RuntimeInputs kSilence[kTot] = {core::RuntimeInputs{0.0, 0.0}};
   core::RuntimeOutput whole[kTot], part[kTot];
   {
     core::SynthRuntime rt = makeRuntime();
@@ -1335,7 +1335,7 @@ void gh6_bit_identical() {
     core::SynthRuntime rt = makeRuntime();
     rt.rebuild();
     rt.configureVcfIdentity(1u, kSeed, calib);
-    for (std::size_t i = 0; i < kTot; ++i) part[i] = rt.processFrame(0.0, true);
+    for (std::size_t i = 0; i < kTot; ++i) part[i] = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
   }
   check(sameSeq(whole, part, kTot),
         "identity render is block-partition invariant (processBlock == per-frame)");
@@ -1489,11 +1489,12 @@ int main() {
     part.setControlVoltage(kJ_CvOut, 3.0);
 
     std::vector<double> zeros(kBlock, 0.0);
+    std::vector<core::RuntimeInputs> zerosRi(kBlock, core::RuntimeInputs{0.0, 0.0});
     std::vector<core::RuntimeOutput> outFull(kBlock), outPart(kBlock);
-    whole.processBlock(zeros.data(), kBlock, outFull.data(), /*driveGraph=*/true);
+    whole.processBlock(zerosRi.data(), kBlock, outFull.data(), /*driveGraph=*/true);
     const std::size_t chunk = kBlock / 4;
     for (std::size_t off = 0; off < kBlock; off += chunk)
-      part.processBlock(zeros.data(), chunk, outPart.data() + off, /*driveGraph=*/true);
+      part.processBlock(zerosRi.data(), chunk, outPart.data() + off, /*driveGraph=*/true);
 
     bool invariant = true;
     for (std::size_t i = 0; i < kBlock; ++i) {
@@ -1544,7 +1545,7 @@ int main() {
     // the deliberate allocation above (and any harness setup) is excluded.
     g_allocCount = 0;
     core::RuntimeOutput last{};
-    for (std::size_t i = 0; i < 100000; ++i) last = rt.processFrame(0.0, /*driveGraph=*/true);
+    for (std::size_t i = 0; i < 100000; ++i) last = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
     const std::size_t allocDuringRender = g_allocCount;
     check(allocDuringRender == 0, "100k frames allocate nothing on the render path");
 
@@ -1595,7 +1596,7 @@ int main() {
     double maxWet = 0.0;
     core::RuntimeOutput last{};
     for (std::size_t i = 0; i < kBlock * 2; ++i) {
-      last = rt.processFrame(0.0, /*driveGraph=*/true);
+      last = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
       if (std::fabs(last.wetL) > maxWet) maxWet = std::fabs(last.wetL);
     }
     check(maxWet > 1e-3, "WET is non-trivial (full chain ran in plan order)");
@@ -1639,14 +1640,16 @@ int main() {
     // render identically.
     std::vector<double> src(kBlock);
     for (std::size_t i = 0; i < kBlock; ++i) src[i] = 0.5 * std::sin(2.0 * 3.14159265358979 * (100.0 / kSr) * static_cast<double>(i));
+    std::vector<core::RuntimeInputs> srcRi(kBlock);
+    for (std::size_t i = 0; i < kBlock; ++i) srcRi[i] = core::RuntimeInputs{src[i], src[i]};
     core::SynthRuntime cycA = makeRuntime();
     cycA.connect(kJ_EnvFolOut, kJ_PreampExtIn);
     cycA.rebuild();
     core::SynthRuntime cycB = makeRuntime();  // unpatched: preamp reads ext directly
     cycB.rebuild();
     std::vector<core::RuntimeOutput> outA(kBlock), outB(kBlock);
-    cycA.processBlock(src.data(), kBlock, outA.data(), /*driveGraph=*/true);
-    cycB.processBlock(src.data(), kBlock, outB.data(), /*driveGraph=*/true);
+    cycA.processBlock(srcRi.data(), kBlock, outA.data(), /*driveGraph=*/true);
+    cycB.processBlock(srcRi.data(), kBlock, outB.data(), /*driveGraph=*/true);
     double diff = 0.0;
     for (std::size_t i = 0; i < kBlock; ++i) diff += std::fabs(outA[i].wetL - outB[i].wetL);
     check(diff > 1e-6,
@@ -1661,12 +1664,12 @@ int main() {
     part.connect(kJ_EnvFolOut, kJ_PreampExtIn);
     part.rebuild();
     std::vector<core::RuntimeOutput> outFull(kBlock), outPart(kBlock);
-    whole.processBlock(src.data(), kBlock, outFull.data(), true);
+    whole.processBlock(srcRi.data(), kBlock, outFull.data(), true);
     const std::size_t chunks[] = {64, 100, 37, 55};
     std::size_t off = 0, ci = 0;
     while (off < kBlock) {
       const std::size_t n = std::min(chunks[ci % 4], kBlock - off);
-      part.processBlock(src.data() + off, n, outPart.data() + off, true);
+      part.processBlock(srcRi.data() + off, n, outPart.data() + off, true);
       off += n; ++ci;
     }
     bool invariant = true;
@@ -1710,8 +1713,9 @@ int main() {
     // 跑满一整块(静音 ext)确认执行器对延迟链的消费是确定且有限的(=64.0 时该值仍由
     // delaySamples 驱动, 对账与 1-deep 两条已在最上面红; 这里只做行为侧兜底)。
     std::vector<double> quiet(kBlock, 0.0);
+    std::vector<core::RuntimeInputs> quietRi(kBlock, core::RuntimeInputs{0.0, 0.0});
     std::vector<core::RuntimeOutput> outc(kBlock);
-    rc.processBlock(quiet.data(), kBlock, outc.data(), /*driveGraph=*/true);
+    rc.processBlock(quietRi.data(), kBlock, outc.data(), /*driveGraph=*/true);
     check(std::isfinite(outc[kBlock - 1].wetL), "reconciled cycle output finite for a full block");
   }
 
@@ -1801,7 +1805,7 @@ int main() {
       }
       actual[i] = a;
       lin[i] = l;
-      rt.processFrame(0.0, /*driveGraph=*/true);
+      rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
       prod[i] = rt.droneChannel(0);        // the value the PRODUCT path fed to the mixer.
     }
 
@@ -1846,7 +1850,7 @@ int main() {
     // form both accept, exactly as the S&H lambda below uses.
     auto renderDrone = [&](core::SynthRuntime& rt) {
       std::vector<double> seq(kN);
-      for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.droneChannel(0); }
+      for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true); seq[i] = rt.droneChannel(0); }
       return seq;
     };
     auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
@@ -1920,7 +1924,7 @@ int main() {
     // (no default capture mode); a default capture is the form both MSVC and Clang accept.
     auto render3 = [&](core::SynthRuntime& rt) {
       std::vector<double> seq(kN);
-      for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(0.0, /*driveGraph=*/true); seq[i] = rt.drone3Channel(); }
+      for (std::size_t i = 0; i < kN; ++i) { rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true); seq[i] = rt.drone3Channel(); }
       return seq;
     };
     auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
@@ -1977,11 +1981,11 @@ int main() {
     std::vector<double> prod(kN), src(kN), hi(kN);
     for (std::size_t i = 0; i < kN; ++i) {
       double n = 0.0;
-      low.processFrame(0.0, true);
+      low.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
       refNoise.tick(&n);
       prod[i] = low.drone3Channel();
       src[i] = n;
-      high.processFrame(0.0, true);
+      high.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
       hi[i] = high.drone3Channel();
     }
     double d = 0.0, pk = 0.0, toneDiff = 0.0;
@@ -2014,7 +2018,7 @@ int main() {
       std::vector<double> ch(kN), cv(kN);
       for (std::size_t i = 0; i < kN; ++i) {
         rt.setDrone3ShClock(clk[i]);
-        rt.processFrame(0.0, true);
+        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
         ch[i] = rt.drone3Channel();
         cv[i] = rt.sampleHold3Cv();
       }
@@ -2071,7 +2075,7 @@ int main() {
     constexpr std::size_t kTotFrames = 256;
     constexpr std::size_t kEventSample = 100;   // absolute sample the pitch lands on.
     constexpr std::size_t kBlocks[3] = {64, 128, 256};
-    static const double kSilence[kTotFrames] = {};  // extSource = 0, as runFrames() uses.
+    static const core::RuntimeInputs kSilence[kTotFrames] = {core::RuntimeInputs{0.0, 0.0}};  // extSource = 0, as runFrames() uses.
 
     // A single drone_3.pitch = 0.5 event at absolute sample kEventSample. The runtime's
     // default pitch is silence, so a nonzero pitch turns the tone on THERE.

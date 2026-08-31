@@ -71,7 +71,7 @@ core::RuntimeOutput churnSnapshot(double baseHz) {
   rt.setControlVoltage(lunar24::registry::JackId::vco_a_v_oct_in, 0.0);
   void(rt.rebuild());
   core::RuntimeOutput last{};
-  for (int i = 0; i < 16; ++i) last = rt.processFrame(0.0, /*driveGraph=*/true);
+  for (int i = 0; i < 16; ++i) last = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
   return last;  // d destroyed at scope exit -> the churn.
 }
 
@@ -364,8 +364,8 @@ int main() {
       // The value the self-edge feeds this frame's vco_b.cv_in (read from the D-sample line,
       // BEFORE the frame publishes a new vco_out).
       const double g = d1.runtime().feedbackAt(fb).buf[d1.runtime().feedbackAt(fb).writePos];
-      const core::RuntimeOutput o1 = d1.runtime().processFrame(0.0, /*driveGraph=*/true);
-      const core::RuntimeOutput o2 = d2.runtime().processFrame(0.0, /*driveGraph=*/true);
+      const core::RuntimeOutput o1 = d1.runtime().processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
+      const core::RuntimeOutput o2 = d2.runtime().processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
       if (!std::isfinite(o1.dryB) || !std::isfinite(o2.dryB)) finite = false;
       if (o1.dryB != o2.dryB) identical = false;
       if (i > 0 && g != prevPub) routeOk = false;  // D=1: this frame's cv_in == last frame's vco_out.
@@ -394,7 +394,7 @@ int main() {
     bool sameSample = true;
     for (int i = 0; i < 16; ++i) {
       const double ext = 0.5 + 0.25 * (i % 4);  // deterministic varying EXT.AUDIO drive.
-      (void)d.runtime().processFrame(ext, /*driveGraph=*/true);
+      (void)d.runtime().processFrame(core::RuntimeInputs{ext, ext}, /*driveGraph=*/true);
       const double droneMod = d.runtime().droneGroupModCv(1);  // drone_2 == classic group 1.
       const double envOut = d.runtime().controlVoltageAt(reg::JackId::env_follower_env_out);
       if (std::fabs(droneMod - envOut) > 1e-12) sameSample = false;
@@ -431,7 +431,7 @@ int main() {
         check(rt.rebuild(), "G2 CV-MOD cable plan rebuilds ok");
       }
       for (std::size_t i = 0; i < n; ++i)
-        seq[i] = rt.processFrame(0.5 + 0.25 * double(i % 4), true);
+        seq[i] = rt.processFrame(core::RuntimeInputs{0.5 + 0.25 * double(i % 4), 0.5 + 0.25 * double(i % 4)}, true);
     };
     constexpr std::size_t kN = 16;
     auto sameWet = [](const core::RuntimeOutput* a, const core::RuntimeOutput* b, std::size_t n) {
@@ -488,11 +488,11 @@ int main() {
       check(wr.rebuild(), "G2b CV-MOD cable plan rebuilds ok");
       for (std::size_t i = 0; i < kN; ++i) {
         const double drive = 0.5 + 0.25 * double(i % 4);
-        static_cast<void>(sr.processFrame(drive, true));          // S publishes this-frame envOut.
+        static_cast<void>(sr.processFrame(core::RuntimeInputs{drive, drive}, true));          // S publishes this-frame envOut.
         const double envNow = sr.controlVoltageAt(reg::JackId::env_follower_env_out);
         mr.setDroneGroupModCv(1, envNow);                          // M: same-frame env, injected.
-        mSeq[i] = mr.processFrame(drive, true);
-        wSeq[i] = wr.processFrame(drive, true);
+        mSeq[i] = mr.processFrame(core::RuntimeInputs{drive, drive}, true);
+        wSeq[i] = wr.processFrame(core::RuntimeInputs{drive, drive}, true);
       }
     };
     core::RuntimeOutput wOn[kN], mOn[kN];
@@ -545,7 +545,7 @@ int main() {
       check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::vcf_cv_l_in),
             "G1 connect env_follower.env_out -> vcf.cv_l_in (L wire only)");
       check(rt.rebuild(), "G1 VCF normalling plan rebuilds ok (L only)");
-      for (int i = 0; i < 8; ++i) (void)rt.processFrame(drv, true);
+      for (int i = 0; i < 8; ++i) (void)rt.processFrame(core::RuntimeInputs{drv, drv}, true);
       const double l = rt.vcfCvReadbackL(), r = rt.vcfCvReadbackR();
       check(l != 0.0, "G1 the L wire feeds a real nonzero CV into the filter (readback is live)");
       check(r == l, "G1 unplugged R falls back to the same-frame L (normalling route.vcf_cv_l_to_cv_r)");
@@ -559,7 +559,7 @@ int main() {
       check(rt.connect(reg::JackId::drone_2_env_out, reg::JackId::vcf_cv_r_in),
             "G1 connect drone_2.env_out -> vcf.cv_r_in (distinct R wire)");
       check(rt.rebuild(), "G1 VCF plan rebuilds ok (L + R)");
-      for (int i = 0; i < 8; ++i) (void)rt.processFrame(drv, true);
+      for (int i = 0; i < 8; ++i) (void)rt.processFrame(core::RuntimeInputs{drv, drv}, true);
       const double l = rt.vcfCvReadbackL(), r = rt.vcfCvReadbackR();
       const double src = rt.controlVoltageAt(reg::JackId::drone_2_env_out);
       check(r != l, "G1 the explicit R wire overrides the normalling (R differs from L)");
@@ -606,8 +606,8 @@ int main() {
     check(d0.runtime().rebuild() && dN.runtime().rebuild(), "host-terminal differential oracle rebuilds ok");
     bool diverged = false, envSensitive = false;
     for (int i = 0; i < 64; ++i) {
-      const core::RuntimeOutput o0 = d0.runtime().processFrame(0.0, /*driveGraph=*/true);
-      const core::RuntimeOutput o1 = dN.runtime().processFrame(0.5, /*driveGraph=*/true);
+      const core::RuntimeOutput o0 = d0.runtime().processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
+      const core::RuntimeOutput o1 = dN.runtime().processFrame(core::RuntimeInputs{0.5, 0.5}, /*driveGraph=*/true);
       if (o0.wetL != o1.wetL || o0.wetR != o1.wetR) diverged = true;
       const double e0 = d0.runtime().controlVoltageAt(reg::JackId::env_follower_env_out);
       const double e1 = dN.runtime().controlVoltageAt(reg::JackId::env_follower_env_out);
@@ -646,7 +646,7 @@ int main() {
     // (i) r0 (d0's runtime) is still alive + rebuildable AFTER that churn.
     check(r0.rebuild(),
           "a pre-churn runtime() reference stays valid + rebuildable after nested definition churn");
-    const core::RuntimeOutput ro = r0.processFrame(0.0, /*driveGraph=*/true);
+    const core::RuntimeOutput ro = r0.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
     check(std::isfinite(ro.wetL) && std::isfinite(ro.wetR) && std::isfinite(ro.dryA) &&
               std::isfinite(ro.dryB),
           "the pre-churn runtime still renders finite output (stable-address ownership, no aliasing)");
@@ -685,8 +685,8 @@ int main() {
           "A′① canonical full chain rebuilds ok (A + fresh B)");
     bool finite = true, identical = true, nonSilent = false;
     for (int i = 0; i < 32; ++i) {
-      const core::RuntimeOutput oA = dA.runtime().processFrame(0.5, /*driveGraph=*/true);
-      const core::RuntimeOutput oB = dB.runtime().processFrame(0.5, /*driveGraph=*/true);
+      const core::RuntimeOutput oA = dA.runtime().processFrame(core::RuntimeInputs{0.5, 0.5}, /*driveGraph=*/true);
+      const core::RuntimeOutput oB = dB.runtime().processFrame(core::RuntimeInputs{0.5, 0.5}, /*driveGraph=*/true);
       if (!std::isfinite(oA.wetL) || !std::isfinite(oA.wetR) ||
           !std::isfinite(oA.dryA) || !std::isfinite(oA.dryB)) finite = false;
       if (oA.wetL != oB.wetL || oA.wetR != oB.wetR ||
@@ -727,7 +727,7 @@ int main() {
       check(d.runtime().rebuild(), "A′① repatch rebuilds ok");
       double fp = 0.0;
       for (int i = 0; i < 8; ++i)
-        fp += d.runtime().processFrame(0.6, /*driveGraph=*/true).wetL;
+        fp += d.runtime().processFrame(core::RuntimeInputs{0.6, 0.6}, /*driveGraph=*/true).wetL;
       return fp;
     };
     const double fpNo = renderWetFp(false);
@@ -742,6 +742,8 @@ int main() {
     constexpr std::size_t kN = 32;
     double extArr[kN];
     for (std::size_t i = 0; i < kN; ++i) extArr[i] = 0.5 + 0.25 * (i % 4);
+    core::RuntimeInputs extArrRi[kN];
+    for (std::size_t i = 0; i < kN; ++i) extArrRi[i] = core::RuntimeInputs{extArr[i], extArr[i]};
     // Two FRESH, identically-configured instances: frame-loop and processBlock must each
     // run from the same initial state, or an accumulation leak would (wrongly) split them.
     auto newSimilar = [&](core::MachineRuntimeDefinition& d) {
@@ -757,7 +759,7 @@ int main() {
       core::MachineRuntimeDefinition d(kSeed, kSr);
       newSimilar(d);
       const std::size_t before = g_allocCount;
-      for (std::size_t i = 0; i < kN; ++i) frameOut[i] = d.runtime().processFrame(extArr[i], true);
+      for (std::size_t i = 0; i < kN; ++i) frameOut[i] = d.runtime().processFrame(core::RuntimeInputs{extArr[i], extArr[i]}, true);
       check(g_allocCount == before, "A′② per-frame render loop allocates nothing (zero-alloc)");
     }
     core::RuntimeOutput blockOut[kN];
@@ -765,7 +767,7 @@ int main() {
       core::MachineRuntimeDefinition d(kSeed, kSr);
       newSimilar(d);
       const std::size_t before = g_allocCount;
-      d.runtime().processBlock(extArr, kN, blockOut, true);
+      d.runtime().processBlock(extArrRi, kN, blockOut, true);
       check(g_allocCount == before, "A′② processBlock renders with zero allocation");
     }
     bool same = true;
@@ -807,6 +809,8 @@ int main() {
     constexpr std::size_t kBlocks35[3] = {37, 91, 128};
     double drv[kP];
     for (std::size_t i = 0; i < kP; ++i) drv[i] = 0.5 + 0.25 * (i % 4);
+    core::RuntimeInputs drvRi[kP];
+    for (std::size_t i = 0; i < kP; ++i) drvRi[i] = core::RuntimeInputs{drv[i], drv[i]};
     auto same35 = [&](const core::RuntimeOutput* a, const core::RuntimeOutput* b) {
       for (std::size_t i = 0; i < kP; ++i)
         if (a[i].wetL != b[i].wetL || a[i].wetR != b[i].wetR ||
@@ -826,7 +830,7 @@ int main() {
             "A′③ connect env->preamp return cable (partition cycle)");
       for (std::size_t b = 0; b < kP; b += block) {
         const std::size_t n = (kP - b) < block ? (kP - b) : block;
-        rt.processBlock(drv + b, n, seq + b, /*driveGraph=*/true);  // offset the drive, was drv.
+        rt.processBlock(drvRi + b, n, seq + b, /*driveGraph=*/true);  // offset the drive, was drv.
       }
     };
     core::RuntimeOutput cyc[3][kP] = {};
@@ -847,7 +851,7 @@ int main() {
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       rt.setDroneGroupGate(/*voiceGroup=*/0, gateOn);
-      for (std::size_t i = 0; i < kP; ++i) seq[i] = rt.processFrame(drv[i], /*driveGraph=*/true);
+      for (std::size_t i = 0; i < kP; ++i) seq[i] = rt.processFrame(core::RuntimeInputs{drv[i], drv[i]}, /*driveGraph=*/true);
     };
     core::RuntimeOutput gOn[2][kP], gOff[kP];
     renderGate(true, gOn[0]);
@@ -896,7 +900,7 @@ int main() {
       rt.setDroneGroupGate(0, true);
       bool envLive = false, envSteady = true, envConsistent = true;
       for (std::size_t i = 0; i < kP; ++i) {
-        (void)rt.processFrame(drv[i], /*driveGraph=*/true);
+        (void)rt.processFrame(core::RuntimeInputs{drv[i], drv[i]}, /*driveGraph=*/true);
         const double ev = rt.droneEnvOutVolts(0);
         if (ev != 0.0) envLive = true; else envSteady = false;   // the classic drone VCA is OPEN (level==1.0) -> full-scale every frame.
         if (ev != rt.controlVoltageAt(reg::JackId::drone_1_env_out)) envConsistent = false;
@@ -925,7 +929,7 @@ int main() {
             "⑤b wire env_follower.env_out -> vco_b.v_oct_in (real pitch cable)");
       check(rt.rebuild(), "⑤b pitch-cable plan rebuilds ok");
       for (std::size_t i = 0; i < kP; ++i) {
-        const core::RuntimeOutput o = rt.processFrame(drv[i], true);
+        const core::RuntimeOutput o = rt.processFrame(core::RuntimeInputs{drv[i], drv[i]}, true);
         if (o.dryA != 0.0) aVoice = true;
         if (o.dryB != 0.0) bVoice = true;
         if (o.dryA != o.dryB) independent = true;
@@ -953,12 +957,12 @@ int main() {
         core::MachineRuntimeDefinition d(kSeed, kSr);
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
-        for (int i = 0; i < 12; ++i) (void)rt.processFrame(warmDrv, true);  // no return cable yet.
+        for (int i = 0; i < 12; ++i) (void)rt.processFrame(core::RuntimeInputs{warmDrv, warmDrv}, true);  // no return cable yet.
         const double warmEnv = rt.controlVoltageAt(reg::JackId::env_follower_env_out);
         check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
               "③b connect env_follower.env_out -> preamp.ext_source_in after warm-up");
         check(rt.rebuild(), "③b return-cable plan rebuilds ok");
-        (void)rt.processFrame(warmDrv, true);  // first post-rebuild frame.
+        (void)rt.processFrame(core::RuntimeInputs{warmDrv, warmDrv}, true);  // first post-rebuild frame.
         return WarmUpProbe{warmEnv, rt.preampResolvedInput()};
       };
       const WarmUpProbe plo = probe(0.15), phi = probe(0.85);
@@ -986,13 +990,13 @@ int main() {
         core::MachineRuntimeDefinition d(kSeed, kSr);
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
-        for (int i = 0; i < 12; ++i) (void)rt.processFrame(0.5 + 0.25 * double(i % 4), true);
+        for (int i = 0; i < 12; ++i) (void)rt.processFrame(core::RuntimeInputs{0.5 + 0.25 * double(i % 4), 0.5 + 0.25 * double(i % 4)}, true);
         if (wireReturn) {
           check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
                 "③c connect env_follower.env_out -> preamp.ext_source_in after warm-up");
           check(rt.rebuild(), "③c return-cable plan rebuilds ok");
         }
-        for (std::size_t i = 0; i < n; ++i) seq[i] = rt.processFrame(0.0, true);  // ext=0 first frame.
+        for (std::size_t i = 0; i < n; ++i) seq[i] = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);  // ext=0 first frame.
       };
       auto sameAll4 = [](const core::RuntimeOutput* a, const core::RuntimeOutput* b, std::size_t n) {
         for (std::size_t i = 0; i < n; ++i)
@@ -1049,7 +1053,7 @@ int main() {
       check(dd.runtime().configureVcfIdentity(1u, kSeed, c), "A′⑥ identity config for L/R oracle");
       double l = 0.0, r = 0.0;
       for (int i = 0; i < 256; ++i) {
-        const core::RuntimeOutput o = dd.runtime().processFrame(0.0, /*driveGraph=*/true);
+        const core::RuntimeOutput o = dd.runtime().processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
         l += o.wetL;
         r += o.wetR;
       }
@@ -1066,6 +1070,8 @@ int main() {
     constexpr std::size_t kN6 = 256;
     double drv6[kN6];
     for (std::size_t i = 0; i < kN6; ++i) drv6[i] = 0.2 + 0.1 * (i % 3);
+    core::RuntimeInputs drv6Ri[kN6];
+    for (std::size_t i = 0; i < kN6; ++i) drv6Ri[i] = core::RuntimeInputs{drv6[i], drv6[i]};
     auto idenSimilar = [&](core::MachineRuntimeDefinition& dd) {
       core::CalibrationState c{};
       c.vcfLeftTrim = 1.0f;
@@ -1076,13 +1082,13 @@ int main() {
     {
       core::MachineRuntimeDefinition dd(kSeed, kSr);
       idenSimilar(dd);
-      for (std::size_t i = 0; i < kN6; ++i) idenFrame[i] = dd.runtime().processFrame(drv6[i], true);
+      for (std::size_t i = 0; i < kN6; ++i) idenFrame[i] = dd.runtime().processFrame(core::RuntimeInputs{drv6[i], drv6[i]}, true);
     }
     core::RuntimeOutput idenBlock[kN6];
     {
       core::MachineRuntimeDefinition dd(kSeed, kSr);
       idenSimilar(dd);
-      dd.runtime().processBlock(drv6, kN6, idenBlock, /*driveGraph=*/true);
+      dd.runtime().processBlock(drv6Ri, kN6, idenBlock, /*driveGraph=*/true);
     }
     bool idenSame = true;
     for (std::size_t i = 0; i < kN6; ++i)
@@ -1097,7 +1103,7 @@ int main() {
     constexpr std::size_t kTot = 256;
     constexpr std::size_t kEventSample = 100;
     constexpr std::size_t kBlocks[3] = {64, 128, 256};
-    static const double kSilence[kTot] = {};
+    static const core::RuntimeInputs kSilence[kTot] = {core::RuntimeInputs{0.0, 0.0}};
     auto pitchEvent = [&]() {
       core::ControlEvent ev{};
       ev.kind = core::ControlEventKind::parameter;

@@ -62,7 +62,7 @@ extern std::size_t g_allocCount;  // defined in the companion _allocator TU.
 static constexpr double kSr = 48000.0;
 static constexpr uint32_t kSeed = 0x5EEDu;  // matches machine_definition default seed
 static constexpr int kCap = 256;
-static constexpr double kZeros[kCap] = {0.0};
+static constexpr core::RuntimeInputs kZeros[kCap] = {core::RuntimeInputs{0.0, 0.0}};
 
 // Bitwise equality — the point of several oracles is that a mid-graph re-computation
 // lands on EXACTLY the same bits (same sample vs a one-frame-off read). We demand it.
@@ -133,7 +133,7 @@ static void frame_capture(core::SynthRuntime& rt, int n, reg::JackId jack, doubl
                           bool captureJack) {
   for (int i = 0; i < n; ++i) {
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     out[i] = captureJack ? rt.controlVoltageAt(jack) : o.wetL;
   }
@@ -281,7 +281,7 @@ static void drone_patch_run(const std::unique_ptr<core::MachineRuntimeDefinition
     if (m == DroneRun::kManual) rt.setDroneGroupModCv(1, refCv[i]);
     else if (m == DroneRun::kFront) rt.setDroneGroupModCv(1, i > 0 ? refCv[i - 1] : 0.0);
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     if (lfoOut) lfoOut[i] = rt.controlVoltageAt(reg::JackId::lfo_a_cv_out);
     if (wetOut) wetOut[i] = o.wetL;
@@ -341,7 +341,7 @@ static void test_2_lfo_drone_mod_same_sample(void) {
     applyParam(rt, reg::ParameterId::lfo_b_wave, 0.5, 0);
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       lfoB[i] = rt.controlVoltageAt(reg::JackId::lfo_b_cv_out);
       wetB[i] = o.wetL;
@@ -391,7 +391,7 @@ static void test_3_seq_gate_eg_env_vcf(void) {
     applyParam(rt, reg::ParameterId::joystick_x, 0.7, 40);
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       envA[i] = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
       envB[i] = rt.controlVoltageAt(reg::JackId::envelope_b_env_out);
@@ -467,7 +467,7 @@ static void test_4_joystick_vcf(void) {
     applyParam(rt, reg::ParameterId::joystick_offset_x, 0.3, 8);
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       outX[i] = rt.controlVoltageAt(reg::JackId::joystick_x_out);
       outY[i] = rt.controlVoltageAt(reg::JackId::joystick_y_out);
@@ -523,7 +523,7 @@ static void test_5_seq_ext_clock(void) {
     // stay high for a long window (no further edge), frame 5..255
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       cv[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
       gate[i] = rt.controlVoltageAt(reg::JackId::sequencer_gate_out);
@@ -558,7 +558,7 @@ static void test_5_seq_ext_clock(void) {
         check(rt.rebuild(), "t5b repatch rebuild succeeds");
       }
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       gate2[i] = rt.controlVoltageAt(reg::JackId::sequencer_gate_out);
     }
@@ -604,7 +604,7 @@ static void test_6_seq_stages_clock_out(void) {
       applyParam(rt, reg::ParameterId::joystick_x, 0.7, 56);
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput o;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &o);
         sqCv[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
         sqGate[i] = rt.controlVoltageAt(reg::JackId::sequencer_gate_out);
@@ -687,7 +687,7 @@ static void test_6_seq_stages_clock_out(void) {
       applyParam(rt, reg::ParameterId::joystick_x, 0.7, 8);
       for (int i = 0; i < 64; ++i) {
         core::RuntimeOutput o;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &o);
         envA[i] = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
       }
@@ -715,7 +715,7 @@ static void test_7_param_table_partition(void) {
     applyParam(rt, reg::ParameterId::lfo_b_rate, 20.0, 0);
     for (int i = 0; i < 64; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
     }
     check(nearD(rt.controlVoltageAt(reg::JackId::joystick_x_out), 2.0),
@@ -737,7 +737,7 @@ static void test_7_param_table_partition(void) {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::joystick_x, 0.7, 0);
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     core::RuntimeOutput o;
     rt.processBlock(&z, 1, &o);
     check(nearD(rt.controlVoltageAt(reg::JackId::joystick_x_out), 2.0),
@@ -756,7 +756,7 @@ static void test_7_param_table_partition(void) {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::joystick_x, -1.0, 0);
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     core::RuntimeOutput o;
     rt.processBlock(&z, 1, &o);
     check(rt.lastApplyStatus() == core::ParameterApplyStatus::invalid_value,
@@ -778,7 +778,7 @@ static void test_7_param_table_partition(void) {
     applyParam(rt, reg::ParameterId::sequencer_step_cv_1, 1.0, 0);
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       cvBase[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
     }
@@ -790,7 +790,7 @@ static void test_7_param_table_partition(void) {
     applyParam(rt, reg::ParameterId::sequencer_pulser, 10000.0, 0);  // out of [0,1]
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       cvPulser[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
     }
@@ -804,7 +804,7 @@ static void test_7_param_table_partition(void) {
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::sequencer_pulser, 10000.0, 0);  // out of [0,1]
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     check(rt.lastApplyStatus() == core::ParameterApplyStatus::invalid_value,
           "t7 pulser 10000.0 (out of [0,1]) -> invalid_value (no silent clamp)");
@@ -823,7 +823,7 @@ static void test_7_param_table_partition(void) {
     applyParam(rt, reg::ParameterId::joystick_x, 0.7, 40);
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       cvPos[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
     }
@@ -896,7 +896,7 @@ static void test_8_task65_invariants_zero_alloc(void) {
     double sink = 0.0;
     for (int i = 0; i < 4000; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       sink += o.wetL;  // consume so the optimizer cannot elide the render
     }
@@ -922,7 +922,7 @@ static void test_negative_controls(void) {
     // before the first frame the source must have a defined (finite) value; after a real
     // render the LFO is visible — proving it ran once/sample, not dropped from the plan.
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     double v1 = rt.controlVoltageAt(reg::JackId::lfo_a_cv_out);
     check(std::isfinite(v0) && std::isfinite(v1) && !sameD(v0, v1),
@@ -963,7 +963,7 @@ static void test_negative_controls(void) {
     applyParam(rt, reg::ParameterId::joystick_x, 0.3, 0);  // stays low the whole window
     for (int i = 0; i < 40; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
     }
     check(sameD(rt.controlVoltageAt(reg::JackId::sequencer_cv_out), 0.0),
@@ -981,7 +981,7 @@ static void test_negative_controls(void) {
     double a0 = 0, b0 = 0;
     for (int i = 0; i < 64; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       if (i == 63) { a0 = rt.controlVoltageAt(reg::JackId::lfo_a_cv_out);
                      b0 = rt.controlVoltageAt(reg::JackId::lfo_b_cv_out); }
@@ -1000,7 +1000,7 @@ static void test_negative_controls(void) {
     double x0 = 0, x8 = 0;
     for (int i = 0; i < 16; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       if (i == 0) x0 = rt.controlVoltageAt(reg::JackId::joystick_x_out);
       if (i == 8) x8 = rt.controlVoltageAt(reg::JackId::joystick_x_out);
@@ -1031,7 +1031,7 @@ static void test_negative_controls(void) {
       applyParam(rt, reg::ParameterId::sequencer_step_cv_1, 1.0, 0);
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput o;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &o);
         base[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
       }
@@ -1043,7 +1043,7 @@ static void test_negative_controls(void) {
       applyParam(rt, reg::ParameterId::sequencer_pulser, 10000.0, 0);
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput o;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &o);
         puls[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
       }
@@ -1185,7 +1185,7 @@ static void row_apply(const ParamRow& row) {
   // CONST surface, never a shadow/param bank.
   applyParam(rt, row.pid, row.valid, 0);
   core::RuntimeOutput o;
-  const double z = 0.0;
+  const core::RuntimeInputs z{0.0, 0.0};
   rt.processBlock(&z, 1, &o);
   check(rt.lastApplyParamId() == row.pid, "t9 row lastApplyParamId == row id");
   check(rt.lastApplyStatus() == core::ParameterApplyStatus::applied,
@@ -1218,7 +1218,7 @@ static void test_9_param_matrix_apply_status(void) {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     applyParam(rt, reg::ParameterId::sequencer_pulser, 0.0, 0); rt.processBlock(&z, 1, &o);
     check(rt.lastApplyParamId() == reg::ParameterId::sequencer_pulser,
           "t9 pulser row lastApplyParamId == pulser");
@@ -1263,7 +1263,7 @@ static void test_9_param_matrix_apply_status(void) {
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::joystick_x, 0.7, 0);
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     const double before = rt.joystick().x();
     applyParam(rt, reg::ParameterId::joystick_x, 5.0, 1);
@@ -1278,7 +1278,7 @@ static void test_9_param_matrix_apply_status(void) {
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::envelope_a_s, 0.4, 0);
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     const double before = rt.envelopeA().sustain();
     applyParam(rt, reg::ParameterId::envelope_a_s, 1.5, 1);
@@ -1293,7 +1293,7 @@ static void test_9_param_matrix_apply_status(void) {
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::lfo_a_wave, 0.25, 0);
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     const double before = rt.lfoA().wave();
     applyParam(rt, reg::ParameterId::lfo_a_wave, 2.0, 1);
@@ -1308,7 +1308,7 @@ static void test_9_param_matrix_apply_status(void) {
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::sequencer_step_cv_1, 3.5, 0);
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     const double before = rt.sequencer().stepCv(0);
     applyParam(rt, reg::ParameterId::sequencer_step_cv_1, 6.0, 1);
@@ -1340,7 +1340,7 @@ static void test_10_vca_ab_and_output_audit(void) {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     for (int i = 0; i < 11; ++i)
       check(std::isfinite(rt.controlVoltageAt(kOut[i])),
@@ -1363,7 +1363,7 @@ static void test_10_vca_ab_and_output_audit(void) {
       applyParam(rt, reg::ParameterId::envelope_a_self_gen, 1.0, 0);  // A runs, B idle
       for (int i = 0; i < 60; ++i) {
         core::RuntimeOutput o;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &o);
         aLive = rt.controlVoltageAt(reg::JackId::envelope_a_vca_cv_out);
         bIdle = rt.controlVoltageAt(reg::JackId::envelope_b_vca_cv_out);
@@ -1378,7 +1378,7 @@ static void test_10_vca_ab_and_output_audit(void) {
       applyParam(rt, reg::ParameterId::envelope_b_self_gen, 1.0, 0);  // B runs, A idle
       for (int i = 0; i < 60; ++i) {
         core::RuntimeOutput o;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &o);
         bLive = rt.controlVoltageAt(reg::JackId::envelope_b_vca_cv_out);
         aIdle = rt.controlVoltageAt(reg::JackId::envelope_a_vca_cv_out);
@@ -1404,7 +1404,7 @@ static void test_10_vca_ab_and_output_audit(void) {
       // VCF id=2 < joystick id=8: the readback lags the published source by one frame, so
       // settle over a short window and read the LAST value (t4 measures exactly this).
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       vcfL = rt.vcfCvReadbackL();  // joystick x -> 5*(2*0.7-1) = +2.0V
       vcfR = rt.vcfCvReadbackR();  // joystick y -> 5*(2*0.3-1) = -2.0V
@@ -1426,7 +1426,7 @@ static void test_10_vca_ab_and_output_audit(void) {
       applyParam(rt, reg::ParameterId::lfo_a_wave, 0.5, 0);
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput blk;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &blk);
         wetBase[i] = blk.wetL;  // no cable, drone MOD at default (inert)
       }
@@ -1442,7 +1442,7 @@ static void test_10_vca_ab_and_output_audit(void) {
       check(rt.rebuild(), "t10 drone cable rebuild (inert)");
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput blk;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &blk);
         wetOff[i] = blk.wetL;
       }
@@ -1458,7 +1458,7 @@ static void test_10_vca_ab_and_output_audit(void) {
       check(rt.rebuild(), "t10 drone cable rebuild (engaged)");
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput blk;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &blk);
         wetOn[i] = blk.wetL;
       }
@@ -1511,7 +1511,7 @@ static void test_11_runtime_pulser_crossing(void) {
     bool saw1 = false, saw2 = false, saw3 = false, sawRising = false, railCoherent = true;
     for (int i = 0; i < 8; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       const double cv = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
       if (nearD(cv, 1.0)) saw1 = true;
@@ -1550,7 +1550,7 @@ static void test_11_runtime_pulser_crossing(void) {
     double step0 = 0.0;
     for (int i = 0; i < 200; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       if (first) { step0 = rt.controlVoltageAt(reg::JackId::sequencer_cv_out); first = false; }
       else held = held && nearD(rt.controlVoltageAt(reg::JackId::sequencer_cv_out), step0);
@@ -1673,7 +1673,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
       applyParam(rt, reg::ParameterId::envelope_a_self_gen, 1.0, 0);
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput blk;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &blk);
         wetBase[i] = blk.wetL;  // no cable, drone MOD at default (inert)
       }
@@ -1688,7 +1688,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
       check(rt.rebuild(), "t13a drone cable rebuild (inert)");
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput blk;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &blk);
         wetOff[i] = blk.wetL;
       }
@@ -1703,7 +1703,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
       check(rt.rebuild(), "t13a drone cable rebuild (engaged)");
       for (int i = 0; i < kCap; ++i) {
         core::RuntimeOutput blk;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &blk);
         wetOn[i] = blk.wetL;
       }
@@ -1735,7 +1735,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
     double vca[kN], env[kN];
     for (int i = 0; i < kN; ++i) {
       core::RuntimeOutput blk;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &blk);
       vca[i] = rt.controlVoltageAt(reg::JackId::envelope_a_vca_cv_out);
       env[i] = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
@@ -1782,7 +1782,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
     double bIdle = 0.0;
     for (int i = 0; i < 30; ++i) {
       core::RuntimeOutput blk;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &blk);
       aRise[i] = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
       bIdle = rt.controlVoltageAt(reg::JackId::envelope_b_env_out);
@@ -1793,7 +1793,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
     double aFall = 0.0;
     for (int i = 0; i < 30; ++i) {
       core::RuntimeOutput blk;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &blk);
       aFall = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
     }
@@ -1814,7 +1814,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
     double bRise = 0.0, aIdle = 0.0;
     for (int i = 0; i < 30; ++i) {
       core::RuntimeOutput blk;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &blk);
       bRise = rt.controlVoltageAt(reg::JackId::envelope_b_env_out);
       aIdle = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
@@ -1842,7 +1842,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
     int rises = 0;
     for (int i = 0; i < 40; ++i) {
       core::RuntimeOutput blk;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &blk);
       const double g = rt.controlVoltageAt(reg::JackId::sequencer_gate_out);
       if (sameD(g, 10.0) && !sameD(prevG, 10.0)) ++rises;  // one-sample 10V pulse per advance
@@ -1867,7 +1867,7 @@ static std::uint64_t count_pulser_rises(core::SynthRuntime& rt, std::uint64_t fr
   std::uint64_t rises = 0;
   for (std::uint64_t i = 0; i < frames; ++i) {
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     if (rt.sequencer().clockOutRising()) ++rises;
   }
@@ -1879,7 +1879,7 @@ static std::uint64_t count_pulser_rises(core::SynthRuntime& rt, std::uint64_t fr
 static std::uint64_t next_rise_at_after(core::SynthRuntime& rt, std::uint64_t scan) {
   for (std::uint64_t i = 0; i < scan; ++i) {
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     if (rt.sequencer().clockOutRising()) return i;
   }
@@ -1901,7 +1901,7 @@ static void test_14_pulser_transfer_and_clock_out(void) {
         core::SynthRuntime& rt = def->runtime();
         applyParam(rt, reg::ParameterId::sequencer_pulser, norm[n], 0);
         core::RuntimeOutput o;
-        const double z = 0.0;
+        const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &o);  // deliver the async param event at frame 0
         check(sameD(rt.sequencerInternalRateHz(), rate[n]),
               "t14 norm->rate readback (provisional 0.05/1.0/20.0 Hz)");
@@ -1932,7 +1932,7 @@ static void test_14_pulser_transfer_and_clock_out(void) {
     b.setSequencerInternalRateHz(480.0);
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput ob;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       b.processBlock(&z, 1, &ob);         // 256 one-frame steps
     }
     const std::uint64_t nextB = next_rise_at_after(b, 256);
@@ -1953,7 +1953,7 @@ static void test_14_pulser_transfer_and_clock_out(void) {
     double maxEnv = 0.0;
     for (std::uint64_t i = 0; i < static_cast<std::uint64_t>(kSr); ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       if (rt.sequencer().clockOutRising()) ++rises;
       if (rt.envelopeA().gateLatch()) ++gateHigh;
@@ -1992,7 +1992,7 @@ static void test_15_source_bank_sentinel(void) {
     core::SynthRuntime& rt = def->runtime();
     rt.setControlVoltage(reg::JackId::sequencer_clock_out, 1234.5);
     core::RuntimeOutput o;
-    const double z = 0.0;
+    const core::RuntimeInputs z{0.0, 0.0};
     rt.processBlock(&z, 1, &o);
     check(sameD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), -10.0),
           "t15 first real sample overwrites the sentinel to the CONFIRMED -10 idle rail");
@@ -2007,7 +2007,7 @@ static void test_15_source_bank_sentinel(void) {
     bool sawPeak = false, sawOther = false;
     for (int i = 0; i < kCap; ++i) {
       core::RuntimeOutput o;
-      const double z = 0.0;
+      const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       const double v = rt.controlVoltageAt(reg::JackId::sequencer_clock_out);
       if (rt.sequencer().clockOutRising()) {

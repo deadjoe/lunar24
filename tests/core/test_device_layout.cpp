@@ -37,6 +37,7 @@
 #include "mini_test.h"
 
 #include <lunar24/core/device_layout.h>
+#include "device_signal_fixture.h"
 
 #include <cmath>
 #include <vector>
