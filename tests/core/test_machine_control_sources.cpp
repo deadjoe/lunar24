@@ -2021,13 +2021,18 @@ static void test_15_source_bank_sentinel(void) {
 }
 
 // ===========================================================================
-// 16. PERMANENTLY FREEZE the ext_clock_in descriptor (@Codex item 2). THIS IS A FROZEN
-//     UNVERIFIED PLACEHOLDER, NOT A HARDWARE FACT. Every field of the generated real
-//     descriptor is asserted so the runtime can never be tempted to back-derive a bipolar
+// 16. PERMANENTLY FREEZE every field of the ext_clock_in descriptor (@Codex item 2).
+//     THIS IS A FROZEN UNVERIFIED PLACEHOLDER, NOT A HARDWARE FACT. ALL generated-real
+//     descriptor fields are asserted (id/stable_id/name/module/direction, signalType,
+//     polarity, nominal+tolerated range, mod-depth, transfer, saturation, maxCables,
+//     gateThreshold/hysteresis, coupling, evidence ref + line + descriptor status, and the
+//     fieldEvidence provenance) so the runtime can never be tempted to back-derive a bipolar
 //     -10..+10 clock rail from it. Only signalType is evidence-confirmed; the other seven
 //     field-evidence slots are explicitly unverified. The core consumes this sink only
 //     through the canonical gate interpreter (an interpreted edge, never a hardcoded
 //     volts / threshold / polarity constant), which is why no clock-rail fact belongs here.
+//     The maxCables=1 and evidence line 493..493 checks are the specific guards that an
+//     earlier freeze missed — a mutation of either REDs here.
 // ===========================================================================
 static void test_16_ext_clock_in_freeze(void) {
   const core::JackDescriptor* d = nullptr;
@@ -2036,17 +2041,39 @@ static void test_16_ext_clock_in_freeze(void) {
   check(d != nullptr, "t16 ext_clock_in is registered (frozen descriptor)");
   if (d == nullptr) return;
 
-  // Identity + placeholders that MUST stay frozen, else a back-derived rail leaks in.
+  // EVERY field of the generated real descriptor is FROZEN to its exact current value,
+  // so the runtime can never back-derive a bipolar rail (or any other value) from it.
+  // Identity:
+  check(d->id == reg::JackId::sequencer_ext_clock_in, "t16 ext_clock_in id frozen");
   check(d->stable_id == "sequencer.ext_clock_in", "t16 ext_clock_in stable_id frozen");
+  check(d->name == "EXT CLOCK IN", "t16 ext_clock_in display name frozen");
   check(d->module == core::ModuleId::sequencer, "t16 ext_clock_in owner module frozen");
   check(d->direction == core::PinDirection::input, "t16 ext_clock_in is an INPUT (frozen)");
+  // Signal + polarity (the rail-critical placeholders):
   check(d->signalType == core::SignalType::clock, "t16 ext_clock_in signalType=clock (frozen)");
   check(d->polarity == core::Polarity::unknown, "t16 ext_clock_in polarity UNKNOWN (frozen)");
+  // Nominal + tolerated range + modulation depth:
   check(sameD(d->nominalMin, 0.0) && sameD(d->nominalMax, 5.0),
         "t16 ext_clock_in nominal 0..5 is a PLACEHOLDER, not a hardware fact (frozen)");
+  check(sameD(d->toleratedMin, 0.0) && sameD(d->toleratedMax, 0.0),
+        "t16 ext_clock_in tolerated 0..0 placeholder (frozen)");
+  check(sameD(d->modulationDepthPerVolt, 1.0), "t16 ext_clock_in mod-depth 1.0 frozen");
+  // Transfer / saturation:
+  check(d->transfer == core::SignalTransfer::unknown, "t16 ext_clock_in transfer UNKNOWN (frozen)");
+  check(d->saturation == core::SaturationType::unknown, "t16 ext_clock_in saturation UNKNOWN (frozen)");
+  // Cable cardinality (a previously-unfreezed field: mutating 1->2 must RED here):
+  check(static_cast<unsigned>(d->maxCables) == 1u,
+        "t16 ext_clock_in maxCables=1 frozen (single-cable cardinality)");
+  // Gate/clock threshold + hysteresis + coupling:
   check(sameD(d->gateThresholdVolts, 0.0) && sameD(d->hysteresisVolts, 0.0),
         "t16 ext_clock_in threshold/hysteresis 0 == placeholder sentinel (frozen)");
   check(d->coupling == core::Coupling::unknown, "t16 ext_clock_in coupling UNKNOWN (frozen)");
+  // Evidence provenance + descriptor-wide status:
+  check(d->evidence.source == "solar42N_manual_v15",
+        "t16 ext_clock_in evidence source frozen (solar42N_manual_v15)");
+  check(d->evidence.lineStart == 493u && d->evidence.lineEnd == 493u,
+        "t16 ext_clock_in evidence line 493..493 frozen");
+  check(d->status == core::EvidenceStatus::confirmed, "t16 ext_clock_in descriptor status CONFIRMED (frozen)");
 
   // fieldEvidence: EXACTLY signalType confirmed, the other seven slots unverified.
   check(d->fieldEvidence.signalType == core::EvidenceStatus::confirmed,
