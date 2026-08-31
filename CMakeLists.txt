@@ -313,6 +313,29 @@ lunar_add_test(test_host_window_layout tests/host/test_host_window_layout.cpp)
 target_link_libraries(test_host_window_layout PRIVATE lunar_host)
 target_include_directories(test_host_window_layout PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# GH#4 8B2: the framework-free host audio-engine owner (task#72) behaviour oracle. It links
+# LUNAR_HOST (not lunar_core) because the engine lives in host/include/host and depends on
+# lunar_core for the DeviceAdapter / MachineRuntimeDefinition. The isolated operator-new
+# allocator probe is built as a SECOND source of the SAME target (its replaceable new/delete
+# must live in a different TU from the call sites, or -Wmismatched-new-delete misjudges the
+# malloc/free implementation). The wiring SHAPE (ProcessBlock/OnReset delegate) is a separate
+# python CTest below: ProcessBlock is not reachable from a unit test (an iPlug virtual), so a
+# python static gate is the permanent second line for "is the host actually wired".
+lunar_add_test(test_host_engine_oracle
+  tests/host/test_host_engine_oracle.cpp
+  tests/host/test_host_engine_oracle_allocator.cpp)
+target_link_libraries(test_host_engine_oracle PRIVATE lunar_host)
+target_include_directories(test_host_engine_oracle PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
+# GH#4 8B2 wiring-shape oracle (task#72): ProcessBlock/OnReset are iPlug virtuals, not
+# reachable from a unit test, so a python gate is the permanent second line for "is the host
+# actually wired". Deterministic and platform-independent — a structural regression (old
+# passthrough/silence stub, OnReset-not-prepare, hardcoded 48k, host-side frame loop) is
+# caught on ANY CI OS, mirroring check_host_windows_target.py at line 183.
+add_test(NAME host_engine_wiring_gate
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_host_engine_wiring.py)
+
 # P3-⑥ Debt 1 (platform half): the four logic outputs against the REAL machine's
 # output layout, read via the framework authority (AudioBufferList). Apple-only: the
 # .cpp is #ifdef __APPLE__-guarded so the non-macOS matrix never compiles it, and even
