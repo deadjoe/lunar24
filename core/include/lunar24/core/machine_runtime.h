@@ -162,7 +162,7 @@ enum class ExecutionKind : std::uint8_t {
   kEnvFollower,
   kMixer,
   kVcfPath,      // PolivoksFilter L/R -> calibration staging -> Distortion -> WET (ONE slot).
-  // Control sources (GH#11 partial @Codex D1): the six always-execute panel
+  // Control sources (@Codex D1): the six always-execute panel
   // control sources. A/B dispatch is by slot.id inside step_ (never a FixedChainRole),
   // and they are NEVER a second source loop outside processFrame(). Each is admitted as
   // an explicit always-execute source in the compile plan even with no cable (per-sample
@@ -417,7 +417,7 @@ class SynthRuntime {
   void setPreampExtIn(JackId j) { preampExtIn_ = j; }
   void setEnvFolOut(JackId j) { envFolOut_ = j; }
 
-  // ---- CONTROL-SOURCE BINDINGS (GH#11 partial @Codex D1/D2) ----
+  // ---- CONTROL-SOURCE BINDINGS (@Codex D1/D2) ----
   // Jacks the six always-run control sources READ (resolved through the single sink
   // resolver) and WRITE (published through the single source bank). Unbound = no resolve /
   // no publish (legacy synthetic fixture). A/B dispatch in step_ is by slot.id.
@@ -1051,7 +1051,7 @@ class SynthRuntime {
       case ParameterId::drone_6_noise: setDrone6Noise(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_fm:    setDrone6Fm(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_am:    setDrone6Am(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
-      // GH#11 partial (@Codex D3): the 34 evidence-mappable control-source params dispatch
+      // GH#11 FIXED-CANDIDATE (@Codex D3): the 34 evidence-mappable control-source params dispatch
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the
       // const/no-alloc readback surface (lastApplyStatus_) — no separate param bank.
@@ -1059,7 +1059,7 @@ class SynthRuntime {
     }
   }
 
-  // ---- 35 control-source parameter dispatch (GH#11 partial + 7C3) ----
+  // ---- 35 control-source parameter dispatch (@Codex 7C3) ----
   // Wires the 35 evidence-mappable params to the six real instances via the sound-core
   // unit-agreeing setters, returning a ParameterApplyStatus that discriminates applied /
   // invalid / unsupported. A malformed value is rejected HERE (keep old) BEFORE it reaches
@@ -2017,7 +2017,7 @@ class SynthRuntime {
   PolivoksFilter vcf_;
   Distortion distortion_;
 
-  // Six control sources (GH#11 partial). The runtime OWNS one stable
+  // Six control sources. The runtime OWNS one stable
   // instance each (D2); the owning definition binds the registry jacks and the
   // always-execute admission list. envGenA_/envGenB_/lfoA_/lfoB_ take sampleRate in
   // the ctor (order matches the init list); joystick_ (stateless) and sequencer_

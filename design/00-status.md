@@ -84,7 +84,7 @@ Codex 报此类"偏离"时，先查是否属于**已声明边界**（§4）或 p
 | P0 registry | ✅ 收口 |
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
-| P3 固定声音核心 | ⚠️ **改判：固定链已达，控制源缺实现**（2026-08-29，见 §2m，取代 2026-08-26 §2l 的"无产品运行时"结论）——固定音频链已有真实 SynthRuntime 消费（task #38/#46），但 GH #11 六个控制源（Envelope A/B、LFO A/B、Joystick、物理 5-step）尚无生产实现/消费 ⇒ **P3 仍 NOT MET/PARTIAL** |
+| P3 固定声音核心 | ⚠️ **改判：GH#11 已 FIXED-CANDIDATE，各控制源/出口独立关闭**（2026-08-31，见 §2m，取代 2026-08-29 §2m 的"控制源缺实现/PARTIAL"）——固定音频链已有真实 SynthRuntime 消费（task #38/#46），GH #11 六个控制源（Envelope A/B、LFO A/B、Joystick、物理 5-step）已有生产实现与消费（规范生产实例 + 35 参数 + 11 输出 + 真实 PatchGraph 汇点），鉴 `maxBlockSize/maxResources=0` 属 GH#4/#10 主机准备/资源依赖而非 GH#11 缺口；P3 出口以 @Codex 复核为准 |
 | **P4 演奏系统与输入适配** | ⚠️ **改判：模块达成，集成未验**（见 §2l）——三路等价只在测试内的 framework-free stub 上成立，host 无真实适配器、`PLUG_DOES_MIDI_IN 0`。各片实施细节见 §2c–§2i |
 | **P5 整张面板** | ▶ **进行中**：①自撰宿主+真窗消费 fit ✅（task #31）／②唯一可逆 transform ✅ **完全达成**（⑤ 于 task #36 用生成器锚重做，head `f1630a2`，ctest 43/43）／③按区域铺控件 **暂停**（task #34，等 #36） |
 | P6 dual effector | 未开始 |
@@ -1001,7 +1001,7 @@ machine_runtime **70/70**（66 旧 + 4 新），ctest **45/45** normal + ASan（
 **取代 §2l（2026-08-26）「模块达成，集成未验 / 无产品运行时」对 P3 的结论。** 现状是：
 
 1. **固定音频链已有真实 SynthRuntime 消费**（task #38 固定链运行时、task #46 ControlEvent 分发进产品运行时、task #54 事件时基两队列）。"无产品运行时 / `compile_graph` 零消费者 / `ControlEvent` 引用数 = 0" 的旧判据**已过期**，不再作为"P3 未达成"的理由。
-2. **P3 仍未 MET/PARTIAL 的真因**：design/06 §3 的 L2「控制与路由」把 LFO×2、EG×2、joystick、物理 5-step 列为必需能力，但 P0–P8 此前没给它们 DSP owner。经此裁决，正确归属为 **P3 固定声音核心的"可跳线控制源"子项**（**不是** P4 keyboard）——design/06 P3 新增第 6 项，逐项列出 Envelope A/B、LFO A/B、Joystick、物理 5-step，并加硬门（框架无关、无堆、逐 sample 生产实现；canonical factory；被 SynthRuntime/PatchGraph 按 registry JackId 真实消费；public 输出 virtual volts；forward 行为测试 + 旧错红的 negative；仅 class/registry/结构扫描不当"有实现"）。这六项尚未实现/消费，故 P3 仍 NOT MET/PARTIAL。
+2. **P3 的 GH#11 子项已 FIXED-CANDIDATE（2026-08-31 收口）**：design/06 §3 的 L2「控制与路由」把 LFO×2、EG×2、joystick、物理 5-step 列为必需能力，P0–P8 此前没给它们 DSP owner，正确归属为 **P3 固定声音核心的"可跳线控制源"子项**（**不是** P4 keyboard）——design/06 P3 新增第 6 项（Envelope A/B、LFO A/B、Joystick、物理 5-step），并加硬门（框架无关、无堆、逐 sample 生产实现；canonical factory；被 SynthRuntime/PatchGraph 按 registry JackId 真实消费；public 输出 virtual volts；forward 行为测试 + 旧错红的 negative；仅 class/registry/结构扫描不当"有实现"）。**截至 head（GH#11 收口片）这六项已有生产实现与消费**：canonical `MachineRuntimeDefinition` 规范生产实例 + 35 参数经 public 参数事件路径 dispatch + 11 输出以 virtual volts 出版 + 被真实 PatchGraph 汇点消费（`vcfCvReadbackL/R`、`droneChannel`、EG gate/ENV、LFO/joy 输出、seq cv/gate/clock_out）。**`maxBlockSize/maxResources=0` 是宿主 prepare/resources 未填的 UNPREPARED/UNSPECIFIED 哨兵（GH#4/#10 主机准备/资源依赖），不是 GH#11 缺口** —— 六个控制源本身在本 head 已实现并被消费。
 
 **两套 sequencer 分离坐实**：物理 5-step（`sequencer`，ModuleId 11，STAGES 3/4/5）与 keyboard 16-step（P4 演奏系统）是**独立的**，禁止写成 "5→16 extension"；design/06 P4 已明写 P4 只经既有 CV/gate/clock 与 P3 控制源相接，不拥有/扩展物理 5-step。相应错误主导注释已在 `device_state.h` 与 `device_capacities.h` 更正（仅注释，不动 schema/wire/ID/布局）。
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Allocator-count probe for the GH#11 partial acceptance (task#66,
+// Allocator-count probe for the GH#11 FIXED-CANDIDATE acceptance (task#66,
 // @Codex D4 — "real audio/PatchGraph oracle"; A′ "render-path zero allocation").
 // The replaceable operator new/delete pair is isolated into its own TU, built ONLY
 // into the test_machine_control_sources target, so GCC's -Wmismatched-new-delete

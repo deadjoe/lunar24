@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH#11 partial acceptance (task#66, per @Codex ruling a14fd6a4).
+// GH#11 final acceptance (task#68, per @Codex ruling a14fd6a4 + 7C3 pulser/clock-out).
 //
 // Proves the six control sources (Envelope A/B, LFO A/B, Joystick, Sequencer) are
 // REAL audio/PatchGraph consumers in the canonical MachineRuntimeDefinition: they are
@@ -13,7 +13,8 @@
 // Scope guard (DO NOT widen): this TU touches ONLY the generated registry +
 // canonical machine_definition + real runtime / PatchGraph / EventTimebase. It does NOT
 // alter design/spec/generated semantics, host/#4/#10, DeviceState/#12, or the VCF
-// restore/#6 boundary. GH#11 stays OPEN / P3 NOT MET — nothing here closes it.
+// restore/#6 boundary. GH#11 is FIXED-CANDIDATE at this head (the six control sources
+// are all implemented and consumed); awaiting @Codex's independent close + P3 ruling.
 //
 // The six source value- and instance-accessors (envelopeA()/lfoA()/... / the private
 // setControlParamValue / setSequencerInternalRateHz) are PRIVATE by design: the injector
@@ -573,7 +574,7 @@ static void test_5_seq_ext_clock(void) {
 //    at the CONFIRMED -10V while the 1.0 Hz PULSER never rises. The internal PULSER Hz is
 //    also exercised via the runtime's public direct-Hz oracle (setSequencerInternalRateHz);
 // ===========================================================================
-static void test_6_seq_stages_pulser_unpub(void) {
+static void test_6_seq_stages_clock_out(void) {
   // (a) Stages: external clock driving advances at exact frames (8,24,40,56) → wraps at
   //     stageCount. We assert per-stage-count the CV sequence and the wrap.
   const struct { int stages; double step0, step1, step2; } cases[3] = {
@@ -1344,9 +1345,9 @@ static void test_10_vca_ab_and_output_audit(void) {
     for (int i = 0; i < 11; ++i)
       check(std::isfinite(rt.controlVoltageAt(kOut[i])),
             "t10 all eleven source outputs are finite/published");
-    // clock_out IS published as a virtual-volts rail: at the defective-default 1.0 Hz PULSER
-    // over one block (no rising edge) it idles at the CONFIRMED -10V rail. This is the
-    // canned physical model being exposed, not an empty slot.
+    // clock_out IS published as a virtual-volts rail: at the provisional-software default
+    // 1.0 Hz PULSER over one block (no rising edge) it idles at the CONFIRMED -10V rail. This
+    // is the canned physical model being exposed, not an empty slot.
     check(nearD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), -10.0),
           "t10 sequencer clock_out IS published and idles at the -10V rail (1.0 Hz PULSER)");
   }
@@ -1966,13 +1967,107 @@ static void test_14_pulser_transfer_and_clock_out(void) {
   }
 }
 
+// ===========================================================================
+// 15. Source-bank sentinel (@Codex item 1): the canonical runtime pre-writes the
+//     sequencer_clock_out bank with a NON-zero/NON-rail value (1234.5) and demands that the
+//     FIRST real sample OVERWRITE it to the CONFIRMED -10/+10 rail. A no-publish mutation
+//     (the kSequencer exec ever failing to write the source bank) would read the sentinel
+//     back and RED, rather than silently recovering a -10. This completes the "pre-seed
+//     non-zero sentinel" criterion the mandate writes.
+// ===========================================================================
+static void test_15_source_bank_sentinel(void) {
+  // (a) the sentinel is pre-seeded and is genuinely neither -10 nor +10.
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    rt.setControlVoltage(reg::JackId::sequencer_clock_out, 1234.5);
+    const double sent = rt.controlVoltageAt(reg::JackId::sequencer_clock_out);
+    check(!sameD(sent, -10.0) && !sameD(sent, +10.0),
+          "t15 sentinel pre-seeded (neither the -10 idle nor the +10 peak rail)");
+  }
+  // (b) one real sample with the 1.0 Hz PULSER (phase < 1.0 over a frame, so it never rises)
+  //     must OVERWRITE the sentinel to the CONFIRMED -10 idle rail.
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    rt.setControlVoltage(reg::JackId::sequencer_clock_out, 1234.5);
+    core::RuntimeOutput o;
+    const double z = 0.0;
+    rt.processBlock(&z, 1, &o);
+    check(sameD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), -10.0),
+          "t15 first real sample overwrites the sentinel to the CONFIRMED -10 idle rail");
+  }
+  // (c) the +10 rail: a fast internal PULSER; every frame where clockOutRising() is live must
+  //     publish exactly +10 (the sentinel is overwritten, not leaked).
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    rt.setControlVoltage(reg::JackId::sequencer_clock_out, 1234.5);
+    check(rt.setSequencerInternalRateHz(480.0), "t15 set fast pulser for a rising capture");
+    bool sawPeak = false, sawOther = false;
+    for (int i = 0; i < kCap; ++i) {
+      core::RuntimeOutput o;
+      const double z = 0.0;
+      rt.processBlock(&z, 1, &o);
+      const double v = rt.controlVoltageAt(reg::JackId::sequencer_clock_out);
+      if (rt.sequencer().clockOutRising()) {
+        if (sameD(v, +10.0)) sawPeak = true;
+        else sawOther = true;
+      }
+    }
+    check(sawPeak, "t15 a rising frame publishes the +10 peak rail (overwrites the sentinel)");
+    check(!sawOther, "t15 every rising frame publishes exactly +10 (no sentinel/other value leaks)");
+  }
+}
+
+// ===========================================================================
+// 16. PERMANENTLY FREEZE the ext_clock_in descriptor (@Codex item 2). THIS IS A FROZEN
+//     UNVERIFIED PLACEHOLDER, NOT A HARDWARE FACT. Every field of the generated real
+//     descriptor is asserted so the runtime can never be tempted to back-derive a bipolar
+//     -10..+10 clock rail from it. Only signalType is evidence-confirmed; the other seven
+//     field-evidence slots are explicitly unverified. The core consumes this sink only
+//     through the canonical gate interpreter (an interpreted edge, never a hardcoded
+//     volts / threshold / polarity constant), which is why no clock-rail fact belongs here.
+// ===========================================================================
+static void test_16_ext_clock_in_freeze(void) {
+  const core::JackDescriptor* d = nullptr;
+  for (std::uint32_t i = 0; i < reg::kJackCount; ++i)
+    if (reg::kJacks[i].id == reg::JackId::sequencer_ext_clock_in) { d = &reg::kJacks[i]; break; }
+  check(d != nullptr, "t16 ext_clock_in is registered (frozen descriptor)");
+  if (d == nullptr) return;
+
+  // Identity + placeholders that MUST stay frozen, else a back-derived rail leaks in.
+  check(d->stable_id == "sequencer.ext_clock_in", "t16 ext_clock_in stable_id frozen");
+  check(d->module == core::ModuleId::sequencer, "t16 ext_clock_in owner module frozen");
+  check(d->direction == core::PinDirection::input, "t16 ext_clock_in is an INPUT (frozen)");
+  check(d->signalType == core::SignalType::clock, "t16 ext_clock_in signalType=clock (frozen)");
+  check(d->polarity == core::Polarity::unknown, "t16 ext_clock_in polarity UNKNOWN (frozen)");
+  check(sameD(d->nominalMin, 0.0) && sameD(d->nominalMax, 5.0),
+        "t16 ext_clock_in nominal 0..5 is a PLACEHOLDER, not a hardware fact (frozen)");
+  check(sameD(d->gateThresholdVolts, 0.0) && sameD(d->hysteresisVolts, 0.0),
+        "t16 ext_clock_in threshold/hysteresis 0 == placeholder sentinel (frozen)");
+  check(d->coupling == core::Coupling::unknown, "t16 ext_clock_in coupling UNKNOWN (frozen)");
+
+  // fieldEvidence: EXACTLY signalType confirmed, the other seven slots unverified.
+  check(d->fieldEvidence.signalType == core::EvidenceStatus::confirmed,
+        "t16 ONLY signalType is evidence-confirmed (frozen)");
+  check(d->fieldEvidence.nominalRange == core::EvidenceStatus::unverified &&
+            d->fieldEvidence.toleratedRange == core::EvidenceStatus::unverified &&
+            d->fieldEvidence.threshold == core::EvidenceStatus::unverified &&
+            d->fieldEvidence.saturation == core::EvidenceStatus::unverified &&
+            d->fieldEvidence.transfer == core::EvidenceStatus::unverified &&
+            d->fieldEvidence.polarity == core::EvidenceStatus::unverified &&
+            d->fieldEvidence.coupling == core::EvidenceStatus::unverified,
+        "t16 the seven non-signal fields are each UNVERIFIED (frozen placeholder, not a rail)");
+}
+
 int main(void) {
   test_1_slots_presence_phase();
   test_2_lfo_drone_mod_same_sample();
   test_3_seq_gate_eg_env_vcf();
   test_4_joystick_vcf();
   test_5_seq_ext_clock();
-  test_6_seq_stages_pulser_unpub();
+  test_6_seq_stages_clock_out();
   test_7_param_table_partition();
   test_8_task65_invariants_zero_alloc();
   test_negative_controls();
@@ -1982,6 +2077,8 @@ int main(void) {
   test_12_always_admission_fail_closed();
   test_13_vca_sink_and_gate_latches();
   test_14_pulser_transfer_and_clock_out();
+  test_15_source_bank_sentinel();
+  test_16_ext_clock_in_freeze();
 
   std::printf("\n[%s] %d checks, %d failed\n", g_fail == 0 ? "PASS" : "FAIL", g_checks,
               g_fail);

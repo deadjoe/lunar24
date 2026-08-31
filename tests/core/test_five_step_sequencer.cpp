@@ -4,9 +4,11 @@
 // GH #11 (P3 item 6) "5-step sequencer" sound-core strong-oracle suite for
 // core/include/lunar24/core/five_step_sequencer.h. This new FiveStepSequencer is a
 // standalone per-sample 5-stage sequential voltage source state machine — NOT a
-// wrapper over arp_sequencer.h, NOT wired into any canonical factory/PatchGraph/
-// SynthRuntime product path (that is a later, separate GH #11 slice), and it gains
-// no CLOCK-out volts rail. It follows the Lfo/EnvelopeGenerator idiom: real
+// wrapper over arp_sequencer.h. At the product head it is WIRED into the canonical
+// runtime as one of the six always-execute control sources (machine_runtime.h
+// kSequencer dispatch publishes its cv/gate/clock-out; machine_definition.h binds
+// the real registry JackIds) and carries a confirmed bipolar CLOCK-out volts rail.
+// It follows the Lfo/EnvelopeGenerator idiom: real
 // sample-rate, fail-closed config, per-sample tick, no block cache, and deliberately
 // no public reset() (there is no hardware/panel reset jack and no transient
 // playhead persistence).
@@ -524,24 +526,27 @@ void test_registry_descriptor_honesty() {
   CHECK_EQ(gate.nominalMin, 0.0);
   CHECK_EQ(gate.nominalMax, 10.0);
 
-  // The two CLOCK jacks: the facts the core would be tempted to hardcode are
-  // EXPLICITLY unverified. The core consumes only an interpreted gate level (bool)
-  // and emits only a discrete event (bool) — it has no clock volts/threshold/
-  // polarity constant. This proves the implementation did not invent a rail.
+  // CLOCK-OUT output (confirmed bipolar -10..+10V rail, GH#11收口): the core may carry a
+  // confirmed clock-out VOLTS rail, so the registry's nominal -10..+10 + fieldEvidence
+  // polarity CONFIRMED is asserted, NOT an unverified placeholder. The one-sample pulse
+  // width stays provisional; the far right fieldEvidence (threshold) is still unverified.
   CHECK(clk.signalType == core::SignalType::clock);
-  CHECK(clk.polarity == core::Polarity::unknown);
+  CHECK(clk.polarity == core::Polarity::bipolar);   // CONFIRMED bipolar (PULSER out -10..+10V)
   CHECK(clk.fieldEvidence.signalType == core::EvidenceStatus::confirmed);
   CHECK(clk.fieldEvidence.threshold == core::EvidenceStatus::unverified);
-  CHECK(clk.fieldEvidence.polarity == core::EvidenceStatus::unverified);
+  CHECK(clk.fieldEvidence.polarity == core::EvidenceStatus::confirmed);
 
+  // ext_clock_in INPUT is a FROZEN UNVERIFIED PLACEHOLDER, NOT hardware fact: the runtime
+  // consumes it only through the gate interpreter (an interpreted edge), never a hardcoded
+  // volts/threshold/polarity constant. Its polarity/nominal/threshold stay unverified —
+  // the CLOCK-OUT output being confirmed bipolar must NOT back-derive an input rail.
   CHECK(ext.signalType == core::SignalType::clock);
   CHECK(ext.polarity == core::Polarity::unknown);
   CHECK(ext.fieldEvidence.threshold == core::EvidenceStatus::unverified);
   CHECK(ext.fieldEvidence.polarity == core::EvidenceStatus::unverified);
 
-  // The core's CLOCK-OUT is a bool, not a volts rail — a direct consequence of the
-  // CLOCK-OUT rail conflict (PULSERL -10..+10V vs registry nominal 0..5) being left
-  // uncommitted rather than silently billed as an implementation constant.
+  // The confirmed CLOCK-OUT volts rail derives from the single pulser edge; before any
+  // tick it idles at the confirmed -10 rail and never emits a rising edge.
   FiveStepSequencer s;
   CHECK_TRUE(!s.clockOutRising());
 }

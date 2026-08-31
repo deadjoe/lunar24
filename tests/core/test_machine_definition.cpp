@@ -143,7 +143,7 @@ int main() {
   // an unknown id.
   check(def.kindOf(core::ModuleId::keyboard) == core::ExecutionKind::kUnsupported,
         "keyboard is deferred (kUnsupported) this slice");
-  // The six control sources are NOW executed (GH#11 partial): each has a real
+  // The six control sources are NOW executed (GH#11 FIXED-CANDIDATE): each has a real
   // control kind, not kUnsupported. keyboard/effector/voices remain declared-deferred.
   check(def.kindOf(core::ModuleId::lfo_a) == core::ExecutionKind::kLfo &&
             def.kindOf(core::ModuleId::lfo_b) == core::ExecutionKind::kLfo &&

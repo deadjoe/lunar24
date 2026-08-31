@@ -169,7 +169,7 @@ inline constexpr MachineDispositionEntry kMachineDisposition[] = {
   {ModuleId::drone_4,       ExecutionKind::kDroneBank},
   {ModuleId::drone_5,       ExecutionKind::kDroneBank},
   {ModuleId::drone_6,       ExecutionKind::kDroneBank},
-  // The six control sources are NOW executed (GH#11 partial, D1/D2/D4),
+  // The six control sources are NOW executed (GH#11 FIXED-CANDIDATE, D1/D2/D4),
   // each as an always-execute source in the compiled plan. `keyboard`/`effector`/
   // `voices` stay declared-deferred (kUnsupported) — no runtime instance yet.
   {ModuleId::keyboard,      ExecutionKind::kUnsupported},
@@ -321,7 +321,7 @@ class MachineRuntimeDefinition {
                                      lunar24::registry::JackId::drone_4_cv_mod_in,
                                      lunar24::registry::JackId::drone_5_cv_mod_in);
 
-    // GH#11 partial (D1/D2): the six control sources are NOW real DSP
+    // GH#11 FIXED-CANDIDATE (D1/D2): the six control sources are NOW real DSP
     // instances, so the owning definition binds their REGISTRY jacks (the same identity
     // the rest of the product reads) and always-executes them. Env A/B resolve their
     // real gate_in and publish env_out + vca_cv_out; LFO A/B publish cv_out; joystick
@@ -412,8 +412,9 @@ class MachineRuntimeDefinition {
   // SCC members — VCO-B (its own self-loop), env-follower and preamp (which ACCEPT a
   // user-patched return SCC, with NO auto-wire) — get explicit cycle-safe contracts.
   // maxBlockSize / maxResources stay 0 == UNPREPARED/UNSPECIFIED sentinel (no prepare
-  // boundary exists yet; @Codex e35b3eca). These limits are PENDING the GH#11 later
-  // prepare/resource integration; P3 stays NOT MET.
+  // boundary exists yet; @Codex e35b3eca). These limits are PENDING a future host
+  // prepare/resource integration (GH#4/#10 dependencies) — they are NOT a GH#11 gap:
+  // the six control sources themselves are implemented and consumed at this head.
   void buildDisposition_(double sampleRate) {
     for (std::uint32_t i = 0; i < kMachineDispositionCount; ++i) {
       ModuleExecutionContract& c = contracts_[i];

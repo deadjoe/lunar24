@@ -76,7 +76,8 @@ struct ModuleExecutionContract {
   // 0 here is an UNPREPARED/UNSPECIFIED sentinel — the field has not yet been filled by a
   // prepare(sampleRate, maxBlockSize) boundary — NOT an "actual zero limit" and NOT
   // "unbounded". A real value comes from a future prepare() that also fixes the resource
-  // counting unit (GH#11 later integration checklist; P3 NOT MET). module_contract_is_valid()
+  // counting unit (a GH#4/#10 host prepare/resource dependency, NOT a GH#11 gap).
+  // module_contract_is_valid()
   // deliberately does not consume these two fields, so this sentinel never extends the
   // scheduler's semantics.
   std::uint32_t maxBlockSize = 0;      // prepared-for maximum block size (frames); 0 == unprepared/unspecified

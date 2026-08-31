@@ -3,13 +3,13 @@
 //
 // GH #11 (P3 item 6) "5-step sequencer" sound-core: a framework-agnostic,
 // fixed-memory, per-sample 5-stage sequential voltage source state machine.
-// This is the SOURCE-level sound core only — it is NOT wired into any canonical
-// factory / PatchGraph / SynthRuntime product path (that consumer is a later,
-// separate GH #11 slice), it is NOT a wrapper over arp_sequencer.h, and it does
-// not gain a CLOCK-out volts rail. It follows the established per-sample DSP
-// idiom of Lfo/EnvelopeGenerator: mandatory real sample-rate, fail-closed
-// configuration, no block cache, reset()-free (there is no hardware / panel
-// reset and no transient playhead persistence).
+// This sound-core is WIRED into the canonical runtime as one of the six P3
+// always-execute control sources (machine_runtime.h kSequencer dispatch publishes
+// this core's cv/gate/clock-out to the registry source bank; machine_definition.h
+// binds the real registry JackIds). It is NOT a wrapper over arp_sequencer.h. It
+// follows the established per-sample DSP idiom of Lfo/EnvelopeGenerator: mandatory
+// real sample-rate, fail-closed configuration, no block cache, reset()-free (there
+// is no hardware / panel reset and no transient playhead persistence).
 //
 // Manual semantics (design/reference/solar42N_manual_text.txt L485-510): a
 // classic Buchla-inspired 5-stage sequential voltage source; each step's output
@@ -22,7 +22,7 @@
 // PROVISIONAL modelling: the internal PULSER normalized->Hz mapping (panel pot 0..1
 // --> Hz) is a centrally-named SOFTWARE policy (pulserNormToRateHz() above): the core
 // still accepts the internal rate IN HERTZ directly (the DSP-level setter), and the
-// runtime consumer maps the pan-file norm through pulserNormToRateHz(). The CLOCK OUT
+// runtime consumer maps the panel norm through pulserNormToRateHz(). The CLOCK OUT
 // rail is a CONFIRMED bipolar -10..+10V (kFiveStepClockIdleVolt/kFiveStepClockPeakVolt);
 // the discrete rising bool (clockOutRising()) remains the single edge truth and the
 // volts projection derives from the SAME pulserRising -- never a second phase/latch. The
