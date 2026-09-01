@@ -327,6 +327,10 @@ lunar_add_test(test_host_window_layout tests/host/test_host_window_layout.cpp)
 target_link_libraries(test_host_window_layout PRIVATE lunar_host)
 target_include_directories(test_host_window_layout PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# GH#12 9A foundation (task#75 r2): disposition table + default-state + migration/validate.
+lunar_add_test(test_state_disposition tests/core/test_state_disposition.cpp)
+lunar_add_test(test_state_validation tests/core/test_state_validation.cpp)
+
 # GH#4 8B2: the framework-free host audio-engine owner (task#72) behaviour oracle. It links
 # LUNAR_HOST (not lunar_core) because the engine lives in host/include/host and depends on
 # lunar_core for the DeviceAdapter / MachineRuntimeDefinition. The isolated operator-new
