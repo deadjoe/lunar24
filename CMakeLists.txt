@@ -345,6 +345,18 @@ lunar_add_test(test_host_engine_oracle
 target_link_libraries(test_host_engine_oracle PRIVATE lunar_host)
 target_include_directories(test_host_engine_oracle PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# GH#12 9B (task#76): the state-aware runtime candidate apply oracle. Drives the framework-free
+# StandaloneAudioEngine::applyDeviceState (a validated DeviceStateV1 -> buildMachineRuntimeCandidate
+# -> single stopped-stream commit -> processBlock -> DeviceAdapter::renderBlock) plus the safe-boot
+# prepare(seed)==make_default_device_state(seed) equality, the distinct calibration/seed trace
+# discriminators, the atomic rejected-candidate leaves-prior-unchanged contract, and the
+# render-path allocator probe (separate TU, mirroring test_host_engine_oracle_allocator).
+lunar_add_test(test_state_apply_oracle
+  tests/host/test_state_apply_oracle.cpp
+  tests/host/test_state_apply_oracle_allocator.cpp)
+target_link_libraries(test_state_apply_oracle PRIVATE lunar_host)
+target_include_directories(test_state_apply_oracle PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.
