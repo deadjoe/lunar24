@@ -32,6 +32,7 @@
 #include <lunar24/core/graph_compiler.h>
 #include <lunar24/core/machine_runtime.h>
 #include <lunar24/core/module_execution_contract.h>
+#include <lunar24/core/state_default.h>  // make_default_device_state (the seed convenience ctor)
 #include <lunar24/registry.hpp>
 #include <lunar24/registry_ids.hpp>
 
@@ -258,6 +259,11 @@ static_assert(kActiveRoutes[0].sourceJack == lunar24::registry::JackId::vco_b_vc
 //   * STATUS: provisional; executed by IDS; generated text left unchanged.
 // ---------------------------------------------------------------------------
 
+// Forward declaration of the state-aware candidate-builder result
+// (machine_candidate.h). Friend-declared below so the validated builder is the single public
+// path from a DeviceStateV1 to a MachineRuntimeDefinition.
+struct MachineCandidateResult;
+
 // ---------------------------------------------------------------------------
 // MachineRuntimeDefinition
 // ---------------------------------------------------------------------------
@@ -268,10 +274,29 @@ class MachineRuntimeDefinition {
   MachineRuntimeDefinition(MachineRuntimeDefinition&&) = delete;
   MachineRuntimeDefinition& operator=(MachineRuntimeDefinition&&) = delete;
 
-  explicit MachineRuntimeDefinition(std::uint64_t seed, double sampleRate = 48000.0)
-      : runtime_(lunar24::registry::kJacks, lunar24::registry::kJackCount,
+ private:
+  // GH#12 9B state-aware constructor (task#76). This is the SINGLE semantic builder, and it is
+  // PRIVATE: a DeviceStateV1 is constructible into a machine ONLY through
+  // buildMachineRuntimeCandidate (the validated factory, friend below). There is NO public path
+  // from an arbitrary state to a MachineRuntimeDefinition, so a caller cannot bypass state
+  // validation and mint a "valid" machine from an invalid candidate. The seed convenience
+  // constructor (public) delegates here through the always-valid power-on DEFAULT state, so it is
+  // not a bypass either.
+  //
+  // It owns a COPY of the exact DeviceStateV1 candidate, seeds the voice layer from
+  // state.identitySeed.seed, binds the canonical tables, and applies the GH#6 VCF->distortion
+  // identity/calibration profile from that SAME owned state (never an orphan snapshot). The full
+  // candidate is preserved byte-for-byte and readable back through deviceState().
+  //
+  // Member-init order is deliberate and REQUIRED by the pointer-capture invariant: state_ is
+  // declared AFTER contracts_/modules_/fixedEdges_ but BEFORE runtime_, so (a) the tables the
+  // runtime points into are already constructed, and (b) the runtime's ctor runs LAST and can be
+  // seeded from state.identitySeed.seed. The init-list order matches that declaration order.
+  explicit MachineRuntimeDefinition(const DeviceStateV1& state, double sampleRate = 48000.0)
+      : state_(state),
+        runtime_(lunar24::registry::kJacks, lunar24::registry::kJackCount,
                  kActiveRoutes, kActiveRouteCount,
-                 modules_, kMachineDispositionCount, seed, sampleRate,
+                 modules_, kMachineDispositionCount, state.identitySeed.seed, sampleRate,
                  fixedEdges_, kCanonicalFixedEdgeCount) {
     // Populate the owned tables BEFORE any rebuild() reads them. The runtime_'s ctor
     // only captured the pointers; compile/rebuild happens in rebuild() below, so the
@@ -356,8 +381,28 @@ class MachineRuntimeDefinition {
 
     // Canonical strictness on, then build the plan.
     runtime_.setStrictBindings(true);
+    // GH#6: the one real identity/calibration apply choke, driven from the SAME owned state
+    // (never a detached snapshot). It consumes identityModelVersion + identitySeed.seed +
+    // calibration; it is fail-closed (a rejected version/trim makes NO change) inside
+    // SynthRuntime, so a valid candidate always configures and identityApplied() reports it.
+    identityApplied_ = runtime_.configureVcfIdentity(state.identityModelVersion,
+                                                     state.identitySeed.seed,
+                                                     state.calibration);
     (void)runtime_.rebuild();
   }
+
+  // The validated state-aware builder (machine_candidate.h) is the ONLY public path from a
+  // DeviceStateV1 to a MachineRuntimeDefinition, so it may invoke the private state ctor above.
+  friend MachineCandidateResult buildMachineRuntimeCandidate(const DeviceStateV1& state,
+                                                             double sampleRate);
+
+ public:
+  // Convenience: build from a startup seed via the power-on DEFAULT state. This is the SAME
+  // state-aware builder as the ctor above — there is no separate seed-only truth path; a seed
+  // always denotes the power-on default DeviceState (task#75 make_default_device_state), which
+  // is what makes "safe boot prepare(seed)" produce a canonical state == that exact default.
+  explicit MachineRuntimeDefinition(std::uint64_t seed, double sampleRate = 48000.0)
+      : MachineRuntimeDefinition(make_default_device_state(seed), sampleRate) {}
 
   SynthRuntime& runtime() { return runtime_; }
   const SynthRuntime& runtime() const { return runtime_; }
@@ -369,6 +414,16 @@ class MachineRuntimeDefinition {
     return status() == SynthRuntime::RebuildStatus::ok ||
            status() == SynthRuntime::RebuildStatus::graph_unchanged;
   }
+
+  // The exact DeviceStateV1 this machine was built from. This is the ONLY canonical-state truth:
+  // it is backed by the definition's own owned copy, so a holder reads it without a second
+  // snapshot living elsewhere. Never null.
+  const DeviceStateV1& deviceState() const { return state_; }
+  // Whether the GH#6 identity/calibration profile was actually configured on the VCF->distortion
+  // path from this state. A valid candidate always configures it; a false means the ctor's
+  // fail-closed path left it off (a degraded candidate the factory rejects). Named precisely:
+  // this reports the IDENTITY/calibration apply only, NOT a whole-DeviceState "applied" claim.
+  bool identityApplied() const { return identityApplied_; }
 
   std::uint32_t moduleCount() const { return kMachineDispositionCount; }
   std::uint32_t fixedEdgeCount() const { return kCanonicalFixedEdgeCount; }
@@ -555,6 +610,14 @@ class MachineRuntimeDefinition {
   ModuleExecutionContract contracts_[kMachineDispositionCount];
   GraphModule modules_[kMachineDispositionCount];
   FixedEdge fixedEdges_[kCanonicalFixedEdgeCount];
+
+  // The exact DeviceStateV1 this machine was built from. Must be declared BEFORE runtime_: the
+  // runtime's ctor is seeded from state.identitySeed.seed, and the whole class is non-movable so
+  // this owned copy is the single canonical-state truth for the definition's whole life.
+  DeviceStateV1 state_;
+
+  // Whether the GH#6 identity/calibration profile was configured on the VCF->distortion path.
+  bool identityApplied_ = false;
 
   // The owning executor. Declared AFTER the arrays it points into so the init-list is
   // well-formed; its ctor only stores the addresses (compile happens in rebuild()).
