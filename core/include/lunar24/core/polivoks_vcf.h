@@ -98,6 +98,14 @@ class PolivoksFilter {
   }
   double inputDrive(int ch) const { return idx_(ch) ? channel_[ch].inputDrive : 0.0; }
 
+  // Panel-control READBACK (task #78): the applied per-channel knob positions, so a
+  // product oracle can verify a state restore truly reached THIS filter (post-clamp
+  // where the setter clamps). modeIsBp: true = bandpass, false = lowpass (position).
+  double freq(int ch) const { return idx_(ch) ? channel_[ch].freq : 0.0; }
+  double res(int ch) const { return idx_(ch) ? channel_[ch].res : 0.0; }
+  double mod(int ch) const { return idx_(ch) ? channel_[ch].mod : 0.0; }
+  bool modeIsBp(int ch) const { return idx_(ch) ? (channel_[ch].mode == kModeBp) : false; }
+
   // Resolved CV voltages at the two jacks (the graph has already applied the
   // route.vcf_cv_l_to_cv_r normalling for the unplugged case).
   void setCvL(double volts) { cvL_ = volts; }

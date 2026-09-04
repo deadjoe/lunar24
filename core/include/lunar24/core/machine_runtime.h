@@ -423,6 +423,41 @@ class SynthRuntime {
     vcB_.setCvAmt(bAmt);
     cvAmtA_ = aAmt; cvAmtB_ = bAmt;
   }
+  // Per-side VCO panel knobs (the registry's vco_a_* / vco_b_*). VCO A and B are two
+  // independent Vco instances, so a single-param apply reaches exactly ONE side (never
+  // both). tune is oct [-1,+1]; morph 0..1; pw duty in (0,1); oct_sel index 0..2;
+  // sub_sel index 0..1; cv_amt 0..1 (updates the mirror the executor's kVco step reads
+  // through setVcoCvAmounts); lin_exp is the generic-CV mode the kVcoA/kVcoB step
+  // consumes directly (task #78: one param -> one side).
+  void setVcoATune(double oct) { vcA_.setTune(oct); }
+  void setVcoBTune(double oct) { vcB_.setTune(oct); }
+  void setVcoAMorph(double m) { vcA_.setMorph(m); }
+  void setVcoBMorph(double m) { vcB_.setMorph(m); }
+  void setVcoAPw(double duty) { vcA_.setShape(duty); }
+  void setVcoBPw(double duty) { vcB_.setShape(duty); }
+  void setVcoAOctSelect(int idx) { vcA_.setOctaveSelect(idx); }
+  void setVcoBOctSelect(int idx) { vcB_.setOctaveSelect(idx); }
+  void setVcoASubSelect(int idx) { vcA_.setSubSelect(idx); }
+  void setVcoBSubSelect(int idx) { vcB_.setSubSelect(idx); }
+  void setVcoACvAmt(double amt) { vcA_.setCvAmt(amt); cvAmtA_ = amt; }
+  void setVcoBCvAmt(double amt) { vcB_.setCvAmt(amt); cvAmtB_ = amt; }
+  void setVcoAControlMode(VcoControlMode m) { cvModeA_ = m; }
+  void setVcoBControlMode(VcoControlMode m) { cvModeB_ = m; }
+  // Readback: the applied per-side knob positions (post-clamp where the setter clamps).
+  double vcoATune() const { return vcA_.tune(); }
+  double vcoBTune() const { return vcB_.tune(); }
+  double vcoAMorph() const { return vcA_.morph(); }
+  double vcoBMorph() const { return vcB_.morph(); }
+  double vcoAPw() const { return vcA_.shape(); }
+  double vcoBPw() const { return vcB_.shape(); }
+  int vcoAOctSelect() const { return vcA_.octaveSelect(); }
+  int vcoBOctSelect() const { return vcB_.octaveSelect(); }
+  int vcoASubSelect() const { return vcA_.subSelectIndex(); }
+  int vcoBSubSelect() const { return vcB_.subSelectIndex(); }
+  double vcoACvAmt() const { return vcA_.cvAmt(); }
+  double vcoBCvAmt() const { return vcB_.cvAmt(); }
+  VcoControlMode vcoAControlMode() const { return cvModeA_; }
+  VcoControlMode vcoBControlMode() const { return cvModeB_; }
   void setVcfCvBindings(JackId cvL, JackId cvR) { vcfCvL_ = cvL; vcfCvR_ = cvR; }
   // Which patch jack is the preamp's external audio input (the break sink of the
   // env_follower cycle) and which is the env_follower's env_out (the break source).
@@ -488,10 +523,24 @@ class SynthRuntime {
   void setVcfFreq(int ch, double freq) { vcf_.setFreq(ch, freq); }
   void setVcfRes(int ch, double res)   { vcf_.setRes(ch, res); }
   void setVcfMode(int ch, bool bp)     { vcf_.setMode(ch, bp); }
+  void setVcfMod(int ch, double mod)   { vcf_.setMod(ch, mod); }
+  void setVcfLink(bool on)             { vcf_.setLink(on); }
   void setDistortion(double dist, double gain) {
     distortion_.setDist(dist);
     distortion_.setGain(gain);
   }
+
+  // Panel-control READBACK (task #78): the applied VCF per-channel knobs and the
+  // two-way selection / LINK, plus the distortion amount+gain, read from the same DSP
+  // members the render path consumes (never a shadow mirror). modeIsBp: true=bandpass,
+  // false=lowpass (the position selection). L/R independent.
+  double vcfFreq(int ch) const { return vcf_.freq(ch); }
+  double vcfRes(int ch) const { return vcf_.res(ch); }
+  double vcfMod(int ch) const { return vcf_.mod(ch); }
+  bool vcfBp(int ch) const { return vcf_.modeIsBp(ch); }
+  bool vcfLink() const { return vcf_.link(); }
+  double distortionAmount() const { return distortion_.dist(); }
+  double distortionGain() const { return distortion_.gain(); }
 
   // ---------------------------------------------------------------------------
   // GH#6: atomic VCF identity / calibration config entry.
@@ -749,6 +798,70 @@ class SynthRuntime {
   bool droneEnvOutBound(int voiceGroup) const {
     return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices && envOutBound_[voiceGroup];
   }
+  // ---------------------------------------------------------------------------
+  // task #78 panel-control READBACK for the whole applied_to_dsp set. These read the
+  // real DSP members the render path consumes (never a shadow mirror), so a product
+  // oracle can verify a state restore truly reached this instance. Classic drones are
+  // addressed by (voiceGroup 0..3, gen 0..4) -> DroneBank flat index via flatGen_;
+  // new drones (PapaVoice 3/6) by their own knob/state getters. Out-of-range -> neutral.
+  double droneFreqBaseHz(int voiceGroup, int gen) const {
+    return inDroneRange_(voiceGroup, gen) ? drone_.freqBaseHz(flatGen_(voiceGroup, gen)) : 0.0;
+  }
+  bool droneMuted(int voiceGroup, int gen) const {
+    return inDroneRange_(voiceGroup, gen) && drone_.mutedOf(flatGen_(voiceGroup, gen));
+  }
+  double droneTuneSemis(int voiceGroup, int gen) const {
+    return inDroneRange_(voiceGroup, gen) ? drone_.tuneOf(flatGen_(voiceGroup, gen)) : 0.0;
+  }
+  double droneModAmount(int voiceGroup, int gen) const {
+    return inDroneRange_(voiceGroup, gen) ? drone_.modAmountOf(flatGen_(voiceGroup, gen)) : 0.0;
+  }
+  double droneVoltSemisDown(int voiceGroup) const {
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices
+               ? drone_.voltOf(static_cast<std::size_t>(voiceGroup)) : 0.0;
+  }
+  bool droneGroupGate(int voiceGroup) const {
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices && drone_.groupGate(voiceGroup);
+  }
+  bool droneGroupHold(int voiceGroup) const {
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices && drone_.groupHold(voiceGroup);
+  }
+  double droneGroupAttSeconds(int voiceGroup) const {
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices
+               ? drone_.groupAttSeconds(voiceGroup) : 0.0;
+  }
+  double droneGroupRlsSeconds(int voiceGroup) const {
+    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices
+               ? drone_.groupRlsSeconds(voiceGroup) : 0.0;
+  }
+  // NEW drone (PapaVoice) per-knob readback: RATE = LF square modulator effective Hz
+  // (0 = stop), PITCH = core audio effective Hz (0..), FM/AM = factory switches (state),
+  // NOISE = mix amplitude. Independent for drone 3 and drone 6.
+  double drone3RateHz() const { return pv3_.rateHz(); }
+  double drone3PitchHz() const { return pv3_.pitchHz(); }
+  bool drone3Fm() const { return pv3_.fmOn(); }
+  bool drone3Am() const { return pv3_.amOn(); }
+  double drone3NoiseAmp() const { return pv3_.noiseAmp(); }
+  double drone6RateHz() const { return pv6_.rateHz(); }
+  double drone6PitchHz() const { return pv6_.pitchHz(); }
+  bool drone6Fm() const { return pv6_.fmOn(); }
+  bool drone6Am() const { return pv6_.amOn(); }
+  double drone6NoiseAmp() const { return pv6_.noiseAmp(); }
+  // Mixer channel VOL/PAN wrappers + readback (0-based channel slot, 1:1 with the
+  // registry's mixer_<N> index offset by one). Reuses VoiceMixer's clamp01.
+  void setMixerChannelVol(int ch, double v) { mixer_.setChannelVol(ch, v); }
+  void setMixerChannelPan(int ch, double p) { mixer_.setChannelPan(ch, p); }
+  double mixerChannelVol(int ch) const { return mixer_.channelVol(ch); }
+  double mixerChannelPan(int ch) const { return mixer_.channelPan(ch); }
+  // Preamp gain (registry's preamp_1, "output gain", normalized 0..1 -> 0..40 dB).
+  void setPreampGainNorm(double norm) { preamp_.setGainNorm(norm); }
+  double preampGainNorm() const { return preamp_.gainNorm(); }
+  // Envelope follower attack/release (registry's env_follower_attack / _release,
+  // SECONDS after the lone monotonic norm->seconds transfer — see the helper below).
+  void setEnvFollowerAttackSeconds(double s) { envFol_.setAttackSeconds(s); }
+  void setEnvFollowerReleaseSeconds(double s) { envFol_.setReleaseSeconds(s); }
+  double envFollowerAttackSeconds() const { return envFol_.attackSeconds(); }
+  double envFollowerReleaseSeconds() const { return envFol_.releaseSeconds(); }
   // General read of a control generator's resolved CV output (the whole CV source bank).
   double controlVoltageAt(JackId jack) const { return cvAt_(jack); }
 
@@ -1018,6 +1131,15 @@ class SynthRuntime {
     void setShClock(double clk) { shClock_ = clk; }
     // The S&H level the product path computed last frame (CV out of the voice).
     double lastShCv() const { return shCv_; }
+    // Panel-control READBACK (task #78): the NEW-drone knob positions the render path
+    // drives from. rateHz/pitchHz read the sub-oscillators' effective frequency (a
+    // real DSP value, not a shadow), fmOn/amOn read the switch state, noiseAmp reads
+    // the noise source amplitude.
+    double rateHz() const { return lf.effectiveFreqHz(); }
+    double pitchHz() const { return audio.effectiveFreqHz(); }
+    bool fmOn() const { return fmOn_; }
+    bool amOn() const { return amOn_; }
+    double noiseAmp() const { return noise.amplitude(); }
     void tick(double* out) {
       double lv = 0.0;
       lf.tick(&lv);
@@ -1294,6 +1416,17 @@ class SynthRuntime {
     return static_cast<std::size_t>(voiceGroup) * DroneBank::kGensPerVoice +
            static_cast<std::size_t>(gen);
   }
+
+  // ---- task #78 centralized norm->physical transfers (ALL software-provisional; the
+  // hardware calibration of every one is untested and flagged as such in the mandate).
+  // These are the ONLY places a normalized registry value becomes a real DSP unit, so a
+  // product oracle can verify each apply against ONE definition and a test can mutate a
+  // single helper to turn an entire family's applies RED. The PULSER reuses the already-
+  // existing FiveStepSequencer::pulserNormToRateHz (see setControlParamValue).
+  static double envFollowerSecondsFromNorm(double n) { return 0.001 + 0.999 * n; }  // s, n in [0,1].
+  static double classicDroneTuneSemisFromNorm(double n) { return (n - 0.5) * 24.0; }  // -12..+12 semis.
+  static double classicDroneVoltSemisDownFromNorm(double n) { return 60.0 * n; }  // 0.5 -> 30 semis down.
+  static double newDroneRateHzFromNorm(double n) { return 12.0 * n; }  // 0.5 -> 6 Hz; 0 -> stop.
 
   // Fixed-kind -> id lookup (linear over the small binding table).
   ExecutionKind kindOf_(ModuleId id) const {

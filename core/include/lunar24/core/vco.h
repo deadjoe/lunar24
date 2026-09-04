@@ -140,6 +140,18 @@ class Vco {
   bool subEnabled() const { return subSelect_ == 1; }    // index 1 = "-1".
   double waveformSampleAt(double p) const;  // shape at a phase, for morph checks.
 
+  // Panel-control READBACK (task #78): the applied knob positions, so a product
+  // oracle can verify a state restore truly reached THIS DSP instance (return the raw
+  // stored knob — post-clamp where the setter clamps). Never a shadow parameter bank;
+  // these read the same members the render path consumes.
+  double tune() const { return tune_; }        // oct, raw store (no clamp).
+  double morph() const { return morph_; }      // 0..1, post-clamp.
+  double shape() const { return duty_; }       // pulse-width duty, post-clamp.
+  int octaveSelect() const { return octSelect_; }   // 0..2, post-clamp.
+  int subSelectIndex() const { return subSelect_; } // 0..1.
+  double cvAmt() const { return cvAmt_; }      // 0..1.
+  VcoControlMode controlMode() const { return cvMode_; }  // lin/exp mode.
+
   static constexpr double kLowOctave = -1.0;  // oct_sel "low" (PROVISIONAL).
   static constexpr double kZeroOctave = 0.0;  // oct_sel "0".
   static constexpr double kPlus3Octave = 3.0; // oct_sel "+3" (approximately +3 oct).
