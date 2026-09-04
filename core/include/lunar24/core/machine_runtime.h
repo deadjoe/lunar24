@@ -86,6 +86,7 @@
 #include <lunar24/core/control_event.h>
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/distortion.h>
+#include <lunar24/core/state_disposition.h>  // task #78: the 169 applied_to_dsp table
 #include <lunar24/core/drone_bank.h>
 #include <lunar24/core/drone_noise.h>
 #include <lunar24/core/envelope_follower.h>
@@ -529,6 +530,11 @@ class SynthRuntime {
     distortion_.setDist(dist);
     distortion_.setGain(gain);
   }
+  // INDEPENDENT single-parameter distortion controls (task #78): one DeviceState param
+  // must touch exactly ONE knob — vcf_dist -> DIST amount, vcf_gain -> output gain — never
+  // the combined setDistortion(dist,gain) which would clobber the sibling.
+  void setDistortionAmount(double dist) { distortion_.setDist(dist); }
+  void setDistortionGain(double gain)   { distortion_.setGain(gain); }
 
   // Panel-control READBACK (task #78): the applied VCF per-channel knobs and the
   // two-way selection / LINK, plus the distortion amount+gain, read from the same DSP
@@ -817,8 +823,11 @@ class SynthRuntime {
     return inDroneRange_(voiceGroup, gen) ? drone_.modAmountOf(flatGen_(voiceGroup, gen)) : 0.0;
   }
   double droneVoltSemisDown(int voiceGroup) const {
-    return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices
-               ? drone_.voltOf(static_cast<std::size_t>(voiceGroup)) : 0.0;
+    // VOLT is a SHARED group transpose: setVolt(group, semis) writes all 5 gens of the group
+    // (gen index group*5..group*5+4), so the group's single value is read back as gen 0 of the
+    // group via flatGen_ — the same (voiceGroup, gen) addressing every other classic inspector
+    // uses. Reading voltOf(voiceGroup) directly would index the WRONG group's per-gen slot.
+    return inDroneRange_(voiceGroup, 0) ? drone_.voltOf(flatGen_(voiceGroup, 0)) : 0.0;
   }
   bool droneGroupGate(int voiceGroup) const {
     return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices && drone_.groupGate(voiceGroup);
@@ -864,6 +873,499 @@ class SynthRuntime {
   double envFollowerReleaseSeconds() const { return envFol_.releaseSeconds(); }
   // General read of a control generator's resolved CV output (the whole CV source bank).
   double controlVoltageAt(JackId jack) const { return cvAt_(jack); }
+  // ---- task #78: full 169-parameter applied_to_DSP apply (commit ②) ----
+  // The ONE public apply choke for a whole DeviceState. applyDspParam routes each id:
+  //   (1) the 35 control-source params -> setControlParamValue (byte-identical reuse);
+  //   (2) any non-applied_to_dsp id -> unsupported_parameter;
+  //   (3) the remaining 134 applied_to_dsp ids -> the explicit dispatch below, after
+  //       dspParamValid_ admits the state value against its registry unit (fail-closed
+  //       keep-old on a malformed value, never a silent setter coercion);
+  //   (4) an id none of the above cover -> unsupported_parameter (a fail-closed guard that
+  //       makes the batch's "exactly 169" check real, never a silent skip).
+  ParameterApplyStatus applyDspParam(ParameterId id, double v) {
+    lastApplyParamId_ = id;
+    if (controlSourceParamRecognized_(id)) return setControlParamValue(id, v);
+    if (disposition_of(id) != StateDisposition::applied_to_dsp) {
+      lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
+      return lastApplyStatus_;
+    }
+    if (!dspParamValid_(id, v)) {
+      lastApplyStatus_ = ParameterApplyStatus::invalid_value;
+      return lastApplyStatus_;
+    }
+    switch (id) {
+      case ParameterId::vco_a_tune:
+        setVcoATune(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_a_morph:
+        setVcoAMorph(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_a_pw:
+        setVcoAPw(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_a_oct_sel:
+        setVcoAOctSelect(static_cast<int>(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_a_sub_sel:
+        setVcoASubSelect(static_cast<int>(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_a_cv_amt:
+        setVcoACvAmt(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_a_lin_exp:
+        setVcoAControlMode(v == 1.0 ? VcoControlMode::kExponential : VcoControlMode::kLinear);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_b_tune:
+#ifdef SPARSE_MUT_E_AB_CROSS
+        setVcoATune(v);  // MUTATION E: VCO B routed to A — anti-cross discriminator RED.
+#else
+        setVcoBTune(v);
+#endif
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_b_morph:
+        setVcoBMorph(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_b_pw:
+        setVcoBPw(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_b_oct_sel:
+        setVcoBOctSelect(static_cast<int>(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_b_sub_sel:
+        setVcoBSubSelect(static_cast<int>(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_b_cv_amt:
+        setVcoBCvAmt(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vco_b_lin_exp:
+        setVcoBControlMode(v == 1.0 ? VcoControlMode::kExponential : VcoControlMode::kLinear);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_l_freq:
+        setVcfFreq(0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_l_res:
+        setVcfRes(0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_l_mod:
+        setVcfMod(0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_l_bp_lp:
+        setVcfMode(0, v == 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_r_freq:
+#ifdef SPARSE_MUT_F_LR_CROSS
+        setVcfFreq(0, v);  // MUTATION F: R filter freq routed to L channel — L/R cross RED.
+#else
+        setVcfFreq(1, v);
+#endif
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_r_res:
+        setVcfRes(1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_r_mod:
+        setVcfMod(1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_r_bp_lp:
+        setVcfMode(1, v == 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_link:
+        setVcfLink(v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_dist:
+        setDistortionAmount(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::vcf_gain:
+        setDistortionGain(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::preamp_gain:
+        setPreampGainNorm(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::env_follower_attack:
+        setEnvFollowerAttackSeconds(envFollowerSecondsFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::env_follower_release:
+        setEnvFollowerReleaseSeconds(envFollowerSecondsFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch1_vol:
+        setMixerChannelVol(0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch1_pan:
+        setMixerChannelPan(0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch2_vol:
+        setMixerChannelVol(1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch2_pan:
+        setMixerChannelPan(1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch3_vol:
+        setMixerChannelVol(2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch3_pan:
+        setMixerChannelPan(2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch4_vol:
+        setMixerChannelVol(3, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch4_pan:
+#ifdef SPARSE_MUT_G_PANVOL_SWAP
+        setMixerChannelVol(3, v);  // MUTATION G: pan routed to volume — vol/pan swap RED.
+#else
+        setMixerChannelPan(3, v);
+#endif
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch5_vol:
+        setMixerChannelVol(4, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch5_pan:
+        setMixerChannelPan(4, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch6_vol:
+        setMixerChannelVol(5, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch6_pan:
+        setMixerChannelPan(5, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch7_vol:
+        setMixerChannelVol(6, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch7_pan:
+        setMixerChannelPan(6, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch8_vol:
+        setMixerChannelVol(7, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch8_pan:
+        setMixerChannelPan(7, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch9_vol:
+        setMixerChannelVol(8, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch9_pan:
+        setMixerChannelPan(8, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch10_vol:
+        setMixerChannelVol(9, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::mixer_ch10_pan:
+        setMixerChannelPan(9, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_tune_1:
+        setDroneTune(0, 0, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mute_1:
+        setDroneMute(0, 0, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mod_1:
+        setDroneMod(0, 0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_tune_2:
+        setDroneTune(0, 1, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mute_2:
+        setDroneMute(0, 1, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mod_2:
+        setDroneMod(0, 1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_tune_3:
+        setDroneTune(0, 2, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mute_3:
+        setDroneMute(0, 2, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mod_3:
+        setDroneMod(0, 2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_tune_4:
+        setDroneTune(0, 3, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mute_4:
+        setDroneMute(0, 3, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mod_4:
+        setDroneMod(0, 3, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_tune_5:
+        setDroneTune(0, 4, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mute_5:
+        setDroneMute(0, 4, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_mod_5:
+        setDroneMod(0, 4, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_volt:
+        setDroneVolt(0, classicDroneVoltSemisDownFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_att:
+        setDroneGroupAtt(0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_rls:
+        setDroneGroupRls(0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_gate_hold:
+        setDroneGroupHold(0, v == 1.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_tune_1:
+        setDroneTune(1, 0, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mute_1:
+        setDroneMute(1, 0, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mod_1:
+        setDroneMod(1, 0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_tune_2:
+        setDroneTune(1, 1, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mute_2:
+        setDroneMute(1, 1, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mod_2:
+        setDroneMod(1, 1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_tune_3:
+#ifdef SPARSE_MUT_H_GROUP_OFFSET
+        setDroneTune(0, 2, classicDroneTuneSemisFromNorm(v));  // MUTATION H: group offset (1→0) — classic group/gen RED.
+#else
+        setDroneTune(1, 2, classicDroneTuneSemisFromNorm(v));
+#endif
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mute_3:
+        setDroneMute(1, 2, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mod_3:
+        setDroneMod(1, 2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_tune_4:
+        setDroneTune(1, 3, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mute_4:
+        setDroneMute(1, 3, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mod_4:
+        setDroneMod(1, 3, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_tune_5:
+        setDroneTune(1, 4, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mute_5:
+        setDroneMute(1, 4, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_mod_5:
+        setDroneMod(1, 4, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_volt:
+        setDroneVolt(1, classicDroneVoltSemisDownFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_att:
+        setDroneGroupAtt(1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_rls:
+        setDroneGroupRls(1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_gate_hold:
+        setDroneGroupHold(1, v == 1.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_tune_1:
+        setDroneTune(2, 0, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mute_1:
+        setDroneMute(2, 0, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mod_1:
+        setDroneMod(2, 0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_tune_2:
+        setDroneTune(2, 1, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mute_2:
+        setDroneMute(2, 1, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mod_2:
+        setDroneMod(2, 1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_tune_3:
+        setDroneTune(2, 2, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mute_3:
+        setDroneMute(2, 2, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mod_3:
+        setDroneMod(2, 2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_tune_4:
+        setDroneTune(2, 3, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mute_4:
+        setDroneMute(2, 3, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mod_4:
+        setDroneMod(2, 3, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_tune_5:
+        setDroneTune(2, 4, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mute_5:
+        setDroneMute(2, 4, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_mod_5:
+        setDroneMod(2, 4, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_volt:
+        setDroneVolt(2, classicDroneVoltSemisDownFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_att:
+        setDroneGroupAtt(2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_rls:
+        setDroneGroupRls(2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_gate_hold:
+        setDroneGroupHold(2, v == 1.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_tune_1:
+        setDroneTune(3, 0, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mute_1:
+        setDroneMute(3, 0, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mod_1:
+        setDroneMod(3, 0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_tune_2:
+        setDroneTune(3, 1, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mute_2:
+        setDroneMute(3, 1, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mod_2:
+        setDroneMod(3, 1, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_tune_3:
+        setDroneTune(3, 2, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mute_3:
+        setDroneMute(3, 2, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mod_3:
+        setDroneMod(3, 2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_tune_4:
+        setDroneTune(3, 3, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mute_4:
+        setDroneMute(3, 3, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mod_4:
+        setDroneMod(3, 3, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_tune_5:
+        setDroneTune(3, 4, classicDroneTuneSemisFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mute_5:
+        setDroneMute(3, 4, v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_mod_5:
+        setDroneMod(3, 4, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_volt:
+        setDroneVolt(3, classicDroneVoltSemisDownFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_att:
+        setDroneGroupAtt(3, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_rls:
+        setDroneGroupRls(3, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_gate_hold:
+        setDroneGroupHold(3, v == 1.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_rate:
+        setDrone3Rate(newDroneRateHzFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_pitch:
+        setDrone3Pitch(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_noise:
+        setDrone3Noise(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_fm:
+        setDrone3Fm(v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_am:
+        setDrone3Am(v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_rate:
+#ifdef SPARSE_MUT_I_NEWDRONE_CROSS
+        setDrone3Rate(newDroneRateHzFromNorm(v));  // MUTATION I: new-drone 6 routed to 3 — collision RED.
+#else
+        setDrone6Rate(newDroneRateHzFromNorm(v));
+#endif
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_pitch:
+        setDrone6Pitch(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_noise:
+        setDrone6Noise(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_fm:
+        setDrone6Fm(v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_am:
+        setDrone6Am(v != 0.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;      default:
+        lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
+        return lastApplyStatus_;
+    }
+  }
+
+  // Batch-apply EVERY applied_to_dsp parameter (exactly 169) from a validated
+  // DeviceStateV1 into the live DSP. On the first non-applied id it returns false and
+  // fills firstFailId / firstFailStatus (the typed rejection the candidate builder
+  // carries); it applies every id BEFORE the failure and bails immediately, so a failing
+  // candidate is discarded whole — it never yields a partial-success path. On full
+  // success it returns true (dspApplyOk_ set) and dspAppliedCount_ == 169. An id that is
+  // not applied_to_dsp is skipped (out of contract scope), never counted.
+  bool applyDspState(const DeviceStateV1& state, ParameterId& firstFailId,
+                     ParameterApplyStatus& firstFailStatus) {
+    std::uint32_t applied = 0;
+    for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i) {
+      if (kDeviceStateDisposition[i].disposition != StateDisposition::applied_to_dsp) continue;
+      const ParameterId id = kDeviceStateDisposition[i].id;
+      const double v = state.parameters[static_cast<std::uint32_t>(id)];
+#ifdef SPARSE_MUT_J_COUNT_SKIP
+      // MUTATION J: blindly count every applied_to_dsp id as success without invoking the
+      // setter. dspApplyOk_ stays true and dspAppliedCount_ would reach 169, so only the
+      // readback discrimination catches it (values never move off default).
+      (void)id;
+      (void)v;
+      ++applied;
+#else
+      const ParameterApplyStatus s = applyDspParam(id, v);
+      if (s != ParameterApplyStatus::applied) {
+        dspApplyOk_ = false;
+        dspAppliedCount_ = applied;
+        firstFailId = id;
+        firstFailStatus = s;
+        return false;
+      }
+      ++applied;
+#endif
+    }
+    dspApplyOk_ = true;
+    dspAppliedCount_ = applied;
+    firstFailId = static_cast<ParameterId>(kParameterCount);  // sentinel: no failure.
+    firstFailStatus = ParameterApplyStatus::applied;
+    return true;
+  }
+
+  // task #78: whether the whole 169-parameter apply succeeded and how many were applied.
+  // dspApplyOk() is the candidate-builder gate; dspAppliedCount() is a diagnostic equal to
+  // count_disposition(applied_to_dsp) on success (169) and partial on a rejection.
+  bool dspApplyOk() const { return dspApplyOk_; }
+  std::uint32_t dspAppliedCount() const { return dspAppliedCount_; }
 
   // ---- GH#6 read-only inspectors (executed value, never a shadow mirror) ----
   // Read back the profile the runtime is ACTUALLY executing, straight from the live
@@ -1383,6 +1885,23 @@ class SynthRuntime {
     }
   }
 
+  // task #78: shared registry-unit-domain admission for the 134 NEW applied_to_dsp ids.
+  // Mirrors controlParamValid_ for the control-source set: reject a value malformed for its
+  // registry descriptor BEFORE it reaches a setter that might clamp/coerce (a malformed norm
+  // stays invalid; a non-integer selector stays invalid — never a silent `v != 0.0` gate-high
+  // on 0.5). Selector = descriptor.step > 0 (exact integer in [min,max]); continuous =
+  // step == 0 (in [min,max]). Finite everywhere.
+  bool dspParamValid_(ParameterId id, double v) const {
+    if (!std::isfinite(v)) return false;
+    const ParameterDescriptor* d = find_parameter(id);
+    if (d == nullptr) return false;
+    if (d->step > 0.0) {
+      const int i = static_cast<int>(v);
+      return static_cast<double>(i) == v && v >= d->min && v <= d->max;
+    }
+    return v >= d->min && v <= d->max;
+  }
+
   // Map a sound-core setter's bool to the status: true -> applied; false -> the value was in
   // unit-domain but the setter still rejected it (e.g. LFO effective-step non-finite).
   static ParameterApplyStatus transferStatus_(bool accepted) {
@@ -1423,10 +1942,40 @@ class SynthRuntime {
   // product oracle can verify each apply against ONE definition and a test can mutate a
   // single helper to turn an entire family's applies RED. The PULSER reuses the already-
   // existing FiveStepSequencer::pulserNormToRateHz (see setControlParamValue).
-  static double envFollowerSecondsFromNorm(double n) { return 0.001 + 0.999 * n; }  // s, n in [0,1].
-  static double classicDroneTuneSemisFromNorm(double n) { return (n - 0.5) * 24.0; }  // -12..+12 semis.
-  static double classicDroneVoltSemisDownFromNorm(double n) { return 60.0 * n; }  // 0.5 -> 30 semis down.
-  static double newDroneRateHzFromNorm(double n) { return 12.0 * n; }  // 0.5 -> 6 Hz; 0 -> stop.
+  // task #78 mutation probes (SPARSE_MUT_* are compile-time-only; no effect unless a
+  // mutation test target -D-defines exactly one). Each turns one FAMILY's applies RED by
+  // corrupting the single helper that family maps norm->physical through, exercising the
+  // product oracle's discrimination. They are the physical counterpart of the "a test can
+  // mutate a single helper to turn an entire family's applies RED" design intent above.
+  static double envFollowerSecondsFromNorm(double n) {
+#ifdef SPARSE_MUT_A_ENVF
+    (void)n;  // MUTATION A: constant seconds — whole env_follower family RED.
+    return 0.5;
+#else
+    return 0.001 + 0.999 * n;
+#endif
+  }  // s, n in [0,1].
+  static double classicDroneTuneSemisFromNorm(double n) {
+#ifdef SPARSE_MUT_B_TUNE
+    return 12.0 * n;  // MUTATION B: wrong scale — classic drone tune family RED.
+#else
+    return (n - 0.5) * 24.0;
+#endif
+  }  // -12..+12 semis.
+  static double classicDroneVoltSemisDownFromNorm(double n) {
+#ifdef SPARSE_MUT_C_VOLT
+    return 30.0 * n;  // MUTATION C: half-travel volts — classic drone VOLT family RED.
+#else
+    return 60.0 * n;
+#endif
+  }  // 0.5 -> 30 semis down.
+  static double newDroneRateHzFromNorm(double n) {
+#ifdef SPARSE_MUT_D_RATE
+    return 6.0 * n;  // MUTATION D: half Hz — new drone RATE family RED.
+#else
+    return 12.0 * n;
+#endif
+  }  // 0.5 -> 6 Hz; 0 -> stop.
 
   // Fixed-kind -> id lookup (linear over the small binding table).
   ExecutionKind kindOf_(ModuleId id) const {
@@ -2153,6 +2702,10 @@ class SynthRuntime {
 
   // Voice sources + fixed chain DSP. The runtime no longer uses SignalPath: the
   // mixer/vcf/dist roll into the plan-driven order instead of a hard-coded chain.
+  // task #78 full-apply result (the candidate-builder gate + the applied count).
+  bool dspApplyOk_ = false;
+  std::uint32_t dspAppliedCount_ = 0;
+
   Vco vcA_;
   Vco vcB_;
   Preamp preamp_;

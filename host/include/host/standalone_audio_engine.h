@@ -60,6 +60,9 @@ using lunar24::core::StateValidationResult;
 using lunar24::core::SynthRuntime;
 using lunar24::core::buildMachineRuntimeCandidate;
 using lunar24::core::make_default_device_state;
+using lunar24::core::ParameterId;
+using lunar24::core::ParameterApplyStatus;
+using lunar24::core::kParameterCount;
 
 // The centralized, deterministic provisional safe-startup seed. This is what the host
 // uses to boot the machine BEFORE the #12 identity / state layer can apply a saved
@@ -95,6 +98,8 @@ class StandaloneAudioEngine {
     RejectedInvalidState, // validate_device_state failed (family+field via lastStateValidation()).
     RejectedGraph,        // state validated but the candidate graph did not compile.
     RejectedIdentity,     // state+graph ok but the GH#6 identity/calibration did not configure.
+    RejectedDspApply,     // state+graph+identity ok but the whole 169-parameter applied_to_DSP
+                          // apply was not complete (first failure via the DspApply accessor).
     RejectedAdapter,      // state+graph+identity ok but the channel plan could not be built.
   };
 
@@ -208,6 +213,11 @@ class StandaloneAudioEngine {
     return obs;
   }
   const StateValidationResult& lastStateValidation() const { return lastStateValidation_; }
+  // task #78: the first applied_to_DSP parameter whose write was rejected, and the reason, on
+  // a RejectedDspApply outcome (sentinel kParameterCount / applied otherwise). Lets a caller
+  // surface the exact failing id/status instead of only a coarse "rejected" bit.
+  ParameterId dspApplyFirstFailParamId() const { return dspApplyFirstFailParamId_; }
+  ParameterApplyStatus dspApplyFirstFailStatus() const { return dspApplyFirstFailStatus_; }
 
  private:
   // Write deterministic silence into the caller's ACTUAL output channels (bounded to what the
@@ -255,6 +265,9 @@ class StandaloneAudioEngine {
   // applyDeviceState() (and Accepted by a successful prepare(), which publishes the default state).
   StateApplyStatus stateApplyStatus_ = StateApplyStatus::NotAttempted;
   StateValidationResult lastStateValidation_;
+  // task #78 first applied_to_DSP failure detail (sentinel kParameterCount / applied iff ok).
+  ParameterId dspApplyFirstFailParamId_ = static_cast<ParameterId>(kParameterCount);
+  ParameterApplyStatus dspApplyFirstFailStatus_ = ParameterApplyStatus::applied;
 };
 
 // ---- prepare --------------------------------------------------------------
@@ -350,6 +363,12 @@ inline StandaloneAudioEngine::StateApplyStatus StandaloneAudioEngine::applyDevic
       stateApplyStatus_ = StateApplyStatus::RejectedIdentity;
       lastStateValidation_ = res.validation;
       return StateApplyStatus::RejectedIdentity;
+    case MachineCandidateStatus::rejected_dsp_apply:
+      stateApplyStatus_ = StateApplyStatus::RejectedDspApply;
+      lastStateValidation_ = res.validation;
+      dspApplyFirstFailParamId_ = res.firstFailParamId;
+      dspApplyFirstFailStatus_ = res.firstFailStatus;
+      return StateApplyStatus::RejectedDspApply;
     case MachineCandidateStatus::accepted:
       break;
   }

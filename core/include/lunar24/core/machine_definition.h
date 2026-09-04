@@ -389,6 +389,20 @@ class MachineRuntimeDefinition {
                                                      state.identitySeed.seed,
                                                      state.calibration);
     (void)runtime_.rebuild();
+    // task #78: after the GH#6 identity/calibration and the final rebuild (order preserved),
+    // apply the WHOLE applied_to_DSP parameter set (exactly 169) from the SAME owned state into
+    // the freshly-rebuilt DSP. Fail-closed: exactly 169 must apply, else dspApplyOk_ is false and
+    // the first failing id/status is retained for the candidate factory to reject whole (it never
+    // contributes a partial-success path).
+    {
+      ParameterId firstFailId = static_cast<ParameterId>(kParameterCount);
+      ParameterApplyStatus firstFailStatus = ParameterApplyStatus::applied;
+      const bool ok = runtime_.applyDspState(state_, firstFailId, firstFailStatus);
+      dspApplyOk_ = ok;
+      dspAppliedCount_ = runtime_.dspAppliedCount();
+      dspFirstFailId_ = ok ? static_cast<ParameterId>(kParameterCount) : firstFailId;
+      dspFirstFailStatus_ = ok ? ParameterApplyStatus::applied : firstFailStatus;
+    }
   }
 
   // The validated state-aware builder (machine_candidate.h) is the ONLY public path from a
@@ -424,6 +438,17 @@ class MachineRuntimeDefinition {
   // fail-closed path left it off (a degraded candidate the factory rejects). Named precisely:
   // this reports the IDENTITY/calibration apply only, NOT a whole-DeviceState "applied" claim.
   bool identityApplied() const { return identityApplied_; }
+
+  // task #78: whether the whole 169-parameter applied_to_DSP set held on this definition's owned
+  // state actually landed on the DSP. true on a complete apply; false if ANY applied_to_DSP id was
+  // rejected (the candidate factory then yields rejected_dsp_apply, carrying the first failure).
+  // dspAppliedCount() is exactly count_disposition(applied_to_dsp) on success (169) and partial on
+  // rejection. dspFirstFailId()/dspFirstFailStatus() give the first failure (sentinel on success).
+  // Named precisely: this reports the FULL DeviceState DSP apply, NOT just the identity/calibration.
+  bool dspApplyOk() const { return dspApplyOk_; }
+  std::uint32_t dspAppliedCount() const { return dspAppliedCount_; }
+  ParameterId dspFirstFailId() const { return dspFirstFailId_; }
+  ParameterApplyStatus dspFirstFailStatus() const { return dspFirstFailStatus_; }
 
   std::uint32_t moduleCount() const { return kMachineDispositionCount; }
   std::uint32_t fixedEdgeCount() const { return kCanonicalFixedEdgeCount; }
@@ -618,6 +643,11 @@ class MachineRuntimeDefinition {
 
   // Whether the GH#6 identity/calibration profile was configured on the VCF->distortion path.
   bool identityApplied_ = false;
+  // task #78 full-apply verdict (the candidate-builder gate + first-failure id/status).
+  bool dspApplyOk_ = false;
+  std::uint32_t dspAppliedCount_ = 0;
+  ParameterId dspFirstFailId_ = static_cast<ParameterId>(kParameterCount);
+  ParameterApplyStatus dspFirstFailStatus_ = ParameterApplyStatus::applied;
 
   // The owning executor. Declared AFTER the arrays it points into so the init-list is
   // well-formed; its ctor only stores the addresses (compile happens in rebuild()).

@@ -141,7 +141,7 @@ class SchmittOsc {
 
   double freqBaseHz() const { return freqBaseHz_; }
   double toleranceOf() const { return tolerance_; }
-  double effectiveFreqHz() const { return freqBaseHz_ * (1.0 + tolerance_); }
+  double effectiveFreqHz() const { return chargeRate_ * pitchScale_ / (4.0 * kWindowVolts); }
 
  private:
   double sampleRate_;

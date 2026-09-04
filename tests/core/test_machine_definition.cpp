@@ -1108,7 +1108,12 @@ int main() {
       core::ControlEvent ev{};
       ev.kind = core::ControlEventKind::parameter;
       ev.parameter = core::ParameterId::drone_3_pitch;
-      ev.value = 0.5;
+      // 0.5 is the DEFAULT applied_to_dsp value of drone_3.pitch (registry initial=0.5), and
+      // task#78 now pre-applies the full default state in the definition ctor — so a 0.5
+      // event is a no-op and the script would look vacuous. Use a value off default so the
+      // event still exercises the dispatch (sample-timing under test), while the applied
+      // baseline stays reflected.
+      ev.value = 0.85;
       ev.source = 1;
       ev.producerSequence = 1;
       core::TimedControlEvent te{};

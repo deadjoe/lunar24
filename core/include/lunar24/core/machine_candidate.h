@@ -44,6 +44,8 @@ enum class MachineCandidateStatus : std::uint8_t {
   rejected_state,    // validate_device_state failed (family+field in `validation`).
   rejected_graph,    // state ok, but the machine graph did not compile.
   rejected_identity, // state+graph ok, but the GH#6 identity/calibration did not configure.
+  rejected_dsp_apply, // state+graph+identity ok, but the 169-parameter applied_to_DSP apply was
+                      // not complete (first failure in firstFailParamId/firstFailStatus).
   rejected_format,   // illegal sample rate.
 };
 
@@ -54,6 +56,10 @@ struct MachineCandidateResult {
   // Non-null iff status == accepted; the caller owns it (and therefore the definition's lifetime)
   // and must hold it at a stable address.
   std::unique_ptr<MachineRuntimeDefinition> definition;
+  // Meaningful iff status == rejected_dsp_apply: the first applied_to_DSP parameter whose write
+  // was rejected, and the rejection reason. Sentinel (kParameterCount / applied) on acceptance.
+  ParameterId firstFailParamId = static_cast<ParameterId>(kParameterCount);
+  ParameterApplyStatus firstFailStatus = ParameterApplyStatus::applied;
 };
 
 // Validate `state`, build a state-aware MachineRuntimeDefinition from it at `sampleRate`, and
@@ -85,6 +91,9 @@ inline MachineCandidateResult buildMachineRuntimeCandidate(const DeviceStateV1& 
     return {MachineCandidateStatus::rejected_graph, v, nullptr};
   if (!definition->identityApplied())
     return {MachineCandidateStatus::rejected_identity, v, nullptr};
+  if (!definition->dspApplyOk())
+    return {MachineCandidateStatus::rejected_dsp_apply, v, nullptr,
+            definition->dspFirstFailId(), definition->dspFirstFailStatus()};
 
   return {MachineCandidateStatus::accepted, v, std::move(definition)};
 }
