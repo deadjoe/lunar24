@@ -1402,9 +1402,18 @@ class SynthRuntime {
   // The resolved input the preamp actually ran this frame — the exact value passed to
   // preamp_.tick(in) at the ext_source_in break sink (delayed env when a return cable
   // feeds it, host EXT terminal fallback when unfed). This is the real DSP feed, never a
-  // shadow mirror: under a return cable, the cycle break edge's own D-sample line is FRESH
-  // zeroed at rebuild (buf[k]=0, writePos=0), so the FIRST post-rebuild frame reads 0.0 —
-  // a "reads live" bug would hand the preamp the stale nonzero env instead.
+  // shadow mirror. Two distinct reset semantics, by rebuild type (@Codex ce765d6d fix comment):
+  //   * A REAL rebuild (the graph changed, graphDirty_ true): the cycle break edge's own
+  //     D-sample line is reset (buf[k]=0, writePos=0), so the FIRST post-RESET frame reads
+  //     0.0 — a "reads live" bug would hand the preamp the nonzero env instead.
+  //   * A graph_unchanged rebuild (no graph change, cached no-op): the reset is NOT run; the
+  //     feedback line PRESERVES the ongoing running state. That preserved value is legitimate
+  //     running state, not an erroneous stale value — this keeps phase continuity over a no-op
+  //     rebuild, so a stale-looking read here is a real running-state read, not a defect.
+  // KNOWN behavior (current rebuild strategy, documented not fixed): because a real rebuild
+  // resets EVERY feedback line (not only the changed ones), an unrelated patch that forces a
+  // real rebuild can transient the VCO-B self-edge buffer. Recorded as a known behavior; it is
+  // NOT expanded into a per-line migration fix here, and no "no transient" claim is made.
   double preampResolvedInput() const { return preampInResolved_; }
   double distortionDrive(int ch) const { return distortion_.channelDrive(ch); }
   double distortionRail(int ch) const { return distortion_.channelRail(ch); }

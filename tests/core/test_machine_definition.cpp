@@ -979,23 +979,49 @@ int main() {
     // ③c (@Codex c30e1b47, Fix 2): ③b's firstPost==0.0 is STILL a getter-only discriminator
     // (preampResolvedInput() + a pure primitive). Add a TRUE equivalent on rendered WET.
     // Two same-seed machines warmed up with the SAME drive/frame count (no return cable).
-    // A then connects env_follower.env_out -> preamp.ext_source_in + rebuild; B stays no-cable.
+    // @Codex ce765d6d rework — the earlier "both call rebuild()" symmetric reset was NOT actually
+    // symmetric: the no-cable side's rebuild() early-returned as graph_unchanged (cached no-op,
+    // machine_runtime.h:1451) and did NOT reset, so the VCO-B self-edge kept its warmup value while
+    // the cable side's real reset zeroed it => dryB A≠B at non-zero CV depth (localized to
+    // feedback-init, not wrong-slot/scheduling). Fix: BOTH sides force a REAL rebuild. A keeps the
+    // return cable (connect sets dirty <=> real reset, VCO-B feedback zeroed). B does connect→
+    // disconnect (dirty, ends NO return cable) so it too real-rebuilds and zeroes its VCO-B feedback.
+    // BOTH sides are now confirmed to actually reset VCO-B self-edge feedback, so the return-cable
+    // per-edge-delay discriminator is a clean single-variable claim WITHOUT the cv_amt=0 isolation
+    // (that isolation is cancelled per @Codex ce765d6d).
     // Both then process the SAME first frame with ext=0. Correct per-edge delay: A's preamp
-    // reads the freshly-zeroed D-sample (=0), B's preamp reads the ext terminal (=0) => both
+    // reads the freshly-reset D-sample (=0), B's preamp reads the ext terminal (=0) => both
     // feed the preamp 0 => ALL FOUR outputs are bit-identical. A live-read bug hands A's
-    // preamp the stale nonzero env => a real preamp->mixer->VCF WET that diverges from B on the
+    // preamp the nonzero env => a real preamp->mixer->VCF WET that diverges from B on the
     // RENDERED output => RED (not merely a getter).
     {
       auto wetDifferential = [&](bool wireReturn, core::RuntimeOutput* seq, std::size_t n) {
         core::MachineRuntimeDefinition d(kSeed, kSr);
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
+        // @Codex ce765d6d: NO cv_amt=0 isolation — compare at the default non-zero CV depth.
         for (int i = 0; i < 12; ++i) (void)rt.processFrame(core::RuntimeInputs{0.5 + 0.25 * double(i % 4), 0.5 + 0.25 * double(i % 4)}, true);
         if (wireReturn) {
+          // A: connect the return cable (sets graphDirty_ => a REAL reset zeroes VCO-B feedback).
           check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
-                "③c connect env_follower.env_out -> preamp.ext_source_in after warm-up");
-          check(rt.rebuild(), "③c return-cable plan rebuilds ok");
+                "③c A connect env_follower.env_out -> preamp.ext_source_in after warm-up");
+        } else {
+          // B: force a REAL rebuild too, but END with no return cable. connect then disconnect the
+          // same edge so graphDirty_ is set; rebuild() then actually resets (a graph_unchanged
+          // no-op would NOT reset and would keep B's warmup self-edge value => dryB A≠B).
+          check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
+                "③c B connect env_follower.env_out -> preamp.ext_source_in (to set dirty)");
+          check(rt.disconnect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
+                "③c B disconnect the return edge (dirty set, end no return cable)");
         }
+        check(rt.rebuild(), "③c plan rebuilds ok");
+        // @Codex ce765d6d: confirm BOTH sides actually rebuilt (real reset, not graph_unchanged) so
+        // VCO-B self-edge feedback is zeroed identically at non-zero CV depth. Line [0] is the VCO-B
+        // self-edge (src=vco_b_vco_out -> sink=vco_b_cv_in) in both, and a real reset leaves it zeroed.
+        check(rt.feedbackCount() >= 1, "③c a feedback line exists (VCO-B self-edge)");
+        { const auto& l = rt.feedbackAt(0);
+          check(l.buf[l.writePos] == 0.0,
+                "③c rebuild actually reset the VCO-B self-edge buffer (a graph_unchanged no-op would keep the warmup value)"); }
         for (std::size_t i = 0; i < n; ++i) seq[i] = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);  // ext=0 first frame.
       };
       auto sameAll4 = [](const core::RuntimeOutput* a, const core::RuntimeOutput* b, std::size_t n) {

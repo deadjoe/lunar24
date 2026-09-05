@@ -31,7 +31,9 @@
 //     the pitch continuously over ONE octave" (registry reads -1..+1 = two octaves).
 //     This conflict is recorded in FINDINGS as a MUST-RESOLVE item and is NOT
 //     silently resolved here. Implemented per registry (oct, -1..+1).
-//   * CV input lin/exp (lin_exp) — selector "lin"/"exp", default index 1="exp"
+//   * CV input lin/exp (lin_exp) — selector "lin"/"exp". The SELECTOR's documented default index is
+//     1="exp"; the registry initial for the DeviceState default is 0="lin" (a separate layer). The
+//     module CONSTRUCTOR default is kExponential; a state apply decides the effective mode.
 //     (PROVISIONAL). The generic CV input is a modulation input with UNKNOWN
 //     transfer (cv_in is -5..+5). The linear-vs-exponential law below is a
 //     PROVISIONAL modeling choice. V/OCT (confirmed) is the calibrated 1 V/oct
@@ -78,7 +80,12 @@ enum class VcoWaveform : std::uint8_t {
   kMorphSineTriangle  // manual-evidenced: sine <-> triangle
 };
 
-// CV input lin/exp mode (lin_exp selector). Default index 1 = kExponential.
+// CV input lin/exp mode (lin_exp selector). The MODULE CONSTRUCTOR default here is index 1 =
+// kExponential (the registry selector's documented default index); the DeviceState DEFAULT
+// (registry initial field) for the lin_exp parameter is 0 = kLinear, which overrides this on the
+// canonical power-on state. The two defaults are DISTINCT layers and are kept separate — a state
+// apply, not this constructor, decides the effective mode. (@Codex 44369539 task#78: clarify, no
+// registry or sound-behavior change.)
 enum class VcoControlMode : std::uint8_t { kLinear, kExponential };
 
 class Vco {

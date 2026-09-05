@@ -188,6 +188,14 @@ inline constexpr std::uint32_t kMachineDispositionCount =
 static_assert(kMachineDispositionCount == lunar24::registry::kModuleCount,
               "every registry module carries exactly one disposition");
 
+// VCO base-frequency software provisional reference (@Codex task#78 VCO ruling, f0336e8d): the
+// canonical MachineRuntimeDefinition seeds BOTH VCOs' base frequency from a SINGLE centrally-named
+// 440Hz provisional value via setVcoBaseHz(), placed BEFORE parameter apply, shared by the default-
+// prepare and state-restore paths (both flow through this same state ctor). This value is NOT a
+// hardware measurement, NOT a new DeviceState parameter, and does NOT change the 169 disposition
+// classification; a later official/measured reference supersedes it.
+inline constexpr double kVcoBaseHzProvisional = 440.0;
+
 // ---------------------------------------------------------------------------
 // Normalized-route disposition table (@Codex correction 2).
 //
@@ -389,6 +397,12 @@ class MachineRuntimeDefinition {
                                                      state.identitySeed.seed,
                                                      state.calibration);
     (void)runtime_.rebuild();
+    // task #78 (@Codex f0336e8d, re-applied per ruling 44369539): seed BOTH VCO base frequencies
+    // from the single centrally-named 440Hz provisional BEFORE parameter apply. This mirrors the
+    // default-prepare and state-restore paths (both flow through this same state ctor). It does NOT
+    // introduce a DeviceState parameter, does NOT change the 169 disposition classification, and a
+    // later official/measured reference number supersedes it.
+    runtime_.setVcoBaseHz(kVcoBaseHzProvisional);
     // task #78: after the GH#6 identity/calibration and the final rebuild (order preserved),
     // apply the WHOLE applied_to_DSP parameter set (exactly 169) from the SAME owned state into
     // the freshly-rebuilt DSP. Fail-closed: exactly 169 must apply, else dspApplyOk_ is false and
