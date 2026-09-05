@@ -65,6 +65,17 @@ double hDefWet() {
   return peakOf(h.wetL());
 }
 
+// Mean absolute difference between two same-length traces — a trace-level "did the audio actually
+// change" metric that avoids the peak (scale-clamped ±0.5 on DRY) and zcr (frequency-only) blind
+// spots. Used to prove a classic drone tune change reaches the REAL WET buffer, not just the
+// pre-mixer bus tap.
+double traceDiff(const std::vector<double>& a, const std::vector<double>& b) {
+  const std::size_t n = a.size() < b.size() ? a.size() : b.size();
+  double s = 0.0;
+  for (std::size_t i = 0; i < n; ++i) s += std::fabs(a[i] - b[i]);
+  return n ? s / n : 0.0;
+}
+
 // --- 1. VCO INIT --------------------------------------------------------------------------
 // The authoritative registry defaults land in the committed runtime; baseHz=440 is live (DRY_A
 // actually oscillates at audio rate, not a DC 0).
@@ -192,6 +203,11 @@ void test_drone_classic() {
   CHECK(std::fabs(v1 - v0) > 1e-3);            // tune moved the real mixer-bus audio.
   CHECK(vM < v1);                              // mute lowered the drone's real audio.
   CHECK(peakOf(h0.wetL()) > hDefWet() + 0.02);  // voice reaches WET once its vol is up.
+
+  // Same route (mixer_ch1_vol=1.0) and SAME volume, ONLY the classic drone tune differs: the REAL
+  // WET trace must differ too. This is the param -> final-audio connection: the tune change is
+  // audible in the actual output buffer, not just the pre-mixer bay tap.
+  CHECK(traceDiff(h0.wetL(), h1.wetL()) > 1e-3);
 }
 
 // --- 8. NEW drone_3 / 9. NEW drone_6 --------------------------------------------------------

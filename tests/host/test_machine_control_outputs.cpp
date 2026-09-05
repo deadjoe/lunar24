@@ -24,6 +24,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 // mini_test.h ships CHECK / CHECK_EQ / CHECK_TRUE / CHECK_FALSE only; a near-equality primitive is
 // needed for the rail/fidelity assertions below.
@@ -63,39 +64,65 @@ struct JackStat {
   double span() const { return mx - mn; }
 };
 
-void test_lfo() {
-  // LFO A: published lfo_a_cv_out oscillates inside 0..+10V and responds to rate.
-  DeviceStateV1 st = make_default_device_state(kSeed);
-  slot(st, ParameterId::lfo_a_rate) = 1.0;   // 1 Hz, a live rate.
-  slot(st, ParameterId::lfo_a_wave) = 0.5;   // mid wave morph.
-
-  EngineHarness h;
-  CHECK(h.load(st));
-  CHECK(h.runtime() != nullptr);
-
+// Run-summary (rail + oscillation) for a captured published-jack series.
+static JackStat statOf(const std::vector<double>& v) {
   JackStat s;
+  for (double x : v) s.fuel(x);
+  return s;
+}
+
+// Count sign changes of (v - mid) across a series — a PERIOD discriminator for a unipolar rail.
+// The LFO CV is 0..+10 V, so its midline (5 V), not 0, is the cycle reference: a faster rate must
+// yield proportionally more midline crossings over the same fixed window. Used to prove a rate
+// parameter changes the real published period, not merely that the module oscillates.
+static int midlineCrossings(const std::vector<double>& v, double mid) {
+  int n = 0;
+  for (std::size_t i = 1; i < v.size(); ++i) {
+    if ((v[i - 1] < mid) != (v[i] < mid)) ++n;
+  }
+  return n;
+}
+
+void test_lfo() {
+  // LFO A: published lfo_a_cv_out is a unipolar 0..+10V oscillation. Two states differ ONLY in the
+  // rate parameter (same wave, same everything else); the faster baseHz must yield proportionally
+  // MORE cycles of the real published CV over the same 1 s window — i.e. the rate param changes the
+  // actual period, not merely that the module runs. The midline (5 V) is the cycle reference.
+  DeviceStateV1 slow = make_default_device_state(kSeed);
+  slot(slow, ParameterId::lfo_a_rate) = 1.0;   // 1 Hz.
+  slot(slow, ParameterId::lfo_a_wave) = 0.5;   // keep wave IDENTICAL across both states.
+  DeviceStateV1 fast = slow;
+  slot(fast, ParameterId::lfo_a_rate) = 20.0;   // 20x faster; every other field identical.
+
+  EngineHarness h, h2;
+  CHECK(h.load(slow));
+  CHECK(h2.load(fast));
+  CHECK(h.runtime() != nullptr);
+  CHECK(h2.runtime() != nullptr);
+
   const double target = 10.0;  // kLfoOutputPeakVolt
-  bool ok = h.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
-    s.fuel(rt.controlVoltageAt(JackId::lfo_a_cv_out));
-  });
-  CHECK(ok);
-  CHECK(s.mn >= 0.0 && s.mx <= target);      // rail 0..+10V.
-  CHECK(s.span() > 0.5);                      // really oscillating, not a DC stub.
-  // Publish fidelity: jack == the LFO's own computed output at this phase (no shadow copy).
-  const auto& rtl = *h.runtime();
+  std::vector<double> slowJack, fastJack;
+  CHECK(h.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
+    slowJack.push_back(rt.controlVoltageAt(JackId::lfo_a_cv_out));
+  }));
+  CHECK(h2.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
+    fastJack.push_back(rt.controlVoltageAt(JackId::lfo_a_cv_out));
+  }));
+
+  const JackStat ss = statOf(slowJack), sf = statOf(fastJack);
+  CHECK(ss.mn >= 0.0 && ss.mx <= target && ss.span() > 0.5);  // slow in-rail, oscillating.
+  CHECK(sf.mn >= 0.0 && sf.mx <= target && sf.span() > 0.5);  // fast in-rail, oscillating.
+
+  const int slowC = midlineCrossings(slowJack, target * 0.5);
+  const int fastC = midlineCrossings(fastJack, target * 0.5);
+  CHECK(slowC >= 1);        // 1 Hz really crosses the midline at least once (a live period, not DC).
+  CHECK(fastC > slowC);     // the rate changed the real published period.
+  CHECK(fastC >= slowC * 8);  // ~20x rate -> roughly proportional cycing.
+
+  // Publish fidelity: jack == the LFO's own computed output at the final phase (no shadow copy).
+  const auto& rtl = *h2.runtime();
   CHECK_CLOSE(rtl.controlVoltageAt(JackId::lfo_a_cv_out),
               (rtl.lfoA().fundamental() + 1.0) * 0.5 * target, 1e-9);
-
-  // Rate response: a much faster LFO still emits in-rail and keeps oscillating.
-  DeviceStateV1 st2 = make_default_device_state(kSeed);
-  slot(st2, ParameterId::lfo_a_rate) = 20.0;
-  EngineHarness h2;
-  CHECK(h2.load(st2));
-  JackStat s2;
-  CHECK(h2.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
-    s2.fuel(rt.controlVoltageAt(JackId::lfo_a_cv_out));
-  }));
-  CHECK(s2.mn >= 0.0 && s2.mx <= target && s2.span() > 0.5);
 }
 
 void test_envelope() {
@@ -172,6 +199,37 @@ void test_env_follower() {
   constexpr double kEnvMax = 10.0;  // kEnvMaxVolt
   CHECK(inStat.peak >= 0.0 && inStat.peak <= kEnvMax);
   CHECK(inStat.peak > noStat.peak + 0.1);  // feeding preamp really raises the follower output.
+
+  // Attack-response: SAME input step (1.0 V preamp), two DIFFERENT legal attack values (attackNorm
+  // -> seconds via 0.001 + 0.999*n). The faster attack must reach half its own final plateau in FEWER
+  // frames than the slower one. A rise-time (to 50% of each state's own peak) discriminator makes the
+  //  comparison invariant to the absolute rectified level, so it proves the attack param genuinely
+  // changes the published rise rather than just the module running.
+  DeviceStateV1 fastA = make_default_device_state(kSeed);
+  slot(fastA, ParameterId::env_follower_attack) = 0.1;   // ~0.10 s attack.
+  DeviceStateV1 slowA = make_default_device_state(kSeed);
+  slot(slowA, ParameterId::env_follower_attack) = 0.9;   // ~0.90 s attack.
+  EngineHarness hF, hS;
+  CHECK(hF.load(fastA));
+  CHECK(hS.load(slowA));
+
+  std::vector<double> fastSeries, slowSeries;
+  CHECK(hF.renderSampled(kSr, 1.0, [&](const lunar24::core::SynthRuntime& rt) {
+    fastSeries.push_back(rt.controlVoltageAt(JackId::env_follower_env_out));
+  }));
+  CHECK(hS.renderSampled(kSr, 1.0, [&](const lunar24::core::SynthRuntime& rt) {
+    slowSeries.push_back(rt.controlVoltageAt(JackId::env_follower_env_out));
+  }));
+  auto riseHalf = [](const std::vector<double>& v) -> int {
+    double peak = 0.0;
+    for (double x : v) if (x > peak) peak = x;
+    const double half = peak * 0.5;
+    for (std::size_t i = 0; i < v.size(); ++i) if (v[i] >= half) return static_cast<int>(i);
+    return static_cast<int>(v.size());
+  };
+  const int fFast = riseHalf(fastSeries), fSlow = riseHalf(slowSeries);
+  CHECK(fFast >= 0 && fSlow >= 0);            // both series really rose (non-empty rise).
+  CHECK(fFast < fSlow);                       // faster attack reaches 50% plateau earlier.
 }
 
 void test_sequencer() {

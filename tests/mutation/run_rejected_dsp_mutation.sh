@@ -43,6 +43,11 @@ EXE_MUT="$WORK/harness_mut"
 EXE_REAL="$WORK/harness_real"
 BLOCK="$WORK/_block.txt"
 
+# Always restore the scratch dir, even on a compile/run failure or interrupt — a failed run must
+# never leave a mutated copy behind (only restore, never touch the source tree).
+cleanup() { rm -rf "$WORK"; }
+trap cleanup EXIT
+
 if [ ! -f "$SRC" ]; then echo "ERROR: $SRC not found (run from repo root / via this script)." >&2; exit 2; fi
 if [ ! -f "$HARNESS" ]; then echo "ERROR: $HARNESS not found." >&2; exit 2; fi
 
@@ -83,25 +88,44 @@ grep -c "setVcoBMorph(v);" "$MUT_HDR"
 
 echo
 echo "== [build/run] MUTATED build — expect GREEN (40 checks, 0 failures) =="
-g++ -std=c++20 -O0 -o "$EXE_MUT" "$HARNESS" -I"$WORK" -Icore/include -Ihost/include -Igenerated
-if ! "$EXE_MUT"; then
-  echo "   ERROR: mutated build did NOT pass. See output above." >&2
-  echo "== [restore] ==" ; rm -rf "$WORK" ; exit 1
+g++ -std=c++17 -O0 -o "$EXE_MUT" "$HARNESS" -I"$WORK" -Icore/include -Ihost/include -Igenerated \
+  || { echo "   ERROR: MUTATED build (g++) failed." >&2; exit 1; }
+MUT_OUT="$("$EXE_MUT" 2>&1)" || { echo "   ERROR: MUTATED run did not pass. See output above." >&2; exit 1; }
+MUT_SUMMARY="$(printf '%s\n' "$MUT_OUT" | grep -o 'owner-atomicity RejectedDspApply harness: [0-9]* checks, [0-9]* failures' || true)"
+if [ "$MUT_SUMMARY" != "owner-atomicity RejectedDspApply harness: 40 checks, 0 failures" ]; then
+  echo "   ERROR: mutated build reported '$MUT_SUMMARY' — expected '40 checks, 0 failures'." >&2
+  exit 1
 fi
+echo "   mutated: $MUT_SUMMARY"
 
 echo
 echo "== [build/run] UNMUTATED build — expect RED at the RejectedDspApply expectations =="
-g++ -std=c++20 -O0 -o "$EXE_REAL" "$HARNESS" -Icore/include -Ihost/include -Igenerated
-# Unmutated: applyDeviceState(B) ACCEPTS the legal value, so the harness must FAIL. Assert nonzero.
+# Unmutated: applyDeviceState(B) ACCEPTS the legal 1.0 value (there is no mutation), so the harness
+# fails SPECIFICALLY at the RejectedDspApply-path assertions. It must NOT be a crash and NOT an
+# unrelated error. Reaching the harness summary rules out a crash/abort (a crash prints no
+# 'harness: N checks' line), and the reported failure count must be exactly the number of
+# RejectedDspApply-expectation assertions.
+g++ -std=c++17 -O0 -o "$EXE_REAL" "$HARNESS" -Icore/include -Ihost/include -Igenerated \
+  || { echo "   ERROR: UNMUTATED build (g++) failed." >&2; exit 1; }
 set +e
-"$EXE_REAL";
+REAL_OUT="$("$EXE_REAL" 2>&1)"
 REAL_RC=$?
 set -e
-if [ "$REAL_RC" -eq 0 ]; then
-  echo "   ERROR: unmutated build unexpectedly PASSED — the mutation is NOT load-bearing!" >&2
-  echo "== [restore] ==" ; rm -rf "$WORK" ; exit 1
+REAL_SUMMARY="$(printf '%s\n' "$REAL_OUT" | grep -o 'owner-atomicity RejectedDspApply harness: [0-9]* checks, [0-9]* failures' || true)"
+REAL_FAILS="$(printf '%s\n' "$REAL_SUMMARY" | grep -oE '[0-9]+ failures' | grep -oE '[0-9]+' || true)"
+# The 13 assertions pinning the RejectedDspApply path: the StateApplyStatus::RejectedDspApply itself,
+# the typed vco_b_morph / invalid_value diagnostics, and the state/format/plan/subsequent-render
+# invariants at that path. If this harness gains or drops such assertions this count AND those checks
+# must stay aligned — it is intentionally NOT a generic "any nonzero exit" check.
+if [ -z "$REAL_SUMMARY" ]; then
+  echo "   ERROR: unmutated build did not reach the harness summary (crash / early abort). rc=$REAL_RC" >&2
+  exit 1
 fi
-echo "   unmutated exit=$REAL_RC (nonzero as required — rejection is load-bearing)"
+if [ "$REAL_FAILS" != "13" ]; then
+  echo "   ERROR: unmutated build reported '$REAL_SUMMARY' — expected the 13 RejectedDspApply-expectation failures." >&2
+  exit 1
+fi
+echo "   unmutated: rc=$REAL_RC, $REAL_SUMMARY (the 13 ARE the RejectedDspApply-expectation assertions — load-bearing)."
 
 echo
 echo "== [restore] =="
