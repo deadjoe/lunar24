@@ -13,6 +13,24 @@
 
 ---
 
+## ERRATA（2026-09-06，首版发布当日）
+
+首版（commit `61c740e`）发布后经外部复核，以下各条已在本文件内**就地更正**。按 `report/README.md` 的快照规则，更正**不静默进行**：每条列出改了什么、依据是什么。**结论与优先级排序未变。**
+
+| # | 位置 | 首版内容 | 更正 | 依据 |
+|---|---|---|---|---|
+| **E1** | §0.3 | 称旧测法失效是因为"`f0` 与 `sr` 成整数关系时混叠像折回谐波位置"，并举 220 Hz @ 48 kHz 为例 | **机制解释在数学上不成立，已重写。** 220 Hz @ 48 kHz 的 `gcd = 20 Hz`、最近混叠-谐波距离 20 Hz、±5 Hz 内 **0 条**；真实失效原因是探测点偏移 `f0/2 = 110 Hz` **不在混叠线偏移集合 {20,40,60,80,100} Hz 内**，读到的是矩形窗泄漏裙。折回谐波要求 **`sr/f0` 为整数**（正确反例：200 Hz @ 48 kHz，1785 条**全部**藏入谐波） | 实测折叠网格；新增 §6.4 可运行脚本 |
+| **E2** | §2 N-2 | 以 `vco.h:76` 作为"默认 `kTriangle`"的出处 | 改为 `vco.h:179`（`VcoWaveform wave_ = VcoWaveform::kTriangle;`）。`:76` 是**枚举成员声明**，不能证明默认值 | 复核提出（其称 `:76` 为 `kSaw` 一节有误——`:76` 确为 `kTriangle`；但"引用了错误证据类型"的判断成立） |
+| **E3** | §2 N-2 事实表 | 称 sub 振荡器 `2.0*subPhase()-1.0` 是"朴素方波" | 改为**朴素上升锯齿**；并新增 **N-8** 记录 `vco.h:213` 代码注释本身标错 | 实测：上升样本 1990 / 下降 0 / 跳变 9（≈1 次每周期） |
+| **E4** | §2 N-2 表格 | 未标注数值口径，与同节引用的 FINDINGS 单线数字并列易被误读为同口径 | 表头注明为 **RMS 聚合**，并补出每格的**最劣单线**值 | 复核提出 |
+| **E5** | §2 N-2 | "全频带聚合 −11.3 dB" | 标注其统计带宽为 **25 Hz–Nyquist**，并补 **20 Hz–20 kHz = −12.6 dB**；明确二者**需修改 §6.2 探针的 `kBandLo/kBandHi` 才能复现**，非默认输出。探针已改为具名常量 | 实测三档带宽：−19.3 / −11.3 / −12.6 dB |
+| **E6** | §1.2 摘要 | N-1 写"开机 24 ms 后死锁" | 改为"20 ms 内"。24 ms 源自早期一个有缺陷的平坦窗检测器（sample 1157）。现统一口径：**6 位精度钉死 ≈ t=0.020 s**；**1e-12 精确平坦 50 ms 窗起点 = sample 1530 / t=0.0319 s（滞后指标）** | 复核提出；实测切片表 |
+| **E7** | §6.2 探针注释 | 注释称 "with a commensurate f0 (e.g. 220 Hz) alias images fold exactly onto harmonics" | 同 E1，已改正并给出正确反例与选点规则 | 同 E1 |
+
+**未更改的部分**：N-2 表格的 9 个 RMS 数值（220 Hz 与 233.08 Hz 两组几乎相同，互为交叉印证）、N-1 全部实测与根因链、N-3 全部频响数据、§3 对既有 issue 的复核、§5 实施顺序。作废旧 `−54 dB` 数字的决定亦维持不变——只是失效**机制**的解释被更正。
+
+---
+
 ## 0. 本报告的证据口径
 
 本报告遵循与本项目相同的证据纪律。请按下列标记读取每一条结论：
@@ -43,11 +61,32 @@
 
 ### 0.3 一处方法学更正（请实施方注意，不要复用错误测法）
 
+> **[E1 已修订 2026-09-06]** 本节初版给出的失效机制在数学上不成立，已按下述实测重写。详见 §ERRATA E1。
+
 审计初稿曾报告"产品路径 DRY A 混叠 −54.0 dB"。**该数字作废，测法无效。**
 
-错误原因：采用"谐波间频段"探针（在 `f0*(k+0.5)` 处取幅度）。当 `f0` 与 `sr` 成整数关系时（如 220 Hz @ 48 kHz），**混叠像恰好折回谐波位置**，谐波间频段内没有混叠分量，测到的是非 bin 对齐基波的**频谱泄漏**。
+**错误方法**：在"谐波间频段"取幅度，即探测点取 `f0·(k+0.5)`——相对最近谐波偏移 **`f0/2`**。
 
-本报告 §2 N-2 采用的正确方法：Hann 窗抑制泄漏 + 解析定位每条折叠谱线（`fold(k·f0)`，`k·f0 > Nyquist`）+ 排除落在真实带内谐波 ±5 Hz 内的像 + 按可闻频段筛选。
+**它为什么测不到混叠 [实测]**：谐波 `k` 折叠后落在 `|k·f0 − n·sr|`，这些频率全部位于 **`gcd(f0, sr)` 的整数倍网格**上。对 `f0 = 220 Hz @ sr = 48 kHz`，`gcd = 20 Hz`，探针覆盖的折叠阶 `n = 1…7` 使混叠线相对最近谐波的偏移只能取 **{20, 40, 60, 80, 100} Hz**：
+
+| 折叠阶 n | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 到最近谐波距离 (Hz) | 40 | 80 | 100 | 60 | 20 | 20 | 60 |
+
+而探测点的偏移是 `f0/2 = 110 Hz`——**不在这个集合里**。旧方法既没打在谐波上、也没打在混叠线上，**它读到的是强邻线在矩形窗（未加窗）下的泄漏裙**，并且当时的 `f0` 是粗扫估计值（219.9 Hz 而非精确 220.0 Hz），连 bin 对齐都不成立，泄漏因此被进一步放大。
+
+**⚠️ 初版把失效归因于"混叠像折回谐波位置"，并举 220 Hz @ 48 kHz 为例——这是错的。** 实测：该组合下 **±5 Hz 内 0 条**混叠落在谐波上。混叠**恰好**折回谐波需要 **`sr/f0` 为整数**：
+
+| f0 @ 48 kHz | sr/f0 | 混叠线总数 | 落在谐波 ±5 Hz 内 |
+|---|---:|---:|---:|
+| **200 Hz** | 240（整数） | 1785 | **1785（全部）** |
+| 240 Hz | 200（整数） | 1485 | **1485（全部）** |
+| 220 Hz | 218.18 | 1635 | **0** |
+| 233.08 Hz | 205.94 | 1545 | **0** |
+
+**真正的教训（给实施者）**：选混叠探测点之前，**先算折叠网格**。`gcd(f0, sr)` 决定混叠线的间距，`sr/f0` 是否为整数决定它们会不会藏进谐波。§6.5 给出可直接运行的网格计算脚本。
+
+本报告 §2 N-2 采用的正确方法：Hann 窗抑制泄漏 + **解析定位**每条折叠谱线（`fold(k·f0)`，`k·f0 > Nyquist`）+ 排除落在真实带内谐波 ±5 Hz 内的像（该排除规则在 `sr/f0` 非整数时不会排掉任何东西，是针对整数比情形的保险）+ 按频段筛选。
 
 ---
 
@@ -65,13 +104,16 @@
 
 | ID | 严重度 | 标题 | 一句话 |
 |---|---|---|---|
-| **N-1** | 🔴 阻断 | DRY B 在开机默认态直流钉死 | 四路逻辑输出之一开机 24 ms 后死锁在 −1.0 V，永不恢复 |
+| **N-1** | 🔴 阻断 | DRY B 在开机默认态直流钉死 | 四路逻辑输出之一在开机 20 ms 内死锁在 −1.0 V，永不恢复 |
 | **N-2** | 🔴 架构 | 全链路无带限处理 | 默认三角波侥幸温和；切换到锯齿/脉冲，可闻带混叠断崖 40–60 dB |
 | **N-3** | 🔴 契约违反 | VCF 截止频率 `sr/8` 硬帽 | 同一 patch 在 44.1k 与 96k 下音色差 3.7 dB；FREQ 旋钮上端 19% 死区 |
 | **N-4** | 🟠 拓扑 | Chamberlin SVF 选型限制后续 | 与 `07 §7`"不是通用 ladder/SVF"冲突；非线性无法放在正确位置 |
 | **N-5** | 🟡 契约缺口 | `ParameterSmoother` 无产品消费者 | 违反 `07 §3` 第 2 条；P5 接上旋钮即产生 zipper noise |
 | **N-6** | ⚪ 易用性 | `processBlock` 输入数组契约未文档化 | 公开 header-only API 的踩坑点，审计者已实际踩中 |
 | **N-7** | ⚪ 文档漂移 | 产品代码注释与已关闭的 #11 矛盾 | `machine_runtime.h:2099-2101` 仍称六个控制源 "not integrated" |
+| **N-8** | ⚪ 注释错误 | sub 振荡器注释把斜坡写成方波 | `vco.h:213` 注释 "sub = square"，实际是上升锯齿 |
+
+> **[E6 已修订 2026-09-06]** N-1 行的时间口径由"24 ms"改为"20 ms 内"（首版数字源自一个有缺陷的平坦窗检测器）。详见 §ERRATA E6。
 
 **N-1 是本次审计最重要的发现。** 它使 P3 出口条件第 3 条"四输出正确"在开机默认态下**不成立**。
 
@@ -235,6 +277,8 @@ CV AMT 扫描验证 [实测]：
 
 ### N-2 🔴 全链路无带限处理，波形切换后可闻带混叠断崖
 
+> **[E2/E3/E4/E5 已修订 2026-09-06]** 本节的默认波形出处（E2）、sub 振荡器波形描述（E3）、测量表口径标注（E4）、全频带数字的可复现性标注（E5）已更正。**9 个 RMS 测量值未变。** 详见 §ERRATA。
+
 #### 事实 [代码]
 
 全仓 `grep -rin "polyblep\|blep\|BLIT\|oversampl\|band-limit" core/` — **命中 1 处，且是一条自认未做的注释**（`drone_noise.h:23`，原文见本节末）。`polyblep` / `BLIT` **零命中**。所有振荡器为朴素波形：
@@ -243,24 +287,26 @@ CV AMT 扫描验证 [实测]：
 |---|---|
 | `drone_bank.h` `sapply_()` | `2*(phase/2π) - 1`，朴素锯齿 |
 | `vco.h:223-243` `waveformSampleAt()` | 相位直接映射（saw / triangle / sine / pulse / 两组 morph） |
-| `vco.h:213` sub 振荡器 | `2.0 * subPhase() - 1.0`，朴素方波 |
+| `vco.h:213` sub 振荡器 | `2.0 * subPhase() - 1.0`，**朴素上升锯齿**（非方波——见 N-8） |
 | `schmitt_osc.h` | 离散阈值翻转，无带限 |
 
 #### 测量 [实测]
 
 **方法**：孤立 `Vco`（不经信号链），sr = 48000，0.2 s 预热后取 1 s 窗；Hann 窗抑制泄漏；解析定位每条折叠谱线 `fold(k·f0)`（`k·f0 > Nyquist`）；排除落在真实带内谐波 ±5 Hz 内的像；**只统计折回可闻中频段 100 Hz – 5 kHz 的混叠能量**（相对基波）。
 
+**口径**：下表为**全部折叠线的 RMS 聚合值**（220 Hz 处 336 条、932 Hz 处 75 条、1865 Hz 处 38 条），不是单条最劣线。括号内为**最劣单线**，供与 FINDINGS 的单线数字同口径比较。
+
 | 波形 | f0 = 220 Hz | f0 = 932 Hz | f0 = 1865 Hz |
 |---|---:|---:|---:|
-| **三角（当前默认）** | −79.2 dB | −60.9 dB | −53.0 dB |
-| **锯齿** | **−27.7 dB** | **−22.4 dB** | **−19.3 dB** |
-| **脉冲（duty 0.5）** | −30.7 dB | −25.5 dB | −22.9 dB |
+| **三角（当前默认）** | −79.2 dB（最劣线 −91.6） | −60.9 dB（−66.9） | −53.0 dB（−55.9） |
+| **锯齿** | **−27.7 dB**（−45.8） | **−22.4 dB**（−33.4） | **−19.3 dB**（−27.6） |
+| **脉冲（duty 0.5）** | −30.7 dB（−45.8） | −25.5 dB（−33.4） | −22.9 dB（−28.0） |
 
-全频带（不限 100 Hz–5 kHz）聚合值更高：锯齿 @1865 Hz 达 **−11.3 dB**。
+放宽统计带宽后聚合值更高（锯齿 @1865 Hz）：**25 Hz–Nyquist 为 −11.3 dB**、**20 Hz–20 kHz 为 −12.6 dB**。⚠️ 这两个数字需把 §6.2 探针的 `kBandLo/kBandHi` 从默认的 `100/5000` 改成对应值才能复现，**不是默认参数下的输出**。
 
 #### 关键判断
 
-**当前开机默认态恰好落在整套波形里最温和的角落。** `vco.h:76` 默认 `kTriangle`，产品路径从不调 `setWaveform`；默认音高 220 Hz。该组合下混叠 −79 dB，实际不可闻。
+**当前开机默认态恰好落在整套波形里最温和的角落。** 默认波形为 `kTriangle`（`vco.h:179`：`VcoWaveform wave_ = VcoWaveform::kTriangle;`），产品路径从不调 `setWaveform`；默认音高 220 Hz。该组合下混叠 −79 dB，实际不可闻。
 
 **但 `kSaw` / `kPulse` 都在 `VcoWaveform` 枚举中（`vco.h:74-81`），都是面板 MORPHING WAVEFORM 选择器的合法位置。** 用户一转波形选择器，可闻带混叠立即从 −79 dB 跳到 −28 dB；音高推到 2 kHz 再降到 −19 dB。**落差 40–60 dB，毫无疑问可闻。**
 
@@ -594,6 +640,47 @@ ERROR: AddressSanitizer: stack-buffer-overflow
 
 ---
 
+### N-8 ⚪ sub 振荡器的代码注释把斜坡写成方波
+
+> 本条由报告外部复核提出，审计实测确认。见 §ERRATA E3。
+
+#### 证据 [代码 + 实测]
+
+`core/include/lunar24/core/vco.h:145-146, 213`：
+
+```cpp
+double phase()    const { return frac(cumPitch_); }        // :145  parent phase [0,1)
+double subPhase() const { return frac(cumPitch_ * 0.5); }  // :146  sub phase   [0,1)
+...
+*subOut = 2.0 * subPhase() - 1.0;   // :213  注释写的是 "sub = square of subPhase"
+```
+
+`subPhase()` 返回 `[0,1)` 的相位，`2·p − 1` 把它**线性**映射到 `[−1,+1)`——这是**上升锯齿**，不是方波。
+
+实测（`baseHz=440`、`octSelect=1`、`subSelect=1`，取 2000 样本）：
+
+```
+上升样本 = 1990（平均斜率 +0.009167）
+下降样本 = 0
+跳变(|Δ|>0.5) = 9  ≈ 每周期 1 次
+对照：真方波应为 上升/下降样本≈0、每周期 2 次跳变
+```
+
+**判定：单向斜率 + 每周期一次跳变 = 锯齿。**
+
+#### 影响
+
+无运行时影响——两种波形在当前实现下都是朴素、都严重混叠（N-2），产品行为不因这条注释改变。
+
+**但它属于 N-7 同一类风险**：以注释为主要上下文的实施 agent 会据此认为 sub 输出是方波，从而在做带限（N-2 落地）时选错算法——方波需要在两个跳变沿各插一个 BLEP，锯齿只需一个。
+
+#### 修复
+
+改正注释。**不改代码行为。** 若确认硬件 sub 应为方波（AS3340 的 sub 通常取自分频器方波），则那是一个**独立的 DSP 缺陷**，需另行取证并单独开单——本条只主张注释与现有代码不符。
+
+
+---
+
 ## 3. 对已跟踪 issue 的独立复核
 
 > 审计独立复现，未采信 issue 记录的自述。以下为独立测得的现状。
@@ -859,6 +946,12 @@ static double foldHz(double f, double sr) {
   return m > sr / 2 ? sr - m : m;
 }
 
+// Statistics band for the aggregate. The report's main table uses the AUDIBLE MID-BAND
+// 100 Hz - 5 kHz. Widen to {25, sr/2 - 25} to reproduce the -11.3 dB figure, or to
+// {20, 20000} for the -12.6 dB figure quoted alongside it.
+static constexpr double kBandLo = 100.0;
+static constexpr double kBandHi = 5000.0;
+
 static void run(const char* nm, VcoWaveform w, double f0, double sr) {
   Vco v(sr);
   v.setWaveform(w); v.setBaseHz(f0); v.setOctaveSelect(1);
@@ -876,7 +969,7 @@ static void run(const char* nm, VcoWaveform w, double f0, double sr) {
     const double h = k * f0;
     if (h <= sr / 2) continue;                       // only harmonics ABOVE Nyquist fold
     const double a = foldHz(h, sr);
-    if (a < 100.0 || a > 5000.0) continue;           // AUDIBLE MID-BAND only
+    if (a < kBandLo || a > kBandHi) continue;        // statistics band (see constants)
     bool onHarm = false;                             // skip aliases hiding on real harmonics
     for (int j = 1; j * f0 < sr / 2; ++j)
       if (std::fabs(a - j * f0) < 5.0) { onHarm = true; break; }
@@ -894,8 +987,12 @@ static void run(const char* nm, VcoWaveform w, double f0, double sr) {
 
 int main() {
   const double sr = 48000.0;
-  // 233.08 Hz is deliberately NON-commensurate with sr: with a commensurate f0
-  // (e.g. 220 Hz) alias images fold exactly onto harmonics and become unmeasurable.
+  // CHOOSING f0 (corrected — see ERRATA E1): alias lines live on the gcd(f0, sr) grid.
+  // They fold EXACTLY onto harmonics only when sr/f0 is an INTEGER (e.g. 200 Hz @ 48 kHz,
+  // sr/f0 = 240 -> all 1785 alias lines land on harmonics and become unmeasurable).
+  // None of the four f0 below is such a case: 220 Hz gives sr/f0 = 218.18 and a minimum
+  // alias-to-harmonic distance of 20 Hz, so every alias line is separable. Run the §6.5
+  // grid calculator before picking any new probe frequency.
   for (double f0 : {220.0, 233.08, 932.33, 1864.66}) {
     std::printf(" f0 = %.2f Hz\n", f0);
     run("TRIANGLE (default)", VcoWaveform::kTriangle, f0, sr);
@@ -963,7 +1060,43 @@ int main() {
 }
 ```
 
-### 6.4 产品路径引用普查（判定"零件是否被产品消费"）
+### 6.4 混叠探测点选取前的折叠网格计算（§0.3 的教训，纯 Python）
+
+```python
+from math import gcd
+
+def fold(f, sr):
+    m = f % sr
+    return sr - m if m > sr / 2 else m
+
+def grid(f0, sr, kmax_mult=8, tol=5.0):
+    """Report where a naive oscillator's alias lines will actually land."""
+    harm = [j * f0 for j in range(1, int(sr / 2 / f0) + 1)]
+    lines, on_harm, mind = 0, 0, float("inf")
+    for k in range(2, int(sr * kmax_mult / f0) + 1):
+        h = k * f0
+        if h <= sr / 2:
+            continue
+        a = fold(h, sr)
+        if a < 1 or a > sr / 2 - 1:
+            continue
+        d = min(abs(a - x) for x in harm)
+        lines += 1
+        mind = min(mind, d)
+        if d < tol:
+            on_harm += 1
+    print(f"f0={f0} sr={sr}  sr/f0={sr/f0:.4f}  alias lines={lines}  "
+          f"min distance to a harmonic={mind:.4f} Hz  hidden on harmonics={on_harm}")
+
+grid(220.0, 48000.0)   # sr/f0=218.18 -> min 20.0 Hz, 0 hidden   -> SAFE probe frequency
+grid(233.08, 48000.0)  # sr/f0=205.94 -> min 14.5 Hz, 0 hidden   -> SAFE
+grid(200.0, 48000.0)   # sr/f0=240    -> min  0.0 Hz, 1785 hidden -> UNUSABLE (the trap)
+grid(240.0, 48000.0)   # sr/f0=200    -> min  0.0 Hz, 1485 hidden -> UNUSABLE
+```
+
+**规则**：`sr/f0` 为整数 ⇒ 全部混叠线藏进谐波，任何"谐波间"或"排除谐波"的测法都会读到 0。选探测频率前先跑这段。
+
+### 6.5 产品路径引用普查（判定"零件是否被产品消费"）
 
 ```sh
 for h in core/include/lunar24/core/*.h; do
