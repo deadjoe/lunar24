@@ -274,6 +274,11 @@ class StandaloneAudioEngine {
 inline bool StandaloneAudioEngine::prepare(std::uint64_t seed, double sampleRate,
                                            int maxBlockSize, int inputCapability,
                                            int outputCapability) {
+  // Reset the host DSP first-fail diagnostic at the START of every prepare()-only, exactly as
+  // applyDeviceState() does below (337-338), so a prior RejectedDspApply never leaks a stale
+  // failure into a later successful/other prepare() on the same owner.
+  dspApplyFirstFailParamId_ = static_cast<ParameterId>(kParameterCount);
+  dspApplyFirstFailStatus_ = ParameterApplyStatus::applied;
   // (1) Impossible / illegal format -> fail-closed. On ANY of these the OLD definition is
   // released and the engine goes NOT-READY: the host is re-configuring for a new stream, and
   // keeping a stale sample-rate runtime would be exactly the "old runtime kept" defect. A
