@@ -1,0 +1,413 @@
+// Copyright (c) 2026 Lunar 24 contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// GH #11 (P3 item 6) LFO A/B sound-core strong-oracle suite for
+// core/include/lunar24/core/lfo.h. This new Lfo is a SEPARATE free-running
+// per-sample oscillator — NOT a wrapper over any audio-rate modulation helper —
+// and A/B are two real independent instances. The tests pin behaviour / trend /
+// determinism and never fake a measured hardware curve (see the header's
+// PROVISIONAL modelling constants). The 0..+10V unipolar CV rail is grounded on
+// the REAL reg::kJacks lfo_a/b_cv_out descriptor, not a test-side shadow.
+//
+// @Codex mandate (msg 2ed673a6) must-tests:
+//   ① square endpoint / duty trend + triangle linear ramp
+//   ② mid morph is neither endpoint and is a per-sample crossfade
+//   ③ 0..+10V bounded / finite
+//   ④ RATE trend (higher baseHz -> more cycles)
+//   ⑤ ×1/×6/×10 multiplier ratio
+//   ⑥ four sample-rates wall-clock (44.1/48/88.2/96k, NO fixed 48k)
+//   ⑦ block partition per-sample bit-identical
+//   ⑧ A/B config + phase isolation (one side reset / change RATE leaves the
+//      other's per-sample trace bit-identical)
+//   ⑨ reset preserves config
+//   ⑩ invalid config fail-closed (a rejected value must NOT pollute the later
+//      phase/output trace, and must keep the FULL prior config)
+//   ⑪ real registry lfo_a/b_cv_out descriptor (direction/CV-type/unipolar/0..10V)
+//
+// Negative controls (each narrow old-error RED->revert GREEN) are run separately
+// in a detached /tmp worktree: ① bypass WAVE (constant square), ② multiplier
+// ignored, ③ phase step fixed 48k, ④ output still bipolar (not mapped to 0..10V),
+// ⑤ A/B shared phase, ⑥ invalid-config guard. Detectors read real per-sample
+// behaviour — never source grep / a read-only inspector / a self-copied trace.
+
+#include "mini_test.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <vector>
+
+#include "lunar24/core/lfo.h"
+#include "lunar24/registry.hpp"
+
+namespace core = lunar24::core;
+namespace reg = lunar24::registry;
+
+namespace {
+
+using core::Lfo;
+using core::LfoSpeedMult;
+using core::kLfoOutputPeakVolt;
+
+int find_jack(core::JackId id) {
+  for (std::uint32_t i = 0; i < core::kJackCount; ++i) {
+    if (reg::kJacks[i].id == id) return static_cast<int>(i);
+  }
+  return -1;
+}
+
+std::vector<double> run_sig(Lfo& l, int n) {
+  std::vector<double> v;
+  v.reserve(static_cast<std::size_t>(n));
+  for (int i = 0; i < n; ++i) v.push_back(l.tick());
+  return v;
+}
+
+// Rising-edge count of the square-biased 0..10V signal, crossing up through 5V.
+int count_rising_edges(const std::vector<double>& sig) {
+  int e = 0;
+  for (std::size_t i = 1; i < sig.size(); ++i) {
+    if (sig[i - 1] < 5.0 && sig[i] >= 5.0) ++e;
+  }
+  return e;
+}
+
+// One wall-clock second of a square LFO, returning the number of rising edges.
+int edges_for(double sr, double baseHz, LfoSpeedMult m) {
+  Lfo l(sr);
+  l.setBaseHz(baseHz);
+  l.setWave(0.0);  // square gives clean rail transitions
+  l.setSpeedMult(m);
+  auto sig = run_sig(l, static_cast<int>(sr));
+  return count_rising_edges(sig);
+}
+
+void test_square_endpoint_and_duty() {
+  const double sr = 48000.0;
+  Lfo l(sr);
+  l.setBaseHz(4.0);
+  l.setWave(0.0);  // square
+  l.setSpeedMult(LfoSpeedMult::x1);
+  // square fundamental is exactly +1 (phase<0.5) -> 10V, or -1 (phase>=0.5) -> 0V.
+  // 1 second at 4 Hz = 4 whole cycles, so duty (high samples) ~ 0.5 and ~4 edges.
+  const int N = static_cast<int>(sr);
+  auto sig = run_sig(l, N);
+  int hi = 0;
+  for (double v : sig) {
+    CHECK(std::isfinite(v));
+    CHECK(v >= 0.0 && v <= kLfoOutputPeakVolt + 1e-9);
+    // square only ever takes the two rail values (no intermediate morph)
+    CHECK(v < 1e-6 || std::fabs(v - kLfoOutputPeakVolt) < 1e-6);
+    if (v >= 5.0) ++hi;
+  }
+  const double duty = static_cast<double>(hi) / N;
+  CHECK(duty > 0.45 && duty < 0.55);
+  const int edges = count_rising_edges(sig);
+  CHECK(edges >= 3 && edges <= 5);
+}
+
+void test_triangle_linear_ramp() {
+  // sr=16, baseHz=1, x1 -> phaseStep=0.0625; one cycle = 16 samples. The triangle
+  // has a constant slope magnitude, so every adjacent-sample delta is
+  // |4 * phaseStep * 5| = 1.25V (turning points included, since samples straddle
+  // them); the peak is exactly 10V and the trough exactly 0V.
+  const double sr = 16.0;
+  const double stepVolt = 1.25;
+  Lfo l(sr);
+  l.setBaseHz(1.0);
+  l.setWave(1.0);  // triangle
+  l.setSpeedMult(LfoSpeedMult::x1);
+  auto sig = run_sig(l, 32);  // two cycles
+  double mx = -1e9, mn = 1e9;
+  for (double v : sig) {
+    CHECK(std::isfinite(v));
+    CHECK(v >= 0.0 && v <= kLfoOutputPeakVolt + 1e-9);
+    mx = std::max(mx, v);
+    mn = std::min(mn, v);
+  }
+  CHECK(std::fabs(mx - kLfoOutputPeakVolt) < 1e-6);
+  CHECK(std::fabs(mn - 0.0) < 1e-6);
+  for (int i = 1; i < 32; ++i) {
+    CHECK(std::fabs(std::fabs(sig[i] - sig[i - 1]) - stepVolt) < 1e-6);
+  }
+}
+
+void test_wave_morph_crossfade() {
+  const double sr = 48000.0, base = 5.0;
+  Lfo a(sr), b(sr), c(sr);
+  a.setBaseHz(base); a.setWave(0.0);  a.setSpeedMult(LfoSpeedMult::x1);
+  b.setBaseHz(base); b.setWave(1.0);  b.setSpeedMult(LfoSpeedMult::x1);
+  c.setBaseHz(base); c.setWave(0.5);  c.setSpeedMult(LfoSpeedMult::x1);
+  // identical baseHz/sr/mult -> all three stay phase-synchronized (wave does not
+  // affect the phase advance), so at each sample their phases are equal and the
+  // mid-wave fundamental is the exact linear mean of the two endpoints.
+  for (int i = 0; i < 1000; ++i) {
+    a.tick(); b.tick(); c.tick();
+    const double fa = a.fundamental(), fb = b.fundamental(), fc = c.fundamental();
+    CHECK(std::fabs(a.phase() - b.phase()) < 1e-12);
+    CHECK(std::fabs(b.phase() - c.phase()) < 1e-12);
+    // endpoints differ
+    CHECK(std::fabs(fa - fb) > 1e-9);
+    // mid is strictly between the endpoints (excludes pure square / pure triangle)
+    CHECK(fc > std::min(fa, fb) + 1e-9 && fc < std::max(fa, fb) - 1e-9);
+    // and is the per-sample linear crossfade
+    CHECK(std::fabs(fc - 0.5 * (fa + fb)) < 1e-9);
+  }
+}
+
+void test_output_bounded_0_10_finite() {
+  const double sr = 44100.0;
+  for (double wave : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+    Lfo l(sr);
+    l.setBaseHz(3.0);
+    l.setWave(wave);
+    l.setSpeedMult(LfoSpeedMult::x10);
+    for (int i = 0; i < static_cast<int>(sr); ++i) {
+      const double v = l.tick();
+      CHECK(std::isfinite(v));
+      CHECK(v >= 0.0 && v <= kLfoOutputPeakVolt + 1e-9);
+    }
+  }
+}
+
+void test_rate_trend() {
+  const double sr = 48000.0;
+  const int e_lo = edges_for(sr, 2.0, LfoSpeedMult::x1);  // ~2 cycles
+  const int e_hi = edges_for(sr, 8.0, LfoSpeedMult::x1);  // ~8 cycles
+  // 8 / 2 = 4: higher baseHz must move the wall-clock frequency up
+  CHECK(e_hi > e_lo);
+  const double ratio = static_cast<double>(e_hi) / static_cast<double>(e_lo);
+  CHECK(ratio > 3.0 && ratio < 5.0);
+}
+
+void test_speed_multiplier_ratio() {
+  const double sr = 48000.0;
+  const int e1 = edges_for(sr, 5.0, LfoSpeedMult::x1);   // ~5 cycles
+  const int e6 = edges_for(sr, 5.0, LfoSpeedMult::x6);   // ~30 cycles
+  const int e10 = edges_for(sr, 5.0, LfoSpeedMult::x10); // ~50 cycles
+  CHECK(e6 > e1 && e10 > e6);
+  const double r6 = static_cast<double>(e6) / static_cast<double>(e1);
+  const double r10 = static_cast<double>(e10) / static_cast<double>(e1);
+  CHECK(r6 > 5.0 && r6 < 7.0);
+  CHECK(r10 > 9.0 && r10 < 11.0);
+}
+
+void test_four_sample_rates_wall_clock() {
+  // Same baseHz setting must give the same wall-clock frequency (~5 Hz) at every
+  // real sample rate. A fixed 48 kHz phase step would skew 88.2/96k (and 44.1k).
+  for (double sr : {44100.0, 48000.0, 88200.0, 96000.0}) {
+    const int edges = edges_for(sr, 5.0, LfoSpeedMult::x1);
+    CHECK(edges >= 4 && edges <= 6);
+  }
+}
+
+void test_block_partition_bit_identical() {
+  const double sr = 48000.0;
+  Lfo a(sr);
+  a.setBaseHz(3.0); a.setWave(0.5); a.setSpeedMult(LfoSpeedMult::x6);
+  const auto full = run_sig(a, 1000);
+
+  Lfo b(sr);
+  b.setBaseHz(3.0); b.setWave(0.5); b.setSpeedMult(LfoSpeedMult::x6);
+  std::vector<double> part;
+  part.reserve(1000);
+  const int chunks[] = {1, 7, 13, 5, 64, 128, 3};
+  int done = 0;
+  for (int c : chunks) {
+    for (int i = 0; i < c; ++i) part.push_back(b.tick());
+    done += c;
+  }
+  while (done < 1000) { part.push_back(b.tick()); ++done; }
+  CHECK(part.size() == 1000);
+  for (int i = 0; i < 1000; ++i) CHECK(full[i] == part[i]);  // bit-identical
+}
+
+void test_ab_isolation() {
+  const double sr = 48000.0;
+  Lfo a(sr), b(sr);
+  a.setBaseHz(5.0); a.setWave(0.0); a.setSpeedMult(LfoSpeedMult::x1);
+  b.setBaseHz(5.0); b.setWave(1.0); b.setSpeedMult(LfoSpeedMult::x1);
+
+  // Warm up A and B to a known cycle position so a later cross-instance pollution
+  // is observable as a phase change (a brand-new phase of 0 would make many buggy
+  // clears invisible). a and b are distinct instances; clocking one never moves the
+  // other.
+  for (int i = 0; i < 500; ++i) { a.tick(); b.tick(); }
+
+  // FREEZE b's expected next-M trace BEFORE A is touched (Codex re-review 683f5f30):
+  // copy b's value state into a local `expected` and clock it. A correct Lfo treats
+  // `expected` as an independent instance, so this does NOT perturb b — it only
+  // records what b's next M samples would be if nothing pollutes it. Freezing the
+  // expectation BEFORE the A-operation is what defeats the twin-oracle mask: two
+  // live clocks that both observe a later shared bump get zeroed symmetrically and
+  // stay equal, whereas a frozen pre-bump expectation keeps the unpolluted reference.
+  const int M = 500;
+  Lfo expected(b);                    // copy of b's config + phase
+  const auto traceExpected = run_sig(expected, M);
+
+  // Operate on A ONLY: reset + change RATE + advance. A correct Lfo confines this
+  // activity to a. Under a shared-reset/epoch bug A's reset() bumps a shared epoch
+  // and b's next tick clears its own phase — but the frozen `expected` trace (taken
+  // before the bump) still holds the unpolluted phase, so b's real trace diverges.
+  a.reset(); a.setBaseHz(80.0); a.setSpeedMult(LfoSpeedMult::x10);
+  for (int i = 0; i < 100; ++i) a.tick();
+
+  // Do NOT reset b. Compare b's real next-M samples against the FROZEN expected
+  // trace, bit-identical. A shared phase (b & expected mutate one cell sequentially,
+  // so b continues from the cell expected already advanced) or a shared-reset epoch
+  // (b's phase cleared by A's reset) both make b's real trace differ from expected.
+  const auto traceActual = run_sig(b, M);
+  CHECK(traceActual == traceExpected);
+  // B config untouched, A config changed
+  CHECK(b.baseHz() == 5.0 && b.wave() == 1.0 && b.speedMult() == LfoSpeedMult::x1);
+  CHECK(a.baseHz() == 80.0 && a.wave() == 0.0 && a.speedMult() == LfoSpeedMult::x10);
+}
+
+void test_reset_preserves_config() {
+  const double sr = 44100.0;
+  Lfo l(sr);
+  l.setBaseHz(7.0); l.setWave(0.75); l.setSpeedMult(LfoSpeedMult::x6);
+  for (int i = 0; i < 100; ++i) l.tick();
+  CHECK(l.phase() > 0.0);
+  l.reset();
+  CHECK(l.phase() == 0.0);
+  CHECK(l.sampleRate() == sr && l.baseHz() == 7.0 && l.wave() == 0.75 &&
+        l.speedMult() == LfoSpeedMult::x6);
+  // after reset the first sample is again the deterministic phase-step start
+  Lfo fresh(sr);
+  fresh.setBaseHz(7.0); fresh.setWave(0.75); fresh.setSpeedMult(LfoSpeedMult::x6);
+  CHECK(l.tick() == fresh.tick());
+}
+
+void test_invalid_config_fail_closed() {
+  const double sr = 48000.0;
+  const int N = 1000;
+  Lfo ctl(sr);
+  ctl.setBaseHz(5.0); ctl.setWave(0.25); ctl.setSpeedMult(LfoSpeedMult::x6);
+  const auto tctl = run_sig(ctl, N);
+
+  Lfo tampered(sr);
+  tampered.setBaseHz(5.0); tampered.setWave(0.25); tampered.setSpeedMult(LfoSpeedMult::x6);
+  // every invalid call must return false
+  CHECK(tampered.setSampleRate(0.0) == false);
+  CHECK(tampered.setSampleRate(std::nan("")) == false);
+  CHECK(tampered.setSampleRate(-1.0) == false);
+  CHECK(tampered.setBaseHz(-1.0) == false);
+  CHECK(tampered.setBaseHz(std::nan("")) == false);
+  CHECK(tampered.setWave(std::numeric_limits<double>::infinity()) == false);
+  CHECK(tampered.setWave(std::nan("")) == false);
+  CHECK(tampered.setSpeedMult(static_cast<LfoSpeedMult>(99)) == false);
+  // ... and leave the FULL prior config intact
+  CHECK(tampered.sampleRate() == sr && tampered.baseHz() == 5.0 &&
+        tampered.wave() == 0.25 && tampered.speedMult() == LfoSpeedMult::x6);
+  // ... and must NOT pollute the later phase/output trace
+  const auto ttampered = run_sig(tampered, N);
+  CHECK(tctl == ttampered);
+}
+
+void test_unconfigured_and_invalid_ctor_finite() {
+  // An unconfigured Lfo (default ctor) has no sample rate, so naively 0/0 would
+  // produce NaN. The tick() timebase guard must instead emit a deterministic finite
+  // no-modulation value WITHOUT advancing the cycle position, and never invent a
+  // hidden 48 kHz default.
+  Lfo d;
+  CHECK(d.sampleRate() == 0.0);
+  for (int i = 0; i < 8; ++i) {
+    const double v = d.tick();
+    CHECK(std::isfinite(v));
+    CHECK(v >= 0.0 && v <= kLfoOutputPeakVolt + 1e-9);
+    CHECK(v == 0.0);          // finite deterministic fallback
+    CHECK(d.phase() == 0.0);  // ... and the cycle position must NOT advance
+  }
+  // An invalid sample-rate ctor is fail-closed: it installs NO bad timebase, so the
+  // Lfo stays unconfigured (sr==0) and still never emits NaN.
+  Lfo badn(std::nan(""));
+  Lfo badneg_ctor(-44100.0);
+  Lfo badzero(0.0);
+  Lfo badinf(std::numeric_limits<double>::infinity());
+  for (Lfo* lp : {&badn, &badneg_ctor, &badzero, &badinf}) {
+    CHECK(lp->sampleRate() == 0.0);
+    CHECK(std::isfinite(lp->tick()));
+    CHECK(lp->tick() == 0.0);
+  }
+  // reset() on an unconfigured Lfo stays finite/unchanged.
+  d.reset();
+  CHECK(std::isfinite(d.tick()));
+}
+
+void test_finite_input_overflow_fail_closed() {
+  // A finite input can still overflow to a non-finite phase step after the
+  // {speedMult * baseHz / sampleRate} chain. Admission must reject the WHOLE
+  // candidate config BEFORE any such step reaches tick(), keeping the prior config.
+  // huge finite Hz alone, at x1 over a 1.0 sr, is finite (DBL_MAX) -> accepted.
+  Lfo big(1.0);
+  big.setBaseHz(5.0); big.setWave(0.0); big.setSpeedMult(LfoSpeedMult::x1);
+  CHECK(big.setBaseHz(std::numeric_limits<double>::max()) == true);
+  CHECK(big.baseHz() == std::numeric_limits<double>::max());
+  // x1 -> x10 makes the step DBL_MAX*10/1.0 overflow to Inf -> must be REJECTED and
+  // keep the prior x1 config (so the accepted config always has a finite step).
+  CHECK(big.setSpeedMult(LfoSpeedMult::x10) == false);
+  CHECK(big.speedMult() == LfoSpeedMult::x1);
+  CHECK(big.baseHz() == std::numeric_limits<double>::max());
+  for (int i = 0; i < 64; ++i) {  // and the actual trace stays finite, never NaN
+    const double v = big.tick();
+    CHECK(std::isfinite(v));
+    CHECK(v >= 0.0 && v <= kLfoOutputPeakVolt + 1e-9);
+  }
+
+  // tiny positive sample rate is itself admissible (finite, >0), but a huge baseHz
+  // over it makes the step overflow (1e300/1e-300 -> 1e600 -> Inf) -> rejected.
+  Lfo t(1e-300);
+  CHECK(t.sampleRate() == 1e-300);
+  CHECK(t.setBaseHz(1e300) == false);
+  CHECK(t.baseHz() == 1.0);  // prior default preserved
+  CHECK(std::isfinite(t.tick()));
+
+  // the same guard on setSampleRate: too-tiny sr makes baseHz*mult/sr overflow.
+  Lfo u(1.0);
+  u.setBaseHz(5.0); u.setWave(0.0); u.setSpeedMult(LfoSpeedMult::x6);
+  CHECK(u.setSampleRate(1e-320) == false);  // 5*6/1e-320 -> Inf -> reject, keep 1.0
+  CHECK(u.sampleRate() == 1.0);
+  CHECK(std::isfinite(u.tick()));
+}
+
+void test_registry_jack_descriptors() {
+  const int ia = find_jack(core::JackId::lfo_a_cv_out);
+  const int ib = find_jack(core::JackId::lfo_b_cv_out);
+  CHECK(ia >= 0 && ib >= 0);
+  if (ia >= 0) {
+    const auto& j = reg::kJacks[ia];
+    CHECK(j.direction == core::PinDirection::output);
+    CHECK(j.signalType == core::SignalType::cv);
+    CHECK(j.polarity == core::Polarity::unipolar);
+    CHECK(j.nominalMin == 0.0 && j.nominalMax == kLfoOutputPeakVolt);
+  }
+  if (ib >= 0) {
+    const auto& j = reg::kJacks[ib];
+    CHECK(j.direction == core::PinDirection::output);
+    CHECK(j.signalType == core::SignalType::cv);
+    CHECK(j.polarity == core::Polarity::unipolar);
+    CHECK(j.nominalMin == 0.0 && j.nominalMax == kLfoOutputPeakVolt);
+  }
+}
+
+}  // namespace
+
+int main() {
+  test_square_endpoint_and_duty();
+  test_triangle_linear_ramp();
+  test_wave_morph_crossfade();
+  test_output_bounded_0_10_finite();
+  test_rate_trend();
+  test_speed_multiplier_ratio();
+  test_four_sample_rates_wall_clock();
+  test_block_partition_bit_identical();
+  test_ab_isolation();
+  test_reset_preserves_config();
+  test_invalid_config_fail_closed();
+  test_unconfigured_and_invalid_ctor_finite();
+  test_finite_input_overflow_fail_closed();
+  test_registry_jack_descriptors();
+  return test::finish("lfo");
+}

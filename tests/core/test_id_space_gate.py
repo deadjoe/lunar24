@@ -92,6 +92,17 @@ def main():
     if bad:
         raise SystemExit("id-space gate violations:\n  " + "\n  ".join(bad))
 
+    # --- exact Parameter-capacity freeze ------------------------------
+    # kDeviceParamCapacity is the P0 FINAL parameter id-space (one-past last id
+    # 423 = 424), derived from the frozen 357-param target and an append-only id
+    # plan (new param ids continue from 376; the 0..375 holes are never reused).
+    # It must be EXACTLY 424 — any drift (512, 448, a rounding-up, etc.) is wrong
+    # and is caught here rather than silently accepted by capacity >= id-space.
+    param_cap = _const(CAPS_HPP, "kDeviceParamCapacity")
+    if param_cap != 424:
+        raise SystemExit(f"kDeviceParamCapacity ({param_cap}) != frozen 424 "
+                         f"(P0 final parameter id-space)")
+
     # --- sparse-id hazard demonstration -------------------------------
     sparse = json.loads(json.dumps(spec))
     # Send one parameter id past the param bank: a valid uint32 id, but a hole
@@ -100,7 +111,6 @@ def main():
     sparse["modules"][0]["parameters"][0]["id"] = sparse_id
     reg_sp = generate_registry.Registry(sparse)  # validates OK: id is in uint32 range
     space_sp = generate_registry._id_space(reg_sp.parameter_ids)
-    param_cap = _const(CAPS_HPP, "kDeviceParamCapacity")
     if space_sp != sparse_id + 1:
         raise SystemExit(f"id-space should be maxId+1 ({space_sp} != {sparse_id}+1)")
     if space_sp <= param_cap:

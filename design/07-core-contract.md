@@ -24,8 +24,28 @@ lunar-core ──→ lightweight snapshots/events ──→ adapters/UI
 
 - `ModuleId / ParameterId / JackId / ProgramId`：稳定、与显示名称、语言和 UI 坐标无关；进入状态格式后不可重用或随意修改。
 - `ParameterDescriptor`：真实单位、范围、默认值、平滑策略和持久化语义。
+- ⚠️ `ParameterDescriptor` 是**标量**：单一数值 ＋ 单位/范围/默认/平滑/持久化。
+  **非标量的设备状态不进参数库** —— `vector`（逐音板调音、按钮值）、`record`（序列步、键盘 preset A–D）、
+  `mask`（音阶开关）**归属** DeviceState 的结构化字段（见 §6），不表示为 ParameterDescriptor。
+  ⚠️ **现状**：其中 preset A–D 的容器已在 `DeviceStateV1`（`keyboard_presets`，当前仅载 id 与压感两项）；
+  `plate_tune` / `pushbutton_value` / `quantise_scale_editor` / `seq_steps` **尚未建模**，
+  按 `device_state.h` 的 PROVISIONAL 注记，**由 P4 键盘子系统设计时补全**。
+  **"归属 DeviceState"是设计归属，不是"已经实现"——不得据此认为它们已被处理。**
+  registry 完整性门禁据此把它们判为**结构性 gap（Root A: "must gap"）**。
+  **这不是待办事项：把它们拍扁成标量才是错的。** 冻结目标 357 参数中**有 8 项属于此类**。
+- ⚠️ 另有一类 gap：目标声明为 `selector-toggle` 但**未给出 positions（值域）**，
+  手册只描述行为不枚举取值时即属此类。**在拿到值域证据前必须保持 gap，不得臆造 positions，
+  也不得改判为 continuous 来绕过。**
+- 两类合计：冻结目标 357 中 **12 项必须保持 gap**（8 非标量 ＋ 4 无值域 selector），
+  因此 **landed 参数上限 = 345**，最终 `kParameterIdSpace = 412`。
+  **这 12 项不是欠账**；把 gap 推向 0 意味着拍扁结构或臆造值域，两者都是错的。
 - `JackDescriptor`：方向、推荐信号用途/范围、normalized route；用途是提示和保护数值范围，不是阻止跨类型实验连接。
 - `NormalizedRoute`：正式图边；插线覆盖，拔线恢复，不允许散落在模块代码里的 `if jack empty` 特判。
+- `FixedEndpointId / FixedRouteId`：固定（内部、非面板可插线）拓扑的稳定身份。**决策 B：只做一致性命中
+  （coherence-only），不建独立运行时数值空间** —— 内部端点以 `module.port` 身份存在、固定路由以
+  `fixed.<...>` 身份存在；完整性门禁只保证每条 fixed route 的 source/sink 指到已声明的内部端点、
+  且 `requiredFixedRoutes` 集逐条存在，不额外分配一个类比 JackId 的 FixedEndpoint 数值空间。
+  只有面板**可插线** jack 才有 JackId；内部固定端点只有身份、无 JackId。
 - `PatchGraph`：连接事实；屏幕 cable 只是它的 visualization，不是连接状态本身。
 - `ControlEvent`：带 block 内 sample offset 的外部离散事件或参数命令。
 - `AudioBlockView`：框架无关、预分配的输入/四逻辑输出 buffer view。
@@ -59,7 +79,7 @@ oscillator、audio、noise、LFO、S&H、envelope、CV 以及 patch cable 上的
 - pitch CV 固定为 1 V/octave-equivalent；不能让每个 VCO/FM 入口各自猜比例。
 - 每个 `JackDescriptor` 必须定义 `polarity`、nominal/tolerated voltage range、DC coupling、每伏调制深度或 transfer curve、gate/clock rising/falling threshold 与 hysteresis、输入 saturation/rail 行为及证据状态。
 - 手册已给出的输出范围直接进入 registry；未给出的 threshold/rail 值必须标 `provisional/unverified`，在 P2 前冻结，不能藏成代码常数。
-- 手册 `OUTS VOLTAGE SPECIFICATION` 当前给出的 source/output 事实是：`DRY V4/V5 max 1 V`、`WET max 2 V`、`VCO -5…+5 V`、`EG 0…8 V`、`ENV VOICES -10…+10 V`、`LFO 0…+10 V`、`PULSER -10…+10 V`、`ENV FOLLOWER CV 0…10 V / GATE 0…8 V`、`JOYSTICK -10…+10 V`、`S&H -5…+5 V`、`VOICE 3/5 MODULATOR 0…12 V`、`5 STEP SEQ CV 0…5 V / GATE 0…10 V`。其中 LFO 的单极性必须保留；`ENV VOICES 1,2,3,6,7,8` 的异常编号原样记录为 `unverified`。
+- 手册 `OUTS VOLTAGE SPECIFICATION` 当前给出的 source/output 事实是：`DRY V4/V5 max 1 V`、`WET max 2 V`、`VCO -5…+5 V`、`EG 0…8 V`、`ENV VOICES -10…+10 V`、`LFO 0…+10 V`、`PULSER -10…+10 V`、`ENV FOLLOWER CV 0…10 V / GATE 0…8 V`、`JOYSTICK -10…+10 V`、`S&H -5…+5 V`、`VOICE 3/5 MODULATOR 0…12 V`、`5 STEP SEQ CV 0…5 V / GATE 0…10 V`。其中 LFO 的单极性必须保留；`ENV VOICES 1,2,3,6,7,8` 的异常编号原样记录为 `unverified`。**（2026-08-31 GH#11 收口）**：`PULSER` 项后置 `L` 为 **manual 笔误**——即 PULSER，其周期输出对应 registry `sequencer.clock_out`，**双极 −10…+10V 已确认**；但该项是**输出**口径，**不得**反推 `ext_clock_in` 的输入 clamp/threshold（本次收口有意保持 `ext_clock_in` 未改、仍 unverified）。
 - 上表是**输出**规格，不能反推出所有输入的 clamp/saturation 电压。输入 rail、soft saturation、gate threshold 与 hysteresis 必须逐模块找证据或标 `provisional`，不能拿输出范围替代。
 - 模块求和 headroom 与 gain staging 由该模块契约定义；不在每条 cable 或每个模块出口统一 hard-clamp `[-1,1]`。硬件本来存在的 rail/saturation 在对应位置建模。
 - Core 的 WET/DRY 仍以 virtual volts 输出；`DeviceAdapter` 才把它映射到 audio-device normalized float。手册只证明 WET:DRY 的 max-spec 幅度比是 `2:1`；在确认 peak/RMS/load 口径一致前，不把它固化为精确 dB 声明。

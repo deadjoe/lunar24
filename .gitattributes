@@ -1,0 +1,10 @@
+# GH#4 8B3 (task#73): the two repo IPlugAPP forks keep the pinned upstream body BYTE-IDENTICAL
+# (verified by tools/check_host_override_drift.py, which pins the SHA-256 of the entire
+# upstream->override unified diff). The upstream iPlug 2 TUs carry trailing whitespace in their
+# banner / comment lines, which is inherited into the fork unchanged. Normalizing that whitespace
+# would break the byte-identical body and inflate the curated diff, so we instead apply a NARROW
+# -whitespace exception to exactly these two derivative files: git diff --check ignores whitespace
+# errors in them, so the repo's whitespace hygiene gate stays strict for every OTHER source file
+# while correctly distinguishing "inherited upstream whitespace" from a real authoring defect.
+host/iPlug_app_override.cpp      -whitespace
+host/iPlug_app_host_override.cpp -whitespace

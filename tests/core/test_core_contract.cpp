@@ -27,7 +27,7 @@ namespace core = lunar24::core;
 
 static void device_state_is_frozen() {
   core::DeviceStateV1 st;
-  CHECK_EQ(st.schemaVersion, 1u);
+  CHECK_EQ(st.schemaVersion, core::kDeviceStorageSchemaVersion);
   CHECK_EQ(st.identityModelVersion, 1u);
   CHECK_EQ(st.identitySeed.seed, 0ull);
   CHECK_EQ(st.calibration.vcfLeftTrim, 1.0f);
@@ -290,32 +290,65 @@ static void device_storage_schema() {
 
   // The named fields a future serialization layer walks by name.
   bool found_params = false, found_presets = false, found_settings = false, found_effector = false;
+  bool found_seq_current = false, found_scale_editor = false, found_plate_tune = false;
+  bool found_pushbutton = false, found_clock_selectors = false;
   for (std::uint32_t i = 0; i < s.fieldCount; ++i) {
     std::string_view n = s.fields[i].name;
     if (n == "parameters") found_params = true;
     if (n == "keyboard_presets") found_presets = true;
     if (n == "keyboard_settings") found_settings = true;
     if (n == "effector_left_program" || n == "effector_right_program") found_effector = true;
+    if (n == "keyboard_seq_current") found_seq_current = true;
+    if (n == "keyboard_scale_editor") found_scale_editor = true;
+    if (n == "keyboard_plate_tune") found_plate_tune = true;
+    if (n == "keyboard_pushbutton") found_pushbutton = true;
+    if (n == "keyboard_clock_selectors") found_clock_selectors = true;
   }
   CHECK(found_params && found_presets && found_settings && found_effector);
+  // P4-②: the live keyboard non-scalar / no-domain-selector fields are present.
+  CHECK(found_seq_current && found_scale_editor && found_plate_tune &&
+        found_pushbutton && found_clock_selectors);
 
   // Effector selects a STABLE ProgramId, not a registry array index.
   core::EffectorSelection l;
   l.program = core::ProgramId{1};
   CHECK(l.program == core::ProgramId{1});
 
-  // A keyboard preset carries its own keyboard-owned state (not a bare id).
+  // A keyboard preset carries its own keyboard-owned state (not a bare id) — the
+  // frozen keyboard_params_minus_clock payload (P4-②). The shell (id / behaviour
+  // / output) is preserved; the full 33-sub-field interior is name-encodable.
   core::KeyboardPreset p;
   p.id = 3u;
   p.pressureBehaviour = 1u;
   p.pressureOutput = 2u;
+  p.reserved[0] = 0xEAu;
+  p.reserved[1] = 0xF5u;  // a "version-N wrote here" byte; preserved, never zeroed
   CHECK_EQ(p.id, 3u);
   CHECK_EQ(p.pressureBehaviour, 1u);
   CHECK_EQ(p.pressureOutput, 2u);
+  CHECK_EQ(p.reserved[0], 0xEAu);
+  CHECK_EQ(p.reserved[1], 0xF5u);
+  CHECK_EQ(core::kKeyboardPresetRecordBytes, 487u);  // 247 (v2 left) + 240 (right half-bank)
+  CHECK_EQ(static_cast<std::uint32_t>(core::kKeyboardPresetLayout.fieldCount), 63u);
+  CHECK_EQ(core::kKeyboardPresetRecordBytes, 247u + core::kKeyboardSideBankBytes);
+
+  // The live keyboard state carries the non-scalars (design/07 §6) as structured
+  // fields, never flattened into a scalar descriptor.
+  core::KeyboardSeq seq;
+  CHECK_EQ(core::kKeyboardSeqStepCount, 16u);
+  CHECK_EQ(core::kKeyboardSeqStepBytes, 6u);
+  CHECK_EQ(core::kKeyboardSeqBytes, 96u);
+  // A seq step is note(u8) + value(f32) + gate(u8), packed.
+  seq.steps[3].note = 7u;
+  seq.steps[3].value = 0.5f;
+  seq.steps[3].gate = 1u;
+  CHECK_EQ(seq.steps[3].note, 7u);
+  CHECK_EQ(seq.steps[3].value, 0.5f);
+  CHECK_EQ(seq.steps[3].gate, 1u);
 
   // Sequencer holds a named reserved block — not a fake opaque packed decode.
-  core::SequencerSettings seq;
-  CHECK_EQ(static_cast<std::uint32_t>(sizeof(seq.reserved)),
+  core::SequencerSettings sequ;
+  CHECK_EQ(static_cast<std::uint32_t>(sizeof(sequ.reserved)),
            core::kSequencerPhysicalBytes);
   CHECK(core::kSequencerPhysicalBytes > 0u);
 }

@@ -78,7 +78,10 @@ negistor 的单元差异、慢漂移和非线性是核心音色，不得用干�
 - 压力测试 UI 拖动/MIDI burst，确保音频线程无锁、无分配、无爆音。
 - 实测 immutable graph/state 的 audio-thread handle 与 non-audio reclamation；不能让 `shared_ptr` 最后一次 release/destructor 偷跑到 callback。
 
-**退出条件**：两平台同时通过。否则只在此处回退到 miniaudio+RtMidi+SDL3，不让框架风险进入 DSP 主体。
+**退出条件**：macOS 上①–⑤全部通过；Windows 侧**本阶段只验 CI 能编译**（`windows-latest`），
+**真机音频/MIDI 行为暂不验证**（bearbone 2026-08-24 决定：Windows 调试先不考虑）。
+⚠️ Windows 真机验证**挂起未完成**，补回时点：**首个面向 Windows 的可分发构建之前**，不得再往后推。
+若①在 macOS 即失败，按原计划在此处回退 miniaudio+RtMidi+SDL3，不让框架风险进入 DSP 主体。
 
 ### P2 — 固定控制时基与路由图
 
@@ -98,12 +101,19 @@ negistor 的单元差异、慢漂移和非线性是核心音色，不得用干�
 3. VCO A/B：AS3340 行为、六波形/morph、PWM/FM/sync/sub；
 4. EXT AUDIO、preamp、envelope follower；
 5. 十路 mixer/pan；双 12 dB Polivoks LP/BP VCF（提高 resonance 不丢低频、CV L normalled 到 CV R）；post-filter distortion（DIST=blend、GAIN=amount）；WET/DRY 输出。左右 calibration/nonlinear state 独立。
+6. 可跳线控制源（L2「控制与路由」中需要模块级即时声源、且 **非 P4 keyboard 演奏系统**的部分；即 GH #11 的完整范围，共 6 个控制源，须满足本阶段退出条件的硬门）：
+   - **Envelope A / Envelope B**：两只独立 ADSR 包络（`envelope_a`/`envelope_b`，带 HOLD 与 SELF-GEN surface、gate 输入 `gate_in`、ENV `env_out` 与 VCA-CV `vca_cv_out` 两路输出）。ENV 0..8V（manual OUTS VOLTAGE SPECIFICATION，confirmed）；VCA-CV 极性/transfer provisional；ATT/DEC/RLS 曲线与真实秒数、HOLD/SELF-GEN transfer unverified（见下证据口径）。
+   - **LFO A / LFO B**：两只独立低频振荡器（`lfo_a`/`lfo_b`，square↔triangle WAVE、RATE、×1/×6/×10 `speed_mult`），公开 CV 单极 0..+10V（manual OUTS SPEC，confirmed，须保留单极性）。精确波形 blend 曲线、频率 transfer、通电相位属 evidence disposition，不作已校真机断言。
+   - **Joystick**：独立 X/Y 与 OFFSET X/Y，两路可跳线输出（`joystick.x_out`/`joystick.y_out`，confirmed −10..+10V）；连续 param→audio-rate CV 源。机械 taper/center/offset transfer unverified。
+   - **物理 5-step sequencer**：独立五段状态机（`sequencer`，ModuleId 11），STAGES 仅 3/4/5；五步 step-CV（0..+5V，`cv_out`）与五步 gate enable（`gate_out` 0..+10V）；内部 PULSER **只控制内部 clock rate**，其 period 输出呈现在 `clock_out`，与 external clock in（`ext_clock_in`）。**（2026-08-31 GH#11 收口）**：manual 输出表 token `PULSERL: −10..+10V` 后置 `L` 为 **manual 笔误**——即 PULSER，其周期输出 `sequencer.clock_out` **双极 −10…+10V 已确认**（polarity bipolar / nominal −10..+10，FieldEvidence 定性项 confirmed），原先"命名/电气对应尚未核清"的 raw-evidence conflict 由此闭合。**PULSER norm→Hz 端点/taper = Provisional 软件模型**：`hz = 0.05·400^n`，norm∈[0,1]→0.05..20 Hz（`kFiveStepPulserMinRateHz=0.05`、`kFiveStepPulserLogBase=400`），norm=0 **不**宣告停止（0.05 Hz≈20s/步）；域外/非有限 → fail-closed 0.0（非法值走 `invalid_value`）。**脉冲宽度 = Provisional 单 sample**（每个 PULSER 上升沿 `clock_out` 输出恰一个 sample 的 +10V，其余 −10V）。⚠️ **`ext_clock_in` 电气/阈值在本次收口被有意保持不变**（未反推、未改 descriptor 码，仍 unverified）；通电 playhead unverified/provisional；不得凭空发明 reset（连通语义见设计/07）。
 
-**退出条件**：除 dual effector 外的整条信号链可演奏、可跳线、四逻辑输出正确；Core 无固定 48 kHz 常数，44.1/48/88.2/96 kHz 与不同 buffer 下行为稳定；固定测试 seed 可重现。
+   > 明确排除：`EnvelopeFollower`（`env_follower`）是 preamp 相关的 **L2 控制与路由**检测器/控制源（design/06 §3 L2；实现归属为 P3 第 4 项 EXT AUDIO / preamp 关联器件），**不是** Envelope A/B（即不作为 GH #11 六个控制源之一），不归入本节；物理 5-step 是 P3 独立 sequencer，**不得**并入 P4 keyboard 的 16-step（那是两套独立 sequencer）。
+
+**退出条件**：除 dual effector 外的整条信号链可演奏、可跳线、四逻辑输出正确；Core 无固定 48 kHz 常数，44.1/48/88.2/96 kHz 与不同 buffer 下行为稳定；固定测试 seed 可重现。**上述 6 个控制源（Envelope A/B、LFO A/B、Joystick、物理 5-step）必须补齐生产实现与消费**，逐项满足硬门：框架无关、固定/无堆、逐 sample 的生产实现；canonical factory/实例化；被 SynthRuntime/PatchGraph 按 registry JackId 真实消费；公开输出使用 virtual volts；有 forward behavior test 与 negative（旧错红）。仅 class/registry/结构扫描当“有实现”**不计入**。
 
 ### P4 — 完成演奏系统与输入适配
 
-- 实现原 keyboard 的全部声音行为与四个 keyboard presets。
+- 实现原 keyboard 的全部声音行为与四个 keyboard presets。**P4 是 keyboard 自己的 arp/16-step 演奏系统**，包含 keyboard 专用的 16-step sequencer、pressure / portamento / vibrato / quantiser 与 six gate 等发音行为；它通过既有 CV/gate/clock 与 P3 控制源相接，**不拥有、不扩展、不取代物理 5-step**（物理 5-step 是 P3 可跳线控制源下的独立 sequencer，ModuleId 11；两套 sequencer 相互独立，禁止写成 “5→16 extension”）。
 - 指针/电脑键盘/MIDI 全部进入同一 state machine；velocity/aftertouch 只映射原 pressure，MIDI clock 只映射 external clock，CC learn 只指向原控件/CV。
 - 完成底部显示屏＋encoder 菜单与输入归一化校准；只保留原 keyboard 的 4 个 presets。
 

@@ -15,27 +15,74 @@
 
 namespace lunar24::core {
 
-// Per-field evidence status for a JackDescriptor (and reused for the path-level
-// evidence in a ModulePathDelay). Each member records whether that specific
-// value is evidenced, rather than inheriting the descriptor-wide status.
+// Per-field evidence status for a JackDescriptor. Each member records whether
+// that specific value is evidenced, rather than inheriting the descriptor-wide
+// status. (This is jack-field provenance; the per-path scheduling facts of a
+// ModuleExecutionContract use their own PathEvidence in module_execution_contract.h.)
 //
 // The voltage range is split into two independent facts: the NOMINAL recommended
 // range (what the manual states a jack is meant to carry) and the TOLERATED /
 // absolute limit (what it survives without malformed behaviour). The manual
 // frequently evidences the first and is silent on the second; marking them as one
 // field would overclaim the tolerated limit as evidenced whenever the nominal is.
+//
+// The three signal-class facts (recommended signal use, polarity, AC/DC coupling)
+// each carry their own provenance too. They are NOT inferred from a stable-id
+// suffix. unknown-enum biconditional (Codex 587f5e72): value == `unknown` ⇔ provenance
+// == `unverified` — a concrete value never carries `unverified` (that would be a guess
+// presented as a fact), and an `unknown` is never confirmed/provisional.
 struct FieldEvidence {
   EvidenceStatus nominalRange = EvidenceStatus::unverified;    // nominal voltage range
   EvidenceStatus toleratedRange = EvidenceStatus::unverified;  // absolute tolerant limit
   EvidenceStatus threshold = EvidenceStatus::unverified;       // gate/clock threshold + hysteresis
   EvidenceStatus saturation = EvidenceStatus::unverified;      // input rail / saturation behaviour
   EvidenceStatus transfer = EvidenceStatus::unverified;        // modulation depth / transfer curve
+  EvidenceStatus signalType = EvidenceStatus::unverified;      // recommended signal use
+  EvidenceStatus polarity = EvidenceStatus::unverified;        // electrical polarity
+  EvidenceStatus coupling = EvidenceStatus::unverified;        // AC / DC coupling
 
   bool nominalRangeEvidenced() const { return nominalRange == EvidenceStatus::confirmed; }
   bool anyUnverified() const {
     return nominalRange != EvidenceStatus::confirmed || toleratedRange != EvidenceStatus::confirmed ||
            threshold != EvidenceStatus::confirmed || saturation != EvidenceStatus::confirmed ||
-           transfer != EvidenceStatus::confirmed;
+           transfer != EvidenceStatus::confirmed || signalType != EvidenceStatus::confirmed ||
+           polarity != EvidenceStatus::confirmed || coupling != EvidenceStatus::confirmed;
+  }
+};
+
+// Per-field evidence status for a ParameterDescriptor (Codex 03848819). The numeric
+// range, the unit label, the default, the step and the smoothing/persistence policies
+// are each independently evidenced, rather than inheriting the descriptor-wide status.
+// This keeps a software-normalized 0..1 encoding of a multi-position selector from ever
+// masquerading as a confirmed hardware fact: an unknown value domain is provisionally
+// mapped, never silently concrete, and every member carries its own provenance.
+struct ParameterFieldEvidence {
+  EvidenceStatus range = EvidenceStatus::unverified;        // min/max numeric range
+  EvidenceStatus unit = EvidenceStatus::unverified;         // unit label (V/OCT, seconds, ...)
+  EvidenceStatus initial = EvidenceStatus::unverified;      // default value
+  EvidenceStatus step = EvidenceStatus::unverified;         // step (0 == continuous)
+  EvidenceStatus smoothing = EvidenceStatus::unverified;    // smoothing policy
+  EvidenceStatus persistence = EvidenceStatus::unverified;  // persistence policy
+
+  bool anyUnverified() const {
+    return range != EvidenceStatus::confirmed || unit != EvidenceStatus::confirmed ||
+           initial != EvidenceStatus::confirmed || step != EvidenceStatus::confirmed ||
+           smoothing != EvidenceStatus::confirmed || persistence != EvidenceStatus::confirmed;
+  }
+};
+
+// Per-field evidence status for a ProgramDescriptor (Codex 2026-08-23). A
+// program's effect `family` and its `selfOscillating` three-state are independent
+// audited facts, governed by the same unknown-enum biconditional (587f5e72):
+// `family`/`selfOscillating` == `unknown` ⇔ provenance == `unverified`, and a concrete
+// value (a real family, no/yes) carries only confirmed/provisional provenance. Both
+// keys are mandatory and each must hold a legal status.
+struct ProgramFieldEvidence {
+  EvidenceStatus family = EvidenceStatus::unverified;            // effect family (reverb, pitched_delay, ...)
+  EvidenceStatus selfOscillating = EvidenceStatus::unverified;   // self-oscillation assertion
+
+  bool anyUnverified() const {
+    return family != EvidenceStatus::confirmed || selfOscillating != EvidenceStatus::confirmed;
   }
 };
 

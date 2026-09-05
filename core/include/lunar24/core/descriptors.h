@@ -55,9 +55,17 @@ struct ParameterDescriptor {
   ParamRole role;
   EvidenceRef evidence;
   EvidenceStatus status;
-  // Range/default provenance is split from identity: numeric min/max/initial are
-  // only `confirmed` when the manual states them, else unverified/provisional.
-  EvidenceStatus rangeEvidence = EvidenceStatus::unverified;
+  // Range/default provenance is split from identity: numeric min/max/initial and the
+  // unit/step/smoothing/persistence policies are each independently evidenced, never
+  // inherited from the descriptor-wide status (design/07 §10, Codex 03848819). The numeric
+  // values themselves are software-normalized when the manual states only a symbolic set.
+  ParameterFieldEvidence fieldEvidence;
+  // Discrete selector positions. optionCount==0 for a continuous parameter; otherwise
+  // `options` points at optionCount labels (this parameter's slice of the generated
+  // kParameterOptionLabels table). UI/MIDI decode the integer index via this table, so a
+  // 0/1/2 value is never offered without knowing what it means.
+  std::uint32_t optionCount = 0;
+  const char* const* options = nullptr;
 };
 
 // A physical patch point (3.5mm jack). Electrical + signal semantics are fixed.
@@ -95,7 +103,7 @@ struct JackDescriptor {
   Coupling coupling;
   EvidenceRef evidence;
   EvidenceStatus status;
-  FieldEvidence fieldEvidence;  // per-field provenance (nominal/tolerated range, threshold, saturation, transfer)
+  FieldEvidence fieldEvidence;  // per-field provenance (range/threshold/saturation/transfer/signal class)
 };
 
 // A hidden signal edge in the patching graph. Does not consume user-cable
@@ -121,12 +129,13 @@ struct ProgramDescriptor {
   std::string_view cartridge;
   std::uint32_t slot;           // 1..3
   std::string_view name;
-  std::string_view family;      // reverb / pitched_delay / ...
-  bool selfOscillating;         // program that sounds without an input
-  std::uint32_t paramBegin;     // index into kParameters[]
+  std::string_view family;           // effect family (reverb / pitched_delay / ...); "unknown" if un-evidenced
+  SelfOscillating selfOscillating;   // three-state assertion (not evidenced => unknown, NOT a silent no)
+  std::uint32_t paramBegin;          // index into kParameters[]
   std::uint32_t paramCount;
   EvidenceRef evidence;
   EvidenceStatus status;
+  ProgramFieldEvidence fieldEvidence;  // per-field provenance (family, selfOscillating)
 };
 
 }  // namespace lunar24::core

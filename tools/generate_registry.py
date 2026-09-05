@@ -180,6 +180,18 @@ class Registry:
                     raise ValueError(f"{label} {item['stable_id']} bad/absent status {item.get('status')!r}")
                 if label == "parameter" and item.get("rangeEvidence", "unverified") not in VALID_STATUS:
                     raise ValueError(f"parameter {item['stable_id']} bad rangeEvidence")
+                if label == "parameter":
+                    # Selector positions are structural (the generated option table is built from
+                    # them), so a malformed positions[] is a hard spec error here. fieldEvidence
+                    # STATUS is policy, not structure — the completeness gate reports it as a
+                    # problem rather than aborting the whole registry (Codex 03848819 Root 1/2),
+                    # and generation still rejects an unknown status via status_from() during
+                    # emission, so a bad status cannot survive a real build.
+                    poss = item.get("positions")
+                    if poss is not None and (not isinstance(poss, list) or not poss or
+                                             not all(isinstance(x, str) and x for x in poss)):
+                        raise ValueError(f"parameter {item['stable_id']} bad positions "
+                                         f"(need a non-empty list of non-empty labels)")
                 if label == "jack":
                     fe = item.get("fieldEvidence", {})
                     if not all(fe.get(k, "unverified") in VALID_STATUS
@@ -229,15 +241,17 @@ def role_expr(p):
 
 def signal_type_expr(j):
     return {"audio": "SignalType::audio", "cv": "SignalType::cv",
-            "gate": "SignalType::gate", "clock": "SignalType::clock"}[j["signalType"]]
+            "gate": "SignalType::gate", "clock": "SignalType::clock",
+            "unknown": "SignalType::unknown"}[j["signalType"]]
 
 
 def polarity_expr(j):
-    return {"unipolar": "Polarity::unipolar", "bipolar": "Polarity::bipolar"}[j["polarity"]]
+    return {"unipolar": "Polarity::unipolar", "bipolar": "Polarity::bipolar",
+            "unknown": "Polarity::unknown"}[j["polarity"]]
 
 
 def coupling_expr(j):
-    return {"ac": "Coupling::ac", "dc": "Coupling::dc"}[j["coupling"]]
+    return {"ac": "Coupling::ac", "dc": "Coupling::dc", "unknown": "Coupling::unknown"}[j["coupling"]]
 
 
 def direction_expr(j):
@@ -261,7 +275,52 @@ def field_evidence_expr(j):
     t = status_from(fe.get("threshold", "unverified"))
     s = status_from(fe.get("saturation", "unverified"))
     xf = status_from(fe.get("transfer", "unverified"))
-    return f"FieldEvidence{{{nr}, {tr}, {t}, {s}, {xf}}}"
+    st = status_from(fe.get("signalType", "unverified"))
+    po = status_from(fe.get("polarity", "unverified"))
+    co = status_from(fe.get("coupling", "unverified"))
+    # Emission order matches the FieldEvidence member order (evidence_policy.h):
+    # nominalRange, toleratedRange, threshold, saturation, transfer, signalType,
+    # polarity, coupling.
+    return f"FieldEvidence{{{nr}, {tr}, {t}, {s}, {xf}, {st}, {po}, {co}}}"
+
+
+def self_oscillating_expr(p):
+    return {"unknown": "SelfOscillating::unknown", "no": "SelfOscillating::no",
+            "yes": "SelfOscillating::yes"}[p.get("selfOscillating", "unknown")]
+
+
+def program_field_evidence_expr(p):
+    fe = p.get("fieldEvidence", {})
+    fam = status_from(fe.get("family", "unverified"))
+    so = status_from(fe.get("selfOscillating", "unverified"))
+    return f"ProgramFieldEvidence{{{fam}, {so}}}"
+
+
+def parameter_field_evidence_expr(p):
+    # ParameterFieldEvidence aggregates in field order: range, unit, initial(default),
+    # step, smoothing, persistence (Codex 03848819 Root 1). The JSON `fieldEvidence`
+    # keys are range/unit/default/step/smoothing/persistence; `default` maps to `initial`
+    # in the C++ struct (a C++ keyword cannot be a member name).
+    fe = p.get("fieldEvidence", {})
+    r = status_from(fe.get("range", p.get("rangeEvidence", "unverified")))
+    u = status_from(fe.get("unit", "unverified"))
+    i = status_from(fe.get("default", "unverified"))
+    s = status_from(fe.get("step", "unverified"))
+    sm = status_from(fe.get("smoothing", "unverified"))
+    pe = status_from(fe.get("persistence", "unverified"))
+    return f"ParameterFieldEvidence{{{r}, {u}, {i}, {s}, {sm}, {pe}}}"
+
+
+def option_table(reg):
+    """Flatten all selector positions into one shared label table + per-param offsets."""
+    labels = []
+    offsets = {}
+    for p in reg.parameters:
+        pos = p.get("positions")
+        if pos:
+            offsets[p["stable_id"]] = len(labels)
+            labels.extend(pos)
+    return labels, offsets
 
 
 # ----------------------------------------------------------------------------
@@ -368,13 +427,30 @@ def gen_registry(reg):
             evidence_expr(m, src), status_expr(m)))
     out.append("};\n")
 
+    # Shared selector-option label table. Every selector parameter's `options` pointer
+    # points at its slice of this array; `kParameterOptionLabelCount` lets the C++ test
+    # round-trip the whole table (each label counted exactly once, no overlap).
+    option_labels, option_offsets = option_table(reg)
+    out.append("inline constexpr const char* kParameterOptionLabels[] = {")
+    for lab in option_labels:
+        out.append("  %s," % qs(lab))
+    out.append("};\n")
+    out.append("inline constexpr std::uint32_t kParameterOptionLabelCount = %d;" % len(option_labels))
+    out.append("")
+
     out.append("inline constexpr ParameterDescriptor kParameters[kParameterCount] = {")
     for p in reg.parameters:
-        out.append("  { ParameterId::%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s }," % (
+        pos = p.get("positions")
+        if pos:
+            oc = len(pos)
+            op = "&kParameterOptionLabels[%d]" % option_offsets[p["stable_id"]]
+        else:
+            oc, op = 0, "nullptr"
+        out.append("  { ParameterId::%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %du, %s }," % (
             sanitize(p["stable_id"]), qs(p["stable_id"]), qs(p["name"]), qs(p["_stable_owner"]), qs(p["unit"]),
             literal(p["min"]), literal(p["max"]), literal(p.get("step", 0.0)), literal(p["default"]),
             smoothing_expr(p), persistence_expr(p), role_expr(p),
-            evidence_expr(p, src), status_expr(p), status_from(p.get("rangeEvidence", "unverified"))))
+            evidence_expr(p, src), status_expr(p), parameter_field_evidence_expr(p), oc, op))
     out.append("};\n")
 
     out.append("inline constexpr JackDescriptor kJacks[kJackCount] = {")
@@ -402,11 +478,11 @@ def gen_registry(reg):
     for i, prog in enumerate(reg.programs):
         pb = (sum(len(x["parameters"]) for x in reg.modules) +
               sum(len(p.get("parameters", [])) for p in reg.programs[:i]))
-        out.append("  { ProgramId::%s, %s, %s, %du, %s, %s, %s, %du, %du, %s, %s }," % (
+        out.append("  { ProgramId::%s, %s, %s, %du, %s, %s, %s, %du, %du, %s, %s, %s }," % (
             sanitize(prog["stable_id"]), qs(prog["stable_id"]), qs(prog["cartridge"]), int(prog["slot"]),
-            qs(prog["name"]), qs(prog["family"]),
-            "true" if prog.get("selfOscillating") else "false",
-            pb, len(prog.get("parameters", [])), evidence_expr(prog, src), status_expr(prog)))
+            qs(prog["name"]), qs(prog["family"]), self_oscillating_expr(prog),
+            pb, len(prog.get("parameters", [])), evidence_expr(prog, src), status_expr(prog),
+            program_field_evidence_expr(prog)))
     out.append("};\n")
 
     out.append("}  // namespace lunar24::registry")

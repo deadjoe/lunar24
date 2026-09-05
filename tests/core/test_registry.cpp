@@ -49,17 +49,306 @@ static bool valid_status(core::EvidenceStatus s) {
 static bool valid_fe(const core::FieldEvidence& fe) {
   return valid_status(fe.nominalRange) && valid_status(fe.toleratedRange) &&
          valid_status(fe.threshold) && valid_status(fe.saturation) &&
-         valid_status(fe.transfer);
+         valid_status(fe.transfer) && valid_status(fe.signalType) &&
+         valid_status(fe.polarity) && valid_status(fe.coupling);
+}
+
+static bool valid_pfe(const core::ParameterFieldEvidence& pfe) {
+  return valid_status(pfe.range) && valid_status(pfe.unit) &&
+         valid_status(pfe.initial) && valid_status(pfe.step) &&
+         valid_status(pfe.smoothing) && valid_status(pfe.persistence);
+}
+
+static bool valid_so(core::SelfOscillating s) {
+  return s == core::SelfOscillating::unknown || s == core::SelfOscillating::no ||
+         s == core::SelfOscillating::yes;
+}
+
+static bool valid_prog_fe(const core::ProgramFieldEvidence& pfe) {
+  return valid_status(pfe.family) && valid_status(pfe.selfOscillating);
+}
+
+// unknown-enum biconditional (Codex 587f5e72): value==unknown ⇔ evidence==unverified.
+// Forward: an `unknown` value is never a confirmed/provisional fact. Reverse: a concrete
+// value (audio/cv/gate/clock/unipolar/bipolar/ac/dc/no/yes, or a family) can carry only
+// confirmed/provisional provenance — never `unverified`, which would present a guess as a
+// fact. Both directions are enforced, not just unknown→unverified.
+static bool unknown_evidence_consistent(core::SignalType v, core::EvidenceStatus ev) {
+  return v == core::SignalType::unknown ? ev == core::EvidenceStatus::unverified
+                                        : ev != core::EvidenceStatus::unverified;
+}
+static bool unknown_evidence_consistent(core::Polarity v, core::EvidenceStatus ev) {
+  return v == core::Polarity::unknown ? ev == core::EvidenceStatus::unverified
+                                      : ev != core::EvidenceStatus::unverified;
+}
+static bool unknown_evidence_consistent(core::Coupling v, core::EvidenceStatus ev) {
+  return v == core::Coupling::unknown ? ev == core::EvidenceStatus::unverified
+                                      : ev != core::EvidenceStatus::unverified;
+}
+static bool unknown_evidence_consistent(core::SelfOscillating v, core::EvidenceStatus ev) {
+  return v == core::SelfOscillating::unknown ? ev == core::EvidenceStatus::unverified
+                                             : ev != core::EvidenceStatus::unverified;
+}
+static bool unknown_evidence_consistent(std::string_view family, core::EvidenceStatus ev) {
+  return family == "unknown" ? ev == core::EvidenceStatus::unverified
+                             : ev != core::EvidenceStatus::unverified;
 }
 
 static void frozen_counts() {
   // Locked P0 baseline — the audit target. These are the actual vertical-slice
   // counts in spec/machine/lunar24.json at the P0 lock.
-  CHECK_EQ(core::kModuleCount, 5u);
-  CHECK_EQ(core::kParameterCount, 30u);
-  CHECK_EQ(core::kJackCount, 19u);
-  CHECK_EQ(core::kProgramCount, 2u);
-  CHECK_EQ(core::kRouteCount, 3u);
+  CHECK_EQ(core::kModuleCount, 21u);     // Phase B DRONE 6 voice slice (Codex msg b121ba1b):
+                                         // +1 module (drone_6 id 20, source, 12 params/5 jacks).
+                                         // Prior: Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
+                                         // +1 module (drone_3 id 19, source, 12 params/5 jacks).
+                                         // Prior: DRONE 5 classic voice slice (Codex msg 6e25b926)
+                                         // drone_5 id 18, DRONE 4 classic voice slice (Codex msg 483a9dc5)
+                                         // drone_4 id 17, DRONE 2 classic voice slice (Codex msg
+                                         // 3bc2111c) drone_2 id 16, DRONE 1 classic voice slice (Codex msg
+                                         // 28e00d92) drone_1 id 15, drone-voices module closure (Codex
+                                         // msg c212dcfb) voices id 14 (performance, zero params/jacks),
+                                         // dual-effector slice (Codex msg 1a47b5d0) effector
+                                         // id 13, voice-mixer slice (Codex msg 920fa79b) mixer id 12,
+                                         // 5-step sequencer slice (Codex msg 6bedef35) sequencer id 11,
+                                         // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
+                                         // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
+                                         // envelope_b.
+  CHECK_EQ(core::kParameterCount, 345u); // Phase B ORCHE Programs 1/2/3 X/Y/Z slice (Claude msg
+                                         // fa41d75a): +9 program params (orche.1/.2/.3 x/y/z
+                                         // delay time/feedback amount/trigger threshold + delay
+                                         // time/feedback amount/trigger threshold + delay time/
+                                         // feedback amount/delay mod lfo/rnd, ids 403-411, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no ms/dB/ratio/level
+                                         // values derived from the Program 1/2/3 names or the
+                                         // Delay time/Feedback amount/Trigger threshold/Delay mod
+                                         // LFO/RND labels; all three ORCHE programs print "Program 1"
+                                         // on the manual (L1306), so the three instances map by
+                                         // column order — the printed name is NOT distinct per
+                                         // program; the nine params share L1307/L1308/L1309 (X=Delay
+                                         // time, Y=Feedback amount, Z=Trigger threshold | Trigger
+                                         // threshold | Delay mod LFO/RND); orche.1 mirrors the frozen
+                                         // target status confirmed, orche.2/3 provisional; ORCHE is
+                                         // the Reverse delay (one-shot) family — the registry
+                                         // metadata does NOT implement its DSP).
+                                         // Prior: Phase B GENERATOR Programs 1/2/3 X/Y/Z slice
+                                         // (Claude msg 760ec3d7): +9 program params (generator.1/.2/.3 x/y/z
+                                         // pitch 1/pitch 2/fm 2-1 + lfo rate/pitch/pitch mod +/-
+                                         // + cutoff/pitch/lp/hp, ids 394-402, neutral software-
+                                         // normalized 0..1 placeholders, all six-field fieldEvidence
+                                         // unverified, roles x/y/z; no physical unit/range/default
+                                         // asserted — no Hz/semitone/ratio/selector value derived
+                                         // from the FM tone/Ramp/Voice program names or the Pitch 1/
+                                         // Pitch 2/FM 2-1/LFO rate/Pitch mod +/-/Cutoff/LP/HP labels;
+                                         // the +/- is panel silk-screen literal text (not a confirmed
+                                         // bipolar/polarity fact) and LP/HP is a continuous X/Y/Z
+                                         // knob assignment, not a discrete selector — both stay
+                                         // norm 0..1; GENERATOR is the "Noise mini synth" cartridge
+                                         // (right column) — the registry metadata does NOT implement
+                                         // its DSP; Program 3 header "Voice" wraps and its Y Pitch
+                                         // lands at L1297 because the L1296 right column is empty
+                                         // (only SYNTEX Y Color), X Cutoff=L1295, Z LP/HP=L1298).
+                                         // Prior: Phase B DIGITAL Programs 1/2/3 X/Y/Z slice
+                                         // (Claude msg b6f928bb): +9 program params (digital.1/.2/.3
+                                         // x/y/z sample rate/cutoff/input gain + sample rate/lfo
+                                         // speed/lfo amount + sample rate/envelope amount/input gain,
+                                         // ids 385-393, neutral software-normalized 0..1 placeholders,
+                                         // all six-field fieldEvidence unverified, roles x/y/z; no
+                                         // physical unit/range/default asserted — no Hz/44100-48000/
+                                         // dB values derived from the Program 1/2/3 names or the
+                                         // Sample rate/Cutoff/Input gain/LFO speed/LFO amount/
+                                         // Envelope amount labels; DIGITAL is a sample-rate crusher
+                                         // family — the registry metadata does NOT implement its
+                                         // DSP; Program 3 header "Envelope crusher" wraps across
+                                         // L1294-1297 and its X/Y/Z are L1298/1299/1300).
+                                         // Prior: Phase B SYNTEX-1 Programs 1/2/3 X/Y/Z slice
+                                         // (Claude msg cadb0b08): +9 program params (syntex_1.1/.2/.3
+                                         // x/y/z vibrato rate/resonance/sub + tremolo rate/resonance/
+                                         // sub + tone/color/sub, ids 376-384, neutral software-
+                                         // normalized 0..1 placeholders, all six-field fieldEvidence
+                                         // unverified, roles x/y/z; no physical unit/range/default
+                                         // asserted — no Hz/Q/octave/level values derived from the
+                                         // Vibe Synth/Pulse Synth/Acid Synth program names or the
+                                         // Vibrato Rate/Tremolo Rate/Resonance/Tone/Color/Sub labels;
+                                         // SYNTEX-1 is a P8 self-oscillating cartridge (B-tier
+                                         // deferred DSP) — the registry metadata does NOT implement
+                                         // its DSP, and neither MAGIC 1's nor the string-ringer
+                                         // conventions are re-used).
+                                         // Prior: Phase B STRING RINGER Programs 1/2/3 X/Y/Z slice
+                                         // (Codex msg 4de86f09): +9 program params (string_ringer.1/.2/.3
+                                         // x/y/z frequency/resonance/sub + frequency/rate/reverb +
+                                         // pitch speed/s&h rate/freq ring mod, ids 367-375, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no Hz/pitch ratio/sample
+                                         // rate/modulation depth/range/default/taper values derived
+                                         // from the Synthetic Ring/Ring Mod/S&H Ring Mod program
+                                         // names or the Frequency/Resonance/Sub/Rate/Reverb/Pitch
+                                         // Speed/S&H Rate/Freq Ring Mod labels; MAGIC 1's concrete
+                                         // values deliberately NOT re-used).
+                                         // Prior: Phase B INFINITY Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // daeed473): +9 program params (infinity.1/.2/.3 x/y/z
+                                         // pre delay/pre delay mod/decay + feedback/delay/pitch +
+                                         // feedback/delay/pitch, ids 358-366, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no ms/semitones/feedback/
+                                         // range/default/taper/time values derived from the
+                                         // Resonance Reveb/O.D.D/Resonance Delay program names or
+                                         // the Pre delay/Pre delay mod/Decay/Feedback/Delay/Pitch
+                                         // labels; MAGIC 1's concrete values deliberately NOT re-used).
+                                         // Prior: Phase B PITCH SHIFTER Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 7071e673): +9 program params (pitch_shifter.1/.2/.3 x/y/z
+                                         // octave-down/octave-up/direct + octave-down/octave-up/
+                                         // direct + pitch 1/pitch 2/voice mix, ids 349-357, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no octave/pitch/direct/
+                                         // voice-mix semitone, ratio or level values derived from
+                                         // the Octave/Pitch/Direct/Voice-mix labels; Direct stays a
+                                         // CONTINUOUS 0..1 placeholder, NOT a binary selector).
+                                         // Prior: Phase B VIBE Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 1176d4f3): +9 program params (vibe.1/.2/.3 x/y/z
+                                         // depth/rate/reverb + depth/rate/reverb +
+                                         // resonance/rate/mod depth, ids 340-348, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no frequency/time/
+                                         // feedback values derived from the Phaser/Flanger/
+                                         // Resonance-flanger program names or the Depth/Rate/
+                                         // Reverb/Resonance/Mod-depth labels).
+                                         // Prior: Phase B FILTER Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 8f5f8a22): +9 program params (filter.1/.2/.3 x/y/z
+                                         // filter amount/envelope/reverb + hp cutoff/lp cutoff/
+                                         // resonance + cut 1/cut 2/resonance, ids 331-339, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no Hz/Q/dB/taper/frequency
+                                         // values derived from the Auto Wah/HP-LP/Notch program
+                                         // names or the Filter amount/Envelope/HP cutoff/LP cutoff/
+                                         // Resonance/Cut 1/Cut 2 labels; L1234 OCR read "Evelope",
+                                         // written per frozen target semanticLabel "Envelope").
+                                         // Prior: Phase B VIBROTREM Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 2a7c2e94): +9 program params (vibrotrem.1/.2/.3 x/y/z
+                                         // depth/rate/reverb, ids 322-330, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — no frequency/time values
+                                         // derived from the Tremolo/Vibrato/Chorus names or the
+                                         // Depth/Rate/Reverb labels).
+                                         // Prior: Phase B TIME Programs 1/2/3 X/Y/Z slice (Codex msg
+                                         // 7cafb3d6): +9 program params (time.1/.2/.3 x/y/z
+                                         // feedback/delay/reverb + feedback/delay/mod depth +
+                                         // feedback/delay-vibrato-rate/mod depth, ids 313-321,
+                                         // neutral software-normalized 0..1 placeholders, all
+                                         // six-field fieldEvidence unverified, roles x/y/z; no
+                                         // physical unit/range/default asserted — no frequency/
+                                         // time values derived from the labels or program names).
+                                         // Prior: Phase B MAGIC Program 2/3 X/Y/Z slice (Codex msg
+                                         // 62370964): +6 program params (magic.2/.3 x/y/z
+                                         // feedback/delay/pitch, ids 307-312, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z; no physical
+                                         // unit/range/default asserted — MAGIC 1's concrete
+                                         // millisecond/semitone values deliberately NOT re-used).
+                                         // Prior: Phase B Cathedral Program 2/3 X/Y/Z slice (Codex msg
+                                         // 3cad5c27): +6 program params (cathedral.2/.3 x/y/z
+                                         // feedback/delay/reverb, ids 301-306, neutral
+                                         // software-normalized 0..1 placeholders, all six-field
+                                         // fieldEvidence unverified, roles x/y/z).
+                                         // Prior: Phase B DRONE 6 voice slice (Codex msg b121ba1b):
+                                         // +12 params (drone_6.rate/mod/divider/pitch/noise/att/rls
+                                         // continuous software-normalized 0..1 placeholders +
+                                         // hi_low selector hi/low + fm/am/rate_switch/hold selectors
+                                         // off/on, ids 289-300).
+                                         // Prior: Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
+                                         // +12 params (drone_3.rate/mod/divider/pitch/noise/att/rls
+                                         // continuous software-normalized 0..1 placeholders +
+                                         // hi_low selector hi/low + fm/am/rate_switch/hold selectors
+                                         // off/on, ids 277-288).
+                                         // Prior: DRONE 5 classic voice slice (Codex msg 6e25b926)
+                                         // +19 (ids 258-276), DRONE 4 classic voice slice (Codex msg
+                                         // 483a9dc5) +19 (ids 239-257), DRONE 2 classic voice slice (Codex msg
+                                         // 3bc2111c) +19 (ids 220-238), DRONE 1 classic voice slice
+                                         // (Codex msg 28e00d92) +19 (ids 201-219), dual-effector
+                                         // slice +8 (ids 193-200), voice-mixer slice +20
+                                         // (mixer.ch1..ch10 so{pan,vol}, ids 173-192). Modules now
+                                         // carry 237, programs 27 (81 program params). Left as honest
+                                         // gaps the 12 keyboard complex params and the 36 other
+                                         // program X/Y/Z params
+                                         // (seq_steps, quantise_scale_editor,
+                                         // plate_tune, pushbutton_value, preset_a..d, arp_clock,
+                                         // seq_clock, arp_rhythm, seq_rhythm + remaining module
+                                         // ranges)
+  CHECK_EQ(core::kJackCount, 64u);       // vco_b registry correction (task #24, append-only per
+                                         // @Claude "只追加，绝不重排"): +1 jack for the manual L411
+                                         // mirror rule — vco_b.vca_ctl (id 66). The other
+                                         // mirror-rule candidate vco_b.fm_in (id 65) was REMOVED as
+                                         // over-recorded (task #32, frozen-P0 removal): manual L388
+                                         // "linear FM input with attenuator" is the cv jack + the cv
+                                         // amt attenuator + the lin/exp switch, NOT a dedicated
+                                         // fm_in. So the frozen count is back to 64 (it briefly
+                                         // was 66 during the +2 append). Appended/removed, never
+                                         // renumbering an existing id.
+                                         // Prior: Phase B DRONE 6 voice slice (Codex msg b121ba1b):
+                                         // +5 patchable jacks (drone_6.cv_out output/cv id 60 — 0..12 is
+                                         // only a numeric placeholder, range/polarity stay
+                                         // unverified/unknown — KEY DIFF: manual L158 "ENV VOICES
+                                         // 1,2,3,6,7,8" does NOT list voice 6, so unlike DRONE 3 this
+                                         // range/polarity is NOT copied as confirmed;
+                                         // .env_out output/cv -10..+10V/bipolar confirmed id 61 — L157
+                                         // DOES list voice 6; .gate_in id 62 input/gate with the 5V
+                                         // gate PRODUCED by the keyboard so the input
+                                         // rail/threshold/polarity stay unverified/unknown; .clock_in
+                                         // id 63 input/clock (clock socket sets the S&H speed,
+                                         // electrical range/polarity unverified); .noise_in id 64
+                                         // input with only the S&H/IN identity known, class + electrical
+                                         // kept unverified/unknown, not guessed).
+                                         // Prior: Phase B DRONE 3 "Papa Srapa" voice slice (Codex msg b86a53c0):
+                                         // +5 patchable jacks (drone_3.cv_out output/cv
+                                         // 0..+12V/unipolar confirmed id 55; .env_out output/cv
+                                         // -10..+10V/bipolar confirmed id 56 — manual L157 "ENV VOICES
+                                         // 1,2,3,6,7,8" DOES list voice 3, so unlike DRONE 4/5 this
+                                         // range/polarity IS confirmed; .gate_in id 57 input/gate with
+                                         // the 5V gate PRODUCED by the keyboard (buttons 3/6) so the
+                                         // input rail/threshold/polarity stay unverified/unknown;
+                                         // .clock_in id 58 input/clock (clock socket sets the S&H
+                                         // speed, electrical range/polarity unverified); .noise_in id 59
+                                         // input with only the S&H/IN identity known, class + electrical
+                                         // kept unverified/unknown, not guessed).
+                                         // Prior: DRONE 5 classic voice slice (Codex msg 6e25b926)
+                                         // +3 (drone_5.cv_mod_in/.gate_in/.env_out, ids 52-54; for
+                                         // env_out the nominalRange + polarity stay unverified/unknown
+                                         // because manual L157 "ENV VOICES 1,2,3,6,7,8" does NOT list
+                                         // 4/5, so the DRONE 1/2 -10..+10V/bipolar confirmed is not
+                                         // copied there), DRONE 4 classic voice slice (Codex msg
+                                         // 483a9dc5) +3 (drone_4.cv_mod_in/.gate_in/.env_out, ids
+                                         // 49-51), DRONE 2 classic voice slice (Codex msg 3bc2111c)
+                                         // +3 (drone_2.cv_mod_in/.gate_in/.env_out, ids 46-48),
+                                         // DRONE 1 classic voice slice (Codex msg 28e00d92) +3
+                                         // (drone_1.cv_mod_in/.gate_in/.env_out, ids 43-45),
+                                         // dual-effector slice +3 CV inputs (ids 40-42, -10..+10V
+                                         // CV/bipolar from L1164).
+                                         // Prior: the
+                                         // 5-step sequencer slice +4 (sequencer.ext_clock_in/
+                                         // clock_out clock, cv_out 0..+5V CV/unipolar L159, gate_out
+                                         // 0..+10V gate/unipolar L160). Prior phases added
+                                         // preamp.ext_source_in, env_follower.env_out/gate_out,
+                                         // joystick x_out/y_out, lfo_a/lfo_b cv_out, envelope_b
+                                         // gate_in/env_out/vca_cv_out, vco_a/vco_b wave_out+pwm_in,
+                                         // keyboard pressure_out+reset_in, envelope_a vca_cv_out and
+                                         // dropped bad jack vcf.audio_in
+  // Program identity layer landed (Codex 7a6467cc slice #57): 39 program
+  // identities (cathedral.1 + magic.1 keep their params; the other 37 are
+  // identity-only, paramCount==0, honest gaps pending Phase B). kParameterCount
+  // counts modules(87) + programs(6) = 93 — the 37 additions add no params.
+  CHECK_EQ(core::kProgramCount, 39u);
+  CHECK_EQ(core::kRouteCount, 6u);       // Phase B route slice: +2 normalized routes whose endpoints
+                                         // already existed + route.keyboard_gate_to_eg_b (Codex msg
+                                         // c4e6c0ff) once envelope_b landed
+                                         // (route.keyboard_v_oct_to_vco_b, route.vco_b_vco_out_to_cv_in,
+                                         // route.keyboard_gate_to_eg_b
   // kNormalizedRoutes[] still holds exactly the frozen route count (kRouteCount
   // generated; the array is sized by that count).
   CHECK_EQ(sizeof(reg::kNormalizedRoutes) / sizeof(reg::kNormalizedRoutes[0]), core::kRouteCount);
@@ -96,6 +385,15 @@ static void program_ranges_within_params() {
     CHECK(p.slot >= 1u && p.slot <= 3u);
     CHECK(!p.stable_id.empty());
     CHECK(!p.name.empty());
+    CHECK(!p.cartridge.empty());               // identity content (Codex f9a4bdae): +cartridge
+    CHECK(valid_status(p.status));             // +status basic validity
+    CHECK(!p.evidence.source.empty());         // +evidence basic validity (cited manual + span)
+    CHECK(p.evidence.lineStart <= p.evidence.lineEnd);
+    CHECK(valid_so(p.selfOscillating));
+    CHECK(valid_prog_fe(p.fieldEvidence));  // per-field provenance (family, selfOscillating)
+    // unknown ⇔ unverified biconditional for both program facts (not just one-way).
+    CHECK(unknown_evidence_consistent(p.family, p.fieldEvidence.family));
+    CHECK(unknown_evidence_consistent(p.selfOscillating, p.fieldEvidence.selfOscillating));
     next += p.paramCount;
   }
   CHECK(next == core::kParameterCount);
@@ -110,8 +408,41 @@ static void parameters_are_valid() {
     CHECK(p.initial >= p.min && p.initial <= p.max);
     CHECK(p.step >= 0.0);
     CHECK(valid_status(p.status));
-    CHECK(valid_status(p.rangeEvidence));  // numeric-range provenance split (07 §10)
+    CHECK(valid_pfe(p.fieldEvidence));  // per-field provenance split (07 §10, Codex 03848819)
     CHECK(!p.evidence.source.empty());
+  }
+}
+
+static void selector_options_are_well_formed() {
+  // A selector parameter's discrete value domain is carried IN the descriptor so UI/MIDI never
+  // receive a bare 0/1/2 integer without knowing what it means (Codex 03848819 Root 2). Verify the
+  // option table is exact and the pointer/count wiring is consistent: a continuous parameter has
+  // optionCount==0 with options==nullptr; a selector has optionCount>=2, a non-null options pointer,
+  // non-empty labels, no duplicate label within one selector's slice, and every option slice counted
+  // exactly once (sum(optionCount) == kParameterOptionLabelCount).
+  std::uint32_t totalOptions = 0;
+  for (std::uint32_t i = 0; i < core::kParameterCount; ++i) {
+    const auto& p = reg::kParameters[i];
+    if (p.optionCount == 0) {
+      CHECK(p.options == nullptr);
+      continue;
+    }
+    CHECK(p.optionCount >= 2u);
+    CHECK(p.options != nullptr);
+    totalOptions += p.optionCount;
+    for (std::uint32_t k = 0; k < p.optionCount; ++k) {
+      CHECK(p.options[k] != nullptr);
+      CHECK(p.options[k][0] != '\0');  // non-empty label
+      for (std::uint32_t m = k + 1; m < p.optionCount; ++m)
+        // Compare label CONTENT, not the pointer: ["same","same"] would share no pointer yet is
+        // still a duplicate label (Codex 644ea86e Root 2).
+        CHECK_FALSE(std::string_view(p.options[k]) == std::string_view(p.options[m]));
+    }
+  }
+  CHECK_EQ(totalOptions, reg::kParameterOptionLabelCount);
+  for (std::uint32_t k = 0; k < reg::kParameterOptionLabelCount; ++k) {
+    CHECK(reg::kParameterOptionLabels[k] != nullptr);
+    CHECK(reg::kParameterOptionLabels[k][0] != '\0');
   }
 }
 
@@ -129,6 +460,12 @@ static void jacks_are_valid() {
     CHECK(valid_status(j.status));
     CHECK(valid_fe(j.fieldEvidence));       // per-field provenance split (07 §3, §10)
     CHECK(!j.evidence.source.empty());
+    // unknown-enum biconditional (Codex 587f5e72): value==unknown ⇔ evidence==unverified.
+    // Both directions enforced — an unknown must be unverified AND a concrete value must be
+    // confirmed/provisional (never unverified).
+    CHECK(unknown_evidence_consistent(j.signalType, j.fieldEvidence.signalType));
+    CHECK(unknown_evidence_consistent(j.polarity, j.fieldEvidence.polarity));
+    CHECK(unknown_evidence_consistent(j.coupling, j.fieldEvidence.coupling));
   }
 }
 
@@ -190,6 +527,7 @@ int main() {
   module_ranges_are_contiguous_and_disjoint();
   program_ranges_within_params();
   parameters_are_valid();
+  selector_options_are_well_formed();
   jacks_are_valid();
   routes_resolve_and_sink_cardinality();
   devices_capacity_matches_routes();
