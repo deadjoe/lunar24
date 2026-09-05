@@ -366,6 +366,21 @@ lunar_add_test(test_state_apply_oracle_169
 target_link_libraries(test_state_apply_oracle_169 PRIVATE lunar_host)
 target_include_directories(test_state_apply_oracle_169 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# task#78 9C rework (@Codex 1e34b7bb): the control-family + audio-family behavior harnesses. BOTH
+# drive the AGREED entry — encode -> decode -> StandaloneAudioEngine.applyDeviceState -> processBlock
+# — through the shared tests/host/test_engine_harness.h (no direct buildMachineRuntimeCandidate /
+# processFrame route). The control harness asserts on the PUBLISHED CV/gate via owner.runtime()
+# (read-only) for the five control-source families; the audio harness asserts on the REAL output
+# buffers (WET_L/DRY_A/DRY_B) for VCO init + six audio families, incl. the NEW drone_3/6 applied
+# params. No product topology change; verification only.
+lunar_add_test(test_machine_control_outputs tests/host/test_machine_control_outputs.cpp)
+target_link_libraries(test_machine_control_outputs PRIVATE lunar_host)
+target_include_directories(test_machine_control_outputs PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
+lunar_add_test(test_machine_audio_families tests/host/test_machine_audio_families.cpp)
+target_link_libraries(test_machine_audio_families PRIVATE lunar_host)
+target_include_directories(test_machine_audio_families PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.
