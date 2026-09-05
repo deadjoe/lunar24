@@ -145,12 +145,12 @@ DeviceStateV1 multiCableState() {
 
 void test_no_cable_default() {
   // The no-cable default has NO user cable introduced by the restore, and the single active
-  // normalized route (VCO-B self-edge) is intact (not overridden, not lost).
+  // normalized route (acyclic VCO-A->VCO-B, task #83 / GH #18) is intact (not overridden, not lost).
   EngineHarness h;
   CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
   CHECK(h.runtime() != nullptr);
   CHECK(h.runtime()->cableCount() == 0u);
-  CHECK(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  CHECK(h.runtime()->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));
 
   // The restore is a faithful no-op for the default: requesting 0 cables cannot perturb it, so two
   // independent loads of the same default render BIT-identical output (deterministic, unperturbed).
@@ -163,26 +163,26 @@ void test_no_cable_default() {
 
 // _________________________________________________________________________________________________
 // (b) on the SAME owner, a user cable into a live route's sink OVERRIDES the active normalized
-// route (the user source actually replaces the self-edge), and removing it restores the route with
-// no residual wire. The route's sink is vco_b.cv_in; the default self-edge (vco_b.vco_out ->
-// vco_b.cv_in) is the single active normalized route. Feeding a constant signal makes the
-// env-follower source non-zero, so the override is signal-observable, not just a normalizedActive
-// bit: the user source drives a different waveform than the self-edge feedback, so the rendered
-// output differs; after removal the output is BIT-identical to the original default (no stray wire
-// left behind, the self-edge feedback restored).
+// route (the user source actually replaces the default A->B normalized edge), and removing it
+// restores the route with no residual wire. The route's sink is vco_b.cv_in; the default normalized
+// route (task #83 / GH #18: vco_a.dry_out -> vco_b.cv_in) is the single active normalized route.
+// Feeding a constant signal makes the env-follower source non-zero, so the override is
+// signal-observable, not just a normalizedActive bit: the user source drives a different waveform
+// than the A->B route, so the rendered output differs; after removal the output is BIT-identical to
+// the original default (no stray wire left behind, the route restored).
 
 void test_override_same_owner_replaces_self_edge() {
   constexpr double kFeed = 0.6;
   EngineHarness h;
 
-  // active A = default: the self-edge route is live, zero user cables.
+  // active A = default: the A->B normalized route is live, zero user cables.
   CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
   CHECK(h.runtime() != nullptr);
   CHECK(h.runtime()->cableCount() == 0u);
-  CHECK(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  CHECK(h.runtime()->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));
   const std::vector<double> base = captureSegment(h, kLongFrames, kFeed);
 
-  // Cable env_follower.env_out -> vco_b.cv_in on the SAME owner overrides the self-edge. check_routes
+  // Cable env_follower.env_out -> vco_b.cv_in on the SAME owner overrides the A->B route. check_routes
   // coherence requires the override bit set when the route's sink holds a user cable.
   DeviceStateV1 wired = make_default_device_state(0x4C554E4152ULL);
   setCable(wired, JackId::env_follower_env_out, JackId::vco_b_cv_in);
@@ -192,20 +192,20 @@ void test_override_same_owner_replaces_self_edge() {
   CHECK(h.runtime()->cableCount() == 1u);
   CHECK(h.runtime()->cableConnected(JackId::env_follower_env_out, JackId::vco_b_cv_in));
   CHECK(h.runtime()->cableCountInto(JackId::vco_b_cv_in) == 1u);
-  // The compiled effective edge at the sink is now the USER cable, not the self-edge: the normalized
-  // route is no longer active. (effectiveEdge == cableConnected || normalizedActive; the cable is
-  // present and the route is off, so the sink is driven by the user source.)
-  CHECK_FALSE(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  // The compiled effective edge at the sink is now the USER cable, not the default A->B normalized
+  // route: the normalized route is no longer active. (effectiveEdge == cableConnected ||
+  // normalizedActive; the cable is present and the route is off, so the sink is driven by the user source.)
+  CHECK_FALSE(h.runtime()->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));
   const std::vector<double> wiredOut = captureSegment(h, kLongFrames, kFeed);
-  // The user source REPLACED the self-edge: the rendered output (WET+DRY) clearly differs from the
-  // self-edge feedback. This is not merely a flag flip — the driven signal changed.
+  // The user source REPLACED the default route: the rendered output (WET+DRY) clearly differs from the
+  // A->B route. This is not merely a flag flip — the driven signal changed.
   CHECK(maxAbsDiff(base, wiredOut) > 5e-3);
 
   // Remove the cable on the SAME owner: the route is restored and NO residual wire remains.
   CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
   CHECK(h.runtime()->cableCount() == 0u);
   CHECK(h.runtime()->cableCountInto(JackId::vco_b_cv_in) == 0u);   // no residual user cable
-  CHECK(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  CHECK(h.runtime()->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));
   const std::vector<double> restored = captureSegment(h, kLongFrames, kFeed);
   CHECK(maxAbsDiff(base, restored) < 1e-12);   // exactly the original default — no stray wire/feedback
 }
@@ -370,7 +370,7 @@ void test_unsupported_graph_typed_reject_preserves_a() {
   CHECK(hA.load(make_default_device_state(0x4C554E4152ULL)));
   const SynthRuntime* activeA = hA.runtime();
   CHECK(activeA != nullptr);
-  CHECK(activeA->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));   // deref BEFORE any load
+  CHECK(activeA->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));   // deref BEFORE any load
 
   // (i) TYPED reject on the real owner: RejectedGraph (a collapsed false, or an error-family bucket,
   // would not distinguish graph-from-state). validation().ok==true proves the state VALIDATED — the
@@ -386,11 +386,11 @@ void test_unsupported_graph_typed_reject_preserves_a() {
 
   // (iii) Pair-A comparison: the owner that ATTEMPTED (and rejected) the bad state renders the SAME
   // audio as a twin A that NEVER attempted it — the reject left the definition/plan/adapter/state
-  // (hence the output) untouched. A fresh default (twin) also confirms the self-edge route is live,
+  // (hence the output) untouched. A fresh default (twin) also confirms the acyclic A->B route is live,
   // which is the "A is intact" behaviour (identity + twin coverage together).
   EngineHarness hRef;
   CHECK(hRef.load(make_default_device_state(0x4C554E4152ULL)));
-  CHECK(hRef.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  CHECK(hRef.runtime()->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));
   const std::vector<double> aOut = captureSegment(hA, kFrames, 0.0);
   const std::vector<double> refOut = captureSegment(hRef, kFrames, 0.0);
   CHECK(maxAbsDiff(aOut, refOut) < 1e-12);

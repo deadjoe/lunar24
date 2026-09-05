@@ -8003,9 +8003,9 @@
     {
       "id": 4,
       "stable_id": "route.vco_b_vco_out_to_cv_in",
-      "sourceJack": "vco_b.vco_out",
+      "sourceJack": "vco_a.dry_out",
       "sinkJack": "vco_b.cv_in",
-      "description": "VCO B-region vco_b.vco_out carries the VCO A normalised signal into vco_b.cv_in; CV AMT sets the depth.",
+      "description": "The VCO A signal (vco_a.dry_out) is normalised into vco_b.cv_in; CV AMT sets the depth. The stable_id preserves the historical 'vco_b_vco_out_to_cv_in' name (legacy) — the source is the published VCO-A signal, not a VCO-B self-edge.",
       "evidence": {
         "line": 410
       },

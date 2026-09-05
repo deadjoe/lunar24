@@ -200,9 +200,10 @@ inline constexpr double kVcoBaseHzProvisional = 440.0;
 // Normalized-route disposition table (@Codex correction 2).
 //
 // All 6 normalized registry routes get a UNIQUE disposition, keyed by the stable
-// RouteId (never by array position in kNormalizedRoutes[]). Only the VCO-B self-edge
-// is wired as a compilable edge this slice; the four keyboard/EG routes are deferred
-// and route.vcf_cv_l_to_cv_r is an intra-VCF fallback (not a compilable edge).
+// RouteId (never by array position in kNormalizedRoutes[]). Only the VCO-A->VCO-B
+// normalised edge (route.vco_b_vco_out_to_cv_in, source = vco_a.dry_out) is wired as a
+// compilable edge this slice; the four keyboard/EG routes are deferred and
+// route.vcf_cv_l_to_cv_r is an intra-VCF fallback (not a compilable edge).
 // ---------------------------------------------------------------------------
 enum class RouteDisposition : std::uint8_t { kActive, kDeferred, kIntraVcfFallback };
 
@@ -247,24 +248,27 @@ inline constexpr std::uint32_t kActiveRouteCount =
     static_cast<std::uint32_t>(sizeof(kActiveRoutes) / sizeof(kActiveRoutes[0]));
 static_assert(countActiveRoutes() == kActiveRouteCount,
               "the active route list must be exactly the kActive routes in the disposition table");
-static_assert(kActiveRoutes[0].sourceJack == lunar24::registry::JackId::vco_b_vco_out &&
+static_assert(kActiveRoutes[0].sourceJack == lunar24::registry::JackId::vco_a_dry_out &&
                   kActiveRoutes[0].sinkJack == lunar24::registry::JackId::vco_b_cv_in,
-              "the active route must be the VCO-B self-edge (route.vco_b_vco_out_to_cv_in)");
+              "the active route must be the acyclic VCO-A->VCO-B normalised edge (route.vco_b_vco_out_to_cv_in)");
 
 // ---------------------------------------------------------------------------
-// AUDIT DISPOSITION (item 8, @Codex eaaf08cc): normalized-route evidence conflict.
-// The active route's stable ID + jacks say the edge is vco_b.vco_out -> vco_b.cv_in
-// (VCO B sinks its own VCO output into its generic CV input). The GENERATED registry
-// description for the same route (route.vco_b_vco_out_to_cv_in) writes "the VCO A
-// normalised signal into vco_b.cv_in" — i.e. the DESCRIPTION attributes the source to
-// VCO A while the JACKS implement a VCO-B self-edge. This slice EXECUTES by the IDS
-// (authoritative: RouteId + sourceJack/sinkJack), which describe the real graph fact;
-// the description prose conflict is kept as a provisional/conflicted evidence item and
-// is NOT "fixed" here (the generated registry is source-of-truth for the manifest and
-// must not be silently rewritten). It is recorded for the P3-exit 待取证 list.
-//   * IDS:   vco_b.vco_out (source) -> vco_b.cv_in (sink)   [executed by this slice]
-//   * TEXT:  "carries the VCO A normalised signal into vco_b.cv_in"  [conflicted?]
-//   * STATUS: provisional; executed by IDS; generated text left unchanged.
+// AUDIT DISPOSITION (item 8, @Codex eaaf08cc; RESOLVED by task #83 / GH #18): normalized-route
+// source conflict. The pre-fix registry had route.vco_b_vco_out_to_cv_in sourced from
+// vco_b.vco_out (a VCO-B SELF-edge: B sinks its own VCO output into its generic CV input). That
+// self-edge was the documented root cause of the default DRY B DC-stall (N-1): with the linear
+// generic-CV transfer p *= (1 + cv*cvAmt) and default cvAmt, a self-fed output reaches the
+// zero-pitch transition and latches. Per @Codex's adjudicated direction A (4fe298c8) the ONLY
+// authorized change is correcting the SOURCE of RouteId 4 to the EXISTING published VCO-A
+// oscillator signal (vco_a.dry_out) — an ACYCLIC A->B edge, so vco_b.cv_in reads A's LIVE value the
+// same frame. The stable ID (route.vco_b_vco_out_to_cv_in) and RouteId (4) are PRESERVED as
+// legacy. We never change default cvAmt / lin_exp / baseHz, never impose a frequency floor, never
+// add a jack, never reassign B's OSC public output owner (vco_b.vco_out). The generator +
+// manifest + generated registry headers are updated to the same single fact; the product
+// integration (a playable B voice) is the P4 scope, not this fix.
+//   * SOURCE (fixed): vco_a.dry_out -> vco_b.cv_in   [acyclic; B reads A live same-frame]
+//   * LEGACY: stable_id "route.vco_b_vco_out_to_cv_in", RouteId 4, B OSC owner vco_b.vco_out unchanged.
+//   * STATUS: source corrected by task #83 / GH #18; description/registry/manifest in agreement.
 // ---------------------------------------------------------------------------
 
 // Forward declaration of the state-aware candidate-builder result
@@ -326,9 +330,10 @@ class MachineRuntimeDefinition {
     runtime_.setVoctBindings(lunar24::registry::JackId::vco_a_v_oct_in,
                              lunar24::registry::JackId::vco_b_v_oct_in);
     // Generic CV + VCO output bindings (@Codex correction 4): each VCO's generic cv_in is
-    // a second, INDEPENDENT CV/transfer path from its V/OCT; the VCO-B self-edge
-    // (vco_b.vco_out -> cv_in) sinks into vco_b.cv_in, so the VCO-B slot resolves it
-    // through setCvInput(held mode) and publishes the real vco_b.vco_out. The lin/exp mode
+    // a second, INDEPENDENT CV/transfer path from its V/OCT. The active A->B normalised route
+    // (vco_a.dry_out -> vco_b.cv_in, task #83 / GH #18) makes vco_b.cv_in an ACYCLIC edge from
+    // vco_a.dry_out: the VCO-B slot resolves it through setCvInput(held mode) reading A's LIVE
+    // published value the same frame, and publishes the real vco_b.vco_out. The lin/exp mode
     // is a runtime decision (explicit below; tests choose it), never a hardcoded law.
     runtime_.setVcoCvBindings(lunar24::registry::JackId::vco_a_cv_in,
                               lunar24::registry::JackId::vco_b_cv_in);
@@ -338,7 +343,7 @@ class MachineRuntimeDefinition {
     // NOT pinned here. Mode is a runtime/test/upper-layer decision — it is NOT canonical
     // hardware truth (the adjudicated ruling). The canonical builder leaves it at the
     // runtime's provisional safe default (kExponential) and the canonical oracles that
-    // rely on the generic CV / self-edge must EXPLICITLY select the mode via
+    // rely on the generic CV / the (now-acyclic) A->B route must EXPLICITLY select the mode via
     // setVcoControlModes; never a hardcoded law in the builder.
     runtime_.setVcfCvBindings(lunar24::registry::JackId::vcf_cv_l_in,
                               lunar24::registry::JackId::vcf_cv_r_in);
@@ -392,7 +397,7 @@ class MachineRuntimeDefinition {
 
     // task #80 (GH#12 9D C3): restore the validated device-state USER CABLES into the real
     // PatchGraph BEFORE the final graph rebuild / publish. The active normalized route (the single
-    // VCO-B self-edge) is carried by the patch_ construction; each restored user cable, by rule,
+    // acyclic VCO-A->VCO-B edge) is carried by the patch_ construction; each restored user cable, by rule,
     // overrides only its own route sink (a derived fact, never stored). We reuse
     // SynthRuntime::connect() but NEVER treat a lone connect()==true as complete: connect() can
     // atomically displace a PRIOR requested cable at a saturated source/sink port. So after placing
@@ -577,8 +582,11 @@ class MachineRuntimeDefinition {
       modules_[i].contract = &contracts_[i];
     }
 
-    // VCO-B self-loop: cv_in -> vco_out direct/min0, cycle-safe. This is the sole default
-    // SCC; the compiler breaks it with a one-sample z^-1 (canDirectThrough -> algebraic).
+    // VCO-B internal path cv_in -> vco_out direct/min0, cycle-safe. This is a CAPABILITY, NOT a
+    // default: it is only an SCC when a USER explicitly cables vco_b.vco_out back into
+    // vco_b.cv_in (the retained B->B feedback-machinery test). The default A->B edge is acyclic,
+    // so this contract is dormant there; when compiled inside a cycle the compiler breaks it with
+    // a one-sample z^-1 (canDirectThrough -> algebraic).
     if (ModuleExecutionContract* c = findContract_(ModuleId::vco_b)) {
       c->allowedInCyclicSCC = true;
       ModulePathDelay& p = c->pathDelays[0];
