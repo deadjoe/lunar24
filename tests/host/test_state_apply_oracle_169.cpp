@@ -399,6 +399,91 @@ double readBackValue(const SynthRuntime& r, ParameterId id) {
   }
 }
 
+// @Codex BLOCK #1 (rev): the 35 control-source ids are routed through setControlParamValue, not the
+// direct-scalar switch, so readBackValue() above cannot see them. Read each back through the REAL
+// owner accessor the render path consumes — EnvelopeGenerator / Lfo / JoystickCv / FiveStepSequencer —
+// so deleting the setControlParamValue call (or the whole control-source branch) moves the readback
+// off to baseline and goes RED, exactly the repro @Codex ran. NaN only for an id not on this list.
+double readBackControlSource(const SynthRuntime& r, ParameterId id) {
+  switch (id) {
+    case ParameterId::envelope_a_a: return r.envelopeA().attackSeconds();
+    case ParameterId::envelope_a_d: return r.envelopeA().decaySeconds();
+    case ParameterId::envelope_a_r: return r.envelopeA().releaseSeconds();
+    case ParameterId::envelope_a_s: return r.envelopeA().sustain();
+    case ParameterId::envelope_a_hold: return r.envelopeA().hold() ? 1.0 : 0.0;
+    case ParameterId::envelope_a_self_gen: return r.envelopeA().selfGen() ? 1.0 : 0.0;
+    case ParameterId::envelope_b_a: return r.envelopeB().attackSeconds();
+    case ParameterId::envelope_b_d: return r.envelopeB().decaySeconds();
+    case ParameterId::envelope_b_r: return r.envelopeB().releaseSeconds();
+    case ParameterId::envelope_b_s: return r.envelopeB().sustain();
+    case ParameterId::envelope_b_hold: return r.envelopeB().hold() ? 1.0 : 0.0;
+    case ParameterId::envelope_b_self_gen: return r.envelopeB().selfGen() ? 1.0 : 0.0;
+    case ParameterId::lfo_a_rate: return r.lfoA().baseHz();
+    case ParameterId::lfo_a_wave: return r.lfoA().wave();
+    case ParameterId::lfo_a_speed_mult:
+      return static_cast<double>(static_cast<int>(r.lfoA().speedMult()));
+    case ParameterId::lfo_b_rate: return r.lfoB().baseHz();
+    case ParameterId::lfo_b_wave: return r.lfoB().wave();
+    case ParameterId::lfo_b_speed_mult:
+      return static_cast<double>(static_cast<int>(r.lfoB().speedMult()));
+    case ParameterId::joystick_x: return r.joystick().x();
+    case ParameterId::joystick_y: return r.joystick().y();
+    case ParameterId::joystick_offset_x: return r.joystick().offsetX();
+    case ParameterId::joystick_offset_y: return r.joystick().offsetY();
+    case ParameterId::sequencer_clock:
+      return static_cast<double>(static_cast<int>(r.sequencer().clockSource()));
+    case ParameterId::sequencer_stages: return static_cast<double>(r.sequencer().stageCount());
+    case ParameterId::sequencer_step_cv_1: return r.sequencer().stepCv(0);
+    case ParameterId::sequencer_step_cv_2: return r.sequencer().stepCv(1);
+    case ParameterId::sequencer_step_cv_3: return r.sequencer().stepCv(2);
+    case ParameterId::sequencer_step_cv_4: return r.sequencer().stepCv(3);
+    case ParameterId::sequencer_step_cv_5: return r.sequencer().stepCv(4);
+    case ParameterId::sequencer_step_gate_1: return r.sequencer().stepGate(0) ? 1.0 : 0.0;
+    case ParameterId::sequencer_step_gate_2: return r.sequencer().stepGate(1) ? 1.0 : 0.0;
+    case ParameterId::sequencer_step_gate_3: return r.sequencer().stepGate(2) ? 1.0 : 0.0;
+    case ParameterId::sequencer_step_gate_4: return r.sequencer().stepGate(3) ? 1.0 : 0.0;
+    case ParameterId::sequencer_step_gate_5: return r.sequencer().stepGate(4) ? 1.0 : 0.0;
+    case ParameterId::sequencer_pulser: return r.sequencer().internalRateHz();
+    default: return std::numeric_limits<double>::quiet_NaN();
+  }
+}
+
+// The DEFINED (product-transfer) expectation for a control-source probe. Envelope times/sustain and
+// joystick/lfo-wave/step-CV store the admitted value verbatim; the selector/boolean ids and
+// stages/clock/pulser map through their own defined transfer. PULSER uses the real product formula
+// so a wrong norm->Hz mapping is caught, not silently accepted as "moved".
+double csExpected(ParameterId id, double probe) {
+  // PULSER and STAGES map through their own defined transfer; every other control-source id keeps
+  // the admitted value verbatim (or the boolean/selector map), so no runtime state is needed here.
+  switch (id) {
+    case ParameterId::envelope_a_a: case ParameterId::envelope_a_d: case ParameterId::envelope_a_r:
+    case ParameterId::envelope_a_s:
+    case ParameterId::envelope_b_a: case ParameterId::envelope_b_d: case ParameterId::envelope_b_r:
+    case ParameterId::envelope_b_s:
+    case ParameterId::lfo_a_rate: case ParameterId::lfo_a_wave:
+    case ParameterId::lfo_b_rate: case ParameterId::lfo_b_wave:
+    case ParameterId::joystick_x: case ParameterId::joystick_y:
+    case ParameterId::joystick_offset_x: case ParameterId::joystick_offset_y:
+    case ParameterId::sequencer_step_cv_1: case ParameterId::sequencer_step_cv_2:
+    case ParameterId::sequencer_step_cv_3: case ParameterId::sequencer_step_cv_4:
+    case ParameterId::sequencer_step_cv_5:
+      return probe;
+    case ParameterId::envelope_a_hold: case ParameterId::envelope_a_self_gen:
+    case ParameterId::envelope_b_hold: case ParameterId::envelope_b_self_gen:
+    case ParameterId::sequencer_step_gate_1: case ParameterId::sequencer_step_gate_2:
+    case ParameterId::sequencer_step_gate_3: case ParameterId::sequencer_step_gate_4:
+    case ParameterId::sequencer_step_gate_5:
+      return probe != 0.0 ? 1.0 : 0.0;
+    case ParameterId::lfo_a_speed_mult: case ParameterId::lfo_b_speed_mult:
+    case ParameterId::sequencer_clock:
+      return static_cast<double>(static_cast<int>(probe));
+    case ParameterId::sequencer_stages: return 3.0 + probe;   // norm index -> 3+n stage count.
+    case ParameterId::sequencer_pulser:
+      return lunar24::core::FiveStepSequencer::pulserNormToRateHz(probe);
+    default: return std::numeric_limits<double>::quiet_NaN();
+  }
+}
+
 // The 35 control-source ids routed via setControlParamValue (no SynthRuntime readback getter).
 // Mirrors SynthRuntime::controlSourceParamRecognized_ so the union proof is independent of the
 // product: it is enumerated from the same disposition authority, not from a private method.
@@ -982,10 +1067,56 @@ static void full169_per_item() {
     }
   }
 
-  // sanity: the per-item class really covers all 134 readback ids touched above.
+  // @Codex BLOCK #1: the 35 control-source ids MUST ALSO be read back through their real owner
+  // accessors (EnvelopeGenerator / Lfo / JoystickCv / FiveStepSequencer). A value that "applies"
+  // (count stays 169) but never actually lands on the control source — e.g. the setControlParamValue
+  // call deleted, or the whole control-source branch neutered — leaves these at baseline, so MOVE
+  // fails. Same MOVE + VTYPE pair as the direct-scalar class, keyed by controlSourceId().
+  double csBase = 0.0;
+  for (std::uint32_t i = 0; i < kParameterCount; ++i) {
+    const auto id = static_cast<ParameterId>(i);
+    if (!controlSourceId(id)) continue;
+    const auto idx = i;
+    csBase = readBackControlSource(d0->runtime(), id);
+    base[idx] = csBase;
+    isRd[idx] = true;
+
+    const ParameterDescriptor* d = find_parameter(id);
+    CHECK(d != nullptr);
+    if (d == nullptr) continue;
+    const std::string lbl(d->stable_id);
+
+    const double probe = probeFor(d);
+    DeviceStateV1 st = def;
+    slot(st, id) = probe;
+    auto dpr = acceptWithLabel(st, id);
+    const double live = readBackControlSource(dpr->runtime(), id);
+
+    // (a) MOVE.
+    if (!(std::fabs(live - base[idx]) > kTiny))
+      std::fprintf(stderr, "MOVE-FAIL id=%s probe=%f base=%f live=%f\n",
+                   lbl.c_str(), probe, base[idx], live);
+    CHECK(std::fabs(live - base[idx]) > kTiny);
+
+    // (b) VTYPE — the defined transfer (verbatim store, boolean/selector map, stages+3, pulser Hz).
+    const double expect = csExpected(id, probe);
+    if (!std::isnan(expect)) {
+      if (!(std::fabs(live - expect) < kTiny))
+        std::fprintf(stderr, "VTYPE-FAIL id=%s probe=%f expect=%f live=%f\n",
+                     lbl.c_str(), probe, expect, live);
+      CHECK(std::fabs(live - expect) < kTiny);
+    }
+  }
+
+  // sanity: the per-item class really covers all 169 applied_to_dsp ids (134 readback + 35 control
+  // source), and no non-applied id is claimed.
   std::uint32_t n = 0;
   for (std::uint32_t i = 0; i < kParameterCount; ++i) if (isRd[i]) ++n;
-  CHECK(n == 134);
+  CHECK(n == 169);
+  for (std::uint32_t i = 0; i < kParameterCount; ++i) {
+    const auto id = static_cast<ParameterId>(i);
+    CHECK(!isRd[i] || disposition_of(id) == StateDisposition::applied_to_dsp);
+  }
 }
 
 // -----------------------------------------------------------------------------------------
@@ -1104,6 +1235,10 @@ static void owner_engine_rejected_apply_is_atomic() {
     CHECK(e.stateApplyStatus() == StandaloneAudioEngine::StateApplyStatus::RejectedInvalidState);
     CHECK(e.sampleRate() == sr && e.blockSize() == bs);
     CHECK(e.inputCapability() == icap && e.outputCapability() == ocap);
+    // Finding #2: a RejectedInvalidState terminal NEVER populates the DSP first-fail diagnostics —
+    // they stay at the entry-sentinel (reset), never a stale residue of an earlier apply.
+    CHECK(e.dspApplyFirstFailParamId() == static_cast<ParameterId>(kParameterCount));
+    CHECK(e.dspApplyFirstFailStatus() == ParameterApplyStatus::applied);
     std::array<double, kF> postL{}, postR{};
     double* o[2] = {postL.data(), postR.data()};
     CHECK(ownerRender(e, inp, o, 1, 2, kF) == StandaloneAudioEngine::Status::Rendered);
@@ -1123,6 +1258,10 @@ static void owner_engine_rejected_apply_is_atomic() {
     CHECK(e.applyDeviceState(def, 48000.0, kF, -1, 2) == StandaloneAudioEngine::StateApplyStatus::RejectedFormat);
     CHECK(e.applyDeviceState(def, 48000.0, kF, 1, 1) == StandaloneAudioEngine::StateApplyStatus::RejectedFormat);
     CHECK(e.isReady());
+    // Finding #2: a RejectedFormat terminal likewise leaves the DSP first-fail diagnostics at the
+    // entry-sentinel (the strict-format gate returns before any builder/apply can touch them).
+    CHECK(e.dspApplyFirstFailParamId() == static_cast<ParameterId>(kParameterCount));
+    CHECK(e.dspApplyFirstFailStatus() == ParameterApplyStatus::applied);
     std::array<double, kF> uL{}, uR{};
     double* o[2] = {uL.data(), uR.data()};
     CHECK(ownerRender(e, inp, o, 1, 2, kF) == StandaloneAudioEngine::Status::Rendered);

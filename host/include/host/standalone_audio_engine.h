@@ -329,6 +329,14 @@ inline StandaloneAudioEngine::StateApplyStatus StandaloneAudioEngine::applyDevic
   // stream re-configuration problem, so the current stream keeps running with the prior canonical
   // state. A rejected candidate is never observable as an intermediate or partial install.
 
+  // @Codex BLOCK #5: reset the DSP first-fail diagnostics to the "no failure" sentinel at the entry
+  // of every apply. Only a RejectedDspApply outcome overwrites them below; every other terminal
+  // outcome (Accepted or any other Rejected*) leaves them at the sentinel, so a prior DSP failure
+  // never leaks into a later apply's diagnostics. Without this, the stale failure survived into a
+  // subsequent Accepted apply (the "otherwise sentinel" contract was never honoured).
+  dspApplyFirstFailParamId_ = static_cast<ParameterId>(kParameterCount);
+  dspApplyFirstFailStatus_ = ParameterApplyStatus::applied;
+
   // Strict-format gate mirrors prepare()'s first two checks — an illegal rate / block / channel set
   // cannot possibly honour the requested state, so it is a FORMAT rejection, not a state rejection.
   if (!std::isfinite(sampleRate) || !(sampleRate > 0.0)) {
