@@ -1433,6 +1433,23 @@ class SynthRuntime {
     return false;
   }
 
+  // Read-only patch queries (task#80, GH#12 9D C3): forward to the private PatchGraph so the
+  // state-aware definition can (a) VERIFY the restored user-cable bank exactly equals the
+  // requested cable set — never trusting a lone connect()==true, which can atomically displace a
+  // prior requested cable at a saturated source/sink port — and (b) let tests observe the derived
+  // override/restore rule. cableCount()/cableCountInto()/cableConnected() count USER cables only
+  // (patch_graph.h): a normalized route never consumes user-cable cardinality, and a route is
+  // ACTIVE at a sink iff that sink has no user cable (countInto(sink)==0). All are const-read and
+  // draw directly from the live patch_ (no recompile, no side effect).
+  std::uint32_t cableCount() const { return patch_.cableCount(); }
+  bool cableConnected(JackId source, JackId sink) const {
+    return patch_.cableConnected(source, sink);
+  }
+  std::uint32_t cableCountInto(JackId sink) const { return patch_.countInto(sink); }
+  bool normalizedActive(JackId source, JackId sink) const {
+    return patch_.normalizedActive(source, sink);
+  }
+
   // Why rebuild() succeeded or refused. The bool return alone cannot distinguish
   // "feedback plan exceeded capacity" (GH#13) from "graph rejected" — this keeps a
   // fixed, no-log/no-alloc, inspectable reason.

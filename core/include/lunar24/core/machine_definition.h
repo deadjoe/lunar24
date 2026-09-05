@@ -389,6 +389,49 @@ class MachineRuntimeDefinition {
 
     // Canonical strictness on, then build the plan.
     runtime_.setStrictBindings(true);
+
+    // task #80 (GH#12 9D C3): restore the validated device-state USER CABLES into the real
+    // PatchGraph BEFORE the final graph rebuild / publish. The active normalized route (the single
+    // VCO-B self-edge) is carried by the patch_ construction; each restored user cable, by rule,
+    // overrides only its own route sink (a derived fact, never stored). We reuse
+    // SynthRuntime::connect() but NEVER treat a lone connect()==true as complete: connect() can
+    // atomically displace a PRIOR requested cable at a saturated source/sink port. So after placing
+    // every requested cable we VERIFY the final user-cable bank exactly equals the requested set and
+    // fail the WHOLE candidate (cableRestoreOk_ = false) on any mismatch — never a silent drop or
+    // partial success. Fail-closed, mirroring dspApplyOk_; the host single-commit guard keeps the old
+    // owner on reject. routeOverridden is NOT a second routing switch here: its coherence against the
+    // ACTUAL cable facts was already enforced by check_routes, and the router merely reflects patch_
+    // state, so it is not consulted by this restore.
+    {
+      std::uint32_t requested = 0;
+      bool restoreFailed = false;
+      for (std::uint32_t i = 0; i < kDevicePatchCapacity; ++i) {
+        if (state_.inputCable[i] == 0u) continue;
+        // i is the serialized JackId of the sink, NOT a dense index (the id-space is sparse, with
+        // holes). PatchGraph::connect() resolves landedness via the descriptor; a hole fails closed.
+        const JackId source = state_.cableSource[i];
+        const JackId sink = static_cast<JackId>(i);
+        if (!runtime_.connect(source, sink)) { restoreFailed = true; break; }
+        ++requested;
+      }
+      if (!restoreFailed) {
+        // The final user-cable set must equal the requested set exactly:
+        //   * cableCount() == requested  -> no sunk cable and no stray/duplicate cable;
+        //   * each requested sink holds exactly ONE user cable reachable from its requested source
+        //     -> no wrong-source (mis-)wire, no displaced requested cable on that sink.
+        if (runtime_.cableCount() != requested) restoreFailed = true;
+        for (std::uint32_t i = 0; !restoreFailed && i < kDevicePatchCapacity; ++i) {
+          if (state_.inputCable[i] == 0u) continue;
+          const JackId sink = static_cast<JackId>(i);
+          if (runtime_.cableCountInto(sink) != 1u ||
+              !runtime_.cableConnected(state_.cableSource[i], sink)) {
+            restoreFailed = true;
+          }
+        }
+      }
+      cableRestoreOk_ = !restoreFailed;
+    }
+
     // GH#6: the one real identity/calibration apply choke, driven from the SAME owned state
     // (never a detached snapshot). It consumes identityModelVersion + identitySeed.seed +
     // calibration; it is fail-closed (a rejected version/trim makes NO change) inside
@@ -439,8 +482,12 @@ class MachineRuntimeDefinition {
   // Real validity: a successfully compiled graph, whether freshly built (ok) or a
   // cached no-change rebuild (graph_unchanged). Any rejection/error status is invalid.
   bool valid() const {
-    return status() == SynthRuntime::RebuildStatus::ok ||
-           status() == SynthRuntime::RebuildStatus::graph_unchanged;
+    // task #80: a faithful user-cable restore (cableRestoreOk_) is part of a valid candidate. A
+    // restore mismatch / capacity loss / wrong-wire is a typed whole-candidate rejection
+    // (rejected_graph via the factory), never a silent drop or partial success.
+    return cableRestoreOk_ &&
+           (status() == SynthRuntime::RebuildStatus::ok ||
+            status() == SynthRuntime::RebuildStatus::graph_unchanged);
   }
 
   // The exact DeviceStateV1 this machine was built from. This is the ONLY canonical-state truth:
@@ -463,6 +510,13 @@ class MachineRuntimeDefinition {
   std::uint32_t dspAppliedCount() const { return dspAppliedCount_; }
   ParameterId dspFirstFailId() const { return dspFirstFailId_; }
   ParameterApplyStatus dspFirstFailStatus() const { return dspFirstFailStatus_; }
+
+  // task #80: whether the validated device-state user cables were faithfully restored into the
+  // real PatchGraph (the final user-cable bank exactly equals the requested set). false on a
+  // restore mismatch / connect failure, surfaced by valid() as a whole-candidate reject
+  // (rejected_graph); the host single-commit guard then keeps the old owner. Layered like
+  // dspApplyOk(): it reports the PATCH restore apply, not a whole-DeviceState claim.
+  bool cableRestoreOk() const { return cableRestoreOk_; }
 
   std::uint32_t moduleCount() const { return kMachineDispositionCount; }
   std::uint32_t fixedEdgeCount() const { return kCanonicalFixedEdgeCount; }
@@ -657,6 +711,8 @@ class MachineRuntimeDefinition {
 
   // Whether the GH#6 identity/calibration profile was configured on the VCF->distortion path.
   bool identityApplied_ = false;
+  // task #80: faithful user-cable restore verdict (the candidate-builder gate for the patch).
+  bool cableRestoreOk_ = true;
   // task #78 full-apply verdict (the candidate-builder gate + first-failure id/status).
   bool dspApplyOk_ = false;
   std::uint32_t dspAppliedCount_ = 0;
