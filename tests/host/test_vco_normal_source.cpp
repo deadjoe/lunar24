@@ -249,6 +249,102 @@ void test_acyclic_no_artificial_delay() {
   std::fprintf(stderr, "  (default feedback edges=%u, vco_a->b feedback=%d)\n", fc, vcoSelf ? 1 : 0);
 }
 
+// (6) SAME-sample vs PREVIOUS-sample A discriminator (the hidden-z^-1 net). @Codex e14e62a8: an
+//     ACYCLIC A->B route means feedbackCount()==0 proves no feedback LINE, but does NOT prove the
+//     executor reads A's LIVE value THIS frame — a build that saves previousA (per runtime) and feeds
+//     that to B passes the structural check yet IS a one-sample hidden delay. So we reconcile B's
+//     rendered output against an EXPLICIT per-sample reference built from the runtime's OWN A readback
+//     (controlVoltageAt(vco_a_dry_out) sampled after each frame — the exact value A published this
+//     frame, which is what a same-frame consumer must read):
+//         refSame(n) = VCO triangle given CV = A(n)     -- B MUST produce this (same-frame route)
+//         refPrev(n) = VCO triangle given CV = A(n-1)   -- what B produces under the delayed mutation
+//     Under an ASYMMETRIC, NON-DEGENERATE (fast) A the two diverge sharply, so:
+//         CHECK(madSame < kSameTol)   -> GREEN on the correct build, RED on the delayed mutation.
+//         CHECK(madPrev > madSame)    -> the delayed reference is the WRONG one (extra bite).
+//     Non-degeneracy guards (so the test can never silently go vacuous on a symmetric/static A):
+//         CHECK(maxAStep > kDegenTol)         -> A actually changes between consecutive samples
+//         CHECK(maxDiffSamePrev > kDegenTol)  -> refSame and refPrev really differ (observable delay)
+//     The reference mirrors the Vco DSP (vco.h:193-245: linear `p*=(1+cv*cvAmt)`, triangle
+//     `4|frac(.5-p)|-1`), baseHz==kVcoBaseHzProvisional(440), vOct==0 (no route feeds vco_b_v_oct_in),
+//     no linear-FM (a plain VCO), and the device-normalise `*0.5` (kDeviceScaleProvisional,
+//     device_adapter.h:90-94) that maps volts to the captured DRY_B channel. It is a READBACK-driven
+//     reference — it does NOT re-run A, so it is insensitive to A's own (unmodeled) phase.
+
+// One sample of the reference B: advance `cum` (cycles) by B's instant pitch under CV=cv and return the
+// device-normalised triangle. Mirrors machine_runtime kVcoB -> Vco::tick/frequencyHz/waveformSampleAt.
+double refB(double& cum, double cv, double sr, double baseHz, int octSel, double tune, double cvAmt) {
+  static constexpr double kOct[3] = {-1.0, 0.0, 3.0};  // "low"/"0"/"+3" (PROVISIONAL, vco.h:162-164).
+  const double oct = kOct[octSel < 0 ? 0 : (octSel > 2 ? 2 : octSel)];
+  double p = baseHz * std::pow(2.0, oct + tune);   // baseHz * 2^octs * 2^tune.
+  // vOct == 0 (default: no route feeds vco_b_v_oct_in) => p *= 2^0 == 1.
+  const double eff = cv * cvAmt;
+  p *= (1.0 + eff);                                 // LINEAR generic-CV law (vco.h:201).
+  // No linear-FM on a plain VCO => instHz == p.
+  cum += p / sr;
+  const double ph = cum - std::floor(cum);
+  const double tri = 4.0 * std::fabs(ph - 0.5) - 1.0;   // triangle (vco.h:228).
+  return 0.5 * tri;                                     // volts -> device-normalised (kDeviceScale=0.5).
+}
+
+void test_b_same_sample_vs_previous() {
+  constexpr double kSameTol = 1e-4;    // correct build: madSince~1e-16; delay mutation: ~1e-2.
+  constexpr double kDegenTol = 1e-3;   // non-degeneracy floor.
+  const double sr = 48000.0;
+  DeviceStateV1 st = make_default_device_state(kSeed);
+  // Make A FAST + asymmetric so consecutive A samples differ strongly (non-degenerate): any one-sample
+  // delay in B's read of A becomes a LARGE divergence between refSame and refPrev. Reachable panel
+  // controls (oct_sel "+3" = baseHz*8, tune +1 oct = baseHz*16 -> ~7 kHz, ~0.5 per-sample A delta).
+  slot(st, ParameterId::vco_a_oct_sel) = 2.0;   // oct_sel "+3".
+  slot(st, ParameterId::vco_a_tune) = 1.0;         // +1 oct.
+  slot(st, ParameterId::vco_b_lin_exp) = 0.0;      // linear (reachable; the reference matches the law).
+  slot(st, ParameterId::vco_b_cv_amt) = 1.0;       // full generic-CV depth (default, non-degenerate).
+
+  EngineHarness h;
+  const bool ok = h.load(st, sr);
+  CHECK(ok);
+  if (!ok) return;
+  const auto* rt = h.runtime();
+  CHECK(rt != nullptr);
+  if (rt == nullptr) return;
+  const double tune = rt->vcoBTune();
+  const int octSel = rt->vcoBOctSelect();
+  const double cvAmt = rt->vcoBCvAmt();
+  const double baseHz = 440.0;  // kVcoBaseHzProvisional (machine_definition.h:197).
+
+  double cumSame = 0.0, cumPrev = 0.0;          // per-sample phase accumulators of the two references.
+  constexpr int kFrames = 8192;
+  double madSame = 0.0, madPrev = 0.0;           // mean |ref - actual| over the block.
+  double maxAStep = 0.0, maxDiffSamePrev = 0.0;  // non-degeneracy observables.
+  long n = 0;
+  double prevA = 0.0;
+  const bool rendered = h.renderSampled(kFrames, 0.0, [&](const SynthRuntime& r) {
+    const double aN = r.controlVoltageAt(JackId::vco_a_dry_out);  // A's live published value, this frame.
+    const double bN = h.dryB()[static_cast<std::size_t>(n)];      // captured DRY_B (device-normalised).
+    if (n > 0 && std::fabs(aN - prevA) > maxAStep) maxAStep = std::fabs(aN - prevA);
+    const double refSame = refB(cumSame, aN, sr, baseHz, octSel, tune, cvAmt);    // CV = A(n).
+    const double refPrev = refB(cumPrev, prevA, sr, baseHz, octSel, tune, cvAmt); // CV = A(n-1).
+    if (std::fabs(refSame - refPrev) > maxDiffSamePrev) maxDiffSamePrev = std::fabs(refSame - refPrev);
+    madSame += std::fabs(refSame - bN);
+    madPrev += std::fabs(refPrev - bN);
+    prevA = aN;
+    ++n;
+  });
+  CHECK(rendered);
+  if (!rendered || n == 0) return;
+  madSame /= static_cast<double>(n);
+  madPrev /= static_cast<double>(n);
+  // Non-degeneracy: A must change per sample and the two references must really differ, so this never
+  // silently weakens into a vacuous pass on a symmetric/static excitation.
+  CHECK(maxAStep > kDegenTol);
+  CHECK(maxDiffSamePrev > kDegenTol);
+  // THE discriminator: B must match the SAME-frame reference (and not the delayed one).
+  CHECK(madSame < kSameTol);
+  CHECK(madPrev > madSame);
+  std::fprintf(stderr,
+               "  (maxAStep=%g maxDiffSamePrev=%g madSame=%g madPrev=%g tune=%g oct=%d cvAmt=%g)\n",
+               maxAStep, maxDiffSamePrev, madSame, madPrev, tune, octSel, cvAmt);
+}
+
 }  // namespace
 
 int main() {
@@ -257,5 +353,6 @@ int main() {
   test_b_change_not_swap_a();
   test_insertion_override_removal_restore();
   test_acyclic_no_artificial_delay();
+  test_b_same_sample_vs_previous();
   return ::test::finish("test_vco_normal_source");
 }

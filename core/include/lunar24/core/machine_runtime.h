@@ -392,19 +392,20 @@ class SynthRuntime {
   void setVoctBindings(JackId aVoct, JackId bVoct) { voctA_ = aVoct; voctB_ = bVoct; }
   // Generic CV input bindings (vco_a.cv_in / vco_b.cv_in, -5..+5) — a SECOND independent
   // CV/transfer path on each VCO, SEPARATE from V/OCT (vco_a.v_oct_in / vco_b.v_oct_in).
-  // The VCO-B self-edge (vco_b.vco_out -> cv_in) sinks into vco_b.cv_in, so the canonical
-  // definition binds it here; the step_ kVcoB slot resolves it through setCvInput(v, held
-  // mode) — never through the confirmed V/OCT setVoct path (@Codex 7C2: two independent
-  // bindings/transfers). JackId{0} is a REAL jack (vco_a.cv_in), so the *_Bound_ flag is
-  // the authoritative admission state, not a JackId{0} sentinel (drone ENV/CV-MOD pattern).
+  // vco_b.cv_in is fed by the A->B route (vco_a.dry_out -> vco_b.cv_in in the default
+  // registry, task #83), so the canonical definition binds it here; the step_ kVcoB slot
+  // resolves it through setCvInput(v, held mode) — never through the confirmed V/OCT setVoct
+  // path (@Codex 7C2: two independent bindings/transfers). JackId{0} is a REAL jack
+  // (vco_a.cv_in), so the *_Bound_ flag is the authoritative admission state, not a
+  // JackId{0} sentinel (drone ENV/CV-MOD pattern).
   void setVcoCvBindings(JackId aCv, JackId bCv) {
     cvInA_ = aCv; cvInB_ = bCv;
     cvInBoundA_ = true; cvInBoundB_ = true;
   }
-  // VCO output jacks the product publishes as a source. vco_b.vco_out is the VCO-B
-  // self-edge source, so the canonical definition binds it and the VCO-B slot publishes
-  // it through the ONE write (the self-edge consumer then reads that frame's value at its
-  // own D-sample line). Unbound = no publish (legacy synthetic fixture).
+  // VCO output jacks the product publishes as a source. vco_b.vco_out is VCO-B's output
+  // jack, so the canonical definition binds it and the VCO-B slot publishes it through the
+  // ONE write (any downstream — a normal consumer or a user-established feedback edge — then
+  // reads that frame's value). Unbound = no publish (legacy synthetic fixture).
   void setVcoOutBindings(JackId aOut, JackId bOut) {
     vcoAOut_ = aOut; vcoBOut_ = bOut;
     vcoAOutBound_ = true; vcoBOutBound_ = true;
@@ -2098,9 +2099,11 @@ class SynthRuntime {
 
   // Strict fail-closed preflight (rebuild_, @Codex 7C2): a compiled-region module
   // EXPLICITLY bound to ExecutionKind::kUnsupported. The canonical fixed-chain table binds
-  // the six control sources + effector/voices to kUnsupported (not integrated in this
-  // slice), so patching any of them into the graph is a real semantics violation: REFUSE
-  // with unsupported_module, never silently skip to zero slots. Distinct from
+  // `keyboard`/`effector`/`voices` to kUnsupported (declared-deferred, no runtime instance
+  // yet); the six control sources are NOW real DSP (GH#11 D1/D2/D4, machine_definition.h),
+  // so they are never kUnsupported here. Patching any kUnsupported module into the graph is
+  // a real semantics violation: REFUSE with unsupported_module, never silently skip to zero
+  // slots. Distinct from
   // hasMissingBinding_ (an unbound module is not a "kUnsupported" module). Only consulted
   // when strictBindings_ is ON. @Codex 67dc06c6: same direct scan — an isolated kUnsupported
   // module is not in region.modules (compile_graph excludes it), so it stays LEGAL, while
@@ -2217,12 +2220,15 @@ class SynthRuntime {
         // V/OCT (v_oct_in): confirmed 1 V/oct exponential pitch input.
         double v = 0.0;
         if (resolveControlSink_(voctB_, v, driveGraph)) vcB_.setVoct(v);
-        // Generic CV (cv_in, -5..+5): the VCO-B self-edge (vco_b.vco_out -> cv_in) sinks
-        // into vco_b.cv_in. The exact-pair consumer here reads the self-edge's own D-sample
-        // line (off by one vs live-last-written — the graph_compiler consume-rule); the
-        // mode comes from the runtime-held setVcoControlModes. This is the fitted
-        // setCvInput path, NEVER the confirmed V/OCT setVoct path (@Codex 7C2: the generic
-        // CV is an independent binding/transfer, not a masquerade of the V/OCT law).
+        // Generic CV (cv_in, -5..+5): resolved from the EXACT source feeding vco_b.cv_in.
+        // task #83 default = the acyclic A->B route vco_a.dry_out -> vco_b.cv_in, read LIVE
+        // same-frame (B consumes A's published value this frame). Only an edge the compiled
+        // graph marks as a FEEDBACK line (e.g. a user B->B cable) is consumed by the exact-pair
+        // reader from that edge's own D-sample line (off by one vs live-last-written — the
+        // graph_compiler consume-rule). The mode comes from the runtime-held setVcoControlModes.
+        // This is the fitted setCvInput path, NEVER the confirmed V/OCT setVoct path (@Codex
+        // 7C2: the generic CV is an independent binding/transfer, not a masquerade of the
+        // V/OCT law).
         if (cvInBoundB_) {
           double g = 0.0;
           if (resolveControlSink_(cvInB_, g, driveGraph)) vcB_.setCvInput(g, cvModeB_);
@@ -2231,8 +2237,9 @@ class SynthRuntime {
         vcB_.tick(&b);
         dryB_ = b;
         chIn_[VoiceMixer::kChannelVcoB] = b;
-        // Publish the real vco_b.vco_out so the self-edge (and any normal downstream) read
-        // THIS frame's value through the single write (@Codex correction 4).
+        // Publish the real vco_b.vco_out so any downstream (a normal consumer, or a
+        // user-established B->B feedback edge) reads THIS frame's value through the single
+        // write (@Codex correction 4).
         if (vcoBOutBound_) publishSourceValue_(vcoBOut_, b);
         break;
       }

@@ -19,9 +19,9 @@
 #   MUTATED code (one regression) -> RED    (the oracle trips on a SPECIFIC pinned assertion — the
 #                                          fix is load-bearing at that defense point).
 #
-# Five contracted defense points (@Codex 4fe298c8), each an ACTUAL production-source mutation (never a
-# relaxed validator), each verified against a SPECIFIC assertion (the exact FAIL expression), not
-# merely a non-zero failure count:
+# Six contracted defense points (@Codex 4fe298c8 + e14e62a8), each an ACTUAL production-source mutation
+# (never a relaxed validator), each verified against a SPECIFIC assertion (the exact FAIL expression),
+# not merely a non-zero failure count:
 #
 #   #1 source_reverts_to_B   (generated/lunar24/registry.hpp)  revert RouteId 4's source from
 #                            vco_a.dry_out back to vco_b.vco_out — the defective self-edge. The
@@ -41,9 +41,15 @@
 #   #5 force_dryb_constant  (machine_runtime.h)  the fix MASKS the defect rather than fixing it: B is
 #                            hard-coded to a constant, hiding whether it oscillates. Pinned
 #                            `bMoved` (test #1: the fixed output must actually move, not sit at DC).
+#   #6 hidden_z1_delay       (machine_runtime.h)  @Codex e14e62a8's CRITICAL gap: each runtime
+#                            independently saves previousA (aThis_/aPrev_) and feeds THAT to B's cv_in.
+#                            The graph is still a VALID acyclic A->B route (feedbackCount()==0 holds),
+#                            so #1..#5 and every structural check stay GREEN — ONLY the same-vs-previous
+#                            discriminator trips. Pinned `madSame < kSameTol` (test #6), under a FAST,
+#                            NON-DEGENERATE A so one sample of delay is a large, observable divergence.
 #
 # #1 splices generated/lunar24/registry.hpp AND a compile-guard-neutralizing machine_definition.h
-# shadow; #3/#4/#5 splice core/include/lunar24/core/machine_runtime.h; #2 splices patch_graph.h.
+# shadow; #3/#4/#5/#6 splice core/include/lunar24/core/machine_runtime.h; #2 splices patch_graph.h.
 # Each is spliced into a DETACHED shadow header under build/ so the oracle compiles against an
 # include path that shadows ONLY the mutated header(s) (isolated per mutation, never left behind) —
 # no tracked path is ever written and the oracle source is untouched.
@@ -137,10 +143,51 @@ open(dst, "w", encoding="utf-8").write(t)
 PY
 }
 
+# Python splice: the @Codex e14e62a8 HIDDEN 1-sample-delay regression (#6). Each runtime INDEPENDENTLY
+# saves previousA (aThis_/aPrev_) and feeds THAT to B's cv_in instead of A's live same-frame value. The
+# compiled result is still a perfectly VALID acyclic A->B route (feedbackCount()==0 continues to hold),
+# so this passes the structural check; ONLY the new same-vs-previous discriminator
+# (test_b_same_sample_vs_previous, `madSame < kSameTol`) catches it. Three edits in one shadow:
+#   (a) add members aThis_/aPrev_ (per-runtime saved previous-A),
+#   (b) in the kVcoA slot: hold the OLD A before the tick (aPrev_ = aThis_) and store the new a after,
+#   (c) resolveSinkValue_ reads aPrev_ ONLY for src==vco_a_dry_out — the live cvOut_[vco_a_dry_out]
+#       (what controlVoltageAt returns) is left alone, so the refSame reference still reads the SAME-frame
+#       A and DIVERGES from what B actually consumed (previous A).
+py_hidden_z1() {
+  local src="$1" rel="$2"
+  python3 - "$src" "$WORK/$rel" <<'PY'
+import os, sys
+src, dst = sys.argv[1], sys.argv[2]
+t = open(src, encoding="utf-8").read()
+edits = [
+    # (a) members
+    ("double dryA_ = 0.0, dryB_ = 0.0;",
+     "double dryA_ = 0.0, dryB_ = 0.0;\n  // [MUT #6 hidden z^-1] per-runtime saved previous-A, fed to B.\n  double aPrev_ = 0.0, aThis_ = 0.0;"),
+    # (b) A slot: hold the OLD A before the tick, store this-frame a after
+    ("        double a = 0.0;\n        vcA_.tick(&a);\n        dryA_ = a;",
+     "        double a = 0.0;\n        aPrev_ = aThis_;   // [MUT #6] hold the OLD A for B to read.\n        vcA_.tick(&a);\n        aThis_ = a;\n        dryA_ = a;"),
+    # (c) resolveSinkValue_: the A->B edge consumes PREVIOUS A, not the live same-frame value
+    ("const double live = cvAt_(src);",
+     "const double live = (src == JackId::vco_a_dry_out) ? aPrev_ : cvAt_(src);   // [MUT #6] B reads PREVIOUS A."),
+]
+for find, repl in edits:
+    n = t.count(find)
+    if n != 1:
+        sys.stderr.write(f"ERROR: anchor count {n} != 1 for: {find[:70]}\n")
+        sys.exit(2)
+    t = t.replace(find, repl)
+os.makedirs(os.path.dirname(dst), exist_ok=True)
+open(dst, "w", encoding="utf-8").write(t)
+PY
+}
+
 # Compile the oracle against the current shadow set, run it, and REQUIRE a RED run that trips the
 # pinned assertion `expect` (a `FAIL <file>:<line>: <expr>` line containing `expect`) — never "just
 # non-zero". The real baseline proved the oracle passes unmutated; a mutated build that (a) goes RED
 # (rc!=0) AND (b) trips the exact pinned assertion proves that defense point is load-bearing.
+# @Codex e14e62a8: the run MUST terminate NORMALLY and hit the pinned assertion — a crash that leaves a
+# residual FAIL is NOT acceptable. mini_test.h CHECK never aborts, so a real regression always prints the
+# `[suite] N/M checks FAILED` summary; require that summary so a crash/no-summary run is rejected.
 run_mutation() {
   local name="$1" expect="$2"
   echo
@@ -158,6 +205,14 @@ run_mutation() {
     echo "   ERROR: mutation #${name} did NOT go RED (rc=0). The fix is NOT load-bearing here." >&2
     exit 1
   fi
+  # Normal-termination proof: the run must print the [suite] N/M checks FAILED summary. A crash would
+  # leave NO such summary — reject that (a crash-residual FAIL is not a clean RED).
+  MUT_SUM="$(printf '%s\n' "$MUT_OUT" | grep -oE '\[test_vco_normal_source\] [0-9]+/[0-9]+ checks FAILED' | tail -1)"
+  if [ -z "$MUT_SUM" ]; then
+    echo "   ERROR: mutation #${name} produced no '[..] N/M checks FAILED' summary — abnormal termination (crash), not a clean RED." >&2
+    printf '%s\n' "$MUT_OUT" | tail -15 >&2
+    exit 1
+  fi
   if ! printf '%s\n' "$MUT_OUT" | awk -v e="$expect" '
         index($0, "FAIL ") > 0 && index($0, e) > 0 { print; found = 1 }
         END { if (!found) exit 1 }'; then
@@ -165,13 +220,8 @@ run_mutation() {
     printf '%s\n' "$MUT_OUT" | tail -15 >&2
     exit 1
   fi
-  MUT_SUM="$(printf '%s\n' "$MUT_OUT" | grep -oE '\[test_vco_normal_source\] [0-9]+/[0-9]+ checks FAILED' | tail -1)"
-  if [ -n "$MUT_SUM" ]; then
-    MUT_FAILS="$(printf '%s' "$MUT_SUM" | grep -oE '[0-9]+/' | head -1 | tr -d '/')"
-    echo "   mutated: rc=$MUT_RC, pinned assertion trips, $MUT_SUM ($MUT_FAILS subtests fail)."
-  else
-    echo "   mutated: rc=$MUT_RC, pinned assertion trips (no FAILED summary line — assertion fired before a follow-on early-exit)."
-  fi
+  MUT_FAILS="$(printf '%s' "$MUT_SUM" | grep -oE '[0-9]+/' | head -1 | tr -d '/')"
+  echo "   mutated: rc=$MUT_RC, pinned assertion trips, $MUT_SUM ($MUT_FAILS subtests fail)."
 }
 
 # -------------------------------------------------------------------------------------------------
@@ -225,9 +275,23 @@ py_splice "$SRC_RT" "lunar24/core/machine_runtime.h"\
 run_mutation "force_dryb_constant" "bMoved"
 rm -f "$WORK/lunar24/core/machine_runtime.h"
 
+# -------------------------------------------------------------------------------------------------
+# #6 — hidden_z1_delay. @Codex e14e62a8's CRITICAL gap: an ACYCLIC A->B route proves feedbackCount()==0,
+#      but does NOT prove B reads A's LIVE same-frame value. Each runtime independently saves previousA
+#      (aThis_/aPrev_) and feeds that to B's cv_in. The compiled graph is still a VALID acyclic route
+#      (feedbackCount()==0 continues to hold), so #1..#5 and the structural checks stay green — ONLY the
+#      new same-vs-previous discriminator (test_b_same_sample_vs_previous, `madSame < kSameTol`) catches
+#      it. The A->B value is delayed by exactly one sample under a FAST, NON-DEGENERATE A, so refSame
+#      (which reads controlVoltageAt's live A via the harness) diverges from what B actually consumed.
+rm -rf "$WORK/lunar24"; mkdir -p "$WORK/lunar24/core"
+py_hidden_z1 "$SRC_RT" "lunar24/core/machine_runtime.h"
+run_mutation "hidden_z1_delay" "madSame < kSameTol"
+rm -f "$WORK/lunar24/core/machine_runtime.h"
+
 echo
 echo "== [restore] =="
 rm -rf "$WORK"
 echo "   removed $WORK; source tree untouched (only the scratch dir was written)."
-echo "-> PASS: task#83 VCO-normal-source fix is load-bearing at all 5 contracted defense points;"
+echo "-> PASS: task#83 VCO-normal-source fix is load-bearing at all 6 contracted defense points"
+echo "        (incl. the @Codex e14e62a8 hidden 1-sample-delay);"
 echo "        real=GREEN ($N checks), each mutated=RED with a pinned specific assertion, reproduced repeatably."

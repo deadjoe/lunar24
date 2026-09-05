@@ -210,7 +210,7 @@ inline void Vco::tick(double* out, double* subOut) {
   *out = waveformSampleAt(phase());
   if (subOut) {
     if (subEnabled()) {
-      *subOut = 2.0 * subPhase() - 1.0;   // sub = square of subPhase (phase-locked).
+      *subOut = 2.0 * subPhase() - 1.0;   // sub = rising SAW (2*frac(cumPitch_*0.5)-1), one octave down, phase-locked.
     } else {
       *subOut = 0.0;
     }
