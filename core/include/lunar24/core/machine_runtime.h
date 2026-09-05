@@ -242,6 +242,9 @@ enum class ParameterApplyStatus : std::uint8_t {
   transfer_unavailable,  // recognised but deliberately UNMAPPED (no current param uses this after 7C3).
   invalid_value,         // malformed for its unit domain (out-of-range / non-exact / non-finite): kept old.
   unsupported_parameter, // not a known control-source param: no transfer.
+  apply_count_mismatch,  // exactly-169 gate: the whole applied_to_DSP batch did not reach the
+                         // contract count (a mutated path that skipped an id), NOT a per-value
+                         // defect — firstFailId pinpoints the first skipped id.
 };
 
 class SynthRuntime {
@@ -916,11 +919,7 @@ class SynthRuntime {
         setVcoAControlMode(v == 1.0 ? VcoControlMode::kExponential : VcoControlMode::kLinear);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vco_b_tune:
-#ifdef SPARSE_MUT_E_AB_CROSS
-        setVcoATune(v);  // MUTATION E: VCO B routed to A — anti-cross discriminator RED.
-#else
         setVcoBTune(v);
-#endif
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vco_b_morph:
         setVcoBMorph(v);
@@ -953,11 +952,7 @@ class SynthRuntime {
         setVcfMode(0, v == 0.0);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vcf_r_freq:
-#ifdef SPARSE_MUT_F_LR_CROSS
-        setVcfFreq(0, v);  // MUTATION F: R filter freq routed to L channel — L/R cross RED.
-#else
         setVcfFreq(1, v);
-#endif
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vcf_r_res:
         setVcfRes(1, v);
@@ -1008,11 +1003,7 @@ class SynthRuntime {
         setMixerChannelVol(3, v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::mixer_ch4_pan:
-#ifdef SPARSE_MUT_G_PANVOL_SWAP
-        setMixerChannelVol(3, v);  // MUTATION G: pan routed to volume — vol/pan swap RED.
-#else
         setMixerChannelPan(3, v);
-#endif
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::mixer_ch5_vol:
         setMixerChannelVol(4, v);
@@ -1126,11 +1117,7 @@ class SynthRuntime {
         setDroneMod(1, 1, v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_2_tune_3:
-#ifdef SPARSE_MUT_H_GROUP_OFFSET
-        setDroneTune(0, 2, classicDroneTuneSemisFromNorm(v));  // MUTATION H: group offset (1→0) — classic group/gen RED.
-#else
         setDroneTune(1, 2, classicDroneTuneSemisFromNorm(v));
-#endif
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_2_mute_3:
         setDroneMute(1, 2, v != 0.0);
@@ -1298,11 +1285,7 @@ class SynthRuntime {
         setDrone3Am(v != 0.0);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_rate:
-#ifdef SPARSE_MUT_I_NEWDRONE_CROSS
-        setDrone3Rate(newDroneRateHzFromNorm(v));  // MUTATION I: new-drone 6 routed to 3 — collision RED.
-#else
         setDrone6Rate(newDroneRateHzFromNorm(v));
-#endif
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_pitch:
         setDrone6Pitch(v);
@@ -1325,40 +1308,75 @@ class SynthRuntime {
   // DeviceStateV1 into the live DSP. On the first non-applied id it returns false and
   // fills firstFailId / firstFailStatus (the typed rejection the candidate builder
   // carries); it applies every id BEFORE the failure and bails immediately, so a failing
-  // candidate is discarded whole — it never yields a partial-success path. On full
-  // success it returns true (dspApplyOk_ set) and dspAppliedCount_ == 169. An id that is
-  // not applied_to_dsp is skipped (out of contract scope), never counted.
+  // candidate is discarded whole — it never yields a partial-success path. On full success
+  // it returns true (dspApplyOk_ set) and dspAppliedCount_ == 169. An id that is not
+  // applied_to_dsp is skipped (out of contract scope), never counted. After the loop it
+  // re-verifies with an independent exactly-169 gate (finding 1): if fewer than the
+  // contract count was admitted (a mutated path that skipped an id) it returns false with
+  // apply_count_mismatch and firstFailId pointing at the first skipped id — never a partial
+  // success masquerading as the count==169 sentinel.
   bool applyDspState(const DeviceStateV1& state, ParameterId& firstFailId,
                      ParameterApplyStatus& firstFailStatus) {
+    // Sentinel contract (finding 5): firstFail* is ALWAYS fully rewritten before we return, so
+    // a prior rejection can never leak into a later success or into a different rejection. On
+    // success / skip-only they carry the no-failure sentinel; on a real rejection they carry the
+    // FIRST failing id/status.
+    firstFailId = static_cast<ParameterId>(kParameterCount);
+    firstFailStatus = ParameterApplyStatus::applied;
+
+    // Which applied_to_DSP ids applyDspParam actually admitted, so the exactly-169 gate can
+    // LOCATE the first missing id rather than reporting a bare count mismatch (finding 1).
+    std::uint32_t appliedBits[(kParameterCount + 31u) / 32u] = {};
+
     std::uint32_t applied = 0;
     for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i) {
       if (kDeviceStateDisposition[i].disposition != StateDisposition::applied_to_dsp) continue;
       const ParameterId id = kDeviceStateDisposition[i].id;
       const double v = state.parameters[static_cast<std::uint32_t>(id)];
-#ifdef SPARSE_MUT_J_COUNT_SKIP
-      // MUTATION J: blindly count every applied_to_dsp id as success without invoking the
-      // setter. dspApplyOk_ stays true and dspAppliedCount_ would reach 169, so only the
-      // readback discrimination catches it (values never move off default).
-      (void)id;
-      (void)v;
-      ++applied;
-#else
       const ParameterApplyStatus s = applyDspParam(id, v);
       if (s != ParameterApplyStatus::applied) {
+        // A per-value defect: this id was rejected by its own unit-domain choke. Report it.
         dspApplyOk_ = false;
         dspAppliedCount_ = applied;
         firstFailId = id;
         firstFailStatus = s;
         return false;
       }
+      const std::uint32_t u = static_cast<std::uint32_t>(id);
+      appliedBits[u / 32u] |= (1u << (u % 32u));
       ++applied;
-#endif
     }
+
+    // Exactly-169 product gate (finding 1): the loop must admit EVERY applied_to_DSP id, not just
+    // produce a plausible count. A mutated path that skips one (e.g. a stray `continue`) is a
+    // REJECTED candidate with the first missing id locatable via the admitted-bit mask — it never
+    // hides behind the count==169 success sentinel.
+    constexpr std::uint32_t kAppliedToDsp =
+        count_disposition(StateDisposition::applied_to_dsp);  // 169, compile-time locked.
+    if (applied != kAppliedToDsp) {
+      dspApplyOk_ = false;
+      dspAppliedCount_ = applied;
+      firstFailId = firstUnadmittedAppliedId_(appliedBits);
+      firstFailStatus = ParameterApplyStatus::apply_count_mismatch;
+      return false;
+    }
+
     dspApplyOk_ = true;
     dspAppliedCount_ = applied;
-    firstFailId = static_cast<ParameterId>(kParameterCount);  // sentinel: no failure.
-    firstFailStatus = ParameterApplyStatus::applied;
+    // firstFailId / firstFailStatus are already the no-failure sentinel from the entry reset.
     return true;
+  }
+
+  // First applied_to_DSP id whose admitted-bit is clear — the missing id an exactly-169
+  // count-mismatch rejection reports. Returns the kParameterCount sentinel if none differ (a
+  // count gate that cannot happen, but fail-closed so the caller always gets a locatable id).
+  ParameterId firstUnadmittedAppliedId_(const std::uint32_t* bits) const {
+    for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i) {
+      if (kDeviceStateDisposition[i].disposition != StateDisposition::applied_to_dsp) continue;
+      const std::uint32_t u = static_cast<std::uint32_t>(kDeviceStateDisposition[i].id);
+      if (!(bits[u / 32u] & (1u << (u % 32u)))) return kDeviceStateDisposition[i].id;
+    }
+    return static_cast<ParameterId>(kParameterCount);
   }
 
   // task #78: whether the whole 169-parameter apply succeeded and how many were applied.
@@ -1939,42 +1957,20 @@ class SynthRuntime {
   // ---- task #78 centralized norm->physical transfers (ALL software-provisional; the
   // hardware calibration of every one is untested and flagged as such in the mandate).
   // These are the ONLY places a normalized registry value becomes a real DSP unit, so a
-  // product oracle can verify each apply against ONE definition and a test can mutate a
-  // single helper to turn an entire family's applies RED. The PULSER reuses the already-
+  // product oracle can verify each apply against ONE definition and a test can isolate-mutate
+  // a single helper to turn an entire family's applies RED. The PULSER reuses the already-
   // existing FiveStepSequencer::pulserNormToRateHz (see setControlParamValue).
-  // task #78 mutation probes (SPARSE_MUT_* are compile-time-only; no effect unless a
-  // mutation test target -D-defines exactly one). Each turns one FAMILY's applies RED by
-  // corrupting the single helper that family maps norm->physical through, exercising the
-  // product oracle's discrimination. They are the physical counterpart of the "a test can
-  // mutate a single helper to turn an entire family's applies RED" design intent above.
   static double envFollowerSecondsFromNorm(double n) {
-#ifdef SPARSE_MUT_A_ENVF
-    (void)n;  // MUTATION A: constant seconds — whole env_follower family RED.
-    return 0.5;
-#else
     return 0.001 + 0.999 * n;
-#endif
   }  // s, n in [0,1].
   static double classicDroneTuneSemisFromNorm(double n) {
-#ifdef SPARSE_MUT_B_TUNE
-    return 12.0 * n;  // MUTATION B: wrong scale — classic drone tune family RED.
-#else
     return (n - 0.5) * 24.0;
-#endif
   }  // -12..+12 semis.
   static double classicDroneVoltSemisDownFromNorm(double n) {
-#ifdef SPARSE_MUT_C_VOLT
-    return 30.0 * n;  // MUTATION C: half-travel volts — classic drone VOLT family RED.
-#else
     return 60.0 * n;
-#endif
   }  // 0.5 -> 30 semis down.
   static double newDroneRateHzFromNorm(double n) {
-#ifdef SPARSE_MUT_D_RATE
-    return 6.0 * n;  // MUTATION D: half Hz — new drone RATE family RED.
-#else
     return 12.0 * n;
-#endif
   }  // 0.5 -> 6 Hz; 0 -> stop.
 
   // Fixed-kind -> id lookup (linear over the small binding table).

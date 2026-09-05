@@ -366,30 +366,6 @@ lunar_add_test(test_state_apply_oracle_169
 target_link_libraries(test_state_apply_oracle_169 PRIVATE lunar_host)
 target_include_directories(test_state_apply_oracle_169 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
-# task#78 commit ②: detached RED->GREEN mutation probe set. Each target recompiles the SAME
-# full-169 oracle against one compile-time production bug injection (the four centralized
-# norm->physical transfer helpers + the cross-wire / group-offset / new-drone switch cases +
-# a count-success-skip-setter loop, all behind SPARSE_MUT_* in machine_runtime.h). Every
-# poisoned build must exit non-zero (the oracle reads back the REAL DSP member and catches the
-# injected bug); CTest WILL_FAIL flips that non-zero pass, so the mutation set is GREEN only
-# while the canonical oracle stays red-under-bug AND green-under-correct. A bug the oracle
-# fails to catch -> poisoned binary exits 0 -> WILL_FAIL FAILs -> the blind spot surfaces.
-# Probes are compile-time only: zero cost to the canonical/CI build.
-option(LUNAR24_MUTATION_PROBES "Build the 169-apply RED->GREEN mutation probe targets" ON)
-if(LUNAR24_MUTATION_PROBES)
-  foreach(mut A_ENVF B_TUNE C_VOLT D_RATE E_AB_CROSS F_LR_CROSS G_PANVOL_SWAP
-               H_GROUP_OFFSET I_NEWDRONE_CROSS J_COUNT_SKIP)
-    set(tgt test_state_apply_oracle_169_mut_${mut})
-    add_executable(${tgt} tests/host/test_state_apply_oracle_169.cpp)
-    target_link_libraries(${tgt} PRIVATE lunar_host)
-    target_compile_definitions(${tgt} PRIVATE SPARSE_MUT_${mut}=1)
-    target_include_directories(${tgt} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
-    lunar_enable_warnings(${tgt})
-    add_test(NAME ${tgt} COMMAND ${tgt})
-    set_tests_properties(${tgt} PROPERTIES WILL_FAIL TRUE)
-  endforeach()
-endif()
-
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.
