@@ -46,6 +46,12 @@ using lunar24::core::make_default_device_state;
 
 namespace {
 
+// 48000 frames = 1 s @ 48k — the render window length used by the sampled families. A named INT
+// constant, deliberately separate from kSr (the double sample rate in the shared harness), so the
+// `int frames` argument of renderSampled never takes an implicit double->int conversion (which
+// MSVC reports as C4244 and /WX turns into a hard error).
+constexpr int kFrames = 48000;
+
 double& slot(DeviceStateV1& st, ParameterId id) {
   return st.parameters[static_cast<std::uint32_t>(id)];
 }
@@ -102,10 +108,10 @@ void test_lfo() {
 
   const double target = 10.0;  // kLfoOutputPeakVolt
   std::vector<double> slowJack, fastJack;
-  CHECK(h.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
+  CHECK(h.renderSampled(kFrames, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
     slowJack.push_back(rt.controlVoltageAt(JackId::lfo_a_cv_out));
   }));
-  CHECK(h2.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
+  CHECK(h2.renderSampled(kFrames, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
     fastJack.push_back(rt.controlVoltageAt(JackId::lfo_a_cv_out));
   }));
 
@@ -138,11 +144,11 @@ void test_envelope() {
   CHECK(hOn.load(on));
 
   JackStat offStat;
-  CHECK(hOff.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
+  CHECK(hOff.renderSampled(kFrames, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
     offStat.fuel(rt.controlVoltageAt(JackId::envelope_a_env_out));
   }));
   JackStat onStat, vcaOn;
-  CHECK(hOn.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
+  CHECK(hOn.renderSampled(kFrames, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
     onStat.fuel(rt.controlVoltageAt(JackId::envelope_a_env_out));
     vcaOn.fuel(rt.controlVoltageAt(JackId::envelope_a_vca_cv_out));
   }));
@@ -190,10 +196,10 @@ void test_env_follower() {
   CHECK(hNo.load(make_default_device_state(kSeed)));
 
   JackStat inStat, noStat;
-  CHECK(hIn.renderSampled(kSr, 1.0, [&](const lunar24::core::SynthRuntime& rt) {  // steady 1.0V preamp.
+  CHECK(hIn.renderSampled(kFrames, 1.0, [&](const lunar24::core::SynthRuntime& rt) {  // steady 1.0V preamp.
     inStat.fuel(rt.controlVoltageAt(JackId::env_follower_env_out));
   }));
-  CHECK(hNo.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {  // no input.
+  CHECK(hNo.renderSampled(kFrames, 0.0, [&](const lunar24::core::SynthRuntime& rt) {  // no input.
     noStat.fuel(rt.controlVoltageAt(JackId::env_follower_env_out));
   }));
   constexpr double kEnvMax = 10.0;  // kEnvMaxVolt
@@ -214,10 +220,10 @@ void test_env_follower() {
   CHECK(hS.load(slowA));
 
   std::vector<double> fastSeries, slowSeries;
-  CHECK(hF.renderSampled(kSr, 1.0, [&](const lunar24::core::SynthRuntime& rt) {
+  CHECK(hF.renderSampled(kFrames, 1.0, [&](const lunar24::core::SynthRuntime& rt) {
     fastSeries.push_back(rt.controlVoltageAt(JackId::env_follower_env_out));
   }));
-  CHECK(hS.renderSampled(kSr, 1.0, [&](const lunar24::core::SynthRuntime& rt) {
+  CHECK(hS.renderSampled(kFrames, 1.0, [&](const lunar24::core::SynthRuntime& rt) {
     slowSeries.push_back(rt.controlVoltageAt(JackId::env_follower_env_out));
   }));
   auto riseHalf = [](const std::vector<double>& v) -> int {
@@ -252,7 +258,7 @@ void test_sequencer() {
 
   double cvMn = 1e30, cvMx = -1e30, clkMn = 1e30, clkMx = -1e30;
   bool sawGate10 = false, sawCv1 = false, sawCv3 = false, sawCv5 = false;
-  CHECK(h.renderSampled(kSr, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
+  CHECK(h.renderSampled(kFrames, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
     const double cv = rt.controlVoltageAt(JackId::sequencer_cv_out);
     const double g = rt.controlVoltageAt(JackId::sequencer_gate_out);
     const double clk = rt.controlVoltageAt(JackId::sequencer_clock_out);

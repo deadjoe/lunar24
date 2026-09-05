@@ -1139,7 +1139,7 @@ int main() {
       // event is a no-op and the script would look vacuous. Use a value off default so the
       // event still exercises the dispatch (sample-timing under test), while the applied
       // baseline stays reflected.
-      ev.value = 0.85;
+      ev.value = 0.85f;   // float literal — ev.value is SignalSample(==float); avoids C4305 double->float truncation
       ev.source = 1;
       ev.producerSequence = 1;
       core::TimedControlEvent te{};
