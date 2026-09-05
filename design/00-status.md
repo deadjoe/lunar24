@@ -6,6 +6,10 @@
 
 **最后更新**：2026-08-26 · **代码 head** `4e8b1d4`（本文件自身的 docs commit 必然在其后，故此处永远记*代码*head，不是 tip）· 分支 `feat/p0-full-registry` · `origin/main` = `baf1e11`（PR #1 合入点）；本分支严格领先、merge-base==origin/main · 无 PR#2
 
+> **当前状态（2026-09-06，工程总监裁决，详见 [report/2026-09-06-director-disposition.md](../report/2026-09-06-director-disposition.md)）**：
+> 阶段性合入 main=`34ece0d`（PR #17）。**当前唯一主实施线 = task #83 · GH #18（修复默认 DRY B 锁死）**，由 @Pi 在隔离分支 `fix/18-vco-normal-source` 依 4fe298c8 契约执行，从先红判据到实现、负控、Release/Debug/ASan+UBSan、host/generator、独立 feature push、draft PR、exact-head CI 修正均预授权，无需再等 GO。
+> **P3 默认四输出出口因 N-1 尚未满足**（默认 DRY B 仍有缺陷）；**P4 产品集成尚未完成**（模块已实现，产品 owner/实际输入集成未完成）。其余发现分别入 GH #19（混叠）/ #20（VCF 数值）/ #21（平滑）。旧流水账保留为历史，不作废。
+
 ## 1. 预授权（@Pi 不必等 GO）
 
 可以直接做完再报复验：
