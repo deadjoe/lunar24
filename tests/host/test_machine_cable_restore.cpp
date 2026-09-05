@@ -106,6 +106,22 @@ std::vector<double> captureAll(EngineHarness& h, int frames, double feed) {
   return v;
 }
 
+// Capture ONLY the `frames` freshly rendered by this call (the four output channels, WET_L/WET_R/
+// DRY_A/DRY_B). The EngineHarness buffers are monotonically growing, so a same-owner sequence of
+// renders must read only the newly appended segment — otherwise a later capture would include the
+// earlier renders and two captures would be compared against overlapping tails.
+std::vector<double> captureSegment(EngineHarness& h, int frames, double feed) {
+  const std::size_t prev = h.wetL().size();
+  CHECK(h.render(frames, feed));
+  std::vector<double> v;
+  v.reserve(static_cast<std::size_t>(frames) * 4u);
+  for (int ch = 0; ch < 4; ++ch) {
+    const auto& c = h.out(ch);
+    v.insert(v.end(), c.begin() + static_cast<std::ptrdiff_t>(prev), c.end());
+  }
+  return v;
+}
+
 double maxAbsDiff(const std::vector<double>& a, const std::vector<double>& b) {
   if (a.size() != b.size()) return 1e30;
   double m = 0.0;
@@ -146,45 +162,52 @@ void test_no_cable_default() {
 }
 
 // _________________________________________________________________________________________________
-// (b) a user cable overrides an active normalized route; removing it restores the route.
+// (b) on the SAME owner, a user cable into a live route's sink OVERRIDES the active normalized
+// route (the user source actually replaces the self-edge), and removing it restores the route with
+// no residual wire. The route's sink is vco_b.cv_in; the default self-edge (vco_b.vco_out ->
+// vco_b.cv_in) is the single active normalized route. Feeding a constant signal makes the
+// env-follower source non-zero, so the override is signal-observable, not just a normalizedActive
+// bit: the user source drives a different waveform than the self-edge feedback, so the rendered
+// output differs; after removal the output is BIT-identical to the original default (no stray wire
+// left behind, the self-edge feedback restored).
 
-void test_override_and_restore() {
-  // No-cable: the VCO-B self-edge route is live.
-  {
-    EngineHarness h;
-    CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
-    CHECK(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
-  }
+void test_override_same_owner_replaces_self_edge() {
+  constexpr double kFeed = 0.6;
+  EngineHarness h;
 
-  // Cable env_follower.env_out -> vco_b.cv_in overrides it. check_routes coherence requires the
-  // override bit set when the route's sink holds a user cable.
-  {
-    DeviceStateV1 wired = make_default_device_state(0x4C554E4152ULL);
-    setCable(wired, JackId::env_follower_env_out, JackId::vco_b_cv_in);
-    overrideRoute(wired, RouteId::route_vco_b_vco_out_to_cv_in);
+  // active A = default: the self-edge route is live, zero user cables.
+  CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
+  CHECK(h.runtime() != nullptr);
+  CHECK(h.runtime()->cableCount() == 0u);
+  CHECK(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  const std::vector<double> base = captureSegment(h, kLongFrames, kFeed);
 
-    // The state must be coherent (route override exactly matching the cable fact) for the factory to
-    // build at all — the factory's validate() gates this, and a failure here surfaces as load()==false.
-    // Establish active A (the default) first, as a real host always has a prior accepted state, so a
-    // restore-regression reject keeps a valid runtime (default) and the checks below go RED cleanly
-    // rather than dereferencing a never-accepted engine (runtime()==nullptr on a fresh engine).
-    EngineHarness h;
-    CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
-    CHECK(h.load(wired));
-    CHECK(verifyWires(h.runtime(), wired));
-    CHECK(h.runtime()->cableCount() == 1u);
-    CHECK(h.runtime()->cableConnected(JackId::env_follower_env_out, JackId::vco_b_cv_in));
-    CHECK(h.runtime()->cableCountInto(JackId::vco_b_cv_in) == 1u);
-    // The active normalized route is now overridden (its sink holds a user cable).
-    CHECK_FALSE(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
-  }
+  // Cable env_follower.env_out -> vco_b.cv_in on the SAME owner overrides the self-edge. check_routes
+  // coherence requires the override bit set when the route's sink holds a user cable.
+  DeviceStateV1 wired = make_default_device_state(0x4C554E4152ULL);
+  setCable(wired, JackId::env_follower_env_out, JackId::vco_b_cv_in);
+  overrideRoute(wired, RouteId::route_vco_b_vco_out_to_cv_in);
+  CHECK(h.load(wired));
+  CHECK(verifyWires(h.runtime(), wired));
+  CHECK(h.runtime()->cableCount() == 1u);
+  CHECK(h.runtime()->cableConnected(JackId::env_follower_env_out, JackId::vco_b_cv_in));
+  CHECK(h.runtime()->cableCountInto(JackId::vco_b_cv_in) == 1u);
+  // The compiled effective edge at the sink is now the USER cable, not the self-edge: the normalized
+  // route is no longer active. (effectiveEdge == cableConnected || normalizedActive; the cable is
+  // present and the route is off, so the sink is driven by the user source.)
+  CHECK_FALSE(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  const std::vector<double> wiredOut = captureSegment(h, kLongFrames, kFeed);
+  // The user source REPLACED the self-edge: the rendered output (WET+DRY) clearly differs from the
+  // self-edge feedback. This is not merely a flag flip — the driven signal changed.
+  CHECK(maxAbsDiff(base, wiredOut) > 5e-3);
 
-  // Removing the cable (fresh default = zeroed patch) restores the route.
-  {
-    EngineHarness h;
-    CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
-    CHECK(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
-  }
+  // Remove the cable on the SAME owner: the route is restored and NO residual wire remains.
+  CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
+  CHECK(h.runtime()->cableCount() == 0u);
+  CHECK(h.runtime()->cableCountInto(JackId::vco_b_cv_in) == 0u);   // no residual user cable
+  CHECK(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  const std::vector<double> restored = captureSegment(h, kLongFrames, kFeed);
+  CHECK(maxAbsDiff(base, restored) < 1e-12);   // exactly the original default — no stray wire/feedback
 }
 
 // _________________________________________________________________________________________________
@@ -255,9 +278,15 @@ void test_supported_asymmetric_cable_difference() {
 }
 
 // _________________________________________________________________________________________________
-// (d) same state restored twice (and a positional-array re-arrangement) -> same wire set/output.
+// (d) EQUIVALENT state construction restores deterministically: the SAME wire set given the same
+// bytes (a positional re-arrangement is a genuinely different DeviceState object that still encodes
+// the same wire set, NOT a different insertion order), and the SAME state restored repeatedly on the
+// SAME owner gives the same wire set / rendered output. The state is positional, so the two fill
+// orders below are byte-identical for the wire fields — the claim is "equivalent state construction
+// is deterministically restored", not "insertion order is irrelevant".
 
 void test_restore_deterministic() {
+  // Three cables from distinct sources to distinct non-route sinks (multiCableState).
   const DeviceStateV1 s = multiCableState();
 
   // Establish active A (default) first in each engine, mirroring a host that always holds a prior
@@ -269,8 +298,9 @@ void test_restore_deterministic() {
   CHECK(verifyWires(h1.runtime(), s));
   const std::vector<double> o1 = captureAll(h1, kFrames, 0.0);
 
-  // Same bytes in a DIFFERENT array-fill order (write sink 49 before 43 before 46): the state is
-  // positional, so this is a genuinely different DeviceState object that encodes the SAME wire set.
+  // The SAME wire set written in a different array-fill order (write sink 49 before 43 before 46):
+  // because the DeviceState is positional, this yields byte-identical wire bytes to `s` — it is an
+  // equivalent state construction, not a different insertion order.
   DeviceStateV1 s2 = make_default_device_state(0x4C554E4152ULL);
   setCable(s2, JackId::joystick_x_out, JackId::drone_4_cv_mod_in);
   setCable(s2, JackId::env_follower_env_out, JackId::drone_1_cv_mod_in);
@@ -282,9 +312,20 @@ void test_restore_deterministic() {
   CHECK(verifyWires(h2.runtime(), s2));
   const std::vector<double> o2 = captureAll(h2, kFrames, 0.0);
 
-  // Same state twice, and a positional re-arrangement, both give the same wire set (verifyWires
-  // passed above) and the same rendered output — the restore is idempotent + order-independent.
+  // Same wire set twice (a positional re-arrangement is the same requested set that restores the
+  // same wire set / output) — the restore is deterministic for an equivalent state.
   CHECK(maxAbsDiff(o1, o2) < 1e-12);
+
+  // The SAME state restored repeatedly on the SAME owner gives the same wire set + output.
+  EngineHarness h3;
+  CHECK(h3.load(make_default_device_state(0x4C554E4152ULL)));
+  CHECK(h3.load(s));
+  CHECK(verifyWires(h3.runtime(), s));
+  const std::vector<double> r1 = captureSegment(h3, kFrames, 0.0);
+  CHECK(h3.load(s));                                  // same bytes again on the same owner
+  CHECK(verifyWires(h3.runtime(), s));
+  const std::vector<double> r2 = captureSegment(h3, kFrames, 0.0);
+  CHECK(maxAbsDiff(r1, r2) < 1e-12);
 }
 
 // _________________________________________________________________________________________________
@@ -306,37 +347,85 @@ void test_multi_cable_no_loss() {
 }
 
 // _________________________________________________________________________________________________
-// (f) an unsupported/deferred graph fails as a WHOLE candidate and the prior owner is preserved.
+// (f) an unsupported/deferred graph fails as a WHOLE candidate with a TYPED reject, and the prior
+// accepted owner A is preserved by the single-commit guard (state/format/plan/trace -> the exact
+// same audio, and the exact same definition object). The helper load() collapses a codec failure and
+// a factory rejection into a bare false, so we ALSO surface the typed StateApplyStatus and the
+// recorded validation result: RejectedGraph (not RejectedInvalidState) carries validation().ok==true,
+// proving the state VALIDATED and only the GRAPH failed — never an ambiguous "just false".
 
-void test_unsupported_graph_fails() {
-  // Establish the accepted owner (active A) and keep its runtime() identity.
-  EngineHarness h;
-  CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
-  const SynthRuntime* activeA = h.runtime();
-  CHECK(activeA != nullptr);
-
-  // A cable into the deferred/unsupported effector's input jack VALIDATES (landed input, correct
-  // direction, cardinality) but drags the kUnsupported effector into the compiled region ->
-  // unsupported_module. That is a WHOLE-candidate typed reject (rejected_graph), not a silent drop.
+void test_unsupported_graph_typed_reject_preserves_a() {
+  // The bad state: env_follower.env_out -> effector.cv_x_in. It VALIDATES (landed input, correct
+  // direction, cardinality) but drags the kUnsupported effector into the compiled region -> a strict
+  // plan rejects it as an unsupported_module. That is a GRAPH rejection, not a state/format one.
   DeviceStateV1 bad = make_default_device_state(0x4C554E4152ULL);
   setCable(bad, JackId::env_follower_env_out, JackId::effector_cv_x_in);
 
-  CHECK_FALSE(h.load(bad));   // rejected, NOT Accepted
+  // Establish the accepted owner (active A). NOTE the harness contract: a runtime() pointer is valid
+  // only until the next COMMIT (= the next LOAD that accepts). A REJECTED load does not commit, but a
+  // mutated build that wrongfully ACCEPTS the bad state DOES commit and would release the old
+  // definition. So we never dereference `activeA` after any load — identity is proved by pointer-VALUE
+  // comparison (safe even if the object was released) + the twin render below.
+  EngineHarness hA;
+  CHECK(hA.load(make_default_device_state(0x4C554E4152ULL)));
+  const SynthRuntime* activeA = hA.runtime();
+  CHECK(activeA != nullptr);
+  CHECK(activeA->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));   // deref BEFORE any load
 
-  // The single-commit guard kept active A: same runtime() pointer (no commit on a rejected path),
-  // and the VCO-B self-edge is still the active route.
-  CHECK(h.runtime() == activeA);
-  CHECK(h.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  // (i) TYPED reject on the real owner: RejectedGraph (a collapsed false, or an error-family bucket,
+  // would not distinguish graph-from-state). validation().ok==true proves the state VALIDATED — the
+  // factory is refusing to build the graph, not to accept the state. StateValidationResult exposes
+  // `.ok/.family/.field` (no method); for a RejectedGraph outcome `.ok==true` is the precise claim.
+  CHECK_FALSE(hA.load(bad));
+  CHECK(hA.applyStatus() == StandaloneAudioEngine::StateApplyStatus::RejectedGraph);
+  CHECK(hA.validation().ok);
+
+  // (ii) A preserved: after the rejected path the owner STILL holds the SAME definition object
+  // (pointer-value identity — no commit happened on a reject). We value-compare only; no deref.
+  CHECK(hA.runtime() == activeA);
+
+  // (iii) Pair-A comparison: the owner that ATTEMPTED (and rejected) the bad state renders the SAME
+  // audio as a twin A that NEVER attempted it — the reject left the definition/plan/adapter/state
+  // (hence the output) untouched. A fresh default (twin) also confirms the self-edge route is live,
+  // which is the "A is intact" behaviour (identity + twin coverage together).
+  EngineHarness hRef;
+  CHECK(hRef.load(make_default_device_state(0x4C554E4152ULL)));
+  CHECK(hRef.runtime()->normalizedActive(JackId::vco_b_vco_out, JackId::vco_b_cv_in));
+  const std::vector<double> aOut = captureSegment(hA, kFrames, 0.0);
+  const std::vector<double> refOut = captureSegment(hRef, kFrames, 0.0);
+  CHECK(maxAbsDiff(aOut, refOut) < 1e-12);
+
+  // (iv) An ILLEGAL state (sink is an OUTPUT jack -> cable_direction) rejects as RejectedInvalidState
+  // and keeps A. This is a VALIDATION rejection (before the factory), so it can never commit in any
+  // build; re-derive identity by re-reading the current runtime and value-comparing.
+  {
+    DeviceStateV1 illegal = make_default_device_state(0x4C554E4152ULL);
+    setCable(illegal, JackId::joystick_x_out, JackId::vco_b_vco_out);   // sink is an output
+    CHECK_FALSE(hA.load(illegal));
+    CHECK(hA.applyStatus() == StandaloneAudioEngine::StateApplyStatus::RejectedInvalidState);
+    CHECK(hA.runtime() == activeA);
+  }
+
+  // (v) An OVER-CAPACITY state (a maxCables==1 source drives two sinks -> cable_cardinality) rejects
+  // as RejectedInvalidState and keeps A.
+  {
+    DeviceStateV1 crowded = make_default_device_state(0x4C554E4152ULL);
+    setCable(crowded, JackId::env_follower_env_out, JackId::drone_1_cv_mod_in);
+    setCable(crowded, JackId::env_follower_env_out, JackId::drone_2_cv_mod_in);  // source over-subscribed
+    CHECK_FALSE(hA.load(crowded));
+    CHECK(hA.applyStatus() == StandaloneAudioEngine::StateApplyStatus::RejectedInvalidState);
+    CHECK(hA.runtime() == activeA);
+  }
 }
 
 }  // namespace
 
 int main() {
   test_no_cable_default();
-  test_override_and_restore();
+  test_override_same_owner_replaces_self_edge();
   test_supported_asymmetric_cable_difference();
   test_restore_deterministic();
   test_multi_cable_no_loss();
-  test_unsupported_graph_fails();
+  test_unsupported_graph_typed_reject_preserves_a();
   return test::finish("test_machine_cable_restore");
 }

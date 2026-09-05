@@ -63,8 +63,20 @@ class EngineHarness {
     if (!encode_device_state(state, wire.data(), wire.size(), &written)) return false;
     DeviceStateV1 decoded;
     if (!decode_device_state(wire.data(), wire.size(), &decoded)) return false;
-    return engine_.applyDeviceState(decoded, sr, blockFrames, inCh, outCh)
-        == StandaloneAudioEngine::StateApplyStatus::Accepted;
+    applyStatus_ = engine_.applyDeviceState(decoded, sr, blockFrames, inCh, outCh);
+    return applyStatus_ == StandaloneAudioEngine::StateApplyStatus::Accepted;
+  }
+
+  // The TYPED outcome of the last load() (task#80 item: a rejected candidate must be distinguished
+  // as RejectedGraph vs RejectedInvalidState vs RejectedFormat, never collapsed into a bare false).
+  // Valid only after load(); NotAttempted before any load().
+  StandaloneAudioEngine::StateApplyStatus applyStatus() const { return applyStatus_; }
+
+  // The validation detail the engine recorded on the last apply(): a RejectedGraph outcome carries
+  // ok==true here (the state VALIDATED; only the graph failed), which is exactly what distinguishes
+  // a graph rejection from a state/format rejection on the agreed entry.
+  const lunar24::core::StateValidationResult& validation() const {
+    return engine_.lastStateValidation();
   }
 
   // Render `frames` frames, appending the four real output channels. `preampV` feeds physical
@@ -118,6 +130,8 @@ class EngineHarness {
   }
 
   StandaloneAudioEngine engine_;
+  StandaloneAudioEngine::StateApplyStatus applyStatus_ =
+      StandaloneAudioEngine::StateApplyStatus::NotAttempted;
   std::vector<double> wetL_, wetR_, dryA_, dryB_;
 };
 
