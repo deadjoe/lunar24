@@ -26,31 +26,38 @@
 //   7. FULL-STATE PRESERVED        — REV-3: ONE legal state writing simultaneously an effector
 //                                  param (preserved_deferred), a program-owner param, a
 //                                  transfer-unavailable param, left/right keyboard + preset payload,
-//                                  a coherent cable+route, left/right ProgramId, and a reserved
-//                                  byte; after apply the canonical state is byte-for-byte the wire
-//                                  of that same state. A single-field-lost (e.g. effector_x dropped
-//                                  back to default) goes RED here.
-//   8. ALLOCATOR (separate TU)     — the processBlock render path allocates 0 bytes.
-//   9. INVALID STATE REJECTED      — a parameter_out_of_range candidate is rejected by BOTH
+//                                  a coherent cable+route with a SUPPORTED source (env_follower),
+//                                  left/right ProgramId, and a reserved byte; after apply the
+//                                  canonical state is byte-for-byte the wire of that same state. A
+//                                  single-field-lost (e.g. effector_x dropped back to default) goes
+//                                  RED here.
+//   8. UNSUPPORTED-SOURCE CABLE    — task#80 (GH#12 9D): the SAME validated composite but with an
+//                                  UNSUPPORTED cable source (keyboard V/OCT, machine_definition.h:176)
+//                                  is still LEGAL (validate.ok), yet the real owner returns a TYPED
+//                                  RejectedGraph (restore pulls the kUnsupported module into the graph
+//                                  -> unsupported_module -> valid()==false). Atomic: prior A preserved.
+//                                  NOT a deferred success, NOT a doc exemption, NOT RejectedInvalidState.
+//   9. ALLOCATOR (separate TU)     — the processBlock render path allocates 0 bytes.
+//  10. INVALID STATE REJECTED      — a parameter_out_of_range candidate is rejected by BOTH
 //                                  buildMachineRuntimeCandidate and applyDeviceState (the
 //                                  validator-bypass counter-example @Codex flagged in rev 2).
-//  10. RUNTIME SEED (DRY)          — the runtime voice seed is a REAL input: two seeds give
+//  11. RUNTIME SEED (DRY)          — the runtime voice seed is a REAL input: two seeds give
 //                                  DISTINCT DRY A/B traces. DRY A/B are tapped BEFORE the
 //                                  VCF->distortion chain, so they isolate the runtime-seed
 //                                  path from the (also seed-derived) configureVcfIdentity path
 //                                  (@Codex issue 2: the WET diff could come from identity
 //                                  alone, leaving a hardcoded runtime seed undetected).
-//  11. IDENTITY PROFILE CONSUMERS  — every GH#6 consumer (VCF input drive, distortion drive,
+//  12. IDENTITY PROFILE CONSUMERS  — every GH#6 consumer (VCF input drive, distortion drive,
 //                                  distortion rail, L/R path staging x calibration trim) reads
 //                                  the LIVE runtime value, and each equals the derived
 //                                  profile. A stored-but-not-applied profile goes RED
 //                                  (@Codex issue 3).
-//  12. CHURN A->B->A (RENDERS)     — REV-3: same engine round-trips valid states; canonical truth
+//  13. CHURN A->B->A (RENDERS)     — REV-3: same engine round-trips valid states; canonical truth
 //                                  byte-identical on return AND a block renders after EACH apply,
 //                                  byte-identical to a FRESH engine applying the same state (each
 //                                  apply re-constructs the definition at t=0, so no stale/dangling
 //                                  contracts-bindings pointer survives a churn apply).
-//  13. BLOCK PARTITION CONSISTENT  — REV-3: the same machine renders PER-SAMPLE EXACT == output
+//  14. BLOCK PARTITION CONSISTENT  — REV-3: the same machine renders PER-SAMPLE EXACT == output
 //                                  across all 4 channels regardless of the block partition (no
 //                                  block-coupled reset / no <tiny tolerance mask).
 
@@ -152,6 +159,46 @@ bool planEqual(const DevicePlan& a, const DevicePlan& b) {
 
 void fillDcIn(double in[1][kF], double v) {
   for (int f = 0; f < kF; ++f) in[0][f] = v;
+}
+
+// Build the ONE "every conserved family at once" composite (REV-3) with a caller-chosen cable
+// SOURCE. The sink is ALWAYS vco_a_v_oct_in (the route_keyboard_v_oct_to_vco sink), so the cable's
+// presence makes routeOverridden[that route]==1 — the mutually-consistent (cable, route) pair —
+// regardless of the source. `cableSource` is the ONLY varying field between the two cases:
+//   * env_follower_env_out  (a SUPPORTED module) -> the whole state compiles and the owner accepts it.
+//   * keyboard_v_oct_out    (kUnsupported module) -> the state still VALIDATES, but the restore pulls
+//                          the unsupported module into the strict graph and the owner REJECTS it
+//                          (typed RejectedGraph). See unsupported_source_cable_rejected() below.
+DeviceStateV1 conserved_composite(JackId cableSource) {
+  constexpr std::uint64_t kSeed = 0xB0101u;
+  DeviceStateV1 st = make_default_device_state(kSeed);
+
+  // (a) preserved_deferred_p6_p8: an effector param AND a program-owner param, both non-default
+  //     (their registry initials are 0.5 and 0.0 respectively, so a drop-back would be caught).
+  st.parameters[static_cast<std::uint32_t>(ParameterId::effector_x)] = 0.25;
+  st.parameters[static_cast<std::uint32_t>(ParameterId::program_cathedral_1_x)] = 0.25;
+  // (b) transfer_unavailable: a landed param with NO runtime consumer (still preserved byte-exact).
+  st.parameters[static_cast<std::uint32_t>(ParameterId::vco_a_pwm)] = 0.75;
+
+  // (c) left/right keyboard live + preset payload (fields a later keyboard slice consumes).
+  st.keyboardSeqCurrent.steps[2].note = 0x55u;
+  st.keyboardSeqCurrentR.steps[2].note = 0x66u;
+  st.keyboardPresets[0].reserved[0] = 0xA5u;   // the shell's reserved byte, preserved verbatim.
+  st.keyboardPresets[0].reserved[1] = 0x5Au;
+
+  // (d) A COHERENT legal cable into VCO A V/OCT. The sink is that route's own sink (vco_a_v_oct_in),
+  //     so its cable presence makes routeOverridden[route] == 1 — the only mutually-consistent
+  //     (cable, route) pair. The source is caller-chosen (see the helper doc comment).
+  const auto kVcoA = static_cast<std::uint32_t>(JackId::vco_a_v_oct_in);
+  st.inputCable[kVcoA] = 1u;
+  st.cableSource[kVcoA] = cableSource;
+  st.routeOverridden[static_cast<std::uint32_t>(RouteId::route_keyboard_v_oct_to_vco)] = 1u;
+
+  // (e) left/right ProgramId: a valid non-default program on both sides (default is cathedral.1).
+  st.leftEffector.program = ProgramId::program_cathedral_2;
+  st.rightEffector.program = ProgramId::program_magic_1;
+
+  return st;
 }
 
 // ---- 1. safe boot publishes the default state -----------------------------------------
@@ -379,52 +426,91 @@ void rejected_format_leaves_prior() {
       CHECK(outAfter[c][f] == ref[c][f]);
 }
 
-// ---- 7. full-state preservation byte-for-byte (REV-3) ---------------------------------
+// ---- 7. full-state preservation byte-for-byte (REV-3 / task#80 cable fix) ---------------
 // @Codex REV-3 item 1: the rev-2 preservation test set only a calibration trim + one keyboard seq
 // note, so a "drop a preserved field back to its registry initial" mutation (e.g. effector_x forced
 // back to 0.5) left the oracle green. This test writes ONE legal state that touches a representative
 // of EVERY conserved family at once — a preserved_deferred effector param, a preserved_deferred
 // program-owner param, a transfer-unavailable param, left/right keyboard live + preset payload, a
-// coherent legal cable+route, left/right ProgramId, and a reserved byte — then asserts the applied
-// canonical state is byte-for-byte the WIRE of that same state. Any single field lost / re-zeroed
-// (the exact "drop preserved family" mutation) goes RED here.
+// coherent legal cable+route with a SUPPORTED source (env_follower), left/right ProgramId, and a
+// reserved byte — then asserts the applied canonical state is byte-for-byte the WIRE of that same
+// state. Any single field lost / re-zeroed (the exact "drop preserved family" mutation) goes RED.
+// @Codex 103f94b3 (task#80): the original fixture used keyboard_v_oct_out as the cable source; since
+// task#80 restores user-cables into the graph, that pulls the kUnsupported keyboard module in and the
+// owner REJECTS it, so the preservation fixture now uses the supported env_follower source — the
+// keyboard-cable case is preserved as the independent negative case (8, unsupported_source_cable_rejected).
 void full_state_preserved() {
-  constexpr std::uint64_t kSeed = 0xB0101u;
-  DeviceStateV1 st = make_default_device_state(kSeed);
-
-  // (a) preserved_deferred_p6_p8: an effector param AND a program-owner param, both non-default
-  //     (their registry initials are 0.5 and 0.0 respectively, so a drop-back would be caught).
-  st.parameters[static_cast<std::uint32_t>(ParameterId::effector_x)] = 0.25;
-  st.parameters[static_cast<std::uint32_t>(ParameterId::program_cathedral_1_x)] = 0.25;
-  // (b) transfer_unavailable: a landed param with NO runtime consumer (still preserved byte-exact).
-  st.parameters[static_cast<std::uint32_t>(ParameterId::vco_a_pwm)] = 0.75;
-
-  // (c) left/right keyboard live + preset payload (fields a later keyboard slice consumes).
-  st.keyboardSeqCurrent.steps[2].note = 0x55u;
-  st.keyboardSeqCurrentR.steps[2].note = 0x66u;
-  st.keyboardPresets[0].reserved[0] = 0xA5u;   // the shell's reserved byte, preserved verbatim.
-  st.keyboardPresets[0].reserved[1] = 0x5Au;
-
-  // (d) A COHERENT legal cable+route: keyboard V/OCT -> VCO A V/OCT. The sink is that route's own
-  //     sink (vco_a_v_oct_in), so its cable presence makes routeOverridden[route0] == 1 — the only
-  //     mutually-consistent (cable, route) pair.
-  const auto kVcoA = static_cast<std::uint32_t>(JackId::vco_a_v_oct_in);
-  st.inputCable[kVcoA] = 1u;
-  st.cableSource[kVcoA] = JackId::keyboard_v_oct_out;
-  st.routeOverridden[static_cast<std::uint32_t>(RouteId::route_keyboard_v_oct_to_vco)] = 1u;
-
-  // (e) left/right ProgramId: a valid non-default program on both sides (default is cathedral.1).
-  st.leftEffector.program = ProgramId::program_cathedral_2;
-  st.rightEffector.program = ProgramId::program_magic_1;
+  // The composite with a SUPPORTED cable source: env_follower is a real compiled module, so the
+  // restored edge pulls a compilable module into the graph and the owner ACCEPTS the whole state.
+  DeviceStateV1 st = conserved_composite(JackId::env_follower_env_out);
 
   // The composite must itself be a legal state — the honest precondition that guards against an
   // accidentally-incoherent composite (fails loudly here rather than fuzzing the apply path).
   CHECK(validate_device_state(st).ok);
 
   StandaloneAudioEngine e;
-  CHECK(e.applyDeviceState(st, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
+  const StateApplyStatus applied = e.applyDeviceState(st, 48000.0, kF, 1, 4);
+  CHECK(applied == StateApplyStatus::Accepted);
+  if (applied != StateApplyStatus::Accepted)
+    return;   // null-safety: never deref a null canonicalState()/runtime() past a non-Accepted apply.
   CHECK(e.identityApplied());
   CHECK(wireEqual(*e.canonicalState(), st));   // every field preserved byte-for-byte.
+}
+
+// ---- 8. unsupported-source cable is a typed RejectedGraph (task#80) --------------------
+// task#80 makes an inert user-cable ACTIVE on restore. The SAME validated composite, but with the
+// ORIGINAL keyboard V/OCT -> VCO A V/OCT source: the state still VALIDATES (check_routes accepts a
+// cable on the route's own sink), yet restoring that edge pulls the kUnsupported keyboard module
+// (machine_definition.h:176) into the strict compiled graph -> rebuild unsupported_module -> valid()
+// == false -> factory rejected_graph -> the real owner returns a TYPED StateApplyStatus::RejectedGraph.
+//
+// This is the negative case @Codex 103f94b3 preserved from the original fixture: it proves the
+// keyboard-cable state is still LEGAL (validate.ok) but is rejected by the owner as a GRAPH problem,
+// NOT a deferred success and NOT a doc exemption. The rejection is ATOMIC: prior A is preserved
+// (running definition + canonical state unchanged, no restart), mirroring the atomic-reject contract
+// that invalid_leaves_prior_unchanged()/rejected_format_leaves_prior() pin.
+void unsupported_source_cable_rejected() {
+  constexpr std::uint64_t kSeed = 444u;
+  const DeviceStateV1 valid = make_default_device_state(kSeed);
+
+  double in[1][kF] = {{0}};
+  fillDcIn(in, 0.25);
+  const double* inp[1] = {in[0]};
+
+  // REFERENCE: a fresh engine applies the valid state and renders ONE block (the same self-advancing
+  // no-op proof shape as invalid_leaves_prior_unchanged below — the machine advances, so a second
+  // render on this engine can never be the "unchanged" proof).
+  double ref[4][kF] = {{0}};
+  double* pRef[4] = {ref[0], ref[1], ref[2], ref[3]};
+  {
+    StandaloneAudioEngine e;
+    CHECK(e.applyDeviceState(valid, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
+    CHECK(e.processBlock(inp, pRef, 1, 4, kF) == EngineStatus::Rendered);
+  }
+
+  // The engine under test: apply the valid default (A), then the composite whose cable source is the
+  // kUnsupported keyboard module.
+  StandaloneAudioEngine e;
+  CHECK(e.applyDeviceState(valid, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
+  const DeviceStateV1 bad = conserved_composite(JackId::keyboard_v_oct_out);
+  CHECK(validate_device_state(bad).ok);   // the state is LEGAL — the reject is a GRAPH, not a state, problem.
+  const StateApplyStatus applied = e.applyDeviceState(bad, 48000.0, kF, 1, 4);
+  CHECK(applied == StateApplyStatus::RejectedGraph);   // typed: NOT Accepted (deferred) and NOT RejectedInvalidState.
+  CHECK(applied != StateApplyStatus::Accepted);
+  CHECK(applied != StateApplyStatus::RejectedInvalidState);
+  CHECK(e.isReady());                                   // atomic — never goes NOT-READY.
+  CHECK(e.stateApplyStatus() == StateApplyStatus::RejectedGraph);
+  CHECK(e.lastStateValidation().ok);                    // state validated; only the graph failed.
+  CHECK(wireEqual(*e.canonicalState(), valid));         // prior canonical state preserved (A kept).
+
+  // Its FIRST render is bit-identical to the fresh reference: the rejection was a no-op on the
+  // definition AND did not advance the machine (the prior A definition is still active).
+  double outAfter[4][kF] = {{0}};
+  double* pAft[4] = {outAfter[0], outAfter[1], outAfter[2], outAfter[3]};
+  CHECK(e.processBlock(inp, pAft, 1, 4, kF) == EngineStatus::Rendered);
+  for (int c = 0; c < 4; ++c)
+    for (int f = 0; f < kF; ++f)
+      CHECK(outAfter[c][f] == ref[c][f]);               // prior definition still renders identically.
 }
 
 // ---- 9. invalid state (parameter_out_of_range) is rejected everywhere ----------------
@@ -713,6 +799,7 @@ int main() {
   invalid_leaves_prior_unchanged();
   rejected_format_leaves_prior();
   full_state_preserved();
+  unsupported_source_cable_rejected();
   invalid_state_rejected();
   runtime_seed_drives_drone();
   identity_profile_consumers();
