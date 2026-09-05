@@ -1582,6 +1582,9 @@ class SynthRuntime {
     return RuntimeOutput{wetL_, wetR_, dryA_, dryB_};
   }
 
+  // N-6 frame-structure array contract: inputs points to n RuntimeInputs frames;
+  // out points to n writable RuntimeOutput frames (one struct per frame).
+  //
   // Block render: advance `n` frames. The per-frame DSP makes this equal a
   // per-block run of the same sequence (partition-invariance, criterion ④).
   //
