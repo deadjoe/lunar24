@@ -381,6 +381,18 @@ lunar_add_test(test_machine_audio_families tests/host/test_machine_audio_familie
 target_link_libraries(test_machine_audio_families PRIVATE lunar_host)
 target_include_directories(test_machine_audio_families PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# task#80 (GH#12 9D C3): the DeviceState user-cable atomic restore into the real PatchGraph, driven
+# through the agreed entry (encode -> decode -> StandaloneAudioEngine.applyDeviceState -> processBlock)
+# and asserted blindly on the published cable bank (cableCount / countInto / cableConnected) + the
+# real output buffers. Covers @Codex 7ce76a8b (a)-(f): no-cable default == original; a user cable
+# overrides an active normalized route and unplug restores it; a supported asymmetric cable yields the
+# expected control + audio difference; same state restored twice (and a positional re-arrangement)
+# gives the same wire set/plan/output; multi-cable no loss; and an unsupported/deferred graph fails
+# as a WHOLE candidate with the prior accepted owner preserved by the single-commit guard.
+lunar_add_test(test_machine_cable_restore tests/host/test_machine_cable_restore.cpp)
+target_link_libraries(test_machine_cable_restore PRIVATE lunar_host)
+target_include_directories(test_machine_cable_restore PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.
