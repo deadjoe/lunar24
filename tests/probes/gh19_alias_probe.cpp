@@ -68,14 +68,25 @@ double& slot(DeviceStateV1& st, ParameterId id) {
 }
 
 double peakOf(const std::vector<double>& c) {
-  double m = 0.0; for (double v : c) { double a = std::fabs(v); if (a > m) m = a; } return m;
+  double m = 0.0;
+  for (double v : c) {
+    const double a = std::fabs(v);
+    if (a > m) m = a;
+  }
+  return m;
 }
 bool allFinite(const std::vector<double>& c) {
-  for (double v : c) if (!std::isfinite(v)) return false; return true;
+  for (double v : c) {
+    if (!std::isfinite(v)) return false;
+  }
+  return true;
 }
 // Zero crossings per window -> measured frequency (2 crossings per period for a triangle).
 double zcrFreq(const std::vector<double>& c, double sr) {
-  int z = 0; for (std::size_t i = 1; i < c.size(); ++i) if ((c[i-1] < 0.0) != (c[i] < 0.0)) ++z;
+  int z = 0;
+  for (std::size_t i = 1; i < c.size(); ++i) {
+    if ((c[i - 1] < 0.0) != (c[i] < 0.0)) ++z;
+  }
   return static_cast<double>(z) * sr / (2.0 * static_cast<double>(c.size()));
 }
 
