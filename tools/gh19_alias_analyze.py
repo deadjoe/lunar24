@@ -786,17 +786,34 @@ def dry_triangle_scale_contract(x):
 # deliberately-mismatched residual (the estimator-robustness test @Codex 1307b784 flagged). A duplicate
 # record whose sr or f0 label is changed (raw + actual-state expectation unchanged) MUST be rejected here.
 # ---------------------------------------------------------------------------
-def label_contract(rec, x):
+def label_contract(rec, x, mrec=None):
     """Return (ok, reason, detail). `rec` is a scenario record carrying `sr_hz`, `f0_target_hz` and the
-    probe-independent `f0_meas_hz`; `x` is the steady-state raw. Compares:
+    probe-independent `f0_meas_hz`; `x` is the steady-state raw; `mrec` (optional) is the INDEPENDENT
+    manifest row carrying `sr` and `stim` (the product-reachable target frequency). Compares:
+      (0) if mrec given, the declared sr and f0_target against the manifest expectation (EXTERNAL ground
+          truth). This breaks the self-consistency hole @Codex 1175c321 flagged: a record whose sr AND
+          f0_target (and f0_meas) are all written wrong-but-consistent would otherwise pass checks (1)/(2).
       (1) declared f0_target vs the independently-measured f0_meas_hz (within F0_LABEL_REL_TOL), and
       (2) declared sr self-consistency: the per-sample band-limited reference must reconcile under the
           declared sr (a wrong sr breaks the integer-period window / reference alignment), AND the
           fundamental re-derived in Hz under the declared sr must agree with f0_meas_hz.
-    A correct label set passes both; a corrupted sr or f0 label fails => REJECT."""
+    A correct label set passes all; a corrupted sr or f0 label fails => REJECT."""
     sr_lab = float(rec["sr_hz"])
     f0_tgt = float(rec["f0_target_hz"])
     f0_meas = float(rec["f0_meas_hz"])
+    # (0) independent manifest expectation (external ground truth; do this FIRST so a record whose
+    #     sr AND f0_meas are both rewritten consistently cannot self-pass):
+    if mrec is not None:
+        man_sr = float(mrec["sr"])
+        man_f0 = float(mrec["stim"])
+        if abs(sr_lab / man_sr - 1.0) > F0_LABEL_REL_TOL:
+            return (False, "sr-label-manifest",
+                    "declared sr %.0f != independent manifest sr %.0f (rel dev %.1f%%)"
+                    % (sr_lab, man_sr, abs(sr_lab / man_sr - 1.0) * 100.0))
+        if abs(f0_tgt / man_f0 - 1.0) > F0_LABEL_REL_TOL:
+            return (False, "f0-label-manifest",
+                    "declared f0_target %.2f Hz != independent manifest target %.2f Hz (rel dev %.2f%%)"
+                    % (f0_tgt, man_f0, abs(f0_tgt / man_f0 - 1.0) * 100.0))
     # (1) f0 label vs actual-state expectation (independent probe measurement):
     if not (f0_meas > 0):
         return (False, "f0-meas", "record has no independent f0 measurement")
@@ -963,6 +980,30 @@ def main():
                     if not sc_real["ok"]:
                         check_fails.append("G2 scale: real product peak %.4f outside derived scale %.4f"
                                            % (sc_real["peak"], sc_real["expected_peak"]))
+                    # @Codex 1175c321: the device-scale contract must apply to EVERY required clean DRY
+                    # triangle cell, not just the representative first one — so a mal-scaled raw anywhere
+                    # in the triangular matrix is caught, not only at the one cell we inspect here.
+                    scale_errs, scale_cnt = [], 0
+                    for c in cells:
+                        if not (c["produced"] and (c["path"].startswith("vco_a_tri") or
+                                                   c["path"].startswith("vco_b_tri"))):
+                            continue
+                        xr = steady(read_raw(os.path.join(args.dir, c["raw"])))
+                        if classify_samples(xr) is not None:
+                            continue
+                        scale_cnt += 1
+                        sc = dry_triangle_scale_contract(xr)
+                        if not sc["ok"]:
+                            scale_errs.append("%s: peak=%.4f dev=%.1f%%"
+                                              % (c["id"], sc["peak"], sc["dev"] * 100.0))
+                    if scale_errs:
+                        check_fails.append("G2 scale-matrix: %d of %d triangle cells fail the device-scale "
+                                           "contract" % (len(scale_errs), scale_cnt))
+                        for e in scale_errs:
+                            print("    [scale]", e)
+                    else:
+                        print("  G2 scale-matrix: %d triangle cells satisfy the device-output-scale contract"
+                              % scale_cnt)
                     # ---------------------------------------------------------------------
                     # CHECK ENTRY 2 — LABEL CONTRACT (accept/reject entry). The SAME label_contract()
                     # validates the real cell's sr/f0 declaration against the independent actual-state
@@ -971,7 +1012,8 @@ def main():
                     # replaces the estimator-robustness test ("wrong target corrected by frequency search"),
                     # which was estimator behavior, not label validation (@Codex 1307b784).
                     # ---------------------------------------------------------------------
-                    lk, lr, ld = label_contract(tri, x)
+                    mrec_tri = required.get(tri["id"])
+                    lk, lr, ld = label_contract(tri, x, mrec_tri)
                     if not lk:
                         check_fails.append("G2 label: real cell declared labels rejected [%s] %s" % (lr, ld))
                     else:
@@ -993,6 +1035,25 @@ def main():
                     else:
                         print("  G2 label-f0: wrong-f0 record (declared %.0f) -> rejected [%s] %s"
                               % (bad_f0_tgt, lr, ld))
+                    # @Codex 1175c321: the INDEPENDENT manifest cross-check must be load-bearing, not a
+                    # tautology. Build a record whose sr AND f0_target AND f0_meas are ALL rewritten to a
+                    # self-consistent wrong value (a "both fields corrupt together" attack): the Hz the raw
+                    # re-derives under the halved sr is written back into f0_target/f0_meas, so internal
+                    # checks (1)/(2) agree. Only the external manifest cross-check (0) can catch it; it MUST
+                    # be rejected. sr is hr-sensitive: halving the declared sr halves the re-derived Hz.
+                    rec_plant = dict(tri)
+                    bad_sr = sr * 0.5
+                    plant_f0 = refine_f0(x, bad_sr, float(tri["f0_meas_hz"]))
+                    rec_plant["sr_hz"] = "%g" % bad_sr
+                    rec_plant["f0_target_hz"] = "%g" % plant_f0
+                    rec_plant["f0_meas_hz"] = "%g" % plant_f0
+                    lk, lr, ld = label_contract(rec_plant, x, mrec_tri)
+                    if lk:
+                        check_fails.append("G2 label-manifest: self-consistent corrupt sr+f0 NOT caught by "
+                                           "the manifest cross-check")
+                    else:
+                        print("  G2 label-manifest: self-consistent wrong sr+f0 record -> rejected [%s] %s"
+                              % (lr, ld))
                     # matrix-wide label validation: EVERY clean triangle cell's declared sr/f0 must be
                     # validated by the SAME label_contract entry (state -> output correspondence across the
                     # matrix), so the normal check genuinely compares the expectation for all cells, not just
@@ -1007,7 +1068,7 @@ def main():
                         if classify_samples(xr) is not None:
                             continue
                         tri_cnt += 1
-                        lk, lr, ld = label_contract(c, xr)
+                        lk, lr, ld = label_contract(c, xr, required.get(c["id"]))
                         if not lk:
                             tri_errs.append("%s[%s]: %s" % (c["id"], lr, ld))
                     if tri_errs:
@@ -1032,9 +1093,12 @@ def main():
                     # CHECK ENTRY 3 — IDEAL STAND-IN REFRAME (state->output association). @Codex 1307b784:
                     # do NOT judge a real product by "output must have enough aliasing" (that would mark a
                     # future successful anti-aliasing fix as false). A clean, band-limited output is LEGAL.
-                    # Test state->output association with an asymmetric state change (a cell whose output
-                    # does not track its declared state frequency = a fixed correctly-scaled ideal) and a
-                    # skip-render (silence) — both must be RED.
+                    # @Codex 1175c321: treat the fixed-ideal stand-in EXPLICITLY as a state-association
+                    # NEGATIVE control. The state-association POSITIVE is the real triangular matrix: cells
+                    # at a normal frequency AND other legal tuning states (220/440/880, vco_a_tri + the
+                    # FM-tuned-away vco_b_tri) ALL track their declared state via label_contract (done above).
+                    # Acceptance should NOT claim to distinguish a fully-equivalent ideal implementation
+                    # (black-box output cannot); it only must catch a stand-in that IGNORES state.
                     # ---------------------------------------------------------------------
                     win = intperiod_window(x, sr, f0)
                     if win is None:
@@ -1088,8 +1152,12 @@ def main():
                                     check_fails.append("G4 state-assoc: fixed ideal ignoring state frequency "
                                                        "not rejected by label_contract")
                                 else:
-                                    print("  G4 state-assoc: fixed correct-scale ideal at 2*f0 (state says f0) "
-                                          "-> rejected [%s] %s" % (lr, ld))
+                                    print("  G4 state-assoc (negative): fixed correct-scale ideal at 2*f0 "
+                                          "(state says f0) -> rejected [%s] %s" % (lr, ld))
+                                    print("  G4 state-assoc (positive): real cells at normal + other legal "
+                                          "tuning states all track their declared state via label_contract; "
+                                          "black-box output cannot distinguish a fully-equivalent ideal, so "
+                                          "acceptance only requires a state-IGNORING stand-in to be RED.")
                         else:
                             check_fails.append("G4 clean-legal: couldn't synthesize clean stand-in")
                     # SILENCE substituting the real output must be classified silent (an invalid cell).

@@ -116,10 +116,10 @@ composite / 非线性行见「结论 ③」表；完整 60-cell 见 `report/gh19
 `python3 tools/gh19_alias_analyze.py --dir report/gh19-probe --check` → **GATE PASS（exit 0）**。**不**断言任何 −60 dB 门槛；真实缺陷只被记录。
 
 - **G1 共轭**（重合谱线对，复数和）：constructive-add（k=196&2596，`conj-sum≈proj≈0.00175`）、destructive-partial-cancel（k=196&2204，`conj-sum≈proj≈0.00148` vs `buggy-no-conj=0.00177`）→ 正确复数共轭折叠；无共轭的错和**不会**被误判为通过。
-- **G2 标签契约（用 `label_contract` 接受/拒绝入口）**：正常接受（f0_target 220.00 / sr 44100 / measured 219.818）；改 sr·0.5 → **拒绝**（声明 sr 下重导出基频 187.272 Hz ≠ 实测）；改 f0×2 → **拒绝**（440 vs 实测 219.818）；**24 个三角单元格全部通过**（标签 → 输出对应）。旧「错误 target 被频率搜索纠正」是估计器行为，非标签校验，已删除。
+- **G2 标签契约（用 `label_contract` 接受/拒绝入口）**：正常接受（f0_target 220.00 / sr 44100 / measured 219.818）；改 sr·0.5 → **拒绝**（声明 sr 下重导出基频 187.272 Hz ≠ 实测）；改 f0×2 → **拒绝**（440 vs 实测 219.818）；**自洽性负控**（sr 与 f0_target/f0_meas 一起写错，内部检查自洽）= **仅 manifest 交叉核对能抓** → 拒绝 [sr-label-manifest]；**24 个三角单元格全部通过**（标签 → 输出对应）。旧「错误 target 被频率搜索纠正」是估计器行为，非标签校验，已删除。
 - **G2 功率归一化**：正确分母(carrier)=−78.0 dB / 错误分母(信号总功率)=−40.09 dB → **必被抓**（不复用 naive vs dedup——它在无折叠重合的单元上会趋同，属假阳性）。
 - **G3 真实非替身**：**60 个**已产出单元 finite + 非静音 + 域量程；覆盖门禁对 required 单元强制 finite/非静音/scale。
-- **G4 改写（不再判「真产品必须有足够混叠」，那会把后续成功的抗混叠修复判为假）**：正确缩放干净带限 ideal 在**正确状态频率** = **合法**输出（分类为有效信号 + `label_contract` 接受）；**固定正确缩放 ideal 无视状态频率**（输出 2·f0，状态声明 f0）→ **拒绝**（f0-label，rel dev 50.00%）= 状态 → 输出关联成立；naive=−67.44 / bandlimited=−83.31 → **分离 15.87 dB ≥ SEP_MIN_DB** 验证工具分辨率。突变活在分析器（合成），生产头**零改动**、不在生产头加故障宏。
+- **G4 改写（不再判「真产品必须有足够混叠」，那会把后续成功的抗混叠修复判为假）**：正确缩放干净带限 ideal 在**正确状态频率** = **合法**输出（分类为有效信号 + `label_contract` 接受）；**固定正确缩放 ideal 无视状态频率**（输出 2·f0，状态声明 f0）→ **拒绝**（f0-label，rel dev 50.00%）= **状态关联负控**（黑盒输出无法区别完全等价实现，验收只要求「会忽略状态的替身」被抓；正控 = 真实三角矩阵在正常 + 其他合法调谐状态全部追踪其声明状态）；naive=−67.44 / bandlimited=−83.31 → **分离 15.87 dB ≥ SEP_MIN_DB** 验证工具分辨率。突变活在分析器（合成），生产头**零改动**、不在生产头加故障宏。
 - **SELF-NEG（fail-closed 检测原语）**：silence 检测、non-finite 检测、skip-render(missing-buffer) 检测、**missing-file-gate**（复用覆盖门禁的 `miss_reason` 原语，对**3 种合成缺失**——not-produced/silent、produced 但无 raw、raw 不存在——全部返回原因；对**完整记录**不误报）。门禁在缺行/未产出/无 raw/0 产出/非有限/静音时**整体 FAIL**，不做 info 行。
 
 ---
@@ -236,19 +236,19 @@ Method B 重述为**纯理论交叉核对**（见 8.2），新增 **Method BL** 
 
 ### 8.3 负控改为真实入口注入（item ②，G2/G4；@Codex 1307b784 三入口修订）
 
-原 G2（仅断言不同模型参数给不同结果）与 G4（两个合成信号）改为在**真实检查入口**注入并必须失败。@Codex 1307b784 收束到**三个检查入口**，每个都交付正常/错误输入的返回结果 + 代码定位；工具的 `--check` 即这些入口的接受/拒绝判据：
+原 G2（仅断言不同模型参数给不同结果）与 G4（两个合成信号）改为在**真实检查入口**注入并必须失败。@Codex 1307b784 收束到**三个检查入口**，每个都交付正常/错误输入的返回结果 + 代码定位；工具的 `--check` 即这些入口的接受/拒绝判据。随后按 @Codex **1175c321** 做**接线**（不重写已有诊断/尺度不变性/纯 callback）：①设备缩放契约与标签检查**应用到全部所需干净 DRY 三角格**；②标签 `sr/目标频率` 与**独立 manifest 对应项**（`sr`/`stim`）交叉核对，避免同一记录里 sr 与 f0 一起写错就自洽通过；③固定 ideal 替身**明确列为状态关联负控**，保留正常频率与另一合法调谐状态的产品输出对照，且**声称不超出**「能抓会忽略状态的替身」（黑盒无法区别完全等价实现）。
 
-- **入口 1 设备输出缩放契约（raw 侧，`dry_triangle_scale_contract`）**：期望峰值**从产品源导出**（`device_adapter.h:90` `kDeviceScaleProvisional=0.5` × `vco.h:228` 三角峰值 `1.0` = **0.5**），**不是**从 raw 重估、也**不是**拟合的 `a1_mag`。真实单元 `ok=True`（peak 0.50000，dev 0.0%）；把 **raw 乘 0.5** 喂**同一函数** `ok=False`（peak 0.25000，dev 50.0%）→ **拒绝**。原 `scale_override=2·a1_mag`（参考侧改坏）已删除——它只改坏参考，不证明 raw 缩放错误可被抓。参考尺度不再称「独立尺度」。
-- **入口 2 标签契约（接受/拒绝入口 `label_contract`）**：对**同一个**接受/拒绝入口，正常时比较**声明** `sr/f0` 与**独立实际状态预期**（探针实测 `f0_meas_hz`）。真实记录 `ok=True`（f0_target 220.00, sr 44100, measured 219.818）；**复制记录改 sr·0.5**（raw + 实际状态预期不变）→ `ok=False [sr-label]`（在声明 sr 下重导出基频 187.272 Hz ≠ 实测 219.818 Hz）**拒绝**；**复制记录改 f0×2** → `ok=False [f0-label]`（声明 440 vs 实测 219.818，rel dev 100.17%）**拒绝**。原「错误 target 被频率搜索纠正」是**估计器行为不是标签校验**，已删除。**矩阵-wide**：24 个三角单元格（含 FM 调制 vco_b_tri）全部通过 `label_contract`（标签 → 输出对应成立）。
-- **入口 3 理想替身改写（状态 → 输出关联）**：**不再**以「输出必须有足够混叠」判真产品（那会把后续成功的抗混叠修复判为假）。正确缩放干净带限理想在**正确状态频率** = 合法输出：分类为有效信号（非静音/非有限）且 `label_contract` **接受**（clean-legal）。而**固定正确缩放 ideal 无视状态频率**（输出在 `2·f0`，状态声明 `f0`）→ `label_contract` **拒绝**（f0-label，rel dev 50%）——即「返回固定正确缩放 ideal」错误被识别为红。静音替换被分类为静音。
+- **入口 1 设备输出缩放契约（raw 侧，`dry_triangle_scale_contract`）**：期望峰值**从产品源导出**（`device_adapter.h:90` `kDeviceScaleProvisional=0.5` × `vco.h:228` 三角峰值 `1.0` = **0.5**），**不是**从 raw 重估、也**不是**拟合的 `a1_mag`。真实单元 `ok=True`（peak 0.50000，dev 0.0%）；把 **raw 乘 0.5** 喂**同一函数** `ok=False`（peak 0.25000，dev 50.0%）→ **拒绝**。原 `scale_override=2·a1_mag`（参考侧改坏）已删除——它只改坏参考，不证明 raw 缩放错误可被抓。参考尺度不再称「独立尺度」。**1175c321 接线**：**不再是首个格**——`scale-matrix` 对**全部 24 个所需干净 DRY 三角格**（vco_a_tri + vco_b_tri）逐一应用该契约，全部满足（0 反对）。
+- **入口 2 标签契约（接受/拒绝入口 `label_contract`）**：对**同一个**接受/拒绝入口，正常时比较**声明** `sr/f0` 与**独立实际状态预期**（探针实测 `f0_meas_hz`）。真实记录 `ok=True`（f0_target 220.00, sr 44100, measured 219.818）；**复制记录改 sr·0.5**（raw + 实际状态预期不变）→ `ok=False [sr-label]`（在声明 sr 下重导出基频 187.272 Hz ≠ 实测 219.818 Hz）**拒绝**；**复制记录改 f0×2** → `ok=False [f0-label]`（声明 440 vs 实测 219.818，rel dev 100.17%）**拒绝**。原「错误 target 被频率搜索纠正」是**估计器行为不是标签校验**，已删除。**1175c321 接线**：`label_contract` 新增 `mrec`（独立 manifest 行，载 `sr`/`stim`），`sr/目标频率` 还有**独立 manifest 交叉核对**；**自洽错误负控**：把记录 sr×0.5 **且** `f0_target/f0_meas` 一起改成声明 sr 下重导出的 Hz（内部检查 1/2 会自洽通过），仅 manifest 核对能抓 → `ok=False [sr-label-manifest]`（声明 sr 22050 ≠ manifest sr 44100，rel dev 50%）。**矩阵-wide**：24 个三角单元格（含 FM 调制 vco_b_tri）全部通过 `label_contract`（标签 → 输出对应成立）。
+- **入口 3 理想替身改写（状态 → 输出关联）**：**不再**以「输出必须有足够混叠」判真产品（那会把后续成功的抗混叠修复判为假）。正确缩放干净带限理想在**正确状态频率** = 合法输出：分类为有效信号（非静音/非有限）且 `label_contract` **接受**（clean-legal）。而**固定正确缩放 ideal 无视状态频率**（输出在 `2·f0`，状态声明 `f0`）→ `label_contract` **拒绝**（f0-label，rel dev 50%）——即「返回固定正确缩放 ideal」错误被识别为红。**1175c321 接线（明确列负控）**：固定 ideal 替身为**状态关联负控**；**状态关联正控** = 真实三角矩阵——正常频率 + 其他合法调谐状态（220/440/880，vco_a_tri + 调离 FM 的 vco_b_tri）**全部**经 `label_contract` 追踪其声明状态（上述 label-matrix）。**声称不超出**：黑盒输出无法区别完全等价实现，验收只要求「会忽略状态的替身」被抓。静音替换被分类为静音。
 - **G2 保留**：功率归一化（正确分母带内 `pe/px` vs 错误分母信号总功率，断言不同）。
 - 保留既有：固定缺失行/缺失文件门禁（SELF-NEG 检测 3 种合成缺失均检出，无空成功）。
 
-代码定位：入口 1/2/3 均在 `tools/gh19_alias_analyze.py`——`dry_triangle_scale_contract`（约 750 行区）、`label_contract`（约 770 行区）、检查块 G2/G4（约 925 行区）；`--check` 的接受/拒绝汇总在 `check_fails`。全部是**测量工具**改动：生产 DSP/默认/路由/registry/持久化与 12 缺口门禁**零改动**。
+代码定位：入口 1/2/3 均在 `tools/gh19_alias_analyze.py`——`dry_triangle_scale_contract`（`:772`）、`label_contract(rec, x, mrec=None)`（`:789`，含 manifest 交叉核对）、检查块 G2/G4（`:964`，含 scale-matrix/label-manifest/state-assoc）；`--check` 的接受/拒绝汇总在 `check_fails`。全部是**测量工具**改动：生产 DSP/默认/路由/registry/持久化与 12 缺口门禁**零改动**。已完成 `--check` GATE PASS exit 0、`analyze` exit 0。
 
 ### 8.4 纯 DSP CPU 计时（item ③）
 
-- **`processPure`**：新增于共享 harness `tests/host/test_engine_harness.h`（**超出「tests/probes」的小扩展，需 @Codex 认可**），直接 `engine_.processBlock(in,out,kInCh,kOutCh,frames)`，**零向量分配、零输入生成、零输出插入**；块大小为 `block=512`，跨 7 条 `blkLanes` 中位数统计。
+- **`processPure`**：新增于共享 harness `tests/host/test_engine_harness.h`（超出「tests/probes」的小扩展，**@Codex 872a2102 已确认在此前授权内，无需另批**），直接 `engine_.processBlock(in,out,kInCh,kOutCh,frames)`，**零向量分配、零输入生成、零输出插入**；块大小为 `block=512`，跨 7 条 `blkLanes` 中位数统计。
 - **CPU 纯内核 = 490.17 ns/sample**（stdev 7.47，512 块，7 lanes）——测 DSP 本体，非 harness 渲染环。
 - 原 harness 渲染环成本改为 `cpu_render_loop` = 481.91 ns/sample（重命名，不再叫「callback」）。
 
