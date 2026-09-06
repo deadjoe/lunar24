@@ -76,6 +76,26 @@ INT_TOL = 3.0e-4                     # relative tolerance for treating a measure
 SEP_MIN_DB = 12.0                    # minimum naive-vs-bandlimited separation the metric must sustain
                                      # for the dynamic-range negative to count as passing.
 
+# --- INDEPENDENT device-output-scale contract for a clean DRY triangle (source-derived, NOT fitted). ---
+# The expected DRY triangle peak is derived from PRODUCT SOURCE, never re-estimated from the raw:
+#   * core/include/lunar24/core/vco.h:228 triangle `return 4.0*std::fabs(p-0.5)-1.0;` -> peak amplitude 1.0 V
+#   * core/include/lunar24/core/device_adapter.h:90 `inline constexpr double kDeviceScaleProvisional = 0.5;`
+#     (applied at line 94 `clamp_val(volts*kDeviceScaleProvisional,-1.0,1.0)`) -> DRY output scale 0.5
+#   => expected DRY triangle peak = 0.5. Both constants are software-provisional (device_adapter.h src
+#      comment: NOT a claim of hardware truth). The contract verifies the RAW's measured peak against
+#      this derived value; halving the raw (peak 0.25 -> 50% deviation) is REJECTED. This is the actual
+#      device-scale error-inject — unlike rebuilding the reference at a wrong scale, which only corrupts
+#      the reference side (the object @Codex 1307b784 flagged; that is no longer called "independent").
+K_DEVICE_SCALE_PROVISIONAL = 0.5     # device_adapter.h:90 (provisional, software-not-true-hardware)
+VCO_TRIANGLE_PEAK = 1.0              # vco.h:228 triangle peak amplitude
+DRY_TRIANGLE_EXPECTED_PEAK = K_DEVICE_SCALE_PROVISIONAL * VCO_TRIANGLE_PEAK  # = 0.5
+DRY_SCALE_TOL = 0.15                 # relative tolerance for the device-scale contract (peak must be
+                                     # within 15% of the derived 0.5; a halved raw deviates 50% -> reject)
+F0_LABEL_REL_TOL = 0.03              # relative tolerance for the f0 label contract (declared f0_target
+                                     # must correspond to the independently-measured f0_meas_hz within 3%;
+                                     # the probe's counter vs the analyzer's refine differ ~0.08% for a
+                                     # clean cell, a corrupted label differs by tens of percent)
+
 
 # --- ideal/tri/saw analytic coefficients (verified closed forms, match vco.h ideal()). ---
 def a_tri(k):
@@ -392,11 +412,13 @@ def bandlimited_tri(n, sr, f0_snap, a1_mag, arg_a1):
     return ref, ks
 
 
-def method_bl(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI, scale_override=None):
+def method_bl(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI):
     """Real per-sample product-minus-band-limited-reference reconciliation for a clean triangle cell.
     Returns the in-band aliasing figure referenced to the PRODUCT's in-band power (the authoritative
-    ratio), a full-band residual, and a per-harmonic shape-verification metric. `scale_override`
-    forces the reference scale (used by the wrong-device-scale negative control); None = measured."""
+    ratio), a full-band residual, and a per-harmonic shape-verification metric. The reference scale is
+    the MEASURED fundamental (a1_mag): the aliasing ratio is scale-invariant (a halved output gives the
+    same dBc), which is CORRECT for an alias ratio; the independent device-scale CONTRACT is a separate
+    raw-side check (dry_triangle_scale_contract), not a reference-side scale override."""
     win = intperiod_window(x, sr, f0)
     if win is None:
         return None
@@ -409,10 +431,7 @@ def method_bl(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI, scale_override=None):
     if a1_mag <= 0:
         return None
     arg_a1 = cmath.phase(a1)
-    if scale_override is None:
-        scale = a1_mag
-    else:
-        scale = scale_override
+    scale = a1_mag
     ref, ks = bandlimited_tri(n, sr, f0_snap, scale, arg_a1)
     resid = 0.0
     total = 0.0
@@ -741,6 +760,64 @@ def fmt_db(v):
     return ("%.2f" % v) if (v is not None and math.isfinite(v)) else "-"
 
 
+# ---------------------------------------------------------------------------
+# PATCH 1 (DEVICE-SCALE CONTRACT, raw-side): an independent device-output-scale check for a clean DRY
+# triangle cell. The expected peak is DERIVED from product source (see DRY_TRIANGLE_EXPECTED_PEAK =
+# device_adapter.h kDeviceScaleProvisional 0.5 x vco.h triangle peak 1.0 = 0.5), NOT re-estimated from
+# the raw and NOT the fitted a1_mag. The raw's MEASURED peak must meet it within DRY_SCALE_TOL. Feeding
+# the SAME function a halved raw (peak 0.25 -> 50% deviation) must REJECT. This is the real raw-scale
+# error-inject; building the reference at a wrong scale is only a reference-side corruption and does not
+# prove the raw's scale error is caught (@Codex 1307b784).
+# ---------------------------------------------------------------------------
+def dry_triangle_scale_contract(x):
+    """Return {ok, peak, expected_peak, dev}. ok=True iff the raw's measured peak is within DRY_SCALE_TOL
+    of the source-derived DRY_TRIANGLE_EXPECTED_PEAK (0.5)."""
+    peak = max(abs(v) for v in x) if x else 0.0
+    expected = DRY_TRIANGLE_EXPECTED_PEAK
+    dev = abs(peak - expected) / expected if expected > 0 else float("inf")
+    return {"ok": dev <= DRY_SCALE_TOL, "peak": peak, "expected_peak": expected, "dev": dev}
+
+
+# ---------------------------------------------------------------------------
+# PATCH 2 (LABEL CONTRACT, accept/reject entry): validate a scenario record's declared sr/f0 labels
+# against the INDEPENDENT actual-state expectation (the probe's measured fundamental f0_meas_hz and the
+# actual sample clock), using the SAME accept/reject entry the gate grades real cells with. The normal
+# check ACTUALLY COMPARES the declaration to these expectations — it does not merely print a
+# deliberately-mismatched residual (the estimator-robustness test @Codex 1307b784 flagged). A duplicate
+# record whose sr or f0 label is changed (raw + actual-state expectation unchanged) MUST be rejected here.
+# ---------------------------------------------------------------------------
+def label_contract(rec, x):
+    """Return (ok, reason, detail). `rec` is a scenario record carrying `sr_hz`, `f0_target_hz` and the
+    probe-independent `f0_meas_hz`; `x` is the steady-state raw. Compares:
+      (1) declared f0_target vs the independently-measured f0_meas_hz (within F0_LABEL_REL_TOL), and
+      (2) declared sr self-consistency: the per-sample band-limited reference must reconcile under the
+          declared sr (a wrong sr breaks the integer-period window / reference alignment), AND the
+          fundamental re-derived in Hz under the declared sr must agree with f0_meas_hz.
+    A correct label set passes both; a corrupted sr or f0 label fails => REJECT."""
+    sr_lab = float(rec["sr_hz"])
+    f0_tgt = float(rec["f0_target_hz"])
+    f0_meas = float(rec["f0_meas_hz"])
+    # (1) f0 label vs actual-state expectation (independent probe measurement):
+    if not (f0_meas > 0):
+        return (False, "f0-meas", "record has no independent f0 measurement")
+    if abs(f0_tgt / f0_meas - 1.0) > F0_LABEL_REL_TOL:
+        return (False, "f0-label",
+                "declared f0_target %.2f Hz vs independently-measured %.3f Hz (rel dev %.2f%%)"
+                % (f0_tgt, f0_meas, abs(f0_tgt / f0_meas - 1.0) * 100.0))
+    # (2) sr label self-consistency: reconcile the per-sample reference under the declared sr.
+    bl = method_bl(x, sr_lab, f0_meas)
+    if bl is None or not (bl["blref_inband_db"] == bl["blref_inband_db"]):
+        return (False, "sr-label", "no reconciling per-sample reference at declared sr %.0f" % sr_lab)
+    # (2b) also confirm the fundamental re-derived in Hz under the declared sr matches the measurement
+    #      (refine_f0 is sr-SENSITIVE: its Hz output scales with the reported sample clock).
+    recompute = refine_f0(x, sr_lab, f0_meas)
+    if abs(recompute / f0_meas - 1.0) > F0_LABEL_REL_TOL:
+        return (False, "sr-label",
+                "fundamental re-derived under declared sr %.0f = %.3f Hz != measured %.3f Hz"
+                % (sr_lab, recompute, f0_meas))
+    return (True, "ok", "labels validated (f0_target=%.2f, sr=%.0f, measured=%.3f)" % (f0_tgt, sr_lab, f0_meas))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="report/gh19-probe")
@@ -845,12 +922,13 @@ def main():
             if not g1_fail:
                 print("  G1 conjugation: PASS")
 
-            # G2 / G4 (REAL-ENTRY injections). Each negative injects an error at the actual check entry
-            # on a REAL produced triangle cell and asserts the gate DETECTS it — a wrong label, a wrong
-            # device scale, a wrong power denominator, or a correctly-scaled ideal / silence stand-in must
-            # NOT pass untested. This replaces the earlier model-parameter diff (which only proved "two
-            # model params differ") and the two-synthetic-signal G4. The fixed missing-row / missing-file
-            # gate above is unchanged.
+            # G2 / G4 (REAL-ENTRY injections, per @Codex 1307b784). Each negative injects an error at the
+            # ACTUAL check entry on a REAL produced triangle cell and asserts the gate DETECTS it. Three
+            # entries: (1) device-output-scale contract (raw-side), (2) label contract (sr/f0 labels vs the
+            # independent actual-state expectation), (3) ideal-stand-in REFRAME — a clean band-limited ideal
+            # is LEGAL, not a "must have enough aliasing" judgment; state->output association is tested via
+            # a fixed-correctly-scaled-ideal/state-change that must be RED. The wrong-power-denominator and
+            # silence controls are retained. The missing-row / missing-file coverage gate is unchanged.
             tri = next((c for c in cells if c["produced"] and c["path"].startswith("vco_a_tri")), None)
             if tri is None:
                 tri = next((c for c in cells if c["produced"] and c["path"].startswith("vco_b_tri")), None)
@@ -865,41 +943,82 @@ def main():
                 if good is None or not (good["blref_inband_db"] == good["blref_inband_db"]):
                     check_fails.append("G2 blref: no reconciliation figure on real triangle cell")
                 else:
-                    # (a) wrong METADATA sr label. Relabel sr and recompute the per-sample reference at the
-                    #     real samples: at a different sr the reference must STOP reconciling (blref jumps),
-                    #     so a bad sr label is detected, not silently trusted.
-                    bad_sr = sr * 0.5
-                    bad = method_bl(x, bad_sr, f0)
-                    if bad is None or not (bad["blref_inband_db"] == bad["blref_inband_db"]):
-                        check_fails.append("G2 label-sr: no figure at relabeled sr")
-                    elif abs(bad["blref_inband_db"] - good["blref_inband_db"]) < 1.0:
-                        check_fails.append("G2 label-sr: relabeled sr NOT caught (blref reconciles "
-                                           "at wrong sr too)")
+                    # ---------------------------------------------------------------------
+                    # CHECK ENTRY 1 — INDEPENDENT DEVICE-OUTPUT-SCALE contract (raw-side).
+                    # expected_peak derives from product source (device_adapter.h 0.5 x vco.h peak 1.0
+                    # = 0.5), NOT from the raw and NOT the fitted a1_mag. The real cell must satisfy it;
+                    # the SAME function fed a HALVED raw (the actual failing mode) must REJECT.
+                    # ---------------------------------------------------------------------
+                    sc_real = dry_triangle_scale_contract(x)
+                    print("  G1  device-scale contract (raw-side): real peak=%.4f expected=%.4f dev=%.1f%% %s"
+                          % (sc_real["peak"], sc_real["expected_peak"], sc_real["dev"] * 100.0,
+                             "OK" if sc_real["ok"] else "FAIL"))
+                    sc_half = dry_triangle_scale_contract([v * 0.5 for v in x])
+                    if sc_half["ok"]:
+                        check_fails.append("G2 scale: halved raw NOT caught by the device-scale contract "
+                                           "(raw-peak %.4f passes as %.4f)" % (sc_half["peak"], sc_real["peak"]))
                     else:
-                        print("  G2 label-sr: good_sr=%.2fdB relabeled_sr=%.2fdB -> caught"
-                              % (good["blref_inband_db"], bad["blref_inband_db"]))
-                    # wrong f0 label: the tool must MEASURE f0 from the signal, not trust the label, so a
-                    # perturbed f0_target must converge back to the same measurement.
-                    f0_bad = refine_f0(x, sr, float(tri["f0_target_hz"]) * 1.05)
-                    if abs(f0_bad - f0) > 0.05:
-                        check_fails.append("G2 label-f0: wrong f0_target moved the measurement "
-                                           "(label trusted, not measured)")
+                        print("  G2 scale-negative: halved raw peak=%.4f -> REJECTED (dev %.1f%%; expected=%.4f)"
+                              % (sc_half["peak"], sc_half["dev"] * 100.0, sc_half["expected_peak"]))
+                    if not sc_real["ok"]:
+                        check_fails.append("G2 scale: real product peak %.4f outside derived scale %.4f"
+                                           % (sc_real["peak"], sc_real["expected_peak"]))
+                    # ---------------------------------------------------------------------
+                    # CHECK ENTRY 2 — LABEL CONTRACT (accept/reject entry). The SAME label_contract()
+                    # validates the real cell's sr/f0 declaration against the independent actual-state
+                    # expectation (probe-measured f0_meas_hz), and a DUPLICATED record whose sr or f0 label
+                    # is changed (raw + actual-state expectation unchanged) MUST be rejected here. This
+                    # replaces the estimator-robustness test ("wrong target corrected by frequency search"),
+                    # which was estimator behavior, not label validation (@Codex 1307b784).
+                    # ---------------------------------------------------------------------
+                    lk, lr, ld = label_contract(tri, x)
+                    if not lk:
+                        check_fails.append("G2 label: real cell declared labels rejected [%s] %s" % (lr, ld))
                     else:
-                        print("  G2 label-f0: wrong target=%.2f measured=%.2f -> label not trusted"
-                              % (float(tri["f0_target_hz"]) * 1.05, f0_bad))
-                    # (b) WRONG DEVICE SCALE: rebuild the reference at a deliberately wrong scale and assert
-                    #     the in-band residual degrades massively — the scale is measured, not a free knob.
-                    bad_scale = method_bl(x, sr, f0, scale_override=2.0 * good["a1_mag"])
-                    if bad_scale is None or not (bad_scale["blref_inband_db"] == bad_scale["blref_inband_db"]):
-                        check_fails.append("G2 scale: no figure at wrong device scale")
-                    elif bad_scale["blref_inband_db"] - good["blref_inband_db"] < 3.0:
-                        check_fails.append("G2 scale: wrong device scale NOT caught (residual unchanged)")
+                        print("  G2 label-normal: %s (accepted)" % ld)
+                    # bad sr label: same raw, actual-state expectation unchanged, declared sr halved -> REJECT.
+                    rec_bad_sr = dict(tri); rec_bad_sr["sr_hz"] = "%g" % (sr * 0.5)
+                    lk, lr, ld = label_contract(rec_bad_sr, x)
+                    if lk:
+                        check_fails.append("G2 label-sr: wrong sr label NOT rejected by label_contract")
                     else:
-                        print("  G2 scale: correct=%.2fdB wrong(2x)=%.2fdB -> caught"
-                              % (good["blref_inband_db"], bad_scale["blref_inband_db"]))
+                        print("  G2 label-sr: halved-sr record -> rejected [%s] %s" % (lr, ld))
+                    # bad f0 label: same raw, actual-state expectation unchanged, declared f0_target doubled.
+                    rec_bad_f0 = dict(tri)
+                    bad_f0_tgt = float(tri["f0_target_hz"]) * 2.0
+                    rec_bad_f0["f0_target_hz"] = "%g" % bad_f0_tgt
+                    lk, lr, ld = label_contract(rec_bad_f0, x)
+                    if lk:
+                        check_fails.append("G2 label-f0: wrong f0 label NOT rejected by label_contract")
+                    else:
+                        print("  G2 label-f0: wrong-f0 record (declared %.0f) -> rejected [%s] %s"
+                              % (bad_f0_tgt, lr, ld))
+                    # matrix-wide label validation: EVERY clean triangle cell's declared sr/f0 must be
+                    # validated by the SAME label_contract entry (state -> output correspondence across the
+                    # matrix), so the normal check genuinely compares the expectation for all cells, not just
+                    # the representative one. Includes the FM-modulated vco_b_tri (its carrier still tracks
+                    # the declared f0, so label_contract accepts it).
+                    tri_errs, tri_cnt = [], 0
+                    for c in cells:
+                        if not (c["produced"] and (c["path"].startswith("vco_a_tri") or
+                                                   c["path"].startswith("vco_b_tri"))):
+                            continue
+                        xr = steady(read_raw(os.path.join(args.dir, c["raw"])))
+                        if classify_samples(xr) is not None:
+                            continue
+                        tri_cnt += 1
+                        lk, lr, ld = label_contract(c, xr)
+                        if not lk:
+                            tri_errs.append("%s[%s]: %s" % (c["id"], lr, ld))
+                    if tri_errs:
+                        check_fails.append("G2 label-matrix: %d of %d triangle cells rejected label_contract"
+                                           % (len(tri_errs), tri_cnt))
+                        for e in tri_errs:
+                            print("    [label]", e)
+                    else:
+                        print("  G2 label-matrix: %d triangle cells pass the label contract" % tri_cnt)
                     # WRONG POWER DENOMINATOR: the in-band alias figure MUST be referenced to the product's
-                    # in-band power, never the whole-signal power (a classic dBc slip). Recompute against
-                    # the wrong denominator and assert the two differ.
+                    # in-band power, never the whole-signal power (a classic dBc slip).
                     ok_denom = good["blref_inband_db"]
                     wrong_denom = (10.0 * math.log10(good["resid_inband_p2"] / good["prod_total_p2"])
                                    if (good["prod_total_p2"] > 0 and good["resid_inband_p2"] > 0)
@@ -909,28 +1028,70 @@ def main():
                     else:
                         print("  G2 power-norm: correct(inband)=%.2fdB wrong(whole-signal)=%.2fdB -> caught"
                               % (ok_denom, wrong_denom))
-                    # (c) correctly-scaled IDEAL / SILENCE stand-in substituting the real product output at
-                    #     this cell's sr/f0/peak. A clean band-limited stand-in must read CLEAN (well below
-                    #     the real aliased figure); the real product must read as ALIASED relative to it.
-                    dr = dynamic_range_control(sr, f0, max(abs(v) for v in x))
-                    if dr is None:
-                        check_fails.append("G4 stand-in: no figure at real cell sr/f0")
+                    # ---------------------------------------------------------------------
+                    # CHECK ENTRY 3 — IDEAL STAND-IN REFRAME (state->output association). @Codex 1307b784:
+                    # do NOT judge a real product by "output must have enough aliasing" (that would mark a
+                    # future successful anti-aliasing fix as false). A clean, band-limited output is LEGAL.
+                    # Test state->output association with an asymmetric state change (a cell whose output
+                    # does not track its declared state frequency = a fixed correctly-scaled ideal) and a
+                    # skip-render (silence) — both must be RED.
+                    # ---------------------------------------------------------------------
+                    win = intperiod_window(x, sr, f0)
+                    if win is None:
+                        check_fails.append("G4 stand-in: no integer-period window at real cell")
                     else:
-                        ma_real = method_a(x, sr, f0)
-                        real_harmris = (ma_real["full_db"] if ma_real else float("-inf"))
-                        print("  G4 stand-in: real=%s dB naive-ideal=%.2f bandlimited-ideal=%.2f sep=%.2f"
-                              % (fmt_db(real_harmris), dr["naive_full"], dr["bl_full"], dr["sep"]))
-                        if dr["sep"] < SEP_MIN_DB:
-                            check_fails.append("G4 stand-in: metric cannot separate aliased from clean "
+                        nwin, f0_snap, gap = win
+                        peak = max(abs(v) for v in x)
+                        # the metric must separate a NAIVE ideal (aliased) from a BAND-LIMITED ideal (clean) —
+                        # this validates the TOOL's resolving power, NOT that the real product is aliased.
+                        dr = dynamic_range_control(sr, f0, peak)
+                        if dr is None:
+                            check_fails.append("G4 metric: no dynamic-range figure at real cell sr/f0")
+                        elif dr["sep"] < SEP_MIN_DB:
+                            check_fails.append("G4 metric: metric cannot separate aliased from clean "
                                                "(sep<%.0fdB)" % SEP_MIN_DB)
-                        # the REAL product must read as clearly more aliased than a clean band-limited
-                        # stand-in — otherwise a clean stand-in is being mistaken for the real signal.
-                        elif not (real_harmris == real_harmris) or (real_harmris - dr["bl_full"]) < SEP_MIN_DB:
-                            check_fails.append("G4 stand-in: real product does not read as aliased relative "
-                                               "to the clean stand-in")
                         else:
-                            print("  G4 stand-in: real reads %0.2fdB above clean stand-in (distinguished)"
-                                  % (real_harmris - dr["bl_full"]))
+                            print("  G4 metric: naive-ideal=%.2f dB bandlimited-ideal=%.2f dB sep=%.1f dB "
+                                  "(tool resolves aliasing)" % (dr["naive_full"], dr["bl_full"], dr["sep"]))
+                        # (c1) LEGALITY: a correctly-scaled clean band-limited ideal at the cell's CORRECT
+                        #      state frequency is a VALID produced signal and is ACCEPTED by label_contract.
+                        x_clean = list(_bandlimited_tri(f0_snap, sr, nwin))
+                        if x_clean:
+                            m = max(abs(v) for v in x_clean) or 1.0
+                            x_clean = [peak * v / m for v in x_clean]  # scale to the measured cell peak
+                            rec_clean = dict(tri)
+                            rec_clean["f0_target_hz"] = "%g" % f0_snap
+                            rec_clean["f0_meas_hz"] = "%g" % f0_snap
+                            if classify_samples(x_clean) is not None:
+                                check_fails.append("G4 clean-legal: clean band-limited output misclassified "
+                                                   "as invalid")
+                            else:
+                                lk, lr, ld = label_contract(rec_clean, x_clean)
+                                if not lk:
+                                    check_fails.append("G4 clean-legal: clean band-limited output rejected "
+                                                       "by label contract [%s]" % ld)
+                                else:
+                                    print("  G4 clean-legal: correctly-scaled clean ideal at real f0 "
+                                          "classified valid + label accepted (clean output is LEGAL)")
+                            # (c2) STATE-ASSOCIATION (RED): a fixed correctly-scaled ideal that IGNORES the
+                            #      cell's state frequency (output at 2*f0_snap, state declares f0_snap) must
+                            #      be REJECTED by label_contract — the output does not track the state.
+                            x_fixed = list(_bandlimited_tri(2.0 * f0_snap, sr, nwin))
+                            if x_fixed:
+                                m = max(abs(v) for v in x_fixed) or 1.0
+                                x_fixed = [peak * v / m for v in x_fixed]
+                                rec_fixed = dict(tri)
+                                rec_fixed["f0_target_hz"] = "%g" % f0_snap   # state says f0_snap
+                                rec_fixed["f0_meas_hz"] = "%g" % (2.0 * f0_snap)  # actual output is 2*f0_snap
+                                lk, lr, ld = label_contract(rec_fixed, x_fixed)
+                                if lk:
+                                    check_fails.append("G4 state-assoc: fixed ideal ignoring state frequency "
+                                                       "not rejected by label_contract")
+                                else:
+                                    print("  G4 state-assoc: fixed correct-scale ideal at 2*f0 (state says f0) "
+                                          "-> rejected [%s] %s" % (lr, ld))
+                        else:
+                            check_fails.append("G4 clean-legal: couldn't synthesize clean stand-in")
                     # SILENCE substituting the real output must be classified silent (an invalid cell).
                     if classify_samples([0.0] * len(x)) != "silent":
                         check_fails.append("G4 stand-in: silence substitution NOT detected as silent")

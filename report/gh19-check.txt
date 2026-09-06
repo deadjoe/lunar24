@@ -63,24 +63,27 @@ MACHINE	cpu_four_output	0	finite_block_failcount	arm64	Darwin 25.6.0	Apple LLVM 
 MACHINE	cpu_four_note	clean	note	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
 MACHINE	cpu_blockpartition	0.000000	block_partition_maxdiff	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
 MACHINE	cpu_blockpartition_note	clean	note	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
-MACHINE	cpu_prep	0.051791	ms	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
-MACHINE	cpu_render_loop	481.911182	ns_per_sample_harness_render	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
-MACHINE	cpu_render_loop_var	3.101357	ns_per_sample_stdev	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
-MACHINE	cpu_render_loop_msps	2.075071	Msamples_per_s	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
-MACHINE	cpu_block_ns	490.170308	ns_per_sample_pure_processblock	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
-MACHINE	cpu_block_var	7.471730	ns_per_sample_stdev	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
-MACHINE	cpu_block_size	512	samples_per_block	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
+MACHINE	cpu_prep	0.047688	ms	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
+MACHINE	cpu_callback	475.822249	ns_per_sample	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
+MACHINE	cpu_callback_var	1.614593	ns_per_sample_stdev	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
+MACHINE	cpu_callback_msg	2.101625	Msamples_per_s	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
+MACHINE	cpu_block_ns	474.233706	ns_per_sample_block	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
+MACHINE	cpu_block_size	1048576	samples_per_block	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
 
 --- negative controls ---
   G1  constructive(same-parity add)  sr=48000  line 4880.00Hz k=196(m1)&k=2596(m1): conj-sum=0.00175 proj=0.00175 buggy-no-conj=0.00175 -> CONSTRUCTIVE add (integer-period, no leakage)
   G1  destructive(mixed-parity cancel)  sr=48000  line 4880.00Hz k=196(m1)&k=2204(m0): conj-sum=0.00148 proj=0.00148 buggy-no-conj=0.00177 -> PARTIAL-CANCEL (integer-period, no leakage)
   G1 conjugation: PASS
-  G2 label-sr: good_sr=-77.98dB relabeled_sr=-0.00dB -> caught
-  G2 label-f0: wrong target=231.00 measured=219.97 -> label not trusted
-  G2 scale: correct=-77.98dB wrong(2x)=-0.00dB -> caught
+  G1  device-scale contract (raw-side): real peak=0.5000 expected=0.5000 dev=0.0% OK
+  G2 scale-negative: halved raw peak=0.2500 -> REJECTED (dev 50.0%; expected=0.5000)
+  G2 label-normal: labels validated (f0_target=220.00, sr=44100, measured=219.818) (accepted)
+  G2 label-sr: halved-sr record -> rejected [sr-label] fundamental re-derived under declared sr 22050 = 187.272 Hz != measured 219.818 Hz
+  G2 label-f0: wrong-f0 record (declared 440) -> rejected [f0-label] declared f0_target 440.00 Hz vs independently-measured 219.818 Hz (rel dev 100.17%)
+  G2 label-matrix: 24 triangle cells pass the label contract
   G2 power-norm: correct(inband)=-77.98dB wrong(whole-signal)=-40.09dB -> caught
-  G4 stand-in: real=-67.54 dB naive-ideal=-67.44 bandlimited-ideal=-83.31 sep=15.87
-  G4 stand-in: real reads 15.77dB above clean stand-in (distinguished)
+  G4 metric: naive-ideal=-67.44 dB bandlimited-ideal=-83.31 dB sep=15.9 dB (tool resolves aliasing)
+  G4 clean-legal: correctly-scaled clean ideal at real f0 classified valid + label accepted (clean output is LEGAL)
+  G4 state-assoc: fixed correct-scale ideal at 2*f0 (state says f0) -> rejected [f0-label] declared f0_target 220.00 Hz vs independently-measured 440.000 Hz (rel dev 50.00%)
   G4 stand-in: silence substitution classified silent
   G3 real cells: 60 produced; coverage gate enforces finite/non-silent/scale on required cells.
   SELF-NEG: detected [silence/non-finite/skip-render/missing-file-gate] (fail-closed; no empty-success).
