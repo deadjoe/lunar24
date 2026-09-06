@@ -129,7 +129,7 @@ def verify(L, N, interp_tol):
             "bv": bv, "bd": bd, "err": err, "vals": vals}
 
 
-def check_prod(path, interp_tol=1e-6):
+def check_prod(path, coeff_tol=1e-9, interp_tol=2e-3, expected_L=8.0, expected_N=256):
     """Read-only check that the PRODUCTION vco.h LUT matches the analytic g here.
 
     @Codex (msg 1a8ed7f2): the previous generation-consistency was self-referential
@@ -137,6 +137,14 @@ def check_prod(path, interp_tol=1e-6):
     production vco.h, deduces its L/N config from its own symbols (kN_blamp, the
     'a / L * kN_blamp' support literal) and verifies its kLut values against the
     analytic g. A hand-copied / hand-edited production coefficient must go red.
+
+    @Codex (msg 104cbc28): TWO independent tolerances — previously a single
+    ``interp_tol`` (the piecewise-linear truncation error, ~2e-3) was reused as the
+    coefficient-consistency tolerance, so a +0.001 corner mutation still passed.
+    The grid coefficients are now checked against the 9-decimal generated value at
+    ``coeff_tol`` (=1e-9), so ANY changed production coefficient (even +1e-3) reads
+    red; the interpolation error stays as its own independent 2e-3 metric. The
+    production L/N must equal the KNOW mandate (L=8, N=256), not be read-and-accepted.
     """
     txt = open(path, encoding="utf-8").read()
 
@@ -144,6 +152,15 @@ def check_prod(path, interp_tol=1e-6):
     assert_ok(m is not None, "production kN_blamp symbol",
               "no 'kN_blamp = <int>' in %s" % path)
     N = int(m.group(1)) + 1
+    assert_ok(N == expected_N, "production kN_blamp config",
+              "kN_blamp+1=%d, mandate N=%d (L=%g) — check against the known config, "
+              "not read-and-accept" % (N, expected_N, expected_L))
+
+    mL = re.search(r'a / ([0-9.]+) \* kN_blamp', txt)
+    assert_ok(mL is not None, "production support L", "no 'a / L * kN_blamp' in %s" % path)
+    L = float(mL.group(1))
+    assert_ok(abs(L - expected_L) <= 1e-9, "production support config",
+              "L=%g, mandate L=%g" % (L, expected_L))
 
     mLut = txt.find("kLut[] = {")
     assert_ok(mLut >= 0, "production kLut declarator", "no 'kLut[] = {' in %s" % path)
@@ -151,16 +168,33 @@ def check_prod(path, interp_tol=1e-6):
     nums = [float(x) for x in re.findall(r'-?\d+\.\d+', body)]
     assert_ok(len(nums) == N, "production kLut size", "got %d want %d" % (len(nums), N))
 
-    mL = re.search(r'a / ([0-9.]+) \* kN_blamp', txt)
-    assert_ok(mL is not None, "production support L", "no 'a / L * kN_blamp' in %s" % path)
-    L = float(mL.group(1))
-
+    # coefficient consistency @ 9-decimal generation precision (coeff_tol, independent).
     grid = [i * L / (N - 1) for i in range(N)]
     vals = [g(x, L) for x in grid]
-    maxdiff = max(abs(nums[i] - vals[i]) for i in range(N))
-    assert_ok(maxdiff <= interp_tol, "production kLut matches analytic g",
-              "max|production-analytic|=%.3e tol=%.3e (a changed production coefficient reads red)"
-              % (maxdiff, interp_tol))
+    gen = [round(v, 9) for v in vals]
+    maxdiff = max(abs(nums[i] - gen[i]) for i in range(N))
+    assert_ok(maxdiff <= coeff_tol, "production kLut matches analytic g",
+              "max|production-generated|=%.3e coeff_tol=%.3e (a changed production "
+              "coefficient, e.g. corner +0.001, reads red)" % (maxdiff, coeff_tol))
+
+    # interpolate the (L,N)-grid geometric truncation error — its OWN independent
+    # 2e-3 standard, NOT used to judge coefficient correctness.
+    step = L / (N - 1)
+    def lut_lin(uv):
+        if uv <= 0:
+            return vals[0]
+        if uv >= L:
+            return 0.0
+        t = uv / L * (N - 1)
+        i = int(t)
+        fr = t - i
+        return vals[i] * (1 - fr) + vals[min(i + 1, N - 1)] * fr
+    err = 0.0
+    for k in range(0, 4001):
+        uv = L * k / 4000.0
+        err = max(err, abs(lut_lin(uv) - g(uv, L)))
+    assert_ok(err <= interp_tol, "linear-interp error <= tol (independent)",
+              "max=%.4e interp_tol=%.4e" % (err, interp_tol))
 
     # plus the corner / boundary continuity on the production config.
     corner = g(0.0, L)
@@ -168,24 +202,31 @@ def check_prod(path, interp_tol=1e-6):
               "g(0)=%.12f" % corner)
     assert_ok(abs(g(L, L)) <= 1e-12, "production boundary value->0", "g(L)=%.6e" % g(L, L))
 
-    print("PROD CHECK PASS L=%g N=%d: production kLut (%d pts) matches analytic g to %.3e"
-          % (L, N, N, maxdiff))
+    print("PROD CHECK PASS L=%g N=%d (mandated): production kLut (%d pts) matches analytic g "
+          "to %.3e (coeff_tol=%.3e), interp-err %.4e <= %.4e"
+          % (L, N, N, maxdiff, coeff_tol, err, interp_tol))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--L", type=float, default=8.0)
     ap.add_argument("--N", type=int, default=256)  # uniform samples over [0,L]
-    ap.add_argument("--interp-tol", type=float, default=2e-3)
+    ap.add_argument("--interp-tol", type=float, default=2e-3,
+                    help="independent linear-interpolation truncation error standard for the "
+                         "grid geometry (kept separate from coefficient correctness)")
+    ap.add_argument("--coeff-tol", type=float, default=1e-9,
+                    help="grid-coefficient consistency tolerance vs the 9-decimal generated "
+                         "value; a changed production coefficient (even +1e-3) reads red")
     ap.add_argument("--check-prod", type=str, default=None,
                     help="read-only check of this production vco.h's kLut / L / N against "
-                         "the analytic g (fail-exit; a changed production coefficient = red)")
+                         "the analytic g and the mandated L=8/N=256 config "
+                         "(fail-exit; a changed production coefficient = red)")
     ap.add_argument("--cpp", action="store_true")
     a = ap.parse_args()
 
     # --check-prod: validate the ACTUAL production header, then stop (no emit).
     if a.check_prod:
-        check_prod(a.check_prod, a.interp_tol)
+        check_prod(a.check_prod, a.coeff_tol, a.interp_tol)
         return
 
     L, N = a.L, a.N
