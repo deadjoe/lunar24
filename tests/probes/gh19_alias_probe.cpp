@@ -55,6 +55,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #if !defined(_WIN32)
 #include <sys/utsname.h>   // POSIX-only; MSVC has no equivalent (machine info falls back below)
@@ -172,8 +173,10 @@ std::string safeTsv(const std::string& s) { return s.empty() ? "-" : s; }
 int main(int argc, char** argv) {
   std::string out = "report/gh19-probe";
   for (int i = 1; i + 1 < argc; ++i) if (std::strcmp(argv[i], "--out") == 0) out = argv[i + 1];
-  std::string mk = "mkdir -p '" + out + "'";
-  if (std::system(mk.c_str()) != 0) { /* best effort */ }
+  // Portable recursive create — the previous "mkdir -p '" + out + "'" invokes a POSIX shell;
+  // on the MSVC CI runner that resolves to cmd.exe where `mkdir` has no -p and the literal
+  // single quotes are kept, so the output dir is never created and fopen("wb") fails below.
+  std::error_code ec; std::filesystem::create_directories(out, ec); /* best effort */
 
   std::vector<std::string> rows;
   rows.push_back("id\tpath\tsignal\tsr_hz\tf0_target_hz\tf0_meas_hz\tpeak\tchannel\twave\traw\tsamples");
