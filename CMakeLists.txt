@@ -407,7 +407,8 @@ target_include_directories(test_vco_normal_source PRIVATE "${CMAKE_CURRENT_SOURC
 # frequency/level cells and dumps the samples + metadata for the verified Python analyzer. This is
 # the measurement guard: it proves the baseline samples come from the product and not an ideal() or a
 # silent buffer. Links lunar_host (the engine lives in host/include/host) and needs tests/host for the
-# shared EngineHarness. Not a CTest — the Python analyzer owns the pass/fail gate.
+# shared EngineHarness. Registered as a CTest; the *measurement pass/fail* decision lives in the
+# Python analyzer (gh19_alias_analyze.py), which this target feeds.
 lunar_add_test(gh19_alias_probe tests/probes/gh19_alias_probe.cpp)
 target_link_libraries(gh19_alias_probe PRIVATE lunar_host)
 target_include_directories(gh19_alias_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
