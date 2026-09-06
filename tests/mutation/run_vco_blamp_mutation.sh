@@ -50,10 +50,13 @@ ANALYZE="$TREE/tools/gh19_alias_analyze.py"
 GATE="$TREE/tools/check_gh19_blamp_acceptance.py"
 BASE="$TREE/tools/gh19_naive_baseline.tsv"
 MANIFEST="$TREE/tools/gh19_manifest.tsv"
-# The passing win8 baseline = the windowed analytic BLAMP, finite support L=8, corner 8/pi^2.
-# It is identical to the integrated production vco.h; a copy is kept in build/ so the runner
-# never depends on the (potentially-dirty) working-tree file.
-PRISTINE="$ROOT/build/.vco_blamp_win8.h"
+# The passing win8 baseline = the windowed analytic BLAMP, finite support L=8, corner 8/pi^2,
+# identical to the INTEGRATED production vco.h (this is the win8 already in production).
+# @Codex (msg 1a8ed7f2): default the POSITIVE sample to the current COMMITTED vco.h, copy it
+# to the temp source tree, then mutate — do NOT depend on a gitignored build/ backup. The
+# win8 backup in build/ is byte-identical to the committed header, so the committed file is the
+# canonical, re-checkout-safe positive.
+PRISTINE="$ROOT/core/include/lunar24/core/vco.h"
 
 cmake -S "$TREE" -B "$WORK" -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1
 
@@ -115,7 +118,7 @@ echo
 echo "== [A] DISCRIMINATOR (pipeline is a real discriminator) =="
 echo "  naive is the committed REFERENCE: imp=0.00dB, so the 880 Hz >=6 dB rule must RED and the"
 echo "  220/440 'not worse' rule must stay GREEN (imp=0). This pins 'no change' as NOT a pass."
-install_tree "$ROOT/core/include/lunar24/core/vco.h"
+install_tree "$PRISTINE"
 py_splice '  if (wave_ == VcoWaveform::kTriangle) {' '  if (false && wave_ == VcoWaveform::kTriangle) {' 1
 build_probe; measure
 echo "     naive:  $(state)"
@@ -126,12 +129,21 @@ else
 fi
 
 echo "  -- polyBLAMP (paper 4-point polynomial, corner 7/30) = COUNTEREXAMPLE -> worsens every 24 cell"
-install_tree "$ROOT/build/.vco_blamp_poly.h"
+# Reproducible source: the committed builder emits the poly header from the committed vco.h
+# (@Codex 1a8ed7f2 — poly must have a re-checkout-safe generation source, not a gitignored
+# build/ copy). MUST read the PRISTINE vco.h, NOT the naive-spliced $VCO: the naive step
+# above disabled the kTriangle guard (`if (false && wave_ == ...)`), and build_poly() keeps
+# that guard, so generating from the mutated $VCO would silently produce a correction-
+# DISABLED poly == naive. Restore pristine first, then generate, then install the poly.
+install_tree "$PRISTINE"
+python3 "$TREE/tools/build_gh19_blamp_candidates.py" --variant poly
+install_tree "$TREE/build/.vco_blamp_poly.h"
 build_probe; measure
 if [ "$(gate)" = "red" ] && grep -qE 'imp=-[0-9]' "$WORK/gate.txt"; then
   echo "     polyBLAMP: $(state)   <- measured to be WORSE than naive in every cell (imp<0); a real RED."
 else
-  echo "     polyBLAMP: $(state)   <-- expected RED+imp<0 (revisit)." >&2
+  echo "     FAIL: polyBLAMP did not measure worse-than-naive (expected RED+imp<0)." >&2
+  cat "$WORK/gate.txt" >&2; exit 1
 fi
 
 echo "  -- win8 windowed analytic BLAMP (accepted kernel) = the passing candidate -> expect GREEN"

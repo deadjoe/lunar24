@@ -17,7 +17,11 @@
 # "essentially free" claim from a single mean.
 #
 # Usage:  tools/run_gh19_cpu.sh build/.vco_blamp_naive.h build/.vco_blamp_win8.h
-# The naive variant (the product's unmodified vco.h) is usually build/.vco_blamp_pristine.h.
+# Both variant vco.h files are built REPRODUCIBLY from the committed vco.h by
+# tools/build_gh19_blamp_candidates.py — run that FIRST (@Codex 1a8ed7f2):
+#   python3 tools/build_gh19_blamp_candidates.py
+# The naive variant (true triangle, corrector DISABLED) and win8 (the integrated production
+# kernel) are generated from the same committed source — never hand-kept in build/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

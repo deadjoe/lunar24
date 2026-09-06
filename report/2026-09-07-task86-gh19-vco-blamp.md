@@ -8,7 +8,7 @@
 
 ## 0. 一句话结论
 
-> **已把 win8（解析来源、Hann 窗截断、线性插值、有限支撑 L=8 的 BLAMP 近似）接入生产 VCO 的 `kTriangle`（A/B 共享）调用点**，在真实产品探针上 **24/24 GREEN**（880 Hz 8 格 `blref_full_db` 改善 **+11.43 … +12.00 dB** ≥6 dB；220/440 Hz 16 格无劣化 >0.5 dB），`blockpart_max=0`。生成器已改为**断言式 fail-exit + 生成物一致性**检查。previousA 与 block-error 负控在**最终 win8 head** 重验均为**可载重、可逆**；CPU 增量为本测量可分辨的 ~+2.3%（**非**「本质上零成本」）。polyBLAMP 仅报告实测失败（0/24，`blref_full_db` 每格劣化），不推断频率响应成因。
+> **已把 win8（解析来源、Hann 窗截断、线性插值、有限支撑 L=8 的 BLAMP 近似）接入生产 VCO 的 `kTriangle`（A/B 共享）调用点**，在真实产品探针上 **24/24 GREEN**（880 Hz 8 格 `blref_full_db` 改善 **+11.43 … +12.00 dB** ≥6 dB；220/440 Hz 16 格无劣化 >0.5 dB），`blockpart_max=0`。生成器已改为**断言式 fail-exit + 生成物一致性**检查。previousA 与 block-error 负控在**最终 win8 head** 重验均为**可载重、可逆**；CPU 增量为本测量可分辨的 ~+4.07%（**非**「本质上零成本」，naive 已改用真·禁用校正来源）。polyBLAMP 仅报告实测失败（0/24，`blref_full_db` 每格劣化），不推断频率响应成因。
 
 ---
 
@@ -71,8 +71,9 @@
 - **生成物一致性**：把 emitted LUT 数组体重新解析（限定在 `kBlampLut[] = {` … `};` 之间，避开 license/注释里的 `2.0`），逐点与解析 g 比对，max|emitted−analytic| = **4.996e-10**（≤5e-10）。
 - **负控**：`--interp-tol 1e-6`（超容）→ exit 1。
 - **常量一致性**：生成器 `kBlampLut` 与集成 vco.h 的 `kLut` **逐值相同**（256 点，max|gen−vco| = **0.0**）—— 只是名字不同，值完全一致（`kLut` 是集成文件内的名字）。
+- **生产 vco.h 只读核对（@Codex 1a8ed7f2 Gap 2）**：`gen_gh19_blamp.py --check-prod core/include/lunar24/core/vco.h` 读取**实际生产头文件**，从其自身符号（`kN_blamp = <int>`、`a / L * kN_blamp`、`kLut[] = {`…`};`）解出 L/N 配置，再把生产 kLut 逐点与解析 g 比对。**正样本**：`--check-prod` 对集成后的 vco.h = **PASS**（max|production−analytic| = **4.996e-10**，L=8 N=256）+ corner/边界断言通过；**负样本**：把任一系数改错（corner 0.810569469 → 0.780000000）→ **RED**（maxdiff = 3.057e-02 > tol，exit 1）。**已注册 CTest `gh19_blamp_lut_gate`**（跑 `--check-prod`，默认 tol 1e-6）——生产任一系数改错该项必红，CI 强制。此处不再沿用（但保留）旧的生成物一致性（自解析自己 emitted 文本）；它作为解析/插值/常量一致性的保留断言。
 
-@Codex 明示：把 corner/对称/边界/插值误差由「只打印」改为 **fail-exit 断言**，并**加生成物一致性检查**——本轮两者均已落地并**实测通过**。
+@Codex 明示：把 corner/对称/边界/插值误差由「只打印」改为 **fail-exit 断言**，并**加生成物一致性检查**——本轮两者均已落地并**实测通过**；@Codex 1a8ed7f2 再指出原「生成一致性」是**自指**的（只重解析自己产物、不读生产 vco.h、未接 CTest），本轮为其**新增了对实际生产 LUT + L/N 配置的只读核对 + CI 门禁**（上述），并**保留原有解析/插值误差断言**。
 
 ---
 
@@ -108,7 +109,7 @@
 | 88200 | **5512.5 Hz** |
 | 96000 | **6000 Hz** |
 
-- **切换行为**：一旦 `dt·8 ≥ 0.5`，校正**返回精确 0**（有界朴素三角），**不**声明该区间有任何改善；这是**显式、有界、可清单的回退**（`b9a77738` 允许），不是静默截断。
+- **切换行为**：一旦 `dt·8 ≥ 0.5`，**修正量返回精确 0**、**输出回到朴素三角**（无任何校正量叠加），**不**声明该区间有任何改善；这是**显式、有界、可清单的回退**（`b9a77738` 允许），不是静默截断。**关键措辞**：这里「输出回到朴素三角」指**修正量归零、样本仍是正常三角音**——**不是**「音频输出为 0 / 静音」（那句是 @Codex 1a8ed7f2 特别点名要避免的误读）。
 - **FM 下的性质**：`step` 随 FM 逐采样变化，故该阈值在 FM 下是**逐采样**判定的。**更根本地**：单步 BLAMP 是一个**瞬时步长的近似**——它按当前 `(phase, step)` 就地修正，对单一主导角点成立；当 `|step|` 大到支持半径跨半周期（角点相互紧邻不满足单角点几何）或 FM 深调制时，该近似退化为**仅在瞬时的步长意义下有效**，**不**宣称全带 / 多重回绕的改善。§4 的 24 格验证只在 `f0/fs < 1/16` 的信号上成立；越过阈值即回退，**不**把回退区当作更优。
 
 ---
@@ -147,16 +148,16 @@
 
 ---
 
-## 8. CPU — 重复样本统计 + 只说明「本测量能否分辨增量」（**最终 win8 head**）
+## 8. CPU — 重复样本统计 + 只说明「本测量能否分辨增量」（**最终 win8 head**，真实 naive 来源）
 
-`tools/run_gh19_cpu.sh`（同机 Apple arm64, clang 21, 纯 `processBlock` 每样本成本）：
+`tools/run_gh19_cpu.sh`（同机 Apple arm64, clang 21, 纯 `processBlock` 每样本成本）。**naive 来源已按 @Codex（1a8ed7f2）修正**：旧报告用 `build/.vco_blamp_pristine.h` 当 naive，而该文件**实为旧 33 点 LUT**（并非真正无修正），得出的增量被低估。现 naive 改为 `build/.vco_blamp_naive.h`（`build_gh19_blamp_candidates.py` 从提交的 vco.h 复制后**禁用 kTriangle 校正**生成，真·无修正）；win8 用 `build/.vco_blamp_win8.h`（同生成器从提交头重产，与生产 vco.h 仅注释/空行差异，执行路径逐字节相同）：
 
 | 变体 | 纯 processBlock (ns/样本) | ±stdev |
 |---|---|---|
-| naive（无修正） | 495.675 | ±1.960 |
-| **win8（集成后）** | 507.020 | ±0.583 |
+| naive（真，禁用校正） | 474.975 | ±1.001 |
+| **win8（集成后）** | 494.324 | ±1.707 |
 
-增量 win8−naive = **+11.35 ns/样本 ≈ +2.3%**；相对两变体 stdev（约 2.05 汇合），增量 ≈ **5.5×** → **本测量能分辨增量**。BLAMP 是一个**真实、非零、~+2.3%** 的成本增量，**不是**「本质上零成本」。（整 harness 循环列本次 win8 离散偏大 var≈16.7，故只引用纯 `processBlock` 列作为可靠口径。）数值随机器负载浮动，但方向与可分辨性稳定。
+增量 win8−naive = **+19.35 ns/样本 ≈ +4.07%**；相对两变体汇合 stdev（≈1.98），增量 ≈ **9.8×** → **本测量能分辨增量**。BLAMP 是**真实、非零、~+4.07%** 的成本增量，**不是**「本质上零成本」。（只引用纯 `processBlock` 列为可靠口径；整 harness 循环列离散更大，仅作参考。）数值随机器负载浮动，但方向与可分辨性稳定。
 
 ---
 
@@ -185,10 +186,12 @@
 ## 复现命令
 
 ```bash
-python3 tools/gen_gh19_blamp.py --L 8 --N 256 --cpp            # 断言 + 生成物一致性 (exit 0)
-bash tools/run_gh19_candidates.sh core/include/lunar24/core/vco.h    # 24 格矩阵 + 门禁
-bash tools/run_gh19_previousa_control.sh                        # previousA 负控
-bash tools/run_gh19_blockerror_control.sh                       # block-error 负控
-bash tests/mutation/run_vco_blamp_mutation.sh                    # BLAMP 载重负控
-bash tools/run_gh19_cpu.sh build/.vco_blamp_pristine.h core/include/lunar24/core/vco.h  # CPU
+python3 tools/gen_gh19_blamp.py --L 8 --N 256 --cpp                        # 断言 + 生成物一致性 (exit 0)
+python3 tools/gen_gh19_blamp.py --check-prod core/include/lunar24/core/vco.h  # 生产 LUT 只读核对 (exit 0)
+python3 tools/build_gh19_blamp_candidates.py                                # 重产 naive/win4/win8/poly 变体
+bash tools/run_gh19_candidates.sh core/include/lunar24/core/vco.h         # 24 格矩阵 + 门禁
+bash tools/run_gh19_previousa_control.sh                                   # previousA 负控
+bash tools/run_gh19_blockerror_control.sh                                  # block-error 负控
+bash tests/mutation/run_vco_blamp_mutation.sh                              # BLAMP 载重负控 (poly 在树内重产)
+bash tools/run_gh19_cpu.sh build/.vco_blamp_naive.h build/.vco_blamp_win8.h  # CPU (naive=真禁用校正)
 ```

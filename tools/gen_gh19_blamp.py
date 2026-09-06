@@ -87,36 +87,27 @@ def assert_ok(cond, label, detail):
         raise SystemExit("ASSERT FAILED: %s  (%s)" % (label, detail))
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--L", type=float, default=8.0)
-    ap.add_argument("--N", type=int, default=256)  # uniform samples over [0,L]
-    ap.add_argument("--interp-tol", type=float, default=2e-3)
-    ap.add_argument("--cpp", action="store_true")
-    a = ap.parse_args()
-    L, N = a.L, a.N
+def verify(L, N, interp_tol):
+    """Fail-exit analytic assertions for the grid (L, N). Returns the metrics dict."""
     if N < 2:
         raise SystemExit("N must be >= 2")
-
-    # Uniform grid over [0, L]; index 0 is the corner (u=0).
     grid = [i * L / (N - 1) for i in range(N)]
     vals = [g(x, L) for x in grid]
 
     corner = g(0.0, L)
     target = 8.0 / PI**2
-
-    # --- verification: fail-exit assertions (was print-only) ---
     assert_ok(abs(corner - target) <= 1e-9, "corner=8/pi^2",
               "g(0)=%.12f vs 8/pi^2=%.12f delta=%.3e" % (corner, target, abs(corner - target)))
+
     maxsym = max(abs(g(x, L) - g(-x, L)) for x in grid)
-    assert_ok(maxsym <= 1e-12, "even symmetry",
-              "max|g(x)-g(-x)|=%.3e" % maxsym)
+    assert_ok(maxsym <= 1e-12, "even symmetry", "max|g(x)-g(-x)|=%.3e" % maxsym)
+
     bv = g(L, L)
     assert_ok(abs(bv) <= 1e-12, "boundary value->0", "g(L)=%.6e" % bv)
+
     step = L / (N - 1)
     bd = abs(g(L, L) - g(L - 2 * step, L))
-    assert_ok(bd <= 1e-4, "boundary slope->0",
-              "g(L)-g(L-2*step)=%.3e" % bd)
+    assert_ok(bd <= 1e-4, "boundary slope->0", "g(L)-g(L-2*step)=%.3e" % bd)
 
     def lut_lin(uv):
         if uv <= 0:
@@ -131,8 +122,77 @@ def main():
     for k in range(0, 4001):
         uv = L * k / 4000.0
         err = max(err, abs(lut_lin(uv) - g(uv, L)))
-    assert_ok(err <= a.interp_tol, "linear-interp error <= tol",
-              "max=%.4e tol=%.4e" % (err, a.interp_tol))
+    assert_ok(err <= interp_tol, "linear-interp error <= tol",
+              "max=%.4e tol=%.4e" % (err, interp_tol))
+
+    return {"L": L, "N": N, "corner": corner, "target": target, "maxsym": maxsym,
+            "bv": bv, "bd": bd, "err": err, "vals": vals}
+
+
+def check_prod(path, interp_tol=1e-6):
+    """Read-only check that the PRODUCTION vco.h LUT matches the analytic g here.
+
+    @Codex (msg 1a8ed7f2): the previous generation-consistency was self-referential
+    (it re-parsed this tool's OWN emitted text). This instead reads the actual
+    production vco.h, deduces its L/N config from its own symbols (kN_blamp, the
+    'a / L * kN_blamp' support literal) and verifies its kLut values against the
+    analytic g. A hand-copied / hand-edited production coefficient must go red.
+    """
+    txt = open(path, encoding="utf-8").read()
+
+    m = re.search(r'kN_blamp\s*=\s*(\d+)', txt)
+    assert_ok(m is not None, "production kN_blamp symbol",
+              "no 'kN_blamp = <int>' in %s" % path)
+    N = int(m.group(1)) + 1
+
+    mLut = txt.find("kLut[] = {")
+    assert_ok(mLut >= 0, "production kLut declarator", "no 'kLut[] = {' in %s" % path)
+    body = txt[mLut + len("kLut[] = {"):txt.index("};", mLut)]
+    nums = [float(x) for x in re.findall(r'-?\d+\.\d+', body)]
+    assert_ok(len(nums) == N, "production kLut size", "got %d want %d" % (len(nums), N))
+
+    mL = re.search(r'a / ([0-9.]+) \* kN_blamp', txt)
+    assert_ok(mL is not None, "production support L", "no 'a / L * kN_blamp' in %s" % path)
+    L = float(mL.group(1))
+
+    grid = [i * L / (N - 1) for i in range(N)]
+    vals = [g(x, L) for x in grid]
+    maxdiff = max(abs(nums[i] - vals[i]) for i in range(N))
+    assert_ok(maxdiff <= interp_tol, "production kLut matches analytic g",
+              "max|production-analytic|=%.3e tol=%.3e (a changed production coefficient reads red)"
+              % (maxdiff, interp_tol))
+
+    # plus the corner / boundary continuity on the production config.
+    corner = g(0.0, L)
+    assert_ok(abs(corner - 8.0 / PI**2) <= 1e-9, "production corner=8/pi^2",
+              "g(0)=%.12f" % corner)
+    assert_ok(abs(g(L, L)) <= 1e-12, "production boundary value->0", "g(L)=%.6e" % g(L, L))
+
+    print("PROD CHECK PASS L=%g N=%d: production kLut (%d pts) matches analytic g to %.3e"
+          % (L, N, N, maxdiff))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--L", type=float, default=8.0)
+    ap.add_argument("--N", type=int, default=256)  # uniform samples over [0,L]
+    ap.add_argument("--interp-tol", type=float, default=2e-3)
+    ap.add_argument("--check-prod", type=str, default=None,
+                    help="read-only check of this production vco.h's kLut / L / N against "
+                         "the analytic g (fail-exit; a changed production coefficient = red)")
+    ap.add_argument("--cpp", action="store_true")
+    a = ap.parse_args()
+
+    # --check-prod: validate the ACTUAL production header, then stop (no emit).
+    if a.check_prod:
+        check_prod(a.check_prod, a.interp_tol)
+        return
+
+    L, N = a.L, a.N
+    m = verify(L, N, a.interp_tol)
+    corner, target, maxsym, bv, bd, err = (m["corner"], m["target"], m["maxsym"],
+                                           m["bv"], m["bd"], m["err"])
+    vals = m["vals"]
 
     print("VERIFY PASS for L=%g N=%d" % (L, N))
     print("  corner=%.9f (8/pi^2=%.9f) sym=%.3e boundary g(L)=%.3e slope-eg=%.3e interp-err=%.4e"

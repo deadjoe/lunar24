@@ -49,9 +49,10 @@ ln -s "$ROOT/third_party" "$TREE/third_party"
 DA_T="$TREE/core/include/lunar24/core/device_adapter.h"
 VCO_T="$TREE/core/include/lunar24/core/vco.h"
 
-# Install the WIN8 candidate (the stronger of the two passing finite BLAMPs) so the
-# "correct path" baseline shows the real blockpart_max=0 the guard SHOULD produce.
-PRISTINE_VCO="$ROOT/build/.vco_blamp_win8.h"
+# The "correct path" baseline = the win8 windowed analytic BLAMP already integrated into the
+# COMMITTED production vco.h (byte-identical to the old build/.vco_blamp_win8.h backup).
+# @Codex (msg 1a8ed7f2): use the committed vco.h as the positive, not a gitignored build/ copy.
+PRISTINE_VCO="$ROOT/core/include/lunar24/core/vco.h"
 
 install_vco() { cp "$PRISTINE_VCO" "$VCO_T"; }
 

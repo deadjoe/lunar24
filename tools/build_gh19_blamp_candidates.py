@@ -2,19 +2,25 @@
 # Copyright (c) 2026 Lunar 24 contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# build_gh19_blamp_candidates.py — emit the two isolated R&D candidate vco.h
-# variants for task #86 / GH#19 (windowed exact BLAMP, two support lengths).
+# build_gh19_blamp_candidates.py — reproducibly emit the isolated R&D vco.h VARIANTS
+# for task #86 / GH#19 (windowed analytic BLAMP, "解析来源、Hann窗截断、线性插值 BLAMP 近似").
 #
-# It loads the CURRENT (paper-faithful polyBLAMP) vco.h, replaces blampG with the
-# windowed exact-residual LUT (g = 8*R*w, from gen_gh19_blamp) and replaces
-# triangleBlampCorr with a MULTI-WRAP summation over ALL corners inside the support
-# (previous code took only the single nearest peak+valley). A bounded high-step
-# fallback (dt*L >= 0.5, i.e. corners of one period merge) returns the naive
-# waveform honestly — documented, not counted as improved coverage.
+# It reads the COMMITTED production vco.h (the win8 integrated BLAMP) and produces, from
+# that single source, all the variants the evidence runners need — so a clean checkout can
+# regenerate every variant without depending on a gitignored build/ backup (@Codex 1a8ed7f2):
+#   win4/win8  windowed analytic BLAMP (LUT via gen_gh19_blamp). win8 reproduces the
+#              integrated production kernel and is the reproducible positive/reference.
+#   naive      the SAME vco.h with the kTriangle correction DISABLED (pure triangle) —
+#              the true uncorrected baseline ("显式去掉修正").
+#   poly       the paper 4-point polynomial BLAMP (Esqueda §3 Table 1, corner 7/30,
+#              single nearest peak+valley, support |u|<2) — the mandated counterexample.
 #
-# Outputs (kept in build/, gitignored, never shipped):
-#   build/.vco_blamp_win4.h   (L = 4)
-#   build/.vco_blamp_win8.h   (L = 8)
+# Outputs (kept in build/, gitignored, never shipped) — all renewable from committed source:
+#   build/.vco_blamp_win4.h / win8.h / naive.h / poly.h
+#
+# Usage:
+#   tools/build_gh19_blamp_candidates.py                 # all variants
+#   tools/build_gh19_blamp_candidates.py --variant poly  # just the poly counterexample
 import os, sys, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gen_gh19_blamp as G
@@ -131,7 +137,97 @@ def build(L, N):
     return dst
 
 
+# Reproducible NAIVE: the committed vco.h with the kTriangle correction DISABLED.
+# The line below is the sole product-reachable call site of the corrector; replacing it
+# with a comment leaves the triangle rendered pure (no correction) — the true baseline
+# the ">=6 dB" rule must RED against. Keep it as a single anchored splice.
+NAIVE_ANCHOR = "    *out += triangleBlampCorr(cumPitch_, step);"
+NAIVE_REPL = "    // NAIVE: correction disabled (pure triangle) — reproducible naive baseline."
+
+
+# Reproducible POLY: the paper 4-point polynomial BLAMP (Esqueda §3 Table 1, corner 7/30).
+# It is a piecewise polynomial with support |u|<2 and a SINGLE nearest peak + nearest
+# valley (it does not multi-wrap); the scale is 2µ with µ=4*step -> mag=8*dt, because the
+# poly kernel does NOT already carry the 8 (its corner is 7/30, not 8/pi^2). This is the
+# mandated counterexample: measured to be WORSE than naive in every cell (imp<0), 0/24 RED.
+POLY_BLAMPG = """inline double Vco::blampG(double u) {
+  const double a = std::fabs(u);
+  if (!(a > 0.0)) return 7.0 / 30.0;            // u=0 (or NaN) -> corner peak.
+  if (a >= 2.0) return 0.0;                      // outside support -> exactly 0.
+  if (a < 1.0) {
+    // span [0,T] (Table 1, row 3):  s^5/40 - s^4/12 + s^2/3 - s/2 + 7/30
+    const double s = a;
+    const double s2 = s * s, s3 = s2 * s, s4 = s3 * s, s5 = s4 * s;
+    return s5 / 40.0 - s4 / 12.0 + s2 / 3.0 - s / 2.0 + 7.0 / 30.0;
+  }
+  // span [T,2T] (Table 1, row 4):  -s^5/120 + s^4/24 - s^3/12 + s^2/12 - s/24 + 1/120
+  const double s = a - 1.0;
+  const double s2 = s * s, s3 = s2 * s, s4 = s3 * s, s5 = s4 * s;
+  return -s5 / 120.0 + s4 / 24.0 - s3 / 12.0 + s2 / 12.0 - s / 24.0 + 1.0 / 120.0;
+}"""
+
+POLY_CORR = """inline double Vco::triangleBlampCorr(double cp, double step) const {
+  const double dt = std::fabs(step);         // |instHz| / sr; finite on reversal.
+  if (!(dt > 0.0) || !std::isfinite(dt)) return 0.0;  // zero/NaN step -> none.
+  // 2µ = 8*|step|: the slope-jump scale for the ±1 triangle (slope ±4 per phase).
+  const double mag = 8.0 * dt;
+  // Peak corner = integer phase (+1): a -8 slope jump, correction is NEGATIVE.
+  const double uPeak = std::fabs(cp - std::round(cp)) / dt;
+  // Valley corner = half-integer phase (-1): a +8 slope jump, correction is +.
+  const double uVal = std::fabs(cp - (std::floor(cp) + 0.5)) / dt;
+  double corr = 0.0;
+  if (uPeak < 2.0) corr -= mag * blampG(uPeak);
+  if (uVal < 2.0) corr += mag * blampG(uVal);  // both may be <2 for large/multi-wrap steps.
+  return corr;
+}"""
+
+
+def build_naive():
+    """Committed vco.h with the kTriangle correction disabled (true uncorrected baseline)."""
+    src = open(SRC, encoding="utf-8").read()
+    assert src.count(NAIVE_ANCHOR) == 1, "expect exactly 1 kTriangle corrector call"
+    out = src.replace(NAIVE_ANCHOR, NAIVE_REPL)
+    os.makedirs(OUTDIR, exist_ok=True)
+    dst = os.path.join(OUTDIR, ".vco_blamp_naive.h")
+    with open(dst, "w", encoding="utf-8") as f:
+        f.write(out)
+    o, c = out.count("{"), out.count("}")
+    assert o == c, f"brace imbalance: open={o} close={c}"
+    print(f"wrote {dst}  (kTriangle correction disabled -> pure triangle; corrector fn kept, unused)")
+    return dst
+
+
+def build_poly():
+    """Committed vco.h with blampG + corr replaced by the paper 4-point polynomial BLAMP."""
+    src = open(SRC, encoding="utf-8").read()
+    out = replace_function(src, OLD_BLAMPG_START, POLY_BLAMPG + "\n")
+    out = replace_function(out, OLD_CORR_START, POLY_CORR + "\n")
+    os.makedirs(OUTDIR, exist_ok=True)
+    dst = os.path.join(OUTDIR, ".vco_blamp_poly.h")
+    with open(dst, "w", encoding="utf-8") as f:
+        f.write(out)
+    assert "7.0 / 30.0" in out, "poly blampG corner missing"
+    assert "uPeak < 2.0" in out, "poly single-peak corr missing"
+    assert "}  // namespace lunar24::core" in out, "namespace close lost"
+    o, c = out.count("{"), out.count("}")
+    assert o == c, f"brace imbalance: open={o} close={c}"
+    print(f"wrote {dst}  (polyBLAMP kernel, corner 7/30, single nearest peak+valley, support |u|<2)")
+    return dst
+
+
 if __name__ == "__main__":
-    # Two support lengths, same window + N, per @Codex "最多比较两种支撑长度".
-    for L, N in [(4, 256), (8, 256)]:
-        build(L, N)
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--variant", action="append", choices=["win4", "win8", "naive", "poly"],
+                    default=None, help="emit only these variants (default: all)")
+    a = ap.parse_args()
+    # Default to ALL so a clean checkout reproduces every variant the runners/CPU report need.
+    want = set(a.variant) if a.variant else {"win4", "win8", "naive", "poly"}
+    if "win4" in want:
+        build(4, 256)
+    if "win8" in want:
+        build(8, 256)
+    if "naive" in want:
+        build_naive()
+    if "poly" in want:
+        build_poly()

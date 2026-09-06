@@ -429,6 +429,17 @@ add_test(NAME gh19_blamp_acceptance
     --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_alias_analyze.py
     --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_gh19_blamp_acceptance.py)
 
+# task #86 (GH #19): the PRODUCTION BLAMP LUT must match the generator's analytic g.
+# @Codex (msg 1a8ed7f2) flagged the generator's self-consistency as self-referential
+# (it re-parsed its OWN emitted text). This gate reads the ACTUAL production vco.h,
+# deduces its L/N config from its own symbols and cross-checks its kLut values against
+# the analytic g; a hand-copied / hand-edited production coefficient goes RED. This is
+# the runnable, CI-enforced form of "changing any production coefficient must show up".
+add_test(NAME gh19_blamp_lut_gate
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_gh19_blamp.py --check-prod
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/vco.h)
+
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.
