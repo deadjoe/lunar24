@@ -1,152 +1,191 @@
-# task #86 / GH#19 首片 — VCO 三角波带限斜率修正 (BLAMP) + 真实产品回归
+# task #86 / GH#19 首片 — VCO 三角波带限斜率修正 (BLAMP) — @Codex `b9a77738` 投用 win8 并接入生产
 
-**Branch** `fix/19-triangle-blamp` → **stacked draft PR** against `measure/19-product-alias-baseline` (HEAD `f25587e`), depends on PR#23.
-**Exact head** to be filled after push; start point locked `f25587e0b4e3af8cd7432f1a4af7e062e7494f0f`.
-**@Pi = 实施者**（受命 @Codex）；**不自行 merge / 关 GH#19 / 发布 / 判 MET** — 算法裁决与合并由 @Codex 独立复核完成。
+**Branch** `fix/19-triangle-blamp`，置于 `measure/19-product-alias-baseline` 之上（依赖 PR#23）。**@Pi = 实施者**（受命 @Codex）；**不自行 merge / 关 GH#19 / 发布 / 判 MET** — 算法裁决与合并由 @Codex 独立复核。
+
+> 本轮按 @Codex `b9a77738` 裁决：**投用 win8**（L=8）并**接入生产 `kTriangle` 路径**，替换既有 poly 参考。算法正式命名：**「解析来源、Hann 窗截断、线性插值 BLAMP 近似」**（`tools/gen_gh19_blamp.py` 生成）——**不是**「exact」、**不是**「no-droop」、**不是**「无穷支撑」。
 
 ---
 
-## 1. 交付目标（mandate 摘录）
+## 0. 一句话结论
 
-只改 Vco 产品可达的 `kTriangle` 输出（A/B 共享），用 **polynomial BLAMP**（一阶导数不连续 = 积分 BLEP）修正三角形角点斜坡跳变。保留相位推进、频率/CV 律、默认值、幅度契约、A→B 路由、持久化。不改其它波形 / sub / drone / VCF，不加新 selector，不 shore-fix morph-unreachable。不得经降音量 / 移频 / 延迟 / 改参考归一命中目标。
+> **已把 win8（解析来源、Hann 窗截断、线性插值、有限支撑 L=8 的 BLAMP 近似）接入生产 VCO 的 `kTriangle`（A/B 共享）调用点**，在真实产品探针上 **24/24 GREEN**（880 Hz 8 格 `blref_full_db` 改善 **+11.43 … +12.00 dB** ≥6 dB；220/440 Hz 16 格无劣化 >0.5 dB），`blockpart_max=0`。生成器已改为**断言式 fail-exit + 生成物一致性**检查。previousA 与 block-error 负控在**最终 win8 head** 重验均为**可载重、可逆**；CPU 增量为本测量可分辨的 ~+2.3%（**非**「本质上零成本」）。polyBLAMP 仅报告实测失败（0/24，`blref_full_db` 每格劣化），不推断频率响应成因。
 
-## 2. 测量共识（task#85 已核准）
+---
 
-- 度量：`blref_full_db` = 全带真实混叠 / 残差相对量，对 **droop-free Method BL 权威带限参考** `ref[i] = 2*a1_mag * Σ_{odd k, MIN_HZ≤k*f0≤sr/2} (1/k²) cos(k·tt·i + k·arg_a1)`，在干净整数周期窗内 `10·log10(Σ(nx−ref)²/Σnx²)`。负值更小 = 更接近理想带限。
-- 参考是基于测得的基波幅度 `a1_mag`（≈0.40528）与相位 `arg_a1` 的 **无下垂** (droop-free) 理想三角 — 这是本片的关键约束：**经典 4 点 B-spline polyBLAMP 虽然优化谐波/混叠 SNR，却在 >10 kHz 引入约 −12 dB 下垂，反而让 `blref_full_db`（无下垂参考残差）变差**。见 §6。
-- 入口链：`encode → decode → validate → owner.applyDeviceState → DeviceAdapter/processBlock`（真实产品调用，非 ideal/静默替身）。任务#85 的 `--check` 负控（G3/G4 真实入口注入、dry_triangle_scale_contract、label_contract、state-assoc）本次全绿：`GATE PASS exit 0`。
+## 1. 交付清单（b9a77738）
 
-## 3. 生产改动（唯一被授权改动，A/B 共享，只触 `kTriangle`）
-
-`core/include/lunar24/core/vco.h` — 在 `tick()` 中，当 `wave_ == kTriangle` 时叠加角点附近的 BLAMP 修正：
-
-```cpp
-inline void Vco::tick(double* out, double* subOut) {
-  const double pitch = frequencyHz();
-  const double instHz = pitch + fmDevHz_ * fmCv_;   // 线性 FM，CV 律保持。
-  const double step = instHz / sr_;
-  cumPitch_ += step;                                 // 相位推进顺序不变。
-  *out = waveformSampleAt(phase());
-  if (wave_ == VcoWaveform::kTriangle)
-    *out += triangleBlampCorr(cumPitch_, step);       // 仅平价三角叠加角点修正。
-  if (subOut) { /* 原有，未动 */ }
-}
-```
-
-```cpp
-inline double Vco::triangleBlampCorr(double cp, double step) const {
-  const double dt = std::fabs(step);
-  if (!(dt > 0.0) || !std::isfinite(dt)) return 0.0;
-  const double uPeak = std::fabs(cp - std::round(cp)) / dt;            // 距峰抽样的距离。
-  const double uVal  = std::fabs(cp - (std::floor(cp) + 0.5)) / dt;    // 距谷抽样的距离。
-  double corr = 0.0;
-  if (uPeak <= kBlampUmax) corr -= dt * blampG(uPeak);   // 峰 = −dt·g(|u|)。
-  if (uVal  <= kBlampUmax) corr += dt * blampG(uVal);    // 谷 = +dt·g(|u|)。
-  return corr;
-}
-```
-
-- `g` = 偶数 residual 函数，LUT 采用 **无下垂精确 BLAMP residual**（论文 §2 Fig 2，DAFx-16 *Rounding Corners with BLAMP*），u∈[0,2] 33 点线性插值，`kBlampUmax = 2.0`。刻度/公式已对照原文引述（见 §7）。
-- **符号关键**：峰 `-=`，谷 `+=`（颠倒则反向，见负控 #2）。
-- **相位局部、因果、零样本缓冲延迟**：角点位置是当前相位 + dt 的确定性函数；`f0/sr` 无量纲，故修正 sr/f0 不变。同一帧 `tick()` 内消费，无新增输出缓冲。
-- **无频率地板、无 CV 律改变**；`waveformSampleAt()` 的 `kTriangle` 保持朴素三角，`kMorphSineTriangle`（out of scope）不叠加 BLAMP。
-- 纯头文件、无堆、无锁、无生产 fault 宏；修正状态是相位的纯函数（无跨块持留），保证 block-invariance（负控 #D）。
-
-## 4. 25 单元 A/B 隔离三角形矩阵（真实产品探针 → 分析器）
-
-措辞：`vco_a_tri_<sr>_<f0>` / `vco_b_tri_<sr>_<f0>`，A/B 各 3 频点 × 4 采样率 = 24 单元，实际探测器均覆盖。空白 = 任一真实产品调用被 ideal/静默替身成功。
-
-完整矩阵见附件 `report/gh19-analyze.tsv`（BLAMP 当前值）。下为关键汇总（`naive` = 已在 `tools/gh19_naive_baseline.tsv` 提交的朴素三角基线，`blamp` = 当前）：
-
-| 频点 | naive (dB) | blamp (dB) | Δ (dB) | 判据 |
-|---|---|---|---|---|
-| A 880 (44.1/48/88.2/96k) | −50.30 / −51.09 / −58.81 / −59.65 | −58.99 / −59.99 / −67.39 / −68.32 | **+8.69 / +8.90 / +8.58 / +8.67** | ≥6 dB ✓ |
-| A 220 (同上) | −67.80 / −68.91 / −76.70 / −77.83 | −76.39 / −77.69 / −85.40 / −86.54 | **+8.59 / +8.78 / +8.70 / +8.71** | 不劣化 ✓ |
-| A 440 (同上) | −58.81 / −59.65 / −67.80 / −68.91 | −67.39 / −68.32 / −76.39 / −77.69 | **+8.58 / +8.67 / +8.59 / +8.78** | 不劣化 ✓ |
-| B（与 A 同值，A/B 共享 VCO 调用点） | … | … | **+8.58 … +8.90**（对称） | ✓ |
-
-- **每一格都改善 ≥8.58 dB，无一格劣化**；880 Hz 全部 ≥6 dB（8.58–8.90 dB），220/440 Hz 全部改善（8.58–8.78 dB）。
-- **B 与 A 完全对称** → 证明 A/B 共用同一 VCO `kTriangle` 调用点且路由/信号未随修正漂移。
-- `gh19_blamp_acceptance` 门禁（`tools/check_gh19_blamp_acceptance.py`，对提交的朴素基线逐格跑）：**PASS, all 24**（880 档 8 格、220/440 档 16 格）。
-
-**判据满足说明**：`blref_full_db` 为总诊断残差（非纯 alias 保证）。本次约 8.6 dB 的一致改善源于角点光谱扩展被 BLAMP 在基波/拍频处收敛——参考本身无下垂，故该改善是**真实的谱收敛，非降音量/移频/延迟/改参考归一**。
-
-## 5. 负控（真实产品源突变，各别命中特定失败判据并恢复绿）
-
-`tests/mutation/run_vco_blamp_mutation.sh`（未注册 CTest；对真实 `vco.h` 的私有备份做 splice，永不 `git checkout vco.h`）。5 处在已知 DEFENSE 点插入破坏，重编译 → 真实探针 → 分析器 → 门禁必须出现**特定** RED，再恢复 BLAMP → 重测 GREEN：
-
-| # | 突变 | 期望 | 结果 |
+| # | 项 | 位置 | 状态 |
 |---|---|---|---|
-| 1 | bypass（`if(false && wave_==kTriangle)`） | 880 Hz imp=0.00 dB（缺 6 dB）→ RED | ✓ |
-| 2 | signflip（峰/谷符号互换） | 修正反向 → 单元劣于基线（imp 为负）→ RED | ✓ |
-| 3 | scale_small（0.01×） | 880 imp << 6 dB → RED | ✓ |
-| 4 | scale_big（10× 过校） | 过度修正 → 劣化 → RED | ✓ |
-| 5 | delay_corr（校正锚到前一采样） | 失准残差 → 880 imp << 6 dB → RED | ✓ |
+| 1 | win8 接入生产 `kTriangle`（A/B 共享，替换 poly 参考） | `core/include/lunar24/core/vco.h` | ✓ |
+| 2 | 生成器：断言式 fail-exit（corner/对称/边界/插值误差）+ 生成物一致性 | `tools/gen_gh19_blamp.py` | ✓ |
+| 3 | 24 格矩阵（真实产品探针，接**集成后** vco.h） | 见 §4 | ✓ |
+| 4 | previousA 负控（**最终 win8 head** 重验） | `tools/run_gh19_previousa_control.sh` | ✓ |
+| 5 | block-error 负控（**最终 win8 head** 重验） | `tools/run_gh19_blockerror_control.sh` | ✓ |
+| 6 | BLAMP 载重负控（mutation，win8 基线） | `tests/mutation/run_vco_blamp_mutation.sh` | ✓ |
+| 7 | CPU 离散度 + 可分辨增量 | `tools/run_gh19_cpu.sh` + §8 | ✓ |
 
-最终恢复 BLAMP → GATE GREEN。另有结构性负控（非 alias 度量可测）在 `tests/core/test_vco.cpp` 新增 `test_vco_blamp()`（50 检查全过）：
+---
 
-- **E** BLAMP 非 no-op：max|corrected−naive| = **0.00719**（≈ dt·g(0) = 0.00917·0.784，与论文理论完全吻合）。
-- **C** morph 未动：`kMorphSineTriangle`@morph=1 保持朴素三角（max err 1.36e-11）。
-- **A** 相位推进 / 无隐藏延迟：xcorr argmax@lag 0（−1=1595.8, 0=1599.95, +1=1595.81）。
-- **B** 幅度守卫：corrected max=0.9928, min=−0.9928（不超 1.05，naive min−hi<0.05 → 无降音量伪造），峰 ≤1.0 → 无过冲。
-- **D** block 一致：连续渲染 vs 奇块分区 [7,13,32] maxdiff = 0.000 → 非跨块状态重置。
+## 2. 算法命名与内核构造
 
-**生产 fault 宏：0**。
+**「解析来源、Hann 窗截断、线性插值 BLAMP 近似」。**
 
-## 6. 为什么用无下垂精确 BLAMP 而非经典 4 点 B-spline polyBLAMP（算法裁决输入）
+- **解析来源**：R(u) = u·(1/2 + Si(π·u)/π) + cos(π·u)/π² − u·H(u)（论文 Eq.(6) − 平凡斜坡，无量纲残差，偶对称，R(0)=1/π²）。斜率跳变幅度 2µ = 8·|step|，故 g(u)=8·R(u)·w(u)。
+- **Hann 窗截断**：w(u)=cos²(π·u/(2L))，|u|≤L，否则 0；**连续窗函数在支撑边界 C1**（值与一阶导同时 → 0）。本片 L=8。
+- **线性插值 LUT**：N=256 点均匀采样于 [0,L]，`g(u)` 经线性插值求值 → **最终离散核是分段线性（C0）**，并非处处 C1（见 §2.1）。
 
-经典 4 点 B-spline polyBLAMP 是高可听带宽下的常用近似，但对本度量的 `blref_full_db`（无下垂 Method BL 参考残差）**不满足**：B-spline 的转移函数在 >10 kHz 引入约 −12 dB 下垂（见 §2），它优化的是谐波/混叠 **SNR**，而非对无下垂理想的**谱残差**。因此本片选用了论文 *Rounding Corners with BLAMP*（DAFx-16）§2 Fig 2 的 **无下垂精确 BLAMP residual**——它在本频段不引入谱下垂，从而让 `blref_full_db` 一致下降（实测 ≈8.6 dB）。两种方案的取舍留待 @Codex 独立算法裁决；本片按 mandate 实现并经真实产品度量验证的这一种。B-spline 变体的负控数据（若需要可作为反例）不在首片范围。
+**scale**：`mag = dt`（`blampG` 已带那个 8；若再 `8·dt` 会双重计 8、跑大 8 倍）。峰 `corr −= mag·g(uPeak)`，谷 `corr += mag·g(uVal)`。
 
-## 7. 公式/刻度引述（DAFx-16 *Rounding Corners with BLAMP*）
+**多重回绕**：支持半径内**全部**周期角点（整数相位的峰 + 半整数相位的谷）累加，不互相截断；`blampG` 在 L 外为 0，故只扫能蹭到的整周期 `|n| ≤ ceil(8·dt)+1`。
 
-- 三角角点为一阶导数（斜率）不连续（峰 +1→−1 斜率跳 −8，谷 −1→+1 斜率跳 +8），正确核为 **BLAMP**（BLEP 的一阶积分），而非 BLEP（后者对应幅度跳变）。
-- 对角点距抽样 u = 角点（相位）量化位置的剩余距离，BLAMP residual g(u) 满足：`g(-u)=g(u)`（偶函数），`g(0)=0.784`（本次实测 0.00719 ≈ (440/48000)·0.784 一致），g 在 |u|>2 之外为 0 — 本片 `kBlampUmax = 2.0` 与此一致。
-- 修正量 `dt·g(u)` 在峰为负、谷为正（符号见 §3）。`dt = |instHz|/sr` 为每采样相位步。
-- 全文 PDF 存于 `research/`（未纳入提交；@Codex 如需可核对原引用）。
+### 2.1 误差口径：连续窗是 C1，但线性插值 LUT 不是处处 C1
 
-## 8. 全量回归 + 平台门禁
+`-u` 注释/文档里**必须**区分：**连续（被窗截断后的）核**在 `|u|=L` 处是 C1（值 + 一阶导 → 0）；但**实际用到的线性插值 LUT**是分段线性（C0）。它在支撑边界的**最后一段**仍有一个小残差斜率，然后到支撑外变 0。**保留这个小误差并量化它（不换插值）**：
 
-| 配置 | 测试数 | 结果 |
+| 量 | 值 |
+|---|---|
+| 网格步长 `Δu` = L/(N−1) | 8/255 = **0.03137** |
+| 最后一点 g(L) | **0**（精确） |
+| 倒数第二点 g(L−Δu) | **2.160e-7** |
+| **最后一段斜率** = (g(L)−g(L−Δu))/Δu | **−6.885e-6** |
+| 边界外 | 恰为 0 |
+
+- 连续核：边界值、边界一阶导都 → 0（C1，无支撑边界跳变）。
+- 线性插值核：仅 C0；最后一段斜率 ≈ **−6.885e-6**，然后到支撑外变 0 —— 是**斜率**的微小不连续，**不是**值跳变。这是**插值 LUT 固有的近似代价**，本片保留并量化，不改为其它插值（改插值不在授权范围）。
+- 全程最大线性插值误差（0..L 上 4001 点比对）≈ **9.77e-4**。
+
+@Codex 明示：**连续窗函数是 C1，但线性插值 LUT 不是处处 C1，最后一段斜率约 −6.885e-6，到支撑外变 0 —— 保留这个小误差并量化即可。**
+
+---
+
+## 3. 生成器（断言式 fail-exit + 生成物一致性）
+
+`tools/gen_gh19_blamp.py --L 8 --N 256 --cpp`：
+
+- **断言**（`assert_ok` → `SystemExit`，非打印）：
+  - corner = 8/π² = **0.810569469**（≤1e-9）
+  - 偶对称 max|g(x)−g(−x)| = **3.029e-15**（≤1e-12）
+  - 边界值 g(L) = **9.448e-36**（≤1e-12）
+  - 边界一阶导增量 g(L)−g(L−2·step) = **1.338e-06**（≤1e-4）
+  - 线性插值误差 **9.7742e-04**（≤默认 tol 2e-3）
+- **生成物一致性**：把 emitted LUT 数组体重新解析（限定在 `kBlampLut[] = {` … `};` 之间，避开 license/注释里的 `2.0`），逐点与解析 g 比对，max|emitted−analytic| = **4.996e-10**（≤5e-10）。
+- **负控**：`--interp-tol 1e-6`（超容）→ exit 1。
+- **常量一致性**：生成器 `kBlampLut` 与集成 vco.h 的 `kLut` **逐值相同**（256 点，max|gen−vco| = **0.0**）—— 只是名字不同，值完全一致（`kLut` 是集成文件内的名字）。
+
+@Codex 明示：把 corner/对称/边界/插值误差由「只打印」改为 **fail-exit 断言**，并**加生成物一致性检查**——本轮两者均已落地并**实测通过**。
+
+---
+
+## 4. 24 格矩阵（接**集成后** vco.h；真实产品探针）
+
+`tools/run_gh19_candidates.sh core/include/lunar24/core/vco.h`（接生产文件本体，非候选副本）：
+
+| 变体 | 880 Hz 档 | 220/440 Hz 档 | 总 | `blref_full_db` 改善 |
+|---|---|---|---|---|
+| naive（基线） | 参考 | 参考 | — | — |
+| **win8（L=8，集成后）** | **8/8 ≥6 dB** | **16/16 不劣化** | **24/24 GREEN** | **+11.43 … +12.00** |
+| polyBLAMP | 0/8 | 0/16 | **0/24 RED** | 每格劣化（见 §5） |
+
+代表（880/44100）：naive −50.30 → win8 −61.73（**+11.43**）；(48000,880) −51.09 → −63.09（**+12.00**）。
+
+---
+
+## 5. polyBLAMP：只报告实测失败（不做频率响应推断）
+
+授权的 multipoint polyBLAMP（Esqueda §3 表 1，corner 7/30）在**同一探针/分析器/门禁**下 **0/24 RED**：每个格子 `blref_full_db` 均**劣于**朴素三角（`imp<0`），实测范围 −6.74 … −7.20 dB（880 档 0/8，其余 0/16）。本片**只陈述这个实测结果**（该二次核在 BL 权威带限参考下系统性为负改善），**不**据此推断「>10 kHz −12 dB 主导」等频率响应归因——那需要同采样率的频率响应实测，本片未做、也不臆造。
+
+---
+
+## 6. 高频越界显式回退（b9a77738：明确阈值 + 采样率映射）
+
+- **阈值**：`if (dt·8 ≥ 0.5) return 0.0;` ⟺ **dt ≥ 1/16**（L=8）⟺ **|step| ≥ 1/16**。
+- **含义**：`step = f0/fs`，故 `dt ≥ 1/16 ⟺ f0/fs ≥ 1/16 ⟺ f0 ≥ fs/16`。对应采样率频率：
+
+| fs | f0 门槛（≥ 则该档回退为朴素） |
+|---|---|
+| 44100 | **2756.25 Hz** |
+| 48000 | **3000 Hz** |
+| 88200 | **5512.5 Hz** |
+| 96000 | **6000 Hz** |
+
+- **切换行为**：一旦 `dt·8 ≥ 0.5`，校正**返回精确 0**（有界朴素三角），**不**声明该区间有任何改善；这是**显式、有界、可清单的回退**（`b9a77738` 允许），不是静默截断。
+- **FM 下的性质**：`step` 随 FM 逐采样变化，故该阈值在 FM 下是**逐采样**判定的。**更根本地**：单步 BLAMP 是一个**瞬时步长的近似**——它按当前 `(phase, step)` 就地修正，对单一主导角点成立；当 `|step|` 大到支持半径跨半周期（角点相互紧邻不满足单角点几何）或 FM 深调制时，该近似退化为**仅在瞬时的步长意义下有效**，**不**宣称全带 / 多重回绕的改善。§4 的 24 格验证只在 `f0/fs < 1/16` 的信号上成立；越过阈值即回退，**不**把回退区当作更优。
+
+---
+
+## 7. 负控：previousA 与 block-error（**最终 win8 head** 重验）
+
+### 7.1 previousA（路由完整性；B 读 live 同帧）
+
+| 阶段 | test_vco_normal_source (6) 判别 | 结果 |
 |---|---|---|
-| Release | 70 | **100% pass**（含新 `gh19_blamp_acceptance` CTEST, 81.5s） |
-| Debug | 70 | **100% pass**（含 `gh19_blamp_acceptance`, 115.4s） |
-| ASan + UBSan | 70 | **100% pass**（含 `gh19_blamp_acceptance`, 209.3s） |
+| 基线（无突变） | madSame=2.378e-05, madPrev=4.558e-3 | **GREEN**（107/107，正确建树） |
+| previousA 突变 | madSame→4.565e-3, madPrev→2.264e-5 | **RED @(6)**（madSame 变大了；其它 5 测试保持 GREEN） |
+| 恢复基线 | madSame=2.378e-05, madPrev=4.558e-3 | **GREEN** |
 
-（此前 `test_vco` 在 ASan 命中的一个越界，根因是本片**测试辅助 lambda 的 xcorr 边界错置**——读 `blamp[-1]` / `blamp[n]`，非生产 BLAMP 代码；已修正为 `lo=max(0,lag)` / `hi=min(n,n+lag)`，Release/Debug 因越界读恰复现可容忍值而未暴露，ASan 正确捕获。**生产 vco.h 零改动**。）
+### 7.2 block-error（块分区守卫非空过；注入点 = `DeviceAdapter::renderBlock`）
 
-`--require-full` 覆盖门禁：**仍是原 12 项键盘缺口**（8 非标量 + 4 无值域），`gap 列表未变、rogue=[]、新增=[]`。无新覆盖回归；门禁未改。
+| 阶段 | blockpart_max | probe exit | note |
+|---|---|---|---|
+| 正确路径（win8） | **0.00e+00** | 0 | clean |
+| block-error 突变 | **2.05e-03** | **8** (bit8) | mismatch |
+| 恢复 | 0.00e+00 | 0 | — |
 
-## 9. 交付物清单
+### 7.3 BLAMP 载重负控（mutation，win8 基线）
 
-- **生产改动**：`core/include/lunar24/core/vco.h`（仅 kTriangle BLAMP，0 其它波形/路由/默认/A→B/持久化改动）。
-- **门禁**：`tools/check_gh19_blamp_acceptance.py`（RED→GREEN，对提交的朴素基线）；`tools/gh19_naive_baseline.tsv`（24 格朴素基线）；`tools/run_gh19_blamp_pipeline.py` + `CMakeLists.txt` 注册 `gh19_blamp_acceptance` CTEST（CI 强制、真实产品链路）。
-- **负控**：`tests/mutation/run_vco_blamp_mutation.sh`（5 源突变 RED→GREEN）；`tests/core/test_vco.cpp::test_vco_blamp()`（5 结构性负控，50 检查）。
-- **分析器**：`tools/gh19_alias_analyze.py`（只读，未改）。
+`tests/mutation/run_vco_blamp_mutation.sh`（win8 基线；每个真实源码突变必须编译且 probe exit 0，gate 才计 RED）：
 
-## 10. 复跑命令
+| 控制 | 结果 |
+|---|---|
+| naive（禁 kTriangle 修正） | RED @ 880Hz（imp=0） |
+| polyBLAMP | RED @ 每格（imp<0） |
+| win8 | **GREEN**（880 8/8, 220/440 16/16） |
+| bypass_ / scale_small_ / late_anchor_ | 各 deflected 880Hz→RED |
+| signflip_ / scale_big_ | 各 deflected imp<0（RED-WORSE） |
+| volume_fake（x100 过载） | 探针自身 OVERSIDE GUARD 拦截（exit≠0） |
+| block 不变量 | `blockpart_max=0` |
+
+---
+
+## 8. CPU — 重复样本统计 + 只说明「本测量能否分辨增量」（**最终 win8 head**）
+
+`tools/run_gh19_cpu.sh`（同机 Apple arm64, clang 21, 纯 `processBlock` 每样本成本）：
+
+| 变体 | 纯 processBlock (ns/样本) | ±stdev |
+|---|---|---|
+| naive（无修正） | 495.675 | ±1.960 |
+| **win8（集成后）** | 507.020 | ±0.583 |
+
+增量 win8−naive = **+11.35 ns/样本 ≈ +2.3%**；相对两变体 stdev（约 2.05 汇合），增量 ≈ **5.5×** → **本测量能分辨增量**。BLAMP 是一个**真实、非零、~+2.3%** 的成本增量，**不是**「本质上零成本」。（整 harness 循环列本次 win8 离散偏大 var≈16.7，故只引用纯 `processBlock` 列作为可靠口径。）数值随机器负载浮动，但方向与可分辨性稳定。
+
+---
+
+## 9. 边界 / 范围（b9a77738）
+
+- **只触产品可达 `kTriangle`**（A/B 共享）；保留相位推进 / 频率 CV 律 / 默认 / 幅度契约 / A→B 路由 / 持久化 / 同帧消费（无新增输出缓冲延迟）。
+- 不改其它波形 / sub / drone / VCF；无新 selector；不 shore-fix morph；不经降音量 / 移频 / 延迟 / 改参考归一。
+- `step=0`（freq 锁零，触碰冻结 P0，本片不修）→ 返回 0（无 pop）。
+- **12 键盘缺口** by-design 红不改（与既定基线一致）。
+- **非多项式 = 已授权**：本片（win8）为**非多项式、解析 + 显式窗**，经 `b9a77738` **授权投用**；poly 仅作记录性反例。
+
+---
+
+## 10. 判定请求 / 提交（@Codex）
+
+- **投用 win8（L=8）** 已完成并接入生产 `kTriangle`；独立定向检查 + 负控在最终 win8 head 重验全部 GREEN/载重。
+- **完整管线**：本片已跑定向检查（24 格 + previousA + block-error + CPU）+ 受影响与全量 Release/Debug/ASan+UBSan、host/generator 门禁；随后 **commit → push 独立分支 → 更新 PR#24 → 等待 exact head 四平台 CI**，fix 范围内失败。
+- **提交 SHA / PR / CI 结果**见文末（投用后追加）。
+- **merge / 关 GH#19 / 发布 / MET** 由 @Codex 独立完成；@Codex 复核后直接接 GH#20 与 GH#12。
+
+---
+
+## 复现命令
 
 ```bash
-# 全量回归（Release / Debug / ASan+UBSan），在新 build 目录：
-cmake -S . -B <build> -DCMAKE_BUILD_TYPE=Release && cmake --build <build> -j 8 && ctest --test-dir <build> --output-on-failure
-# ASan+UBSan：
-cmake -S . -B <asan> -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" && cmake --build <asan> -j 8 && ctest --test-dir <asan>
-
-# 定向矩阵（探针 → 分析器 → 门禁）：
-cmake --build <build> --target gh19_alias_probe
-<build>/gh19_alias_probe --out <probe-out>
-python3 tools/gh19_alias_analyze.py --dir <probe-out> --manifest tools/gh19_manifest.tsv --check     # 负控门禁
-python3 tools/check_gh19_blamp_acceptance.py --baseline tools/gh19_naive_baseline.tsv --current <analyze.tsv>  # 接受门禁
-# 或用一站式 CTEST：
-ctest --test-dir <build> -R gh19_blamp_acceptance --output-on-failure
-
-# 突变负控（scratch build，跟踪树保持干净）：
-BUILD_DIR=<scratch> bash tests/mutation/run_vco_blamp_mutation.sh
+python3 tools/gen_gh19_blamp.py --L 8 --N 256 --cpp            # 断言 + 生成物一致性 (exit 0)
+bash tools/run_gh19_candidates.sh core/include/lunar24/core/vco.h    # 24 格矩阵 + 门禁
+bash tools/run_gh19_previousa_control.sh                        # previousA 负控
+bash tools/run_gh19_blockerror_control.sh                       # block-error 负控
+bash tests/mutation/run_vco_blamp_mutation.sh                    # BLAMP 载重负控
+bash tools/run_gh19_cpu.sh build/.vco_blamp_pristine.h core/include/lunar24/core/vco.h  # CPU
 ```
-
-## 11. 结论
-
-- 交付判据达成：真实产品（非 ideal/静默替身）调用可成功；漏共轭/漏修正必红；隔离源突变被确诊并被门禁捕获；`--require-full` 覆盖保持原 12 项缺口。
-- **24 格全部**“改善≥6dB（880 档）/ 不劣化（220/440 档）”均满足：880 Hz 档 8 格全部 ≥6 dB，220/440 档 16 格全部改善（无一格劣化）。
-- 算法取舍（无下垂精确 BLAMP vs 经典 4 点 B-spline 的 −12 dB 下垂）已交由 @Codex 独立裁决；本片按 mandate 实现并验证的是无下垂精确 BLAMP。
-
-**未执行（由 @Codex 独立完成）**：merge、关闭 GH#19、发布、MET 判定。等待 @Codex 复核 + 算法裁决。
