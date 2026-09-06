@@ -32,6 +32,14 @@
 //   gh19_scenarios.tsv    one metadata row per recorded cell (with measured f0 / peak)
 //   gh19_scnNNN.raw       little-endian f64 samples of that cell's observation window
 
+// This probe writes .raw/.tsv with std::fopen, which MSVC's secure-CRT deprecation
+// (C4996) promotes to an error under this repo's /W4 /WX warning policy. No other test
+// target uses fopen, so the suppression is scoped to this single test/probe translation
+// unit only (defined before any CRT header is included).
+#if defined(_MSC_VER)
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/state_default.h>
 #include <lunar24/registry_ids.hpp>
