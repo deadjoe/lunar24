@@ -498,17 +498,17 @@ int main(int argc, char** argv) {
       std::vector<double> cin0(block, 0.0), cin1(block, 0.0);     // input pre-filled OUTSIDE timing
       std::vector<double> cout0(block), cout1(block), cout2(block), cout3(block);
       const double* in[kInCh] = {cin0.data(), cin1.data()};
-      double* out[kOutCh] = {cout0.data(), cout1.data(), cout2.data(), cout3.data()};
+      double* devOut[kOutCh] = {cout0.data(), cout1.data(), cout2.data(), cout3.data()};
       const int blkLanes = 7;
       std::vector<double> lanes; lanes.reserve(blkLanes);
       for (int i = 0; i < blkLanes; ++i) {
         EngineHarness hB;
         if (!hB.load(st, sr, block, kInCh, kOutCh)) continue;
-        if (hB.processPure(in, out, block) != StandaloneAudioEngine::Status::Rendered) continue;  // warmup
+        if (hB.processPure(in, devOut, block) != StandaloneAudioEngine::Status::Rendered) continue;  // warmup
         auto t0 = Clock::now();
         bool ok = true;
         for (int r = 0; r < nRep; ++r) {
-          if (hB.processPure(in, out, block) != StandaloneAudioEngine::Status::Rendered) { ok = false; break; }
+          if (hB.processPure(in, devOut, block) != StandaloneAudioEngine::Status::Rendered) { ok = false; break; }
         }
         auto t1 = Clock::now();
         if (ok) {
