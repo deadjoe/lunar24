@@ -173,8 +173,11 @@
 ## 10. 判定请求 / 提交（@Codex）
 
 - **投用 win8（L=8）** 已完成并接入生产 `kTriangle`；独立定向检查 + 负控在最终 win8 head 重验全部 GREEN/载重。
-- **完整管线**：本片已跑定向检查（24 格 + previousA + block-error + CPU）+ 受影响与全量 Release/Debug/ASan+UBSan、host/generator 门禁；随后 **commit → push 独立分支 → 更新 PR#24 → 等待 exact head 四平台 CI**，fix 范围内失败。
-- **提交 SHA / PR / CI 结果**见文末（投用后追加）。
+- **完整管线**：本片已跑定向检查（24 格 + previousA + block-error + CPU + mutation 载重）+ 受影响与全量 Release/Debug/ASan+UBSan（各 **70/70**）、host/generator 门禁；随后 **commit → push 独立分支 → 更新 PR#24 → exact head 四平台 CI 全绿**，fix 范围内 0 失败。
+- **提交 SHA / PR / CI 结果**：
+  - **提交 head = `d661fd826e782eb31ddce34e5701f285b794a18d`**（`fix/19-triangle-blamp`，置于 `1b5ba7d` 之上）。
+  - **PR #24**（OPEN, base `measure/19-product-alias-baseline`, MERGEABLE）：https://github.com/deadjoe/lunar24/pull/24
+  - **四平台 CI = run `34062198173` @ head `d661fd8`（workflow_dispatch）**：windows(cl) ✅ / macos(clang++) ✅ / ubuntu(clang++) ✅ / ubuntu(g++) ✅；`full coverage (--require-full)` job 因 `if: github.event_name=='pull_request'` 门控而 **skipped**（feature-branch 不触发该 PR-merge 门禁，故本 dispatch 无红色 by-design）。
 - **merge / 关 GH#19 / 发布 / MET** 由 @Codex 独立完成；@Codex 复核后直接接 GH#20 与 GH#12。
 
 ---
