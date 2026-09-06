@@ -402,6 +402,16 @@ lunar_add_test(test_vco_normal_source tests/host/test_vco_normal_source.cpp)
 target_link_libraries(test_vco_normal_source PRIVATE lunar_host)
 target_include_directories(test_vco_normal_source PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# task #85 (GH #19): REAL-PRODUCT anti-aliasing probe. Renders the actual product DSP (through the
+# agreed encode->decode->applyDeviceState->processBlock chain) for a matrix of path x sample-rate x
+# frequency/level cells and dumps the samples + metadata for the verified Python analyzer. This is
+# the measurement guard: it proves the baseline samples come from the product and not an ideal() or a
+# silent buffer. Links lunar_host (the engine lives in host/include/host) and needs tests/host for the
+# shared EngineHarness. Not a CTest — the Python analyzer owns the pass/fail gate.
+lunar_add_test(gh19_alias_probe tests/probes/gh19_alias_probe.cpp)
+target_link_libraries(gh19_alias_probe PRIVATE lunar_host)
+target_include_directories(gh19_alias_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
+
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.
