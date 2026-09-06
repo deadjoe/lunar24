@@ -48,7 +48,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <sys/utsname.h>
+#if !defined(_WIN32)
+#include <sys/utsname.h>   // POSIX-only; MSVC has no equivalent (machine info falls back below)
+#endif
 #include <vector>
 
 using namespace lunar24::testengine;
@@ -255,8 +257,12 @@ int main(int argc, char** argv) {
   // parses the 3rd field of a scenario row as "signal"; a cpu meta row there would be miscounted).
   {
     std::string machine = "unknown", sysrel = "unknown", compiler = "unknown";
+#if !defined(_WIN32)
     struct utsname un;
     if (uname(&un) == 0) { machine = un.machine; sysrel = std::string(un.sysname) + " " + un.release; }
+#else
+    machine = "windows";
+#endif
 #ifdef _MSC_VER
     compiler = "MSVC " + std::to_string(_MSC_VER);
 #else
