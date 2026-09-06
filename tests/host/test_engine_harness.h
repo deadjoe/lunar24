@@ -83,14 +83,58 @@ class EngineHarness {
   // input ch1 (the preamp feed under the >=2 input route). Returns false if any processBlock is
   // not Rendered.
   bool render(int frames, double preampV = 0.0) {
-    return renderImpl(frames, preampV, [](const SynthRuntime&) {});
+    return renderFeed(frames, [preampV](std::size_t, double& in0, double& in1) {
+      in0 = 0.0; in1 = preampV;
+    });
+  }
+
+  // Render `frames` frames with a per-frame input feed. `feed(frame, &in0, &in1)` supplies each
+  // frame's planar inputs — this is how an AC stimulus (e.g. a zero-centred sine on the preamp
+  // physical ch1) reaches the input stage, which the constant-`preampV` render() cannot. Returns
+  // false if any processBlock is not Rendered.
+  template <class Feed>
+  bool renderFeed(int frames, Feed&& feed) {
+    return renderFeedSampled(frames, std::forward<Feed>(feed), [](const SynthRuntime&) {});
   }
 
   // Render `frames` frames and run `onSample(runtime)` after each one. This is how a control family
   // samples the PUBLISHED CV/gate jack (controlVoltageAt) at every step without re-committing.
   template <class Fn>
   bool renderSampled(int frames, double preampV, Fn&& onSample) {
-    return renderImpl(frames, preampV, std::forward<Fn>(onSample));
+    return renderFeedSampled(frames, [preampV](std::size_t, double& in0, double& in1) {
+      in0 = 0.0; in1 = preampV;
+    }, std::forward<Fn>(onSample));
+  }
+
+  // Reserve capacity for the four captured output vectors. The CPU-cost measurement must not time
+  // render-loop vector growth (realloc on push_back), so callers pre-reserve the full window before
+  // the timed region (BLOCK item ⑤). No-op-safe: harmless if never called.
+  void reserve(std::size_t n) {
+    wetL_.reserve(n); wetR_.reserve(n); dryA_.reserve(n); dryB_.reserve(n);
+  }
+
+  // Render `frames` frames in ONE processBlock(...) call — the real-block path, distinguished from
+  // the per-frame render() above. Used to compare the four outputs under the same state + input for
+  // BLOCK-PARTITION invariance. `feed(frame, &in0, &in1)` fills the planar input buffers.
+  // NOTE: requires frames <= the blockFrames the engine was loaded with, else processBlock drops to
+  // silence (returns false). Appends all four outputs.
+  template <class Feed>
+  bool renderBlock(int frames, Feed&& feed) {
+    std::vector<double> in0(frames, 0.0), in1(frames, 0.0);
+    for (int f = 0; f < frames; ++f) {
+      feed(static_cast<std::size_t>(f), in0[static_cast<std::size_t>(f)],
+           in1[static_cast<std::size_t>(f)]);
+    }
+    const double* in[kInCh] = {in0.data(), in1.data()};
+    std::vector<double> o0(frames), o1(frames), o2(frames), o3(frames);
+    double* out[kOutCh] = {o0.data(), o1.data(), o2.data(), o3.data()};
+    const auto s = engine_.processBlock(in, out, kInCh, kOutCh, frames);
+    if (s != StandaloneAudioEngine::Status::Rendered) return false;
+    wetL_.insert(wetL_.end(), o0.begin(), o0.end());
+    wetR_.insert(wetR_.end(), o1.begin(), o1.end());
+    dryA_.insert(dryA_.end(), o2.begin(), o2.end());
+    dryB_.insert(dryB_.end(), o3.begin(), o3.end());
+    return true;
   }
 
   // Read-only published state (valid only until the next load()). Never null after a successful load.
@@ -111,10 +155,12 @@ class EngineHarness {
   const std::vector<double>& dryB() const { return dryB_; }
 
  private:
-  template <class Fn>
-  bool renderImpl(int frames, double preampV, Fn&& onSample) {
+  // Per-frame render loop with a caller-supplied input feed and an optional per-frame sample hook.
+  template <class Feed, class Fn>
+  bool renderFeedSampled(int frames, Feed&& feed, Fn&& onSample) {
     for (int f = 0; f < frames; ++f) {
-      double in0 = 0.0, in1 = preampV;
+      double in0 = 0.0, in1 = 0.0;
+      feed(static_cast<std::size_t>(f), in0, in1);
       const double* in[kInCh] = {&in0, &in1};
       double o0 = 0.0, o1 = 0.0, o2 = 0.0, o3 = 0.0;
       double* out[kOutCh] = {&o0, &o1, &o2, &o3};
