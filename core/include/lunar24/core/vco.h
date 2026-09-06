@@ -182,6 +182,16 @@ class Vco {
   double fmCv_ = 0.0;
   double fmDevHz_ = 0.0;
   double cumPitch_ = 0.0;              // unwrapped pitch phase (cycles).
+
+  // BLAMP (Norilo, "Rounding Corners with BLAMP", DAFx-16, §2 / Fig 2) triangle
+  // slope correction. A triangle's discontinuities are first-DERIVATIVE (slope)
+  // jumps, so the correct band-limiting tool is a BLAMP (the integral of a BLEP),
+  // NOT a step-BLEP. The corner residual is even about the corner and scales as
+  // one sample step; we store it as a LUT over u = |phase - corner| / |step| in
+  // [0,2] (u in units of the local incremental step, so it is sr/f0-invariant).
+  static constexpr double kBlampUmax = 2.0;
+  static double blampG(double u);                  // even corner-residual shape.
+  double triangleBlampCorr(double cp, double step) const;
 };
 
 inline void Vco::setOctaveSelect(int index) {
@@ -206,8 +216,15 @@ inline double Vco::frequencyHz() const {
 inline void Vco::tick(double* out, double* subOut) {
   const double pitch = frequencyHz();
   const double instHz = pitch + fmDevHz_ * fmCv_;  // linear FM.
-  cumPitch_ += instHz / sr_;
+  const double step = instHz / sr_;
+  cumPitch_ += step;
   *out = waveformSampleAt(phase());
+  if (wave_ == VcoWaveform::kTriangle) {
+    // Band-limit the slope jumps (peak/valley corners) for the product-reachable
+    // A/B-shared triangle. Morphing sine<->triangle stays the naive blend (out of
+    // scope); this adds the exact corner residual, phase-local and zero-latency.
+    *out += triangleBlampCorr(cumPitch_, step);
+  }
   if (subOut) {
     if (subEnabled()) {
       *subOut = 2.0 * subPhase() - 1.0;   // sub = rising SAW (2*frac(cumPitch_*0.5)-1), one octave down, phase-locked.
@@ -242,6 +259,56 @@ inline double Vco::waveformSampleAt(double p) const {
     }
   }
   return 0.0;
+}
+
+// ----------------------------------------------------------------------------
+// BLAMP (Norilo DAFx-16 "Rounding Corners with BLAMP") triangle slope corrector.
+//
+// The triangle has first-derivative (slope) discontinuities at the peak (phase =
+// integer, slope jumps -8) and valley (phase = half-integer, slope jumps +8).
+// A BLAMP is the correct band-limiting kernel for a slope jump (it is the
+// antiderivative of a BLEP). The CORRECTION applied to a perfectly band-limited
+// ramp that is clipped to the naive triangle is the difference between the
+// band-limited ramp and the trivial ramp, sampled on the discrete grid — the
+// "BLAMP residual function" of the paper (Fig 2). Adding it moves the naive
+// sample toward the band-limited value at every corner; because the residual is
+// proportional to one sample step, storing it as a function of the normalized
+// distance u = |phase - corner| / |step| makes it sr/f0-invariant and causal.
+//
+// The residual g(u) is EVEN (g(-u) = g(u)), so only |u| is needed; the valley
+// corner is the exact negative of the peak (the slope jump has opposite sign),
+// so one LUT serves both via the sign convention +peak / -valley. The LUT
+// samples the exact residual at 33 points over [0,2] and is linear-interpolated.
+inline double Vco::blampG(double u) {
+  static constexpr double kLut[33] = {
+      // g(0) .. g(2), step 0.0625. Even about u=0.
+      0.78409446, 0.59118254, 0.34412184, 0.20084246, 0.02114479, -0.06641579,
+      -0.14030679, -0.22622430, -0.25363887, -0.27169375, -0.27739374,
+      -0.26017824, -0.24878568, -0.20900965, -0.16572994, -0.11331405,
+      -0.08318639, -0.03808442, 0.01234752, 0.03733353, 0.08003451, 0.10470669,
+      0.11844808, 0.13797119, 0.14208394, 0.14384044, 0.13700179, 0.12116512,
+      0.11509523, 0.09143974, 0.06339156, 0.03442564, 0.02382082};
+  constexpr double kMax = 2.0;
+  constexpr int kLast = 32;
+  if (!(u > 0.0)) return kLut[0];           // u<=0 (incl. NaN) -> corner sample.
+  if (u >= kMax) return kLut[kLast];
+  const double t = u / kMax * kLast;        // u in [0,2] -> index scale [0,32].
+  const int i = static_cast<int>(t);
+  const double fr = t - i;
+  return kLut[i] * (1.0 - fr) + kLut[i + 1] * fr;
+}
+
+inline double Vco::triangleBlampCorr(double cp, double step) const {
+  const double dt = std::fabs(step);         // |instHz| / sr; finite on reversal.
+  if (!(dt > 0.0) || !std::isfinite(dt)) return 0.0;  // zero/NaN step -> none.
+  // Peak corner = integer phase (+1): a -8 slope jump, correction is NEGATIVE.
+  const double uPeak = std::fabs(cp - std::round(cp)) / dt;
+  // Valley corner = half-integer phase (-1): a +8 slope jump, correction is +.
+  const double uVal = std::fabs(cp - (std::floor(cp) + 0.5)) / dt;
+  double corr = 0.0;
+  if (uPeak <= kBlampUmax) corr -= dt * blampG(uPeak);
+  if (uVal <= kBlampUmax) corr += dt * blampG(uVal);
+  return corr;
 }
 
 }  // namespace lunar24::core
