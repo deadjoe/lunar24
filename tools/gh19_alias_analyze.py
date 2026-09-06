@@ -9,51 +9,36 @@
 # a `gh19_scenarios.tsv` row per cell + `gh19_scnNNN.raw` little-endian f64 samples captured from
 # the real DSP.
 #
-# Reference construction is the key adaptation: a REAL periodic signal has no closed-form a_k (the
-# verified tool knew ideal() saw/tri/pulse). So the band-limited reference is built from the signal's
-# OWN measured in-band harmonic coefficients — matched-filter projections at k*f0 (k*f0 <= sr/2).
-# This is shape/phase/amplitude-agnostic and needs no ideal() table.
+# FAIL-CLOSED COVERAGE GATE (BLOCK item ① — a REQUIRED-scenario manifest + explicitly allowed blocks):
+#   A committed contract (tools/gh19_manifest.tsv) enumerates EVERY required cell (by id). The gate
+#   compares the probe's produced cells against that manifest; on a clean run they match exactly. ANY
+#   of the old-error modes is an overall FAIL, not an informational line:
+#       missing row    -> a required manifest id has NO scenario row
+#       skip render    -> a required cell left signal="" but has no readable raw file
+#       prod failure   -> a required cell whose capture returned a non-produced signal
+#       non-finite     -> a required cell whose samples contain NaN/Inf
+#       unexpected silence / over-scale (substitution) -> peak outside the recorded voltage domain
+#   There is NO empty-exit-0: if 0 required cells are produced, the gate FAILs. Deferred module
+#   probes (sub, saw/pulse/morph) are in the manifest as `required=0` and are declared ALLOWED blocks
+#   (documented, never silently dropped) — they do NOT need a product cell.
 #
-# LEAKAGE is the trap solved here. At a fractional-period window the in-band sinusoids {e^{j2pi k f0 n/sr}}
-# are NOT orthogonal, so a straight projection/reconstruction leaks harmonics into the residual and
-# reads a false floor (~-37..-48 dB @ 220 Hz/48k). The fix is an INTEGER-PERIOD window (N*f0/sr an
-# integer): then the harmonics land on distinct integer bins, the projections are orthogonal, and the
-# residual is leakage-free and N-converged (verified: synthetic naive tri @220/48k stays exactly
-# -68.44 dB across N=2400..19200).
-#
-#   METHOD A (primary, product-facing):
-#       ref = sum_k 2 Re{ A_k e^{j2 pi k f0 n/sr} } (in-band harmonics), residual e = x - ref.
-#       aliasA_full = 10 log10( sum e^2 / sum x^2 )  — FULL-BAND aliased energy (leakage-free).
-#       aliasA_inband = 10 log10( in-band [BAND_LO,BAND_HI] power of e / total power ) — the reported
-#          reporting band (zero-padded windowed FFT; integer-period makes this near-exact).
-#       A band-limited oscillator -> aliasA_full drifts toward the floor; a naive wrap -> aliasA_full
-#       lands at the naive-triangle/saw fold level (shown by the dynamic-range control).
-#
-#   METHOD B (cross-check, VCO-triangle cells only):
-#       Ideal triangle exact analytic coefficients 4/(pi^2 k^2) (odd k), folded with the CONJUGATED
-#       mirror rule (fold_line + conjugate), dedup over distinct observed lines. In-band [100,5000]
-#       dBc. A naive product triangle reads Method A_full-band ~ aligned with the naive fold and
-#       Method B_in-band as the subset; an already-anti-aliased one reads Method A well below the
-#       naive fold. Comparison evidence, not an assertion.
-#
-#   GATE (negative controls — a buggy MEASUREMENT must RED, not false-pass):
-#       G1 conjugation: two harmonics folding onto ONE observed line. The correct conjugated COMPLEX
-#          sum must match an independent matched-filter projection; the buggy no-conj sum must NOT.
-#          Comparison is complex (a magnitude-only compare false-trips when both harmonics are
-#          mirrored since |conj(a)+conj(b)|=|a+b| but S=conj(wrong_S)). Run on analytic SAW (coincident
-#          tri folds do not exist @220, so saw is the canonical conjugate-bearing case).
-#       G2 reconciliation: Method B under a WRONG sample-rate and WRONG reference-frequency label each
-#          must change the figure detectably (labels + power normalisation are caught).
-#       G3 real-not-silent / substitution: each produced cell must be finite, non-silent, and on the
-#          recorded voltage domain (peak [1e-4,0.55] device / [1e-3,5.5] volt) — an un-scaled ideal()
-#          stand-in is rejected.
-#       G4 dynamic range: a SYNTHETIC naive triangle must read a MUCH larger alias than a SYNTHETIC
-#          band-limited triangle (same integer-period window). Proves the metric can distinguish
-#          aliased from clean — isolated source-mutation evidence (no fault macro in any production
-#          header; the injection lives only in this analyzer).
+# REFERENCE MEANING (BLOCK item ② — Method A is NOT an independent band-limited reference):
+#   METHOD A ("harmonic-fit residual", lower bound): reference = the signal's OWN measured in-band
+#      harmonic coefficients (projection at k*f0, k*f0 <= sr/2); residual = x - ref. This ABSORBS
+#      aliasing that lands on legitimate in-band harmonics, so it is a LOWER bound on total aliasing,
+#      never the authoritative alias figure. Reported as `harmres_*_db`.
+#   METHOD B ("analytic reference", authoritative for clean triangle): ideal-triaes exact analytic
+#      a_tri(k)=4/(pi^2 k^2) (odd k), folded with the CONJUGATED mirror rule, dedup over distinct
+#      observed lines, in-band dBc. For a triangle cell this is the INDEPENDENT alias reference.
+#      Reported as `analytic_ref_inband_db`. A naive product triangle => analytic_ref ~= the naive fold;
+#      an already-anti-aliased one => analytic_ref << naive fold. A-B consistency is evidence.
+#   COMPOSITE / non-single-module paths (drone voice, new-drone Schmitt voice, preamp tanh, wet chain):
+#      no independent single-module alias reference exists, so NO alias attribution is claimed; the
+#      row reports the harmonic-fit residual and total in-band power (a total-waveform-error / PSD
+#      statistic), and is labeled `category`=composite/periodic/nonlinear — never a single-module alias.
 #
 # The alias figures are EVIDENCE; no threshold is asserted (-60dB is NOT a gate). Exit 0 = the
-# MEASUREMENT TOOL passed its own negative controls; != 0 = the tool is broken.
+# MEASUREMENT TOOL passed its own negative controls; != 0 = the tool is broken or coverage is wrong.
 #
 # Reproduction:
 #   ./build/gh19_alias_probe --out report/gh19-probe
@@ -78,6 +63,8 @@ INT_TOL = 3.0e-4                     # relative tolerance for treating a measure
                                      # up to ~1e-4 (e.g. 219.978Hz for a 220Hz target) is measurement
                                      # noise inside the projection main lobe, NOT a genuinely non-integer
                                      # fundamental. A snap at this tolerance is reported via `gap`.
+SEP_MIN_DB = 12.0                    # minimum naive-vs-bandlimited separation the metric must sustain
+                                     # for the dynamic-range negative to count as passing.
 
 
 # --- ideal/tri/saw analytic coefficients (verified closed forms, match vco.h ideal()). ---
@@ -206,7 +193,7 @@ def harmonics_in_band(f0, sr):
 # For an exactly-integer f0 (VCO nominal), per = sr/gcd(f0,sr) is the samples/period; the largest
 # multiple of per fitting the buffer (>= a few periods) is the window. For a NON-integer f0 no exact
 # integer-period window exists -> use the full steady-state length and set gap=NaN so the caller can
-# mark the measurement as leakage-uncontrolled (composite / not single-periodic paths). Returns
+# mark the measurement as leakage-uncontrolled (composite / not-single-periodic paths). Returns
 # (N, f0_snap, gap); gap=0 => exact integer-period (leakage-free); NaN => leakage not controlled.
 # ---------------------------------------------------------------------------
 def intperiod_window(x, sr, f0):
@@ -214,18 +201,11 @@ def intperiod_window(x, sr, f0):
     if not (f0 > 0):
         return None
     fr = int(round(f0))
-    # The sharp refine measures the product frequency to ~+-0.003 Hz, so a near-integer fundamental is
-    # treated as integer-periodic and snapped: exactly this makes N*f0/sr integer over the window
-    # (harmonics orthogonal -> residual leakage-free). INT_TOL is a RELATIVE tolerance (0.001%/0.003Hz
-    # all well inside it); the residual snap error (f0 - fr)/fr is reported as `gap` so the report stays
-    # honest that the frequency was measured, not assumed.
     if abs(f0 - fr) <= INT_TOL * f0:
         per = sr / math.gcd(fr, int(sr))
         per = int(per)
         if per < 1:
             per = 1
-        # A near-Nyquist f0 at high sr can have gcd=1 (per=sr), so one integer-period is longer than
-        # the whole buffer -> no usable integer-period window exists; fall through to the leak flag.
         if per <= maxlen:
             n = (maxlen // per) * per
             if n < 4 * per and maxlen >= 4 * per:
@@ -234,17 +214,15 @@ def intperiod_window(x, sr, f0):
                 n = per
             gap = abs(f0 - fr) / fr
             return (n, float(fr), gap)
-    # non-integer f0 (or no integer-period window fits this buffer): use the full window and flag the
-    # leakage as uncontrolled (composite / not-single-periodic paths, or a near-Nyquist prime f0).
     return (maxlen, float(f0), float("nan"))
 
 
 # ---------------------------------------------------------------------------
-# METHOD A: measured band-limited reference (real product, any periodic shape, leakage-free).
+# METHOD A: harmonic-fit residual (real product, any periodic shape, leakage-free). This is a LOWER
+# bound on total aliasing (it absorbs aliasing co-located with a legitimate in-band harmonic), so it
+# is reported as a harmonic-fit residual, never as the authoritative alias figure.
 # ---------------------------------------------------------------------------
-def method_a(x, sr, f0, maxlen_may_be_none=True):
-    """Returns dict with full_db (full-band aliased residual), inband_db (reporting band), kcount,
-    a1_mag, n, f0_snap, Nperiods, gap. Uses an integer-period window chosen from the full x buffer."""
+def method_a(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI):
     win = intperiod_window(x, sr, f0)
     if win is None:
         return None
@@ -276,7 +254,6 @@ def method_a(x, sr, f0, maxlen_may_be_none=True):
         return None
     full_db = 10.0 * math.log10(resid / total)
 
-    # in-band reporting figure: zero-pad the residual, Hann-window, FFT, sum |.|^2 in [BAND_LO,BAND_HI].
     ewin = [0j] * ZPAD
     hn = hann(n)
     for i in range(n):
@@ -286,9 +263,8 @@ def method_a(x, sr, f0, maxlen_may_be_none=True):
     pe = 0.0
     for k in range(1, ZPAD // 2):
         f = k * bin_hz
-        if BAND_LO <= f <= BAND_HI:
+        if band_lo <= f <= band_hi:
             pe += abs(ewin[k]) ** 2
-    # normalise by total signal power in the SAME windowed/zeropad coordinate.
     xw = [0j] * ZPAD
     for i in range(n):
         xw[i] = complex(nx[i] * hn[i], 0.0)
@@ -302,7 +278,8 @@ def method_a(x, sr, f0, maxlen_may_be_none=True):
 
 
 # ---------------------------------------------------------------------------
-# METHOD B: ideal-triangle analytic folded-line alias (CONJUGATE-corrected).
+# METHOD B: ideal-triangle analytic folded-line alias (CONJUGATE-corrected). Authoritative reference
+# for a clean triangle cell — independent of the signal's own harmonics.
 # ---------------------------------------------------------------------------
 def fold_line(hz, sr):
     r = math.fmod(hz, sr)
@@ -316,8 +293,6 @@ def fold_line(hz, sr):
 
 
 def _fold_analytic(coeff_fn, f0, sr, scale, kfmax=KFMAX, band_lo=BAND_LO, band_hi=BAND_HI):
-    """Conjugate-corrected folded-line alias. coeff_fn(k) -> analytic a_k; scale matches measured a1.
-    Returns (dedup_db, naive_db, dedup_p, naive_p, fold_count, carrier_p2)."""
     nyq = sr * 0.5
     lines = {}
     naive_p = 0.0
@@ -402,15 +377,12 @@ def _two_harmonic_signal(coeff_fn, k1, k2, f0, n, sr):
 
 
 def fold_pair_criteria(coeff_fn, name, f0, sr):
-    """Conjugation control: correct conjugated COMPLEX sum must match an independent matched-filter
-    projection; the buggy no-conj sum must NOT. Returns (rows, errors)."""
     rows, errors = [], []
     pairs = _same_line_pairs(coeff_fn, f0, sr)
     if not pairs:
         rows.append(("conjugation", f"{name}/{f0:g}@{sr:g}: no in-band coincident fold pair "
                                    "(documented, not-a-failure)"))
         return rows, errors
-    # use an integer-period window if one exists for this f0/sr.
     per = sr / math.gcd(int(round(f0)), int(sr)) if abs(f0 - round(f0)) < 1e-9 else None
     n = (int(per) * 4) if per is not None else 8192
     note = " (integer-period, no leakage)" if per is not None else " (no integer-period: projection exact only to error bound)"
@@ -441,7 +413,10 @@ def fold_pair_criteria(coeff_fn, name, f0, sr):
 
 
 # ---------------------------------------------------------------------------
-# G4: dynamic range — synthetic naive vs band-limited triangle at an integer-period window.
+# G4: dynamic range / correct-scaled-ideal-stand-in negative. Anchored to a REAL cell's sr + refined
+# f0 + peak, so the synthetic ideals are matched to the real-data parameters. A correctly-scaled naive
+# ideal triangle must read as ALIASED (naive fold); a correctly-scaled band-limited ideal must read as
+# clean. The metric must separate them — proving a stand-in cannot be mistaken for a clean result.
 # ---------------------------------------------------------------------------
 def _bandlimited_tri(f0, sr, n):
     kmax = int((NYQ_FRAC * sr * 0.5) / f0)
@@ -460,13 +435,22 @@ def _bandlimited_tri(f0, sr, n):
     return ref
 
 
-def dynamic_range_control(sr=48000.0, f0=1865.0):
-    # pick an integer-period N for f0/sr (gcd(1865,48000)=5 -> per=9600).
+def dynamic_range_control(sr, f0, peak):
+    """Correct-scaled naive vs band-limited ideal triangle at the REAL cell sr/f0, scaled to its peak.
+    Returns dict with naive_full / bl_full / sep, or None if no integer-period window fits."""
     import math as m
-    per = sr / m.gcd(int(f0), int(sr))
+    fr = int(round(f0))
+    if abs(f0 - fr) <= INT_TOL * f0:
+        per = sr / m.gcd(fr, int(sr))
+        per = int(per)
+    else:
+        per = None
+    if per is None or per < 1:
+        return None
     n = int(per) * 2
-    x_naive = [ideal_tri(m.fmod(f0 * i / sr, 1.0)) for i in range(n)]
-    x_bl = _bandlimited_tri(f0, sr, n)
+    # scale to the measured peak: ideal_tri peak is 1.0 (at p=0 or p=1), so multiply by peak.
+    x_naive = [peak * ideal_tri(f0 * i / sr) for i in range(n)]
+    x_bl = [peak * v for v in _bandlimited_tri(f0, sr, n)]
     r_naive = method_a(x_naive, sr, f0)
     r_bl = method_a(x_bl, sr, f0)
     if r_naive is None or r_bl is None:
@@ -487,8 +471,6 @@ def read_raw(path):
 
 
 def steady(x):
-    """Drop the probe's warmup (kWarm=8192 settle frames): keep only the settled tail so the
-    integer-period window lands in steady-state audio, not on a transient."""
     return x[-STEADY:] if len(x) > STEADY else x
 
 
@@ -497,6 +479,8 @@ def read_cells(dirpath):
     rows = []
     with open(tsv) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
+    if not lines:
+        return []
     header = lines[0].split("\t")
     idx = {name: i for i, name in enumerate(header)}
     for line in lines[1:]:
@@ -509,123 +493,326 @@ def read_cells(dirpath):
     return rows
 
 
+def miss_reason(mid, mrec, by_id, dirpath):
+    """Fail-closed coverage predicate: return a reason a required cell is NOT an acceptable
+    measurement, or None if it is. Single source of truth for both the coverage gate and the
+    self-negative control, so a complete matrix cannot silently self-defeat the control."""
+    c = by_id.get(mid)
+    if c is None:
+        return "no-row"
+    if not c["produced"]:
+        return "not-produced:" + c.get("signal", "")
+    raw_rel = c.get("raw", "")
+    if not raw_rel or not os.path.exists(os.path.join(dirpath, raw_rel)):
+        return "skip-render:no-raw"
+    return None
+
+
+def load_manifest(path):
+    """Read the committed required-scenario contract. Returns (required, allowed_blocks, parsed_rows).
+    required = {id: rec}; allowed_blocks = {id: rec} for required=0 rows (declared deferred module
+    probes that legitimately produce no product cell)."""
+    required, allowed = {}, {}
+    parsed = []
+    with open(path) as fh:
+        lines = [l.rstrip("\n") for l in fh if l.strip()]
+    if not lines:
+        raise SystemExit("FATAL: manifest is empty")
+    header = lines[0].split("\t")
+    idx = {name: i for i, name in enumerate(header)}
+    for line in lines[1:]:
+        cols = line.split("\t")
+        if len(cols) < len(header):
+            continue
+        rec = {name: cols[idx[name]] for name in header}
+        rec["required"] = (rec.get("required", "0") == "1")
+        parsed.append(rec)
+        (required if rec["required"] else allowed)[rec["id"]] = rec
+    return required, allowed, parsed
+
+
+# When a non-triangle periodic / composite cell has a non-null gap this is leakage-uncontrolled; the
+# harmonic-fit residual is then a diagnostic, labeled `leak`. We still report it but never call it an
+# alias. Returns the category label.
+def cat_of(path):
+    if path.startswith("vco_a_tri") or path.startswith("vco_b_tri"):
+        return "triangle(analytic_target)"
+    if path == "preamp_ac":
+        return "nonlinear(preamp_tanh)"
+    if path == "wet_chain":
+        return "composite(kVcfPath)"
+    if path.startswith("drone1_classic"):
+        return "composite(saw+cubic_chain)"
+    if path.startswith("drone3_schmitt") or path.startswith("drone6_schmitt"):
+        return "composite(Schmitt_voice)"
+    return "periodic(harmfit_residual)"
+
+
+def classify_samples(x):
+    """Classify a sample window into a fail reason, or None if it is a valid produced signal.
+    This is the real-data detector the self-negative controls exercise (silence / non-finite / over-scale /
+    missing buffer)."""
+    if not x:
+        return "missing-raw"
+    if any(not math.isfinite(v) for v in x):
+        return "non-finite"
+    peak = max(abs(v) for v in x)
+    if peak < 1e-4:
+        return "silent"
+    if peak > 5.5:  # volt-domain upper bound; device domain clamped by the probe's own scale guard.
+        return "over-scale"
+    return None
+
+
+def analyze_cell(dirpath, rec):
+    """Return a dict with the metrics for one produced cell, or a dict with {err} on a bad cell. `x` is
+    the steady-state sample window."""
+    sr = float(rec["sr_hz"])
+    f0_target = float(rec["f0_target_hz"])
+    raw = os.path.join(dirpath, rec["raw"])
+    x = steady(read_raw(raw))
+    err = classify_samples(x)
+    if err:
+        return {"err": err}
+    peak = max(abs(v) for v in x)
+    seed = f0_target if f0_target > 0 else float(rec["f0_meas_hz"] or 0)
+    seed = seed if seed > 0 else 200.0
+    f0 = refine_f0(x, sr, seed)
+    ma = method_a(x, sr, f0)
+    out = {"sr": sr, "f0_target": f0_target, "f0": f0, "peak": peak,
+           "kcount": (ma["kcount"] if ma else 0), "n": (ma["n"] if ma else 0),
+           "periods": (ma["Nperiods"] if ma else 0), "gap": (ma["gap"] if ma else float("nan")),
+           "harmris": ("%.2f" % ma["full_db"]) if ma and math.isfinite(ma["full_db"]) else "-",
+           "harmris_inband": ("%.2f" % ma["inband_db"]) if ma and math.isfinite(ma["inband_db"]) else "-",
+           "cat": cat_of(rec["path"]), "err": None}
+    path = rec["path"]
+    if (path.startswith("vco_a_tri") or path.startswith("vco_b_tri")) and ma:
+        mb = method_b_tri(sr, f0, ma["a1_mag"])
+        out["analytic_ref"] = ("%.1f" % mb["dedup_db"]) if mb else "-"
+    else:
+        out["analytic_ref"] = "-"
+    return out
+
+
+def fmt_db(v):
+    return ("%.2f" % v) if (v is not None and math.isfinite(v)) else "-"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="report/gh19-probe")
+    ap.add_argument("--manifest", default="tools/gh19_manifest.tsv")
     ap.add_argument("--check", action="store_true", help="run the negative-control gate")
     args = ap.parse_args()
 
+    required, allowed, _ = load_manifest(args.manifest)
+
     cells = read_cells(args.dir)
-    produced = [c for c in cells if c["produced"] and c.get("raw")]
-    if not produced:
-        print("no produced cells to measure")
+    by_id = {c["id"]: c for c in cells}
+
+    gate_errors = []   # hard FAILs (coverage + per-cell validity), cause exit 1 either mode
+    check_fails = []   # only when --check (negative controls)
+
+    # ---------------------------------------------------------------- coverage gate (always)
+    cov_ok, cov_missing = 0, []
+    for mid, mrec in required.items():
+        r = miss_reason(mid, mrec, by_id, args.dir)
+        if r is not None:
+            cov_missing.append((mid, r))
+        else:
+            cov_ok += 1
+    for mid, reason in cov_missing:
+        gate_errors.append(f"required-cell-missing {mid} [{reason}]")
+    if cov_ok == 0:
+        gate_errors.append("0 required cells produced (empty-success)")
+    if cov_missing:
+        print(f"coverage: {cov_ok}/{len(required)} required cells produced", file=sys.stderr)
+
+    # ---------------------------------------------------------------- per-cell analysis + report
+    hdr = ("id\tpath\tsr\tf0_target\tf0_refined\tharmris_full_db\tharmris_inband_db\t"
+           "analytic_ref_inband_db\tN\tperiods\tgap\tcategory")
+    print(hdr)
+    for cid in sorted(required) + [c["id"] for c in cells if c["id"] not in required]:
+        rec = by_id.get(cid)
+        if rec is None:
+            # a manifest-required id with no row is already a coverage error; emit a stub row.
+            m = required.get(cid)
+            print("\t".join([cid, (m["path"] if m else "-"), (m["sr"] if m else "-"), "-", "-",
+                             "-", "-", "-", "-", "-", "-", "MISSING"]))
+            continue
+        if not rec["produced"]:
+            print("\t".join([cid, rec["path"], rec["sr_hz"], rec["f0_target_hz"], "-", "-", "-",
+                             "-", "-", "-", "-", "not-produced:" + rec.get("signal", "")]))
+            continue
+        a = analyze_cell(args.dir, rec)
+        if a["err"]:
+            print("\t".join([cid, rec["path"], rec["sr_hz"], rec["f0_target_hz"], "-", "-", "-",
+                             "-", "-", "-", "-", a["err"]]))
+            # a required cell that is produced but invalid is a hard FAIL (not an info line).
+            if cid in required:
+                gate_errors.append(f"invalid-cell {cid} [{a['err']}]")
+            continue
+        print("\t".join([
+            cid, rec["path"], str(int(a["sr"])), str(int(a["f0_target"])),
+            ("%.2f" % a["f0"]) if a["f0"] > 0 else "-",
+            a["harmris"], a["harmris_inband"],
+            a.get("analytic_ref", "-"), str(a["n"]), str(a["periods"]),
+            ("%.4f" % a["gap"]) if (a["gap"] == a["gap"]) else "-",  # NaN -> "-"
+            a["cat"]]))
+
+    # (G3 real-data validity of required cells is enforced by the coverage gate above: a required cell
+    # that is non-finite / silent / over-scale is a hard FAIL, not an informational line.)
+
+    # ---------------------------------------------------------------- machine evidence (cpu.tsv)
+    cpu_recs = []
+    cpu_tsv = os.path.join(args.dir, "gh19_cpu.tsv")
+    if os.path.exists(cpu_tsv):
+        with open(cpu_tsv) as fh:
+            lines = [l.rstrip("\n") for l in fh if l.strip()]
+        if lines:
+            h = lines[0].split("\t")
+            idx = {n: i for i, n in enumerate(h)}
+            for line in lines[1:]:
+                cols = line.split("\t")
+                if len(cols) >= len(h):
+                    rec = {n: cols[idx[n]] for n in h}
+                    if rec.get("id", "").startswith("cpu_"):
+                        cpu_recs.append(rec)
+        for r in cpu_recs:
+            print("MACHINE\t" + "\t".join([r.get("id", ""), r.get("value", ""), r.get("unit", ""),
+                                           r.get("machine", ""), r.get("os", ""), r.get("compiler", "")]))
+
+    # ---------------------------------------------------------------- negative-control gate (--check)
+    if args.check:
+        if not gate_errors:
+            print("\n--- negative controls ---")
+            g1_fail = []
+            for wave, coeff, sfreq in (("saw", a_saw, 220.0),):
+                for sr in (48000.0,):
+                    rows, errs = fold_pair_criteria(coeff, wave, sfreq, sr)
+                    for kind, detail in rows:
+                        print("  G1  %s  sr=%g  %s" % (kind, sr, detail))
+                    g1_fail.extend(errs)
+            check_fails.extend(g1_fail)
+            if not g1_fail:
+                print("  G1 conjugation: PASS")
+
+            # G2 wrong-label + wrong power-normalization reconciliation on a REAL triangle cell.
+            tri = next((c for c in cells if c["produced"] and c["path"].startswith("vco_a_tri")), None)
+            if tri is None:
+                tri = next((c for c in cells if c["produced"] and c["path"].startswith("vco_b_tri")), None)
+            if tri is None:
+                check_fails.append("G2 reconcile: no triangle cell present")
+                print("  G2 reconcile: no triangle cell present")
+            else:
+                sr = float(tri["sr_hz"])
+                x = steady(read_raw(os.path.join(args.dir, tri["raw"])))
+                f0 = refine_f0(x, sr, float(tri["f0_target_hz"]))
+                ma = method_a(x, sr, f0)
+                a1 = ma["a1_mag"]
+                good = method_b_tri(sr, f0, a1)
+                wrong_sr = method_b_tri((sr * 2) if sr != 96000 else 44100, f0, a1)
+                wrong_f0 = method_b_tri(sr, f0 * 1.03, a1)
+                if good is None or wrong_sr is None or wrong_f0 is None:
+                    check_fails.append("G2 reconcile: no baseline figure")
+                elif abs(good["dedup_db"] - wrong_sr["dedup_db"]) < 1e-3:
+                    check_fails.append("G2 reconcile: wrong-sr-label not caught")
+                elif abs(good["dedup_db"] - wrong_f0["dedup_db"]) < 1e-3:
+                    check_fails.append("G2 reconcile: wrong-f0-label not caught")
+                else:
+                    print("  G2 reconcile: good=%.1fdB wrong_sr=%.1fdB wrong_f0=%.1fdB -> labels caught"
+                          % (good["dedup_db"], wrong_sr["dedup_db"], wrong_f0["dedup_db"]))
+                # wrong power normalization: the alias figure MUST be referenced to the carrier
+                # (a1_mag^2 == carrier_p2). Recompute it against a genuinely WRONG denominator — the
+                # whole signal's power (harmonic + alias, the classic dBc slip) — and assert the two
+                # differ, so a power-normalisation error is caught REGARDLESS of whether this cell has
+                # coincident-fold coincidence (naive vs dedup happens to agree on a clean triangle).
+                total_p = sum(v * v for v in x)
+                wrong_pw = (10.0 * math.log10(good["dedup_p"] / total_p)
+                            if (total_p > 0 and good["dedup_p"] > 0) else float("-inf"))
+                if wrong_pw == float("-inf") or abs(wrong_pw - good["dedup_db"]) < 1e-3:
+                    check_fails.append("G2 reconcile: power-normalisation not distinguishable")
+                else:
+                    print("  G2 power-norm: correct(carrier)=%.1fdB wrong(signal-power)=%.1fdB -> caught"
+                          % (good["dedup_db"], wrong_pw))
+                # correct-scaled-ideal-stand-in negative anchored to this real cell.
+                dr = dynamic_range_control(sr, f0, max(abs(v) for v in steady(x)))
+                if dr is None:
+                    check_fails.append("G4 dynamic-range: no figure at real cell sr/f0")
+                else:
+                    print("  G4 stand-in: naive_full=%.2f bandlimited_full=%.2f sep=%.2f"
+                          % (dr["naive_full"], dr["bl_full"], dr["sep"]))
+                    if dr["sep"] < SEP_MIN_DB:
+                        check_fails.append("G4 dynamic-range: metric cannot distinguish aliased from clean (sep<%.0fdB)" % SEP_MIN_DB)
+
+            # G3 real-data: report the required-cell validity already enforced by the coverage gate.
+            print("  G3 real cells: %d produced; coverage gate enforces finite/non-silent/scale on required cells."
+                  % sum(1 for c in cells if c["produced"]))
+
+            # Self-negative: the fail-closed detection helpers must actually detect each old-error mode,
+            # so a skip-render / silence / non-finite / missing-file run cannot empty-succeed.
+            selfneg_hits = []
+            if classify_samples([0.0] * 128) != "silent":
+                check_fails.append("selfneg: silence not detected")
+            else:
+                selfneg_hits.append("silence")
+            if classify_samples([float("nan")] * 128) != "non-finite":
+                check_fails.append("selfneg: non-finite not detected")
+            else:
+                selfneg_hits.append("non-finite")
+            if classify_samples([]) != "missing-raw":
+                check_fails.append("selfneg: skip-render(missing-buffer) not detected")
+            else:
+                selfneg_hits.append("skip-render")
+            # a required cell whose raw is missing / not produced must be flagged by the coverage
+            # gate. Test the DETECTION PRIMITIVE directly on synthetic records (NOT the chance
+            # completeness of the live data), so a full matrix can never self-defeat the control:
+            # every absence mode must yield a reason, and a genuinely complete record must yield none.
+            if required:
+                first = next(iter(required))
+                real = by_id.get(first)
+                mrec = required[first]
+                # (a) guard: a complete record must NOT be reported missing (no false positive).
+                if real and real["produced"] and real.get("raw") and \
+                   os.path.exists(os.path.join(args.dir, real["raw"])):
+                    if miss_reason(first, mrec, by_id, args.dir) is not None:
+                        check_fails.append("selfneg: complete required cell reported missing")
+                # (b) every synthetic absence mode MUST be flagged by the same primitive the gate uses.
+                syn = [
+                    {"id": first, "path": mrec["path"], "sr_hz": "1",
+                     "produced": False, "signal": "silent", "raw": ""},
+                    {"id": first, "path": mrec["path"], "sr_hz": "1",
+                     "produced": True, "signal": "", "raw": ""},
+                    {"id": first, "path": mrec["path"], "sr_hz": "1",
+                     "produced": True, "signal": "", "raw": "does-not-happen.raw"},
+                ]
+                if all(miss_reason(first, mrec, {first: s}, args.dir) is not None for s in syn):
+                    selfneg_hits.append("missing-file-gate")
+                else:
+                    check_fails.append("selfneg: missing-file-gate did not flag a synthetic absence")
+            if selfneg_hits:
+                print("  SELF-NEG: detected [%s] (fail-closed; no empty-success)." % "/".join(selfneg_hits))
+
+        print("\n--- gate summary ---")
+        if gate_errors:
+            print("COVERAGE FAIL (%d):" % len(gate_errors))
+            for g in gate_errors:
+                print("  [FAIL]", g)
+        if check_fails:
+            print("CHECK FAIL (%d):" % len(check_fails))
+            for g in check_fails:
+                print("  [FAIL]", g)
+        if gate_errors or check_fails:
+            return 1
+        print("GATE PASS: coverage OK + measurement negative controls OK (no aliasing threshold asserted).")
         return 0
 
-    gate_fail = []
-    print("id\tpath\tsr\tf0_target\tf0_refined\taliasA_full(dB)\taliasA_inband(dB)\tN\tperiods\tgap\taliasB_inband(dB)\tnote")
-    for rec in produced:
-        sr = float(rec["sr_hz"])
-        f0_target = float(rec["f0_target_hz"])
-        x = steady(read_raw(os.path.join(args.dir, rec["raw"])))
-        if not x or any(not math.isfinite(v) for v in x):
-            if args.check:
-                gate_fail.append(rec["id"] + ": non-finite/empty")
-            print("\t".join([rec["id"], rec["path"], str(int(sr)), str(int(f0_target)), "-", "-", "-", "-", "-", "-", "-", "non-finite"]))
-            continue
-        peak = max(abs(v) for v in x)
-        if peak < 1e-4:
-            if args.check:
-                gate_fail.append(rec["id"] + ": silent")
-            print("\t".join([rec["id"], rec["path"], str(int(sr)), str(int(f0_target)), "-", "-", "-", "-", "-", "-", "-", "silent"]))
-            continue
-        if f0_target > 0:
-            f0 = refine_f0(x, sr, f0_target)
-        else:
-            f0_meas = float(rec["f0_meas_hz"])
-            f0 = refine_f0(x, sr, (f0_meas if f0_meas > 0 else 200.0))
-        ma = method_a(x, sr, f0)
-        note = ""
-        aliasB = "-"
-        if rec["path"].startswith("vco_a") and ma:
-            mb = method_b_tri(sr, f0, ma["a1_mag"])
-            if mb:
-                aliasB = "%.1f" % mb["dedup_db"]
-                note = "tri(cross-check)"
-        elif rec["path"].startswith("vco_b") and ma:
-            mb = method_b_tri(sr, f0, ma["a1_mag"])
-            if mb:
-                aliasB = "%.1f" % mb["dedup_db"]
-                note = "tri(cross-check)"
-        elif rec["path"] == "drone1_gn1":
-            note = "composite(saw+cubic, non-single-periodic)"
-        elif rec["path"] == "wet_chain":
-            note = "composite(kVcfPath, not single-module)"
-        row = [rec["id"], rec["path"], str(int(sr)), str(int(f0_target)),
-               ("%.2f" % f0) if f0 > 0 else "-",
-               ("%.2f" % ma["full_db"]) if ma and math.isfinite(ma["full_db"]) else "-",
-               ("%.2f" % ma["inband_db"]) if ma and math.isfinite(ma["inband_db"]) else "-",
-               (ma["n"] if ma else "-"), (ma["Nperiods"] if ma else "-"),
-               ("%.4f" % ma["gap"]) if ma else "-",
-               aliasB, note if note else "-"]
-        print("\t".join(str(v) for v in row))
-
-    # ------------------------------------------------------------------ gate
-    if args.check:
-        print("\n--- G1 conjugation (coincident-fold pairs, complex compare) ---")
-        for wave, coeff, sfreq in (("saw", a_saw, 220.0),):
-            for sr in (48000.0,):
-                rows, errs = fold_pair_criteria(coeff, wave, sfreq, sr)
-                for kind, detail in rows:
-                    print("  %s  sr=%g  %s" % (kind, sr, detail))
-                gate_fail.extend(errs)
-
-        print("\n--- G2 reconciliation (wrong sample-rate / reference-frequency labels must be caught) ---")
-        rec = next((c for c in produced if c["path"].startswith("vco_a")), None)
-        if rec:
-            sr = float(rec["sr_hz"])
-            x = steady(read_raw(os.path.join(args.dir, rec["raw"])))
-            f0 = refine_f0(x, sr, float(rec["f0_target_hz"]))
-            ma = method_a(x, sr, f0)
-            a1 = ma["a1_mag"]
-            good = method_b_tri(sr, f0, a1)
-            wrong_sr = method_b_tri((sr * 2) if sr != 96000 else 44100, f0, a1)
-            wrong_f0 = method_b_tri(sr, f0 * 1.03, a1)
-            if good is None:
-                gate_fail.append("reconcile: no baseline")
-            elif wrong_sr is None or wrong_f0 is None:
-                gate_fail.append("reconcile: wrong-label produced no figure")
-            elif abs(good["dedup_db"] - wrong_sr["dedup_db"]) < 1e-3:
-                gate_fail.append("reconcile: wrong-sr-label not caught")
-            elif abs(good["dedup_db"] - wrong_f0["dedup_db"]) < 1e-3:
-                gate_fail.append("reconcile: wrong-f0-label not caught")
-            else:
-                print("  good=%.1fdB wrong_sr=%.1fdB wrong_f0=%.1fdB -> labels caught"
-                      % (good["dedup_db"], wrong_sr["dedup_db"], wrong_f0["dedup_db"]))
-        else:
-            gate_fail.append("reconcile: no VCO cell present")
-
-        print("\n--- G3 real-not-silent / substitution ---")
-        print("  checked %d produced cells (finite + non-silent + domain-scale via probe clamp)." % len(produced))
-
-        print("\n--- G4 dynamic range (naive vs band-limited synthetic triangle @1865Hz/48k) ---")
-        dr = dynamic_range_control()
-        if dr is None:
-            gate_fail.append("dynamic-range: no figures")
-        else:
-            print("  naive full=%.2fdB inband=%.2fdB | bandlimited full=%.2fdB inband=%.2fdB | separation=%.2fdB"
-                  % (dr["naive_full"], dr["naive_inband"], dr["bl_full"], dr["bl_inband"], dr["sep"]))
-            if not (dr["sep"] >= 12.0):
-                gate_fail.append("dynamic-range: metric cannot distinguish aliased from clean (sep<12dB)")
-
-    if args.check and gate_fail:
-        print("\nGATE FAIL (%d):" % len(gate_fail))
-        for g in gate_fail:
-            print("  [FAIL]", g)
+    # non-check mode (matrix production): fail-closed still applies to coverage.
+    if gate_errors:
+        print("COVERAGE FAIL (%d):" % len(gate_errors), file=sys.stderr)
+        for g in gate_errors:
+            print("  [FAIL]", g, file=sys.stderr)
         return 1
-    if args.check:
-        print("\nGATE PASS: measurement negative controls OK (no aliasing threshold asserted).")
-    else:
-        print("\n(run with --check to run the negative-control gate)")
     return 0
 
 
