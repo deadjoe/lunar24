@@ -462,9 +462,11 @@ int main(int argc, char** argv) {
     }
     double prepMedian = medianOf(prepMs);
 
-    // (d) single-thread per-frame callback cost over a large render (per-frame processBlock(1)).
-    //      Multiple reps => median + variance; buffer prep is moved OUT of the timed region by
-    //      reserve() + an un-timed warmup, so no realloc contaminates the measured callback.
+    // (d) single-thread per-frame HARNESS render-loop cost over a large render (per-frame
+    //      processBlock(1) + the harness's input-feed lambda + per-frame output push + the sampled
+    //      hook). This is the WHOLE harness render path per sample, NOT a pure processBlock cost —
+    //      that is (e). Multiple reps => median + variance; buffer prep is OUTSIDE the timed region
+    //      (reserve() + an un-timed warmup), so no realloc contaminates the measurement.
     const std::size_t N = 1ULL << 20;             // 1,048,576 frames
     const int cbReps = 7;
     std::vector<double> cbNs; cbNs.reserve(cbReps);
@@ -483,21 +485,41 @@ int main(int argc, char** argv) {
     double cbStd = stdevOf(cbNs, cbMed);
     double cbMsg = (cbMed > 0) ? (1e9 / cbMed) / 1e6 : -1.0;   // Msamples/s
 
-    // (e) real-block path: single processBlock(blockSamples) call, report ns/sample + block size.
-    double cbBlockNs = -1.0; long blockSamples = 0;
+    // (e) real-block CPU cost: time ONLY engine.processBlock on a NORMAL block size, repeated, with
+    //     every allocation, the input fill and the output insert OUTSIDE the timed region (BLOCK item
+    //     ③ — the old single renderBlock(1M) wrapped six vector allocs + input generation + output
+    //     insert in the timed loop, so it was NOT a pure processBlock cost). Buffers are caller-owned
+    //     (processPure does not allocate / feed / capture), reused across calls; the input is a
+    //     constant zero pre-filled once. Median + stdev over `blkLanes` independent lanes.
+    double cbBlockNs = -1.0; double cbBlockStd = -1.0; long blockSamples = 0;
     {
-      EngineHarness hB;
-      if (hB.load(st, sr, static_cast<int>(N), kInCh, kOutCh)) {
-        hB.reserve(N);
+      const int block = 512;                       // normal audio block
+      const int nRep = 4000;                       // processBlock calls per lane
+      std::vector<double> cin0(block, 0.0), cin1(block, 0.0);     // input pre-filled OUTSIDE timing
+      std::vector<double> cout0(block), cout1(block), cout2(block), cout3(block);
+      const double* in[kInCh] = {cin0.data(), cin1.data()};
+      double* out[kOutCh] = {cout0.data(), cout1.data(), cout2.data(), cout3.data()};
+      const int blkLanes = 7;
+      std::vector<double> lanes; lanes.reserve(blkLanes);
+      for (int i = 0; i < blkLanes; ++i) {
+        EngineHarness hB;
+        if (!hB.load(st, sr, block, kInCh, kOutCh)) continue;
+        if (hB.processPure(in, out, block) != StandaloneAudioEngine::Status::Rendered) continue;  // warmup
         auto t0 = Clock::now();
-        bool r = hB.renderBlock(static_cast<int>(N),
-                                [](std::size_t, double& in0, double& in1) { in0 = 0.0; in1 = 0.0; });
-        auto t1 = Clock::now();
-        if (r) {
-          const double sec = std::chrono::duration<double>(t1 - t0).count();
-          cbBlockNs = sec * 1e9 / static_cast<double>(N);
-          blockSamples = static_cast<long>(N);
+        bool ok = true;
+        for (int r = 0; r < nRep; ++r) {
+          if (hB.processPure(in, out, block) != StandaloneAudioEngine::Status::Rendered) { ok = false; break; }
         }
+        auto t1 = Clock::now();
+        if (ok) {
+          const double sec = std::chrono::duration<double>(t1 - t0).count();
+          lanes.push_back(sec * 1e9 / static_cast<double>(nRep * block));
+        }
+      }
+      if (!lanes.empty()) {
+        cbBlockNs = medianOf(lanes);
+        cbBlockStd = stdevOf(lanes, cbBlockNs);
+        blockSamples = static_cast<long>(block);
       }
     }
 
@@ -513,14 +535,16 @@ int main(int argc, char** argv) {
                     "\t" + safeTsv(bpNote) + "\tnote\t" + std::to_string(sr));
     crows.push_back("cpu_prep\t" + machine + "\t" + sysrel + "\t" + compiler +
                     "\t" + std::to_string(prepMedian) + "\tms\t" + std::to_string(sr));
-    crows.push_back("cpu_callback\t" + machine + "\t" + sysrel + "\t" + compiler +
-                    "\t" + std::to_string(cbMed) + "\tns_per_sample\t" + std::to_string(sr));
-    crows.push_back("cpu_callback_var\t" + machine + "\t" + sysrel + "\t" + compiler +
+    crows.push_back("cpu_render_loop\t" + machine + "\t" + sysrel + "\t" + compiler +
+                    "\t" + std::to_string(cbMed) + "\tns_per_sample_harness_render\t" + std::to_string(sr));
+    crows.push_back("cpu_render_loop_var\t" + machine + "\t" + sysrel + "\t" + compiler +
                     "\t" + std::to_string(cbStd) + "\tns_per_sample_stdev\t" + std::to_string(sr));
-    crows.push_back("cpu_callback_msg\t" + machine + "\t" + sysrel + "\t" + compiler +
+    crows.push_back("cpu_render_loop_msps\t" + machine + "\t" + sysrel + "\t" + compiler +
                     "\t" + std::to_string(cbMsg) + "\tMsamples_per_s\t" + std::to_string(sr));
     crows.push_back("cpu_block_ns\t" + machine + "\t" + sysrel + "\t" + compiler +
-                    "\t" + std::to_string(cbBlockNs) + "\tns_per_sample_block\t" + std::to_string(sr));
+                    "\t" + std::to_string(cbBlockNs) + "\tns_per_sample_pure_processblock\t" + std::to_string(sr));
+    crows.push_back("cpu_block_var\t" + machine + "\t" + sysrel + "\t" + compiler +
+                    "\t" + std::to_string(cbBlockStd) + "\tns_per_sample_stdev\t" + std::to_string(sr));
     crows.push_back("cpu_block_size\t" + machine + "\t" + sysrel + "\t" + compiler +
                     "\t" + std::to_string(blockSamples) + "\tsamples_per_block\t" + std::to_string(sr));
     std::string cpuTsv = out + "/gh19_cpu.tsv";

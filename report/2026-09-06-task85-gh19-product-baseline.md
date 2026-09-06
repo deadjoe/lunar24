@@ -155,7 +155,7 @@ composite / 非线性行见「结论 ③」表；完整 60-cell 见 `report/gh19
 - **A/B 共享调用点（本片已确证）：** VCO-A 与 VCO-B 在 `vco_b_cv_amt=0` 下 12 个单元数值**完全一致** → 二者调用**同一** VCO 三角生成器，一处修正同时覆盖 dryA/dryB。（旧报告「需实现时核对」已由本片数据**解决**。）
 
 - **实现候选（≤2，各给可测目标，不预先承诺零延迟/全单元改善）**
-  1. **候选 A（推荐）：三角 BLAMP / 带限积分修正。** 在相位累加器式三角波的两个**斜率不连续点**（p=0、p=0.5）施加带限误差校正（带限脉冲积分路线），O(1) 每样本。以 `analytic_ref_inband_db`（`a_tri(k)=4/(π²k²)` 为带限三角目标）为对照。
+  1. **候选 A（推荐）：三角 BLAMP / 带限积分修正。** 在相位累加器式三角波的两个**斜率不连续点**（p=0、p=0.5）施加带限误差校正（带限脉冲积分路线），O(1) 每样本。以 **Method BL `blref_full_db`（真实总混叠，权威参考，见 §8）** 为对照——`analytic_ref_inband_db`/`harmris_*` 仅当交叉核对/诊断。
   2. **候选 B（考虑，不推荐）：2–4× 分数过采样 + 重置。** Class-B 式处理，牺牲延迟、CPU 最高；单个振荡器上不值得，除非选 VCF/非线性链（另有其契约）。
 
 - **产品可达性：** `dryA`（VCO-A 默认三角）已确证、干净、周期；`dryB`（VCO-B，cv_amt=0 稳态）共享同一生成器。VCO saw/pulse/morph/sub 无产品 `setWaveform` 入口 → 属模块研发探针，不在首片。
@@ -163,8 +163,8 @@ composite / 非线性行见「结论 ③」表；完整 60-cell 见 `report/gh19
 - **波形/调制保持（须实测）：** BLAMP 只局域修正接近不连续点的采样，不改基频、幅度、三角形状类别；对相位累加式 FM/AM 交互的调制保持**必须实测**，不能仅按「逐样本相位校正故成立」口头推断——列入首片验收据。
 
 - **别名改善量的可验证目标（用同工具，实现后对照）：**
-  - 实现后重跑 `gh19_alias_probe`（探针不变）+ `gh19_alias_analyze.py --check`，对 VCO-A 三角各 cell 的 `harmris_full_db`、`harmris_inband_db` 与本次 naive 基线做前后对照，记录实测改善量。
-  - 判据（**不断言 −60 dB，不预设未测量数值**）：BLAMP 后 `harmris_full_db`/`harmris_inband_db` 必须**逐 cell 相对 naive 基线单调改善（可测的负向增量）**，且更接近解析带限参考（该参考上界为理想值，**不是** BLAMP 保证值）；**任一 cell 无改善 → 目标失败**。
+  - 实现后重跑 `gh19_alias_probe`（探针不变）+ `gh19_alias_analyze.py --check`，对 VCO-A 三角各 cell 的 **`blref_full_db`（权威，真实总混叠）**与本次 naive 基线做前后对照，记录实测改善量；`harmris_full_db`/`harmris_inband_db` 同步记录（诊断/核对）。
+  - 判据（**不断言 −60 dB，不预设未测量数值**）：BLAMP 后 `blref_full_db` 必须**逐 cell 相对 naive 基线单调改善（可测的负向增量）**，且更接近 Method BL 全带参考（该参考上界为理想值，**不是** BLAMP 保证值）；**任一 cell 无改善 → 目标失败**。
   - 改善量随实现落地后写入 reftable，以数据裁决，不以预算/经验阈值先行。
 
 - **CPU / 延迟代价：** 候选 A 每样本常数级；零新增 look-ahead。真实数字由实现后在同一 harness 测（callback 475.82 ns/sample、block 474.23 ns/sample 为对照组）。延迟/破环约束与 GH#11 只读测量契约一致（不以滤波器群延迟替代破环最小延迟）。**不预先承诺**「零延迟」「全部件改善」。
@@ -190,13 +190,70 @@ cmake --build build --target gh19_alias_probe -j
 python3 tools/gh19_alias_analyze.py --dir report/gh19-probe --check
 # 4) 只出矩阵（与提交入包的 report/gh19-analyze.tsv 一致）
 python3 tools/gh19_alias_analyze.py --dir report/gh19-probe > report/gh19-analyze.tsv
+# (分析器依赖 numpy；无 numpy 的环境用 `uv run --no-project --with numpy python3 tools/...`)
 ```
 
 > `report/gh19-probe/`（.raw 确定性可再生成产物）已 gitignore；提交入包的矩阵工件为 `report/gh19-analyze.tsv`、`report/gh19-check.txt`。探针/工具均**不改生产 DSP/默认值/路由/registry/持久化**，也不改 12 项已声明键盘缺口门禁。
 
 ---
 
-## 8. 边界（与 2a7a13ca 一致）
+## 8. REVISION (a1a71ae5) — 权威带限参考 + 真实入口负控
+
+本报告基线在 `4e19f01`（PR #23）之后，针对 @Codex `a1a71ae5` 三个承重缺口做了定向复核修订，新增/改写如下。**不改生产 DSP/默认值/路由/registry/持久化**，仍是只读测量。
+
+### 8.1 Method BL：权威逐样本带限参考（item ①）
+
+Method B 重述为**纯理论交叉核对**（见 8.2），新增 **Method BL** 作为权威参考。参考由真实产品采样**自身**构建（不再用理想尺度拟合设备缩放）：
+
+- 参考 = 理想三角，落在产品**吸附的** `f0_snap`（`intperiod_window` 取整周），**设备缩放**用实测 `a1_mag`、**初相**用实测 `arg_a1`。
+- **只带限到全 Nyquist（sr/2）**，非 `NYQ_FRAC·sr/2`（后者把 k=99·220 这类带内谐波误截掉——早先版本因此出现 10.43 dB 假缝）。
+- 系数：`r[i] = 2·a1_mag·Σ_{奇 k, MIN_HZ≤k·f0_snap≤sr/2} a_tri(k)/a_tri(1) · cos(k·(2π·f0_snap·i/sr)+k·arg_a1)`，`a_tri(k)=4/(π²k²)`。
+- `blref_inband_db` = 带内 [100,5000] 功率比 `10·log10(pe/px)`，`pe`=x−ref 带内功率、`px`=x 带内功率（均零填充 Hann FFT）。
+- `blref_full_db` = 同式但**全带**（全 Nyquist），即真实总混叠。
+- `blshape_max_db` = 带内奇 k 上 `max 20·log10(| |proj(x,k·f0_snap)| − (scale·a_tri(k)/a_tri(1))| / (scale·a_tri(k)/a_tri(1)))`——验证产品**确为干净三角**（参考归属有效）。
+
+**尺度不变性**：混叠比按构造对尺度不变（信号减半 → 同 dBc）。先前「设备尺度权威参考」主张撤回；参考用实测尺度，用形状检查 + 错误尺度负控双重验证（8.2）。
+
+**与独立理论对账（24 个三角单元格，`blref_inband` vs `theory_dedup`）：** 44.1/48 kHz 一致在 ~0.06 dB 内；88.2/96 kHz 一致在 ~0.28 dB 内（深混叠 −90…−91 dB 靠近参考精度噪声底，故偏差略大）。
+
+| 单元 | blref_inband（dB） | theory_dedup（dB） | |偏差|（dB） |
+|---|---|---|---|---|
+| 220 @ 44100 | −77.98 | −78.00 | 0.02 |
+| 440 @ 44100 | −68.74 | −68.70 | 0.04 |
+| 880 @ 44100 | −59.70 | −59.64 | 0.06 |
+| 220 @ 88200 | −90.03 | −90.31 | 0.28 |
+| 440 @ 88200 | −81.32 | −81.35 | 0.03 |
+| 880 @ 88200 | −71.88 | −71.84 | 0.04 |
+| 220 @ 96000 | −91.36 | −91.63 | 0.27 |
+
+（全部 24 个三角单元格见 `report/gh19-analyze.tsv`；`blref_inband` 对干净三角与 `harmris_inband` 逐格相等——理想参考 ≡ 自信号拟合参考在带内等价。）`blshape_max_db` 范围 −43.33…−79.53 dB，确认产品是干净三角。**全带真实混叠 `blref_full_db` = −50.30 dB（880 @ 44100）… −77.83 dB（220 @ 96000）**，即首片抗混叠的优化目标指标。
+
+### 8.2 Method A / Method B 归位（item ①）
+
+- **Method A（`harmris_*`）** 明确降为**诊断/下界**：对产品**自身**带内谐波做拟合重建的残差，会把折叠到带内谐波 bin 上的混叠**吸收进去**，故**不能**叫「总混叠下界」，只能当诊断。**不是**独立参考。
+- **Method B（`theory_dedup_db`）** 明确为**纯理论预测**：**不读任何采样、不读相位**，仅理想三角解析折叠线；**实测 `a1_mag` 在比值中相消**。作为交叉核对，不当作权威参考。
+- 权威参考 = Method BL（8.1）。
+
+### 8.3 负控改为真实入口注入（item ②，G2/G4）
+
+原 G2（仅断言不同模型参数给不同结果）与 G4（两个合成信号）改为在**真实检查入口**注入并必须失败：
+
+- **G2 label-sr**：把元数据 `sr` 改成 `sr·0.5`（音频不变）→ 断言 `blref_inband` 必须变化 ≥1 dB（实测 good −77.98 vs relabeled −0.00，被抓）。
+- **G2 label-f0**：给错误 `f0_target` → 断言收敛到实测同频 ±0.05 Hz（实测 wrong 231.00 → converged 219.97，标签不可信）。
+- **G2 scale**：`scale_override=2·a1_mag`（错误设备缩放）→ 断言 `blref` 退化 ≥3 dB（实测 good −77.98 vs wrong −0.00，被抓）。
+- **G2 power-norm**：正确分母（带内 `pe/px`）vs 错误分母（信号总功率）→ 断言不同（实测 good −77.98 vs wrong −40.09，被抓）。
+- **G4 stand-in**：正确缩放 ideal/静音替代真实输出（`dynamic_range_control` + 静音分类）。实测 real −67.54 vs naive-ideal −67.44 vs 带限-ideal −83.31 → 分离 15.87 dB（≥12）；真实比干净替身高 15.77 dB；静音替换被分类为静音。
+- 保留既有：固定缺失行/缺失文件门禁（SELF-NEG 检测 3 种合成缺失均检出，无空成功）。
+
+### 8.4 纯 DSP CPU 计时（item ③）
+
+- **`processPure`**：新增于共享 harness `tests/host/test_engine_harness.h`（**超出「tests/probes」的小扩展，需 @Codex 认可**），直接 `engine_.processBlock(in,out,kInCh,kOutCh,frames)`，**零向量分配、零输入生成、零输出插入**；块大小为 `block=512`，跨 7 条 `blkLanes` 中位数统计。
+- **CPU 纯内核 = 490.17 ns/sample**（stdev 7.47，512 块，7 lanes）——测 DSP 本体，非 harness 渲染环。
+- 原 harness 渲染环成本改为 `cpu_render_loop` = 481.91 ns/sample（重命名，不再叫「callback」）。
+
+---
+
+## 9. 边界（与 2a7a13ca 一致）
 
 - 仅允许：tests/probes、测量工具、必要 CMake 注册、report 文档。禁止：生产 DSP/默认值/路由/registry/持久化；不改 12 项已声明缺口门禁。
 - 真实产品调用不能被 ideal 替身或静音输出替换而继续成功（G3 + SELF-NEG 已保住）；复数折叠漏共轭必红（G1）；错采样率/参考频率标签与**功率归一化**可被对账抓住（G2）；隔离源码突变、不在生产头加故障宏（G4）。

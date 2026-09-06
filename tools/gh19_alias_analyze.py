@@ -22,16 +22,26 @@
 #   probes (sub, saw/pulse/morph) are in the manifest as `required=0` and are declared ALLOWED blocks
 #   (documented, never silently dropped) — they do NOT need a product cell.
 #
-# REFERENCE MEANING (BLOCK item ② — Method A is NOT an independent band-limited reference):
-#   METHOD A ("harmonic-fit residual", lower bound): reference = the signal's OWN measured in-band
+# REFERENCE MEANING (BLOCK item ② + @Codex a1a71ae5 — Method A is a diagnostic, Method B is theory,
+# and the authoritative per-sample reference is METHOD BL):
+#   METHOD A ("harmonic-fit residual", DIAGNOSTIC): reference = the signal's OWN measured in-band
 #      harmonic coefficients (projection at k*f0, k*f0 <= sr/2); residual = x - ref. This ABSORBS
 #      aliasing that lands on legitimate in-band harmonics, so it is a LOWER bound on total aliasing,
-#      never the authoritative alias figure. Reported as `harmres_*_db`.
-#   METHOD B ("analytic reference", authoritative for clean triangle): ideal-triaes exact analytic
+#      and it is built FROM the signal (not independent). Diagnostic only — never the total-aliasing
+#      figure (other error sources are not excluded). Reported as `harmris_*_db`.
+#   METHOD B ("analytic folded-line", THEORY / cross-check): ideal-triangle exact analytic
 #      a_tri(k)=4/(pi^2 k^2) (odd k), folded with the CONJUGATED mirror rule, dedup over distinct
-#      observed lines, in-band dBc. For a triangle cell this is the INDEPENDENT alias reference.
-#      Reported as `analytic_ref_inband_db`. A naive product triangle => analytic_ref ~= the naive fold;
-#      an already-anti-aliased one => analytic_ref << naive fold. A-B consistency is evidence.
+#      observed lines, in-band dBc. Reads NO samples and NO phase; the measured fundamental a1_mag
+#      cancels in the returned ratio, so it is a THEORETICAL PREDICTION, not a reference. Reported as
+#      `theory_dedup_db` and cross-checked against METHOD BL (they must agree for a clean triangle).
+#   METHOD BL ("per-sample band-limited reference", AUTHORITATIVE for clean triangle): builds an
+#      INDEPENDENT ideal triangle at the product's snapped frequency with the product's MEASURED device
+#      scale and measured initial phase, band-limited to FULL Nyquist, and takes the real per-sample
+#      product-minus-reference residual. The residual is the aliasing. Reported as `blref_inband_db`
+#      (referenced to the product's in-band power), `blref_full_db` (full-band), and `blshape_max_db`
+#      (max per-harmonic deviation of the product from the ideal-triangle shape — certifies the
+#      reference attribution is valid). For a clean triangle blref_inband_db agrees with the theory
+#      (`theory_dedup_db`) and with the harmonic-fit diagnostic (which is the SAME signal's own fit).
 #   COMPOSITE / non-single-module paths (drone voice, new-drone Schmitt voice, preamp tanh, wet chain):
 #      no independent single-module alias reference exists, so NO alias attribution is claimed; the
 #      row reports the harmonic-fit residual and total in-band power (a total-waveform-error / PSD
@@ -218,9 +228,13 @@ def intperiod_window(x, sr, f0):
 
 
 # ---------------------------------------------------------------------------
-# METHOD A: harmonic-fit residual (real product, any periodic shape, leakage-free). This is a LOWER
-# bound on total aliasing (it absorbs aliasing co-located with a legitimate in-band harmonic), so it
-# is reported as a harmonic-fit residual, never as the authoritative alias figure.
+# METHOD A: harmonic-fit residual (real product, any periodic shape, leakage-free). DIAGNOSTIC ONLY.
+# It subtracts the signal's OWN measured in-band harmonics, so aliasing that folds onto a legitimate
+# in-band harmonic is ABSORBED into the fit and disappears from the residual => it is a LOWER bound on
+# total aliasing, and it is NOT an independent reference (it is built from the signal itself). It is
+# useful as an in-reach diagnostic and as a cross-check, but the AUTHORITATIVE independent figure for a
+# clean triangle is METHOD BL (per-sample product-minus-band-limited-reference, below). Reframe: this
+# is a harmonic-fit residual, never the total-aliasing figure.
 # ---------------------------------------------------------------------------
 def method_a(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI):
     win = intperiod_window(x, sr, f0)
@@ -278,8 +292,12 @@ def method_a(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI):
 
 
 # ---------------------------------------------------------------------------
-# METHOD B: ideal-triangle analytic folded-line alias (CONJUGATE-corrected). Authoritative reference
-# for a clean triangle cell — independent of the signal's own harmonics.
+# METHOD B (theory): ideal-triangle analytic folded-line alias (CONJUGATE-corrected). This is a CLOSED-
+# FORM PREDICTION only — it reads NO samples and NO phase. It takes a measured fundamental magnitude
+# a1_mag and returns the aliasing ratio folded from above Nyquist, but a1_mag cancels in the ratio
+# (restated as dBc against the carrier). It is therefore a THEORETICAL CROSS-CHECK for a clean
+# triangle cell, NOT an authoritative per-sample reference. The authoritative per-sample product-minus-
+# reference reconciliation is METHOD BL (below), and the report-band figure is referenced from it.
 # ---------------------------------------------------------------------------
 def fold_line(hz, sr):
     r = math.fmod(hz, sr)
@@ -321,12 +339,122 @@ def _fold_analytic(coeff_fn, f0, sr, scale, kfmax=KFMAX, band_lo=BAND_LO, band_h
 
 
 def method_b_tri(sr, f0, a1_mag, band_lo=BAND_LO, band_hi=BAND_HI):
+    """Theoretical folded-line alias prediction for a clean triangle. Reads NO samples/phase; a1_mag
+    only rescales the carrier and cancels in the returned ratio. Cross-check only (see METHOD BL)."""
     if a1_mag <= 0:
         return None
     scale = a1_mag / a_tri(1)
     r = _fold_analytic(a_tri, f0, sr, scale, band_lo=band_lo, band_hi=band_hi)
     r["carrier_p2"] = a1_mag * a1_mag
     return r
+
+
+# ---------------------------------------------------------------------------
+# METHOD BL (authoritative): real per-sample band-limited triangle reference. Builds an INDEPENDENT
+# ideal triangle at the product's snapped frequency with the product's MEASURED device scale and
+# measured initial phase, band-limited to FULL Nyquist (no aliasing), then computes the per-sample
+# residual of the real product against it. The residual is the aliasing. This is the real
+# "product sample - independent band-limited reference" reconciliation @Codex requires:
+#   * frequency / initial phase = from product state (refine_f0 snap + arg of the measured fundamental)
+#   * device scale = the measured fundamental magnitude (a1_mag), NOT an arbitrary fit
+#   * shape = independent ideal a_tri(k)/a_tri(1) (a clean-triangle authority), verified per-harmonic
+#   * band-limit = full Nyquist (sr/2), NOT NYQ_FRAC*sr/2 (which would miss genuine in-band harmonics)
+# The scale is inherently scale-invariant (a 2x-amplitude output gives the same dBc ratio), which is
+# CORRECT for an aliasing ratio / not an amplitude meter; the aliasing figure is referenced to the
+# product's in-band power, so a halved output is correctly reported at the SAME alias dBc. What the
+# reference establishes is that the product IS a clean ideal triangle at the measured scale+phase
+# (verified via blshape_max_db) and how far it departs from that ideal in-band (blref_inband_db).
+# ---------------------------------------------------------------------------
+def bandlimited_tri(n, sr, f0_snap, a1_mag, arg_a1):
+    """x_ref[i] = 2*a1_mag * sum_{odd k, MIN_HZ<=k*f0_snap<=sr/2}
+                     (a_tri(k)/a_tri(1)) * cos(k*(2*pi*f0_snap*i/sr) + k*arg_a1).
+    Full-Nyquist band-limit; the k*arg_a1 phases reproduce the product's measured harmonic phase
+    progression. Returns (ref, ks)."""
+    tt = 2.0 * math.pi * f0_snap / sr
+    ks = []
+    kmax = int(sr * 0.5 / f0_snap) + 1
+    for k in range(1, kmax + 1):
+        if k % 2 == 1 and MIN_HZ <= k * f0_snap <= sr * 0.5:
+            ks.append(k)
+    ref = [0.0] * n
+    scale = 2.0 * a1_mag
+    for k in ks:
+        ak = a_tri(k) / a_tri(1)          # real, positive; ideal triangle relative harmonic
+        w = k * tt
+        C, S = math.cos(w), math.sin(w)
+        c, s = 1.0, 0.0
+        cp, sp = math.cos(k * arg_a1), math.sin(k * arg_a1)
+        # cos(k*tt*i + k*arg_a1) = (c*cp - s*sp), with c,s tracking cos/sin of k*tt*i incrementally.
+        for i in range(n):
+            ref[i] += scale * ak * (c * cp - s * sp)
+            nc, ns = c * C - s * S, s * C + c * S
+            c, s = nc, ns
+    return ref, ks
+
+
+def method_bl(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI, scale_override=None):
+    """Real per-sample product-minus-band-limited-reference reconciliation for a clean triangle cell.
+    Returns the in-band aliasing figure referenced to the PRODUCT's in-band power (the authoritative
+    ratio), a full-band residual, and a per-harmonic shape-verification metric. `scale_override`
+    forces the reference scale (used by the wrong-device-scale negative control); None = measured."""
+    win = intperiod_window(x, sr, f0)
+    if win is None:
+        return None
+    n, f0_snap, gap = win
+    if f0_snap <= 0:
+        return None
+    nx = x[:n]
+    a1 = proj(nx, sr, f0_snap)
+    a1_mag = abs(a1)
+    if a1_mag <= 0:
+        return None
+    arg_a1 = cmath.phase(a1)
+    if scale_override is None:
+        scale = a1_mag
+    else:
+        scale = scale_override
+    ref, ks = bandlimited_tri(n, sr, f0_snap, scale, arg_a1)
+    resid = 0.0
+    total = 0.0
+    for i in range(n):
+        e = nx[i] - ref[i]
+        resid += e * e
+        total += nx[i] * nx[i]
+    full_db = (10.0 * math.log10(resid / total) if (total > 0 and resid > 0) else float("-inf"))
+
+    ewin = [0j] * ZPAD
+    xw = [0j] * ZPAD
+    hn = hann(n)
+    for i in range(n):
+        ewin[i] = complex((nx[i] - ref[i]) * hn[i], 0.0)
+        xw[i] = complex(nx[i] * hn[i], 0.0)
+    fft(ewin)
+    fft(xw)
+    bin_hz = sr / ZPAD
+    pe = 0.0
+    px = 0.0
+    for k in range(1, ZPAD // 2):
+        f = k * bin_hz
+        if band_lo <= f <= band_hi:
+            pe += abs(ewin[k]) ** 2
+            px += abs(xw[k]) ** 2
+    inband_db = (10.0 * math.log10(pe / px) if (pe > 0 and px > 0) else float("-inf"))
+
+    # shape verification: max relative deviation of the product's in-band odd harmonic MAGNITUDES from
+    # the ideal triangle ratio a_tri(k)/a_tri(1). Small => the product is a clean ideal triangle and the
+    # reference attribution (aliasing == residual) is valid; large => the reference does not describe the
+    # product (wrong shape / wrong scale), so blref is NOT a valid alias figure for this cell.
+    shape_max = -float("inf")
+    for k in ks:
+        ideal_mag = scale * a_tri(k) / a_tri(1)
+        if ideal_mag > 0:
+            meas_mag = abs(proj(nx, sr, k * f0_snap))
+            dev = abs(meas_mag - ideal_mag) / ideal_mag
+            shape_max = max(shape_max, 20.0 * math.log10(dev if dev > 0 else 1e-300))
+    return {"f0_snap": f0_snap, "kfull": len(ks), "a1_mag": a1_mag, "arg_a1": arg_a1,
+            "blref_full_db": full_db, "blref_inband_db": inband_db, "blshape_max_db": shape_max,
+            "resid_inband_p2": pe, "prod_inband_p2": px, "prod_total_p2": total,
+            "n": n, "Nperiods": int(round(n * f0_snap / sr)), "gap": gap}
 
 
 # ---------------------------------------------------------------------------
@@ -588,9 +716,24 @@ def analyze_cell(dirpath, rec):
     path = rec["path"]
     if (path.startswith("vco_a_tri") or path.startswith("vco_b_tri")) and ma:
         mb = method_b_tri(sr, f0, ma["a1_mag"])
-        out["analytic_ref"] = ("%.1f" % mb["dedup_db"]) if mb else "-"
+        out["theory_dedup_db"] = ("%.2f" % mb["dedup_db"]) if mb else "-"
+        mbl = method_bl(x, sr, f0)
+        if mbl:
+            out["blref_inband_db"] = (fmt_db(mbl["blref_inband_db"]) if mbl["blref_inband_db"] ==
+                                      mbl["blref_inband_db"] else "-")
+            out["blref_full_db"] = (fmt_db(mbl["blref_full_db"]) if mbl["blref_full_db"] ==
+                                    mbl["blref_full_db"] else "-")
+            out["blshape_max_db"] = (fmt_db(mbl["blshape_max_db"]) if mbl["blshape_max_db"] ==
+                                     mbl["blshape_max_db"] else "-")
+        else:
+            out["blref_inband_db"] = "-"
+            out["blref_full_db"] = "-"
+            out["blshape_max_db"] = "-"
     else:
-        out["analytic_ref"] = "-"
+        out["theory_dedup_db"] = "-"
+        out["blref_inband_db"] = "-"
+        out["blref_full_db"] = "-"
+        out["blshape_max_db"] = "-"
     return out
 
 
@@ -630,24 +773,27 @@ def main():
 
     # ---------------------------------------------------------------- per-cell analysis + report
     hdr = ("id\tpath\tsr\tf0_target\tf0_refined\tharmris_full_db\tharmris_inband_db\t"
-           "analytic_ref_inband_db\tN\tperiods\tgap\tcategory")
+           "blref_inband_db\tblref_full_db\tblshape_max_db\ttheory_dedup_db\t"
+           "N\tperiods\tgap\tcategory")
     print(hdr)
     for cid in sorted(required) + [c["id"] for c in cells if c["id"] not in required]:
         rec = by_id.get(cid)
         if rec is None:
             # a manifest-required id with no row is already a coverage error; emit a stub row.
             m = required.get(cid)
-            print("\t".join([cid, (m["path"] if m else "-"), (m["sr"] if m else "-"), "-", "-",
-                             "-", "-", "-", "-", "-", "-", "MISSING"]))
+            print("\t".join([cid, (m["path"] if m else "-"), (m["sr"] if m else "-"),
+                             "-", "-", "-", "-", "-", "-", "-", "-",
+                             "-", "-", "-", "MISSING"]))
             continue
         if not rec["produced"]:
-            print("\t".join([cid, rec["path"], rec["sr_hz"], rec["f0_target_hz"], "-", "-", "-",
-                             "-", "-", "-", "-", "not-produced:" + rec.get("signal", "")]))
+            print("\t".join([cid, rec["path"], rec["sr_hz"], rec["f0_target_hz"], "-", "-",
+                             "-", "-", "-", "-", "-", "-", "-", "-",
+                             "not-produced:" + rec.get("signal", "")]))
             continue
         a = analyze_cell(args.dir, rec)
         if a["err"]:
-            print("\t".join([cid, rec["path"], rec["sr_hz"], rec["f0_target_hz"], "-", "-", "-",
-                             "-", "-", "-", "-", a["err"]]))
+            print("\t".join([cid, rec["path"], rec["sr_hz"], rec["f0_target_hz"], "-", "-",
+                             "-", "-", "-", "-", "-", "-", "-", "-", a["err"]]))
             # a required cell that is produced but invalid is a hard FAIL (not an info line).
             if cid in required:
                 gate_errors.append(f"invalid-cell {cid} [{a['err']}]")
@@ -656,7 +802,9 @@ def main():
             cid, rec["path"], str(int(a["sr"])), str(int(a["f0_target"])),
             ("%.2f" % a["f0"]) if a["f0"] > 0 else "-",
             a["harmris"], a["harmris_inband"],
-            a.get("analytic_ref", "-"), str(a["n"]), str(a["periods"]),
+            a.get("blref_inband_db", "-"), a.get("blref_full_db", "-"),
+            a.get("blshape_max_db", "-"), a.get("theory_dedup_db", "-"),
+            str(a["n"]), str(a["periods"]),
             ("%.4f" % a["gap"]) if (a["gap"] == a["gap"]) else "-",  # NaN -> "-"
             a["cat"]]))
 
@@ -697,7 +845,12 @@ def main():
             if not g1_fail:
                 print("  G1 conjugation: PASS")
 
-            # G2 wrong-label + wrong power-normalization reconciliation on a REAL triangle cell.
+            # G2 / G4 (REAL-ENTRY injections). Each negative injects an error at the actual check entry
+            # on a REAL produced triangle cell and asserts the gate DETECTS it — a wrong label, a wrong
+            # device scale, a wrong power denominator, or a correctly-scaled ideal / silence stand-in must
+            # NOT pass untested. This replaces the earlier model-parameter diff (which only proved "two
+            # model params differ") and the two-synthetic-signal G4. The fixed missing-row / missing-file
+            # gate above is unchanged.
             tri = next((c for c in cells if c["produced"] and c["path"].startswith("vco_a_tri")), None)
             if tri is None:
                 tri = next((c for c in cells if c["produced"] and c["path"].startswith("vco_b_tri")), None)
@@ -708,42 +861,81 @@ def main():
                 sr = float(tri["sr_hz"])
                 x = steady(read_raw(os.path.join(args.dir, tri["raw"])))
                 f0 = refine_f0(x, sr, float(tri["f0_target_hz"]))
-                ma = method_a(x, sr, f0)
-                a1 = ma["a1_mag"]
-                good = method_b_tri(sr, f0, a1)
-                wrong_sr = method_b_tri((sr * 2) if sr != 96000 else 44100, f0, a1)
-                wrong_f0 = method_b_tri(sr, f0 * 1.03, a1)
-                if good is None or wrong_sr is None or wrong_f0 is None:
-                    check_fails.append("G2 reconcile: no baseline figure")
-                elif abs(good["dedup_db"] - wrong_sr["dedup_db"]) < 1e-3:
-                    check_fails.append("G2 reconcile: wrong-sr-label not caught")
-                elif abs(good["dedup_db"] - wrong_f0["dedup_db"]) < 1e-3:
-                    check_fails.append("G2 reconcile: wrong-f0-label not caught")
+                good = method_bl(x, sr, f0)
+                if good is None or not (good["blref_inband_db"] == good["blref_inband_db"]):
+                    check_fails.append("G2 blref: no reconciliation figure on real triangle cell")
                 else:
-                    print("  G2 reconcile: good=%.1fdB wrong_sr=%.1fdB wrong_f0=%.1fdB -> labels caught"
-                          % (good["dedup_db"], wrong_sr["dedup_db"], wrong_f0["dedup_db"]))
-                # wrong power normalization: the alias figure MUST be referenced to the carrier
-                # (a1_mag^2 == carrier_p2). Recompute it against a genuinely WRONG denominator — the
-                # whole signal's power (harmonic + alias, the classic dBc slip) — and assert the two
-                # differ, so a power-normalisation error is caught REGARDLESS of whether this cell has
-                # coincident-fold coincidence (naive vs dedup happens to agree on a clean triangle).
-                total_p = sum(v * v for v in x)
-                wrong_pw = (10.0 * math.log10(good["dedup_p"] / total_p)
-                            if (total_p > 0 and good["dedup_p"] > 0) else float("-inf"))
-                if wrong_pw == float("-inf") or abs(wrong_pw - good["dedup_db"]) < 1e-3:
-                    check_fails.append("G2 reconcile: power-normalisation not distinguishable")
-                else:
-                    print("  G2 power-norm: correct(carrier)=%.1fdB wrong(signal-power)=%.1fdB -> caught"
-                          % (good["dedup_db"], wrong_pw))
-                # correct-scaled-ideal-stand-in negative anchored to this real cell.
-                dr = dynamic_range_control(sr, f0, max(abs(v) for v in steady(x)))
-                if dr is None:
-                    check_fails.append("G4 dynamic-range: no figure at real cell sr/f0")
-                else:
-                    print("  G4 stand-in: naive_full=%.2f bandlimited_full=%.2f sep=%.2f"
-                          % (dr["naive_full"], dr["bl_full"], dr["sep"]))
-                    if dr["sep"] < SEP_MIN_DB:
-                        check_fails.append("G4 dynamic-range: metric cannot distinguish aliased from clean (sep<%.0fdB)" % SEP_MIN_DB)
+                    # (a) wrong METADATA sr label. Relabel sr and recompute the per-sample reference at the
+                    #     real samples: at a different sr the reference must STOP reconciling (blref jumps),
+                    #     so a bad sr label is detected, not silently trusted.
+                    bad_sr = sr * 0.5
+                    bad = method_bl(x, bad_sr, f0)
+                    if bad is None or not (bad["blref_inband_db"] == bad["blref_inband_db"]):
+                        check_fails.append("G2 label-sr: no figure at relabeled sr")
+                    elif abs(bad["blref_inband_db"] - good["blref_inband_db"]) < 1.0:
+                        check_fails.append("G2 label-sr: relabeled sr NOT caught (blref reconciles "
+                                           "at wrong sr too)")
+                    else:
+                        print("  G2 label-sr: good_sr=%.2fdB relabeled_sr=%.2fdB -> caught"
+                              % (good["blref_inband_db"], bad["blref_inband_db"]))
+                    # wrong f0 label: the tool must MEASURE f0 from the signal, not trust the label, so a
+                    # perturbed f0_target must converge back to the same measurement.
+                    f0_bad = refine_f0(x, sr, float(tri["f0_target_hz"]) * 1.05)
+                    if abs(f0_bad - f0) > 0.05:
+                        check_fails.append("G2 label-f0: wrong f0_target moved the measurement "
+                                           "(label trusted, not measured)")
+                    else:
+                        print("  G2 label-f0: wrong target=%.2f measured=%.2f -> label not trusted"
+                              % (float(tri["f0_target_hz"]) * 1.05, f0_bad))
+                    # (b) WRONG DEVICE SCALE: rebuild the reference at a deliberately wrong scale and assert
+                    #     the in-band residual degrades massively — the scale is measured, not a free knob.
+                    bad_scale = method_bl(x, sr, f0, scale_override=2.0 * good["a1_mag"])
+                    if bad_scale is None or not (bad_scale["blref_inband_db"] == bad_scale["blref_inband_db"]):
+                        check_fails.append("G2 scale: no figure at wrong device scale")
+                    elif bad_scale["blref_inband_db"] - good["blref_inband_db"] < 3.0:
+                        check_fails.append("G2 scale: wrong device scale NOT caught (residual unchanged)")
+                    else:
+                        print("  G2 scale: correct=%.2fdB wrong(2x)=%.2fdB -> caught"
+                              % (good["blref_inband_db"], bad_scale["blref_inband_db"]))
+                    # WRONG POWER DENOMINATOR: the in-band alias figure MUST be referenced to the product's
+                    # in-band power, never the whole-signal power (a classic dBc slip). Recompute against
+                    # the wrong denominator and assert the two differ.
+                    ok_denom = good["blref_inband_db"]
+                    wrong_denom = (10.0 * math.log10(good["resid_inband_p2"] / good["prod_total_p2"])
+                                   if (good["prod_total_p2"] > 0 and good["resid_inband_p2"] > 0)
+                                   else float("-inf"))
+                    if wrong_denom == float("-inf") or abs(wrong_denom - ok_denom) < 1e-3:
+                        check_fails.append("G2 power-norm: power denominator NOT distinguishable")
+                    else:
+                        print("  G2 power-norm: correct(inband)=%.2fdB wrong(whole-signal)=%.2fdB -> caught"
+                              % (ok_denom, wrong_denom))
+                    # (c) correctly-scaled IDEAL / SILENCE stand-in substituting the real product output at
+                    #     this cell's sr/f0/peak. A clean band-limited stand-in must read CLEAN (well below
+                    #     the real aliased figure); the real product must read as ALIASED relative to it.
+                    dr = dynamic_range_control(sr, f0, max(abs(v) for v in x))
+                    if dr is None:
+                        check_fails.append("G4 stand-in: no figure at real cell sr/f0")
+                    else:
+                        ma_real = method_a(x, sr, f0)
+                        real_harmris = (ma_real["full_db"] if ma_real else float("-inf"))
+                        print("  G4 stand-in: real=%s dB naive-ideal=%.2f bandlimited-ideal=%.2f sep=%.2f"
+                              % (fmt_db(real_harmris), dr["naive_full"], dr["bl_full"], dr["sep"]))
+                        if dr["sep"] < SEP_MIN_DB:
+                            check_fails.append("G4 stand-in: metric cannot separate aliased from clean "
+                                               "(sep<%.0fdB)" % SEP_MIN_DB)
+                        # the REAL product must read as clearly more aliased than a clean band-limited
+                        # stand-in — otherwise a clean stand-in is being mistaken for the real signal.
+                        elif not (real_harmris == real_harmris) or (real_harmris - dr["bl_full"]) < SEP_MIN_DB:
+                            check_fails.append("G4 stand-in: real product does not read as aliased relative "
+                                               "to the clean stand-in")
+                        else:
+                            print("  G4 stand-in: real reads %0.2fdB above clean stand-in (distinguished)"
+                                  % (real_harmris - dr["bl_full"]))
+                    # SILENCE substituting the real output must be classified silent (an invalid cell).
+                    if classify_samples([0.0] * len(x)) != "silent":
+                        check_fails.append("G4 stand-in: silence substitution NOT detected as silent")
+                    else:
+                        print("  G4 stand-in: silence substitution classified silent")
 
             # G3 real-data: report the required-cell validity already enforced by the coverage gate.
             print("  G3 real cells: %d produced; coverage gate enforces finite/non-silent/scale on required cells."

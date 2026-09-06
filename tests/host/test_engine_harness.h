@@ -137,6 +137,16 @@ class EngineHarness {
     return true;
   }
 
+  // Pure engine processBlock on CALLER-OWNED planar buffers: NO allocation, NO input generation and NO
+  // captured-output insert inside this call (BLOCK item ③). The caller supplies already-sized `in[*]` /
+  // `out[*]` so a CPU-cost measurement can time ONLY the DSP loop — the harness wrapper (renderBlock /
+  // render) allocates six vectors, fills the inputs and inserts the outputs, which must be OUTSIDE the
+  // timed region. Returns the engine Status. `frames` must be <= the blockFrames the engine was loaded
+  // with; the engine must have been loaded with the same kInCh/kOutCh this call uses.
+  StandaloneAudioEngine::Status processPure(const double* const* in, double* const* out, int frames) {
+    return engine_.processBlock(in, out, kInCh, kOutCh, frames);
+  }
+
   // Read-only published state (valid only until the next load()). Never null after a successful load.
   const SynthRuntime* runtime() const { return engine_.runtime(); }
 
