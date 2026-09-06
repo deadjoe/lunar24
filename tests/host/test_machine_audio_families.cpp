@@ -104,7 +104,7 @@ void test_vco_voices() {
   CHECK(hDef.load(make_default_device_state(kSeed)));
   CHECK(hDef.render(kF));
   const int a0 = zcrOf(hDef.dryA());   // VCO-A audio-frequency, default.
-  const int b0 = zcrOf(hDef.dryB());   // VCO-B default linear full-depth self-edge -> near-static.
+  const int b0 = zcrOf(hDef.dryB());   // VCO-B default acyclic VCO-A->VCO-B normalized route.
 
   // VCO-A: vco_a_tune moves DRY_A's zero-crossing rate.
   EngineHarness hA;
@@ -115,9 +115,15 @@ void test_vco_voices() {
   CHECK(a0 >= 10);                       // baseHz 440 live (not 0).
   CHECK(zcrOf(hA.dryA()) != a0);         // tune moved VCO-A frequency.
 
-  // VCO-B: default self-edge stall (zcr ~1); cv_amt=0 OR lin_exp=1 restores oscillation; the
-  // recovered VCO-B then responds to vco_b_tune.
-  CHECK(b0 <= 4);                        // default near-static self-edge.
+  // VCO-B (task #83 / GH #18): the default normalized route is now the ACYCLIC VCO-A->VCO-B edge
+  // (source = vco_a.dry_out, NOT the pre-fix vco_b.vco_out self-edge), so default DRY B is a LIVE
+  // oscillator. The pre-fix default self-edge stall is gone. B still responds to its parameter
+  // families, which is what this block keeps proving (the feedback mechanism itself is exercised by
+  // an explicit user B->B cable in test_machine_definition / test_machine_cable_restore):
+  //   * cv_amt=0 isolates the A->B link -> B runs at its own baseHz (live, different pitch).
+  //   * lin_exp=1 runs B exponential (live).
+  //   * vco_b_tune moves B's pitch once B is audible.
+  CHECK(b0 >= 10);                        // default DRY B is live (was the near-static self-edge drift).
   {
     EngineHarness hB;
     DeviceStateV1 r = make_default_device_state(kSeed);
@@ -125,14 +131,14 @@ void test_vco_voices() {
     CHECK(hB.load(r));
     CHECK(hB.render(kF));
     const int bR = zcrOf(hB.dryB());
-    CHECK(bR >= 15);                     // cv_amt=0 restores oscillation.
-    CHECK(bR != b0);
+    CHECK(bR >= 15);                     // isolating the A->B link leaves B at its baseHz.
+    CHECK(traceDiff(hDef.dryB(), hB.dryB()) > 1e-3);  // default (A-modulated) vs cv_amt=0 (baseHz) traces differ.
     EngineHarness hBt;
     DeviceStateV1 r2 = r;
     slot(r2, ParameterId::vco_b_tune) = 0.5;
     CHECK(hBt.load(r2));
     CHECK(hBt.render(kF));
-    CHECK(zcrOf(hBt.dryB()) != bR);      // recovered VCO-B responds to tune.
+    CHECK(zcrOf(hBt.dryB()) != bR);      // B responds to vco_b_tune at cv_amt=0.
   }
   {
     EngineHarness hLin;
@@ -140,7 +146,7 @@ void test_vco_voices() {
     slot(r, ParameterId::vco_b_lin_exp) = 1.0;
     CHECK(hLin.load(r));
     CHECK(hLin.render(kF));
-    CHECK(zcrOf(hLin.dryB()) >= 15);     // lin_exp=1 also restores oscillation.
+    CHECK(zcrOf(hLin.dryB()) >= 15);     // lin_exp=1 leaves B live.
   }
 }
 
@@ -224,7 +230,7 @@ void test_drone_new() {
     CHECK(hB.load(base3)); CHECK(hP.load(p3));
     CHECK(hB.render(kF)); CHECK(hP.render(kF));
     CHECK(std::fabs(hP.runtime()->drone3Channel() - hB.runtime()->drone3Channel()) > 1e-3);
-    CHECK(std::fabs(peakOf(hP.wetL()) - peakOf(hB.wetL())) > 1e-3);   // real WET moved too.
+    CHECK(traceDiff(hP.wetL(), hB.wetL()) > 1e-3);   // real WET moved too.
   }
   {
     DeviceStateV1 base6 = make_default_device_state(kSeed);

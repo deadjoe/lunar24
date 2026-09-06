@@ -393,6 +393,15 @@ lunar_add_test(test_machine_cable_restore tests/host/test_machine_cable_restore.
 target_link_libraries(test_machine_cable_restore PRIVATE lunar_host)
 target_include_directories(test_machine_cable_restore PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# task #83 (GH #18): RED-first product oracle + regression net for correcting the default VCO-B
+# normalized-route SOURCE to the published VCO-A signal (acyclic A->B). Drives the agreed entry and
+# asserts the GH #18 contract: default DRY A/B non-constant + no 50ms flat window at 4 sample rates,
+# cvAmt 0..1 A-only asymmetric propagation (isolating at 0), B-change never swaps the A source, a user
+# cable overrides/restores the A->B route, and the A->B edge is acyclic (no artificial z^-1 delay).
+lunar_add_test(test_vco_normal_source tests/host/test_vco_normal_source.cpp)
+target_link_libraries(test_vco_normal_source PRIVATE lunar_host)
+target_include_directories(test_vco_normal_source PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.

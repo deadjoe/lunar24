@@ -8,8 +8,10 @@
 //
 // The fixed-route set is a 28-entry DATA TABLE deriving 11 unique inter-module compiler
 // edges (mixer->vcf_l/r fold); the normalized routes are keyed by stable RouteId (the
-// VCO-B self-edge is the sole active one). Only the actual SCC members (VCO-B, env-
-// follower, preamp) carry cycle-safe contracts; default is cycle-UNSAFE. The audit API
+// VCO-A->VCO-B route is the sole active one; after the N-1 source fix the default machine is
+// ACYCLIC, and the feedback mechanism is exercised only via an explicit user B->B cable).
+// Only the actual SCC members (VCO-B, env-follower, preamp) carry cycle-safe contracts; default
+// is cycle-UNSAFE. The audit API
 // distinguishes "unknown module" (nullopt / nullptr) from "declared deferred" (kUnsupported
 // / a real contract).
 
@@ -64,8 +66,8 @@ core::RuntimeOutput churnSnapshot(double baseHz) {
   rt.setVcoBaseHz(baseHz);
   rt.setVcoCvAmounts(1.0, 0.0);
   // item 1 (@Codex eaaf08cc): the canonical builder NO LONGER pins the A/B generic-CV
-  // lin/exp mode. Any oracle that drives the generic CV / normalized self-edge must be
-  // EXPLICIT here — never silently on the runtime's provisional default.
+  // lin/exp mode. Any oracle that drives the generic CV / the (now-acyclic) A->B normalized
+  // route must be EXPLICIT here — never silently on the runtime's provisional default.
   rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
   rt.setControlVoltage(lunar24::registry::JackId::vco_b_v_oct_in, 0.0);
   rt.setControlVoltage(lunar24::registry::JackId::vco_a_v_oct_in, 0.0);
@@ -218,30 +220,30 @@ int main() {
     if (core::kFixedRoutes[i].stableId[0] == '\0') fixedStableIdComplete = false;
   check(fixedStableIdComplete, "item5: all 28 fixed-route stableIds are non-empty (no omitted id)");
 
-  // ---- item 8 (@Codex eaaf08cc): the normalized-route evidence conflict is OBSERVED, not
-  //      silently resolved. The active route's IDS (sourceJack/sinkJack == vco_b.vco_out ->
-  //      vco_b.cv_in) are the AUTHORITATIVE execution identity; the registry DESCRIPTION
-  //      attributes the source to "VCO A" ("vco_b.vco_out carries the VCO A normalised
-  //      signal into vco_b.cv_in"). The slice executes by IDS and keeps the evidence
-  //      PROVISIONAL — it does NOT change the generated registry. Pin the IDS-truth + the
-  //      provisional status + the observed description mismatch so a future description->
-  //      ids swap or a premature confirmation is caught.
+  // ---- item 8 (@Codex eaaf08cc, RESOLVED by task #83 / GH #18): the active normalized route.
+  //      The pre-fix route sourced vco_b.vco_out (a VCO-B SELF-edge: B sinks its own output into
+  //      its generic CV). Per the adjudicated fix the source is CORRECTED to the existing published
+  //      VCO-A oscillator signal vco_a.dry_out, making the edge ACYCLIC; stable_id
+  //      route.vco_b_vco_out_to_cv_in + RouteId 4 + B's OSC public owner vco_b.vco_out are
+  //      PRESERVED as legacy, and evidence stays PROVISIONAL (hardware unmeasured). Pin the
+  //      resolved IDS + the provisional status + the description attribution so a future source
+  //      revert to B or a premature confirmation is caught.
   {
-    bool activeIdsConsistent = false, activeProvisional = false, activeDescribesA = false;
+    bool activeIdsResolved = false, activeProvisional = false, activeDescribesA = false;
     for (std::uint32_t i = 0; i < reg::kRouteCount; ++i) {
       if (reg::kNormalizedRoutes[i].id != reg::RouteId::route_vco_b_vco_out_to_cv_in) continue;
-      if (reg::kNormalizedRoutes[i].sourceJack == reg::JackId::vco_b_vco_out &&
+      if (reg::kNormalizedRoutes[i].sourceJack == reg::JackId::vco_a_dry_out &&
           reg::kNormalizedRoutes[i].sinkJack == reg::JackId::vco_b_cv_in)
-        activeIdsConsistent = true;
+        activeIdsResolved = true;
       if (reg::kNormalizedRoutes[i].status == reg::EvidenceStatus::provisional) activeProvisional = true;
       if (reg::kNormalizedRoutes[i].description.find("VCO A") != std::string_view::npos) activeDescribesA = true;
     }
-    check(activeIdsConsistent,
-          "item8: active route IDS = vco_b.vco_out -> vco_b.cv_in (executed by source/sink, not description)");
+    check(activeIdsResolved,
+          "item8: active route IDS = vco_a.dry_out -> vco_b.cv_in (acyclic A->B, not a B self-edge)");
     check(activeProvisional,
-          "item8: active route evidence status is provisional (the conflict is unresolved, not baked confirmed)");
+          "item8: active route evidence status is provisional (hardware unmeasured, not baked confirmed)");
     check(activeDescribesA,
-          "item8: active route DESCRIPTION attributes the source to 'VCO A' (the observed IDS-vs-description conflict)");
+          "item8: active route DESCRIPTION attributes the source to 'VCO A' (agrees with the fixed IDS)");
   }
 
   // ---- audit tightening (@Codex correction 5): unknown is NULL, not a masquerade ----
@@ -295,12 +297,12 @@ int main() {
   check(!sentinelIsRealJack,
         "no registry descriptor uses kFixedEndpointJackSentinel (it is an internal tag only)");
 
-  // ---- the runtime is the product surface and carries the VCO-B self-edge ---------
+  // ---- the runtime is the product surface; the default A->B route is ACYCLIC ---------
   check(def.runtime().lastRebuildStatus() == core::SynthRuntime::RebuildStatus::ok,
         "runtime() rebuilt to ok");
   check(def.runtime().graphValid(), "compiled graph is valid");
-  check(def.runtime().feedbackCount() >= 1,
-        "the VCO-B normalized self-edge compiled into >=1 feedback edge (z^-1 break)");
+  check(def.runtime().feedbackCount() == 0,
+        "the default A->B route compiles to ZERO feedback edges (acyclic, no artificial z^-1 delay)");
   check(def.runtime().execSlotCount() >= 1, "the executor has >=1 compiled module slot");
 
   // ---- valid() is real after a no-op rebuild (@Codex correction 5) ---------------
@@ -334,11 +336,13 @@ int main() {
   check(exact.value != diff.value,
         "delayed and live reads are DISTINCT (D>1-shaped state discriminates)");
 
-  // ---- oracle: canonical rendered VCO-B integration (@Codex 5f8845fe, b4e0e731 §4) ----
-  // The VCO-B self-edge (vco_b.vco_out -> cv_in) is the machine's ONE active normalized
-  // route. This proves the RENDERED machine routes + stages it: the compiler produces a
-  // feedback line exactly matching the self-edge pair, that line's D-sample slot delivers
-  // the PREVIOUS frame's published vco_out to THIS frame's cv_in (the z^-1 break), the
+  // ---- oracle: canonical rendered VCO-B feedback integration (@Codex 5f8845fe, b4e0e731 §4) ----
+  // The default A->B route is ACYCLIC (task #83 / GH #18), so the compiler's feedback MECHANISM
+  // is exercised here through an EXPLICIT user B->B patch cable (vco_b.vco_out -> cv_in) — the
+  // same legal feedback pathology the old self-edge produced (@Codex: keep the loop verifiable,
+  // never assert "always no loop"). This proves the RENDERED machine routes + stages it: the
+  // compiler produces a feedback line exactly matching the B->B pair, that line's D-sample slot
+  // delivers the PREVIOUS frame's published vco_out to THIS frame's cv_in (the z^-1 break), the
   // machine stays finite, and a same-seed fresh run is bit-identical (determinism).
   // @Codex f33b1f44: the exact-pair-vs-source-only discriminator CANNOT be separated by a
   // rendered trace (1-deep ring is overwritten), so it lives in the feedbackSinkValue
@@ -346,9 +350,13 @@ int main() {
   {
     core::MachineRuntimeDefinition d1(kSeed, kSr);
     core::MachineRuntimeDefinition d2(kSeed, kSr);
-    // item 1: the self-edge drives vco_b's generic CV input — be EXPLICIT about the mode.
+    // item 1: the B->B cable drives vco_b's generic CV input — be EXPLICIT about the mode.
     d1.runtime().setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
     d2.runtime().setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
+    check(d1.runtime().connect(reg::JackId::vco_b_vco_out, reg::JackId::vco_b_cv_in) &&
+              d2.runtime().connect(reg::JackId::vco_b_vco_out, reg::JackId::vco_b_cv_in),
+          "oracle: use an explicit user B->B cable (the default A->B route is acyclic)");
+    check(d1.runtime().rebuild() && d2.runtime().rebuild(), "oracle: B->B plan rebuilds ok");
     int fb = -1;
     for (std::uint32_t i = 0; i < d1.runtime().feedbackCount(); ++i) {
       if (d1.runtime().feedbackAt(i).sourceJack == reg::JackId::vco_b_vco_out &&
@@ -357,11 +365,11 @@ int main() {
         break;
       }
     }
-    check(fb >= 0, "the compiler produces a VCO-B self-edge feedback line (vco_b.vco_out -> cv_in)");
+    check(fb >= 0, "the compiler produces the B->B feedback line (vco_b.vco_out -> cv_in)");
     bool finite = true, identical = true, routeOk = true;
     double prevPub = 0.0;
     for (int i = 0; i < 16; ++i) {
-      // The value the self-edge feeds this frame's vco_b.cv_in (read from the D-sample line,
+      // The value the B->B cable feeds this frame's vco_b.cv_in (read from the D-sample line,
       // BEFORE the frame publishes a new vco_out).
       const double g = d1.runtime().feedbackAt(fb).buf[d1.runtime().feedbackAt(fb).writePos];
       const core::RuntimeOutput o1 = d1.runtime().processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
@@ -371,9 +379,9 @@ int main() {
       if (i > 0 && g != prevPub) routeOk = false;  // D=1: this frame's cv_in == last frame's vco_out.
       prevPub = o1.dryB;
     }
-    check(finite, "canonical VCO-B self-edge renders finite output (no NaN/Inf)");
-    check(identical, "VCO-B self-edge render is bit-identical across a same-seed fresh run");
-    check(routeOk, "the self-edge D-sample line delivers the previous frame's vco_out to cv_in");
+    check(finite, "canonical B->B feedback renders finite output (no NaN/Inf)");
+    check(identical, "B->B feedback render is bit-identical across a same-seed fresh run");
+    check(routeOk, "the B->B D-sample line delivers the previous frame's vco_out to cv_in");
   }
 
   // ---- oracle: same-sample real path (b4e0e731 §4.2) ------------------------------
@@ -999,6 +1007,12 @@ int main() {
         core::MachineRuntimeDefinition d(kSeed, kSr);
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
+        // task #83 / GH #18: the default A->B route is ACYCLIC, so the feedback line this block
+        // reset-checks must come from an EXPLICIT user B->B cable (the same feedback pathology).
+        // Placed before warm-up so the buffer accumulates a warmup value the real rebuild must clear.
+        check(rt.connect(reg::JackId::vco_b_vco_out, reg::JackId::vco_b_cv_in),
+              "③c connect the user B->B cable (the persistent feedback line to reset-check)");
+        check(rt.rebuild(), "③c B->B cable plan rebuilds ok");
         // @Codex ce765d6d: NO cv_amt=0 isolation — compare at the default non-zero CV depth.
         for (int i = 0; i < 12; ++i) (void)rt.processFrame(core::RuntimeInputs{0.5 + 0.25 * double(i % 4), 0.5 + 0.25 * double(i % 4)}, true);
         if (wireReturn) {
@@ -1016,12 +1030,23 @@ int main() {
         }
         check(rt.rebuild(), "③c plan rebuilds ok");
         // @Codex ce765d6d: confirm BOTH sides actually rebuilt (real reset, not graph_unchanged) so
-        // VCO-B self-edge feedback is zeroed identically at non-zero CV depth. Line [0] is the VCO-B
-        // self-edge (src=vco_b_vco_out -> sink=vco_b_cv_in) in both, and a real reset leaves it zeroed.
-        check(rt.feedbackCount() >= 1, "③c a feedback line exists (VCO-B self-edge)");
-        { const auto& l = rt.feedbackAt(0);
+        // the B->B feedback buffer is zeroed identically at non-zero CV depth. Find the B->B line by
+        // exact (src,sink) — the default A->B route is acyclic, so the B->B user cable is the
+        // persistent feedback line in BOTH wireReturn paths — and a real reset leaves it zeroed.
+        int fbB = -1;
+        for (std::uint32_t i = 0; i < rt.feedbackCount(); ++i) {
+          const auto& l = rt.feedbackAt(i);
+          if (l.sourceJack == reg::JackId::vco_b_vco_out && l.sinkJack == reg::JackId::vco_b_cv_in) {
+            fbB = static_cast<int>(i);
+            break;
+          }
+        }
+        check(fbB >= 0, "③c the B->B user cable compiles a feedback line");
+        if (fbB >= 0) {
+          const auto& l = rt.feedbackAt(static_cast<std::uint32_t>(fbB));
           check(l.buf[l.writePos] == 0.0,
-                "③c rebuild actually reset the VCO-B self-edge buffer (a graph_unchanged no-op would keep the warmup value)"); }
+                "③c rebuild actually reset the B->B feedback buffer (a graph_unchanged no-op would keep the warmup value)");
+        }
         for (std::size_t i = 0; i < n; ++i) seq[i] = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);  // ext=0 first frame.
       };
       auto sameAll4 = [](const core::RuntimeOutput* a, const core::RuntimeOutput* b, std::size_t n) {

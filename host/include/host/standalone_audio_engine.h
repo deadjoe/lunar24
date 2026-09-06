@@ -139,10 +139,12 @@ class StandaloneAudioEngine {
                                     int inputCapability, int outputCapability);
 
   // The production block delegate — the ONLY render entry the host's ProcessBlock calls. The
-  // channel counts and block size are the ACTUAL device facts right now. Returns the Status; a
-  // dropped block has already had deterministic silence written into the OUTPUT buffers, so the
-  // host's ProcessBlock is a pure delegate with no further work. This path allocates nothing,
-  // locks nothing, and logs nothing.
+  // channel counts and block size are the ACTUAL device facts right now. `inputs` and `outputs`
+  // are two planar arrays of channel pointers (inCh input channels / outCh output channels);
+  // EACH channel buffer holds `frames` samples, and all channels share the same `frames` length
+  // in a given call. Returns the Status; a dropped block has already had deterministic silence
+  // written into the OUTPUT buffers, so the host's ProcessBlock is a pure delegate with no
+  // further work. This path allocates nothing, locks nothing, and logs nothing.
   Status processBlock(const double* const* inputs, double* const* outputs, int inCh, int outCh,
                       int frames);
 
