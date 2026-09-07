@@ -103,6 +103,8 @@
 #include <lunar24/core/lfo.h>
 #include <lunar24/core/joystick_cv.h>
 #include <lunar24/core/five_step_sequencer.h>
+#include <lunar24/core/arp_sequencer.h>
+#include <lunar24/core/keyboard_behaviour.h>
 #include <lunar24/core/unit_identity_profile.h>
 #include <lunar24/core/vco.h>
 #include <lunar24/core/voice_mixer.h>
@@ -184,6 +186,16 @@ enum class ExecutionKind : std::uint8_t {
   kLfo,        // lfo_a/b: no-input source, tick once/sample, publish cv_out (0..+10V).
   kJoystick,   // joystick: stateless X/Y+offset, read + publish x/y (±10V).
   kSequencer,  // five-step seq: ext_clock_in -> rising to core, publish cv/gate/clock_out.
+  // GH#12 keyboard product owner: the keyboard module is now a REAL executed control
+  // source (no longer kUnsupported). It receives canonical note ControlEvents
+  // (pitch/pressure/gate_on/gate_off/reset) via applyControlEvent_ -> the in-owner
+  // ArpSeq (default Keyboard mode = transparent pass-through) -> KeyboardBehaviour, and
+  // per-sample ticks the behaviour to publish note CV -> keyboard_v_oct_out and the
+  // engaged gate (0/+10V rail) -> keyboard_gate_left_main_out. The four keyboard
+  // normalized routes (pitch/gate -> VCO A/B + EG A/B) are flipped kActive so the
+  // PatchGraph consumes them, and the module is always-executed so its glide advances
+  // every sample even unwired.
+  kKeyboard,   // keyboard: note ControlEvents -> note CV/gate publish.
   // Legacy-compat kinds (synthetic fixture only; never emitted by the canonical table).
   kExtIn,
   kVcf,
@@ -377,6 +389,14 @@ class SynthRuntime {
     // FiveStepSequencer has only a default ctor (no sampleRate overload), so set the
     // rate in the body like vcf_. JoystickCv is stateless (no sampleRate at all).
     sequencer_.setSampleRate(sampleRate);
+    // GH#12 keyboard product owner: configure the in-owner ArpSeq (default Keyboard
+    // mode = transparent pass-through) and the KeyboardBehaviour (default params =
+    // microtonal passthrough, portamento legato=false/vibrato off) with the machine's
+    // sample rate. They are only ticked when a kKeyboard slot is in the compiled plan
+    // (canonical definition active routes + always-execute), so an unbound fixture that
+    // never ticks them remains untouched. Default params are safe for both.
+    keyboardArpSeq_.configure(ArpSeqParams{}, sampleRate);
+    keyboardBeh_.configure(KeyboardBehaviourParams{}, sampleRate);
   }
 
   // Voice source base frequency (the f0 the VCO chain references). Applied to BOTH
@@ -482,6 +502,12 @@ class SynthRuntime {
   void setJoystickBindings(JackId xOut, JackId yOut) { joyXOut_ = xOut; joyYOut_ = yOut; }
   void setSequencerBindings(JackId extClockIn, JackId cvOut, JackId gateOut, JackId clockOut) {
     seqExtClockIn_ = extClockIn; seqCvOut_ = cvOut; seqGateOut_ = gateOut; seqClockOut_ = clockOut;
+  }
+  // GH#12 keyboard product owner: the note-CV and gate output jacks the keyboard module
+  // publishes as a source. The canonical definition binds the real generated jacks
+  // keyboard.v_oct_out (V/OCT 0..8V) and keyboard.gate_left_main_out (GATE, 0/+10V rail).
+  void setKeyboardBindings(JackId vOctOut, JackId gateOut) {
+    kbdVOctOut_ = vOctOut; kbdGateOut_ = gateOut;
   }
   // The plan must ALWAYS execute these sources even when they carry no cable (per-sample
   // LFO / EG-SELF-GEN / PULSER phase continuity). Admission happens INSIDE compile_graph
@@ -1723,6 +1749,31 @@ class SynthRuntime {
   // need an UNEVIDENCED scale, so they are deliberately NOT wired here (FINDINGS §7) —
   // that is the separately-scheduled parameter-mapping work, not this dispatch pass.
   void applyControlEvent_(const ControlEvent& e) {
+    // GH#12 keyboard product owner (@Codex direction, @Kimi option A): the keyboard is
+    // a REAL executed control source that consumes the canonical note ControlEvents
+    // (pitch/pressure/gate_on/gate_off/reset) — InputStateMachine::translate emits exactly
+    // this set for a note press. Forward them to the in-owner ArpSeq (default Keyboard
+    // mode = transparent pass-through) which passes each event unchanged to the
+    // KeyboardBehaviour. The behaviour carries ALL per-note semantics (note identity by
+    // (source, channel, noteId), legato/retrigger etc.) — this lane adds no new gate
+    // semantics (per @Kimi e8b073c2). `parameter` events must NOT be forwarded (they are
+    // control-source param transfer below, handled by setControlParamValue).
+    switch (e.kind) {
+      case ControlEventKind::pitch:
+      case ControlEventKind::pressure:
+      case ControlEventKind::gate_on:
+      case ControlEventKind::gate_off:
+      case ControlEventKind::reset: {
+        // ArpSeq's Arp/Seq branches take the sink by lvalue ref, so pass a named lvalue
+        // (never a prvalue lambda — the template instantiates every branch). In the default
+        // Keyboard mode this sink forwards the event unchanged to the KeyboardBehaviour.
+        auto kbdSink = [this](const ControlEvent& nkb) { keyboardBeh_.handleControlEvent(nkb); };
+        keyboardArpSeq_.handleControlEvent(e, kbdSink);
+        return;  // a note event is fully consumed by the keyboard owner, never a parameter.
+      }
+      default:
+        break;  // parameter / clock / sync fall through to the existing path below.
+    }
     if (e.kind != ControlEventKind::parameter) return;
     const double v = static_cast<double>(e.value);
     lastApplyParamId_ = e.parameter;
@@ -2102,9 +2153,10 @@ class SynthRuntime {
 
   // Strict fail-closed preflight (rebuild_, @Codex 7C2): a compiled-region module
   // EXPLICITLY bound to ExecutionKind::kUnsupported. The canonical fixed-chain table binds
-  // `keyboard`/`effector`/`voices` to kUnsupported (declared-deferred, no runtime instance
-  // yet); the six control sources are NOW real DSP (GH#11 D1/D2/D4, machine_definition.h),
-  // so they are never kUnsupported here. Patching any kUnsupported module into the graph is
+  // `effector`/`voices` to kUnsupported (declared-deferred, no runtime instance yet);
+  // `keyboard` is now kKeyboard (GH#12 owner) and the six control sources are real DSP
+  // (GH#11 D1/D2/D4, machine_definition.h), so they are never kUnsupported here. Patching
+  // any kUnsupported module into the graph is
   // a real semantics violation: REFUSE with unsupported_module, never silently skip to zero
   // slots. Distinct from
   // hasMissingBinding_ (an unbound module is not a "kUnsupported" module). Only consulted
@@ -2426,6 +2478,21 @@ class SynthRuntime {
         publishSourceValue_(seqClockOut_, sequencer_.clockOutVolts());  // -10/+10 one-sample (rail confirmed, width provisional).
         break;
       }
+      case ExecutionKind::kKeyboard: {  // GH#12 keyboard product owner.
+        // Advance the note voice ONE sample (portamento glide continuity — GH#8: the glide
+        // must advance every sample, so a note pitch glides to its target and the note CV is
+        // the glided/vibrato pitch, not a frozen current()). The gate is the live engaged
+        // level: publish the 0/10V GATE rail (keyboard.gate_left_main_out is unipolar 0..10)
+        // so the downstream EG A/B gate_in interpreter (threshold 0.5V + hysteresis) reads it
+        // HIGH when notes are held and LOW otherwise. Pitch CV goes to keyboard.v_oct_out
+        // (V/OCT 0..8V); VCO A/B v_oct_in consume it via the two active keyboard routes.
+        double pitchCv = 0.0;
+        double pressureCv = 0.0;
+        keyboardBeh_.tick(&pitchCv, &pressureCv);
+        publishSourceValue_(kbdVOctOut_, pitchCv);
+        publishSourceValue_(kbdGateOut_, keyboardBeh_.gate() ? 10.0 : 0.0);
+        break;
+      }
       case ExecutionKind::kUnsupported:
         break;
     }
@@ -2631,6 +2698,7 @@ class SynthRuntime {
       case ExecutionKind::kLfo:        return FixedChainRole::kNone;
       case ExecutionKind::kJoystick:   return FixedChainRole::kNone;
       case ExecutionKind::kSequencer:  return FixedChainRole::kNone;
+      case ExecutionKind::kKeyboard:   return FixedChainRole::kNone;  // control-only, not a chain role.
       case ExecutionKind::kUnsupported:return FixedChainRole::kNone;
     }
     return FixedChainRole::kNone;
@@ -2769,6 +2837,13 @@ class SynthRuntime {
   JackId joyXOut_ = JackId{0}, joyYOut_ = JackId{0};
   JackId seqExtClockIn_ = JackId{0}, seqCvOut_ = JackId{0}, seqGateOut_ = JackId{0},
          seqClockOut_ = JackId{0};
+  // GH#12 keyboard product owner: the note-CV / gate output jacks the keyboard publishes.
+  JackId kbdVOctOut_ = JackId{0}, kbdGateOut_ = JackId{0};
+  // The in-owner note chain (approved option A): an ArpSeq in default Keyboard mode
+  // (a transparent pass-through) feeding a KeyboardBehaviour. Both are configured with the
+  // machine sample rate in the ctor; only the keyboard behaviour carries per-note state.
+  ArpSeq keyboardArpSeq_;
+  KeyboardBehaviour keyboardBeh_;
 
   // Always-execute admission list (six control-source module ids). Unwired sources
   // must still execute once per sample, so the compiler force-includes them. Sized
