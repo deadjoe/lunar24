@@ -92,7 +92,14 @@ using lunar24::core::make_default_device_state;
 namespace {
 
 constexpr std::uint64_t kProbeSeed = 0x4C554E4152ULL;     // LUNAR hex (same as harness).
-constexpr std::size_t kWarm = 4096;                       // settle transients.
+// kWarm must settle the SLOWEST transient before the steady-state window. The trapezoidal SVF at
+// res=1 (Q ~ 1/0.1 = 10) has a resonator time constant tau = Q/(pi*fc). The binding cell is the
+// swept resonance norm=0.15 (fc=56.4 Hz), whose 60 Hz point sits 3.6 Hz past the ~+20 dB peak; a
+// too-short warmup leaves that peak under-settled at higher sr, inflating the measured amplitude by
+// >0.1 dB. kWarm=24576 gives a window that settles it to <=0.02 dB at every rate (verified against
+// the independent reference): tau=56.4 Hz/Q10 = 0.0564 s; 24576/96000 = 0.256 s ~ 4.5 tau. kWin is
+// unchanged; kBlock feeds the whole probe, so a larger warmup only slows the run, never the math.
+constexpr std::size_t kWarm = 24576;                      // settle transients (Q~10 resonator, all sr).
 constexpr std::size_t kWin = 16384;                       // steady-state window.
 constexpr std::size_t kBlock = kWarm + kWin;              // one processBlock per cell.
 
@@ -140,26 +147,36 @@ double dominantHz(const std::vector<double>& c, std::size_t begin, double sr) {
 // Noise floor: after fitting (removing) the stimulus sinusoid, the residual RMS is the
 // numerical floor that bounds this cell's resolvability (a pure sine in a linear filter has
 // no other content). Single render, no second idle pass needed.
+//
+// This is a TRUE least-squares fit over the steady-state window. The naive decoupled projection
+// a=2*reS/norm, b=-2*imS/norm only equals the LS solution when cos(wt) and sin(wt) are orthogonal
+// over the window — true only at bin-aligned frequencies (freq*n/sr an integer). Off-bin (e.g.
+// 8000 Hz at 44.1 kHz, where freq*n/sr = 2972.335) cos and sin are non-orthogonal, so the
+// decoupled coefficients are wrong and the residual can EXCEED the raw signal. The correct fit
+// solves the 2x2 Gram system; by the orthogonal-projection energy identity the residual energy is
+// then sum(y^2) - a*r1 - b*r2, so no second pass is needed.
 double residualNoiseRms(const std::vector<double>& c, std::size_t begin, double freq, double sr) {
   const std::size_t n = c.size() - begin;
   if (n < 4 || freq <= 0.0) return 0.0;
   const double w = 2.0 * 3.14159265358979323846 * freq / sr;
-  double reS = 0.0, imS = 0.0, norm = 0.0;
+  double c11 = 0.0, c12 = 0.0, c22 = 0.0, r1 = 0.0, r2 = 0.0, e = 0.0;
   for (std::size_t i = begin; i < c.size(); ++i) {
     const double ph = w * static_cast<double>(i - begin);
     const double co = std::cos(ph), si = std::sin(ph);
-    reS += c[i] * co; imS += c[i] * si;
-    norm += co * co + si * si;
+    c11 += co * co; c12 += co * si; c22 += si * si;
+    r1 += c[i] * co; r2 += c[i] * si;
+    e += c[i] * c[i];
   }
-  if (norm <= 1e-15) return 0.0;
-  const double a = 2.0 * reS / norm, b = -2.0 * imS / norm;   // x(t) ~ a*cos(wt)+b*sin(wt).
-  double s = 0.0;
-  for (std::size_t i = begin; i < c.size(); ++i) {
-    const double ph = w * static_cast<double>(i - begin);
-    const double d = c[i] - (a * std::cos(ph) + b * std::sin(ph));
-    s += d * d;
-  }
-  return std::sqrt(s / static_cast<double>(n));
+  const double det = c11 * c22 - c12 * c12;
+  if (det <= 1e-15) return 0.0;   // degenerate window, cannot fit.
+  const double a = (r1 * c22 - r2 * c12) / det;
+  const double b = (r2 * c11 - r1 * c12) / det;
+
+  // Residual energy = total - projection energy (exact for the LS fit). The tiny negative clamp
+  // guards a last-ulp artifact when the window is nearly a single tone (residual ~ 0).
+  double res_e = e - (a * r1 + b * r2);
+  if (res_e < 0.0) res_e = 0.0;
+  return std::sqrt(res_e / static_cast<double>(n));
 }
 
 // A per-sr stimulus frequency set that stays inside the measurable band (well below Nyquist so

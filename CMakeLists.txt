@@ -450,31 +450,32 @@ lunar_add_test(gh20_vcf_probe tests/probes/gh20_vcf_probe.cpp)
 target_link_libraries(gh20_vcf_probe PRIVATE lunar_host)
 target_include_directories(gh20_vcf_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
 
-# task #87 (GH #20): the runnable, CI-enforced gate. Runs the REAL-PRODUCT probe, then the verified
-# analyzer (--check) on its output: coverage must match the committed manifest (no missing / silent /
-# over-scale / non-finite cell) AND the response must show the sr/8 low-pass knob dead-zone (N-3a),
-# the 8 kHz cross-sample-rate gain gap 44.1k vs 96k (N-3b), and a same-input L/R asymmetry. Running
-# this gate on a cap-free R-ignored source VCF is RED (the source negatives). Running it on the
-# VERIFIED baseline (unchanged production) is GREEN. No production DSP is changed to make it green.
+# task #88 (GH #20): the runnable, CI-enforced gate. Runs the REAL-PRODUCT probe (the same
+# codec->owner->render path), then the verified analyzer (--check) on its output: coverage must match
+# the committed manifest (no missing / silent / over-scale / non-finite cell) AND the product WET
+# response must match the INDEPENDENT bilinear reference to <= 0.1 dB (the @Codex numeric contract,
+# msg 8320798f), with a sample-rate-uniform 100 Hz-normalised 8 kHz endpoint (<= 1 dB across
+# 44.1/48/88.2/96k). A product reproducing the OLD sr/8-capped Chamberlin response is RED, so the
+# criterion is not self-fulfilling. No production DSP is changed to make it green.
 add_test(NAME gh20_vcf_acceptance
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh20_vcf_gate.py
     --probe $<TARGET_FILE:gh20_vcf_probe>
     --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_manifest.tsv
-    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_vcf_analyze.py)
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_trap_analyze.py)
 
-# task #87 (GH #20): SOURCE NEGATIVE CONTROLS. The acceptance gate must DISCRIMINATE: GREEN on the
-# real (verified-baseline) product and RED on a source mutated away from the audit finding. This
-# rebuilds the probe against an isolated shadowed VCF header (cap-removed: dead-zone absent; L/R-
-# ignored: same-input L/R asymmetry vanishes) and asserts the analyzer turns RED on each, with the
-# real control GREEN. POSIX-only (the mutation rebuild invokes the compiler); on Windows this is
-# skipped — the real gate still runs there.
+# task #88 (GH #20): SOURCE NEGATIVE CONTROLS. The acceptance gate must DISCRIMINATE: GREEN on the
+# real trapezoidal product and RED on a production PolivoksFilter source mutated away from the @Codex
+# numeric contract (old cap / old recursion / wrong damp / wrong LP-BP / L-R cross / skip setter /
+# wrong update order). This builds the header-only negative driver (gh20_trap_neg_driver.cpp) against
+# an isolated shadowed header and asserts the reference comparison turns RED on each, with the real
+# control GREEN. POSIX-only (the mutation rebuild invokes the compiler); on Windows this is
+# skipped — the real acceptance gate still runs there.
 if(UNIX)
   add_test(NAME gh20_vcf_negative
     COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh20_vcf_negatives.py
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh20_trap_negatives.py
       --root ${CMAKE_CURRENT_SOURCE_DIR}
-      --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_manifest.tsv
       --compiler ${CMAKE_CXX_COMPILER})
 endif()
 
