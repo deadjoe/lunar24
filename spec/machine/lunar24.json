@@ -2370,7 +2370,7 @@
           "min": 0.0,
           "max": 10.0,
           "default": 0.01,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 387
@@ -2381,7 +2381,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -2394,7 +2394,7 @@
           "min": 0.0,
           "max": 10.0,
           "default": 0.1,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 399
@@ -2405,7 +2405,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -2418,7 +2418,7 @@
           "min": 0.0,
           "max": 10.0,
           "default": 0.1,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 389
@@ -2429,7 +2429,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -2442,7 +2442,7 @@
           "min": 0.0,
           "max": 1.0,
           "default": 0.5,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 392
@@ -2453,7 +2453,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -2616,7 +2616,7 @@
           "min": 0.0,
           "max": 10.0,
           "default": 0.01,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 387
@@ -2627,7 +2627,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -2640,7 +2640,7 @@
           "min": 0.0,
           "max": 10.0,
           "default": 0.1,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 399
@@ -2651,7 +2651,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -2664,7 +2664,7 @@
           "min": 0.0,
           "max": 10.0,
           "default": 0.1,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 389
@@ -2675,7 +2675,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -2688,7 +2688,7 @@
           "min": 0.0,
           "max": 1.0,
           "default": 0.5,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 392
@@ -2699,7 +2699,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -2887,7 +2887,7 @@
           "max": 20.0,
           "default": 1.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 441
@@ -2897,7 +2897,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -3006,7 +3006,7 @@
           "max": 20.0,
           "default": 1.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 441
@@ -3016,7 +3016,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -3101,7 +3101,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 450
@@ -3111,7 +3111,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -3125,7 +3125,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 450
@@ -3135,7 +3135,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -3149,7 +3149,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 452
@@ -3159,7 +3159,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -3173,7 +3173,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 452
@@ -3183,7 +3183,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -3445,7 +3445,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 500
@@ -3455,7 +3455,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -3526,7 +3526,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 486
@@ -3536,7 +3536,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "confirmed"
           }
@@ -3550,7 +3550,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 486
@@ -3560,7 +3560,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "confirmed"
           }
@@ -3574,7 +3574,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 486
@@ -3584,7 +3584,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "confirmed"
           }
@@ -3598,7 +3598,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 486
@@ -3608,7 +3608,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "confirmed"
           }
@@ -3622,7 +3622,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
             "line": 486
@@ -3632,7 +3632,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "confirmed"
           }
