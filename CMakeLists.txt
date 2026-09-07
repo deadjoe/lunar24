@@ -440,6 +440,44 @@ add_test(NAME gh19_blamp_lut_gate
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_gh19_blamp.py --check-prod
     ${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/vco.h)
 
+# task #87 (GH #20): REAL-PRODUCT VCF cross-sample-rate response probe. Renders the actual product
+# DSP (encode->decode->applyDeviceState->processBlock, via EngineHarness) for a sr x mode x res x
+# norm x freq matrix and records the steady-state WET amplitude + per-cell noise floor. This is the
+# measurement guard: it proves the response samples come from the product VCF and not an analytic
+# re-derivation. The *measurement/finding* decision lives in the Python analyzer (gh20_vcf_analyze.py),
+# which this target feeds.
+lunar_add_test(gh20_vcf_probe tests/probes/gh20_vcf_probe.cpp)
+target_link_libraries(gh20_vcf_probe PRIVATE lunar_host)
+target_include_directories(gh20_vcf_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
+
+# task #87 (GH #20): the runnable, CI-enforced gate. Runs the REAL-PRODUCT probe, then the verified
+# analyzer (--check) on its output: coverage must match the committed manifest (no missing / silent /
+# over-scale / non-finite cell) AND the response must show the sr/8 low-pass knob dead-zone (N-3a),
+# the 8 kHz cross-sample-rate gain gap 44.1k vs 96k (N-3b), and a same-input L/R asymmetry. Running
+# this gate on a cap-free R-ignored source VCF is RED (the source negatives). Running it on the
+# VERIFIED baseline (unchanged production) is GREEN. No production DSP is changed to make it green.
+add_test(NAME gh20_vcf_acceptance
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh20_vcf_gate.py
+    --probe $<TARGET_FILE:gh20_vcf_probe>
+    --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_manifest.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_vcf_analyze.py)
+
+# task #87 (GH #20): SOURCE NEGATIVE CONTROLS. The acceptance gate must DISCRIMINATE: GREEN on the
+# real (verified-baseline) product and RED on a source mutated away from the audit finding. This
+# rebuilds the probe against an isolated shadowed VCF header (cap-removed: dead-zone absent; L/R-
+# ignored: same-input L/R asymmetry vanishes) and asserts the analyzer turns RED on each, with the
+# real control GREEN. POSIX-only (the mutation rebuild invokes the compiler); on Windows this is
+# skipped — the real gate still runs there.
+if(UNIX)
+  add_test(NAME gh20_vcf_negative
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh20_vcf_negatives.py
+      --root ${CMAKE_CURRENT_SOURCE_DIR}
+      --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_manifest.tsv
+      --compiler ${CMAKE_CXX_COMPILER})
+endif()
+
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.
