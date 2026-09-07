@@ -234,6 +234,16 @@ python3 tools/run_gh20_vcf_negatives.py --root . --manifest tools/gh20_manifest.
   the GH#19 `gh19_blamp_lut_gate` and host wiring/stream-plan/codec/CoreAudio tests all green.
 - **Production:** 0 DSP / default / routing / registry / persistence changes. GH#20 **not** fixed.
 
+**Submission record (docs follow-up commit):**
+- Exact submitted SHA: **`33d6020`** (branch `measure/20-vcf-response`, stacked on `fix/19-triangle-blamp`).
+- Stacked PR: **#25** (draft, base `fix/19-triangle-blamp`, head `measure/20-vcf-response`), MERGEABLE.
+- 4-platform CI: manually dispatched (`workflow_dispatch`) because this PR's base is not `main` and the branch
+  is not `feat/**`, so the `ci.yml` auto-triggers (`push main|feat/**`, `pull_request→main`) do **not** fire.
+  Run **`34069185210`** @ exact head `33d6020` — **four matrix platforms all SUCCESS**
+  (`ubuntu clang++` 6m55s, `ubuntu g++` 7m53s, `macos clang++` 6m55s, `windows cl` 13m26s);
+  the `full coverage (--require-full)` job is **skipped** (`pull_request`-gated) — identical to the
+  GH#19 `a27d807` / `942ad82` approved baseline state (0 new, gate unchanged).
+
 **Next-slice recommendation:** (1) a **res sweep** {0.0, 0.5, 1.0} at the two endpoint srs and a
 focused norm/freq set, labelled provisional for the `dampMin` non-self-oscillation floor; (2) a
 per-sample `ns/sample` CPU figure for the baseline VCF; (3) after @Codex algorithms-ruling, implement
