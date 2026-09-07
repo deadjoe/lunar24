@@ -381,9 +381,11 @@ explains the residual (rather than asserting an unexplained 2.21→3.72 discrepa
   −3 dB point sits *at* fc. The product is the **actual Chamberlin**, whose −3 dB point sits at **~0.58 ×
   fc** (§4) — it rejects **earlier and harder** than the generic prototype. At the tight 44.1 k cap
   (fc=5512.5 Hz) the Chamberlin's non-generic LP reaches 8 k well into its upper stopband, so **it rejects
-  the 8 k input more at 44.1 k than the generic model does** — hence a **larger** product gap at every res.
-  The model is therefore a **conservative lower bound** on the non-generic product rejection (for the
-  *direction/order*: res ordering differs, see below).
+  the 8 k input more at 44.1 k than the generic model does** — hence a **larger** product gap at the three
+  measured res points. **This is a measured observation at those points, NOT a proven universal inequality
+  and NOT a "lower bound".** The `reject-before-cutoff` mechanism explains the res=0/0.5 direction but does
+  **not** hold at res=1, where the resonance **boosts** 8 k (below); the magnitude ordering across res is
+  product-specific (see next bullet).
 - **Res-order sensitivity:** the product gap is **non-monotonic in res** (−2.01 at 0.5, −3.72 at 0, −4.24 at 1),
   while the generic model is **monotonic** (1.78 at 0.5, 2.21 at 0, 2.56 at 1). The **res=0.5 minimum** and the
   **res=1 maximum** are product-specific (the non-generic response + the resonance-peak-vs-8 k interaction
@@ -397,10 +399,14 @@ explains the residual (rather than asserting an unexplained 2.21→3.72 discrepa
 
 **Conclusion:** the R&D and product numbers are **not two measurements of the same thing**; the R&D is a
 generic-topology directional check and the product is the authoritative non-generic Chamberlin measurement.
-The direction and the ~3–5 dB product-superset ordering are explained by N-4 (non-generic −3 dB at 0.58×fc
-rejects harder at the tight 44.1 k cap). The **product values are authoritative**; the R&D is retained only
-as a reproducibility sanity check and a lower bound on the rejection. Neither the TPT 1.57 dB nor the
-generic 2.21 dB is claimed as the product's expected post-fix gap, and no <1 dB claim is made.
+The direction and the larger-product-gap-at-the-measured-points are explained by N-4 (non-generic −3 dB at
+0.58×fc rejects harder at the tight 44.1 k cap). The **product values are authoritative**; the R&D is
+retained only as a reproducibility sanity check for the generic-topology direction/sign. **It is NOT a
+lower bound, and is NOT used to select the production algorithm (per @Codex `ef076ca3`)** — the larger
+product gap is an observation at three points, not a proven inequality, and at res=1 the product *boosts*
+8 k (resonance), so the res=1 "gap" is a boost difference rather than a rejection difference. Neither the
+TPT 1.57 dB nor the generic 2.21 dB is claimed as the product's expected post-fix gap, and no <1 dB claim
+is made.
 
 ---
 
