@@ -1,38 +1,70 @@
-coverage: 7958/7958 required cells produced; produced-set=7958
+coverage: 15518/15518 required cells produced; produced-set=15518
 
---- N-3a inert-ONSET norm (normalised response curve == norm=1.0), per (res, level) ---
-  sr=44100 res=0 lvl=0.05  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
-  sr=44100 res=0 lvl=0.2  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
-  sr=44100 res=0.5 lvl=0.05  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
-  sr=44100 res=0.5 lvl=0.2  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
-  sr=44100 res=1 lvl=0.05  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
-  sr=44100 res=1 lvl=0.2  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
-  sr=48000 res=0 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
-  sr=48000 res=0 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
-  sr=48000 res=0.5 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
-  sr=48000 res=0.5 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
-  sr=48000 res=1 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
-  sr=48000 res=1 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
-  sr=88200 res=0 lvl=0.05  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
-  sr=88200 res=0 lvl=0.2  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
-  sr=88200 res=0.5 lvl=0.05  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
-  sr=88200 res=0.5 lvl=0.2  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
-  sr=88200 res=1 lvl=0.05  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
-  sr=88200 res=1 lvl=0.2  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
-  sr=96000 res=0 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
-  sr=96000 res=0 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
-  sr=96000 res=0.5 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
-  sr=96000 res=0.5 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
-  sr=96000 res=1 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
-  sr=96000 res=1 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
-  sr=44100 lvl=0.05  onset RES-INDEPENDENT (spread 0.050: 0.80, 0.85)
-  sr=44100 lvl=0.2  onset RES-INDEPENDENT (spread 0.050: 0.80, 0.85)
-  sr=48000 lvl=0.05  onset RES-INDEPENDENT (spread 0.000: 0.85, 0.85)
-  sr=48000 lvl=0.2  onset RES-INDEPENDENT (spread 0.000: 0.85, 0.85)
-  sr=88200 lvl=0.05  onset RES-INDEPENDENT (spread 0.050: 0.90, 0.95)
-  sr=88200 lvl=0.2  onset RES-INDEPENDENT (spread 0.050: 0.90, 0.95)
-  sr=96000 lvl=0.05  onset RES-INDEPENDENT (spread 0.000: 0.95, 0.95)
-  sr=96000 lvl=0.2  onset RES-INDEPENDENT (spread 0.000: 0.95, 0.95)
+--- N-3a inert-ONSET norm (normalised response curve == norm=1.0), per (mode, res, level) ---
+  sr=44100 mode=bp res=0 lvl=0.05  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=bp res=0 lvl=0.2  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=bp res=0.5 lvl=0.05  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=bp res=0.5 lvl=0.2  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=bp res=1 lvl=0.05  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=bp res=1 lvl=0.2  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=lp res=0 lvl=0.05  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=lp res=0 lvl=0.2  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=lp res=0.5 lvl=0.05  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=lp res=0.5 lvl=0.2  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=lp res=1 lvl=0.05  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 mode=lp res=1 lvl=0.2  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=48000 mode=bp res=0 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=bp res=0 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=bp res=0.5 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=bp res=0.5 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=bp res=1 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=bp res=1 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=lp res=0 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=lp res=0 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=lp res=0.5 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=lp res=0.5 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=lp res=1 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 mode=lp res=1 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=88200 mode=bp res=0 lvl=0.05  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=bp res=0 lvl=0.2  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=bp res=0.5 lvl=0.05  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=bp res=0.5 lvl=0.2  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=bp res=1 lvl=0.05  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=bp res=1 lvl=0.2  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=lp res=0 lvl=0.05  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=lp res=0 lvl=0.2  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=lp res=0.5 lvl=0.05  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=lp res=0.5 lvl=0.2  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=lp res=1 lvl=0.05  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 mode=lp res=1 lvl=0.2  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=96000 mode=bp res=0 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=bp res=0 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=bp res=0.5 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=bp res=0.5 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=bp res=1 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=bp res=1 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=lp res=0 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=lp res=0 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=lp res=0.5 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=lp res=0.5 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=lp res=1 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 mode=lp res=1 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=44100 mode=bp lvl=0.05  onset RES-INDEPENDENT (spread 0.050: 0.80, 0.85)
+  sr=44100 mode=bp lvl=0.2  onset RES-INDEPENDENT (spread 0.050: 0.80, 0.85)
+  sr=44100 mode=lp lvl=0.05  onset RES-INDEPENDENT (spread 0.050: 0.80, 0.85)
+  sr=44100 mode=lp lvl=0.2  onset RES-INDEPENDENT (spread 0.050: 0.80, 0.85)
+  sr=48000 mode=bp lvl=0.05  onset RES-INDEPENDENT (spread 0.000: 0.85, 0.85)
+  sr=48000 mode=bp lvl=0.2  onset RES-INDEPENDENT (spread 0.000: 0.85, 0.85)
+  sr=48000 mode=lp lvl=0.05  onset RES-INDEPENDENT (spread 0.000: 0.85, 0.85)
+  sr=48000 mode=lp lvl=0.2  onset RES-INDEPENDENT (spread 0.000: 0.85, 0.85)
+  sr=88200 mode=bp lvl=0.05  onset RES-INDEPENDENT (spread 0.050: 0.90, 0.95)
+  sr=88200 mode=bp lvl=0.2  onset RES-INDEPENDENT (spread 0.050: 0.90, 0.95)
+  sr=88200 mode=lp lvl=0.05  onset RES-INDEPENDENT (spread 0.050: 0.90, 0.95)
+  sr=88200 mode=lp lvl=0.2  onset RES-INDEPENDENT (spread 0.050: 0.90, 0.95)
+  sr=96000 mode=bp lvl=0.05  onset RES-INDEPENDENT (spread 0.000: 0.95, 0.95)
+  sr=96000 mode=bp lvl=0.2  onset RES-INDEPENDENT (spread 0.000: 0.95, 0.95)
+  sr=96000 mode=lp lvl=0.05  onset RES-INDEPENDENT (spread 0.000: 0.95, 0.95)
+  sr=96000 mode=lp lvl=0.2  onset RES-INDEPENDENT (spread 0.000: 0.95, 0.95)
 
 --- N-3b crossrate rel_gain(8000) vs sr (norm=1, LP), per res ---
   sr=44100  norm=0p95 res=0 lvl=0.2 LP rel_gain(8000)=-7.72 dB
@@ -90,7 +122,7 @@ MACHINE	cpu_blockpartition_note	clean	note	arm64	Darwin 25.6.0	Apple LLVM 21.0.0
   selfneg: over-scale output -> detected
   selfneg: non-finite amp_rms -> detected
   selfneg: not-produced cell -> detected
-  sr-label: real cells accepted (24 groups); halved-sr records rejected
+  sr-label: real cells accepted (48 groups); halved-sr records rejected
 
 --- gate summary ---
 GATE PASS: coverage OK + N-3a deadzone / N-3b crossrate / L-R asym detected + measurement negative controls OK. No production DSP changed.

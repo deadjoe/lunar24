@@ -27,18 +27,18 @@ non-finite at high norm (N-4 evidence, §7).
 | Dimension | Coverage | Notes |
 |---|---|---|
 | Sample rates | 44100 / 48000 / 88200 / 96000 | `kSrs` |
-| Mode | LP and BP | crossrate cells |
+| Mode | LP and BP | **both** the cutoff sweep and the crossrate cells (mandate "LP/BP, norm≥21 points") |
 | Resonance | **res ∈ {0.0, 0.5, 1.0}** (`kDampMax=2.0` / `damp=1.05` / `kDampMin=0.1`) | res-swept per @Codex `e3d4211e` item 1 |
 | Norm points | **21** (0.00–1.00, step 0.05) | mandate "norm≥21 points" |
 | Input levels | **2** (`0.05` small / `0.20` medium) | the two legal levels (drive=0 ⇒ level-invariant input stage; a `0.50` large was dropped — it exceeded the legal level pair and its fold is outside the attribution) |
 | Frequency sweep | per-sr log sweep to Nyquist (15–16 points) | `probeFreqs(sr)` |
 | Label per cell | freq_hz, amp_rms, amp_peak, f0_meas_hz, noise_rms, window | actual measured values, not input copies |
 
-Required cells: **7958 / 7958 produced** (21 norm × 15-16 freq × 3 res × 2 lvl per sr for cutoff + the
-384 crossrate + 8 asym + 4 floor + 2 level), 0 blocked, produced-set exactly equals the committed
-manifest (`tools/gh20_manifest.tsv`). Each cell is rendered through the **one agreed real entry**:
-`make_default_device_state → encode → decode → engine.applyDeviceState → DeviceAdapter::renderBlock`,
-driven by `EngineHarness` (`tests/host/`).
+Required cells: **15518 / 15518 produced** (21 norm × 15-16 freq × 3 res × 2 lvl × 2 modes(LP|BP) per sr
+for the cutoff sweep + 384 crossrate + 8 asym + 4 floor + 2 level), 0 blocked, produced-set exactly
+equals the committed manifest (`tools/gh20_manifest.tsv`). Each cell is rendered through the **one agreed
+real entry**: `make_default_device_state → encode → decode → engine.applyDeviceState →
+DeviceAdapter::renderBlock`, driven by `EngineHarness` (`tests/host/`).
 
 ---
 
@@ -77,6 +77,16 @@ knob is inert earlier at 44.1 k than at 96 k, for the same physical cutoff knob 
 > resolution and a **0.08 judgement tolerance** baked in. The theoretical `sr/8` onset (0.813) falls inside
 > the measured **interval `[0.800, 0.850]`** for 44.1 k (0.90–0.95 for 88.2 k, theo 0.914) — the measured-grid
 > onset matches theory to within one grid step.
+
+> **BP coverage (per @Codex `89f88d27` item ② — the "LP/BP, norm≥21 points" gap).** The band-pass (BP)
+> mode is now swept at the **full 21-point norm** in the cutoff group (previously BP appeared **only** at
+> `norm ≥ 0.85` inside the crossrate 100/8k pair, so the BP full-norm response was not covered). Its inert
+> onset is **identical to the LP table above** (0.80/0.85/0.90/0.95 per sr) at every res and level — the cap
+> is **mode-independent**, as the cap binds only the freq map (`baseFreqHz_`), and BP enters the filter
+> only through the final output tap. So the N-3a dead-zone finding holds for **both** modes, and the
+> response curve tables in §3/§4 now carry the LP **and** BP traces. Only the LP trace is gate-validated
+> (the 8 k gap uses LP); the BP trace is the missing-coverage completion and is reported, not the locus of
+> a new gate.
 
 ---
 
@@ -329,17 +339,25 @@ is mathematically impossible". The two corresponding narrow candidates are the t
 
 ### Candidate B — keep the Chamberlin, remap the reachable cutoff range → *full-travel usable* (loses the 20 kHz endpoint)
 - **Layer / formula path:** keep `tick_` and the stability cap; change **only the norm→Hz re-map** so
-  that `norm ∈ [0,1]` lands inside the **common safe Hz range** `[kFreqMinHz, min(sr/8, res−boundary·sr)]`
-  instead of `[20 Hz, 20 kHz]`. Concretely, `baseFreqHz_` becomes a monotone curve whose top equals the
-  safe cap at every sr, so **no norm saturates the cap — the knob plateau is removed**.
-- **Reachable range / bandwidth cost:** the knob's top cutoff is now **`sr/8` (≈ 5.5 kHz @44.1 k)** instead
-  of 20 kHz. **The absolute bandwidth is lost** — the 20 kHz endpoint is traded for full-travel usability.
-  This is the honest cost, and the *reason* the first draft's "irreducible" was wrong: a map-only change
-  can remove the plateau (reach **full-travel usable**), it just cannot simultaneously keep the 20 kHz
-  endpoint. The top can be pushed as high as the res=0 boundary (`0.136`, i.e. ~0.127 oct above `sr/8`),
-  but that headroom is marginal and does not change the picture.
-- **Response reference:** the current Chamberlin response re-anchored so the top norm maps to the safe
-  cap; the `0.58×fc` −3 dB point still holds.
+  that at *each* sample rate `norm ∈ [0,1]` lands inside **that sr's own safe range**
+  `[kFreqMinHz, sr/8]` instead of `[20 Hz, 20 kHz]`. Concretely, `baseFreqHz_` becomes a monotone curve
+  whose **top equals that sr's cap** (`sr/8`), so at that sr **no norm saturates the cap — the knob
+  plateau is removed, independently per sample rate.**
+  - **Rate-dependence caveat (the "common range" is NOT sr-invariant):** the top is `sr/8`, so the
+    reachable range is **different at every sr** (5.5 k@44.1, 6.0 k@48, 11.0 k@88.2, 12.0 k@96). There is
+    **no single sr-independent "common safe Hz range"** — `baseFreqHz_`'s `20·1000^n` slope is sr-invariant
+    but its cap (`sr/8`) is not. The plateau is removed **per-sr** (each sr's own top = its own cap); a true
+    *common* upper bound would be `min_sr(sr/8) = 5512.5 Hz`, which is strictly worse than every sr's own
+    cap, so per-sr remap is the right reading. This is precisely why Candidate B "removes the plateau" is
+    a **per-sample-rate statement**, not a single "common range".
+- **Reachable range / bandwidth cost:** the knob's top cutoff is **`sr/8`** per sr (5.5 k@44.1, 6.0 k@48,
+  11.0 k@88.2, 12.0 k@96) instead of 20 kHz. **The absolute bandwidth is lost** — the 20 kHz endpoint is
+  traded for full-travel usability at that sr. This is the honest cost, and the *reason* the first draft's
+  "irreducible" was wrong: a map-only change can remove the plateau (reach **full-travel usable**), it just
+  cannot simultaneously keep the 20 kHz endpoint. The top can be pushed as high as the res=0 boundary
+  (`0.136`, i.e. ~0.127 oct above `sr/8`), but that headroom is marginal and does not change the picture.
+- **Response reference:** the current Chamberlin response re-anchored so the top norm maps to that sr's
+  safe cap; the `0.58×fc` −3 dB point still holds.
 - **Actual error:** **no 8 k-gap reduction** — the cross-rate gap (3.72 dB) is caused by the cap being
   rate-dependent (`sr/8`), and re-mapping the norm range does **not** change the cutoffs the filter runs
   at, only which norm lands on which cutoff. So Candidate B **removes the plateau** (fixes the dead-zone
@@ -356,57 +374,57 @@ the dead-zone plateau) but trades away the 20 kHz endpoint and does **not** clos
 "impossible": the honest trade is *identity + absolute bandwidth* (A) vs. *bandwidth, keeping identity*
 (B). Production is unchanged until @Codex rules on the algorithm.
 
-### 8a. Model ↔ product reconciliation (per @Codex item 2(c))
+### 8a. Exact-recursion ↔ product reconciliation (per @Codex item 2(c), msg `89f88d27`)
 
-**The R&D (recursive) numbers and the product numbers differ, and they are *not* the same quantity.**
-This subsection unifies the observation point, the reference denominator, the res/identity split, and
-explains the residual (rather than asserting an unexplained 2.21→3.72 discrepancy).
+The PRIOR R&D number (2.21/1.78/2.56 dB) came from a **different recursion/口径** (a generic prototype),
+which is why it did not match the product. @Codex derived the **exact LP transfer function for the real
+`tick_` update order**, and it reproduces the product to within **0.014 dB**. Using the actual update
+order (§6a: `low' = low + f·band`, then `high = x − low' − d·band`, then `band' = band + f·high`), with
+`q = e^{−jω}`:
 
-| res | R&D recursive model gap | product probe gap (measured, §3) | diff (product − model) |
-|---|---|---|---|
-| 0.0 | 2.21 dB | −3.72 dB | −5.93 dB |
-| 0.5 | 1.78 dB | −2.01 dB | −3.79 dB |
-| 1.0 | 2.56 dB | −4.24 dB | −6.80 dB |
+**LP transfer — `H(q) = f²·q / [1 − (2 − f·d − f²)·q + (1 − f·d)·q²]`**
+where `f = 2·sin(π·fc/sr)`, `d = 2 − 1.9·res` (damp). This is not "a non-generic Chamberlin vs a generic
+model" — it **is the Chamberlin's own exact magnitude response**, and it matches the product. Reproducible
+via `python3 tools/gh20_recursion_reconcile.py --scenario report/gh20-probe/gh20_scenarios.tsv`.
 
-**Unification — what is ALREADY identical (so the comparison is meaningful):**
-- **Input observation point:** both drive a sine at the cutoff-map input; the probe drives the real
-  product through `encode → decode → applyDeviceState → DeviceAdapter → wetL` (§1). The R&D drives the
-  same recursion at the same frequencies.
-- **Reference denominator:** both normalise to the **same 100 Hz reference** at `norm=1`/8 k in-band —
-  i.e. `rel_gain(8k) = 20·log10(|H(sr,8k)| / |H(sr,100Hz)|)`. The denominator and its sign are preserved.
-- **Same `baseFreqHz_` map** `20·1000^norm` and **same `sr/8` cap** in both (the attribute being measured).
+Closed-form `rel_gain(8k)` at `norm=1` (`fc = sr/8`), normalised to the **same 100 Hz reference** and the
+**same `wetL` observation point** as the product, compared against the raw probe output:
 
-**Why they differ — the model is a GENERIC prototype, the product is the NON-GENERIC Chamberlin (N-4):**
-- The R&D gap (2.21/1.78/2.56 dB) is computed from a **generic** 2nd-order state-variable prototype whose
-  −3 dB point sits *at* fc. The product is the **actual Chamberlin**, whose −3 dB point sits at **~0.58 ×
-  fc** (§4) — it rejects **earlier and harder** than the generic prototype. At the tight 44.1 k cap
-  (fc=5512.5 Hz) the Chamberlin's non-generic LP reaches 8 k well into its upper stopband, so **it rejects
-  the 8 k input more at 44.1 k than the generic model does** — hence a **larger** product gap at the three
-  measured res points. **This is a measured observation at those points, NOT a proven universal inequality
-  and NOT a "lower bound".** The `reject-before-cutoff` mechanism explains the res=0/0.5 direction but does
-  **not** hold at res=1, where the resonance **boosts** 8 k (below); the magnitude ordering across res is
-  product-specific (see next bullet).
-- **Res-order sensitivity:** the product gap is **non-monotonic in res** (−2.01 at 0.5, −3.72 at 0, −4.24 at 1),
-  while the generic model is **monotonic** (1.78 at 0.5, 2.21 at 0, 2.56 at 1). The **res=0.5 minimum** and the
-  **res=1 maximum** are product-specific (the non-generic response + the resonance-peak-vs-8 k interaction
-  at res=1, §3 sign flip), and cannot be reproduced by the generic prototype. Only the res=0 row is a
-  meaningful model-vs-product sanity check; the res=0.5/1 rows are product-only.
-- **|H| magnitude vs windowed steady-state:** the model reports a pure transfer |H|; the product measures a
-  **finite-windowed steady state** (Hann window + noise floor, §4 columns) so its resonance peak at res=1
-  is slightly damped and the deep-stopband cells sit *at/below the probe noise floor* (those are labeled
-  **"not a response", not a 0 dB value** — per @Codex item 1, cells at/below the noise floor past their
-  cutoff are reported as **indistinguishable**, not as a measured floor).
+| res | sr | closed-form | product | residual (product − form) |
+|---|---|---|---|---|
+| 0.0 | 44100 | −7.7189 | −7.7221 | −0.0032 |
+| 0.0 | 96000 | −3.9852 | −3.9985 | −0.0133 |
+| 0.5 | 44100 | −2.0124 | −2.0150 | −0.0027 |
+| 0.5 | 96000 | +0.0080 | −0.0053 | −0.0133 |
+| 1.0 | 44100 | +0.7263 | +0.7237 | −0.0026 |
+| 1.0 | 96000 | +4.9756 | +4.9619 | −0.0137 |
 
-**Conclusion:** the R&D and product numbers are **not two measurements of the same thing**; the R&D is a
-generic-topology directional check and the product is the authoritative non-generic Chamberlin measurement.
-The direction and the larger-product-gap-at-the-measured-points are explained by N-4 (non-generic −3 dB at
-0.58×fc rejects harder at the tight 44.1 k cap). The **product values are authoritative**; the R&D is
-retained only as a reproducibility sanity check for the generic-topology direction/sign. **It is NOT a
-lower bound, and is NOT used to select the production algorithm (per @Codex `ef076ca3`)** — the larger
-product gap is an observation at three points, not a proven inequality, and at res=1 the product *boosts*
-8 k (resonance), so the res=1 "gap" is a boost difference rather than a rejection difference. Neither the
-TPT 1.57 dB nor the generic 2.21 dB is claimed as the product's expected post-fix gap, and no <1 dB claim
-is made.
+**Worst |residual| = 0.0137 dB** (over 4 sr × 3 res). The residual is the finite-window steady-state +
+measurement precision (the product reports a windowed steady-state with a noise floor, not a pure
+|H|), and is **not** evidence of a model-vs-product discrepancy.
+
+**Per-res cross-rate gap (the N-3b finding), closed-form vs product:**
+| res | 44.1 k | 96 k | gap (44.1→96 k) | product gap (§3) |
+|---|---|---|---|---|
+| 0.0 | −7.7189 | −3.9852 | **−3.7337 dB** | −3.72 dB |
+| 0.5 | −2.0124 | +0.0080 | **−2.0204 dB** | −2.01 dB |
+| 1.0 | +0.7263 | +4.9756 | **−4.2493 dB** | −4.24 dB |
+
+**The exact recursion reproduces the per-res gap to within 0.02 dB.** The PRIOR 2.21/1.78/2.56 dB model is
+now fully accounted for: it was a different (generic) recursion, not "the product is product-specific and
+the generic model cannot reproduce it". **Deleting the earlier "conflict".**
+
+> **res=1 sign-flip precision (@Codex).** Earlier text said "at res=1 the rel_gain flips sign". The precise
+> statement: at res=1 the **relative gain** (`rel_gain(8k)`) is **positive at both srs** (+0.73/+4.98) — a
+> resonance-peak signature, i.e. 8 k is **boosted** under the `damp=0.1` floor. But the **cross-rate gap
+> sign is unchanged** (both srs boost, 96 k boosts more), so the gap stays **negative** (−4.2493 dB). The
+> res=1 change is in the **relative-gain** sign, **not** the **gap** sign.
+
+**Conclusion:** the R&D (recursion closed-form) and the product are **the same quantity** measured two ways;
+the residual is measurement precision. The product values are authoritative; the exact recursion is the
+reproducible model. **No "generic model is a lower bound", no "non-generic → harsher rejection", and no
+"only res=0 is comparable"** — those were overclaims/artifacts of the wrong recursion and are withdrawn.
+Neither the TPT 1.57 dB nor an "expected post-fix gap" is claimed, and no <1 dB claim is made.
 
 ---
 
@@ -423,7 +441,7 @@ python3 tools/gh20_vcf_analyze.py --dir report/gh20-probe --manifest tools/gh20_
 python3 tools/run_gh20_vcf_negatives.py --root . --manifest tools/gh20_manifest.tsv
 ```
 
-**Artifacts (committed):** `report/gh20-probe/gh20_scenarios.tsv` (**7958 cells**: 7560 cutoff_norm +
+**Artifacts (committed):** `report/gh20-probe/gh20_scenarios.tsv` (**15518 cells**: 15120 cutoff_norm +
 384 crossrate + 8 asym_lr + 4 floor + 2 level), `report/gh20-probe/gh20_cpu.tsv` (machine +
 finite/block-partition), `report/gh20-check.txt` (gate pass).
 
@@ -450,9 +468,12 @@ finite/block-partition), `report/gh20-check.txt` (gate pass).
 
 **This document is a FURTHER unpushed REVISION** (per @Codex `f7c895bd`: run the full matrix + directional
 negatives now, do **not** push unreviewed revisions nor repeat full CI). It expands the matrix to
-res ∈ {0, 0.5, 1} × two legal levels (**7958 cells**), re-measures §2/§3/§5/§7/§8a, and is awaiting
-@Codex algorithm ruling. **Exact local commit: `800ed40`** (on top of `265f4de`; origin branch
-`measure/20-vcf-response` is unchanged at `33d6020` — **not pushed**; no full CI run per `f7c895bd`).
+res ∈ {0, 0.5, 1} × two legal levels × **LP+BP full 21-point norm** (**15518 cells**), re-measures
+§2/§3/§5/§7/§8, and — per @Codex `89f88d27` — **closes the three remaining items** with
+§8a exact-recursion reconciliation (`tools/gh20_recursion_reconcile.py`), §2 BP coverage, and §8
+Candidate-B per-sample-rate scope wording. It is awaiting @Codex algorithm ruling. **Exact local commit:
+`<FILL>`** (on top of `265f4de`; origin branch `measure/20-vcf-response` is unchanged at `33d6020` —
+**not pushed**; no full CI run per `f7c895bd`).
 
 **Next step after this revision:** the res sweep requested in the prior next-slice is **done** (§2/§3/§5).
 What remains: (1) @Codex algorithm ruling on the candidate direction (A = topology → TPT/ZDF, or B =

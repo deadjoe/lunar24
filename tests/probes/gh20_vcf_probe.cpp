@@ -212,7 +212,7 @@ static const ResCase kSweepRes[] = {
 };
 struct LvlCase { double lvl; char const* tok; char const* col; };
 static const LvlCase kSweepLvl[] = {{0.05, "small", "0.05"}, {0.20, "medium", "0.2"}};
-constexpr bool kSweepLp = true;   // cutoff_norm is LP-only; crossrate sweeps BP|LP.
+// BOTH the cutoff_norm and crossrate groups sweep LP|BP (the mandatory "LP/BP, norm>=21 points").
 
 // Configure the state so the ONLY audible mixer input is the EXT.AUDIO channel (ch4) and the
 // VCF chain downstream is transparent distortion: muting everything except ch4 removes the
@@ -338,25 +338,29 @@ int main(int argc, char** argv) {
     emit("floor_" + std::to_string((int)sr), sr, "lp", 0.0, 0.5, 0.0, 0.0, "wetL", c, kWin);
   }
 
-  // ---- cutoff_norm: sr x norm x freq sweep, mode=LP, res x level. The analyzer finds the -3 dB
-  //      cutoff per (sr,norm,res,level) and detects the sr/8 plateau (finding N-3a). The plateau
+  // ---- cutoff_norm: sr x mode(LP|BP) x norm x freq sweep, res x level. The analyzer finds the -3 dB
+  //      cutoff per (sr,mode,norm,res,level) and detects the sr/8 plateau (finding N-3a). The plateau
   //      onset must be res-INDEPENDENT (the cap does not read res), while the response SHAPE per res
-  //      is a real difference — this is the correction-1 res coverage. ----
+  //      is a real difference — this is the correction-1 res coverage. BOTH modes are swept at the full
+  //      21-point norm (mandate "LP/BP, norm>=21 points"); the mode is embedded in the id. ----
   {
     for (double sr : kSrs) {
       const auto freqs = probeFreqs(sr);
-      for (const auto& np : normGrid()) {
-        const double norm = np.first;
-        const char* nlabel = np.second;
-        for (double freq : freqs) {
-          for (const ResCase& rc : kSweepRes) {
-            for (const LvlCase& lc : kSweepLvl) {
-              DeviceStateV1 st = make_default_device_state(kProbeSeed);
-              configureIsolatedVcf(st, norm, norm, rc.res, rc.res, kSweepLp, kSweepLp, kMixVol);
-              Cap c = measure(st, sr, freq, lc.lvl, "wetL");
-              emit("cutoff_norm_sr" + isr(sr) + "_r" + rc.tok + "_lvl" + lc.tok +
-                   "_n" + nlabel + "_f" + ifreq(freq),
-                   sr, "lp", rc.res, norm, lc.lvl, freq, "wetL", c, kWin);
+      for (int modeIdx : {0, 1}) {                 // 0 = BP, 1 = LP.
+        const bool lp = (modeIdx == 1);
+        for (const auto& np : normGrid()) {
+          const double norm = np.first;
+          const char* nlabel = np.second;
+          for (double freq : freqs) {
+            for (const ResCase& rc : kSweepRes) {
+              for (const LvlCase& lc : kSweepLvl) {
+                DeviceStateV1 st = make_default_device_state(kProbeSeed);
+                configureIsolatedVcf(st, norm, norm, rc.res, rc.res, lp, lp, kMixVol);
+                Cap c = measure(st, sr, freq, lc.lvl, "wetL");
+                emit("cutoff_norm_sr" + isr(sr) + "_" + (lp ? "lp" : "bp") +
+                     "_r" + rc.tok + "_lvl" + lc.tok + "_n" + nlabel + "_f" + ifreq(freq),
+                     sr, lp ? "lp" : "bp", rc.res, norm, lc.lvl, freq, "wetL", c, kWin);
+              }
             }
           }
         }

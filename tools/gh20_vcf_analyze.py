@@ -241,16 +241,16 @@ def build_dbm(curves):
 
 def inactive_onset(dbm, group, labels_by_norm, normval):
     """The smallest norm label whose curve is identical to (norm=1.0)'s, i.e. where the FREQ knob has
-    gone inert. `group` is the (sr, res, lvl) prefix, but the `build_dbm` key order is (sr, norm_label,
-    res, lvl), so every lookup is (sr, label, res, lvl) — NOT group + (label,). Returns the onset norm
-    value (float) or None."""
-    sr, res, lvl = group
-    ref = dbm.get((sr, "1", res, lvl))
+    gone inert. `group` is the (sr, mode, res, lvl) prefix, but the `build_dbm` key order is
+    (sr, mode, norm_label, res, lvl), so every lookup is (sr, mode, label, res, lvl) — NOT group +
+    (label,). Returns the onset norm value (float) or None."""
+    sr, mode, res, lvl = group
+    ref = dbm.get((sr, mode, "1", res, lvl))
     if not ref:
         return None
     ref_pts = sorted(ref)
     for label in labels_by_norm:
-        c = dbm.get((sr, label, res, lvl))
+        c = dbm.get((sr, mode, label, res, lvl))
         if not c:
             continue
         # Compare over the freqs measurable in the reference curve (on-the-normalised-gain scale).
@@ -356,8 +356,12 @@ def main():
         g = rec["group"]
         a = float(rec["amp_rms"])
         kres, klvl = str(rec.get("res", "0")), str(rec.get("lvl", "0"))
-        if g == "cutoff_norm" and rec["mode"] == "lp":
-            cutoff_pts.setdefault((int(float(rec["sr_hz"])), rec["norm_label"], kres, klvl), [])\
+        if g == "cutoff_norm":
+            # Both LP and BP are swept at the full 21-point norm (mandate "LP/BP, norm>=21 points",
+            # @Codex 89f88d27 item ②); the mode is part of the grouping key so each mode gets its own
+            # response curve and (mode-independent) cap onset. The cap binds only the freq map, so both
+            # modes should track the same sr/8 inert onset.
+            cutoff_pts.setdefault((int(float(rec["sr_hz"])), rec["mode"], rec["norm_label"], kres, klvl), [])\
                 .append((float(rec["freq_hz"]), a))
         elif g == "crossrate":
             cross.setdefault((int(float(rec["sr_hz"])), rec["mode"], rec["norm_label"], kres, klvl), {})\
@@ -390,19 +394,20 @@ def main():
                "0p5": 0.50, "0p55": 0.55, "0p6": 0.60, "0p65": 0.65, "0p7": 0.70,
                "0p75": 0.75, "0p8": 0.80, "0p85": 0.85, "0p9": 0.90, "0p95": 0.95, "1": 1.0}
 
-    # ---------------------------------------------------------------- deadzone (N-3a), per res x level.
+    # ---------------------------------------------------------------- deadzone (N-3a), per mode x res x level.
     dbm = build_dbm(cutoff_pts)
-    # Group keys are (sr, norm_label, res, lvl). Build per-(sr, res, lvl) norm-label lists, and per-(sr,
-    # res, lvl) onset values. The onset must (i) track sr/8 within ONSET_TOL, (ii) be monotonic in sr per
-    # (res, lvl), and (iii) be INDEPENDENT of res at a fixed (sr, lvl) within RES_ONSET_TOL — the cap
-    # binds only the freq map, and res enters the VCF only through the damp coefficient.
-    print("\n--- N-3a inert-ONSET norm (normalised response curve == norm=1.0), per (res, level) ---")
-    onset_groups = {}   # {(sr, res, lvl): onset_norm}
-    group_labels = {}   # {(sr, res, lvl): [normlabels sorted]}
-    for (sr, lbl, res, lvl) in dbm:
-        group_labels.setdefault((sr, res, lvl), set()).add(lbl)
-    for (sr, res, lvl), sset in sorted(group_labels.items()):
-        g = (sr, res, lvl)
+    # Group keys are (sr, mode, norm_label, res, lvl). Build per-(sr, mode, res, lvl) norm-label lists,
+    # and per-(sr, mode, res, lvl) onset values. The onset must (i) track sr/8 within ONSET_TOL,
+    # (ii) be monotonic in sr per (mode, res, lvl), and (iii) be INDEPENDENT of res at a fixed (sr, mode,
+    # lvl) within RES_ONSET_TOL — the cap binds only the freq map (mode AND res enter nowhere near the
+    # cap), so BOTH the LP and BP traces should agree on the same sr/8 inert onset.
+    print("\n--- N-3a inert-ONSET norm (normalised response curve == norm=1.0), per (mode, res, level) ---")
+    onset_groups = {}   # {(sr, mode, res, lvl): onset_norm}
+    group_labels = {}   # {(sr, mode, res, lvl): [normlabels sorted]}
+    for (sr, mode, lbl, res, lvl) in dbm:
+        group_labels.setdefault((sr, mode, res, lvl), set()).add(lbl)
+    for (sr, mode, res, lvl), sset in sorted(group_labels.items()):
+        g = (sr, mode, res, lvl)
         labels = sorted(sset, key=lambda L: normval[L])
         onset = inactive_onset(dbm, g, labels, normval)
         onset_groups[g] = onset
@@ -412,33 +417,34 @@ def main():
         # A source with the cap removed (or the max cutoff driven below sr/8) is RED here by the
         # deadzone-detect logic itself, NOT by accidentally destabilising the filter.
         if onset is None or onset >= 0.999:
-            gate_errors.append("deadzone sr%d res=%s lvl=%s: no inert onset (cap never activates)"
-                               % (sr, res, lvl))
+            gate_errors.append("deadzone sr%d mode=%s res=%s lvl=%s: no inert onset (cap never activates)"
+                               % (sr, mode, res, lvl))
             continue
         dev = abs(onset - theo)
         if dev > ONSET_TOL:
-            gate_errors.append("deadzone sr%d res=%s lvl=%s: onset norm=%.2f != theoretical %.3f (dev %.3f)"
-                               % (sr, res, lvl, onset, theo, dev))
-        print("  sr=%d res=%s lvl=%s  onset_norm=%.2f (theoretical %.3f)  cap=%.0f  inert-at-and-above-onset"
-              % (sr, res, lvl, onset, theo, sr / 8.0))
-    # (ii) The inert onset must be non-decreasing in sr, per (res, lvl).
-    for (res, lvl) in sorted({(r, l) for (_sr, r, l) in onset_groups}):
-        seq = [onset_groups[(s, res, lvl)] for s in srs if (s, res, lvl) in onset_groups and onset_groups[(s, res, lvl)] is not None]
+            gate_errors.append("deadzone sr%d mode=%s res=%s lvl=%s: onset norm=%.2f != theoretical %.3f (dev %.3f)"
+                               % (sr, mode, res, lvl, onset, theo, dev))
+        print("  sr=%d mode=%s res=%s lvl=%s  onset_norm=%.2f (theoretical %.3f)  cap=%.0f  inert-at-and-above-onset"
+              % (sr, mode, res, lvl, onset, theo, sr / 8.0))
+    # (ii) The inert onset must be non-decreasing in sr, per (mode, res, lvl).
+    for (mode, res, lvl) in sorted({(m, r, l) for (_s, m, r, l) in onset_groups}):
+        seq = [onset_groups[(s, mode, res, lvl)] for s in srs
+               if (s, mode, res, lvl) in onset_groups and onset_groups[(s, mode, res, lvl)] is not None]
         if len(seq) >= 2 and any(seq[i] > seq[i + 1] + 1e-9 for i in range(len(seq) - 1)):
-            gate_errors.append("deadzone res=%s lvl=%s: inert onset NOT monotonic in sr: %s (cap-free would cap flat)"
-                               % (res, lvl, ", ".join("%.2f" % v for v in seq)))
-    # (iii) The onset is res-INDEPENDENT at a fixed (sr, lvl) — the res-dependence R&D/probe-sweep point.
-    for (sr, lvl) in sorted({(s, l) for (s, _r, l) in onset_groups}):
-        vals = [onset_groups[(sr, r, lvl)] for r in ("0", "0p5", "1")
-                if (sr, r, lvl) in onset_groups and onset_groups[(sr, r, lvl)] is not None]
+            gate_errors.append("deadzone mode=%s res=%s lvl=%s: inert onset NOT monotonic in sr: %s (cap-free would cap flat)"
+                               % (mode, res, lvl, ", ".join("%.2f" % v for v in seq)))
+    # (iii) The onset is res-INDEPENDENT at a fixed (sr, mode, lvl) — the res-dependence R&D/probe-sweep point.
+    for (sr, mode, lvl) in sorted({(s, m, l) for (s, m, _r, l) in onset_groups}):
+        vals = [onset_groups[(sr, mode, r, lvl)] for r in ("0", "0p5", "1")
+                if (sr, mode, r, lvl) in onset_groups and onset_groups[(sr, mode, r, lvl)] is not None]
         if vals:
             spread = max(vals) - min(vals)
             if spread > RES_ONSET_TOL:
-                gate_errors.append("deadzone sr%d lvl=%s: inert onset RES-DEPENDENT (spread %.3f: %s)"
-                                   % (sr, lvl, spread, ", ".join("%.2f" % v for v in vals)))
+                gate_errors.append("deadzone sr%d mode=%s lvl=%s: inert onset RES-DEPENDENT (spread %.3f: %s)"
+                                   % (sr, mode, lvl, spread, ", ".join("%.2f" % v for v in vals)))
             else:
-                print("  sr=%d lvl=%s  onset RES-INDEPENDENT (spread %.3f: %s)"
-                      % (sr, lvl, spread, ", ".join("%.2f" % v for v in vals)))
+                print("  sr=%d mode=%s lvl=%s  onset RES-INDEPENDENT (spread %.3f: %s)"
+                      % (sr, mode, lvl, spread, ", ".join("%.2f" % v for v in vals)))
 
     # ---------------------------------------------------------------- crossrate (N-3b), per res.
     print("\n--- N-3b crossrate rel_gain(%d) vs sr (norm=1, LP), per res ---" % int(CROSS_FOCUS_FREQ))
@@ -565,19 +571,19 @@ def main():
             # the probe on legal levels (lvl=0.2) and every res; it is the onset vs sr that is labelled.
             bad_sr = 0
             ok_sr = 0
-            for (sr, res, lvl), onset in onset_groups.items():
+            for (sr, mode, res, lvl), onset in onset_groups.items():
                 if onset is None:
                     continue
                 ok = abs(onset - theoretical_onset(sr)) <= ONSET_TOL      # real cell: accept.
                 bad = abs(onset - theoretical_onset(sr * 0.5)) <= ONSET_TOL  # halved-sr: reject.
                 ok_sr += 1 if ok else 0
                 if not ok:
-                    check_fails.append("sr-label sr%d res=%s lvl=%s: real onset %.2f not accepted by sr/8 theory"
-                                       % (sr, res, lvl, onset))
+                    check_fails.append("sr-label sr%d mode=%s res=%s lvl=%s: real onset %.2f not accepted by sr/8 theory"
+                                       % (sr, mode, res, lvl, onset))
                 if bad:
                     bad_sr += 1
-                    check_fails.append("sr-label sr%d res=%s lvl=%s: halved-sr onset accepted (%.2f matches sr/16 theory)"
-                                       % (sr, res, lvl, onset))
+                    check_fails.append("sr-label sr%d mode=%s res=%s lvl=%s: halved-sr onset accepted (%.2f matches sr/16 theory)"
+                                       % (sr, mode, res, lvl, onset))
             if ok_sr and bad_sr == 0:
                 print("  sr-label: real cells accepted (%d groups); halved-sr records rejected" % ok_sr)
             print("\n--- gate summary ---")

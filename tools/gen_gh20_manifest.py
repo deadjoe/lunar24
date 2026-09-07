@@ -83,19 +83,21 @@ def cells():
         yield ("floor_%d" % sr,
                {"group": "floor", "sr": sr, "mode": "lp", "res": "0", "norm": "0.5",
                 "norm_label": "-", "lvl": "0", "freq": "0", "channel": "wetL", "required": 1})
-    # --- cutoff_norm: sr x norm x freq sweep, mode=LP, res x level. The -3 dB curve and the sr/8
-    #     plateau onset are measured PER (res, level) — the res-dependence of the response SHAPE — and
-    #     the plateau onset must be res-independent (cap ≠ res-dependent) per the R&D. ---
+    # --- cutoff_norm: sr x mode(LP|BP) x norm x freq sweep, res x level. The -3 dB curve and the sr/8
+    #     plateau onset are measured PER (mode, res, level) — the res-dependence of the response SHAPE —
+    #     and the plateau onset must be res-independent (cap ≠ res-dependent) per the R&D. BOTH modes are
+    #     swept at the full 21-point norm (mandate "LP/BP, norm>=21 points", @Codex 89f88d27 item ②). ---
     for sr in SR_S:
-        for norm, label in NORM_GRID:
-            for freq in FREQS[sr]:
-                for rv, rtok, _rc in RES_TABLE:
-                    for ltok, lcol in LEVEL_TABLE:
-                        yield ("cutoff_norm_sr%d_r%s_lvl%s_n%s_f%d" % (sr, rtok, ltok, label, freq),
-                               {"group": "cutoff_norm", "sr": sr, "mode": "lp",
-                                "res": _res_col(rv), "norm": "%.2f" % norm,
-                                "norm_label": label, "lvl": lcol, "freq": str(freq),
-                                "channel": "wetL", "required": 1})
+        for mode in ("bp", "lp"):
+            for norm, label in NORM_GRID:
+                for freq in FREQS[sr]:
+                    for rv, rtok, _rc in RES_TABLE:
+                        for ltok, lcol in LEVEL_TABLE:
+                            yield ("cutoff_norm_sr%d_%s_r%s_lvl%s_n%s_f%d" % (sr, mode, rtok, ltok, label, freq),
+                                   {"group": "cutoff_norm", "sr": sr, "mode": mode,
+                                    "res": _res_col(rv), "norm": "%.2f" % norm,
+                                    "norm_label": label, "lvl": lcol, "freq": str(freq),
+                                    "channel": "wetL", "required": 1})
     # --- crossrate: sr x mode(LP|BP) x norm(>=0.85) x {100,8000} x res x level. The 8k cross-rate
     #     gain gap is the RES-DEPENDENT finding (model 2.21/1.78/2.56 dB); per-res here is the point. ---
     for sr in SR_S:
