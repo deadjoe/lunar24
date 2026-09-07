@@ -3,7 +3,23 @@
 - Worktree: `wt-21-gh21-smoothing`, branch `feat/21-continuous-smoothing`
 - HEAD: `9524c20b2e46c6ad86152e2ab667b940a443dc1c` (3 commits ahead of `origin/main` `31736b6`)
 - PR: **#30** (`feat/21-continuous-smoothing` → `main`)
-- Result: **444 checks / 0 failed** (was 418 with 98 failed), Release / Debug / ASan+UBSan each **70/70**, count pinned **177 seconds / 168 none**.
+- Result: **449 checks / 0 failed** (was 418 with 98 failed; 444 → 449 after the NO-GO rework added the fail-closed negative control), Release / Debug / ASan+UBSan each **70/70**, count pinned **177 seconds / 168 none**.
+
+## NO-GO rework applied (task #128) — three items, all resolved
+
+1. **`sqCv` / `cvPos` unused-but-set-variable (-Werror)**: removed the two dead write-only arrays
+   in `test_machine_control_sources.cpp` (declarations at :469/:1019 + their one write each). GCC /
+   linux-clang `-Wall` enables `-Wunused-but-set-variable` but AppleClang's `-Wall` does not — that is
+   why the earlier three-leg local (mac) was green. Re-compiling the test TU locally with
+   `-Wunused-but-set-variable` added is clean for all `tests/core/*.cpp`.
+2. **`applyDspParam` seconds-snap branch skipped `controlParamValid_`**: added a fail-closed
+   `if (!controlParamValid_(id, v)) { invalid_value; return; }` at the branch head (mirrors the live
+   `setControlParamValue` ordering), so a malformed/out-of-domain whole-state apply rejects keep-old
+   instead of resetting the smoother to garbage. Added negative control t17-(E): `applyDspParam`
+   0.7 then 5.0/NaN → `invalid_value` AND getter kept at 0.7; verified **RED under the no-validation
+   mutation** (4 checks).
+3. **mut2 count aligned to the anchored minimal definition**: see §Negative-control item 2 — **6 RED**,
+   not the earlier-reported 70.
 
 ## Operative rules (from @Kimi d1b9402d / 8ba2e4e3)
 
@@ -54,7 +70,7 @@ The 15 discrete single-sample-direct assertions: sequencer clock/stages/step_gat
 
 1. **tau→0 snap mutation** (`kGh21SmoothingTauSeconds = 0.0` → coefficient 1.0): **12 RED** — the smooth-ramp / anti-old-frame / predictive-crossing-window assertions discriminate:
    - t3 anti-old-frame (not frame 8), t4 (jump-not-ramp, mid-ramp), t5 anti-old-frame + step0 CV mid-ramp, t6 anti-old-frame ×3, t6c anti-old-frame, t7 anti-old-frame ×N, t11 step0 live ramp, t17 live ramp (not one-sample). Reverted.
-2. **B-form perpetual-writer mutation** (`advanceControlSmoothing_` always writes): **70 RED** — t14 partition-invariant, t15 rail-publish, t17 direct-setter-no-clobber reject the B form. Reverted to (A).
+2. **B-form perpetual-writer mutation — anchored minimal definition** (delete ONLY `if (sm.settled()) continue;` from `advanceControlSmoothing_`; leave `if (sm.settled()) applySmoothedControl_(id, sm.target());` intact): **6 RED** — t11 runtime-PULSER crossing + t11 clock_out, t14 partition-invariant, t15 rail-publish, t17 direct-setter-no-clobber ×2. Reverted to (A). (Earlier report claimed **70 RED**; that was the straddling harsher mutation which ALSO deleted the snap line — the audit-chain number has been corrected to the 6 RED of the anchored minimal B-form that @Kimi's NO-GO review specified.)
 
 Both mutations were reverted; final tree is clean (444/0), no stray mutation markers.
 

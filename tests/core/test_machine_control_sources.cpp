@@ -466,7 +466,7 @@ static void test_2_lfo_drone_mod_same_sample(void) {
 //    plan-order robustness, gate-mask isolation, A/B independence and R-normalling.
 // ===========================================================================
 static void test_3_seq_gate_eg_env_vcf(void) {
-  double envA[kCap], envB[kCap], sqCv[kCap], sqGate[kCap], vcfL[kCap], vcfR[kCap];
+  double envA[kCap], envB[kCap], sqGate[kCap], vcfL[kCap], vcfR[kCap];
   int stepAt[kCap];
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
@@ -501,7 +501,6 @@ static void test_3_seq_gate_eg_env_vcf(void) {
       rt.processBlock(&z, 1, &o);
       envA[i] = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
       envB[i] = rt.controlVoltageAt(reg::JackId::envelope_b_env_out);
-      sqCv[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
       sqGate[i] = rt.controlVoltageAt(reg::JackId::sequencer_gate_out);
       vcfL[i] = rt.vcfCvReadbackL();
       vcfR[i] = rt.vcfCvReadbackR();
@@ -1016,7 +1015,7 @@ static void test_7_param_table_partition(void) {
   //     to be bit-identical: if PULSER were silently clamped/coerced the second run would
   //     advance and diverge. A legitimate joystick→external-clock advance at sample 40 is the
   //     positive control. (A VALID norm transfer is verified separately in test_13.)
-  double cvBase[kCap], cvPulser[kCap], cvPos[kCap];
+  double cvBase[kCap], cvPulser[kCap];
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
@@ -1082,7 +1081,6 @@ static void test_7_param_table_partition(void) {
       core::RuntimeOutput o;
       const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
-      cvPos[i] = rt.controlVoltageAt(reg::JackId::sequencer_cv_out);
       if (startFrame < 0 && rt.sequencer().started()) startFrame = i;
       if (advFrame < 0 && rt.sequencer().currentStep() >= 1) advFrame = i;
     }
@@ -2548,6 +2546,35 @@ static void test_17_gh21_smoothing_negative_controls(void) {
       converged = nearD(rt.joystick().x(), 0.2);
     }
     check(converged, "t17 live event re-arms a whole-state-snapped smoother toward its target");
+  }
+
+  // (E) Whole-state apply must be FAIL-CLOSED on a malformed value too — the mirror of the
+  //     live lane's controlParamValid_ that the NO-GO review flagged as missing. applyDspParam
+  //     on a seconds param with an out-of-domain value must land `invalid_value` and leave the
+  //     getter at the prior value (keep-old), never reset the smoother to the garbage level.
+  //     RED if the snap branch resets+applies without validating.
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    // Prime a valid snapped value first so there IS a prior value to keep.
+    check(rt.applyDspParam(reg::ParameterId::joystick_x, 0.7) == core::ParameterApplyStatus::applied,
+          "t17 whole-state prime 0.7 applied");
+    // An out-of-range joystick norm (not in [0,1]) must be rejected without touching the smoother.
+    const core::ParameterApplyStatus bad =
+        rt.applyDspParam(reg::ParameterId::joystick_x, 5.0);
+    check(bad == core::ParameterApplyStatus::invalid_value,
+          "t17 whole-state out-of-range 5.0 -> invalid_value (fail-closed)");
+    rt.processBlock(&z, 1, &o);
+    check(nearD(rt.joystick().x(), 0.7),
+          "t17 whole-state invalid value keeps the prior 0.7 (never resets smoother)");
+    // A non-finite value behaves identically: no reset to a NaN level.
+    check(rt.applyDspParam(reg::ParameterId::joystick_x,
+                           std::numeric_limits<double>::quiet_NaN()) ==
+              core::ParameterApplyStatus::invalid_value,
+          "t17 whole-state NaN -> invalid_value");
+    rt.processBlock(&z, 1, &o);
+    check(nearD(rt.joystick().x(), 0.7),
+          "t17 whole-state NaN keeps the prior 0.7");
   }
 }
 

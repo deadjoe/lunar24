@@ -962,6 +962,15 @@ class SynthRuntime {
       // setter or a later ramp's starting point.
       const ParameterDescriptor* desc = find_parameter(id);
       if (desc != nullptr && desc->smoothing == Smoothing::seconds) {
+        // Fail-closed like setControlParamValue: the snap path must not let a
+        // malformed / out-of-domain value reach a sound-core setter. Mirror the
+        // live lane's recognized→valid order, so a NaN or out-of-range whole-state
+        // apply rejects (keep-old) instead of silently resetting the smoother to
+        // an invalid level and calling applySmoothedControl_ with it.
+        if (!controlParamValid_(id, v)) {
+          lastApplyStatus_ = ParameterApplyStatus::invalid_value;
+          return lastApplyStatus_;
+        }
         const std::uint32_t ord = static_cast<std::uint32_t>(id);
         controlSmoothers_[ord].reset(v);
         applySmoothedControl_(id, v);
