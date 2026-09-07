@@ -464,6 +464,14 @@ add_test(NAME gh20_vcf_acceptance
     --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_manifest.tsv
     --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh20_trap_analyze.py)
 
+# CI time: the REAL-product probe (gh20_vcf_probe) and the criterion gate that re-runs it
+# (gh20_vcf_acceptance) render the actual DSP through the full sr x mode x res x norm grid
+# (15518 cells) and take ~25-60 min per leg. They must not gate every feature push, so they
+# carry the same `slow` label that PR #28 (chore/ci-probe-gating) introduced for the gh19
+# pair; the PR-only probe-gate runs them. gh20_vcf_negative is a fast header-only shadow build
+# and deliberately stays in the fast set.
+set_tests_properties(gh20_vcf_probe gh20_vcf_acceptance PROPERTIES LABELS "slow")
+
 # task #88 (GH #20): SOURCE NEGATIVE CONTROLS. The acceptance gate must DISCRIMINATE: GREEN on the
 # real trapezoidal product and RED on a production PolivoksFilter source mutated away from the @Codex
 # numeric contract (old cap / old recursion / wrong damp / wrong LP-BP / L-R cross / skip setter /
