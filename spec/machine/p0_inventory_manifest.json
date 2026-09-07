@@ -1849,7 +1849,7 @@
           "max": 10.0,
           "default": 0.1,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -1860,7 +1860,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -1899,7 +1899,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -1910,7 +1910,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -1949,7 +1949,7 @@
           "max": 10.0,
           "default": 0.01,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -1960,7 +1960,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -1974,7 +1974,7 @@
           "max": 10.0,
           "default": 0.1,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -1985,7 +1985,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2024,7 +2024,7 @@
           "max": 10.0,
           "default": 0.1,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2035,7 +2035,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2049,7 +2049,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2060,7 +2060,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2099,7 +2099,7 @@
           "max": 20.0,
           "default": 1.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2110,7 +2110,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2174,7 +2174,7 @@
           "max": 20.0,
           "default": 1.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2185,7 +2185,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2424,7 +2424,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2435,7 +2435,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2449,7 +2449,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2460,7 +2460,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2474,7 +2474,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2485,7 +2485,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2499,7 +2499,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2510,7 +2510,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2599,7 +2599,7 @@
           "max": 1.0,
           "default": 0.5,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2610,7 +2610,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2674,7 +2674,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2685,7 +2685,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2699,7 +2699,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2710,7 +2710,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2724,7 +2724,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2735,7 +2735,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2749,7 +2749,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2760,7 +2760,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
@@ -2774,7 +2774,7 @@
           "max": 5.0,
           "default": 0.0,
           "step": 0.0,
-          "smoothing": "none",
+          "smoothing": "seconds",
           "persistence": "deviceState",
           "status": "confirmed",
           "descriptorEvidence": {
@@ -2785,7 +2785,7 @@
             "unit": "confirmed",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified"
           }
         },
