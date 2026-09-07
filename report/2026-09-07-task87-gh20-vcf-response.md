@@ -347,9 +347,15 @@ is mathematically impossible". The two corresponding narrow candidates are the t
     reachable range is **different at every sr** (5.5 k@44.1, 6.0 k@48, 11.0 k@88.2, 12.0 k@96). There is
     **no single sr-independent "common safe Hz range"** — `baseFreqHz_`'s `20·1000^n` slope is sr-invariant
     but its cap (`sr/8`) is not. The plateau is removed **per-sr** (each sr's own top = its own cap); a true
-    *common* upper bound would be `min_sr(sr/8) = 5512.5 Hz`, which is strictly worse than every sr's own
-    cap, so per-sr remap is the right reading. This is precisely why Candidate B "removes the plateau" is
-    a **per-sample-rate statement**, not a single "common range".
+    *common* upper bound would be `min_sr(sr/8) = 5512.5 Hz`. **This is a concrete bandwidth cost, not an
+    unconditional quality ordering:** a sr-invariant `sr/8`=5512.5 Hz common bound would *lower* the top
+    cutoff to 5512.5 Hz at every sr (below the 6.0 k@48 and 12.0 k@96 tops the per-sr remap reaches), so it
+    trades away more absolute bandwidth — but it could in principle **buy cross-rate consistency** (a
+    sr-invariant cutoff range where every sr's response aligns), which is exactly the N-3b gap symptom. So
+    per-sr remap vs. a 5512.5 Hz common bound is a **trade-off (bandwidth for cross-rate consistency)**,
+    not a "per-sr is strictly better" ordering. This is precisely why Candidate B "removes the plateau" is
+    a **per-sample-rate statement**, not a single "common range"; the choice of which reading is preferred
+    is @Codex/owner's to rule.
 - **Reachable range / bandwidth cost:** the knob's top cutoff is **`sr/8`** per sr (5.5 k@44.1, 6.0 k@48,
   11.0 k@88.2, 12.0 k@96) instead of 20 kHz. **The absolute bandwidth is lost** — the 20 kHz endpoint is
   traded for full-travel usability at that sr. This is the honest cost, and the *reason* the first draft's
@@ -385,7 +391,11 @@ order (§6a: `low' = low + f·band`, then `high = x − low' − d·band`, then 
 **LP transfer — `H(q) = f²·q / [1 − (2 − f·d − f²)·q + (1 − f·d)·q²]`**
 where `f = 2·sin(π·fc/sr)`, `d = 2 − 1.9·res` (damp). This is not "a non-generic Chamberlin vs a generic
 model" — it **is the Chamberlin's own exact magnitude response**, and it matches the product. Reproducible
-via `python3 tools/gh20_recursion_reconcile.py --scenario report/gh20-probe/gh20_scenarios.tsv`.
+via `python3 tools/gh20_recursion_reconcile.py --scenario report/gh20-probe/gh20_scenarios.tsv`. **Scope note: this
+reconcile is a reporting / reproduction aid, NOT a rejection gate.** It prints the closed-form-vs-product
+residual for the reviewer to see; it does **not** auto-pass or auto-fail the submission, and it does **not**
+claim to reject all model-vs-product mismatch — matching the material that leaves the residual is the
+reviewer's judgment.
 
 Closed-form `rel_gain(8k)` at `norm=1` (`fc = sr/8`), normalised to the **same 100 Hz reference** and the
 **same `wetL` observation point** as the product, compared against the raw probe output:
@@ -466,18 +476,15 @@ finite/block-partition), `report/gh20-check.txt` (gate pass).
   the `full coverage (--require-full)` job is **skipped** (`pull_request`-gated) — identical to the
   GH#19 `a27d807` / `942ad82` approved baseline state (0 new, gate unchanged).
 
-**This document is a FURTHER unpushed REVISION** (per @Codex `f7c895bd`: run the full matrix + directional
-negatives now, do **not** push unreviewed revisions nor repeat full CI). It expands the matrix to
-res ∈ {0, 0.5, 1} × two legal levels × **LP+BP full 21-point norm** (**15518 cells**), re-measures
-§2/§3/§5/§7/§8, and — per @Codex `89f88d27` — **closes the three remaining items** with
-§8a exact-recursion reconciliation (`tools/gh20_recursion_reconcile.py`), §2 BP coverage, and §8
-Candidate-B per-sample-rate scope wording. It is awaiting @Codex algorithm ruling. **Exact local commit:
-`bf7aa6d`** (on top of `265f4de`; origin branch `measure/20-vcf-response` is unchanged at `33d6020` —
-**not pushed**; no full CI run per `f7c895bd`).
-
-**Next step after this revision:** the res sweep requested in the prior next-slice is **done** (§2/§3/§5).
-What remains: (1) @Codex algorithm ruling on the candidate direction (A = topology → TPT/ZDF, or B =
-remap the Chamberlin); (2) optionally, a per-sample `ns/sample` CPU figure for the baseline VCF (the
-`gh20_cpu.tsv` emits the machine + finite/block-partition columns, not yet a cost-per-sample); (3) after
-the ruling, implement the chosen correction-candidate in an isolated branch with the above acceptance
-criteria. No production DSP change and no GH#20-fixed claim until @Codex rules.
+**This document is the accepted measurement baseline for GH#20.** Per @Codex `2706b466` / `463b9586`
+(2026-09-07) the three `89f88d27` closes were independently re-verified: **15518/15518 GATE PASS**, exact
+recursion ↔ product residual **0.0137 dB**, BP full-norm loop + grouping confirmed, `bb7f897` directed
+review **passed**. The submission is authorized: run the full inspection (all checks + host/generator),
+push, and manually trigger four-platform CI; the **final SHA is reported in the Raft message, not a
+dedicated doc head** (copying the SHA into a separate un-verified doc commit is explicitly avoided per
+`463b9586`). This revision adds the two wording fixes @Codex requested: §8 Candidate-B **"common upper
+bound = 5512.5 Hz" is stated as a concrete bandwidth cost that trades for cross-rate consistency — not an
+unconditional quality ordering**, and §8a reconcile is **scoped as a reporting/reproduction aid, NOT a
+rejection gate** (it does not auto-reject mismatch; the residual is the reviewer's judgment). No production
+DSP change; **GH#20 is not claimed fixed**. This is a measurement baseline + correction-candidate contract
+for @Codex's algorithm ruling (A = topology → TPT/ZDF, B = remap the Chamberlin).
