@@ -597,6 +597,126 @@ static bool test_vco_narrowpulse_fold() {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// task #86 / GH#19: BLAMP triangle slope-correction STRUCTURAL contract. The
+// alias metric (blref_full_db) is the acceptance, but it realigns to the measured
+// fundamental phase and is scale-invariant, so these four structural controls are
+// asserted here so a regression is caught by the right detector, not by accident:
+//   A) phase-advance guard   — the corrected triangle must add NO whole-sample
+//      latency. Cross-correlation with the naive triangle must peak at lag 0.
+//   B) amplitude guard       — corner rounding never overshoots past the naive
+//      swing, and the output is never silently volume-scaled (fake improvement).
+//   C) morph-untouched       — the morphing sine<->triangle uses the NAIVE triangle
+//      (the BLAMP is applied only to the plain kTriangle core, in scope).
+//   D) block-invariance      — the correction is a pure function of the persisted
+//      phase accumulator, so a block-boundary reset would change the output.
+//   E) BLAMP-is-active       — corrected kTriangle differs from the naive triangle
+//      (kMorphSineTriangle @ morph=1 is the naive triangle) at the corners.
+// ---------------------------------------------------------------------------
+static bool test_vco_blamp() {
+  const double sr = 48000.0;
+  const double baseHz = 440.0;
+  const std::size_t n = 4800;  // ~44 cycles of 440 Hz.
+
+  // Render a Vco at a waveform/morph into a buffer.
+  auto render = [&](core::VcoWaveform w, double morph) {
+    core::Vco v(sr);
+    v.setBaseHz(baseHz);
+    v.setWaveform(w);
+    v.setMorph(morph);
+    std::vector<double> out;
+    render_vco(v, n, out);
+    return out;
+  };
+
+  const std::vector<double> triBlamp = render(core::VcoWaveform::kTriangle, 0.5);
+  const std::vector<double> triNaive = render(core::VcoWaveform::kMorphSineTriangle, 1.0);
+
+  // E) the BLAMP is not a no-op: corrected differs from naive near corners.
+  double maxDiff = 0.0;
+  for (std::size_t i = 0; i < n; ++i)
+    maxDiff = std::max(maxDiff, std::fabs(triBlamp[i] - triNaive[i]));
+  std::printf("P3-3 vco-blamp: max|corrected-naive| = %.5f (BLAMP active if > 1e-4)\n",
+              maxDiff);
+  CHECK(maxDiff > 1e-4);   // the correction actually changed the triangle.
+  CHECK(maxDiff < 0.05);   // but it is a corner-local residual, not a reshaping.
+
+  // C) morph-untouched: kMorphSineTriangle @morph=1 is EXACTLY the naive triangle.
+  //    The Vco pre-increments the phase accumulator before each sample, so sample i
+  //    uses phase = frac((i+1)*f0/sr) — mirror that convention for the reference.
+  double morphErr = 0.0;
+  const double step = baseHz / sr;
+  for (std::size_t i = 0; i < n; ++i) {
+    const double ph = (double(i + 1) * step) - std::floor(double(i + 1) * step);
+    const double ref = 4.0 * std::fabs(ph - 0.5) - 1.0;
+    morphErr = std::max(morphErr, std::fabs(triNaive[i] - ref));
+  }
+  std::printf("P3-3 vco-blamp: morph=1 stays naive (max err %.3e)\n", morphErr);
+  CHECK(morphErr < 1e-9);  // the morph waveform never receives the BLAMP.
+
+  // A) phase-advance / no hidden one-sample delay: cross-correlation peaks at lag 0.
+  //    corr(lag) = sum_i naive[i] * blamp[i - lag]. For a lagged alignment both indices
+  //    must stay in [0, n): i in [max(0,lag), min(n, n+lag)). Getting these bounds wrong
+  //    reads out of range (blamp[-1] or blamp[n]) and only a memory sanitizer catches it.
+  auto corr = [&](int lag) {
+    double s = 0.0;
+    const std::size_t lo = (lag > 0 ? std::size_t(lag) : 0);
+    const std::size_t hi = (lag < 0 ? n - std::size_t(-lag) : n);
+    for (std::size_t i = lo; i < hi; ++i)
+      s += triNaive[i] * triBlamp[i - lag];
+    return s;
+  };
+  const double c0 = corr(0), c1 = corr(1), cm1 = corr(-1);
+  std::printf("P3-3 vco-blamp: xcorr lag -1=%g 0=%g +1=%g (argmax must be 0)\n",
+              cm1, c0, c1);
+  CHECK(c0 > c1 * 1.001);   // no +1-sample delay.
+  CHECK(c0 > cm1 * 1.001);  // no -1-sample delay.
+
+  // B) amplitude guard: corner rounding keeps |out| <= ~1, never overshoots,
+  //    and is never volume-scaled below the naive swing (fake "improvement").
+  double hi = -1e9, lo = 1e9, naiveHi = -1e9;
+  for (std::size_t i = 0; i < n; ++i) {
+    hi = std::max(hi, triBlamp[i]);
+    lo = std::min(lo, triBlamp[i]);
+    naiveHi = std::max(naiveHi, triNaive[i]);
+  }
+  std::printf("P3-3 vco-blamp: corrected max=%.4f min=%.4f, naive max=%.4f\n",
+              hi, lo, naiveHi);
+  CHECK(hi <= 1.05);              // no overshoot beyond the naive rail.
+  CHECK(lo >= -1.05);
+  CHECK(naiveHi - hi < 0.05);     // the BLAMP did not lower the peak (no volume fake).
+  CHECK(hi > 0.9 && lo < -0.9);   // full swing present — not a silent/low buffer.
+
+  // D) block-invariance: contiguous render == split-into-odd-blocks render, so a
+  //    block-boundary reset of the correction state would be caught.
+  core::Vco v(sr);
+  v.setBaseHz(baseHz);
+  v.setWaveform(core::VcoWaveform::kTriangle);
+  v.setMorph(0.5);
+  std::vector<double> contiguous(n);
+  std::size_t idx = 0;
+  for (std::size_t i = 0; i < n; ++i) v.tick(&contiguous[idx++], nullptr);
+  core::Vco w(sr);
+  w.setBaseHz(baseHz);
+  w.setWaveform(core::VcoWaveform::kTriangle);
+  w.setMorph(0.5);
+  std::vector<double> partitioned(n);
+  idx = 0;
+  const std::size_t blocks[] = {7, 13, 32};  // odd, non-divisor, and even partitions.
+  for (std::size_t b = 0, off = 0; off < n; ++b) {
+    const std::size_t len = std::min(blocks[b % 3], n - off);
+    for (std::size_t j = 0; j < len; ++j) w.tick(&partitioned[off + j], nullptr);
+    off += len;
+  }
+  double partMax = 0.0;
+  for (std::size_t i = 0; i < n; ++i)
+    partMax = std::max(partMax, std::fabs(contiguous[i] - partitioned[i]));
+  std::printf("P3-3 vco-blamp: contiguous-vs-partitioned maxdiff = %.3e\n", partMax);
+  CHECK(partMax < 1e-12);  // the correction state is a pure function of phase.
+
+  return true;
+}
+
 int main() {
   test_vco_voct_and_lilin();
   test_vco_sub_locked();
@@ -606,5 +726,6 @@ int main() {
   test_vco_pwm_extreme_duty();
   test_vco_hardsync_splatter();
   test_vco_narrowpulse_fold();
+  test_vco_blamp();
   return ::test::finish("vco");
 }

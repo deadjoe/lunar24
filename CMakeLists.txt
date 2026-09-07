@@ -413,6 +413,33 @@ lunar_add_test(gh19_alias_probe tests/probes/gh19_alias_probe.cpp)
 target_link_libraries(gh19_alias_probe PRIVATE lunar_host)
 target_include_directories(gh19_alias_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
 
+# task #86 (GH #19): RED->GREEN acceptance gate for the VCO-triangle BLAMP. Builds nothing
+# itself: it runs the REAL product probe (already built as gh19_alias_probe) through the
+# verified analyzer and asserts the deliverable criterion against the committed NAIVE
+# baseline (tools/gh19_naive_baseline.tsv): every 880 Hz A/B isolated triangle cell improves
+# the full-band residual by >= 6 dB, and every 220/440 Hz cell does not worsen beyond 0.5 dB.
+# Running this gate on the naive triangle is RED (imp=0 dB at 880); on the BLAMP triangle it
+# is GREEN (~8.6 dB). It is the runnable, CI-enforced form of the committed matrix.
+add_test(NAME gh19_blamp_acceptance
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_blamp_pipeline.py
+    --probe $<TARGET_FILE:gh19_alias_probe>
+    --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_manifest.tsv
+    --baseline ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_naive_baseline.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_alias_analyze.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_gh19_blamp_acceptance.py)
+
+# task #86 (GH #19): the PRODUCTION BLAMP LUT must match the generator's analytic g.
+# @Codex (msg 1a8ed7f2) flagged the generator's self-consistency as self-referential
+# (it re-parsed its OWN emitted text). This gate reads the ACTUAL production vco.h,
+# deduces its L/N config from its own symbols and cross-checks its kLut values against
+# the analytic g; a hand-copied / hand-edited production coefficient goes RED. This is
+# the runnable, CI-enforced form of "changing any production coefficient must show up".
+add_test(NAME gh19_blamp_lut_gate
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_gh19_blamp.py --check-prod
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/vco.h)
+
 # GH#4 8B3 (task#73): the shared channel-plan oracle. The host override and this test call the SAME
 # negotiate_stream_plan() function, so the host and the oracle cannot disagree on how many channels
 # the stream actually opens. No allocator probe: the negotiation is pure ints.
