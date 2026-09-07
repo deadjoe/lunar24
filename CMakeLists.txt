@@ -429,6 +429,15 @@ add_test(NAME gh19_blamp_acceptance
     --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_alias_analyze.py
     --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_gh19_blamp_acceptance.py)
 
+# CI time: the REAL-product probe (gh19_alias_probe) and the criterion gate that re-runs it
+# (gh19_blamp_acceptance) render the actual DSP through the full chain and take 25-60 min per leg.
+# They must not gate every feature push (that made CI ~1 hr and, across the 4-OS matrix, multiplied it).
+# They are tagged `slow`, excluded from the every-push `build-and-test` matrix (`ctest --label-exclude
+# slow`), and run once, on ubuntu, at PR/merge time in the `probe-gate` job (`ctest --label-regex slow`).
+# Both stay as separate CTest entries on purpose: the probe is the per-cell measurement guard, the
+# acceptance is the criterion-level gate — they are different assertions, not a redundant re-run.
+set_tests_properties(gh19_alias_probe gh19_blamp_acceptance PROPERTIES LABELS "slow")
+
 # task #86 (GH #19): the PRODUCTION BLAMP LUT must match the generator's analytic g.
 # @Codex (msg 1a8ed7f2) flagged the generator's self-consistency as self-referential
 # (it re-parsed its OWN emitted text). This gate reads the ACTUAL production vco.h,
