@@ -39,8 +39,41 @@ FREQS = {
 CROSS_MIN_NORM = 0.85       # only the cap-zone / high-res norms for the 8k cross-rate focus.
 CROSS_FREQS = [100, 8000]
 ASYM_L_FREQ, ASYM_R_FREQ = 0.90, 0.30
-LEVEL_IDS = ["small", "medium", "large"]
-LEVEL_VALS = {"small": 0.05, "medium": 0.20, "large": 0.50}
+
+# @Codex correction 1 (e3d4211e): restore low/mid/high res + two legal input levels. The res enters
+# ONLY via the damp coefficient (damp = 2.0 + (0.1-2.0)*res), so a res=0-only sweep was masking
+# res-dependence of the 8k cross-rate gain, the stability margin, and the response shape. Legal res =
+# {0.0 flat, 0.5 mid, 1.0 max}; two legal input levels {0.05, 0.20} bound the input-stage (drive=0 =>
+# linear passthrough) so the VCF attribution holds at both.
+#   (value, id-token, manifest-res-column) — the id token and the manifest `res` column must byte-match
+#   the probe's emit AND the analyzer's grouping key.
+RES_TABLE = [
+    (0.0, "0", "0"),
+    (0.5, "0p5", "0.5"),
+    (1.0, "1", "1"),
+]
+#   (id-token, manifest-lvl-column) — the id token is the existing level-group token ("small"/"medium");
+#   the manifest `lvl` column is the numeric level value.
+LEVEL_TABLE = [
+    ("small", "0.05"),
+    ("medium", "0.2"),
+]
+LEVEL_IDS = ["small", "medium"]            # two legal input levels (0.05, 0.20).
+LEVEL_VALS = {"small": 0.05, "medium": 0.2}
+
+
+def _res_col(value):      # numeric res value -> manifest column string (byte-matched to the probe).
+    for v, _tok, col in RES_TABLE:
+        if abs(v - value) < 1e-12:
+            return col
+    raise ValueError("unknown res value %r" % value)
+
+
+def _res_tok(value):      # numeric res value -> id token.
+    for v, tok, _col in RES_TABLE:
+        if abs(v - value) < 1e-12:
+            return tok
+    raise ValueError("unknown res value %r" % value)
 
 
 def cells():
@@ -50,26 +83,34 @@ def cells():
         yield ("floor_%d" % sr,
                {"group": "floor", "sr": sr, "mode": "lp", "res": "0", "norm": "0.5",
                 "norm_label": "-", "lvl": "0", "freq": "0", "channel": "wetL", "required": 1})
-    # --- cutoff_norm: sr x norm x freq sweep, mode=LP, res=0. ---
+    # --- cutoff_norm: sr x norm x freq sweep, mode=LP, res x level. The -3 dB curve and the sr/8
+    #     plateau onset are measured PER (res, level) — the res-dependence of the response SHAPE — and
+    #     the plateau onset must be res-independent (cap ≠ res-dependent) per the R&D. ---
     for sr in SR_S:
         for norm, label in NORM_GRID:
             for freq in FREQS[sr]:
-                yield ("cutoff_norm_sr%d_n%s_f%d" % (sr, label, freq),
-                       {"group": "cutoff_norm", "sr": sr, "mode": "lp", "res": "0",
-                        "norm": ("%.2f" % norm) if abs(norm - round(norm, 2)) > 0 else "%.2f" % norm,
-                        "norm_label": label, "lvl": "0.05", "freq": str(freq),
-                        "channel": "wetL", "required": 1})
-    # --- crossrate: sr x mode(LP|BP) x norm(>=0.85) x {100,8000}. ---
+                for rv, rtok, _rc in RES_TABLE:
+                    for ltok, lcol in LEVEL_TABLE:
+                        yield ("cutoff_norm_sr%d_r%s_lvl%s_n%s_f%d" % (sr, rtok, ltok, label, freq),
+                               {"group": "cutoff_norm", "sr": sr, "mode": "lp",
+                                "res": _res_col(rv), "norm": "%.2f" % norm,
+                                "norm_label": label, "lvl": lcol, "freq": str(freq),
+                                "channel": "wetL", "required": 1})
+    # --- crossrate: sr x mode(LP|BP) x norm(>=0.85) x {100,8000} x res x level. The 8k cross-rate
+    #     gain gap is the RES-DEPENDENT finding (model 2.21/1.78/2.56 dB); per-res here is the point. ---
     for sr in SR_S:
         for mode in ("bp", "lp"):
             for norm, label in NORM_GRID:
                 if norm < CROSS_MIN_NORM:
                     continue
                 for freq in CROSS_FREQS:
-                    yield ("crossrate_sr%d_%s_n%s_f%d" % (sr, mode, label, freq),
-                           {"group": "crossrate", "sr": sr, "mode": mode, "res": "0",
-                            "norm": "%.2f" % norm, "norm_label": label, "lvl": "0.05",
-                            "freq": str(freq), "channel": "wetL", "required": 1})
+                    for rv, rtok, _rc in RES_TABLE:
+                        for ltok, lcol in LEVEL_TABLE:
+                            yield ("crossrate_sr%d_%s_r%s_lvl%s_n%s_f%d" % (sr, mode, rtok, ltok, label, freq),
+                                   {"group": "crossrate", "sr": sr, "mode": mode,
+                                    "res": _res_col(rv), "norm": "%.2f" % norm,
+                                    "norm_label": label, "lvl": lcol, "freq": str(freq),
+                                    "channel": "wetL", "required": 1})
     # --- asym_lr: wetL at norm 0.9, wetR at norm 0.3, SAME input, freq 1000. ---
     for sr in SR_S:
         yield ("asym_lr_sr%d_wetL" % sr,

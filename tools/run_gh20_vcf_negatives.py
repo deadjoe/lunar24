@@ -91,6 +91,21 @@ def analyze(root, analyzer, manifest, probe_outdir, check=True):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
+def fail_lines(r):
+    """Extract the [FAIL] reasons from analyzer stdout/stderr so the caller can assert the SPECIFIC
+    negative identity, rather than treating "analyzer exited nonzero" as if the intended gate fired.
+    A nonzero exit for an UNRELATED reason (coverage miss, an exception, a broken-probe partial
+    dataset) must NOT be conflated with the negative we are testing."""
+    out = (r.stdout or "") + "\n" + (r.stderr or "")
+    return [ln.strip() for ln in out.splitlines() if "[FAIL]" in ln]
+
+
+def has_fail_identity(fail_lines_out, substr):
+    """True if at least one [FAIL] line carries `substr`. Used to discriminate e.g. the dead-zone
+    detect ("no inert onset") from a bare coverage miss."""
+    return any(substr.lower() in ln.lower() for ln in fail_lines_out)
+
+
 def write_mutated(root, get_a, get_b, shadow_dir, base):
     """Copy the VCF header into a shadow include dir applying the two string replacement hooks."""
     path = vcf_abs(root, shadow_dir)
@@ -159,18 +174,35 @@ def main():
             if args.verbose:
                 print("cap-removed: probe -> %s" % (r.stdout.strip().splitlines()[-1] if r.stdout else r.stderr.strip()))
             if r.returncode != 0:
-                # Probe failed to produce the full matrix (e.g. non-finite) — the gate is red but via
-                # a broken filter, so this is the N-4 stability path, not a clean deadzone-detect.
-                print("[NEGATIVE cap-removed] probe blocked (%d) -> RED via instability "
-                      "(this is the N-4 stability-boundary evidence, not a clean deadzone-detect)" % r.returncode)
-                fail.append("cap-removed negative destabilised the filter (non-finite red, N-4 stability proof)")
+                # Probe did NOT complete normally (it exits nonzero on a required-cell block, e.g. the
+                # mutated filter went non-finite). This is the N-4 instability identity, NOT the clean
+                # dead-zone-detect the cap-removed surrogate is meant to exercise. It is reported as
+                # such and MUST NOT be counted as the discriminator firing — a broken probe is an
+                # unrelated failure, not evidence the gate sees the dead-zone.
+
+                print("[NEGATIVE cap-removed] probe DID NOT COMPLETE (%d) -> "
+                      "this is the N-4 instability identity, not the dead-zone-detect. "
+                      "This negative is NOT satisfied by a broken probe." % r.returncode)
+                fail.append("cap-removed negative: probe did not complete (rc=%d). The cap-removed "
+                            "surrogate was intended to exercise the dead-zone-detect (must still produce "
+                            "the full matrix), but the filter went non-finite — so the discriminator was "
+                            "NOT shown to fire on a dead-zone-absent response. Use a cap that keeps the "
+                            "matrix producible, or drop this identity claim." % r.returncode)
             else:
                 a = analyze(root, os.path.join(root, "tools/gh20_vcf_analyze.py"), args.manifest, n1_out)
-                if a.returncode == 0:
-                    print("[NEGATIVE cap-removed] GATE PASS (unexpected — should be RED)")
-                    fail.append("cap-removed negative NOT rejected (deadzone-detect no longer fires)")
+                if a.returncode == 0 or not has_fail_identity(fail_lines(a), "no inert onset"):
+                    # Analyzer accepted the mutated response (gate PASS), OR it failed for a reason
+                    # OTHER than "no inert onset" (e.g. a coverage miss). Either way the dead-zone-detect
+                    # did NOT fire — so this is not the intended discriminating failure.
+
+                    print("[NEGATIVE cap-removed] analyzer did NOT fire the dead-zone-detect "
+                          "(%s). The cap-removed negative is NOT rejected." %
+                          ("GATE PASS" if a.returncode == 0 else "failed on a non-deadzone reason: " +
+                           "; ".join(ln for ln in fail_lines(a) if "no inert onset" not in ln)[:200]))
+                    fail.append("cap-removed negative NOT rejected (dead-zone-detect did not fire): "
+                                "%s" % ("GATE PASS" if a.returncode == 0 else "; ".join(fail_lines(a))[:200]))
                 else:
-                    print("[NEGATIVE cap-removed] -> RED (dead-zone absent, deadzone-detect fired)")
+                    print("[NEGATIVE cap-removed] -> RED (dead-zone absent -> no inert onset fired)")
 
         # ---------------- negative 2: lr-ignored (right uses left FREQ knob) -> L/R asym disappears.
         neg2 = os.path.join(td, "neg2")
@@ -193,11 +225,25 @@ def main():
             if args.verbose:
                 print("lr-ignored: probe -> %s" % (r.stdout.strip().splitlines()[-1] if r.stdout else r.stderr.strip()))
             a = analyze(root, os.path.join(root, "tools/gh20_vcf_analyze.py"), args.manifest, n2_out)
-            if a.returncode == 0:
-                print("[NEGATIVE lr-ignored] GATE PASS (unexpected — should be RED)")
-                fail.append("lr-ignored negative NOT rejected (L/R asym detector no longer fires)")
+            if r.returncode != 0:
+                # Probe did not complete normally — unrelated failure, not the L/R-asym detection.
+                print("[NEGATIVE lr-ignored] probe DID NOT COMPLETE (%d) -> not the L/R-asym identity"
+                      % r.returncode)
+                fail.append("lr-ignored negative: probe did not complete (rc=%d) — the L/R-asym detector "
+                            "was not exercised; a broken probe is an unrelated failure, not evidence the "
+                            "discriminator fires." % r.returncode)
+
+            fl = fail_lines(a)
+            if a.returncode == 0 or not any(("|L/R|" in ln and "dB" in ln) or "L/R" in ln for ln in fl):
+                # Analyzer accepted (gate PASS) or failed on a non-asym reason. The L/R-asym detector
+                # did not fire, so this is not the intended discriminating failure.
+
+                reason = "GATE PASS" if a.returncode == 0 else "non-asym failure: " + "; ".join(fl)[:200]
+                print("[NEGATIVE lr-ignored] analyzer did NOT fire the L/R-asym detector (%s). "
+                      "The lr-ignored negative is NOT rejected." % reason)
+                fail.append("lr-ignored negative NOT rejected (L/R-asym detector did not fire): %s" % reason)
             else:
-                print("[NEGATIVE lr-ignored] -> RED (same-input L/R difference vanished)")
+                print("[NEGATIVE lr-ignored] -> RED (same-input L/R difference vanished -> L/R-asym fired)")
 
     finally:
         shutil_rmtree(td)

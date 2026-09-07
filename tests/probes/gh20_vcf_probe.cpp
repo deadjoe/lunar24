@@ -26,15 +26,20 @@
 //   chain is the VCF itself, which is the attribution point. vcf_l_mod=0 (registry default)
 //   zeroes any CV shift, so vcf_l_freq alone sets the cutoff (no default-CV confound).
 //
-// MATRIX (every cell required=1 in tools/gh20_manifest.tsv; none are blocked):
-//   * cutoff_norm  — sr x norm x freq log sweep, mode=LP, res=low. The analyzer interpolates
-//     the -3 dB cutoff per (sr,norm) and detects the sr/8 plateau (finding N-3a).
-//   * crossrate    — sr x mode(LP|BP) x norm x {low_ref, 8000 Hz}: the analyzer computes
-//     the low-band normalised gain and reports the exact sample-rate difference (N-3b).
+// MATRIX (every cell required=1 in tools/gh20_manifest.tsv; none are blocked). @Codex correction 1
+// restored the low/mid/high res + two legal input levels so a res=0-only sweep cannot mask the
+// res-dependence of the response:
+//   * cutoff_norm  — sr x norm x freq log sweep, mode=LP, res x level. The analyzer interpolates
+//     the -3 dB cutoff per (sr,norm,res,level) and detects the sr/8 plateau (finding N-3a). The
+//     plateau onset must be res-INDEPENDENT; the SHAPE per res is the real res-dependence.
+//   * crossrate    — sr x mode(LP|BP) x norm x {low_ref, 8000 Hz} x res x level: the analyzer
+//     computes the low-band normalised gain and reports the exact sample-rate difference (N-3b),
+//     PER res — the res-dependence of the gap (model 2.21/1.78/2.56 dB) is the point.
 //   * asym_lr      — sr: vcf_l_freq=0.9, vcf_r_freq=0.3, same input: proves the product
 //     consumes the L/R FREQ knobs independently (a same-input asymmetric response).
-//   * level        — sr=44.1k, norm=0.9, freq=1k, 3 input levels: the VCF input-stage
-//     level-dependence (GH#6 tanh) as a composite attribution (NOT the VCF response).
+//   * level        — sr=44.1k, norm=0.9, freq=1k, 2 legal input levels: the VCF input-stage
+//     level-dependence (GH#6 tanh at inputDrive=0 => passthrough) as a composite attribution
+//     (NOT the VCF response) — must be ~linear.
 //   * floor        — per-sr zero-input idle output: the numerical noise floor that bounds
 //     every amplitude below (labels the resolvability of the matrix).
 //
@@ -194,10 +199,20 @@ const std::vector<std::pair<double, char const*>>& normGrid() {
   };
   return g;
 }
-// The res=0 (flat, damp kDampMax=2.0) low-pass is the sweep's default; res is kept in the id so the
-// analyzer can detect a future res-dependence, but this task measures the response at the flat res.
-constexpr double kSweepRes = 0.0;
-constexpr bool kSweepLp = true;
+// res sweep: {0 flat, 0.5 mid, 1.0 max} — the three LEGAL res values (damp = 2.0 / 1.05 / 0.1). The
+// res enters the VCF ONLY via the damp coefficient, so a res=0-only sweep masks res-dependence of the
+// 8k cross-rate gain, the stability margin, and the response SHAPE. The id token (tok) and the emitted
+// res column (col) byte-match tools/gen_gh20_manifest.py RES_TABLE and the analyzer's grouping key.
+// level sweep: {small=0.05, medium=0.20} — the two legal input levels. inputDrive defaults to 0 =>
+// the input stage is an EXACT passthrough (no tanh fold), so the response is level-invariant; sweeping
+// the two legal levels bounds the VCF attribution at both. The level token/column byte-match LEVEL_TABLE.
+struct ResCase { double res; char const* tok; char const* col; };
+static const ResCase kSweepRes[] = {
+    {0.0, "0", "0"}, {0.5, "0p5", "0.5"}, {1.0, "1", "1"},
+};
+struct LvlCase { double lvl; char const* tok; char const* col; };
+static const LvlCase kSweepLvl[] = {{0.05, "small", "0.05"}, {0.20, "medium", "0.2"}};
+constexpr bool kSweepLp = true;   // cutoff_norm is LP-only; crossrate sweeps BP|LP.
 
 // Configure the state so the ONLY audible mixer input is the EXT.AUDIO channel (ch4) and the
 // VCF chain downstream is transparent distortion: muting everything except ch4 removes the
@@ -253,14 +268,18 @@ Cap measure(const DeviceStateV1& st, double sr, double freq, double amp,
   c.ampPeak = peakOf(*src, kWarm);
   c.f0 = dominantHz(*src, kWarm, sr);
   c.noise = residualNoiseRms(*src, kWarm, freq, sr);
-  // Over-scale guard (un-scaled-ideal substitution detector, BLOCK item ①): a real output channel
-  // bounded by the device-normalised chain gain should have peak <= ~0.55; anything larger is a
-  // substituted ideal. NOTE: we do NOT reject on small amplitude here — a low-pass at a frequency
-  // far above its cutoff legitimately attenuates to ~0 (that is the response we are measuring), so
-  // a stopband cell is recorded (tiny ampRms) and the analyzer decides whether it is above the
-  // machine noise floor. The silent-substitute / empty-data detection is the analyzer's job,
-  // applied to the deep-passband reference cells where the signal MUST be present.
-  if (c.ampPeak > 0.55) { c.signal = "over-scale"; c.ok = false; return c; }
+  // Over-scale guard (un-scaled-ideal substitution detector, BLOCK item ①): reject only an output a
+  // REAL product response cannot produce. The measured bounded max across this matrix is the res=1
+  // resonance peak = 0.709 (lvl 0.20); res=0/0.5 stay < 0.08. The per-content bound is 1.0 — a
+  // full-scale / genuinely un-scaled ideal substitute (>= 1.0 at these test levels) is the over-scale
+  // signature. It is NOT the flat-res 0.55 from the res=0-only sweep (0.55 falsely rejects the real
+  // res=1 resonance; a res-swept product legitimately exceeds it). NOTE: we do NOT reject on small
+  // amplitude here — a low-pass at a frequency far above its cutoff legitimately attenuates to ~0
+  // (that is the response we are measuring), so a stopband cell is recorded (tiny ampRms) and the
+  // analyzer decides whether it is above the machine noise floor. The silent-substitute / empty-data
+  // detection is the analyzer's job, applied to the deep-passband reference cells where the signal
+  // MUST be present.
+  if (c.ampPeak > 1.0) { c.signal = "over-scale"; c.ok = false; return c; }
   c.ok = true;
   return c;
 }
@@ -300,7 +319,7 @@ int main(int argc, char** argv) {
     if (!c.ok) { std::fprintf(stderr, "FATAL %s: required cell not produced [%s]\n", id.c_str(), c.signal.c_str()); gCode |= 1; }
   };
 
-  const double kLvlSmall = 0.05, kLvlMed = 0.20, kLvlLarge = 0.50;   // device-normalised sine.
+  const double kLvlSmall = 0.05, kLvlMed = 0.20;   // the two legal device-normalised input levels.
   const double kMixVol = 0.5;
 
   // ---- Floor per sample rate: zero-input idle output bounds every amplitude. ----
@@ -319,8 +338,10 @@ int main(int argc, char** argv) {
     emit("floor_" + std::to_string((int)sr), sr, "lp", 0.0, 0.5, 0.0, 0.0, "wetL", c, kWin);
   }
 
-  // ---- cutoff_norm: sr x norm x freq sweep, mode=LP, res=low. Analyzer finds the -3 dB
-  //      cutoff per (sr,norm) and detects the sr/8 plateau (finding N-3a). ----
+  // ---- cutoff_norm: sr x norm x freq sweep, mode=LP, res x level. The analyzer finds the -3 dB
+  //      cutoff per (sr,norm,res,level) and detects the sr/8 plateau (finding N-3a). The plateau
+  //      onset must be res-INDEPENDENT (the cap does not read res), while the response SHAPE per res
+  //      is a real difference — this is the correction-1 res coverage. ----
   {
     for (double sr : kSrs) {
       const auto freqs = probeFreqs(sr);
@@ -328,18 +349,24 @@ int main(int argc, char** argv) {
         const double norm = np.first;
         const char* nlabel = np.second;
         for (double freq : freqs) {
-          DeviceStateV1 st = make_default_device_state(kProbeSeed);
-          configureIsolatedVcf(st, norm, norm, kSweepRes, kSweepRes, kSweepLp, kSweepLp, kMixVol);
-          Cap c = measure(st, sr, freq, kLvlSmall, "wetL");
-          emit("cutoff_norm_sr" + isr(sr) + "_n" + nlabel + "_f" + ifreq(freq),
-               sr, "lp", kSweepRes, norm, kLvlSmall, freq, "wetL", c, kWin);
+          for (const ResCase& rc : kSweepRes) {
+            for (const LvlCase& lc : kSweepLvl) {
+              DeviceStateV1 st = make_default_device_state(kProbeSeed);
+              configureIsolatedVcf(st, norm, norm, rc.res, rc.res, kSweepLp, kSweepLp, kMixVol);
+              Cap c = measure(st, sr, freq, lc.lvl, "wetL");
+              emit("cutoff_norm_sr" + isr(sr) + "_r" + rc.tok + "_lvl" + lc.tok +
+                   "_n" + nlabel + "_f" + ifreq(freq),
+                   sr, "lp", rc.res, norm, lc.lvl, freq, "wetL", c, kWin);
+            }
+          }
         }
       }
     }
   }
 
-  // ---- crossrate: sr x mode(LP|BP) x norm x {low_ref, 8000 Hz} — the sample-rate gain
-  //      difference at the same knob setting (finding N-3b). ----
+  // ---- crossrate: sr x mode(LP|BP) x norm(>=0.85) x {low_ref, 8000 Hz} x res x level — the
+  //      sample-rate gain difference at the same knob setting (finding N-3b). The gap is the
+  //      RES-DEPENDENT finding (model 2.21 / 1.78 / 2.56 dB); per-res here is the point (correction 1). ----
   {
     for (double sr : kSrs) {
       for (int modeIdx : {0, 1}) {                 // 0 = BP, 1 = LP.
@@ -349,12 +376,16 @@ int main(int argc, char** argv) {
           const char* nlabel = np.second;
           if (norm < 0.85) continue;   // only the cap-zone / high-res norms (the 8k cross-rate focus).
           for (double freq : {100.0, 8000.0}) {
-            DeviceStateV1 st = make_default_device_state(kProbeSeed);
-            configureIsolatedVcf(st, norm, norm, kSweepRes, kSweepRes, lp, lp, kMixVol);
-            Cap c = measure(st, sr, freq, kLvlSmall, "wetL");
-            emit("crossrate_sr" + isr(sr) + "_" + (lp ? "lp" : "bp") +
-                 "_n" + nlabel + "_f" + ifreq(freq),
-                 sr, lp ? "lp" : "bp", kSweepRes, norm, kLvlSmall, freq, "wetL", c, kWin);
+            for (const ResCase& rc : kSweepRes) {
+              for (const LvlCase& lc : kSweepLvl) {
+                DeviceStateV1 st = make_default_device_state(kProbeSeed);
+                configureIsolatedVcf(st, norm, norm, rc.res, rc.res, lp, lp, kMixVol);
+                Cap c = measure(st, sr, freq, lc.lvl, "wetL");
+                emit("crossrate_sr" + isr(sr) + "_" + (lp ? "lp" : "bp") +
+                     "_r" + rc.tok + "_lvl" + lc.tok + "_n" + nlabel + "_f" + ifreq(freq),
+                     sr, lp ? "lp" : "bp", rc.res, norm, lc.lvl, freq, "wetL", c, kWin);
+              }
+            }
           }
         }
       }
@@ -376,12 +407,13 @@ int main(int argc, char** argv) {
     }
   }
 
-  // ---- level: sr=44.1k, LP, res=low, norm=0.9, freq=1k, 3 input levels — the VCF input-stage
-  //      level-dependence (GH#6 tanh) as a composite attribution, NOT the VCF response. ----
+  // ---- level: sr=44.1k, LP, res=0, norm=0.9, freq=1k, 2 legal input levels — the VCF input-stage
+  //      level-dependence (GH#6 tanh at inputDrive=0 => exact passthrough) as a composite attribution,
+  //      NOT the VCF response. small->medium must be ~linear (12.04 dB). ----
   {
-    const char* llabels[] = {"small", "medium", "large"};
-    const double lvals[] = {kLvlSmall, kLvlMed, kLvlLarge};
-    for (int i = 0; i < 3; ++i) {
+    const char* llabels[] = {"small", "medium"};
+    const double lvals[] = {kLvlSmall, kLvlMed};
+    for (int i = 0; i < 2; ++i) {
       DeviceStateV1 st = make_default_device_state(kProbeSeed);
       configureIsolatedVcf(st, 0.90, 0.90, 0.0, 0.0, true, true, kMixVol);
       Cap c = measure(st, 44100.0, 1000.0, lvals[i], "wetL");

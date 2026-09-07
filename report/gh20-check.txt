@@ -1,21 +1,71 @@
-coverage: 1339/1339 required cells produced; produced-set=1339
+coverage: 7958/7958 required cells produced; produced-set=7958
 
---- N-3a inert-ONSET norm (normalised response curve == norm=1.0) ---
-  sr=44100  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
-  sr=48000  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
-  sr=88200  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
-  sr=96000  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+--- N-3a inert-ONSET norm (normalised response curve == norm=1.0), per (res, level) ---
+  sr=44100 res=0 lvl=0.05  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 res=0 lvl=0.2  onset_norm=0.80 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 res=0.5 lvl=0.05  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 res=0.5 lvl=0.2  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 res=1 lvl=0.05  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=44100 res=1 lvl=0.2  onset_norm=0.85 (theoretical 0.813)  cap=5512  inert-at-and-above-onset
+  sr=48000 res=0 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 res=0 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 res=0.5 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 res=0.5 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 res=1 lvl=0.05  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=48000 res=1 lvl=0.2  onset_norm=0.85 (theoretical 0.826)  cap=6000  inert-at-and-above-onset
+  sr=88200 res=0 lvl=0.05  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 res=0 lvl=0.2  onset_norm=0.90 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 res=0.5 lvl=0.05  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 res=0.5 lvl=0.2  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 res=1 lvl=0.05  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=88200 res=1 lvl=0.2  onset_norm=0.95 (theoretical 0.914)  cap=11025  inert-at-and-above-onset
+  sr=96000 res=0 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 res=0 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 res=0.5 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 res=0.5 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 res=1 lvl=0.05  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=96000 res=1 lvl=0.2  onset_norm=0.95 (theoretical 0.926)  cap=12000  inert-at-and-above-onset
+  sr=44100 lvl=0.05  onset RES-INDEPENDENT (spread 0.050: 0.80, 0.85)
+  sr=44100 lvl=0.2  onset RES-INDEPENDENT (spread 0.050: 0.80, 0.85)
+  sr=48000 lvl=0.05  onset RES-INDEPENDENT (spread 0.000: 0.85, 0.85)
+  sr=48000 lvl=0.2  onset RES-INDEPENDENT (spread 0.000: 0.85, 0.85)
+  sr=88200 lvl=0.05  onset RES-INDEPENDENT (spread 0.050: 0.90, 0.95)
+  sr=88200 lvl=0.2  onset RES-INDEPENDENT (spread 0.050: 0.90, 0.95)
+  sr=96000 lvl=0.05  onset RES-INDEPENDENT (spread 0.000: 0.95, 0.95)
+  sr=96000 lvl=0.2  onset RES-INDEPENDENT (spread 0.000: 0.95, 0.95)
 
---- N-3b crossrate rel_gain(8000) vs sr (norm=1, LP) ---
-  sr=44100  norm=0p95 LP rel_gain(8000)=-7.72 dB
-  sr=44100  norm=1 LP rel_gain(8000)=-7.72 dB
-  sr=48000  norm=0p95 LP rel_gain(8000)=-7.38 dB
-  sr=48000  norm=1 LP rel_gain(8000)=-7.38 dB
-  sr=88200  norm=0p95 LP rel_gain(8000)=-4.40 dB
-  sr=88200  norm=1 LP rel_gain(8000)=-4.40 dB
-  sr=96000  norm=0p95 LP rel_gain(8000)=-4.00 dB
-  sr=96000  norm=1 LP rel_gain(8000)=-4.00 dB
-  N-3b: rel_gain(8k) 44.1k=-7.72 dB  96k=-4.00 dB  gap=-3.72 dB
+--- N-3b crossrate rel_gain(8000) vs sr (norm=1, LP), per res ---
+  sr=44100  norm=0p95 res=0 lvl=0.2 LP rel_gain(8000)=-7.72 dB
+  sr=44100  norm=0p95 res=0.5 lvl=0.2 LP rel_gain(8000)=-2.02 dB
+  sr=44100  norm=0p95 res=1 lvl=0.2 LP rel_gain(8000)=0.72 dB
+  sr=44100  norm=1 res=0 lvl=0.2 LP rel_gain(8000)=-7.72 dB
+  sr=44100  norm=1 res=0.5 lvl=0.2 LP rel_gain(8000)=-2.02 dB
+  sr=44100  norm=1 res=1 lvl=0.2 LP rel_gain(8000)=0.72 dB
+  sr=48000  norm=0p95 res=0 lvl=0.2 LP rel_gain(8000)=-7.38 dB
+  sr=48000  norm=0p95 res=0.5 lvl=0.2 LP rel_gain(8000)=-1.49 dB
+  sr=48000  norm=0p95 res=1 lvl=0.2 LP rel_gain(8000)=3.72 dB
+  sr=48000  norm=1 res=0 lvl=0.2 LP rel_gain(8000)=-7.38 dB
+  sr=48000  norm=1 res=0.5 lvl=0.2 LP rel_gain(8000)=-1.49 dB
+  sr=48000  norm=1 res=1 lvl=0.2 LP rel_gain(8000)=3.72 dB
+  sr=88200  norm=0p95 res=0 lvl=0.2 LP rel_gain(8000)=-4.40 dB
+  sr=88200  norm=0p95 res=0.5 lvl=0.2 LP rel_gain(8000)=-0.04 dB
+  sr=88200  norm=0p95 res=1 lvl=0.2 LP rel_gain(8000)=6.25 dB
+  sr=88200  norm=1 res=0 lvl=0.2 LP rel_gain(8000)=-4.40 dB
+  sr=88200  norm=1 res=0.5 lvl=0.2 LP rel_gain(8000)=-0.04 dB
+  sr=88200  norm=1 res=1 lvl=0.2 LP rel_gain(8000)=6.25 dB
+  sr=96000  norm=0p95 res=0 lvl=0.2 LP rel_gain(8000)=-4.00 dB
+  sr=96000  norm=0p95 res=0.5 lvl=0.2 LP rel_gain(8000)=-0.01 dB
+  sr=96000  norm=0p95 res=1 lvl=0.2 LP rel_gain(8000)=4.96 dB
+  sr=96000  norm=1 res=0 lvl=0.2 LP rel_gain(8000)=-4.00 dB
+  sr=96000  norm=1 res=0.5 lvl=0.2 LP rel_gain(8000)=-0.01 dB
+  sr=96000  norm=1 res=1 lvl=0.2 LP rel_gain(8000)=4.96 dB
+  N-3b res=0 lvl=0.05: rel_gain(8k) 44.1k=-7.72 dB  96k=-4.00 dB  gap=-3.72 dB
+  N-3b res=0 lvl=0.2: rel_gain(8k) 44.1k=-7.72 dB  96k=-4.00 dB  gap=-3.72 dB
+  N-3b res=0.5 lvl=0.05: rel_gain(8k) 44.1k=-2.02 dB  96k=-0.01 dB  gap=-2.01 dB
+  N-3b res=0.5 lvl=0.2: rel_gain(8k) 44.1k=-2.02 dB  96k=-0.01 dB  gap=-2.01 dB
+  N-3b res=1 lvl=0.05: rel_gain(8k) 44.1k=0.72 dB  96k=4.96 dB  gap=-4.24 dB
+  N-3b res=1 lvl=0.2: rel_gain(8k) 44.1k=0.72 dB  96k=4.96 dB  gap=-4.24 dB
+  N-3b: crossrate 8k gap DETECTED at every res (cap-free shows ~0 dB)
 
 --- asym_lr same-input L/R (norm L=0.9, R=0.3, freq=1000) ---
   sr=44100  ampL=0.012029 ampR=0.000320557  |L/R|=31.49 dB
@@ -23,9 +73,8 @@ coverage: 1339/1339 required cells produced; produced-set=1339
   sr=88200  ampL=0.012515 ampR=0.000316708  |L/R|=31.94 dB
   sr=96000  ampL=0.0125327 ampR=0.000316537  |L/R|=31.95 dB
 
---- level (sr=44.1k, norm=0.9, freq=1000) — composite input-stage linearity ---
-  small->medium 12.02 dB (linear 12.04), small->large 19.86 dB (linear 20.00)
-  input-stage fold (composite, GH#6 tanh): dev_sm=+-0.02 dB, dev_lg=+-0.14 dB
+--- level (sr=44.1k, norm=0.9, freq=1000) — composite input-stage linearity, 2 legal levels ---
+  small->medium 12.02 dB (linear 12.04), input-stage fold (composite, GH#6 tanh): dev=-0.02 dB
 
   N-4 note: Chamberlin SVF is a non-generic low-pass — even at the flat res the -3 dB
   point sits at ~0.58 x the natural cutoff (measured), not at the cutoff. This is reported
@@ -36,12 +85,12 @@ MACHINE	cpu_blockpartition	0	block_partition_maxdiff	arm64	Darwin 25.6.0	Apple L
 MACHINE	cpu_blockpartition_note	clean	note	arm64	Darwin 25.6.0	Apple LLVM 21.0.0 (clang-2100.1.1.101)
 
 --- negative controls (tool discriminating power) ---
-  deadzone: inert onset detected on real product & tracks sr/8 (see above)
+  deadzone: inert onset detected on real product per (res, level) & tracks sr/8 & is res-independent (see above)
   selfneg: silence substitution -> classified silent
   selfneg: over-scale output -> detected
   selfneg: non-finite amp_rms -> detected
   selfneg: not-produced cell -> detected
-  sr-label: real cells accepted; halved-sr records rejected
+  sr-label: real cells accepted (24 groups); halved-sr records rejected
 
 --- gate summary ---
 GATE PASS: coverage OK + N-3a deadzone / N-3b crossrate / L-R asym detected + measurement negative controls OK. No production DSP changed.
