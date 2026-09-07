@@ -78,12 +78,14 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
 #include <utility>
 
 #include <lunar24/core/control_event.h>
+#include <lunar24/core/enums.h>
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/distortion.h>
 #include <lunar24/core/state_disposition.h>  // task #78: the 169 applied_to_dsp table
@@ -94,6 +96,7 @@
 #include <lunar24/core/fm_am.h>
 #include <lunar24/core/graph_compiler.h>
 #include <lunar24/core/patch_graph.h>
+#include <lunar24/core/parameter_smoothing.h>
 #include <lunar24/core/polivoks_vcf.h>
 #include <lunar24/core/preamp.h>
 #include <lunar24/core/sample_hold.h>
@@ -259,6 +262,20 @@ enum class ParameterApplyStatus : std::uint8_t {
                          // defect — firstFailId pinpoints the first skipped id.
 };
 
+// GH#21 continuous control smoothing time constant (design/07 §3.2: knob/joystick/MIDI CC
+// targets move in SECONDS toward the new value, not in one sample). A SINGLE named global
+// constant, not a buried magic number (contract hard-req #2). PROVISIONAL software policy:
+// this is a knob-automation one-pole value, NOT a measured hardware response — there is no
+// Solar 42N panel evidence for a knob slew time, so it stays a documented model. 50 ms is a
+// typical production control-smoothing sigma (≈0.23 s to 99%); a future measurement only has
+// to relabel this line, never re-derive a curve elsewhere.
+inline constexpr double kGh21SmoothingTauSeconds = 0.050;
+// Upper bound on the ACTIVE seconds-smoothed control-source set. The runtime recognises
+// 35 control-source params (Surface-1); not all are continuous, so the live smoothed set is
+// derived from the registry at construction (must be <= 35). Sized generously so a future
+// registry addition cannot overflow the fixed array (which stays zero-alloc / no map).
+inline constexpr std::uint32_t kMaxControlSmoothParams = 35;
+
 class SynthRuntime {
  public:
   static constexpr int kNumChannels = VoiceMixer::kNumChannels;  // 10
@@ -397,6 +414,26 @@ class SynthRuntime {
     // never ticks them remains untouched. Default params are safe for both.
     keyboardArpSeq_.configure(ArpSeqParams{}, sampleRate);
     keyboardBeh_.configure(KeyboardBehaviourParams{}, sampleRate);
+
+    // GH#21 continuous control smoothing: build the ACTIVE smoothing set from the registry
+    // (params whose `smoothing == Smoothing::seconds` AND that are control-source params),
+    // and prime each smoother to the DSP core's CURRENT value so the first target transition
+    // interpolates from where the machine actually is (zero single-sample step). The sound-core
+    // default values are documented LOCAL-SAFE defaults (NOT necessarily the registry `initial`),
+    // so priming from the live getter — never the registry initial — is the invariant that
+    // guarantees zero-jump. Kernel is fixed at construction (sampleRate is ctor-only), so the
+    // smoothers never recompute mid-stream and the per-sample sequence is partition-independent.
+    controlSmoothOrdinalCount_ = 0;
+    for (const ParameterDescriptor& d : registry::kParameters) {
+      if (d.smoothing != Smoothing::seconds) continue;
+      if (!controlSourceParamRecognized_(d.id)) continue;  // Surface-1 lane only
+      if (controlSmoothOrdinalCount_ >= kMaxControlSmoothParams) continue;  // defensive cap
+      controlSmoothOrdinals_[controlSmoothOrdinalCount_++] = d.id;
+      ParameterSmoother& sm = controlSmoothers_[static_cast<std::uint32_t>(d.id)];
+      sm.setTimeConstantSeconds(kGh21SmoothingTauSeconds);
+      sm.setSampleRate(sampleRate);
+      sm.reset(currentControlParam_(d.id));  // current DSP value, not registry initial
+    }
   }
 
   // Voice source base frequency (the f0 the VCO chain references). Applied to BOTH
@@ -914,7 +951,25 @@ class SynthRuntime {
   //       makes the batch's "exactly 169" check real, never a silent skip).
   ParameterApplyStatus applyDspParam(ParameterId id, double v) {
     lastApplyParamId_ = id;
-    if (controlSourceParamRecognized_(id)) return setControlParamValue(id, v);
+    if (controlSourceParamRecognized_(id)) {
+      // GH#21 layering (boundary): a whole-state candidate build / reset SNAPS a
+      // seconds-smoothed control source to the applied value instead of ramping it.
+      // Live knob-automation ControlEvents (setControlParamValue) are the ONLY ramp
+      // path (design/07 §3.2); a preset/state restore is the exact stopped-stream
+      // initialization and must land at the value immediately, never relax from the
+      // old value toward the new one. reset() also sets the smoother current=target
+      // so it is settled/inert afterwards — no residual drift onto a later direct
+      // setter or a later ramp's starting point.
+      const ParameterDescriptor* desc = find_parameter(id);
+      if (desc != nullptr && desc->smoothing == Smoothing::seconds) {
+        const std::uint32_t ord = static_cast<std::uint32_t>(id);
+        controlSmoothers_[ord].reset(v);
+        applySmoothedControl_(id, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied;
+        return lastApplyStatus_;
+      }
+      return setControlParamValue(id, v);
+    }
     if (disposition_of(id) != StateDisposition::applied_to_dsp) {
       lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
       return lastApplyStatus_;
@@ -1599,6 +1654,11 @@ class SynthRuntime {
   RuntimeOutput processFrame(RuntimeInputs inputs, bool driveGraph = true) {
     lastIn_ = inputs;
     for (int i = 0; i < kNumChannels; ++i) chIn_[i] = 0.0;
+    // GH#21: advance the continuous-control smoothers BEFORE the graph resolves so the
+    // control sources (joystick X/Y, env, lfo, sequencer) publish THIS frame's smoothed value.
+    // A target set at the current block's sampleOffset (via setControlParamValue -> setTarget)
+    // transitions from the smoother's current state here — one coefficient fraction, no jump.
+    advanceControlSmoothing_();
     // Drive the per-module executor: exactly ONE resolve->step->publish per ModuleId, in
     // the compiled plan (region topo) order, with NO ExecutionKind dedup (the contract is
     // one ModuleId one slot; deduping by kind would drop a module). driveGraph=false
@@ -1820,6 +1880,21 @@ class SynthRuntime {
       lastApplyStatus_ = ParameterApplyStatus::invalid_value;
       return lastApplyStatus_;
     }
+    // GH#21 continuous control smoothing (design/07 §3.2): a SECONDS-smoothed control target
+    // is not dispatched to the DSP directly — it becomes the smoother's target and is applied
+    // one-smoothed-value-per-frame in advanceControlSmoothing_(). This is the Surface-1
+    // ControlEvent parameter lane only. Boundary (contract hard-req #3): exposed AUDIO-RATE CV
+    // (a jack patch-signal modulation) and the Surface-2 host/preset params (vco/vcf) are NOT
+    // smoothed here. Gate/note/clock edges and the 15 discrete control params keep the direct
+    // single-sample dispatch below. Partition-independent: the smoothers persist across
+    // processBlock and fs/tau are fixed, so 64/128/256 reproduce the same per-sample sequence.
+    const ParameterDescriptor* desc = find_parameter(id);
+    if (desc != nullptr && desc->smoothing == Smoothing::seconds) {
+      const std::uint32_t ord = static_cast<std::uint32_t>(id);
+      controlSmoothers_[ord].setTarget(v);
+      lastApplyStatus_ = ParameterApplyStatus::applied;
+      return lastApplyStatus_;
+    }
     switch (id) {
       // Envelope A (6).
       case ParameterId::envelope_a_a: lastApplyStatus_ = transferStatus_(envGenA_.setAttackSeconds(v));  return lastApplyStatus_;
@@ -1982,6 +2057,100 @@ class SynthRuntime {
       default:
         return false;  // unknown ids are handled before reaching here.
     }
+  }
+
+  // GH#21 per-frame smoother advance. Iterate the ACTIVE seconds-smoothed control-source set,
+  // pull each smoother's next per-sample output, and feed it to the sound-core setter. Runs
+  // once per frame in processFrame before the graph resolves, so the control source publishes
+  // this frame's smoothed value. No allocation; the set was built at construction.
+  void advanceControlSmoothing_() {
+    for (std::uint32_t k = 0; k < controlSmoothOrdinalCount_; ++k) {
+      const ParameterId id = controlSmoothOrdinals_[k];
+      const std::uint32_t ord = static_cast<std::uint32_t>(id);
+      ParameterSmoother& sm = controlSmoothers_[ord];
+      // Once settled, DO NOT write the DSP setter. Leaving a settled smoother in
+      // place is the GH#21 fix for the direct-setter clobber: a sanctioned direct
+      // DSP-domain setter (e.g. setSequencerInternalRateHz) that bypasses the
+      // parameter lane must NOT be overwritten back to the smoother's own target on
+      // the next frame. The smoother is inert between live target changes; the DSP
+      // keeps whatever the caller (parameter lane OR direct setter) last wrote.
+      if (sm.settled()) continue;
+      // Converging: advance one pole step, publish it to the sound-core setter.
+      applySmoothedControl_(id, sm.next());
+      // First frame that crosses the settle tolerance: snap to the EXACT target so
+      // the DSP holds the precise (not approx +1%) value, then go inert above.
+      if (sm.settled()) applySmoothedControl_(id, sm.target());
+    }
+  }
+
+  // Apply a smoothed control value (already in the registry unit domain: seconds for EG
+  // times, Hz for LFO rate, norm for joystick + pulser, volts for step CV) to the sound-core
+  // setter. Called from advanceControlSmoothing_; the in-domain smoother output is guaranteed
+  // accepted by the setters (the bool return is ignored — only a non-finite / out-of-range value
+  // would reject, which a smoother bounded between current and an in-domain target never emits).
+  void applySmoothedControl_(ParameterId id, double v) {
+    switch (id) {
+      case ParameterId::envelope_a_a: envGenA_.setAttackSeconds(v);  break;
+      case ParameterId::envelope_a_d: envGenA_.setDecaySeconds(v);    break;
+      case ParameterId::envelope_a_r: envGenA_.setReleaseSeconds(v);  break;
+      case ParameterId::envelope_a_s: envGenA_.setSustain(v);          break;
+      case ParameterId::envelope_b_a: envGenB_.setAttackSeconds(v);  break;
+      case ParameterId::envelope_b_d: envGenB_.setDecaySeconds(v);    break;
+      case ParameterId::envelope_b_r: envGenB_.setReleaseSeconds(v);  break;
+      case ParameterId::envelope_b_s: envGenB_.setSustain(v);          break;
+      case ParameterId::lfo_a_rate: lfoA_.setBaseHz(v);  break;
+      case ParameterId::lfo_b_rate: lfoB_.setBaseHz(v);  break;
+      case ParameterId::joystick_x: joystick_.setX(v);        break;
+      case ParameterId::joystick_y: joystick_.setY(v);        break;
+      case ParameterId::joystick_offset_x: joystick_.setOffsetX(v); break;
+      case ParameterId::joystick_offset_y: joystick_.setOffsetY(v); break;
+      case ParameterId::sequencer_step_cv_1: sequencer_.setStepCv(0, v); break;
+      case ParameterId::sequencer_step_cv_2: sequencer_.setStepCv(1, v); break;
+      case ParameterId::sequencer_step_cv_3: sequencer_.setStepCv(2, v); break;
+      case ParameterId::sequencer_step_cv_4: sequencer_.setStepCv(3, v); break;
+      case ParameterId::sequencer_step_cv_5: sequencer_.setStepCv(4, v); break;
+      case ParameterId::sequencer_pulser:
+        sequencer_.setInternalRateHz(FiveStepSequencer::pulserNormToRateHz(v)); break;
+      default: break;  // never reached: only seconds control-source ids are advanced.
+    }
+  }
+
+  // Read the DSP core's CURRENT value for a continuous control-source param, in the param's
+  // registry unit domain. Used to prime each smoother to the live sound value so the first
+  // target transition interpolates from where the machine actually is (zero-jump). The
+  // sequencer.pulser core stores Hz, so the norm is recovered by inverting the centrally-named
+  // PULSER software model (norm = log(Hz/min)/log(base); centre 1 Hz -> 0.5).
+  double currentControlParam_(ParameterId id) const {
+    switch (id) {
+      case ParameterId::envelope_a_a:   return envGenA_.attackSeconds();
+      case ParameterId::envelope_a_d:   return envGenA_.decaySeconds();
+      case ParameterId::envelope_a_r:   return envGenA_.releaseSeconds();
+      case ParameterId::envelope_a_s:   return envGenA_.sustain();
+      case ParameterId::envelope_b_a:   return envGenB_.attackSeconds();
+      case ParameterId::envelope_b_d:   return envGenB_.decaySeconds();
+      case ParameterId::envelope_b_r:   return envGenB_.releaseSeconds();
+      case ParameterId::envelope_b_s:   return envGenB_.sustain();
+      case ParameterId::lfo_a_rate:     return lfoA_.baseHz();
+      case ParameterId::lfo_b_rate:     return lfoB_.baseHz();
+      case ParameterId::joystick_x:        return joystick_.x();
+      case ParameterId::joystick_y:        return joystick_.y();
+      case ParameterId::joystick_offset_x: return joystick_.offsetX();
+      case ParameterId::joystick_offset_y: return joystick_.offsetY();
+      case ParameterId::sequencer_step_cv_1: return sequencer_.stepCv(0);
+      case ParameterId::sequencer_step_cv_2: return sequencer_.stepCv(1);
+      case ParameterId::sequencer_step_cv_3: return sequencer_.stepCv(2);
+      case ParameterId::sequencer_step_cv_4: return sequencer_.stepCv(3);
+      case ParameterId::sequencer_step_cv_5: return sequencer_.stepCv(4);
+      case ParameterId::sequencer_pulser:
+        return pulserRateHzToNorm_(sequencer_.internalRateHz());
+      default: return 0.0;  // never reached: only seconds control-source ids are primed.
+    }
+  }
+
+  // Inverse of FiveStepSequencer::pulserNormToRateHz (hz = min * base^norm). Recover the panel
+  // norm from the core's stored Hz so the pulser smoother can be primed from the live DSP value.
+  static double pulserRateHzToNorm_(double hz) {
+    return std::log(hz / kFiveStepPulserMinRateHz) / std::log(kFiveStepPulserLogBase);
   }
 
   // task #78: shared registry-unit-domain admission for the 134 NEW applied_to_dsp ids.
@@ -2828,6 +2997,16 @@ class SynthRuntime {
   Lfo lfoB_;
   JoystickCv joystick_;
   FiveStepSequencer sequencer_;
+
+  // GH#21 continuous control smoothing. One ParameterSmoother per ParameterId-space slot
+  // (O(1) index by static_cast<uint32_t>(id)) — a fixed preallocated array, NEVER a map
+  // (zero-callback-allocation, contract hard-req #1). Only params whose registry
+  // `smoothing == Smoothing::seconds` AND are Surface-1 control-source params advance each
+  // frame; the active ordinals are built at construction from the registry. Persistent across
+  // processBlock (partition-independent); tau/sr are fixed at construction.
+  std::array<ParameterSmoother, registry::kParameterIdSpace> controlSmoothers_;
+  std::array<ParameterId, kMaxControlSmoothParams> controlSmoothOrdinals_;
+  std::uint32_t controlSmoothOrdinalCount_ = 0;
 
   // Envelope A/B published jack ids (gate resolve-input, env out, vca-cv out).
   JackId gateInA_ = JackId{0}, envOutA_ = JackId{0}, vcaOutA_ = JackId{0};
