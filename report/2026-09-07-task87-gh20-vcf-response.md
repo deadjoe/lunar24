@@ -472,7 +472,7 @@ res ∈ {0, 0.5, 1} × two legal levels × **LP+BP full 21-point norm** (**15518
 §2/§3/§5/§7/§8, and — per @Codex `89f88d27` — **closes the three remaining items** with
 §8a exact-recursion reconciliation (`tools/gh20_recursion_reconcile.py`), §2 BP coverage, and §8
 Candidate-B per-sample-rate scope wording. It is awaiting @Codex algorithm ruling. **Exact local commit:
-`<FILL>`** (on top of `265f4de`; origin branch `measure/20-vcf-response` is unchanged at `33d6020` —
+`bf7aa6d`** (on top of `265f4de`; origin branch `measure/20-vcf-response` is unchanged at `33d6020` —
 **not pushed**; no full CI run per `f7c895bd`).
 
 **Next step after this revision:** the res sweep requested in the prior next-slice is **done** (§2/§3/§5).
