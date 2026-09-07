@@ -11,6 +11,10 @@
 # (the committed work artifacts are report/gh19-analyze.tsv + report/gh19-check.txt, from the same data).
 /report/gh19-probe/
 
+# task #88 (GH #20) probe output — deterministic, regenerable by the probe, not committed
+# (the committed work artifact is the task#88 report .md, from the same data).
+/report/gh20-probe-trap/
+
 # IDE / OS cruft
 .vscode/
 .idea/

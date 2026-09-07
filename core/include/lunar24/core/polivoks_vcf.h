@@ -11,13 +11,16 @@
 //   * The FILTER is the Polivoks, NOT a generic LP/BP. The manual (L1120-1122) is
 //     the DEFINITIONAL behaviour: "Double 12 dB filter... Still, you will not lose
 //     low frequencies when increasing resonance." A filter that loses lows at high
-//     resonance is NOT a Polivoks. This header implements a Chamberlin state-variable
-//     filter (low + band states), whose lowpass has unity DC gain INDEPENDENT of the
-//     resonance feedback — so raising resonance adds a peak near the cutoff but does
-//     not drop the low band. That is the property must-test #1 verifies.
+//     resonance is NOT a Polivoks. This header implements a two-integrator trapezoidal
+//     (TPT/ZDF) state-variable filter (one pair of integrator states per channel), the
+//     bilinear-transformed analog SVF of Andrew Simper's SvfLinearTrapOptimised2 — whose
+//     lowpass has unity DC gain INDEPENDENT of the resonance damping `damp`, so raising
+//     resonance adds a peak near the cutoff but does not drop the low band. That is the
+//     property must-test #1 verifies. (GH#20 task #88: the Chamberlin recursion was
+//     replaced, since its sr/8 stability cap produced the knob dead-zone.)
 //   * FREQ (vcf.l_freq id13 / vcf.r_freq id18) — "manual filter cutoff frequency"
 //     (L1138). unit "norm" 0..1, default 0.3, CONFIRMED. The manual gives NO cutoff
-//     range; the norm→Hz mapping (20..20 kHz log, capped at sr/8 for SVF stability)
+//     range; the norm→Hz mapping (20..20 kHz log, effective cap min(20000, 0.49·sr))
 //     is PROVISIONAL.
 //   * RESONANCE (vcf.l_res id14 / vcf.r_res id34) — "Filter resonance (boost the
 //     frequency near cutoff point)" (L1140). unit "norm" 0..1, default 0.0, CONFIRMED
@@ -106,6 +109,15 @@ class PolivoksFilter {
   double mod(int ch) const { return idx_(ch) ? channel_[ch].mod : 0.0; }
   bool modeIsBp(int ch) const { return idx_(ch) ? (channel_[ch].mode == kModeBp) : false; }
 
+  // Real-filter state readback (task #88): the two integrator states, so a product
+  // oracle can verify reset truly reached THIS filter. Independent per channel.
+  double ic1eq(int ch) const { return idx_(ch) ? channel_[ch].ic1eq : 0.0; }
+  double ic2eq(int ch) const { return idx_(ch) ? channel_[ch].ic2eq : 0.0; }
+  // Effective cutoff (Hz) actually applied: post-CV shift, post-cap. Same-frame.
+  double effectiveCutoffHz(int ch) const {
+    return idx_(ch) ? effCutoffHz_(channel_[ch], cvEffFor_(channel_[ch])) : 0.0;
+  }
+
   // Resolved CV voltages at the two jacks (the graph has already applied the
   // route.vcf_cv_l_to_cv_r normalling for the unplugged case).
   void setCvL(double volts) { cvL_ = volts; }
@@ -120,6 +132,17 @@ class PolivoksFilter {
     outR = tick_(channel_[1], inR);
   }
 
+  // ------------------------------------------------------------------ reset --
+  // Reset the two integrator states (per channel, independent) to zero. The states
+  // are consumed same-frame and there is no added feedback delay; reset clears any
+  // retained transient. GH#20 task #88 reset / real-state read seam.
+  void reset() {
+    for (int i = 0; i < 2; ++i) {
+      channel_[i].ic1eq = 0.0;
+      channel_[i].ic2eq = 0.0;
+    }
+  }
+
   // CONFIRMED ranges / nominal (registry).
   static constexpr double kModeBp = 0.0;  // positions[0] = "bp".
   static constexpr double kModeLp = 1.0;  // positions[1] = "lp".
@@ -129,9 +152,11 @@ class PolivoksFilter {
   static constexpr double kCvVoltsPerOctave = 1.0; // CV -> octave depth (provisional).
   static constexpr double kDampMax = 2.0;          // res=0 (flat response).
   static constexpr double kDampMin = 0.1;          // res=1 (max resonance, kept >0).
-  // PROVISIONAL stability cap: the Chamberlin SVF is capped at sr/8 (kept well away
-  // from Nyquist so the resonance floor stays stable). Not a manual spec.
-  static constexpr double kCutoffCapRatio = 1.0 / 8.0;
+  // PROVISIONAL software safety cap (GH#20 task #88): the effective cutoff is capped
+  // at min(20000 Hz, 0.49·sr) so the prewarped `g = tan(pi·fc/sr)` stays away from its
+  // pi/2 singularity (fc/sr < 0.49 < 0.5). This is a software safety POLICY, NOT a
+  // stability theorem; 0.49 is not a TPT/ZDF boundary (0.45351 is not one either).
+  static constexpr double kCutoffCapRatioSoft = 0.49;
   // PROVISIONAL input-stage drive floor: with a drive > 0 the fold saturates toward
   // +-1/drive; a small (< ~0.15) drive is numerically near-linear across the whole
   // nominal range, so the GH#6 profile chooses drives in [0.6, 1.0] to make the
@@ -141,7 +166,7 @@ class PolivoksFilter {
   struct Channel {
     double freq = 0.3, res = 0.0, mod = 0.0;
     double mode = 0.0;   // 0.0=bp, 1.0=lp (positions[0/1]).
-    double low = 0.0, band = 0.0;
+    double ic1eq = 0.0, ic2eq = 0.0;  // two-integrator trapezoidal (TPT/ZDF) states.
     double sr = 0.0;
     double inputDrive = 0.0;  // GH#6 per-channel input-stage drive (L/R independent).
   };
@@ -149,9 +174,19 @@ class PolivoksFilter {
   static bool idx_(int ch) { return ch == 0 || ch == 1; }
   static double clamp01_(double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); }
 
+  // Effective upper cutoff cap: min(20000 Hz, 0.49·sr). 0.49 keeps the prewarped
+  // tangent away from its singularity (fc/sr < 0.5) and is a software safety POLICY,
+  // not a stability theorem. Never below the 20 Hz floor; if the sample rate ever made
+  // the cap invert below the floor (unrealistic), clamp to the floor and stay finite.
+  static double cutoffCapHz_(double sr) {
+    const double cap = sr * kCutoffCapRatioSoft;
+    if (cap < kFreqMinHz) return kFreqMinHz;
+    return (cap < kFreqMaxHz) ? cap : kFreqMaxHz;
+  }
+
   double baseFreqHz_(double freqNorm, double sr) const {
     double fc = kFreqMinHz * std::pow(kFreqMaxHz / kFreqMinHz, freqNorm);
-    const double cap = sr * kCutoffCapRatio;
+    const double cap = cutoffCapHz_(sr);
     if (fc > cap) fc = cap;
     if (fc < kFreqMinHz) fc = kFreqMinHz;
     return fc;
@@ -163,7 +198,7 @@ class PolivoksFilter {
     const double baseFc = baseFreqHz_(c.freq, sr_);
     const double shift = c.mod * cvEff / kCvVoltsPerOctave;
     double fc = baseFc * std::pow(2.0, shift);
-    const double cap = sr_ * kCutoffCapRatio;
+    const double cap = cutoffCapHz_(sr_);
     if (fc > cap) fc = cap;
     if (fc < kFreqMinHz) fc = kFreqMinHz;
     return fc;
@@ -178,19 +213,31 @@ class PolivoksFilter {
     return std::tanh(c.inputDrive * x) / c.inputDrive;
   }
 
+  // Two-integrator trapezoidal (TPT/ZDF) state-variable filter (GH#20 task #88).
+  // Recursion per @Codex numeric contract, matching Andrew Simper's
+  // SvfLinearTrapOptimised2 ("The Art of VA Filter Design", cytomic SVF):
+  //   g = tan(pi·fc/sr), k = damp (the SAME 2−1.9·res map), a1 = 1/(1+g(g+k)),
+  //   a2 = g·a1, a3 = g·a2; v3 = x − ic2eq; v1 = a1·ic1eq + a2·v3;
+  //   v2 = ic2eq + a2·ic1eq + a3·v3; ic1eq = 2v1 − ic1eq; ic2eq = 2v2 − ic2eq.
+  // Outputs: BP = v1, LP = v2. The lowpass has unity DC gain independent of `damp`,
+  // so raising resonance does not drop the low end (the Polivoks-defining property).
   double tick_(Channel& c, double x) {
     if (c.sr != sr_) { c.sr = sr_; }
     x = inputStage_(c, x);  // GH#6: level-dependent, per-channel input nonlinearity.
     const double fc = effCutoffHz_(c, cvEffFor_(c));
-    const double f = 2.0 * std::sin(3.14159265358979323846 * fc / sr_);
-    // Chamberlin state-variable filter: lowpass has unity DC gain independent of
-    // the resonance feedback `damp`, so raising resonance does not drop the low end.
+    const double g = std::tan(3.14159265358979323846 * fc / sr_);
     const double damp = kDampMax + (kDampMin - kDampMax) * c.res;
-    c.low += f * c.band;
-    const double high = x - c.low - damp * c.band;
-    c.band += f * high;
+    const double k = damp;  // same-damp definition (2−1.9·res), as in the Chamberlin.
+    const double a1 = 1.0 / (1.0 + g * (g + k));
+    const double a2 = g * a1;
+    const double a3 = g * a2;
+    const double v3 = x - c.ic2eq;
+    const double v1 = a1 * c.ic1eq + a2 * v3;
+    const double v2 = c.ic2eq + a2 * c.ic1eq + a3 * v3;
+    c.ic1eq = 2.0 * v1 - c.ic1eq;
+    c.ic2eq = 2.0 * v2 - c.ic2eq;
     // Two-state output selection (bp | lp), not a continuous morph.
-    return (c.mode < 0.5) ? c.band : c.low;
+    return (c.mode < 0.5) ? v1 : v2;  // bp=v1, lp=v2.
   }
 
   // Resolve the effective CV for a channel. LINK (active) overrides the plugged CV R
