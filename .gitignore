@@ -3,8 +3,13 @@
 /build-asan/
 /build-tsan/
 /build-rel/
+/build-debug/
 /cmake-build-*/
 **/build/
+
+# task #85 (GH #19) probe output — deterministic, regenerable by the probe, not committed
+# (the committed work artifacts are report/gh19-analyze.tsv + report/gh19-check.txt, from the same data).
+/report/gh19-probe/
 
 # IDE / OS cruft
 .vscode/
