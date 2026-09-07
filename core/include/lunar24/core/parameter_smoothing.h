@@ -72,10 +72,24 @@ class ParameterSmoother {
 
  private:
   void recompute() {
-    if (sample_rate_ > 0.0 && tau_seconds_ > 0.0) {
-      coefficient_ = 1.0 - std::exp(-1.0 / (sample_rate_ * tau_seconds_));
+    if (sample_rate_ > 0.0) {
+      // tau <= 0 means ZERO smoothing: snap to the target on the next sample
+      // (coefficient 1.0) — the keyboard portamento contract. A portamentoSpeed
+      // of 0 is NOT a freeze: it must jump immediately (the one-pole limit
+      // a = 1 - exp(-1/(fs*tau)) is 1.0 as tau -> 0+). Negative tau is treated
+      // the same way defensively. coefficient 1.0 is the ONLY legal snap value.
+      //
+      // Contrast this with a sample rate that is still 0 (not yet configured,
+      // below): there coefficient 0.0 IS appropriate — it is an inert not-yet-live
+      // state that returns the held value until the host sets the rate. Do not
+      // carry that 0.0 into a live-rate tau=0 case; that is the freeze bug.
+      if (tau_seconds_ <= 0.0) {
+        coefficient_ = 1.0;
+      } else {
+        coefficient_ = 1.0 - std::exp(-1.0 / (sample_rate_ * tau_seconds_));
+      }
     } else {
-      coefficient_ = 0.0;  // not yet fully configured
+      coefficient_ = 0.0;  // no sample rate yet: inert
     }
   }
 

@@ -171,9 +171,11 @@ inline constexpr MachineDispositionEntry kMachineDisposition[] = {
   {ModuleId::drone_5,       ExecutionKind::kDroneBank},
   {ModuleId::drone_6,       ExecutionKind::kDroneBank},
   // The six control sources are NOW executed (GH#11 FIXED-CANDIDATE, D1/D2/D4),
-  // each as an always-execute source in the compiled plan. `keyboard`/`effector`/
+  // each as an always-execute source in the compiled plan. GH#12 keyboard product
+  // owner: `keyboard` is ALSO now a real executed control source (kKeyboard) — it
+  // consumes canonical note ControlEvents and publishes note CV + gate. `effector`/
   // `voices` stay declared-deferred (kUnsupported) — no runtime instance yet.
-  {ModuleId::keyboard,      ExecutionKind::kUnsupported},
+  {ModuleId::keyboard,      ExecutionKind::kKeyboard},
   {ModuleId::envelope_a,    ExecutionKind::kEnvelope},
   {ModuleId::envelope_b,    ExecutionKind::kEnvelope},
   {ModuleId::lfo_a,         ExecutionKind::kLfo},
@@ -200,10 +202,12 @@ inline constexpr double kVcoBaseHzProvisional = 440.0;
 // Normalized-route disposition table (@Codex correction 2).
 //
 // All 6 normalized registry routes get a UNIQUE disposition, keyed by the stable
-// RouteId (never by array position in kNormalizedRoutes[]). Only the VCO-A->VCO-B
-// normalised edge (route.vco_b_vco_out_to_cv_in, source = vco_a.dry_out) is wired as a
-// compilable edge this slice; the four keyboard/EG routes are deferred and
-// route.vcf_cv_l_to_cv_r is an intra-VCF fallback (not a compilable edge).
+// RouteId (never by array position in kNormalizedRoutes[]). GH#12 keyboard product owner:
+// the four keyboard/EG routes are now ACTIVE (keyboard_v_oct_out -> VCO A/B v_oct_in and
+// keyboard_gate_left_main_out -> EG A/B gate_in), so the PatchGraph consumes the keyboard
+// note CV + gate. The VCO-A->VCO-B normalised edge (route.vco_b_vco_out_to_cv_in, source =
+// vco_a.dry_out) remains active; route.vcf_cv_l_to_cv_r is an intra-VCF fallback (not a
+// compilable edge).
 // ---------------------------------------------------------------------------
 enum class RouteDisposition : std::uint8_t { kActive, kDeferred, kIntraVcfFallback };
 
@@ -213,12 +217,12 @@ struct NormalizedRouteDisposition {
 };
 
 inline constexpr NormalizedRouteDisposition kRouteDisposition[] = {
-  {RouteId::route_keyboard_v_oct_to_vco,  RouteDisposition::kDeferred},
-  {RouteId::route_keyboard_gate_to_eg,    RouteDisposition::kDeferred},
+  {RouteId::route_keyboard_v_oct_to_vco,  RouteDisposition::kActive},
+  {RouteId::route_keyboard_gate_to_eg,    RouteDisposition::kActive},
   {RouteId::route_vcf_cv_l_to_cv_r,       RouteDisposition::kIntraVcfFallback},
-  {RouteId::route_keyboard_v_oct_to_vco_b, RouteDisposition::kDeferred},
+  {RouteId::route_keyboard_v_oct_to_vco_b, RouteDisposition::kActive},
   {RouteId::route_vco_b_vco_out_to_cv_in, RouteDisposition::kActive},
-  {RouteId::route_keyboard_gate_to_eg_b,  RouteDisposition::kDeferred},
+  {RouteId::route_keyboard_gate_to_eg_b,  RouteDisposition::kActive},
 };
 inline constexpr std::uint32_t kRouteDispositionCount =
     static_cast<std::uint32_t>(sizeof(kRouteDisposition) / sizeof(kRouteDisposition[0]));
@@ -242,7 +246,16 @@ inline constexpr NormalizedRoute lookupRoute(RouteId id) {
 }
 
 inline constexpr NormalizedRoute kActiveRoutes[] = {
+    // Keep the acyclic VCO-A->VCO-B edge FIRST so the static_assert below pins index 0.
     lookupRoute(RouteId::route_vco_b_vco_out_to_cv_in),
+    // GH#12 keyboard product owner: the four keyboard normalized routes are active, so the
+    // PatchGraph consumes the keyboard note CV (keyboard_v_oct_out -> VCO A/B v_oct_in) and
+    // the engaged gate (keyboard_gate_left_main_out -> EG A/B gate_in). Order within the
+    // array is immaterial to compile_graph (it topo-sorts); the A->B edge stays at index 0.
+    lookupRoute(RouteId::route_keyboard_v_oct_to_vco),
+    lookupRoute(RouteId::route_keyboard_gate_to_eg),
+    lookupRoute(RouteId::route_keyboard_v_oct_to_vco_b),
+    lookupRoute(RouteId::route_keyboard_gate_to_eg_b),
 };
 inline constexpr std::uint32_t kActiveRouteCount =
     static_cast<std::uint32_t>(sizeof(kActiveRoutes) / sizeof(kActiveRoutes[0]));
@@ -381,15 +394,22 @@ class MachineRuntimeDefinition {
                                   lunar24::registry::JackId::sequencer_cv_out,
                                   lunar24::registry::JackId::sequencer_gate_out,
                                   lunar24::registry::JackId::sequencer_clock_out);
-    // Always-execute the six sources so an unwired LFO/EG-SELF-GEN/PULSER still runs once
-    // per sample (compile_graph force-includes them -> isolated acyclic singleton regions).
-    // ModuleId{0} is vco_a (a REAL module), so this list is NOT null-terminated — the
-    // count is the authoritative bound.
+    // GH#12 keyboard product owner: the keyboard publishes the registered note-CV and gate
+    // output jacks. VCO A/B and EG A/B consume them through the four now-active keyboard
+    // routes (route_keyboard_v_oct_to_vco / _b, route_keyboard_gate_to_eg / _b).
+    runtime_.setKeyboardBindings(lunar24::registry::JackId::keyboard_v_oct_out,
+                                 lunar24::registry::JackId::keyboard_gate_left_main_out);
+    // Always-execute the seven sources so an unwired LFO/EG-SELF-GEN/PULSER/keyboard still
+    // runs once per sample (compile_graph force-includes them -> isolated acyclic singleton
+    // regions). The keyboard is always-executed so its portamento glide advances every
+    // sample even if a user cable overrides its output route. ModuleId{0} is vco_a (a REAL
+    // module), so this list is NOT null-terminated — the count is the authoritative bound.
     {
-      const ModuleId alwaysExec[6] = {ModuleId::envelope_a, ModuleId::envelope_b,
+      const ModuleId alwaysExec[7] = {ModuleId::envelope_a, ModuleId::envelope_b,
                                       ModuleId::lfo_a, ModuleId::lfo_b,
-                                      ModuleId::joystick, ModuleId::sequencer};
-      runtime_.setAlwaysExecute(alwaysExec, 6);
+                                      ModuleId::joystick, ModuleId::sequencer,
+                                      ModuleId::keyboard};
+      runtime_.setAlwaysExecute(alwaysExec, 7);
     }
 
     // Canonical strictness on, then build the plan.

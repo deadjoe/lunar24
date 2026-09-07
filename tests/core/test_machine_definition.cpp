@@ -104,7 +104,10 @@ int main() {
   // ---- fixed-route data table (@Codex correction 1) ---------------------------
   check(def.fixedRouteCount() == 28, "the fixed-route data table enumerates all 28 routes");
   check(def.fixedEdgeCount() == 11, "the 28-route table derives exactly 11 unique FixedEdges");
-  check(def.activeRouteCount() == 1, "wires exactly the one active normalized route");
+  // GH#12: four keyboard routes (keyboard_v_oct_out -> VCO A/B, keyboard_gate_left_main_out
+  // -> EG A/B) are now active alongside the acyclic VCO-A->VCO-B edge.
+  check(def.activeRouteCount() == 5,
+        "wires the acyclic VCO-A->VCO-B edge plus the four GH#12 keyboard routes (5 active)");
 
   // Category accounting across the 28 authored routes (independent per-category counts).
   std::uint32_t nInter = 0, nIntra = 0, nHost = 0, nDry = 0, nDeferred = 0;
@@ -141,10 +144,11 @@ int main() {
   check(def.kindOf(core::ModuleId::drone_1) == core::ExecutionKind::kDroneBank &&
             def.kindOf(core::ModuleId::drone_6) == core::ExecutionKind::kDroneBank,
         "the six drones are six independent kDroneBank slots (no kind-dedup)");
-  // A DEFERRED in-inventory module still HAS a disposition (kUnsupported) — distinct from
-  // an unknown id.
-  check(def.kindOf(core::ModuleId::keyboard) == core::ExecutionKind::kUnsupported,
-        "keyboard is deferred (kUnsupported) this slice");
+  // GH#12: the keyboard module is now a real execution kind — it hosts the ArpSeq +
+  // KeyboardBehaviour owner that turns note ControlEvents into pitch/gate. The six control
+  // sources were already executed (GH#11). kKeyboard is in-inventory WITH a disposition.
+  check(def.kindOf(core::ModuleId::keyboard) == core::ExecutionKind::kKeyboard,
+        "keyboard is executed (kKeyboard GH#12 owner)");
   // The six control sources are NOW executed (GH#11 FIXED-CANDIDATE): each has a real
   // control kind, not kUnsupported. keyboard/effector/voices remain declared-deferred.
   check(def.kindOf(core::ModuleId::lfo_a) == core::ExecutionKind::kLfo &&
@@ -515,24 +519,42 @@ int main() {
   }
 
   // ---- oracle: unsupported fail-closed (b4e0e731 §4.4) ---------------------------
-  // keyboard is still declared-deferred (kUnsupported) this slice (the six control sources
-  // are now EXECUTED — see above). Patching a REAL generated keyboard output jack into a
-  // REAL VCF sink MUST REFUSE at rebuild() with the fixed unsupported_module status and NO
-  // phantom keyboard slot — it must NOT return true and silently skip the unsupported
+  // keyboard is now kKeyboard (GH#12 owner) — NOT the fail-closed subject. The
+  // still-deferred `effector` module is. Patching a REAL generated effector INPUT jack into
+  // a real source edge MUST REFUSE at rebuild() with the fixed unsupported_module status and
+  // NO phantom effector slot — it must NOT return true and silently skip the unsupported
   // module (the §5 negative ④) nor fake the source via setControlVoltage.
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
     check(d.status() == core::SynthRuntime::RebuildStatus::ok,
           "the clean machine builds ok before the unsupported patch");
-    check(d.runtime().connect(reg::JackId::keyboard_v_oct_out, reg::JackId::vcf_cv_l_in),
-          "connect keyboard.v_oct_out -> vcf.cv_l_in (real generated jack)");
+    check(d.runtime().connect(reg::JackId::env_follower_env_out, reg::JackId::effector_cv_x_in),
+          "connect env_follower.env_out -> effector.cv_x_in (real generated jacks)");
     check(!d.runtime().rebuild(), "rebuild REFUSES an unsupported module entering the plan");
     check(d.runtime().lastRebuildStatus() == core::SynthRuntime::RebuildStatus::unsupported_module,
           "refusal status is exactly unsupported_module (not a generic reject)");
+    bool effectorSlotted = false;
+    for (std::uint32_t i = 0; i < d.runtime().execSlotCount(); ++i)
+      if (d.runtime().execSlotAt(i).id == core::ModuleId::effector) effectorSlotted = true;
+    check(!effectorSlotted, "no phantom effector execution slot (unsupported is not silently run)");
+  }
+
+  // ---- oracle: keyboard is now routable + slotted (GH#12) -------------------------
+  // keyboard is kKeyboard, so wiring its REAL generated v_oct_out INTO a real VCF sink must
+  // now SUCCEED at rebuild() (the old kUnsupported refusal no longer applies), and keyboard
+  // must be present as a real execution slot — not phantom and not silently dropped.
+  {
+    core::MachineRuntimeDefinition d(kSeed, kSr);
+    check(d.status() == core::SynthRuntime::RebuildStatus::ok,
+          "the machine builds ok before the keyboard-route patch");
+    check(d.runtime().connect(reg::JackId::keyboard_v_oct_out, reg::JackId::vcf_cv_l_in),
+          "connect keyboard.v_oct_out -> vcf.cv_l_in (keyboard is kKeyboard, routable)");
+    check(d.runtime().rebuild(), "rebuild ACCEPTS the keyboard module into the plan (kKeyboard)");
+    check(d.runtime().execSlotCount() > 0, "the keyboard-route plan has execution slots");
     bool keyboardSlotted = false;
     for (std::uint32_t i = 0; i < d.runtime().execSlotCount(); ++i)
       if (d.runtime().execSlotAt(i).id == core::ModuleId::keyboard) keyboardSlotted = true;
-    check(!keyboardSlotted, "no phantom keyboard execution slot (unsupported is not silently run)");
+    check(keyboardSlotted, "keyboard is present as an execution slot (GH#12 owner runs)");
   }
 
   // ---- oracle: VCF CV L->R normalling (route.vcf_cv_l_to_cv_r, Gap 1 @Codex 864b2d24) ----
