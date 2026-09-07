@@ -1568,9 +1568,14 @@ static void test_11_runtime_pulser_crossing(void) {
 //     compile_graph admission independently returns invalid_always_execute on a bad list.
 // ===========================================================================
 static void test_12_always_admission_fail_closed(void) {
-  const core::ModuleId six[6] = {core::ModuleId::envelope_a, core::ModuleId::envelope_b,
+  // GH#12 keyboard product owner made keyboard a real always-execute source, so the DEFAULT
+  // always-execute list is now 7 (envelope A/B, LFO A/B, joystick, sequencer, keyboard).
+  // `six` must equal that default exactly, in the ctor's order: re-submitting it must be a
+  // no-op (graph_unchanged), which is the t12 no-op witness.
+  const core::ModuleId six[7] = {core::ModuleId::envelope_a, core::ModuleId::envelope_b,
                                  core::ModuleId::lfo_a,     core::ModuleId::lfo_b,
-                                 core::ModuleId::joystick,  core::ModuleId::sequencer};
+                                 core::ModuleId::joystick,  core::ModuleId::sequencer,
+                                 core::ModuleId::keyboard};
   const core::ModuleId rev[6] = {core::ModuleId::sequencer, core::ModuleId::joystick,
                                  core::ModuleId::lfo_b,     core::ModuleId::lfo_a,
                                  core::ModuleId::envelope_b, core::ModuleId::envelope_a};
@@ -1611,7 +1616,7 @@ static void test_12_always_admission_fail_closed(void) {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
     (void)rt.rebuild();  // settle to a clean graph
-    check(rt.setAlwaysExecute(six, 6), "t12 identical always list accepted (no-op)");
+    check(rt.setAlwaysExecute(six, 7), "t12 identical always list accepted (no-op)");
     check(rt.rebuild() && rt.lastRebuildStatus() == core::SynthRuntime::RebuildStatus::graph_unchanged,
           "t12 identical list does NOT dirty the plan (no-op)");
   }
