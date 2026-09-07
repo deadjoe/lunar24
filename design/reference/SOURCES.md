@@ -1,8 +1,8 @@
 # 参考资料索引（Lunar 24）
 
 ## ⚠️ 原始 PDF 的真实位置
-- `/Users/joe/Downloads/Solar_42N/solar42N_instruct_08_04_v15.pdf` —— 用户手册，**28 页**，75.9 MB
-- `/Users/joe/Downloads/Solar_42N/Solar42_panel_42n_04 copy.pdf` —— 面板高清图，**1 页**，3.6 MB
+- `<本地>/Solar_42N/solar42N_instruct_08_04_v15.pdf` —— 用户手册，**28 页**，75.9 MB
+- `<本地>/Solar_42N/Solar42_panel_42n_04 copy.pdf` —— 面板高清图，**1 页**，3.6 MB
 
 ## 本目录已生成的衍生件
 - `solar42N_manual_text.txt` —— 手册全文（`pdftotext -layout` 提取，102,532 字符）

@@ -203,7 +203,7 @@ bottom) instead of being scaled to fit. A fit-to-window would show the entire
    read the `LUNAR_FBO_TEXTURE:` lines from stderr and `sips`'d the PNG.
 4. `config.h` has been **reverted to the ①b baseline** `PLUG_WIDTH 600` /
    `PLUG_HEIGHT 300`. The build dir and auto-deployed
-   `/Users/joe/Applications/IPlugVisualizer.app` are gitignored disposable spike
+   `<local>/Applications/IPlugVisualizer.app` are gitignored disposable spike
    artifacts, not tracked source.
 
 ### ⚠️ Architecture discipline (MUST carry forward — same as ①b / igraphics_smoke)

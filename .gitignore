@@ -42,6 +42,10 @@ secrets/
 # public. Source URL + checksums + extraction notes live in design/reference/SOURCES.md.
 design/reference/*.png
 design/reference/solar42N_manual_text.txt
+# The ORIGINAL vendor PDFs (manual + panel scan) are ELTA Music copyright and must
+# never be committed — they were previously untracked but NOT ignored, so any
+# `git add -A` would have pulled 75 MB of vendor material into a public repo.
+design/reference/*.pdf
 
 # iPlug2 is a pinned git submodule (third_party/iPlug2, see .gitmodules + the pin gate
 # in tools/check_iplug_pin_clean.py). It is tracked as a submodule, so it is NOT ignored;
