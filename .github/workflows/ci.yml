@@ -72,8 +72,8 @@ jobs:
               || { echo "FAIL: Windows executable missing"; exit 1; }
           fi
 
-      - name: Run gate suite (CTest)
-        run: ctest --test-dir build --output-on-failure --build-config Release
+      - name: Run gate suite (CTest, fast — probe/acceptance gates are PR-only/ubuntu)
+        run: ctest --test-dir build --output-on-failure --build-config Release --label-exclude slow
 
   # Full-machine coverage gate, invoked with --require-full for REAL (not an
   # unused option). Independence is guaranteed by the manifest being transcribed
@@ -99,3 +99,30 @@ jobs:
         run: |
           python3 --version || python --version
           python3 tools/check_registry_complete.py --require-full
+
+  # The GH#19 (and, once #88 lands, GH#20) REAL-product probe + acceptance gates render the actual
+  # DSP through the full chain and take 25-60 min per leg, so they must not gate every feature push
+  # (that made CI ~1 hr; across the 4-OS matrix it multiplied). They are tagged `slow` in CMake and
+  # excluded from `build-and-test` (`--label-exclude slow`); this job runs them ONCE at PR/merge time,
+  # on a single OS, where they still gate. Consistent with the `full-coverage` PR-only gate above.
+  probe-gate:
+    name: probe gate (slow, PR-only, ubuntu)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # iPlug2 is a real pinned submodule on APPLE/WIN32 only; on ubuntu the host target is
+          # excluded, but a recursive checkout keeps the gitlink intact and matches build-and-test.
+          submodules: recursive
+
+      - name: Configure project
+        run: |
+          python3 --version || python --version
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run probe + acceptance gates (slow)
+        run: ctest --test-dir build --output-on-failure --build-config Release --label-regex slow
