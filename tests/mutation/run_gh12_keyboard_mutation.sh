@@ -19,7 +19,7 @@
 #   MUTATED code (one regression) -> RED    (the probe trips on a SPECIFIC pinned assertion — the
 #                                           fix is load-bearing at that defense point).
 #
-# Seven contracted defense points (per @Kimi e8b073c2 + the ea57e5a2 ruling), each an ACTUAL
+# Eight contracted defense points (per @Kimi e8b073c2 + the ea57e5a2/ccb43c67 rulings), each an ACTUAL
 # production-source mutation (never a relaxed validator), each verified against a SPECIFIC probe
 # assertion (a `[FAIL] <what>` line), not merely a non-zero failure count:
 #
@@ -47,6 +47,13 @@
 #                            The keyboard portamento (product default speed=0) then never advances
 #                            from its held value, so a note is published as 0 V. Pinned
 #                            `AC-1 keyboard publishes`.
+#   NC-8 keyboard_kunsupported_revert (machine_definition.h) @Kimi ccb43c67 regression-lock: revert the
+#                            keyboard ExecutionKind back to kUnsupported (the pre-fix topology). Keyboard
+#                            is no longer an executed control source, so the owner wiring never publishes
+#                            the note CV and the keyboard stays idle. Locks both the §8 state_apply_oracle
+#                            conversion (a kUnsupported keyboard would re-assert the RejectedGraph
+#                            negative) and the owner wiring (keyboard must be a real executed module to be
+#                            playable). Pinned `AC-1 keyboard publishes`.
 #
 # Each splices into a DETACHED shadow header under build/ so the probe compiles against an include
 # path that shadows ONLY the mutated header(s) (isolated per mutation, never left behind) — no
@@ -270,6 +277,17 @@ py_splice "$SRC_SMOOTH" "lunar24/core/parameter_smoothing.h"\
 run_mutation "NC-7 relevel_freeze_revert" "AC-1 keyboard publishes ~1.0 V pitch CV"
 rm -f "$WORK/lunar24/core/parameter_smoothing.h"
 
+# NC-8 — keyboard_kunsupported_revert (@Kimi ccb43c67). Revert the keyboard ExecutionKind back to
+#      kUnsupported (the pre-fix topology): keyboard is no longer an executed control source, so the
+#      owner wiring never publishes the note CV and the keyboard stays idle. Locks both the
+#      state_apply_oracle §8 conversion (a kUnsupported keyboard would re-assert RejectedGraph) and the
+#      owner wiring (keyboard must be a real executed module to be playable). Pinned `AC-1 keyboard publishes`.
+py_splice "$SRC_DEF" "lunar24/core/machine_definition.h" \
+  "  {ModuleId::keyboard,      ExecutionKind::kKeyboard}," \
+  "  {ModuleId::keyboard,      ExecutionKind::kUnsupported},   /* [MUT NC-8] keyboard no longer executed */" 1
+run_mutation "NC-8 keyboard_kunsupported_revert" "AC-1 keyboard publishes ~1.0 V pitch CV"
+rm -f "$WORK/lunar24/core/machine_definition.h"
+
 echo
-echo "== [mutation] RESULT: unmutated probe GREEN (8/8) + all 7 defense points RED on a pinned assertion. =="
+echo "== [mutation] RESULT: unmutated probe GREEN (8/8) + all 8 defense points RED on a pinned assertion. =="
 echo "   The GH#12 keyboard-owner fix is load-bearing at every contracted defense point."

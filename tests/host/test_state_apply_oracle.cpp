@@ -31,12 +31,13 @@
 //                                  canonical state is byte-for-byte the wire of that same state. A
 //                                  single-field-lost (e.g. effector_x dropped back to default) goes
 //                                  RED here.
-//   8. UNSUPPORTED-SOURCE CABLE    — task#80 (GH#12 9D): the SAME validated composite but with an
-//                                  UNSUPPORTED cable source (keyboard V/OCT, machine_definition.h:176)
-//                                  is still LEGAL (validate.ok), yet the real owner returns a TYPED
-//                                  RejectedGraph (restore pulls the kUnsupported module into the graph
-//                                  -> unsupported_module -> valid()==false). Atomic: prior A preserved.
-//                                  NOT a deferred success, NOT a doc exemption, NOT RejectedInvalidState.
+//   8. KEYBOARD-SOURCE CABLE       — GH#12 keyboard product owner: the SAME validated composite but with
+//                                  the keyboard V/OCT cable source (machine_definition.h) is LEGAL and
+//                                  ACCEPTED — keyboard is now a supported kKeyboard module, so the
+//                                  restored edge compiles into the strict graph and the owner returns a
+//                                  TYPED Accepted with the wire preserved byte-for-byte. (task#80 pinned
+//                                  the RejectedGraph negative for this source; GH#12 overturns it and that
+//                                  negative now lives in test_machine_cable_restore f.)
 //   9. ALLOCATOR (separate TU)     — the processBlock render path allocates 0 bytes.
 //  10. INVALID STATE REJECTED      — a parameter_out_of_range candidate is rejected by BOTH
 //                                  buildMachineRuntimeCandidate and applyDeviceState (the
@@ -166,9 +167,11 @@ void fillDcIn(double in[1][kF], double v) {
 // presence makes routeOverridden[that route]==1 — the mutually-consistent (cable, route) pair —
 // regardless of the source. `cableSource` is the ONLY varying field between the two cases:
 //   * env_follower_env_out  (a SUPPORTED module) -> the whole state compiles and the owner accepts it.
-//   * keyboard_v_oct_out    (kUnsupported module) -> the state still VALIDATES, but the restore pulls
-//                          the unsupported module into the strict graph and the owner REJECTS it
-//                          (typed RejectedGraph). See unsupported_source_cable_rejected() below.
+//   * keyboard_v_oct_out    (NOW a supported kKeyboard module, GH#12) -> the state compiles and the
+//                          owner accepts it too (the keyboard-source positive witness). task#80 typed
+//                          this source as RejectedGraph (it was kUnsupported then); GH#12 overturns
+//                          that, and the typed-RejectedGraph negative now lives in test_machine_cable_restore.
+//                          See keyboard_source_cable_accepted() below.
 DeviceStateV1 conserved_composite(JackId cableSource) {
   constexpr std::uint64_t kSeed = 0xB0101u;
   DeviceStateV1 st = make_default_device_state(kSeed);
@@ -436,9 +439,11 @@ void rejected_format_leaves_prior() {
 // reserved byte — then asserts the applied canonical state is byte-for-byte the WIRE of that same
 // state. Any single field lost / re-zeroed (the exact "drop preserved family" mutation) goes RED.
 // @Codex 103f94b3 (task#80): the original fixture used keyboard_v_oct_out as the cable source; since
-// task#80 restores user-cables into the graph, that pulls the kUnsupported keyboard module in and the
-// owner REJECTS it, so the preservation fixture now uses the supported env_follower source — the
-// keyboard-cable case is preserved as the independent negative case (8, unsupported_source_cable_rejected).
+// task#80 restores user-cables into the graph, that pulled the then-kUnsupported keyboard module in and
+// the owner REJECTED it, so the preservation fixture uses the supported env_follower source. GH#12 made
+// keyboard a supported kKeyboard module, so the keyboard-cable case is now the independent POSITIVE
+// case (8, keyboard_source_cable_accepted) — the two supported sources cross-check each other, and the
+// typed-RejectedGraph negative now lives in test_machine_cable_restore (f).
 void full_state_preserved() {
   // The composite with a SUPPORTED cable source: env_follower is a real compiled module, so the
   // restored edge pulls a compilable module into the graph and the owner ACCEPTS the whole state.
@@ -457,60 +462,35 @@ void full_state_preserved() {
   CHECK(wireEqual(*e.canonicalState(), st));   // every field preserved byte-for-byte.
 }
 
-// ---- 8. unsupported-source cable is a typed RejectedGraph (task#80) --------------------
-// task#80 makes an inert user-cable ACTIVE on restore. The SAME validated composite, but with the
-// ORIGINAL keyboard V/OCT -> VCO A V/OCT source: the state still VALIDATES (check_routes accepts a
-// cable on the route's own sink), yet restoring that edge pulls the kUnsupported keyboard module
-// (machine_definition.h:176) into the strict compiled graph -> rebuild unsupported_module -> valid()
-// == false -> factory rejected_graph -> the real owner returns a TYPED StateApplyStatus::RejectedGraph.
+// ---- 8. keyboard-source cable is a typed Accepted (GH#12 keyboard product owner) --------
+// GH#12 makes keyboard a supported (kKeyboard) control source. The SAME validated composite, but with
+// the keyboard V/OCT -> VCO A V/OCT source: the state still VALIDATES (check_routes accepts a cable on
+// the route's own sink), and because keyboard is now a SUPPORTED module the restored edge compiles into
+// the strict graph, so the real owner returns a TYPED StateApplyStatus::Accepted with the wire preserved
+// byte-for-byte.
 //
-// This is the negative case @Codex 103f94b3 preserved from the original fixture: it proves the
-// keyboard-cable state is still LEGAL (validate.ok) but is rejected by the owner as a GRAPH problem,
-// NOT a deferred success and NOT a doc exemption. The rejection is ATOMIC: prior A is preserved
-// (running definition + canonical state unchanged, no restart), mirroring the atomic-reject contract
-// that invalid_leaves_prior_unchanged()/rejected_format_leaves_prior() pin.
-void unsupported_source_cable_rejected() {
-  constexpr std::uint64_t kSeed = 444u;
-  const DeviceStateV1 valid = make_default_device_state(kSeed);
+// This is the positive witness @Kimi (ccb43c67) ruled to replace the task#80 negative, which GH#12
+// overturns: the keyboard-cable state is still LEGAL (validate.ok) and is now ACCEPTED, not rejected.
+// It mirrors section 7 (full_state_preserved, env_follower source): two independent SUPPORTED sources
+// are both Accepted, so acceptance is not a keyboard-only special case. The typed-RejectedGraph negative
+// task#80 pinned here is NOT lost — it now lives in test_machine_cable_restore (f), on the sink-side
+// effector/voices path that stays kUnsupported.
+void keyboard_source_cable_accepted() {
+  // The composite with the keyboard cable source: keyboard is a real supported module, so the restored
+  // edge pulls a compilable module into the graph and the owner ACCEPTS the whole state.
+  DeviceStateV1 st = conserved_composite(JackId::keyboard_v_oct_out);
 
-  double in[1][kF] = {{0}};
-  fillDcIn(in, 0.25);
-  const double* inp[1] = {in[0]};
+  // The composite must itself be a legal state — the honest precondition that guards against an
+  // accidentally-incoherent composite (fails loudly here rather than fuzzing the apply path).
+  CHECK(validate_device_state(st).ok);
 
-  // REFERENCE: a fresh engine applies the valid state and renders ONE block (the same self-advancing
-  // no-op proof shape as invalid_leaves_prior_unchanged below — the machine advances, so a second
-  // render on this engine can never be the "unchanged" proof).
-  double ref[4][kF] = {{0}};
-  double* pRef[4] = {ref[0], ref[1], ref[2], ref[3]};
-  {
-    StandaloneAudioEngine e;
-    CHECK(e.applyDeviceState(valid, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
-    CHECK(e.processBlock(inp, pRef, 1, 4, kF) == EngineStatus::Rendered);
-  }
-
-  // The engine under test: apply the valid default (A), then the composite whose cable source is the
-  // kUnsupported keyboard module.
   StandaloneAudioEngine e;
-  CHECK(e.applyDeviceState(valid, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
-  const DeviceStateV1 bad = conserved_composite(JackId::keyboard_v_oct_out);
-  CHECK(validate_device_state(bad).ok);   // the state is LEGAL — the reject is a GRAPH, not a state, problem.
-  const StateApplyStatus applied = e.applyDeviceState(bad, 48000.0, kF, 1, 4);
-  CHECK(applied == StateApplyStatus::RejectedGraph);   // typed: NOT Accepted (deferred) and NOT RejectedInvalidState.
-  CHECK(applied != StateApplyStatus::Accepted);
-  CHECK(applied != StateApplyStatus::RejectedInvalidState);
-  CHECK(e.isReady());                                   // atomic — never goes NOT-READY.
-  CHECK(e.stateApplyStatus() == StateApplyStatus::RejectedGraph);
-  CHECK(e.lastStateValidation().ok);                    // state validated; only the graph failed.
-  CHECK(wireEqual(*e.canonicalState(), valid));         // prior canonical state preserved (A kept).
-
-  // Its FIRST render is bit-identical to the fresh reference: the rejection was a no-op on the
-  // definition AND did not advance the machine (the prior A definition is still active).
-  double outAfter[4][kF] = {{0}};
-  double* pAft[4] = {outAfter[0], outAfter[1], outAfter[2], outAfter[3]};
-  CHECK(e.processBlock(inp, pAft, 1, 4, kF) == EngineStatus::Rendered);
-  for (int c = 0; c < 4; ++c)
-    for (int f = 0; f < kF; ++f)
-      CHECK(outAfter[c][f] == ref[c][f]);               // prior definition still renders identically.
+  const StateApplyStatus applied = e.applyDeviceState(st, 48000.0, kF, 1, 4);
+  CHECK(applied == StateApplyStatus::Accepted);
+  if (applied != StateApplyStatus::Accepted)
+    return;   // null-safety: never deref a null canonicalState()/runtime() past a non-Accepted apply.
+  CHECK(e.identityApplied());
+  CHECK(wireEqual(*e.canonicalState(), st));   // every field preserved byte-for-byte.
 }
 
 // ---- 9. invalid state (parameter_out_of_range) is rejected everywhere ----------------
@@ -799,7 +779,7 @@ int main() {
   invalid_leaves_prior_unchanged();
   rejected_format_leaves_prior();
   full_state_preserved();
-  unsupported_source_cable_rejected();
+  keyboard_source_cable_accepted();
   invalid_state_rejected();
   runtime_seed_drives_drone();
   identity_profile_consumers();
