@@ -481,6 +481,18 @@ add_test(NAME gh20_vcf_acceptance
 # and deliberately stays in the fast set.
 set_tests_properties(gh20_vcf_probe gh20_vcf_acceptance PROPERTIES LABELS "slow")
 
+# task (GH #12): KEYBOARD-OWNER red-first acceptance. Renders the REAL canonical
+# MachineRuntimeDefinition (default power-on state via the public seed ctor) and injects a
+# canonical note triple (pitch + pressure + gate_on, the exact set InputStateMachine::translate
+# emits for a note_on) through the genuine EventTimebase -> applyControlEvent_ -> processFrame
+# -> step_ dispatch. On the pre-fix head the keyboard is kUnsupported / deferred and
+# applyControlEvent_ drops non-parameter events, so AC-1 (pitch doubling), AC-2 (gate->EG) and
+# AC-4b (legato re-note) MUST be red — that is the "will-turn-red" evidence @Kimi required
+# before the implementation starts. Links only lunar_core (no host engine, no seam), exactly
+# like the core-probe family. Tagged `slow` so the PR-only probe-gate can run it once.
+lunar_add_test(gh12_keyboard_owner_probe tests/probes/gh12_keyboard_owner_probe.cpp)
+set_tests_properties(gh12_keyboard_owner_probe PROPERTIES LABELS "slow")
+
 # task #88 (GH #20): SOURCE NEGATIVE CONTROLS. The acceptance gate must DISCRIMINATE: GREEN on the
 # real trapezoidal product and RED on a production PolivoksFilter source mutated away from the @Codex
 # numeric contract (old cap / old recursion / wrong damp / wrong LP-BP / L-R cross / skip setter /
