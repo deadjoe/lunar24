@@ -2578,6 +2578,224 @@ static void test_17_gh21_smoothing_negative_controls(void) {
   }
 }
 
+// ===========================================================================
+// 18. GH#21 Surface-2 acceptance (task #94 g). The 16 vco/vcf panel-knob seconds
+//     params are now members of the shared continuous-smoothing family (20 -> 36).
+//     Whole-state apply (applyDspParam) SNAPS; live apply (setControlParamValue)
+//     RAMPS over the tau-derived settle window. Pins:
+//       T1  trajectory: whole-state snap-exact + live reach-exact inside the tau window;
+//       T2  monotonic + anti-old-frame (first frame strictly between v0 and v1);
+//       T3  partition consistency: 64/128/mixed render the same ramp bit-identically;
+//       T4  zero-alloc across all 36 smoothers advancing;
+//       T5  bypass fail-closed negative control (RED under dspParamValid_ removal);
+//       T6  out-of-scope byte-identical lock (discrete selectors stay unaffected).
+//     Same Surface-1 discipline: this proves the 16 take the SHARED ramp lane, not a
+//     second smoothing implementation (the @Kimi hard constraint).
+// ===========================================================================
+static void test_18_gh21_surface2_acceptance(void) {
+  const core::RuntimeInputs z{0.0, 0.0};
+  core::RuntimeOutput o;
+  const int settle = gh21_settle_frames(kSr);  // tau-derived (rule 2), not a magic number
+
+  // The 16 panel-knob seconds params: (pid, snap target, ramp target, readback getter).
+  // Both targets are in-domain (tune oct [-1,1], rest norm [0,1]); the getter reads the
+  // DSP value the sound-core render path consumes, never a shadow mirror.
+  struct Surf2Case {
+    reg::ParameterId pid;
+    double v0, v1;
+    double (*get)(const core::SynthRuntime&);
+    const char* name;
+  };
+  const Surf2Case kCases[] = {
+    {reg::ParameterId::vco_a_tune,    -0.5,  0.5, [](const core::SynthRuntime& rt){ return rt.vcoATune(); },        "vco_a.tune"},
+    {reg::ParameterId::vco_a_morph,    0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcoAMorph(); },       "vco_a.morph"},
+    {reg::ParameterId::vco_a_pw,       0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcoAPw(); },          "vco_a.pw"},
+    {reg::ParameterId::vco_a_cv_amt,   0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcoACvAmt(); },       "vco_a.cv_amt"},
+    {reg::ParameterId::vco_b_tune,    -0.5,  0.5, [](const core::SynthRuntime& rt){ return rt.vcoBTune(); },        "vco_b.tune"},
+    {reg::ParameterId::vco_b_morph,    0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcoBMorph(); },       "vco_b.morph"},
+    {reg::ParameterId::vco_b_pw,       0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcoBPw(); },          "vco_b.pw"},
+    {reg::ParameterId::vco_b_cv_amt,   0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcoBCvAmt(); },       "vco_b.cv_amt"},
+    {reg::ParameterId::vcf_l_freq,     0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcfFreq(0); },        "vcf.l_freq"},
+    {reg::ParameterId::vcf_l_res,      0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcfRes(0); },         "vcf.l_res"},
+    {reg::ParameterId::vcf_l_mod,      0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcfMod(0); },         "vcf.l_mod"},
+    {reg::ParameterId::vcf_r_freq,     0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcfFreq(1); },        "vcf.r_freq"},
+    {reg::ParameterId::vcf_r_res,      0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcfRes(1); },         "vcf.r_res"},
+    {reg::ParameterId::vcf_r_mod,      0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.vcfMod(1); },         "vcf.r_mod"},
+    {reg::ParameterId::vcf_dist,       0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.distortionAmount(); }, "vcf.dist"},
+    {reg::ParameterId::vcf_gain,       0.10, 0.70, [](const core::SynthRuntime& rt){ return rt.distortionGain(); },   "vcf.gain"},
+  };
+  const int nCases = static_cast<int>(sizeof(kCases) / sizeof(kCases[0]));
+  check(nCases == 16,
+        "T0 exactly 16 vco/vcf panel-knob seconds params are admitted (no 17th/15th)");
+
+  // ---- T1 trajectory + T2 monotonic / anti-old-frame (per case). ----
+  for (int c = 0; c < nCases; ++c) {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    char nm[64], m[192];
+    std::snprintf(nm, sizeof nm, "%s", kCases[c].name);
+
+    // (T1) whole-state apply SNAPS exactly (restore/init lane: a preset/state restore is the
+    //      exact stopped-stream initialisation and must land immediately, never ramp).
+    const core::ParameterApplyStatus st0 = rt.applyDspParam(kCases[c].pid, kCases[c].v0);
+    std::snprintf(m, sizeof m, "T1 %s: whole-state apply SNAPS to the target (no ramp from default)", nm);
+    check(st0 == core::ParameterApplyStatus::applied && sameD(kCases[c].get(rt), kCases[c].v0), m);
+    rt.processBlock(&z, 1, &o);
+    std::snprintf(m, sizeof m, "T1 %s: snapped smoother is inert after one frame (settled, not drifted)", nm);
+    check(sameD(kCases[c].get(rt), kCases[c].v0), m);
+
+    // (T2) live lane ACCEPTED via the public ControlEvent entry (applyParam -> enqueueControlEvent
+    //      -> applyControlEvent_ -> setControlParamValue), and the FIRST published frame is
+    //      strictly between v0 and v1 — one-pole ramped, never a single-sample jump
+    //      (anti-old-frame, no snap). If one of the 16 were NOT admitted to the live smoothing
+    //      lane, the event would be rejected and the getter would stay pinned at v0 (RED here).
+    applyParam(rt, kCases[c].pid, kCases[c].v1, 1);  // deliver at the very next frame (frame 1)
+    rt.processBlock(&z, 1, &o);
+    const double first = kCases[c].get(rt);
+    std::snprintf(m, sizeof m, "T2 %s: live ramp first frame strictly between (admitted + ramped, no snap)", nm);
+    check(!nearD(first, kCases[c].v1) && !nearD(first, kCases[c].v0), m);
+
+    // (T1) converge: monotone toward v1, never overshoot [v0,v1], reach the EXACT target
+    //      inside the tau-derived settle window, and stay finite. The live lane carries the
+    //      target as a FLOAT32 ControlEvent sample value, so the smoother converges EXACTLY to
+    //      that carried value — not to the un-quantized double literal (0.7/0.1 are float32-
+    //      inexact; the one-pole lands bitwise on the float32-carried target).
+    const double lo = kCases[c].v0 < kCases[c].v1 ? kCases[c].v0 : kCases[c].v1;
+    const double hi = kCases[c].v0 < kCases[c].v1 ? kCases[c].v1 : kCases[c].v0;
+    const bool rising = kCases[c].v1 > kCases[c].v0;
+    const double target = static_cast<double>(static_cast<core::SignalSample>(kCases[c].v1));
+    double prev = first, sink = 0.0;
+    bool converged = false, monotone = true;
+    for (int i = 0; i < settle && !converged; ++i) {
+      rt.processBlock(&z, 1, &o);
+      const double cur = kCases[c].get(rt);
+      sink += cur;
+      if (cur < lo - 1e-5 || cur > hi + 1e-5) monotone = false;   // overshoot / out-of-band
+      if (rising ? (cur < prev - 1e-5) : (cur > prev + 1e-5)) monotone = false;  // went backwards
+      prev = cur;
+      converged = sameD(cur, target);
+    }
+    std::snprintf(m, sizeof m, "T1 %s: ramp is monotone inside the tau window (no overshoot)", nm);
+    check(monotone, m);
+    std::snprintf(m, sizeof m, "T1 %s: reaches the EXACT target within the tau settle window", nm);
+    check(converged, m);
+    std::snprintf(m, sizeof m, "T1 %s: ramp stays finite (no NaN blow-up)", nm);
+    check(std::isfinite(sink), m);
+  }
+
+  // ---- T3 partition consistency (design/07 §5): the SAME vcf.l_freq ramp event under
+  //      256/128/64/mixed partitions renders bit-identical per-sample wetL, and the final
+  //      knob state is partition-independent (the ramp began identically, no silent no-op). ----
+  {
+    const uint32_t p256[1] = {256};
+    const uint32_t p128[2] = {128, 128};
+    const uint32_t p64[4]  = {64, 64, 64, 64};
+    const uint32_t pM[5]   = {128, 16, 96, 8, 8};
+    core::RuntimeOutput s256[kCap], s128[kCap], s64[kCap], sM[kCap];
+    double f256 = 0, f128 = 0, f64 = 0, fM = 0;
+    for (int sched = 0; sched < 4; ++sched) {
+      std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+      core::SynthRuntime& rt = def->runtime();
+      rt.applyDspParam(reg::ParameterId::vcf_l_freq, 0.3);   // base snap
+      applyParam(rt, reg::ParameterId::vcf_l_freq, 0.7, 8);  // ramp event at frame 8
+      const uint32_t* blk = (sched == 0) ? p256 : (sched == 1) ? p128 : (sched == 3) ? pM : p64;
+      const int nb = (sched == 0) ? 1 : (sched == 1) ? 2 : (sched == 3) ? 5 : 4;
+      block_render(rt, kCap, blk, nb, (sched == 0) ? s256 : (sched == 1) ? s128 : (sched == 3) ? sM : s64);
+      const double f = rt.vcfFreq(0);
+      if (sched == 0) f256 = f; else if (sched == 1) f128 = f; else if (sched == 3) fM = f; else f64 = f;
+    }
+    bool part = true;
+    for (int i = 0; i < kCap; ++i)
+      part = part && sameD(s256[i].wetL, s128[i].wetL) &&
+             sameD(s256[i].wetL, s64[i].wetL) && sameD(s256[i].wetL, sM[i].wetL);
+    check(part, "T3 64/128/mixed partition renders the panel-knob ramp bit-identically (#5)");
+    check(sameD(f256, f128) && sameD(f256, f64) && sameD(f256, fM),
+          "T3 the final panel-knob state is partition-independent (converged identically)");
+    check(f256 > 0.3 + 1e-3,
+          "T3 the knob ramp began identically (event delivered + smoothed, not a silent no-op)");
+  }
+
+  // ---- T4 zero-alloc across the 36-member smoothing family advancing. ----
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    rt.applyDspParam(reg::ParameterId::vco_a_tune, -0.5);
+    rt.applyDspParam(reg::ParameterId::vcf_l_freq, 0.3);
+    applyParam(rt, reg::ParameterId::joystick_x, 0.7, 0);
+    applyParam(rt, reg::ParameterId::lfo_a_rate, 100.0, 5);
+    applyParam(rt, reg::ParameterId::vco_a_tune, 0.5, 8);
+    applyParam(rt, reg::ParameterId::vcf_l_freq, 0.7, 8);
+    const std::size_t before = g_allocCount;
+    double sink = 0.0;
+    for (int i = 0; i < 4000; ++i) {
+      rt.processBlock(&z, 1, &o);
+      sink += o.wetL;  // consume so the optimizer cannot elide the render
+    }
+    const std::size_t after = g_allocCount;
+    check(after == before, "T4 render path allocates ZERO with all 36 smoothers advancing (A′)");
+    check(std::isfinite(sink), "T4 sustained render stays finite (no NaN blow-up)");
+  }
+
+  // ---- T5 bypass fail-closed negative control (RED under dspParamValid_ removal). ----
+  //      A whole-state apply of an OUT-OF-DOMAIN vco/vcf knob must land invalid_value and
+  //      keep the prior value (the smoother is never reset to a garbage level). If the
+  //      isContinuousSmoothingParam_ snap branch ever skipped dspParamValid_, the value would
+  //      be setter-coerced and land applied — this check goes RED, so the path is a real
+  //      discriminator (item 6: it must not bypass the existing fail-closed validation).
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    // Prime a valid snapped value so there is a prior value to keep.
+    check(rt.applyDspParam(reg::ParameterId::vco_a_tune, 0.3) == core::ParameterApplyStatus::applied,
+          "T5 whole-state prime 0.3 applied");
+    rt.processBlock(&z, 1, &o);
+    // vco_a.tune is oct [-1,1]: -2.0 is below the rail -> must be invalid_value (keep-old).
+    check(rt.applyDspParam(reg::ParameterId::vco_a_tune, -2.0) == core::ParameterApplyStatus::invalid_value,
+          "T5 oct below -1 -> invalid_value (fail-closed, not setter-coerced)");
+    rt.processBlock(&z, 1, &o);
+    check(sameD(rt.vcoATune(), 0.3), "T5 invalid whole-state keeps the prior 0.3 (never reset)");
+    // Non-finite behaves identically: never reset the smoother to a NaN level.
+    check(rt.applyDspParam(reg::ParameterId::vco_a_tune, std::numeric_limits<double>::quiet_NaN()) ==
+              core::ParameterApplyStatus::invalid_value,
+          "T5 whole-state NaN -> invalid_value");
+    rt.processBlock(&z, 1, &o);
+    check(sameD(rt.vcoATune(), 0.3), "T5 whole-state NaN keeps the prior 0.3");
+    // Live lane mirrors it (via the public ControlEvent entry): vcf.l_freq is norm [0,1]; a
+    // 1.5 event is REJECTED by dspParamValid_ and the smoother is NOT retargeted — the getter
+    // stays pinned at the valid base. If this branch ever skipped dspParamValid_, the event
+    // would be admitted and vcfFreq(0) would move off 0.3 (RED here).
+    rt.applyDspParam(reg::ParameterId::vcf_l_freq, 0.3);
+    rt.processBlock(&z, 1, &o);
+    applyParam(rt, reg::ParameterId::vcf_l_freq, 1.5, 4);  // out-of-domain live event at frame 4
+    rt.processBlock(&z, 1, &o);
+    check(sameD(rt.vcfFreq(0), 0.3), "T5 live invalid value does not retarget the smoother (keeps 0.3)");
+  }
+
+  // ---- T6 out-of-scope byte-identical regression lock. Discrete VCO/VCF selectors are
+  //      Smoothing::none and must be UNAFFECTED by the 16-param smoothing move: whole-state
+  //      apply still SNAPS through the 118 dispatch, and they still have NO live lane
+  //      (setControlParamValue keeps refusing them). Proves the 16-move did not sweep the
+  //      sibling discrete selectors into the smoothing family. ----
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+    core::SynthRuntime& rt = def->runtime();
+    // oct_sel is selector [0,2]: whole-state apply in-range still routes to the direct dispatch.
+    check(rt.applyDspParam(reg::ParameterId::vco_a_oct_sel, 1) == core::ParameterApplyStatus::applied,
+          "T6 out-of-scope discrete selector still whole-state applies (direct dispatch)");
+    check(rt.vcoAOctSelect() == 1, "T6 discrete selector SNAPS instantly (not smoothed)");
+    // And it is still NOT a live lane member: a ControlEvent on a Smoothing::none selector is
+    // rejected (no source seat, no continuous-smoothing seat), so the value is UNCHANGED. If
+    // the 16-move had swept the sibling discrete selectors into the smoothing family, this live
+    // event would ramp vco_a_oct_sel off 0 (RED here).
+    rt.applyDspParam(reg::ParameterId::vco_a_oct_sel, 0);
+    rt.processBlock(&z, 1, &o);
+    applyParam(rt, reg::ParameterId::vco_a_oct_sel, 1, 1);  // live event at frame 1
+    rt.processBlock(&z, 1, &o);
+    check(rt.vcoAOctSelect() == 0,
+          "T6 discrete selector still has NO live lane (live event rejected, value unchanged)");
+  }
+}
+
 int main(void) {
   test_1_slots_presence_phase();
   test_2_lfo_drone_mod_same_sample();
@@ -2597,6 +2815,7 @@ int main(void) {
   test_15_source_bank_sentinel();
   test_16_ext_clock_in_freeze();
   test_17_gh21_smoothing_negative_controls();
+  test_18_gh21_surface2_acceptance();
 
   std::printf("\n[%s] %d checks, %d failed\n", g_fail == 0 ? "PASS" : "FAIL", g_checks,
               g_fail);
