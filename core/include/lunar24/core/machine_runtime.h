@@ -1917,7 +1917,8 @@ class SynthRuntime {
     bool fmOn_ = false;
     bool amOn_ = false;
     double shClock_ = 0.0;  // S&H clock level (derived from the divided LF square, GH#15 D3).
-    double divN_ = 1.0;     // S&H division ratio (1 + (kNewDroneDivMax-1)*norm), GH#15 D3.
+    double divN_ = 8.5;     // S&H division ratio (1 + (kNewDroneDivMax-1)*norm), GH#15 D3.
+                            // = 注册默认 norm 0.5 映射.
     double lfPrevLevel_ = 0.0;  // previous LF-square level, for rising-edge detection.
     double lfEdgeAcc_ = 0.0;    // fractional LF-edge counter, scaled by divN_ into captures.
     double shCv_ = 0.0;

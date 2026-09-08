@@ -466,6 +466,57 @@ static bool test_sandhold_buffer_independence() {
   return true;
 }
 
+// S&H CLOCK-EDGE form (GH#15 D3): tick(input, clock, *out) is the product path —
+// a level >= kClockOn on a RISING edge captures the input; between edges the last
+// captured level is held. @Kimi addition (task #98): the drone lane reaches this
+// only through the divided LF square, so two properties have no lane-level proof.
+// Pin them at the module level: (1) an UNCLOCKED (constant-0) clock never self-runs
+// (the "未接 clock 时不自走" acceptance), and (2) an arbitrary waveform clock captures
+// the input exactly AT each rising edge, holding it until the next.
+static bool test_sandhold_clock_edge() {
+  const double sr = 48000.0;
+
+  // (1) Unclocked (constant 0.0) clock: a rising edge is
+  //     (clock >= kClockOn) && (prevClock_ < kClockOn); with clock pinned at 0.0 the
+  //     threshold is never crossed, so held_ is never re-captured. Feed a strictly
+  //     increasing input that WOULD move a running hold — it must not.
+  {
+    core::SAndHold sh(sr, kHoldSeconds, /*initial=*/5.0);
+    double out = -1.0;
+    for (std::size_t i = 0; i < 16; ++i) {
+      sh.tick(static_cast<double>(i), 0.0, &out);   // clock stays 0.0.
+      CHECK(out == 5.0);                             // held at the initial level.
+    }
+  }
+
+  // (2) Arbitrary waveform clock: clock is 0.0 most samples and 1.0 (>= kClockOn,
+  //     preceded by a 0.0) exactly at rising indices {2, 7, 13}, so each such index is
+  //     a genuine rising edge. Value captured must be the input AT that index.
+  {
+    const std::size_t n = 16;
+    const std::vector<std::size_t> rises = {2, 7, 13};
+    core::SAndHold sh(sr, kHoldSeconds, /*initial=*/-1.0);
+    std::vector<double> in(n), out(n), clock(n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) in[i] = 100.0 + static_cast<double>(i);  // distinct.
+    for (std::size_t r : rises) clock[r] = 1.0;
+    for (std::size_t i = 0; i < n; ++i) sh.tick(in[i], clock[i], &out[i]);
+    // Until the first rising edge (i<2) the initial level is held.
+    CHECK(out[0] == -1.0);
+    CHECK(out[1] == -1.0);
+    // At i=2 the edge captures in[2]; held through i=6.
+    CHECK(out[2] == in[2]);
+    for (std::size_t i = 3; i < 7; ++i) CHECK(out[i] == in[2]);
+    // At i=7 the edge captures in[7]; held through i=12.
+    CHECK(out[7] == in[7]);
+    for (std::size_t i = 8; i < 13; ++i) CHECK(out[i] == in[7]);
+    // At i=13 the edge captures in[13]; held to the end.
+    CHECK(out[13] == in[13]);
+    for (std::size_t i = 14; i < n; ++i) CHECK(out[i] == in[13]);
+  }
+
+  return true;
+}
+
 // FM/AM: sample-accurate — the per-sample output is identical across partitionings
 // (negatives = a per-block modulator recompute), and it is deterministic per seed.
 static bool test_fm_am_buffer_determinism() {
@@ -728,6 +779,7 @@ int main() {
   test_noise_reproducible_buffer();
   test_sandhold_cross_sr_duration();
   test_sandhold_buffer_independence();
+  test_sandhold_clock_edge();
   test_fm_am_buffer_determinism();
   test_fm_am_carrier_cross_sr();
   test_fm_am_deviation_realized();

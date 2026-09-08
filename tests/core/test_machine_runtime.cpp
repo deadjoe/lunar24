@@ -87,6 +87,8 @@ namespace {
 // releases) its own (still large) frame. This is a CI-safety latch, not product semantics.
 #if defined(__GNUC__) || defined(__clang__)
 #define IJU_TEST_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define IJU_TEST_NOINLINE __declspec(noinline)
 #else
 #define IJU_TEST_NOINLINE
 #endif
@@ -1346,6 +1348,148 @@ void gh6_bit_identical() {
         "different seed -> fixed WET difference (seed participates in the profile)");
 }
 
+constexpr double kD3DivSpan = 16.0 - 1.0;   // kNewDroneDivMax-1 (PROVISIONAL max, task #98).
+
+// ---- GH#15 D3 acceptance (task #98): drone_3/6 divider in the real S&H clock lane ----
+// Each of these constructs a SynthRuntime BY VALUE on the stack (~174 KiB), so like the
+// registry_* tests they are held out of main()'s frame (IJU_TEST_NOINLINE). MSVC
+// allocates a per-local stack slot and does not reuse across scopes, so stacking the D3
+// runtimes atop main()'s pre-existing per-section slots pushed the frame past the 1 MiB
+// runner stack (the Windows crash). Under a noinline function each block runs (and
+// releases) its own large frame, so the live set is bounded to that block's runtimes.
+// This is a CI-safety latch, not product semantics.
+
+IJU_TEST_NOINLINE void d3_sah_lane_clock_contract() {
+    constexpr std::size_t kN = 8192;
+    auto render3 = [](core::SynthRuntime& rt, double divNorm, std::size_t frames) {
+      rt.rebuild();
+      rt.setDrone3Rate(60.0);   // fast LF (fixture convenience) so captures are dense in-window.
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, divNorm));
+      std::vector<double> ch(frames), cv(frames);
+      for (std::size_t i = 0; i < frames; ++i) {
+        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+        ch[i] = rt.drone3Channel();
+        cv[i] = rt.sampleHold3Cv();
+      }
+      return std::make_pair(ch, cv);
+    };
+    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
+      double d = 0.0;
+      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
+      return d;
+    };
+    auto countSteps = [](const std::vector<double>& v) {
+      std::size_t n = 0;
+      if (v.empty()) return n;
+      double prev = v[0];
+      for (std::size_t i = 1; i < v.size(); ++i) {
+        if (std::fabs(v[i] - prev) > 1e-9) ++n;
+        prev = v[i];
+      }
+      return n;
+    };
+    // (i) the lane-clock drives the S&H: DIVIDER=0 (N=1, capture every LF rising edge) over
+    // a fast-LF window gives a stepped, bounded nonzero CV — never the inert 0.0 of the old
+    // no-clock path.
+    {
+      core::SynthRuntime rt = makeRuntime();
+      auto [ch, cv] = render3(rt, 0.0, kN);
+      static_cast<void>(ch);
+      double cvPeak = 0.0;
+      for (double x : cv) cvPeak = std::max(cvPeak, std::fabs(x));
+      check(cvPeak > 1e-3,
+            "S&H is clocked by the lane (sampleHold3Cv is a bounded nonzero level)");
+      const std::size_t steps = countSteps(cv);
+      check(steps >= 4,
+            "clocked S&H steps at the divided-LF clock edges (sampleHold3Cv changes)");
+    }
+    // (ii) S&H CV is a CV OUT, never summed into *out: two divider ratios give two distinct
+    // CV profiles (different division rates -> different captures) but byte-identical channels.
+    {
+      core::SynthRuntime rtA = makeRuntime();
+      auto a = render3(rtA, 0.0, kN);   // N = 1 -> capture every LF edge.
+      core::SynthRuntime rtB = makeRuntime();
+      auto b = render3(rtB, 1.0, kN);   // N = 16 -> capture every 16th LF edge.
+      check(peakDiff(a.first, b.first) < 1e-12,
+            "S&H is NOT in the audio channel (divider change leaves drone3Channel byte-identical)");
+      check(peakDiff(a.second, b.second) > 1e-3,
+            "divider change alters the S&H CV readback (real lever, non-vacuous)");
+    }
+}
+
+IJU_TEST_NOINLINE void d3_div_acceptance_batch() {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.25));
+      const double n25 = rt.drone3Divider();
+      check(std::fabs(n25 - (1.0 + kD3DivSpan * 0.25)) < 1e-9,
+            "d3 divider norm=0.25 -> divN=1+(16-1)*0.25");
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.75));
+      const double n75 = rt.drone3Divider();
+      check(std::fabs(n75 - (1.0 + kD3DivSpan * 0.75)) < 1e-9,
+            "d3 divider norm=0.75 -> divN=1+(16-1)*0.75");
+      check(std::fabs(n75 - n25 - kD3DivSpan * 0.5) < 1e-9,
+            "d3 divider is linear in norm (0.25 -> 0.75 gap = 15*0.5)");
+      core::SynthRuntime rt6 = makeRuntime(); rt6.rebuild();
+      static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_divider, 0.75));
+      check(std::fabs(rt6.drone6Divider() - (1.0 + kD3DivSpan * 0.75)) < 1e-9,
+            "d6 divider batch lane reaches the field (1+(16-1)*0.75)");
+}
+
+IJU_TEST_NOINLINE void d3_div_acceptance_live() {
+      constexpr std::size_t kTot = 128;
+      static const core::RuntimeInputs kSil[kTot] = {};
+      core::RuntimeOutput out[kTot] = {};
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      core::ControlEvent ev;
+      ev.kind = core::ControlEventKind::parameter;
+      ev.parameter = core::ParameterId::drone_3_divider;
+      ev.value = static_cast<core::SignalSample>(0.25);
+      ev.source = 1;
+      ev.producerSequence = 1;
+      core::TimedControlEvent te;
+      te.event = ev;
+      te.sample = 0;
+      check(rt.enqueueControlEvent(te), "d3 divider live ControlEvent is admitted");
+      rt.processBlock(kSil, kTot, out, /*driveGraph=*/true);
+      check(std::fabs(rt.drone3Divider() - (1.0 + kD3DivSpan * 0.25)) < 1e-9,
+            "d3 divider live lane reaches the field (1+(16-1)*0.25)");
+}
+
+IJU_TEST_NOINLINE void d3_div_acceptance_render_lever() {
+      const auto renderDiv = [&](core::SynthRuntime& rt, double norm, std::size_t kN) {
+        rt.rebuild();
+        rt.setDrone3Rate(60.0);   // fast LF (fixture) so captures are dense in-window.
+        static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, norm));
+        std::vector<double> ch(kN), cv(kN);
+        for (std::size_t i = 0; i < kN; ++i) {
+          rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+          ch[i] = rt.drone3Channel();
+          cv[i] = rt.sampleHold3Cv();
+        }
+        return std::make_pair(ch, cv);
+      };
+      constexpr std::size_t kN = 8192;
+      core::SynthRuntime rtA = makeRuntime(); auto a = renderDiv(rtA, 0.0, kN);   // N=1.
+      core::SynthRuntime rtB = makeRuntime(); auto b = renderDiv(rtB, 1.0, kN);   // N=16.
+      check(vecPeakDiff(a.first, b.first) < 1e-12,
+            "d3 divider change leaves drone3Channel byte-identical (S&H NOT in audio)");
+      check(vecPeakDiff(a.second, b.second) > 1e-3,
+            "d3 divider change alters the S&H CV readback (real lever, non-vacuous)");
+}
+
+IJU_TEST_NOINLINE void d3_div_acceptance_range_lock() {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.25));
+      const double held = rt.drone3Divider();
+      check(rt.applyDspParam(core::ParameterId::drone_3_divider, 2.0) ==
+                core::ParameterApplyStatus::invalid_value,
+            "d3 divider 2.0 is rejected as invalid_value (norm > 1)");
+      check(rt.drone3Divider() == held, "d3 divider 2.0 leaves the state unchanged");
+      check(rt.applyDspParam(core::ParameterId::drone_3_divider, -0.5) ==
+                core::ParameterApplyStatus::invalid_value,
+            "d3 divider -0.5 is rejected as invalid_value (norm < 0)");
+      check(rt.drone3Divider() == held, "d3 divider -0.5 leaves the state unchanged");
+}
 }  // namespace
 
 int main() {
@@ -2014,63 +2158,7 @@ int main() {
   // LF (its CV is a stepped nonzero sequence, never inert 0.0), and the CV is a CV OUT that
   // is never summed into *out (a divider change leaves drone3Channel byte-identical while
   // sampleHold3Cv moves).
-  {
-    constexpr std::size_t kN = 8192;
-    auto render3 = [](core::SynthRuntime& rt, double divNorm, std::size_t frames) {
-      rt.rebuild();
-      rt.setDrone3Rate(60.0);   // fast LF (fixture convenience) so captures are dense in-window.
-      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, divNorm));
-      std::vector<double> ch(frames), cv(frames);
-      for (std::size_t i = 0; i < frames; ++i) {
-        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
-        ch[i] = rt.drone3Channel();
-        cv[i] = rt.sampleHold3Cv();
-      }
-      return std::make_pair(ch, cv);
-    };
-    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
-      double d = 0.0;
-      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
-      return d;
-    };
-    auto countSteps = [](const std::vector<double>& v) {
-      std::size_t n = 0;
-      if (v.empty()) return n;
-      double prev = v[0];
-      for (std::size_t i = 1; i < v.size(); ++i) {
-        if (std::fabs(v[i] - prev) > 1e-9) ++n;
-        prev = v[i];
-      }
-      return n;
-    };
-    // (i) the lane-clock drives the S&H: DIVIDER=0 (N=1, capture every LF rising edge) over
-    // a fast-LF window gives a stepped, bounded nonzero CV — never the inert 0.0 of the old
-    // no-clock path.
-    {
-      core::SynthRuntime rt = makeRuntime();
-      auto [ch, cv] = render3(rt, 0.0, kN);
-      static_cast<void>(ch);
-      double cvPeak = 0.0;
-      for (double x : cv) cvPeak = std::max(cvPeak, std::fabs(x));
-      check(cvPeak > 1e-3,
-            "S&H is clocked by the lane (sampleHold3Cv is a bounded nonzero level)");
-      const std::size_t steps = countSteps(cv);
-      check(steps >= 4,
-            "clocked S&H steps at the divided-LF clock edges (sampleHold3Cv changes)");
-    }
-    // (ii) S&H CV is a CV OUT, never summed into *out: two divider ratios give two distinct
-    // CV profiles (different division rates -> different captures) but byte-identical channels.
-    {
-      core::SynthRuntime rtA = makeRuntime();
-      auto a = render3(rtA, 0.0, kN);   // N = 1 -> capture every LF edge.
-      core::SynthRuntime rtB = makeRuntime();
-      auto b = render3(rtB, 1.0, kN);   // N = 16 -> capture every 16th LF edge.
-      check(peakDiff(a.first, b.first) < 1e-12,
-            "S&H is NOT in the audio channel (divider change leaves drone3Channel byte-identical)");
-      check(peakDiff(a.second, b.second) > 1e-3,
-            "divider change alters the S&H CV readback (real lever, non-vacuous)");
-    }
-  }
+  d3_sah_lane_clock_contract();
 
   // ---- #46: ControlEvent dispatch consumes EventTimebase (buffer-invariant) ----
   std::printf("(46) ControlEvent dispatch is buffer-invariant + non-vacuous\n");
@@ -2389,95 +2477,10 @@ int main() {
   // NEGATIVE (source mutations the fixture discriminates): summing shCv_ into *out
   // collapses (c) byte-identical onto two differing channels -> red; forcing divN_ = 1
   // (ignoring the norm) collapses (a)/(b) onto the default ratio -> red.
-  {
-    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
-      double d = 0.0;
-      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i)
-        d = std::max(d, std::fabs(a[i] - b[i]));
-      return d;
-    };
-    constexpr double kDivSpan = 16.0 - 1.0;   // kNewDroneDivMax-1 (PROVISIONAL max).
-
-    // (a) batch lane, two norms on the REAL getter. Closed form divN_ = 1 + 15*norm, so
-    // a mapping error (wrong max, or a nonlinear norm) is a red here. Both drones.
-    {
-      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
-      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.25));
-      const double n25 = rt.drone3Divider();
-      check(std::fabs(n25 - (1.0 + kDivSpan * 0.25)) < 1e-9,
-            "d3 divider norm=0.25 -> divN=1+(16-1)*0.25");
-      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.75));
-      const double n75 = rt.drone3Divider();
-      check(std::fabs(n75 - (1.0 + kDivSpan * 0.75)) < 1e-9,
-            "d3 divider norm=0.75 -> divN=1+(16-1)*0.75");
-      check(std::fabs(n75 - n25 - kDivSpan * 0.5) < 1e-9,
-            "d3 divider is linear in norm (0.25 -> 0.75 gap = 15*0.5)");
-      core::SynthRuntime rt6 = makeRuntime(); rt6.rebuild();
-      static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_divider, 0.75));
-      check(std::fabs(rt6.drone6Divider() - (1.0 + kDivSpan * 0.75)) < 1e-9,
-            "d6 divider batch lane reaches the field (1+(16-1)*0.75)");
-    }
-    // (b) live lane, non-vacuous. A scheduled parameter ControlEvent must reach the SAME
-    // getter via applyControlEvent_. te.sample=0 fires at frame 0, before the frame ticks.
-    {
-      constexpr std::size_t kTot = 128;
-      static const core::RuntimeInputs kSil[kTot] = {};
-      core::RuntimeOutput out[kTot] = {};
-      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
-      core::ControlEvent ev;
-      ev.kind = core::ControlEventKind::parameter;
-      ev.parameter = core::ParameterId::drone_3_divider;
-      ev.value = static_cast<core::SignalSample>(0.25);
-      ev.source = 1;
-      ev.producerSequence = 1;
-      core::TimedControlEvent te;
-      te.event = ev;
-      te.sample = 0;
-      check(rt.enqueueControlEvent(te), "d3 divider live ControlEvent is admitted");
-      rt.processBlock(kSil, kTot, out, /*driveGraph=*/true);
-      check(std::fabs(rt.drone3Divider() - (1.0 + kDivSpan * 0.25)) < 1e-9,
-            "d3 divider live lane reaches the field (1+(16-1)*0.25)");
-    }
-    // (c) render lever. The S&H is a CV OUT, never summed into *out, so a divider change
-    // leaves drone3Channel byte-identical while sampleHold3Cv moves (fast-LF window).
-    {
-      const auto renderDiv = [&](core::SynthRuntime& rt, double norm, std::size_t kN) {
-        rt.rebuild();
-        rt.setDrone3Rate(60.0);   // fast LF (fixture) so captures are dense in-window.
-        static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, norm));
-        std::vector<double> ch(kN), cv(kN);
-        for (std::size_t i = 0; i < kN; ++i) {
-          rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
-          ch[i] = rt.drone3Channel();
-          cv[i] = rt.sampleHold3Cv();
-        }
-        return std::make_pair(ch, cv);
-      };
-      constexpr std::size_t kN = 8192;
-      core::SynthRuntime rtA = makeRuntime(); auto a = renderDiv(rtA, 0.0, kN);   // N=1.
-      core::SynthRuntime rtB = makeRuntime(); auto b = renderDiv(rtB, 1.0, kN);   // N=16.
-      check(peakDiff(a.first, b.first) < 1e-12,
-            "d3 divider change leaves drone3Channel byte-identical (S&H NOT in audio)");
-      check(peakDiff(a.second, b.second) > 1e-3,
-            "d3 divider change alters the S&H CV readback (real lever, non-vacuous)");
-    }
-    // (d) out-of-range lock. The batch lane validates the continuous unit domain via
-    // dspParamValid_ (v in [min,max]); 2.0 / -0.5 are outside [0,1] -> invalid_value and
-    // the readback stays at the last valid value (fail-closed, never a silent clamp).
-    {
-      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
-      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.25));
-      const double held = rt.drone3Divider();
-      check(rt.applyDspParam(core::ParameterId::drone_3_divider, 2.0) ==
-                core::ParameterApplyStatus::invalid_value,
-            "d3 divider 2.0 is rejected as invalid_value (norm > 1)");
-      check(rt.drone3Divider() == held, "d3 divider 2.0 leaves the state unchanged");
-      check(rt.applyDspParam(core::ParameterId::drone_3_divider, -0.5) ==
-                core::ParameterApplyStatus::invalid_value,
-            "d3 divider -0.5 is rejected as invalid_value (norm < 0)");
-      check(rt.drone3Divider() == held, "d3 divider -0.5 leaves the state unchanged");
-    }
-  }
+  d3_div_acceptance_batch();
+  d3_div_acceptance_live();
+  d3_div_acceptance_render_lever();
+  d3_div_acceptance_range_lock();
 
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();
