@@ -80,13 +80,24 @@ using core::ModuleId;
 
 namespace {
 
-// GH#15 D3 Windows-cl bisect: feed flushed markers so the CI log pinpoints the exact
-// crash site (Windows stdout to a pipe is fully buffered, so unflushed printf is lost
-// on an access violation). Removed before the fix lands.
-#define BMARK(token)                                  \
-  do {                                                 \
-    std::printf(">>> BISECT:%s\n", token);             \
-    std::fflush(stdout);                               \
+// GH#15 D3 Windows-cl bisect: feed markers to stdout, stderr (unbuffered) AND a file so the
+// CI log pinpoints the exact crash site even though CTest drops a segfaulting test's stdout.
+// The file survives an access violation (each marker is fflush'd + closed). Removed before
+// the fix lands.
+#define BMARK(token)                                                          \
+  do {                                                                        \
+    std::printf(">>> BISECT:%s\n", token);                                    \
+    std::fflush(stdout);                                                      \
+    std::fprintf(stderr, ">>> BISECT:%s\n", token);                           \
+    std::fflush(stderr);                                                      \
+    {                                                                         \
+      FILE* bf_ = std::fopen("bisect_trace.txt", "a");                        \
+      if (bf_) {                                                              \
+        std::fprintf(bf_, ">>> BISECT:%s\n", token);                          \
+        std::fflush(bf_);                                                     \
+        std::fclose(bf_);                                                     \
+      }                                                                       \
+    }                                                                         \
   } while (0)
 
 // The large-object (SynthRuntime, which embeds the DroneBank + 2 PapaVoice + filters)
@@ -1358,9 +1369,12 @@ void gh6_bit_identical() {
 }  // namespace
 
 int main() {
+  BMARK("main-start");
   std::printf("ENGINE-LEVEL controlled fixture (SynthRuntime/GraphCompiler/executor mechanics).\n");
 
   // ---- ① product path consumes compile_graph() --------------------------------
+  BMARK("sec-1");
+    BMARK("sec:1");
   std::printf("(1) product path consumes compile_graph()\n");
   {
     core::SynthRuntime rt = makeRuntime();
@@ -1409,6 +1423,7 @@ int main() {
   }
 
   // ---- ② repatching changes the output ---------------------------------------
+    BMARK("sec:2");
   std::printf("(2) repatching changes the output\n");
   {
     // Bare: no edge -> VCO B stays at base freq.
@@ -1439,6 +1454,7 @@ int main() {
   }
 
   // ---- ③ four outputs correct, non-interfering ------------------------------
+    BMARK("sec:3");
   std::printf("(3) four outputs correct and non-interfering\n");
   {
     // Baseline: no edge, both VCOs at the same base frequency, same start phase.
@@ -1463,6 +1479,7 @@ int main() {
   }
 
   // ---- ④ sr/buffer invariance + reproducibility -----------------------------
+    BMARK("sec:4");
   std::printf("(4) sr/buffer invariance + reproducibility\n");
   {
     const double kSrs[] = {44100.0, 48000.0, 88200.0, 96000.0};
@@ -1516,6 +1533,7 @@ int main() {
   }
 
   // ---- ⑤ RT-safe: no alloc/lock on the render path --------------------------
+    BMARK("sec:5");
   std::printf("(5) RT-safe: no allocation / lock on the render path\n");
   {
     core::SynthRuntime rt = makeRuntime();
@@ -1565,6 +1583,7 @@ int main() {
   }
 
   // ---- ⑥ ruling 2: fixed chain + pluggable edges share ONE plan --------------
+    BMARK("sec:6");
   std::printf("(6) ruling 2: fixed chain + pluggable edges share one plan\n");
   {
     // (a) SHARED PLAN. The fixed-chain modules (preamp/env_follower/mixer/vcf/dist)
@@ -2085,6 +2104,7 @@ int main() {
   }
 
   // ---- #46: ControlEvent dispatch consumes EventTimebase (buffer-invariant) ----
+    BMARK("sec:46");
   std::printf("(46) ControlEvent dispatch is buffer-invariant + non-vacuous\n");
   {
     constexpr std::size_t kTotFrames = 256;
@@ -2497,48 +2517,63 @@ int main() {
   }
 
   BMARK("D3-block-done");
+    BMARK("sec:11");
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();
 
+    BMARK("sec:12");
   std::printf("(12) GH#5 classic drone group gate/env — product path (batch 4A)\n");
   registry_drone_gate_envout();
 
+    BMARK("sec:13");
   std::printf("(13) GH#5 classic drone shared CV MOD — joined control consumed\n");
   registry_drone_cv_mod();
 
+    BMARK("sec:14");
   std::printf("(14) GH#5 classic drone same-seed reproducibility\n");
   registry_drone_reproducible();
 
+    BMARK("sec:14b");
   std::printf("(14b) GH#11 no execution-kind dedup — four classic drone slots\n");
   registry_drone_no_dedup_slots();
 
+    BMARK("sec:14c");
   std::printf("(14c) GH#11 explicit strict binding policy — distinct fail-closed statuses\n");
   registry_strict_binding_policy();
 
+    BMARK("sec:14d");
   std::printf("(14d) GH#11 strict preflight judges ACTIVE edge-endpoints, not inventory presence\n");
   registry_strict_active_only();
 
+    BMARK("sec:14e");
   std::printf("(14e) GH#11 bindExecutionKind dirties the plan on add + update\n");
   registry_strict_binding_kind_dirty();
 
+    BMARK("sec:15");
   std::printf("(15) GH#5 classic drone ENV OUT fail-closed\n");
   registry_drone_envout_fail_closed();
 
+    BMARK("sec:16");
   std::printf("(16) GH#5 classic drone ENV OUT block-partition invariance\n");
   registry_drone_envout_partition();
 
+    BMARK("sec:17");
   std::printf("(17) GH#5 classic drone JackId{0} sentinel removed (legal id 0 cohort)\n");
   registry_drone_envout_id0_sentinel();
 
+    BMARK("sec:18");
   std::printf("(18) GH#6 VCF identity / calibration config entry on the product runtime\n");
   gh6_config_entry();
 
+    BMARK("sec:19");
   std::printf("(19) GH#6 fail-closed version / trim admission (keep old complete profile)\n");
   gh6_fail_closed();
 
+    BMARK("sec:20");
   std::printf("(20) GH#6 L/R calibration + profile domain isolation\n");
   gh6_lr_isolation();
 
+    BMARK("sec:21");
   std::printf("(21) GH#6 reproducibility + seed participation (bit-identical, partition-invariant)\n");
   gh6_bit_identical();
 

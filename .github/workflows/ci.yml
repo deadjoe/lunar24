@@ -73,7 +73,13 @@ jobs:
           fi
 
       - name: Run gate suite (CTest, fast — probe/acceptance gates are PR-only/ubuntu)
-        run: ctest --test-dir build --output-on-failure --build-config Release --label-exclude slow
+        run: |
+          ctest --test-dir build --output-on-failure --build-config Release --label-exclude slow
+          rc=$?
+          echo "=== BISECT TRACE (bisect branch; reverted on fix) ==="
+          find . -name bisect_trace.txt -exec cat {} \; 2>/dev/null || true
+          echo "=== END BISECT TRACE ==="
+          exit $rc
 
   # Full-machine coverage gate, invoked with --require-full for REAL (not an
   # unused option). Independence is guaranteed by the manifest being transcribed
