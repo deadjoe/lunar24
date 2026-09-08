@@ -65,7 +65,15 @@
 #include <lunar24/core/state_serializer.h>
 #include <lunar24/registry_ids.hpp>
 
+// The ONE shared real host entry (tests/host/): encode -> decode -> StandaloneAudioEngine
+// ::applyDeviceState -> processBlock, capturing the four real output channels. task#101 review
+// (group 1) requires the mode/restore/failure checks to be re-entered HERE, not only at
+// buildMachineRuntimeCandidate, so the atomic-apply contract is pinned on the owner that is
+// actually rendering.
+#include "test_engine_harness.h"
+
 namespace core = lunar24::core;
+namespace testengine = lunar24::testengine;
 
 static int g_checks = 0;
 static int g_fail = 0;
@@ -236,6 +244,45 @@ static int crossings_of(const std::vector<double>& v, double reference) {
   for (std::size_t i = 1; i < v.size(); ++i)
     if (((v[i - 1] - reference) < 0.0) != ((v[i] - reference) < 0.0)) ++z;
   return z;
+}
+
+// ---- host-entry / cable helpers (task#101 review groups 1 and 3) --------------
+
+// A LEGAL user cable: presence bit + source, and the routeOverridden coherence every landed
+// route whose sink is `sink` must carry (validate_device_state::check_routes). Nothing here
+// bypasses the validator — every state built with this helper goes through the real chain.
+static void set_cable(core::DeviceStateV1& st, core::JackId src, core::JackId sink) {
+  const std::size_t s = static_cast<std::size_t>(sink);
+  st.inputCable[s] = 1;
+  st.cableSource[s] = src;
+  for (const auto& r : lunar24::registry::kNormalizedRoutes) {
+    if (r.sinkJack == sink) st.routeOverridden[static_cast<std::size_t>(r.id)] = 1;
+  }
+}
+
+// Structural equality of the committed device plan (the "state/format/plan" a rejected apply
+// must leave untouched).
+static bool same_plan(const core::DevicePlan& a, const core::DevicePlan& b) {
+  return a.layout.kind == b.layout.kind && a.layout.totalChannels == b.layout.totalChannels &&
+         a.outputCapability == b.outputCapability && a.outputCount == b.outputCount &&
+         a.output.channel[0] == b.output.channel[0] &&
+         a.output.channel[1] == b.output.channel[1] &&
+         a.output.channel[2] == b.output.channel[2] &&
+         a.output.channel[3] == b.output.channel[3] && a.inputCapability == b.inputCapability &&
+         a.input == b.input && a.inputCh[0] == b.inputCh[0] && a.inputCh[1] == b.inputCh[1];
+}
+
+// The canonical storage bytes of a state (the wire a round-trip must reproduce).
+static std::vector<std::uint8_t> wire_of(const core::DeviceStateV1& st) {
+  std::vector<std::uint8_t> buf(core::kDeviceStorageSchema.totalBytesHint, 0);
+  std::size_t written = 0;
+  if (!core::encode_device_state(st, buf.data(), buf.size(), &written)) return {};
+  buf.resize(written);
+  return buf;
+}
+
+static bool same_snap(const Snap& a, const Snap& b) {
+  return a.vOct == b.vOct && a.gateL == b.gateL && a.gateR == b.gateR && a.press == b.press;
 }
 
 // ============================================================ A. Single + collapse
@@ -679,11 +726,15 @@ static void accept_readback_19() {
   set_left(st, core::ParameterId::keyboard_pressure_rise, 0.5);
   set_left(st, core::ParameterId::keyboard_pressure_fall, 0.25);
   set_left(st, core::ParameterId::keyboard_root_note, 0.5);
+  st.keyboardScaleEditor = core::kScaleIonian;  // a RESOLVED non-scalar mask (must install)
   std::unique_ptr<core::MachineRuntimeDefinition> def = chain(st);
   if (def == nullptr) { check(false, "H build"); return; }
   core::SynthRuntime& rt = def->runtime();
   const core::ArpSeqParams& a = rt.keyboardArpSeqParams(core::KeyboardSide::Left);
-  const core::KeyboardBehaviourParams& b = rt.keyboardBehaviourParams(core::KeyboardSide::Left);
+  // H10..H19 read the EXECUTED configuration (KeyboardBehaviour::executed()), i.e. the
+  // per-behaviour state tick() actually runs off — not the decoded request `params_`.
+  const core::KeyboardBehaviour::Executed e =
+      rt.keyboardBehaviourExecuted(core::KeyboardSide::Left);
 
   check(a.mode == 2, "H01 keyboard.mode (101) read back");
   check(a.arpHold == 1, "H02 keyboard.arp_hold (102) read back");
@@ -694,16 +745,26 @@ static void accept_readback_19() {
   check(near(a.seqLength, 0.5, 1e-9), "H07 keyboard.seq_length (110) read back");
   check(a.seqDirection == 2, "H08 keyboard.seq_direction (112) read back");
   check(a.seqCvOutput == 1, "H09 keyboard.seq_cv_output (113) read back");
-  check(near(b.portamentoSpeed, 0.5, 1e-9), "H10 keyboard.portamento_speed (117) read back");
-  check(b.portamentoLegato == 1, "H11 keyboard.portamento_legato (118) read back");
-  check(near(b.vibratoSpeed, 0.25, 1e-9), "H12 keyboard.vibrato_speed (119) read back");
-  check(near(b.vibratoDepth, 0.5, 1e-9), "H13 keyboard.vibrato_depth (120) read back");
-  check(near(b.vibratoDelay, 0.75, 1e-9), "H14 keyboard.vibrato_delay (121) read back");
-  check(near(b.vibratoPressure, 1.0, 1e-9), "H15 keyboard.vibrato_pressure (122) read back");
-  check(b.pressureOutput == 3, "H16 keyboard.pressure_output (123) read back");
-  check(near(b.pressureRise, 0.5, 1e-9), "H17 keyboard.pressure_rise (124) read back");
-  check(near(b.pressureFall, 0.25, 1e-9), "H18 keyboard.pressure_fall (125) read back");
-  check(near(b.rootNote, 0.5, 1e-9), "H19 keyboard.root_note (128) read back");
+  check(near(e.portamentoTauSeconds, 0.5 * core::kPortamentoMaxSeconds, 1e-12) && e.portamentoLegato,
+        "H10 keyboard.portamento_speed (117) EXECUTED as the installed glide time constant");
+  check(e.portamentoLegato,
+        "H11 keyboard.portamento_legato (118) EXECUTED as the installed legato flag");
+  check(near(e.vibratoSpeedHz, 0.25 * core::kVibratoMaxHz, 1e-12),
+        "H12 keyboard.vibrato_speed (119) EXECUTED as the installed LFO rate (Hz)");
+  check(near(e.vibratoDepthCv, 0.5 * core::kVibratoMaxDepthCv, 1e-12),
+        "H13 keyboard.vibrato_depth (120) EXECUTED as the installed depth (V)");
+  check(near(e.vibratoDelaySeconds, 0.75 * core::kVibratoMaxDelaySec, 1e-12),
+        "H14 keyboard.vibrato_delay (121) EXECUTED as the installed ramp time (s)");
+  check(e.vibratoPressureControl && near(e.vibratoPressureAmount, 1.0, 1e-12),
+        "H15 keyboard.vibrato_pressure (122) EXECUTED as the installed pressure-control scale");
+  check(e.pressureMode == core::PressureOutput::Loop,
+        "H16 keyboard.pressure_output (123) EXECUTED as the installed outlet mode");
+  check(near(e.pressureRiseSeconds, 0.5 * core::kPressureMaxSeconds, 1e-12),
+        "H17 keyboard.pressure_rise (124) EXECUTED as the installed rise time (s)");
+  check(near(e.pressureFallSeconds, 0.25 * core::kPressureMaxSeconds, 1e-12),
+        "H18 keyboard.pressure_fall (125) EXECUTED as the installed fall time (s)");
+  check(e.rootSemitone == 6 && e.scaleMask == core::kScaleIonian && near(e.sampleRate, kSr, 1e-9),
+        "H19 keyboard.root_note (128) + scale editor EXECUTED (root 6, resolved mask, live rate)");
 }
 
 // Decoded-but-UNCONSUMED items: they are parsed into the side parameter set but drive no
@@ -1084,6 +1145,452 @@ static void accept_repeat_and_reject() {
   }
 }
 
+// ============================================================ Q. host single-commit entry
+
+// Q: the SAME mode/restore/failure facts, re-entered through the host's ONE commit entry —
+// EngineHarness (encode -> decode -> StandaloneAudioEngine::applyDeviceState -> processBlock,
+// capturing the four real output channels). O2/O4 above only prove that a rejected CANDIDATE is
+// null and that the caller's state object is untouched; they never touch an owner that is
+// already rendering. Q2/Q3 pin the atomic contract where it matters: a LIVE owner keeps its
+// prior state/format/plan AND its subsequent trace after a rejected commit attempt.
+//
+// FINDING F-1 (reported to the owner, deliberately NOT fixed here): the host render path
+// (StandaloneAudioEngine::processBlock -> DeviceAdapter::renderBlock ->
+// SynthRuntime::processFrame) never drains EventTimebase. Only SynthRuntime::processBlock
+// drains it (core/include/lunar24/core/machine_runtime.h:1849-1860) and no product code calls
+// that entry, so the notes enqueued below are NOT applied on this entry today and the compared
+// traces are the free-running machine. The enqueues are kept so these checks strengthen
+// automatically once the host path drains events; the event-driven families are pinned in R/S
+// on the canonical runtime block entry, the only entry that drains events today.
+static void accept_host_entry() {
+  std::printf("Q  -- the host single-commit entry (EngineHarness) is accepted and atomic\n");
+
+  // Q1: every mode is accepted through the host entry, and a re-commit of the SAME state on the
+  // same owner is output-identical (the host's stopped-stream re-apply path).
+  for (int mode = 0; mode <= 2; ++mode) {
+    core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+    set_mode(st, static_cast<std::uint8_t>(mode));
+    set_left(st, core::ParameterId::keyboard_portamento_speed, 0.4);
+    set_right(st, core::ParameterId::keyboard_portamento_speed, 0.1);
+    testengine::EngineHarness once, twice;
+    const bool ok1 = once.load(st);
+    const bool ok2 = twice.load(st) && twice.load(st);
+    if (!ok1 || !ok2) { check(false, "Q1 host load"); continue; }
+    const auto script = [](core::SynthRuntime& rt) {
+      note(rt, core::KeyboardSide::Left, 1.0, 0.6, 1, 0);
+      note(rt, core::KeyboardSide::Right, 2.0, 0.4, 2, 240);
+      release(rt, core::KeyboardSide::Left, 1, 1200);
+    };
+    script(*once.producerRuntime());
+    script(*twice.producerRuntime());
+    const bool rendered = once.render(4800) && twice.render(4800);
+    const bool fmt = once.ready() && once.sampleRate() == kSr && once.blockSize() == 4096 &&
+                     once.inputCapability() == 2 && once.outputCapability() == 4 &&
+                     once.plan().outputCount == 4 &&
+                     once.plan().input == core::InputRoute::Distinct;
+    check(rendered && fmt && twice.ready() && once.out(0) == twice.out(0) &&
+              once.out(1) == twice.out(1) && once.out(2) == twice.out(2) &&
+              once.out(3) == twice.out(3),
+          mode == 0 ? "Q1 Single: host entry accepted; re-commit of the same state is output-identical"
+          : mode == 1
+              ? "Q1 Twin: host entry accepted; re-commit of the same state is output-identical"
+              : "Q1 Split: host entry accepted; re-commit of the same state is output-identical");
+  }
+
+  // Q1b (non-vacuity): the host-path trace these checks compare is a LIVE free-running machine,
+  // not four silent buffers — so "identical" is a real statement about rendered audio.
+  {
+    testengine::EngineHarness live;
+    if (!live.load(core::make_default_device_state(kSeed)) || !live.render(4800)) {
+      check(false, "Q1b live render");
+    } else {
+      check(range_of(live.out(3)) > 0.01 && range_of(live.out(2)) > 0.001,
+            "Q1b the host-path four-channel trace is a live render (DRY_B / DRY_A both move)");
+    }
+  }
+
+  // Q2: an INVALID state committed to a LIVE, rendering owner is rejected atomically.
+  core::DeviceStateV1 a = core::make_default_device_state(kSeed);
+  set_mode(a, 2);
+  set_left(a, core::ParameterId::keyboard_portamento_speed, 0.4);
+  set_right(a, core::ParameterId::keyboard_portamento_speed, 0.1);
+  testengine::EngineHarness subj, ctrl;
+  if (!subj.load(a) || !ctrl.load(a)) { check(false, "Q2 load"); return; }
+  const core::DevicePlan planA = subj.plan();
+  const core::DeviceStateV1* canonA = subj.canonicalState();
+  const std::vector<std::uint8_t> wireA = wire_of(a);
+  const auto script2 = [](core::SynthRuntime& rt) {
+    note(rt, core::KeyboardSide::Left, 1.0, 0.6, 1, 0);
+    note(rt, core::KeyboardSide::Right, 2.0, 0.4, 2, 100);
+    release(rt, core::KeyboardSide::Left, 1, 2000);
+    note(rt, core::KeyboardSide::Right, 1.5, 0.4, 2, 3000);
+  };
+  script2(*subj.producerRuntime());
+  script2(*ctrl.producerRuntime());
+  const bool p1 = subj.render(2400) && ctrl.render(2400);
+  core::DeviceStateV1 bad = a;
+  set_mode(bad, 99);  // out of the canonical 0..2 selector range
+  const bool rejected = !subj.load(bad);
+  check(p1 && rejected &&
+            subj.applyStatus() ==
+                testengine::StandaloneAudioEngine::StateApplyStatus::RejectedInvalidState,
+        "Q2 a live owner's invalid commit is RejectedInvalidState (typed, not a bare false)");
+  check(!subj.validation().ok,
+        "Q2 the rejection carries the validation family/field for the caller");
+  check(subj.ready() && same_plan(subj.plan(), planA) && subj.sampleRate() == kSr &&
+            subj.blockSize() == 4096 && subj.inputCapability() == 2 &&
+            subj.outputCapability() == 4,
+        "Q2 the live owner's state/format/plan are UNCHANGED by the rejected commit");
+  check(subj.canonicalState() == canonA && wire_of(*subj.canonicalState()) == wireA,
+        "Q2 the canonical state is the SAME object holding the SAME bytes (A, never the rejected B)");
+  const bool p2 = subj.render(2400) && ctrl.render(2400);
+  check(p2 && subj.out(0) == ctrl.out(0) && subj.out(1) == ctrl.out(1) &&
+            subj.out(2) == ctrl.out(2) && subj.out(3) == ctrl.out(3) &&
+            range_of(ctrl.out(3)) > 0.01,
+        "Q2 the live owner's SUBSEQUENT trace still equals the untouched A control (4 channels)");
+
+  // Q3: an ILLEGAL FORMAT commit on a live owner is likewise atomic (RejectedFormat), and the
+  // owner keeps rendering with its prior format.
+  testengine::EngineHarness fctrl;
+  if (!fctrl.load(a)) { check(false, "Q3 control load"); return; }
+  script2(*fctrl.producerRuntime());
+  if (!fctrl.render(1200)) { check(false, "Q3 control render"); return; }
+  const auto try_format = [&](double sr, int block, int outCh, const char* what) {
+    testengine::EngineHarness h;
+    if (!h.load(a)) { check(false, what); return; }
+    const core::DevicePlan p0 = h.plan();
+    const core::DeviceStateV1* c0 = h.canonicalState();
+    script2(*h.producerRuntime());
+    const bool rejected = !h.load(a, sr, block, 2, outCh) &&
+                          h.applyStatus() ==
+                              testengine::StandaloneAudioEngine::StateApplyStatus::RejectedFormat;
+    const bool preserved = h.ready() && same_plan(h.plan(), p0) && h.canonicalState() == c0 &&
+                           h.sampleRate() == kSr && h.blockSize() == 4096 &&
+                           h.inputCapability() == 2 && h.outputCapability() == 4;
+    const bool renders = h.render(1200) && h.out(0) == fctrl.out(0) && h.out(1) == fctrl.out(1) &&
+                         h.out(2) == fctrl.out(2) && h.out(3) == fctrl.out(3);
+    check(rejected && preserved && renders, what);
+  };
+  try_format(0.0, 4096, 4, "Q3 sampleRate=0 is RejectedFormat; the live owner keeps format+plan+trace");
+  try_format(kSr, 0, 4, "Q3 blockSize=0 is RejectedFormat; the live owner keeps format+plan+trace");
+  try_format(kSr, 4096, 1, "Q3 outCh=1 is RejectedFormat; the live owner keeps format+plan+trace");
+
+  // Q4 (anti-vacuity): a LEGAL commit through the SAME entry DOES install B — the canonical state
+  // object and its bytes change, the committed format changes, and the free-running audio changes
+  // (VCO-B is re-tuned two octaves up) — so the "unchanged after rejection" checks above cannot
+  // be true merely because nothing on this entry ever changes.
+  testengine::EngineHarness legal;
+  if (!legal.load(a)) { check(false, "Q4 load A"); return; }
+  if (!legal.render(2400)) { check(false, "Q4 render A"); return; }
+  const std::vector<double> outA = legal.out(3);
+  const std::size_t nA = outA.size();
+  core::DeviceStateV1 b = core::make_default_device_state(kSeed);
+  set_left(b, core::ParameterId::vco_b_oct_sel, 2.0);  // VCO-B +2 octaves, a free-run change
+  const std::vector<std::uint8_t> wireB = wire_of(b);
+  const bool accepted =
+      legal.load(b, kSr, 2048) &&
+      legal.applyStatus() == testengine::StandaloneAudioEngine::StateApplyStatus::Accepted;
+  if (!legal.render(2400)) { check(false, "Q4 render B"); return; }
+  const std::vector<double> outB(legal.out(3).begin() + static_cast<std::ptrdiff_t>(nA),
+                                 legal.out(3).end());
+  check(accepted && legal.canonicalState() != canonA &&
+            wire_of(*legal.canonicalState()) == wireB && wireB != wireA && legal.blockSize() == 2048 &&
+            legal.ready() && outB.size() == nA &&
+            crossings_of(outB, 0.0) > 3 * crossings_of(outA, 0.0),
+        "Q4 a LEGAL re-commit replaces state + format + free-run output (not vacuous)");
+}
+
+// ============================================================ R. real graph consumption
+
+// R: the two NEW right-side outputs must drive real, existing consumers through LEGAL user
+// cables — not just read back. Override and removal are both checked, and the evidence is the
+// consumer's own behaviour (VCO-B audio / the EG-B envelope), never a published value. These run
+// on the canonical runtime block entry (the product runtime + SynthRuntime::processBlock, the
+// entry that drains ControlEvents — see finding F-1 in Q).
+static void accept_cable_consumption() {
+  std::printf("R  -- legal user cables make the new right outputs drive real consumers\n");
+
+  // R1: keyboard.pressure_out (in Split = the RIGHT pitch, criterion E) into vco_b.v_oct_in
+  // overrides route.keyboard_v_oct_to_vco_b (whose normalised source is keyboard_v_oct_out).
+  const auto dryB = [](bool cable, double leftPitch, double rightPitch, std::vector<double>* out) {
+    core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+    set_mode(st, 2);
+    if (cable)
+      set_cable(st, core::JackId::keyboard_pressure_out, core::JackId::vco_b_v_oct_in);
+    std::unique_ptr<core::MachineRuntimeDefinition> def = chain(st);
+    if (def == nullptr) return false;
+    core::SynthRuntime& rt = def->runtime();
+    note(rt, core::KeyboardSide::Left, leftPitch, 0.0, 1, 0);
+    note(rt, core::KeyboardSide::Right, rightPitch, 0.0, 2, 0);
+    std::vector<core::RuntimeInputs> in(9600);
+    std::vector<core::RuntimeOutput> o(9600);
+    rt.processBlock(in.data(), in.size(), o.data());
+    out->reserve(o.size());
+    for (const core::RuntimeOutput& r : o) out->push_back(r.dryB);
+    return true;
+  };
+  std::vector<double> cabled, plain, rightZeroCabled, rightZeroPlain, removed;
+  if (!dryB(true, 1.0, 2.0, &cabled) || !dryB(false, 1.0, 2.0, &plain) ||
+      !dryB(true, 1.0, 0.0, &rightZeroCabled) || !dryB(false, 1.0, 0.0, &rightZeroPlain) ||
+      !dryB(false, 1.0, 2.0, &removed)) {
+    check(false, "R1 render");
+    return;
+  }
+  const int zc = crossings_of(cabled, 0.0), zp = crossings_of(plain, 0.0);
+  const int zr = crossings_of(rightZeroCabled, 0.0), zq = crossings_of(rightZeroPlain, 0.0);
+  check(zp > 100 && zc > 1.7 * zp && zc < 2.3 * zp,
+        "R1 pressure->VCO-B: the cabled VCO-B tracks the RIGHT pitch (dryB ~2x at +1 octave)");
+  check(zr > 0 && zq > 100 && zq > 1.7 * zr && zq < 2.3 * zr,
+        "R1 the cabled VCO-B follows the right side, not the left/main normalised pitch");
+  check(removed == plain && cabled != plain,
+        "R1 removing the cable restores the normalised route bit-identically");
+
+  // R2: keyboard.gate_right_out into envelope_b.gate_in overrides route.keyboard_gate_to_eg_b
+  // (normalised source = keyboard_gate_left_main_out). The consumer read is EG-B's own env_out.
+  const auto envB = [](bool cable, bool playRight, std::vector<double>* out) {
+    core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+    set_mode(st, 2);
+    if (cable)
+      set_cable(st, core::JackId::keyboard_gate_right_out, core::JackId::envelope_b_gate_in);
+    std::unique_ptr<core::MachineRuntimeDefinition> def = chain(st);
+    if (def == nullptr) return false;
+    core::SynthRuntime& rt = def->runtime();
+    if (playRight) note(rt, core::KeyboardSide::Right, 1.0, 0.0, 2, 0);
+    else note(rt, core::KeyboardSide::Left, 1.0, 0.0, 1, 0);
+    std::vector<core::RuntimeInputs> in(1);
+    std::vector<core::RuntimeOutput> o(1);
+    out->reserve(4800);
+    for (int i = 0; i < 4800; ++i) {
+      rt.processBlock(in.data(), 1, o.data());
+      out->push_back(rt.controlVoltageAt(core::JackId::envelope_b_env_out));
+    }
+    return true;
+  };
+  std::vector<double> egLeftDefault, egRightDefault, egRightCabled, egLeftCabled, egLeftRemoved;
+  if (!envB(false, false, &egLeftDefault) || !envB(false, true, &egRightDefault) ||
+      !envB(true, true, &egRightCabled) || !envB(true, false, &egLeftCabled) ||
+      !envB(false, false, &egLeftRemoved)) {
+    check(false, "R2 render");
+    return;
+  }
+  check(range_of(egLeftDefault) > 0.05,
+        "R2 EG-B opens from the normalised LEFT gate with no cable (the default route is real)");
+  check(range_of(egRightDefault) < 1e-9,
+        "R2 the right gate does NOT reach EG-B without a cable (no implicit second feed)");
+  check(range_of(egRightCabled) > 0.05,
+        "R2 the gate_right->EG-B cable makes the RIGHT gate drive EG-B");
+  check(range_of(egLeftCabled) < 1e-9,
+        "R2 the cable OVERRIDES (does not sum with) the normalised LEFT gate");
+  check(egLeftRemoved == egLeftDefault,
+        "R2 removing the cable restores the normalised LEFT-gate route bit-identically");
+}
+
+// ============================================================ S. block boundaries
+
+// S: the N-section fix. N compared only dryA and the four keyboard values at the END of the run,
+// which cannot see a RIGHT-side error that occurs and is corrected mid-run, and the right side is
+// not wired to VCO-B by default so left DRY_A cannot stand in for it. Here the same state + event
+// script is rendered (a) one frame per block (the reference) and (b) in REAL 256-frame blocks,
+// with key events landing mid-block; all four audio channels are compared, and the four published
+// values are compared AT EVERY REAL BLOCK BOUNDARY. Canonical runtime block entry (see F-1).
+static void accept_block_boundary_traces() {
+  std::printf("S  -- real block boundaries: left/right control traces vs a per-frame reference\n");
+  constexpr int kBlock = 256;
+  constexpr int kBlocks = 8;
+  const auto build = []() {
+    core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+    set_mode(st, 2);  // Split: the right side publishes its own pitch (pressure jack) and gate
+    set_left(st, core::ParameterId::keyboard_portamento_speed, 0.4);
+    set_right(st, core::ParameterId::keyboard_portamento_speed, 0.0);
+    set_left(st, core::ParameterId::keyboard_vibrato_speed, 0.6);
+    set_left(st, core::ParameterId::keyboard_vibrato_depth, 1.0);
+    // Both NEW right outputs drive real consumers, so a mid-block right-side error is audible in
+    // dryB (pitch) and visible at the boundary (EG-B, gated by the right gate).
+    set_cable(st, core::JackId::keyboard_pressure_out, core::JackId::vco_b_v_oct_in);
+    set_cable(st, core::JackId::keyboard_gate_right_out, core::JackId::envelope_b_gate_in);
+    return st;
+  };
+  // Key events land MID-block (0, 130, 700, 1030, 1500) — never on a 256-frame boundary. The
+  // left side takes a SECOND note at a lower pitch so the left control trace itself moves by a
+  // whole interval (the left portamento is then carried across a block boundary too).
+  const auto script = [](core::SynthRuntime& rt) {
+    note(rt, core::KeyboardSide::Left, 1.0, 0.6, 1, 0);
+    note(rt, core::KeyboardSide::Right, 2.0, 0.0, 2, 130);
+    release(rt, core::KeyboardSide::Left, 1, 700);
+    note(rt, core::KeyboardSide::Left, 0.5, 0.6, 1, 1030);
+    note(rt, core::KeyboardSide::Right, 1.5, 0.0, 2, 1030);
+    release(rt, core::KeyboardSide::Right, 2, 1500);
+  };
+  std::unique_ptr<core::MachineRuntimeDefinition> defRef = chain(build());
+  std::unique_ptr<core::MachineRuntimeDefinition> defBlk = chain(build());
+  if (defRef == nullptr || defBlk == nullptr) { check(false, "S build"); return; }
+  core::SynthRuntime& ref = defRef->runtime();
+  core::SynthRuntime& blk = defBlk->runtime();
+  script(ref);
+  script(blk);
+  std::vector<Snap> frames;
+  std::vector<double> refL, refR, refA, refB;
+  frames.reserve(static_cast<std::size_t>(kBlock * kBlocks));
+  {
+    std::vector<core::RuntimeInputs> in(1);
+    std::vector<core::RuntimeOutput> o(1);
+    for (int i = 0; i < kBlock * kBlocks; ++i) {
+      ref.processBlock(in.data(), 1, o.data());
+      refL.push_back(o[0].wetL);
+      refR.push_back(o[0].wetR);
+      refA.push_back(o[0].dryA);
+      refB.push_back(o[0].dryB);
+      frames.push_back(snap(ref));
+    }
+  }
+  std::vector<Snap> ends;
+  std::vector<double> blkL, blkR, blkA, blkB;
+  {
+    std::vector<core::RuntimeInputs> in(static_cast<std::size_t>(kBlock));
+    std::vector<core::RuntimeOutput> o(static_cast<std::size_t>(kBlock));
+    for (int i = 0; i < kBlocks; ++i) {
+      blk.processBlock(in.data(), static_cast<std::size_t>(kBlock), o.data());
+      for (int f = 0; f < kBlock; ++f) {
+        blkL.push_back(o[static_cast<std::size_t>(f)].wetL);
+        blkR.push_back(o[static_cast<std::size_t>(f)].wetR);
+        blkA.push_back(o[static_cast<std::size_t>(f)].dryA);
+        blkB.push_back(o[static_cast<std::size_t>(f)].dryB);
+      }
+      ends.push_back(snap(blk));
+    }
+  }
+  check(ends.size() == static_cast<std::size_t>(kBlocks) &&
+            blkL.size() == static_cast<std::size_t>(kBlock * kBlocks),
+        "S1 all 8 real 256-frame blocks rendered");
+  check(blkL == refL && blkR == refR && blkA == refA && blkB == refB,
+        "S2 all FOUR audio channels are bit-identical, real blocks vs the per-frame reference");
+  bool boundary = ends.size() == static_cast<std::size_t>(kBlocks);
+  for (int i = 0; i < kBlocks && boundary; ++i) {
+    boundary = same_snap(ends[static_cast<std::size_t>(i)],
+                         frames[static_cast<std::size_t>((i + 1) * kBlock - 1)]);
+  }
+  check(boundary,
+        "S3 every real block boundary equals the per-frame reference (all 4 published values)");
+  std::vector<double> leftPitch, rightGate, rightPitch, leftGate;
+  leftPitch.reserve(frames.size());
+  for (const Snap& s : frames) {
+    leftPitch.push_back(s.vOct);
+    rightGate.push_back(s.gateR);
+    rightPitch.push_back(s.press);
+    leftGate.push_back(s.gateL);
+  }
+  int firstRightGate = -1;
+  for (std::size_t i = 0; i < rightGate.size(); ++i) {
+    if (rightGate[i] > 1.0) { firstRightGate = static_cast<int>(i); break; }
+  }
+  // Non-vacuity: every compared quantity must actually move. The left pitch moves by its vibrato
+  // (depth 1.0 = +-2/12V, observed span ~0.19V over this window) and by the second left note, the
+  // right pitch by 2.0 -> 1.5 plus the release, both gates by the full 0..10V rail. A flat trace
+  // would make "equal at every boundary" meaningless.
+  check(range_of(leftPitch) > 0.1 && range_of(rightPitch) > 0.4 && range_of(leftGate) > 5.0 &&
+            range_of(rightGate) > 5.0,
+        "S4 the left/right pitch and gate traces all move (the comparison is not vacuous)");
+  check(firstRightGate == 130,
+        "S4 the mid-block right key event is carried at its exact sample (frame 130)");
+}
+// ============================================================ T. preset payload round-trip
+
+// T: preserved fields + the 4 keyboard presets. task#100 counted the preset payload as stored-only;
+// this pins that a fully-populated keyboard payload survives the wire byte-for-byte, that the
+// reserved shell bytes are preserved VERBATIM, and that the candidate build rewrites nothing.
+static void accept_preset_roundtrip() {
+  std::printf("T  -- preserved fields + the 4-preset keyboard payload round-trip\n");
+  core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+  set_mode(st, 2);
+  set_pressure_out(st, 3);
+  st.keyboardScaleEditor = core::kScaleIonian;
+  st.keyboardScaleEditorR = core::kChromaticScaleMask;  // legal, distinct from the left mask
+  for (std::size_t i = 0; i < core::kKeyboardPlateTuneCount; ++i) {
+    st.keyboardPlateTune[i] = 0.25f * static_cast<float>(i + 1);
+    st.keyboardPlateTuneR[i] = -0.5f * static_cast<float>(i + 1);
+  }
+  for (std::size_t i = 0; i < core::kKeyboardPushbuttonCount; ++i) {
+    st.keyboardPushbutton[i] = 1.0f + static_cast<float>(i);
+    st.keyboardPushbuttonR[i] = -1.0f - static_cast<float>(i);
+  }
+  for (std::size_t i = 0; i < 4; ++i) {
+    st.keyboardClockSelectors[i] = static_cast<std::uint8_t>(i + 1);
+    st.keyboardClockSelectorsR[i] = static_cast<std::uint8_t>(4 - i);
+  }
+  for (std::size_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    st.keyboardSeqCurrent.steps[i] = {static_cast<std::uint8_t>(i),
+                                      static_cast<float>(0.1 * static_cast<double>(i)),
+                                      static_cast<std::uint8_t>(i & 1u)};
+    st.keyboardSeqCurrentR.steps[i] = {static_cast<std::uint8_t>(15 - i),
+                                       static_cast<float>(-0.2 * static_cast<double>(i)),
+                                       static_cast<std::uint8_t>((i + 1u) & 1u)};
+  }
+  // The four keyboard-owned presets: ids must stay 0..3 (preset_invalid otherwise), the composite
+  // payloads are distinct per slot, and the 22 per-side scalar pairs are copied from THIS state's
+  // live bank — legal by construction, since the same descriptor checks both.
+  for (std::uint32_t k = 0; k < core::kDeviceKeyboardPresetCount; ++k) {
+    core::KeyboardPreset& p = st.keyboardPresets[k];
+    p.reserved[0] = static_cast<std::uint8_t>(0xA0u + k);
+    p.reserved[1] = static_cast<std::uint8_t>(0xB0u + k);
+    p.pressureBehaviour = static_cast<std::uint8_t>(k % 3u);
+    p.pressureOutput = static_cast<std::uint8_t>(k % 5u);
+    p.arpClock = static_cast<std::uint8_t>(k);
+    p.arpRhythm = static_cast<std::uint8_t>(3u - k);
+    p.seqClock = static_cast<std::uint8_t>(k);
+    p.seqRhythm = static_cast<std::uint8_t>(k);
+    p.quantiseScaleEditor = core::kScaleIonian;
+    p.quantiseScaleEditorR = core::kChromaticScaleMask;
+    for (std::size_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+      p.seqSteps.steps[i] = {static_cast<std::uint8_t>(i + k),
+                             static_cast<float>(0.05 * static_cast<double>(i + 1)),
+                             static_cast<std::uint8_t>((i + k) & 1u)};
+      p.seqStepsR.steps[i] = {static_cast<std::uint8_t>(15u - i),
+                              static_cast<float>(-0.05 * static_cast<double>(i + 1)),
+                              static_cast<std::uint8_t>((i + k + 1u) & 1u)};
+    }
+    for (std::size_t i = 0; i < core::kKeyboardPlateTuneCount; ++i) {
+      p.plateTune[i] = 0.1f * static_cast<float>(i + 1) + static_cast<float>(k);
+      p.plateTuneR[i] = -0.1f * static_cast<float>(i + 1) - static_cast<float>(k);
+    }
+    for (std::size_t i = 0; i < core::kKeyboardPushbuttonCount; ++i) {
+      p.pushbuttonValue[i] = 2.0f + static_cast<float>(i) + static_cast<float>(k);
+      p.pushbuttonValueR[i] = -2.0f - static_cast<float>(i) - static_cast<float>(k);
+    }
+    core::save_live_side_bank(st, p);
+  }
+  const std::vector<std::uint8_t> wire = wire_of(st);
+  check(!wire.empty(), "T1 the fully-populated keyboard payload encodes");
+  core::DeviceStateV1 dec;
+  check(core::decode_device_state(wire.data(), wire.size(), &dec), "T1 it decodes");
+  check(wire_of(dec) == wire,
+        "T1 encode->decode->encode is byte-identical (4 presets + both live banks)");
+  check(dec.keyboardPresets[2].reserved[0] == 0xA2u &&
+            dec.keyboardPresets[2].reserved[1] == 0xB2u && dec.keyboardPresets[3].id == 3u &&
+            dec.keyboardPresets[3].reserved[1] == 0xB3u,
+        "T2 the preset shell (id + the 2 preserved reserved bytes) survives per slot");
+  check(dec.keyboardPresets[1].seqSteps.steps[5].gate == 0u &&
+            near(dec.keyboardPresets[1].seqSteps.steps[5].value, 0.30, 1e-6) &&
+            dec.keyboardPresets[1].plateTune[3] == st.keyboardPresets[1].plateTune[3] &&
+            dec.keyboardPresets[1].pushbuttonValue[2] == st.keyboardPresets[1].pushbuttonValue[2],
+        "T2 a preset's composite regions (seq steps / plate tune / pushbutton) round-trip");
+  check(dec.keyboardScaleEditorR == core::kChromaticScaleMask &&
+            dec.keyboardClockSelectors[2] == 3u && dec.keyboardClockSelectorsR[2] == 2u &&
+            dec.keyboardSeqCurrent.steps[7].gate == 1u &&
+            near(dec.keyboardSeqCurrentR.steps[3].value, -0.6, 1e-6),
+        "T3 the live non-scalar keyboard fields round-trip (masks / selectors / both seq runs)");
+  bool scalars = true;
+  for (std::size_t i = 0; i < core::kKeyboardScalarRightCount; ++i) {
+    scalars = scalars && dec.keyboardScalarRight[i] == st.keyboardScalarRight[i];
+  }
+  check(scalars, "T3 the 22-scalar right bank round-trips exactly");
+  std::unique_ptr<core::MachineRuntimeDefinition> def = chain(dec);
+  if (def == nullptr) { check(false, "T4 build"); return; }
+  check(wire_of(def->deviceState()) == wire,
+        "T4 the candidate build preserves every preserved field byte-for-byte");
+  check(def->runtime().keyboardMode() == core::KeyboardMode::Split,
+        "T4 the restored side configuration still reads back after the full payload round-trip");
+}
+
 int main() {
   accept_single_compat();
   accept_translate_side_path();
@@ -1102,6 +1609,10 @@ int main() {
   accept_default_equivalence();
   accept_block_invariance();
   accept_repeat_and_reject();
+  accept_host_entry();
+  accept_cable_consumption();
+  accept_block_boundary_traces();
+  accept_preset_roundtrip();
 
   std::printf("\n%d checks, %d failures\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;

@@ -667,6 +667,11 @@ class SynthRuntime {
   const KeyboardBehaviourParams& keyboardBehaviourParams(KeyboardSide side) const {
     return keyboardBeh_[keyboardSideIndex_(side)].params();
   }
+  // The EXECUTED per-side behaviour configuration (the state tick() actually runs off,
+  // not the decoded request `keyboardBehaviourParams` returns).
+  KeyboardBehaviour::Executed keyboardBehaviourExecuted(KeyboardSide side) const {
+    return keyboardBeh_[keyboardSideIndex_(side)].executed();
+  }
   ArpSeqMode keyboardArpSeqMode(KeyboardSide side) const {
     return keyboardArpSeq_[keyboardSideIndex_(side)].mode();
   }
