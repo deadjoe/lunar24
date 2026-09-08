@@ -37,7 +37,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -61,7 +61,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -85,7 +85,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -165,7 +165,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -437,7 +437,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -461,7 +461,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -485,7 +485,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -508,7 +508,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -836,7 +836,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -860,7 +860,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -884,7 +884,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -908,7 +908,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -932,7 +932,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -956,7 +956,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -1036,7 +1036,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
@@ -1060,7 +1060,7 @@
             "unit": "unverified",
             "default": "unverified",
             "step": "unverified",
-            "smoothing": "unverified",
+            "smoothing": "provisional",
             "persistence": "unverified",
             "range": "unverified"
           }
