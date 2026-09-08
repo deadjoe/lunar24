@@ -270,11 +270,15 @@ enum class ParameterApplyStatus : std::uint8_t {
 // typical production control-smoothing sigma (≈0.23 s to 99%); a future measurement only has
 // to relabel this line, never re-derive a curve elsewhere.
 inline constexpr double kGh21SmoothingTauSeconds = 0.050;
-// Upper bound on the ACTIVE seconds-smoothed control-source set. The runtime recognises
-// 35 control-source params (Surface-1); not all are continuous, so the live smoothed set is
-// derived from the registry at construction (must be <= 35). Sized generously so a future
-// registry addition cannot overflow the fixed array (which stays zero-alloc / no map).
-inline constexpr std::uint32_t kMaxControlSmoothParams = 35;
+// Upper bound on the ACTIVE seconds-smoothed set. The runtime derives the live smoothed set
+// from the registry at construction (Smoothing::seconds && applied_to_dsp), and that set must
+// not overflow this fixed array. Surface-1 contributed 20 continuous control-source params;
+// Surface-2 adds the 16 vco/vcf panel-knob seconds params -> 36 total. The array stays
+// zero-alloc / no map, so the bound must be a known-at-compile-time ceiling >= 36; 40 leaves
+// headroom for a future registry addition without going back and growing a fixed array.
+// controlSmoothers_ (below) is indexed by full ParameterId ordinal (kParameterIdSpace), so it
+// needs no such cap — only this ordinals list does.
+inline constexpr std::uint32_t kMaxControlSmoothParams = 40;
 
 class SynthRuntime {
  public:
@@ -416,7 +420,7 @@ class SynthRuntime {
     keyboardBeh_.configure(KeyboardBehaviourParams{}, sampleRate);
 
     // GH#21 continuous control smoothing: build the ACTIVE smoothing set from the registry
-    // (params whose `smoothing == Smoothing::seconds` AND that are control-source params),
+    // (params whose `smoothing == Smoothing::seconds` AND `disposition == applied_to_dsp`),
     // and prime each smoother to the DSP core's CURRENT value so the first target transition
     // interpolates from where the machine actually is (zero single-sample step). The sound-core
     // default values are documented LOCAL-SAFE defaults (NOT necessarily the registry `initial`),
@@ -425,8 +429,7 @@ class SynthRuntime {
     // smoothers never recompute mid-stream and the per-sample sequence is partition-independent.
     controlSmoothOrdinalCount_ = 0;
     for (const ParameterDescriptor& d : registry::kParameters) {
-      if (d.smoothing != Smoothing::seconds) continue;
-      if (!controlSourceParamRecognized_(d.id)) continue;  // Surface-1 lane only
+      if (!isContinuousSmoothingParam_(d.id)) continue;  // Smoothing::seconds && applied_to_dsp
       if (controlSmoothOrdinalCount_ >= kMaxControlSmoothParams) continue;  // defensive cap
       controlSmoothOrdinals_[controlSmoothOrdinalCount_++] = d.id;
       ParameterSmoother& sm = controlSmoothers_[static_cast<std::uint32_t>(d.id)];
@@ -942,12 +945,15 @@ class SynthRuntime {
   double controlVoltageAt(JackId jack) const { return cvAt_(jack); }
   // ---- task #78: full 169-parameter applied_to_DSP apply (commit ②) ----
   // The ONE public apply choke for a whole DeviceState. applyDspParam routes each id:
-  //   (1) the 35 control-source params -> setControlParamValue (byte-identical reuse);
-  //   (2) any non-applied_to_dsp id -> unsupported_parameter;
-  //   (3) the remaining 134 applied_to_dsp ids -> the explicit dispatch below, after
-  //       dspParamValid_ admits the state value against its registry unit (fail-closed
-  //       keep-old on a malformed value, never a silent setter coercion);
-  //   (4) an id none of the above cover -> unsupported_parameter (a fail-closed guard that
+  //   (1) the 35 control-source params -> either a seconds-smoothed SNAP (Smoothing::seconds)
+  //       or setControlParamValue (byte-identical reuse for the non-seconds control-source ids);
+  //   (2) the 16 vco/vcf panel-knob seconds params (isContinuousSmoothingParam_) -> the shared
+  //       family SNAP (dspParamValid_ FIRST, then reset + applySmoothedControl_), never a ramp;
+  //   (3) any non-applied_to_dsp id -> unsupported_parameter;
+  //   (4) the remaining 118 applied_to_dsp ids (the former 134 minus the 16 moved to (2)) ->
+  //       the explicit dispatch below, after dspParamValid_ admits the state value against its
+  //       registry unit (fail-closed keep-old on a malformed value, never a silent setter coercion);
+  //   (5) an id none of the above cover -> unsupported_parameter (a fail-closed guard that
   //       makes the batch's "exactly 169" check real, never a silent skip).
   ParameterApplyStatus applyDspParam(ParameterId id, double v) {
     lastApplyParamId_ = id;
@@ -979,6 +985,24 @@ class SynthRuntime {
       }
       return setControlParamValue(id, v);
     }
+    // Surface-2: the 16 vco/vcf panel-knob seconds params (isContinuousSmoothingParam_) reach
+    // the shared family here. Whole-state apply is snap-only, mirroring the control-source
+    // seconds path above (a preset / state restore is the exact stopped-stream initialisation
+    // and must land at the value immediately). Validate via dspParamValid_ FIRST — it is the
+    // ONLY validator spanning oct [-1,1] (controlParamValid_'s default:return false rejects
+    // tune) — then reset + applySmoothedControl_, and NEVER skip the check (fail-closed
+    // keep-old on a malformed whole-state value, so the batch "exactly 169" stays honest).
+    if (isContinuousSmoothingParam_(id)) {
+      if (!dspParamValid_(id, v)) {
+        lastApplyStatus_ = ParameterApplyStatus::invalid_value;
+        return lastApplyStatus_;
+      }
+      const std::uint32_t ord = static_cast<std::uint32_t>(id);
+      controlSmoothers_[ord].reset(v);
+      applySmoothedControl_(id, v);
+      lastApplyStatus_ = ParameterApplyStatus::applied;
+      return lastApplyStatus_;
+    }
     if (disposition_of(id) != StateDisposition::applied_to_dsp) {
       lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
       return lastApplyStatus_;
@@ -988,35 +1012,17 @@ class SynthRuntime {
       return lastApplyStatus_;
     }
     switch (id) {
-      case ParameterId::vco_a_tune:
-        setVcoATune(v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vco_a_morph:
-        setVcoAMorph(v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vco_a_pw:
-        setVcoAPw(v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      // (the vco_a/b tune/morph/pw/cv_amt and vcf_l/r freq/res/mod and vcf dist/gain ids are the
+      // 16 Surface-2 panel-knob seconds params — handled by the isContinuousSmoothingParam_ snap
+      // branch above, so they no longer fall through to the direct dispatch switch.)
       case ParameterId::vco_a_oct_sel:
         setVcoAOctSelect(static_cast<int>(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vco_a_sub_sel:
         setVcoASubSelect(static_cast<int>(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vco_a_cv_amt:
-        setVcoACvAmt(v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vco_a_lin_exp:
         setVcoAControlMode(v == 1.0 ? VcoControlMode::kExponential : VcoControlMode::kLinear);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vco_b_tune:
-        setVcoBTune(v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vco_b_morph:
-        setVcoBMorph(v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vco_b_pw:
-        setVcoBPw(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vco_b_oct_sel:
         setVcoBOctSelect(static_cast<int>(v));
@@ -1024,44 +1030,17 @@ class SynthRuntime {
       case ParameterId::vco_b_sub_sel:
         setVcoBSubSelect(static_cast<int>(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vco_b_cv_amt:
-        setVcoBCvAmt(v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vco_b_lin_exp:
         setVcoBControlMode(v == 1.0 ? VcoControlMode::kExponential : VcoControlMode::kLinear);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vcf_l_freq:
-        setVcfFreq(0, v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vcf_l_res:
-        setVcfRes(0, v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vcf_l_mod:
-        setVcfMod(0, v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vcf_l_bp_lp:
         setVcfMode(0, v == 0.0);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vcf_r_freq:
-        setVcfFreq(1, v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vcf_r_res:
-        setVcfRes(1, v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vcf_r_mod:
-        setVcfMod(1, v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vcf_r_bp_lp:
         setVcfMode(1, v == 0.0);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::vcf_link:
         setVcfLink(v != 0.0);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vcf_dist:
-        setDistortionAmount(v);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      case ParameterId::vcf_gain:
-        setDistortionGain(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::preamp_gain:
         setPreampGainNorm(v);
@@ -1865,14 +1844,15 @@ class SynthRuntime {
     }
   }
 
-  // ---- 35 control-source parameter dispatch (@Codex 7C3) ----
-  // Wires the 35 evidence-mappable params to the six real instances via the sound-core
-  // unit-agreeing setters, returning a ParameterApplyStatus that discriminates applied /
-  // invalid / unsupported. A malformed value is rejected HERE (keep old) BEFORE it reaches
-  // a setter that might clamp/coerce — e.g. LFO setWave clamps a finite value to [0,1] and a
-  // `v != 0.0` transfer would turn 0.5 into gate-high — so a value outside the registry
-  // unit-domain is reported `invalid_value`, never a silent coercion. Step params are
-  // 1-indexed (sequencer_step_cv_N -> idx N-1).
+  // ---- 35 control-source + 16 Surface-2 panel-knob parameter dispatch (@Codex 7C3) ----
+  // Live parameter lane (ControlEvent). Wires the 35 evidence-mappable control-source params
+  // AND the 16 Surface-2 vco/vcf panel-knob seconds params (via isContinuousSmoothingParam_)
+  // to the sound-core unit-agreeing setters, returning a ParameterApplyStatus that
+  // discriminates applied / invalid / unsupported. A malformed value is rejected HERE (keep
+  // old) BEFORE it reaches a setter that might clamp/coerce — e.g. LFO setWave clamps a finite
+  // value to [0,1] and a `v != 0.0` transfer would turn 0.5 into gate-high — so a value outside
+  // the registry unit-domain is reported `invalid_value`, never a silent coercion. Step params
+  // are 1-indexed (sequencer_step_cv_N -> idx N-1).
   // @Codex final ruling 7C3: `sequencer.pulser` is a DOMAIN-VALIDATED provisional transfer.
   // The norm [0,1] is admitted and mapped through the centrally-named PULSER software model
   // (FiveStepSequencer::pulserNormToRateHz) into the core's direct-Hz DSP setter; the
@@ -1881,22 +1861,34 @@ class SynthRuntime {
   // keep-old (rate unchanged, invalid_value).
   ParameterApplyStatus setControlParamValue(ParameterId id, double v) {
     lastApplyParamId_ = id;
-    if (!controlSourceParamRecognized_(id)) {
+    // Recognition now covers BOTH lanes of the smoothing family: the 35 乐音 control-source
+    // params AND the Surface-2 panel-knob seconds params (the 16 vco/vcf, via
+    // isContinuousSmoothingParam_). Deliberately NOT merged into controlSourceParamRecognized_ —
+    // that predicate is 乐音 control-source semantics; the 16 are panel knobs. Control-source ids
+    // may go direct or smoothed; a panel-knob id is ALWAYS Smoothing::seconds, so it only ever
+    // takes the ramp path below (never a direct dispatch).
+    const bool ctrlSource = controlSourceParamRecognized_(id);
+    if (!ctrlSource && !isContinuousSmoothingParam_(id)) {
       lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
       return lastApplyStatus_;
     }
-    if (!controlParamValid_(id, v)) {                   // malformed: keep old, no setter touched.
+    // Validation is set-specific: control-source params admit against controlParamValid_ (their
+    // own registry-unit domain); panel-knob seconds params admit against the generic registry
+    // gate dspParamValid_ — the only validator spanning oct [-1,1] (controlParamValid_'s default
+    // return false rejects tune). A malformed value rejects keep-old, no setter touched.
+    const bool valid = ctrlSource ? controlParamValid_(id, v) : dspParamValid_(id, v);
+    if (!valid) {                                          // malformed: keep old, no setter touched.
       lastApplyStatus_ = ParameterApplyStatus::invalid_value;
       return lastApplyStatus_;
     }
     // GH#21 continuous control smoothing (design/07 §3.2): a SECONDS-smoothed control target
     // is not dispatched to the DSP directly — it becomes the smoother's target and is applied
-    // one-smoothed-value-per-frame in advanceControlSmoothing_(). This is the Surface-1
-    // ControlEvent parameter lane only. Boundary (contract hard-req #3): exposed AUDIO-RATE CV
-    // (a jack patch-signal modulation) and the Surface-2 host/preset params (vco/vcf) are NOT
-    // smoothed here. Gate/note/clock edges and the 15 discrete control params keep the direct
-    // single-sample dispatch below. Partition-independent: the smoothers persist across
-    // processBlock and fs/tau are fixed, so 64/128/256 reproduce the same per-sample sequence.
+    // one-smoothed-value-per-frame in advanceControlSmoothing_(). This is the ControlEvent
+    // parameter lane (Surface-1 control-source + Surface-2 panel-knob). Boundary (contract
+    // hard-req #3): exposed AUDIO-RATE CV (a jack patch-signal modulation) is NOT smoothed here.
+    // Gate/note/clock edges and the 15 discrete control params keep the direct single-sample
+    // dispatch below. Partition-independent: the smoothers persist across processBlock and
+    // fs/tau are fixed, so 64/128/256 reproduce the same per-sample sequence.
     const ParameterDescriptor* desc = find_parameter(id);
     if (desc != nullptr && desc->smoothing == Smoothing::seconds) {
       const std::uint32_t ord = static_cast<std::uint32_t>(id);
@@ -2005,6 +1997,23 @@ class SynthRuntime {
     }
   }
 
+  // The one predicate marking an id as a member of the ACTIVE continuous-smoothing set:
+  // `smoothing == Smoothing::seconds` AND `disposition == applied_to_dsp`. This is the
+  // GH#21 Surface-1+Surface-2 union — the 20 control-source seconds params (envelope a/b
+  // attack/decay/release/sustain, lfo a/b rate, joystick x/y/offset_x/offset_y, sequencer
+  // step_cv_1..5, pulser) plus the 16 vco/vcf panel-knob seconds params (vco a/b tune/morph/
+  // pw/cv_amt, vcf l/r freq/res/mod, vcf dist/gain) = 36. It is deliberately NOT folded into
+  // controlSourceParamRecognized_ (that predicate is 乐音 control-source semantics; the 16
+  // are panel knobs). Applied_to_dsp naturally excludes keyboard (35), p6/p8-preserved (125)
+  // and transfer-unavailable (16, incl. vco a/b pwm) params — a declared-but-unwired seconds
+  // param is NOT in any smoothing route, which keeps the "exactly 169 apply" gate honest.
+  bool isContinuousSmoothingParam_(ParameterId id) const {
+    const ParameterDescriptor* desc = find_parameter(id);
+    return desc != nullptr &&
+           desc->smoothing == Smoothing::seconds &&
+           disposition_of(id) == StateDisposition::applied_to_dsp;
+  }
+
   // Product-boundary unit-domain admission (@Codex BLOCKED #1). Rejects a value malformed for
   // its registry unit BEFORE it reaches a sound-core setter, so the setter's legal clamp /
   // coercion is never mistaken for a valid transfer. Domains are the registry evidence, not
@@ -2068,10 +2077,10 @@ class SynthRuntime {
     }
   }
 
-  // GH#21 per-frame smoother advance. Iterate the ACTIVE seconds-smoothed control-source set,
-  // pull each smoother's next per-sample output, and feed it to the sound-core setter. Runs
-  // once per frame in processFrame before the graph resolves, so the control source publishes
-  // this frame's smoothed value. No allocation; the set was built at construction.
+  // GH#21 per-frame smoother advance. Iterate the ACTIVE continuous-smoothing set (control-source
+  // + panel-knob, 36), pull each smoother's next per-sample output, and feed it to the sound-core
+  // setter. Runs once per frame in processFrame before the graph resolves, so the control source
+  // publishes this frame's smoothed value. No allocation; the set was built at construction.
   void advanceControlSmoothing_() {
     for (std::uint32_t k = 0; k < controlSmoothOrdinalCount_; ++k) {
       const ParameterId id = controlSmoothOrdinals_[k];
@@ -2093,10 +2102,11 @@ class SynthRuntime {
   }
 
   // Apply a smoothed control value (already in the registry unit domain: seconds for EG
-  // times, Hz for LFO rate, norm for joystick + pulser, volts for step CV) to the sound-core
-  // setter. Called from advanceControlSmoothing_; the in-domain smoother output is guaranteed
-  // accepted by the setters (the bool return is ignored — only a non-finite / out-of-range value
-  // would reject, which a smoother bounded between current and an in-domain target never emits).
+  // times, Hz for LFO rate, norm for joystick + pulser + panel-knob, volts for step CV) to the
+  // sound-core setter. Called from advanceControlSmoothing_; the in-domain smoother output is
+  // guaranteed accepted by the setters (the bool return is ignored — only a non-finite /
+  // out-of-range value would reject, which a smoother bounded between current and an in-domain
+  // target never emits).
   void applySmoothedControl_(ParameterId id, double v) {
     switch (id) {
       case ParameterId::envelope_a_a: envGenA_.setAttackSeconds(v);  break;
@@ -2120,15 +2130,34 @@ class SynthRuntime {
       case ParameterId::sequencer_step_cv_5: sequencer_.setStepCv(4, v); break;
       case ParameterId::sequencer_pulser:
         sequencer_.setInternalRateHz(FiveStepSequencer::pulserNormToRateHz(v)); break;
-      default: break;  // never reached: only seconds control-source ids are advanced.
+      // Surface-2: the 16 vco/vcf panel-knob seconds params feed the SAME setters used by the
+      // whole-state applyDspParam dispatch. The smoother output is in the registry unit domain
+      // (oct for tune, norm otherwise), so it is passed straight to each existing setter.
+      case ParameterId::vco_a_tune: setVcoATune(v); break;
+      case ParameterId::vco_a_morph: setVcoAMorph(v); break;
+      case ParameterId::vco_a_pw:    setVcoAPw(v);    break;
+      case ParameterId::vco_a_cv_amt: setVcoACvAmt(v); break;
+      case ParameterId::vco_b_tune: setVcoBTune(v); break;
+      case ParameterId::vco_b_morph: setVcoBMorph(v); break;
+      case ParameterId::vco_b_pw:    setVcoBPw(v);    break;
+      case ParameterId::vco_b_cv_amt: setVcoBCvAmt(v); break;
+      case ParameterId::vcf_l_freq: setVcfFreq(0, v); break;
+      case ParameterId::vcf_l_res:  setVcfRes(0, v);  break;
+      case ParameterId::vcf_l_mod:  setVcfMod(0, v);  break;
+      case ParameterId::vcf_r_freq: setVcfFreq(1, v); break;
+      case ParameterId::vcf_r_res:  setVcfRes(1, v);  break;
+      case ParameterId::vcf_r_mod:  setVcfMod(1, v);  break;
+      case ParameterId::vcf_dist:   setDistortionAmount(v); break;
+      case ParameterId::vcf_gain:   setDistortionGain(v);   break;
+      default: break;  // never reached: only seconds Smoothing::seconds && applied_to_dsp ids advance.
     }
   }
 
-  // Read the DSP core's CURRENT value for a continuous control-source param, in the param's
-  // registry unit domain. Used to prime each smoother to the live sound value so the first
-  // target transition interpolates from where the machine actually is (zero-jump). The
-  // sequencer.pulser core stores Hz, so the norm is recovered by inverting the centrally-named
-  // PULSER software model (norm = log(Hz/min)/log(base); centre 1 Hz -> 0.5).
+  // Read the DSP core's CURRENT value for a continuous smoothing param (control-source or
+  // panel-knob), in the param's registry unit domain. Used to prime each smoother to the live
+  // sound value so the first target transition interpolates from where the machine actually is
+  // (zero-jump). The sequencer.pulser core stores Hz, so the norm is recovered by inverting the
+  // centrally-named PULSER software model (norm = log(Hz/min)/log(base); centre 1 Hz -> 0.5).
   double currentControlParam_(ParameterId id) const {
     switch (id) {
       case ParameterId::envelope_a_a:   return envGenA_.attackSeconds();
@@ -2152,7 +2181,26 @@ class SynthRuntime {
       case ParameterId::sequencer_step_cv_5: return sequencer_.stepCv(4);
       case ParameterId::sequencer_pulser:
         return pulserRateHzToNorm_(sequencer_.internalRateHz());
-      default: return 0.0;  // never reached: only seconds control-source ids are primed.
+      // Surface-2: the 16 vco/vcf panel-knob seconds params prime from the same live getters
+      // used by the whole-state applyDspParam snapshot, so a construction build starts from
+      // where the machine actually is (zero-jump).
+      case ParameterId::vco_a_tune:   return vcoATune();
+      case ParameterId::vco_a_morph:  return vcoAMorph();
+      case ParameterId::vco_a_pw:     return vcoAPw();
+      case ParameterId::vco_a_cv_amt: return vcoACvAmt();
+      case ParameterId::vco_b_tune:   return vcoBTune();
+      case ParameterId::vco_b_morph:  return vcoBMorph();
+      case ParameterId::vco_b_pw:     return vcoBPw();
+      case ParameterId::vco_b_cv_amt: return vcoBCvAmt();
+      case ParameterId::vcf_l_freq:   return vcfFreq(0);
+      case ParameterId::vcf_l_res:    return vcfRes(0);
+      case ParameterId::vcf_l_mod:    return vcfMod(0);
+      case ParameterId::vcf_r_freq:   return vcfFreq(1);
+      case ParameterId::vcf_r_res:    return vcfRes(1);
+      case ParameterId::vcf_r_mod:    return vcfMod(1);
+      case ParameterId::vcf_dist:     return distortionAmount();
+      case ParameterId::vcf_gain:     return distortionGain();
+      default: return 0.0;  // never reached: only Smoothing::seconds && applied_to_dsp ids are primed.
     }
   }
 
@@ -3010,9 +3058,10 @@ class SynthRuntime {
   // GH#21 continuous control smoothing. One ParameterSmoother per ParameterId-space slot
   // (O(1) index by static_cast<uint32_t>(id)) — a fixed preallocated array, NEVER a map
   // (zero-callback-allocation, contract hard-req #1). Only params whose registry
-  // `smoothing == Smoothing::seconds` AND are Surface-1 control-source params advance each
-  // frame; the active ordinals are built at construction from the registry. Persistent across
-  // processBlock (partition-independent); tau/sr are fixed at construction.
+  // `smoothing == Smoothing::seconds` AND `disposition == applied_to_dsp` advance each
+  // frame (the ACTIVE set — 36: 20 control-source + 16 vco/vcf panel-knob); the active
+  // ordinals are built at construction from the registry. Persistent across processBlock
+  // (partition-independent); tau/sr are fixed at construction.
   std::array<ParameterSmoother, registry::kParameterIdSpace> controlSmoothers_;
   std::array<ParameterId, kMaxControlSmoothParams> controlSmoothOrdinals_;
   std::uint32_t controlSmoothOrdinalCount_ = 0;
