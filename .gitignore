@@ -54,3 +54,4 @@ design/reference/*.pdf
 # iPlug2 is a pinned git submodule (third_party/iPlug2, see .gitmodules + the pin gate
 # in tools/check_iplug_pin_clean.py). It is tracked as a submodule, so it is NOT ignored;
 # submodule working-tree dirt is checked by the pin gate, not by this file.
+/build-san/
