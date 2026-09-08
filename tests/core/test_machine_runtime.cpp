@@ -2200,7 +2200,7 @@ int main() {
       core::ControlEvent ev;
       ev.kind = core::ControlEventKind::parameter;
       ev.parameter = core::ParameterId::drone_3_mod;
-      ev.value = 0.8;
+      ev.value = static_cast<core::SignalSample>(0.8);
       ev.source = 1;
       ev.producerSequence = 1;
       core::TimedControlEvent te;
