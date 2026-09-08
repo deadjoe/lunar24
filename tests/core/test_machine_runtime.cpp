@@ -2133,6 +2133,103 @@ int main() {
           "event script differs from the empty script (dispatch is exercised, not vacuous)");
   }
 
+  // ---- GH#15 D1: MOD knob (drone_3/6.mod) reaches the audio DSP ------------------
+  // The mod knobs were in the 16 no-consumer set; D1 wires them into BOTH dispatch
+  // lanes (applyDspParam batch + applyControlEvent_ live) -> the PapaVoice mod_ field,
+  // which tick() scales onto the LF square feeding the audio oscillator (the OLD code
+  // fed a raw ±1 square, i.e. depth 1.0; the NEW default is the registry 0.5).
+  // Acceptance is non-vacuous per @Kimi's default-change contract (35e5328b):
+  //   (c) a FRESH runtime reports the registry default 0.5 on both drones;
+  //   (a) the batch lane routes a non-default value into the real field (getter);
+  //   (a') norm->depth follows the declared linear kModDepthFromNorm;
+  //   (b) the live ControlEvent lane routes into the same field;
+  //   (d) mod is a REAL audio lever — with FM on, depth 1.0 vs 0.5 change
+  //       drone3Channel() (the OLD behavior vs the NEW default).
+  // NEGATIVE (source mutations the fixture above discriminates): dropping `* mod_` in
+  // PapaVoice::tick collapses (d) 1.0 vs 0.5 onto one stream -> red; zeroing the
+  // kModDepthFromNorm scale makes (a)/(a')/b) applied values 0 instead of 0.8/1.0 -> red.
+  {
+    auto render3 = [](core::SynthRuntime& rt) {
+      constexpr std::size_t kN = 1024;
+      std::vector<double> seq(kN);
+      for (std::size_t i = 0; i < kN; ++i) {
+        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
+        seq[i] = rt.drone3Channel();
+      }
+      return seq;
+    };
+    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
+      double d = 0.0;
+      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i)
+        d = std::max(d, std::fabs(a[i] - b[i]));
+      return d;
+    };
+
+    // (c) default. Fresh runtime never touched -> registry default 0.5 on BOTH drones.
+    // This pins the POST-wire default (was implicitly depth 1.0 via the raw ±1 square).
+    {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      check(rt.drone3ModApplied() == 0.5, "d3 MOD default depth is 0.5 (registry default)");
+      check(rt.drone6ModApplied() == 0.5, "d6 MOD default depth is 0.5 (registry default)");
+    }
+    // (a) batch lane, non-vacuous. 0.8 != default 0.5, so a missed dispatch case stays
+    // 0.5 and reds; a zeroed kModDepthFromNorm applies 0.0 and reds.
+    {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      const auto s3 = rt.applyDspParam(core::ParameterId::drone_3_mod, 0.8);
+      check(s3 == core::ParameterApplyStatus::applied, "d3 MOD batch apply is 'applied'");
+      check(rt.drone3ModApplied() == 0.8, "d3 MOD batch lane reaches the audio field (0.8)");
+      const auto s6 = rt.applyDspParam(core::ParameterId::drone_6_mod, 0.8);
+      check(s6 == core::ParameterApplyStatus::applied, "d6 MOD batch apply is 'applied'");
+      check(rt.drone6ModApplied() == 0.8, "d6 MOD batch lane reaches the audio field (0.8)");
+    }
+    // (a') linear mapping: norm 1.0 -> depth kModDepthFromNorm (== 1.0), pinning the
+    // declared norm->depth relationship rather than an undocumented scale.
+    {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_mod, 1.0));
+      check(rt.drone3ModApplied() == 1.0, "d3 MOD norm=1.0 maps to depth 1.0 (kModDepthFromNorm)");
+    }
+    // (b) live lane, non-vacuous. A scheduled parameter ControlEvent must reach the SAME
+    // field via applyControlEvent_. te.sample=0 fires at frame 0, before the frame ticks.
+    {
+      constexpr std::size_t kTot = 128;
+      static const core::RuntimeInputs kSil[kTot] = {};
+      core::RuntimeOutput out[kTot] = {};
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      core::ControlEvent ev;
+      ev.kind = core::ControlEventKind::parameter;
+      ev.parameter = core::ParameterId::drone_3_mod;
+      ev.value = 0.8;
+      ev.source = 1;
+      ev.producerSequence = 1;
+      core::TimedControlEvent te;
+      te.event = ev;
+      te.sample = 0;
+      check(rt.enqueueControlEvent(te), "d3 MOD live ControlEvent is admitted");
+      rt.processBlock(kSil, kTot, out, /*driveGraph=*/true);
+      // SignalSample is float, so the panel value 0.8 lands as 0.8000000119 — compare
+      // with a tolerance (the batch lane, which passes an exact double 0.8, stays exact).
+      check(std::fabs(rt.drone3ModApplied() - 0.8) < 1e-5,
+            "d3 MOD live lane reaches the audio field (0.8)");
+    }
+    // (d) mod is a REAL audio lever. FM is ON (fmDevHz=120 non-inert), so scaling the
+    // mod depth 1.0 vs 0.5 changes the FM swing on drone3Channel(). Fresh same-seed
+    // runtimes cancel the noise stem, so a peak diff > 0 is the audio difference only.
+    {
+      const auto modDepth = [&](double depth) {
+        core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+        rt.setDrone3Fm(true);
+        rt.setDrone3Mod(depth);
+        return render3(rt);
+      };
+      const auto d10 = modDepth(1.0);  // OLD behavior: unconditional full depth.
+      const auto d05 = modDepth(0.5);  // NEW default: registry-consistent half depth.
+      check(peakDiff(d10, d05) > 1e-5,
+            "d3 MOD depth 1.0 vs 0.5 change the drone channel (mod is a real audio lever)");
+    }
+  }
+
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();
 

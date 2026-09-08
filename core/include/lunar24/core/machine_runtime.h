@@ -310,6 +310,10 @@ class SynthRuntime {
   // LF square modulator default frequency (RATE). PROVISIONAL (RATE range not in
   // the manual); the RATE control overrides it.
   static constexpr double kNewDroneLfFreqHz = 6.0;
+  // MOD knob -> audio-oscillator modulation depth. depth = modNorm * kModDepthFromNorm
+  // (linear, kModDepthFromNorm = 1.0). PROVISIONAL: the norm->depth model is software
+  // (no manual/DSP circuit evidence), like the pulser model. GH#15 D1.
+  static constexpr double kModDepthFromNorm = 1.0;
   // Voice-6 (drone 6) seed mix, so the two Papa Srapa voices are independent.
   static constexpr std::uint64_t kNewSndSeed6Xor = 0x9E3779B97F4A7C15ULL;
   // Per-source sub-seed mix so the audio/LF/FmAm/noise stems within one voice are
@@ -774,12 +778,17 @@ class SynthRuntime {
   void setDrone3Am(bool on) { pv3_.setAm(on); }
   void setDrone3Noise(double amp) { pv3_.setNoise(amp); }
   void setDrone3ShClock(double clk) { pv3_.setShClock(clk); }
+  // GH#15 D1 (mod knob): norm [0,1] -> audio-oscillator modulation depth = modNorm
+  // (linear, marked PROVISIONAL below as kModDepthFromNorm). Registry-AGREEING unit:
+  // both the registry unit and the setter take norm 0..1, so no invented scale.
+  void setDrone3Mod(double depth) { pv3_.setMod(depth); }
   void setDrone6Pitch(double pct) { pv6_.setPitch(pct); }
   void setDrone6Rate(double hz) { pv6_.setRate(hz); }
   void setDrone6Fm(bool on) { pv6_.setFm(on); }
   void setDrone6Am(bool on) { pv6_.setAm(on); }
   void setDrone6Noise(double amp) { pv6_.setNoise(amp); }
   void setDrone6ShClock(double clk) { pv6_.setShClock(clk); }
+  void setDrone6Mod(double depth) { pv6_.setMod(depth); }
 
   // ---- CLASSIC group GATE/HOLD/ATT/RLS + CV MOD + environment (batch 4A, GH#5) ----
   // Panel/control entries for the 4 CLASSIC drone voices (voiceGroup 0..3 == drone
@@ -921,11 +930,15 @@ class SynthRuntime {
   bool drone3Fm() const { return pv3_.fmOn(); }
   bool drone3Am() const { return pv3_.amOn(); }
   double drone3NoiseAmp() const { return pv3_.noiseAmp(); }
+  // GH#15 D1: MOD = applied audio-oscillator modulation depth (modNorm, linear). Reads the
+  // REAL PapaVoice field the render path consumes (modApplied()), not a shadow bank.
+  double drone3ModApplied() const { return pv3_.modApplied(); }
   double drone6RateHz() const { return pv6_.rateHz(); }
   double drone6PitchHz() const { return pv6_.pitchHz(); }
   bool drone6Fm() const { return pv6_.fmOn(); }
   bool drone6Am() const { return pv6_.amOn(); }
   double drone6NoiseAmp() const { return pv6_.noiseAmp(); }
+  double drone6ModApplied() const { return pv6_.modApplied(); }
   // Mixer channel VOL/PAN wrappers + readback (0-based channel slot, 1:1 with the
   // registry's mixer_<N> index offset by one). Reuses VoiceMixer's clamp01.
   void setMixerChannelVol(int ch, double v) { mixer_.setChannelVol(ch, v); }
@@ -1354,6 +1367,9 @@ class SynthRuntime {
       case ParameterId::drone_3_am:
         setDrone3Am(v != 0.0);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_mod:
+        setDrone3Mod(v * kModDepthFromNorm);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_rate:
         setDrone6Rate(newDroneRateHzFromNorm(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
@@ -1368,7 +1384,11 @@ class SynthRuntime {
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_am:
         setDrone6Am(v != 0.0);
-        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;      default:
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_mod:
+        setDrone6Mod(v * kModDepthFromNorm);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      default:
         lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
         return lastApplyStatus_;
     }
@@ -1753,6 +1773,16 @@ class SynthRuntime {
     void setAm(bool on) { amOn_ = on; }
     void setNoise(double amp) { noise.setAmplitude(amp); }
     void setShClock(double clk) { shClock_ = clk; }
+    // MOD knob (GH#15 D1). Depth = modNorm (linear, kModDepthFromNorm): scales the
+    // LF-square modulation the audio oscillator consumes. BEFORE the knob was wired
+    // tick() fed audio a raw ±1 square (depth 1.0); after wiring it scales by the
+    // knob's value, so the DEFAULT drone_3/6 mod depth is 1.0 -> 0.5 (registry default
+    // drone_3/6.mod = 0.5). PROVISIONAL: the norm->depth mapping is a software model
+    // (no manual/DSP circuit evidence), so it is marked provisional like the pulser.
+    void setMod(double depth) { mod_ = depth; }
+    // The modulation depth the product path actually drives the audio oscillator with
+    // (mod_ is read every tick), a real DSP lever, not a shadow bank.
+    double modApplied() const { return mod_; }
     // The S&H level the product path computed last frame (CV out of the voice).
     double lastShCv() const { return shCv_; }
     // Panel-control READBACK (task #78): the NEW-drone knob positions the render path
@@ -1767,7 +1797,10 @@ class SynthRuntime {
     void tick(double* out) {
       double lv = 0.0;
       lf.tick(&lv);
-      audio.setMod(lf.square());
+      // MOD knob: scale the ±1 LF square by the mod depth before feeding the audio
+      // oscillator. depth=modNorm linear (kModDepthFromNorm, PROVISIONAL). Default
+      // drone_3/6 mod depth changed 1.0 (raw square) -> 0.5 (registry default).
+      audio.setMod(lf.square() * mod_);
       audio.setFmDevHz(fmOn_ ? fm.fDevHz() : 0.0);
       audio.setAmDepth(amOn_ ? fm.depth() : 0.0);
       double a = 0.0;
@@ -1786,6 +1819,9 @@ class SynthRuntime {
     bool amOn_ = false;
     double shClock_ = 0.0;
     double shCv_ = 0.0;
+    // MOD knob depth (GH#15 D1). Default 0.5 = the registered drone_3/6.mod default,
+    // so the post-wire default sound is half-depth modulation (was the raw ±1 square).
+    double mod_ = 0.5;
   };
 
   // #46 ControlEvent dispatch. Consumes a parameter ControlEvent that EventTimebase
@@ -1836,6 +1872,8 @@ class SynthRuntime {
       case ParameterId::drone_6_noise: setDrone6Noise(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_fm:    setDrone6Fm(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_am:    setDrone6Am(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_3_mod:   setDrone3Mod(v * kModDepthFromNorm); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_mod:   setDrone6Mod(v * kModDepthFromNorm); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       // GH#11 FIXED-CANDIDATE (@Codex D3): the 34 evidence-mappable control-source params dispatch
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the

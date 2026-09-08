@@ -14,12 +14,12 @@
 //
 // Classification (Codex revision-2, msg 40bef2eb — supersedes 135/35/125/50/0):
 // exactly five classes with counts
-//   169 applied_to_DSP / 35 applied_to_keyboard / 125 preserved_deferred_P6_P8 /
-//   16 transfer_unavailable / 0 invalid_unlanded == 345 landed.
-// The 16 transfer_unavailable are precisely the parameters with NO real runtime
-// consumer: vco_a.pwm(8), vco_b.pwm(30), drone3 {278,279,282,283,284,287,288},
-// drone6 {290,291,294,295,296,299,300}. The other 169 must reach a real DSP apply
-// in later slices; the software norm->DSP mappings are marked PROVISIONAL there,
+//   171 applied_to_DSP / 35 applied_to_keyboard / 125 preserved_deferred_P6_P8 /
+//   14 transfer_unavailable / 0 invalid_unlanded == 345 landed.
+// The remaining 14 transfer_unavailable are precisely the parameters with NO real
+// runtime consumer: vco_a.pwm(8), vco_b.pwm(30), drone3 {279,282,283,284,287,288},
+// drone6 {291,294,295,296,299,300}. The other 171 must reach a real DSP apply in
+// later slices; the software norm->DSP mappings are marked PROVISIONAL there,
 // not as unavailable.
 
 #pragma once
@@ -263,7 +263,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::drone_5_rls, StateDisposition::applied_to_dsp },
     { ParameterId::drone_5_gate_hold, StateDisposition::applied_to_dsp },
     { ParameterId::drone_3_rate, StateDisposition::applied_to_dsp },
-    { ParameterId::drone_3_mod, StateDisposition::transfer_unavailable },
+    { ParameterId::drone_3_mod, StateDisposition::applied_to_dsp },
     { ParameterId::drone_3_divider, StateDisposition::transfer_unavailable },
     { ParameterId::drone_3_pitch, StateDisposition::applied_to_dsp },
     { ParameterId::drone_3_noise, StateDisposition::applied_to_dsp },
@@ -275,7 +275,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::drone_3_rate_switch, StateDisposition::transfer_unavailable },
     { ParameterId::drone_3_hold, StateDisposition::transfer_unavailable },
     { ParameterId::drone_6_rate, StateDisposition::applied_to_dsp },
-    { ParameterId::drone_6_mod, StateDisposition::transfer_unavailable },
+    { ParameterId::drone_6_mod, StateDisposition::applied_to_dsp },
     { ParameterId::drone_6_divider, StateDisposition::transfer_unavailable },
     { ParameterId::drone_6_pitch, StateDisposition::applied_to_dsp },
     { ParameterId::drone_6_noise, StateDisposition::applied_to_dsp },
@@ -406,10 +406,10 @@ inline constexpr std::uint32_t count_disposition(StateDisposition d) noexcept {
     if (kDeviceStateDisposition[i].disposition == d) ++n;
   return n;
 }
-static_assert(count_disposition(StateDisposition::applied_to_dsp) == 169, "applied_to_DSP count");
+static_assert(count_disposition(StateDisposition::applied_to_dsp) == 171, "applied_to_DSP count");
 static_assert(count_disposition(StateDisposition::applied_to_keyboard) == 35, "applied_to_keyboard count");
 static_assert(count_disposition(StateDisposition::preserved_deferred_p6_p8) == 125, "preserved_deferred_P6_P8 count");
-static_assert(count_disposition(StateDisposition::transfer_unavailable) == 16, "transfer_unavailable count");
+static_assert(count_disposition(StateDisposition::transfer_unavailable) == 14, "transfer_unavailable count");
 static_assert(count_disposition(StateDisposition::invalid_unlanded) == 0, "invalid_unlanded count");
 
 // Disposition of a ParameterId. A landed id -> its class; a hole/slack/unknown id

@@ -26,20 +26,19 @@
 
 namespace core = lunar24::core;
 
-// The 16 transfer-unavailable parameters (no real runtime consumer), by stable
+// The 14 transfer-unavailable parameters (no real runtime consumer), by stable
 // ParameterId. This is the pinned set from the revision-2 classification: vco_a.pwm(8),
-// vco_b.pwm(30), drone3 {278,279,282,283,284,287,288}, drone6 {290,291,294,295,296,299,300}.
+// vco_b.pwm(30), drone3 {279,282,283,284,287,288}, drone6 {291,294,295,296,299,300}.
+// D1 (GH#15) moved drone_3_mod(278)/drone_6_mod(290) to applied_to_dsp, hence 16->14.
 static constexpr core::ParameterId kUnavailablePids[] = {
     core::ParameterId::vco_a_pwm,
     core::ParameterId::vco_b_pwm,
-    core::ParameterId::drone_3_mod,
     core::ParameterId::drone_3_divider,
     core::ParameterId::drone_3_att,
     core::ParameterId::drone_3_rls,
     core::ParameterId::drone_3_hi_low,
     core::ParameterId::drone_3_rate_switch,
     core::ParameterId::drone_3_hold,
-    core::ParameterId::drone_6_mod,
     core::ParameterId::drone_6_divider,
     core::ParameterId::drone_6_att,
     core::ParameterId::drone_6_rls,
@@ -74,10 +73,10 @@ static core::StateDisposition oracle_classify(core::ParameterId id) {
 
 static void class_counts_and_sum() {
   CHECK_EQ(core::kDeviceStateDispositionCount, 345u);
-  CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_dsp), 169u);
+  CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_dsp), 171u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_keyboard), 35u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::preserved_deferred_p6_p8), 125u);
-  CHECK_EQ(core::count_disposition(core::StateDisposition::transfer_unavailable), 16u);
+  CHECK_EQ(core::count_disposition(core::StateDisposition::transfer_unavailable), 14u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::invalid_unlanded), 0u);
   const std::uint32_t sum =
       core::count_disposition(core::StateDisposition::applied_to_dsp) +
@@ -110,10 +109,10 @@ static void per_id_matches_independent_oracle() {
     for (std::uint32_t b = a + 1; b < core::kDeviceStateDispositionCount; ++b)
       CHECK(core::kDeviceStateDisposition[b].id != ea.id);
   }
-  CHECK_EQ(dsp, 169u);
+  CHECK_EQ(dsp, 171u);
   CHECK_EQ(kbd, 35u);
   CHECK_EQ(deferred, 125u);
-  CHECK_EQ(unavailable, 16u);
+  CHECK_EQ(unavailable, 14u);
   CHECK_EQ(unlanded, 0u);
 }
 
@@ -173,7 +172,7 @@ static void hole_and_slack_resolve_invalid() {
   CHECK(core::disposition_of(static_cast<core::ParameterId>(412)) == core::StateDisposition::invalid_unlanded);
   CHECK(core::is_landed_parameter(static_cast<core::ParameterId>(4)) == false);
   CHECK(core::is_landed_parameter(static_cast<core::ParameterId>(412)) == false);
-  // The 16 unavailable are exactly the pinned set, none of them a hole/slack id.
+  // The 14 unavailable are exactly the pinned set, none of them a hole/slack id.
   for (std::uint32_t i = 0; i < sizeof(kUnavailablePids) / sizeof(kUnavailablePids[0]); ++i)
     CHECK(core::is_landed_parameter(kUnavailablePids[i]));
 }
@@ -184,6 +183,9 @@ static void spot_check_known_dispositions() {
   CHECK(core::disposition_of(core::ParameterId::program_orche_3_z) == core::StateDisposition::preserved_deferred_p6_p8);
   CHECK(core::disposition_of(core::ParameterId::vco_a_pwm) == core::StateDisposition::transfer_unavailable);
   CHECK(core::disposition_of(core::ParameterId::vco_b_pwm) == core::StateDisposition::transfer_unavailable);
+  // GH#15 D1: drone_3/6_mod moved from transfer_unavailable to applied_to_dsp.
+  CHECK(core::disposition_of(core::ParameterId::drone_3_mod) == core::StateDisposition::applied_to_dsp);
+  CHECK(core::disposition_of(core::ParameterId::drone_6_mod) == core::StateDisposition::applied_to_dsp);
 }
 
 static void landed_slot_arithmetic() {
