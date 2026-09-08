@@ -2230,6 +2230,144 @@ int main() {
     }
   }
 
+  // ---- GH#15 D2: RANGE / RATE-SWITCH selectors (drone_3/6.hi_low + rate_switch) ----
+  // The hi_low (RANGE) and rate_switch (RATE SWITCH) selectors were the last four D2
+  // no-consumer params. D2 wires them into BOTH dispatch lanes (applyDspParam batch +
+  // applyControlEvent_ live) onto the audio/LF oscillator as a COMPOSE onto the already-
+  // wired PITCH+RANGE / RATE, not a replace:
+  //   * hi_low (labels [hi,low], idx0=hi): setRangeHiLow shades the audio pitch band by
+  //     rangeBaseSt_ (-24 st at low; 0 at hi) ON TOP of the wired PITCH knob, so
+  //     pitchHz(low) = pitchHz(hi) * 2^(-24/12) = pitchHz(hi) * 0.25.
+  //   * rate_switch (labels [off,on], idx0=off): setRateSwitch multiplies the LF rate by
+  //     rateMult_ (2 at on; 1 at off) ON TOP of the wired RATE knob, so rateHz(on) =
+  //     rateHz(off) * 2.
+  // Both default to position 0 (hi / off), which yields 0 offset / ×1 — the selectors are
+  // BIT-IDENTICAL to the pre-D2 oscillator at default, so (unlike D1's mod, whose default
+  // depth moved 1.0→0.5) there is NO default-behaviour change and no before/after evidence.
+  // Acceptance (per @Kimi D2 clause): each position proves it changes the executed module:
+  //   (a) batch lane position 0 vs 1 on the REAL getter — hi_low pitchHz ratio 0.25,
+  //       rate_switch rateHz ratio 2.0;
+  //   (b) live lane ControlEvent reaches the same getter;
+  //   (c) render lever (audio) — hi_low: FM OFF, channel 0 vs 1 differ; rate_switch:
+  //       FM ON (the LF only reaches the audio through the mod swing), channel 0 vs 1 differ;
+  //   (d) out-of-range lock — 2.0 / 0.5 / -1.0 are invalid_value and leave state unchanged.
+  // NEGATIVE (source mutations the fixture discriminates): hard-coding rangeBaseSt_=0 /
+  // rateMult_=1 (ignoring the selector) collapses the (a)/(b) two-position ratio onto one
+  // stream -> red; dropping the selector->osc feeding collapses (c) -> red.
+  {
+    auto render3n = [](core::SynthRuntime& rt, std::size_t kN) {
+      std::vector<double> seq(kN);
+      for (std::size_t i = 0; i < kN; ++i) {
+        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
+        seq[i] = rt.drone3Channel();
+      }
+      return seq;
+    };
+    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
+      double d = 0.0;
+      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i)
+        d = std::max(d, std::fabs(a[i] - b[i]));
+      return d;
+    };
+    constexpr double kRangeRatio = 0.25;   // 2^(-24/12) — the PROVISIONAL low-band shift.
+    constexpr double kRateRatio = 2.0;     // kNewDroneRateSwitchMult — the ON multiplier.
+
+    // (a) batch lane, two positions on the REAL getter. Position 0 is the identity default,
+    // positioning 1 must differ (and by the exact declared ratio). Both drones.
+    {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      const double p0 = rt.drone3PitchHz();   // hi_low=0 (hi, default): base band.
+      check(p0 > 0.0, "d3 hi_low base pitch is audible (>0, real tone)");
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_hi_low, 1.0));
+      const double p1 = rt.drone3PitchHz();
+      check(std::fabs(p1 / p0 - kRangeRatio) < 1e-3,
+            "d3 hi_low low position drops the pitch band by 2 oct (pitchHz ratio 0.25)");
+      const double r0 = rt.drone3RateHz();    // rate_switch=0 (off, default): ×1.
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rate_switch, 1.0));
+      const double r1 = rt.drone3RateHz();
+      check(std::fabs(r1 / r0 - kRateRatio) < 1e-6,
+            "d3 rate_switch on position doubles the LF rate (rateHz ratio 2.0)");
+
+      core::SynthRuntime rt6 = makeRuntime(); rt6.rebuild();
+      const double q0 = rt6.drone6PitchHz();
+      static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_hi_low, 1.0));
+      check(std::fabs(rt6.drone6PitchHz() / q0 - kRangeRatio) < 1e-3,
+            "d6 hi_low low position drops the pitch band by 2 oct (pitchHz ratio 0.25)");
+      const double s0 = rt6.drone6RateHz();
+      static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_rate_switch, 1.0));
+      check(std::fabs(rt6.drone6RateHz() / s0 - kRateRatio) < 1e-6,
+            "d6 rate_switch on position doubles the LF rate (rateHz ratio 2.0)");
+    }
+    // (b) live lane, non-vacuous. A scheduled parameter ControlEvent must reach the SAME
+    // getter via applyControlEvent_. te.sample=0 fires at frame 0, before the frame ticks.
+    {
+      constexpr std::size_t kTot = 128;
+      static const core::RuntimeInputs kSil[kTot] = {};
+      core::RuntimeOutput out[kTot] = {};
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      const double p0 = rt.drone3PitchHz();
+      core::ControlEvent ev;
+      ev.kind = core::ControlEventKind::parameter;
+      ev.parameter = core::ParameterId::drone_3_hi_low;
+      ev.value = static_cast<core::SignalSample>(1.0);
+      ev.source = 1;
+      ev.producerSequence = 1;
+      core::TimedControlEvent te;
+      te.event = ev;
+      te.sample = 0;
+      check(rt.enqueueControlEvent(te), "d3 hi_low live ControlEvent is admitted");
+      rt.processBlock(kSil, kTot, out, /*driveGraph=*/true);
+      check(std::fabs(rt.drone3PitchHz() / p0 - kRangeRatio) < 1e-3,
+            "d3 hi_low live lane reaches the pitch field (2-oct drop)");
+    }
+    // (c) hi_low is a REAL audio lever. FM OFF (default): the audio tone itself shifts band,
+    // so position 0 vs 1 differ on drone3Channel() immediately.
+    {
+      const auto leverHi = [&](int sel) {
+        core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+        rt.setDrone3HiLow(sel);   // 0 = hi (default), 1 = low.
+        return render3n(rt, 1024);
+      };
+      check(peakDiff(leverHi(0), leverHi(1)) > 1e-5,
+            "d3 hi_low changes the drone channel (RANGE is a real audio lever)");
+    }
+    // (c') rate_switch is a REAL audio lever. FM ON (the LF only reaches the audio via the
+    // mod swing): rate_switch ON doubles the LF rate, so the mod square flips earlier than
+    // the OFF (×1) run. A long enough window captures that flipped-mod difference.
+    {
+      const auto leverRate = [&](int sel) {
+        core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+        rt.setDrone3Fm(true);
+        rt.setDrone3RateSwitch(sel);   // 0 = off (default, ×1), 1 = on (×2).
+        return render3n(rt, 8192);     // > 83 ms so the ON run's first flip is in-window.
+      };
+      check(peakDiff(leverRate(0), leverRate(1)) > 1e-5,
+            "d3 rate_switch changes the drone channel (RATE-SWITCH is a real audio lever)");
+    }
+    // (d) out-of-range lock. The batch lane validates selectors via dspParamValid_ (exact
+    // integer in [min,max]); 2.0 / 0.5 / -1.0 are all rejected as invalid_value and the
+    // readback stays at the last VALID value (fail-closed, never a silent clamp).
+    {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_hi_low, 1.0));
+      const double held = rt.drone3PitchHz();
+      check(rt.applyDspParam(core::ParameterId::drone_3_hi_low, 2.0) ==
+                core::ParameterApplyStatus::invalid_value,
+            "d3 hi_low 2.0 is rejected as invalid_value");
+      check(rt.drone3PitchHz() == held, "d3 hi_low out-of-range leaves the state unchanged");
+      check(rt.applyDspParam(core::ParameterId::drone_3_hi_low, 0.5) ==
+                core::ParameterApplyStatus::invalid_value,
+            "d3 hi_low 0.5 is rejected as invalid_value (non-integer)");
+      check(rt.drone3PitchHz() == held, "d3 hi_low 0.5 leaves the state unchanged");
+      const double heldRate = rt.drone3RateHz();
+      check(rt.applyDspParam(core::ParameterId::drone_3_rate_switch, -1.0) ==
+                core::ParameterApplyStatus::invalid_value,
+            "d3 rate_switch -1.0 is rejected as invalid_value");
+      check(rt.drone3RateHz() == heldRate,
+            "d3 rate_switch out-of-range leaves the state unchanged");
+    }
+  }
+
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();
 

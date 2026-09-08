@@ -323,6 +323,18 @@ class SynthRuntime {
   // pitch). PROVISIONAL (pitch range = C0..E7 per manual, not numerically bound).
   static constexpr double kNewPitchMinSt = 0.0;
   static constexpr double kNewPitchMaxSt = 24.0;
+  // RANGE selector (hi/low) -> semitone band offset. hi (0, default) = 0 offset
+  // (bit-identical to pre-D2); low (1) shifts the whole PITCH band this many semitones
+  // DOWN (a 2-octave product-range shift). PROVISIONAL: a software model (the manual
+  // gives no numeric RANGE shift; no circuit/DSP evidence), flagged like the pulser.
+  // Solo-implementation note: the acceptance proves the LOW position against this
+  // single constant, so calibrating it later needs only one edit.
+  static constexpr double kNewDroneRangeLowShiftSt = -24.0;
+  // RATE SWITCH selector (off/on) -> LF-square modulator frequency multiplier. off
+  // (0, default) = x1 (LF keeps running at the RATE-knob-derived frequency — it NEVER
+  // stops, preserving the FM/AM default behavior); on (1) = x2 speed. PROVISIONAL: a
+  // software model (no manual number for the "switch" ratio; no evidence). GH#15 D2.
+  static constexpr double kNewDroneRateSwitchMult = 2.0;
   // Source indices for newVoiceSeed/newSourceSeed derivation.
   static constexpr int kNewSrcAudio = 0;
   static constexpr int kNewSrcLf = 1;
@@ -789,6 +801,14 @@ class SynthRuntime {
   void setDrone6Noise(double amp) { pv6_.setNoise(amp); }
   void setDrone6ShClock(double clk) { pv6_.setShClock(clk); }
   void setDrone6Mod(double depth) { pv6_.setMod(depth); }
+  // GH#15 D2 (RANGE / RATE SWITCH selectors, both Papa Srapa voices). Selector index
+  // 0/1 (the batch lane validates it via dspParamValid_ before the switch; the live
+  // lane forwards the ControlEvent value). Both default positions are bit-identical to
+  // pre-D2, so a default state reproduces the shipped sound exactly.
+  void setDrone3HiLow(int sel) { pv3_.setRangeHiLow(sel); }
+  void setDrone3RateSwitch(int sel) { pv3_.setRateSwitch(sel); }
+  void setDrone6HiLow(int sel) { pv6_.setRangeHiLow(sel); }
+  void setDrone6RateSwitch(int sel) { pv6_.setRateSwitch(sel); }
 
   // ---- CLASSIC group GATE/HOLD/ATT/RLS + CV MOD + environment (batch 4A, GH#5) ----
   // Panel/control entries for the 4 CLASSIC drone voices (voiceGroup 0..3 == drone
@@ -1370,6 +1390,12 @@ class SynthRuntime {
       case ParameterId::drone_3_mod:
         setDrone3Mod(v * kModDepthFromNorm);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_hi_low:
+        setDrone3HiLow(static_cast<int>(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_rate_switch:
+        setDrone3RateSwitch(static_cast<int>(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_rate:
         setDrone6Rate(newDroneRateHzFromNorm(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
@@ -1387,6 +1413,12 @@ class SynthRuntime {
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_mod:
         setDrone6Mod(v * kModDepthFromNorm);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_hi_low:
+        setDrone6HiLow(static_cast<int>(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_rate_switch:
+        setDrone6RateSwitch(static_cast<int>(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       default:
         lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
@@ -1762,13 +1794,40 @@ class SynthRuntime {
           fm(newSourceSeed(voiceSeed, kNewSrcFm), sr, kNewDroneFmDev, kNewDroneDepth),
           noise(newSourceSeed(voiceSeed, kNewSrcNoise), kNewDroneNoiseAmp),
           sh(sr, kNewDroneShSeconds) {
-      lf.setFreqHz(kNewDroneLfFreqHz);
+      // GH#15 D2: the two NEW selectors default to their bit-identical positions
+      // (hi_low=hi -> rangeBaseSt_=0; rate_switch=off -> rateMult_=1), so this
+      // constructor value reproduces the pre-D2 sound exactly.
+      baseRateHz_ = kNewDroneLfFreqHz;
+      applyRate();
     }
     void setPitch(double pct) {
-      audio.setPitchSemitones(pct <= 0.0 ? SchmittOsc::kSilenceSt
-                                         : kNewPitchMinSt + pct * (kNewPitchMaxSt - kNewPitchMinSt));
+      pitchSemis_ = pct <= 0.0 ? SchmittOsc::kSilenceSt
+                                : kNewPitchMinSt + pct * (kNewPitchMaxSt - kNewPitchMinSt);
+      applyPitch();
     }
-    void setRate(double hz) { lf.setFreqHz(hz); }
+    void setRate(double hz) { baseRateHz_ = hz; applyRate(); }
+    // GH#15 D2 (RANGE selector). Shifts the audible PITCH band by the RANGE offset:
+    // hi (0, default) -> 0 (bit-identical to pre-D2); low -> kNewDroneRangeLowShiftSt
+    // (2 oct down). PROVISIONAL offset (see constant).
+    void setRangeHiLow(int sel) {
+      rangeBaseSt_ = (sel == 1) ? kNewDroneRangeLowShiftSt : 0.0;
+      applyPitch();
+    }
+    // GH#15 D2 (RATE SWITCH selector). x1 (off, default) / x2 (on) on the RATE-derived
+    // LF frequency. off NEVER stops the LF — the FM/AM modulation the default sound
+    // relies on keeps running at the RATE-knob-derived frequency. PROVISIONAL (see const).
+    void setRateSwitch(int sel) {
+      rateMult_ = (sel == 1) ? kNewDroneRateSwitchMult : 1.0;
+      applyRate();
+    }
+    void applyPitch() {
+      // PITCH-at-floor silence is absolute; the RANGE offset only shades an active band
+      // (never turns a silent PITCH into an audible tone).
+      audio.setPitchSemitones(pitchSemis_ == SchmittOsc::kSilenceSt
+                                  ? SchmittOsc::kSilenceSt
+                                  : rangeBaseSt_ + pitchSemis_);
+    }
+    void applyRate() { lf.setFreqHz(baseRateHz_ * rateMult_); }
     void setFm(bool on) { fmOn_ = on; }
     void setAm(bool on) { amOn_ = on; }
     void setNoise(double amp) { noise.setAmplitude(amp); }
@@ -1822,6 +1881,19 @@ class SynthRuntime {
     // MOD knob depth (GH#15 D1). Default 0.5 = the registered drone_3/6.mod default,
     // so the post-wire default sound is half-depth modulation (was the raw ±1 square).
     double mod_ = 0.5;
+    // RANGE keyboard/panel-band offset in semitones (GH#15 D2). 0 = hi (default,
+    // bit-identical to pre-D2); otherwise the LOW position's kNewDroneRangeLowShiftSt.
+    double rangeBaseSt_ = 0.0;
+    // PITCH knob-derived semitones (pre-RANGE-offset), held so changing the RANGE
+    // selector recomputes the same band with a different offset.
+    double pitchSemis_ = 0.0;
+    // RATE knob-derived LF frequency (Hz, pre-multiplier), held so changing the RATE
+    // SWITCH recomputes the same rate with a different multiplier. Constructor-initialised
+    // to kNewDroneLfFreqHz so a fresh voice reproduces the pre-D2 default rate.
+    double baseRateHz_ = 0.0;
+    // RATE SWITCH multiplier (1 = off/default; otherwise kNewDroneRateSwitchMult). The
+    // LF is NEVER gated off by this selector — off is x1, not silence.
+    double rateMult_ = 1.0;
   };
 
   // #46 ControlEvent dispatch. Consumes a parameter ControlEvent that EventTimebase
@@ -1874,6 +1946,12 @@ class SynthRuntime {
       case ParameterId::drone_6_am:    setDrone6Am(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_3_mod:   setDrone3Mod(v * kModDepthFromNorm); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_mod:   setDrone6Mod(v * kModDepthFromNorm); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      // GH#15 D2 (selectors, live lane). The ControlEvent carries the selector index 0/1;
+      // forward it to the voice (the batch lane validated it via dspParamValid_).
+      case ParameterId::drone_3_hi_low:       setDrone3HiLow(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_3_rate_switch:  setDrone3RateSwitch(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_hi_low:       setDrone6HiLow(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_rate_switch:  setDrone6RateSwitch(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       // GH#11 FIXED-CANDIDATE (@Codex D3): the 34 evidence-mappable control-source params dispatch
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the
