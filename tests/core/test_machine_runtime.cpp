@@ -1685,37 +1685,13 @@ IJU_TEST_NOINLINE void d3_div_actual_timing_acceptance() {
           "d3 timing asymmetric: two lanes do not cross-talk (drone6 count != drone3 count)");
   }
 
-  // (D) SAME STATE, block-split AND restore-consistent: the divider is set through the live
-  //     ControlEvent lane; rendering the window as ONE processBlock vs kBlock-sized chunks must give
-  //     the same divider state and the same final S&H level (no block-boundary dependence), and a
-  //     fresh program with the same state restored must reproduce the same result (recovery).
-  {
-    auto renderDiv = [&](core::SynthRuntime& rt, double divNorm, bool chunked) {
-      rt.rebuild();
-      d3timing::send(rt, core::ParameterId::drone_3_divider, divNorm, 1);
-      std::vector<core::RuntimeInputs> in(kWin, core::RuntimeInputs{0.0, 0.0});
-      std::vector<core::RuntimeOutput> out(kWin);
-      if (chunked) {
-        for (std::size_t b = 0; b < kWin; b += kBlock)
-          rt.processBlock(in.data() + b, std::min(kBlock, kWin - b), out.data() + b, true);
-      } else {
-        rt.processBlock(in.data(), kWin, out.data(), true);
-      }
-      return std::make_pair(rt.drone3Divider(), rt.sampleHold3Cv());
-    };
-    core::SynthRuntime rtW = makeRuntime();
-    const auto whole = renderDiv(rtW, 1.0, /*chunked=*/false);
-    core::SynthRuntime rtS = makeRuntime();
-    const auto split = renderDiv(rtS, 1.0, /*chunked=*/true);
-    check(std::fabs(whole.first - split.first) < 1e-9 && whole.first == 16.0,
-          "d3 timing block-split: same divider state, one-block vs chunked (16.0 both)");
-    check(std::fabs(whole.second - split.second) < 1e-9,
-          "d3 timing block-split: same final S&H level, one-block vs chunked");
-    core::SynthRuntime rtR = makeRuntime();
-    const auto restore = renderDiv(rtR, 1.0, /*chunked=*/false);
-    check(std::fabs(restore.second - whole.second) < 1e-9 && restore.first == 16.0,
-          "d3 timing restore: fresh same-state program reproduces the same level (recovery)");
-  }
+  // (D) REAL codec->owner->processBlock restore + per-sample block split is NOT here: a "restore"
+  //     created by rebuilding a SynthRuntime fixture and re-sending ControlEvents is not the product
+  //     entry (no encode/decode / applyDeviceState), and a block-split compared only on the final
+  //     getter cannot see a mid-capture mis-sample. The real restore (legal DeviceState ->
+  //     applyDeviceState -> renderSampled), restore-twice determinism, per-sample block-split and
+  //     audio block-partition are asserted in the @Codex dd57c783 gap-fill:
+  //     tests/host/test_d3_divider_restore.cpp.
 }
 }  // namespace
 
