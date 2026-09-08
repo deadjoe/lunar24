@@ -425,6 +425,7 @@ class KeyboardBehaviour {
   // Decode the side params into the running configuration (reads via the choke
   // point are done externally in read_behaviour_params, then applied here).
   void configure(const KeyboardBehaviourParams& p, double sample_rate) {
+    params_ = p;
     fs_ = sample_rate;
     pressure_.setSampleRate(sample_rate);
     vibrato_.setSampleRate(sample_rate);
@@ -472,6 +473,10 @@ class KeyboardBehaviour {
   bool gate() const { return engagedCount_() > 0; }
   double rootSemitone() const { return static_cast<double>(rootSemitone_); }
   std::uint16_t scaleMask() const { return scaleMask_; }
+  // GH#12 task#101: the configured parameter set, READ BACK verbatim. This is the set the
+  // LAST configure() actually installed (the same values the per-note path decodes from),
+  // never a separately-written mirror — so an acceptance can pin what this side runs.
+  const KeyboardBehaviourParams& params() const { return params_; }
 
   // Random-mode seed: forwarded so a test makes the Random output deterministic.
   void setRandomSeed(std::uint32_t s) { pressure_.setRandomSeed(s); }
@@ -618,6 +623,7 @@ class KeyboardBehaviour {
   }
 
   double fs_ = 0.0;
+  KeyboardBehaviourParams params_{};  // GH#12 task#101: verbatim readback of the last configure().
   std::uint16_t scaleMask_ = kMicrotonalScaleMask;
   std::uint8_t rootSemitone_ = 0;
   HeldNote notes_[kMaxHeld];

@@ -397,8 +397,13 @@ class MachineRuntimeDefinition {
     // GH#12 keyboard product owner: the keyboard publishes the registered note-CV and gate
     // output jacks. VCO A/B and EG A/B consume them through the four now-active keyboard
     // routes (route_keyboard_v_oct_to_vco / _b, route_keyboard_gate_to_eg / _b).
+    // task#101: all FOUR registered keyboard outputs are bound (v_oct / gate_left_main /
+    // gate_right / pressure_out). The normalized routes keep their existing endpoints — this
+    // adds no route and does not touch VCO-B's default source.
     runtime_.setKeyboardBindings(lunar24::registry::JackId::keyboard_v_oct_out,
-                                 lunar24::registry::JackId::keyboard_gate_left_main_out);
+                                 lunar24::registry::JackId::keyboard_gate_left_main_out,
+                                 lunar24::registry::JackId::keyboard_gate_right_out,
+                                 lunar24::registry::JackId::keyboard_pressure_out);
     // Always-execute the seven sources so an unwired LFO/EG-SELF-GEN/PULSER/keyboard still
     // runs once per sample (compile_graph force-includes them -> isolated acyclic singleton
     // regions). The keyboard is always-executed so its portamento glide advances every
@@ -485,6 +490,15 @@ class MachineRuntimeDefinition {
       dspFirstFailId_ = ok ? static_cast<ParameterId>(kParameterCount) : firstFailId;
       dspFirstFailStatus_ = ok ? ParameterApplyStatus::applied : firstFailStatus;
     }
+    // GH#12 task#101: restore the keyboard's per-side PERFORMANCE STATE (mode + both sides'
+    // behaviour/arp-seq configuration) from the SAME owned state, after the DSP apply so the
+    // parsed config lands on the instance that will actually be ticked. This is configuration
+    // only — it publishes no note and changes no default output; an unplayed keyboard stays
+    // silent. It deliberately does NOT gate the candidate: there is no real failure condition
+    // in this apply, so inventing a keyboardApplyOk_ flag (or a new MachineCandidateStatus
+    // enumerator with no reachable false) would be a vacuous pass. The non-vacuous evidence is
+    // the per-side readback (keyboardMode()/keyboardArpSeqParams()/keyboardBehaviourParams()).
+    runtime_.applyKeyboardState(state_);
   }
 
   // The validated state-aware builder (machine_candidate.h) is the ONLY public path from a

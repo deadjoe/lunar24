@@ -108,6 +108,7 @@
 #include <lunar24/core/five_step_sequencer.h>
 #include <lunar24/core/arp_sequencer.h>
 #include <lunar24/core/keyboard_behaviour.h>
+#include <lunar24/core/keyboard_side_bank.h>  // GH#12 task#101: the per-side scalar bank map
 #include <lunar24/core/unit_identity_profile.h>
 #include <lunar24/core/vco.h>
 #include <lunar24/core/voice_mixer.h>
@@ -438,8 +439,17 @@ class SynthRuntime {
     // sample rate. They are only ticked when a kKeyboard slot is in the compiled plan
     // (canonical definition active routes + always-execute), so an unbound fixture that
     // never ticks them remains untouched. Default params are safe for both.
-    keyboardArpSeq_.configure(ArpSeqParams{}, sampleRate);
-    keyboardBeh_.configure(KeyboardBehaviourParams{}, sampleRate);
+    //
+    // GH#12 task#101: TWO independent performance instances, one per side. `applyKeyboardState`
+    // re-configures them from the owned DeviceState; this ctor leaves the structural defaults
+    // (== the power-on default state's keyboard banks) in place so a fixture that never calls
+    // applyKeyboardState behaves exactly as before. The sample rate is retained because the
+    // side configure happens after construction (state apply), not in the ctor.
+    sampleRate_ = sampleRate;
+    for (std::uint32_t s = 0; s < 2; ++s) {
+      keyboardArpSeq_[s].configure(ArpSeqParams{}, sampleRate);
+      keyboardBeh_[s].configure(KeyboardBehaviourParams{}, sampleRate);
+    }
 
     // GH#21 continuous control smoothing: build the ACTIVE smoothing set from the registry
     // (params whose `smoothing == Smoothing::seconds` AND `disposition == applied_to_dsp`),
@@ -568,8 +578,103 @@ class SynthRuntime {
   // GH#12 keyboard product owner: the note-CV and gate output jacks the keyboard module
   // publishes as a source. The canonical definition binds the real generated jacks
   // keyboard.v_oct_out (V/OCT 0..8V) and keyboard.gate_left_main_out (GATE, 0/+10V rail).
-  void setKeyboardBindings(JackId vOctOut, JackId gateOut) {
-    kbdVOctOut_ = vOctOut; kbdGateOut_ = gateOut;
+  //
+  // GH#12 task#101: FOUR outputs, the four keyboard jacks that already exist in the registry.
+  //   keyboard.v_oct_out           <- LEFT pitch (all modes)
+  //   keyboard.gate_left_main_out  <- LEFT gate (all modes)
+  //   keyboard.gate_right_out      <- RIGHT gate; explicit LOW under Single (unused side)
+  //   keyboard.pressure_out        <- Single: the real pressure behaviour output;
+  //                                   Twin/Split: the RIGHT pitch (manual BEHAVIOUR: twin
+  //                                   pressure acts as the right V/oct, split the same
+  //                                   layout with independent parameters). The right pitch
+  //                                   and the pressure are NEVER summed into one jack.
+  // No new jack is invented: these four ids are exactly the registered keyboard outputs.
+  void setKeyboardBindings(JackId vOctOut, JackId gateLeftOut, JackId gateRightOut,
+                           JackId pressureOut) {
+    kbdVOctOut_ = vOctOut; kbdGateLeftOut_ = gateLeftOut;
+    kbdGateRightOut_ = gateRightOut; kbdPressureOut_ = pressureOut;
+    kbdBound_ = true;
+  }
+
+  // ---- GH#12 task#101: per-side keyboard state apply ----
+  //
+  // The ONE place the owned DeviceState's keyboard half reaches the two per-side performance
+  // instances. Called by the state ctor AFTER the DSP apply, so the keyboard sees a fully
+  // applied machine. It reads (never writes) the owned state:
+  //
+  //   * keyboard.behaviour (100) is the GLOBAL single/twin/split selector -> KeyboardMode.
+  //   * every per-side SCALAR is read through read_side_scalar / side_bank: Single and Twin
+  //     read bank 0 (parameters[]), Split reads bank 0 for LEFT and keyboardScalarRight[] for
+  //     RIGHT. The bank resolution is the existing choke point — no new per-side id.
+  //   * the non-scalar side paths reuse the same side_bank() resolution: the 12-bit scale
+  //     editor, the 16 seqSteps record, and the four no-domain clock/rhythm selectors.
+  //   * keyboard.clock_bpm (129) is PARSED into ArpSeqParams::bpm and stops there: the registry
+  //     value is a norm with NO evidenced norm->BPM law, so it never drives a clock and is not
+  //     counted as a consumed parameter (contract §3).
+  //
+  // Shared CONFIGURATION is not shared PERFORMANCE STATE: Single/Twin install the same bank
+  // into both instances, but each instance keeps its own held notes, chord, glide and envelope.
+  // There is no "reject Split" and no "success but incomplete" path: this function has no
+  // failure branch because every input it reads is already validated by the candidate chain
+  // (validate_device_state ran before the state ctor) and every setter it calls is total.
+  void applyKeyboardState(const DeviceStateV1& state) {
+    keyboardMode_ = mode_from_behaviour(state.keyboardSettings.pressureBehaviour);
+    // (bankIndex, id) -> double: bank 0 is the live parameters[] (left/shared), bank 1 is the
+    // keyboardScalarRight mirror. An id outside the 22-scalar set has no bank-1 slot and reads
+    // 0.0 — fail-closed, never a wrong-side value.
+    const auto bank = [&state](std::uint8_t b, IdValue id) -> double {
+      const ParameterId pid = static_cast<ParameterId>(id);
+      if (b == 0u) return state.parameters[static_cast<std::size_t>(pid)];
+      const std::int32_t idx = keyboard_scalar_index(pid);
+      return idx < 0 ? 0.0
+                     : state.keyboardScalarRight[static_cast<std::size_t>(idx)];
+    };
+    const auto scaleEditor = [&state](std::uint8_t b) -> std::uint16_t {
+      return b == 0u ? state.keyboardScaleEditor : state.keyboardScaleEditorR;
+    };
+    for (std::uint32_t s = 0; s < 2; ++s) {
+      const KeyboardSide side = (s == 0u) ? KeyboardSide::Left : KeyboardSide::Right;
+      const std::uint8_t b = side_bank(keyboardMode_, side);
+      const KeyboardSeq& seq =
+          (b == 0u) ? state.keyboardSeqCurrent : state.keyboardSeqCurrentR;
+      std::array<ArpSeqStep, 16> steps{};
+      for (std::size_t i = 0; i < steps.size(); ++i) {
+        steps[i].note = seq.steps[i].note;
+        steps[i].value = static_cast<double>(seq.steps[i].value);
+        steps[i].gate = seq.steps[i].gate;
+      }
+      const std::uint8_t* sel =
+          (b == 0u) ? state.keyboardClockSelectors : state.keyboardClockSelectorsR;
+      const std::array<std::uint8_t, 4> selectors{sel[0], sel[1], sel[2], sel[3]};
+      keyboardArpSeq_[s].configure(
+          read_arp_seq_params(bank, keyboardMode_, side,
+                              state.parameters[static_cast<std::size_t>(
+                                  ParameterId::keyboard_clock_bpm)],
+                              steps, selectors),
+          sampleRate_);
+      keyboardBeh_[s].configure(read_behaviour_params(bank, scaleEditor, keyboardMode_, side),
+                                sampleRate_);
+    }
+  }
+
+  // Readback of the applied per-side keyboard configuration. These expose the structs the
+  // side instances actually run (ArpSeq::params() / KeyboardBehaviour::params()), so an
+  // acceptance pins the installed configuration, never a separately-written mirror.
+  KeyboardMode keyboardMode() const { return keyboardMode_; }
+  const ArpSeqParams& keyboardArpSeqParams(KeyboardSide side) const {
+    return keyboardArpSeq_[keyboardSideIndex_(side)].params();
+  }
+  const KeyboardBehaviourParams& keyboardBehaviourParams(KeyboardSide side) const {
+    return keyboardBeh_[keyboardSideIndex_(side)].params();
+  }
+  ArpSeqMode keyboardArpSeqMode(KeyboardSide side) const {
+    return keyboardArpSeq_[keyboardSideIndex_(side)].mode();
+  }
+  // PARSED CONFIG READBACK — NOT AN APPLIED BEHAVIOUR. keyboard.clock_bpm (129) has no
+  // evidenced norm->BPM law, so it is parsed into the arp/seq param set and consumed by
+  // NOTHING. Do not cite this as a consumed parameter and do not derive a tempo from it.
+  double keyboardParsedBpm(KeyboardSide side) const {
+    return keyboardArpSeq_[keyboardSideIndex_(side)].bpm();
   }
   // The plan must ALWAYS execute these sources even when they carry no cable (per-sample
   // LFO / EG-SELF-GEN / PULSER phase continuity). Admission happens INSIDE compile_graph
@@ -1962,17 +2067,57 @@ class SynthRuntime {
       case ControlEventKind::pitch:
       case ControlEventKind::pressure:
       case ControlEventKind::gate_on:
-      case ControlEventKind::gate_off:
-      case ControlEventKind::reset: {
+      case ControlEventKind::gate_off: {
+        // GH#12 task#101 SIDE ROUTING. `e.side` is explicit metadata carried from the input
+        // adapter; it is NEVER inferred from the channel/pitch/noteId. Under Single the two
+        // sides are ONE performance identity, so a right-side event is merged onto LEFT
+        // BEFORE any identity handling (a note pressed on the right plate under Single is the
+        // same single performer). Under Twin/Split the side is the performer, so each side
+        // keeps its own held-note state: the same (source, channel, noteId) on left and right
+        // are two DIFFERENT notes and neither can release the other.
+        const std::uint32_t idx = keyboardEventSideIndex_(e.side);
         // ArpSeq's Arp/Seq branches take the sink by lvalue ref, so pass a named lvalue
         // (never a prvalue lambda — the template instantiates every branch). In the default
         // Keyboard mode this sink forwards the event unchanged to the KeyboardBehaviour.
-        auto kbdSink = [this](const ControlEvent& nkb) { keyboardBeh_.handleControlEvent(nkb); };
-        keyboardArpSeq_.handleControlEvent(e, kbdSink);
+        auto kbdSink = [this, idx](const ControlEvent& nkb) {
+          keyboardBeh_[idx].handleControlEvent(nkb);
+        };
+        keyboardArpSeq_[idx].handleControlEvent(e, kbdSink);
         return;  // a note event is fully consumed by the keyboard owner, never a parameter.
       }
+      case ControlEventKind::reset: {
+        // GH#12 task#101: a reset is the FAILSAFE (all-gates-off / clock resync), not a
+        // side-scoped performance gesture. It clears EVERY side regardless of the event's
+        // side metadata — a reset that only cleared the default Left side would leave a
+        // right-side note stuck (the exact "default Left leaks" defect the contract names).
+        for (std::uint32_t s = 0; s < 2; ++s) {
+          auto kbdSink = [this, s](const ControlEvent& nkb) {
+            keyboardBeh_[s].handleControlEvent(nkb);
+          };
+          keyboardArpSeq_[s].handleControlEvent(e, kbdSink);
+        }
+        return;  // a reset is fully consumed by the keyboard owner.
+      }
+      case ControlEventKind::clock:
+      case ControlEventKind::sync: {
+        // GH#12 task#101: the arp/seq modes are only reachable from an EXPLICIT external
+        // clock/sync edge — this slice invents no internal BPM clock and no clock division
+        // (contract §3). The registered keyboard.clock_in is ONE jack feeding the device, so
+        // under Twin/Split both independent arp/seq engines consume the same edge; under
+        // Single there is one performer, so only LEFT. In the default Keyboard mode the
+        // forwarded event reaches KeyboardBehaviour, which ignores clock/sync — so the
+        // default behaviour is bit-unchanged.
+        const std::uint32_t n = (keyboardMode_ == KeyboardMode::Single) ? 1u : 2u;
+        for (std::uint32_t s = 0; s < n; ++s) {
+          auto kbdSink = [this, s](const ControlEvent& nkb) {
+            keyboardBeh_[s].handleControlEvent(nkb);
+          };
+          keyboardArpSeq_[s].handleControlEvent(e, kbdSink);
+        }
+        return;  // a clock/sync edge is consumed by the keyboard owner (arp/seq run).
+      }
       default:
-        break;  // parameter / clock / sync fall through to the existing path below.
+        break;  // parameter falls through to the existing path below.
     }
     if (e.kind != ControlEventKind::parameter) return;
     const double v = static_cast<double>(e.value);
@@ -2876,11 +3021,25 @@ class SynthRuntime {
         // so the downstream EG A/B gate_in interpreter (threshold 0.5V + hysteresis) reads it
         // HIGH when notes are held and LOW otherwise. Pitch CV goes to keyboard.v_oct_out
         // (V/OCT 0..8V); VCO A/B v_oct_in consume it via the two active keyboard routes.
-        double pitchCv = 0.0;
-        double pressureCv = 0.0;
-        keyboardBeh_.tick(&pitchCv, &pressureCv);
-        publishSourceValue_(kbdVOctOut_, pitchCv);
-        publishSourceValue_(kbdGateOut_, keyboardBeh_.gate() ? 10.0 : 0.0);
+        //
+        // GH#12 task#101: BOTH sides advance every sample (each instance owns its own glide /
+        // vibrato / pressure envelope, so an unused side must not be advanced lazily or the
+        // two sides would diverge by block partition). The four published jacks are the four
+        // registered keyboard outputs; which signal lands on pressure_out depends on the mode
+        // (contract §4 / manual BEHAVIOUR: single = pressure, twin/split = right V/oct).
+        double pitchL = 0.0, pressL = 0.0, pitchR = 0.0, pressR = 0.0;
+        keyboardBeh_[0].tick(&pitchL, &pressL);
+        keyboardBeh_[1].tick(&pitchR, &pressR);
+        if (kbdBound_) {
+          const bool single = (keyboardMode_ == KeyboardMode::Single);
+          publishSourceValue_(kbdVOctOut_, pitchL);
+          publishSourceValue_(kbdGateLeftOut_, keyboardBeh_[0].gate() ? 10.0 : 0.0);
+          // An unused side is held at an EXPLICIT low rail, never left unpublished (a stale
+          // frame in the CV bank would read as a held gate to a downstream interpreter).
+          publishSourceValue_(kbdGateRightOut_,
+                              (!single && keyboardBeh_[1].gate()) ? 10.0 : 0.0);
+          publishSourceValue_(kbdPressureOut_, single ? pressL : pitchR);
+        }
         break;
       }
       case ExecutionKind::kUnsupported:
@@ -2914,6 +3073,19 @@ class SynthRuntime {
   double cvAt_(JackId jack) const {
     const std::uint32_t j = static_cast<std::uint32_t>(jack);
     return j < kMaxEdges ? cvOut_[j] : 0.0;
+  }
+
+  // GH#12 task#101: the instance index a SIDE names. The index is the side itself; the
+  // collapse-to-Left rule under Single lives at the EVENT entry (keyboardEventSideIndex_),
+  // not here, so a readback of the Right instance always addresses the Right instance.
+  static constexpr std::uint32_t keyboardSideIndex_(KeyboardSide side) {
+    return side == KeyboardSide::Right ? 1u : 0u;
+  }
+  // The instance an incoming PERFORMANCE event belongs to. Under Single both sides are one
+  // performer, so a right-side event is merged onto Left BEFORE identity handling; under
+  // Twin/Split the event's own side is the performer.
+  std::uint32_t keyboardEventSideIndex_(KeyboardSide side) const {
+    return (keyboardMode_ == KeyboardMode::Single) ? 0u : keyboardSideIndex_(side);
   }
 
   // Look up a registered JackDescriptor by id (linear over the small registry). Returns
@@ -3239,12 +3411,20 @@ class SynthRuntime {
   JackId seqExtClockIn_ = JackId{0}, seqCvOut_ = JackId{0}, seqGateOut_ = JackId{0},
          seqClockOut_ = JackId{0};
   // GH#12 keyboard product owner: the note-CV / gate output jacks the keyboard publishes.
-  JackId kbdVOctOut_ = JackId{0}, kbdGateOut_ = JackId{0};
+  // task#101: four real registered jacks + an explicit bound flag (unbound = no publish, so a
+  // synthetic fixture never writes jack 0 — the JackId{0} sentinel is a REAL jack).
+  JackId kbdVOctOut_ = JackId{0}, kbdGateLeftOut_ = JackId{0},
+         kbdGateRightOut_ = JackId{0}, kbdPressureOut_ = JackId{0};
+  bool kbdBound_ = false;
   // The in-owner note chain (approved option A): an ArpSeq in default Keyboard mode
   // (a transparent pass-through) feeding a KeyboardBehaviour. Both are configured with the
   // machine sample rate in the ctor; only the keyboard behaviour carries per-note state.
-  ArpSeq keyboardArpSeq_;
-  KeyboardBehaviour keyboardBeh_;
+  // task#101: ONE PAIR PER SIDE (index 0 = Left, 1 = Right) — the two sides are independent
+  // performance instances; they share no held notes, chord, glide or envelope.
+  ArpSeq keyboardArpSeq_[2];
+  KeyboardBehaviour keyboardBeh_[2];
+  KeyboardMode keyboardMode_ = KeyboardMode::Single;
+  double sampleRate_ = 48000.0;  // retained for applyKeyboardState (state apply is post-ctor)
 
   // Always-execute admission list (six control-source module ids). Unwired sources
   // must still execute once per sample, so the compiler force-includes them. Sized

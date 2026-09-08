@@ -509,6 +509,14 @@ set_tests_properties(gh20_vcf_probe gh20_vcf_acceptance PROPERTIES LABELS "slow"
 lunar_add_test(gh12_keyboard_owner_probe tests/probes/gh12_keyboard_owner_probe.cpp)
 set_tests_properties(gh12_keyboard_owner_probe PROPERTIES LABELS "slow")
 
+# task #101 (GH #12 side restore): acceptance for the per-side keyboard performance state. It
+# enters through the real canonical chain (encode -> decode -> validate -> candidate -> runtime)
+# and renders tens of thousands of frames per criterion, so it carries the `slow` label the
+# probe-gating (PR #28) introduced; the PR-only probe-gate runs it once. Links only lunar_core,
+# exactly like the core-probe family — no host engine, no test seam.
+lunar_add_test(gh12_keyboard_side_restore_probe tests/probes/gh12_keyboard_side_restore_probe.cpp)
+set_tests_properties(gh12_keyboard_side_restore_probe PROPERTIES LABELS "slow")
+
 # task #98 (GH #15 D3): the real-restore divider acceptance renders the actual DSP per-sample over
 # ~800k frames (a short run is under-sampled for the N=16 discriminator). It must not gate every
 # feature push, so it carries the `slow` label the probe-gating (PR #28) introduced; the PR-only

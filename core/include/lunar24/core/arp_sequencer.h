@@ -211,6 +211,10 @@ class ArpSeq {
   // (the arp/seq being engaged means the direct plate sound is produced here).
   ArpSeqMode mode() const { return arp_seq_mode(params_.mode); }
   double bpm() const { return params_.bpm; }
+  // GH#12 task#101: the configured parameter set, READ BACK verbatim. This is the set
+  // the LAST configure() actually installed (the same struct handleControlEvent reads),
+  // never a separately-written mirror — so an acceptance can pin what this side runs.
+  const ArpSeqParams& params() const { return params_; }
 
   // Feed one canonical event from translate(). `sink` receives each ControlEvent the
   // downstream KeyboardBehaviour should observe. In keyboard mode the event is
@@ -279,6 +283,11 @@ class ArpSeq {
   // Forward a constructed event, preserving the source's transport fields AND the
   // GH#8 press identity. `noteId` carries the identity the downstream KeyboardBehaviour
   // keys its note state by.
+  //
+  // GH#12 task#101: the SIDE is propagated too. An arp/seq instance belongs to ONE side
+  // and transforms that side's events, so every event it constructs must stay on that
+  // side — otherwise a right-side arp note would be consumed by the left-side
+  // KeyboardBehaviour (the exact cross-side leak this slice exists to prevent).
   template <typename Sink>
   void emit_(Sink& sink, ControlEventKind kind, double value, const ControlEvent& src,
              NoteId noteId) {
@@ -290,6 +299,7 @@ class ArpSeq {
     e.channel = src.channel;
     e.noteId = noteId;
     e.producerSequence = src.producerSequence;
+    e.side = src.side;
     sink(e);
   }
   template <typename Sink>
