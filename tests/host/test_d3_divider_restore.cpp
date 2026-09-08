@@ -18,9 +18,16 @@
 //   2. FULL CAPTURE SEQUENCE — the S&H is observed at the harness's PER-SAMPLE seam (renderSampled:
 //      one processBlock(1) per frame + an onSample hook after each), so each capture is recorded at
 //      its ABSOLUTE frame with its held value — not an approximate chunk-tail frame. The same
-//      per-sample observation is then used to compare (a) restoring the SAME state twice and
-//      (b) ONE renderSampled(all) vs TWO renderSampled(half)+renderSampled(half), so a bug that only
-//      mis-samples mid-capture (invisible to a final-getter comparison) REDS here.
+//      per-sample observation is then used to compare (a) restoring the SAME state twice and (b) ONE
+//      renderSampled(all) vs TWO renderSampled calls over the same window. (b) is a RENDER-CALL
+//      BOUNDARY invariance check — the divider state must not reset between render calls. It is NOT a
+//      block-size check: renderSampled is processBlock(1) on both sides (@Codex e40bdb0b).
+//   3. BLOCK-SIZE INVARIANCE (@Codex e40bdb0b) — a SECOND same-state owner is driven through the
+//      harness's real-block renderBlock path with uniform 64 / 256 / 4096 and irregular partitions;
+//      after EVERY block the published S&H CV of BOTH lanes must equal this file's per-sample
+//      reference trajectory at that block's last absolute frame, with boundaries landing exactly one
+//      frame before and one frame after every reference capture. The audio block-partition check (E)
+//      cannot cover this: the S&H CV is never summed into WET.
 //
 // The divider RATIO is measured against an INDEPENDENT reference: round(win * liveRateHz / sr),
 // computed from the LIVE rate getter — never the divider getter — so the count is anchored outside
@@ -38,6 +45,7 @@
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/state_default.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -78,6 +86,7 @@ struct Seq {
   double divN = 0.0;           // the divider ratio that was restored (readback).
   std::vector<long> cf;        // ABSOLUTE frame of each capture (per-sample, not chunk-tail).
   std::vector<double> h;       // the held S&H CV value at each capture.
+  double initH = 0.0;          // held CV BEFORE frame 0 (the piecewise-constant reference's 1st piece).
 };
 
 // Drive the real codec -> owner -> processBlock entry: a legal DeviceState's RATE/DIVIDER is
@@ -103,6 +112,7 @@ Seq measure(const DeviceStateV1& st, bool six, long win) {
   s.divN = six ? rt->drone6Divider() : rt->drone3Divider();
   s.totalEdges = static_cast<std::size_t>(std::round(double(win) * s.rateHz / kSr));
   double pv = six ? rt->sampleHold6Cv() : rt->sampleHold3Cv();
+  s.initH = pv;  // the reference trajectory's value before frame 0.
   long fc = 0;
   h.renderSampled(static_cast<int>(win), 0.0, [&](const SynthRuntime& r) {
     const double cv = six ? r.sampleHold6Cv() : r.sampleHold3Cv();
@@ -229,13 +239,15 @@ void asymmetric() {
   std::printf("  (restore asymmetric: drone3 %ld / %ld, drone6 %ld / %ld)\n", c3, (long)std::lround(edges3), c6, (long)std::lround(edges6));
 }
 
-// (D) RESTORE DETERMINISM + BLOCK SPLIT, at per-sample precision:
+// (D) RESTORE DETERMINISM + RENDER-CALL BOUNDARY invariance, at per-sample precision:
 //     (a) restoring the SAME legal state into TWO freshly-loaded owners must reproduce the SAME
 //         capture-frame / held-value sequence (real restore is deterministic — the codec round-trip
 //         and applyDeviceState are single-valued);
-//     (b) rendering the SAME window as ONE renderSampled(all) vs TWO renderSampled(half)+
-//         renderSampled(half) must give the SAME per-sample capture sequence — a bug that only
-//         mis-samples mid-capture (invisible to a final-getter comparison) trips here.
+//     (b) rendering the SAME window as ONE renderSampled(all) vs TWO renderSampled calls must give
+//         the SAME per-sample capture sequence — the divider state must carry across a render-call
+//         boundary (no reset between calls). NOTE (@Codex e40bdb0b): both sides are processBlock(1),
+//         so this is a RENDER-CALL boundary check, NOT a block-size check — the block-size invariance
+//         is (F), which drives genuinely different audio block sizes through renderBlock.
 void restore_and_block_split() {
   DeviceStateV1 st = make_default_device_state(kSeed);
   slot(st, ParameterId::drone_3_rate) = 0.5;
@@ -268,8 +280,8 @@ void restore_and_block_split() {
     split.caps = split.cf.size();
   }
   check(split.caps == x.caps && split.cf == x.cf,
-        "d3 restore block-split: one render(all) vs two render(half) -> same per-sample capture frames");
-  check(split.h == x.h, "d3 restore block-split: same held-value sequence across the split");
+        "d3 restore render-call boundary: one render(all) vs two render calls -> same capture frames");
+  check(split.h == x.h, "d3 restore render-call boundary: same held-value sequence across the calls");
 }
 
 // (E) AUDIO block-partition bit-identity on the same restored state: rendering a window as one
@@ -291,6 +303,170 @@ void audio_partition() {
   check(h1.wetR() == h2.wetR(), "d3 restore audio block-partition: bit-identical WET_R");
 }
 
+// (F) BLOCK-SIZE INVARIANCE on the real owner (@Codex e40bdb0b). The divider/S&H state is
+//     frame-indexed, so the held CV PUBLISHED at a block boundary must equal this file's per-sample
+//     reference trajectory at that block's LAST absolute frame, for ANY audio partition. The reference
+//     is the block=1 trajectory from measure(); the block owner is a SECOND same-state owner driven
+//     through the harness's real-block renderBlock path (engine -> adapter -> processFrame(frames)),
+//     reading BOTH lanes' sampleHold CV after EVERY actual block. Partitions: uniform 64 / 256 / 4096
+//     frames plus two IRREGULAR partitions whose boundaries land EXACTLY one frame before and one
+//     frame after every reference capture, so the comparison is sensitive at the capture edge and not
+//     only at far block tails or the final value. A regression that resets the divider remainder at a
+//     block boundary shifts every capture frame; it is invisible to a final-getter comparison and to
+//     the audio-only check (E) (the S&H CV is never summed into WET), but it breaks this.
+constexpr long kWinBlock = 400000;  // ~8.3 s at the legal 6 Hz -> ~50 LF edges: several captures.
+
+// The held CV the per-sample reference carries at absolute frame f: piecewise-constant — h[j] from
+// capture frame cf[j] until the next capture, initH before the first one.
+double heldAt(const Seq& s, long f) {
+  double v = s.initH;
+  for (std::size_t i = 0; i < s.cf.size() && s.cf[i] <= f; ++i) v = s.h[i];
+  return v;
+}
+
+// Uniform partition: blocks of `B` frames (last block trimmed to the window).
+std::vector<int> uniform_schedule(long W, int B) {
+  std::vector<int> s;
+  for (long f = 0; f < W;) {
+    const int b = static_cast<int>(std::min<long>(B, W - f));
+    s.push_back(b);
+    f += b;
+  }
+  return s;
+}
+
+// Irregular partition: blocks of `cap` frames, but the last block of each gap is trimmed so an
+// END-EXCLUSIVE boundary lands exactly on every frame in `specials`.
+std::vector<int> irregular_schedule(long W, std::vector<long> specials, int cap) {
+  std::sort(specials.begin(), specials.end());
+  std::vector<int> s;
+  long f = 0;
+  for (long t : specials) {
+    if (t <= f || t > W) continue;
+    while (f < t) {
+      const int b = static_cast<int>(std::min<long>(cap, t - f));
+      s.push_back(b);
+      f += b;
+    }
+  }
+  while (f < W) {
+    const int b = static_cast<int>(std::min<long>(cap, W - f));
+    s.push_back(b);
+    f += b;
+  }
+  return s;
+}
+
+struct PartitionResult {
+  long boundaries = 0;        // blocks driven (one S&H read per block, both lanes).
+  long bad3 = 0;              // boundaries where drone3's CV != the per-sample reference.
+  long bad6 = 0;              // boundaries where drone6's CV != the per-sample reference.
+  double worst3 = 0.0;
+  double worst6 = 0.0;
+  long firstBad = -1;         // absolute frame of the first mismatch (diagnostic).
+  std::vector<double> seen3;  // every observed drone3 CV (vacuity guard: must take >1 value).
+};
+
+// Drive a SAME-STATE owner through the real-block path with `sched`; after every block compare the
+// published S&H CV of BOTH lanes with the per-sample reference at that block's last absolute frame.
+PartitionResult run_partition(const DeviceStateV1& st, const std::vector<int>& sched,
+                              const Seq& r3, const Seq& r6) {
+  PartitionResult pr;
+  EngineHarness h;
+  h.load(st, kSr, 4096, kInCh, kOutCh);
+  const SynthRuntime* rt = h.runtime();
+  long f = 0;
+  for (int B : sched) {
+    h.renderBlock(B, [](std::size_t, double& i0, double& i1) { i0 = 0.0; i1 = 0.0; });
+    f += B;
+    const long last = f - 1;  // the absolute frame this block just processed.
+    const double v3 = rt->sampleHold3Cv();
+    const double v6 = rt->sampleHold6Cv();
+    const double e3 = std::fabs(v3 - heldAt(r3, last));
+    const double e6 = std::fabs(v6 - heldAt(r6, last));
+    if (e3 > 0.0) { ++pr.bad3; if (pr.firstBad < 0) pr.firstBad = last; }
+    if (e6 > 0.0) ++pr.bad6;
+    if (e3 > pr.worst3) pr.worst3 = e3;
+    if (e6 > pr.worst6) pr.worst6 = e6;
+    pr.seen3.push_back(v3);
+    ++pr.boundaries;
+  }
+  return pr;
+}
+
+void block_size_invariance() {
+  DeviceStateV1 st = make_default_device_state(kSeed);
+  slot(st, ParameterId::drone_3_rate) = 0.5;     // legal 6 Hz on both lanes.
+  slot(st, ParameterId::drone_6_rate) = 0.5;
+  slot(st, ParameterId::drone_3_divider) = 0.5;  // N=8.5 -> ~6 captures in the window.
+  slot(st, ParameterId::drone_6_divider) = 1.0;  // N=16  -> ~3 captures in the window.
+  const Seq r3 = measure(st, false, kWinBlock);  // per-sample reference trajectory (block=1).
+  const Seq r6 = measure(st, true, kWinBlock);
+  check(r3.caps >= 3, "d3 restore block-size: drone3 reference spans multiple captures (not one tail)");
+  check(r6.caps >= 3, "d3 restore block-size: drone6 reference spans multiple captures (not one tail)");
+
+  // Boundaries (end-exclusive) at every reference capture frame AND the frame after it, for BOTH
+  // lanes — the state just before and just after each capture.
+  std::vector<long> specials;
+  for (long c : r3.cf) { specials.push_back(c); specials.push_back(c + 1); }
+  for (long c : r6.cf) { specials.push_back(c); specials.push_back(c + 1); }
+  std::sort(specials.begin(), specials.end());
+  specials.erase(std::unique(specials.begin(), specials.end()), specials.end());
+
+  struct P { const char* who; std::vector<int> sched; };
+  std::vector<P> parts;
+  parts.push_back({"uniform 64", uniform_schedule(kWinBlock, 64)});
+  parts.push_back({"uniform 256", uniform_schedule(kWinBlock, 256)});
+  parts.push_back({"uniform 4096", uniform_schedule(kWinBlock, 4096)});
+  parts.push_back({"irregular cap 64", irregular_schedule(kWinBlock, specials, 64)});
+  parts.push_back({"irregular cap 256", irregular_schedule(kWinBlock, specials, 256)});
+
+  for (const P& p : parts) {
+    const PartitionResult pr = run_partition(st, p.sched, r3, r6);
+    char lbl[320];
+    std::snprintf(lbl, sizeof lbl,
+                  "d3 restore block-size invariance: %s partition -> S&H CV == per-sample reference at "
+                  "every block boundary (drone3)", p.who);
+    check(pr.bad3 == 0, lbl);
+    std::snprintf(lbl, sizeof lbl,
+                  "d3 restore block-size invariance: %s partition -> S&H CV == per-sample reference at "
+                  "every block boundary (drone6)", p.who);
+    check(pr.bad6 == 0, lbl);
+    // Vacuity guard: a constant observed CV would make the equality above trivially true.
+    std::vector<double> uniq = pr.seen3;
+    std::sort(uniq.begin(), uniq.end());
+    uniq.erase(std::unique(uniq.begin(), uniq.end()), uniq.end());
+    std::snprintf(lbl, sizeof lbl,
+                  "d3 restore block-size: %s partition observes a STEPPED held CV (>1 value, not a "
+                  "constant tail)", p.who);
+    check(uniq.size() >= 2, lbl);
+    std::printf("  (block-size %-16s boundaries=%ld bad3=%ld bad6=%ld worst=%.3g/%.3g distinct=%zu)\n",
+                p.who, pr.boundaries, pr.bad3, pr.bad6, pr.worst3, pr.worst6, uniq.size());
+  }
+
+  // Sensitivity guard: the irregular partitions must actually compare the held CV immediately BEFORE
+  // and AFTER every reference capture (by construction) — the criterion is not only "block tails".
+  for (std::size_t k = 3; k < parts.size(); ++k) {
+    std::vector<long> ends;
+    long f = 0;
+    for (int B : parts[k].sched) { f += B; ends.push_back(f); }
+    bool allAdj = true;
+    for (long c : r3.cf) {
+      if (!std::binary_search(ends.begin(), ends.end(), c) ||
+          !std::binary_search(ends.begin(), ends.end(), c + 1)) allAdj = false;
+    }
+    for (long c : r6.cf) {
+      if (!std::binary_search(ends.begin(), ends.end(), c) ||
+          !std::binary_search(ends.begin(), ends.end(), c + 1)) allAdj = false;
+    }
+    char lbl[320];
+    std::snprintf(lbl, sizeof lbl,
+                  "d3 restore block-size: %s partition has a boundary exactly before AND after every "
+                  "capture (both lanes)", parts[k].who);
+    check(allAdj, lbl);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -300,6 +476,7 @@ int main() {
   asymmetric();
   restore_and_block_split();
   audio_partition();
+  block_size_invariance();
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);
   return g_fail == 0 ? 0 : 1;
 }
