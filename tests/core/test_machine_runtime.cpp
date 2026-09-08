@@ -87,6 +87,8 @@ namespace {
 // releases) its own (still large) frame. This is a CI-safety latch, not product semantics.
 #if defined(__GNUC__) || defined(__clang__)
 #define IJU_TEST_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define IJU_TEST_NOINLINE __declspec(noinline)
 #else
 #define IJU_TEST_NOINLINE
 #endif
@@ -1346,6 +1348,351 @@ void gh6_bit_identical() {
         "different seed -> fixed WET difference (seed participates in the profile)");
 }
 
+constexpr double kD3DivSpan = 16.0 - 1.0;   // kNewDroneDivMax-1 (PROVISIONAL max, task #98).
+
+// ---- GH#15 D3 acceptance (task #98): drone_3/6 divider in the real S&H clock lane ----
+// Each of these constructs a SynthRuntime BY VALUE on the stack (~174 KiB), so like the
+// registry_* tests they are held out of main()'s frame (IJU_TEST_NOINLINE). MSVC
+// allocates a per-local stack slot and does not reuse across scopes, so stacking the D3
+// runtimes atop main()'s pre-existing per-section slots pushed the frame past the 1 MiB
+// runner stack (the Windows crash). Under a noinline function each block runs (and
+// releases) its own large frame, so the live set is bounded to that block's runtimes.
+// This is a CI-safety latch, not product semantics.
+
+IJU_TEST_NOINLINE void d3_sah_lane_clock_contract() {
+    constexpr std::size_t kN = 8192;
+    auto render3 = [](core::SynthRuntime& rt, double divNorm, std::size_t frames) {
+      rt.rebuild();
+      rt.setDrone3Rate(60.0);   // fast LF (fixture convenience) so captures are dense in-window.
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, divNorm));
+      std::vector<double> ch(frames), cv(frames);
+      for (std::size_t i = 0; i < frames; ++i) {
+        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+        ch[i] = rt.drone3Channel();
+        cv[i] = rt.sampleHold3Cv();
+      }
+      return std::make_pair(ch, cv);
+    };
+    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
+      double d = 0.0;
+      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
+      return d;
+    };
+    auto countSteps = [](const std::vector<double>& v) {
+      std::size_t n = 0;
+      if (v.empty()) return n;
+      double prev = v[0];
+      for (std::size_t i = 1; i < v.size(); ++i) {
+        if (std::fabs(v[i] - prev) > 1e-9) ++n;
+        prev = v[i];
+      }
+      return n;
+    };
+    // (i) the lane-clock drives the S&H: DIVIDER=0 (N=1, capture every LF rising edge) over
+    // a fast-LF window gives a stepped, bounded nonzero CV — never the inert 0.0 of the old
+    // no-clock path.
+    {
+      core::SynthRuntime rt = makeRuntime();
+      auto [ch, cv] = render3(rt, 0.0, kN);
+      static_cast<void>(ch);
+      double cvPeak = 0.0;
+      for (double x : cv) cvPeak = std::max(cvPeak, std::fabs(x));
+      check(cvPeak > 1e-3,
+            "S&H is clocked by the lane (sampleHold3Cv is a bounded nonzero level)");
+      const std::size_t steps = countSteps(cv);
+      check(steps >= 4,
+            "clocked S&H steps at the divided-LF clock edges (sampleHold3Cv changes)");
+    }
+    // (ii) S&H CV is a CV OUT, never summed into *out: two divider ratios give two distinct
+    // CV profiles (different division rates -> different captures) but byte-identical channels.
+    {
+      core::SynthRuntime rtA = makeRuntime();
+      auto a = render3(rtA, 0.0, kN);   // N = 1 -> capture every LF edge.
+      core::SynthRuntime rtB = makeRuntime();
+      auto b = render3(rtB, 1.0, kN);   // N = 16 -> capture every 16th LF edge.
+      check(peakDiff(a.first, b.first) < 1e-12,
+            "S&H is NOT in the audio channel (divider change leaves drone3Channel byte-identical)");
+      check(peakDiff(a.second, b.second) > 1e-3,
+            "divider change alters the S&H CV readback (real lever, non-vacuous)");
+    }
+}
+
+IJU_TEST_NOINLINE void d3_div_acceptance_batch() {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.25));
+      const double n25 = rt.drone3Divider();
+      check(std::fabs(n25 - (1.0 + kD3DivSpan * 0.25)) < 1e-9,
+            "d3 divider norm=0.25 -> divN=1+(16-1)*0.25");
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.75));
+      const double n75 = rt.drone3Divider();
+      check(std::fabs(n75 - (1.0 + kD3DivSpan * 0.75)) < 1e-9,
+            "d3 divider norm=0.75 -> divN=1+(16-1)*0.75");
+      check(std::fabs(n75 - n25 - kD3DivSpan * 0.5) < 1e-9,
+            "d3 divider is linear in norm (0.25 -> 0.75 gap = 15*0.5)");
+      core::SynthRuntime rt6 = makeRuntime(); rt6.rebuild();
+      static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_divider, 0.75));
+      check(std::fabs(rt6.drone6Divider() - (1.0 + kD3DivSpan * 0.75)) < 1e-9,
+            "d6 divider batch lane reaches the field (1+(16-1)*0.75)");
+}
+
+IJU_TEST_NOINLINE void d3_div_acceptance_live() {
+      constexpr std::size_t kTot = 128;
+      static const core::RuntimeInputs kSil[kTot] = {};
+      core::RuntimeOutput out[kTot] = {};
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      core::ControlEvent ev;
+      ev.kind = core::ControlEventKind::parameter;
+      ev.parameter = core::ParameterId::drone_3_divider;
+      ev.value = static_cast<core::SignalSample>(0.25);
+      ev.source = 1;
+      ev.producerSequence = 1;
+      core::TimedControlEvent te;
+      te.event = ev;
+      te.sample = 0;
+      check(rt.enqueueControlEvent(te), "d3 divider live ControlEvent is admitted");
+      rt.processBlock(kSil, kTot, out, /*driveGraph=*/true);
+      check(std::fabs(rt.drone3Divider() - (1.0 + kD3DivSpan * 0.25)) < 1e-9,
+            "d3 divider live lane reaches the field (1+(16-1)*0.25)");
+}
+
+IJU_TEST_NOINLINE void d3_div_acceptance_render_lever() {
+      const auto renderDiv = [&](core::SynthRuntime& rt, double norm, std::size_t kN) {
+        rt.rebuild();
+        rt.setDrone3Rate(60.0);   // fast LF (fixture) so captures are dense in-window.
+        static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, norm));
+        std::vector<double> ch(kN), cv(kN);
+        for (std::size_t i = 0; i < kN; ++i) {
+          rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+          ch[i] = rt.drone3Channel();
+          cv[i] = rt.sampleHold3Cv();
+        }
+        return std::make_pair(ch, cv);
+      };
+      constexpr std::size_t kN = 8192;
+      core::SynthRuntime rtA = makeRuntime(); auto a = renderDiv(rtA, 0.0, kN);   // N=1.
+      core::SynthRuntime rtB = makeRuntime(); auto b = renderDiv(rtB, 1.0, kN);   // N=16.
+      check(vecPeakDiff(a.first, b.first) < 1e-12,
+            "d3 divider change leaves drone3Channel byte-identical (S&H NOT in audio)");
+      check(vecPeakDiff(a.second, b.second) > 1e-3,
+            "d3 divider change alters the S&H CV readback (real lever, non-vacuous)");
+}
+
+IJU_TEST_NOINLINE void d3_div_acceptance_range_lock() {
+      core::SynthRuntime rt = makeRuntime(); rt.rebuild();
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.25));
+      const double held = rt.drone3Divider();
+      check(rt.applyDspParam(core::ParameterId::drone_3_divider, 2.0) ==
+                core::ParameterApplyStatus::invalid_value,
+            "d3 divider 2.0 is rejected as invalid_value (norm > 1)");
+      check(rt.drone3Divider() == held, "d3 divider 2.0 leaves the state unchanged");
+      check(rt.applyDspParam(core::ParameterId::drone_3_divider, -0.5) ==
+                core::ParameterApplyStatus::invalid_value,
+            "d3 divider -0.5 is rejected as invalid_value (norm < 0)");
+      check(rt.drone3Divider() == held, "d3 divider -0.5 leaves the state unchanged");
+}
+
+// ---- GH#15 D3 DIRECTIONAL acceptance (@Codex a99f6489 gap fill) ----
+// The acceptance above proves the divider is a real CV lever (it changes the S&H readback, never
+// the audio channel) and that the setter/readback map is exact, but never measures the DIVISION
+// itself. @Codex found the gap: mutating `lfEdgeAcc_ += 1.0` -> `+= 2.0` in an isolated shadow
+// header still passes 347/347, because the old assertions only ask "is the CV nonzero / does it
+// change" — a 2x-faster capture schedule satisfies that too. This block measures the REAL capture
+// schedule and reconciles it against an INDEPENDENT LF-edge reference (the live rate Hz, not the
+// divider getter): it asserts the actual capture count tracks totalLFEdges / divN, and presents
+// the default N=8.5 as a MEAN ratio (intervals alternate 8/9 edges, never "exactly 8.5 each").
+//
+// Division policy (software — no invented hardware basis): each LF-square rising edge advances a
+// fractional accumulator (`lfEdgeAcc_ += 1.0`); when it reaches divN_ that edge feeds a one-sample
+// capture pulse to the S&H and divN_ is subtracted (the remainder is carried forward). The first
+// capture is not a special phase — the accumulator starts at 0 and the first capture lands on the
+// first LF edge at which the running count first reaches divN_.
+
+namespace d3timing {
+// One captured schedule over a window: the REAL S&H output changes (one CV step = one capture) plus
+// an INDEPENDENT LF-edge reference computed from the LIVE rate getter — NOT from the divider getter —
+// so the count is anchored outside the divider, which is exactly what a `+=2.0` mutation defeats.
+struct Timing {
+  std::size_t captures = 0;    // observed S&H CV-step events over the window.
+  std::size_t totalEdges = 0;  // round(W * liveRateHz / sr) — independent LF-edge reference.
+  double divN = 0.0;           // the divider ratio that was live (readback).
+  double rateHz = 0.0;         // the live LF rate (independent of the divider).
+  std::vector<std::size_t> captureFrames;  // approx frame of each capture (chunk-boundary aligned).
+};
+
+// Admit a live parametric ControlEvent — the real codec->owner->processBlock lane: a panel/MIDI knob
+// turn becomes a ControlEvent that processBlock drains and applies at its scheduled sample. (The
+// batch applyDspParam lane is NOT this path; the divider must be measured where the product runs it.)
+bool send(core::SynthRuntime& rt, core::ParameterId p, double v, std::size_t seq) {
+  core::ControlEvent ev;
+  ev.kind = core::ControlEventKind::parameter;
+  ev.parameter = p;
+  ev.value = static_cast<core::SignalSample>(v);
+  ev.source = 1;
+  ev.producerSequence = seq;
+  core::TimedControlEvent te;
+  te.event = ev;
+  te.sample = 0;
+  return rt.enqueueControlEvent(te);
+}
+
+double heldCv(core::SynthRuntime& rt, bool six) { return six ? rt.sampleHold6Cv() : rt.sampleHold3Cv(); }
+double liveRate(core::SynthRuntime& rt, bool six) { return six ? rt.drone6RateHz() : rt.drone3RateHz(); }
+double liveDiv(core::SynthRuntime& rt, bool six) { return six ? rt.drone6Divider() : rt.drone3Divider(); }
+
+// Drive the REAL codec->owner->processBlock lane: rate + divider are established by live parametric
+// ControlEvents (not a direct applyDspParam, and never the illegal setDrone3Rate(60)), and the window
+// is rendered through processBlock itself (chunked as a host would block). The S&H output is observed
+// directly (sampleHoldNCv step = one capture). The independent LF-edge reference round(W*rateHz/sr)
+// comes from the live rate getter, so a divider mutation that doubles the capture count breaks it.
+Timing measure(core::SynthRuntime& rt, bool six, double divNorm, std::size_t frames,
+               std::size_t block) {
+  Timing t;
+  rt.rebuild();
+  const core::ParameterId rateId = six ? core::ParameterId::drone_6_rate
+                                       : core::ParameterId::drone_3_rate;
+  const core::ParameterId divId = six ? core::ParameterId::drone_6_divider
+                                      : core::ParameterId::drone_3_divider;
+  check(send(rt, rateId, 0.5, 1), "d3 timing: legal RATE ControlEvent (norm 0.5) admitted");
+  check(send(rt, divId, divNorm, 2), "d3 timing: divider ControlEvent admitted");
+  std::vector<core::RuntimeInputs> in(frames, core::RuntimeInputs{0.0, 0.0});
+  std::vector<core::RuntimeOutput> out(frames);
+  double prev = heldCv(rt, six);  // S&H held level before any post-set clock edge.
+  for (std::size_t b = 0; b < frames; b += block) {
+    const std::size_t n = std::min(block, frames - b);
+    rt.processBlock(in.data() + b, n, out.data() + b, /*driveGraph=*/true);
+    const double cv = heldCv(rt, six);
+    if (std::fabs(cv - prev) > 1e-9) {  // one real S&H capture = one CV step.
+      ++t.captures;
+      t.captureFrames.push_back(b + n);  // chunk-boundary aligned (captures are sparse vs. block).
+    }
+    prev = cv;
+  }
+  t.rateHz = liveRate(rt, six);
+  t.divN = liveDiv(rt, six);
+  t.totalEdges = static_cast<std::size_t>(std::round(double(frames) * t.rateHz / kSr));
+  return t;
+}
+}  // namespace d3timing
+
+IJU_TEST_NOINLINE void d3_div_actual_timing_acceptance() {
+  constexpr std::size_t kWin = 800000;  // ~16.7 s at the legal default 6 Hz -> ~100 LF edges.
+  constexpr std::size_t kSlack = 2;     // boundary/phase tolerance (the analytic reference is ±1 edge).
+
+  // (A) INTEGER divider endpoints (norm 0 -> divN=1, norm 1 -> divN=16) on BOTH drones, each on a
+  //     fresh runtime at the LEGAL default rate (norm 0.5 -> 6 Hz, never the old illegal 60): the
+  //     real capture count tracks the INDEPENDENT LF-edge reference divided by divN. A `+=2.0`
+  //     accumulator mutation doubles the capture rate and breaks this absolute reference.
+  {
+    core::SynthRuntime rt3 = makeRuntime();
+    d3timing::Timing a = d3timing::measure(rt3, /*six=*/false, /*divNorm=*/1.0, kWin, kBlock);  // N=16.
+    check(std::fabs(a.rateHz - 6.0) < 1e-9, "d3 timing: drone3 LIVE RATE is the legal default 6 Hz");
+    check(a.divN == 16.0, "d3 timing: norm=1 -> exact divN=16");
+    check(std::fabs(double(a.captures) - double(a.totalEdges) / 16.0) <= kSlack,
+          "d3 timing N=16: real captures == LF-edges/16 (integer division)");
+
+    core::SynthRuntime rt6 = makeRuntime();
+    d3timing::Timing b = d3timing::measure(rt6, /*six=*/true, /*divNorm=*/0.0, kWin, kBlock);  // N=1.
+    check(std::fabs(b.rateHz - 6.0) < 1e-9, "d3 timing: drone6 LIVE RATE is the legal default 6 Hz");
+    check(b.divN == 1.0, "d3 timing: norm=0 -> exact divN=1");
+    check(std::fabs(double(b.captures) - double(b.totalEdges) / 1.0) <= kSlack,
+          "d3 timing N=1: real captures == LF-edges (capture every edge)");
+  }
+
+  // (B) DEFAULT N=8.5 (live product default, norm 0.5) on BOTH drones: the ratio is a MEAN. Each
+  //     per-capture interval is an integer LF-edge span that ALTERNATES 8 / 9 (never "exactly 8.5
+  //     edges per capture"), so sum(intervals)/count is the 8.5 average. This documents the CURRENT
+  //     software remainder policy: each capture subtracts divN_ (8.5) from a running float
+  //     accumulator `lfEdgeAcc_`, so the fractional 0.5 carries forward between captures and yields
+  //     the 8/9 alternation — no hardware basis is invented here.
+  {
+    core::SynthRuntime rt3 = makeRuntime();
+    d3timing::Timing t3 = d3timing::measure(rt3, /*six=*/false, /*divNorm=*/0.5, kWin, kBlock);
+    check(t3.divN == 8.5, "d3 timing: default norm 0.5 -> divN=8.5");
+    check(std::fabs(double(t3.captures) - double(t3.totalEdges) / 8.5) <= kSlack,
+          "d3 timing N=8.5: drone3 captures == LF-edges/8.5 (mean division ratio)");
+
+    core::SynthRuntime rt6 = makeRuntime();
+    d3timing::Timing t6 = d3timing::measure(rt6, /*six=*/true, /*divNorm=*/0.5, kWin, kBlock);
+    check(t6.divN == 8.5, "d3 timing: drone6 default norm 0.5 -> divN=8.5");
+    check(std::fabs(double(t6.captures) - double(t6.totalEdges) / 8.5) <= kSlack,
+          "d3 timing N=8.5: drone6 captures == LF-edges/8.5 (mean division ratio)");
+
+    // Per-interval edge count must alternate between integer 8 and 9 (mean 8.5) on both voices.
+    auto timingStats = [](const d3timing::Timing& t, std::size_t& n8, std::size_t& n9,
+                          double& mean) {
+      double sumEdges = 0.0;
+      std::size_t intervals = 0;
+      n8 = n9 = 0;
+      for (std::size_t i = 1; i < t.captureFrames.size(); ++i) {
+        const double e = double(t.captureFrames[i] - t.captureFrames[i - 1]) * t.rateHz / kSr;
+        sumEdges += e;
+        ++intervals;
+        if (std::fabs(e - 8.0) <= 0.5) ++n8;
+        else if (std::fabs(e - 9.0) <= 0.5) ++n9;
+      }
+      mean = intervals ? sumEdges / double(intervals) : 0.0;
+      return intervals;
+    };
+    std::size_t n8 = 0, n9 = 0;
+    double mean = 0.0;
+    const std::size_t i3 = timingStats(t3, n8, n9, mean);
+    check(i3 > 0, "d3 timing N=8.5: enough drone3 capture intervals");
+    check(n8 > 0 && n9 > 0,
+          "d3 timing N=8.5: drone3 intervals are integer 8 AND 9 edge spans (alternating)");
+    check(std::fabs(mean - 8.5) <= 0.5, "d3 timing N=8.5: drone3 mean interval is 8.5 edges");
+    const std::size_t i6 = timingStats(t6, n8, n9, mean);
+    check(i6 > 0, "d3 timing N=8.5: enough drone6 capture intervals");
+    check(n8 > 0 && n9 > 0,
+          "d3 timing N=8.5: drone6 intervals are integer 8 AND 9 edge spans (alternating)");
+    check(std::fabs(mean - 8.5) <= 0.5, "d3 timing N=8.5: drone6 mean interval is 8.5 edges");
+  }
+
+  // (C) ASYMMETRIC two lanes, no cross-talk: ONE program with drone3 divider=16 (N=16) and drone6
+  //     divider=1 (N=1) live together, both driven through the live ControlEvent lane and rendered
+  //     with processBlock. Each PapaVoice owns an independent LF / divider / noise / S&H, so drone6
+  //     (capture every LF edge) yields ~16x the capture count of drone3 (every 16th edge). A
+  //     cross-voice clock/divider leak would collapse the two counts; they are held distinct.
+  {
+    core::SynthRuntime rt = makeRuntime();
+    rt.rebuild();
+    check(d3timing::send(rt, core::ParameterId::drone_3_rate, 0.5, 1),
+          "d3 timing asymmetric: drone3 legal RATE ControlEvent admitted");
+    check(d3timing::send(rt, core::ParameterId::drone_6_rate, 0.5, 2),
+          "d3 timing asymmetric: drone6 legal RATE ControlEvent admitted");
+    check(d3timing::send(rt, core::ParameterId::drone_3_divider, 1.0, 3),
+          "d3 timing asymmetric: drone3 divider=1 (N=16) ControlEvent admitted");
+    check(d3timing::send(rt, core::ParameterId::drone_6_divider, 0.0, 4),
+          "d3 timing asymmetric: drone6 divider=0 (N=1) ControlEvent admitted");
+    std::vector<core::RuntimeInputs> in(kWin, core::RuntimeInputs{0.0, 0.0});
+    std::vector<core::RuntimeOutput> out(kWin);
+    std::size_t c3 = 0, c6 = 0;
+    double p3 = rt.sampleHold3Cv(), p6 = rt.sampleHold6Cv();
+    for (std::size_t b = 0; b < kWin; b += kBlock) {
+      const std::size_t n = std::min(kBlock, kWin - b);
+      rt.processBlock(in.data() + b, n, out.data() + b, /*driveGraph=*/true);
+      const double cv3 = rt.sampleHold3Cv(), cv6 = rt.sampleHold6Cv();
+      if (std::fabs(cv3 - p3) > 1e-9) ++c3;
+      if (std::fabs(cv6 - p6) > 1e-9) ++c6;
+      p3 = cv3;
+      p6 = cv6;
+    }
+    const double edges = double(kWin) * rt.drone3RateHz() / kSr;
+    check(std::fabs(double(c3) - edges / 16.0) <= kSlack,
+          "d3 timing asymmetric: drone3 captures == LF-edges/16");
+    check(std::fabs(double(c6) - edges / 1.0) <= kSlack,
+          "d3 timing asymmetric: drone6 captures == LF-edges (capture every edge)");
+    check(double(c6) > 8.0 * double(c3),
+          "d3 timing asymmetric: two lanes do not cross-talk (drone6 count != drone3 count)");
+  }
+
+  // (D) REAL codec->owner->processBlock restore + per-sample block split is NOT here: a "restore"
+  //     created by rebuilding a SynthRuntime fixture and re-sending ControlEvents is not the product
+  //     entry (no encode/decode / applyDeviceState), and a block-split compared only on the final
+  //     getter cannot see a mid-capture mis-sample. The real restore (legal DeviceState ->
+  //     applyDeviceState -> renderSampled), restore-twice determinism, per-sample block-split and
+  //     audio block-partition are asserted in the @Codex dd57c783 gap-fill:
+  //     tests/host/test_d3_divider_restore.cpp.
+}
 }  // namespace
 
 int main() {
@@ -2002,72 +2349,19 @@ int main() {
           "raising PITCH back on re-adds the tone (the recipe really removed it; non-vacuous)");
   }
 
-  // ---- ⑬ #45: S&H is a CV OUT (not in the audio channel); unclocked it doesn't self-run
+  // ---- ⑬ #45: S&H is a CV OUT (not in the audio channel); the lane OWNS its clock ----
   // @Claude criterion ③: the Sample & Hold runs noise->IN with the LF/mod source as its
   // clock and yields a -5..+5 V CV OUT of the voice (manual), so it is NOT summed into
-  // the mixer channel. Clocked it steps at the clock rate; unclocked (constant clock) it
-  // captures nothing and does NOT self-run. The product path never sums sampleHold*Cv
-  // into chIn_, so clocking the S&H must leave drone3Channel byte-identical while the
-  // CV itself moves.
-  {
-    constexpr std::size_t kN = 1024;
-    std::vector<double> clk0(kN, 0.0), clkSq(kN);
-    for (std::size_t i = 0; i < kN; ++i) clkSq[i] = (i / 100) % 2 == 0 ? 0.0 : 1.0;  // 100-frame period.
-    auto render3 = [&](core::SynthRuntime& rt, const std::vector<double>& clk) {
-      rt.rebuild();
-      std::vector<double> ch(kN), cv(kN);
-      for (std::size_t i = 0; i < kN; ++i) {
-        rt.setDrone3ShClock(clk[i]);
-        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
-        ch[i] = rt.drone3Channel();
-        cv[i] = rt.sampleHold3Cv();
-      }
-      return std::make_pair(ch, cv);
-    };
-    auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
-      double d = 0.0;
-      for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
-      return d;
-    };
-    auto countSteps = [](const std::vector<double>& v) {
-      std::size_t n = 0;
-      if (v.empty()) return n;
-      double prev = v[0];
-      for (std::size_t i = 1; i < v.size(); ++i) {
-        if (std::fabs(v[i] - prev) > 1e-9) ++n;
-        prev = v[i];
-      }
-      return n;
-    };
-    // (a) unclocked: constant clock 0.0 -> captures nothing -> CV stays at the initial
-    // held value (0.0); the channel keeps sounding but the CV does NOT self-run.
-    {
-      core::SynthRuntime rt = makeRuntime();
-      auto [ch, cv] = render3(rt, clk0);
-      static_cast<void>(ch);
-      double cvMax = 0.0;
-      for (double x : cv) cvMax = std::max(cvMax, std::fabs(x));
-      check(cvMax < 1e-12,
-            "unclocked S&H does NOT self-run (sampleHold3Cv stays at the initial held value)");
-    }
-    // (b) clocked vs unclocked: clocking the S&H leaves drone3Channel byte-identical
-    // (S&H is NOT in the audio channel) but makes sampleHold3Cv step at the clock edges.
-    {
-      core::SynthRuntime rtC = makeRuntime();
-      auto clocked = render3(rtC, clkSq);
-      core::SynthRuntime rtU = makeRuntime();
-      auto unclocked = render3(rtU, clk0);
-      check(peakDiff(clocked.first, unclocked.first) < 1e-12,
-            "S&H is NOT in the audio channel (clocking it leaves drone3Channel byte-identical)");
-      const std::size_t steps = countSteps(clocked.second);
-      check(steps >= 4,
-            "clocked S&H steps at the clock rate (sampleHold3Cv changes at the clock edges)");
-      double cvPeak = 0.0;
-      for (double x : clocked.second) cvPeak = std::max(cvPeak, std::fabs(x));
-      check(cvPeak > 1e-3,
-            "clocked S&H CV is a bounded nonzero level (the noise samples it captures)");
-    }
-  }
+  // the mixer channel. GH#15 D3 re-routes this: the driven S&H clock is now the LF square,
+  // edge-count divided by the DIVIDER ratio divN_ (a real lane knob, not an injectable
+  // clock). @Kimi ruling ④ voided the setDrone3ShClock field-injection seam, so the old
+  // arbitrary-clock-waveform / no-clock ("unclocked doesn't self-run") cases are NO LONGER
+  // expressible through the product lane — that is reported back (escape hatch) rather than
+  // silently dropped. What the lane CAN prove: the S&H is genuinely clocked by the divided
+  // LF (its CV is a stepped nonzero sequence, never inert 0.0), and the CV is a CV OUT that
+  // is never summed into *out (a divider change leaves drone3Channel byte-identical while
+  // sampleHold3Cv moves).
+  d3_sah_lane_clock_contract();
 
   // ---- #46: ControlEvent dispatch consumes EventTimebase (buffer-invariant) ----
   std::printf("(46) ControlEvent dispatch is buffer-invariant + non-vacuous\n");
@@ -2367,6 +2661,36 @@ int main() {
             "d3 rate_switch out-of-range leaves the state unchanged");
     }
   }
+
+  // ---- GH#15 D3: DIVIDER knob (drone_3/6.divider) owns the S&H clock division ----
+  // The divider was the last D3 no-consumer param beside the S&H clock. @Kimi ruling ④
+  // gave the divided-LF lane OWNERSHIP of the S&H clock source (shClock_ is derived in
+  // tick() from the LF square, edge-count divided by divN_); the old setShClock injection
+  // seam is voided, so no invented dual-source priority rule is introduced. D3 wires
+  // drone_3/6_divider into BOTH dispatch lanes (applyDspParam batch + applyControlEvent_
+  // live) -> PapaVoice::setDivider, which sets divN_ = 1 + (kNewDroneDivMax-1)*norm
+  // (linear; the max is PROVISIONAL — a software model, no manual/DSP evidence).
+  // Acceptance (per @Kimi D3 clause): each divider value proves it changes the executed
+  // module — the S&H clock — via its CV-out readback, and does NOT touch the audio:
+  //   (a) batch lane two norms on the REAL getter (drone3Divider(), closed form 1+15*n);
+  //   (b) live lane ControlEvent reaches the same getter;
+  //   (c) render lever — changing the divider leaves drone3Channel byte-identical (the
+  //       S&H CV is never summed into *out) but moves sampleHold3Cv (a real lever);
+  //   (d) out-of-range lock — norm outside [0,1] is invalid_value and leaves state unchanged.
+  // NEGATIVE (source mutations the fixture discriminates): summing shCv_ into *out
+  // collapses (c) byte-identical onto two differing channels -> red; forcing divN_ = 1
+  // (ignoring the norm) collapses (a)/(b) onto the default ratio -> red.
+  d3_div_acceptance_batch();
+  d3_div_acceptance_live();
+  d3_div_acceptance_render_lever();
+  d3_div_acceptance_range_lock();
+  // (e) @Codex a99f6489 gap-fill: DIVISION ITSELF. The (a)-(b) acceptance proves the divider is a CV
+  // lever but not the ratio; here I measure the ratio: the live codec->owner->processBlock lane, a
+  // LEGAL rate (norm 0.5 -> the panel default 6 Hz — the earlier setDrone3Rate(60) was OUT of the
+  // panel 0..12 Hz map), a long window, the real S&H output vs an INDEPENDENT LF-edge reference
+  // (from the live rate getter, NOT the divider getter), for integer N AND the default N=8.5 (mean,
+  // intervals alternate 8/9), on drone3 AND drone6, with asymmetric no-cross-talk and split+restore.
+  d3_div_actual_timing_acceptance();
 
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();

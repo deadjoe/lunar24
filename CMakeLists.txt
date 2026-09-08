@@ -402,6 +402,22 @@ lunar_add_test(test_vco_normal_source tests/host/test_vco_normal_source.cpp)
 target_link_libraries(test_vco_normal_source PRIVATE lunar_host)
 target_include_directories(test_vco_normal_source PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# task #98 (GH #15 D3 divider): REAL-RESTORE directional acceptance (the @Codex dd57c783 gap-fill).
+# The live-lane d3 acceptance (test_machine_runtime::d3_div_actual_timing_acceptance) drives rate +
+# divider through a controlled SynthRuntime fixture; it does NOT exercise the codec -> owner ->
+# StandaloneAudioEngine restore path, and its capture frames are chunk-tail-approximate. This test
+# restores a LEGAL DeviceState's RATE/DIVIDER through encode -> decode -> applyDeviceState and observes
+# the real S&H at the harness's PER-SAMPLE seam (renderSampled: one processBlock(1) per frame + an
+# onSample hook), so each capture is recorded at its absolute frame with its held value. It asserts the
+# ratio against an INDEPENDENT LF-edge reference round(win*rateHz/sr) from the live rate getter (not the
+# divider getter), integer N and default N=8.5 (intervals strictly alternating 8/9, mean 8.5), asymmetric
+# two-lane no-cross-talk, restore-twice determinism (same state two loads -> same frame/held sequence)
+# and one-render(all) vs two-render(half) block-split at the same per-sample seam. Tagged `slow` (it
+# renders ~800k frames per-sample; PR/merge probe-gate only).
+lunar_add_test(test_d3_divider_restore tests/host/test_d3_divider_restore.cpp)
+target_link_libraries(test_d3_divider_restore PRIVATE lunar_host)
+target_include_directories(test_d3_divider_restore PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
 # task #85 (GH #19): REAL-PRODUCT anti-aliasing probe. Renders the actual product DSP (through the
 # agreed encode->decode->applyDeviceState->processBlock chain) for a matrix of path x sample-rate x
 # frequency/level cells and dumps the samples + metadata for the verified Python analyzer. This is
@@ -492,6 +508,12 @@ set_tests_properties(gh20_vcf_probe gh20_vcf_acceptance PROPERTIES LABELS "slow"
 # like the core-probe family. Tagged `slow` so the PR-only probe-gate can run it once.
 lunar_add_test(gh12_keyboard_owner_probe tests/probes/gh12_keyboard_owner_probe.cpp)
 set_tests_properties(gh12_keyboard_owner_probe PROPERTIES LABELS "slow")
+
+# task #98 (GH #15 D3): the real-restore divider acceptance renders the actual DSP per-sample over
+# ~800k frames (a short run is under-sampled for the N=16 discriminator). It must not gate every
+# feature push, so it carries the `slow` label the probe-gating (PR #28) introduced; the PR-only
+# probe-gate runs it once.
+set_tests_properties(test_d3_divider_restore PROPERTIES LABELS "slow")
 
 # task #88 (GH #20): SOURCE NEGATIVE CONTROLS. The acceptance gate must DISCRIMINATE: GREEN on the
 # real trapezoidal product and RED on a production PolivoksFilter source mutated away from the @Codex
