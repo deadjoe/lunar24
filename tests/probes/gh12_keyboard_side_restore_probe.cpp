@@ -1014,20 +1014,29 @@ static void accept_block_invariance() {
 
 static void accept_repeat_and_reject() {
   std::printf("O  -- same state restored twice is identical; an invalid state is rejected\n");
-  core::DeviceStateV1 st = core::make_default_device_state(kSeed);
-  set_mode(st, 2);
-  set_left(st, core::ParameterId::keyboard_portamento_speed, 0.7);
-  set_right(st, core::ParameterId::keyboard_arp_direction, 2.0);
-  std::unique_ptr<core::MachineRuntimeDefinition> d1 = chain(st);
-  std::unique_ptr<core::MachineRuntimeDefinition> d2 = chain(st);
-  if (d1 == nullptr || d2 == nullptr) { check(false, "O build"); return; }
-  note(d1->runtime(), core::KeyboardSide::Left, 1.0, 0.5, 1, 0);
-  note(d2->runtime(), core::KeyboardSide::Left, 1.0, 0.5, 1, 0);
-  std::vector<double> a, b;
-  render(d1->runtime(), 4800, &a);
-  render(d2->runtime(), 4800, &b);
-  check(a == b && snap(d1->runtime()).vOct == snap(d2->runtime()).vOct,
-        "O1 the same state restored twice is bit-identical");
+  // O1: EVERY mode — the same state restored twice must be bit-identical (both sides driven,
+  // so a per-side instance that carried state across restores would show up here).
+  for (int mode = 0; mode <= 2; ++mode) {
+    core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+    set_mode(st, mode);
+    set_left(st, core::ParameterId::keyboard_portamento_speed, 0.7);
+    set_right(st, core::ParameterId::keyboard_arp_direction, 2.0);
+    std::unique_ptr<core::MachineRuntimeDefinition> d1 = chain(st);
+    std::unique_ptr<core::MachineRuntimeDefinition> d2 = chain(st);
+    if (d1 == nullptr || d2 == nullptr) { check(false, "O1 build"); continue; }
+    note(d1->runtime(), core::KeyboardSide::Left, 1.0, 0.5, 1, 0);
+    note(d2->runtime(), core::KeyboardSide::Left, 1.0, 0.5, 1, 0);
+    note(d1->runtime(), core::KeyboardSide::Right, 2.0, 0.3, 2, 0);
+    note(d2->runtime(), core::KeyboardSide::Right, 2.0, 0.3, 2, 0);
+    std::vector<double> a, b;
+    render(d1->runtime(), 4800, &a);
+    render(d2->runtime(), 4800, &b);
+    check(a == b && snap(d1->runtime()).vOct == snap(d2->runtime()).vOct &&
+              snap(d1->runtime()).gateR == snap(d2->runtime()).gateR,
+          mode == 0   ? "O1 Single: the same state restored twice is bit-identical"
+          : mode == 1 ? "O1 Twin: the same state restored twice is bit-identical"
+                      : "O1 Split: the same state restored twice is bit-identical");
+  }
 
   // An invalid state (keyboard.mode out of its 0..2 range) must be rejected by the chain
   // and produce NO runtime — the product never publishes a definition from a bad state.
@@ -1050,6 +1059,29 @@ static void accept_repeat_and_reject() {
   const bool enc2 = core::encode_device_state(bad, after.data(), after.size(), &written2);
   check(enc2 && written == written2 && buf == after,
         "O3 a rejected candidate leaves the caller's state byte-identical");
+
+  // O4: a rejected candidate has NO effect on an ALREADY-ACTIVE runtime — the active
+  // state/format/plan and the subsequent trace are preserved. Two identical runtimes are
+  // driven in lockstep; the rejected attempt is made between the halves of one of them.
+  {
+    core::DeviceStateV1 good = core::make_default_device_state(kSeed);
+    set_mode(good, 2);
+    std::unique_ptr<core::MachineRuntimeDefinition> g = chain(good);
+    std::unique_ptr<core::MachineRuntimeDefinition> c = chain(good);
+    if (g == nullptr || c == nullptr) { check(false, "O4 build"); return; }
+    std::vector<double> ta, tb;
+    note(g->runtime(), core::KeyboardSide::Left, 1.0, 0.5, 1, 0);
+    note(c->runtime(), core::KeyboardSide::Left, 1.0, 0.5, 1, 0);
+    render(g->runtime(), 2400, &ta);
+    render(c->runtime(), 2400, &tb);
+    const core::MachineCandidateResult r2 = core::buildMachineRuntimeCandidate(bad, kSr);
+    check(r2.status == core::MachineCandidateStatus::rejected_state,
+          "O4 the mid-flight rejected attempt is still rejected_state");
+    render(g->runtime(), 2400, &ta);
+    render(c->runtime(), 2400, &tb);
+    check(ta == tb,
+          "O4 a rejected candidate leaves an ACTIVE runtime's subsequent trace bit-identical");
+  }
 }
 
 int main() {

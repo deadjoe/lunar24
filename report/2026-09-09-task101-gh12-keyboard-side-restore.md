@@ -61,7 +61,7 @@ selectors, plus calibration/preset/APP payloads) are **not** claimed as applied.
 | `core/include/lunar24/core/keyboard_behaviour.h` | `KeyboardBehaviour::configure()` stores `params_`; `params()` readback |
 | `core/include/lunar24/core/machine_definition.h` | binds **all four** keyboard jacks; calls `applyKeyboardState(state_)` after the DSP apply |
 | `core/include/lunar24/core/machine_runtime.h` | per-side instances, `setKeyboardBindings(4)`, `applyKeyboardState`, per-side event dispatch, per-side tick + 4-jack publish, readbacks |
-| `tests/probes/gh12_keyboard_side_restore_probe.cpp` | NEW acceptance (91 checks) |
+| `tests/probes/gh12_keyboard_side_restore_probe.cpp` | NEW acceptance (95 checks) |
 | `tests/mutation/run_gh12_side_restore_mutation.sh` | NEW 8-point isolated negative-control driver |
 | `CMakeLists.txt` | registers the probe (label `slow`) |
 
@@ -70,7 +70,7 @@ schema change, no fault macro in a production header.
 
 ---
 
-## 3. Acceptance — 91 checks, 0 failures
+## 3. Acceptance — 95 checks, 0 failures
 
 Entry is the real chain, never a private setter:
 `DeviceStateV1 → encode_device_state → decode_device_state → buildMachineRuntimeCandidate →
@@ -94,7 +94,7 @@ enqueueControlEvent / InputStateMachine::translate → processBlock → controlV
 | L | quantiser root (128) discriminates a sparse (Ionian) scale | 1 |
 | M | default prepare == default restore (one documented parse difference: `clock_bpm`) | 7 |
 | N | 64/256/irregular partitions bit-identical (4 outputs + dryA) | 2 |
-| O | same state restored twice identical; an invalid state is `rejected_state`; caller state untouched | 3 |
+| O | **every mode** (Single/Twin/Split) restored twice is bit-identical; an invalid state is `rejected_state`; caller state untouched; a rejected attempt leaves an **already-active** runtime's subsequent trace bit-identical | 7 |
 
 Selected load-bearing results:
 
@@ -104,8 +104,12 @@ Selected load-bearing results:
   preserved and the behaviour is honestly absent.
 - **`N1/N2`** — 8192 frames in 64/256/irregular partitions produce bit-identical `dryA` and
   bit-identical four-output snapshots.
+- **`O1`** — the same state restored twice is bit-identical in **every** mode (Single/Twin/Split,
+  both sides driven), i.e. restore is idempotent and does not leak performance state across sides.
 - **`O2`** — `keyboard.mode = 99` is rejected by `validate_device_state` inside the candidate chain
   and yields **no** definition; `O3` proves the caller's state is byte-identical afterwards.
+- **`O4`** — a rejected attempt made **while another runtime is already active** leaves that
+  runtime's subsequent trace bit-identical (the failure keeps the active state/format/plan).
 - **`M1/M5`** — default prepare and default restore compile the same graph and render bit-identical
   audio and identical keyboard outputs.
 
@@ -114,7 +118,7 @@ Selected load-bearing results:
 ## 4. Negative controls — 8/8 RED on a pinned assertion
 
 `tests/mutation/run_gh12_side_restore_mutation.sh`. Baseline is built and run first and must be
-**GREEN (91/91)**; then each point is a *detached production-source mutation* in a shadow header
+**GREEN (95/95)**; then each point is a *detached production-source mutation* in a shadow header
 (no tracked path is written, no fault macro added). A point passes only if the mutated build
 (a) compiles, (b) terminates normally (prints the `N checks, M failures` summary — a crash is
 rejected), and (c) trips the **exact pinned `[FAIL]` line**, not merely a non-zero count.
@@ -138,10 +142,10 @@ rejected), and (c) trips the **exact pinned `[FAIL]` line**, not merely a non-ze
 |------|---------|--------|
 | Release fast suite | `ctest --test-dir build-release --label-exclude slow` | **70/70 passed** (incl. regeneration zero-diff, license/header gate, negative-fixture gate, id-stability, host engine oracle, state apply oracles, host wiring + script codec) |
 | Release slow/probe gate | `ctest --test-dir build-release --label-regex slow` | 7 tests: `test_d3_divider_restore`, `gh19_alias_probe`, `gh19_blamp_acceptance`, `gh20_vcf_probe`, `gh20_vcf_acceptance`, `gh12_keyboard_owner_probe`, **`gh12_keyboard_side_restore_probe`** — see §5.1 |
-| ASan + UBSan Debug | `cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"` then full build + fast suite | **build rc=0**, **70/70 passed**, probe **91/91, 0 failures, 0 sanitizer reports** |
+| ASan + UBSan Debug | `cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"` then full build + fast suite | **build rc=0**, **70/70 passed**, probe **95/95, 0 failures, 0 sanitizer reports** |
 | Real host artifact | `cmake --build build-release --target Lunar24Host` | built; `build-release/out/Lunar24Host.app/Contents/MacOS/Lunar24Host` present and executable |
 | Full-coverage gate | `python3 tools/check_registry_complete.py --require-full` | **rc=1, by design** — the *pre-existing* 12-item keyboard gap is unchanged (`newRogue=[]`, no regression, same 8 Root-A non-scalar + 4 no-value-domain selectors). Per contract §5 this gap is listed separately and does **not** change the gate. |
-| Mutation harness | `./tests/mutation/run_gh12_side_restore_mutation.sh` | baseline 91/91 GREEN, **8/8 mutations RED on their pin** |
+| Mutation harness | `./tests/mutation/run_gh12_side_restore_mutation.sh` | baseline 95/95 GREEN, **8/8 mutations RED on their pin** |
 
 ### 5.1 Slow/probe gate detail
 
