@@ -54,6 +54,7 @@
 #include <vector>
 
 #include <lunar24/core/device_state.h>
+#include <lunar24/core/input_state_machine.h>
 #include <lunar24/core/keyboard_behaviour.h>
 #include <lunar24/core/keyboard_mode.h>
 #include <lunar24/core/keyboard_side_bank.h>
@@ -161,6 +162,33 @@ static void reset_edge(core::SynthRuntime& rt, core::KeyboardSide side, std::uin
   push(rt, core::ControlEventKind::reset, 0.0, side, 0, sample);
 }
 
+// The REAL producer path: a normalized PerformanceInput goes through
+// InputStateMachine::translate() — the one place a performance message becomes
+// canonical ControlEvents — and the emitted events are enqueued unmodified. This is
+// the seam the side metadata actually has to survive, so criterion P enters here.
+static core::PerformanceInput perf(core::PerfInputKind kind, double pitch, double value,
+                                   core::KeyboardSide side, core::NoteId id,
+                                   std::uint64_t sample) {
+  core::PerformanceInput in{};
+  in.kind = kind;
+  in.sample = sample;
+  in.pitch = static_cast<core::SignalSample>(pitch);
+  in.value = static_cast<core::SignalSample>(value);
+  in.channel = 0;
+  in.source = 1;
+  in.noteId = id;
+  in.seq = sample;
+  in.side = side;
+  return in;
+}
+static void enqueue_translated(core::SynthRuntime& rt, const core::PerformanceInput& in) {
+  static const core::InputStateMachine kSm(nullptr, 0u);  // no CC bindings
+  core::ControlEvent evs[3];
+  const std::uint32_t n = kSm.translate(in, evs, 3u);
+  for (std::uint32_t i = 0; i < n; ++i)
+    rt.enqueueControlEvent(core::TimedControlEvent{evs[i], in.sample});
+}
+
 // ---- render helpers ----------------------------------------------------------
 
 struct Snap {
@@ -260,6 +288,32 @@ static void accept_single_compat() {
     s = snap(rt);
     check(s.gateL == 0.0, "A2 Single: a left release releases the collapsed note (one identity)");
   }
+}
+
+// ============================================================ P. producer path
+
+static void accept_translate_side_path() {
+  std::printf("P  -- the REAL producer path: PerformanceInput -> translate() -> runtime\n");
+  core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+  set_mode(st, 2);  // Split: the two sides are independent performances
+  std::unique_ptr<core::MachineRuntimeDefinition> def = chain(st);
+  if (def == nullptr) { check(false, "P build"); return; }
+  core::SynthRuntime& rt = def->runtime();
+  enqueue_translated(rt, perf(core::PerfInputKind::note_on, 1.0, 0.5,
+                              core::KeyboardSide::Left, 1, 0));
+  enqueue_translated(rt, perf(core::PerfInputKind::note_on, 2.0, 0.5,
+                              core::KeyboardSide::Right, 2, 0));
+  render(rt, 4800);
+  Snap s = snap(rt);
+  check(s.gateL == kGateHigh && s.gateR == kGateHigh && near(s.vOct, 1.0, 1e-6) &&
+            near(s.press, 2.0, 1e-6),
+        "P1 translate(): a left note and a right note are two independent performances");
+  enqueue_translated(rt, perf(core::PerfInputKind::note_off, 0.0, 0.0,
+                              core::KeyboardSide::Left, 1, 4800));
+  render(rt, 4800);
+  s = snap(rt);
+  check(s.gateL == 0.0 && s.gateR == kGateHigh,
+        "P2 translate(): the left note-off releases only the left performance");
 }
 
 // ============================================================ B. Twin
@@ -1000,6 +1054,7 @@ static void accept_repeat_and_reject() {
 
 int main() {
   accept_single_compat();
+  accept_translate_side_path();
   accept_twin();
   accept_split();
   accept_same_identity();
