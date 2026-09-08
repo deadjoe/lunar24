@@ -26,19 +26,17 @@
 
 namespace core = lunar24::core;
 
-// The 10 transfer-unavailable parameters (no real runtime consumer), by stable
+// The 8 transfer-unavailable parameters (no real runtime consumer), by stable
 // ParameterId. This is the pinned set from the revision-2 classification: vco_a.pwm(8),
-// vco_b.pwm(30) and the drone3/6 DIVIDER/ATT/RLS/HOLD pairs. GH#15 D1 moved
-// drone_3/6_mod and D2 moved drone_3/6_hi_low + drone_3/6_rate_switch to applied_to_dsp
-// (16 -> 14 -> 10).
+// vco_b.pwm(30) and the drone3/6 ATT/RLS/HOLD pairs. GH#15 D1 moved drone_3/6_mod, D2
+// moved drone_3/6_hi_low + drone_3/6_rate_switch, and D3 moved drone_3/6_divider to
+// applied_to_dsp (16 -> 14 -> 10 -> 8).
 static constexpr core::ParameterId kUnavailablePids[] = {
     core::ParameterId::vco_a_pwm,
     core::ParameterId::vco_b_pwm,
-    core::ParameterId::drone_3_divider,
     core::ParameterId::drone_3_att,
     core::ParameterId::drone_3_rls,
     core::ParameterId::drone_3_hold,
-    core::ParameterId::drone_6_divider,
     core::ParameterId::drone_6_att,
     core::ParameterId::drone_6_rls,
     core::ParameterId::drone_6_hold,
@@ -70,10 +68,10 @@ static core::StateDisposition oracle_classify(core::ParameterId id) {
 
 static void class_counts_and_sum() {
   CHECK_EQ(core::kDeviceStateDispositionCount, 345u);
-  CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_dsp), 175u);
+  CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_dsp), 177u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_keyboard), 35u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::preserved_deferred_p6_p8), 125u);
-  CHECK_EQ(core::count_disposition(core::StateDisposition::transfer_unavailable), 10u);
+  CHECK_EQ(core::count_disposition(core::StateDisposition::transfer_unavailable), 8u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::invalid_unlanded), 0u);
   const std::uint32_t sum =
       core::count_disposition(core::StateDisposition::applied_to_dsp) +
@@ -106,10 +104,10 @@ static void per_id_matches_independent_oracle() {
     for (std::uint32_t b = a + 1; b < core::kDeviceStateDispositionCount; ++b)
       CHECK(core::kDeviceStateDisposition[b].id != ea.id);
   }
-  CHECK_EQ(dsp, 175u);
+  CHECK_EQ(dsp, 177u);
   CHECK_EQ(kbd, 35u);
   CHECK_EQ(deferred, 125u);
-  CHECK_EQ(unavailable, 10u);
+  CHECK_EQ(unavailable, 8u);
   CHECK_EQ(unlanded, 0u);
 }
 

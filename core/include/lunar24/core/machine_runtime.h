@@ -314,6 +314,12 @@ class SynthRuntime {
   // (linear, kModDepthFromNorm = 1.0). PROVISIONAL: the norm->depth model is software
   // (no manual/DSP circuit evidence), like the pulser model. GH#15 D1.
   static constexpr double kModDepthFromNorm = 1.0;
+  // GH#15 D3: DIVIDER knob (drone_3/6.divider, norm [0,1]) -> S&H clock division ratio.
+  // divN = 1 + (kNewDroneDivMax-1)*norm (linear). The divided LF square drives the S&H
+  // clock socket (the voice comment at the SAndHold member: "LF/mod->clock"), so the S&H
+  // captures the noise once every divN LF cycles. PROVISIONAL: the max ratio is a
+  // software model (no manual/DSP circuit evidence for the norm->divisor model).
+  static constexpr double kNewDroneDivMax = 16.0;
   // Voice-6 (drone 6) seed mix, so the two Papa Srapa voices are independent.
   static constexpr std::uint64_t kNewSndSeed6Xor = 0x9E3779B97F4A7C15ULL;
   // Per-source sub-seed mix so the audio/LF/FmAm/noise stems within one voice are
@@ -780,16 +786,16 @@ class SynthRuntime {
   // source, one set per Papa Srapa voice (drone 3, drone 6). PITCH is a 0..1
   // position (0 = tone off => the "clean noise" recipe; 1 = max pitch). RATE drives
   // the LF square modulator; FM/AM are the two factory switches; NOISE is the mix
-  // amount; SH_CLOCK drives the Sample & Hold clock (a constant = unclocked, so it
-  // does not self-run). The rest (RANGE, MOD, DIVIDER, GATE/HOLD, ATT/RLS, env out)
-  // have no dedicated runtime source yet and stay PROVISIONAL (see 00-status).
+  // amount. MOD (D1) scales the LF square onto the audio oscillator; DIVIDER (D3) is
+  // the S&H clock division ratio (the S&H captures noise once per divN_ LF edges). The
+  // GATE/HOLD, ATT/RLS and env-out sources remain PROVISIONAL (see 00-status).
   // These forward directly to the NEW sources, read every frame by step_(kDrone).
   void setDrone3Pitch(double pct) { pv3_.setPitch(pct); }
   void setDrone3Rate(double hz) { pv3_.setRate(hz); }
   void setDrone3Fm(bool on) { pv3_.setFm(on); }
   void setDrone3Am(bool on) { pv3_.setAm(on); }
   void setDrone3Noise(double amp) { pv3_.setNoise(amp); }
-  void setDrone3ShClock(double clk) { pv3_.setShClock(clk); }
+  void setDrone3Divider(double norm) { pv3_.setDivider(norm); }
   // GH#15 D1 (mod knob): norm [0,1] -> audio-oscillator modulation depth = modNorm
   // (linear, marked PROVISIONAL below as kModDepthFromNorm). Registry-AGREEING unit:
   // both the registry unit and the setter take norm 0..1, so no invented scale.
@@ -799,7 +805,7 @@ class SynthRuntime {
   void setDrone6Fm(bool on) { pv6_.setFm(on); }
   void setDrone6Am(bool on) { pv6_.setAm(on); }
   void setDrone6Noise(double amp) { pv6_.setNoise(amp); }
-  void setDrone6ShClock(double clk) { pv6_.setShClock(clk); }
+  void setDrone6Divider(double norm) { pv6_.setDivider(norm); }
   void setDrone6Mod(double depth) { pv6_.setMod(depth); }
   // GH#15 D2 (RANGE / RATE SWITCH selectors, both Papa Srapa voices). Selector index
   // 0/1 (the batch lane validates it via dspParamValid_ before the switch; the live
@@ -953,12 +959,17 @@ class SynthRuntime {
   // GH#15 D1: MOD = applied audio-oscillator modulation depth (modNorm, linear). Reads the
   // REAL PapaVoice field the render path consumes (modApplied()), not a shadow bank.
   double drone3ModApplied() const { return pv3_.modApplied(); }
+  // GH#15 D3: DIVIDER = the S&H clock division ratio the render path actually drives
+  // (divN_ = 1 + (kNewDroneDivMax-1)*norm). Reads the real PapaVoice field, like the
+  // pitch/rate getters, so the panel knob -> divided-clock link is observable.
+  double drone3Divider() const { return pv3_.divider(); }
   double drone6RateHz() const { return pv6_.rateHz(); }
   double drone6PitchHz() const { return pv6_.pitchHz(); }
   bool drone6Fm() const { return pv6_.fmOn(); }
   bool drone6Am() const { return pv6_.amOn(); }
   double drone6NoiseAmp() const { return pv6_.noiseAmp(); }
   double drone6ModApplied() const { return pv6_.modApplied(); }
+  double drone6Divider() const { return pv6_.divider(); }
   // Mixer channel VOL/PAN wrappers + readback (0-based channel slot, 1:1 with the
   // registry's mixer_<N> index offset by one). Reuses VoiceMixer's clamp01.
   void setMixerChannelVol(int ch, double v) { mixer_.setChannelVol(ch, v); }
@@ -1396,6 +1407,9 @@ class SynthRuntime {
       case ParameterId::drone_3_rate_switch:
         setDrone3RateSwitch(static_cast<int>(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_divider:
+        setDrone3Divider(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_rate:
         setDrone6Rate(newDroneRateHzFromNorm(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
@@ -1419,6 +1433,9 @@ class SynthRuntime {
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_rate_switch:
         setDrone6RateSwitch(static_cast<int>(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_divider:
+        setDrone6Divider(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       default:
         lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
@@ -1831,7 +1848,12 @@ class SynthRuntime {
     void setFm(bool on) { fmOn_ = on; }
     void setAm(bool on) { amOn_ = on; }
     void setNoise(double amp) { noise.setAmplitude(amp); }
-    void setShClock(double clk) { shClock_ = clk; }
+    // GH#15 D3 (DIVIDER knob). The lane OWNS the S&H clock source; the old setShClock
+    // field-injection seam (a pure test hook) is voided. divN = 1 + (kNewDroneDivMax-1)*norm
+    // (linear). Default norm 0.5 -> divN = 8.5: the S&H CV readback (sampleHold*Cv) goes from
+    // a constant 0.0 to a stepped noise sequence, but the audio channel is byte-identical
+    // (the S&H CV is never summed into *out). PROVISIONAL max (see constant).
+    void setDivider(double norm) { divN_ = 1.0 + (kNewDroneDivMax - 1.0) * norm; }
     // MOD knob (GH#15 D1). Depth = modNorm (linear, kModDepthFromNorm): scales the
     // LF-square modulation the audio oscillator consumes. BEFORE the knob was wired
     // tick() fed audio a raw ±1 square (depth 1.0); after wiring it scales by the
@@ -1850,22 +1872,40 @@ class SynthRuntime {
     // the noise source amplitude.
     double rateHz() const { return lf.effectiveFreqHz(); }
     double pitchHz() const { return audio.effectiveFreqHz(); }
+    // GH#15 D3: DIVIDER = the S&H clock division ratio divN_ the render path consumes.
+    double divider() const { return divN_; }
     bool fmOn() const { return fmOn_; }
     bool amOn() const { return amOn_; }
     double noiseAmp() const { return noise.amplitude(); }
     void tick(double* out) {
       double lv = 0.0;
       lf.tick(&lv);
+      const double sq = lf.square();  // ±1 LF-square level (read-only tap).
       // MOD knob: scale the ±1 LF square by the mod depth before feeding the audio
       // oscillator. depth=modNorm linear (kModDepthFromNorm, PROVISIONAL). Default
       // drone_3/6 mod depth changed 1.0 (raw square) -> 0.5 (registry default).
-      audio.setMod(lf.square() * mod_);
+      audio.setMod(sq * mod_);
       audio.setFmDevHz(fmOn_ ? fm.fDevHz() : 0.0);
       audio.setAmDepth(amOn_ ? fm.depth() : 0.0);
       double a = 0.0;
       audio.tick(&a);
       double n = 0.0;
       noise.tick(&n);
+      // GH#15 D3: the S&H clock socket is fed by the LF square, edge-count divided by the
+      // DIVIDER ratio divN_. The lane owns this clock (the setShClock injection seam is
+      // voided). A rising edge of the LF square advances a fractional edge counter; every
+      // divN_ LF edges a one-sample clock pulse is fed to the S&H, so it captures the noise
+      // exactly once per divN_ LF cycles. Between groups the clock is low and the S&H holds
+      // (it never self-runs). shCv_ is the CV-out readback, never summed into the channel.
+      shClock_ = 0.0;
+      if (sq >= 0.5 && lfPrevLevel_ < 0.5) {  // LF square rising edge (-1 -> +1).
+        lfEdgeAcc_ += 1.0;
+        if (lfEdgeAcc_ >= divN_) {            // this edge completes a div-by-N group.
+          lfEdgeAcc_ -= divN_;
+          shClock_ = 1.0;                     // one-sample capture pulse -> S&H rising edge.
+        }
+      }
+      lfPrevLevel_ = sq;
       sh.tick(n, shClock_, &shCv_);
       *out = a + n;  // noise adds; S&H CV is NOT summed here.
     }
@@ -1876,7 +1916,10 @@ class SynthRuntime {
     SAndHold sh;        // noise->in, LF/mod->clock; CV out, not in the audio channel.
     bool fmOn_ = false;
     bool amOn_ = false;
-    double shClock_ = 0.0;
+    double shClock_ = 0.0;  // S&H clock level (derived from the divided LF square, GH#15 D3).
+    double divN_ = 1.0;     // S&H division ratio (1 + (kNewDroneDivMax-1)*norm), GH#15 D3.
+    double lfPrevLevel_ = 0.0;  // previous LF-square level, for rising-edge detection.
+    double lfEdgeAcc_ = 0.0;    // fractional LF-edge counter, scaled by divN_ into captures.
     double shCv_ = 0.0;
     // MOD knob depth (GH#15 D1). Default 0.5 = the registered drone_3/6.mod default,
     // so the post-wire default sound is half-depth modulation (was the raw ±1 square).
@@ -1952,6 +1995,10 @@ class SynthRuntime {
       case ParameterId::drone_3_rate_switch:  setDrone3RateSwitch(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_hi_low:       setDrone6HiLow(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_rate_switch:  setDrone6RateSwitch(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      // GH#15 D3 (DIVIDER, both voices). The batch lane validated the norm range [0,1] via
+      // dspParamValid_ before the switch, so the knob value reaches the voice unchanged.
+      case ParameterId::drone_3_divider:   setDrone3Divider(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_divider:   setDrone6Divider(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       // GH#11 FIXED-CANDIDATE (@Codex D3): the 34 evidence-mappable control-source params dispatch
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the
