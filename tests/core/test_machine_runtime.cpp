@@ -80,6 +80,15 @@ using core::ModuleId;
 
 namespace {
 
+// GH#15 D3 Windows-cl bisect: feed flushed markers so the CI log pinpoints the exact
+// crash site (Windows stdout to a pipe is fully buffered, so unflushed printf is lost
+// on an access violation). Removed before the fix lands.
+#define BMARK(token)                                  \
+  do {                                                 \
+    std::printf(">>> BISECT:%s\n", token);             \
+    std::fflush(stdout);                               \
+  } while (0)
+
 // The large-object (SynthRuntime, which embeds the DroneBank + 2 PapaVoice + filters)
 // acceptance tests create a runtime BY VALUE on the stack. Under ASan the usable stack is
 // sharply reduced, and -O1 will happily inline a small test function into main, inflating
@@ -2015,6 +2024,7 @@ int main() {
   // is never summed into *out (a divider change leaves drone3Channel byte-identical while
   // sampleHold3Cv moves).
   {
+    BMARK("enter 13-rework (render3)");
     constexpr std::size_t kN = 8192;
     auto render3 = [](core::SynthRuntime& rt, double divNorm, std::size_t frames) {
       rt.rebuild();
@@ -2047,6 +2057,7 @@ int main() {
     // a fast-LF window gives a stepped, bounded nonzero CV — never the inert 0.0 of the old
     // no-clock path.
     {
+      BMARK("13-(i) lane-clock drives S&H");
       core::SynthRuntime rt = makeRuntime();
       auto [ch, cv] = render3(rt, 0.0, kN);
       static_cast<void>(ch);
@@ -2061,6 +2072,7 @@ int main() {
     // (ii) S&H CV is a CV OUT, never summed into *out: two divider ratios give two distinct
     // CV profiles (different division rates -> different captures) but byte-identical channels.
     {
+      BMARK("13-(ii) S&H CV-out (two ratios)");
       core::SynthRuntime rtA = makeRuntime();
       auto a = render3(rtA, 0.0, kN);   // N = 1 -> capture every LF edge.
       core::SynthRuntime rtB = makeRuntime();
@@ -2390,6 +2402,7 @@ int main() {
   // collapses (c) byte-identical onto two differing channels -> red; forcing divN_ = 1
   // (ignoring the norm) collapses (a)/(b) onto the default ratio -> red.
   {
+    BMARK("D3-block-enter");
     auto peakDiff = [](const std::vector<double>& a, const std::vector<double>& b) {
       double d = 0.0;
       for (std::size_t i = 0; i < a.size() && i < b.size(); ++i)
@@ -2401,6 +2414,7 @@ int main() {
     // (a) batch lane, two norms on the REAL getter. Closed form divN_ = 1 + 15*norm, so
     // a mapping error (wrong max, or a nonlinear norm) is a red here. Both drones.
     {
+      BMARK("D3-(a) batch lane");
       core::SynthRuntime rt = makeRuntime(); rt.rebuild();
       static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.25));
       const double n25 = rt.drone3Divider();
@@ -2420,6 +2434,7 @@ int main() {
     // (b) live lane, non-vacuous. A scheduled parameter ControlEvent must reach the SAME
     // getter via applyControlEvent_. te.sample=0 fires at frame 0, before the frame ticks.
     {
+      BMARK("D3-(b) live lane");
       constexpr std::size_t kTot = 128;
       static const core::RuntimeInputs kSil[kTot] = {};
       core::RuntimeOutput out[kTot] = {};
@@ -2441,6 +2456,7 @@ int main() {
     // (c) render lever. The S&H is a CV OUT, never summed into *out, so a divider change
     // leaves drone3Channel byte-identical while sampleHold3Cv moves (fast-LF window).
     {
+      BMARK("D3-(c) render lever");
       const auto renderDiv = [&](core::SynthRuntime& rt, double norm, std::size_t kN) {
         rt.rebuild();
         rt.setDrone3Rate(60.0);   // fast LF (fixture) so captures are dense in-window.
@@ -2465,6 +2481,7 @@ int main() {
     // dspParamValid_ (v in [min,max]); 2.0 / -0.5 are outside [0,1] -> invalid_value and
     // the readback stays at the last valid value (fail-closed, never a silent clamp).
     {
+      BMARK("D3-(d) oob lock");
       core::SynthRuntime rt = makeRuntime(); rt.rebuild();
       static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_divider, 0.25));
       const double held = rt.drone3Divider();
@@ -2479,6 +2496,7 @@ int main() {
     }
   }
 
+  BMARK("D3-block-done");
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();
 
