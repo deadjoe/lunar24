@@ -115,7 +115,7 @@ Selected load-bearing results:
 
 ---
 
-## 4. Negative controls — 8/8 RED on a pinned assertion
+## 4. Negative controls — 8/8 RED on a pinned assertion (first round @ `a5062df`; superseded by §8)
 
 `tests/mutation/run_gh12_side_restore_mutation.sh`. Baseline is built and run first and must be
 **GREEN (95/95)**; then each point is a *detached production-source mutation* in a shadow header
@@ -145,7 +145,7 @@ rejected), and (c) trips the **exact pinned `[FAIL]` line**, not merely a non-ze
 | ASan + UBSan Debug | `cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"` then full build + fast suite | **build rc=0**, **70/70 passed**, probe **95/95, 0 failures, 0 sanitizer reports** |
 | Real host artifact | `cmake --build build-release --target Lunar24Host` | built; `build-release/out/Lunar24Host.app/Contents/MacOS/Lunar24Host` present and executable |
 | Full-coverage gate | `python3 tools/check_registry_complete.py --require-full` | **rc=1, by design** — the *pre-existing* 12-item keyboard gap is unchanged (`newRogue=[]`, no regression, same 8 Root-A non-scalar + 4 no-value-domain selectors). Per contract §5 this gap is listed separately and does **not** change the gate. |
-| Mutation harness | `./tests/mutation/run_gh12_side_restore_mutation.sh` | baseline 95/95 GREEN, **8/8 mutations RED on their pin** |
+| Mutation harness | `./tests/mutation/run_gh12_side_restore_mutation.sh` | baseline 95/95 GREEN, **8/8 mutations RED on their pin** (first round @ `a5062df`; 10/10 at the current head — §8) |
 
 ### 5.1 Slow/probe gate detail
 
@@ -192,3 +192,97 @@ when the run completes.
 - The 12 full-coverage gaps are pre-existing and untouched (`--require-full` stays RED by design).
 - The slow/probe gate must run on the exact pushed head in CI before any merge decision.
 - Merge / GH#12 closure / release / MET are **not** in this slice; @Codex holds the merge gate.
+
+---
+
+## 8. Review rework — @Codex msg `b7d63c1f` groups 1-3 (head `c435c2e`, UNPUSHED)
+
+Baseline of this round: `a5062df`. The bank / mode / event-propagation tests were **not** rewritten
+(they were already correct). Only the three contracted groups changed.
+
+### 8.1 Group 1 — the real host single-commit entry (probe section `Q`)
+
+New `accept_host_entry()` re-enters the SAME mode / restore / failure facts through
+`testengine::EngineHarness` — encode → decode → `StandaloneAudioEngine::applyDeviceState` →
+`processBlock`, capturing the four real output channels — instead of only
+`buildMachineRuntimeCandidate`.
+
+- `Q1` every mode (Single/Twin/Split) is accepted; a re-commit of the same state on the same owner
+  is output-identical on all four channels. `Q1b` proves the compared trace is a **live** render.
+- `Q2` a **live, already-rendering** owner: load A → render → attempt an invalid B
+  (`keyboard.mode = 99`) → `RejectedInvalidState` (typed) + validation family; **state / format /
+  plan unchanged**, the canonical state is the **same object with the same bytes** (A, never B),
+  and the **subsequent** four-channel trace still equals the untouched A control.
+- `Q3` illegal formats (`sr=0`, `block=0`, `outCh=1`) are `RejectedFormat` on the live owner, which
+  keeps format + plan + canonical bytes + trace.
+- `Q4` anti-vacuity: a **legal** re-commit does replace the canonical bytes, the block size and the
+  free-run audio (VCO-B +3 octaves) — so “unchanged after rejection” is a real claim, not a path
+  that never changes anything.
+
+**FINDING F-1 (reported to the owner, deliberately NOT fixed in this slice).** The host render path
+`StandaloneAudioEngine::processBlock` → `DeviceAdapter::renderBlock`
+(`core/include/lunar24/core/device_adapter.h:286-294`, one `rt.processFrame(in, true)` per frame) →
+`SynthRuntime::processFrame` (`core/include/lunar24/core/machine_runtime.h:1821`) **never drains
+`EventTimebase`**. Only `SynthRuntime::processBlock` does
+(`core/include/lunar24/core/machine_runtime.h:1849-1860`: `eventTimebase_.processBlock(...)` then a
+per-frame `applyControlEvent_`), and **no product code calls it** — `host/plugin.cpp` only calls
+`engine_.processBlock`. Consequence: queued `ControlEvent`s (keyboard / MIDI) are invisible through
+the host entry today; the compared traces there are the **free-running** machine. Design intent
+(`design/00-status.md:975-1000`, #46) placed the drain in `processBlock`, so this is a host-path
+defect, not a probe defect. Minimal repro: a `EngineHarness` loaded with a Split state, one
+`note(Left, 1.0)` enqueued, then `render(4800)` publishes `v_oct = 0` (no note), while the same
+sequence through the canonical runtime block entry publishes `v_oct = 1.0`. Per the task contract
+this pauses **only** the affected (host-entry event-driven) part: `Q` keeps the enqueues so its
+checks strengthen automatically once the host path drains, and the event-driven families are pinned
+in `R`/`S` on the canonical runtime block entry (the only entry that drains events today).
+
+### 8.2 Group 2 — the executed configuration (not the `params_` mirror)
+
+`KeyboardBehaviour::executed()` (`core/include/lunar24/core/keyboard_behaviour.h`),
+`SynthRuntime::keyboardBehaviourExecuted(side)` (`machine_runtime.h`) and
+`ParameterSmoother::timeConstantSeconds()` (`parameter_smoothing.h`) read the state `tick()`
+**actually runs off** (mode / rise / fall / tau / legato / Hz / depth / delay / pressure-control /
+mask / root / rate). `H10`-`H19` now pin those. The `ArpSeq` half still reads `params_` (it really
+uses it) and is kept.
+
+### 8.3 Group 3 — real consumption + real block boundaries (probe sections `R`, `S`)
+
+- `R` (canonical runtime block entry): legal **user cables** `pressure_out → vco_b.v_oct_in` and
+  `gate_right_out → envelope_b.gate_in` drive the **real consumers**. `R1` reads VCO-B’s own audio
+  (zero-crossing ratio ≈ 2 at +1 octave, and it follows the **right** side, not the left), `R2`
+  reads EG-B’s own `envelope_b_env_out` (opens from the normalised left gate; the right gate does
+  **not** reach it without a cable; the cable **overrides** rather than sums; removal is
+  **bit-identical**).
+- `S` replaces the old end-of-run `N` comparison: the same state + **mid-block** event script
+  (samples 0/130/700/1030/1500) rendered (a) one frame per block (reference) and (b) in real
+  256-frame blocks. All **four audio channels** are bit-identical; **every boundary** equals
+  reference frame `(i+1)·256−1` on all four published values; the traces all move (non-vacuity);
+  the right key event lands at its exact frame 130.
+- `T` (kept from the previous round): preserved fields + the 4-preset payload round-trip.
+
+### 8.4 Negative controls — now 10/10, rc **exactly** 1, summary must be the LAST line
+
+`tests/mutation/run_gh12_side_restore_mutation.sh` (host include path added; `-I$WORK` first so the
+host shadow wins):
+
+| # | Mutation | Anchor | Pinned assertion | Result |
+|---|----------|--------|------------------|--------|
+| NC-1..NC-5, NC-7, NC-8 | unchanged | unchanged | unchanged | RED (see §4) |
+| NC-6 | **validator_bypassed** (reframed to its true meaning: the validator no longer rejects; it does **not** claim “a failure is still published”) | `machine_candidate.h` | `O2 an out-of-range keyboard.mode is rejected_state with no definition` | RED, 5 |
+| NC-9 | **config_not_executed** — `configure()` keeps `params_ = p` but skips `setMode`/`setTimes`/`setNorm` | `keyboard_behaviour.h` | `H10 keyboard.portamento_speed (117) EXECUTED as the installed glide time constant` | RED, 19 |
+| NC-10 | **host_error_commit** — the host format gate records the rejection but falls through and commits the bad format | `host/standalone_audio_engine.h` | `Q3 blockSize=0 is RejectedFormat; the live owner keeps format+plan+trace` | RED, 2 |
+
+Baseline at this head: **130 checks, 0 failures**. Every mutation exits with **exactly rc=1**, prints
+the summary as its **last** line, and trips its pinned `[FAIL]` line.
+
+### 8.5 Gates at this head
+
+| Gate | Command | Result |
+|------|---------|--------|
+| Probe (CTest) | `ctest --test-dir build-release -R '^gh12_keyboard_side_restore_probe$'` | **Passed, 130/0** |
+| Incremental Release build (all targets) | `cmake --build build-release -j8` | **rc=0, no errors/warnings** |
+| Mutation harness | `bash tests/mutation/run_gh12_side_restore_mutation.sh` | **rc=0**: baseline 130/0 + 10/10 RED |
+| Full fast suite / ASan+UBSan / CI | **not re-run** — per @Codex “暂不重复全套或push” | owed on the pushed head |
+
+The earlier slow/probe-gate run (`/tmp/gh12_101_slow_release.log`, 129 checks / 7 failures) is the
+**pre-rework** tree and is superseded by §8.5; it must be re-run on the pushed head.
