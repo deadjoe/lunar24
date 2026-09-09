@@ -44,7 +44,7 @@ owner itself and the test harness (§3).
 | `host/include/host/standalone_audio_engine.h` | `PresetAction` / `PresetActionStatus` / `applyPresetAction` + the include of the preset helpers |
 | `tests/host/test_engine_harness.h` | `presetAction()` / `presetAttempted()` / `presetStatus()` + `applyCanonical()` on the shared harness |
 | `tests/host/test_preset_engine_actions.cpp` | NEW — 943 lines, 63 checks (the acceptance) |
-| `tools/run_preset_engine_negatives.py` | NEW — 318 lines, isolated shadow-header negative controls |
+| `tools/run_preset_engine_negatives.py` | NEW — 353 lines, isolated shadow-header negative controls (7 single-source + 3 constructed) |
 | `CMakeLists.txt` | register `test_preset_engine_actions` (fast) + `preset_engine_actions_negative` (`if(UNIX)`, fast) |
 
 Net: 163 inserted lines in existing files + 2 new files. No production DSP, registry, schema or
@@ -82,7 +82,7 @@ bytes or encoded fields**, never as raw objects.
 
 ---
 
-## 4. Negative controls — `tools/run_preset_engine_negatives.py`, 10/10 PASS
+## 4. Negative controls — `tools/run_preset_engine_negatives.py`, 12/12 assertions PASS
 
 Each control mutates **one production source** inside an isolated shadow include tree (`-I shadow`
 first, nothing in the committed tree touched), rebuilds the acceptance, and asserts it terminates
@@ -110,11 +110,17 @@ illegal. Paired experiment:
   and atomic: canonical wire / plan / format / ready unchanged).
 - fixture + `false_success_on_rejection` (owner reports `Accepted` on a rejected candidate) ->
   `D1 an accepted LOAD really committed the slot payload (no false success)` goes **RED**.
+- fixture + `failure_still_commits` (the failed action re-runs the ONE commit path on a repaired
+  candidate, so the caller still reads `RejectedState` while the canonical state changed) ->
+  `D1 a downstream candidate failure ... is reported as RejectedState` **holds** and
+  `D1 the rejected preset action is atomic` goes **RED**.
 
-**Honest limit on the sixth control ("失败仍 commit"):** the owner has exactly one commit path and
-`MachineRuntimeDefinition::deviceState()` is const-only, so "commit despite a rejection" is not
-expressible without *adding a second commit path* — which the contract forbids. The observable
-symptom (claiming success with no commit) is what the paired control turns RED.
+**On the sixth control ("失败仍 commit") — corrected.** My first pass said it was not expressible
+because the owner has exactly one commit path and `deviceState()` is const-only. That reasoning was
+too strong: the *observable symptom* is expressible on the single existing path, and it is what the
+paired `failure_still_commits` control now turns RED. What is true and unchanged: the defect cannot
+arise inside the owner without a source change (one commit path, const-only readback), and the
+control adds no second production path — it re-invokes the existing one in the shadow tree only.
 
 ---
 

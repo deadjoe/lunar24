@@ -26,6 +26,9 @@
 #   load_produces_illegal_candidate — the recall writes an out-of-range scale editor, so the
 #   candidate the owner hands to applyDeviceState is invalid. The D1 criterion must then observe
 #   RejectedState + full atomicity, and the paired false_success_on_rejection control must go RED.
+#   failure_still_commits — paired with the same fixture: the caller is told RejectedState but the
+#   canonical state changed anyway (the ONE existing commit path is re-run on a repaired candidate).
+#   This is the "失败仍 commit" symptom; D1's atomicity assertion must go RED.
 #
 # POSIX-only (the driver invokes the compiler); on Windows the acceptance test still runs.
 #
@@ -144,6 +147,26 @@ def mut_false_success_on_rejection(text, _name):
                     "false_success_on_rejection")
 
 
+def mut_failure_still_commits(text, _name):
+    """The observable 'failure still commits' defect: the caller is told RejectedState, but the
+    canonical state changed anyway. Expressed on the ONE existing commit path (no second path is
+    added): on a rejection the action re-applies a repaired candidate through that same path."""
+    tail = ("  const StateApplyStatus st =\n"
+            "      applyDeviceState(candidate, sampleRate_, blockSize_, inputCapability_, "
+            "outputCapability_);\n"
+            "  if (st != StateApplyStatus::Accepted) {\n"
+            "    // MUTATION: a failed action still commits — the same single path is re-run on a\n"
+            "    // repaired candidate, so the reported failure left the canonical state changed.\n"
+            "    DeviceStateV1 repaired = candidate;\n"
+            "    repaired.keyboardScaleEditor = 0u;\n"
+            "    (void)applyDeviceState(repaired, sampleRate_, blockSize_, inputCapability_,\n"
+            "                           outputCapability_);\n"
+            "    return PresetActionStatus::RejectedState;\n"
+            "  }\n"
+            "  return PresetActionStatus::Accepted;\n")
+    return _replace(text, APPLY_TAIL, tail, "failure_still_commits")
+
+
 def fixture_load_produces_illegal_candidate(text, _name):
     return _replace(text, SCALE_LOAD,
                     SCALE_LOAD +
@@ -161,6 +184,7 @@ MUTATIONS = {
     "initialise_steals_load": (ENGINE[0], ENGINE[1], mut_initialise_steals_load),
     "skip_real_apply": (ENGINE[0], ENGINE[1], mut_skip_real_apply),
     "false_success_on_rejection": (ENGINE[0], ENGINE[1], mut_false_success_on_rejection),
+    "failure_still_commits": (ENGINE[0], ENGINE[1], mut_failure_still_commits),
     "load_produces_illegal_candidate": (PRESETS[0], PRESETS[1], fixture_load_produces_illegal_candidate),
 }
 
@@ -202,6 +226,17 @@ PAIRED = {
         "mutation": "false_success_on_rejection",
         "must_fail_labels": [
             "D1 an accepted LOAD really committed the slot payload (no false success)",
+        ],
+    },
+    "failure_still_commits_on_rejected_candidate": {
+        "fixture": "load_produces_illegal_candidate",
+        "mutation": "failure_still_commits",
+        "must_pass_labels": [
+            "D1 a downstream candidate failure after a legal preset action is reported as "
+            "RejectedState",
+        ],
+        "must_fail_labels": [
+            "D1 the rejected preset action is atomic",
         ],
     },
 }
