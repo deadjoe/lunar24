@@ -12,6 +12,7 @@
 
 #include "IPlug_include_in_plug_hdr.h"
 
+#include <host/app_state_store.h>
 #include <host/standalone_audio_engine.h>
 
 using namespace iplug;
@@ -42,9 +43,25 @@ public:
   bool setActualChannelPlan(int inCh, int outCh);
 #endif
 
+  // GH#12 task#105: the APP host hands in the ALREADY-RESOLVED per-user settings directory (the
+  // directory that holds settings.ini). The plugin never re-derives it — one resolution, one truth
+  // (W17). Passing nullptr/"" means "no path": the store reports NoPath and performs no IO.
+  void setStateDirectory(const char* dir);
+
+  // The exit/lifecycle save. Called by IPlugAPPHost's destructor AFTER CloseAudio() has returned
+  // (audio callbacks are quiesced) and before the plugin is destroyed, so the engine and its
+  // canonical state are still alive. It is NOT a running-stream operation, NOT a debounce and NOT
+  // crash recovery; the typed outcome is returned for the host to record.
+  lunar24::host::StateSaveOutcome saveDeviceState();
+
 private:
   // The framework-free runtime owner, held BY VALUE. It owns the address-stable
   // MachineRuntimeDefinition (heap) + the single DeviceAdapter (task#71). ProcessBlock is a
   // PURE delegate to it.
   lunar24::host::StandaloneAudioEngine engine_;
+
+  // The narrow APP-session persistence policy (one read attempt, the pending transfer payload and
+  // the lifecycle-save gate) + the real FileOps. It holds NO second editable state bank and does
+  // NO file IO on the audio path.
+  lunar24::host::AppStateStore stateStore_;
 };

@@ -82,6 +82,23 @@ oracle statically verifies the SHAPE of the host->engine wiring that the CTest
       in{0,1,2} x out{0,2,4} and <= the declared max; an ill-formed plan installs 0/0 and returns
       false (never a silent clamp/truncate), and the host MUST check the return.
 
+  W15 task#105 (GH#12) — OnReset carries the APP state policy at the stopped-stream boundary in the
+      mandate's order: captureCanonical() -> loadOnce() -> engine_.prepare( -> publishPending().
+      The capture must precede prepare() (prepare releases the owner, so a later capture loses the
+      committed session); the one read attempt must precede prepare() too; the publish must be
+      gated on isReady() so a failed prepare() keeps the pending for the next legal boundary; the
+      owner is rebuilt ONLY by engine_.prepare() (the GH#4 8B2 fail-closed contract is unchanged);
+      OnReset performs NO file IO and never infers the read attempt from canonicalState()==nullptr.
+  W16a task#105 — the audio path: ProcessBlock must not reference the state store and performs no
+      file IO. (W16b, the ~IPlugAPPHost exit call AFTER CloseAudio(), is HELD — it needs a new hunk
+      in host/iPlug_app_host_override.cpp, whose pinned diff hash is owned by
+      tools/check_host_override_drift.py and regenerated only on an @Codex ruling.)
+  W17a task#105 — the store's file/env discipline: it writes exactly one product file
+      (lunar24-state.bin), never settings.ini, never re-derives the per-user directory (no
+      getenv/HOME/APPDATA), reuses core's decode/migrate/validate/encode + save_state_atomic as the
+      ONE writer, and the plugin carries the host's already-resolved directory without re-deriving
+      it. (W17b, the APP host's handoff of the resolved directory, is HELD with W16b.)
+
 Each invariant is named and reported; a violation exits nonzero. The 8B2 mandate §4/b says a
 behaviour detector comes FIRST (the CTest) and this structural gate is the permanent second
 line. It is deliberately narrow: it flags the high-level wiring shape, not DSP semantics.
@@ -468,6 +485,96 @@ else:
     check("W10 AppProcess attaches by actual connected count",
           "NChannelsConnected(" in app_proc_code and "AttachBuffers(" in app_proc_code,
           "AppProcess must AttachBuffers by NChannelsConnected (the count setActualChannelPlan installed)")
+
+
+# _______________________________________________________________________________________________
+# task #105 (GH#12): the APP one-shot startup restore / device-reopen retention / exit atomic save.
+# The behaviour is the CTest test_app_state_store; these are the STRUCTURAL second line for the two
+# seams a unit test cannot reach: the iPlug virtual OnReset() (W15) and the audio path (W16a), plus
+# the file/env discipline of the narrow store (W17a). W16b (the ~IPlugAPPHost exit call position) and
+# W17b (the APP host hands in the ALREADY-RESOLVED directory) are HELD: they need a new hunk in
+# host/iPlug_app_host_override.cpp, whose pinned diff hash is owned by
+# tools/check_host_override_drift.py (regenerated only on an @Codex ruling). Reported separately.
+
+# W15 — OnReset carries the state policy at the stopped-stream boundary, in the mandate's order:
+#   captureCanonical() -> loadOnce() -> engine_.prepare( -> publishPending()
+# The capture must come BEFORE prepare() (prepare releases the owner, so a later capture would lose
+# the committed session). loadOnce() must come before prepare() too (the one read attempt happens
+# once per session, and the pending must be in place for the publish). The publish must be guarded
+# by the owner actually being ready, and the owner is (re)built ONLY by engine_.prepare() — the
+# original GH#4 8B2 failure contract (fail-closed prepare) is unchanged.
+onreset_code = strip_comments(onreset)
+i_capture = onreset_code.find("captureCanonical")
+i_load = onreset_code.find("loadOnce")
+i_prepare = onreset_code.find("engine_.prepare(")
+i_publish = onreset_code.find("publishPending")
+check("W15 OnReset state policy statements present",
+      i_capture >= 0 and i_load >= 0 and i_prepare >= 0 and i_publish >= 0,
+      "OnReset must capture -> loadOnce -> prepare -> publishPending")
+check("W15 OnReset order capture < loadOnce < prepare < publish",
+      -1 < i_capture < i_load < i_prepare < i_publish,
+      "a later capture loses the committed session; a later load leaves no pending for the publish")
+check("W15 capture happens BEFORE prepare releases the owner",
+      i_capture < i_prepare,
+      "prepare() releases the owner, so the capture must run first")
+check("W15 publish is gated on a ready owner",
+      "isReady()" in onreset_code,
+      "publishPending must run only when prepare() produced a ready owner (a failed prepare keeps "
+      "the pending for the next legal boundary)")
+check("W15 prepare is the ONLY owner build in OnReset",
+      onreset_code.count("engine_.prepare(") == 1 and "applyDeviceState" not in onreset_code,
+      "OnReset must not bypass the store and publish a candidate directly")
+check("W15 no file IO in OnReset", not any(t in onreset_code for t in
+      ("fopen", "ifstream", "ofstream", "filesystem", "std::FILE")),
+      "OnReset is the stopped-stream boundary, not a file-IO site (the store owns all IO)")
+check("W15 read attempt is NOT inferred from canonicalState()",
+      "canonicalState()" not in onreset_code,
+      "canonicalState()==nullptr is also true after a failed prepare(); the store latches explicitly")
+check("W15 OnReset drives the narrow store", "stateStore_" in onreset_code,
+      "OnReset must delegate the session policy to stateStore_")
+
+# W16a — the audio path never touches the store (no file IO, no store call in ProcessBlock).
+proc_code = strip_comments(proc)
+check("W16a ProcessBlock does not reference the state store",
+      "stateStore_" not in proc_code,
+      "the audio callback must never read/write the persistence store")
+check("W16a ProcessBlock performs no file IO", not any(t in proc_code for t in
+      ("fopen", "ifstream", "ofstream", "filesystem", "std::FILE", "save_state_atomic")),
+      "no file IO on the audio path")
+
+# W17a — the store's file/env discipline. It writes exactly one product file, never settings.ini,
+# and never re-derives the directory (one resolution, one truth: the APP host resolves it).
+STORE_H = ROOT / "host" / "include" / "host" / "app_state_store.h"
+if not STORE_H.exists():
+    check("W17a app_state_store.h present", False, f"missing {STORE_H.relative_to(ROOT)}")
+else:
+    store_src = strip_comments(STORE_H.read_text(encoding="utf-8"))
+    check("W17a store present", True, f"read {STORE_H.relative_to(ROOT)}")
+    check("W17a store writes the one product file",
+          "kAppStateFileName" in store_src and '"lunar24-state.bin"' in store_src,
+          "the product file is lunar24-state.bin")
+    check("W17a store never touches settings.ini", "settings.ini" not in store_src,
+          "settings.ini belongs to the iPlug2 INI writer; the state file is a sibling")
+    check("W17a store does not re-derive the directory",
+          not any(t in store_src for t in ("getenv", "HOME", "Application Support", "APPDATA")),
+          "the APP host resolves the per-user directory; the store only consumes it")
+    check("W17a store reuses core's atomic save (no second writer)",
+          "save_state_atomic(" in store_src and "std::ofstream" not in store_src,
+          "encode -> save_state_atomic is the ONE writer; no hand-rolled file write")
+    check("W17a store reuses the core codec/validation chain",
+          all(t in store_src for t in ("decode_device_state(", "migrate_device_state(",
+                                       "validate_device_state(", "encode_device_state(")),
+          "decode -> migrate -> validate -> encode, all from core")
+    check("W17a store does not read the engine canonical to decide the read",
+          "canonicalState()" in store_src and "restoreAttempted_" in store_src,
+          "the session latch is explicit; canonicalState() is used only as the save SOURCE")
+    plug_code = strip_comments(PLUGIN_CPP)
+    check("W17a plugin never re-derives the settings directory",
+          not any(t in plug_code for t in ("getenv", "HOME", "Application Support", "APPDATA")),
+          "setStateDirectory() only carries the host's already-resolved directory into the store")
+    check("W17a plugin exposes the exit save seam",
+          "StateSaveOutcome LunarHostPlugin::saveDeviceState" in plug_code,
+          "the host calls LunarHostPlugin::saveDeviceState() at exit")
 
 
 def main() -> int:

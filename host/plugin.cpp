@@ -98,8 +98,39 @@ void LunarHostPlugin::OnReset()
   // installed via setActualChannelPlan() BEFORE this runs, so NInChansConnected()/
   // NOutChansConnected() are the actual open counts. A failure (e.g. <2 outputs, or the 0/0
   // failure sentinel) leaves the engine not-ready and ProcessBlock fail-silent.
+  //
+  // GH#12 task#105 — this SAME boundary carries the state policy, in this exact order:
+  //   1. captureCanonical(): keep the committed config BEFORE prepare() releases the owner, so a
+  //      device reopen can never fall back to the power-on default or re-read the disk;
+  //   2. loadOnce(): ONE startup read attempt per APP session (the store latches it explicitly);
+  //   3. prepare(): the unchanged GH#4 8B2 owner (re)build for the real device format;
+  //   4. publishPending(): only when prepare() produced a ready owner — publish the pending restore
+  //      through the engine's ONE real candidate path. A rejection is atomic and the store records
+  //      the reason; a failed prepare() leaves the pending intact for the NEXT legal boundary.
+  stateStore_.captureCanonical(engine_);
+  stateStore_.loadOnce();
   engine_.prepare(lunar24::host::kLunarStartupSeed, GetSampleRate(), GetBlockSize(),
                   NInChansConnected(), NOutChansConnected());
+  if (engine_.isReady())
+    stateStore_.publishPending(engine_, GetSampleRate(), GetBlockSize(), NInChansConnected(),
+                               NOutChansConnected());
+}
+
+void LunarHostPlugin::setStateDirectory(const char* dir)
+{
+  // GH#12 task#105: accept the host's ALREADY-RESOLVED per-user settings directory. This class
+  // must never re-derive it (no environment lookup, no platform branch here) — the APP host owns
+  // the one resolution, and this seam only carries it into the store.
+  stateStore_.setDirectory(dir != nullptr ? std::string(dir) : std::string());
+}
+
+lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
+{
+  // GH#12 task#105: the lifecycle (exit) save. Pure delegate to the narrow store: it picks the
+  // source (committed canonical, else the retained last legal config), encodes to the exact wire
+  // size and runs the atomic temp->flush->replace. Never a disk read, never an overwrite of a file
+  // that was present but unusable.
+  return stateStore_.save(engine_);
 }
 
 bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)

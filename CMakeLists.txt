@@ -551,6 +551,31 @@ if(UNIX)
       --compiler ${CMAKE_CXX_COMPILER})
 endif()
 
+# task #105 (GH #12): the APP one-shot startup restore / device-reopen retention / exit atomic save
+# acceptance. It drives the REAL file adapter in a REAL temporary directory and the REAL engine
+# candidate path (exact-length gate -> decode -> migrate -> validate -> pending -> applyDeviceState
+# -> single stopped-stream publish; save -> encode -> save_state_atomic). Framework-free: it links
+# only lunar_core + lunar_host's headers, so a plain CTest target is enough. ~64 rendered blocks, so
+# it stays in the fast set.
+lunar_add_test(test_app_state_store tests/host/test_app_state_store.cpp)
+target_link_libraries(test_app_state_store PRIVATE lunar_host)
+target_include_directories(test_app_state_store PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
+# task #105 (GH #12): SOURCE NEGATIVE CONTROLS for the APP state acceptance. Each required control
+# mutates ONE production source in an isolated shadow include tree (skip the startup apply / re-read
+# every boundary / drop the pending transfer / overwrite a bad file on exit / let a short write report
+# success / delete the live file before replace / swallow the typed SaveResult / drop or misplace the
+# exit call) and asserts the acceptance terminates normally and turns RED on its NAMED criterion; a
+# retention positive control proves the unmutated build is GREEN. POSIX-only (the driver invokes the
+# compiler); on Windows the acceptance test still runs. Fast (header-only shadow builds).
+if(UNIX)
+  add_test(NAME app_state_store_negative
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_app_state_negatives.py
+      --root ${CMAKE_CURRENT_SOURCE_DIR}
+      --compiler ${CMAKE_CXX_COMPILER})
+endif()
+
 # task #98 (GH #15 D3): the real-restore divider acceptance renders the actual DSP per-sample over
 # ~800k frames (a short run is under-sampled for the N=16 discriminator). It must not gate every
 # feature push, so it carries the `slow` label the probe-gating (PR #28) introduced; the PR-only
