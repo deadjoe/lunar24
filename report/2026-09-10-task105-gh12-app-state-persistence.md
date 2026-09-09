@@ -118,15 +118,16 @@
 | 行为验收 Release | `./build-rel/test_app_state_store` | **190 checks OK** |
 | 行为验收 Debug+ASan+UBSan | `./build-debug/test_app_state_store` | **190 checks OK** |
 | 负控 driver | `python3 tools/run_app_state_negatives.py` | rc=0，**OVERALL: PASS**（12/12 自检 + 保留性正控绿 + 8/8 可跑负控命中，2 HELD） |
-| Release 快门 | `ctest --label-exclude slow`（build-rel） | 74/74（04:38，见 §3.1） |
+| Release 快门 | `ctest --label-exclude slow -j4`（build-rel） | **74/74**（最终文件集，含 `test_app_state_store` 190 OK + `app_state_store_negative`） |
 | Debug+ASan+UBSan 快门 | `ctest --label-exclude slow`（build-debug） | 74/74（04:40，见 §3.1） |
-| Release slow | `ctest -j4 -L slow`（build-rel） | 进行中（后台） |
+| Release slow | `ctest -j4 -L slow`（build-rel） | **7/7 PASS** rc=0（897.65 sec*proc / 394.72s real） |
 | Debug+ASan+UBSan slow | `ctest -j4 -L slow`（build-debug） | 进行中（后台） |
 
 ### 3.1 时序说明（避免误读）
 
-- 两条快门 74/74 是在 **C8 加入之前**跑的（Release 04:38 结束、Debug 04:40 结束；`test_app_state_store` 二进制分别重建于 04:40:26 / 04:41）。C8 之后唯一变化的文件就是 `tests/host/test_app_state_store.cpp`，该目标已在两套配置下单独重跑并双双 **190 checks OK**；两条快门待 slow 跑完后在最终文件集上整跑一遍，结果补进本节，不单独再提报告。
-- 两条 slow 门（Release / Debug+ASan+UBSan）在本报告首次交付时仍在后台跑（mandate 允许完整 Release/Debug/ASan+UBSan 与候选交付并行）。
+- Release 快门已在**最终文件集**上整跑：74/74，含 `test_app_state_store`（190 checks OK）与 `app_state_store_negative`（OVERALL PASS）。
+- Debug+ASan+UBSan 快门 74/74 是在 **C8 加入之前**跑的（04:40 结束，二进制重建于 04:41）；C8 之后唯一变化的文件就是 `tests/host/test_app_state_store.cpp`，该目标已在 Debug+ASan+UBSan 下单独重跑 **190 checks OK**；待 Debug slow 跑完后在最终文件集上整跑一遍，结果补进本节，不单独再提报告。
+- Release slow 已完：**7/7 PASS**（gh19_alias_probe / gh19_blamp_acceptance / gh20_vcf_probe / gh20_vcf_acceptance / gh12_keyboard_owner_probe / gh12_keyboard_side_restore_probe / test_d3_divider_restore）。
 - `--require-full` 原 **12 项缺口单列不动**，未列入本卡门禁。
 
 ## §4 负控证据（隔离影子源码；编译失败不算红）
