@@ -431,7 +431,9 @@ numbers hold verbatim at the pushed head.
 
 ASan/UBSan runs use `ASAN_OPTIONS=detect_leaks=0` (AppleClang ships no LSan) and
 `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`. The 77-test inventory is unchanged: **70 fast +
-7 `slow`**. The Debug build also reports 0 warnings / 0 errors.
+7 `slow`**. The Debug build also reports 0 warnings / 0 errors. The Debug row above is the fast
+subset; the **complete** Debug suite (all 77, no label filter) was run afterwards on @Codex
+`d7daabf9` — see **§11.1**.
 
 ### 10.2 The 12 pre-existing coverage gaps (listed separately, unchanged)
 
@@ -471,3 +473,67 @@ in the hand-off message and the PR head, not here — naming it would require re
 No merge, no GH#12 closure, no release, no MET. Push + draft PR are per @Codex `8dc08f0d`; the
 four-platform CI and the PR-only slow `probe-gate` must pass on the **exact pushed head** before any
 merge decision, which @Codex holds.
+
+## 11. Complete Debug/ASan+UBSan suite + the Windows build fix — @Codex `d7daabf9` / `66ccc9cb`
+
+@Codex `d7daabf9`: the §10 hand-off reported only the Debug **fast** suite; the full Debug/ASan
+authorization was still owed. @Codex `66ccc9cb` then found the remote Windows job red and authorized a
+narrow in-scope build fix. Both are closed here. **Pushed head for this section: `6cf79ef`.**
+
+### 11.1 Debug + ASan + UBSan, complete suite — actual counts
+
+`ctest --test-dir build-debug --output-on-failure` with **no label filter**, env
+`ASAN_OPTIONS=detect_leaks=0` (AppleClang ships no LSan) and
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`:
+
+| Item | Result |
+|---|---|
+| Whole Debug suite | **100% tests passed out of 77** (rc=0) |
+| Total wall time | **10509.74 s** (≈2 h 55 m) |
+| `slow` label | 10399.69 s across **7** tests, all Passed |
+| `#65 test_d3_divider_restore` | Passed 86.02 s |
+| `#66 gh19_alias_probe` | Passed 180.02 s |
+| `#67 gh19_blamp_acceptance` | Passed 248.19 s |
+| `#69 gh20_vcf_probe` | Passed 4941.57 s |
+| `#70 gh20_vcf_acceptance` | Passed 4937.40 s |
+| `#71 gh12_keyboard_owner_probe` | Passed 2.25 s |
+| `#72 gh12_keyboard_side_restore_probe` | Passed 4.25 s |
+| Remaining 70 fast tests | all Passed |
+| Real host / generator checks (inside the 77) | `host_engine_wiring_gate`, `host_script_codec`, `test_host_engine_oracle`, `registry_regen_zero_diff`, `manifest_regen_zero_diff` — all Passed |
+
+Per-configuration counts in one place: **Release = 70 fast + 7 slow**; **Debug+ASan+UBSan = 77/77**
+(70 fast + 7 slow). No figure is extrapolated from a subset; the slow segment was run to completion.
+
+### 11.2 The Windows build fix (`6cf79ef`, one test line)
+
+Remote run `34307653815` failed the `windows` job with
+`gh12_keyboard_side_restore_probe.cpp(1133,18): error C2220` /
+`warning C4244: 'argument': conversion from 'int' to 'uint8_t'` — MSVC escalates C4244 to an error
+under `/WX`. Fix, exactly as authorized (narrow, value-preserving, `/WX` untouched):
+
+```cpp
+-  set_mode(st, mode);
++  set_mode(st, static_cast<std::uint8_t>(mode));
+```
+
+`mode` is the loop variable of `for (int mode = 0; mode <= 2; ++mode)` in `accept_repeat_and_reject()`;
+the value domain is 0..2, so the cast changes no behaviour. No other file, no warning-level change, no
+product code. Re-verification at the fixed source: Release rebuild **rc=0, 0 warnings**; affected
+directed set **14/14 passed**; mutation harness **rc=0** (baseline **151/151** + **11/11** RED, each rc
+exactly 1 with the pinned `[FAIL]` line and the summary last); `build-debug` rebuild rc=0 and the two
+keyboard probes re-run **2/2 Passed** (`#71` 2.24 s, `#72` **4.69 s**, 151 checks / 0 failures).
+
+### 11.3 Which results correspond to a source-equivalent version
+
+The 77/77 Debug run was executed on the **pre-cast** binary (source of `7ed9d95`). The only difference
+in `6cf79ef` is the single `int→uint8_t` cast above, inside the probe; the product tree `core/` and the
+rest of the probe are byte-identical, so the 77/77 result is **source-equivalent for product
+behaviour**. The affected probes were re-run at the exact pushed head (`#71`, `#72` → 2/2 Passed) per
+@Codex's "不重做无关慢测". Release fast/slow were not re-run (already passed, and the cast cannot reach
+them beyond the same single probe line).
+
+### 11.4 Not claimed (unchanged)
+
+No merge, no GH#12 closure, no release, no MET, and no 35/35 coverage claim (§10.2's 12 gaps stay
+listed separately; the gate is untouched). The exact-head four-platform CI and the PR-only slow
+`probe-gate` for `6cf79ef` are still in flight at the time of writing; @Codex holds the merge gate.
