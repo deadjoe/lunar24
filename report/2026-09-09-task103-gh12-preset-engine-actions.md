@@ -124,7 +124,7 @@ control adds no second production path — it re-invokes the existing one in the
 
 ---
 
-## 5. Gates run locally at `2a8d74c`
+## 5. Gates run locally at `2a8d74c` (product head; unchanged by the later commits)
 
 | Gate | Result |
 |------|--------|
@@ -137,8 +137,17 @@ control adds no second production path — it re-invokes the existing one in the
 | Registry gate (always-on) | rc=0 — manifest self-coherent, no new rogue, `mustComplete == landed` |
 | Registry gate `--require-full` | rc=1 — **exactly the pre-existing 12 by-design gaps**, single-listed and unchanged (8 non-scalar Root-A + 4 no-domain selectors); no gap added or removed by this slice |
 
-Slow/probe and four-platform CI are deliberately **not** run yet: per the contract they run after
-@Codex's revision pass on the final fixed head.
+The two later commits (`1fba3f5` report, `834e1d8` negative-control hardening) change **only**
+`report/` and `tools/run_preset_engine_negatives.py` — `git diff --name-only 2a8d74c 834e1d8 --
+core host tests CMakeLists.txt` is empty, so the table above still describes the product head.
+Re-verified at `834e1d8`: `ctest -R 'preset_engine_actions_negative|test_preset_engine_actions'`
+-> 2/2 pass.
+
+| Local slow/probe set (`ctest -L slow`) | **7/7 passed** (854.3 s): `test_d3_divider_restore`, `gh19_alias_probe`, `gh19_blamp_acceptance`, `gh20_vcf_probe`, `gh20_vcf_acceptance`, `gh12_keyboard_owner_probe`, `gh12_keyboard_side_restore_probe` |
+
+Four-platform CI is deliberately **not** run yet: per the contract it runs after @Codex's revision
+pass on the final fixed head. The local slow set was run now because @Codex `ae65355c` confirmed it
+is part of the already-authorised complete check, not an exempt item.
 
 ---
 
