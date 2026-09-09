@@ -521,6 +521,36 @@ target_link_libraries(gh12_keyboard_side_restore_probe PRIVATE lunar_host)
 target_include_directories(gh12_keyboard_side_restore_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
 set_tests_properties(gh12_keyboard_side_restore_probe PROPERTIES LABELS "slow")
 
+# task #103 (GH #12): ENGINE-LAYER preset LOAD / SAVE / INITIALISE acceptance. Section A pins the
+# D-1 defect on the PRE-EXISTING public surface only (canonicalState -> load_preset_to_live ->
+# the owner's single-commit apply), so it is genuinely RED on the unfixed keyboard_presets.h with
+# RejectedInvalidState / keyboard_live_invalid field 9002; A3 re-asserts that rejection directly so
+# A1 can never pass vacuously. Section B drives the new owner API through the shared EngineHarness
+# (encode -> decode -> applyDeviceState -> applyPresetAction -> processBlock) and asserts explicit
+# failure results, real two-sided recall, LAST-COMMITTED SAVE semantics, INITIALISE scope,
+# byte-exact slot round-trip, re-commit timebase reset, partition invariance and a recalled
+# consumed scalar reaching the host audio. ~25k rendered frames total, so it stays in the fast set.
+lunar_add_test(test_preset_engine_actions tests/host/test_preset_engine_actions.cpp)
+target_link_libraries(test_preset_engine_actions PRIVATE lunar_host)
+target_include_directories(test_preset_engine_actions PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
+# task #103 (GH #12): SOURCE NEGATIVE CONTROLS for the preset action acceptance. Each required
+# control mutates ONE production source in an isolated shadow include tree (missing behaviour
+# mirror / missing right-bank transfer / slot cross-wire / L-R bank cross-wire / SAVE reading an
+# earlier committed state / INITIALISE stealing a LOAD / skipping the real apply) and asserts the
+# acceptance terminates normally and turns RED on its named criterion; a retention positive control
+# proves the unmutated build is GREEN. The constructed downstream-failure pair (an isolated fixture
+# that makes the recalled candidate illegal, +/- a false-success owner) proves the D1 atomicity
+# criterion is reachable and discriminating. POSIX-only (the driver invokes the compiler); on
+# Windows the acceptance test still runs. Fast (header-only shadow builds), so no `slow` label.
+if(UNIX)
+  add_test(NAME preset_engine_actions_negative
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_preset_engine_negatives.py
+      --root ${CMAKE_CURRENT_SOURCE_DIR}
+      --compiler ${CMAKE_CXX_COMPILER})
+endif()
+
 # task #98 (GH #15 D3): the real-restore divider acceptance renders the actual DSP per-sample over
 # ~800k frames (a short run is under-sampled for the N=16 discriminator). It must not gate every
 # feature push, so it carries the `slow` label the probe-gating (PR #28) introduced; the PR-only

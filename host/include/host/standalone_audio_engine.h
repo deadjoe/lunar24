@@ -36,6 +36,7 @@
 #include <memory>
 
 #include <lunar24/core/device_adapter.h>
+#include <lunar24/core/keyboard_presets.h>    // load/save/initialise preset transfer helpers
 #include <lunar24/core/machine_candidate.h>   // buildMachineRuntimeCandidate (state-aware builder)
 #include <lunar24/core/machine_definition.h>
 #include <lunar24/core/state_default.h>       // make_default_device_state (safe-boot default)
@@ -103,6 +104,29 @@ class StandaloneAudioEngine {
     RejectedAdapter,      // state+graph+identity ok but the channel plan could not be built.
   };
 
+  // ---- GH#12 engine-layer preset actions (task #103) ------------------------------------------
+  // LOAD / SAVE / INITIALISE of the four native keyboard presets, expressed at the ENGINE layer.
+  // This is an INTERNAL engine enum: it never enters the wire format and is never a ControlEvent
+  // (it is neither a ParameterId nor a ControlEventKind), so no new id/enum leaks into the device
+  // protocol or the state schema.
+  enum class PresetAction : std::uint8_t {
+    Load = 0,        // recall the slot's payload into the live keyboard state
+    Save = 1,        // snapshot the committed canonical live config into the slot
+    Initialise = 2,  // reset ONLY the slot to its factory default (never implicitly loads it)
+  };
+
+  // The fixed, inspectable outcome of applyPresetAction(). A not-ready engine / illegal slot /
+  // unknown action is reported explicitly — never a false success. A candidate-level rejection is
+  // reported as RejectedState with the exact StateApplyStatus in stateApplyStatus() and the
+  // family+field in lastStateValidation().
+  enum class PresetActionStatus : std::uint8_t {
+    Accepted = 0,           // the state-layer transfer applied and the candidate committed
+    RejectedNotReady,       // no committed definition -> nothing to read or re-publish
+    RejectedInvalidSlot,    // slot >= kDeviceKeyboardPresetCount (there is no 5th preset)
+    RejectedInvalidAction,  // not one of Load / Save / Initialise
+    RejectedState,          // the re-commit candidate was rejected; see stateApplyStatus()
+  };
+
   StandaloneAudioEngine() = default;
   // Owns a unique_ptr<MachineRuntimeDefinition> plus the single DeviceAdapter (both are
   // non-copyable for different reasons): the definition is non-movable by contract, and the
@@ -137,6 +161,32 @@ class StandaloneAudioEngine {
   // ready (it does NOT go NOT-READY). Returns the inspectable StateApplyStatus.
   StateApplyStatus applyDeviceState(const DeviceStateV1& state, double sampleRate, int maxBlockSize,
                                     int inputCapability, int outputCapability);
+
+  // GH#12 task #103: the engine-layer preset LOAD / SAVE / INITIALISE. Call ONLY at the existing
+  // stopped-stream / non-audio-thread boundary (the same place prepare()/applyDeviceState() are
+  // called) — it re-commits a complete candidate and is NOT a running-stream operation.
+  //
+  //   * Format: the engine's CURRENT committed format is reused; the caller does not restate it.
+  //   * Path: copy the canonical DeviceStateV1, apply the ONE existing state-layer transfer helper
+  //     (load_preset_to_live / save_live_to_preset / initialise_preset), then go through the ONE
+  //     existing applyDeviceState candidate/commit path. No second owner, no parallel state bank,
+  //     no rebuild from the audio callback.
+  //   * LOAD writes the slot payload into the live keyboard state (the existing two-sided
+  //     behaviour then consumes it). SAVE stores the LAST SUCCESSFULLY COMMITTED canonical live
+  //     config into the target slot. INITIALISE resets ONLY the target slot and never implicitly
+  //     loads it — a later LOAD is what makes it audible.
+  //   * ALL THREE re-commit, so a success RESETS the performance/event timebase. This is the
+  //     documented software behaviour: it is NOT a claim that a hardware SAVE re-triggers, and NOT
+  //     a claim of seamless operation during a running stream.
+  //   * SAVE / INITIALISE leave the live config CONTENT and the other three slots as they are.
+  //   * Saving config is NOT capturing current DSP/keys transients: the caller must have committed
+  //     its configuration through applyDeviceState first. A direct runtime setter or ControlEvent
+  //     does not write back to the canonical state, so such a change is NOT saved.
+  //   * A failure leaves the old owner, canonical state, format, plan and subsequent trace
+  //     UNCHANGED (applyDeviceState's atomic rejection; reported as RejectedState).
+  //   * There is NO APP/UI caller today (host/plugin.cpp builds MakeConfig(0,0); the menu is inert)
+  //     — this is the engine seam, not a finished product entry.
+  PresetActionStatus applyPresetAction(std::uint32_t slot, PresetAction action);
 
   // The production block delegate — the ONLY render entry the host's ProcessBlock calls. The
   // channel counts and block size are the ACTUAL device facts right now. `inputs` and `outputs`
@@ -400,6 +450,53 @@ inline StandaloneAudioEngine::StateApplyStatus StandaloneAudioEngine::applyDevic
   lastStateValidation_ = res.validation;   // ok
   stateApplyStatus_ = StateApplyStatus::Accepted;
   return StateApplyStatus::Accepted;
+}
+
+// ---- applyPresetAction ----------------------------------------------------
+inline StandaloneAudioEngine::PresetActionStatus StandaloneAudioEngine::applyPresetAction(
+    std::uint32_t slot, PresetAction action) {
+  // Gate 1: an action reads the committed canonical state and re-publishes at the committed
+  // format, so a not-ready engine can NEVER report success (there is nothing to read or apply).
+  if (!ready_ || definition_ == nullptr) return PresetActionStatus::RejectedNotReady;
+  // Gate 2: the slot bank is fixed at four native presets; a 5th slot is structurally impossible
+  // and is rejected explicitly rather than silently indexing out of range.
+  if (!lunar24::core::preset_slot_is_valid(slot)) return PresetActionStatus::RejectedInvalidSlot;
+  // Gate 3: the action must be one of the three defined operations.
+  switch (action) {
+    case PresetAction::Load:
+    case PresetAction::Save:
+    case PresetAction::Initialise:
+      break;
+    default:
+      return PresetActionStatus::RejectedInvalidAction;
+  }
+
+  // Copy the CANONICAL state and apply the ONE state-layer helper. The copy is deliberate: the
+  // helper mutates in place, and a rejection below must leave the committed state untouched.
+  DeviceStateV1 candidate = definition_->deviceState();
+  bool ok = false;
+  switch (action) {
+    case PresetAction::Load:
+      ok = lunar24::core::load_preset_to_live(candidate, slot);
+      break;
+    case PresetAction::Save:
+      ok = lunar24::core::save_live_to_preset(candidate, slot);
+      break;
+    case PresetAction::Initialise:
+      ok = lunar24::core::initialise_preset(candidate, slot);
+      break;
+    default:
+      break;  // unreachable: gated above
+  }
+  // The helpers carry the same slot guard; a false here would mean the two guards disagree.
+  if (!ok) return PresetActionStatus::RejectedInvalidSlot;
+
+  // The ONE existing candidate/commit path, at the CURRENT committed format. A rejection is atomic
+  // (old owner / canonical state / format / plan kept) and is reported, never swallowed.
+  const StateApplyStatus st =
+      applyDeviceState(candidate, sampleRate_, blockSize_, inputCapability_, outputCapability_);
+  return (st == StateApplyStatus::Accepted) ? PresetActionStatus::Accepted
+                                            : PresetActionStatus::RejectedState;
 }
 
 // ---- processBlock ---------------------------------------------------------

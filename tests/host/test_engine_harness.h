@@ -72,6 +72,27 @@ class EngineHarness {
   // Valid only after load(); NotAttempted before any load().
   StandaloneAudioEngine::StateApplyStatus applyStatus() const { return applyStatus_; }
 
+  // GH#12 task#103: the engine-layer preset action through the OWNER API (the same seam the host
+  // will call at the stopped-stream boundary). Returns the accepted bit; the exact outcome is in
+  // presetStatus(). This never bypasses applyDeviceState — the owner re-commits internally.
+  bool presetAction(std::uint32_t slot, StandaloneAudioEngine::PresetAction action) {
+    presetAttempted_ = true;
+    presetStatus_ = engine_.applyPresetAction(slot, action);
+    return presetStatus_ == StandaloneAudioEngine::PresetActionStatus::Accepted;
+  }
+  // Valid ONLY after presetAction() (presetAttempted() is true); before that it is a sentinel.
+  bool presetAttempted() const { return presetAttempted_; }
+  StandaloneAudioEngine::PresetActionStatus presetStatus() const { return presetStatus_; }
+
+  // Re-publish a caller-mutated CANONICAL copy through the SAME single-commit apply, at the
+  // engine's CURRENT committed format. Used to pin a state-layer criterion before/without the
+  // engine preset API (the D-1 criterion must be reachable with the existing surface).
+  StandaloneAudioEngine::StateApplyStatus applyCanonical(const DeviceStateV1& state) {
+    applyStatus_ = engine_.applyDeviceState(state, engine_.sampleRate(), engine_.blockSize(),
+                                            engine_.inputCapability(), engine_.outputCapability());
+    return applyStatus_;
+  }
+
   // The validation detail the engine recorded on the last apply(): a RejectedGraph outcome carries
   // ok==true here (the state VALIDATED; only the graph failed), which is exactly what distinguishes
   // a graph rejection from a state/format rejection on the agreed entry.
@@ -220,6 +241,9 @@ class EngineHarness {
   StandaloneAudioEngine engine_;
   StandaloneAudioEngine::StateApplyStatus applyStatus_ =
       StandaloneAudioEngine::StateApplyStatus::NotAttempted;
+  bool presetAttempted_ = false;
+  StandaloneAudioEngine::PresetActionStatus presetStatus_ =
+      StandaloneAudioEngine::PresetActionStatus::RejectedNotReady;  // sentinel until presetAction()
   std::vector<double> wetL_, wetR_, dryA_, dryB_;
 };
 
