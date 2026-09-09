@@ -286,3 +286,104 @@ the summary as its **last** line, and trips its pinned `[FAIL]` line.
 
 The earlier slow/probe-gate run (`/tmp/gh12_101_slow_release.log`, 129 checks / 7 failures) is the
 **pre-rework** tree and is superseded by §8.5; it must be re-run on the pushed head.
+
+## 9. F-1 fix — @Codex msg `0fd75e9f` (code head `aaad381`, UNPUSHED)
+
+@Codex: “F-1 成立，授权在本片修复。优先最窄实现：DeviceAdapter 每帧完成输入映射后调用既有
+`SynthRuntime::processBlock(&in,1,&out,true)`，再按原样写输出；不把 drain 偷加进 processFrame…
+沿用唯一 EventTimebase 和 dispatch，不建第二套事件循环，不加动态缓冲或新延迟。”
+
+### 9.1 The change (product, 1 file)
+
+`core/include/lunar24/core/device_adapter.h` — `DeviceAdapter::renderBlock` now drives each frame
+through the EXISTING `SynthRuntime::processBlock(&in, 1, &out, true)` instead of
+`SynthRuntime::processFrame(in, true)`. One drain, one frame of time advanced, one `EventTimebase`,
+no second event loop, no dynamic buffer, no added latency; the drain is **not** inside `processFrame`
+(that would advance the time base twice per frame through `processBlock`). The header doc block
+records why. No new id / jack / route / schema / enum; no product header gained a fault macro.
+
+### 9.2 RED first, then GREEN
+
+Section `U` was written and run **against the unfixed adapter** before the fix: `151 checks, 7
+failures`, every failure F-1-driven (`U1`×4 exact-frame/gate/pitch/audio, `U2`×2 host-vs-canonical,
+`U3` live). After the one-line fix the same probe is `151 checks, 0 failures`, and the 130 pre-existing
+checks are untouched.
+
+| `U` criterion | Pins |
+|---|---|
+| U1 | A Split script queued on the **host** entry acts at its EXACT absolute frames: left note@0 / release@700 (`gateL` high at 0 and 699, 0 at 700), right note@130 (`gateR` 0 at 129, rail at 130), `v_oct` = left pitch, `pressure_out` = right pitch from 130; and the four-channel host audio differs from a no-event control. |
+| U2 | The host entry's published control trace **and** all four audio channels equal the canonical per-frame entry (audio through the one frozen 0.5 device scale), bit-for-bit. |
+| U3 | 64 (×40) / 256 (×10) / irregular `{300,100,1024,7,501,400,100,128}` host blocks are bit-identical to a per-frame reference; every real block boundary equals the reference frame `cum-1`; the compared trace is live. |
+| U4 | Re-committing the same state on the same owner **resets** the event time base (replayed script is bit-identical control + audio), then a default-Left `reset` clears BOTH sides. |
+| U5 | Standalone `EventTimebase` semantics under the per-frame drain: same-frame global order (`stable_sort` reference), per-frame drain == whole-block drain, future event retained, late event delivered at offset 0 + counted, continuous 65th non-coalescible event refused + counted, parameter coalescing by `ParameterId`, critical overflow → ONE reconcile reset first (`criticalFlushed()` = 64, pending 0), dispatch capacity leaves the remainder pending + counted. |
+
+### 9.3 Q/R/S re-pointed at the fixed host path
+
+Per “Q/R/S 的事件驱动验证接到修好的真实 host 路径；自由跑 trace 不能充作键盘验收”:
+
+- **Q** already entered through `EngineHarness`; its queued scripts are now live rather than
+  free-running, and the stale “F-1 deliberately NOT fixed here” comment block is replaced.
+- **R** (`accept_cable_consumption`) now builds a `EngineHarness`, enqueues on `producerRuntime()`
+  and renders one real 9600-frame host block; VCO-B is read from the host's `DRY_B`. Same five
+  assertions (cable ⇒ VCO-B tracks the RIGHT pitch ≈2×; right side not the normalised left; removal
+  bit-identical; EG-B driven by the right gate only when cabled; override, not sum).
+- **S** (`accept_block_boundary_traces`) now renders the eight real 256-frame blocks through the
+  host entry and compares all four **host** channels to the per-frame reference through the 0.5
+  scale (exact), plus every block-boundary control snapshot; the mid-block right key event is still
+  pinned at frame 130.
+
+### 9.4 Zero-alloc / zero-free with events in flight
+
+`tests/host/test_host_engine_oracle.cpp::allocator_probe()` — the measured window now also covers
+the drain: (a) a held note + a **late** release (sample 5, queued after `blockStart_` = 128) + a
+second note, with enqueues **inside** the window (the producer seam is fixed-capacity/no-heap, and a
+real producer enqueues while audio renders); (b) both capacity boundaries under load — 70 parameter
+events (coalesce), 70 non-coalescible pitch events (continuous overflow), 70 clock edges (critical
+overflow → reconcile reset). `g_allocCount`/`g_freeCount` are unchanged across the whole window, and
+a non-vacuity check proves the events were really DELIVERED (`keyboard_gate_left_main_out` > 1 V
+after the window). Reverting the adapter to `processFrame` (the NC-11 mutation, applied to a
+detached shadow build) makes **11/3866** checks fail, including exactly that delivery check — so the
+new zero-alloc claim is not vacuous. Oracle: **3866 checks OK**.
+
+### 9.5 Negative controls — now 11/11
+
+`tests/mutation/run_gh12_side_restore_mutation.sh`: baseline `151 checks, 0 failures`, then all
+eleven defense points RED on their pinned `[FAIL]` line with **rc exactly 1** and the summary as the
+**last** line. New:
+
+| NC | Mutation (file) | Pinned assertion | Result |
+|---|---|---|---|
+| NC-11 | **adapter_reverts_processframe** (`device_adapter.h`): `renderBlock` back to `rt.processFrame(in, true)` — the host path never drains | `U1 a left note at frame 0 and its release at frame 700 act at their EXACT frames` | RED, 17 |
+
+### 9.6 Same-machine CPU cost (@Codex: report a comparison if the cost is unsuitable)
+
+Same process, same machine, same default state, empty event queues (the common case), interleaved
+repeats, `-O2`: per-frame `processBlock` (fixed, drains) vs per-frame `processFrame` (pre-F-1).
+
+| Run | fixed | pre-F-1 | ratio | delta |
+|---|---|---|---|---|
+| 1 | 1.196 s | 1.158 s | 1.033 | +19.0 ns/frame |
+| 2 | 1.162 s | 1.164 s | 0.999 | −0.9 ns/frame |
+
+400 000 frames × 5 reps per column, ≈2.9 µs/frame, i.e. the one-frame drain is at the measurement
+noise floor (≤0.7 %). Measurement tool: `/tmp/gh12_101_cpu_compare.cpp` (not committed).
+
+### 9.7 Gates re-run at this head (affected directed tests + negatives only, per instruction)
+
+| Gate | Result |
+|---|---|
+| `gh12_keyboard_side_restore_probe` (CTest) | **Passed, 151/0** |
+| Affected directed tests (16): `test_device_adapter_oracle`, `test_host_engine_oracle`, `test_state_apply_oracle`, `test_state_apply_oracle_169`, `test_machine_control_outputs`, `test_machine_audio_families`, `test_machine_cable_restore`, `test_vco_normal_source`, `test_d3_divider_restore`, `test_host_stream_plan`, `host_engine_wiring_gate`, `host_script_codec`, `gh12_keyboard_owner_probe`, `gh19_alias_probe`, `gh20_vcf_probe` | **16/16 passed** |
+| Full Release build, all targets | **rc=0, zero warnings/errors** |
+| Mutation harness | **rc=0: baseline 151/0 + 11/11 RED** |
+| Full fast suite / ASan+UBSan / CI / slow probe gate | **NOT re-run** — per @Codex “只重跑受影响定向与负控…再推进全套” |
+
+### 9.8 Housekeeping (honest note)
+
+The previous commit `c435c2e` swept `build-release/` (913 regenerable artifacts) into git via
+`git add -A`. This commit untracks it (`git rm -r --cached build-release`) and adds `/build-release/`
+to `.gitignore`, so the review diff carries source + tests only. No source line was affected.
+
+### 9.9 Not claimed
+
+No push, no merge, no GH#12 closure, no release, no MET. The 35-item ledger unchanged (§6).
