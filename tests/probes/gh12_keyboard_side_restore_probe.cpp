@@ -15,6 +15,12 @@
 //     -> buildMachineRuntimeCandidate (validate_device_state + graph + identity + DSP)
 //     -> definition.runtime().enqueueControlEvent / processBlock
 //
+// and, for the families that must hold on the owner the product actually renders (Q/R/S/U),
+// the SAME states and event scripts re-entered through the real host entry:
+//
+//   EngineHarness -> StandaloneAudioEngine::applyDeviceState -> processBlock
+//     -> DeviceAdapter::renderBlock -> SynthRuntime (the ONE EventTimebase drain, F-1)
+//
 // No test seam, no private access: the same public objects the audio engine wraps.
 //
 // CRITERIA (contract @Codex msg 57a5ab2a §5, rulings msg 9943ae28):
@@ -43,9 +49,25 @@
 //   J  64/256/irregular partitions produce bit-identical dryA and identical final
 //      keyboard outputs; the same state restored twice is bit-identical.
 //   K  An invalid state is rejected by the candidate chain and yields NO runtime.
+//   Q  The REAL host single-commit entry (EngineHarness: encode -> decode ->
+//      StandaloneAudioEngine::applyDeviceState -> processBlock) accepts every mode, is
+//      atomic against an invalid/illegal-format commit on a LIVE owner (typed rejection,
+//      state/format/plan/trace preserved), and a legal commit really replaces them.
+//   R  The two new right-side outputs drive real consumers over LEGAL user cables
+//      (pressure_out -> VCO-B pitch; gate_right_out -> EG-B), with override + bit-identical
+//      removal — measured on the REAL host render entry, never on a published value.
+//   S  Mid-block key events land at their exact absolute frame: real 256-frame HOST blocks
+//      equal a per-frame reference on all four audio channels and at every block boundary.
+//   U  F-1: the REAL host render entry (StandaloneAudioEngine::processBlock ->
+//      DeviceAdapter::renderBlock) drains the EventTimebase, so a queued keyboard/MIDI event
+//      acts at its exact ABSOLUTE frame on the product path; the host entry equals the
+//      canonical per-frame entry; 64/256/irregular HOST blocks agree; a re-commit resets the
+//      time base; and the per-frame drain preserves the defined EventTimebase semantics
+//      (same-frame order, future retention, late delivery, capacity boundaries).
 //
 // EXIT CODE. 0 = all criteria green; non-zero = any criterion red.
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -53,7 +75,9 @@
 #include <memory>
 #include <vector>
 
+#include <lunar24/core/device_adapter.h>
 #include <lunar24/core/device_state.h>
+#include <lunar24/core/event_timebase.h>
 #include <lunar24/core/input_state_machine.h>
 #include <lunar24/core/keyboard_behaviour.h>
 #include <lunar24/core/keyboard_mode.h>
@@ -283,6 +307,33 @@ static std::vector<std::uint8_t> wire_of(const core::DeviceStateV1& st) {
 
 static bool same_snap(const Snap& a, const Snap& b) {
   return a.vOct == b.vOct && a.gateL == b.gateL && a.gateR == b.gateR && a.press == b.press;
+}
+
+// The same four published jacks, read from a CONST runtime (the host harness exposes only a
+// const runtime()). Same values, no mutation.
+static Snap read_snap(const core::SynthRuntime& rt) {
+  Snap s;
+  s.vOct = rt.controlVoltageAt(core::JackId::keyboard_v_oct_out);
+  s.gateL = rt.controlVoltageAt(core::JackId::keyboard_gate_left_main_out);
+  s.gateR = rt.controlVoltageAt(core::JackId::keyboard_gate_right_out);
+  s.press = rt.controlVoltageAt(core::JackId::keyboard_pressure_out);
+  return s;
+}
+
+// A raw absolute-timeline event for the standalone EventTimebase checks (U5).
+static core::TimedControlEvent tev(core::ControlEventKind kind, double value, std::uint64_t sample,
+                                   std::uint32_t source = 1, std::uint64_t seq = 0,
+                                   core::ParameterId pid = core::ParameterId{0}) {
+  core::ControlEvent e{};
+  e.kind = kind;
+  e.value = static_cast<core::SignalSample>(value);
+  e.parameter = pid;
+  e.source = source;
+  e.producerSequence = seq;
+  core::TimedControlEvent t;
+  t.event = e;
+  t.sample = sample;
+  return t;
 }
 
 // ============================================================ A. Single + collapse
@@ -1154,14 +1205,13 @@ static void accept_repeat_and_reject() {
 // already rendering. Q2/Q3 pin the atomic contract where it matters: a LIVE owner keeps its
 // prior state/format/plan AND its subsequent trace after a rejected commit attempt.
 //
-// FINDING F-1 (reported to the owner, deliberately NOT fixed here): the host render path
-// (StandaloneAudioEngine::processBlock -> DeviceAdapter::renderBlock ->
-// SynthRuntime::processFrame) never drains EventTimebase. Only SynthRuntime::processBlock
-// drains it (core/include/lunar24/core/machine_runtime.h:1849-1860) and no product code calls
-// that entry, so the notes enqueued below are NOT applied on this entry today and the compared
-// traces are the free-running machine. The enqueues are kept so these checks strengthen
-// automatically once the host path drains events; the event-driven families are pinned in R/S
-// on the canonical runtime block entry, the only entry that drains events today.
+// FINDING F-1 (fixed in this slice, @Codex msg 0fd75e9f): the host render path
+// (StandaloneAudioEngine::processBlock -> DeviceAdapter::renderBlock) used to call
+// SynthRuntime::processFrame per frame and never drained EventTimebase, so the notes enqueued
+// below were invisible on this entry and the compared traces were a free-running machine. The
+// adapter now drives each frame through the EXISTING SynthRuntime::processBlock(&in, 1, &out,
+// true) — one drain, one frame of time, one timebase (see U). Q's queued events therefore ACT
+// here, and the checks below are statements about an event-driven host render, not a free run.
 static void accept_host_entry() {
   std::printf("Q  -- the host single-commit entry (EngineHarness) is accepted and atomic\n");
 
@@ -1305,8 +1355,11 @@ static void accept_host_entry() {
 // R: the two NEW right-side outputs must drive real, existing consumers through LEGAL user
 // cables — not just read back. Override and removal are both checked, and the evidence is the
 // consumer's own behaviour (VCO-B audio / the EG-B envelope), never a published value. These run
-// on the canonical runtime block entry (the product runtime + SynthRuntime::processBlock, the
-// entry that drains ControlEvents — see finding F-1 in Q).
+// on the REAL host render path (EngineHarness -> StandaloneAudioEngine::processBlock ->
+// DeviceAdapter::renderBlock), the entry the product runs, so the enqueued keyboard events are
+// delivered by the same EventTimebase drain (F-1 fixed; see U). VCO-B is read from the host's
+// DRY_B channel: the one frozen device scale (x0.5) is positive, so zero-crossing counts are
+// exactly those of the canonical render.
 static void accept_cable_consumption() {
   std::printf("R  -- legal user cables make the new right outputs drive real consumers\n");
 
@@ -1317,16 +1370,13 @@ static void accept_cable_consumption() {
     set_mode(st, 2);
     if (cable)
       set_cable(st, core::JackId::keyboard_pressure_out, core::JackId::vco_b_v_oct_in);
-    std::unique_ptr<core::MachineRuntimeDefinition> def = chain(st);
-    if (def == nullptr) return false;
-    core::SynthRuntime& rt = def->runtime();
-    note(rt, core::KeyboardSide::Left, leftPitch, 0.0, 1, 0);
-    note(rt, core::KeyboardSide::Right, rightPitch, 0.0, 2, 0);
-    std::vector<core::RuntimeInputs> in(9600);
-    std::vector<core::RuntimeOutput> o(9600);
-    rt.processBlock(in.data(), in.size(), o.data());
-    out->reserve(o.size());
-    for (const core::RuntimeOutput& r : o) out->push_back(r.dryB);
+    testengine::EngineHarness h;
+    if (!h.load(st, kSr, 9600)) return false;  // one real 9600-frame host block below.
+    note(*h.producerRuntime(), core::KeyboardSide::Left, leftPitch, 0.0, 1, 0);
+    note(*h.producerRuntime(), core::KeyboardSide::Right, rightPitch, 0.0, 2, 0);
+    if (!h.renderBlock(9600, [](std::size_t, double& a, double& b) { a = 0.0; b = 0.0; }))
+      return false;
+    *out = h.out(3);
     return true;
   };
   std::vector<double> cabled, plain, rightZeroCabled, rightZeroPlain, removed;
@@ -1352,19 +1402,15 @@ static void accept_cable_consumption() {
     set_mode(st, 2);
     if (cable)
       set_cable(st, core::JackId::keyboard_gate_right_out, core::JackId::envelope_b_gate_in);
-    std::unique_ptr<core::MachineRuntimeDefinition> def = chain(st);
-    if (def == nullptr) return false;
-    core::SynthRuntime& rt = def->runtime();
-    if (playRight) note(rt, core::KeyboardSide::Right, 1.0, 0.0, 2, 0);
-    else note(rt, core::KeyboardSide::Left, 1.0, 0.0, 1, 0);
-    std::vector<core::RuntimeInputs> in(1);
-    std::vector<core::RuntimeOutput> o(1);
+    testengine::EngineHarness h;
+    if (!h.load(st, kSr, 4800)) return false;
+    if (playRight) note(*h.producerRuntime(), core::KeyboardSide::Right, 1.0, 0.0, 2, 0);
+    else note(*h.producerRuntime(), core::KeyboardSide::Left, 1.0, 0.0, 1, 0);
     out->reserve(4800);
-    for (int i = 0; i < 4800; ++i) {
-      rt.processBlock(in.data(), 1, o.data());
+    // Per-frame host renders (block=1) with the published EG-B output sampled after each frame.
+    return h.renderSampled(4800, 0.0, [out](const core::SynthRuntime& rt) {
       out->push_back(rt.controlVoltageAt(core::JackId::envelope_b_env_out));
-    }
-    return true;
+    });
   };
   std::vector<double> egLeftDefault, egRightDefault, egRightCabled, egLeftCabled, egLeftRemoved;
   if (!envB(false, false, &egLeftDefault) || !envB(false, true, &egRightDefault) ||
@@ -1390,9 +1436,12 @@ static void accept_cable_consumption() {
 // S: the N-section fix. N compared only dryA and the four keyboard values at the END of the run,
 // which cannot see a RIGHT-side error that occurs and is corrected mid-run, and the right side is
 // not wired to VCO-B by default so left DRY_A cannot stand in for it. Here the same state + event
-// script is rendered (a) one frame per block (the reference) and (b) in REAL 256-frame blocks,
-// with key events landing mid-block; all four audio channels are compared, and the four published
-// values are compared AT EVERY REAL BLOCK BOUNDARY. Canonical runtime block entry (see F-1).
+// script is rendered (a) one frame per block (the reference, canonical runtime entry) and (b) in
+// REAL 256-frame blocks through the REAL HOST ENTRY (EngineHarness -> applyDeviceState ->
+// StandaloneAudioEngine::processBlock -> DeviceAdapter::renderBlock), with key events landing
+// mid-block; all four host audio channels are compared (through the one frozen 0.5 device scale),
+// and the four published values are compared AT EVERY REAL BLOCK BOUNDARY. Both entries drain the
+// ONE EventTimebase (F-1 fixed), so the partition is a delivery detail and nothing else.
 static void accept_block_boundary_traces() {
   std::printf("S  -- real block boundaries: left/right control traces vs a per-frame reference\n");
   constexpr int kBlock = 256;
@@ -1422,12 +1471,9 @@ static void accept_block_boundary_traces() {
     release(rt, core::KeyboardSide::Right, 2, 1500);
   };
   std::unique_ptr<core::MachineRuntimeDefinition> defRef = chain(build());
-  std::unique_ptr<core::MachineRuntimeDefinition> defBlk = chain(build());
-  if (defRef == nullptr || defBlk == nullptr) { check(false, "S build"); return; }
+  if (defRef == nullptr) { check(false, "S build"); return; }
   core::SynthRuntime& ref = defRef->runtime();
-  core::SynthRuntime& blk = defBlk->runtime();
   script(ref);
-  script(blk);
   std::vector<Snap> frames;
   std::vector<double> refL, refR, refA, refB;
   frames.reserve(static_cast<std::size_t>(kBlock * kBlocks));
@@ -1443,27 +1489,36 @@ static void accept_block_boundary_traces() {
       frames.push_back(snap(ref));
     }
   }
+  // (b) the SAME state + script through the REAL host entry, in real 256-frame blocks.
+  testengine::EngineHarness h;
+  if (!h.load(build(), kSr, kBlock)) { check(false, "S host load"); return; }
+  script(*h.producerRuntime());
   std::vector<Snap> ends;
-  std::vector<double> blkL, blkR, blkA, blkB;
-  {
-    std::vector<core::RuntimeInputs> in(static_cast<std::size_t>(kBlock));
-    std::vector<core::RuntimeOutput> o(static_cast<std::size_t>(kBlock));
-    for (int i = 0; i < kBlocks; ++i) {
-      blk.processBlock(in.data(), static_cast<std::size_t>(kBlock), o.data());
-      for (int f = 0; f < kBlock; ++f) {
-        blkL.push_back(o[static_cast<std::size_t>(f)].wetL);
-        blkR.push_back(o[static_cast<std::size_t>(f)].wetR);
-        blkA.push_back(o[static_cast<std::size_t>(f)].dryA);
-        blkB.push_back(o[static_cast<std::size_t>(f)].dryB);
-      }
-      ends.push_back(snap(blk));
+  for (int i = 0; i < kBlocks; ++i) {
+    if (!h.renderBlock(kBlock, [](std::size_t, double& a, double& b) { a = 0.0; b = 0.0; })) {
+      check(false, "S host block render");
+      return;
     }
+    ends.push_back(read_snap(*h.runtime()));  // published control values at this block END.
   }
+  const std::vector<double>& blkL = h.out(0);
+  const std::vector<double>& blkR = h.out(1);
+  const std::vector<double>& blkA = h.out(2);
+  const std::vector<double>& blkB = h.out(3);
   check(ends.size() == static_cast<std::size_t>(kBlocks) &&
             blkL.size() == static_cast<std::size_t>(kBlock * kBlocks),
-        "S1 all 8 real 256-frame blocks rendered");
-  check(blkL == refL && blkR == refR && blkA == refA && blkB == refB,
-        "S2 all FOUR audio channels are bit-identical, real blocks vs the per-frame reference");
+        "S1 all 8 real 256-frame host blocks rendered");
+  // The host channels are the same virtual volts through the ONE frozen device scale, so this is
+  // an exact per-sample comparison of the product path against the per-frame reference.
+  bool audioSame = blkL.size() == refL.size();
+  for (std::size_t i = 0; audioSame && i < refL.size(); ++i) {
+    audioSame = blkL[i] == core::device_normalized_from_volts(refL[i]) &&
+                blkR[i] == core::device_normalized_from_volts(refR[i]) &&
+                blkA[i] == core::device_normalized_from_volts(refA[i]) &&
+                blkB[i] == core::device_normalized_from_volts(refB[i]);
+  }
+  check(audioSame,
+        "S2 all FOUR host audio channels equal the per-frame reference through the device scale");
   bool boundary = ends.size() == static_cast<std::size_t>(kBlocks);
   for (int i = 0; i < kBlocks && boundary; ++i) {
     boundary = same_snap(ends[static_cast<std::size_t>(i)],
@@ -1493,6 +1548,333 @@ static void accept_block_boundary_traces() {
   check(firstRightGate == 130,
         "S4 the mid-block right key event is carried at its exact sample (frame 130)");
 }
+// ============================================================ U. host event drain (F-1)
+
+// U: FINDING F-1, fixed in this slice. The host render path
+// (StandaloneAudioEngine::processBlock -> DeviceAdapter::renderBlock) used to call
+// SynthRuntime::processFrame per frame and NEVER drain the EventTimebase, so events queued by
+// the host's own keyboard/MIDI producer were invisible on the product entry: the adapter
+// rendered a free-running machine. The authorized fix (@Codex msg 0fd75e9f) routes each frame
+// through the EXISTING SynthRuntime::processBlock(&in, 1, &out, true) — ONE drain, one frame of
+// time, the ONE EventTimebase, no second event loop, no dynamic buffer, no added latency, and
+// no drain smuggled into processFrame (which would double-advance the time base).
+//
+// U pins that on the REAL host entry: an event acts at its exact ABSOLUTE frame; the host entry
+// equals the canonical per-frame entry; 64/256/irregular HOST blocks agree; a re-commit resets
+// the time base; and the per-frame drain does not change the EventTimebase's defined semantics
+// (same-frame global order, future retention, late delivery, capacity boundaries).
+static void accept_host_event_drain() {
+  std::printf("U  -- the host render entry drains the EventTimebase at its exact absolute frames\n");
+  const auto build = []() {
+    core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+    set_mode(st, 2);  // Split: v_oct = left pitch, pressure_out = right pitch, both gates live
+    return st;
+  };
+  const auto script = [](core::SynthRuntime& rt) {
+    note(rt, core::KeyboardSide::Left, 1.0, 0.6, 1, 0);
+    note(rt, core::KeyboardSide::Right, 2.0, 0.4, 2, 130);
+    release(rt, core::KeyboardSide::Left, 1, 700);
+    note(rt, core::KeyboardSide::Left, 0.5, 0.6, 1, 1030);
+  };
+
+  // U1: queued left/right note + pressure + release act at their EXACT absolute frames on the
+  // real host entry, and the rendered audio is a function of those events (not free-running).
+  {
+    testengine::EngineHarness h, ctrl;
+    if (!h.load(build()) || !ctrl.load(build())) { check(false, "U1 load"); return; }
+    script(*h.producerRuntime());
+    std::vector<Snap> f;
+    f.reserve(1200);
+    const bool ok = h.renderSampled(1200, 0.0, [&f](const core::SynthRuntime& rt) {
+      f.push_back(read_snap(rt));
+    }) && ctrl.render(1200);
+    check(ok && f.size() == 1200, "U1 the host entry renders the sampled window");
+    if (!ok || f.size() != 1200) return;
+    check(f[0].gateL == kGateHigh && f[699].gateL == kGateHigh && f[700].gateL == 0.0,
+          "U1 a left note at frame 0 and its release at frame 700 act at their EXACT frames");
+    check(f[129].gateR == 0.0 && f[130].gateR == kGateHigh,
+          "U1 the right note acts at exactly frame 130 (its absolute sample)");
+    check(f[0].vOct > 0.0 && f[129].press == 0.0 && f[130].press > 0.0 &&
+              near(f[1199].press, 2.0, 0.05),
+          "U1 v_oct carries the left pitch and Split pressure_out the RIGHT pitch, from 130");
+    check(range_of(h.out(2)) > 0.01 && range_of(h.out(3)) > 0.01 &&
+              h.out(2) != ctrl.out(2) && h.out(3) != ctrl.out(3),
+          "U1 the queued events change the four-channel host audio (not a free-running trace)");
+  }
+
+  // U2: the host entry and the canonical runtime per-frame entry are the SAME machine — same
+  // published control trace and same audio (compared through the frozen 0.5 device scale).
+  {
+    std::unique_ptr<core::MachineRuntimeDefinition> def = chain(build());
+    testengine::EngineHarness h;
+    if (def == nullptr || !h.load(build())) { check(false, "U2 load"); return; }
+    core::SynthRuntime& canon = def->runtime();
+    script(canon);
+    script(*h.producerRuntime());
+    std::vector<Snap> canonF;
+    std::vector<double> cL, cR, cA, cB;
+    {
+      std::vector<core::RuntimeInputs> in(1);
+      std::vector<core::RuntimeOutput> o(1);
+      for (int i = 0; i < 1200; ++i) {
+        canon.processBlock(in.data(), 1, o.data());
+        canonF.push_back(snap(canon));
+        cL.push_back(o[0].wetL);
+        cR.push_back(o[0].wetR);
+        cA.push_back(o[0].dryA);
+        cB.push_back(o[0].dryB);
+      }
+    }
+    std::vector<Snap> hostF;
+    const bool ok = h.renderSampled(1200, 0.0, [&hostF](const core::SynthRuntime& rt) {
+      hostF.push_back(read_snap(rt));
+    });
+    bool sameControl = ok && hostF.size() == canonF.size();
+    for (std::size_t i = 0; sameControl && i < canonF.size(); ++i)
+      sameControl = same_snap(hostF[i], canonF[i]);
+    check(sameControl, "U2 the host entry's published control trace equals the canonical entry");
+    bool sameAudio = h.out(0).size() == cL.size() && range_of(cA) > 0.01;
+    for (std::size_t i = 0; sameAudio && i < cL.size(); ++i) {
+      sameAudio = h.out(0)[i] == core::device_normalized_from_volts(cL[i]) &&
+                  h.out(1)[i] == core::device_normalized_from_volts(cR[i]) &&
+                  h.out(2)[i] == core::device_normalized_from_volts(cA[i]) &&
+                  h.out(3)[i] == core::device_normalized_from_volts(cB[i]);
+    }
+    check(sameAudio,
+          "U2 all FOUR host audio channels equal the canonical render through the 0.5 scale");
+  }
+
+  // U3: 64/256/irregular HOST blocks are interchangeable, and every real block boundary equals
+  // the per-frame reference — the per-frame drain must not become partition-dependent.
+  {
+    testengine::EngineHarness href;
+    if (!href.load(build())) { check(false, "U3 reference load"); return; }
+    script(*href.producerRuntime());
+    std::vector<Snap> ref;
+    ref.reserve(2560);
+    if (!href.renderSampled(2560, 0.0, [&ref](const core::SynthRuntime& rt) {
+          ref.push_back(read_snap(rt));
+        })) {
+      check(false, "U3 reference render");
+      return;
+    }
+    struct Run {
+      std::vector<double> ch[4];
+      std::vector<Snap> ends;
+      bool ok = false;
+    };
+    const auto run = [&](const std::vector<int>& sched) {
+      Run r;
+      testengine::EngineHarness h;
+      if (!h.load(build())) return r;
+      script(*h.producerRuntime());
+      for (int n : sched) {
+        if (!h.renderBlockSampled(n, 0.0, [&r](const core::SynthRuntime& rt) {
+              r.ends.push_back(read_snap(rt));
+            })) {
+          return r;
+        }
+      }
+      for (int c = 0; c < 4; ++c) r.ch[c] = h.out(c);
+      r.ok = true;
+      return r;
+    };
+    const Run r64 = run(std::vector<int>(40, 64));    // 2560 frames in 40 blocks
+    const Run r256 = run(std::vector<int>(10, 256));  // the same 2560 frames in 10 blocks
+    const int irSizes[] = {300, 100, 1024, 7, 501, 400, 100, 128};  // sums to exactly 2560
+    const Run rIr = run(std::vector<int>(irSizes, irSizes + 8));
+    check(r64.ok && r256.ok && rIr.ok, "U3 all three host partitions rendered");
+    bool audioEq = r64.ok && r256.ok && rIr.ok;
+    for (int c = 0; audioEq && c < 4; ++c)
+      audioEq = r64.ch[c] == r256.ch[c] && r256.ch[c] == rIr.ch[c] && r64.ch[c] == href.out(c);
+    check(audioEq, "U3 64/256/irregular host blocks are bit-identical to the per-frame render");
+    // Every real boundary must equal the per-frame reference at the SAME absolute frame.
+    bool b64 = true, b256 = true, bIr = true;
+    {
+      std::size_t cum = 0;
+      for (std::size_t i = 0; i < r64.ends.size(); ++i) {
+        cum += 64;
+        b64 = b64 && same_snap(r64.ends[i], ref[cum - 1]);
+      }
+      cum = 0;
+      for (std::size_t i = 0; i < r256.ends.size(); ++i) {
+        cum += 256;
+        b256 = b256 && same_snap(r256.ends[i], ref[cum - 1]);
+      }
+      cum = 0;
+      for (std::size_t i = 0; i < rIr.ends.size() && i < 8; ++i) {
+        cum += static_cast<std::size_t>(irSizes[i]);
+        bIr = bIr && same_snap(rIr.ends[i], ref[cum - 1]);
+      }
+    }
+    check(b64 && b256 && bIr,
+          "U3 every host block boundary equals the per-frame reference (all four jacks)");
+    bool gateMoves = false;
+    for (const Snap& s : ref) {
+      if (s.gateR > 1.0) { gateMoves = true; break; }
+    }
+    check(range_of(href.out(3)) > 0.01 && gateMoves && !ref.empty(),
+          "U3 the compared host trace is live (audio moves and the right gate opens)");
+  }
+
+  // U4: a re-commit on the SAME owner installs a fresh runtime whose event time base starts at
+  // 0 — the same script replayed is bit-identical (no double advance, no carried timebase) —
+  // and a reset event on the host entry clears both sides.
+  {
+    testengine::EngineHarness h;
+    if (!h.load(build())) { check(false, "U4 load"); return; }
+    std::vector<Snap> first, second, tail;
+    script(*h.producerRuntime());
+    if (!h.renderSampled(2560, 0.0, [&first](const core::SynthRuntime& rt) {
+          first.push_back(read_snap(rt));
+        })) {
+      check(false, "U4 first render");
+      return;
+    }
+    const std::vector<double> audioA = h.out(3);
+    if (!h.load(build())) { check(false, "U4 re-commit"); return; }  // same state, same owner
+    script(*h.producerRuntime());
+    if (!h.renderSampled(2560, 0.0, [&second](const core::SynthRuntime& rt) {
+          second.push_back(read_snap(rt));
+        })) {
+      check(false, "U4 second render");
+      return;
+    }
+    const std::vector<double> audioB(h.out(3).begin() + 2560, h.out(3).end());
+    bool sameTrace = first.size() == second.size() && !first.empty();
+    for (std::size_t i = 0; sameTrace && i < first.size(); ++i)
+      sameTrace = same_snap(first[i], second[i]);
+    check(sameTrace && audioA == audioB,
+          "U4 a re-commit resets the event time base: the replayed script is bit-identical");
+    reset_edge(*h.producerRuntime(), core::KeyboardSide::Left, 2560);  // default-Left reset
+    if (!h.renderSampled(480, 0.0, [&tail](const core::SynthRuntime& rt) {
+          tail.push_back(read_snap(rt));
+        })) {
+      check(false, "U4 reset render");
+      return;
+    }
+    check(!tail.empty() && tail.back().gateL == 0.0 && tail.back().gateR == 0.0,
+          "U4 a reset on the host entry clears BOTH sides (no stuck right note)");
+  }
+
+  // U5: the fix adds NO new scheduler — it drives the EXISTING EventTimebase once per frame, so
+  // the defined semantics are identical under a 1-frame drain and under one whole block:
+  // same-frame global ordering, future-event retention, late delivery at offset 0, the critical
+  // overflow reconcile, and the capacity boundary.
+  {
+    const auto fill = [](core::EventTimebase& tb) {
+      // Five due events at the SAME absolute sample 300, enqueued scrambled, plus one far-future.
+      tb.enqueue(tev(core::ControlEventKind::gate_on, 1.0, 300, 3, 9));
+      tb.enqueue(tev(core::ControlEventKind::pitch, 1.0, 300, 1, 7));
+      tb.enqueue(tev(core::ControlEventKind::gate_off, 0.0, 300, 2, 5));
+      tb.enqueue(tev(core::ControlEventKind::clock, 1.0, 500, 1, 1));
+      tb.enqueue(tev(core::ControlEventKind::parameter, 0.5, 100, 1, 2,
+                     core::ParameterId::drone_3_pitch));
+      tb.enqueue(tev(core::ControlEventKind::pitch, 2.0, 5000, 1, 3));
+    };
+    core::EventTimebase perFrameTb, wholeTb;
+    fill(perFrameTb);
+    fill(wholeTb);
+    std::vector<core::TimedControlEvent> perFrame, whole;
+    core::TimedControlEvent buf[core::kEventDispatchCapacity];
+    for (int f = 0; f < 600; ++f) {
+      const std::uint32_t n = perFrameTb.processBlock(1, buf, core::kEventDispatchCapacity);
+      for (std::uint32_t i = 0; i < n; ++i) perFrame.push_back(buf[i]);
+    }
+    {
+      const std::uint32_t n = wholeTb.processBlock(600, buf, core::kEventDispatchCapacity);
+      for (std::uint32_t i = 0; i < n; ++i) whole.push_back(buf[i]);
+    }
+    // Expected order = the same stable sort the scheduler's insert_sorted performs.
+    std::vector<core::TimedControlEvent> expected;
+    expected.push_back(tev(core::ControlEventKind::parameter, 0.5, 100, 1, 2,
+                           core::ParameterId::drone_3_pitch));
+    expected.push_back(tev(core::ControlEventKind::gate_off, 0.0, 300, 2, 5));
+    expected.push_back(tev(core::ControlEventKind::pitch, 1.0, 300, 1, 7));
+    expected.push_back(tev(core::ControlEventKind::clock, 1.0, 500, 1, 1));
+    expected.push_back(tev(core::ControlEventKind::gate_on, 1.0, 300, 3, 9));
+    std::stable_sort(expected.begin(), expected.end(),
+                     [](const core::TimedControlEvent& a, const core::TimedControlEvent& b) {
+                       return core::timed_event_before(a, b);
+                     });
+    const auto same_seq = [](const std::vector<core::TimedControlEvent>& a,
+                             const std::vector<core::TimedControlEvent>& b) {
+      if (a.size() != b.size()) return false;
+      for (std::size_t i = 0; i < a.size(); ++i) {
+        if (a[i].sample != b[i].sample || a[i].event.kind != b[i].event.kind ||
+            a[i].event.value != b[i].event.value ||
+            a[i].event.parameter != b[i].event.parameter) {
+          return false;
+        }
+      }
+      return true;
+    };
+    check(perFrame.size() == 5 && same_seq(perFrame, expected),
+          "U5 same-frame events are delivered in the defined global order (per-frame drain)");
+    check(same_seq(whole, expected),
+          "U5 one whole-block drain delivers the SAME sequence as the per-frame drain");
+    check(perFrameTb.pending() == 1 && wholeTb.pending() == 1 && !perFrameTb.lateSeen() &&
+              !wholeTb.lateSeen(),
+          "U5 a future event is retained, never delivered early or late");
+    // Late delivery: an event whose absolute sample is behind the block start goes out at 0.
+    {
+      core::EventTimebase tb;
+      tb.processBlock(100, buf, core::kEventDispatchCapacity);  // blockStart_ -> 100
+      tb.enqueue(tev(core::ControlEventKind::pitch, 1.0, 50));
+      const std::uint32_t n = tb.processBlock(1, buf, core::kEventDispatchCapacity);
+      check(n == 1 && buf[0].event.sampleOffset == 0 && tb.lateSeen() && tb.lateCount() == 1,
+            "U5 a late event is delivered at offset 0 and counted (never silently dropped)");
+    }
+    // Continuous capacity: pitch never coalesces -> the 65th is refused and counted.
+    {
+      core::EventTimebase tb;
+      for (int i = 0; i < 64; ++i) tb.enqueue(tev(core::ControlEventKind::pitch, 1.0, 1000 + i));
+      const bool ok65 = tb.enqueue(tev(core::ControlEventKind::pitch, 1.0, 2000));
+      check(!ok65 && tb.continuousOverflow() == 1 && tb.pending() == 64,
+            "U5 the continuous lane's 65th non-coalescible event is refused and counted");
+    }
+    // Parameter capacity: the same ParameterId coalesces into the newest representative.
+    {
+      core::EventTimebase tb;
+      for (int i = 0; i < 64; ++i)
+        tb.enqueue(tev(core::ControlEventKind::parameter, 0.1 * i, 1000 + i, 1,
+                       static_cast<std::uint64_t>(i), core::ParameterId::drone_3_pitch));
+      const bool okC = tb.enqueue(tev(core::ControlEventKind::parameter, 9.0, 2000, 1, 99,
+                                      core::ParameterId::drone_3_pitch));
+      check(okC && tb.parameterCoalesced() == 64 && tb.pending() == 1,
+            "U5 under pressure a parameter coalesces by ParameterId (no silent edge loss)");
+    }
+    // Critical capacity: an overflow raises ONE reconcile, which emits a reset first.
+    {
+      core::EventTimebase tb;
+      for (int i = 0; i < 64; ++i)
+        tb.enqueue(tev(core::ControlEventKind::gate_on, 1.0, 1000 + i));
+      const bool ok65 = tb.enqueue(tev(core::ControlEventKind::gate_on, 1.0, 2000));
+      const bool pendingReconcile = tb.reconcilePending() && tb.criticalOverflow() == 1 &&
+                                    tb.pending() == 64;
+      // The reconcile is emitted FIRST (offset 0) and deterministically clears the now-untrusted
+      // critical batch, so this block delivers exactly that one reset.
+      const std::uint32_t n = tb.processBlock(4096, buf, core::kEventDispatchCapacity);
+      check(ok65 == false && pendingReconcile && n == 1 &&
+                buf[0].event.kind == core::ControlEventKind::reset &&
+                buf[0].event.sampleOffset == 0 && tb.reconcileCount() == 1 &&
+                tb.criticalFlushed() == 64 && tb.pending() == 0,
+            "U5 a critical overflow raises ONE reconcile reset first, never a silent drop");
+    }
+    // Dispatch capacity: events that do not fit stay PENDING and are counted, never dropped.
+    {
+      core::EventTimebase tb;
+      for (int i = 0; i < 64; ++i) {
+        tb.enqueue(tev(core::ControlEventKind::gate_on, 1.0, 10 + i));
+        tb.enqueue(tev(core::ControlEventKind::pitch, 1.0, 10 + i));
+      }
+      const std::uint32_t n = tb.processBlock(100, buf, 65);
+      check(n == 65 && tb.dispatchCapacity() == 63 && tb.pending() == 63,
+            "U5 a full dispatch buffer leaves the remainder PENDING and counted (no drop)");
+    }
+  }
+}
+
 // ============================================================ T. preset payload round-trip
 
 // T: preserved fields + the 4 keyboard presets. task#100 counted the preset payload as stored-only;
@@ -1612,6 +1994,7 @@ int main() {
   accept_host_entry();
   accept_cable_consumption();
   accept_block_boundary_traces();
+  accept_host_event_drain();
   accept_preset_roundtrip();
 
   std::printf("\n%d checks, %d failures\n", g_checks, g_fail);

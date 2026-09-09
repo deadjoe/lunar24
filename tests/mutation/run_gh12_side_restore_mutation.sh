@@ -17,8 +17,9 @@
 # mode-correctly, the 19 already-consumed parameters read back and behaviourally
 # discriminating, the two new right-side outputs driving REAL existing consumers through
 # legal user cables (override + removal), real 256-frame block boundaries vs a per-frame
-# reference on all four audio channels, and the preserved-field / 4-preset payload round-trip.
-# On the delivered head the probe is GREEN (130 checks, 0 failures).
+# reference on all four audio channels, the host entry's EventTimebase drain at exact absolute
+# frames (F-1, section U), and the preserved-field / 4-preset payload round-trip.
+# On the delivered head the probe is GREEN (151 checks, 0 failures).
 #
 # This driver injects a DETACHED production-source mutation and proves, per defense point:
 #
@@ -26,7 +27,7 @@
 #   MUTATED code (one regression) -> RED    (the probe trips on a SPECIFIC pinned assertion —
 #                                           the slice is load-bearing at that defense point).
 #
-# Ten contracted defense points, each an ACTUAL production-source mutation (never a relaxed
+# Eleven contracted defense points, each an ACTUAL production-source mutation (never a relaxed
 # validator, never a fault macro in a production header), each verified against a SPECIFIC
 # probe assertion (a `[FAIL] <what>` line), not merely a failure count:
 #
@@ -76,6 +77,11 @@
 #                            rejection but FALLS THROUGH and commits the bad format anyway: the
 #                            host installs a state it was required to reject. Pinned `Q3
 #                            blockSize=0 is RejectedFormat; the live owner keeps format+plan+trace`.
+#   NC-11 adapter_reverts_processframe (device_adapter.h) the product render entry goes back to the
+#                            pre-F-1 per-frame processFrame drive, so the host path never drains the
+#                            EventTimebase and every queued keyboard/MIDI event is invisible there.
+#                            Pinned `U1 a left note at frame 0 and its release at frame 700 act at
+#                            their EXACT frames`.
 #
 # Each splices into a DETACHED shadow header under build/ so the probe compiles against an include
 # path that shadows ONLY the mutated header(s) (isolated per mutation, never left behind) — no
@@ -97,6 +103,7 @@ SRC_DEF="core/include/lunar24/core/machine_definition.h"
 SRC_CAND="core/include/lunar24/core/machine_candidate.h"
 SRC_ISM="core/include/lunar24/core/input_state_machine.h"
 SRC_KB="core/include/lunar24/core/keyboard_behaviour.h"
+SRC_ADAPTER="core/include/lunar24/core/device_adapter.h"
 SRC_HOST="host/include/host/standalone_audio_engine.h"
 TEST="tests/probes/gh12_keyboard_side_restore_probe.cpp"
 
@@ -112,7 +119,7 @@ COMMON_INC=(-I"$WORK" -Icore/include -Igenerated -Itests/host -Ihost/include)
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
-for f in "$SRC_RT" "$SRC_DEF" "$SRC_CAND" "$SRC_ISM" "$SRC_KB" "$SRC_HOST" "$TEST"; do
+for f in "$SRC_RT" "$SRC_DEF" "$SRC_CAND" "$SRC_ISM" "$SRC_KB" "$SRC_ADAPTER" "$SRC_HOST" "$TEST"; do
   if [ ! -f "$f" ]; then echo "ERROR: $f not found (run from repo root / via this script)." >&2; exit 2; fi
 done
 
@@ -307,6 +314,19 @@ py_splice "$SRC_HOST" "host/standalone_audio_engine.h"\
 run_mutation "NC-10 host_error_commit" "Q3 blockSize=0 is RejectedFormat; the live owner keeps format+plan+trace"
 rm -f "$WORK/host/standalone_audio_engine.h"
 
+# -------------------------------------------------------------------------------------------------
+# NC-11 — adapter_reverts_processframe (F-1, @Codex msg 0fd75e9f). The product render entry goes
+#      back to the pre-fix per-frame drive: DeviceAdapter::renderBlock calls SynthRuntime::processFrame
+#      instead of the ONE-frame processBlock, so the EventTimebase is never drained on the host path
+#      and every queued keyboard/MIDI event is invisible there. The host event assertions must catch
+#      it (U1 pins the exact absolute frame; R/S are now measured on the same host entry).
+rm -rf "$WORK/lunar24"; mkdir -p "$WORK/lunar24/core"
+py_splice "$SRC_ADAPTER" "lunar24/core/device_adapter.h"\
+  $'    rt.processBlock(&in, 1, &out, true);'\
+  $'    rt.processFrame(in, true);   /* [MUT NC-11] pre-F-1 drive: the host path never drains the EventTimebase */' 1
+run_mutation "NC-11 adapter_reverts_processframe" "U1 a left note at frame 0 and its release at frame 700 act at their EXACT frames"
+rm -f "$WORK/lunar24/core/device_adapter.h"
+
 echo
-echo "== [mutation] RESULT: unmutated probe GREEN ($N/$N) + all 10 defense points RED on a pinned assertion (rc=1, summary last). =="
+echo "== [mutation] RESULT: unmutated probe GREEN ($N/$N) + all 11 defense points RED on a pinned assertion (rc=1, summary last). =="
 echo "   The GH#12 task#101 per-side keyboard slice is load-bearing at every contracted defense point."

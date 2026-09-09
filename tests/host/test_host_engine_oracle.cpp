@@ -56,10 +56,18 @@ extern std::size_t g_freeCount;
 namespace {
 
 using lunar24::core::BufferLayoutKind;
+using lunar24::core::ControlEvent;
+using lunar24::core::ControlEventKind;
 using lunar24::core::DevicePlan;
 using lunar24::core::DRY_A;
 using lunar24::core::DRY_B;
 using lunar24::core::InputRoute;
+using lunar24::core::KeyboardSide;
+using lunar24::core::NoteId;
+using lunar24::core::ParameterId;
+using lunar24::core::SignalSample;
+using lunar24::core::SynthRuntime;
+using lunar24::core::TimedControlEvent;
 using lunar24::core::WET_L;
 using lunar24::core::WET_R;
 using lunar24::host::StandaloneAudioEngine;
@@ -387,6 +395,25 @@ void churn() {
   CHECK(maxAbs(out[0], kF) > 1e-4);  // non-silent (the machine self-oscillates).
 }
 
+// Enqueue one raw ControlEvent on a runtime through the PRODUCER seam (fixed-capacity, no heap).
+// The allocator probe uses it to hold the EventTimebase under load INSIDE the measured window: a
+// real host keyboard/MIDI producer enqueues while audio renders, so the drain paths that drives
+// (same-frame ordering, future retention, late delivery, both capacity boundaries) must be
+// alloc-0 / free-0 too (F-1, task#101).
+bool enqueue_ev(SynthRuntime* rt, ControlEventKind kind, double value, NoteId id,
+                std::uint64_t sample, ParameterId pid = ParameterId{0}) {
+  ControlEvent e{};
+  e.kind = kind;
+  e.value = static_cast<SignalSample>(value);
+  e.parameter = pid;
+  e.source = 1;   // one stable producer
+  e.channel = 0;  // and one stable channel: identity is (source, channel, noteId)
+  e.noteId = id;
+  e.producerSequence = sample;
+  e.side = KeyboardSide::Left;
+  return rt->enqueueControlEvent(TimedControlEvent{e, sample});
+}
+
 // ---- 7. allocator: the full prepared render path allocates 0 ------------------------------
 void allocator_probe() {
   StandaloneAudioEngine e;
@@ -410,6 +437,59 @@ void allocator_probe() {
   for (int i = 0; i < 21; ++i) render(e, inp, outp, 1, 4, kF);  // includes the "first" block.
   CHECK(g_allocCount == before);  // the owner delegate (-> DeviceAdapter::renderBlock) allocates 0.
   CHECK(g_freeCount == freeBefore);  // ... and frees 0 (a callback reset/free is the defect @Codex flagged).
+
+  // ---- F-1 (task#101): the SAME window with events PENDING and DELIVERED ---------------------
+  // The product render entry now drains the ONE EventTimebase per frame (DeviceAdapter::renderBlock
+  // -> SynthRuntime::processBlock(&in, 1, &out, true)), so the drain itself must stay alloc-0 /
+  // free-0 as well. The enqueues below are deliberately INSIDE the measured window: a real host
+  // producer enqueues while audio renders, and the producer seam is fixed-capacity / no-heap.
+  {
+    StandaloneAudioEngine ev;
+    CHECK(ev.prepare(0x5151u, 48000.0, kF, 1, 4));
+    SynthRuntime* rt = const_cast<SynthRuntime*>(ev.runtime());
+    CHECK(rt != nullptr);
+    const std::size_t a1 = g_allocCount;
+    const std::size_t f1 = g_freeCount;
+    // A held note at frame 0 (pitch + pressure + gate_on), then a LATE release (sample 5) queued
+    // after two blocks have already advanced past it, then a second note at 1030.
+    CHECK(enqueue_ev(rt, ControlEventKind::pitch, 1.0, 1, 0));
+    CHECK(enqueue_ev(rt, ControlEventKind::pressure, 0.5, 1, 0));
+    CHECK(enqueue_ev(rt, ControlEventKind::gate_on, 1.0, 1, 0));
+    for (int i = 0; i < 2; ++i) render(ev, inp, outp, 1, 4, kF);
+    CHECK(enqueue_ev(rt, ControlEventKind::gate_off, 0.0, 1, 5));  // late: blockStart_ is 128.
+    for (int i = 0; i < 2; ++i) render(ev, inp, outp, 1, 4, kF);
+    CHECK(enqueue_ev(rt, ControlEventKind::pitch, 2.0, 2, 1030));
+    CHECK(enqueue_ev(rt, ControlEventKind::gate_on, 1.0, 2, 1030));
+    for (int i = 0; i < 17; ++i) render(ev, inp, outp, 1, 4, kF);  // 21 blocks = 1344 frames.
+    CHECK(g_allocCount == a1);
+    CHECK(g_freeCount == f1);
+    // Non-vacuity: those events really were DELIVERED inside the window (a drain that never ran
+    // would leave the left gate at its low rail).
+    CHECK(rt->controlVoltageAt(lunar24::core::JackId::keyboard_gate_left_main_out) > 1.0);
+  }
+  // Both CAPACITY boundaries under load, on the same measured window: parameter events exercise
+  // the continuous lane's coalesce path, extra non-coalescible pitch events the continuous
+  // overflow refusal, and clock edges the critical overflow -> reconcile-reset failsafe. Every
+  // event is due inside the window; none of these paths may allocate or free.
+  {
+    StandaloneAudioEngine ev;
+    CHECK(ev.prepare(0x5252u, 48000.0, kF, 1, 4));
+    SynthRuntime* rt = const_cast<SynthRuntime*>(ev.runtime());
+    CHECK(rt != nullptr);
+    const std::size_t a1 = g_allocCount;
+    const std::size_t f1 = g_freeCount;
+    for (int i = 0; i < 70; ++i)
+      (void)enqueue_ev(rt, ControlEventKind::parameter, 0.5, 0,
+                       static_cast<std::uint64_t>(i) * 8, lunar24::core::ParameterId::vco_b_oct_sel);
+    for (int i = 0; i < 70; ++i)
+      (void)enqueue_ev(rt, ControlEventKind::pitch, 0.25, static_cast<NoteId>(i + 1),
+                       static_cast<std::uint64_t>(i) * 4);
+    for (int i = 0; i < 70; ++i)
+      (void)enqueue_ev(rt, ControlEventKind::clock, 1.0, 0, static_cast<std::uint64_t>(i) * 6);
+    for (int i = 0; i < 21; ++i) render(ev, inp, outp, 1, 4, kF);
+    CHECK(g_allocCount == a1);
+    CHECK(g_freeCount == f1);
+  }
 
   // The probe is live on BOTH sides, BOTH alignednesses. A deliberate alloc AND the matching free
   // must each be detected (so the counter is not itself a silent no-op). First unaligned...
