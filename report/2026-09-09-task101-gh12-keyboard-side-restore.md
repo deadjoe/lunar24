@@ -195,7 +195,7 @@ when the run completes.
 
 ---
 
-## 8. Review rework — @Codex msg `b7d63c1f` groups 1-3 (head `c435c2e`, UNPUSHED)
+## 8. Review rework — @Codex msg `b7d63c1f` groups 1-3 (head `45a2be2`, UNPUSHED)
 
 Baseline of this round: `a5062df`. The bank / mode / event-propagation tests were **not** rewritten
 (they were already correct). Only the three contracted groups changed.
@@ -287,7 +287,7 @@ the summary as its **last** line, and trips its pinned `[FAIL]` line.
 The earlier slow/probe-gate run (`/tmp/gh12_101_slow_release.log`, 129 checks / 7 failures) is the
 **pre-rework** tree and is superseded by §8.5; it must be re-run on the pushed head.
 
-## 9. F-1 fix — @Codex msg `0fd75e9f` (code head `aaad381`, UNPUSHED)
+## 9. F-1 fix — @Codex msg `0fd75e9f` (code head `8f827d0`, UNPUSHED)
 
 @Codex: “F-1 成立，授权在本片修复。优先最窄实现：DeviceAdapter 每帧完成输入映射后调用既有
 `SynthRuntime::processBlock(&in,1,&out,true)`，再按原样写输出；不把 drain 偷加进 processFrame…
@@ -365,8 +365,11 @@ repeats, `-O2`: per-frame `processBlock` (fixed, drains) vs per-frame `processFr
 | 1 | 1.196 s | 1.158 s | 1.033 | +19.0 ns/frame |
 | 2 | 1.162 s | 1.164 s | 0.999 | −0.9 ns/frame |
 
-400 000 frames × 5 reps per column, ≈2.9 µs/frame, i.e. the one-frame drain is at the measurement
-noise floor (≤0.7 %). Measurement tool: `/tmp/gh12_101_cpu_compare.cpp` (not committed).
+400 000 frames × 5 reps per column, ≈2.9 µs/frame. **Reported at raw values only** (@Codex msg
+`7fbf04f6`): the two runs disagree in sign (1.033 then 0.999), so no single "noise floor" figure is
+asserted and the earlier "≤0.7 %" characterisation is withdrawn. The defensible reading is limited to
+"the fixed per-frame drive costs the same order as the pre-F-1 drive at ~2.9 µs/frame". Measurement
+tool: `/tmp/gh12_101_cpu_compare.cpp` (not committed).
 
 ### 9.7 Gates re-run at this head (affected directed tests + negatives only, per instruction)
 
@@ -378,11 +381,25 @@ noise floor (≤0.7 %). Measurement tool: `/tmp/gh12_101_cpu_compare.cpp` (not c
 | Mutation harness | **rc=0: baseline 151/0 + 11/11 RED** |
 | Full fast suite / ASan+UBSan / CI / slow probe gate | **NOT re-run** — per @Codex “只重跑受影响定向与负控…再推进全套” |
 
-### 9.8 Housekeeping (honest note)
+### 9.8 Housekeeping (honest note) — history rewritten
 
-The previous commit `c435c2e` swept `build-release/` (913 regenerable artifacts) into git via
-`git add -A`. This commit untracks it (`git rm -r --cached build-release`) and adds `/build-release/`
-to `.gitignore`, so the review diff carries source + tests only. No source line was affected.
+The review-rework commit swept `build-release/` (913 regenerable artifacts) into git via `git add -A`.
+Deleting them in a later commit is **not** enough: the blobs stay in the unpushed history and would be
+uploaded on push (@Codex msg `7fbf04f6`). The branch (unpushed, no remote ref) was therefore rewritten
+with `git filter-repo --path build-release/ --invert-paths --refs 920f51d..HEAD --partial --force`;
+`/build-release/` stays in `.gitignore`. **No source or test line changed** — the net diff
+`920f51d..HEAD` is byte-identical to the pre-rewrite diff (15 files, +3180/−21), and no commit tree in
+the range contains a `build-release/` path any more. The pre-rewrite tip is preserved locally at
+`refs/backup/task101-prewipe` (`fd9befe`) until the review is closed.
+
+| pre-rewrite | rewritten |
+|---|---|
+| `c435c2e` (review rework) | **`45a2be2`** |
+| `cd850eb` (§8 docs) | **`fc726e9`** |
+| `aaad381` (F-1 fix, code head) | **`8f827d0`** |
+| `fd9befe` (§9 docs) | **`09fd7ee`** |
+
+`ef89a07`/`6c97eae`/`5551b46`/`a5062df`/`cf4ad48` are unchanged (never contained the artifacts).
 
 ### 9.9 Not claimed
 
