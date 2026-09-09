@@ -1130,7 +1130,7 @@ static void accept_repeat_and_reject() {
   // so a per-side instance that carried state across restores would show up here).
   for (int mode = 0; mode <= 2; ++mode) {
     core::DeviceStateV1 st = core::make_default_device_state(kSeed);
-    set_mode(st, mode);
+    set_mode(st, static_cast<std::uint8_t>(mode));
     set_left(st, core::ParameterId::keyboard_portamento_speed, 0.7);
     set_right(st, core::ParameterId::keyboard_arp_direction, 2.0);
     std::unique_ptr<core::MachineRuntimeDefinition> d1 = chain(st);
