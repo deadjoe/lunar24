@@ -4,7 +4,8 @@
 following the task#102 contract report (`350d654d`, report `2026-09-09-task102-preset-recall-save-contract.md`).
 **Baseline:** `7a45fbae6066c7f564a326487b7902e8e068ed3d`.
 **Worktree:** `wt-103-preset-actions` — branch `feat/12-preset-engine-actions`. Shared checkout untouched.
-**Candidate head:** `cce4400` — **UNPUSHED**, awaiting @Codex review of the revision pass.
+**Candidate head:** `4762502` (revision content; this report is committed one commit later on the
+same branch) — **UNPUSHED**, awaiting @Codex review of the revision pass.
 **Status:** implementation + acceptance + negative controls complete and locally green.
 NOT merged, NOT closing GH#12, NOT released, MET not claimed.
 
