@@ -66,25 +66,45 @@ static constexpr std::size_t kWire = host::kAppStateWireBytes;
 
 // ---- real temp directory ---------------------------------------------------------------------
 
+// Every path this test hands around is UTF-8 (u8string), and every file it opens goes through the
+// SAME native-path boundary the product uses -- so on Windows this test exercises the wide APIs on
+// a real non-ASCII directory, not an ASCII convenience path.
 static std::string makeTempDir(const char* tag) {
   static std::uint64_t seq = 0u;
   std::error_code ec;
   const auto base = std::filesystem::temp_directory_path(ec);
   const std::string name = std::string("lunar24-app-state-") + tag + "-" +
                            std::to_string(static_cast<unsigned long long>(seq++));
-  const auto dir = base / name;
+  const auto dir = base / std::filesystem::u8path(name);
   std::filesystem::remove_all(dir, ec);
   std::filesystem::create_directories(dir, ec);
-  return dir.string();
+  return dir.u8string();
+}
+
+// C9 — a REAL directory whose name carries a CJK word plus two non-BMP code points: U+1D11E
+// (MUSICAL SYMBOL G CLEF) and U+1F39B (CONTROL KNOBS), each a UTF-16 surrogate pair. The bytes are
+// spelled as escapes so no source-charset assumption can soften the test, and the name cannot be
+// represented in a legacy ANSI code page at all -- an ACP round trip fails here by construction.
+static std::string makeUnicodeTempDir() {
+  static std::uint64_t seq = 0u;
+  std::error_code ec;
+  const auto base = std::filesystem::temp_directory_path(ec);
+  const std::string name =
+      std::string("lunar24-app-state-\xE9\x85\x8D\xE7\xBD\xAE-\xF0\x9D\x84\x9E-\xF0\x9F\x8E\x9B-") +
+      std::to_string(static_cast<unsigned long long>(seq++));
+  const auto dir = base / std::filesystem::u8path(name);
+  std::filesystem::remove_all(dir, ec);
+  std::filesystem::create_directories(dir, ec);
+  return dir.u8string();
 }
 
 static void removeTree(const std::string& dir) {
   std::error_code ec;
-  std::filesystem::remove_all(std::filesystem::path(dir), ec);
+  std::filesystem::remove_all(std::filesystem::u8path(dir), ec);
 }
 
 static bool readBytes(const std::string& path, std::vector<std::uint8_t>* out) {
-  std::FILE* f = std::fopen(path.c_str(), "rb");
+  std::FILE* f = host::app_state_file_ops::openNative(path, "rb");
   if (f == nullptr) return false;
   if (std::fseek(f, 0L, SEEK_END) != 0) {
     std::fclose(f);
@@ -102,10 +122,20 @@ static bool readBytes(const std::string& path, std::vector<std::uint8_t>* out) {
 }
 
 static bool writeBytes(const std::string& path, const std::vector<std::uint8_t>& bytes) {
-  std::FILE* f = std::fopen(path.c_str(), "wb");
+  std::FILE* f = host::app_state_file_ops::openNative(path, "wb");
   if (f == nullptr) return false;
   const bool ok = bytes.empty() || std::fwrite(bytes.data(), 1u, bytes.size(), f) == bytes.size();
   return std::fclose(f) == 0 && ok;
+}
+
+// UTF-8-correct "same directory": compare the bytes BEFORE the last separator. Going through
+// std::filesystem::path here would re-encode the string through the ANSI code page on Windows.
+static std::string parentUtf8(const std::string& path) {
+  const std::size_t cut = path.find_last_of("/\\");
+  return (cut == std::string::npos) ? std::string() : path.substr(0u, cut);
+}
+static bool sameDir(const std::string& a, const std::string& b) {
+  return parentUtf8(a) == parentUtf8(b);
 }
 
 static bool encodeState(const DeviceStateV1& st, std::vector<std::uint8_t>* out) {
@@ -412,7 +442,7 @@ static void c1_real_round_trip() {
   const std::string t2 = store.tempPath();
   check(!t1.empty() && t1 != store.livePath() && t2 != t1,
         "C1.4 temp paths are unique and never the live path");
-  check(std::filesystem::path(t1).parent_path() == std::filesystem::path(dir),
+  check(sameDir(t1, store.livePath()),
         "C1.4 the temp file lives in the SAME directory as the live file");
 
   // A brand-new store over the same directory: the file state must come back.
@@ -972,6 +1002,137 @@ static void c8_save_source_precedence() {
   }
 }
 
+// ---- C9 the UTF-8 -> native path boundary ---------------------------------------------------
+// The host hands the per-user directory in as UTF-8 (SHGetSpecialFolderPathUTF8). Windows file APIs
+// are WIDE, and the process ANSI code page cannot represent a Chinese user name at all -- so the
+// conversion must be explicit, done ONCE at the file-adapter boundary, and the same native path must
+// be used by create/open/write/rename/remove. This section proves the conversion against known code
+// units AND drives a real save -> new-instance-restore round trip in a real non-ASCII directory.
+
+static void c9_native_path_boundary() {
+  namespace fsops = host::app_state_file_ops;
+
+  // C9.1 — the conversion itself, checked against KNOWN code units rather than a round trip (a
+  // round trip through the same broken conversion would agree with itself and prove nothing).
+  {
+    const std::string ascii = "C:/Users/Joe/AppData/Local/Lunar24";
+    const fsops::NativePath nAscii = fsops::nativePath(ascii);
+#if defined(_WIN32)
+    check(nAscii == std::wstring(L"C:/Users/Joe/AppData/Local/Lunar24"),
+          "C9.1 an ASCII path converts to the same code units, not an ACP re-encoding");
+#else
+    check(nAscii == ascii, "C9.1 on POSIX the UTF-8 bytes pass through unchanged");
+#endif
+
+    // U+914D U+7F6E '-' U+1D11E '-' U+1F39B: two BMP CJK units plus two non-BMP surrogate PAIRS.
+    const std::string u8 = "\xE9\x85\x8D\xE7\xBD\xAE-\xF0\x9D\x84\x9E-\xF0\x9F\x8E\x9B";
+    const fsops::NativePath nU8 = fsops::nativePath(u8);
+#if defined(_WIN32)
+    std::wstring want;
+    want.push_back(static_cast<wchar_t>(0x914D));
+    want.push_back(static_cast<wchar_t>(0x7F6E));
+    want.push_back(L'-');
+    want.push_back(static_cast<wchar_t>(0xD834));
+    want.push_back(static_cast<wchar_t>(0xDD1E));
+    want.push_back(L'-');
+    want.push_back(static_cast<wchar_t>(0xD83C));
+    want.push_back(static_cast<wchar_t>(0xDF9B));
+    check(nU8 == want,
+          "C9.1 UTF-8 converts to the exact UTF-16 units incl. both surrogate pairs");
+    check(nU8.size() == 8u && want.size() == 8u,
+          "C9.1 each non-BMP character is a surrogate PAIR, not one unit");
+#else
+    check(nU8 == u8, "C9.1 on POSIX the non-ASCII UTF-8 bytes pass through unchanged");
+    check(nU8.size() == u8.size(), "C9.1 the POSIX path is byte-identical to the input");
+#endif
+
+    // Invalid UTF-8 must be REFUSED, never silently replaced or truncated at the offending byte:
+    // a lossy conversion would address a DIFFERENT file and the store would save into it.
+    const std::string bad = std::string("ok-") + "\xFF" + "-tail";
+    const fsops::NativePath nBad = fsops::nativePath(bad);
+#if defined(_WIN32)
+    check(nBad.empty(), "C9.1 invalid UTF-8 is refused, not lossily replaced");
+#else
+    check(nBad == bad, "C9.1 on POSIX the byte string passes through (POSIX paths have no encoding)");
+#endif
+
+    // joinUtf8: keeps the directory bytes verbatim, normalizes exactly one separator, and never
+    // goes through a narrow std::filesystem round trip.
+    check(fsops::joinUtf8(std::string("a/b/"), "c") == std::string("a/b/c") &&
+              fsops::joinUtf8(std::string("a\\b"), "c") == std::string("a\\b/c") &&
+              fsops::joinUtf8(u8, "x") == u8 + "/x",
+          "C9.1 joinUtf8 keeps the directory bytes intact and adds exactly one separator");
+  }
+
+  // C9.2-C9.4 — a REAL directory whose name needs surrogate pairs: save, then restore through a
+  // brand-new store instance, then replace the file, with every file call going through the wide
+  // boundary. This is the criterion Windows CI must run.
+  {
+    const std::string dir = makeUnicodeTempDir();
+    check(!dir.empty(), "C9.2 the non-ASCII temp directory name is non-empty");
+
+    AppStateStore store;
+    store.setDirectory(dir);
+    const std::string live = store.livePath();
+    check(live.size() > dir.size() && live.compare(0u, dir.size(), dir) == 0u,
+          "C9.2 the live path keeps the directory bytes verbatim (no ACP round trip)");
+
+    StandaloneAudioEngine engine;
+    check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "C9.2 the engine prepared");
+    check(store.loadOnce() == StateLoadOutcome::NoFile,
+          "C9.2 a first run in a non-ASCII directory reports NoFile, not Unreadable");
+
+    const DeviceStateV1 st = nonDefaultState();
+    check(engine.applyDeviceState(st, kSr, kBlock, kInCh, kOutCh) ==
+              StandaloneAudioEngine::StateApplyStatus::Accepted,
+          "C9.3 the non-default fixture committed in the non-ASCII directory");
+    check(store.save(engine) == StateSaveOutcome::Saved,
+          "C9.3 the lifecycle save WROTE into the non-ASCII directory");
+
+    std::vector<std::uint8_t> bytes;
+    check(readBytes(live, &bytes) && bytes.size() == kWire,
+          "C9.3 the file exists in the non-ASCII directory at exactly the wire size");
+
+    AppStateStore store2;
+    store2.setDirectory(dir);
+    check(store2.loadOnce() == StateLoadOutcome::Ok,
+          "C9.4 a NEW instance reads the file back out of the non-ASCII directory");
+    check(store2.pending() != nullptr && wireEqual(*store2.pending(), st),
+          "C9.4 the restored state wire-equals the saved state");
+    check(store2.publishPending(engine, kSr, kBlock, kInCh, kOutCh) ==
+              StandaloneAudioEngine::StateApplyStatus::Accepted,
+          "C9.4 the restored candidate is accepted by the real engine");
+    check(engine.canonicalState() != nullptr && wireEqual(*engine.canonicalState(), st),
+          "C9.4 the engine canonical is the restored state");
+
+    // Replace must use the SAME native path: a second save overwrites in place (never
+    // delete-then-create), and the aborted-temp cleanup must not leave a stray in this directory.
+    DeviceStateV1 second = st;
+    second.calibration.vcfLeftTrim = 0.625f;
+    check(engine.applyDeviceState(second, kSr, kBlock, kInCh, kOutCh) ==
+              StandaloneAudioEngine::StateApplyStatus::Accepted,
+          "C9.3 a second config committed");
+    check(store2.save(engine) == StateSaveOutcome::Saved,
+          "C9.3 the atomic replace inside the non-ASCII directory succeeded");
+    std::vector<std::uint8_t> after;
+    DeviceStateV1 decoded;
+    check(readBytes(live, &after) &&
+              core::decode_device_state(after.data(), after.size(), &decoded) &&
+              wireEqual(decoded, second),
+          "C9.3 the replaced file holds the second config (replaced, never deleted first)");
+
+    int entries = 0;
+    int strays = 0;
+    for (const auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(dir))) {
+      ++entries;
+      if (e.path().filename().u8string() != std::string(host::kAppStateFileName)) ++strays;
+    }
+    check(entries == 1 && strays == 0,
+          "C9.4 the non-ASCII directory holds exactly the state file (no leftover temp)");
+    removeTree(dir);
+  }
+}
+
 // ---- C6 multi-instance ----------------------------------------------------------------------
 
 static void c6_multi_instance() {
@@ -985,8 +1146,7 @@ static void c6_multi_instance() {
   s1.setDirectory(dir);
   s2.setDirectory(dir);
   check(s1.tempPath() != s2.tempPath(), "C6.2 two instances use different temp names");
-  check(std::filesystem::path(s1.tempPath()).parent_path() ==
-            std::filesystem::path(s2.tempPath()).parent_path(),
+  check(sameDir(s1.tempPath(), s2.tempPath()),
         "C6.2 both temp names live in the shared directory");
 
   StandaloneAudioEngine e1;
@@ -1038,8 +1198,7 @@ static void c6_multi_instance() {
     check(std::filesystem::exists(std::filesystem::path(r1)) &&
               std::filesystem::exists(std::filesystem::path(r2)),
           "C6.4 each reserved temp name exists on disk (claimed in the kernel)");
-    check(std::filesystem::path(r1).parent_path() ==
-              std::filesystem::path(reserved.livePath()).parent_path(),
+    check(sameDir(r1, reserved.livePath()),
           "C6.4 the reserved temp lives in the live directory");
     removeTree(edir);
   }
@@ -1059,8 +1218,7 @@ static void c6_multi_instance() {
     check(store.save(engine) == StateSaveOutcome::FlushFailed, "C6.5 the save failed at the flush");
     check(fs.existedAtWrite && fs.sizeAtWrite == 0u,
           "C6.5 the temp was ALREADY reserved (empty file) when the backend was asked to write");
-    check(std::filesystem::path(fs.seenPath).parent_path() ==
-              std::filesystem::path(store.livePath()).parent_path(),
+    check(sameDir(fs.seenPath, store.livePath()),
           "C6.5 the reserved temp lives in the live directory");
     check(!std::filesystem::exists(std::filesystem::path(fs.seenPath)),
           "C6.5 the reservation was cleaned up -- exactly the path we took");
@@ -1112,6 +1270,7 @@ int main() {
   c8_save_source_precedence();
   c6_multi_instance();
   c7_audio_path_is_clean();
+  c9_native_path_boundary();
   if (g_fail != 0) {
     std::fprintf(stderr, "[app state store] %d/%d checks FAILED\n", g_fail, g_checks);
     return 1;

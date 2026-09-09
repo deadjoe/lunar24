@@ -37,12 +37,20 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <string>
-#include <system_error>
 #include <vector>
 
 #if defined(_WIN32)
+// Every file call below is WIDE: the UTF-8 the host hands in is converted ONCE, at this boundary
+// (nativePath). WIN32_LEAN_AND_MEAN / NOMINMAX keep <windows.h> from dragging the rarely-used
+// headers and the min/max macros into every TU that includes this store.
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include <fcntl.h>
 #include <io.h>
 #include <share.h>
@@ -117,20 +125,85 @@ enum class StateSaveOutcome : std::uint8_t {
 // test, so the round trip is exercised through the SAME code the APP runs.
 namespace app_state_file_ops {
 
+#if defined(_WIN32)
+// The native path form the Windows file APIs take.
+using NativePath = std::wstring;
+#else
+using NativePath = std::string;
+#endif
+
+// ---- the ONE path-encoding boundary ----------------------------------------------------------
+// The APP host resolves the per-user directory as UTF-8 (SHGetSpecialFolderPathUTF8) and the store
+// keeps it as UTF-8 end to end. POSIX paths ARE byte strings, so the UTF-8 bytes pass through
+// unchanged; Windows needs UTF-16 for the wide file APIs and must NOT go through the process ANSI
+// code page -- a Chinese user name is not representable in a legacy code page, and "it happens to
+// work on an English machine" is exactly the defect this boundary removes. Invalid UTF-8 yields an
+// empty native path, which every caller below turns into a typed failure rather than a guess.
+inline NativePath nativePath(const std::string& utf8) {
+#if defined(_WIN32)
+  if (utf8.empty()) return std::wstring();
+  const int len = static_cast<int>(utf8.size());
+  const int need =
+      ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), len, nullptr, 0);
+  if (need <= 0) return std::wstring();
+  std::wstring wide(static_cast<std::size_t>(need), L'\0');
+  if (::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), len, &wide[0], need) != need)
+    return std::wstring();
+  return wide;
+#else
+  return utf8;
+#endif
+}
+
+// std::FILE* on the SAME native path every other call in this namespace uses, so a UTF-8 path can
+// never reach the narrow fopen by accident on Windows.
+inline std::FILE* openNative(const std::string& utf8Path, const char* mode) {
+#if defined(_WIN32)
+  const NativePath native = nativePath(utf8Path);
+  if (native.empty()) return nullptr;
+  std::wstring wideMode;
+  for (const char* p = mode; p != nullptr && *p != '\0'; ++p)
+    wideMode.push_back(static_cast<wchar_t>(*p));
+  return ::_wfopen(native.c_str(), wideMode.c_str());
+#else
+  // POSIX paths ARE byte strings, so nativePath() is the identity here and this is the same fopen on
+  // the same bytes. The indirection is deliberate: ONE boundary on BOTH platforms, so a conversion
+  // defect cannot hide behind a second, unconverted call site.
+  const NativePath native = nativePath(utf8Path);
+  return std::fopen(native.c_str(), mode);
+#endif
+}
+
+// Join a directory and a file name in UTF-8 WITHOUT a std::filesystem narrow round trip: on Windows
+// path(std::string) / path::string() go through the ANSI code page, which would corrupt a non-ASCII
+// directory before the wide conversion ever ran. A trailing separator is dropped so the result is
+// always `dir + "/" + name`.
+inline std::string joinUtf8(const std::string& dir, const std::string& name) {
+  std::size_t n = dir.size();
+  while (n > 0u && (dir[n - 1u] == '/' || dir[n - 1u] == '\\')) --n;
+  std::string out = dir.substr(0u, n);
+  out.push_back('/');
+  out += name;
+  return out;
+}
+
 // Claim `path` by EXCLUSIVE creation (O_CREAT|O_EXCL). steady_clock + an in-process counter cannot
 // guarantee uniqueness across PROCESSES; the kernel's exclusive create is the only portable arbiter,
 // and it is what the store uses instead of a lock service or lock file. Returns false when the name
 // is already taken (another instance won) or the directory is unusable.
 inline bool reserveExclusiveCreate(const std::string& path) {
 #if defined(_WIN32)
+  const NativePath native = nativePath(path);
+  if (native.empty()) return false;
   int fd = -1;
-  if (_sopen_s(&fd, path.c_str(), _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY, _SH_DENYRW,
-               _S_IREAD | _S_IWRITE) != 0)
+  if (_wsopen_s(&fd, native.c_str(), _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY, _SH_DENYRW,
+                _S_IREAD | _S_IWRITE) != 0)
     return false;
   _close(fd);
   return true;
 #else
-  const int fd = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0666);
+  const NativePath native = nativePath(path);
+  const int fd = ::open(native.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0666);
   if (fd < 0) return false;
   ::close(fd);
   return true;
@@ -154,7 +227,7 @@ inline bool statModeIsRegularFile(int mode) {
 // prefix. The close result is part of the verdict (a failed close can lose buffered bytes).
 inline bool realWriteFile(void* ctx, const char* path, const std::uint8_t* bytes, std::size_t n) {
   (void)ctx;
-  std::FILE* f = std::fopen(path, "r+b");
+  std::FILE* f = openNative(path, "r+b");
   if (!f) return false;
 #if defined(_WIN32)
   if (_chsize_s(_fileno(f), 0) != 0) {
@@ -176,7 +249,7 @@ inline bool realWriteFile(void* ctx, const char* path, const std::uint8_t* bytes
 // rather than a second write; the durability boundary above still applies.
 inline bool realFlushFile(void* ctx, const char* path) {
   (void)ctx;
-  std::FILE* f = std::fopen(path, "r+b");
+  std::FILE* f = openNative(path, "r+b");
   if (!f) return false;
   const int flushed = std::fflush(f);
 #if defined(_WIN32)
@@ -188,21 +261,40 @@ inline bool realFlushFile(void* ctx, const char* path) {
   return flushed == 0 && synced == 0 && closed == 0;
 }
 
-// Same-directory atomic replace. std::filesystem::rename maps to MoveFileExW(MOVEFILE_REPLACE_
-// EXISTING) on Windows and to rename(2) on POSIX, both of which replace an existing destination.
-// The destination is NEVER removed first: a failed replace must leave the prior live file intact.
+// Same-directory atomic replace. On Windows this is MoveFileExW(MOVEFILE_REPLACE_EXISTING) on the
+// SAME native (wide) paths the write used; on POSIX it is rename(2). Both replace an existing
+// destination. MOVEFILE_COPY_ALLOWED is deliberately NOT set: a cross-volume move would silently
+// degrade into copy-then-delete -- not atomic, and a failed copy can destroy the destination -- so a
+// cross-volume temp is a typed ReplaceFailed instead. The destination is NEVER removed first: a
+// failed replace must leave the prior live file intact.
 inline bool realAtomicReplace(void* ctx, const char* from, const char* to) {
   (void)ctx;
-  std::error_code ec;
-  std::filesystem::rename(std::filesystem::path(from), std::filesystem::path(to), ec);
-  return !ec;
+#if defined(_WIN32)
+  const NativePath fromNative = nativePath(from);
+  const NativePath toNative = nativePath(to);
+  if (fromNative.empty() || toNative.empty()) return false;
+  return ::MoveFileExW(fromNative.c_str(), toNative.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+  // POSIX paths ARE byte strings: rename(2) takes the UTF-8 bytes unchanged (nativePath() is the
+  // identity). No std::filesystem anywhere in this file, so no narrow/ACP round trip can creep in on
+  // either platform.
+  const NativePath fromNative = nativePath(from);
+  const NativePath toNative = nativePath(to);
+  return ::rename(fromNative.c_str(), toNative.c_str()) == 0;
+#endif
 }
 
-// Best-effort cleanup of an aborted temp file. Never touches the live file.
+// Best-effort cleanup of an aborted temp file. Never touches the live file. DeleteFileW on the same
+// native path form; POSIX removes the byte path.
 inline void realDiscardFile(void* ctx, const char* path) {
   (void)ctx;
-  std::error_code ec;
-  std::filesystem::remove(std::filesystem::path(path), ec);
+#if defined(_WIN32)
+  const NativePath native = nativePath(path);
+  if (!native.empty()) (void)::DeleteFileW(native.c_str());
+#else
+  const NativePath native = nativePath(path);
+  (void)::remove(native.c_str());
+#endif
 }
 
 inline FileOps realOps() {
@@ -238,9 +330,7 @@ class AppStateStore {
   const std::string& directory() const { return directory_; }
   std::string livePath() const {
     if (directory_.empty()) return std::string();
-    std::filesystem::path p(directory_);
-    p /= kAppStateFileName;
-    return p.string();
+    return app_state_file_ops::joinUtf8(directory_, kAppStateFileName);
   }
   // A fresh, non-colliding temp CANDIDATE path in the SAME directory on every call. This only
   // generates a name; it does not claim it. reserveTempPath() is what makes the name ours.
@@ -250,9 +340,9 @@ class AppStateStore {
     const auto ticks =
         static_cast<unsigned long long>(std::chrono::steady_clock::now().time_since_epoch().count());
     const auto seq = counter.fetch_add(1u, std::memory_order_relaxed);
-    std::filesystem::path p(directory_);
-    p /= std::string(kAppStateTempStem) + std::to_string(ticks) + "-" + std::to_string(seq);
-    return p.string();
+    return app_state_file_ops::joinUtf8(
+        directory_,
+        std::string(kAppStateTempStem) + std::to_string(ticks) + "-" + std::to_string(seq));
   }
 
   // Reserve a temp path in the SAME directory by EXCLUSIVE creation, retrying with a fresh candidate
@@ -308,7 +398,7 @@ class AppStateStore {
     }
 
     ++readAttempts_;
-    std::FILE* f = std::fopen(live.c_str(), "rb");
+    std::FILE* f = app_state_file_ops::openNative(live, "rb");
     if (!f) {
       // ENOENT is a genuine first run; anything else (permission, it is a directory, IO) is an
       // EXPLICIT unreadable status and must never masquerade as "no file yet".

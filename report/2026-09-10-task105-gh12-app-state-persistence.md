@@ -62,12 +62,19 @@
 - `C8.1 retained_config_is_save_source`：无 owner（`canonicalState()==nullptr`）时，保存来源必须是**保留的最后合法配置**；写出的字节解回后等于该配置，且**不等于**上电默认。
 - `C8.2 no_legal_config_means_no_write`：本次会话从未成功提交过合法配置 → `SkippedNoConfig`，**不写任何文件**（不得退回写默认态）。
 
-### W15–W17 结构门（真实委托证据）
+### C9 非 ASCII 路径往返（@Codex `2a544b0b` 的 Windows Unicode 路径修订）
+- `C9.1 native_path_conversion`：`nativePath()` 对 ASCII 路径逐码元相同；对 `配-𝄞-🎛`（U+914D/U+7F6E + 两个 **非 BMP** 代理对）在 Windows 上必须得到**精确 8 个 UTF-16 码元**（逐个与手写期望值比较，不用同一条转换做往返自证），非法 UTF-8 必须**拒绝**而非有损替换；POSIX 必须**逐字节原样**透传（`NativePath == std::string`，路径本无编码）。`joinUtf8()` 保留目录字节、只归一化一个分隔符。
+- `C9.2 no_file_in_non_ascii_dir`：真实目录名含中文 + 非 BMP 字符时，首跑 `NoFile`（不是 `Unreadable`），`livePath()` 字节前缀与目录完全一致。
+- `C9.3 save_into_non_ascii_dir`：非默认态在该目录里**真的写出去**（文件存在、长度 == 6297），第二次保存走原子替换、替换后文件解回第二份配置。
+- `C9.4 restore_from_non_ascii_dir`：**新实例**从该目录读回 → `Ok`、wire 等于保存态、真实候选 Accepted、engine canonical 一致；目录里**恰好一个**状态文件（无残留临时文件）。
+
+### W15–W18 结构门（真实委托证据）
 - `W15 OnReset 停机边界顺序`：`capture*` → `loadOnce` → `engine_.prepare(` → `publish*` 单调递增；`prepare()` 失败契约不变（仍只调 `engine_.prepare`）。
 - `W16a 音频路径`：`processBlock` 不得引用 store、不得有任何文件 IO。
 - `W16b 退出保存位置`：`~IPlugAPPHost` 体内 `saveDeviceState` 出现在 `CloseAudio();` **之后**、成员清理之前；调用是 `LunarHostPlugin` 委托；析构体内零文件 IO；全文件 `saveDeviceState` **恰好一次**。
 - `W17a 路径与文件纪律`：store 只写 `lunar24-state.bin`、不碰 `settings.ini`、不重解析目录、复用 core 的 codec/校验链与原子保存。
 - `W17b APP host → plugin 的路径交接`：`InitState()` 内 `setStateDirectory(mINIPath.Get())` 出现在平台目录解析 `SetFormatted(` **之后**、`Append("settings.ini")` **之前**；全文件恰好一次；host 从不出现 `lunar24-state.bin`（文件名归 store 所有）。
+- `W18 UTF-8 → 原生路径边界`（@Codex `2a544b0b`，12 条）：`nativePath()` / `openNative()` 存在且是**唯一**边界；转换显式用 `CP_UTF8` + `MB_ERR_INVALID_CHARS`（非法输入拒绝、不替换）；Windows 的 create/open/rename/remove **全部**走宽字符 API（`_wfopen` / `_wsopen_s` / `MoveFileExW` / `DeleteFileW`），不得残留窄 `_sopen_s` 或第二个 `fopen`；路径处理**不得**经过 `std::filesystem`（窄 ACP 往返）；原子替换不得退化（`MOVEFILE_REPLACE_EXISTING` 在、`MOVEFILE_COPY_ALLOWED` 不在）；POSIX 保持字节透传**且四个 POSIX 调用点同样消费 `nativePath()` 输出**（一个边界、两个平台）；`joinUtf8()` 自拼路径；验收里 C9 判据与 `makeUnicodeTempDir` 不得被删而门仍绿。
 
 ### N 系列负控（隔离源码，必须跑通并命中特定断言；编译失败不算红）
 1. `skip_startup_apply` — 不做 pending 发布 → C3.1/C2.4 红。
@@ -100,10 +107,10 @@
 
 | 文件 | 状态 | 作用 |
 | --- | --- | --- |
-| `host/include/host/app_state_store.h` | 新增 | 窄协调层：一次读盘 latch、pending 转移、保存来源选择、粘性采纳判决、排他临时名、真实 FileOps |
-| `tests/host/test_app_state_store.cpp` | 新增（251 checks） | C0–C8 行为判据（真实临时目录 + 真实 engine 候选路径） |
-| `tools/run_app_state_negatives.py` | 新增 | N 系列隔离影子负控 driver（12 条验收突变 + 2 条结构突变） |
-| `tools/check_host_engine_wiring.py` | 修改 | +W15(8) / W16a(2) / W17a(9) / W16b(6) / W17b(6) = 31 条结构判据（合计 94） |
+| `host/include/host/app_state_store.h` | 新增 | 窄协调层：一次读盘 latch、pending 转移、保存来源选择、粘性采纳判决、排他临时名、**UTF-8→原生路径唯一边界**、真实 FileOps |
+| `tests/host/test_app_state_store.cpp` | 新增（271 checks） | C0–C9 行为判据（真实临时目录 + 真实 engine 候选路径 + 非 ASCII 目录往返） |
+| `tools/run_app_state_negatives.py` | 新增 | N 系列隔离影子负控 driver（13 条验收突变 + 3 条结构突变） |
+| `tools/check_host_engine_wiring.py` | 修改 | +W15(8) / W16a(2) / W17a(9) / W16b(6) / W17b(6) / W18(12) = 43 条结构判据（合计 106） |
 | `host/plugin.h` / `host/plugin.cpp` | 修改 | `setStateDirectory` 交接孔 + `saveDeviceState` 退出保存孔 + `OnReset` 顺序 |
 | `CMakeLists.txt` | 修改 | 注册 `test_app_state_store` + `app_state_store_negative`（UNIX） |
 | `host/iPlug_app_host_override.cpp` | 修改（+14 行，纯插入） | 两处生命周期 hunk（§5，@Codex `97d9f1a2` 授权 A） |
@@ -124,6 +131,19 @@
 2. **先拒绝再分配**。原 `loadOnce` 用 `ftell` + `resize` 按任意长度整文件分配，超长文件会在 typed failure 之前耗尽内存。改为对**已打开描述符** `fstat`/`_fstat64`：非普通文件（例如目录）→ `Unreadable`；`st_size != kWire` → `LengthMismatch`，**先于任何分配**。判据 C4.13（64 MiB → `LengthMismatch` 且 `bytesRead()==0`）+ 负控 `oversized_allocated_before_size_gate`。
 3. **读边界钉死 + 排他临时名**。`d5f6a520` 追加两点：①路径上的 `file_size` 不是已打开文件的稳定快照 ⇒ 新增 `readExactRecord`：始终只读 `kWire` 字节，**短读拒绝**，并 `fgetc` 探测**越界尾字节**（文件在尺寸门之后变大时不得当作完整记录），`ferror` 区分 IO 错误；②排他预留必须**贯穿实际写入**（不能预留后删除再普通创建）⇒ `reserveTempPath()` 用 `O_CREAT|O_EXCL` 循环取唯一名，`realWriteFile` 只以 `"r+b"` 打开并 truncate，清理只删本次成功取得的那条路径。判据 C4.14 + C6.3/C6.4/C6.5 + 负控 `trailing_byte_accepted` / `temp_reserve_not_exclusive`。
 
+### 2.5 Windows Unicode 路径修订（@Codex `2a544b0b`，全部落盘）
+
+**问题**（@Codex 复核指出）：host 用 `SHGetSpecialFolderPathUTF8` 交出 **UTF-8** 目录，而新 backend 用窄字符 `fopen` / `_sopen_s` 与 `std::filesystem::path(std::string)` 直接消费——中文用户名目录只能靠进程 ANSI 代码页「碰巧兼容」，不可依赖。
+
+**修法**（文件适配器边界统一 UTF-8 输入）：
+
+1. **一个边界、两个平台**：新增 `using NativePath = std::wstring`（Windows）/ `std::string`（POSIX），以及唯一的 `nativePath(const std::string& utf8)`。Windows 用 `MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, …)` 显式转换；**非法 UTF-8 返回空 `std::wstring`**（拒绝，不做有损替换——有损映射会指向**另一个文件**并把状态存进去）。POSIX 分支是恒等映射（POSIX 路径本就是字节串），但**四个 POSIX 调用点（`::open` / `fopen` / `rename` / `remove`）同样消费 `nativePath()` 的输出**，因此「唯一边界」在两个平台上都是字面事实，而不是只对 Windows 成立的口号。
+2. **Windows 全宽字符**：`openNative()` → `_wfopen`（宽模式串）；排他预留 → `_wsopen_s` + `_SH_DENYRW`；原子替换 → `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`（**不**加 `MOVEFILE_COPY_ALLOWED`：跨卷必须失败成 `ReplaceFailed`，不得退化为非原子的复制+删除）；清理 → `DeleteFileW`。**同一个原生路径**贯穿 create/open/rename/remove。
+3. **彻底移除 `std::filesystem`**：`<filesystem>` / `<system_error>` 已从 store 头文件删除；路径拼接改由 `joinUtf8()` 用字节直接完成（Windows 上 `path(std::string)` / `.string()` 会经过 ANSI 代码页，在宽转换之前就把非 ASCII 目录弄坏）。门禁因此可以**断言 store 源码里不出现 `filesystem`**。
+4. **判据与负控**：C9.1（转换本身，含非 BMP 代理对，逐个码元比对）+ C9.2/C9.3/C9.4（真实中文 + 非 BMP 目录的写→新实例读回→原子替换→无残留）；负控 `native_path_mangles_non_ascii`（把边界退化成「截断到第一个非 ASCII 字节」，正是 ACP 转换对中文路径干的事）与结构负控 `utf8_boundary_replaced_by_narrow_fopen`（把宽 `_wfopen` 换回窄 `fopen`，W18 两条不变式必须红）。
+
+**诚实边界**：本机无 Windows 工具链，**宽字符分支是编译期/结构门级证据，尚未在 Windows 上实跑**。C9 判据已在 POSIX 上真实执行（真目录、真 FileOps）；Windows 侧由 CI 实跑（见 §3/§6）。
+
 ### 2.4 过程中发现并修掉的两处判据弱点（先红后修）
 
 - **C5.4 判据过弱（被 `delete_old_file_first` 负控暴露）**：原判据只查 `exists(livePath)`。突变"先删目标再 rename"在测试里**成功**（目标是个目录时 rename 仍可完成），于是路径上确实"有东西"，弱判据假绿。改为 `is_directory(livePath)` 并加注释：必须**同一个目标对象**存活，而不是"路径上存在任意东西"。
@@ -135,21 +155,21 @@
 
 | 门 | 命令 | 结果 |
 | --- | --- | --- |
-| 结构门 | `python3 tools/check_host_engine_wiring.py` | rc=0，**94/94 PASS**（含 W15 8 + W16a 2 + W17a 9 + W16b 6 + W17b 6 = 31） |
+| 结构门 | `python3 tools/check_host_engine_wiring.py` | rc=0，**106/106 PASS**（含 W15 8 + W16a 2 + W17a 9 + W16b 6 + W17b 6 + W18 12 = 43） |
 | override drift | `python3 tools/check_host_override_drift.py` | rc=0，**11/11 PASS**（`host` 哈希重生成 `65d1ba34…`，PIN 不动；诊断行仍打印 `note … IPlugAPPHost::IPlugAPPHost`，见 §5.3） |
-| 行为验收 Release | `./build-rel/test_app_state_store` | **251 checks OK** |
-| 行为验收 Debug+ASan+UBSan | `./build-debug/test_app_state_store` | **251 checks OK** |
-| 负控 driver | `python3 tools/run_app_state_negatives.py --require-all` | rc=0，**OVERALL: PASS**（24/24 judge 自检 + 保留性正控绿 + 结构正控绿 + **12/12** 验收突变命中 + 2/2 结构突变命中） |
-| Release 快门 | `ctest --label-exclude slow -j4`（build-rel） | **74/74 PASS** rc=0（25.99s real；含 `test_app_state_store` 251 OK + `app_state_store_negative`） |
-| Debug+ASan+UBSan 快门 | `ctest --label-exclude slow`（build-debug） | 见 §3.1（待 Debug slow 释放 build-debug 后整跑） |
+| 行为验收 Release | `./build-rel/test_app_state_store` | **271 checks OK** |
+| 行为验收 Debug+ASan+UBSan | `./build-debug/test_app_state_store` | **271 checks OK** |
+| 负控 driver | `python3 tools/run_app_state_negatives.py --require-all` | rc=0，**OVERALL: PASS**（judge 自检 + 保留性正控绿 + 结构正控绿 + **13/13** 验收突变命中 + **3/3** 结构突变命中，合计 16 条） |
+| Release 快门 | `ctest --test-dir build-rel --output-on-failure --build-config Release --label-exclude slow`（build-rel） | **74/74 PASS** rc=0（96.99s real；含 `test_app_state_store` 271 OK + `app_state_store_negative`） |
+| Debug+ASan+UBSan 快门 | `ctest --label-exclude slow`（build-debug） | 见 §3.1（本轮未重跑无关全套） |
 | Release slow | `ctest -j4 -L slow`（build-rel） | **7/7 PASS** rc=0（390.96s real，最终文件集） |
-| Debug+ASan+UBSan slow | `ctest -j4 -L slow`（build-debug） | 进行中（04:40 启动，约 2.9h；见 §3.1） |
+| Debug+ASan+UBSan slow | `ctest -j4 -L slow`（build-debug） | 见 §3.1（本轮未重跑无关 slow） |
 
 ### 3.1 时序说明（避免误读）
 
-- **Release 快门已在最终文件集上整跑**：74/74，含 `test_app_state_store`（251 checks OK）与 `app_state_store_negative`（OVERALL PASS）。
-- **两个验收目标都在最终文件集上单跑过**：Release **251 OK**、Debug+ASan+UBSan **251 OK**。
-- **Debug+ASan+UBSan 快门（74 条）与 slow 未在最终文件集上整跑**：`build-debug` 自 04:40 起被 slow 套件占用，且其 ctest 日志与并发 ctest 冲突；按 @Codex「不用重复已通过的无关全套」，本轮不为 app-state 改动重跑无关 slow。该慢套件涉及的 7 个目标均不消费本轮改动文件（`app_state_store.h` 只被 `test_app_state_store` 与 APP host 目标引用）。待 slow 结束后在最终文件集整跑 Debug 快门，结果补进本节，不单独再提报告。
+- **Release 快门已在最终文件集上整跑**：74/74，含 `test_app_state_store`（271 checks OK）与 `app_state_store_negative`（OVERALL PASS）。
+- **两个验收目标都在最终文件集上单跑过**：Release **271 OK**、Debug+ASan+UBSan **271 OK**。
+- **Debug+ASan+UBSan 快门（74 条）与 slow 未在最终文件集上整跑**：按 @Codex「不用重复已通过的无关全套」，本轮只为 Windows Unicode 路径修订重跑受影响目标。该慢套件涉及的 7 个目标均不消费本轮改动文件（`app_state_store.h` 只被 `test_app_state_store` 与 APP host 目标引用）。
 - **Release slow 已按最终文件集重跑：7/7 PASS**（`gh12_keyboard_side_restore_probe` / `gh19_blamp_acceptance` / `gh20_vcf_probe` / `gh20_vcf_acceptance` 等 7 条，rc=0，390.96s）。本轮修订改动了 `app_state_store.h`，故不沿用修订前那次结果。
 - `--require-full` 原 **12 项缺口单列不动**，未列入本卡门禁。
 
@@ -171,9 +191,15 @@
 | `oversized_allocated_before_size_gate` | 关掉 fstat 尺寸门 | C4.13「NOTHING was read」 |
 | `trailing_byte_accepted` | 读边界丢掉越界字节探测 | C4.14「a byte BEYOND the record is rejected」 |
 | `temp_reserve_not_exclusive` | 临时名仍创建但不再排他 | C6.3「refuses a path another owner already holds」 |
+| `native_path_mangles_non_ascii` | 唯一边界截断到第一个非 ASCII 字节（= ACP 转换对中文路径的作为） | C9.1「non-ASCII bytes pass through unchanged」+ 5 条邻带（见下） |
 | `exit_call_missing` / `exit_call_before_closeaudio` | 结构突变（影子 repo + 真实门副本） | W16b（4 条 / 1 条） |
+| `utf8_boundary_replaced_by_narrow_fopen` | 结构突变：宽 `_wfopen` 换回窄 `fopen` | W18（2 条，且该影子 repo 只剩这 2 条 FAIL） |
 
 `exit_call_missing` 命中 4 条 W16b（委托/顺序/位置/恰好一次），`exit_call_before_closeaudio` 命中 1 条（顺序），其余 5 条仍绿——特异性证据见 driver 的 `STRUCTURAL[...]["must_pass"]`。
+
+**`native_path_mangles_non_ascii` 的真实签名（实测，不是假设）**：突变后 store 仍然**自洽**——它只是把文件放到了**错误的路径**。截断后的路径是 ASCII 前缀，于是：保存落在请求目录**之外**；第二次保存的排他临时名与那条已落地的文件**相撞**（`TempWriteFailed`）；请求目录最终**为空**。因此 RED 恰为 6 条：C9.1 ×3（转换本身）、C9.3「atomic replace inside the non-ASCII directory succeeded」、C9.3「replaced file holds the second config」、C9.4「directory holds exactly the state file」。而 C9.3「save WROTE」、C9.3「file at exactly the wire size」、C9.4「a NEW instance reads the file back」**仍绿**——因为测试自己的文件助手也走同一个边界，与 store 一起「错得一致」。这条控制**不能被描述成「往返失败」**：诚实的缺陷是**放错位置**，上述 RED 集合才是它的真签名（driver 的 `must_pass` 把这层含义显式钉住）。
+
+**两项 driver 加固（本轮随该控制一起落盘）**：①`build_and_run` 为每次运行注入**全新 TMPDIR/TMP/TEMP**——突变后的 store 会写到它自己算出的路径，既不能污染用户真实临时目录，也不能让上一次运行的残留改变本次观测签名（否则同一个突变会「两次运行两个样子」）；②`GATE_INPUTS` 补入 `host/iPlug_app_host_override.cpp`，使针对 store 的结构负控影子 repo 里仍带**真实** host override——此前 W8/W16b 会因「文件缺失」报 FAIL，那是与突变无关的噪声；现在该影子 repo 只剩 2 条 W18 FAIL，正是突变该命中的那 2 条。
 
 ## §5 退出接线：已落盘（@Codex `97d9f1a2` 授权 A）
 

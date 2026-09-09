@@ -55,16 +55,34 @@
 #  12. temp_reserve_not_exclusive — the temp name is still created but no longer claimed EXCLUSIVELY,
 #                                 so a colliding name is silently shared with another process.
 #
-# Structural controls (2, judged by the W16b wiring invariants — NOT by the C++ acceptance):
-#  13. exit_call_missing        — ~IPlugAPPHost never calls the plugin's exit save, so the lifecycle
+# Added for @Codex 2a544b0b (Windows Unicode path consistency — the file-adapter boundary takes
+# UTF-8 and must convert to native; on Windows every file call must be WIDE):
+#  13. native_path_mangles_non_ascii — the ONE conversion boundary truncates a UTF-8 path at its
+#                                 first non-ASCII byte instead of handing it to the OS unchanged
+#                                 (exactly what an ACP/narrow conversion does to a Chinese path).
+#                                 Every file call on both platforms goes through that boundary, so
+#                                 the direct conversion criteria go RED and the store writes OUTSIDE
+#                                 the requested non-ASCII directory: the requested directory ends up
+#                                 EMPTY and the second save's exclusive temp reservation collides
+#                                 with the mislocated file. ASCII paths, the byte-verbatim join and
+#                                 the (self-consistent) read-back stay green.
+#
+# Structural controls (3, judged by the wiring invariants — NOT by the C++ acceptance):
+#  14. exit_call_missing        — ~IPlugAPPHost never calls the plugin's exit save, so the lifecycle
 #                                 save silently disappears from the host.
-#  14. exit_call_before_closeaudio — the save is moved BEFORE CloseAudio(), i.e. it runs while the
+#  15. exit_call_before_closeaudio — the save is moved BEFORE CloseAudio(), i.e. it runs while the
 #                                 audio callback may still be live (mandate §5 order).
-# Both mutate host/iPlug_app_host_override.cpp. That file's whole upstream->fork diff is pinned by
-# tools/check_host_override_drift.py, so a control NEVER edits the product file: it builds a shadow
-# repo (a real copy of tools/check_host_engine_wiring.py + a symlink farm to the rest of the tree,
-# with the mutated override as the only real content) and runs the gate there. @Codex msg 97d9f1a2
-# authorized the two hunks and the matching drift-hash update, which un-HELD these controls.
+#  16. utf8_boundary_replaced_by_narrow_fopen — the store's Windows calls are put back on the narrow
+#                                 (ANSI-code-page) file API, so the W18 invariants that require every
+#                                 Windows file call to be wide and the UTF-8 conversion to be explicit
+#                                 go RED. This is a STRUCTURAL control over the store header (shadow
+#                                 include tree), not a behavioural one: the C++ acceptance runs on
+#                                 POSIX, where the Windows branch is not compiled.
+# Controls 14-15 mutate host/iPlug_app_host_override.cpp. That file's whole upstream->fork diff is
+# pinned by tools/check_host_override_drift.py, so a control NEVER edits the product file: it builds
+# a shadow repo (a real copy of tools/check_host_engine_wiring.py + a symlink farm to the rest of the
+# tree, with the mutated override as the only real content) and runs the gate there. @Codex msg
+# 97d9f1a2 authorized the two hunks and the matching drift-hash update, which un-HELD these controls.
 #
 # POSIX-only (the driver invokes the compiler); on Windows the acceptance test still runs.
 #
@@ -100,6 +118,13 @@ GATE_INPUTS = [
     "host/config.h",
     "host/include/host/stream_plan.h",
     "host/include/host/app_state_store.h",
+    # The store-level structural control targets the store, so the shadow repo must still carry the
+    # REAL host override: without it the gate's W8/W16b invariants fail for "file missing", which is
+    # noise that has nothing to do with the mutation under test.
+    HOST_OVR,
+    # W18 reads the acceptance source too (the non-ASCII criteria must not be deleted while the
+    # gate stays green), so the shadow repo needs it as well.
+    TEST_SRC,
 ]
 
 FAIL_SUMMARY_RE = re.compile(r"^\[app state store\] (\d+)/(\d+) checks FAILED", re.M)
@@ -178,21 +203,15 @@ def mut_short_write_lies(text, name):
                     name)
 
 
-REAL_REPLACE_BODY = ("  std::error_code ec;\n"
-                     "  std::filesystem::rename(std::filesystem::path(from), "
-                     "std::filesystem::path(to), ec);\n"
-                     "  return !ec;\n")
+REAL_REPLACE_BODY = "  return ::rename(fromNative.c_str(), toNative.c_str()) == 0;\n"
 
 
 def mut_delete_old_file_first(text, name):
     """The REAL replace removes the destination first, so a failed replace destroys the old file."""
     return _replace(text, REAL_REPLACE_BODY,
-                    "  std::error_code ec;\n"
                     "  // MUTATION: delete_old_file_first — the destination is removed up front.\n"
-                    "  std::filesystem::remove(std::filesystem::path(to), ec);\n"
-                    "  std::filesystem::rename(std::filesystem::path(from), "
-                    "std::filesystem::path(to), ec);\n"
-                    "  return !ec;\n",
+                    "  (void)::remove(toNative.c_str());\n"
+                    "  return ::rename(fromNative.c_str(), toNative.c_str()) == 0;\n",
                     name)
 
 
@@ -297,8 +316,8 @@ def mut_trailing_byte_accepted(text, name):
                     name)
 
 
-EXCL_POSIX = "  const int fd = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0666);\n"
-EXCL_WIN = ("  if (_sopen_s(&fd, path.c_str(), _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY, "
+EXCL_POSIX = "  const int fd = ::open(native.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0666);\n"
+EXCL_WIN = ("  if (_wsopen_s(&fd, native.c_str(), _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY, "
             "_SH_DENYRW,\n")
 
 
@@ -307,12 +326,31 @@ def mut_temp_reserve_not_exclusive(text, name):
     shared with another process instead of being refused by the kernel."""
     text = _replace(text, EXCL_POSIX,
                     "  // MUTATION: temp_reserve_not_exclusive — no O_EXCL.\n"
-                    "  const int fd = ::open(path.c_str(), O_CREAT | O_WRONLY, 0666);\n",
+                    "  const int fd = ::open(native.c_str(), O_CREAT | O_WRONLY, 0666);\n",
                     name)
     return _replace(text, EXCL_WIN,
                     "  // MUTATION: temp_reserve_not_exclusive — no _O_EXCL.\n"
-                    "  if (_sopen_s(&fd, path.c_str(), _O_CREAT | _O_WRONLY | _O_BINARY, "
+                    "  if (_wsopen_s(&fd, native.c_str(), _O_CREAT | _O_WRONLY | _O_BINARY, "
                     "_SH_DENYRW,\n",
+                    name)
+
+
+NATIVE_PATH_POSIX = "  return utf8;\n"
+
+
+def mut_native_path_mangles_non_ascii(text, name):
+    """The POSIX branch stops being a byte pass-through and truncates at the first non-ASCII byte --
+    which is exactly what an ACP/narrow conversion does to a Chinese path. The store then addresses a
+    DIFFERENT path (or none), so the real non-ASCII-directory round trip cannot complete."""
+    return _replace(text, NATIVE_PATH_POSIX,
+                    "  // MUTATION: native_path_mangles_non_ascii — truncate at the first byte "
+                    ">= 0x80.\n"
+                    "  std::string cut;\n"
+                    "  for (char c : utf8) {\n"
+                    "    if (static_cast<unsigned char>(c) >= 0x80u) break;\n"
+                    "    cut.push_back(c);\n"
+                    "  }\n"
+                    "  return cut;\n",
                     name)
 
 
@@ -333,6 +371,7 @@ MUTATIONS = {
                                              mut_oversized_allocated_before_size_gate),
     "trailing_byte_accepted": (STORE[0], STORE[1], mut_trailing_byte_accepted),
     "temp_reserve_not_exclusive": (STORE[0], STORE[1], mut_temp_reserve_not_exclusive),
+    "native_path_mangles_non_ascii": (STORE[0], STORE[1], mut_native_path_mangles_non_ascii),
 }
 
 # ---- structural mutations of the APP host TU (judged by the W16b wiring invariants) -------------
@@ -386,6 +425,39 @@ STRUCTURAL = {
     ),
 }
 
+# The W18 boundary lives in the STORE header, so its structural control mutates THAT file in the
+# shadow repo (same gate copy + symlink farm). This is the pin a Linux-only run cannot get from the
+# C++ acceptance: the Windows branch is compiled and run by Windows CI, and this proves the branch
+# cannot be silently swapped back to the narrow/ACP API in the meantime.
+def mut_utf8_boundary_replaced_by_narrow_fopen(text, name):
+    """The wide Windows open is replaced by the narrow one: the path goes back through the process
+    ANSI code page, which cannot represent a Chinese user directory at all."""
+    return _replace(text, "  return ::_wfopen(native.c_str(), wideMode.c_str());\n",
+                    "  // MUTATION: utf8_boundary_replaced_by_narrow_fopen — narrow ACP open.\n"
+                    "  (void)native;\n"
+                    "  (void)wideMode;\n"
+                    "  return std::fopen(utf8Path.c_str(), mode);\n",
+                    name)
+
+
+# name -> (transform, must_fail, must_pass); run against STORE[0].
+STRUCTURAL_STORE = {
+    "utf8_boundary_replaced_by_narrow_fopen": (
+        mut_utf8_boundary_replaced_by_narrow_fopen,
+        ["W18 every Windows file call is WIDE",
+         "W18 no narrow or ACP file call remains"],
+        ["W18 the store converts UTF-8 to native paths once, explicitly",
+         "W18 invalid UTF-8 is refused, not substituted",
+         "W18 path handling never round-trips through std::filesystem",
+         "W18 the atomic replace cannot degrade into a copy",
+         "W18 POSIX keeps byte pass-through",
+         "W18 the POSIX file calls use the SAME boundary, not a second call site",
+         "W18 path joining keeps the directory bytes verbatim",
+         "W18 the acceptance carries the non-ASCII directory criteria",
+         "W17a store reuses core's atomic save (no second writer)"],
+    ),
+}
+
 # Every W16b/W17b invariant that MUST have actually run in the structural positive control (the
 # unmutated shadow tree). A mutation going red is only evidence if the neighbouring invariants really
 # executed; this is the structural analogue of REQUIRED_GREEN.
@@ -402,6 +474,19 @@ STRUCTURAL_REQUIRED_GREEN = [
     "W17b handoff passes the resolved mINIPath",
     "W17b host calls setStateDirectory exactly once",
     "W17b host never names the state file",
+    # W18 (@Codex 2a544b0b): the UTF-8 -> native path boundary the new structural control targets.
+    "W18 nativePath body present",
+    "W18 openNative body present",
+    "W18 the store converts UTF-8 to native paths once, explicitly",
+    "W18 invalid UTF-8 is refused, not substituted",
+    "W18 every Windows file call is WIDE",
+    "W18 no narrow or ACP file call remains",
+    "W18 path handling never round-trips through std::filesystem",
+    "W18 the atomic replace cannot degrade into a copy",
+    "W18 POSIX keeps byte pass-through",
+    "W18 the POSIX file calls use the SAME boundary, not a second call site",
+    "W18 path joining keeps the directory bytes verbatim",
+    "W18 the acceptance carries the non-ASCII directory criteria",
 ]
 
 
@@ -435,6 +520,12 @@ REQUIRED_GREEN = [
     "C4.14 a byte BEYOND the record is rejected, not accepted",
     "C6.3 exclusive creation refuses a path another owner already holds",
     "C6.5 the temp was ALREADY reserved (empty file) when the backend was asked to write",
+    # @Codex 2a544b0b: the UTF-8 -> native path boundary, exercised on a REAL non-ASCII directory.
+    "C9.1 on POSIX the non-ASCII UTF-8 bytes pass through unchanged",
+    "C9.2 a first run in a non-ASCII directory reports NoFile, not Unreadable",
+    "C9.3 the lifecycle save WROTE into the non-ASCII directory",
+    "C9.4 a NEW instance reads the file back out of the non-ASCII directory",
+    "C9.4 the non-ASCII directory holds exactly the state file (no leftover temp)",
 ]
 
 # Single-source controls. `must_fail` = the label this mutation is DESIGNED to break;
@@ -525,6 +616,35 @@ SINGLE = {
                       "C6.4 each reserved temp name exists on disk (claimed in the kernel)",
                       "C6.5 the temp was ALREADY reserved (empty file) when the backend was asked "
                       "to write"],
+    },
+    # @Codex 2a544b0b: the UTF-8 -> native path boundary. It is the ONE boundary on BOTH platforms
+    # (POSIX branches call nativePath too, where it is the identity), so mangling it the way an
+    # ACP/narrow conversion would mangles the directory for every real file call.
+    #
+    # The REAL signature (measured, not assumed -- see report §2.5): the store stays internally
+    # self-consistent, it just addresses the WRONG path. The truncated path is the ASCII prefix, so
+    # the save lands outside the requested directory, the next save's exclusive temp reservation
+    # collides with that very file, and the requested directory is left EMPTY. The test's own file
+    # helpers go through the same boundary, so its read-back checks agree with the store and stay
+    # green -- which is exactly why this control must NOT be described as "the round trip fails":
+    # the honest defect is misplacement, and the RED set below is that defect's true signature.
+    "native_path_mangles_non_ascii": {
+        "must_fail": ["C9.1 on POSIX the non-ASCII UTF-8 bytes pass through unchanged"],
+        "also_fail": ["C9.1 the POSIX path is byte-identical to the input",
+                      "C9.1 on POSIX the byte string passes through (POSIX paths have no encoding)",
+                      "C9.3 the atomic replace inside the non-ASCII directory succeeded",
+                      "C9.3 the replaced file holds the second config (replaced, never deleted "
+                      "first)",
+                      "C9.4 the non-ASCII directory holds exactly the state file (no leftover temp)"],
+        "must_pass": ["C9.1 on POSIX the UTF-8 bytes pass through unchanged",
+                      "C9.1 joinUtf8 keeps the directory bytes intact and adds exactly one separator",
+                      "C9.2 the non-ASCII temp directory name is non-empty",
+                      "C9.2 the live path keeps the directory bytes verbatim (no ACP round trip)",
+                      "C9.2 a first run in a non-ASCII directory reports NoFile, not Unreadable",
+                      "C9.3 the lifecycle save WROTE into the non-ASCII directory",
+                      "C9.3 the file exists in the non-ASCII directory at exactly the wire size",
+                      "C9.4 a NEW instance reads the file back out of the non-ASCII directory",
+                      "C1.1 the saved file is EXACTLY the wire size"],
     },
 }
 
@@ -874,42 +994,56 @@ def build_and_run(root, compiler, shadow_texts):
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             return {"compile_error": (proc.stdout + proc.stderr)[-4000:]}
-        run = subprocess.run([binpath], capture_output=True, text=True, timeout=900)
+        # A FRESH temp directory per run, via TMPDIR/TMP/TEMP. Two reasons, both required for this
+        # control to be a control: (1) a mutated store writes to the path its defect computes, so it
+        # must not be able to touch the user's real temp directory, and (2) a leftover from a
+        # previous run at that same computed path would change the observed signature (the second
+        # run would READ a file the first run wrote), i.e. the same mutation would look different
+        # run to run. Isolation makes every observation reproducible.
+        env = dict(os.environ)
+        with tempfile.TemporaryDirectory(prefix="lunar24-neg-tmp-") as runtmp:
+            env["TMPDIR"] = runtmp
+            env["TMP"] = runtmp
+            env["TEMP"] = runtmp
+            run = subprocess.run([binpath], capture_output=True, text=True, timeout=900, env=env)
         return {"rc": run.returncode, "out": run.stdout, "err": run.stderr}
 
 
-def build_shadow_repo(root, td, override_text):
+def build_shadow_repo(root, td, mutated):
     """Build a shadow repo the wiring gate can run in: a REAL copy of the gate (so
     Path(__file__).resolve() stays inside the shadow root — a symlinked gate would resolve back to
-    the product tree and the mutation would be invisible), the mutated override as the only real
-    content, and symlinks for every other file the gate reads."""
+    the product tree and the mutation would be invisible), `mutated` (repo-relative path -> real
+    content) as the only real content, and symlinks for every other file the gate reads."""
     shadow = os.path.join(td, "repo")
     root = os.path.abspath(root)  # symlink targets must be absolute (a relative target resolves
                                   # against the link's own directory, not the process cwd)
     os.makedirs(os.path.join(shadow, "tools"))
     shutil.copy2(os.path.join(root, GATE_TOOL), os.path.join(shadow, GATE_TOOL))
-    dest = os.path.join(shadow, HOST_OVR)
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    with open(dest, "w") as fh:
-        fh.write(override_text)
+    for rel, text in mutated.items():
+        dest = os.path.join(shadow, rel)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w") as fh:
+            fh.write(text)
     for rel in GATE_INPUTS:
+        if rel in mutated:
+            continue
         dst = os.path.join(shadow, rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         os.symlink(os.path.join(root, rel), dst)
     return shadow
 
 
-def run_wiring_gate(root, mutate):
-    """Run the wiring gate on a shadow tree whose host override is (optionally) mutated."""
+def run_wiring_gate(root, mutate, target=HOST_OVR):
+    """Run the wiring gate on a shadow tree whose `target` file is (optionally) mutated."""
     try:
-        with open(os.path.join(root, HOST_OVR)) as fh:
+        with open(os.path.join(root, target)) as fh:
             text = fh.read()
     except OSError as exc:
         return {"error": str(exc)}
     if mutate is not None:
         text = mutate(text, "structural")
     with tempfile.TemporaryDirectory() as td:
-        shadow = build_shadow_repo(root, td, text)
+        shadow = build_shadow_repo(root, td, {target: text})
         try:
             proc = subprocess.run([sys.executable, os.path.join(shadow, GATE_TOOL)],
                                   capture_output=True, text=True, timeout=300)
@@ -924,7 +1058,7 @@ def main():
     ap.add_argument("--compiler", default=None)
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--require-all", action="store_true",
-                    help="fail if any control is HELD (all 14 controls now run: 12 acceptance + 2 "
+                    help="fail if any control is HELD (all 16 controls now run: 13 acceptance + 3 "
                          "structural)")
     args = ap.parse_args()
 
@@ -1004,12 +1138,22 @@ def main():
         if args.verbose:
             for l in obs.failed:
                 print("        FAIL: %s" % l)
+    for name, (mutate, must_fail, must_pass) in STRUCTURAL_STORE.items():
+        obs = GateObservation(run_wiring_gate(root, mutate, STORE[0]))
+        problems = judge_gate_red(obs, must_fail, must_pass)
+        check(not problems, "%s: the wiring gate is RED for the named reason (rc=1, complete "
+                            "summary, expected FAIL invariant present)" % name)
+        for p in problems:
+            print("        %s" % p)
+        if args.verbose:
+            for l in obs.failed:
+                print("        FAIL: %s" % l)
 
     if args.require_all:
-        # No control may be silently skipped: 12 acceptance controls + 2 structural controls.
-        check(len(SINGLE) == 12 and len(STRUCTURAL) == 2,
-              "--require-all: all 14 controls ran (%d acceptance + %d structural)"
-              % (len(SINGLE), len(STRUCTURAL)))
+        # No control may be silently skipped: 13 acceptance controls + 3 structural controls.
+        check(len(SINGLE) == 13 and len(STRUCTURAL) == 2 and len(STRUCTURAL_STORE) == 1,
+              "--require-all: all 16 controls ran (%d acceptance + %d structural)"
+              % (len(SINGLE), len(STRUCTURAL) + len(STRUCTURAL_STORE)))
 
     print("\nOVERALL:", "PASS" if ok else "FAIL")
     return 0 if ok else 1

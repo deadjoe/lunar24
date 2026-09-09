@@ -104,6 +104,15 @@ oracle statically verifies the SHAPE of the host->engine wiring that the CTest
       platform resolution and BEFORE any Append("settings.ini") mutates mINIPath (after the Append
       the string is a FILE path, not the directory), exactly once; the host never names the state
       file, because the store owns that. Same @Codex ruling as W16b.
+  W18 task#105 (@Codex 2a544b0b) — the ONE UTF-8 -> native path boundary in the store's file
+      adapter: the host hands the directory in as UTF-8, Windows needs UTF-16 for the wide file
+      APIs, and the process ANSI code page cannot represent a Chinese user name at all. So the
+      conversion is explicit (MultiByteToWideChar with CP_UTF8 + MB_ERR_INVALID_CHARS, invalid
+      input refused rather than substituted), EVERY Windows file call (create/open/write/rename/
+      remove) takes the same native wide path, nothing round-trips a path through a narrow
+      std::filesystem path, the replace never degrades into a copy (no MOVEFILE_COPY_ALLOWED), and
+      POSIX keeps byte pass-through. The gate also pins that the acceptance still carries the real
+      non-ASCII directory criteria (C9) — the behaviour detector Windows CI runs.
 
 Each invariant is named and reported; a violation exits nonzero. The 8B2 mandate §4/b says a
 behaviour detector comes FIRST (the CTest) and this structural gate is the permanent second
@@ -642,6 +651,63 @@ else:
           "one resolution point; neither plugin nor store re-derives the directory")
     check("W17b host never names the state file", "lunar24-state.bin" not in host_ovr_code,
           "the host hands a DIRECTORY; the store owns the product file name")
+
+# W18 — the ONE UTF-8 -> native path boundary (@Codex 2a544b0b). The APP host resolves the per-user
+# directory as UTF-8 (SHGetSpecialFolderPathUTF8); Windows file APIs are WIDE and the process ANSI
+# code page cannot represent a Chinese user name at all. So the conversion must be explicit and
+# happen ONCE at the file-adapter boundary, every Windows file call must use the SAME native path,
+# and nothing may round-trip a path through a narrow std::filesystem path (ACP). POSIX keeps byte
+# pass-through. A C++-level mutation cannot prove this on Linux, which is why it is a structural pin
+# here AND a real non-ASCII-directory round trip in the acceptance (C9, run by Windows CI).
+STORE_TEST = ROOT / "tests" / "host" / "test_app_state_store.cpp"
+if not STORE_H.exists():
+    check("W18 app_state_store.h present for the path boundary", False,
+          f"missing {STORE_H.relative_to(ROOT)}")
+else:
+    store_src = strip_comments(STORE_H.read_text(encoding="utf-8"))
+    native_body = body_balanced(store_src, r"inline\s+NativePath\s+nativePath\s*\(")
+    open_body = body_balanced(store_src, r"inline\s+std::FILE\*\s+openNative\s*\(")
+    check("W18 nativePath body present", native_body != "",
+          "the store must convert UTF-8 to the native path form in ONE place")
+    check("W18 openNative body present", open_body != "",
+          "every stdio open must go through the one native-path helper")
+    check("W18 the store converts UTF-8 to native paths once, explicitly",
+          "MultiByteToWideChar(CP_UTF8" in native_body,
+          "CP_UTF8 is the contract; the process code page is not an encoding")
+    check("W18 invalid UTF-8 is refused, not substituted",
+          "MB_ERR_INVALID_CHARS" in native_body and "std::wstring()" in native_body,
+          "MB_ERR_INVALID_CHARS makes the conversion FAIL; a lossy map would address a "
+          "different file and the store would save into it")
+    check("W18 every Windows file call is WIDE",
+          all(t in store_src for t in ("_wfopen(", "_wsopen_s(", "MoveFileExW(", "DeleteFileW(")),
+          "create / open / write / rename / remove must all take the wide native path")
+    check("W18 no narrow or ACP file call remains",
+          "_sopen_s(" not in store_src and store_src.count("std::fopen(") == 1
+          and "std::fopen(" in open_body,
+          "the single narrow fopen is the POSIX branch of openNative; a second one (or a narrow "
+          "_sopen_s) would reintroduce the ANSI code page on Windows")
+    check("W18 path handling never round-trips through std::filesystem",
+          "filesystem" not in store_src,
+          "path(std::string)/.string() go through the ANSI code page on Windows; the store joins "
+          "UTF-8 bytes itself (joinUtf8) and POSIX uses rename/remove directly")
+    check("W18 the atomic replace cannot degrade into a copy",
+          "MOVEFILE_REPLACE_EXISTING" in store_src and "MOVEFILE_COPY_ALLOWED" not in store_src,
+          "a cross-volume move must fail (ReplaceFailed), not become a non-atomic copy+delete")
+    check("W18 POSIX keeps byte pass-through",
+          "return utf8;" in native_body and "::rename(" in store_src and "::remove(" in store_src,
+          "POSIX paths ARE byte strings: no conversion, and rename(2)/remove(3) on the same bytes")
+    check("W18 the POSIX file calls use the SAME boundary, not a second call site",
+          all(t in store_src for t in ("::open(native.c_str()", "std::fopen(native.c_str()",
+                                       "::rename(fromNative.c_str()", "::remove(native.c_str()")),
+          "one boundary on BOTH platforms: the POSIX create/open/rename/remove consume nativePath()'s "
+          "output too, so a conversion defect cannot hide behind an unconverted call site")
+    check("W18 path joining keeps the directory bytes verbatim",
+          "joinUtf8(" in store_src and "p /= " not in store_src,
+          "livePath()/tempPath() must not rebuild the path through a narrow filesystem path")
+    test_src = STORE_TEST.read_text(encoding="utf-8")
+    check("W18 the acceptance carries the non-ASCII directory criteria",
+          all(t in test_src for t in ("C9.1", "C9.2", "C9.3", "C9.4", "makeUnicodeTempDir")),
+          "the gate may not pass while the real non-ASCII save/restore criterion was deleted")
 
 
 def main() -> int:
