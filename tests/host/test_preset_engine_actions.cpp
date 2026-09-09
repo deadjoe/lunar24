@@ -20,9 +20,11 @@
 // (check_keyboard_live, family keyboard_live_invalid, field 9002). Because check_keyboard_live
 // runs BEFORE check_presets, ANY slot whose behaviour differed from the live mirror made the
 // whole recalled state invalid -> applyDeviceState returned RejectedInvalidState and kept the
-// prior runtime, i.e. the recall was a silent no-op. A1/A2 pin the fix; A3 pins the
-// discriminating power of the assertion itself (a hand-built unsynchronised candidate MUST be
-// rejected with field 9002), so A1 can never pass vacuously.
+// prior runtime. That is a STATE-LAYER latent defect, not a defect a user had already hit: at the
+// time the APP had no preset-action caller (host/plugin.cpp builds MakeConfig(0, 0) and the
+// keyboard menu is inert), so the refusal was reachable only from the state layer itself.
+// A1/A2 pin the fix; A3 pins the discriminating power of the assertion itself (a hand-built
+// unsynchronised candidate MUST be rejected with field 9002), so A1 can never pass vacuously.
 //
 // SECTION B pins the engine API contract: not-ready / illegal slot / unknown action are reported,
 // never a false success; LOAD changes the live config AND the existing two-sided behaviour
@@ -236,6 +238,62 @@ static Cfg audible_split_cfg(std::uint32_t variant) {
   return c;
 }
 
+// C1 (Rev-3): a render-safe payload for the slot x mode matrix. Derived from the power-on
+// default so every selector a rendered criterion does not care about stays default, then the two
+// banks are made asymmetric in a CONSUMED SCALAR plus the scale editor it acts on: the left bank
+// is chromatic (0x0FFF, a 0.04 V plate quantises to 0.0 V whatever the root), the right bank is
+// the single-note mask 0x0001 rooted at F (root_note norm 5/11 -> semitone 5, root_note_semitone
+// = lround(norm*11)), so the same 0.04 V plate quantises to 5/12 V. The published pressure jack —
+// left pressure in Single, right pitch in Twin/Split — therefore names WHICH bank and WHICH side
+// the consumer read. Both banks get an instant portamento so the pitch settles inside the window.
+static Cfg mode_matrix_cfg(std::uint8_t mode) {
+  Cfg c = cfg_from_state(core::make_default_device_state(kSeed));
+  c.mode = mode;
+  c.scaleL = 0x0FFFu;
+  c.scaleR = 0x0001u;
+  const auto set = [](double* bank, core::ParameterId id, double v) {
+    bank[static_cast<std::size_t>(core::keyboard_scalar_index(id))] = v;
+  };
+  const core::ParameterId porta = core::ParameterId::keyboard_portamento_speed;
+  const core::ParameterId root = core::ParameterId::keyboard_root_note;
+  set(c.scalarL, porta, legal_value(porta, 0.0));
+  set(c.scalarR, porta, legal_value(porta, 0.0));
+  set(c.scalarL, root, legal_value(root, 0.0));          // C
+  set(c.scalarR, root, legal_value(root, 5.0 / 11.0));   // F
+  return c;
+}
+
+// C2 (Rev-3): the same Single-mode payload with the LEFT scale mask parameterised — the recalled
+// mask itself is the discriminator (a 0.30 V note quantises differently per mask).
+static Cfg scale_probe_cfg(std::uint16_t scale_l) {
+  Cfg c = mode_matrix_cfg(0u);
+  c.scaleL = scale_l;
+  return c;
+}
+
+// C3 (Rev-3): a Single-mode payload whose LEFT side is a 2-step sequencer running FREE
+// (seq_run 0 = no plate needed) on an EXPLICIT external clock edge, with continuous CV output
+// (seq_cv_output 0 = every step gated). steps[0] = 0 semitones, steps[1] = 7 semitones, so each
+// clock edge alternates the published V/OCT between 0 and 7/12 V.
+static Cfg seq_probe_cfg() {
+  Cfg c = mode_matrix_cfg(0u);
+  const auto set_l = [&c](core::ParameterId id, double v) {
+    c.scalarL[static_cast<std::size_t>(core::keyboard_scalar_index(id))] = v;
+  };
+  set_l(core::ParameterId::keyboard_mode, 2.0);           // Sequencer (per-side arp/seq mux)
+  set_l(core::ParameterId::keyboard_seq_run, 0.0);        // free-run: no held plate required
+  set_l(core::ParameterId::keyboard_seq_length, 0.0);     // seq_length_steps(0) == 2 steps
+  set_l(core::ParameterId::keyboard_seq_cv_output, 0.0);  // continuous: every step gated
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
+    c.seqNoteL[i] = 0u;
+    c.seqGateL[i] = 1u;
+    c.seqValueL[i] = 0.0f;
+  }
+  c.seqNoteL[0] = 0u;
+  c.seqNoteL[1] = 7u;
+  return c;
+}
+
 static void write_cfg(core::DeviceStateV1& st, const Cfg& c) {
   set_mode(st, c.mode);
   for (std::uint32_t j = 0; j < core::kKeyboardScalarRightCount; ++j) {
@@ -269,6 +327,18 @@ static void write_cfg(core::DeviceStateV1& st, const Cfg& c) {
     st.keyboardClockSelectors[i] = c.clockL[i];
     st.keyboardClockSelectorsR[i] = c.clockR[i];
   }
+}
+
+// Store `c` as slot `slot` of a fresh default state whose LIVE config stays the default. The
+// recall is therefore always a real change, and the only way the payload can reach the consumer
+// is through the engine preset action (Rev-3: slot -> live -> consumer connectivity).
+static core::DeviceStateV1 state_with_slot(const Cfg& c, std::uint32_t slot) {
+  core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+  core::DeviceStateV1 scratch = st;
+  write_cfg(scratch, c);
+  core::save_live_to_preset(scratch, slot);
+  st.keyboardPresets[slot] = scratch.keyboardPresets[slot];
+  return st;
 }
 
 // Read the LIVE config back out of a state and compare it field-by-field with `c`. The two
@@ -784,11 +854,6 @@ static void b10_partition_invariance_after_action() {
     note(rt, core::KeyboardSide::Left, 0.5, 0.7, 1, 0);
     note(rt, core::KeyboardSide::Right, 1.5, 0.3, 2, 64);
   };
-  const auto silent = [](std::size_t, double& in0, double& in1) {
-    in0 = 0.0;
-    in1 = 0.0;
-  };
-
   EngineHarness ref;
   if (!ref.load(build()) || !ref.presetAction(3u, StandaloneAudioEngine::PresetAction::Load)) {
     check(false, "B10 reference");
@@ -812,6 +877,10 @@ static void b10_partition_invariance_after_action() {
   const char* labels[3] = {"B10 64-frame host blocks equal the per-frame render",
                            "B10 256-frame host blocks equal the per-frame render",
                            "B10 irregular host blocks equal the per-frame render"};
+  const char* boundaryLabels[3] = {
+      "B10 64-frame block boundaries: the two-sided control equals the per-frame reference",
+      "B10 256-frame block boundaries: the two-sided control equals the per-frame reference",
+      "B10 irregular block boundaries: the two-sided control equals the per-frame reference"};
   for (int variant = 0; variant < 3; ++variant) {
     EngineHarness h;
     if (!h.load(build()) || !h.presetAction(3u, StandaloneAudioEngine::PresetAction::Load)) {
@@ -819,12 +888,31 @@ static void b10_partition_invariance_after_action() {
       return;
     }
     script(*h.producerRuntime());
+    // Each block is ONE real processBlock call; the published control state is sampled ONCE at
+    // the END of that block. Reconcile every boundary sample with the per-frame reference at the
+    // same frame — the two-sided control (v_oct / gate L / gate R / pressure) must agree, not just
+    // the audio. `frameAtBoundary` is the 1-based frame count; the reference index is one less.
+    std::vector<Snap> blockTrace;
+    int frameAtBoundary = 0;
+    bool boundarySame = true;
     for (int k = 0; k < counts[variant]; ++k) {
-      if (!h.renderBlock(sizes[variant][k], silent)) {
+      if (!h.renderBlockSampled(sizes[variant][k], 0.0,
+                                [&blockTrace](const core::SynthRuntime& rt) {
+                                  blockTrace.push_back(snap(rt));
+                                })) {
         check(false, "B10 block render");
         return;
       }
+      frameAtBoundary += sizes[variant][k];
+      const Snap& b = blockTrace.back();
+      const Snap& r = refTrace[static_cast<std::size_t>(frameAtBoundary - 1)];
+      // Gates are rails (exact 0/10 V); the continuous CVs are compared at the same 1e-12
+      // tolerance the WET audio uses, which still fails on a wrong side or a wrong bank
+      // (those differ by whole semitones, i.e. >= 1/12 V).
+      boundarySame = boundarySame && near(b.vOct, r.vOct, 1e-12) && b.gateL == r.gateL &&
+                     b.gateR == r.gateR && near(b.press, r.press, 1e-12);
     }
+    check(boundarySame, boundaryLabels[variant]);
     if (h.out(0).size() != refTrace.size()) {
       check(false, "B10 partition produced the expected frame count");
       return;
@@ -883,42 +971,276 @@ static void b11_recalled_consumed_scalar_reaches_the_audio() {
         "B11 the recalled consumed scalar changes the real host audio, not just the control CV");
 }
 
+// ============================================================ C. the slot -> live -> consumer matrix
+//
+// Rev-3 (@Codex b9d8ff9f): the four slots and the three behaviour modes must be exercised through
+// the ENGINE API with a real OUTPUT criterion, and at least one recalled scale and one recalled
+// sequence must reach the published control — the slot -> live -> consumer chain, not just the
+// state layer. Each criterion below renders through the real host block path and reads the four
+// published jacks (keyboard.v_oct_out / gate_left_main_out / gate_right_out / pressure_out).
+
+// C1: every one of the FOUR slots, recalled in each of the THREE modes, reaches the consumer with
+// the mode-correct output. A right-only plate is the discriminator (pitch 0.04 V, pressure 0.5):
+//   Single : the right plate is the SAME performer as left -> gate LEFT high, pressure_out = the
+//            pressure stage (the plate's pressure), pitch read from BANK 0 (chromatic 0x0FFF ->
+//            0.04 V quantises to 0.0 V).
+//   Twin   : the sides are independent -> gate RIGHT high, pressure_out = right PITCH read from
+//            BANK 0 (twin shares one bank -> chromatic, so 0.04 V quantises to 0.0 V).
+//   Split  : same gating as Twin, but the right pitch reads BANK 1 (microtonal 0x0000 -> 0.04 V
+//            survives).
+// The three expected triples are mutually distinct (Single differs on gateL, Twin vs Split on
+// pressure), and each is compared against a control harness that was never handed the action.
+static void c1_four_slots_times_three_modes_reach_the_consumer() {
+  std::printf("C  -- the engine API matrix: 4 slots x Single/Twin/Split reach the consumer\n");
+  struct Expect {
+    double gateL, gateR, press, vOct;
+  };
+  // Single: the merged left side publishes vOct = pitchL and pressure_out = pressL.
+  // Twin: the right side reads bank 0 (left root C), so pressure_out = pitchR = 0.0.
+  // Split: the right side reads bank 1 (right root F), so pressure_out = pitchR = 5/12 V —
+  // the three modes are mutually distinct on purpose (no criterion can pass by mode collapse).
+  const Expect expect[3] = {{kGateHigh, 0.0, 0.5, 0.0},            // Single
+                            {0.0, kGateHigh, 0.0, 0.0},            // Twin
+                            {0.0, kGateHigh, 5.0 / 12.0, 0.0}};    // Split
+  const char* modeName[3] = {"Single", "Twin", "Split"};
+  const auto play = [](EngineHarness& e) {
+    note(*e.producerRuntime(), core::KeyboardSide::Right, 0.04, 0.5, 2, 0);
+    return e.renderSampled(64, 0.0, [](const core::SynthRuntime&) {});
+  };
+
+  // The control is the power-on default LIVE (Single, microtonal bank 0) with the SAME plate. It
+  // is never handed a preset action, so every recalled combo must differ from it somewhere — that
+  // is the slot -> live -> consumer connectivity proof (the recall really changed the output).
+  EngineHarness hCtrl;
+  if (!hCtrl.load(core::make_default_device_state(kSeed)) || !play(hCtrl)) {
+    check(false, "C1 control load/render");
+    return;
+  }
+  const Snap ctrl = snap(*hCtrl.runtime());
+
+  for (std::uint32_t slot = 0; slot < core::kDeviceKeyboardPresetCount; ++slot) {
+    for (std::uint32_t mode = 0; mode < 3u; ++mode) {
+      const Cfg payload = mode_matrix_cfg(static_cast<std::uint8_t>(mode));
+      EngineHarness h;
+      if (!h.load(state_with_slot(payload, slot)) ||
+          !h.presetAction(slot, StandaloneAudioEngine::PresetAction::Load) ||
+          !live_matches(*h.canonicalState(), payload) || !play(h)) {
+        check(false, "C1 load / recall / live-config / render");
+        return;
+      }
+      const Snap s = snap(*h.runtime());
+      char label[192];
+      std::snprintf(label, sizeof label,
+                    "C1 slot %u x %s: the recalled payload reaches the consumer (gate L/R, "
+                    "pressure, V/OCT)",
+                    slot, modeName[mode]);
+      check(s.gateL == expect[mode].gateL && s.gateR == expect[mode].gateR &&
+                near(s.press, expect[mode].press, 1e-9) &&
+                near(s.vOct, expect[mode].vOct, 1e-9),
+            label);
+      char diffLabel[192];
+      std::snprintf(diffLabel, sizeof diffLabel,
+                    "C1 slot %u x %s: the output differs from the never-recalled default live", slot,
+                    modeName[mode]);
+      check(s.gateL != ctrl.gateL || s.gateR != ctrl.gateR ||
+                !near(s.press, ctrl.press, 1e-12) || !near(s.vOct, ctrl.vOct, 1e-12),
+            diffLabel);
+    }
+  }
+}
+
+// C2: a recalled QUANTISER SCALE is what the published pitch runs through. A 0.30 V plate is 3.6
+// semitones: the chromatic mask (0x0FFF) rounds it to 4 semitones (4/12 V), the 0x0F0F mask to 3
+// (3/12 V), and the power-on microtonal mask (0x0000) passes 0.30 V through untouched. The three
+// values are distinct, so the criterion cannot pass by reading the wrong bank or ignoring the
+// recall.
+static void c2_recalled_scale_drives_the_published_cv() {
+  std::printf("C  -- a recalled quantiser scale drives the published V/OCT\n");
+  const Cfg payload = scale_probe_cfg(0x0F0Fu);
+  EngineHarness h, hCtrl;
+  if (!h.load(state_with_slot(payload, 2u)) ||
+      !hCtrl.load(core::make_default_device_state(kSeed))) {  // default live: mask 0x0000
+    check(false, "C2 load");
+    return;
+  }
+  check(h.presetAction(2u, StandaloneAudioEngine::PresetAction::Load) &&
+            live_matches(*h.canonicalState(), payload),
+        "C2 the recalled payload installed the 0x0F0F scale mask into the live config");
+  const auto play = [](EngineHarness& e) {
+    note(*e.producerRuntime(), core::KeyboardSide::Left, 0.30, 0.6, 1, 0);
+    return e.renderSampled(64, 0.0, [](const core::SynthRuntime&) {});
+  };
+  if (!play(h) || !play(hCtrl)) {
+    check(false, "C2 render");
+    return;
+  }
+  const double recalled = snap(*h.runtime()).vOct;
+  const double untouched = snap(*hCtrl.runtime()).vOct;
+  // The event value travels as SignalSample (float32), so the "untouched" reference is the float32
+  // of 0.30 — not a tolerance: an unquantised passthrough returns the sample EXACTLY.
+  const double plate03 = static_cast<double>(static_cast<float>(0.30));
+  check(near(recalled, 3.0 / 12.0, 1e-9),
+        "C2 the recalled 0x0F0F mask quantises 0.30 V to 3/12 V (the slot's scale is consumed)");
+  check(untouched == plate03,
+        "C2 the never-recalled default mask (microtonal) passes 0.30 V through untouched");
+  check(!near(recalled, untouched, 1e-6),
+        "C2 the recall CHANGED the published pitch (the scale came from the slot, not the default)");
+}
+
+// C3: a recalled SEQUENCER payload is driven by an EXPLICIT external clock edge and its steps
+// reach the published V/OCT. Free-run 2-step sequence (seq_run 0, seq_length 0 -> 2 steps),
+// continuous CV output, steps[0] = 0 semitones and steps[1] = 7: four clock edges must publish
+// 0, 7/12, 0, 7/12 V at the stable frames after each edge. The control (the same edges on the
+// never-recalled default live) publishes 0 V and no gate — the sequence exists only because the
+// slot was recalled through the engine API.
+static void c3_recalled_seq_steps_are_driven_by_the_clock() {
+  std::printf("C  -- a recalled sequencer runs on an explicit clock edge\n");
+  const Cfg payload = seq_probe_cfg();
+  EngineHarness h, hCtrl;
+  if (!h.load(state_with_slot(payload, 1u)) ||
+      !hCtrl.load(core::make_default_device_state(kSeed))) {
+    check(false, "C3 load");
+    return;
+  }
+  check(h.presetAction(1u, StandaloneAudioEngine::PresetAction::Load) &&
+            live_matches(*h.canonicalState(), payload),
+        "C3 the recalled payload installed the free-run 2-step sequence into the live config");
+
+  const auto script = [](core::SynthRuntime& rt) {
+    for (std::uint64_t k = 0; k < 4u; ++k)
+      push(rt, core::ControlEventKind::clock, 1.0, core::KeyboardSide::Left, 0u, k * 50u);
+  };
+  const std::size_t probeFrames[4] = {10u, 60u, 110u, 160u};
+  const double expectCv[4] = {0.0, 7.0 / 12.0, 0.0, 7.0 / 12.0};
+  script(*h.producerRuntime());
+  std::vector<Snap> trace;
+  if (!h.renderSampled(200, 0.0,
+                       [&trace](const core::SynthRuntime& rt) { trace.push_back(snap(rt)); })) {
+    check(false, "C3 render");
+    return;
+  }
+  bool pattern = true, gated = true;
+  for (std::size_t k = 0; k < 4u; ++k) {
+    const Snap& s = trace[probeFrames[k]];
+    pattern = pattern && near(s.vOct, expectCv[k], 1e-9);
+    gated = gated && s.gateL == kGateHigh;
+  }
+  check(pattern, "C3 each clock edge publishes the recalled step (0, 7/12, 0, 7/12 V)");
+  check(gated, "C3 the recalled sequence holds the gate high while it runs");
+
+  script(*hCtrl.producerRuntime());
+  std::vector<Snap> ctrlTrace;
+  if (!hCtrl.renderSampled(200, 0.0,
+                           [&ctrlTrace](const core::SynthRuntime& rt) {
+                             ctrlTrace.push_back(snap(rt));
+                           })) {
+    check(false, "C3 control render");
+    return;
+  }
+  bool quiet = true;
+  for (const Snap& s : ctrlTrace) quiet = quiet && near(s.vOct, 0.0, 1e-12) && s.gateL == 0.0;
+  check(quiet,
+        "C3 the same clock edges on the default live publish no note (the sequence is the slot's)");
+}
+
 // D1: a downstream candidate failure AFTER a legal preset action must be REPORTED, never a false
-// success, and must be ATOMIC. On the real tree the recalled candidate is legal, so the action is
-// accepted — and an accepted action must really have committed the slot payload (a "success" that
-// committed nothing is a defect). The failure branch is exercised by the isolated fixture mutation
-// `load_produces_illegal_candidate` (tools/run_preset_engine_negatives.py --fixture), which makes
-// the SAME legal call yield an illegal candidate; the paired isolated control
-// `false_success_on_rejection` then reports success without a commit and this criterion goes RED.
+// success, and must be ATOMIC — where "atomic" means the OWNER THAT WAS ALREADY RUNNING is left
+// exactly as it was, not merely that the canonical state/plan/format are unchanged (@Codex
+// b9d8ff9f Rev-1). On the real tree the recalled candidate is legal, so the action is accepted —
+// and an accepted action must really have committed the slot payload (a "success" that committed
+// nothing is a defect).
+//
+// The failure branch is exercised by the isolated fixture mutation `load_produces_illegal_candidate`
+// (tools/run_preset_engine_negatives.py), which makes the SAME legal call yield an illegal
+// candidate. The owner is ALREADY RUNNING WITH A PENDING EVENT when the action is attempted, and a
+// control harness with the IDENTICAL history is never handed the action: the rejected action must
+// keep the same runtime OBJECT, and the full continuation (both-side control trace + all four audio
+// channels) must equal that control. Paired isolated controls:
+//   * `false_success_on_rejection`  -> reports success without a commit (accepted branch, RED).
+//   * `failure_still_commits`       -> canonical state changes (the atomicity label, RED).
+//   * `runtime_mutated_on_rejection` -> the ONE rejection path mutates the live runtime
+//     (definition_->runtime().setVcoBaseHz) and the audio-preservation label goes RED, while the
+//     identity / trace / liveness labels stay PASS — the control is specific, not a shotgun.
 static void d1_downstream_candidate_failure_is_reported_and_atomic() {
+  std::printf("D  -- a downstream candidate failure is reported AND leaves the running owner alone\n");
+  const Cfg live = split_discriminator_cfg();  // Split: both sides live, so the trace is two-sided
   const Cfg want = make_cfg(3u, 1u);
   core::DeviceStateV1 st = core::make_default_device_state(kSeed);
+  write_cfg(st, live);
   core::DeviceStateV1 scratch = st;
   write_cfg(scratch, want);
   core::save_live_to_preset(scratch, 3u);
   st.keyboardPresets[3] = scratch.keyboardPresets[3];
 
-  EngineHarness h;
-  if (!h.load(st)) {
+  EngineHarness h, hCtrl;  // hCtrl: the SAME history, never handed the action
+  if (!h.load(st) || !hCtrl.load(st)) {
     check(false, "D1 baseline load");
     return;
   }
   const std::vector<std::uint8_t> wireBefore = encode_wire(*h.canonicalState());
   const std::vector<long long> planBefore = plan_identity(h.plan());
+
+  // Already running, with a PENDING event: the script is enqueued up front, 400 frames render, and
+  // the release at frame 700 has not fired yet when the action is attempted.
+  const auto script = [](core::SynthRuntime& rt) {
+    note(rt, core::KeyboardSide::Left, 1.0, 0.6, 1, 0);
+    note(rt, core::KeyboardSide::Right, 2.0, 0.4, 2, 130);
+    release(rt, core::KeyboardSide::Left, 1, 700);
+  };
+  std::vector<Snap> traceH, traceC;
+  script(*h.producerRuntime());
+  script(*hCtrl.producerRuntime());
+  if (!h.renderSampled(400, 0.0,
+                       [&traceH](const core::SynthRuntime& rt) { traceH.push_back(snap(rt)); }) ||
+      !hCtrl.renderSampled(400, 0.0,
+                           [&traceC](const core::SynthRuntime& rt) { traceC.push_back(snap(rt)); })) {
+    check(false, "D1 pre-action render");
+    return;
+  }
+  const core::SynthRuntime* rtBefore = h.runtime();
+
   const bool ok = h.presetAction(3u, StandaloneAudioEngine::PresetAction::Load);
   if (ok) {
     check(h.presetStatus() == StandaloneAudioEngine::PresetActionStatus::Accepted,
           "D1 an accepted LOAD reports Accepted");
     check(live_matches(*h.canonicalState(), want),
           "D1 an accepted LOAD really committed the slot payload (no false success)");
-  } else {
-    check(h.presetStatus() == StandaloneAudioEngine::PresetActionStatus::RejectedState,
-          "D1 a downstream candidate failure after a legal preset action is reported as "
-          "RejectedState");
-    check(encode_wire(*h.canonicalState()) == wireBefore && plan_identity(h.plan()) == planBefore &&
-              h.ready() && h.sampleRate() == testengine::kSr && h.blockSize() == 4096,
-          "D1 the rejected preset action is atomic (canonical state/plan/format/ready unchanged)");
+    return;
   }
+
+  check(h.presetStatus() == StandaloneAudioEngine::PresetActionStatus::RejectedState,
+        "D1 a downstream candidate failure after a legal preset action is reported as "
+        "RejectedState");
+  check(encode_wire(*h.canonicalState()) == wireBefore && plan_identity(h.plan()) == planBefore &&
+            h.ready() && h.sampleRate() == testengine::kSr && h.blockSize() == 4096,
+        "D1 the rejected preset action is atomic (canonical state/plan/format/ready unchanged)");
+  check(h.runtime() == rtBefore,
+        "D1 the rejected action keeps the SAME runtime object (the running owner is not swapped)");
+
+  // The continuation: the pending release must still fire, and the FULL trace (pre + post) must be
+  // exactly what the control produced — so a divergence in either half is caught.
+  if (!h.renderSampled(800, 0.0,
+                       [&traceH](const core::SynthRuntime& rt) { traceH.push_back(snap(rt)); }) ||
+      !hCtrl.renderSampled(800, 0.0,
+                           [&traceC](const core::SynthRuntime& rt) { traceC.push_back(snap(rt)); })) {
+    check(false, "D1 post-action render");
+    return;
+  }
+  bool sameTrace = traceH.size() == traceC.size() && traceH.size() == 1200u;
+  for (std::size_t i = 0; sameTrace && i < traceH.size(); ++i) {
+    sameTrace = traceH[i].vOct == traceC[i].vOct && traceH[i].gateL == traceC[i].gateL &&
+                traceH[i].gateR == traceC[i].gateR && traceH[i].press == traceC[i].press;
+  }
+  check(sameTrace,
+        "D1 the rejected action preserves the pending-event progress: the full two-sided trace "
+        "equals the control that was never handed the action");
+  check(traceH[0].gateL == kGateHigh && traceH[699].gateL == kGateHigh &&
+            traceH[700].gateL == 0.0 && traceH[129].gateR == 0.0 && traceH[130].gateR == kGateHigh,
+        "D1 the compared continuation is live on both sides (the pending release fires at its frame)");
+  const bool audioSame = h.out(0) == hCtrl.out(0) && h.out(1) == hCtrl.out(1) &&
+                         h.out(2) == hCtrl.out(2) && h.out(3) == hCtrl.out(3);
+  check(audioSame && range_of(h.out(2)) > 0.01 && range_of(h.out(3)) > 0.001,
+        "D1 the rejected action preserves all four audio channels against the control");
 }
 
 int main() {
@@ -933,6 +1255,9 @@ int main() {
   b9_repeat_and_timebase();
   b10_partition_invariance_after_action();
   b11_recalled_consumed_scalar_reaches_the_audio();
+  c1_four_slots_times_three_modes_reach_the_consumer();
+  c2_recalled_scale_drives_the_published_cv();
+  c3_recalled_seq_steps_are_driven_by_the_clock();
   d1_downstream_candidate_failure_is_reported_and_atomic();
   if (g_fail != 0) {
     std::fprintf(stderr, "[preset engine actions] %d/%d checks FAILED\n", g_fail, g_checks);
