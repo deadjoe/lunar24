@@ -404,3 +404,70 @@ the range contains a `build-release/` path any more. The pre-rewrite tip is pres
 ### 9.9 Not claimed
 
 No push, no merge, no GH#12 closure, no release, no MET. The 35-item ledger unchanged (§6).
+
+---
+
+## 10. Full gate suite at the rewritten head — @Codex msg `8dc08f0d` (pushed head, UNPUSHED at writing)
+
+@Codex authorized the full local suite after the targeted re-run: “授权继续完整 Release/Debug/ASan+UBSan
+及真实 host/generator 检查，**按实际 CTest 数报告**”. Every figure below is the actual CTest count — no
+extrapolation from a subset, and the slow gate was run to completion rather than assumed. The gates
+were run on the source/test tree of `f854478`; the only commit after it is this §10 report text, so the
+numbers hold verbatim at the pushed head.
+
+### 10.1 Results
+
+| Gate | Command | Result |
+|---|---|---|
+| Release build, all targets | `cmake --build build-release -j` | **rc=0, 0 warnings / 0 errors** |
+| Release fast suite | `ctest --test-dir build-release --output-on-failure --label-exclude slow` | **100% tests passed out of 70** (48.58 s) |
+| Debug + ASan + UBSan fast suite | `ctest --test-dir build-debug --output-on-failure --label-exclude slow` | **100% tests passed out of 70** (113.37 s) |
+| Release slow / probe gate | `ctest --test-dir build-release --output-on-failure -L slow` | **100% tests passed out of 7** (851.24 s, rc=0) |
+| ↳ of which the slice's own probe | `#72 gh12_keyboard_side_restore_probe` | **Passed 0.32 s** (151 checks / 0 failures) |
+| ↳ other slow tests | `#65 d3_divider_restore` 6.55 / `#66 gh19_alias_probe` 14.04 / `#67 gh19_blamp_acceptance` 82.39 / `#69 gh20_vcf_probe` 373.80 / `#70 gh20_vcf_acceptance` 373.96 / `#71 gh12_keyboard_owner_probe` 0.17 | all **Passed** |
+| Mutation harness | `tests/mutation/run_gh12_side_restore_mutation.sh` | **rc=0**: baseline 151/0 green + **11/11** defenses RED (rc exactly 1, pinned `[FAIL]` line, summary last) |
+| Zero-alloc oracle | `test_host_engine_oracle` (in the fast suite) | **3866 checks OK**; the shadow adapter-revert fails 11/3866 |
+| Full-coverage gate — **NOT a pass** | `tools/check_registry_complete.py --require-full` | **rc=1, the same 12 pre-existing gaps** (§10.2); RED by design, gate/target/classification untouched |
+
+ASan/UBSan runs use `ASAN_OPTIONS=detect_leaks=0` (AppleClang ships no LSan) and
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`. The 77-test inventory is unchanged: **70 fast +
+7 `slow`**. The Debug build also reports 0 warnings / 0 errors.
+
+### 10.2 The 12 pre-existing coverage gaps (listed separately, unchanged)
+
+`--require-full` stays RED by design; this slice does not touch the gate, the frozen target, or the
+classification. The gate's own two groups, verbatim ids:
+
+- **8 Root-A non-scalar — structural, NOT a to-do; must NOT be flattened into scalar parameters:**
+  `keyboard.plate_tune`, `keyboard.preset_a`, `keyboard.preset_b`, `keyboard.preset_c`,
+  `keyboard.preset_d`, `keyboard.pushbutton_value`, `keyboard.quantise_scale_editor`,
+  `keyboard.seq_steps`
+- **4 selector-toggle with no evidenced value domain — must stay a gap until the domain is evidenced:**
+  `keyboard.arp_clock`, `keyboard.arp_rhythm`, `keyboard.seq_clock`, `keyboard.seq_rhythm`
+
+### 10.3 History / tree reconciliation (@Codex `8dc08f0d`: “交整理后的SHA与树差异对账”)
+
+Content head **`f854478`**; the pushed head is `f854478` + this §10 report-only commit (its exact SHA is
+in the hand-off message and the PR head, not here — naming it would require rewriting this section).
+
+- Rewritten commits: `45a2be2` / `fc726e9` / `8f827d0` / `09fd7ee` (§9.8);
+  `cf4ad48`/`a5062df`/`5551b46`/`6c97eae`/`ef89a07` unchanged; then the report-only `f854478`
+  (housekeeping note + §9.6 CPU raw-value correction) and this §10 commit.
+- **No commit in `920f51d..f854478` contains a `build-release/` path** — checked tree-by-tree across
+  all **10** commits in the range: 0 hits each. **277** tracked files; `git status` clean;
+  `git ls-files | grep -c '^build-release/'` = **0**.
+- Net diff `920f51d..f854478` = **15 files, +3197 / −21**: the 10 modified headers/tests, `.gitignore`,
+  `CMakeLists.txt`, the 2 new test files, and the report. With this §10 section the same 15-file diff
+  reads +3264/−21 — the report is the only file that moves.
+- At the rewritten docs head `09fd7ee` the net diff was byte-identical to the pre-rewrite diff
+  (15 files, +3180/−21, §9.8). Everything added since is **report text only**: `f854478` (+17 lines:
+  the §9.8 note and the §9.6 CPU raw-value correction @Codex `7fbf04f6`) and this §10.
+- **Source/test tree unchanged since the reviewed code head:**
+  `git diff --name-only 8f827d0..f854478 -- core/ tests/ CMakeLists.txt` → **empty**.
+- Pre-rewrite tip preserved locally at `refs/backup/task101-prewipe` (`fd9befe`) until the review closes.
+
+### 10.4 Not claimed
+
+No merge, no GH#12 closure, no release, no MET. Push + draft PR are per @Codex `8dc08f0d`; the
+four-platform CI and the PR-only slow `probe-gate` must pass on the **exact pushed head** before any
+merge decision, which @Codex holds.
