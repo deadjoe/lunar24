@@ -90,14 +90,20 @@ oracle statically verifies the SHAPE of the host->engine wiring that the CTest
       owner is rebuilt ONLY by engine_.prepare() (the GH#4 8B2 fail-closed contract is unchanged);
       OnReset performs NO file IO and never infers the read attempt from canonicalState()==nullptr.
   W16a task#105 — the audio path: ProcessBlock must not reference the state store and performs no
-      file IO. (W16b, the ~IPlugAPPHost exit call AFTER CloseAudio(), is HELD — it needs a new hunk
-      in host/iPlug_app_host_override.cpp, whose pinned diff hash is owned by
-      tools/check_host_override_drift.py and regenerated only on an @Codex ruling.)
+      file IO.
+  W16b task#105 — the lifecycle exit save in ~IPlugAPPHost: AFTER CloseAudio() returns (audio
+      callback quiesced), BEFORE the remaining member teardown, as a pure delegate to the plugin's
+      narrow seam, with no file logic in the destructor body. @Codex msg 97d9f1a2 authorized this
+      hunk (option A) together with the drift-hash update in tools/check_host_override_drift.py.
   W17a task#105 — the store's file/env discipline: it writes exactly one product file
       (lunar24-state.bin), never settings.ini, never re-derives the per-user directory (no
       getenv/HOME/APPDATA), reuses core's decode/migrate/validate/encode + save_state_atomic as the
       ONE writer, and the plugin carries the host's already-resolved directory without re-deriving
-      it. (W17b, the APP host's handoff of the resolved directory, is HELD with W16b.)
+      it.
+  W17b task#105 — the APP host hands its ALREADY-RESOLVED per-user directory to the plugin AFTER the
+      platform resolution and BEFORE any Append("settings.ini") mutates mINIPath (after the Append
+      the string is a FILE path, not the directory), exactly once; the host never names the state
+      file, because the store owns that. Same @Codex ruling as W16b.
 
 Each invariant is named and reported; a violation exits nonzero. The 8B2 mandate §4/b says a
 behaviour detector comes FIRST (the CTest) and this structural gate is the permanent second
@@ -490,11 +496,13 @@ else:
 # _______________________________________________________________________________________________
 # task #105 (GH#12): the APP one-shot startup restore / device-reopen retention / exit atomic save.
 # The behaviour is the CTest test_app_state_store; these are the STRUCTURAL second line for the two
-# seams a unit test cannot reach: the iPlug virtual OnReset() (W15) and the audio path (W16a), plus
-# the file/env discipline of the narrow store (W17a). W16b (the ~IPlugAPPHost exit call position) and
-# W17b (the APP host hands in the ALREADY-RESOLVED directory) are HELD: they need a new hunk in
-# host/iPlug_app_host_override.cpp, whose pinned diff hash is owned by
-# tools/check_host_override_drift.py (regenerated only on an @Codex ruling). Reported separately.
+# seams a unit test cannot reach: the iPlug virtual OnReset() (W15), the audio path (W16a), the two
+# host-lifecycle seams in host/iPlug_app_host_override.cpp (W16b the ~IPlugAPPHost exit call, W17b
+# the InitState directory handoff), and the file/env discipline of the narrow store (W17a). W16b/W17b
+# were HELD until @Codex msg 97d9f1a2 ruled option A and authorized both hunks plus the corresponding
+# tools/check_host_override_drift.py hash update. tools/run_app_state_negatives.py drives W16b with
+# two structural negative controls (missing call / call moved before CloseAudio) on a SHADOW copy of
+# this gate, so the pinned product file is never mutated by a control.
 
 # W15 — OnReset carries the state policy at the stopped-stream boundary, in the mandate's order:
 #   captureCanonical() -> loadOnce() -> engine_.prepare( -> publishPending()
@@ -575,6 +583,65 @@ else:
     check("W17a plugin exposes the exit save seam",
           "StateSaveOutcome LunarHostPlugin::saveDeviceState" in plug_code,
           "the host calls LunarHostPlugin::saveDeviceState() at exit")
+
+# W16b — the lifecycle exit save in ~IPlugAPPHost (mandate §5). The save must run AFTER CloseAudio()
+# returns (the audio callback is quiesced) and BEFORE the remaining member teardown; mIPlug is
+# declared first and therefore destroyed last, so the plugin is still alive at the call. The
+# destructor body is a pure DELEGATE: no file logic, no store API, no atomic save (the store owns
+# every byte of IO -- W17a). The host calls saveDeviceState() exactly once: the exit save is a
+# lifecycle save, not a debounce / panel auto-save / crash-recovery hook.
+if not APP_HOST.exists():
+    check("W16b APP host override present", False, f"missing {APP_HOST.relative_to(ROOT)}")
+else:
+    host_ovr_src = APP_HOST.read_text(encoding="utf-8")
+    host_ovr_code = strip_comments(host_ovr_src)
+    dtor = body_balanced(host_ovr_src, r"IPlugAPPHost::~IPlugAPPHost\s*\(\s*\)")
+    check("W16b ~IPlugAPPHost body present", dtor != "",
+          "host/iPlug_app_host_override.cpp must define ~IPlugAPPHost")
+    dtor_code = strip_comments(dtor)
+    i_close = dtor_code.find("CloseAudio();")
+    i_save = dtor_code.find("saveDeviceState")
+    i_teardown = dtor_code.find("cancelCallback")
+    check("W16b exit save is a plugin delegate",
+          "LunarHostPlugin" in dtor_code and "GetPlug()" in dtor_code,
+          "the destructor calls the plugin's seam; it never opens/writes the file itself")
+    check("W16b exit save runs AFTER CloseAudio() returns", -1 < i_close < i_save,
+          "the save must run once the audio callback is quiesced (CloseAudio() first)")
+    check("W16b exit save runs before the remaining member teardown", -1 < i_save < i_teardown,
+          "mIPlug is declared first and destroyed last; the save needs the plugin still alive")
+    check("W16b no file IO in the destructor body",
+          not any(t in dtor_code for t in ("fopen", "ifstream", "ofstream", "filesystem",
+                                           "std::FILE", "save_state_atomic")),
+          "file logic lives in the narrow store; the destructor body is a delegate only")
+    check("W16b the host override calls saveDeviceState exactly once",
+          host_ovr_code.count("saveDeviceState") == 1,
+          "one lifecycle exit save; no debounce / panel auto-save call in the host")
+
+    # W17b — the APP host's ONE directory-resolution point (mandate §1). InitState() resolves the
+    # per-user settings directory (SetFormatted) and then APPENDS "settings.ini" to the same string;
+    # the handoff must land between the two, or the plugin would receive a FILE path as a directory.
+    # The host hands a DIRECTORY only: it never names lunar24-state.bin (the store owns the file name)
+    # and it calls setStateDirectory() exactly once (no second, silently-different resolution).
+    initstate = body_balanced(host_ovr_src, r"bool IPlugAPPHost::InitState\s*\(\s*\)")
+    check("W17b InitState body present", initstate != "",
+          "host/iPlug_app_host_override.cpp must define InitState()")
+    init_code = strip_comments(initstate)
+    i_setfmt = init_code.find("SetFormatted(")
+    i_handoff = init_code.find("setStateDirectory(")
+    i_append = init_code.find('Append("settings.ini")')
+    check("W17b handoff happens after the platform directory resolution", -1 < i_setfmt < i_handoff,
+          "the plugin receives the directory the APP host resolved, never a guess")
+    check('W17b handoff happens BEFORE Append("settings.ini") mutates mINIPath',
+          -1 < i_handoff < i_append,
+          "after the Append the string is a FILE path, not the settings directory")
+    check("W17b handoff passes the resolved mINIPath",
+          "setStateDirectory(mINIPath.Get())" in init_code,
+          "the handoff carries the resolved directory")
+    check("W17b host calls setStateDirectory exactly once",
+          host_ovr_code.count("setStateDirectory(") == 1,
+          "one resolution point; neither plugin nor store re-derives the directory")
+    check("W17b host never names the state file", "lunar24-state.bin" not in host_ovr_code,
+          "the host hands a DIRECTORY; the store owns the product file name")
 
 
 def main() -> int:

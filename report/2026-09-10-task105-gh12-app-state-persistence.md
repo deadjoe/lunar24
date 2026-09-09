@@ -1,7 +1,7 @@
 # task #105 — GH#12: APP 一次启动恢复、设备重开配置保留与退出原子保存
 
 - 分支 `feat/12-app-state-persistence`，基线 `727236e66cce33a70c4864f93a56884b20649bda`（隔离 worktree）。
-- 授权：@Codex `b2af0b4`（thread `#Lunar24:7e247170`）。
+- 授权：@Codex `b2af0b4`（thread `#Lunar24:7e247170`）；drift 白名单与两处 host 接线由 @Codex `97d9f1a2` 授权 A；三项修订（粘性保护 / 先拒后分配 / 读边界+排他临时名）由 @Codex `0c9ea88d` + `d5f6a520` 指派。
 - 纪律：不 merge / 不关 GH#12 / 不发布 / 不 MET；`--require-full` 原 12 缺口单列不动。
 
 ## §0 本文件先写判据（mandate 顺序：判据 → 实现 → 负控 → 门禁）
@@ -65,9 +65,9 @@
 ### W15–W17 结构门（真实委托证据）
 - `W15 OnReset 停机边界顺序`：`capture*` → `loadOnce` → `engine_.prepare(` → `publish*` 单调递增；`prepare()` 失败契约不变（仍只调 `engine_.prepare`）。
 - `W16a 音频路径`：`processBlock` 不得引用 store、不得有任何文件 IO。
-- `W16b 退出保存位置`：`~IPlugAPPHost` 体内 `saveDeviceState` 出现在 `CloseAudio();` **之后** —— **HELD**（见 §5）。
+- `W16b 退出保存位置`：`~IPlugAPPHost` 体内 `saveDeviceState` 出现在 `CloseAudio();` **之后**、成员清理之前；调用是 `LunarHostPlugin` 委托；析构体内零文件 IO；全文件 `saveDeviceState` **恰好一次**。
 - `W17a 路径与文件纪律`：store 只写 `lunar24-state.bin`、不碰 `settings.ini`、不重解析目录、复用 core 的 codec/校验链与原子保存。
-- `W17b APP host → plugin 的路径交接` —— **HELD**（见 §5）。
+- `W17b APP host → plugin 的路径交接`：`InitState()` 内 `setStateDirectory(mINIPath.Get())` 出现在平台目录解析 `SetFormatted(` **之后**、`Append("settings.ini")` **之前**；全文件恰好一次；host 从不出现 `lunar24-state.bin`（文件名归 store 所有）。
 
 ### N 系列负控（隔离源码，必须跑通并命中特定断言；编译失败不算红）
 1. `skip_startup_apply` — 不做 pending 发布 → C3.1/C2.4 红。
@@ -78,7 +78,21 @@
 6. `delete_old_file_first` — replace 前先删 live 且 replace 失败 → C5.4 红。
 7. `save_result_swallowed` — 忽略 `SaveResult` → C5.5 红。
 8. `save_writes_default_without_legal_config` — 无 owner 时保存源退回 `&pending_`（而非返回 `SkippedNoConfig`）→ C8.2 红。
-9. `exit_call_missing` / `exit_call_before_closeaudio` — 结构突变 → W16b 红（静态门）—— **HELD**（见 §5）。
+9. `save_gate_reopened_by_session_publish` — 粘性采纳判决换成「任何 Accepted 发布都重开闸门」→ C4.12 红（@Codex `0c9ea88d` 实际重现的洞）。
+10. `oversized_allocated_before_size_gate` — 关掉 fstat 尺寸门 → C4.13「NOTHING was read」红。
+11. `trailing_byte_accepted` — 读边界丢掉越界字节探测 → C4.14 红。
+12. `temp_reserve_not_exclusive` — 排他创建退化为普通创建 → C6.3 红。
+13. `exit_call_missing` — 删掉 `~IPlugAPPHost` 的退出保存调用 → W16b 4 条红（委托/顺序/位置/恰好一次）。
+14. `exit_call_before_closeaudio` — 把保存调用移到 `CloseAudio();` 之前 → W16b 顺序条红（**恰 1 条**，其余 5 条仍绿）。
+
+### C4.11–C4.14 / C6.3–C6.5（@Codex `0c9ea88d` + `d5f6a520` 三项修订的判据）
+- `C4.11 sticky_adoption_verdict`：合法但图不可执行的文件被拒后，闸门关闭且 `fileUnadopted()` 为真。
+- `C4.12 protection_survives_device_reopen`：拒绝后做 **1 次与 3 次**设备重开（每次 `prepare` 都会重建默认态并作为 `FromSession` **成功发布**），闸门**不得**重开；退出保存 → `SkippedFileUnhealthy`，原文件**逐字节保留**。
+- `C4.13 oversized_refused_before_allocation`：64 MiB 文件 → `LengthMismatch` 且 `bytesRead()==0`（尺寸门先于任何读取/分配）。
+- `C4.14 read_boundary_exactness`：精确长度接受并读满 `kWire`；**多一个尾字节**拒绝；短读拒绝。
+- `C6.3 exclusive_temp_claim`：已存在路径的排他创建被拒；新路径成功且真的创建了文件。
+- `C6.4 reserved_names_distinct`：两次预留名字不同、各自真实存在于 live 同目录。
+- `C6.5 reservation_spans_write`：后端被要求写入时，临时路径**已是我们排他占有的空文件**；清理只删这一条路径。
 
 ## §2 实现
 
@@ -86,48 +100,57 @@
 
 | 文件 | 状态 | 作用 |
 | --- | --- | --- |
-| `host/include/host/app_state_store.h` | 新增（425 行） | 窄协调层：一次读盘 latch、pending 转移、保存来源选择、真实 FileOps |
-| `tests/host/test_app_state_store.cpp` | 新增（~900 行，190 checks） | C0–C8 行为判据（真实临时目录 + 真实 engine 候选路径） |
-| `tools/run_app_state_negatives.py` | 新增（~520 行） | N 系列隔离影子负控 driver |
-| `tools/check_host_engine_wiring.py` | 修改 | +W15(8) / W16a(2) / W17a(9) = 19 条结构判据 |
+| `host/include/host/app_state_store.h` | 新增 | 窄协调层：一次读盘 latch、pending 转移、保存来源选择、粘性采纳判决、排他临时名、真实 FileOps |
+| `tests/host/test_app_state_store.cpp` | 新增（251 checks） | C0–C8 行为判据（真实临时目录 + 真实 engine 候选路径） |
+| `tools/run_app_state_negatives.py` | 新增 | N 系列隔离影子负控 driver（12 条验收突变 + 2 条结构突变） |
+| `tools/check_host_engine_wiring.py` | 修改 | +W15(8) / W16a(2) / W17a(9) / W16b(6) / W17b(6) = 31 条结构判据（合计 94） |
 | `host/plugin.h` / `host/plugin.cpp` | 修改 | `setStateDirectory` 交接孔 + `saveDeviceState` 退出保存孔 + `OnReset` 顺序 |
 | `CMakeLists.txt` | 修改 | 注册 `test_app_state_store` + `app_state_store_negative`（UNIX） |
-| `host/iPlug_app_host_override.cpp` | **未改** | 两处 hunk 被 drift 门钉死 → **HELD**（§5） |
-| `tools/check_host_override_drift.py` | **未改** | 同上 |
+| `host/iPlug_app_host_override.cpp` | 修改（+14 行，纯插入） | 两处生命周期 hunk（§5，@Codex `97d9f1a2` 授权 A） |
+| `tools/check_host_override_drift.py` | 修改 | `ALLOWED["host"]` +2 函数名；`EXPECTED_DIFF_HASH["host"]` 重生成（PIN 与其余限制不动） |
 
 ### 2.2 设计要点（逐条对 mandate）
 
 1. **路径**：store 不自己解析目录。`AppStateStore::setDirectory()` 只接受宿主**已解析**的 per-user 目录字符串（`host/plugin.cpp:119-125`）；目录为空时 `loadOnce()` → `NoPath`、`save()` → `SkippedNoPath`，**不落 cwd、不落其他目录**（C4.10）。产品文件 `lunar24-state.bin` 与 `settings.ini` 同目录但互不触碰（C1.3 / W17a）。临时文件同目录、名字含原子计数器 + `steady_clock` 计数（C1.4 / C6.2），无锁服务。
 2. **一次读盘**：`readAttempts_` 显式 latch（**不是** `canonicalState()==nullptr`，W15 第 7 条静态钉）。长度门是**精确相等** `kAppStateWireBytes == kDeviceStorageSchema.totalBytesHint`(6297)，比 core 的 `>=` 更严；再走 `decode → migrate(仅当版本受支持) → validate_device_state`，产物进 `pending_`。缺文件 → `NoFile`（沿用既有常量 seed 默认态，C3.2）；有文件 → 身份按文件原样恢复（C1.6）。
-3. **失败语义**：不可读 / 长度不符 / 版本过旧或过新 / 校验不过 / 校验过但候选不可执行，一律**原文件逐字节保留**（C4.7）、**默认态安全启动且 ready**（C4.8）、**本次退出自动保存不得覆盖该文件**（C4.9，`save()` → `SkippedFileUnhealthy`）。无 UI 修复入口、无覆盖确认流、无自动修复。
+3. **失败语义**：不可读 / 长度不符 / 版本过旧或过新 / 校验不过 / 校验过但候选不可执行，一律**原文件逐字节保留**（C4.7）、**默认态安全启动且 ready**（C4.8）、**本次退出自动保存不得覆盖该文件**（C4.9，`save()` → `SkippedFileUnhealthy`）。无 UI 修复入口、无覆盖确认流、无自动修复。**该保护是粘性的**：`fileUnadopted_` 单调，只有「`FromFile` 的发布被 Accepted」才可能解除；设备重开时 `prepare()` 重建默认态并作为 `FromSession` **成功发布**，**不得**重开闸门（C4.11/C4.12，见 §2.3）。
 4. **停机边界**：`OnReset()` 内严格四步（`host/plugin.cpp:110-116`）——`captureCanonical()`（**先于** `prepare()`，防止设备重开回退上电默认或重读磁盘）→ `loadOnce()` → `engine_.prepare(...)`（原 GH#4 8B2 owner 构建，契约未改）→ 仅当 `engine_.isReady()` 才 `publishPending(...)`。非法格式使 `prepare()` 失败时 pending 保留，供**下一次**合法边界恢复（C2.3/C2.4）。发布成功即清空 pending，此后以 engine canonical 为唯一权威，不存在第二个可独立编辑的 bank（C2.6）。`prepare()` 的默认态构建不会覆盖 pending 恢复（W15 第 3 条）。
-5. **退出保存**：`LunarHostPlugin::saveDeviceState()`（`host/plugin.cpp:127-134`）纯委托给 store；来源优先级 = `engine.canonicalState()` → 无则保留的最后合法配置 `pending_` → 都没有则 `SkippedNoConfig`（**不写**，C8.2）。文件逻辑全在窄协调层，**不在析构体、不在音频回调**。退出保存**仅算 lifecycle save**，不是实时防抖 / 崩溃恢复 / 面板自动保存；类型化 `StateSaveOutcome` 保留失败诊断；回调内无日志。
-6. **真实 FileOps**：`realWriteFile` / `realFlushFile` / `realAtomicReplace` / `realDiscardFile`。原子替换走同目录 `rename`（POSIX）/ `MoveFileEx`（Win）语义；失败保留旧文件、临时文件 best-effort 清理、**不先删旧文件**（C5.4，见 §2.3）；保持"非崩溃安全"边界，不引入校验和、不声称检测所有位翻转。后端谎报短写 = **接口违约**（`writeFile` 契约"Return true only on a COMPLETE write"），负控 `short_write_lies` 钉的是真实后端的返回逻辑。
+5. **退出保存**：`LunarHostPlugin::saveDeviceState()`（`host/plugin.cpp:127-134`）纯委托给 store；来源优先级 = `engine.canonicalState()` → 无则保留的最后合法配置 `pending_` → 都没有则 `SkippedNoConfig`（**不写**，C8.2）。文件逻辑全在窄协调层，**不在析构体、不在音频回调**。宿主侧唯一调用点 = `~IPlugAPPHost` 内 `CloseAudio();` 返回之后、成员清理之前（`host/iPlug_app_host_override.cpp:100`），`mIPlug` 先声明后析构故插件仍存活；目录交接点 = `InitState()` 内平台解析之后、`Append("settings.ini")` 之前（`:163`）。退出保存**仅算 lifecycle save**，不是实时防抖 / 崩溃恢复 / 面板自动保存；类型化 `StateSaveOutcome` 保留失败诊断；回调内无日志。
+6. **真实 FileOps**：`realWriteFile` / `realFlushFile` / `realAtomicReplace` / `realDiscardFile`。原子替换走同目录 `rename`（POSIX）/ `MoveFileEx`（Win）语义；失败保留旧文件、临时文件 best-effort 清理、**不先删旧文件**（C5.4，见 §2.4）；保持"非崩溃安全"边界，不引入校验和、不声称检测所有位翻转。后端谎报短写 = **接口违约**（`writeFile` 契约"Return true only on a COMPLETE write"），负控 `short_write_lies` 钉的是真实后端的返回逻辑。**临时名由排他创建占有**（`O_CREAT|O_EXCL` / `_sopen_s + _O_SH_DENYRW`），预留**贯穿写入**（`realWriteFile` 只 `"r+b"` 打开、绝不创建），清理只针对本次成功取得的那一条路径（C6.3/C6.4/C6.5）。
 
-### 2.3 过程中发现并修掉的两处判据弱点（先红后修）
+### 2.3 三项修订（@Codex `0c9ea88d` + `d5f6a520`，全部落盘）
+
+1. **粘性采纳判决（修的是 @Codex 实际重现的覆盖漏洞）**。原实现里「Accepted → `saveAllowed_ = true`」对所有来源一视同仁。@Codex 的重现：合法但图不可执行的文件首次被拒 → 闸门关；再按 plugin 顺序做一次设备重开，默认配置作为 `FromSession` 成功发布 → 闸门被重新打开 → 退出保存覆盖原文件（实跑 `original preserved=0`）。修法：Accepted 分支只在 `origin == PendingOrigin::FromFile && !fileUnadopted_` 时开闸；所有「有文件但未采纳」的路径都置 `fileUnadopted_ = true`（单调，会话内不可清除）。判据 C4.11（拒绝即关闸）+ C4.12（**1 次与 3 次**重开后仍关闸、原文件逐字节保留）+ 负控 `save_gate_reopened_by_session_publish`。
+2. **先拒绝再分配**。原 `loadOnce` 用 `ftell` + `resize` 按任意长度整文件分配，超长文件会在 typed failure 之前耗尽内存。改为对**已打开描述符** `fstat`/`_fstat64`：非普通文件（例如目录）→ `Unreadable`；`st_size != kWire` → `LengthMismatch`，**先于任何分配**。判据 C4.13（64 MiB → `LengthMismatch` 且 `bytesRead()==0`）+ 负控 `oversized_allocated_before_size_gate`。
+3. **读边界钉死 + 排他临时名**。`d5f6a520` 追加两点：①路径上的 `file_size` 不是已打开文件的稳定快照 ⇒ 新增 `readExactRecord`：始终只读 `kWire` 字节，**短读拒绝**，并 `fgetc` 探测**越界尾字节**（文件在尺寸门之后变大时不得当作完整记录），`ferror` 区分 IO 错误；②排他预留必须**贯穿实际写入**（不能预留后删除再普通创建）⇒ `reserveTempPath()` 用 `O_CREAT|O_EXCL` 循环取唯一名，`realWriteFile` 只以 `"r+b"` 打开并 truncate，清理只删本次成功取得的那条路径。判据 C4.14 + C6.3/C6.4/C6.5 + 负控 `trailing_byte_accepted` / `temp_reserve_not_exclusive`。
+
+### 2.4 过程中发现并修掉的两处判据弱点（先红后修）
 
 - **C5.4 判据过弱（被 `delete_old_file_first` 负控暴露）**：原判据只查 `exists(livePath)`。突变"先删目标再 rename"在测试里**成功**（目标是个目录时 rename 仍可完成），于是路径上确实"有东西"，弱判据假绿。改为 `is_directory(livePath)` 并加注释：必须**同一个目标对象**存活，而不是"路径上存在任意东西"。
 - **mandate §5 末句缺判据**：新增 C8 两条 + 第 8 条负控。突变选择 `source = &pending_` 而非 `make_default_device_state(...)`——store 头文件不 include `state_default.h`，写默认态会**编译失败**，而编译失败按 driver 信任模型**不算红**，所以选了能编译且语义正确的突变。
+- **C4.13 夹具自身先红（测试 bug，不是产品 bug）**：`std::filesystem::resize_file` 要求目标**已存在**（底层是 `truncate(2)`，否则 ENOENT），直接 resize 得到「没有文件」→ `loadOnce` 返回 `NoFile`，三条判据全红而原因与产品无关。修法：先 `writeBytes(live, {})` 建文件再 resize。记录在案：**夹具失败必须先分清是产品红还是夹具红**。
+- **突变锚点漂移被 driver 当场拦下**：本轮给 `saveImpl` 插入排他预留与清理块后，`save_result_swallowed` 的锚点匹配数变 0，driver 立即 `SystemExit` 并打印「production source drifted」。这正是 `_replace` 的设计意图——锚点漂移绝不允许静默退化成「无突变的假绿」。已更新锚点并加一次性 pre-flight 全锚点自检。
 
 ## §3 门禁输出（最终文件集）
 
 | 门 | 命令 | 结果 |
 | --- | --- | --- |
-| 结构门 | `python3 tools/check_host_engine_wiring.py` | rc=0，**82/82 PASS**（含新 W15 8 + W16a 2 + W17a 9 = 19） |
-| override drift | `python3 tools/check_host_override_drift.py` | rc=0，**11/11 PASS**（未改 `host/iPlug_app_host_override.cpp`） |
-| 行为验收 Release | `./build-rel/test_app_state_store` | **190 checks OK** |
-| 行为验收 Debug+ASan+UBSan | `./build-debug/test_app_state_store` | **190 checks OK** |
-| 负控 driver | `python3 tools/run_app_state_negatives.py` | rc=0，**OVERALL: PASS**（12/12 自检 + 保留性正控绿 + 8/8 可跑负控命中，2 HELD） |
-| Release 快门 | `ctest --label-exclude slow -j4`（build-rel） | **74/74**（最终文件集，含 `test_app_state_store` 190 OK + `app_state_store_negative`） |
-| Debug+ASan+UBSan 快门 | `ctest --label-exclude slow`（build-debug） | 74/74（04:40，见 §3.1） |
-| Release slow | `ctest -j4 -L slow`（build-rel） | **7/7 PASS** rc=0（897.65 sec*proc / 394.72s real） |
-| Debug+ASan+UBSan slow | `ctest -j4 -L slow`（build-debug） | 进行中（后台） |
+| 结构门 | `python3 tools/check_host_engine_wiring.py` | rc=0，**94/94 PASS**（含 W15 8 + W16a 2 + W17a 9 + W16b 6 + W17b 6 = 31） |
+| override drift | `python3 tools/check_host_override_drift.py` | rc=0，**11/11 PASS**（`host` 哈希重生成 `65d1ba34…`，PIN 不动；诊断行仍打印 `note … IPlugAPPHost::IPlugAPPHost`，见 §5.3） |
+| 行为验收 Release | `./build-rel/test_app_state_store` | **251 checks OK** |
+| 行为验收 Debug+ASan+UBSan | `./build-debug/test_app_state_store` | **251 checks OK** |
+| 负控 driver | `python3 tools/run_app_state_negatives.py --require-all` | rc=0，**OVERALL: PASS**（24/24 judge 自检 + 保留性正控绿 + 结构正控绿 + **12/12** 验收突变命中 + 2/2 结构突变命中） |
+| Release 快门 | `ctest --label-exclude slow -j4`（build-rel） | **74/74 PASS** rc=0（25.99s real；含 `test_app_state_store` 251 OK + `app_state_store_negative`） |
+| Debug+ASan+UBSan 快门 | `ctest --label-exclude slow`（build-debug） | 见 §3.1（待 Debug slow 释放 build-debug 后整跑） |
+| Release slow | `ctest -j4 -L slow`（build-rel） | **7/7 PASS** rc=0（390.96s real，最终文件集） |
+| Debug+ASan+UBSan slow | `ctest -j4 -L slow`（build-debug） | 进行中（04:40 启动，约 2.9h；见 §3.1） |
 
 ### 3.1 时序说明（避免误读）
 
-- Release 快门已在**最终文件集**上整跑：74/74，含 `test_app_state_store`（190 checks OK）与 `app_state_store_negative`（OVERALL PASS）。
-- Debug+ASan+UBSan 快门 74/74 是在 **C8 加入之前**跑的（04:40 结束，二进制重建于 04:41）；C8 之后唯一变化的文件就是 `tests/host/test_app_state_store.cpp`，该目标已在 Debug+ASan+UBSan 下单独重跑 **190 checks OK**；待 Debug slow 跑完后在最终文件集上整跑一遍，结果补进本节，不单独再提报告。
-- Release slow 已完：**7/7 PASS**（gh19_alias_probe / gh19_blamp_acceptance / gh20_vcf_probe / gh20_vcf_acceptance / gh12_keyboard_owner_probe / gh12_keyboard_side_restore_probe / test_d3_divider_restore）。
+- **Release 快门已在最终文件集上整跑**：74/74，含 `test_app_state_store`（251 checks OK）与 `app_state_store_negative`（OVERALL PASS）。
+- **两个验收目标都在最终文件集上单跑过**：Release **251 OK**、Debug+ASan+UBSan **251 OK**。
+- **Debug+ASan+UBSan 快门（74 条）与 slow 未在最终文件集上整跑**：`build-debug` 自 04:40 起被 slow 套件占用，且其 ctest 日志与并发 ctest 冲突；按 @Codex「不用重复已通过的无关全套」，本轮不为 app-state 改动重跑无关 slow。该慢套件涉及的 7 个目标均不消费本轮改动文件（`app_state_store.h` 只被 `test_app_state_store` 与 APP host 目标引用）。待 slow 结束后在最终文件集整跑 Debug 快门，结果补进本节，不单独再提报告。
+- **Release slow 已按最终文件集重跑：7/7 PASS**（`gh12_keyboard_side_restore_probe` / `gh19_blamp_acceptance` / `gh20_vcf_probe` / `gh20_vcf_acceptance` 等 7 条，rc=0，390.96s）。本轮修订改动了 `app_state_store.h`，故不沿用修订前那次结果。
 - `--require-full` 原 **12 项缺口单列不动**，未列入本卡门禁。
 
 ## §4 负控证据（隔离影子源码；编译失败不算红）
@@ -144,31 +167,42 @@
 | `delete_old_file_first` | replace 前先删 live | C5.4（邻带 C5.3） |
 | `save_result_swallowed` | 忽略 `SaveResult` | C5.5（邻带 C5.1） |
 | `save_writes_default_without_legal_config` | 无 owner 时退回 `&pending_` | C8.2（邻带 C8.1） |
-| `exit_call_missing` / `exit_call_before_closeaudio` | 结构突变 | W16b —— **HELD** |
+| `save_gate_reopened_by_session_publish` | 粘性采纳判决换成「任何 Accepted 发布都重开闸门」 | C4.12（邻带 C4.12 字节保留 + C4.11 退出保存） |
+| `oversized_allocated_before_size_gate` | 关掉 fstat 尺寸门 | C4.13「NOTHING was read」 |
+| `trailing_byte_accepted` | 读边界丢掉越界字节探测 | C4.14「a byte BEYOND the record is rejected」 |
+| `temp_reserve_not_exclusive` | 临时名仍创建但不再排他 | C6.3「refuses a path another owner already holds」 |
+| `exit_call_missing` / `exit_call_before_closeaudio` | 结构突变（影子 repo + 真实门副本） | W16b（4 条 / 1 条） |
 
-**HELD 原因**：两者都必须改 `host/iPlug_app_host_override.cpp`，而该文件整份 upstream→fork 差分被 `tools/check_host_override_drift.py` 的 `PIN` + `EXPECTED_DIFF_HASH["host"]` 逐字节钉死，该门自己的注释把"重新生成"保留给 @Codex 对 curated hunk 的裁决（已在 msg `1bc54368` 报 `file:line` 并给两个选项，未获裁决）。按 mandate 的冲突规则：**只暂停相应部分**，其余继续。
+`exit_call_missing` 命中 4 条 W16b（委托/顺序/位置/恰好一次），`exit_call_before_closeaudio` 命中 1 条（顺序），其余 5 条仍绿——特异性证据见 driver 的 `STRUCTURAL[...]["must_pass"]`。
 
-## §5 HELD：退出接线（`file:line` + 所需裁决）
+## §5 退出接线：已落盘（@Codex `97d9f1a2` 授权 A）
 
-### 5.1 被阻塞的两处 hunk（均未落盘）
+### 5.1 两处 hunk（均已落盘，`+14` 行纯插入，无删除/无改写）
 
-1. **路径交接** —— `host/iPlug_app_host_override.cpp:139` `InitState()`，目录在 `:144`(Win) / `:146`(mac) 解析完成后、`:151` `struct stat st;` 之前插入：
+1. **路径交接** —— `host/iPlug_app_host_override.cpp:163` `InitState()`，平台目录解析完成后、`:169` `mINIPath.Append("settings.ini")` 之前：
    ```cpp
    static_cast<LunarHostPlugin*>(GetPlug())->setStateDirectory(mINIPath.Get());
    ```
-   必须在此处（`mINIPath.Append("settings.ini")` 于 `:155`/`:194`/`:203` 之前），否则拿到的是 ini 全路径而非目录。强制转换写法与 `:70` / `:732` 既有模式一致。
-2. **退出保存** —— `host/iPlug_app_host_override.cpp:89` `~IPlugAPPHost()`，`:93` `CloseAudio();` 之后、`:95` midi 清理之前插入：
+   必须在此处，否则拿到的是 ini 全路径而非目录。强制转换写法与既有 `:70` / `:732` 模式一致。W17b 六条不变式（`:159-163` 注释即为其可读化说明）。
+2. **退出保存** —— `host/iPlug_app_host_override.cpp:100` `~IPlugAPPHost()`，`:93` `CloseAudio();` 之后、成员清理之前：
    ```cpp
    static_cast<LunarHostPlugin*>(GetPlug())->saveDeviceState();
    ```
-   `mExiting = true;` 在 `:91`，早于 `:93`，满足 mandate 的"`CloseAudio()` 返回后、成员析构前"。
+   `mExiting = true;` 在 `:91`，早于 `:93`，满足 mandate「`CloseAudio()` 返回后、成员析构前」。
 
-### 5.2 解除 HELD 需要 @Codex 裁决的机械项
+### 5.2 配套门禁改动（授权范围内）
 
-- `tools/check_host_override_drift.py:74-78` `ALLOWED["host"]` 增加两个函数名：`IPlugAPPHost::~IPlugAPPHost`、`IPlugAPPHost::InitState`。
-- `tools/check_host_override_drift.py:64-67` `EXPECTED_DIFF_HASH["host"]` 重新生成（当前 `8e46b85646917044c8e8f16bdfff8aee87becdaf04f403cec09defeefa81d36f`，本次未动）。
-- `tools/check_host_engine_wiring.py` 增加 W16b（析构体内 `CloseAudio()` 之后）与 W17b（APP host 交接调用点）。
-- `tools/run_app_state_negatives.py` 把 2 条 HELD 负控从 HELD 移入可跑集合。
+- `tools/check_host_override_drift.py`：`ALLOWED["host"]` +2 函数名（`IPlugAPPHost::~IPlugAPPHost`、`IPlugAPPHost::InitState`）；`EXPECTED_DIFF_HASH["host"]` 重生成 → `65d1ba34e6aad7b5fd89d579167f0a23408662319a315929ec6231f068ce583e`。**PIN 与其他限制未动**，未放宽为忽略任意差异。
+- `tools/check_host_engine_wiring.py`：新增 W16b 6 条 + W17b 6 条。
+- `tools/run_app_state_negatives.py`：两条结构负控从 HELD 移入可跑集合，用影子 repo（真实门副本 + symlink farm）判定，**从不编辑产品文件**。
 
-**未做**：未改 `host/iPlug_app_host_override.cpp`、未改 `tools/check_host_override_drift.py`、未自行 merge / 关 GH#12 / 发布 / MET。
+### 5.3 非门禁诊断行（已知，不影响 PASS）
 
+drift 门仍打印 `note … non-curated anchors in diff: IPlugAPPHost::IPlugAPPHost`：门的 `SIG_RE` 匹配不到析构函数签名（`~`），属诊断行而非判据，11/11 仍 PASS。未改门逻辑（超出本次授权）。
+
+
+## §6 交付状态
+
+- **候选 = 未推送 head**（本轮修订 commit 见交付消息）；分支 `feat/12-app-state-persistence`。
+- 等 @Codex 复验：**未 push、未开/更新 PR、未跑 CI、未 merge、未关 GH#12、未发布、未 MET**。
+- 后继项（需总监开卡）：其余消费者、`UnitIdentitySeed`「每安装首次生成」缺口、`save_state_atomic` 长度/回读校验。

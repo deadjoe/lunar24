@@ -326,6 +326,35 @@ struct CountFs {
   }
 };
 
+// A backend that inspects the REAL temp file at write time: it proves the store claimed the name by
+// exclusive creation BEFORE handing it to the backend, and that the cleanup removes exactly that
+// path (and nothing else). The flush then fails, so the store's own cleanup has to run.
+struct ReserveProbeFs {
+  std::string seenPath;
+  bool existedAtWrite = false;
+  std::uintmax_t sizeAtWrite = 0u;
+  static bool write(void* ctx, const char* path, const std::uint8_t*, std::size_t) {
+    ReserveProbeFs* self = static_cast<ReserveProbeFs*>(ctx);
+    self->seenPath = path;
+    std::error_code ec;
+    const std::filesystem::path p(path);
+    self->existedAtWrite = std::filesystem::exists(p, ec);
+    self->sizeAtWrite = std::filesystem::file_size(p, ec);
+    return true;  // pretend the bytes landed; the failing flush below aborts the save
+  }
+  static bool flush(void*, const char*) { return false; }
+  static bool replace(void*, const char*, const char*) { return false; }
+  static void discard(void*, const char*) {}
+  core::FileOps ops() {
+    core::FileOps o;
+    o.writeFile = &write;
+    o.flushFile = &flush;
+    o.atomicReplace = &replace;
+    o.discardFile = &discard;
+    return o;
+  }
+};
+
 // ---- C0 the fixture is legal ----------------------------------------------------------------
 
 static void c0_fixture_is_legal() {
@@ -650,6 +679,129 @@ static void c4_failure_semantics() {
               !std::filesystem::exists(std::filesystem::path(cwdBefore) / host::kAppStateFileName),
           "C4.10 the save never fell back to the working directory");
   }
+
+  // C4.11/C4.12 — the protection is STICKY across device reopens. A legal file whose graph the REAL
+  // candidate refuses must stay protected even after a SUCCESSFUL FromSession publish: the plugin's
+  // OnReset sequence (captureCanonical -> loadOnce -> prepare -> publishPending) publishes the
+  // power-on default on the next boundary, and that is exactly the sequence that used to re-open the
+  // gate and let the exit save overwrite the refused file.
+  {
+    DeviceStateV1 unexecutable = core::make_default_device_state(kSeed);
+    setCable(unexecutable, JackId::env_follower_env_out, JackId::effector_cv_x_in);
+    std::vector<std::uint8_t> original;
+    check(encodeState(unexecutable, &original), "C4.11 the refused record encoded");
+
+    for (int reopens : {1, 3}) {
+      const std::string dir = makeTempDir("c4sticky");
+      const std::string live = dir + "/" + host::kAppStateFileName;
+      check(writeBytes(live, original), "C4.11 the refused file was written");
+
+      AppStateStore store;
+      store.setDirectory(dir);
+      StandaloneAudioEngine engine;
+      check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "C4.11 the engine booted");
+
+      // Boundary 1: the file is adopted as a candidate and refused by the REAL engine.
+      store.captureCanonical(engine);
+      check(store.loadOnce() == StateLoadOutcome::Ok,
+            "C4.11 the refused file was loaded as a candidate");
+      check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "C4.11 the boundary prepared");
+      check(store.publishPending(engine, kSr, kBlock, kInCh, kOutCh) ==
+                StandaloneAudioEngine::StateApplyStatus::RejectedGraph,
+            "C4.11 the real candidate refused the graph");
+      check(!store.saveAllowed() && store.fileUnadopted(),
+            "C4.11 the refusal closed the lifecycle save gate");
+
+      // Boundaries 2..N: device reopens. Each one publishes the DEFAULT config FromSession.
+      for (int i = 0; i < reopens; ++i) {
+        store.captureCanonical(engine);
+        check(store.loadOnce() == StateLoadOutcome::Ok && store.readAttempts() == 1u,
+              "C4.11 the reopen did not re-read the disk");
+        check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh),
+              "C4.11 the reopened device prepared");
+        check(store.publishPending(engine, kSr, kBlock, kInCh, kOutCh) ==
+                  StandaloneAudioEngine::StateApplyStatus::Accepted,
+              "C4.11 the default config published successfully on the reopen");
+        check(!store.saveAllowed() && store.fileUnadopted(),
+              "C4.12 a successful FromSession publish did NOT re-open the gate");
+      }
+
+      check(store.save(engine) == StateSaveOutcome::SkippedFileUnhealthy,
+            "C4.11 the exit save refused to touch the refused file");
+      std::vector<std::uint8_t> after;
+      check(readBytes(live, &after) && after == original,
+            "C4.12 the refused file is preserved byte-for-byte across device reopens");
+      removeTree(dir);
+    }
+  }
+
+  // C4.13 — the size gate runs BEFORE any allocation or read: a huge record must be a typed
+  // LengthMismatch without pulling the file into memory first (the old ftell+resize did exactly that
+  // before it knew the length was wrong).
+  {
+    const std::string dir = makeTempDir("c4big");
+    const std::string live = dir + "/" + host::kAppStateFileName;
+    check(writeBytes(live, std::vector<std::uint8_t>()), "C4.13 the oversized record was created");
+    std::error_code ec;
+    std::filesystem::resize_file(live, 64u * 1024u * 1024u, ec);
+    check(!ec && std::filesystem::exists(live), "C4.13 a 64 MiB oversized record was created");
+    AppStateStore store;
+    store.setDirectory(dir);
+    check(store.loadOnce() == StateLoadOutcome::LengthMismatch,
+          "C4.13 an oversized record is a length mismatch");
+    check(store.bytesRead() == 0u, "C4.13 NOTHING was read: the size gate precedes allocation");
+    check(!store.saveAllowed() && store.fileUnadopted(),
+          "C4.13 the oversized file stays protected");
+    removeTree(dir);
+  }
+
+  // C4.14 — the READ boundary itself: bounded to the wire size, and a trailing byte past the record
+  // fails (the fstat size gate is a snapshot, not a lock, so growth after it must still be caught).
+  {
+    const std::string dir = makeTempDir("c4read");
+    std::vector<std::uint8_t> good2;
+    check(encodeState(nonDefaultState(), &good2), "C4.14 the record encoded");
+
+    const std::string exactPath = dir + "/exact";
+    check(writeBytes(exactPath, good2), "C4.14 the exact-size file was written");
+    std::uint64_t readCount = 0u;
+    bool ioError = false;
+    std::vector<std::uint8_t> out;
+    std::FILE* f = std::fopen(exactPath.c_str(), "rb");
+    check(f != nullptr, "C4.14 the exact-size file opened");
+    if (f != nullptr) {
+      const bool ok = AppStateStore::readExactRecord(f, &out, &readCount, &ioError);
+      std::fclose(f);
+      check(ok && !ioError && readCount == kWire,
+            "C4.14 an exact-size record is accepted and exactly that many bytes were read");
+    }
+
+    std::vector<std::uint8_t> grown = good2;
+    grown.push_back(0x5Au);
+    const std::string grownPath = dir + "/grown";
+    check(writeBytes(grownPath, grown), "C4.14 the record with a trailing byte was written");
+    readCount = 0u;
+    f = std::fopen(grownPath.c_str(), "rb");
+    check(f != nullptr, "C4.14 the grown file opened");
+    if (f != nullptr) {
+      const bool ok = AppStateStore::readExactRecord(f, &out, &readCount, &ioError);
+      std::fclose(f);
+      check(!ok && !ioError, "C4.14 a byte BEYOND the record is rejected, not accepted");
+    }
+
+    std::vector<std::uint8_t> shortRec(good2.begin(), good2.begin() + 100);
+    const std::string shortPath = dir + "/short";
+    check(writeBytes(shortPath, shortRec), "C4.14 the short record was written");
+    readCount = 0u;
+    f = std::fopen(shortPath.c_str(), "rb");
+    check(f != nullptr, "C4.14 the short file opened");
+    if (f != nullptr) {
+      const bool ok = AppStateStore::readExactRecord(f, &out, &readCount, &ioError);
+      std::fclose(f);
+      check(!ok && !ioError, "C4.14 a SHORT read is rejected, not accepted");
+    }
+    removeTree(dir);
+  }
 }
 
 // ---- C5 the save failure matrix -------------------------------------------------------------
@@ -862,6 +1014,58 @@ static void c6_multi_instance() {
     if (!core::decode_device_state(bytes.data(), bytes.size(), &d) || !wireEqual(d, b)) alwaysWhole = false;
   }
   check(alwaysWhole, "C6.1 interleaved saves never expose a half-written live file");
+
+  // C6.3/C6.4 — the temp name is CLAIMED, not guessed. steady_clock + an in-process counter cannot
+  // guarantee uniqueness across PROCESSES; the kernel's exclusive create is the arbiter (there is no
+  // lock service and no lock file).
+  {
+    const std::string edir = makeTempDir("c6e");
+    const std::string taken = edir + "/taken";
+    check(writeBytes(taken, std::vector<std::uint8_t>(1u, 0x7Fu)), "C6.3 the colliding path exists");
+    check(!host::app_state_file_ops::reserveExclusiveCreate(taken),
+          "C6.3 exclusive creation refuses a path another owner already holds");
+    const std::string fresh = edir + "/fresh";
+    check(host::app_state_file_ops::reserveExclusiveCreate(fresh),
+          "C6.3 exclusive creation succeeds on a fresh path");
+    check(std::filesystem::exists(std::filesystem::path(fresh)),
+          "C6.3 the reservation really created the file");
+
+    AppStateStore reserved;
+    reserved.setDirectory(edir);
+    const std::string r1 = reserved.reserveTempPath();
+    const std::string r2 = reserved.reserveTempPath();
+    check(!r1.empty() && !r2.empty() && r1 != r2, "C6.4 reserved temp names are distinct");
+    check(std::filesystem::exists(std::filesystem::path(r1)) &&
+              std::filesystem::exists(std::filesystem::path(r2)),
+          "C6.4 each reserved temp name exists on disk (claimed in the kernel)");
+    check(std::filesystem::path(r1).parent_path() ==
+              std::filesystem::path(reserved.livePath()).parent_path(),
+          "C6.4 the reserved temp lives in the live directory");
+    removeTree(edir);
+  }
+
+  // C6.5 — the reservation SPANS the write. At the moment the backend is asked to write, the temp
+  // path it is handed already exists as the empty file WE claimed, so a plain create could not have
+  // been substituted; and the cleanup removes exactly that path, nothing else.
+  {
+    const std::string pdir = makeTempDir("c6p");
+    ReserveProbeFs fs;
+    AppStateStore store;
+    store.setDirectory(pdir);
+    store.setFileOps(fs.ops(), &fs);
+    StandaloneAudioEngine engine;
+    check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "C6.5 the engine prepared");
+    check(store.loadOnce() == StateLoadOutcome::NoFile, "C6.5 a first run reports NoFile");
+    check(store.save(engine) == StateSaveOutcome::FlushFailed, "C6.5 the save failed at the flush");
+    check(fs.existedAtWrite && fs.sizeAtWrite == 0u,
+          "C6.5 the temp was ALREADY reserved (empty file) when the backend was asked to write");
+    check(std::filesystem::path(fs.seenPath).parent_path() ==
+              std::filesystem::path(store.livePath()).parent_path(),
+          "C6.5 the reserved temp lives in the live directory");
+    check(!std::filesystem::exists(std::filesystem::path(fs.seenPath)),
+          "C6.5 the reservation was cleaned up -- exactly the path we took");
+    removeTree(pdir);
+  }
 
   removeTree(dir);
 }

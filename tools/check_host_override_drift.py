@@ -7,7 +7,8 @@ The Lunar24Host must not silently carry two divergent host truths. The repo owns
 pinned iPlug2 submodule TUs (host/iPlug_app_override.cpp of IPlugAPP.cpp, host/
 iPlug_app_host_override.cpp of IPlugAPP_host.cpp). Each fork may differ from upstream ONLY by the
 curated, committed hunks (the Lunar banner + the AppProcess / InitAudio / AudioCallback bodies +
-the failure-invalidation helper). Everything else must be byte-identical to the pinned submodule TU.
+the failure-invalidation helper + the GH#12 task#105 lifecycle hooks in IPlugAPPHost::InitState /
+~IPlugAPPHost). Everything else must be byte-identical to the pinned submodule TU.
 
 The 8B3 review (G5) required EXACT truth here, not a name anchor: the previous anchor-based gate
 let you rewrite an allowlisted function's body arbitrarily (any text anchored to "AppProcess" /
@@ -61,9 +62,16 @@ OVERRIDE = {
 # values. Regenerated only when @Codex rules a legitimate change to a curated hunk; a mutation that
 # silently rewrites an allowlisted body does NOT pass, because it changes the diff (and hence the
 # hash) even though the function name is unchanged.
+#
+# GH#12 task#105 (@Codex msg 97d9f1a2, option A): the "host" hash was regenerated ONCE for the two
+# authorized lifecycle hooks (setStateDirectory handoff in InitState before the settings.ini Append;
+# saveDeviceState after CloseAudio() in ~IPlugAPPHost). The pin, the byte-identity requirement and
+# every other restriction are unchanged -- the new hash still pins the ENTIRE diff, so any third
+# change (including stray whitespace) fails. tools/check_host_engine_wiring.py W16b/W17b assert the
+# two hooks' ORDER/text independently of this hash.
 EXPECTED_DIFF_HASH = {
     "app": "6161896270765f649cfc964d85134178e8c15519997a3c01f272053610c3495e",
-    "host": "8e46b85646917044c8e8f16bdfff8aee87becdaf04f403cec09defeefa81d36f",
+    "host": "65d1ba34e6aad7b5fd89d579167f0a23408662319a315929ec6231f068ce583e",
 }
 
 # Function names (as "Class::func") that the curated diff is allowed to touch, per file. A region
@@ -74,7 +82,8 @@ EXPECTED_DIFF_HASH = {
 ALLOWED = {
     "app": {"", "IPlugAPP::AppProcess"},
     "host": {"", "IPlugAPPHost::InitAudio", "IPlugAPPHost::AudioCallback",
-             "IPlugAPPHost::TryToChangeAudio"},
+             "IPlugAPPHost::TryToChangeAudio", "IPlugAPPHost::InitState",
+             "IPlugAPPHost::~IPlugAPPHost"},
 }
 
 failures = []

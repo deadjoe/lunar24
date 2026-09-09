@@ -43,14 +43,28 @@
 #                                 SkippedNoConfig (mandate §5 "no successful legal config -> don't
 #                                 write").
 #
-# HELD controls (NOT run here; reported, never counted as a pass):
-#   9. exit_call_missing / exit_call_before_closeaudio — both are structural mutations of
-#      host/iPlug_app_host_override.cpp (~IPlugAPPHost) and are judged by the W16 static gate.
-#      That file's upstream->fork diff is pinned whole by tools/check_host_override_drift.py
-#      (PIN + EXPECTED_DIFF_HASH["host"]), and the gate's own rule reserves regeneration of that
-#      hash to an @Codex ruling on a curated hunk. The hunk is written and ready; it is HELD
-#      pending that ruling (msg 1bc54368). `--require-all` turns the held controls fatal so the
-#      complete state can be enforced once the ruling lands.
+# Added for @Codex 0c9ea88d / d5f6a520 (the three ordered revisions):
+#   9. save_gate_reopened_by_session_publish — the sticky adoption verdict is replaced by "any
+#                                 Accepted publish re-opens the gate", which is exactly the reported
+#                                 hole: a later successful device reopen (default config) un-protects a
+#                                 file this session refused, and the exit save overwrites it.
+#  10. oversized_allocated_before_size_gate — the fstat size gate is disabled, so an oversized record
+#                                 is read before the length verdict instead of being refused first.
+#  11. trailing_byte_accepted  — the read boundary stops probing for a byte beyond the record, so a
+#                                 file that grew after the (snapshot) size gate is accepted as exact.
+#  12. temp_reserve_not_exclusive — the temp name is still created but no longer claimed EXCLUSIVELY,
+#                                 so a colliding name is silently shared with another process.
+#
+# Structural controls (2, judged by the W16b wiring invariants — NOT by the C++ acceptance):
+#  13. exit_call_missing        — ~IPlugAPPHost never calls the plugin's exit save, so the lifecycle
+#                                 save silently disappears from the host.
+#  14. exit_call_before_closeaudio — the save is moved BEFORE CloseAudio(), i.e. it runs while the
+#                                 audio callback may still be live (mandate §5 order).
+# Both mutate host/iPlug_app_host_override.cpp. That file's whole upstream->fork diff is pinned by
+# tools/check_host_override_drift.py, so a control NEVER edits the product file: it builds a shadow
+# repo (a real copy of tools/check_host_engine_wiring.py + a symlink farm to the rest of the tree,
+# with the mutated override as the only real content) and runs the gate there. @Codex msg 97d9f1a2
+# authorized the two hunks and the matching drift-hash update, which un-HELD these controls.
 #
 # POSIX-only (the driver invokes the compiler); on Windows the acceptance test still runs.
 #
@@ -62,6 +76,7 @@
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -70,6 +85,22 @@ TEST_SRC = os.path.join("tests", "host", "test_app_state_store.cpp")
 
 # (repo-relative source, include-relative shadow path) for each mutated production source.
 STORE = ("host/include/host/app_state_store.h", "host/app_state_store.h")
+
+# The structural controls mutate the APP host TU and are judged by the W16b wiring invariants. The
+# shadow repo needs the gate itself (a REAL copy: Path(__file__).resolve() must stay inside the
+# shadow root, or the gate would re-read the product tree and the mutation would be invisible) and
+# every file the gate reads (symlinks: the gate only reads text).
+HOST_OVR = os.path.join("host", "iPlug_app_host_override.cpp")
+GATE_TOOL = os.path.join("tools", "check_host_engine_wiring.py")
+GATE_INPUTS = [
+    "host/plugin.h",
+    "host/plugin.cpp",
+    "host/include/host/standalone_audio_engine.h",
+    "host/iPlug_app_override.cpp",
+    "host/config.h",
+    "host/include/host/stream_plan.h",
+    "host/include/host/app_state_store.h",
+]
 
 FAIL_SUMMARY_RE = re.compile(r"^\[app state store\] (\d+)/(\d+) checks FAILED", re.M)
 OK_SUMMARY_RE = re.compile(r"^\[app state store\] (\d+) checks OK", re.M)
@@ -186,6 +217,13 @@ SAVE_RESULT_SWITCH = (
     "    const SaveResult result = lunar24::core::save_state_atomic(wire.data(), written, "
     "temp.c_str(),\n"
     "                                                              live.c_str(), ops_, opsCtx_);\n"
+    "    if (result != SaveResult::ok) {\n"
+    "      // The backend's discardFile is the backend's own cleanup; this only drops the reservation "
+    "WE\n"
+    "      // took, and only for the exact path we reserved (never a pattern, never another "
+    "instance's).\n"
+    "      app_state_file_ops::realDiscardFile(nullptr, temp.c_str());\n"
+    "    }\n"
     "    switch (result) {\n"
     "      case SaveResult::ok: return StateSaveOutcome::Saved;\n"
     "      case SaveResult::flush_failed: return StateSaveOutcome::FlushFailed;\n"
@@ -202,8 +240,79 @@ def mut_save_result_swallowed(text, name):
                     "written, temp.c_str(),\n"
                     "                                                              live.c_str(), "
                     "ops_, opsCtx_);\n"
+                    "    if (result != SaveResult::ok) {\n"
+                    "      app_state_file_ops::realDiscardFile(nullptr, temp.c_str());\n"
+                    "    }\n"
                     "    (void)result;  // MUTATION: save_result_swallowed — always Saved.\n"
                     "    return StateSaveOutcome::Saved;\n",
+                    name)
+
+
+STICKY_ADOPTION = ("      if (origin == PendingOrigin::FromFile && !fileUnadopted_) {\n"
+                   "        saveAllowed_ = true;  // the file was adopted by the REAL candidate\n"
+                   "      }\n")
+
+
+def mut_save_gate_reopened_by_session_publish(text, name):
+    """The adoption verdict stops being sticky: any Accepted publish re-opens the exit save. This is
+    @Codex 0c9ea88d's reproduced hole — the file is refused, the gate closes, a device reopen publishes
+    the DEFAULT config as a successful FromSession publish, and the exit save overwrites the file."""
+    return _replace(text, STICKY_ADOPTION,
+                    "      // MUTATION: save_gate_reopened_by_session_publish — a successful publish\n"
+                    "      // of ANY origin lifts the protection again.\n"
+                    "      if (loadOutcome_ == StateLoadOutcome::Ok) {\n"
+                    "        saveAllowed_ = true;\n"
+                    "      }\n",
+                    name)
+
+
+SIZE_GATE = ("    if (static_cast<std::uintmax_t>(st.st_size) !=\n"
+             "        static_cast<std::uintmax_t>(kAppStateWireBytes)) {\n")
+
+
+def mut_oversized_allocated_before_size_gate(text, name):
+    """The pre-allocation size gate is gone: an oversized record is read (and allocated) in full
+    before the length verdict, instead of being refused by the fstat snapshot first."""
+    return _replace(text, SIZE_GATE,
+                    "    // MUTATION: oversized_allocated_before_size_gate — the size gate is "
+                    "disabled.\n"
+                    "    if (false) {\n",
+                    name)
+
+
+TRAILING_PROBE = ("    const int extra = (got == out->size()) ? std::fgetc(f) : EOF;\n"
+                  "    *ioError = std::ferror(f) != 0;\n"
+                  "    return !*ioError && got == out->size() && extra == EOF;\n")
+
+
+def mut_trailing_byte_accepted(text, name):
+    """The read boundary stops probing past the record: a file that grew after the fstat snapshot is
+    accepted as an exact record instead of being refused."""
+    return _replace(text, TRAILING_PROBE,
+                    "    const int extra = (got == out->size()) ? std::fgetc(f) : EOF;\n"
+                    "    *ioError = std::ferror(f) != 0;\n"
+                    "    // MUTATION: trailing_byte_accepted — the extra-byte probe is dropped.\n"
+                    "    (void)extra;\n"
+                    "    return !*ioError && got == out->size();\n",
+                    name)
+
+
+EXCL_POSIX = "  const int fd = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0666);\n"
+EXCL_WIN = ("  if (_sopen_s(&fd, path.c_str(), _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY, "
+            "_SH_DENYRW,\n")
+
+
+def mut_temp_reserve_not_exclusive(text, name):
+    """The temp name is still created, but not claimed EXCLUSIVELY: a colliding name is silently
+    shared with another process instead of being refused by the kernel."""
+    text = _replace(text, EXCL_POSIX,
+                    "  // MUTATION: temp_reserve_not_exclusive — no O_EXCL.\n"
+                    "  const int fd = ::open(path.c_str(), O_CREAT | O_WRONLY, 0666);\n",
+                    name)
+    return _replace(text, EXCL_WIN,
+                    "  // MUTATION: temp_reserve_not_exclusive — no _O_EXCL.\n"
+                    "  if (_sopen_s(&fd, path.c_str(), _O_CREAT | _O_WRONLY | _O_BINARY, "
+                    "_SH_DENYRW,\n",
                     name)
 
 
@@ -218,7 +327,83 @@ MUTATIONS = {
     "save_result_swallowed": (STORE[0], STORE[1], mut_save_result_swallowed),
     "save_writes_default_without_legal_config": (STORE[0], STORE[1],
                                                  mut_save_writes_default_without_legal_config),
+    "save_gate_reopened_by_session_publish": (STORE[0], STORE[1],
+                                              mut_save_gate_reopened_by_session_publish),
+    "oversized_allocated_before_size_gate": (STORE[0], STORE[1],
+                                             mut_oversized_allocated_before_size_gate),
+    "trailing_byte_accepted": (STORE[0], STORE[1], mut_trailing_byte_accepted),
+    "temp_reserve_not_exclusive": (STORE[0], STORE[1], mut_temp_reserve_not_exclusive),
 }
+
+# ---- structural mutations of the APP host TU (judged by the W16b wiring invariants) -------------
+#
+# The two anchors are the delivered product text: the exit-save call line, and the destructor's
+# `mExiting = true;` / `CloseAudio();` opening. `_replace` fails LOUDLY if either drifts, so a control
+# can never silently become a no-op.
+EXIT_SAVE_LINE = "  static_cast<LunarHostPlugin*>(GetPlug())->saveDeviceState();\n"
+DTOR_OPEN = "  mExiting = true;\n  \n  CloseAudio();\n"
+
+
+def mut_exit_call_missing(text, name):
+    """The host never calls the plugin's exit save: the lifecycle save is gone from the product."""
+    return _replace(text, EXIT_SAVE_LINE, "", name)
+
+
+def mut_exit_call_before_closeaudio(text, name):
+    """The save is moved BEFORE CloseAudio(): it runs while the audio callback may still be live."""
+    text = _replace(text, EXIT_SAVE_LINE, "", name)
+    return _replace(text, DTOR_OPEN,
+                    "  mExiting = true;\n"
+                    "\n"
+                    "  // MUTATION: exit_call_before_closeaudio — the exit save runs before the\n"
+                    "  // audio callback is quiesced.\n"
+                    + EXIT_SAVE_LINE +
+                    "  CloseAudio();\n",
+                    name)
+
+
+# name -> (transform, must_fail, must_pass). `must_fail` = the W16b invariants this mutation is
+# DESIGNED to break; `must_pass` = invariants that must still hold (specificity: the mutation is one
+# ordering/presence defect, not a gate crash).
+STRUCTURAL = {
+    "exit_call_missing": (
+        mut_exit_call_missing,
+        ["W16b exit save is a plugin delegate",
+         "W16b exit save runs AFTER CloseAudio() returns",
+         "W16b exit save runs before the remaining member teardown",
+         "W16b the host override calls saveDeviceState exactly once"],
+        ["W16b ~IPlugAPPHost body present",
+         "W16b no file IO in the destructor body"],
+    ),
+    "exit_call_before_closeaudio": (
+        mut_exit_call_before_closeaudio,
+        ["W16b exit save runs AFTER CloseAudio() returns"],
+        ["W16b ~IPlugAPPHost body present",
+         "W16b exit save is a plugin delegate",
+         "W16b exit save runs before the remaining member teardown",
+         "W16b no file IO in the destructor body",
+         "W16b the host override calls saveDeviceState exactly once"],
+    ),
+}
+
+# Every W16b/W17b invariant that MUST have actually run in the structural positive control (the
+# unmutated shadow tree). A mutation going red is only evidence if the neighbouring invariants really
+# executed; this is the structural analogue of REQUIRED_GREEN.
+STRUCTURAL_REQUIRED_GREEN = [
+    "W16b ~IPlugAPPHost body present",
+    "W16b exit save is a plugin delegate",
+    "W16b exit save runs AFTER CloseAudio() returns",
+    "W16b exit save runs before the remaining member teardown",
+    "W16b no file IO in the destructor body",
+    "W16b the host override calls saveDeviceState exactly once",
+    "W17b InitState body present",
+    "W17b handoff happens after the platform directory resolution",
+    'W17b handoff happens BEFORE Append("settings.ini") mutates mINIPath',
+    "W17b handoff passes the resolved mINIPath",
+    "W17b host calls setStateDirectory exactly once",
+    "W17b host never names the state file",
+]
+
 
 # Criteria that MUST have actually run in the retention positive control — each is one exact label
 # the unmutated acceptance prints as a PASS line. A criterion that silently stopped executing can
@@ -241,6 +426,15 @@ REQUIRED_GREEN = [
     "C7.1 rendering performed no file operation at all",
     "C8.1 the retained legal config is the save source when no owner exists",
     "C8.2 no successful legal config means NO write",
+    # @Codex 0c9ea88d / d5f6a520: the sticky adoption verdict, the pre-allocation size gate, the
+    # extra-byte read boundary and the EXCLUSIVE temp claim.
+    "C4.11 the refusal closed the lifecycle save gate",
+    "C4.12 a successful FromSession publish did NOT re-open the gate",
+    "C4.12 the refused file is preserved byte-for-byte across device reopens",
+    "C4.13 NOTHING was read: the size gate precedes allocation",
+    "C4.14 a byte BEYOND the record is rejected, not accepted",
+    "C6.3 exclusive creation refuses a path another owner already holds",
+    "C6.5 the temp was ALREADY reserved (empty file) when the backend was asked to write",
 ]
 
 # Single-source controls. `must_fail` = the label this mutation is DESIGNED to break;
@@ -298,20 +492,41 @@ SINGLE = {
         # The retained-config source is untouched: with a pending it still writes THAT.
         "must_pass": ["C8.1 the retained legal config is the save source when no owner exists"],
     },
+    # @Codex 0c9ea88d's reproduced hole: refusal -> gate closed -> device reopen publishes the
+    # DEFAULT config successfully -> the exit save overwrites the refused file.
+    "save_gate_reopened_by_session_publish": {
+        "must_fail": ["C4.12 a successful FromSession publish did NOT re-open the gate"],
+        "also_fail": ["C4.12 the refused file is preserved byte-for-byte across device reopens",
+                      "C4.11 the exit save refused to touch the refused file"],
+        # The refusal itself still closes the gate; only the later reopen re-opens it.
+        "must_pass": ["C4.11 the refusal closed the lifecycle save gate"],
+    },
+    # The size gate is the ONLY pre-allocation refusal for an oversized record; the bounded read
+    # still turns the file into a typed LengthMismatch, so the mutation is observed by the ordering
+    # criterion alone (that is precisely the @Codex d5f6a520 requirement).
+    "oversized_allocated_before_size_gate": {
+        "must_fail": ["C4.13 NOTHING was read: the size gate precedes allocation"],
+        "must_pass": ["C4.13 an oversized record is a length mismatch",
+                      "C4.13 the oversized file stays protected"],
+    },
+    # fstat is a snapshot, not a lock: the extra-byte probe is the only thing that catches a file
+    # that grew after the size gate (the oversized case is already refused by that gate).
+    "trailing_byte_accepted": {
+        "must_fail": ["C4.14 a byte BEYOND the record is rejected, not accepted"],
+        "must_pass": ["C4.14 an exact-size record is accepted and exactly that many bytes were read",
+                      "C4.14 a SHORT read is rejected, not accepted"],
+    },
+    # The temp is still created (so the save path still works) but no longer claimed exclusively:
+    # the collision with another owner is the defect.
+    "temp_reserve_not_exclusive": {
+        "must_fail": ["C6.3 exclusive creation refuses a path another owner already holds"],
+        "must_pass": ["C6.3 exclusive creation succeeds on a fresh path",
+                      "C6.3 the reservation really created the file",
+                      "C6.4 each reserved temp name exists on disk (claimed in the kernel)",
+                      "C6.5 the temp was ALREADY reserved (empty file) when the backend was asked "
+                      "to write"],
+    },
 }
-
-# Controls that cannot run yet, with the exact reason. They are REPORTED, never counted as passes.
-HELD = {
-    "exit_call_missing": (
-        "structural mutation of host/iPlug_app_host_override.cpp (~IPlugAPPHost) judged by the W16 "
-        "static gate; that file's whole upstream->fork diff is pinned by "
-        "tools/check_host_override_drift.py (PIN + EXPECTED_DIFF_HASH[\"host\"]), whose own rule "
-        "reserves regeneration to an @Codex ruling — HELD on msg 1bc54368"),
-    "exit_call_before_closeaudio": (
-        "same file / same pinned-diff blocker as exit_call_missing: moving the save call before "
-        "CloseAudio() is a second hunk in the same pinned diff"),
-}
-
 
 class Observation:
     """One build-and-run of the acceptance, parsed AND cross-checked.
@@ -407,6 +622,103 @@ def judge_green(obs, must_pass):
     return problems
 
 
+# ---- structural controls: the W16b wiring gate as the behaviour detector -------------------------
+
+GATE_HEADER = "check_host_engine_wiring"
+GATE_FAIL_SUMMARY_RE = re.compile(r"^  (\d+) wiring invariant\(s\) FAILED$", re.M)
+GATE_OK_SUMMARY_RE = re.compile(r"^  all host wiring invariants PASS$", re.M)
+
+
+class GateObservation:
+    """One run of tools/check_host_engine_wiring.py on a shadow tree, parsed AND cross-checked.
+
+    Same trust model as `Observation`: a control is evidence only if the gate ran to a COMPLETE
+    termination on a tree that really contained the mutation. A traceback (unreadable/missing file),
+    a signal exit, or a summary that disagrees with the printed lines is NOT a red control."""
+
+    def __init__(self, res):
+        self.rc = res.get("rc")
+        self.passed = []
+        self.failed = []
+        self.summary = None
+        self.failed_count = None
+        self.problems = []
+
+        if res.get("error") is not None:
+            self.problems.append("the wiring gate could not be launched (%s)" % res["error"])
+            return
+
+        out = res.get("out", "")
+        if GATE_HEADER not in out:
+            self.problems.append("the wiring gate never printed its header — it did not run")
+        for line in out.splitlines():
+            if line.startswith("  PASS  "):
+                self.passed.append(line[len("  PASS  "):].strip())
+            elif line.startswith("  FAIL  "):
+                self.failed.append(line[len("  FAIL  "):].strip())
+
+        m = GATE_FAIL_SUMMARY_RE.search(out)
+        if m:
+            self.summary = "failed"
+            self.failed_count = int(m.group(1))
+        elif GATE_OK_SUMMARY_RE.search(out):
+            self.summary = "ok"
+            self.failed_count = 0
+        else:
+            self.problems.append("the wiring gate printed NO complete termination summary "
+                                 "(neither 'N wiring invariant(s) FAILED' nor "
+                                 "'all host wiring invariants PASS')")
+
+        if self.summary == "failed" and self.failed_count != len(self.failed):
+            self.problems.append("the summary claims %d failed invariants but %d FAIL lines were "
+                                 "printed (truncated / interleaved output)"
+                                 % (self.failed_count, len(self.failed)))
+        if self.summary == "ok" and self.failed:
+            self.problems.append("the gate reports all invariants PASS but also printed FAIL lines")
+
+        if self.rc is None:
+            self.problems.append("no exit code was observed")
+        elif self.rc < 0:
+            self.problems.append("the gate was killed by signal %d (NOT a red control)" % -self.rc)
+        elif self.rc > 1:
+            self.problems.append("the gate exited %d (a normal red gate exits exactly 1; a crash is "
+                                 "NOT a red control)" % self.rc)
+
+    def trusted(self):
+        return not self.problems
+
+
+def judge_gate_red(obs, must_fail, must_pass):
+    """A red structural control must be TRUSTED, exit exactly 1, and hit exactly the named labels."""
+    problems = list(obs.problems)
+    if obs.rc != 1:
+        problems.append("exit code is %s, not exactly 1" % (obs.rc,))
+    if obs.summary != "failed":
+        problems.append("no 'N wiring invariant(s) FAILED' termination summary")
+    for want in must_fail:
+        if not any(want in l for l in obs.failed):
+            problems.append("the expected RED invariant did not appear as a FAIL line: '%s'" % want)
+    for want in must_pass:
+        if not any(want in l for l in obs.passed):
+            problems.append("the invariant that must still HOLD never printed a PASS line: '%s'"
+                            % want)
+    return problems
+
+
+def judge_gate_green(obs, must_pass):
+    problems = list(obs.problems)
+    if obs.rc != 0:
+        problems.append("exit code is %s, not 0" % (obs.rc,))
+    if obs.summary != "ok":
+        problems.append("no 'all host wiring invariants PASS' termination summary")
+    if obs.failed:
+        problems.append("%d FAIL lines in the structural positive control" % len(obs.failed))
+    for want in must_pass:
+        if not any(want in l for l in obs.passed):
+            problems.append("invariant did not run (no PASS line): '%s'" % want)
+    return problems
+
+
 def _synth(rc, passed, failed, summary="failed", total=None, failed_count=None,
            compile_error=None):
     """Build a synthetic build-and-run result for the judge's own self-check."""
@@ -423,6 +735,19 @@ def _synth(rc, passed, failed, summary="failed", total=None, failed_count=None,
         out += "[app state store] %d checks OK\n" % (
             len(passed) if total is None else total)
     return {"rc": rc, "out": out, "err": err}
+
+
+def _synth_gate(rc, passed, failed, summary="failed", failed_count=None, header=True):
+    """Build a synthetic wiring-gate run for the structural judge's own self-check."""
+    out = (GATE_HEADER + "\n") if header else ""
+    out += "".join("  PASS  %s\n" % l for l in passed)
+    out += "".join("  FAIL  %s\n" % l for l in failed)
+    if summary == "failed":
+        out += "  %d wiring invariant(s) FAILED\n" % (
+            len(failed) if failed_count is None else failed_count)
+    elif summary == "ok":
+        out += "  all host wiring invariants PASS\n"
+    return {"rc": rc, "out": out, "err": ""}
 
 
 # (kind, name, synthetic result, must_fail, must_pass, the judge MUST report problems).
@@ -455,6 +780,64 @@ SELF_CHECK = [
      _synth(0, ["C1.1 ok"], ["C2.5 the label"], summary="ok"), [], ["C1.1 ok"], True),
     ("green", "a green run whose criterion never ran is rejected",
      _synth(0, ["something"], [], summary="ok"), [], ["C1.1 ok"], True),
+]
+
+# The structural judge gets its own self-check: every entry is a way it could bless a broken
+# structural control (or reject a good one).
+SELF_CHECK_GATE = [
+    ("red", "a clean red gate run that hits its invariant is TRUSTED",
+     _synth_gate(1, ["W16b no file IO in the destructor body"],
+                 ["W16b exit save runs AFTER CloseAudio() returns"]),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], False),
+    ("red", "a gate that exits 0 is not a red control",
+     _synth_gate(0, ["W16b no file IO in the destructor body"],
+                 ["W16b exit save runs AFTER CloseAudio() returns"], summary="ok"),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], True),
+    ("red", "a gate killed by a signal is rejected",
+     _synth_gate(-11, ["W16b no file IO in the destructor body"],
+                 ["W16b exit save runs AFTER CloseAudio() returns"]),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], True),
+    ("red", "a gate that crashed (exit >1) is rejected",
+     _synth_gate(2, ["W16b no file IO in the destructor body"],
+                 ["W16b exit save runs AFTER CloseAudio() returns"]),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], True),
+    ("red", "a gate run with no termination summary is rejected",
+     _synth_gate(1, ["W16b no file IO in the destructor body"],
+                 ["W16b exit save runs AFTER CloseAudio() returns"], summary=None),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], True),
+    ("red", "a summary that disagrees with the printed FAIL count is rejected",
+     _synth_gate(1, ["W16b no file IO in the destructor body"],
+                 ["W16b exit save runs AFTER CloseAudio() returns"], failed_count=4),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], True),
+    ("red", "a gate that never printed its header (did not run) is rejected",
+     _synth_gate(1, ["W16b no file IO in the destructor body"],
+                 ["W16b exit save runs AFTER CloseAudio() returns"], header=False),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], True),
+    ("red", "a missing expected RED invariant is rejected",
+     _synth_gate(1, ["W16b no file IO in the destructor body"], ["something else"]),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], True),
+    ("red", "residual-only FAIL (the must-hold invariant never ran) is rejected",
+     _synth_gate(1, [], ["W16b exit save runs AFTER CloseAudio() returns"]),
+     ["W16b exit save runs AFTER CloseAudio() returns"],
+     ["W16b no file IO in the destructor body"], True),
+    ("green", "a clean green gate run is accepted",
+     _synth_gate(0, ["W16b no file IO in the destructor body"], [], summary="ok"),
+     [], ["W16b no file IO in the destructor body"], False),
+    ("green", "a green gate run with a FAIL line is rejected",
+     _synth_gate(0, ["W16b no file IO in the destructor body"],
+                 ["W16b exit save runs AFTER CloseAudio() returns"], summary="ok"),
+     [], ["W16b no file IO in the destructor body"], True),
+    ("green", "a green gate run whose invariant never ran is rejected",
+     _synth_gate(0, ["something"], [], summary="ok"), [], ["W16b no file IO in the destructor body"],
+     True),
 ]
 
 
@@ -495,13 +878,54 @@ def build_and_run(root, compiler, shadow_texts):
         return {"rc": run.returncode, "out": run.stdout, "err": run.stderr}
 
 
+def build_shadow_repo(root, td, override_text):
+    """Build a shadow repo the wiring gate can run in: a REAL copy of the gate (so
+    Path(__file__).resolve() stays inside the shadow root — a symlinked gate would resolve back to
+    the product tree and the mutation would be invisible), the mutated override as the only real
+    content, and symlinks for every other file the gate reads."""
+    shadow = os.path.join(td, "repo")
+    root = os.path.abspath(root)  # symlink targets must be absolute (a relative target resolves
+                                  # against the link's own directory, not the process cwd)
+    os.makedirs(os.path.join(shadow, "tools"))
+    shutil.copy2(os.path.join(root, GATE_TOOL), os.path.join(shadow, GATE_TOOL))
+    dest = os.path.join(shadow, HOST_OVR)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "w") as fh:
+        fh.write(override_text)
+    for rel in GATE_INPUTS:
+        dst = os.path.join(shadow, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        os.symlink(os.path.join(root, rel), dst)
+    return shadow
+
+
+def run_wiring_gate(root, mutate):
+    """Run the wiring gate on a shadow tree whose host override is (optionally) mutated."""
+    try:
+        with open(os.path.join(root, HOST_OVR)) as fh:
+            text = fh.read()
+    except OSError as exc:
+        return {"error": str(exc)}
+    if mutate is not None:
+        text = mutate(text, "structural")
+    with tempfile.TemporaryDirectory() as td:
+        shadow = build_shadow_repo(root, td, text)
+        try:
+            proc = subprocess.run([sys.executable, os.path.join(shadow, GATE_TOOL)],
+                                  capture_output=True, text=True, timeout=300)
+        except OSError as exc:
+            return {"error": str(exc)}
+        return {"rc": proc.returncode, "out": proc.stdout, "err": proc.stderr}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=".")
     ap.add_argument("--compiler", default=None)
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--require-all", action="store_true",
-                    help="treat the HELD controls as fatal (use once the drift ruling lands)")
+                    help="fail if any control is HELD (all 14 controls now run: 12 acceptance + 2 "
+                         "structural)")
     args = ap.parse_args()
 
     root = os.path.abspath(args.root)
@@ -521,6 +945,13 @@ def main():
         got = bool(problems)
         detail = "" if got == want_problems else "  -> got %s" % (problems or "no problems")
         check(got == want_problems, "self-check (%s): %s%s" % (kind, name, detail))
+    for kind, name, res, must_fail, must_pass, want_problems in SELF_CHECK_GATE:
+        obs = GateObservation(res)
+        problems = judge_gate_red(obs, must_fail, must_pass) if kind == "red" \
+            else judge_gate_green(obs, must_pass)
+        got = bool(problems)
+        detail = "" if got == want_problems else "  -> got %s" % (problems or "no problems")
+        check(got == want_problems, "self-check (gate %s): %s%s" % (kind, name, detail))
     if not ok:
         print("\nOVERALL: FAIL (the judge itself is not trustworthy; no control was run)")
         return 1
@@ -551,12 +982,34 @@ def main():
             for l in obs.failed:
                 print("        FAIL: %s" % l)
 
-    print("\n== HELD CONTROLS (reported, never counted as passes) ==")
-    for name, why in HELD.items():
-        print("  HELD %s — %s" % (name, why))
+    print("\n== STRUCTURAL POSITIVE CONTROL (unmutated shadow tree) ==")
+    base = GateObservation(run_wiring_gate(root, None))
+    problems = judge_gate_green(base, STRUCTURAL_REQUIRED_GREEN)
+    check(not problems, "the unmutated shadow tree is GREEN under the wiring gate (rc=0, complete "
+                        "summary, every W16b/W17b invariant printed a PASS line)")
+    for p in problems:
+        print("        %s" % p)
+    if problems:
+        print("\nOVERALL: FAIL (the structural baseline is not green; its controls are meaningless)")
+        return 1
+
+    print("\n== STRUCTURAL NEGATIVE CONTROLS (shadow copy of the wiring gate) ==")
+    for name, (mutate, must_fail, must_pass) in STRUCTURAL.items():
+        obs = GateObservation(run_wiring_gate(root, mutate))
+        problems = judge_gate_red(obs, must_fail, must_pass)
+        check(not problems, "%s: the wiring gate is RED for the named reason (rc=1, complete "
+                            "summary, expected FAIL invariant present)" % name)
+        for p in problems:
+            print("        %s" % p)
+        if args.verbose:
+            for l in obs.failed:
+                print("        FAIL: %s" % l)
+
     if args.require_all:
-        check(False, "every control must run (--require-all): %d control(s) are still HELD"
-              % len(HELD))
+        # No control may be silently skipped: 12 acceptance controls + 2 structural controls.
+        check(len(SINGLE) == 12 and len(STRUCTURAL) == 2,
+              "--require-all: all 14 controls ran (%d acceptance + %d structural)"
+              % (len(SINGLE), len(STRUCTURAL)))
 
     print("\nOVERALL:", "PASS" if ok else "FAIL")
     return 0 if ok else 1

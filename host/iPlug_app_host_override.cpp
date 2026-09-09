@@ -92,6 +92,13 @@ IPlugAPPHost::~IPlugAPPHost()
   
   CloseAudio();
   
+  // GH#12 task#105: the lifecycle exit save. CloseAudio() has returned, so the audio callback is
+  // quiesced; the plugin (mIPlug, declared first and therefore destroyed last) is still alive. The
+  // call is a pure delegate to the narrow state store -- no file logic in this destructor body and
+  // nothing in the audio callback. It writes only when a successful legal config exists, so a file
+  // that was present but unusable is never overwritten.
+  static_cast<LunarHostPlugin*>(GetPlug())->saveDeviceState();
+
   if (mMidiIn)
     mMidiIn->cancelCallback();
 
@@ -147,6 +154,13 @@ bool IPlugAPPHost::InitState()
 #else
   #error NOT IMPLEMENTED
 #endif
+
+  // GH#12 task#105: hand the ALREADY-RESOLVED per-user settings directory to the plugin. This must
+  // happen BEFORE any Append("settings.ini") below mutates mINIPath, and the plugin must never
+  // re-derive it (this is the one resolution point the APP host owns). The store only records the
+  // directory: a not-yet-created directory is fine (the read reports NoFile, never a silent
+  // fallback to cwd or another directory).
+  static_cast<LunarHostPlugin*>(GetPlug())->setStateDirectory(mINIPath.Get());
 
   struct stat st;
 

@@ -12,10 +12,14 @@
 //     `canonicalState() == nullptr` (that is also true after a failed prepare());
 //   * the pending transfer payload, captured BEFORE prepare() releases the owner, so a device
 //     reopen can never fall back to the power-on default or re-read the disk;
-//   * the lifecycle-save gate: ONLY a missing file or a successfully adopted file may be written.
-//     A file that was present but unusable is preserved byte-for-byte and never overwritten;
+//   * the lifecycle-save gate: ONLY a missing file or a file the REAL candidate ADOPTED may be
+//     written. A file that was present but not adopted (bad format, IO failure, or a graph the
+//     engine refuses) is preserved byte-for-byte and never overwritten, and that verdict is STICKY
+//     for the whole session: a later successful FromSession publish (the default config after a
+//     device reopen) must never re-open the gate over a file this session failed to adopt;
 //   * the real platform FileOps (complete-write check / flush+close result / same-directory
-//     atomic replace / best-effort temp cleanup).
+//     atomic replace / best-effort temp cleanup), with the temp name claimed by EXCLUSIVE creation
+//     (O_CREAT|O_EXCL) so two PROCESSES cannot share it -- there is no lock service.
 //
 // It performs NO file IO on the audio path, and it holds NO second editable state bank: once a
 // pending restore is published, the engine's canonical state is the single authority.
@@ -39,8 +43,13 @@
 #include <vector>
 
 #if defined(_WIN32)
+#include <fcntl.h>
 #include <io.h>
+#include <share.h>
+#include <sys/stat.h>
 #else
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -64,8 +73,11 @@ using lunar24::core::StateValidationResult;
 // never a section inside it: the iPlug2 INI writer owns settings.ini and rewrites it wholesale.
 inline constexpr const char* kAppStateFileName = "lunar24-state.bin";
 // Temp files live in the SAME directory (the rename must stay intra-volume) and carry a unique
-// suffix so two instances never share a temp name. There is no lock service and no lock file.
+// suffix. Uniqueness across PROCESSES is not assumed from the name: the name is claimed by exclusive
+// creation. There is no lock service and no lock file.
 inline constexpr const char* kAppStateTempStem = "lunar24-state.bin.tmp-";
+// How many fresh candidate names to try when another process wins the exclusive-create race.
+inline constexpr int kTempReserveAttempts = 16;
 
 // The exact wire size this host accepts. Core's decode only rejects `size < totalBytesHint`; the
 // APP host is stricter on purpose (an exact-equality gate), so a truncated OR grown file is
@@ -105,12 +117,56 @@ enum class StateSaveOutcome : std::uint8_t {
 // test, so the round trip is exercised through the SAME code the APP runs.
 namespace app_state_file_ops {
 
-// Complete-write check: a short fwrite is a FAILURE even if the OS accepted the prefix. The close
-// result is part of the verdict (a failed close can lose buffered bytes).
+// Claim `path` by EXCLUSIVE creation (O_CREAT|O_EXCL). steady_clock + an in-process counter cannot
+// guarantee uniqueness across PROCESSES; the kernel's exclusive create is the only portable arbiter,
+// and it is what the store uses instead of a lock service or lock file. Returns false when the name
+// is already taken (another instance won) or the directory is unusable.
+inline bool reserveExclusiveCreate(const std::string& path) {
+#if defined(_WIN32)
+  int fd = -1;
+  if (_sopen_s(&fd, path.c_str(), _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY, _SH_DENYRW,
+               _S_IREAD | _S_IWRITE) != 0)
+    return false;
+  _close(fd);
+  return true;
+#else
+  const int fd = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0666);
+  if (fd < 0) return false;
+  ::close(fd);
+  return true;
+#endif
+}
+
+// st_mode -> "is a regular file", portable across the two stat flavours the loader uses.
+inline bool statModeIsRegularFile(int mode) {
+#if defined(_WIN32)
+  return (mode & _S_IFMT) == _S_IFREG;
+#else
+  return S_ISREG(mode);
+#endif
+}
+
+// Write into an ALREADY-RESERVED temp file. The temp name is claimed by reserveExclusiveCreate
+// BEFORE this call, so this NEVER creates a file: "r+b" fails when the reservation is missing, which
+// is what makes the exclusivity span the write instead of being a pre-check a plain create could
+// bypass. The file is truncated to exactly the record length first, so a stale longer temp can never
+// leave trailing bytes. Complete-write check: a short fwrite is a FAILURE even if the OS accepted the
+// prefix. The close result is part of the verdict (a failed close can lose buffered bytes).
 inline bool realWriteFile(void* ctx, const char* path, const std::uint8_t* bytes, std::size_t n) {
   (void)ctx;
-  std::FILE* f = std::fopen(path, "wb");
+  std::FILE* f = std::fopen(path, "r+b");
   if (!f) return false;
+#if defined(_WIN32)
+  if (_chsize_s(_fileno(f), 0) != 0) {
+    std::fclose(f);
+    return false;
+  }
+#else
+  if (::ftruncate(::fileno(f), 0) != 0) {
+    std::fclose(f);
+    return false;
+  }
+#endif
   const std::size_t wrote = (n == 0) ? 0u : std::fwrite(bytes, 1u, n, f);
   const int closed = std::fclose(f);
   return wrote == n && closed == 0;
@@ -186,7 +242,8 @@ class AppStateStore {
     p /= kAppStateFileName;
     return p.string();
   }
-  // A fresh, non-colliding temp path in the SAME directory on every call.
+  // A fresh, non-colliding temp CANDIDATE path in the SAME directory on every call. This only
+  // generates a name; it does not claim it. reserveTempPath() is what makes the name ours.
   std::string tempPath() const {
     if (directory_.empty()) return std::string();
     static std::atomic<std::uint64_t> counter{0u};
@@ -198,6 +255,19 @@ class AppStateStore {
     return p.string();
   }
 
+  // Reserve a temp path in the SAME directory by EXCLUSIVE creation, retrying with a fresh candidate
+  // name when another PROCESS won the race. Returns "" when no name could be claimed; the caller then
+  // reports a typed failure and the live file is untouched. Only the returned path is ever cleaned
+  // up -- never a pattern, never another instance's file.
+  std::string reserveTempPath() const {
+    if (directory_.empty()) return std::string();
+    for (int attempt = 0; attempt < kTempReserveAttempts; ++attempt) {
+      const std::string candidate = tempPath();
+      if (app_state_file_ops::reserveExclusiveCreate(candidate)) return candidate;
+    }
+    return std::string();
+  }
+
   // Fault injection / call counting for tests. The default is the real platform ops above.
   void setFileOps(const FileOps& ops, void* ctx) {
     ops_ = ops;
@@ -206,6 +276,21 @@ class AppStateStore {
   void useRealFileOps() {
     ops_ = app_state_file_ops::realOps();
     opsCtx_ = nullptr;
+  }
+
+  // The read boundary, exposed so the boundary itself is directly testable: read AT MOST the exact
+  // wire size from an already-open record and accept it only when it is EXACTLY that long. A short
+  // read fails, and so does a byte BEYOND the record — the file may have grown after the fstat size
+  // gate, which is a snapshot, not a lock, so the size gate alone never decides completeness.
+  // `*ioError` distinguishes a read error (Unreadable) from a length problem.
+  static bool readExactRecord(std::FILE* f, std::vector<std::uint8_t>* out,
+                              std::uint64_t* bytesRead, bool* ioError) {
+    out->assign(kAppStateWireBytes, 0u);
+    const std::size_t got = std::fread(out->data(), 1u, out->size(), f);
+    *bytesRead += got;
+    const int extra = (got == out->size()) ? std::fgetc(f) : EOF;
+    *ioError = std::ferror(f) != 0;
+    return !*ioError && got == out->size() && extra == EOF;
   }
 
   // ---- the ONE startup read attempt ------------------------------------------------------------
@@ -229,36 +314,46 @@ class AppStateStore {
       // EXPLICIT unreadable status and must never masquerade as "no file yet".
       loadOutcome_ =
           (errno == ENOENT) ? StateLoadOutcome::NoFile : StateLoadOutcome::Unreadable;
+      fileUnadopted_ = (loadOutcome_ != StateLoadOutcome::NoFile);
       saveAllowed_ = (loadOutcome_ == StateLoadOutcome::NoFile);
       return loadOutcome_;
     }
 
-    std::vector<std::uint8_t> bytes;
-    bool readOk = true;
-    if (std::fseek(f, 0L, SEEK_END) != 0) {
-      readOk = false;
-    } else {
-      const long end = std::ftell(f);
-      if (end < 0) {
-        readOk = false;
-      } else {
-        if (std::fseek(f, 0L, SEEK_SET) != 0) {
-          readOk = false;
-        } else {
-          bytes.resize(static_cast<std::size_t>(end));
-          if (!bytes.empty()) readOk = (std::fread(bytes.data(), 1u, bytes.size(), f) == bytes.size());
-        }
-      }
-    }
-    std::fclose(f);
-    if (!readOk) {
+    // Size gate BEFORE any allocation, taken from the OPENED descriptor: fstat is a snapshot of THIS
+    // file object (a path-based size can be swapped underneath us between check and read), and it
+    // classifies a non-regular path -- the file IS a directory -- as such instead of as a length
+    // problem. An oversized record must fail as a typed LengthMismatch without first pulling the
+    // whole file into memory.
+#if defined(_WIN32)
+    struct _stat64 st;
+    const int statRc = _fstat64(_fileno(f), &st);
+#else
+    struct stat st;
+    const int statRc = ::fstat(::fileno(f), &st);
+#endif
+    if (statRc != 0 || !app_state_file_ops::statModeIsRegularFile(static_cast<int>(st.st_mode))) {
+      std::fclose(f);
       loadOutcome_ = StateLoadOutcome::Unreadable;
+      fileUnadopted_ = true;
+      saveAllowed_ = false;
+      return loadOutcome_;
+    }
+    if (static_cast<std::uintmax_t>(st.st_size) !=
+        static_cast<std::uintmax_t>(kAppStateWireBytes)) {
+      std::fclose(f);
+      loadOutcome_ = StateLoadOutcome::LengthMismatch;
+      fileUnadopted_ = true;
       saveAllowed_ = false;
       return loadOutcome_;
     }
 
-    if (bytes.size() != kAppStateWireBytes) {
-      loadOutcome_ = StateLoadOutcome::LengthMismatch;
+    std::vector<std::uint8_t> bytes;
+    bool ioError = false;
+    const bool exact = readExactRecord(f, &bytes, &bytesRead_, &ioError);
+    std::fclose(f);
+    if (!exact) {
+      loadOutcome_ = ioError ? StateLoadOutcome::Unreadable : StateLoadOutcome::LengthMismatch;
+      fileUnadopted_ = true;
       saveAllowed_ = false;
       return loadOutcome_;
     }
@@ -276,6 +371,7 @@ class AppStateStore {
       loadOutcome_ = (m.status == MigrationStatus::requires_newer_codec)
                          ? StateLoadOutcome::RequiresNewerCodec
                          : StateLoadOutcome::UnsupportedVersion;
+      fileUnadopted_ = true;
       saveAllowed_ = false;
       return loadOutcome_;
     }
@@ -283,6 +379,7 @@ class AppStateStore {
     lastValidation_ = lunar24::core::validate_device_state(migrated);
     if (!lastValidation_.ok) {
       loadOutcome_ = StateLoadOutcome::InvalidState;
+      fileUnadopted_ = true;
       saveAllowed_ = false;
       return loadOutcome_;
     }
@@ -316,6 +413,7 @@ class AppStateStore {
     if (!pendingValid_) return StandaloneAudioEngine::StateApplyStatus::NotAttempted;
 
     const DeviceStateV1 candidate = pending_;  // copy: a rejection must leave the store intact
+    const PendingOrigin origin = pendingOrigin_;
     const auto status = engine.applyDeviceState(candidate, sampleRate, maxBlockSize, inputCapability,
                                                 outputCapability);
     lastPublishStatus_ = status;
@@ -323,17 +421,24 @@ class AppStateStore {
     if (status == StandaloneAudioEngine::StateApplyStatus::Accepted) {
       pendingValid_ = false;
       pendingOrigin_ = PendingOrigin::None;
-      if (loadOutcome_ == StateLoadOutcome::Ok) saveAllowed_ = true;  // the file was adopted
+      // ONLY a publish that came FROM THE FILE can lift the protection, and only if this session has
+      // not already judged that file unadoptable. A FromSession publish (the default config after a
+      // device reopen) must NEVER re-open the exit save over a file we failed to adopt.
+      if (origin == PendingOrigin::FromFile && !fileUnadopted_) {
+        saveAllowed_ = true;  // the file was adopted by the REAL candidate
+      }
       return status;
     }
 
-    if (pendingOrigin_ == PendingOrigin::FromFile) {
+    if (origin == PendingOrigin::FromFile) {
       // The file validated but the engine refuses to run it: the file is NOT adopted, so the
-      // lifecycle save must never overwrite it. Keep it inspectable; do not keep re-trying it.
+      // lifecycle save must never overwrite it. Keep it inspectable; do not keep re-trying it. The
+      // verdict is STICKY for the rest of the session.
       rejectedCandidate_ = candidate;
       rejectedCandidateValid_ = true;
       pendingValid_ = false;
       pendingOrigin_ = PendingOrigin::None;
+      fileUnadopted_ = true;
       saveAllowed_ = false;
     }
     // FromSession: keep the pending so the NEXT legal boundary can re-publish it; the save gate is
@@ -354,6 +459,9 @@ class AppStateStore {
   StateLoadOutcome loadOutcome() const { return loadOutcome_; }
   StateSaveOutcome lastSaveOutcome() const { return lastSaveOutcome_; }
   bool saveAllowed() const { return saveAllowed_; }
+  // STICKY for the session: a file was present and this session did NOT adopt it. Once true, no
+  // later publish (however successful) can re-open the exit save over that file.
+  bool fileUnadopted() const { return fileUnadopted_; }
   bool hasPending() const { return pendingValid_; }
   const DeviceStateV1* pending() const { return pendingValid_ ? &pending_ : nullptr; }
   bool hasRejectedCandidate() const { return rejectedCandidateValid_; }
@@ -364,6 +472,9 @@ class AppStateStore {
   StandaloneAudioEngine::StateApplyStatus lastPublishStatus() const { return lastPublishStatus_; }
   std::uint64_t readAttempts() const { return readAttempts_; }
   std::uint64_t writeAttempts() const { return writeAttempts_; }
+  // Bytes actually pulled off the disk by the ONE read attempt. A rejected-by-size record must leave
+  // this at 0: the size gate runs BEFORE any allocation or read.
+  std::uint64_t bytesRead() const { return bytesRead_; }
   const FileOps& fileOps() const { return ops_; }
 
  private:
@@ -383,9 +494,18 @@ class AppStateStore {
 
     ++writeAttempts_;
     const std::string live = livePath();
-    const std::string temp = tempPath();
+    // Claim the temp name by EXCLUSIVE creation before any bytes are written. The kernel is the only
+    // cross-process arbiter here (no lock service, no lock file); the reservation also spans the
+    // write, because realWriteFile refuses a temp it did not reserve.
+    const std::string temp = reserveTempPath();
+    if (temp.empty()) return StateSaveOutcome::TempWriteFailed;
     const SaveResult result = lunar24::core::save_state_atomic(wire.data(), written, temp.c_str(),
                                                               live.c_str(), ops_, opsCtx_);
+    if (result != SaveResult::ok) {
+      // The backend's discardFile is the backend's own cleanup; this only drops the reservation WE
+      // took, and only for the exact path we reserved (never a pattern, never another instance's).
+      app_state_file_ops::realDiscardFile(nullptr, temp.c_str());
+    }
     switch (result) {
       case SaveResult::ok: return StateSaveOutcome::Saved;
       case SaveResult::flush_failed: return StateSaveOutcome::FlushFailed;
@@ -405,6 +525,9 @@ class AppStateStore {
   StateLoadOutcome loadOutcome_ = StateLoadOutcome::NotAttempted;
   StateSaveOutcome lastSaveOutcome_ = StateSaveOutcome::NotAttempted;
   bool saveAllowed_ = false;
+  // MONOTONIC protection: set when a present file is not adopted (bad format, IO failure, or a graph
+  // the real candidate refuses). Never cleared in this session -- that is the whole point.
+  bool fileUnadopted_ = false;
 
   bool pendingValid_ = false;
   PendingOrigin pendingOrigin_ = PendingOrigin::None;
@@ -419,6 +542,7 @@ class AppStateStore {
 
   std::uint64_t readAttempts_ = 0u;
   std::uint64_t writeAttempts_ = 0u;
+  std::uint64_t bytesRead_ = 0u;
 };
 
 }  // namespace lunar24::host
