@@ -282,6 +282,10 @@ class PressureOutlet {
     return current_;
   }
   double current() const { return current_; }
+  // The EXECUTED configuration (what tick() actually runs with) — the readback a consumer pins.
+  PressureOutput mode() const { return mode_; }
+  double riseSeconds() const { return riseSec_; }
+  double fallSeconds() const { return fallSec_; }
   void setRandomSeed(std::uint32_t s) { rand_.seed(s); }
   // GH#8 reset: HARD-clear every piece of envelope state (stage/current/held/captured),
   // distinct from gate(false) which only starts an ASR release and would leave a
@@ -356,6 +360,9 @@ class PortamentoGlide {
   void reset() { smoother_.reset(0.0); }
   double tick() { return smoother_.next(); }
   double current() const { return smoother_.current(); }
+  // The EXECUTED glide configuration (the smoother's real time constant + the legato flag).
+  double tauSeconds() const { return smoother_.timeConstantSeconds(); }
+  bool legato() const { return legato_; }
 
  private:
   ParameterSmoother smoother_;
@@ -405,6 +412,14 @@ class Vibrato {
     return std::sin(phase_) * amt;
   }
 
+  // The EXECUTED vibrato configuration (Hz / volts / seconds / flag) — what tick()
+  // actually runs with, as opposed to the raw norm request that produced it.
+  double speedHz() const { return speedHz_; }
+  double depthCv() const { return depthCv_; }
+  double delaySeconds() const { return delaySec_; }
+  bool pressureControl() const { return pressureCtrl_; }
+  double pressureAmount() const { return pressureAmount_; }
+
  private:
   double fs_ = 0.0, speedHz_ = 0.0, depthCv_ = 0.0, delaySec_ = 0.0;
   double delayElapsed_ = 0.0, phase_ = 0.0, pressureAmount_ = 0.0;
@@ -425,6 +440,7 @@ class KeyboardBehaviour {
   // Decode the side params into the running configuration (reads via the choke
   // point are done externally in read_behaviour_params, then applied here).
   void configure(const KeyboardBehaviourParams& p, double sample_rate) {
+    params_ = p;
     fs_ = sample_rate;
     pressure_.setSampleRate(sample_rate);
     vibrato_.setSampleRate(sample_rate);
@@ -472,6 +488,47 @@ class KeyboardBehaviour {
   bool gate() const { return engagedCount_() > 0; }
   double rootSemitone() const { return static_cast<double>(rootSemitone_); }
   std::uint16_t scaleMask() const { return scaleMask_; }
+  // GH#12 task#101: the configured parameter set, READ BACK verbatim. This is the set the
+  // LAST configure() actually installed (the same values the per-note path decodes from),
+  // never a separately-written mirror — so an acceptance can pin what this side runs.
+  const KeyboardBehaviourParams& params() const { return params_; }
+
+  // GH#12 task#101 review (group 2): what this side's behaviours ACTUALLY EXECUTE with.
+  // `params_` is only the decoded request; tick() runs off the per-behaviour state the
+  // setNorm/setTimes/setMode calls installed. These accessors read that state directly,
+  // so a mutation that keeps `params_ = p` but skips the install cannot pass a readback.
+  struct Executed {
+    PressureOutput pressureMode = PressureOutput::Pressure;
+    double pressureRiseSeconds = 0.0;
+    double pressureFallSeconds = 0.0;
+    double portamentoTauSeconds = 0.0;
+    bool portamentoLegato = false;
+    double vibratoSpeedHz = 0.0;
+    double vibratoDepthCv = 0.0;
+    double vibratoDelaySeconds = 0.0;
+    bool vibratoPressureControl = false;
+    double vibratoPressureAmount = 0.0;
+    std::uint16_t scaleMask = kMicrotonalScaleMask;
+    std::uint8_t rootSemitone = 0;
+    double sampleRate = 0.0;
+  };
+  Executed executed() const {
+    Executed e{};
+    e.pressureMode = pressure_.mode();
+    e.pressureRiseSeconds = pressure_.riseSeconds();
+    e.pressureFallSeconds = pressure_.fallSeconds();
+    e.portamentoTauSeconds = portamento_.tauSeconds();
+    e.portamentoLegato = portamento_.legato();
+    e.vibratoSpeedHz = vibrato_.speedHz();
+    e.vibratoDepthCv = vibrato_.depthCv();
+    e.vibratoDelaySeconds = vibrato_.delaySeconds();
+    e.vibratoPressureControl = vibrato_.pressureControl();
+    e.vibratoPressureAmount = vibrato_.pressureAmount();
+    e.scaleMask = scaleMask_;
+    e.rootSemitone = rootSemitone_;
+    e.sampleRate = fs_;
+    return e;
+  }
 
   // Random-mode seed: forwarded so a test makes the Random output deterministic.
   void setRandomSeed(std::uint32_t s) { pressure_.setRandomSeed(s); }
@@ -618,6 +675,7 @@ class KeyboardBehaviour {
   }
 
   double fs_ = 0.0;
+  KeyboardBehaviourParams params_{};  // GH#12 task#101: verbatim readback of the last configure().
   std::uint16_t scaleMask_ = kMicrotonalScaleMask;
   std::uint8_t rootSemitone_ = 0;
   HeldNote notes_[kMaxHeld];

@@ -32,6 +32,7 @@
 
 #include <lunar24/core/control_event.h>
 #include <lunar24/core/id_types.h>
+#include <lunar24/core/keyboard_mode.h>
 #include <lunar24/core/signal.h>
 
 namespace lunar24::core {
@@ -60,6 +61,11 @@ struct PerformanceInput {
   ControlSourceId source = 0;              // stable producer id (pointer/key/midi)
   NoteId noteId = 0;                       // note/touch press identity (GH#8)
   std::uint64_t seq = 0;                   // deterministic same-source tiebreak
+  // GH#12 task#101: which physical performance side produced this input. An explicit
+  // internal metadata field carried through translate() onto every ControlEvent it
+  // emits; a source adapter states the side it read, it is never inferred from the
+  // channel/pitch/noteId. Defaults to Left so every pre-#101 caller is unchanged.
+  KeyboardSide side = KeyboardSide::Left;
 };
 
 // Data-driven CC-learn binding: a controller number -> the ParameterId of an
@@ -116,6 +122,7 @@ inline std::uint32_t InputStateMachine::translate(const PerformanceInput& in,
     out[n].channel = in.channel;
     out[n].noteId = in.noteId;   // the SAME press identity every event of this note carries
     out[n].producerSequence = in.seq;
+    out[n].side = in.side;       // GH#12 task#101: the SAME side every event of this input carries
     ++n;
   };
 

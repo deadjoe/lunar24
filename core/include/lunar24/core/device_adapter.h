@@ -22,6 +22,14 @@
 // to drift. Tests drive `renderBlock` directly (never replicating the frame loop), so
 // every accept criterion below is exercised on the exact path the host will run.
 //
+// EVENT DRAIN (F-1, task#101): the per-frame drive goes through
+// `SynthRuntime::processBlock(&in, 1, &out, true)`, NOT `processFrame`. The one-frame
+// block drains the runtime's single EventTimebase and applies each due ControlEvent at
+// its exact frame, so an event the host's keyboard/MIDI producer enqueued acts at its
+// ABSOLUTE sample on this entry (the adapter used to call processFrame per frame, which
+// silently ignored every queued event). The drain is deliberately NOT inside
+// processFrame: that would advance the time base twice per frame through processBlock.
+//
 // Frozen contracts (design/07 §5, the GH#4 mandate):
 //   OUTPUT capability:  <2  => prepare() REJECTS (fail-closed; keeps the previous plan
 //                               or leaves the adapter with no plan).
@@ -288,9 +296,17 @@ inline void DeviceAdapter::renderBlock(SynthRuntime& rt, const double* const* pl
   if (!hasPlan_) return;
   for (int f = 0; f < frames; ++f) {
     RuntimeInputs in{0.0, 0.0};
-    resolveInput_(planarIn, f, in);                     // input direction (single primitive).
-    const RuntimeOutput out = rt.processFrame(in, true);  // drive the product runtime.
-    writeOutput_(out, planarOut, f);                    // output direction (single primitive).
+    resolveInput_(planarIn, f, in);  // input direction (single primitive).
+    // THE ONE event-drained product entry (F-1). A ONE-FRAME block through the SAME
+    // SynthRuntime block path the canonical render uses: it drains the ONE EventTimebase,
+    // applies each due ControlEvent at its exact frame, then advances ONE frame — so a
+    // queued keyboard/MIDI event acts at its exact ABSOLUTE sample on the host timeline
+    // and the partition stays a delivery detail. processFrame alone bypasses the drain
+    // (that WAS the defect); the drain is NOT added inside processFrame, which would
+    // advance the time base twice per frame. One drain, one frame, one timebase.
+    RuntimeOutput out{};
+    rt.processBlock(&in, 1, &out, true);
+    writeOutput_(out, planarOut, f);  // output direction (single primitive).
   }
 }
 

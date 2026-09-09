@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include <lunar24/core/id_types.h>
+#include <lunar24/core/keyboard_mode.h>
 #include <lunar24/core/signal.h>
 
 namespace lunar24::core {
@@ -92,6 +93,13 @@ struct ControlEvent {
   std::uint8_t channel = 0;                // source sub-id (MIDI channel etc.)
   NoteId noteId = 0;                       // note/touch press identity (GH#8)
   std::uint64_t producerSequence = 0;      // stable tiebreak for same-source ordering
+  // GH#12 task#101: the PERFORMANCE SIDE this event belongs to. An explicit internal
+  // metadata field — NOT a persisted format, NOT a ParameterId, NOT a physical jack.
+  // source/channel/noteId stay the event's identity; the side is NEVER inferred from a
+  // MIDI channel, a pitch range or a noteId range (that would be a guess, not identity).
+  // Old callers that never set it keep the Left default, which is the pre-#101 behaviour.
+  // Appended last so every existing positional aggregate initialisation stays valid.
+  KeyboardSide side = KeyboardSide::Left;
 
   ControlLane lane() const { return control_event_lane(kind); }
 };
@@ -101,6 +109,11 @@ struct ControlEvent {
 // deterministic comparator the scheduler uses to stabilise control events that
 // share a block; two events with equal (offset, phase, source, sequence) are
 // indistinguishable and any order is valid.
+//
+// GH#12 task#101: `side` is deliberately NOT a comparator key. The two sides are
+// independent performance instances, so their relative order carries no semantics,
+// and adding a key here would silently re-order existing same-sample sequences with
+// no evidence that the new order is the correct one. Left unchanged by contract.
 inline bool control_event_before(const ControlEvent& a, const ControlEvent& b) {
   if (a.sampleOffset != b.sampleOffset) return a.sampleOffset < b.sampleOffset;
   const std::uint32_t pa = control_event_phase(a.kind);

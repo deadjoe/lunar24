@@ -137,6 +137,38 @@ class EngineHarness {
     return true;
   }
 
+  // Render `frames` frames in ONE processBlock(...) call and then invoke `onSample(runtime)` ONCE,
+  // with the state as of the END of that block — the real BLOCK-BOUNDARY control sample. Combine
+  // with renderSampled() (block=1) to compare a published control trace at real block boundaries
+  // against a per-frame reference. Requires frames <= the prepared block size.
+  template <class Fn>
+  bool renderBlockSampled(int frames, double preampV, Fn&& onSample) {
+    if (!renderBlock(frames, [preampV](std::size_t, double& in0, double& in1) {
+          in0 = 0.0; in1 = preampV;
+        })) {
+      return false;
+    }
+    onSample(*engine_.runtime());
+    return true;
+  }
+
+  // ---- host-entry inspection (task#101 review group 1) -------------------------------------
+  // The committed device plan / format of the ACTIVE definition. These are the "state/format/plan"
+  // a rejected apply must leave untouched (the atomic-apply contract of applyDeviceState).
+  const lunar24::core::DevicePlan& plan() const { return engine_.plan(); }
+  const DeviceStateV1* canonicalState() const { return engine_.canonicalState(); }
+  double sampleRate() const { return engine_.sampleRate(); }
+  int blockSize() const { return engine_.blockSize(); }
+  int inputCapability() const { return engine_.inputCapability(); }
+  int outputCapability() const { return engine_.outputCapability(); }
+  bool ready() const { return engine_.isReady(); }
+
+  // PRODUCER-SIDE event injection. The runtime is owned by the engine; this is the same public
+  // enqueueControlEvent entry the host's keyboard/MIDI producer calls. It changes NO engine state,
+  // format or plan and triggers NO commit — it is the producer seam, not an engine bypass. Same
+  // lifetime rule as runtime(): valid only until the next load() that COMMITS.
+  SynthRuntime* producerRuntime() { return const_cast<SynthRuntime*>(engine_.runtime()); }
+
   // Pure engine processBlock on CALLER-OWNED planar buffers: NO allocation, NO input generation and NO
   // captured-output insert inside this call (BLOCK item ③). The caller supplies already-sized `in[*]` /
   // `out[*]` so a CPU-cost measurement can time ONLY the DSP loop — the harness wrapper (renderBlock /

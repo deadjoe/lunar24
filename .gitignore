@@ -55,3 +55,8 @@ design/reference/*.pdf
 # in tools/check_iplug_pin_clean.py). It is tracked as a submodule, so it is NOT ignored;
 # submodule working-tree dirt is checked by the pin gate, not by this file.
 /build-san/
+
+# task#101: the Release build tree is a regenerable artifact (like /build/, /build-debug/).
+# It was accidentally swept into c435c2e by a `git add -A`; untracked here so the review diff
+# carries only source + tests + reports.
+/build-release/

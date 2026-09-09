@@ -87,6 +87,10 @@ class ParameterSmoother {
   double current() const { return current_; }
   double target() const { return target_; }
   double sampleRate() const { return sample_rate_; }
+  // GH#12 task#101 review: the time constant the smoother is ACTUALLY running with (the value
+  // the per-sample coefficient was derived from), so a consumer's readback can pin the executed
+  // configuration instead of only the requested one.
+  double timeConstantSeconds() const { return tau_seconds_; }
 
   // Fraction of the current step that `current` has travelled from the reset
   // level. Used by the cross-sample-rate reach-time check.
