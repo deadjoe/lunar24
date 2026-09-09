@@ -535,5 +535,15 @@ them beyond the same single probe line).
 ### 11.4 Not claimed (unchanged)
 
 No merge, no GH#12 closure, no release, no MET, and no 35/35 coverage claim (§10.2's 12 gaps stay
-listed separately; the gate is untouched). The exact-head four-platform CI and the PR-only slow
-`probe-gate` for `6cf79ef` are still in flight at the time of writing; @Codex holds the merge gate.
+listed separately; the gate is untouched).
+
+**Exact-head CI, terminal (head `597b335`, the pushed head of this section):**
+
+| Run / job | Result |
+|---|---|
+| PR run `34319567762` — `ubuntu-latest (g++)` / `ubuntu-latest (clang++)` / `macos-latest (clang++)` / **`windows-latest (cl)`** | all **success** (the C2220 above is gone) |
+| PR run `34319567762` — `probe gate (slow, PR-only, ubuntu)` | **7/7 passed**, 3304.65 s (`#65` 24.93 / `#66` 53.35 / `#67` 194.97 / `#69` 1516.13 / `#70` 1513.15 / `#71` 0.70 / `#72` 1.21) |
+| PR run `34319567762` — `full coverage (--require-full)` | **failure, by design** — the only failing step is `Run registry completeness gate with --require-full`, i.e. §10.2's 12 gaps |
+| Push run `34319564136` | four platforms **success**; `full-coverage` and `probe-gate` skipped on push, by design |
+
+The merge gate stays with @Codex.
