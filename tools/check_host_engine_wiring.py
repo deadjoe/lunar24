@@ -82,6 +82,38 @@ oracle statically verifies the SHAPE of the host->engine wiring that the CTest
       in{0,1,2} x out{0,2,4} and <= the declared max; an ill-formed plan installs 0/0 and returns
       false (never a silent clamp/truncate), and the host MUST check the return.
 
+  W15 task#105 (GH#12) — OnReset carries the APP state policy at the stopped-stream boundary in the
+      mandate's order: captureCanonical() -> loadOnce() -> engine_.prepare( -> publishPending().
+      The capture must precede prepare() (prepare releases the owner, so a later capture loses the
+      committed session); the one read attempt must precede prepare() too; the publish must be
+      gated on isReady() so a failed prepare() keeps the pending for the next legal boundary; the
+      owner is rebuilt ONLY by engine_.prepare() (the GH#4 8B2 fail-closed contract is unchanged);
+      OnReset performs NO file IO and never infers the read attempt from canonicalState()==nullptr.
+  W16a task#105 — the audio path: ProcessBlock must not reference the state store and performs no
+      file IO.
+  W16b task#105 — the lifecycle exit save in ~IPlugAPPHost: AFTER CloseAudio() returns (audio
+      callback quiesced), BEFORE the remaining member teardown, as a pure delegate to the plugin's
+      narrow seam, with no file logic in the destructor body. @Codex msg 97d9f1a2 authorized this
+      hunk (option A) together with the drift-hash update in tools/check_host_override_drift.py.
+  W17a task#105 — the store's file/env discipline: it writes exactly one product file
+      (lunar24-state.bin), never settings.ini, never re-derives the per-user directory (no
+      getenv/HOME/APPDATA), reuses core's decode/migrate/validate/encode + save_state_atomic as the
+      ONE writer, and the plugin carries the host's already-resolved directory without re-deriving
+      it.
+  W17b task#105 — the APP host hands its ALREADY-RESOLVED per-user directory to the plugin AFTER the
+      platform resolution and BEFORE any Append("settings.ini") mutates mINIPath (after the Append
+      the string is a FILE path, not the directory), exactly once; the host never names the state
+      file, because the store owns that. Same @Codex ruling as W16b.
+  W18 task#105 (@Codex 2a544b0b) — the ONE UTF-8 -> native path boundary in the store's file
+      adapter: the host hands the directory in as UTF-8, Windows needs UTF-16 for the wide file
+      APIs, and the process ANSI code page cannot represent a Chinese user name at all. So the
+      conversion is explicit (MultiByteToWideChar with CP_UTF8 + MB_ERR_INVALID_CHARS, invalid
+      input refused rather than substituted), EVERY Windows file call (create/open/write/rename/
+      remove) takes the same native wide path, nothing round-trips a path through a narrow
+      std::filesystem path, the replace never degrades into a copy (no MOVEFILE_COPY_ALLOWED), and
+      POSIX keeps byte pass-through. The gate also pins that the acceptance still carries the real
+      non-ASCII directory criteria (C9) — the behaviour detector Windows CI runs.
+
 Each invariant is named and reported; a violation exits nonzero. The 8B2 mandate §4/b says a
 behaviour detector comes FIRST (the CTest) and this structural gate is the permanent second
 line. It is deliberately narrow: it flags the high-level wiring shape, not DSP semantics.
@@ -468,6 +500,214 @@ else:
     check("W10 AppProcess attaches by actual connected count",
           "NChannelsConnected(" in app_proc_code and "AttachBuffers(" in app_proc_code,
           "AppProcess must AttachBuffers by NChannelsConnected (the count setActualChannelPlan installed)")
+
+
+# _______________________________________________________________________________________________
+# task #105 (GH#12): the APP one-shot startup restore / device-reopen retention / exit atomic save.
+# The behaviour is the CTest test_app_state_store; these are the STRUCTURAL second line for the two
+# seams a unit test cannot reach: the iPlug virtual OnReset() (W15), the audio path (W16a), the two
+# host-lifecycle seams in host/iPlug_app_host_override.cpp (W16b the ~IPlugAPPHost exit call, W17b
+# the InitState directory handoff), and the file/env discipline of the narrow store (W17a). W16b/W17b
+# were HELD until @Codex msg 97d9f1a2 ruled option A and authorized both hunks plus the corresponding
+# tools/check_host_override_drift.py hash update. tools/run_app_state_negatives.py drives W16b with
+# two structural negative controls (missing call / call moved before CloseAudio) on a SHADOW copy of
+# this gate, so the pinned product file is never mutated by a control.
+
+# W15 — OnReset carries the state policy at the stopped-stream boundary, in the mandate's order:
+#   captureCanonical() -> loadOnce() -> engine_.prepare( -> publishPending()
+# The capture must come BEFORE prepare() (prepare releases the owner, so a later capture would lose
+# the committed session). loadOnce() must come before prepare() too (the one read attempt happens
+# once per session, and the pending must be in place for the publish). The publish must be guarded
+# by the owner actually being ready, and the owner is (re)built ONLY by engine_.prepare() — the
+# original GH#4 8B2 failure contract (fail-closed prepare) is unchanged.
+onreset_code = strip_comments(onreset)
+i_capture = onreset_code.find("captureCanonical")
+i_load = onreset_code.find("loadOnce")
+i_prepare = onreset_code.find("engine_.prepare(")
+i_publish = onreset_code.find("publishPending")
+check("W15 OnReset state policy statements present",
+      i_capture >= 0 and i_load >= 0 and i_prepare >= 0 and i_publish >= 0,
+      "OnReset must capture -> loadOnce -> prepare -> publishPending")
+check("W15 OnReset order capture < loadOnce < prepare < publish",
+      -1 < i_capture < i_load < i_prepare < i_publish,
+      "a later capture loses the committed session; a later load leaves no pending for the publish")
+check("W15 capture happens BEFORE prepare releases the owner",
+      i_capture < i_prepare,
+      "prepare() releases the owner, so the capture must run first")
+check("W15 publish is gated on a ready owner",
+      "isReady()" in onreset_code,
+      "publishPending must run only when prepare() produced a ready owner (a failed prepare keeps "
+      "the pending for the next legal boundary)")
+check("W15 prepare is the ONLY owner build in OnReset",
+      onreset_code.count("engine_.prepare(") == 1 and "applyDeviceState" not in onreset_code,
+      "OnReset must not bypass the store and publish a candidate directly")
+check("W15 no file IO in OnReset", not any(t in onreset_code for t in
+      ("fopen", "ifstream", "ofstream", "filesystem", "std::FILE")),
+      "OnReset is the stopped-stream boundary, not a file-IO site (the store owns all IO)")
+check("W15 read attempt is NOT inferred from canonicalState()",
+      "canonicalState()" not in onreset_code,
+      "canonicalState()==nullptr is also true after a failed prepare(); the store latches explicitly")
+check("W15 OnReset drives the narrow store", "stateStore_" in onreset_code,
+      "OnReset must delegate the session policy to stateStore_")
+
+# W16a — the audio path never touches the store (no file IO, no store call in ProcessBlock).
+proc_code = strip_comments(proc)
+check("W16a ProcessBlock does not reference the state store",
+      "stateStore_" not in proc_code,
+      "the audio callback must never read/write the persistence store")
+check("W16a ProcessBlock performs no file IO", not any(t in proc_code for t in
+      ("fopen", "ifstream", "ofstream", "filesystem", "std::FILE", "save_state_atomic")),
+      "no file IO on the audio path")
+
+# W17a — the store's file/env discipline. It writes exactly one product file, never settings.ini,
+# and never re-derives the directory (one resolution, one truth: the APP host resolves it).
+STORE_H = ROOT / "host" / "include" / "host" / "app_state_store.h"
+if not STORE_H.exists():
+    check("W17a app_state_store.h present", False, f"missing {STORE_H.relative_to(ROOT)}")
+else:
+    store_src = strip_comments(STORE_H.read_text(encoding="utf-8"))
+    check("W17a store present", True, f"read {STORE_H.relative_to(ROOT)}")
+    check("W17a store writes the one product file",
+          "kAppStateFileName" in store_src and '"lunar24-state.bin"' in store_src,
+          "the product file is lunar24-state.bin")
+    check("W17a store never touches settings.ini", "settings.ini" not in store_src,
+          "settings.ini belongs to the iPlug2 INI writer; the state file is a sibling")
+    check("W17a store does not re-derive the directory",
+          not any(t in store_src for t in ("getenv", "HOME", "Application Support", "APPDATA")),
+          "the APP host resolves the per-user directory; the store only consumes it")
+    check("W17a store reuses core's atomic save (no second writer)",
+          "save_state_atomic(" in store_src and "std::ofstream" not in store_src,
+          "encode -> save_state_atomic is the ONE writer; no hand-rolled file write")
+    check("W17a store reuses the core codec/validation chain",
+          all(t in store_src for t in ("decode_device_state(", "migrate_device_state(",
+                                       "validate_device_state(", "encode_device_state(")),
+          "decode -> migrate -> validate -> encode, all from core")
+    check("W17a store does not read the engine canonical to decide the read",
+          "canonicalState()" in store_src and "restoreAttempted_" in store_src,
+          "the session latch is explicit; canonicalState() is used only as the save SOURCE")
+    plug_code = strip_comments(PLUGIN_CPP)
+    check("W17a plugin never re-derives the settings directory",
+          not any(t in plug_code for t in ("getenv", "HOME", "Application Support", "APPDATA")),
+          "setStateDirectory() only carries the host's already-resolved directory into the store")
+    check("W17a plugin exposes the exit save seam",
+          "StateSaveOutcome LunarHostPlugin::saveDeviceState" in plug_code,
+          "the host calls LunarHostPlugin::saveDeviceState() at exit")
+
+# W16b — the lifecycle exit save in ~IPlugAPPHost (mandate §5). The save must run AFTER CloseAudio()
+# returns (the audio callback is quiesced) and BEFORE the remaining member teardown; mIPlug is
+# declared first and therefore destroyed last, so the plugin is still alive at the call. The
+# destructor body is a pure DELEGATE: no file logic, no store API, no atomic save (the store owns
+# every byte of IO -- W17a). The host calls saveDeviceState() exactly once: the exit save is a
+# lifecycle save, not a debounce / panel auto-save / crash-recovery hook.
+if not APP_HOST.exists():
+    check("W16b APP host override present", False, f"missing {APP_HOST.relative_to(ROOT)}")
+else:
+    host_ovr_src = APP_HOST.read_text(encoding="utf-8")
+    host_ovr_code = strip_comments(host_ovr_src)
+    dtor = body_balanced(host_ovr_src, r"IPlugAPPHost::~IPlugAPPHost\s*\(\s*\)")
+    check("W16b ~IPlugAPPHost body present", dtor != "",
+          "host/iPlug_app_host_override.cpp must define ~IPlugAPPHost")
+    dtor_code = strip_comments(dtor)
+    i_close = dtor_code.find("CloseAudio();")
+    i_save = dtor_code.find("saveDeviceState")
+    i_teardown = dtor_code.find("cancelCallback")
+    check("W16b exit save is a plugin delegate",
+          "LunarHostPlugin" in dtor_code and "GetPlug()" in dtor_code,
+          "the destructor calls the plugin's seam; it never opens/writes the file itself")
+    check("W16b exit save runs AFTER CloseAudio() returns", -1 < i_close < i_save,
+          "the save must run once the audio callback is quiesced (CloseAudio() first)")
+    check("W16b exit save runs before the remaining member teardown", -1 < i_save < i_teardown,
+          "mIPlug is declared first and destroyed last; the save needs the plugin still alive")
+    check("W16b no file IO in the destructor body",
+          not any(t in dtor_code for t in ("fopen", "ifstream", "ofstream", "filesystem",
+                                           "std::FILE", "save_state_atomic")),
+          "file logic lives in the narrow store; the destructor body is a delegate only")
+    check("W16b the host override calls saveDeviceState exactly once",
+          host_ovr_code.count("saveDeviceState") == 1,
+          "one lifecycle exit save; no debounce / panel auto-save call in the host")
+
+    # W17b — the APP host's ONE directory-resolution point (mandate §1). InitState() resolves the
+    # per-user settings directory (SetFormatted) and then APPENDS "settings.ini" to the same string;
+    # the handoff must land between the two, or the plugin would receive a FILE path as a directory.
+    # The host hands a DIRECTORY only: it never names lunar24-state.bin (the store owns the file name)
+    # and it calls setStateDirectory() exactly once (no second, silently-different resolution).
+    initstate = body_balanced(host_ovr_src, r"bool IPlugAPPHost::InitState\s*\(\s*\)")
+    check("W17b InitState body present", initstate != "",
+          "host/iPlug_app_host_override.cpp must define InitState()")
+    init_code = strip_comments(initstate)
+    i_setfmt = init_code.find("SetFormatted(")
+    i_handoff = init_code.find("setStateDirectory(")
+    i_append = init_code.find('Append("settings.ini")')
+    check("W17b handoff happens after the platform directory resolution", -1 < i_setfmt < i_handoff,
+          "the plugin receives the directory the APP host resolved, never a guess")
+    check('W17b handoff happens BEFORE Append("settings.ini") mutates mINIPath',
+          -1 < i_handoff < i_append,
+          "after the Append the string is a FILE path, not the settings directory")
+    check("W17b handoff passes the resolved mINIPath",
+          "setStateDirectory(mINIPath.Get())" in init_code,
+          "the handoff carries the resolved directory")
+    check("W17b host calls setStateDirectory exactly once",
+          host_ovr_code.count("setStateDirectory(") == 1,
+          "one resolution point; neither plugin nor store re-derives the directory")
+    check("W17b host never names the state file", "lunar24-state.bin" not in host_ovr_code,
+          "the host hands a DIRECTORY; the store owns the product file name")
+
+# W18 — the ONE UTF-8 -> native path boundary (@Codex 2a544b0b). The APP host resolves the per-user
+# directory as UTF-8 (SHGetSpecialFolderPathUTF8); Windows file APIs are WIDE and the process ANSI
+# code page cannot represent a Chinese user name at all. So the conversion must be explicit and
+# happen ONCE at the file-adapter boundary, every Windows file call must use the SAME native path,
+# and nothing may round-trip a path through a narrow std::filesystem path (ACP). POSIX keeps byte
+# pass-through. A C++-level mutation cannot prove this on Linux, which is why it is a structural pin
+# here AND a real non-ASCII-directory round trip in the acceptance (C9, run by Windows CI).
+STORE_TEST = ROOT / "tests" / "host" / "test_app_state_store.cpp"
+if not STORE_H.exists():
+    check("W18 app_state_store.h present for the path boundary", False,
+          f"missing {STORE_H.relative_to(ROOT)}")
+else:
+    store_src = strip_comments(STORE_H.read_text(encoding="utf-8"))
+    native_body = body_balanced(store_src, r"inline\s+NativePath\s+nativePath\s*\(")
+    open_body = body_balanced(store_src, r"inline\s+std::FILE\*\s+openNative\s*\(")
+    check("W18 nativePath body present", native_body != "",
+          "the store must convert UTF-8 to the native path form in ONE place")
+    check("W18 openNative body present", open_body != "",
+          "every stdio open must go through the one native-path helper")
+    check("W18 the store converts UTF-8 to native paths once, explicitly",
+          "MultiByteToWideChar(CP_UTF8" in native_body,
+          "CP_UTF8 is the contract; the process code page is not an encoding")
+    check("W18 invalid UTF-8 is refused, not substituted",
+          "MB_ERR_INVALID_CHARS" in native_body and "std::wstring()" in native_body,
+          "MB_ERR_INVALID_CHARS makes the conversion FAIL; a lossy map would address a "
+          "different file and the store would save into it")
+    check("W18 every Windows file call is WIDE",
+          all(t in store_src for t in ("_wfopen_s(", "_wsopen_s(", "MoveFileExW(", "DeleteFileW(")),
+          "create / open / write / rename / remove must all take the wide native path")
+    check("W18 no narrow or ACP file call remains",
+          "_sopen_s(" not in store_src and store_src.count("std::fopen(") == 1
+          and "std::fopen(" in open_body,
+          "the single narrow fopen is the POSIX branch of openNative; a second one (or a narrow "
+          "_sopen_s) would reintroduce the ANSI code page on Windows")
+    check("W18 path handling never round-trips through std::filesystem",
+          "filesystem" not in store_src,
+          "path(std::string)/.string() go through the ANSI code page on Windows; the store joins "
+          "UTF-8 bytes itself (joinUtf8) and POSIX uses rename/remove directly")
+    check("W18 the atomic replace cannot degrade into a copy",
+          "MOVEFILE_REPLACE_EXISTING" in store_src and "MOVEFILE_COPY_ALLOWED" not in store_src,
+          "a cross-volume move must fail (ReplaceFailed), not become a non-atomic copy+delete")
+    check("W18 POSIX keeps byte pass-through",
+          "return utf8;" in native_body and "::rename(" in store_src and "::remove(" in store_src,
+          "POSIX paths ARE byte strings: no conversion, and rename(2)/remove(3) on the same bytes")
+    check("W18 the POSIX file calls use the SAME boundary, not a second call site",
+          all(t in store_src for t in ("::open(native.c_str()", "std::fopen(native.c_str()",
+                                       "::rename(fromNative.c_str()", "::remove(native.c_str()")),
+          "one boundary on BOTH platforms: the POSIX create/open/rename/remove consume nativePath()'s "
+          "output too, so a conversion defect cannot hide behind an unconverted call site")
+    check("W18 path joining keeps the directory bytes verbatim",
+          "joinUtf8(" in store_src and "p /= " not in store_src,
+          "livePath()/tempPath() must not rebuild the path through a narrow filesystem path")
+    test_src = STORE_TEST.read_text(encoding="utf-8")
+    check("W18 the acceptance carries the non-ASCII directory criteria",
+          all(t in test_src for t in ("C9.1", "C9.2", "C9.3", "C9.4", "makeUnicodeTempDir")),
+          "the gate may not pass while the real non-ASCII save/restore criterion was deleted")
 
 
 def main() -> int:
