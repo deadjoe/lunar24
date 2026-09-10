@@ -1,0 +1,18 @@
+# task #109 / GH#19 S1: NAIVE baseline for the SchmittOsc audio triangle path.
+# Measured on the PRE-S1 source (SchmittOsc has no anti-aliasing) with the realized-period
+# analyzer fix from the preceding commit, so the values are the zero-correction reference
+# the S1 slice must improve on. sr/f0_refined/blref_full_db as emitted by
+# tools/gh19_alias_analyze.py (more negative = better). One row per required cell.
+id	sr	f0_refined	blref_full_db
+drone3_schmitt_44100_p20	44100	1160.53	-47.43
+drone3_schmitt_44100_p60	44100	2004.52	-41.01
+drone3_schmitt_48000_p20	48000	1142.88	-50.80
+drone3_schmitt_48000_p60	48000	2000.00	-41.61
+drone3_schmitt_88200_p20	88200	1160.48	-58.26
+drone3_schmitt_88200_p60	88200	2004.58	-51.18
+drone3_schmitt_96000_p20	96000	1170.76	-54.66
+drone3_schmitt_96000_p60	96000	2000.00	-52.00
+drone6_schmitt_44100_p30	44100	2756.25	-32.44
+drone6_schmitt_48000_p30	48000	2666.69	-41.54
+drone6_schmitt_88200_p30	88200	2756.25	-41.92
+drone6_schmitt_96000_p30	96000	2666.71	-46.85
