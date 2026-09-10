@@ -73,7 +73,22 @@ inline bool load_preset_to_live(DeviceStateV1& live, std::uint32_t slot) noexcep
   const KeyboardPreset& p = live.keyboardPresets[slot];
 
   // The one non-per-side keyboard field: single/twin/split behaviour selector.
+  // KeyboardSettings.pressureBehaviour is the CANONICAL live value, but
+  // parameters[keyboard_behaviour] is a compatibility MIRROR that
+  // validate_device_state requires to equal it (state_validation.h check_keyboard_live,
+  // family keyboard_live_invalid, field 9002). Writing only the canonical side left the
+  // mirror at its pre-load value, so ANY slot whose behaviour differed from the live
+  // mirror produced a state the validator rejects — and check_keyboard_live runs BEFORE
+  // check_presets, so the whole load was refused (applyDeviceState ->
+  // RejectedInvalidState, prior runtime kept). That is a STATE-LAYER latent defect, not a
+  // defect a user had already hit: at the time the APP had no preset-action caller
+  // (host/plugin.cpp builds MakeConfig(0, 0) and the keyboard menu is inert), so the
+  // refusal was reachable only from the state layer itself. Converge the mirror here,
+  // exactly as make_default_device_state does for the default (state_default.h).
+  // D-1 (task #102 §1.3, @Codex msg 7d734b47; wording per @Codex b9d8ff9f).
   live.keyboardSettings.pressureBehaviour = p.pressureBehaviour;
+  live.parameters[static_cast<IdValue>(ParameterId::keyboard_behaviour)] =
+      static_cast<double>(p.pressureBehaviour);
 
   // Both per-side scalar banks: left = parameters[id], right = keyboardScalarRight.
   load_live_side_bank(p, live);
