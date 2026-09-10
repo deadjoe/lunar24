@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
 """ZERO-PERTURBATION AUDIT for a change to tools/gh19_alias_analyze.py.
 
 Runs two analyzer reports over the SAME rendered probe directory (before = the unmodified analyzer,
