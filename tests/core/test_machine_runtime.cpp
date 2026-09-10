@@ -2210,6 +2210,14 @@ IJU_TEST_NOINLINE void d4_cohort_fail_closed() {
 // stage measured over it never reaches its clamp (so the closed form is the whole story).
 constexpr std::size_t kD5Win = 480;
 
+// The two stage windows of the bit-identical-script block. They sit at namespace scope — like every
+// other frame count in this section — because a function-local constant used inside the block's
+// capture-less lambda is rejected by MSVC (C3493: needs a capture) and the capture it wants is then
+// rejected by clang as unused (-Wunused-lambda-capture, an error here). Namespace scope needs no
+// capture on any of the three compilers.
+constexpr std::size_t kD5FallFrames = 960;  // 20 ms of release: lands well below 1.0
+constexpr std::size_t kD5RiseFrames = 480;  // 10 ms of re-attack: still below 1.0
+
 // The transition window (column 3 of the contract's behaviour table) is shared by both voices.
 void d5Advance(core::SynthRuntime& rt, std::size_t frames) {
   for (std::size_t i = 0; i < frames; ++i) rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
@@ -2441,8 +2449,6 @@ IJU_TEST_NOINLINE void d5_hold_transition_behaviour() {
   // gate on only one of them: the level and the rendered channel must stay bit-identical. The
   // divergence point is chosen mid-rise (0 < level < 1.0) so the equality cannot pass vacuously at
   // a clamp.
-  constexpr std::size_t kD5FallFrames = 960;  // 20 ms of release: lands well below 1.0
-  constexpr std::size_t kD5RiseFrames = 480;  // 10 ms of re-attack: still below 1.0
   auto rampMidRise = [](core::SynthRuntime& r) {
     static_cast<void>(r.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in));
     static_cast<void>(r.rebuild());
