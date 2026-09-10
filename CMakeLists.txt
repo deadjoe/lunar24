@@ -463,7 +463,7 @@ set_tests_properties(gh19_alias_probe gh19_blamp_acceptance PROPERTIES LABELS "s
 add_test(NAME gh19_blamp_lut_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_gh19_blamp.py --check-prod
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/vco.h)
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/blamp_kernel.h)
 
 # task #87 (GH #20): REAL-PRODUCT VCF cross-sample-rate response probe. Renders the actual product
 # DSP (encode->decode->applyDeviceState->processBlock, via EngineHarness) for a sr x mode x res x
