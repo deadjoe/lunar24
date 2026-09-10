@@ -371,6 +371,16 @@ class MachineRuntimeDefinition {
                                      lunar24::registry::JackId::drone_2_cv_mod_in,
                                      lunar24::registry::JackId::drone_4_cv_mod_in,
                                      lunar24::registry::JackId::drone_5_cv_mod_in);
+    // PAPA SRAPA voice cohort (GH#15 D4, order 0..1 == drone_3/drone_6). Two landed
+    // jacks each: gate_in is the AR envelope's TRIGGER SOURCE (manual L331 — the same
+    // socket the hardware routes the panel button and any external CV into), and env_out
+    // publishes the envelope level. Binding them makes the landed jacks CONSUMED rather
+    // than merely declared; a voice whose gate_in has no cable keeps the provisional
+    // default (open), so an unpatched machine renders exactly as before D4.
+    runtime_.setDroneVoiceGateBindings(lunar24::registry::JackId::drone_3_gate_in,
+                                       lunar24::registry::JackId::drone_6_gate_in);
+    runtime_.setDroneVoiceEnvOutBindings(lunar24::registry::JackId::drone_3_env_out,
+                                         lunar24::registry::JackId::drone_6_env_out);
 
     // GH#11 FIXED-CANDIDATE (D1/D2): the six control sources are NOW real DSP
     // instances, so the owning definition binds their REGISTRY jacks (the same identity

@@ -485,6 +485,68 @@ core::SynthRuntime makeRegistryDroneRuntime() {
   return rt;
 }
 
+// ---- GH#15 D4 registry fixture: the TWO Papa Srapa voices (drone_3 / drone_6) in the plan ----
+// The D4 slice binds drone_3/6.gate_in + drone_3/6.env_out, so those two ModuleIds must actually
+// REACH the compiled plan before any D4 criterion can be observed. Two things are needed and both
+// are load-bearing (verified empirically — with either one missing the voice is silently dropped):
+//   1. a fixed edge per voice (drone_3/drone_6 -> mixer), so the module is an ACTIVE edge endpoint;
+//   2. bindFixedRole(..., kDrone), because kindOf_() reports kUnsupported for an unbound module
+//      and countExecSlots_() drops non-kUnsupported-dropped modules from the plan.
+// Six edges + six role bindings therefore yield exactly SIX drone slots (ids 15..20). This is a
+// SEPARATE fixture from makeRegistryDroneJacks() on purpose: the classic tests assert
+// execSlotCount() == 4 (no-dedup) and must keep seeing exactly their own four slots.
+// Static storage for the same reason as kClassicDroneEdge / makeRegistryDroneJacks: SynthRuntime
+// keeps both the edge array and mods_ pointers for its whole lifetime, and both helpers return by
+// value.
+const core::FixedEdge kPapaDroneEdge[] = {
+    {core::ModuleId::drone_1, core::ModuleId::mixer, "drone_1_to_mixer"},
+    {core::ModuleId::drone_2, core::ModuleId::mixer, "drone_2_to_mixer"},
+    {core::ModuleId::drone_4, core::ModuleId::mixer, "drone_4_to_mixer"},
+    {core::ModuleId::drone_5, core::ModuleId::mixer, "drone_5_to_mixer"},
+    {core::ModuleId::drone_3, core::ModuleId::mixer, "drone_3_to_mixer"},
+    {core::ModuleId::drone_6, core::ModuleId::mixer, "drone_6_to_mixer"},
+};
+
+// Registry-backed runtime with all SIX drone voices bound to kDrone and six fixed edges, so
+// drone_3/drone_6 land in the compiled plan as their own PapaVoice slots. The D4 cohorts are NOT
+// bound here — this is the unbound base the default-equivalence lock and the fail-closed negatives
+// start from (mirroring makeRegistryDroneBase()).
+core::SynthRuntime makeRegistryPapaBase() {
+  namespace reg = lunar24::registry;
+  // See the storage-duration note in makeRegistryDroneJacks (static + per-field set: an aggregate
+  // ModuleExecutionContract copy into static storage ICEs GCC's gimplifier).
+  static core::ModuleExecutionContract cyc[core::kModuleCount];
+  static core::GraphModule mods[core::kModuleCount];
+  for (std::uint32_t i = 0; i < core::kModuleCount; ++i) {
+    cyc[i].sampleRate = kSr;
+    cyc[i].allowedInCyclicSCC = true;
+    mods[i].id = reg::kModules[i].id;
+    mods[i].contract = &cyc[i];
+  }
+  core::SynthRuntime rt(reg::kJacks, reg::kJackCount, nullptr, 0, mods, core::kModuleCount,
+                        kSeed, kSr, kPapaDroneEdge, 6);
+  rt.bindFixedRole(core::ModuleId::drone_1, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(core::ModuleId::drone_2, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(core::ModuleId::drone_4, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(core::ModuleId::drone_5, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(core::ModuleId::drone_3, core::FixedChainRole::kDrone);
+  rt.bindFixedRole(core::ModuleId::drone_6, core::FixedChainRole::kDrone);
+  static_cast<void>(rt.rebuild());
+  return rt;
+}
+
+// The product-wired D4 runtime: the Papa base + BOTH real generated-registry cohorts. Discarding
+// the setters' bool would hide a silent admission failure, so both are checked.
+core::SynthRuntime makeRegistryPapaRuntime() {
+  namespace reg = lunar24::registry;
+  core::SynthRuntime rt = makeRegistryPapaBase();
+  check(rt.setDroneVoiceGateBindings(reg::JackId::drone_3_gate_in, reg::JackId::drone_6_gate_in),
+        "both real registry GATE IN jacks pass atomic admission (setter returns true)");
+  check(rt.setDroneVoiceEnvOutBindings(reg::JackId::drone_3_env_out, reg::JackId::drone_6_env_out),
+        "both real registry ENV OUT jacks pass atomic admission (setter returns true)");
+  return rt;
+}
+
 // Gate the classic group OFF, let it release, then verify the product path: near-silent
 // channel, ENV OUT dropped to the row's own nominalMin, and a neighbor group left untouched.
 // Then gate ONLY group 0 back ON and verify it recovers with an attack while group 1 stays
@@ -1693,6 +1755,435 @@ IJU_TEST_NOINLINE void d3_div_actual_timing_acceptance() {
   //     audio block-partition are asserted in the @Codex dd57c783 gap-fill:
   //     tests/host/test_d3_divider_restore.cpp.
 }
+
+// ---- GH#15 D4 acceptance (task #106): drone_3/6 ATT/RLS + the AR VCA envelope ----
+// Each function builds one or more SynthRuntime BY VALUE on the stack, so — exactly like the D3
+// block above — they are held out of main()'s frame (IJU_TEST_NOINLINE) to keep the MSVC/ASan
+// runner stack bounded. A CI-safety latch, not product semantics.
+
+// Both stages bottom out at the classic 0.001 s floor (48 samples at kSr), so a settle window of
+// 2x that ALWAYS reaches the clamped target. "Settled" is therefore asserted as exact equality
+// (the tick clamps to the target), never a tolerance.
+constexpr std::size_t kD4Settle = 96;
+// The classic norm -> seconds span, written as the CLOSED FORM the shared DroneBank mapping
+// implements (kAttNormMinSeconds + norm*(kAttNormMaxSeconds-kAttNormMinSeconds)). Deliberately NOT
+// read back through mapAttSeconds/mapRlsSeconds: the oracle must stay independent of the product
+// mapping so a mutated mapping reds, while the two constant pins in the first checks stop the
+// closed form from silently drifting away from the header.
+constexpr double kD4AttSpan = 1.0 - 0.001;
+constexpr double kD4RlsSpan = 1.0 - 0.001;
+// The default-equivalence window (section 5). Long enough to clear every startup transient.
+constexpr std::size_t kD4LockFrames = 4096;
+
+// Bitwise double equality. The D4 default-equivalence lock is a BIT-level claim (an unpatched
+// voice must be bit-identical to the pre-D4 path), so no tolerance is allowed there.
+bool d4BitEq(double a, double b) { return std::memcmp(&a, &b, sizeof(double)) == 0; }
+bool d4SameAll(const std::vector<double>& a, const std::vector<double>& b) {
+  if (a.size() != b.size()) return false;
+  for (std::size_t i = 0; i < a.size(); ++i)
+    if (!d4BitEq(a[i], b[i])) return false;
+  return true;
+}
+
+// (1) ATT/RLS reach the AR envelope's stage seconds through the SINGLE shared mapping, in both
+// dispatch lanes, and the stages stay independent. Clause 3 of the D4 contract: the span is the
+// classic 0.001..1.0 s constant reused verbatim — no new constant, PROVISIONAL as before.
+IJU_TEST_NOINLINE void d4_att_rls_mapping_acceptance() {
+  using core::ParameterApplyStatus;
+  check(core::DroneBank::kAttNormMinSeconds == 0.001 && core::DroneBank::kAttNormMaxSeconds == 1.0,
+        "d4 att span is the classic DroneBank constant 0.001..1.0 s (no new constant invented)");
+  check(core::DroneBank::kRlsNormMinSeconds == 0.001 && core::DroneBank::kRlsNormMaxSeconds == 1.0,
+        "d4 rls span is the classic DroneBank constant 0.001..1.0 s (no new constant invented)");
+
+  core::SynthRuntime rt = makeRuntime();
+  static_cast<void>(rt.rebuild());
+  check(rt.applyDspParam(core::ParameterId::drone_3_att, 0.5) == ParameterApplyStatus::applied,
+        "d3 att norm=0.5 is admitted by the batch lane (applied_to_dsp)");
+  check(std::fabs(rt.drone3AttSeconds() - (0.001 + kD4AttSpan * 0.5)) < 1e-12,
+        "d3 att norm=0.5 -> 0.5005 s on the REAL stage (closed form 0.001+0.999*0.5)");
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.0));
+  check(std::fabs(rt.drone3AttSeconds() - 0.001) < 1e-12,
+        "d3 att norm=0 -> the classic 0.001 s floor");
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 1.0));
+  check(std::fabs(rt.drone3AttSeconds() - 1.0) < 1e-12,
+        "d3 att norm=1 -> the classic 1.0 s ceiling");
+  check(std::fabs(rt.drone3RlsSeconds() - 0.001) < 1e-12,
+        "changing d3 ATT leaves RLS at its own default (independent stages, no shared state)");
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.25));
+  const double rlsHeld = rt.drone3RlsSeconds();
+  check(std::fabs(rlsHeld - (0.001 + kD4RlsSpan * 0.25)) < 1e-12,
+        "d3 rls norm=0.25 -> 0.25075 s on the REAL stage (closed form 0.001+0.999*0.25)");
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.75));
+  check(rt.drone3RlsSeconds() == rlsHeld,
+        "changing d3 ATT after RLS leaves the RLS stage byte-identical (no cross-stage write)");
+
+  core::SynthRuntime rt6 = makeRuntime();
+  static_cast<void>(rt6.rebuild());
+  static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_att, 0.75));
+  check(std::fabs(rt6.drone6AttSeconds() - (0.001 + kD4AttSpan * 0.75)) < 1e-12,
+        "d6 att batch lane reaches the field (closed form 0.001+0.999*0.75)");
+  static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_rls, 0.75));
+  check(std::fabs(rt6.drone6RlsSeconds() - (0.001 + kD4RlsSpan * 0.75)) < 1e-12,
+        "d6 rls batch lane reaches the field (closed form 0.001+0.999*0.75)");
+
+  // The live lane: a panel knob turn is a ControlEvent that processBlock drains (the real
+  // codec->owner->processBlock entry, NOT the batch applyDspParam lane).
+  constexpr std::size_t kTot = 128;
+  static const core::RuntimeInputs kSil[kTot] = {};
+  core::RuntimeOutput out[kTot] = {};
+  core::SynthRuntime rtL = makeRuntime();
+  static_cast<void>(rtL.rebuild());
+  auto sendLive = [&](core::ParameterId p, double v, std::uint32_t seq) {
+    core::ControlEvent ev;
+    ev.kind = core::ControlEventKind::parameter;
+    ev.parameter = p;
+    ev.value = static_cast<core::SignalSample>(v);
+    ev.source = 1;
+    ev.producerSequence = seq;
+    core::TimedControlEvent te;
+    te.event = ev;
+    te.sample = 0;
+    const bool ok = rtL.enqueueControlEvent(te);
+    rtL.processBlock(kSil, kTot, out, /*driveGraph=*/true);
+    return ok;
+  };
+  check(sendLive(core::ParameterId::drone_3_att, 0.25, 1),
+        "d3 att live ControlEvent is admitted");
+  check(std::fabs(rtL.drone3AttSeconds() - (0.001 + kD4AttSpan * 0.25)) < 1e-12,
+        "d3 att live lane reaches the stage seconds (closed form 0.001+0.999*0.25)");
+  check(sendLive(core::ParameterId::drone_6_rls, 0.5, 2),
+        "d6 rls live ControlEvent is admitted");
+  check(std::fabs(rtL.drone6RlsSeconds() - (0.001 + kD4RlsSpan * 0.5)) < 1e-12,
+        "d6 rls live lane reaches the stage seconds (closed form 0.001+0.999*0.5)");
+
+  // Unit-domain lock: norm outside [0,1] is malformed for its registry unit -> invalid_value,
+  // and the stage seconds keep the old value (never a silent coercion).
+  core::SynthRuntime rtR = makeRuntime();
+  static_cast<void>(rtR.rebuild());
+  static_cast<void>(rtR.applyDspParam(core::ParameterId::drone_3_att, 0.25));
+  static_cast<void>(rtR.applyDspParam(core::ParameterId::drone_3_rls, 0.25));
+  const double attHeld = rtR.drone3AttSeconds();
+  const double rlsHeld2 = rtR.drone3RlsSeconds();
+  check(rtR.applyDspParam(core::ParameterId::drone_3_att, 2.0) == ParameterApplyStatus::invalid_value,
+        "d3 att 2.0 is rejected as invalid_value (norm > 1)");
+  check(rtR.drone3AttSeconds() == attHeld, "d3 att 2.0 leaves the stage seconds unchanged");
+  check(rtR.applyDspParam(core::ParameterId::drone_3_att, -0.5) == ParameterApplyStatus::invalid_value,
+        "d3 att -0.5 is rejected as invalid_value (norm < 0)");
+  check(rtR.drone3AttSeconds() == attHeld, "d3 att -0.5 leaves the stage seconds unchanged");
+  check(rtR.applyDspParam(core::ParameterId::drone_3_rls, 2.0) == ParameterApplyStatus::invalid_value,
+        "d3 rls 2.0 is rejected as invalid_value (norm > 1)");
+  check(rtR.drone3RlsSeconds() == rlsHeld2, "d3 rls 2.0 leaves the stage seconds unchanged");
+  check(rtR.applyDspParam(core::ParameterId::drone_3_rls, -0.5) == ParameterApplyStatus::invalid_value,
+        "d3 rls -0.5 is rejected as invalid_value (norm < 0)");
+  check(rtR.drone3RlsSeconds() == rlsHeld2, "d3 rls -0.5 leaves the stage seconds unchanged");
+}
+
+// (2) The gate really reaches the envelope through the patch graph, per voice and without
+// cross-talk — and an UNPATCHED gate is NOT "closed": it follows the named provisional default
+// (kDefaultGroupGateOpen), which is what makes the pre-D4 path bit-identical.
+IJU_TEST_NOINLINE void d4_gate_follows_cable() {
+  namespace reg = lunar24::registry;
+  core::SynthRuntime rt = makeRegistryPapaRuntime();
+  check(rt.droneVoiceGateBound(0) && rt.droneVoiceGateBound(1),
+        "both Papa voices are gate-bound after the real registry cohort is admitted");
+  // Fastest legal stages, so the settle window is short and the endpoints are exact.
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.0));
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.0));
+  for (std::size_t i = 0; i < kD4Settle; ++i)
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+  check(rt.droneVoiceArGate(0),
+        "an UNPATCHED gate_in keeps the named provisional default (OPEN, not 'closed')");
+  check(rt.droneVoiceArLevel(0) == 1.0,
+        "an unpatched gate leaves the drone_3 AR level at exactly 1.0");
+
+  // Patch the gate and drive it below the descriptor's 0 V threshold.
+  check(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in),
+        "a cable can be patched into drone_3.gate_in");
+  static_cast<void>(rt.rebuild());
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+  for (std::size_t i = 0; i < kD4Settle; ++i)
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+  check(!rt.droneVoiceArGate(0),
+        "gate_in at -5 V (< the 0 V threshold) closes the drone_3 voice gate");
+  check(rt.droneVoiceArLevel(0) == 0.0,
+        "a closed gate releases the drone_3 AR level to exactly 0 (clamped, never below)");
+  check(rt.droneVoiceArGate(1) && rt.droneVoiceArLevel(1) == 1.0,
+        "the UNPATCHED drone_6 voice is untouched by the drone_3 cable (no cross-talk)");
+
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, 5.0);
+  for (std::size_t i = 0; i < kD4Settle; ++i)
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+  check(rt.droneVoiceArGate(0),
+        "gate_in at +5 V (>= the 0 V threshold) re-opens the drone_3 voice gate");
+  check(rt.droneVoiceArLevel(0) == 1.0,
+        "the re-opened gate returns the AR level to exactly 1.0");
+}
+
+// (3) WHICH stage ran, measured on the RENDER (not the readback). The two spans are numerically
+// identical (0.001..1.0 s), so a readback-only oracle cannot tell ATT from RLS; the accumulated
+// level can. Frame counts are chosen so neither stage clamps inside its own window.
+IJU_TEST_NOINLINE void d4_att_rls_stage_rates_in_render() {
+  namespace reg = lunar24::registry;
+  constexpr std::size_t kWin = 480;  // 10 ms at kSr: < the 0.5005 s attack, > the 0.001 s release.
+  core::SynthRuntime rt = makeRegistryPapaRuntime();
+  check(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in),
+        "d4 stage-rate probe: the gate cable is admitted");
+  static_cast<void>(rt.rebuild());
+  // ATT slow (norm 0.5 -> 0.5005 s), RLS fast (norm 0.0 -> 0.001 s).
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.5));
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.0));
+  const double attSec = 0.001 + kD4AttSpan * 0.5;
+  const double rlsSec = 0.001 + kD4RlsSpan * 0.0;
+
+  // Start OPEN, then close the gate: the RELEASE stage must own the fall — and it is 500x faster
+  // than the attack, so it reaches exactly 0 inside kWin.
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, 5.0);
+  for (std::size_t i = 0; i < kD4Settle; ++i)
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+  check(rt.droneVoiceArLevel(0) == 1.0,
+        "d4 stage-rate probe: the voice starts fully open (release measurement is not vacuous)");
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+  check(double(kWin) / kSr > rlsSec,
+        "d4 stage-rate probe: the release window is longer than the mapped RLS stage (so a "
+        "settled-to-0 result is meaningful, not a truncated measurement)");
+  for (std::size_t i = 0; i < kWin; ++i)
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+  check(rt.droneVoiceArLevel(0) == 0.0,
+        "the gate-close ramp uses the RLS stage (a 0.001 s release settles inside 480 frames)");
+
+  // Now open it again: only the ATTACK stage may own the rise, so the level after kWin frames is
+  // exactly kWin/sr/attSeconds — a 0.001 s attack would have clamped at 1.0 instead.
+  const double fromClosed = rt.droneVoiceArLevel(0);
+  check(fromClosed == 0.0, "d4 stage-rate probe: the level is at 0 before the attack window");
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, 5.0);
+  for (std::size_t i = 0; i < kWin; ++i)
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+  check(std::fabs(rt.droneVoiceArLevel(0) - double(kWin) / kSr / attSec) < 1e-9,
+        "the gate-open ramp advances at dt/attSeconds from the mapped ATT norm (linear, not exponential)");
+  check(rt.droneVoiceArLevel(0) > 0.0 && rt.droneVoiceArLevel(0) < 1.0,
+        "the ATT ramp is still in flight after 10 ms (so the previous check is not a clamp artefact)");
+}
+
+// (4) ENV OUT publication: descriptor-driven, single write into the CV source bank, and the
+// released/unbound state reads 0 (never a stale voltage).
+IJU_TEST_NOINLINE void d4_env_out_publication_acceptance() {
+  namespace reg = lunar24::registry;
+  core::SynthRuntime rt = makeRegistryPapaRuntime();
+  const core::JackDescriptor* d3 = reqRegistryJack(reg::JackId::drone_3_env_out);
+  const core::JackDescriptor* d6 = reqRegistryJack(reg::JackId::drone_6_env_out);
+  const double span3 = d3->nominalMax - d3->nominalMin;
+  const double span6 = d6->nominalMax - d6->nominalMin;
+  check(span3 != 0.0 && span6 != 0.0,
+        "the real drone_3/6 ENV OUT descriptors carry a non-degenerate nominal range");
+
+  for (std::size_t i = 0; i < kD4Settle; ++i)
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+  check(rt.droneVoiceEnvOutVolts(0) == d3->nominalMin + 1.0 * span3,
+        "ENV OUT at AR level 1.0 is the descriptor's own nominalMax (transfer read from the descriptor)");
+  check(rt.droneVoiceEnvOutVolts(0) == d3->nominalMax,
+        "the ENV OUT endpoint is exactly nominalMax — no hard-coded voltage");
+  check(rt.controlVoltageAt(reg::JackId::drone_3_env_out) ==
+            d3->nominalMin + rt.droneVoiceArLevel(0) * span3,
+        "the drone_3.env_out CV source slot holds exactly min + level*(max-min) of the LIVE AR level");
+
+  // Drive the gate low: the envelope goes to 0 and the published volts must reach nominalMin.
+  check(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in),
+        "ENV OUT probe: the gate cable is admitted");
+  static_cast<void>(rt.rebuild());
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.0));
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.0));
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+  for (std::size_t i = 0; i < kD4Settle; ++i)
+    rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+  check(rt.droneVoiceArLevel(0) == 0.0, "ENV OUT probe: the gated voice really released to 0");
+  check(rt.droneVoiceEnvOutVolts(0) == d3->nominalMin,
+        "a released voice publishes exactly the descriptor's nominalMin");
+  check(rt.droneVoiceEnvOutVolts(0) != d3->nominalMax,
+        "the ENV OUT transfer is a real lever (min != max), not a constant");
+  check(rt.droneVoiceEnvOutVolts(1) == d6->nominalMin + 1.0 * span6 &&
+            rt.droneVoiceEnvOutVolts(1) == d6->nominalMax,
+        "the untouched drone_6 ENV OUT still publishes its OWN descriptor's nominalMax "
+        "(per-voice transfer, no cross-talk)");
+}
+
+// (5) THE REGRESSION LOCK (highest weight — @Kimi clause 1): without a cable on gate_in the AR
+// envelope must be a transparent x1.0 gain, so the whole D4 path is bit-identical to pre-D4. Three
+// configurations are compared BITWISE (no tolerance):
+//   A = no D4 cohort bound at all (the pre-D4 state);
+//   B = both cohorts bound, gate_in NOT patched (the provisional default applies);
+//   C = both cohorts bound, gate_in patched and driven CONSTANTLY HIGH.
+// A == B proves binding a cohort does not change the sound; B == C proves "default" really means
+// OPEN, not merely "some constant". A fourth capture (cable driven LOW) must DIFFER, so the lock
+// cannot be satisfied vacuously. Flipping the named default constant to false breaks B and C.
+struct D4Capture {
+  std::vector<double> ch3, ch6;
+  bool levelAlwaysOne = true;  // droneVoiceArLevel(0) == 1.0 at EVERY sample.
+  bool gateAlwaysOpen = true;  // droneVoiceArGate(0) == true at EVERY sample.
+};
+
+IJU_TEST_NOINLINE void d4_default_equivalence_lock() {
+  namespace reg = lunar24::registry;
+  auto capture = [](core::SynthRuntime& rt, double gateVolts, bool cable) {
+    D4Capture c;
+    if (cable) {
+      rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in);
+      static_cast<void>(rt.rebuild());
+      rt.setControlVoltage(reg::JackId::lfo_a_cv_out, gateVolts);
+    }
+    for (std::size_t i = 0; i < kD4LockFrames; ++i) {
+      rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+      c.ch3.push_back(rt.drone3Channel());
+      c.ch6.push_back(rt.drone6Channel());
+      if (rt.droneVoiceArLevel(0) != 1.0) c.levelAlwaysOne = false;
+      if (!rt.droneVoiceArGate(0)) c.gateAlwaysOpen = false;
+    }
+    return c;
+  };
+  core::SynthRuntime rtA = makeRegistryPapaBase();  // A: pre-D4 (no cohort bound)
+  const D4Capture a = capture(rtA, 0.0, false);
+  check(a.ch3[0] != 0.0 && a.ch6[0] != 0.0,
+        "the unpatched Papa channels are non-zero (so the bitwise lock below is meaningful)");
+
+  core::SynthRuntime rtB = makeRegistryPapaRuntime();  // B: bound, gate unpatched
+  const D4Capture b = capture(rtB, 0.0, false);
+
+  core::SynthRuntime rtC = makeRegistryPapaRuntime();  // C: bound, gate driven HIGH
+  const D4Capture c = capture(rtC, 5.0, true);
+
+  check(d4SameAll(a.ch3, b.ch3),
+        "D4 lock: binding the GATE cohort alone leaves drone_3 BIT-IDENTICAL to pre-D4");
+  check(d4SameAll(a.ch6, b.ch6),
+        "D4 lock: binding the GATE cohort alone leaves drone_6 BIT-IDENTICAL to pre-D4");
+  check(d4SameAll(b.ch3, c.ch3),
+        "D4 lock: a gate_in cable held HIGH is BIT-IDENTICAL to the unpatched default (default == OPEN)");
+  check(d4SameAll(b.ch6, c.ch6),
+        "D4 lock: the drone_6 voice is bit-identical in both bound configurations");
+  check(b.levelAlwaysOne && c.levelAlwaysOne,
+        "D4 lock: the drone_3 AR level is exactly 1.0 at EVERY sample in both bound configurations");
+  check(c.gateAlwaysOpen,
+        "D4 lock: the gate readback is OPEN at every sample while the cable is driven HIGH");
+
+  // Non-vacuity: the SAME cable driven LOW must change the channel and move the level.
+  core::SynthRuntime rtD = makeRegistryPapaRuntime();
+  const D4Capture d = capture(rtD, -5.0, true);
+  check(!d4SameAll(b.ch3, d.ch3),
+        "D4 lock is NOT vacuous: the same cable driven LOW does change the drone_3 channel");
+  check(!d.levelAlwaysOne,
+        "D4 lock is NOT vacuous: the same cable driven LOW does move the AR level off 1.0");
+}
+
+// (6) ATOMIC FAIL-CLOSED cohort admission for BOTH D4 cohorts, plus the release semantics: a
+// refused cohort must leave the voice OPEN again (the named provisional default), and a released
+// env_out cohort must zero the CV source slots it had written.
+IJU_TEST_NOINLINE void d4_cohort_fail_closed() {
+  namespace reg = lunar24::registry;
+  using core::JackId;
+  {
+    core::SynthRuntime base = makeRegistryPapaBase();
+    check(!base.droneVoiceGateBound(0) && !base.droneVoiceGateBound(1),
+          "an unbound Papa GATE cohort fails closed (bound=false, never a JackId{0} sentinel)");
+    check(!base.droneVoiceEnvOutBound(0) && !base.droneVoiceEnvOutBound(1) &&
+              base.droneVoiceEnvOutVolts(0) == 0.0,
+          "an unbound Papa ENV OUT cohort reads 0 volts, never a stale jack");
+    check(!base.droneVoiceGateBound(2) && !base.droneVoiceEnvOutBound(-1) &&
+              base.droneVoiceArLevel(2) == 0.0 && base.droneVoiceArAttSeconds(-1) == 0.0 &&
+              base.droneVoiceEnvOutVolts(7) == 0.0,
+          "an out-of-range D4 voice index fails closed on every D4 readback");
+  }
+
+  const JackId missing = unusedRegistryId();
+  const JackId overCap = static_cast<JackId>(999);  // >= kMaxEdges (128)
+  enum class Kind { Gate, EnvOut };
+  struct Neg {
+    Kind kind;
+    const char* name;
+    JackId v3;
+    JackId v6;
+  };
+  const Neg negs[] = {
+      {Kind::Gate, "missing registry id", missing, missing},
+      {Kind::Gate, "out-of-capacity id", overCap, overCap},
+      {Kind::Gate, "wrong owning module (a drone_6 jack for voice 0)", reg::JackId::drone_6_gate_in,
+       reg::JackId::drone_6_gate_in},
+      {Kind::Gate, "wrong direction (an output jack for GATE IN)", reg::JackId::drone_3_env_out,
+       reg::JackId::drone_6_env_out},
+      {Kind::EnvOut, "missing registry id", missing, missing},
+      {Kind::EnvOut, "out-of-capacity id", overCap, overCap},
+      {Kind::EnvOut, "wrong owning module (a drone_6 jack for voice 0)",
+       reg::JackId::drone_6_env_out, reg::JackId::drone_6_env_out},
+      {Kind::EnvOut, "wrong direction (an input jack for ENV OUT)", reg::JackId::drone_3_gate_in,
+       reg::JackId::drone_6_gate_in},
+  };
+  for (const Neg& n : negs) {
+    // BOTH valid cohorts are admitted first, so a refusal has something real to release.
+    core::SynthRuntime rt = makeRegistryPapaRuntime();
+    if (n.kind == Kind::Gate) {
+      // Prove the valid cohort was LIVE: its cable closes the gate.
+      static_cast<void>(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in));
+      static_cast<void>(rt.rebuild());
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.0));
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.0));
+      rt.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+      for (std::size_t i = 0; i < kD4Settle; ++i)
+        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+      char live[224];
+      std::snprintf(live, sizeof live,
+                    "'%s': the valid GATE cohort was LIVE first (its cable had closed the voice)",
+                    n.name);
+      check(rt.droneVoiceArGate(0) == false, live);
+
+      char refused[224];
+      std::snprintf(refused, sizeof refused, "'%s': the bad GATE cohort is rejected (setter returns false)",
+                    n.name);
+      check(rt.setDroneVoiceGateBindings(n.v3, n.v6) == false, refused);
+      for (int v = 0; v < 2; ++v) {
+        char m[224];
+        std::snprintf(m, sizeof m, "'%s': voice %d gate-unbound (NO partial binding after refusal)",
+                      n.name, v);
+        check(!rt.droneVoiceGateBound(v), m);
+      }
+      for (std::size_t i = 0; i < kD4Settle; ++i)
+        rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+      char rel[224];
+      std::snprintf(rel, sizeof rel,
+                    "'%s': a refused GATE cohort returns the voice to the named provisional default "
+                    "(OPEN, level exactly 1.0)",
+                    n.name);
+      check(rt.droneVoiceArGate(0) && rt.droneVoiceArLevel(0) == 1.0, rel);
+    } else {
+      rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+      const double before3 = rt.controlVoltageAt(reg::JackId::drone_3_env_out);
+      char beforeMsg[224];
+      std::snprintf(beforeMsg, sizeof beforeMsg,
+                    "'%s': the valid ENV OUT cohort wrote non-zero volts first (release is not vacuous)",
+                    n.name);
+      check(before3 != 0.0, beforeMsg);
+
+      char refused[224];
+      std::snprintf(refused, sizeof refused,
+                    "'%s': the bad ENV OUT cohort is rejected (setter returns false)", n.name);
+      check(rt.setDroneVoiceEnvOutBindings(n.v3, n.v6) == false, refused);
+      for (int v = 0; v < 2; ++v) {
+        char m1[224];
+        std::snprintf(m1, sizeof m1, "'%s': voice %d env-out-unbound (NO partial binding after refusal)",
+                      n.name, v);
+        char m2[224];
+        std::snprintf(m2, sizeof m2, "'%s': voice %d reads 0 volts (NO stale readback after refusal)",
+                      n.name, v);
+        check(!rt.droneVoiceEnvOutBound(v), m1);
+        check(rt.droneVoiceEnvOutVolts(v) == 0.0, m2);
+      }
+      char m3[224];
+      std::snprintf(m3, sizeof m3,
+                    "'%s': the ORIGINAL valid source-bank slots are cleared to 0 "
+                    "(releaseVoiceEnvOut_ zeroes cvOut_, no stale ENV OUT voltage survives)",
+                    n.name);
+      check(rt.controlVoltageAt(reg::JackId::drone_3_env_out) == 0.0 &&
+                rt.controlVoltageAt(reg::JackId::drone_6_env_out) == 0.0,
+            m3);
+    }
+  }
+}
 }  // namespace
 
 int main() {
@@ -2691,6 +3182,30 @@ int main() {
   // (from the live rate getter, NOT the divider getter), for integer N AND the default N=8.5 (mean,
   // intervals alternate 8/9), on drone3 AND drone6, with asymmetric no-cross-talk and split+restore.
   d3_div_actual_timing_acceptance();
+
+  // ---- GH#15 D4: drone_3/6 ATT + RLS into the AR VCA envelope of the Papa Srapa voices ----
+  // D4 gives each NEW voice (drone_3/drone_6) the envelope the classic groups already own:
+  // the very same LINEAR VCA law (target = gate ? 1 : 0, level += dt/attSeconds toward it,
+  // clamped), the very same norm->seconds mapping (DroneBank::mapAttSeconds/mapRlsSeconds,
+  // 0.001..1.0 s, PROVISIONAL), and the very same provisional default-open gate constant
+  // (DroneBank::kDefaultGroupGateOpen). NOT the exponential EnvelopeGenerator.
+  // Acceptance: (1) ATT/RLS reach the envelope's REAL stage seconds through the shared mapping,
+  // in BOTH dispatch lanes, unit-domain locked; (2) the gate is a real cable consumer
+  // (drone_N.gate_in), per voice, no cross-talk — an UNPATCHED gate is NOT "closed";
+  // (3) WHICH stage ran is measured on the render (the two spans are numerically equal, so only
+  // the accumulated level can tell ATT from RLS apart); (4) ENV OUT is descriptor-driven and
+  // reads 0 when unbound/released; (5) THE REGRESSION LOCK — bitwise identical to pre-D4 with no
+  // gate cable, in both the bound and bound+driven-HIGH configurations; (6) atomic fail-closed
+  // admission + release semantics for BOTH D4 cohorts.
+  std::printf("(47) GH#15 D4 drone_3/6 ATT+RLS -> AR VCA envelope — product path\n");
+  // clang-format off
+  d4_att_rls_mapping_acceptance();
+  d4_gate_follows_cable();
+  d4_att_rls_stage_rates_in_render();
+  d4_env_out_publication_acceptance();
+  d4_default_equivalence_lock();
+  d4_cohort_fail_closed();
+  // clang-format on
 
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();
