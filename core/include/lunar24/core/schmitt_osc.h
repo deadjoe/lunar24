@@ -174,7 +174,11 @@ class SchmittOsc {
   //     half-period -- NOT the analytic r/2. That distinction is load-bearing: with
   //     the analytic step every half-integer corner lands `a` samples away from the
   //     corner the waveform actually has, and the measured cost of that misplacement
-  //     was up to 7 dB (two cells came out WORSE than the uncorrected naive render).
+  //     was up to 7 dB: THREE cells came out WORSE than the uncorrected naive render
+  //     (-4.30, -1.65 and -7.14 dB on drone3_48000_p20, drone3_96000_p60 and
+  //     drone6_96000_p30). Counted from the product renders per cell, not from the
+  //     offline surrogate; earlier drafts of this comment said two, then four, both
+  //     wrong -- the fourth cell, drone6_48000_p30, is +0.29, i.e. BETTER.
   //   * SCALE. mag = slope_jump/8 = 2r/8 = r/4 (the kernel already carries the 8,
   //     corner 8/pi^2). Cross-check by the paper's A*phi law: A = kWindowVolts = 0.5
   //     and phi = r/2, giving the same r/4. Two independent routes, one number.
@@ -206,6 +210,12 @@ class SchmittOsc {
   //   tested as a TWO-kernel construction and is WORSE STILL (-76.7 dB): splitting
   //   the jump is not what the naive waveform does. The fitted constant is therefore
   //   not a disguised physical quantity; see the slice report.
+  //   METRIC NOTE on those four figures. They are the OFFLINE HELD-REFERENCE SURROGATE,
+  //   not the acceptance gate. The surrogate fits the bandlimited reference to the PRE
+  //   render; the gate re-fits it to the POST render and is less conservative, by 1..16
+  //   dB per cell. So the SAME 0.5*a configuration the surrogate scores at +92.6 dB
+  //   measures +122.12 dB on the gate. Use these four numbers to RANK the constructions
+  //   (all four are scored in one metric); do NOT read +92.6 as this code's gate result.
   //   The correction is applied BEFORE the AM multiply, so it is exact only for
   //   amDepth = 0 (i.e. it does not scale with the AM index); see the slice report.
   double railBlampCorr(double inc, int rail) {
@@ -222,9 +232,11 @@ class SchmittOsc {
     // half period, unconditionally). The lattice step must be 0.5 cycles per ACTUAL
     // half period, not per ideal one -- with the ideal step `every half-integer
     // (-rail) corner sat `a` samples away from the corner the waveform really has`,
-    // which cost up to 7 dB of the correction on real cells. Cross-checked against
-    // the analyzer: this step reproduces the offline corner-anchored model's per-cell
-    // dB exactly (see the slice report).
+    // which cost up to 7 dB of the correction on real cells. Cross-check, stated in the
+    // two pieces that were actually measured: the product carrying this step reproduces
+    // the offline corner-anchored model's per-cell dB, and the model's NAIVE column
+    // reproduces the analyzer's to <=0.005 dB on all 12 required cells. Their CORRECTED
+    // columns are different scalars -- see the METRIC NOTE above.
     const double mActual = std::ceil(mIdeal);   // integer half-period the ramp HAS.
     const double step = 0.5 / mActual;          // cycles/sample; exact at every clamp.
     if (blampSupportReachesHalfPeriod(step)) return 0.0;    // M <= 8: fallback.
