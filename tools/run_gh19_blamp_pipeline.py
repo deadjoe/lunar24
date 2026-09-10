@@ -41,6 +41,15 @@ def main():
     ap.add_argument("--baseline", required=True, help="tools/gh19_naive_baseline.tsv")
     ap.add_argument("--analyzer", required=True, help="tools/gh19_alias_analyze.py")
     ap.add_argument("--gate", required=True, help="tools/check_gh19_blamp_acceptance.py")
+    # Optional gate arguments. Both default OFF so the VCO sibling -- which shares this
+    # driver and has neither an M<=8 byte-identity assertion nor a self-check -- keeps
+    # running with exactly the argument list it ran with before.
+    ap.add_argument("--gate-wants-raws", action="store_true",
+                    help="also pass --current-raws <probe dir> to the gate (the Schmitt "
+                         "gate's fallback byte-identity assertion needs the raw renders)")
+    ap.add_argument("--gate-self-check", action="store_true",
+                    help="also pass --self-check to the gate, so the gate's own "
+                         "non-vacuity cases are exercised on every CI run")
     ap.add_argument("--out", default=None,
                     help="scratch dir (default: a tempdir, removed on exit)")
     args = ap.parse_args()
@@ -55,8 +64,17 @@ def main():
                   "--manifest", args.manifest])
         with open(tsv, "w", encoding="utf-8") as f:
             f.write(an.stdout)
-        run([sys.executable, args.gate, "--baseline", args.baseline,
-             "--current", tsv])
+        gate_cmd = [sys.executable, args.gate, "--baseline", args.baseline,
+                    "--current", tsv]
+        if args.gate_wants_raws:
+            gate_cmd += ["--current-raws", probe_dir]
+        if args.gate_self_check:
+            gate_cmd += ["--self-check"]
+        g = run(gate_cmd)
+        # Echo the gate's verdict table even on success. Otherwise a passing CTest entry
+        # records only "rc=0" and the per-cell numbers -- the actual evidence -- exist
+        # nowhere in the CI log. Costs ~14 lines.
+        sys.stdout.write(g.stdout)
         return 0
     finally:
         if args.out is None:
