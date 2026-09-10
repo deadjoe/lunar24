@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Lunar 24 contributors
 # SPDX-License-Identifier: Apache-2.0
-# task #86 / GH#19: one-command REAL-PRODUCT pipeline used by the CTest gate
-# `gh19_blamp_acceptance`. Runs the compiled product probe into a scratch dir, feeds it
-# to the verified analyzer, then runs the BLAMP acceptance gate (current vs the committed
-# naive baseline). Exit 0 = accepted; non-zero = a required triangle cell fails.
+# task #86 / GH#19: one-command REAL-PRODUCT pipeline used by the CTest gates
+# `gh19_blamp_acceptance` (VCO triangle) and `gh19_schmitt_blamp_acceptance` (Schmitt
+# oscillator, task #109). Runs the compiled product probe into a scratch dir, feeds it
+# to the verified analyzer, then runs the acceptance gate (current vs the committed
+# naive baseline). Exit 0 = accepted; non-zero = a required cell fails.
+#
+# The gate and the baseline are ARGUMENTS, so both slices share this one driver rather
+# than forking it: the only thing that differs between them is the criterion file and
+# which committed baseline it reads. Exit 0 = accepted; non-zero = a required cell fails.
 #
 # Usage (used by CMake; also runnable by hand):
 #   python3 run_gh19_blamp_pipeline.py --probe <path-to-gh19_alias_probe> \
@@ -20,7 +25,11 @@ import tempfile
 def run(cmd, check=True):
     p = subprocess.run(cmd, capture_output=True, text=True)
     if check and p.returncode != 0:
-        sys.stderr.write("command failed: %s\n%s\n" % (" ".join(cmd), p.stderr))
+        # Echo BOTH streams: the analyzer and the gates report their per-cell table on
+        # stdout and only their diagnostics on stderr, so a stderr-only message hides the
+        # very rows that explain a RED verdict (which is what the negative controls need).
+        sys.stderr.write("command failed (rc=%d): %s\n--- stdout ---\n%s\n--- stderr ---\n%s\n"
+                         % (p.returncode, " ".join(cmd), p.stdout, p.stderr))
         sys.exit(p.returncode or 1)
     return p
 
