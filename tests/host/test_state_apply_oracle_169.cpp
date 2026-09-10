@@ -116,7 +116,7 @@ constexpr int kDroneGroup5 = 3;
 //               formula) fails. Monotonic pitch is covered by (a) + direction (no closed form).
 // The 35 control-source ids have NO SynthRuntime readback getter (internal EG/LFO/Joystick/
 // Sequencer members); they are pinned by test_state_apply_oracle.cpp. disposition_target_set()
-// recovers the applied_to_DSP set from the disposition table and proves 142(readback) ∪ 35 == it.
+// recovers the applied_to_DSP set from the disposition table and proves 146(readback) ∪ 35 == it.
 
 enum class RdKind { Scal, SelInt, SelBool, SelBoolInv, SelBoolExact, LinExp,
                     ClosedEnv, ClosedTune, ClosedVolt, ClosedRate, Mono };
@@ -178,6 +178,11 @@ constexpr RdSpec kRdSpecs[] = {
   // in the machine_runtime D3 acceptance via the CV-out readback, not a closed form here),
   // so MOVE-only like the hi_low/rate_switch pair.
   { ParameterId::drone_3_divider, RdKind::Mono, -1, -1 },
+  // GH#15 D4: ATT/RLS of the Papa Srapa voices are the FIRST drone_3/6 ids whose transfer into
+  // the AR envelope is a closed form (the shared DroneBank::mapAttSeconds/mapRlsSeconds, linear
+  // 0.001..1.0 s == envSecFromNorm), so they get the exact ClosedEnv kind rather than MOVE-only.
+  { ParameterId::drone_3_att, RdKind::ClosedEnv, -1, -1 },
+  { ParameterId::drone_3_rls, RdKind::ClosedEnv, -1, -1 },
   { ParameterId::drone_4_att, RdKind::ClosedEnv, 2, -1 },
   { ParameterId::drone_4_gate_hold, RdKind::SelBoolExact, 2, -1 },
   { ParameterId::drone_4_mod_1, RdKind::SelInt, 2, 0 },
@@ -227,6 +232,9 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::drone_6_rate_switch, RdKind::Mono, -1, -1 },
   // GH#15 D3 (see drone_3 above): same divided-clock ratio, MOVE-only.
   { ParameterId::drone_6_divider, RdKind::Mono, -1, -1 },
+  // GH#15 D4 (see drone_3 above): same shared norm->seconds closed form -> exact ClosedEnv.
+  { ParameterId::drone_6_att, RdKind::ClosedEnv, -1, -1 },
+  { ParameterId::drone_6_rls, RdKind::ClosedEnv, -1, -1 },
   { ParameterId::env_follower_attack, RdKind::ClosedEnv, -1, -1 },
   { ParameterId::env_follower_release, RdKind::ClosedEnv, -1, -1 },
   { ParameterId::mixer_ch10_pan, RdKind::Scal, 9, -1 },
@@ -326,6 +334,12 @@ double readBackValue(const SynthRuntime& r, ParameterId id) {
     case ParameterId::drone_3_hi_low: return static_cast<double>(r.drone3PitchHz());
     case ParameterId::drone_3_rate_switch: return static_cast<double>(r.drone3RateHz());
     case ParameterId::drone_3_divider: return r.drone3Divider();
+    // GH#15 D4: the AR envelope's REAL stage seconds (post shared norm->seconds mapping). Closed
+    // form (envSecFromNorm), so a wrong mapping or a skipped setter both fail.
+    case ParameterId::drone_3_att: return r.drone3AttSeconds();
+    case ParameterId::drone_3_rls: return r.drone3RlsSeconds();
+    case ParameterId::drone_6_att: return r.drone6AttSeconds();
+    case ParameterId::drone_6_rls: return r.drone6RlsSeconds();
     case ParameterId::drone_4_att: return static_cast<double>(r.droneGroupAttSeconds(2));
     case ParameterId::drone_4_gate_hold: return (r.droneGroupHold(2) ? 1.0 : 0.0);
     case ParameterId::drone_4_mod_1: return static_cast<double>(r.droneModAmount(2, 0));
@@ -586,16 +600,16 @@ std::unique_ptr<MachineRuntimeDefinition> acceptWithLabel(const DeviceStateV1& s
 }
 
 // -----------------------------------------------------------------------------------------
-// 1 & 4: default state -> accepted candidate, exactly 177 applied, sentinel firstFail, and
+// 1 & 4: default state -> accepted candidate, exactly 181 applied, sentinel firstFail, and
 // default(seed) readbacks are deterministic across independent builds (default==restore on the
 // canonical power-on default). GH#15 D1 adds drone_3/6_mod (169->171), D2 adds
-// drone_3/6_hi_low + drone_3/6_rate_switch (171->175), D3 adds drone_3/6_divider (175->177)
-// to applied_to_dsp.
+// drone_3/6_hi_low + drone_3/6_rate_switch (171->175), D3 adds drone_3/6_divider (175->177),
+// D4 adds drone_3/6_att + drone_3/6_rls (177->181) to applied_to_dsp.
 static void full169_default_apply() {
   const DeviceStateV1 def = make_default_device_state(kSeed);
   auto d = mustAccept(def);
   CHECK(d->dspApplyOk());
-  CHECK_EQ(d->dspAppliedCount(), 177u);
+  CHECK_EQ(d->dspAppliedCount(), 181u);
   CHECK(d->dspFirstFailId() == static_cast<ParameterId>(kParameterCount));
   CHECK(d->dspFirstFailStatus() == ParameterApplyStatus::applied);
   CHECK(d->valid());
@@ -953,8 +967,8 @@ static void typed_reject_carry_first_fail() {
   CHECK(firstId == ParameterId::vco_a_pw);
   CHECK(firstStatus == ParameterApplyStatus::invalid_value);
   // applyDspState re-writes the runtime's own running count on every call (partial on a
-  // rejection); the definition's construction-time count stays 177. Read the runtime count.
-  CHECK(d->runtime().dspAppliedCount() < 177u);
+  // rejection); the definition's construction-time count stays 181. Read the runtime count.
+  CHECK(d->runtime().dspAppliedCount() < 181u);
   // Fail-closed against partial-success: the source state is NEVER mutated by the apply.
   CHECK(bad.parameters[badIdx] == pvBefore);
 
@@ -997,18 +1011,18 @@ static void typed_reject_carry_first_fail() {
 
 }  // namespace
 
-// Whether ParameterId is one of the 142 ids covered by a per-item readback switch.
+// Whether ParameterId is one of the 146 ids covered by a per-item readback switch.
 bool hasReadback(ParameterId id) {
   for (const RdSpec& s : kRdSpecs) if (s.id == id) return true;
   return false;
 }
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #1/#2: the exact-177 gate must have a PRODUCT witness, not a bare
-// `== 177` constant inside the applicator. Recover the applied_to_DSP set from the disposition
+// REV of @Codex BLOCK finding #1/#2: the exact-181 gate must have a PRODUCT witness, not a bare
+// `== 181` constant inside the applicator. Recover the applied_to_DSP set from the disposition
 // table (the sole authority @Codex designated), then prove:
-//   * count_disposition(applied_to_DSP) is 177 (static contract, restated as a runtime CHECK),
-//   * the per-item readback class (142) and the control-source class (35) partition that set
+//   * count_disposition(applied_to_DSP) is 181 (static contract, restated as a runtime CHECK),
+//   * the per-item readback class (146) and the control-source class (35) partition that set
 //     EXACTLY: every applied id is in EXACTLY ONE class, no id is covered by both, no applied id
 //     is uncovered, and neither class claims a non-applied id.
 // Any migration that adds/removes an applied id, or any id that gains/loses a readback slot, now
@@ -1032,15 +1046,15 @@ static void disposition_target_set() {
     CHECK(!isReadback || isApplied);
     CHECK(!isControlSource || isApplied);
   }
-  CHECK(count_disposition(StateDisposition::applied_to_dsp) == 177);
-  CHECK(appliedCount == 177);
-  CHECK(rdCount == 142);
+  CHECK(count_disposition(StateDisposition::applied_to_dsp) == 181);
+  CHECK(appliedCount == 181);
+  CHECK(rdCount == 146);
   CHECK(ctCount == 35);
   CHECK(rdCount + ctCount == appliedCount);
 }
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #2: FULL-177 per-item readback. For each of the 142 readback ids,
+// REV of @Codex BLOCK finding #2: FULL-181 per-item readback. For each of the 146 readback ids,
 // apply a SINGLE mismatch-free value (probe derived from the registry descriptor: in-domain and
 // off the default) and assert BOTH:
 //   (a) MOVE  — the id's REAL readback (the member the render path consumes) moved off the value
@@ -1051,8 +1065,8 @@ static void disposition_target_set() {
 //               families and raw/selector families, and for the monotonic pitch (RdKind::Mono)
 //               the readback must still have MOVED, with no closed-form check. A wrong-transfer
 //               bug (e.g. tuning written through the volt formula) fails (b).
-// The union of these 142 readback ids + the 35 control-source ids (pinned by the 9B oracle) is
-// proven equal to exactly 177 by disposition_target_set(); control-source ids have no readback
+// The union of these 146 readback ids + the 35 control-source ids (pinned by the 9B oracle) is
+// proven equal to exactly 181 by disposition_target_set(); control-source ids have no readback
 // getter (internal EG/LFO/Joystick/Sequencer state) and are intentionally excluded here.
 static void full169_per_item() {
   const DeviceStateV1 def = make_default_device_state(kSeed);
@@ -1136,11 +1150,11 @@ static void full169_per_item() {
     }
   }
 
-  // sanity: the per-item class really covers all 177 applied_to_dsp ids (142 readback + 35 control
+  // sanity: the per-item class really covers all 181 applied_to_dsp ids (146 readback + 35 control
   // source), and no non-applied id is claimed.
   std::uint32_t n = 0;
   for (std::uint32_t i = 0; i < kParameterCount; ++i) if (isRd[i]) ++n;
-  CHECK(n == 177);
+  CHECK(n == 181);
   for (std::uint32_t i = 0; i < kParameterCount; ++i) {
     const auto id = static_cast<ParameterId>(i);
     CHECK(!isRd[i] || disposition_of(id) == StateDisposition::applied_to_dsp);

@@ -90,6 +90,7 @@
 #include <lunar24/core/distortion.h>
 #include <lunar24/core/state_disposition.h>  // task #78: the 169 applied_to_dsp table
 #include <lunar24/core/drone_bank.h>
+#include <lunar24/core/ar_envelope.h>  // GH#15 D4: the Papa Srapa voice AR VCA envelope.
 #include <lunar24/core/drone_noise.h>
 #include <lunar24/core/envelope_follower.h>
 #include <lunar24/core/event_timebase.h>
@@ -295,6 +296,9 @@ class SynthRuntime {
   static constexpr std::uint32_t kMaxFeedbackDelay = 1024;
   // Classic drone voices in the bank (drone 1/2/4/5), each a 5-generator group.
   static constexpr int kClassicDroneVoices = DroneBank::kClassicVoices;
+  // PAPA SRAPA (NEW) drone voices (drone 3/6), index 0 == drone_3, index 1 == drone_6.
+  // GH#15 D4: each has a landed gate_in consumer and a landed env_out publisher.
+  static constexpr int kPapaVoiceCount = 2;
   // NEW drone voice 6 (Papa Srapa NoiseSource) amplitude. PROVISIONAL: the noise
   // level is not in the manual; exposed so the product path can bind a NOISE knob
   // and a test can compare the executed channel to a same-seed NoiseSource.
@@ -910,6 +914,11 @@ class SynthRuntime {
   // (linear, marked PROVISIONAL below as kModDepthFromNorm). Registry-AGREEING unit:
   // both the registry unit and the setter take norm 0..1, so no invented scale.
   void setDrone3Mod(double depth) { pv3_.setMod(depth); }
+  // GH#15 D4: ATT/RLS take the registry's NORMALIZED 0..1 control; the single monotonic
+  // norm->seconds map lives in DroneBank (mapAttSeconds/mapRlsSeconds), shared with the
+  // classic groups. The default voice gate (kDefaultGroupGateOpen) is set inside the voice.
+  void setDrone3Att(double norm) { pv3_.setAttNorm(norm); }
+  void setDrone3Rls(double norm) { pv3_.setRlsNorm(norm); }
   void setDrone6Pitch(double pct) { pv6_.setPitch(pct); }
   void setDrone6Rate(double hz) { pv6_.setRate(hz); }
   void setDrone6Fm(bool on) { pv6_.setFm(on); }
@@ -917,6 +926,9 @@ class SynthRuntime {
   void setDrone6Noise(double amp) { pv6_.setNoise(amp); }
   void setDrone6Divider(double norm) { pv6_.setDivider(norm); }
   void setDrone6Mod(double depth) { pv6_.setMod(depth); }
+  // GH#15 D4: drone_6 mirrors drone_3 (same norm unit, same shared mapping).
+  void setDrone6Att(double norm) { pv6_.setAttNorm(norm); }
+  void setDrone6Rls(double norm) { pv6_.setRlsNorm(norm); }
   // GH#15 D2 (RANGE / RATE SWITCH selectors, both Papa Srapa voices). Selector index
   // 0/1 (the batch lane validates it via dspParamValid_ before the switch; the live
   // lane forwards the ControlEvent value). Both default positions are bit-identical to
@@ -982,6 +994,75 @@ class SynthRuntime {
       cvModInBound_[g] = true;
     }
     return true;
+  }
+
+  // ---- PAPA SRAPA voices (drone_3 = index 0, drone_6 = index 1): GH#15 D4 ----
+  // Same ATOMIC FAIL-CLOSED admission shape as the classic cohort above (validate the
+  // WHOLE cohort against a common + per-kind rule, release the old cohort, commit only
+  // if all passed). The Papa voices need TWO cohorts because D4 gives them two landed
+  // jacks each:
+  //   * gate_in  — an INPUT gate jack the product READS. Unpatched it resolves nothing,
+  //                so the voice keeps the named provisional default (kDefaultGroupGateOpen),
+  //                which is what makes the unpatched voice bit-identical to pre-D4.
+  //   * env_out  — an OUTPUT cv jack the product WRITES the voice's AR envelope level to,
+  //                via the same descriptor-driven transfer the classic groups use.
+  bool setDroneVoiceGateBindings(JackId v3, JackId v6) {
+    const JackId ids[kPapaVoiceCount] = {v3, v6};
+    for (int v = 0; v < kPapaVoiceCount; ++v)
+      if (!voiceGateBindingValid_(v, ids[v])) { releaseVoiceGate_(); return false; }
+    releaseVoiceGate_();
+    for (int v = 0; v < kPapaVoiceCount; ++v) {
+      voiceGateJack_[v] = ids[v];
+      voiceGateBound_[v] = true;
+    }
+    return true;
+  }
+  bool setDroneVoiceEnvOutBindings(JackId v3, JackId v6) {
+    const JackId ids[kPapaVoiceCount] = {v3, v6};
+    for (int v = 0; v < kPapaVoiceCount; ++v)
+      if (!voiceEnvOutBindingValid_(v, ids[v])) { releaseVoiceEnvOut_(); return false; }
+    releaseVoiceEnvOut_();
+    for (int v = 0; v < kPapaVoiceCount; ++v) {
+      voiceEnvOutJack_[v] = ids[v];
+      voiceEnvOutBound_[v] = true;
+    }
+    return true;
+  }
+  // Post-admission state, decided by the EXPLICIT bound flags (never a JackId{0}
+  // sentinel — id 0 is a real vco_a.cv_in jack), mirroring droneEnvOutBound.
+  bool droneVoiceGateBound(int voice) const {
+    return voice >= 0 && voice < kPapaVoiceCount && voiceGateBound_[voice];
+  }
+  bool droneVoiceEnvOutBound(int voice) const {
+    return voice >= 0 && voice < kPapaVoiceCount && voiceEnvOutBound_[voice];
+  }
+  // The AR envelope readbacks the render path actually consumed/produced for a Papa voice
+  // (0 = drone_3, 1 = drone_6): the VCA gain multiplied into the voice's audio, the gate
+  // level the last sample resolved, and the two mapped stage times in seconds. Real
+  // executed DSP values, so a criterion can discriminate the envelope without a private.
+  double droneVoiceArLevel(int voice) const {
+    if (voice < 0 || voice >= kPapaVoiceCount) return 0.0;
+    return (voice == 0 ? pv3_ : pv6_).arLevel();
+  }
+  bool droneVoiceArGate(int voice) const {
+    if (voice < 0 || voice >= kPapaVoiceCount) return false;
+    return (voice == 0 ? pv3_ : pv6_).arGate();
+  }
+  double droneVoiceArAttSeconds(int voice) const {
+    if (voice < 0 || voice >= kPapaVoiceCount) return 0.0;
+    return (voice == 0 ? pv3_ : pv6_).arAttSeconds();
+  }
+  double droneVoiceArRlsSeconds(int voice) const {
+    if (voice < 0 || voice >= kPapaVoiceCount) return 0.0;
+    return (voice == 0 ? pv3_ : pv6_).arRlsSeconds();
+  }
+  // The virtual volts the PRODUCT actually wrote into the runtime CV source bank for a
+  // Papa voice's env_out jack last frame. An unbound (or released) voice is never
+  // written, so this reads 0 — not a stale jack-0 value.
+  double droneVoiceEnvOutVolts(int voice) const {
+    if (voice < 0 || voice >= kPapaVoiceCount) return 0.0;
+    if (!voiceEnvOutBound_[voice]) return 0.0;
+    return cvAt_(voiceEnvOutJack_[voice]);
   }
 
   // ---- batch 4A read-only inspectors (executed value, never a shadow mirror) ----
@@ -1073,6 +1154,14 @@ class SynthRuntime {
   // (divN_ = 1 + (kNewDroneDivMax-1)*norm). Reads the real PapaVoice field, like the
   // pitch/rate getters, so the panel knob -> divided-clock link is observable.
   double drone3Divider() const { return pv3_.divider(); }
+  // GH#15 D4: ATT/RLS AFTER the single shared norm->seconds mapping — the REAL seconds the AR
+  // envelope's stage consumes (ArEnvelope::attSeconds/rlsSeconds, which the render path uses to
+  // advance `level`), not the raw norm and not a shadow bank. mapAttSeconds is linear
+  // 0.001..1.0 s, so a wrong mapping (or a skipped setter) moves these readbacks.
+  double drone3AttSeconds() const { return pv3_.arAttSeconds(); }
+  double drone3RlsSeconds() const { return pv3_.arRlsSeconds(); }
+  double drone6AttSeconds() const { return pv6_.arAttSeconds(); }
+  double drone6RlsSeconds() const { return pv6_.arRlsSeconds(); }
   double drone6RateHz() const { return pv6_.rateHz(); }
   double drone6PitchHz() const { return pv6_.pitchHz(); }
   bool drone6Fm() const { return pv6_.fmOn(); }
@@ -1520,6 +1609,15 @@ class SynthRuntime {
       case ParameterId::drone_3_divider:
         setDrone3Divider(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      // GH#15 D4: the Papa Srapa voice's ATT/RLS knobs. Registry unit is `norm` 0..1,
+      // which is exactly what the shared DroneBank mapAtt/mapRlsSeconds consumes — no
+      // invented scale (the classic drone_1/2/4/5 rows above are the precedent).
+      case ParameterId::drone_3_att:
+        setDrone3Att(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_3_rls:
+        setDrone3Rls(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_rate:
         setDrone6Rate(newDroneRateHzFromNorm(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
@@ -1546,6 +1644,13 @@ class SynthRuntime {
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_divider:
         setDrone6Divider(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      // GH#15 D4: drone_6 mirrors drone_3 (same norm unit, same shared mapping).
+      case ParameterId::drone_6_att:
+        setDrone6Att(v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_6_rls:
+        setDrone6Rls(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       default:
         lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
@@ -1920,7 +2025,17 @@ class SynthRuntime {
           lf(newSourceSeed(voiceSeed, kNewSrcLf), sr),
           fm(newSourceSeed(voiceSeed, kNewSrcFm), sr, kNewDroneFmDev, kNewDroneDepth),
           noise(newSourceSeed(voiceSeed, kNewSrcNoise), kNewDroneNoiseAmp),
-          sh(sr, kNewDroneShSeconds) {
+          sh(sr, kNewDroneShSeconds),
+          // GH#15 D4: the voice's AR VCA envelope. It starts from the SAME named
+          // provisional gate default the classic groups use (DroneBank::
+          // kDefaultGroupGateOpen) and the SAME norm->seconds mapping (DroneBank::
+          // mapAtt/mapRlsSeconds) — there is deliberately no second copy of either,
+          // so the two drone sections cannot drift apart. With the default-open gate
+          // and level starting at 1.0 the gain is a transparent x1.0 on every sample
+          // until a cable lands on this voice's gate_in.
+          ar(sr, DroneBank::kDefaultGroupGateOpen,
+             DroneBank::mapAttSeconds(DroneBank::kDefaultAttNorm),
+             DroneBank::mapRlsSeconds(DroneBank::kDefaultRlsNorm)) {
       // GH#15 D2: the two NEW selectors default to their bit-identical positions
       // (hi_low=hi -> rangeBaseSt_=0; rate_switch=off -> rateMult_=1), so this
       // constructor value reproduces the pre-D2 sound exactly.
@@ -1971,6 +2086,26 @@ class SynthRuntime {
     // drone_3/6.mod = 0.5). PROVISIONAL: the norm->depth mapping is a software model
     // (no manual/DSP circuit evidence), so it is marked provisional like the pulser.
     void setMod(double depth) { mod_ = depth; }
+    // GH#15 D4 (ATT / RLS knobs). Both arrive from the registry as a normalized 0..1
+    // control and are mapped by DroneBank::mapAttSeconds / mapRlsSeconds — the ONE
+    // product mapping, made public static so this section reuses the classic group
+    // mapping and its 0.001..1.0 s PROVISIONAL range instead of carrying a second,
+    // drifting copy. Larger norm => longer stage; ATT and RLS are separate state.
+    void setAttNorm(double norm) { ar.setAttSeconds(DroneBank::mapAttSeconds(norm)); }
+    void setRlsNorm(double norm) { ar.setRlsSeconds(DroneBank::mapRlsSeconds(norm)); }
+    // The resolved gate level for the voice's AR envelope (drone_N.gate_in -> patch graph
+    // -> gate shaper -> here). An UNPATCHED gate is NOT "closed": the runtime passes the
+    // named provisional default DroneBank::kDefaultGroupGateOpen, the same constant the
+    // classic groups use, so "unpatched = open" has exactly one source in the product.
+    void setVoiceGate(bool high) { ar.setGate(high); }
+    // The VCA gain the render path multiplied the voice's audio by on the last sample,
+    // plus the gate level it consumed and the two mapped stage times. Real executed
+    // DSP readbacks (never a shadow bank), so a criterion can discriminate the
+    // envelope without reading a private.
+    double arLevel() const { return ar.level(); }
+    bool arGate() const { return ar.gate(); }
+    double arAttSeconds() const { return ar.attSeconds(); }
+    double arRlsSeconds() const { return ar.rlsSeconds(); }
     // The modulation depth the product path actually drives the audio oscillator with
     // (mod_ is read every tick), a real DSP lever, not a shadow bank.
     double modApplied() const { return mod_; }
@@ -2017,13 +2152,23 @@ class SynthRuntime {
       }
       lfPrevLevel_ = sq;
       sh.tick(n, shClock_, &shCv_);
-      *out = a + n;  // noise adds; S&H CV is NOT summed here.
+      // GH#15 D4: advance the voice's AR VCA envelope FIRST and multiply the voice's
+      // summed audio by its gain — the SAME order and the SAME law as DroneBank::
+      // tickGroup (advance the group envelope, then scale the group's final audio).
+      // The oscillators keep free-running: the envelope never resets phase. With the
+      // provisional default-open gate the gain stays 1.0, so `(a + n) * 1.0` is
+      // bit-identical to the pre-D4 `a + n` (the D4 regression lock).
+      ar.tick();
+      *out = (a + n) * ar.level();  // noise adds; S&H CV is NOT summed here.
     }
     SchmittOsc audio;   // audio-frequency oscillator (PITCH/RANGE) -> tone.
     SchmittOsc lf;      // LF oscillator used as a square-wave modulator (RATE).
     FmAmVoice fm;       // expresses the LF->audio modulation relationship (FM/AM).
     NoiseSource noise;  // independent noise mix (NOISE amount).
     SAndHold sh;        // noise->in, LF/mod->clock; CV out, not in the audio channel.
+    // GH#15 D4 AR VCA envelope (linear, classic-drone law). Gates the voice's summed
+    // audio; never summed into the audio path itself, never resets an oscillator phase.
+    ArEnvelope ar;
     bool fmOn_ = false;
     bool amOn_ = false;
     double shClock_ = 0.0;  // S&H clock level (derived from the divided LF square, GH#15 D3).
@@ -2150,6 +2295,13 @@ class SynthRuntime {
       // dspParamValid_ before the switch, so the knob value reaches the voice unchanged.
       case ParameterId::drone_3_divider:   setDrone3Divider(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_divider:   setDrone6Divider(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      // GH#15 D4 (ATT/RLS, both voices). Registry unit is `norm` 0..1, exactly what the
+      // shared DroneBank norm->seconds map consumes — the knob value reaches the voice
+      // unchanged. The batch lane validated the range via dspParamValid_ before the switch.
+      case ParameterId::drone_3_att:   setDrone3Att(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_3_rls:   setDrone3Rls(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_att:   setDrone6Att(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_rls:   setDrone6Rls(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       // GH#11 FIXED-CANDIDATE (@Codex D3): the 34 evidence-mappable control-source params dispatch
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the
@@ -2847,11 +2999,11 @@ class SynthRuntime {
         // NOT a registry drone_N) falls through to a clearly-marked whole-bank compat path.
         const int classicGroup = classicGroupOfDrone_(slot.id);
         if (slot.id == ModuleId::drone_3) {
-          tickPapaVoice_(pv3_, VoiceMixer::kChannelDrone3, sh3Cv_);
+          tickPapaVoice_(pv3_, 0, VoiceMixer::kChannelDrone3, sh3Cv_, driveGraph);
           break;
         }
         if (slot.id == ModuleId::drone_6) {
-          tickPapaVoice_(pv6_, VoiceMixer::kChannelDrone6, sh6Cv_);
+          tickPapaVoice_(pv6_, 1, VoiceMixer::kChannelDrone6, sh6Cv_, driveGraph);
           break;
         }
         if (classicGroup >= 0) {
@@ -2904,8 +3056,8 @@ class SynthRuntime {
             if (d != nullptr)
               publishSourceValue_(envOut, d->nominalMin + lvl * (d->nominalMax - d->nominalMin));
           }
-          tickPapaVoice_(pv3_, VoiceMixer::kChannelDrone3, sh3Cv_);
-          tickPapaVoice_(pv6_, VoiceMixer::kChannelDrone6, sh6Cv_);
+          tickPapaVoice_(pv3_, 0, VoiceMixer::kChannelDrone3, sh3Cv_, driveGraph);
+          tickPapaVoice_(pv6_, 1, VoiceMixer::kChannelDrone6, sh6Cv_, driveGraph);
           break;
         }
       }
@@ -3175,6 +3327,60 @@ class SynthRuntime {
     }
   }
 
+  // The ONE Papa voice module that voice slot `v` (0 == drone_3, 1 == drone_6) owns.
+  // A jack whose module is not exactly this is a wrong-owner binding -> admission fails.
+  static ModuleId papaVoiceOwner(int v) {
+    return v == 0 ? ModuleId::drone_3 : ModuleId::drone_6;
+  }
+  // Common admission rule for a Papa voice binding (same shape as commonBindingValid_):
+  // descriptor exists, id indexes cvOut_ (< kMaxEdges), owning module is exactly this
+  // voice's drone_3/drone_6.
+  bool commonVoiceBindingValid_(int v, JackId id) const {
+    const std::uint32_t j = static_cast<std::uint32_t>(id);
+    if (j >= kMaxEdges) return false;          // id can't index cvOut_ (out-of-capacity).
+    const JackDescriptor* d = findJackDescriptor_(id);
+    if (d == nullptr) return false;            // not a registered jack (missing id).
+    return d->module == papaVoiceOwner(v);     // wrong-owner fails here.
+  }
+  // GATE IN extra rule: an INPUT gate jack on a finite range.
+  bool voiceGateBindingValid_(int v, JackId id) const {
+    if (!commonVoiceBindingValid_(v, id)) return false;
+    const JackDescriptor* d = findJackDescriptor_(id);
+    return d->direction == PinDirection::input && d->signalType == SignalType::gate &&
+           validRange_(d);
+  }
+  // ENV OUT extra rule: an OUTPUT cv jack with a finite, non-inverted nominal range.
+  bool voiceEnvOutBindingValid_(int v, JackId id) const {
+    if (!commonVoiceBindingValid_(v, id)) return false;
+    const JackDescriptor* d = findJackDescriptor_(id);
+    return d->direction == PinDirection::output && d->signalType == SignalType::cv &&
+           validRange_(d);
+  }
+  void releaseVoiceGate_() {
+    for (int v = 0; v < kPapaVoiceCount; ++v) {
+      // Reset the per-voice gate latch so a re-admission starts un-primed (no phantom
+      // edge from the previous cohort's last sample) AND return the voice's gate to the
+      // named provisional default, so a released cohort leaves the voice OPEN exactly as
+      // a never-bound one (the default-equivalence contract is cohort-independent).
+      sink_gate_reset(voiceGateLatch_[v]);
+      (v == 0 ? pv3_ : pv6_).setVoiceGate(DroneBank::kDefaultGroupGateOpen);
+      voiceGateJack_[v] = JackId{0};
+      voiceGateBound_[v] = false;
+    }
+  }
+  void releaseVoiceEnvOut_() {
+    for (int v = 0; v < kPapaVoiceCount; ++v) {
+      // Deterministically clear the old env_out CV source slot so a released cohort
+      // leaves NO stale voltage consumable through the patch graph.
+      if (voiceEnvOutBound_[v]) {
+        const std::uint32_t j = static_cast<std::uint32_t>(voiceEnvOutJack_[v]);
+        if (j < kMaxEdges) cvOut_[j] = 0.0;
+      }
+      voiceEnvOutJack_[v] = JackId{0};
+      voiceEnvOutBound_[v] = false;
+    }
+  }
+
   // Drone grouping — design/01 §3 (CONFIRMED, not provisional): six drone voices,
   // 1/2/4/5 = "CLASSIC" (5 oscillators each, i.e. the DroneBank's 20 voices),
   // 3/6 = "NEW" (Papa Srapa, P3-②, NOT part of the DroneBank). The 20 flat bank
@@ -3214,13 +3420,45 @@ class SynthRuntime {
     return classicChannels[group];
   }
 
-  // NEW-voice (drone 3/6) per-slot tick: advance the PapaVoice, write the channel, and
-  // latch the S&H CV out of the voice (NOT summed into the channel — it is a CV out).
-  void tickPapaVoice_(PapaVoice& pv, int channel, double& shCvOut) {
+  // NEW-voice (drone 3/6) per-slot tick: resolve -> tick -> publish, matching the
+  // classic group path's shape.
+  //
+  // (1) RESOLVE the voice's gate BEFORE the tick (same-sample), through the SAME single
+  // sink resolver the classic cv_mod_in uses. The provisional convention is the whole
+  // point of this step: an UNPATCHED gate_in is NOT "closed". When there is no cable
+  // (or the graph is bypassed, or the jack was never bound) the voice keeps
+  // DroneBank::kDefaultGroupGateOpen — the ONE named default the classic groups use —
+  // so an unpatched voice renders bit-identically to pre-D4. Only a real resolved cable
+  // lets the gate actually close the voice.
+  //
+  // (2) TICK the voice (its AR envelope is inside, advanced then applied to the audio).
+  // (3) PUBLISH channel + ENV OUT. The env_out transfer is descriptor-driven, exactly
+  // like the classic groups: nominalMin + level*(nominalMax-nominalMin), range read ONLY
+  // from the bound JackDescriptor. The level->volts transfer is PROVISIONAL (no measured
+  // hardware transfer) — the SAME provisional convention the classic ENV OUT already uses.
+  void tickPapaVoice_(PapaVoice& pv, int voice, int channel, double& shCvOut, bool driveGraph) {
+    bool gateHigh = DroneBank::kDefaultGroupGateOpen;
+    if (voiceGateBound_[voice]) {
+      double volts = 0.0;
+      // driveGraph=false (the criterion-① negative) bypasses the control layer, so a
+      // patched gate cable then has no effect and the voice stays at the default.
+      if (resolveControlSink_(voiceGateJack_[voice], volts, driveGraph)) {
+        const JackDescriptor* d = findJackDescriptor_(voiceGateJack_[voice]);
+        if (d != nullptr)
+          gateHigh = sink_gate_interpret(*d, voiceGateLatch_[voice], volts).gateHigh;
+      }
+    }
+    pv.setVoiceGate(gateHigh);
     double n = 0.0;
     pv.tick(&n);
     chIn_[channel] = n;
     shCvOut = pv.lastShCv();
+    if (voiceEnvOutBound_[voice]) {
+      const JackId envOut = voiceEnvOutJack_[voice];
+      const JackDescriptor* d = findJackDescriptor_(envOut);
+      if (d != nullptr)
+        publishSourceValue_(envOut, d->nominalMin + pv.arLevel() * (d->nominalMax - d->nominalMin));
+    }
   }
 
   struct FixedRoleBinding {
@@ -3317,6 +3555,14 @@ class SynthRuntime {
   JackId cvModInJack_[DroneBank::kClassicVoices] = {JackId{0}, JackId{0}, JackId{0}, JackId{0}};
   bool envOutBound_[DroneBank::kClassicVoices] = {false, false, false, false};
   bool cvModInBound_[DroneBank::kClassicVoices] = {false, false, false, false};
+  // PAPA SRAPA voice bindings (GH#15 D4), index 0 == drone_3, 1 == drone_6: the gate_in
+  // jacks the product READS (through the same single sink resolver the classic cv_mod_in
+  // uses) and the env_out jacks it WRITES. Same explicit-flag admission contract as the
+  // classic cohort above — a released/failed cohort clears the jack AND the bound flag.
+  JackId voiceGateJack_[kPapaVoiceCount] = {JackId{0}, JackId{0}};
+  JackId voiceEnvOutJack_[kPapaVoiceCount] = {JackId{0}, JackId{0}};
+  bool voiceGateBound_[kPapaVoiceCount] = {false, false};
+  bool voiceEnvOutBound_[kPapaVoiceCount] = {false, false};
 
   // Fixed-chain role binding (registry semantics).
   FixedRoleBinding roleBindings_[kMaxFixedModules] = {};
@@ -3450,6 +3696,10 @@ class SynthRuntime {
   GateClockSinkState envA_gate_;
   GateClockSinkState envB_gate_;
   GateClockSinkState seqClockLatch_;
+  // GH#15 D4: one gate-clock latch PER Papa voice (index 0 == drone_3, 1 == drone_6).
+  // Separate latches, so a gate cable landing on drone_3 cannot shift drone_6's
+  // hysteresis state — the two voices are independent gates, not one shared sink.
+  GateClockSinkState voiceGateLatch_[kPapaVoiceCount];
 };
 
 }  // namespace lunar24::core

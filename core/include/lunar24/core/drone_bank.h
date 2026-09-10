@@ -351,6 +351,20 @@ class DroneBank {
   static double sawtooth(double phase) { return 2.0 * (phase / twoPi_) - 1.0; }
   static double nonlinearity(double x) { return x - (1.0 / 3.0) * x * x * x; }
 
+  // ---- centralized, PROVISIONAL, monotonic norm→seconds mappings (design/07: no
+  // hardware value claimed; a larger normalized knob always yields a longer stage) ----
+  // PUBLIC so the Papa Srapa voice AR envelope (drone_3/drone_6) consumes the SAME
+  // mapping and the SAME kAtt/kRlsNormMin/MaxSeconds constants as the classic groups
+  // instead of carrying a second, drifting copy. There is exactly ONE source of the
+  // mapping in the product; ATT and RLS share the same shape but separate ranges so the
+  // two stages never share state.
+  static double mapAttSeconds(double norm) {
+    return kAttNormMinSeconds + clamp01_(norm) * (kAttNormMaxSeconds - kAttNormMinSeconds);
+  }
+  static double mapRlsSeconds(double norm) {
+    return kRlsNormMinSeconds + clamp01_(norm) * (kRlsNormMaxSeconds - kRlsNormMinSeconds);
+  }
+
  private:
   static constexpr double twoPi_ = 6.283185307179586;
   static constexpr double kVvoltMid = 30.0;         // provisional: VOLT halfturn (semitones down).
@@ -390,15 +404,6 @@ class DroneBank {
     if (x < 0.0) return 0.0;
     if (x > 1.0) return 1.0;
     return x;
-  }
-  // Centralized, PROVISIONAL, monotonic norm→seconds mappings (design/07: no hardware
-  // value claimed; a larger normalized knob always yields a longer stage). ATT and RLS
-  // share the same shape but separate ranges so the two stages never share state.
-  static double mapAttSeconds(double norm) {
-    return kAttNormMinSeconds + clamp01_(norm) * (kAttNormMaxSeconds - kAttNormMinSeconds);
-  }
-  static double mapRlsSeconds(double norm) {
-    return kRlsNormMinSeconds + clamp01_(norm) * (kRlsNormMaxSeconds - kRlsNormMinSeconds);
   }
   // Splitmix64-style finalizer (pure, stateless). Same construction SeededRandom uses,
   // but applied as a PURE function of (seed, generator, absolute-sample) rather than a
