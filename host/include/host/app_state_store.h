@@ -164,7 +164,12 @@ inline std::FILE* openNative(const std::string& utf8Path, const char* mode) {
   std::wstring wideMode;
   for (const char* p = mode; p != nullptr && *p != '\0'; ++p)
     wideMode.push_back(static_cast<wchar_t>(*p));
-  return ::_wfopen(native.c_str(), wideMode.c_str());
+  // _wfopen_s, not _wfopen: MSVC deprecates the latter (C4996), which this repo's /WX policy
+  // promotes to an error, and its errno_t result drops straight into the same typed-failure path as
+  // the _wsopen_s create below -- one secure CRT call shape for every wide open, no suppression.
+  std::FILE* fp = nullptr;
+  if (::_wfopen_s(&fp, native.c_str(), wideMode.c_str()) != 0) return nullptr;
+  return fp;
 #else
   // POSIX paths ARE byte strings, so nativePath() is the identity here and this is the same fopen on
   // the same bytes. The indirection is deliberate: ONE boundary on BOTH platforms, so a conversion

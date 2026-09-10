@@ -74,7 +74,7 @@
 - `W16b 退出保存位置`：`~IPlugAPPHost` 体内 `saveDeviceState` 出现在 `CloseAudio();` **之后**、成员清理之前；调用是 `LunarHostPlugin` 委托；析构体内零文件 IO；全文件 `saveDeviceState` **恰好一次**。
 - `W17a 路径与文件纪律`：store 只写 `lunar24-state.bin`、不碰 `settings.ini`、不重解析目录、复用 core 的 codec/校验链与原子保存。
 - `W17b APP host → plugin 的路径交接`：`InitState()` 内 `setStateDirectory(mINIPath.Get())` 出现在平台目录解析 `SetFormatted(` **之后**、`Append("settings.ini")` **之前**；全文件恰好一次；host 从不出现 `lunar24-state.bin`（文件名归 store 所有）。
-- `W18 UTF-8 → 原生路径边界`（@Codex `2a544b0b`，12 条）：`nativePath()` / `openNative()` 存在且是**唯一**边界；转换显式用 `CP_UTF8` + `MB_ERR_INVALID_CHARS`（非法输入拒绝、不替换）；Windows 的 create/open/rename/remove **全部**走宽字符 API（`_wfopen` / `_wsopen_s` / `MoveFileExW` / `DeleteFileW`），不得残留窄 `_sopen_s` 或第二个 `fopen`；路径处理**不得**经过 `std::filesystem`（窄 ACP 往返）；原子替换不得退化（`MOVEFILE_REPLACE_EXISTING` 在、`MOVEFILE_COPY_ALLOWED` 不在）；POSIX 保持字节透传**且四个 POSIX 调用点同样消费 `nativePath()` 输出**（一个边界、两个平台）；`joinUtf8()` 自拼路径；验收里 C9 判据与 `makeUnicodeTempDir` 不得被删而门仍绿。
+- `W18 UTF-8 → 原生路径边界`（@Codex `2a544b0b`，12 条）：`nativePath()` / `openNative()` 存在且是**唯一**边界；转换显式用 `CP_UTF8` + `MB_ERR_INVALID_CHARS`（非法输入拒绝、不替换）；Windows 的 create/open/rename/remove **全部**走宽字符 API（`_wfopen_s` / `_wsopen_s` / `MoveFileExW` / `DeleteFileW`），不得残留窄 `_sopen_s` 或第二个 `fopen`；路径处理**不得**经过 `std::filesystem`（窄 ACP 往返）；原子替换不得退化（`MOVEFILE_REPLACE_EXISTING` 在、`MOVEFILE_COPY_ALLOWED` 不在）；POSIX 保持字节透传**且四个 POSIX 调用点同样消费 `nativePath()` 输出**（一个边界、两个平台）；`joinUtf8()` 自拼路径；验收里 C9 判据与 `makeUnicodeTempDir` 不得被删而门仍绿。
 
 ### N 系列负控（隔离源码，必须跑通并命中特定断言；编译失败不算红）
 1. `skip_startup_apply` — 不做 pending 发布 → C3.1/C2.4 红。
@@ -138,9 +138,9 @@
 **修法**（文件适配器边界统一 UTF-8 输入）：
 
 1. **一个边界、两个平台**：新增 `using NativePath = std::wstring`（Windows）/ `std::string`（POSIX），以及唯一的 `nativePath(const std::string& utf8)`。Windows 用 `MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, …)` 显式转换；**非法 UTF-8 返回空 `std::wstring`**（拒绝，不做有损替换——有损映射会指向**另一个文件**并把状态存进去）。POSIX 分支是恒等映射（POSIX 路径本就是字节串），但**四个 POSIX 调用点（`::open` / `fopen` / `rename` / `remove`）同样消费 `nativePath()` 的输出**，因此「唯一边界」在两个平台上都是字面事实，而不是只对 Windows 成立的口号。
-2. **Windows 全宽字符**：`openNative()` → `_wfopen`（宽模式串）；排他预留 → `_wsopen_s` + `_SH_DENYRW`；原子替换 → `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`（**不**加 `MOVEFILE_COPY_ALLOWED`：跨卷必须失败成 `ReplaceFailed`，不得退化为非原子的复制+删除）；清理 → `DeleteFileW`。**同一个原生路径**贯穿 create/open/rename/remove。
+2. **Windows 全宽字符**：`openNative()` → **`_wfopen_s`**（宽模式串；**不**用 `_wfopen`——MSVC 把它的弃用警告 C4996 在 `/WX` 下升成 C2220 编译错误，而 `_wfopen_s` 返回 `errno_t`，非 0 即 `nullptr`，直接接进既有 typed failure 路径，并且与同文件的 `_wsopen_s` 形状一致，**不需要任何压制**）；排他预留 → `_wsopen_s` + `_SH_DENYRW`；原子替换 → `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`（**不**加 `MOVEFILE_COPY_ALLOWED`：跨卷必须失败成 `ReplaceFailed`，不得退化为非原子的复制+删除）；清理 → `DeleteFileW`。**同一个原生路径**贯穿 create/open/rename/remove。测试 TU 自身用 `std::fopen` 读回，按仓库既有先例（`tests/probes/gh19_alias_probe.cpp` / `gh20_vcf_probe.cpp`）在该 TU 顶部 `#define _CRT_SECURE_NO_WARNINGS`，**压制范围限于这一个测试翻译单元**。此处修复由 Windows CI 首次实跑暴露（§6）。
 3. **彻底移除 `std::filesystem`**：`<filesystem>` / `<system_error>` 已从 store 头文件删除；路径拼接改由 `joinUtf8()` 用字节直接完成（Windows 上 `path(std::string)` / `.string()` 会经过 ANSI 代码页，在宽转换之前就把非 ASCII 目录弄坏）。门禁因此可以**断言 store 源码里不出现 `filesystem`**。
-4. **判据与负控**：C9.1（转换本身，含非 BMP 代理对，逐个码元比对）+ C9.2/C9.3/C9.4（真实中文 + 非 BMP 目录的写→新实例读回→原子替换→无残留）；负控 `native_path_mangles_non_ascii`（把边界退化成「截断到第一个非 ASCII 字节」，正是 ACP 转换对中文路径干的事）与结构负控 `utf8_boundary_replaced_by_narrow_fopen`（把宽 `_wfopen` 换回窄 `fopen`，W18 两条不变式必须红）。
+4. **判据与负控**：C9.1（转换本身，含非 BMP 代理对，逐个码元比对）+ C9.2/C9.3/C9.4（真实中文 + 非 BMP 目录的写→新实例读回→原子替换→无残留）；负控 `native_path_mangles_non_ascii`（把边界退化成「截断到第一个非 ASCII 字节」，正是 ACP 转换对中文路径干的事）与结构负控 `utf8_boundary_replaced_by_narrow_fopen`（把宽 `_wfopen_s` 换回窄 `fopen`，W18 两条不变式必须红）。
 
 **诚实边界**：本机无 Windows 工具链，**宽字符分支是编译期/结构门级证据，尚未在 Windows 上实跑**。C9 判据已在 POSIX 上真实执行（真目录、真 FileOps）；Windows 侧由 CI 实跑（见 §3/§6）。
 
@@ -193,7 +193,7 @@
 | `temp_reserve_not_exclusive` | 临时名仍创建但不再排他 | C6.3「refuses a path another owner already holds」 |
 | `native_path_mangles_non_ascii` | 唯一边界截断到第一个非 ASCII 字节（= ACP 转换对中文路径的作为） | C9.1「non-ASCII bytes pass through unchanged」+ 5 条邻带（见下） |
 | `exit_call_missing` / `exit_call_before_closeaudio` | 结构突变（影子 repo + 真实门副本） | W16b（4 条 / 1 条） |
-| `utf8_boundary_replaced_by_narrow_fopen` | 结构突变：宽 `_wfopen` 换回窄 `fopen` | W18（2 条，且该影子 repo 只剩这 2 条 FAIL） |
+| `utf8_boundary_replaced_by_narrow_fopen` | 结构突变：宽 `_wfopen_s` 换回窄 `fopen` | W18（2 条，且该影子 repo 只剩这 2 条 FAIL） |
 
 `exit_call_missing` 命中 4 条 W16b（委托/顺序/位置/恰好一次），`exit_call_before_closeaudio` 命中 1 条（顺序），其余 5 条仍绿——特异性证据见 driver 的 `STRUCTURAL[...]["must_pass"]`。
 
@@ -229,6 +229,8 @@ drift 门仍打印 `note … non-curated anchors in diff: IPlugAPPHost::IPlugAPP
 
 ## §6 交付状态
 
-- **候选 = 未推送 head**（本轮修订 commit 见交付消息）；分支 `feat/12-app-state-persistence`。
-- 等 @Codex 复验：**未 push、未开/更新 PR、未跑 CI、未 merge、未关 GH#12、未发布、未 MET**。
+- 分支 `feat/12-app-state-persistence`，draft PR #37（base `main`）。**未 merge、未关 GH#12、未发布、未 MET。**
+- **CI 第 1 轮（`db7fc86`）**：pull_request `34458879537` / push `34458862121` 均 failure。两条非绿：①`full coverage (--require-full)` = 既有 12 项缺口（by-design，与本片无关）；②**`windows-latest (cl)` = 真实构建失败**。
+- **Windows 构建失败的根因与修复（本机无法预先发现——只有 macOS 工具链，该警告在本机不出现）**：MSVC 将 secure-CRT 弃用警告 **C4996 在 `/WX` 下升为 C2220 错误**，命中两处：`host/include/host/app_state_store.h` 的 `_wfopen`（→ 改 `_wfopen_s`，见 §2.5.2）与 `tests/host/test_app_state_store.cpp` 的 `std::fopen`（→ 该 TU 顶部 `_CRT_SECURE_NO_WARNINGS`，按仓库既有先例）。随之同步 `tools/check_host_engine_wiring.py` 的 W18 宽 API 断言串与 `tools/run_app_state_negatives.py` 的结构突变锚点。
+- **含义（不得误读）**：第 1 轮是**编译期**失败，**C9 在 Windows 上尚未执行**，本片最需要的决定性证据仍待 Windows 腿实跑。判据与判断逻辑未因此次修复改动一字。
 - 后继项（需总监开卡）：其余消费者、`UnitIdentitySeed`「每安装首次生成」缺口、`save_state_atomic` 长度/回读校验。

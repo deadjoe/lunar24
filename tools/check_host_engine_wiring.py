@@ -679,7 +679,7 @@ else:
           "MB_ERR_INVALID_CHARS makes the conversion FAIL; a lossy map would address a "
           "different file and the store would save into it")
     check("W18 every Windows file call is WIDE",
-          all(t in store_src for t in ("_wfopen(", "_wsopen_s(", "MoveFileExW(", "DeleteFileW(")),
+          all(t in store_src for t in ("_wfopen_s(", "_wsopen_s(", "MoveFileExW(", "DeleteFileW(")),
           "create / open / write / rename / remove must all take the wide native path")
     check("W18 no narrow or ACP file call remains",
           "_sopen_s(" not in store_src and store_src.count("std::fopen(") == 1

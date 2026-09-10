@@ -432,7 +432,10 @@ STRUCTURAL = {
 def mut_utf8_boundary_replaced_by_narrow_fopen(text, name):
     """The wide Windows open is replaced by the narrow one: the path goes back through the process
     ANSI code page, which cannot represent a Chinese user directory at all."""
-    return _replace(text, "  return ::_wfopen(native.c_str(), wideMode.c_str());\n",
+    return _replace(text,
+                    "  std::FILE* fp = nullptr;\n"
+                    "  if (::_wfopen_s(&fp, native.c_str(), wideMode.c_str()) != 0) return nullptr;\n"
+                    "  return fp;\n",
                     "  // MUTATION: utf8_boundary_replaced_by_narrow_fopen — narrow ACP open.\n"
                     "  (void)native;\n"
                     "  (void)wideMode;\n"

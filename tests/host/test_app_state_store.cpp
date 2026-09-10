@@ -15,6 +15,14 @@
 // so the isolated source-mutation negative controls (tools/run_app_state_negatives.py) can assert
 // WHICH assertion fired, not merely that the binary failed.
 
+// This test reads records back with std::fopen, which MSVC's secure-CRT deprecation (C4996)
+// promotes to an error under this repo's /W4 /WX warning policy. The store itself uses the secure
+// CRT (`_wfopen_s`/`_wsopen_s`), so the suppression is scoped to this single test translation unit
+// only (defined before any CRT header is included).
+#if defined(_MSC_VER)
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
