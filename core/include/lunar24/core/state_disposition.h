@@ -14,16 +14,15 @@
 //
 // Classification (Codex revision-2, msg 40bef2eb — supersedes 135/35/125/50/0):
 // exactly five classes with counts. GH#15 D1 (mod) moved 2, D2 (hi_low + rate_switch)
-// moved 4, D3 (divider) moved 2, and D4 (the Papa Srapa AR envelope's ATT/RLS)
-// moved 4 from transfer_unavailable -> applied_to_dsp:
-//   181 applied_to_DSP / 35 applied_to_keyboard / 125 preserved_deferred_P6_P8 /
-//   4 transfer_unavailable / 0 invalid_unlanded == 345 landed.
-// The remaining 4 transfer_unavailable are precisely the parameters with NO real
-// runtime consumer: vco_a.pwm(8), vco_b.pwm(30), and the drone3/6 HOLD pair — HOLD is
-// NOT in the D4 slice (it is an OR term on the envelope target, not a second
-// envelope), so drone_3.hold(288) and drone_6.hold(300) stay deferred. The other 181
-// must reach a real DSP apply in later slices; the software norm->DSP mappings are
-// marked PROVISIONAL there, not as unavailable.
+// moved 4, D3 (divider) moved 2, D4 (the Papa Srapa AR envelope's ATT/RLS) moved 4,
+// and D5 (the drone3/6 HOLD OR term on that envelope's target) moved 2 from
+// transfer_unavailable -> applied_to_dsp:
+//   183 applied_to_DSP / 35 applied_to_keyboard / 125 preserved_deferred_P6_P8 /
+//   2 transfer_unavailable / 0 invalid_unlanded == 345 landed.
+// The remaining 2 transfer_unavailable are precisely the parameters with NO real
+// runtime consumer: vco_a.pwm(8) and vco_b.pwm(30) — both stay deferred pending GH#19.
+// The other 183 must reach a real DSP apply in later slices; the software norm->DSP
+// mappings are marked PROVISIONAL there, not as unavailable.
 
 #pragma once
 
@@ -276,7 +275,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::drone_3_fm, StateDisposition::applied_to_dsp },
     { ParameterId::drone_3_am, StateDisposition::applied_to_dsp },
     { ParameterId::drone_3_rate_switch, StateDisposition::applied_to_dsp },
-    { ParameterId::drone_3_hold, StateDisposition::transfer_unavailable },
+    { ParameterId::drone_3_hold, StateDisposition::applied_to_dsp },
     { ParameterId::drone_6_rate, StateDisposition::applied_to_dsp },
     { ParameterId::drone_6_mod, StateDisposition::applied_to_dsp },
     { ParameterId::drone_6_divider, StateDisposition::applied_to_dsp },
@@ -288,7 +287,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::drone_6_fm, StateDisposition::applied_to_dsp },
     { ParameterId::drone_6_am, StateDisposition::applied_to_dsp },
     { ParameterId::drone_6_rate_switch, StateDisposition::applied_to_dsp },
-    { ParameterId::drone_6_hold, StateDisposition::transfer_unavailable },
+    { ParameterId::drone_6_hold, StateDisposition::applied_to_dsp },
     { ParameterId::program_cathedral_2_x, StateDisposition::preserved_deferred_p6_p8 },
     { ParameterId::program_cathedral_2_y, StateDisposition::preserved_deferred_p6_p8 },
     { ParameterId::program_cathedral_2_z, StateDisposition::preserved_deferred_p6_p8 },
@@ -403,17 +402,17 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
 };
 
 // Compile-time class counts lock the classification. The chain so far is
-// 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) 181/35/125/4/0.
+// 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) -> (D5) 183/35/125/2/0.
 inline constexpr std::uint32_t count_disposition(StateDisposition d) noexcept {
   std::uint32_t n = 0;
   for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i)
     if (kDeviceStateDisposition[i].disposition == d) ++n;
   return n;
 }
-static_assert(count_disposition(StateDisposition::applied_to_dsp) == 181, "applied_to_DSP count");
+static_assert(count_disposition(StateDisposition::applied_to_dsp) == 183, "applied_to_DSP count");
 static_assert(count_disposition(StateDisposition::applied_to_keyboard) == 35, "applied_to_keyboard count");
 static_assert(count_disposition(StateDisposition::preserved_deferred_p6_p8) == 125, "preserved_deferred_P6_P8 count");
-static_assert(count_disposition(StateDisposition::transfer_unavailable) == 4, "transfer_unavailable count");
+static_assert(count_disposition(StateDisposition::transfer_unavailable) == 2, "transfer_unavailable count");
 static_assert(count_disposition(StateDisposition::invalid_unlanded) == 0, "invalid_unlanded count");
 
 // Disposition of a ParameterId. A landed id -> its class; a hole/slack/unknown id

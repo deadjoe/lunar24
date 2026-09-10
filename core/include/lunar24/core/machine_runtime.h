@@ -88,7 +88,7 @@
 #include <lunar24/core/enums.h>
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/distortion.h>
-#include <lunar24/core/state_disposition.h>  // task #78: the 169 applied_to_dsp table
+#include <lunar24/core/state_disposition.h>  // task #78: the applied_to_dsp disposition table
 #include <lunar24/core/drone_bank.h>
 #include <lunar24/core/ar_envelope.h>  // GH#15 D4: the Papa Srapa voice AR VCA envelope.
 #include <lunar24/core/drone_noise.h>
@@ -259,9 +259,10 @@ enum class ParameterApplyStatus : std::uint8_t {
   transfer_unavailable,  // recognised but deliberately UNMAPPED (no current param uses this after 7C3).
   invalid_value,         // malformed for its unit domain (out-of-range / non-exact / non-finite): kept old.
   unsupported_parameter, // not a known control-source param: no transfer.
-  apply_count_mismatch,  // exactly-169 gate: the whole applied_to_DSP batch did not reach the
-                         // contract count (a mutated path that skipped an id), NOT a per-value
-                         // defect — firstFailId pinpoints the first skipped id.
+  apply_count_mismatch,  // whole-state gate: the applied_to_DSP batch did not reach the contract
+                         // count — `count_disposition(applied_to_dsp)`, never a literal (a mutated
+                         // path that skipped an id), NOT a per-value defect — firstFailId
+                         // pinpoints the first skipped id.
 };
 
 // GH#21 continuous control smoothing time constant (design/07 §3.2: knob/joystick/MIDI CC
@@ -929,6 +930,11 @@ class SynthRuntime {
   // GH#15 D4: drone_6 mirrors drone_3 (same norm unit, same shared mapping).
   void setDrone6Att(double norm) { pv6_.setAttNorm(norm); }
   void setDrone6Rls(double norm) { pv6_.setRlsNorm(norm); }
+  // GH#15 D5: HOLD (selector, off/on) for the two Papa Srapa voices. Mirrors the classic
+  // groups' setDroneGroupHold(voiceGroup, bool) shape above — the selector index reaches
+  // the voice as a bool, never as an int that could silently coerce a fractional value.
+  void setDrone3Hold(bool on) { pv3_.setHold(on); }
+  void setDrone6Hold(bool on) { pv6_.setHold(on); }
   // GH#15 D2 (RANGE / RATE SWITCH selectors, both Papa Srapa voices). Selector index
   // 0/1 (the batch lane validates it via dspParamValid_ before the switch; the live
   // lane forwards the ControlEvent value). Both default positions are bit-identical to
@@ -1048,6 +1054,14 @@ class SynthRuntime {
     if (voice < 0 || voice >= kPapaVoiceCount) return false;
     return (voice == 0 ? pv3_ : pv6_).arGate();
   }
+  // GH#15 D5: the HOLD state the render path ORed into the AR target. This is a SEPARATE
+  // readback from droneVoiceArGate on purpose: hold=on with the gate low must read
+  // gate==false AND hold==true AND level==1.0 at the same time, which no implementation
+  // that conflates the two flags can satisfy.
+  bool droneVoiceArHold(int voice) const {
+    if (voice < 0 || voice >= kPapaVoiceCount) return false;
+    return (voice == 0 ? pv3_ : pv6_).arHold();
+  }
   double droneVoiceArAttSeconds(int voice) const {
     if (voice < 0 || voice >= kPapaVoiceCount) return 0.0;
     return (voice == 0 ? pv3_ : pv6_).arAttSeconds();
@@ -1162,6 +1176,10 @@ class SynthRuntime {
   double drone3RlsSeconds() const { return pv3_.arRlsSeconds(); }
   double drone6AttSeconds() const { return pv6_.arAttSeconds(); }
   double drone6RlsSeconds() const { return pv6_.arRlsSeconds(); }
+  // GH#15 D5: HOLD (off/on) AFTER the two dispatch lanes — the state the AR envelope
+  // actually ORed into its target last tick, named per voice like drone3Fm()/drone3Am().
+  bool drone3Hold() const { return pv3_.arHold(); }
+  bool drone6Hold() const { return pv6_.arHold(); }
   double drone6RateHz() const { return pv6_.rateHz(); }
   double drone6PitchHz() const { return pv6_.pitchHz(); }
   bool drone6Fm() const { return pv6_.fmOn(); }
@@ -1186,18 +1204,20 @@ class SynthRuntime {
   double envFollowerReleaseSeconds() const { return envFol_.releaseSeconds(); }
   // General read of a control generator's resolved CV output (the whole CV source bank).
   double controlVoltageAt(JackId jack) const { return cvAt_(jack); }
-  // ---- task #78: full 169-parameter applied_to_DSP apply (commit ②) ----
+  // ---- task #78: the whole applied_to_DSP apply (commit ②) ----
   // The ONE public apply choke for a whole DeviceState. applyDspParam routes each id:
   //   (1) the 35 control-source params -> either a seconds-smoothed SNAP (Smoothing::seconds)
   //       or setControlParamValue (byte-identical reuse for the non-seconds control-source ids);
   //   (2) the 16 vco/vcf panel-knob seconds params (isContinuousSmoothingParam_) -> the shared
   //       family SNAP (dspParamValid_ FIRST, then reset + applySmoothedControl_), never a ramp;
   //   (3) any non-applied_to_dsp id -> unsupported_parameter;
-  //   (4) the remaining 118 applied_to_dsp ids (the former 134 minus the 16 moved to (2)) ->
-  //       the explicit dispatch below, after dspParamValid_ admits the state value against its
-  //       registry unit (fail-closed keep-old on a malformed value, never a silent setter coercion);
+  //   (4) EVERY remaining applied_to_dsp id -> the explicit dispatch below, after dspParamValid_
+  //       admits the state value against its registry unit (fail-closed keep-old on a malformed
+  //       value, never a silent setter coercion). No count is spelled here on purpose: the class
+  //       sizes live in `count_disposition(applied_to_dsp)`, which the gate below reads directly,
+  //       so they cannot drift out of the comment;
   //   (5) an id none of the above cover -> unsupported_parameter (a fail-closed guard that
-  //       makes the batch's "exactly 169" check real, never a silent skip).
+  //       makes the batch's whole-state count check real, never a silent skip).
   ParameterApplyStatus applyDspParam(ParameterId id, double v) {
     lastApplyParamId_ = id;
     if (controlSourceParamRecognized_(id)) {
@@ -1234,7 +1254,7 @@ class SynthRuntime {
     // and must land at the value immediately). Validate via dspParamValid_ FIRST — it is the
     // ONLY validator spanning oct [-1,1] (controlParamValid_'s default:return false rejects
     // tune) — then reset + applySmoothedControl_, and NEVER skip the check (fail-closed
-    // keep-old on a malformed whole-state value, so the batch "exactly 169" stays honest).
+    // keep-old on a malformed whole-state value, so the batch's whole-state count stays honest).
     if (isContinuousSmoothingParam_(id)) {
       if (!dspParamValid_(id, v)) {
         lastApplyStatus_ = ParameterApplyStatus::invalid_value;
@@ -1618,6 +1638,15 @@ class SynthRuntime {
       case ParameterId::drone_3_rls:
         setDrone3Rls(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      // GH#15 D5: the Papa Srapa voice's HOLD selector (registry unit `selector` 0/1,
+      // off/on). The transfer is `v == 1.0`, the CLASSIC drone_1/2/4/5 gate_hold shape
+      // above — never `static_cast<int>(v)`. dspParamValid_ has already admitted the
+      // value against step=1/min=0/max=1, so v is exactly 0.0 or 1.0 here and the
+      // comparison is total on its definition domain (a static_cast would silently
+      // coerce a hypothetical 0.5 to `off`).
+      case ParameterId::drone_3_hold:
+        setDrone3Hold(v == 1.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_rate:
         setDrone6Rate(newDroneRateHzFromNorm(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
@@ -1652,23 +1681,28 @@ class SynthRuntime {
       case ParameterId::drone_6_rls:
         setDrone6Rls(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      // GH#15 D5: drone_6 mirrors drone_3 (same selector unit, same `v == 1.0` shape).
+      case ParameterId::drone_6_hold:
+        setDrone6Hold(v == 1.0);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       default:
         lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
         return lastApplyStatus_;
     }
   }
 
-  // Batch-apply EVERY applied_to_dsp parameter (exactly 169) from a validated
+  // Batch-apply EVERY applied_to_dsp parameter from a validated
   // DeviceStateV1 into the live DSP. On the first non-applied id it returns false and
   // fills firstFailId / firstFailStatus (the typed rejection the candidate builder
   // carries); it applies every id BEFORE the failure and bails immediately, so a failing
   // candidate is discarded whole — it never yields a partial-success path. On full success
-  // it returns true (dspApplyOk_ set) and dspAppliedCount_ == 169. An id that is not
-  // applied_to_dsp is skipped (out of contract scope), never counted. After the loop it
-  // re-verifies with an independent exactly-169 gate (finding 1): if fewer than the
+  // it returns true (dspApplyOk_ set) and dspAppliedCount_ == count_disposition(applied_to_dsp).
+  // An id that is not applied_to_dsp is skipped (out of contract scope), never counted. After the
+  // loop it re-verifies with an independent whole-state gate (finding 1): if fewer than the
   // contract count was admitted (a mutated path that skipped an id) it returns false with
   // apply_count_mismatch and firstFailId pointing at the first skipped id — never a partial
-  // success masquerading as the count==169 sentinel.
+  // success masquerading as the count sentinel. The contract count is READ from the disposition
+  // table (kAppliedToDsp below), never written as a literal, so no slice can leave it stale.
   bool applyDspState(const DeviceStateV1& state, ParameterId& firstFailId,
                      ParameterApplyStatus& firstFailStatus) {
     // Sentinel contract (finding 5): firstFail* is ALWAYS fully rewritten before we return, so
@@ -1678,7 +1712,7 @@ class SynthRuntime {
     firstFailId = static_cast<ParameterId>(kParameterCount);
     firstFailStatus = ParameterApplyStatus::applied;
 
-    // Which applied_to_DSP ids applyDspParam actually admitted, so the exactly-169 gate can
+    // Which applied_to_DSP ids applyDspParam actually admitted, so the whole-state gate can
     // LOCATE the first missing id rather than reporting a bare count mismatch (finding 1).
     std::uint32_t appliedBits[(kParameterCount + 31u) / 32u] = {};
 
@@ -1701,12 +1735,12 @@ class SynthRuntime {
       ++applied;
     }
 
-    // Exactly-169 product gate (finding 1): the loop must admit EVERY applied_to_DSP id, not just
+    // Whole-state product gate (finding 1): the loop must admit EVERY applied_to_DSP id, not just
     // produce a plausible count. A mutated path that skips one (e.g. a stray `continue`) is a
     // REJECTED candidate with the first missing id locatable via the admitted-bit mask — it never
-    // hides behind the count==169 success sentinel.
+    // hides behind the count success sentinel.
     constexpr std::uint32_t kAppliedToDsp =
-        count_disposition(StateDisposition::applied_to_dsp);  // 169, compile-time locked.
+        count_disposition(StateDisposition::applied_to_dsp);  // compile-time locked to the table.
     if (applied != kAppliedToDsp) {
       dspApplyOk_ = false;
       dspAppliedCount_ = applied;
@@ -1721,7 +1755,7 @@ class SynthRuntime {
     return true;
   }
 
-  // First applied_to_DSP id whose admitted-bit is clear — the missing id an exactly-169
+  // First applied_to_DSP id whose admitted-bit is clear — the missing id a whole-state
   // count-mismatch rejection reports. Returns the kParameterCount sentinel if none differ (a
   // count gate that cannot happen, but fail-closed so the caller always gets a locatable id).
   ParameterId firstUnadmittedAppliedId_(const std::uint32_t* bits) const {
@@ -1733,9 +1767,9 @@ class SynthRuntime {
     return static_cast<ParameterId>(kParameterCount);
   }
 
-  // task #78: whether the whole 169-parameter apply succeeded and how many were applied.
+  // task #78: whether the whole applied_to_DSP apply succeeded and how many were applied.
   // dspApplyOk() is the candidate-builder gate; dspAppliedCount() is a diagnostic equal to
-  // count_disposition(applied_to_dsp) on success (169) and partial on a rejection.
+  // count_disposition(applied_to_dsp) on success and partial on a rejection.
   bool dspApplyOk() const { return dspApplyOk_; }
   std::uint32_t dspAppliedCount() const { return dspAppliedCount_; }
 
@@ -2098,12 +2132,18 @@ class SynthRuntime {
     // named provisional default DroneBank::kDefaultGroupGateOpen, the same constant the
     // classic groups use, so "unpatched = open" has exactly one source in the product.
     void setVoiceGate(bool high) { ar.setGate(high); }
+    // GH#15 D5 (HOLD knob). The registry unit is `selector` 0/1 (off/on), so the value
+    // arrives as a bool. HOLD is an OR term on the AR envelope's TARGET — it is NOT a
+    // second envelope and it does NOT write the gate, so a held voice still reports
+    // arGate()==false when its gate_in is patched low.
+    void setHold(bool on) { ar.setHold(on); }
     // The VCA gain the render path multiplied the voice's audio by on the last sample,
-    // plus the gate level it consumed and the two mapped stage times. Real executed
-    // DSP readbacks (never a shadow bank), so a criterion can discriminate the
-    // envelope without reading a private.
+    // plus the gate level it consumed, the HOLD state it ORed in, and the two mapped
+    // stage times. Real executed DSP readbacks (never a shadow bank), so a criterion
+    // can discriminate the envelope without reading a private.
     double arLevel() const { return ar.level(); }
     bool arGate() const { return ar.gate(); }
+    bool arHold() const { return ar.hold(); }
     double arAttSeconds() const { return ar.attSeconds(); }
     double arRlsSeconds() const { return ar.rlsSeconds(); }
     // The modulation depth the product path actually drives the audio oscillator with
@@ -2302,6 +2342,14 @@ class SynthRuntime {
       case ParameterId::drone_3_rls:   setDrone3Rls(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_att:   setDrone6Att(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_rls:   setDrone6Rls(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      // GH#15 D5 (HOLD, both voices, live lane). The ControlEvent carries the selector
+      // index 0/1; the transfer is `v == 1.0`, the CLASSIC drone_1/2/4/5 gate_hold shape,
+      // so a value outside {0,1} — which this lane's entry does not validate for the drone
+      // panel (a pre-existing D1..D4 shape, booked in the landing comment) — reads as `off`,
+      // the registry default. That makes the unvalidated boundary fail-CLOSED for D5: the
+      // worst case is a hold that does not engage, never a silently engaged one.
+      case ParameterId::drone_3_hold:  setDrone3Hold(v == 1.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
+      case ParameterId::drone_6_hold:  setDrone6Hold(v == 1.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       // GH#11 FIXED-CANDIDATE (@Codex D3): the 34 evidence-mappable control-source params dispatch
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the
@@ -2470,9 +2518,10 @@ class SynthRuntime {
   // step_cv_1..5, pulser) plus the 16 vco/vcf panel-knob seconds params (vco a/b tune/morph/
   // pw/cv_amt, vcf l/r freq/res/mod, vcf dist/gain) = 36. It is deliberately NOT folded into
   // controlSourceParamRecognized_ (that predicate is 乐音 control-source semantics; the 16
-  // are panel knobs). Applied_to_dsp naturally excludes keyboard (35), p6/p8-preserved (125)
-  // and transfer-unavailable (16, incl. vco a/b pwm) params — a declared-but-unwired seconds
-  // param is NOT in any smoothing route, which keeps the "exactly 169 apply" gate honest.
+  // are panel knobs). Applied_to_dsp naturally excludes the other three classes — read their
+  // sizes from `count_disposition(...)`, never from this comment — and the transfer-unavailable
+  // remainder is the GH#19 pwm pair. A declared-but-unwired seconds param is NOT in any smoothing
+  // route, which keeps the whole-state apply gate honest.
   bool isContinuousSmoothingParam_(ParameterId id) const {
     const ParameterDescriptor* desc = find_parameter(id);
     return desc != nullptr &&
@@ -2676,7 +2725,8 @@ class SynthRuntime {
     return std::log(hz / kFiveStepPulserMinRateHz) / std::log(kFiveStepPulserLogBase);
   }
 
-  // task #78: shared registry-unit-domain admission for the 134 NEW applied_to_dsp ids.
+  // task #78: shared registry-unit-domain admission for the applied_to_dsp ids that the
+  // explicit dispatch below covers.
   // Mirrors controlParamValid_ for the control-source set: reject a value malformed for its
   // registry descriptor BEFORE it reaches a setter that might clamp/coerce (a malformed norm
   // stays invalid; a non-integer selector stays invalid — never a silent `v != 0.0` gate-high

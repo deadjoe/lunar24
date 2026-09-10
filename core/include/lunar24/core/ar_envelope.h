@@ -13,10 +13,20 @@
 // whose ADSR is a ONE-POLE EXPONENTIAL. Mixing the two would put two different
 // envelope laws and two different sets of time constants under one panel section.
 //
-// NOT IN THIS SLICE: HOLD. The classic group envelope ORs a PROVISIONAL `hold` term
-// into its target (`gate || hold`). The D4 contract deliberately scopes the
-// drone_3/6 `hold` parameters (registry 288/300) OUT, so this envelope's target is
-// the gate alone. When/if HOLD lands it is an OR on `target`, not a second envelope.
+// HOLD (GH#15 D5) is an OR term on the TARGET, not a second envelope — exactly as the
+// classic group envelope does it (`DroneBank::GroupEnv::hold` ORed inside `tickGroup`).
+// The D4 contract scoped the drone_3/6 `hold` parameters (registry 288/300) OUT and
+// reserved this boundary; D5 lands it here:
+//
+//     target = (gate_ || hold_) ? 1.0 : 0.0
+//
+// `hold_` defaults to FALSE, which makes the expression expand identically to the D4
+// `gate_ ? 1.0 : 0.0`, so an untouched HOLD is bit-identical to pre-D5. HOLD never
+// writes `gate_`: `gate()` keeps reporting the TRUE resolved gate, so a held voice
+// legitimately reads `gate() == false` AND `level() == 1.0`. It also never resets
+// `level_` and never touches the two stage times — engaging HOLD mid-release resumes
+// the rise from wherever the level currently is, which is what keeps the VCA gain
+// continuous (the same property `setGate` has).
 //
 // GATE SEMANTICS (the provisional convention, stated once here): the gate level is
 // resolved OUTSIDE this primitive (the runtime resolves drone_N.gate_in through the
@@ -63,12 +73,18 @@ class ArEnvelope {
   // the level currently is, so the VCA gain is always continuous).
   void setGate(bool high) { gate_ = high; }
 
-  // Advance one sample. This is the classic GroupEnv law verbatim: move toward the
-  // target at the stage's rate and CLAMP at the target so the level can overshoot
-  // neither 1.0 nor 0.0.
+  // HOLD (GH#15 D5) — the OR term on the target. Default FALSE, which is the registry's
+  // initial selector position ("off") and makes `(gate_ || hold_)` expand identically to
+  // the D4 `gate_` alone. It deliberately does NOT write `gate_`: `gate()` keeps meaning
+  // "the gate the caller resolved", so a held voice reads gate()==false with level()==1.0.
+  void setHold(bool on) { hold_ = on; }
+
+  // Advance one sample. This is the classic GroupEnv law verbatim — `(e.gate || e.hold)`
+  // included — moving toward the target at the stage's rate and CLAMPING at the target so
+  // the level can overshoot neither 1.0 nor 0.0.
   void tick() {
     const double dt = 1.0 / sampleRate_;
-    const double target = gate_ ? 1.0 : 0.0;
+    const double target = (gate_ || hold_) ? 1.0 : 0.0;
     if (level_ < target) {
       level_ += dt / attSeconds_;
       if (level_ > target) level_ = target;
@@ -80,8 +96,11 @@ class ArEnvelope {
 
   // Current VCA gain 0..1 — the value the product multiplies the voice's audio by.
   double level() const { return level_; }
-  // The gate level the last tick consumed (readback, not a shadow bank).
+  // The gate level the last tick consumed (readback, not a shadow bank). This is the TRUE
+  // gate — HOLD does not overwrite it (see setHold).
   bool gate() const { return gate_; }
+  // The HOLD state the last tick ORed into the target (readback, not a shadow bank).
+  bool hold() const { return hold_; }
   double attSeconds() const { return attSeconds_; }
   double rlsSeconds() const { return rlsSeconds_; }
 
@@ -90,6 +109,10 @@ class ArEnvelope {
 
   double sampleRate_;
   bool gate_;
+  // HOLD OR term (GH#15 D5). Starts FALSE = the registry's initial selector position
+  // ("off" for drone_3.hold(288) / drone_6.hold(300)) and the classic `GroupEnv::hold`
+  // default, so an untouched envelope is bit-identical to pre-D5.
+  bool hold_ = false;
   double attSeconds_;
   double rlsSeconds_;
   // Starts OPEN (1.0), exactly like GroupEnv::level — so with the provisional
