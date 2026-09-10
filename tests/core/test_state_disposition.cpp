@@ -5,9 +5,9 @@
 //
 // The revision-3 oracle is NOT self-proving. Each landed id is classified by an
 // INDEPENDENT rule derived only from the registry descriptor (owner / role) plus a
-// pinned 16-member unavailable set — never by reading the disposition table itself —
+// pinned 2-member unavailable set — never by reading the disposition table itself —
 // and the table's disposition_of(id) must agree with that rule for EVERY id, and the
-// five per-class counts must be exactly 181/35/125/4/0.
+// five per-class counts must be exactly 183/35/125/2/0.
 //
 // This catches the "equal-quantity separation" false-green: swapping the class of a
 // DSP-landed id with a differently-classed id (e.g. an effector id) leaves the class
@@ -26,17 +26,15 @@
 
 namespace core = lunar24::core;
 
-// The 4 transfer-unavailable parameters (no real runtime consumer), by stable
-// ParameterId: vco_a.pwm(8), vco_b.pwm(30) and the drone3/6 HOLD pair — HOLD is NOT in
-// the GH#15 D4 slice (it is an OR term on the envelope target, not a second envelope).
+// The 2 REMAINING transfer-unavailable parameters (no real runtime consumer), by stable
+// ParameterId: vco_a.pwm(8) and vco_b.pwm(30) — both still deferred to GH#19.
 // GH#15 D1 moved drone_3/6_mod, D2 moved drone_3/6_hi_low + drone_3/6_rate_switch,
-// D3 moved drone_3/6_divider, and D4 moved the drone3/6 ATT/RLS pair to
-// applied_to_dsp (16 -> 14 -> 10 -> 8 -> 4).
+// D3 moved drone_3/6_divider, D4 moved the drone3/6 ATT/RLS pair, and D5 moved the
+// drone3/6 HOLD pair (an OR term on the envelope TARGET, not a second envelope)
+// (16 -> 14 -> 10 -> 8 -> 4 -> 2).
 static constexpr core::ParameterId kUnavailablePids[] = {
     core::ParameterId::vco_a_pwm,
     core::ParameterId::vco_b_pwm,
-    core::ParameterId::drone_3_hold,
-    core::ParameterId::drone_6_hold,
 };
 
 static bool is_unavailable(core::ParameterId id) noexcept {
@@ -65,10 +63,10 @@ static core::StateDisposition oracle_classify(core::ParameterId id) {
 
 static void class_counts_and_sum() {
   CHECK_EQ(core::kDeviceStateDispositionCount, 345u);
-  CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_dsp), 181u);
+  CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_dsp), 183u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_keyboard), 35u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::preserved_deferred_p6_p8), 125u);
-  CHECK_EQ(core::count_disposition(core::StateDisposition::transfer_unavailable), 4u);
+  CHECK_EQ(core::count_disposition(core::StateDisposition::transfer_unavailable), 2u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::invalid_unlanded), 0u);
   const std::uint32_t sum =
       core::count_disposition(core::StateDisposition::applied_to_dsp) +
@@ -101,17 +99,17 @@ static void per_id_matches_independent_oracle() {
     for (std::uint32_t b = a + 1; b < core::kDeviceStateDispositionCount; ++b)
       CHECK(core::kDeviceStateDisposition[b].id != ea.id);
   }
-  CHECK_EQ(dsp, 181u);
+  CHECK_EQ(dsp, 183u);
   CHECK_EQ(kbd, 35u);
   CHECK_EQ(deferred, 125u);
-  CHECK_EQ(unavailable, 4u);
+  CHECK_EQ(unavailable, 2u);
   CHECK_EQ(unlanded, 0u);
 }
 
 // Equal-quantity separation is DETECTABLE: an applied_to_DSP id and a deferred
 // (effector) id classify differently, so swapping their classes would flip both to
-// red even though the class counts stay 175/35/125/10/0. We pin one representative of
-// each so the oracle can never be "equal counts, wrong labels".
+// red even though every class count stays unchanged. We pin one representative of each
+// so the oracle can never be "equal counts, wrong labels".
 static void equal_quantity_swap_is_detectable() {
   const core::ParameterId dsp_id = core::ParameterId::vco_a_tune;       // DSP knob
   const core::ParameterId eff_id = core::ParameterId::program_orche_3_z;  // deferred (x/y/z)
@@ -185,13 +183,14 @@ static void spot_check_known_dispositions() {
   CHECK(core::disposition_of(core::ParameterId::drone_6_hi_low) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_6_rate_switch) == core::StateDisposition::applied_to_dsp);
   // GH#15 D4: drone_3/6_att + drone_3/6_rls moved from transfer_unavailable to
-  // applied_to_dsp (16 -> 14 -> 10 -> 8 -> 4), while the HOLD pair stays deferred.
+  // applied_to_dsp; GH#15 D5: the drone_3/6 HOLD pair followed (16 -> 14 -> 10 -> 8 ->
+  // 4 -> 2). Both steps leave only the GH#19 pwm pair unavailable.
   CHECK(core::disposition_of(core::ParameterId::drone_3_att) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_3_rls) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_6_att) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_6_rls) == core::StateDisposition::applied_to_dsp);
-  CHECK(core::disposition_of(core::ParameterId::drone_3_hold) == core::StateDisposition::transfer_unavailable);
-  CHECK(core::disposition_of(core::ParameterId::drone_6_hold) == core::StateDisposition::transfer_unavailable);
+  CHECK(core::disposition_of(core::ParameterId::drone_3_hold) == core::StateDisposition::applied_to_dsp);
+  CHECK(core::disposition_of(core::ParameterId::drone_6_hold) == core::StateDisposition::applied_to_dsp);
 }
 
 static void landed_slot_arithmetic() {

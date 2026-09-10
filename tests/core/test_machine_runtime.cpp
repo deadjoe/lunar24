@@ -2184,6 +2184,509 @@ IJU_TEST_NOINLINE void d4_cohort_fail_closed() {
     }
   }
 }
+
+// ---- GH#15 D5 acceptance (task #107): drone_3/6 HOLD = an OR term on the AR envelope target ----
+// D5 gives the two Papa Srapa voices the HOLD selector the classic groups already own, with the
+// SAME law and the SAME default: `DroneBank::tickGroup` computes `target = (e.gate || e.hold) ? 1.0
+// : 0.0` from a `bool hold` FIELD of the group envelope, and this slice reproduces that shape
+// inside ArEnvelope rather than adding a second envelope or a second gain stage. HOLD is NOT a
+// gate write: `arGate()` keeps reporting the TRUE resolved gate, so a held voice reads
+// gate()==false AND level()==1.0 simultaneously.
+//
+// Acceptance: (1) hold=on keeps the voice OPEN against a LOW true gate, per voice, with the
+// three-way discriminator (hold==true AND gate==false AND level==1.0); (2) BOTH dispatch lanes
+// reach the real OR term and everything outside {0,1} is rejected keep-old; (3) every row of the
+// transition table, against a closed form measured on the RENDER (not the readback); (4) HOLD
+// never perturbs the two stage times, never resets the level, and is per-voice (no cross-talk);
+// (5) ENV OUT follows the held level through the row's OWN descriptor; (6) THE REGRESSION LOCK —
+// explicit hold=0 is bit-identical to pre-D5, hold=1 with a LOW gate is bit-identical to the
+// pre-D5 OPEN voice, and the cable-LOW configuration must differ so the lock is not vacuous.
+//
+// Each function builds SynthRuntime BY VALUE on the stack, so — exactly like the D3/D4 blocks —
+// they are held out of main()'s frame (IJU_TEST_NOINLINE) to keep the MSVC/ASan runner stack
+// bounded. A CI-safety latch, not product semantics.
+//
+// 10 ms at kSr: long enough to move a 0.5005 s stage by a measurable amount, short enough that a
+// stage measured over it never reaches its clamp (so the closed form is the whole story).
+constexpr std::size_t kD5Win = 480;
+
+// The two stage windows of the bit-identical-script block. They sit at namespace scope — like every
+// other frame count in this section — because a function-local constant used inside the block's
+// capture-less lambda is rejected by MSVC (C3493: needs a capture) and the capture it wants is then
+// rejected by clang as unused (-Wunused-lambda-capture, an error here). Namespace scope needs no
+// capture on any of the three compilers.
+constexpr std::size_t kD5FallFrames = 960;  // 20 ms of release: lands well below 1.0
+constexpr std::size_t kD5RiseFrames = 480;  // 10 ms of re-attack: still below 1.0
+
+// The transition window (column 3 of the contract's behaviour table) is shared by both voices.
+void d5Advance(core::SynthRuntime& rt, std::size_t frames) {
+  for (std::size_t i = 0; i < frames; ++i) rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+}
+double d5ChannelOf(const core::SynthRuntime& rt, int voice) {
+  return voice == 0 ? rt.drone3Channel() : rt.drone6Channel();
+}
+
+// (1) THE CORE CLAIM, per voice: with the voice's TRUE gate held LOW, HOLD=1 must keep the AR
+// level at exactly 1.0 at every sample, while the gate readback stays false. The triple
+// (hold==true, gate==false, level==1.0) is the discriminator: an implementation that folds HOLD
+// into the gate, or that ignores HOLD, cannot satisfy all three at once.
+IJU_TEST_NOINLINE void d5_hold_or_term_acceptance() {
+  namespace reg = lunar24::registry;
+  using core::ParameterApplyStatus;
+  const reg::JackId kGate[2] = {reg::JackId::drone_3_gate_in, reg::JackId::drone_6_gate_in};
+  const core::ParameterId kHoldId[2] = {core::ParameterId::drone_3_hold,
+                                        core::ParameterId::drone_6_hold};
+  const core::ParameterId kAttId[2] = {core::ParameterId::drone_3_att,
+                                       core::ParameterId::drone_6_att};
+  const core::ParameterId kRlsId[2] = {core::ParameterId::drone_3_rls,
+                                       core::ParameterId::drone_6_rls};
+  for (int v = 0; v < 2; ++v) {
+    core::SynthRuntime rt = makeRegistryPapaRuntime();
+    check(rt.connect(reg::JackId::lfo_a_cv_out, kGate[v]),
+          "d5 core: the voice's gate_in cable is admitted");
+    static_cast<void>(rt.rebuild());
+    // Fastest legal stages so the endpoints are reached exactly.
+    static_cast<void>(rt.applyDspParam(kAttId[v], 0.0));
+    static_cast<void>(rt.applyDspParam(kRlsId[v], 0.0));
+    rt.setControlVoltage(reg::JackId::lfo_a_cv_out, 5.0);
+    d5Advance(rt, kD4Settle);
+    check(rt.droneVoiceArLevel(v) == 1.0 && rt.droneVoiceArGate(v),
+          "d5 core: the voice starts OPEN with the gate cable driven HIGH");
+    check(!rt.droneVoiceArHold(v),
+          "d5 core: an UNAPPLIED hold reads back off (the registry initial selector position)");
+
+    // (a) hold=off + gate LOW: the D4 release semantics must NOT regress.
+    rt.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+    d5Advance(rt, kD4Settle);
+    check(!rt.droneVoiceArGate(v) && rt.droneVoiceArLevel(v) == 0.0,
+          "d5 core: hold=off + gate LOW still releases the voice (D4 semantics preserved)");
+    const double silent = d5ChannelOf(rt, v);
+
+    // (b) hold=on + the SAME low gate: the voice must stay open, and the gate must stay FALSE.
+    check(rt.applyDspParam(kHoldId[v], 1.0) == ParameterApplyStatus::applied,
+          "d5 core: hold=1 is admitted by the batch lane");
+    d5Advance(rt, kD4Settle);  // let the re-attack reach the held ceiling first
+    check(rt.droneVoiceArLevel(v) == 1.0,
+          "d5 core: HOLD=1 against the LOW gate re-opens the voice to exactly 1.0");
+    // ...and then it must STAY there: HOLD pins the target at 1.0, so a level that drifts off it
+    // (a HOLD that decayed, or one that only armed a one-shot rise) is caught here.
+    bool levelAlwaysOne = true;
+    for (std::size_t i = 0; i < kD4Settle; ++i) {
+      rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+      if (rt.droneVoiceArLevel(v) != 1.0) levelAlwaysOne = false;
+    }
+    check(levelAlwaysOne,
+          "d5 core: once held, the level sits at exactly 1.0 at EVERY sample across a full window");
+    check(!rt.droneVoiceArGate(v),
+          "d5 core: the TRUE gate readback stays FALSE under HOLD (an OR term, not a gate write)");
+    check(rt.droneVoiceArHold(v),
+          "d5 core: the executed HOLD state reads back true on the voice that consumed it");
+    check(d5ChannelOf(rt, v) != 0.0 && d5ChannelOf(rt, v) != silent,
+          "d5 core: the held voice is AUDIBLE again and differs from the released channel");
+
+    // (c) hold back to off: the gate alone owns the target again.
+    check(rt.applyDspParam(kHoldId[v], 0.0) == ParameterApplyStatus::applied,
+          "d5 core: hold=0 is admitted by the batch lane");
+    d5Advance(rt, kD4Settle);
+    check(!rt.droneVoiceArHold(v) && rt.droneVoiceArLevel(v) == 0.0,
+          "d5 core: turning HOLD off with the gate still LOW releases the voice again");
+  }
+}
+
+// (2) BOTH DISPATCH LANES reach the real OR term, and the selector's unit-domain is enforced:
+// every value outside the exact {0,1} step is invalid_value and leaves the state untouched.
+IJU_TEST_NOINLINE void d5_hold_dispatch_and_range_lock() {
+  namespace reg = lunar24::registry;
+  using core::ParameterApplyStatus;
+
+  // The batch lane (applyDspParam) is the applyDeviceState choke; it is validated against the
+  // registry descriptor by dspParamValid_ BEFORE the switch, so a fractional selector never
+  // reaches `v == 1.0`.
+  core::SynthRuntime rt = makeRuntime();
+  static_cast<void>(rt.rebuild());
+  check(rt.drone3Hold() == false && rt.drone6Hold() == false,
+        "d5 lanes: both voices default to HOLD=off before any apply");
+  check(rt.applyDspParam(core::ParameterId::drone_3_hold, 1.0) == ParameterApplyStatus::applied,
+        "d5 lanes: drone_3.hold=1 applied on the batch lane");
+  check(rt.drone3Hold() && rt.droneVoiceArHold(0),
+        "d5 lanes: the batch lane reaches the executed AR HOLD state (named AND indexed readback)");
+  check(!rt.drone6Hold() && !rt.droneVoiceArHold(1),
+        "d5 lanes: applying drone_3.hold leaves drone_6's HOLD untouched (independent voices)");
+  check(rt.applyDspParam(core::ParameterId::drone_6_hold, 1.0) == ParameterApplyStatus::applied,
+        "d5 lanes: drone_6.hold=1 applied on the batch lane");
+  check(rt.drone6Hold() && rt.droneVoiceArHold(1),
+        "d5 lanes: the batch lane reaches drone_6's executed AR HOLD state");
+  check(rt.applyDspParam(core::ParameterId::drone_6_hold, 0.0) == ParameterApplyStatus::applied,
+        "d5 lanes: drone_6.hold=0 is a legal selector position");
+  check(!rt.drone6Hold(), "d5 lanes: hold=0 turns the OR term back off");
+
+  // The live lane: a panel switch flip is a ControlEvent that processBlock drains (the real
+  // codec->owner->processBlock entry, NOT the batch applyDspParam lane).
+  constexpr std::size_t kTot = 128;
+  static const core::RuntimeInputs kSil[kTot] = {};
+  core::RuntimeOutput out[kTot] = {};
+  core::SynthRuntime rtL = makeRuntime();
+  static_cast<void>(rtL.rebuild());
+  auto sendLive = [&](core::ParameterId p, double v, std::uint32_t seq) {
+    core::ControlEvent ev;
+    ev.kind = core::ControlEventKind::parameter;
+    ev.parameter = p;
+    ev.value = static_cast<core::SignalSample>(v);
+    ev.source = 1;
+    ev.producerSequence = seq;
+    core::TimedControlEvent te;
+    te.event = ev;
+    te.sample = 0;
+    const bool ok = rtL.enqueueControlEvent(te);
+    rtL.processBlock(kSil, kTot, out, /*driveGraph=*/true);
+    return ok;
+  };
+  check(sendLive(core::ParameterId::drone_3_hold, 1.0, 1),
+        "d5 lanes: the drone_3.hold live ControlEvent is admitted");
+  check(rtL.drone3Hold() && rtL.droneVoiceArHold(0),
+        "d5 lanes: the live lane reaches the executed AR HOLD state");
+  check(!rtL.drone6Hold(), "d5 lanes: the live drone_3 event leaves drone_6's HOLD off");
+  check(sendLive(core::ParameterId::drone_6_hold, 1.0, 2),
+        "d5 lanes: the drone_6.hold live ControlEvent is admitted");
+  check(rtL.drone6Hold(), "d5 lanes: the live lane reaches drone_6's executed AR HOLD state");
+
+  // Unit-domain lock: the registry unit is `selector` (step 1, 0..1), so a fractional / out-of-
+  // range / non-finite value is malformed and must be rejected keep-old — never a silent
+  // coercion into `off` (or, worse, into `on`).
+  core::SynthRuntime rtR = makeRuntime();
+  static_cast<void>(rtR.rebuild());
+  static_cast<void>(rtR.applyDspParam(core::ParameterId::drone_3_hold, 1.0));
+  const bool heldBefore = rtR.drone3Hold();
+  struct Bad {
+    double v;
+    const char* what;
+  };
+  const Bad bads[] = {
+      {0.5, "a fractional selector (0.5)"},
+      {2.0, "an out-of-range selector (2.0)"},
+      {-1.0, "a negative selector (-1.0)"},
+      {std::numeric_limits<double>::quiet_NaN(), "a non-finite selector (NaN)"},
+  };
+  for (const Bad& b : bads) {
+    char label[192];
+    std::snprintf(label, sizeof label, "d5 lanes: %s is rejected as invalid_value", b.what);
+    check(rtR.applyDspParam(core::ParameterId::drone_3_hold, b.v) == ParameterApplyStatus::invalid_value,
+          label);
+    char keep[192];
+    std::snprintf(keep, sizeof keep,
+                  "d5 lanes: %s leaves the executed HOLD state unchanged (keep-old, no coercion)",
+                  b.what);
+    check(rtR.drone3Hold() == heldBefore, keep);
+  }
+  check(rtR.drone3Hold(),
+        "d5 lanes: after the whole malformed matrix the voice is still exactly where it was");
+}
+
+// (3) THE TRANSITION TABLE, measured on the RENDER with closed forms. ATT (norm 0.5 -> 0.5005 s)
+// and RLS (norm 0.25 -> 0.25075 s) are deliberately DIFFERENT, so a rise and a fall over the same
+// window are numerically distinguishable — which is also what makes the fourth negative control
+// (an OR term that swallowed the two stage constants) observable.
+IJU_TEST_NOINLINE void d5_hold_transition_behaviour() {
+  namespace reg = lunar24::registry;
+  const double attSec = 0.001 + kD4AttSpan * 0.5;
+  const double rlsSec = 0.001 + kD4RlsSpan * 0.25;
+  const double rise = double(kD5Win) / kSr / attSec;
+  const double fall = double(kD5Win) / kSr / rlsSec;
+  check(std::fabs(rise - fall) > 1e-3,
+        "d5 transition: the two stage windows are numerically distinguishable (the premise of "
+        "every closed form below)");
+
+  core::SynthRuntime rt = makeRegistryPapaRuntime();
+  check(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in),
+        "d5 transition: the drone_3 gate cable is admitted");
+  static_cast<void>(rt.rebuild());
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.5));
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.25));
+  check(std::fabs(rt.droneVoiceArAttSeconds(0) - attSec) < 1e-12 &&
+            std::fabs(rt.droneVoiceArRlsSeconds(0) - rlsSec) < 1e-12,
+        "d5 transition: the render path consumes the two closed-form stage seconds");
+
+  // Start fully open.
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, 5.0);
+  d5Advance(rt, kD4Settle);
+  check(rt.droneVoiceArLevel(0) == 1.0, "d5 transition: the voice starts fully open");
+
+  // Row 1: hold=off, gate high->low -> the RELEASE stage owns the fall.
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+  d5Advance(rt, kD5Win);
+  const double l1 = rt.droneVoiceArLevel(0);
+  check(std::fabs(l1 - (1.0 - fall)) < 1e-12,
+        "d5 transition: hold=off, gate high->low falls at exactly dt/rlsSeconds from 1.0 (D4 law)");
+  check(l1 > 0.0 && l1 < 1.0, "d5 transition: that fall is mid-flight (not a clamp artefact)");
+
+  // Row 2 (the slice's core): hold off->on WHILE RELEASING -> the rise resumes from the CURRENT
+  // level at dt/attSeconds. It must NOT restart at 0, and it must NOT use the release stage.
+  check(rt.applyDspParam(core::ParameterId::drone_3_hold, 1.0) == core::ParameterApplyStatus::applied,
+        "d5 transition: HOLD engages mid-release");
+  d5Advance(rt, kD5Win);
+  const double l2 = rt.droneVoiceArLevel(0);
+  check(std::fabs(l2 - (l1 + rise)) < 1e-12,
+        "d5 transition: engaging HOLD mid-release resumes the RISE at dt/attSeconds from the "
+        "current level (no reset to 0)");
+  check(l2 > l1 && l2 < 1.0, "d5 transition: the resumed rise is real and still mid-flight");
+  check(std::fabs(l2 - (l1 + fall)) > 1e-6,
+        "d5 transition: the resumed rise did NOT advance at the RELEASE stage (a negative-control "
+        "discriminator: the OR term must not merge the two stage constants)");
+
+  // Row 3: hold on->off while RISING (gate still low) -> the fall takes over from the current
+  // level at dt/rlsSeconds.
+  check(rt.applyDspParam(core::ParameterId::drone_3_hold, 0.0) == core::ParameterApplyStatus::applied,
+        "d5 transition: HOLD disengages mid-rise with the gate still LOW");
+  d5Advance(rt, kD5Win);
+  const double l3 = rt.droneVoiceArLevel(0);
+  check(std::fabs(l3 - (l2 - fall)) < 1e-12,
+        "d5 transition: disengaging HOLD mid-rise hands the target back to the gate, so the level "
+        "falls at dt/rlsSeconds from where it was");
+  check(l3 > 0.0 && l3 < l2, "d5 transition: that handover is continuous and mid-flight");
+
+  // Rows 4+5: while HOLD is ON, a gate edge is INVISIBLE on the target. Proven exactly, by
+  // driving TWO runtimes through a BIT-IDENTICAL script up to a mid-rise state and then moving the
+  // gate on only one of them: the level and the rendered channel must stay bit-identical. The
+  // divergence point is chosen mid-rise (0 < level < 1.0) so the equality cannot pass vacuously at
+  // a clamp.
+  auto rampMidRise = [](core::SynthRuntime& r) {
+    static_cast<void>(r.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in));
+    static_cast<void>(r.rebuild());
+    static_cast<void>(r.applyDspParam(core::ParameterId::drone_3_att, 0.5));
+    static_cast<void>(r.applyDspParam(core::ParameterId::drone_3_rls, 0.25));
+    r.setControlVoltage(reg::JackId::lfo_a_cv_out, 5.0);
+    d5Advance(r, kD4Settle);  // open (the envelope starts there and the gate agrees)
+    r.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+    d5Advance(r, kD5FallFrames);
+    static_cast<void>(r.applyDspParam(core::ParameterId::drone_3_hold, 1.0));
+    d5Advance(r, kD5RiseFrames);
+  };
+  core::SynthRuntime rtP = makeRegistryPapaRuntime();
+  rampMidRise(rtP);
+  const double l4 = rtP.droneVoiceArLevel(0);
+  check(l4 > 0.0 && l4 < 1.0 && rtP.droneVoiceArHold(0),
+        "d5 transition: the invisibility probe starts mid-rise with HOLD on (non-vacuous)");
+
+  core::SynthRuntime rtQ = makeRegistryPapaRuntime();
+  rampMidRise(rtQ);
+  check(d4BitEq(rtQ.droneVoiceArLevel(0), l4) && d4BitEq(rtQ.drone3Channel(), rtP.drone3Channel()),
+        "d5 transition: the two runtimes are in the SAME state before the gate edge (probe sanity)");
+
+  // Row 4: gate LOW -> HIGH on rtP only. rtQ's gate never moves.
+  rtP.setControlVoltage(reg::JackId::lfo_a_cv_out, 5.0);
+  d5Advance(rtP, kD5RiseFrames);
+  d5Advance(rtQ, kD5RiseFrames);
+  check(rtP.droneVoiceArGate(0) && !rtQ.droneVoiceArGate(0),
+        "d5 transition: the gate edge LOW->HIGH really reached the runtime under test, and only it");
+  check(d4BitEq(rtP.droneVoiceArLevel(0), rtQ.droneVoiceArLevel(0)),
+        "d5 transition: hold=on, gate low->high leaves the AR level BIT-IDENTICAL (the edge is "
+        "invisible on a target HOLD already pins at 1.0)");
+  check(d4BitEq(rtP.drone3Channel(), rtQ.drone3Channel()),
+        "d5 transition: ...and nothing downstream of the target saw the edge either (the rendered "
+        "channel is bit-identical too)");
+
+  // Row 5: the mirror. Drive rtP back LOW; rtQ still never moved.
+  rtP.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+  d5Advance(rtP, kD5RiseFrames);
+  d5Advance(rtQ, kD5RiseFrames);
+  check(!rtP.droneVoiceArGate(0) && !rtQ.droneVoiceArGate(0),
+        "d5 transition: the gate edge HIGH->LOW also reached the runtime under test");
+  check(d4BitEq(rtP.droneVoiceArLevel(0), rtQ.droneVoiceArLevel(0)) &&
+            d4BitEq(rtP.drone3Channel(), rtQ.drone3Channel()),
+        "d5 transition: hold=on, gate high->low leaves the level AND the channel BIT-IDENTICAL too");
+
+  // Row 6: toggling HOLD never touches the two stage times.
+  const double attHeld = rtP.droneVoiceArAttSeconds(0);
+  const double rlsHeld = rtP.droneVoiceArRlsSeconds(0);
+  static_cast<void>(rtP.applyDspParam(core::ParameterId::drone_3_hold, 0.0));
+  static_cast<void>(rtP.applyDspParam(core::ParameterId::drone_3_hold, 1.0));
+  static_cast<void>(rtP.applyDspParam(core::ParameterId::drone_3_hold, 0.0));
+  d5Advance(rtP, kD4Settle);
+  check(d4BitEq(rtP.droneVoiceArAttSeconds(0), attHeld) &&
+            d4BitEq(rtP.droneVoiceArRlsSeconds(0), rlsHeld),
+        "d5 transition: HOLD is target-only — the ATT/RLS stage seconds stay byte-identical across "
+        "three toggles");
+}
+
+// (4) ENV OUT follows the held level, through the row's OWN descriptor (no hard-coded voltage);
+// HOLD is per-voice (no cross-talk); and releasing the GATE cohort must NOT clear a panel HOLD.
+IJU_TEST_NOINLINE void d5_hold_env_out_isolation_and_cohort() {
+  namespace reg = lunar24::registry;
+  const core::JackDescriptor* d3 = reqRegistryJack(reg::JackId::drone_3_env_out);
+  const double span3 = d3->nominalMax - d3->nominalMin;
+  check(span3 != 0.0, "d5 env_out: the drone_3 ENV OUT descriptor has a non-degenerate range");
+
+  core::SynthRuntime rt = makeRegistryPapaRuntime();
+  static_cast<void>(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in));
+  static_cast<void>(rt.rebuild());
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.0));
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.0));
+  rt.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+  d5Advance(rt, kD4Settle);
+  check(rt.droneVoiceEnvOutVolts(0) == d3->nominalMin,
+        "d5 env_out: hold=off + gate LOW publishes exactly the descriptor's nominalMin");
+  static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_hold, 1.0));
+  d5Advance(rt, kD4Settle);
+  check(rt.droneVoiceArLevel(0) == 1.0 && rt.droneVoiceEnvOutVolts(0) == d3->nominalMax,
+        "d5 env_out: HOLD=1 publishes exactly the descriptor's nominalMax (range read from the "
+        "descriptor, no hard-coded voltage)");
+  check(rt.controlVoltageAt(reg::JackId::drone_3_env_out) ==
+            d3->nominalMin + rt.droneVoiceArLevel(0) * span3,
+        "d5 env_out: the published slot is min + level*(max-min) of the LIVE held level");
+
+  // Per-voice independence: hold drone_3 only, with BOTH gates driven LOW, and require drone_6 to
+  // be BIT-IDENTICAL to a reference where neither voice is held. The two gates hang off TWO
+  // DIFFERENT source jacks on purpose: PatchGraph's cable bank saturates a source port, so a
+  // second cable from the SAME source atomically DISPLACES the first (the documented `connect()`
+  // semantics quoted at machine_runtime.h:1820-1824) and the displaced gate would silently fall
+  // back to the default-open one — which is what the precondition check below pins.
+  auto releaseBoth = [](core::SynthRuntime& r) {
+    static_cast<void>(r.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in));
+    static_cast<void>(r.connect(reg::JackId::lfo_b_cv_out, reg::JackId::drone_6_gate_in));
+    static_cast<void>(r.rebuild());
+    static_cast<void>(r.applyDspParam(core::ParameterId::drone_3_att, 0.0));
+    static_cast<void>(r.applyDspParam(core::ParameterId::drone_3_rls, 0.0));
+    static_cast<void>(r.applyDspParam(core::ParameterId::drone_6_att, 0.0));
+    static_cast<void>(r.applyDspParam(core::ParameterId::drone_6_rls, 0.0));
+    r.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
+    r.setControlVoltage(reg::JackId::lfo_b_cv_out, -5.0);
+    d5Advance(r, kD4Settle);
+  };
+  core::SynthRuntime ref = makeRegistryPapaRuntime();
+  releaseBoth(ref);
+  core::SynthRuntime one = makeRegistryPapaRuntime();
+  releaseBoth(one);
+  check(ref.droneVoiceArLevel(0) == 0.0 && ref.droneVoiceArLevel(1) == 0.0 &&
+            !ref.droneVoiceArGate(0) && !ref.droneVoiceArGate(1),
+        "d5 isolation precondition: TWO live source cables really released BOTH voices");
+
+  static_cast<void>(one.applyDspParam(core::ParameterId::drone_3_hold, 1.0));
+  d5Advance(one, kD4Settle);
+  d5Advance(ref, kD4Settle);  // same frame count: `ref` is the no-HOLD twin of `one`
+  check(one.droneVoiceArLevel(0) == 1.0 && ref.droneVoiceArLevel(0) == 0.0,
+        "d5 isolation: holding drone_3 lifts only drone_3 off its released level");
+  check(d4BitEq(one.droneVoiceArLevel(1), ref.droneVoiceArLevel(1)) &&
+            d4BitEq(one.drone6Channel(), ref.drone6Channel()) && !one.droneVoiceArHold(1),
+        "d5 isolation: the UNHELD drone_6 voice is byte-identical (level AND rendered channel) to "
+        "the no-HOLD reference at the same frame — HOLD is a per-voice panel parameter, never a "
+        "shared group flag");
+
+  // Cohort release semantics: a REFUSED gate cohort releases the binding and returns the gate to
+  // the named provisional default — but HOLD is a PANEL parameter, so it must survive untouched.
+  core::SynthRuntime rel = makeRegistryPapaRuntime();
+  static_cast<void>(rel.applyDspParam(core::ParameterId::drone_3_hold, 1.0));
+  d5Advance(rel, kD4Settle);
+  const bool relOk = rel.setDroneVoiceGateBindings(unusedRegistryId(), unusedRegistryId());
+  check(!relOk && !rel.droneVoiceGateBound(0) && !rel.droneVoiceGateBound(1),
+        "d5 cohort: a refused GATE cohort releases both bindings (fail-closed admission)");
+  check(rel.droneVoiceArHold(0),
+        "d5 cohort: releasing the GATE cohort does NOT clear the HOLD panel state");
+  check(rel.droneVoiceArGate(0),
+        "d5 cohort: the released voice falls back to the named provisional default gate (OPEN)");
+  d5Advance(rel, kD4Settle);
+  check(rel.droneVoiceArLevel(0) == 1.0,
+        "d5 cohort: hold=1 + the default-open gate leaves the voice exactly at 1.0");
+}
+
+// (5) THE REGRESSION LOCK (highest weight). Four configurations, compared BITWISE (no tolerance):
+//   A  = no Papa cohort bound at all + HOLD never applied (the pre-D4/pre-D5 path);
+//   B  = both cohorts bound + an EXPLICIT `hold = 0` on both voices through the real batch lane;
+//   D0 = both cohorts bound + drone_3.gate_in driven LOW, hold = 0;
+//   D1 = the SAME cable driven LOW, hold = 1.
+// A == B proves the registry default (0) and the member default (false) cannot diverge; A == D1
+// proves HOLD=1 reproduces the pre-D5 OPEN voice bit-for-bit (it pins the target at 1.0 without
+// touching the audio path); B != D0 keeps the lock non-vacuous; B != D1 proves HOLD is a real
+// lever. Flipping the member default to `true` breaks B (and D0); removing the OR term breaks D1.
+struct D5Lock {
+  std::vector<double> ch3, ch6;
+  bool levelAlwaysOne = true;
+};
+
+IJU_TEST_NOINLINE void d5_default_equivalence_lock_hold() {
+  namespace reg = lunar24::registry;
+  auto capture = [](core::SynthRuntime& rt, bool cable, double gateVolts, int holdOn) {
+    if (cable) {
+      // Both voices get a cable, from two DIFFERENT sources (a single source port saturates and
+      // the second connect would displace the first — see the isolation block note).
+      static_cast<void>(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in));
+      static_cast<void>(rt.connect(reg::JackId::lfo_b_cv_out, reg::JackId::drone_6_gate_in));
+      static_cast<void>(rt.rebuild());
+      rt.setControlVoltage(reg::JackId::lfo_a_cv_out, gateVolts);
+      rt.setControlVoltage(reg::JackId::lfo_b_cv_out, gateVolts);
+    }
+    if (holdOn >= 0) {  // -1 = never applied (the pre-D5 configuration).
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_hold, holdOn == 1 ? 1.0 : 0.0));
+      static_cast<void>(rt.applyDspParam(core::ParameterId::drone_6_hold, holdOn == 1 ? 1.0 : 0.0));
+    }
+    D5Lock c;
+    for (std::size_t i = 0; i < kD4LockFrames; ++i) {
+      rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
+      c.ch3.push_back(rt.drone3Channel());
+      c.ch6.push_back(rt.drone6Channel());
+      if (rt.droneVoiceArLevel(0) != 1.0) c.levelAlwaysOne = false;
+    }
+    return c;
+  };
+
+  core::SynthRuntime rtA = makeRegistryPapaBase();
+  const D5Lock a = capture(rtA, false, 0.0, -1);
+  check(a.ch3[0] != 0.0 && a.ch6[0] != 0.0,
+        "d5 lock: the unpatched Papa channels are non-zero (so the bitwise lock below is meaningful)");
+
+  // SCOPE of the A≡B leg below (honest): it proves the OBSERVABLE part of default-state consistency —
+  // rendering under the shipped registry default (no patch, no apply) is bit-identical to rendering
+  // after hold=0 has been pushed through the real batch lane. It does NOT, by itself, discriminate a
+  // FLIPPED member default: config A leaves the true gate open, so the target is 1.0 either way, and
+  // config B APPLIES hold=0 before rendering, which masks the member default. The flip discrimination
+  // is carried by TWO other criteria — the transition criterion's row 1 (the gate is driven LOW before
+  // any hold apply, pinning the D4 law) and "an UNAPPLIED hold reads back off" — plus the lock's own
+  // `neverApplied` config asserted below, which drives the gate LOW with hold never applied anywhere
+  // and so can only be satisfied by the real member default.
+  core::SynthRuntime rtB = makeRegistryPapaRuntime();
+  const D5Lock b = capture(rtB, false, 0.0, 0);
+  check(d4SameAll(a.ch3, b.ch3),
+        "d5 lock: an EXPLICIT hold=0 (through the real batch lane) is BIT-IDENTICAL to the "
+        "un-applied default on the OPEN-gate path (the observable part of default-state consistency; "
+        "the flipped-default discriminator is the neverApplied leg below, not this one)");
+  check(d4SameAll(a.ch6, b.ch6),
+        "d5 lock: drone_6 is bit-identical too (both voices, not one)");
+  check(b.levelAlwaysOne, "d5 lock: hold=0 keeps the unpatched voice at exactly 1.0 at every sample");
+
+  core::SynthRuntime rtD0 = makeRegistryPapaRuntime();
+  const D5Lock d0 = capture(rtD0, true, -5.0, 0);
+  core::SynthRuntime rtD1 = makeRegistryPapaRuntime();
+  const D5Lock d1 = capture(rtD1, true, -5.0, 1);
+
+  // The lock's OWN flipped-default detector (self-contained, needs no other section): the gate cable
+  // is driven LOW and hold is NEVER applied anywhere — not through the batch lane, not through the
+  // live lane. Nothing but the real member default can keep the voice open, so a flipped `hold_`
+  // initialiser makes this config stay pinned at 1.0 (and diverge from the explicit hold=0 config)
+  // instead of releasing per the D4 law. Asserted against the D4 release law AND against the explicit
+  // hold=0 config, so the lock's name matches what the lock actually measures.
+  core::SynthRuntime rtNever = makeRegistryPapaRuntime();
+  const D5Lock neverApplied = capture(rtNever, true, -5.0, -1);
+  check(!neverApplied.levelAlwaysOne,
+        "d5 lock: with the cable driven LOW and hold NEVER applied, the voice RELEASES off 1.0 per "
+        "the D4 law (a flipped member default would keep it pinned open here)");
+  check(d4SameAll(neverApplied.ch3, d0.ch3) && d4SameAll(neverApplied.ch6, d0.ch6),
+        "d5 lock: never-applied is BIT-IDENTICAL to an explicit hold=0 on BOTH voices — the member "
+        "default and the registry initial selector position agree at render level");
+
+  check(d4SameAll(a.ch3, d1.ch3),
+        "d5 lock: HOLD=1 against a LOW gate reproduces the pre-D5 OPEN voice BIT-FOR-BIT");
+  check(d4SameAll(a.ch6, d1.ch6),
+        "d5 lock: the drone_6 held voice is bit-identical to the pre-D5 open voice as well");
+  check(d1.levelAlwaysOne,
+        "d5 lock: the held voice sits at exactly 1.0 at EVERY sample across the whole window");
+  check(!d4SameAll(b.ch3, d0.ch3),
+        "d5 lock is NOT vacuous: the same cable driven LOW with hold=0 DOES change the channel");
+  check(!d0.levelAlwaysOne,
+        "d5 lock is NOT vacuous: hold=0 + the LOW gate does move the AR level off 1.0");
+  check(!d4SameAll(d0.ch3, d1.ch3) && !d4SameAll(d0.ch6, d1.ch6),
+        "d5 lock: HOLD is a REAL lever — under the SAME LOW gate, hold=1 differs from hold=0 on "
+        "BOTH voices");
+}
+
 }  // namespace
 
 int main() {
@@ -3205,6 +3708,24 @@ int main() {
   d4_env_out_publication_acceptance();
   d4_default_equivalence_lock();
   d4_cohort_fail_closed();
+  // clang-format on
+
+  // (48) GH#15 D5 (task #107). The slice's acceptance: (1) HOLD is an OR term on the AR TARGET —
+  // hold=on against a LOW true gate keeps the voice at exactly 1.0 while `gate()` KEEPS REPORTING
+  // FALSE (the three-way discriminator); (2) both dispatch lanes reach the real OR term and the
+  // selector's unit-domain is locked (everything outside {0,1} rejected keep-old); (3) every row
+  // of the transition table, against a closed form measured on the RENDER; (4) HOLD is target-only
+  // — it never resets the level nor perturbs the two stage seconds — and per-voice; (5) ENV OUT
+  // follows the held level through the row's OWN descriptor; (6) THE REGRESSION LOCK, bitwise: an
+  // explicit hold=0 reproduces pre-D5 exactly, and hold=1 against a LOW gate reproduces the pre-D5
+  // OPEN voice exactly, with both non-vacuity legs asserted.
+  std::printf("(48) GH#15 D5 drone_3/6 HOLD -> AR envelope target OR term — product path\n");
+  // clang-format off
+  d5_hold_or_term_acceptance();
+  d5_hold_dispatch_and_range_lock();
+  d5_hold_transition_behaviour();
+  d5_hold_env_out_isolation_and_cohort();
+  d5_default_equivalence_lock_hold();
   // clang-format on
 
   std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
