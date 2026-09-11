@@ -43,9 +43,11 @@ WORK="$(mktemp -d "$(mktemp -d)/classic-saw-work.XXXXXX")"
 cleanup() { rm -rf "$TREE" "$WORK"; }
 trap cleanup EXIT
 
+# Every local build dir a developer may have is excluded -- build-san included (the ASan+UBSan
+# leg's dir). The runner configures its OWN $WORK, so copying them is pure waste (~287 MB here).
 rsync -a --delete --exclude 'build' --exclude 'build-asan' --exclude 'build-tsan' \
   --exclude 'cmake-build-debug' --exclude 'build-rel' --exclude 'build-dbg' \
-  --exclude 'build-debug' --exclude '.git' --exclude 'research' \
+  --exclude 'build-debug' --exclude 'build-san' --exclude '.git' --exclude 'research' \
   --exclude 'third_party' "$ROOT/" "$TREE/"
 ln -s "$ROOT/third_party" "$TREE/third_party"
 
@@ -58,15 +60,20 @@ MANIFEST="$TREE/tools/gh19_manifest.tsv"
 PRE_S2_REV="${PRE_S2_REV:-1f667d53f9ae3c4d12b6851115dcb88f703e4e7e}"
 NAIVE_RAWS="${NAIVE_RAWS:-}"
 
-# Per-role acceptance thresholds. Set AFTER measuring the fixed arm (@Kimi 612691ea: the
-# thresholds follow the measurement, they do not precede it).
-MIN_LOW_DB="${MIN_LOW_DB:-}"
-MIN_HIGH_DB="${MIN_HIGH_DB:-}"
+# Per-role acceptance thresholds. These DEFAULTS are load-bearing: a bare run must reproduce
+# the APPROVED configuration. They used to default to EMPTY, which fell through to
+# --min-gain-db 6.0 and reds all 24 LOW cells (measured ceiling +5.88 dB) -- so the positive
+# control came back RED and anyone running this without the two env vars got a FALSE FAIL.
+# Values = the ones approved for S2, set AFTER measuring the fixed arm (@Kimi 612691ea: the
+# thresholds follow the measurement, they do not precede it): LOW 5.0 / HIGH 7.0 against
+# measured weakest +5.88 / +7.85 => 0.88 / 0.85 dB margin. Changing a threshold requires new
+# evidence, not an edit here.
+MIN_LOW_DB="${MIN_LOW_DB:-5.0}"
+MIN_HIGH_DB="${MIN_HIGH_DB:-7.0}"
+# Inert while both per-role values above are present: the gate prefers them over this one.
 MIN_DB="${MIN_DB:-6.0}"
 
-GATE_ARGS=(--min-gain-db "$MIN_DB")
-[ -n "$MIN_LOW_DB" ] && GATE_ARGS+=(--min-gain-low-db "$MIN_LOW_DB")
-[ -n "$MIN_HIGH_DB" ] && GATE_ARGS+=(--min-gain-high-db "$MIN_HIGH_DB")
+GATE_ARGS=(--min-gain-db "$MIN_DB" --min-gain-low-db "$MIN_LOW_DB" --min-gain-high-db "$MIN_HIGH_DB")
 
 [ -f "$BASE" ] || { echo "ERROR: missing $BASE — regenerate the 36-cell S2 naive baseline first." >&2; exit 1; }
 
