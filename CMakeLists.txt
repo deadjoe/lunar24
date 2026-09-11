@@ -454,6 +454,31 @@ add_test(NAME gh19_blamp_acceptance
 # acceptance is the criterion-level gate — they are different assertions, not a redundant re-run.
 set_tests_properties(gh19_alias_probe gh19_blamp_acceptance PROPERTIES LABELS "slow")
 
+# task #109 (GH #19 S1): RED->GREEN acceptance gate for the SCHMITT-OSCILLATOR slope
+# correction. Same shape as the VCO gate above -- same probe, same analyzer, same pipeline
+# driver -- but a different criterion file and a different baseline. The 12 in-scope cells
+# (3 Schmitt lanes x 4 sample rates) are pinned in the gate's SOURCE, and the Schmitt
+# branch of the analyzer is what gives them a usable full-band BL metric (the realized-
+# period window). Running it on the pre-S1 naive Schmitt is RED; the corrected Schmitt
+# improves every in-scope cell, by >= 6 dB on the 9 full-band cells and by a bounded
+# positive amount on the 2 kernel-dense cells (see the gate's header for why those two
+# bands exist and why the edge between them is PROVISIONAL). The gate also asserts that
+# the M<=8 fallback cell's rendered bytes are unchanged from the uncorrected product --
+# `--gate-wants-raws` is what hands it the raw renders that assertion reads.
+# `--gate-self-check` makes the gate's own non-vacuity cases (including two that must make
+# the byte assertion reject) run on every CI invocation rather than only by hand.
+add_test(NAME gh19_schmitt_blamp_acceptance
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_blamp_pipeline.py
+    --probe $<TARGET_FILE:gh19_alias_probe>
+    --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_manifest.tsv
+    --baseline ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_schmitt_naive_baseline.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_alias_analyze.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_gh19_schmitt_blamp_acceptance.py
+    --gate-wants-raws --gate-self-check)
+# Same `slow` rationale as the VCO pair above: this gate re-runs the full-chain probe.
+set_tests_properties(gh19_schmitt_blamp_acceptance PROPERTIES LABELS "slow")
+
 # task #86 (GH #19): the PRODUCTION BLAMP LUT must match the generator's analytic g.
 # @Codex (msg 1a8ed7f2) flagged the generator's self-consistency as self-referential
 # (it re-parsed its OWN emitted text). This gate reads the ACTUAL production vco.h,
@@ -463,7 +488,7 @@ set_tests_properties(gh19_alias_probe gh19_blamp_acceptance PROPERTIES LABELS "s
 add_test(NAME gh19_blamp_lut_gate
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_gh19_blamp.py --check-prod
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/vco.h)
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/blamp_kernel.h)
 
 # task #87 (GH #20): REAL-PRODUCT VCF cross-sample-rate response probe. Renders the actual product
 # DSP (encode->decode->applyDeviceState->processBlock, via EngineHarness) for a sr x mode x res x

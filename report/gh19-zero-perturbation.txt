@@ -1,0 +1,29 @@
+metric columns: id	path	sr	f0_target	f0_refined	harmris_full_db	harmris_inband_db	blref_inband_db	blref_full_db	blshape_max_db	theory_dedup_db	N	periods	gap	category
+non-cell lines compared by key set only (timing values vary per run): 11 keys
+allowed new-population scope: drone3_schmitt, drone6_schmitt
+
+(a) identical        : 48
+(b) newly-populated  : 12
+(c) changed          : 0   <-- must be 0
+    + drone3_schmitt_44100_p20           blref_inband_db=-61.55  blref_full_db=-47.43  blshape_max_db=-0.84
+    + drone3_schmitt_44100_p60           blref_inband_db=-201.42  blref_full_db=-41.01  blshape_max_db=-0.67
+    + drone3_schmitt_48000_p20           blref_inband_db=-68.29  blref_full_db=-50.80  blshape_max_db=-20.17
+    + drone3_schmitt_48000_p60           blref_inband_db=-203.04  blref_full_db=-41.61  blshape_max_db=-5.01
+    + drone3_schmitt_88200_p20           blref_inband_db=-89.28  blref_full_db=-58.26  blshape_max_db=-10.83
+    + drone3_schmitt_88200_p60           blref_inband_db=-213.04  blref_full_db=-51.18  blshape_max_db=-10.89
+    + drone3_schmitt_96000_p20           blref_inband_db=-71.23  blref_full_db=-54.66  blshape_max_db=1.16
+    + drone3_schmitt_96000_p60           blref_inband_db=-205.96  blref_full_db=-52.00  blshape_max_db=-21.45
+    + drone6_schmitt_44100_p30           blref_inband_db=-216.08  blref_full_db=-32.44  blshape_max_db=-1.50
+    + drone6_schmitt_48000_p30           blref_inband_db=-225.43  blref_full_db=-41.54  blshape_max_db=-4.46
+    + drone6_schmitt_88200_p30           blref_inband_db=-215.08  blref_full_db=-41.92  blshape_max_db=-0.44
+    + drone6_schmitt_96000_p30           blref_inband_db=-219.05  blref_full_db=-46.85  blshape_max_db=-10.03
+
+OVERALL: PASS  (0 violation(s); 12 cell(s) newly populated, all in scope)
+
+self-check: each mutation must produce a RED verdict
+    RED   NC-1 value changed on an existing VCO cell
+    RED   NC-2 value changed in a non-newly-populated column of an in-scope cell
+    RED   NC-3 newly populated OUTSIDE the declared scope
+    RED   NC-4 a cell row dropped
+    RED   NC-5 metric header renamed
+self-check: PASS

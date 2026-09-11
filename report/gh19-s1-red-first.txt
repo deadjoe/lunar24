@@ -1,0 +1,50 @@
+GH#19 S1 red-first evidence (task #109)
+generated: 2026-09-10T18:54:43Z
+head: 6e3c41f53418ca7cd5dbb70c9b09a7f2a48a7233
+gate: tools/check_gh19_schmitt_blamp_acceptance.py
+baseline: tools/gh19_schmitt_naive_baseline.tsv  (pre-S1 naive Schmitt, M-derivation source)
+current:  report/gh19-zero-perturbation-after.tsv  (pre-S1 product, == committed baseline for the 12 Schmitt cells)
+meaning: with NO Schmitt correction in the product, every in-gate cell must be RED by ~0 dB.
+=======================================================================
+
+GH#19 S1 Schmitt BLAMP acceptance  (baseline=pre-S1 naive Schmitt, current=BLAMP Schmitt)
+
+cell                              sr     M     naive     blamp     dB_imp   rule                  verdict
+drone3_schmitt_44100_p20          44100  19    -47.43    -47.43    0.00     improve:>=6dB         RED
+drone3_schmitt_44100_p60          44100  11    -41.01    -41.01    0.00     improve:>=6dB         RED
+drone3_schmitt_48000_p20          48000  21    -50.80    -50.80    0.00     improve:>=6dB         RED
+drone3_schmitt_48000_p60          48000  12    -41.61    -41.61    0.00     improve:>=6dB         RED
+drone3_schmitt_88200_p20          88200  38    -58.26    -58.26    0.00     improve:>=6dB         RED
+drone3_schmitt_88200_p60          88200  22    -51.18    -51.18    0.00     improve:>=6dB         RED
+drone3_schmitt_96000_p20          96000  41    -54.66    -54.66    0.00     improve:>=6dB         RED
+drone3_schmitt_96000_p60          96000  24    -52.00    -52.00    0.00     improve:>=6dB         RED
+drone6_schmitt_44100_p30          44100  8     -32.44    -32.44    0.00     fallback:!worse>0.5dB GREEN
+drone6_schmitt_48000_p30          48000  9     -41.54    -41.54    0.00     improve:>=6dB         RED
+drone6_schmitt_88200_p30          88200  16    -41.92    -41.92    0.00     improve:>=6dB         RED
+drone6_schmitt_96000_p30          96000  18    -46.85    -46.85    0.00     improve:>=6dB         RED
+
+Bins: in-gate(M>8) passed=0/11, fallback(M<=8) passed=1/1
+
+FAIL:
+  - drone3_schmitt_44100_p20: improve:>=6dB -> imp=0.00dB
+  - drone3_schmitt_44100_p60: improve:>=6dB -> imp=0.00dB
+  - drone3_schmitt_48000_p20: improve:>=6dB -> imp=0.00dB
+  - drone3_schmitt_48000_p60: improve:>=6dB -> imp=0.00dB
+  - drone3_schmitt_88200_p20: improve:>=6dB -> imp=0.00dB
+  - drone3_schmitt_88200_p60: improve:>=6dB -> imp=0.00dB
+  - drone3_schmitt_96000_p20: improve:>=6dB -> imp=0.00dB
+  - drone3_schmitt_96000_p60: improve:>=6dB -> imp=0.00dB
+  - drone6_schmitt_48000_p30: improve:>=6dB -> imp=0.00dB
+  - drone6_schmitt_88200_p30: improve:>=6dB -> imp=0.00dB
+  - drone6_schmitt_96000_p30: improve:>=6dB -> imp=0.00dB
+
+self-check: (1) must PASS, (2)-(6) structural-RED, (7) criterion-RED
+    OK    rc=0 (want 0)  NC-1 in-gate cells improved by 6 dB, fallback cell left as-is -> must PASS
+    OK    rc=2 (want 2)  NC-2 a required baseline row dropped -> structural
+    OK    rc=2 (want 2)  NC-3 a duplicate baseline row -> structural
+    OK    rc=2 (want 2)  NC-4 fallback cell's f0 edited so it derives into the in-gate bin -> structural
+    OK    rc=2 (want 2)  NC-5 f0 edited so the derived M is no longer an integer -> structural
+    OK    rc=2 (want 2)  NC-6 a current cell renamed out of the canonical set -> structural
+    OK    rc=1 (want 1)  NC-7 fallback cell worsened beyond 0.5 dB -> criterion RED (not structural)
+self-check: PASS
+gate rc = 1

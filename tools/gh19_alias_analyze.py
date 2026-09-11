@@ -73,6 +73,13 @@ INT_TOL = 3.0e-4                     # relative tolerance for treating a measure
                                      # up to ~1e-4 (e.g. 219.978Hz for a 220Hz target) is measurement
                                      # noise inside the projection main lobe, NOT a genuinely non-integer
                                      # fundamental. A snap at this tolerance is reported via `gap`.
+PERIODIC_TOL = 1.0e-9                # relative-to-peak tolerance for realized_period_window's
+                                     # exact-repetition test. The Schmitt steady state repeats
+                                     # BIT-EXACTLY at the realized period (measured max|x[i]-x[i+per]|
+                                     # == 0 over the full window on all 12 required Schmitt cells), so
+                                     # this tolerance is pure FP-contraction head-room across build
+                                     # platforms, not a model allowance: a residual of 1e-9 of full
+                                     # scale leaks at the ~-180 dB level, far below the metric floor.
 SEP_MIN_DB = 12.0                    # minimum naive-vs-bandlimited separation the metric must sustain
                                      # for the dynamic-range negative to count as passing.
 
@@ -248,6 +255,49 @@ def intperiod_window(x, sr, f0):
 
 
 # ---------------------------------------------------------------------------
+# REALIZED-period window: for a path whose steady state is exactly periodic in an INTEGER number of
+# samples but whose realized frequency sr/(2M) is a FRACTIONAL Hz, so the integer-Hz snap above cannot
+# reach it. This is the Schmitt audio path: schmitt_osc.h clamps ramp_ to the rail and DISCARDS the
+# overshoot, so every corner lands exactly on a sample, the half-period M = ceil(1/r) is an integer and
+# the steady state is exactly 2M-periodic (the product header documents this).
+#
+# The window is validated by the property that actually makes it leakage-free -- EXACT repetition at
+# `per` -- rather than by a frequency tolerance, so it does not depend on refine_f0's +-0.02 Hz
+# precision. If the signal does not repeat, this returns None and the caller reports the cell as
+# unmeasurable (fail-closed) instead of emitting a leaky figure. Measured on the 12 required Schmitt
+# cells: max|x[i]-x[i+per]| == 0 over the whole window, i.e. zero, against a 1e-9*peak tolerance.
+# Returns (N, f0_snap, gap) with gap == 0 (leakage-free by construction), or None when inapplicable.
+# ---------------------------------------------------------------------------
+def realized_period_window(x, sr, f0):
+    maxlen = len(x)
+    if not (f0 > 0):
+        return None
+    M = int(round(sr / (2.0 * f0)))
+    if M < 1:
+        return None
+    per = 2 * M
+    if per > maxlen:
+        return None
+    peak = 0.0
+    for v in x:
+        a = abs(v)
+        if a > peak:
+            peak = a
+    if peak <= 0.0:
+        return None
+    tol = PERIODIC_TOL * peak
+    for i in range(maxlen - per):
+        if abs(x[i] - x[i + per]) > tol:
+            return None
+    n = (maxlen // per) * per
+    if n < 4 * per and maxlen >= 4 * per:
+        n = 4 * per
+    elif n < per:
+        n = per
+    return (n, sr / per, 0.0)
+
+
+# ---------------------------------------------------------------------------
 # METHOD A: harmonic-fit residual (real product, any periodic shape, leakage-free). DIAGNOSTIC ONLY.
 # It subtracts the signal's OWN measured in-band harmonics, so aliasing that folds onto a legitimate
 # in-band harmonic is ABSORBED into the fit and disappears from the residual => it is a LOWER bound on
@@ -412,14 +462,18 @@ def bandlimited_tri(n, sr, f0_snap, a1_mag, arg_a1):
     return ref, ks
 
 
-def method_bl(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI):
+def method_bl(x, sr, f0, band_lo=BAND_LO, band_hi=BAND_HI, window_fn=intperiod_window):
     """Real per-sample product-minus-band-limited-reference reconciliation for a clean triangle cell.
     Returns the in-band aliasing figure referenced to the PRODUCT's in-band power (the authoritative
     ratio), a full-band residual, and a per-harmonic shape-verification metric. The reference scale is
     the MEASURED fundamental (a1_mag): the aliasing ratio is scale-invariant (a halved output gives the
     same dBc), which is CORRECT for an alias ratio; the independent device-scale CONTRACT is a separate
-    raw-side check (dry_triangle_scale_contract), not a reference-side scale override."""
-    win = intperiod_window(x, sr, f0)
+    raw-side check (dry_triangle_scale_contract), not a reference-side scale override.
+
+    `window_fn` selects the leakage-free window: the integer-Hz snap by default (correct for the VCO
+    cells, whose nominal f0 IS an integer Hz), or realized_period_window for an integer-sample-periodic
+    path whose realized frequency is fractional (the Schmitt audio path)."""
+    win = window_fn(x, sr, f0)
     if win is None:
         return None
     n, f0_snap, gap = win
@@ -737,6 +791,24 @@ def analyze_cell(dirpath, rec):
         mb = method_b_tri(sr, f0, ma["a1_mag"])
         out["theory_dedup_db"] = ("%.2f" % mb["dedup_db"]) if mb else "-"
         mbl = method_bl(x, sr, f0)
+        if mbl:
+            out["blref_inband_db"] = (fmt_db(mbl["blref_inband_db"]) if mbl["blref_inband_db"] ==
+                                      mbl["blref_inband_db"] else "-")
+            out["blref_full_db"] = (fmt_db(mbl["blref_full_db"]) if mbl["blref_full_db"] ==
+                                    mbl["blref_full_db"] else "-")
+            out["blshape_max_db"] = (fmt_db(mbl["blshape_max_db"]) if mbl["blshape_max_db"] ==
+                                     mbl["blshape_max_db"] else "-")
+        else:
+            out["blref_inband_db"] = "-"
+            out["blref_full_db"] = "-"
+            out["blshape_max_db"] = "-"
+    elif path.startswith("drone3_schmitt") or path.startswith("drone6_schmitt"):
+        # Schmitt audio path: integer-sample-periodic steady state at a FRACTIONAL realized frequency
+        # sr/(2M), so the BL reference must be anchored on the realized period rather than the
+        # integer-Hz snap (which reports gap!=0 / NaN for all 12 of these cells). No theory_dedup_db:
+        # the fold-table metric is defined for the VCO cells and is not claimed here.
+        out["theory_dedup_db"] = "-"
+        mbl = method_bl(x, sr, f0, window_fn=realized_period_window)
         if mbl:
             out["blref_inband_db"] = (fmt_db(mbl["blref_inband_db"]) if mbl["blref_inband_db"] ==
                                       mbl["blref_inband_db"] else "-")

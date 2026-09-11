@@ -130,11 +130,11 @@ def verify(L, N, interp_tol):
 
 
 def check_prod(path, coeff_tol=1e-9, interp_tol=2e-3, expected_L=8.0, expected_N=256):
-    """Read-only check that the PRODUCTION vco.h LUT matches the analytic g here.
+    """Read-only check that the PRODUCTION BLAMP LUT matches the analytic g here.
 
     @Codex (msg 1a8ed7f2): the previous generation-consistency was self-referential
     (it re-parsed this tool's OWN emitted text). This instead reads the actual
-    production vco.h, deduces its L/N config from its own symbols (kN_blamp, the
+    production BLAMP header, deduces its L/N config from its own symbols (kN_blamp, the
     'a / L * kN_blamp' support literal) and verifies its kLut values against the
     analytic g. A hand-copied / hand-edited production coefficient must go red.
 
@@ -162,9 +162,16 @@ def check_prod(path, coeff_tol=1e-9, interp_tol=2e-3, expected_L=8.0, expected_N
     assert_ok(abs(L - expected_L) <= 1e-9, "production support config",
               "L=%g, mandate L=%g" % (L, expected_L))
 
-    mLut = txt.find("kLut[] = {")
-    assert_ok(mLut >= 0, "production kLut declarator", "no 'kLut[] = {' in %s" % path)
-    body = txt[mLut + len("kLut[] = {"):txt.index("};", mLut)]
+    # task #109: the LUT now lives in the shared blamp_kernel.h and is namespaced as
+    # kBlampLut; the gate locator accepts either spelling so it keeps checking the
+    # production coefficients rather than a filename. Exactly ONE declarator must be
+    # present: a file carrying both a renamed and a legacy copy is a second source of
+    # truth and reads red.
+    decls = list(re.finditer(r'\bk(?:Blamp)?Lut\[\] = \{', txt))
+    assert_ok(len(decls) == 1, "exactly one production LUT declarator",
+              "found %d 'kLut[] = {' / 'kBlampLut[] = {' in %s (want 1)" % (len(decls), path))
+    mLut = decls[0].start()
+    body = txt[decls[0].end():txt.index("};", mLut)]
     nums = [float(x) for x in re.findall(r'-?\d+\.\d+', body)]
     assert_ok(len(nums) == N, "production kLut size", "got %d want %d" % (len(nums), N))
 
@@ -218,7 +225,7 @@ def main():
                     help="grid-coefficient consistency tolerance vs the 9-decimal generated "
                          "value; a changed production coefficient (even +1e-3) reads red")
     ap.add_argument("--check-prod", type=str, default=None,
-                    help="read-only check of this production vco.h's kLut / L / N against "
+                    help="read-only check of this production BLAMP header's kLut / L / N against "
                          "the analytic g and the mandated L=8/N=256 config "
                          "(fail-exit; a changed production coefficient = red)")
     ap.add_argument("--cpp", action="store_true")
