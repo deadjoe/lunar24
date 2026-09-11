@@ -145,6 +145,15 @@ inline bool polyblepSupportReachesHalfPeriod(double dt) {
 // (see the header note), and folding a clamp into the kernel would convert a detectable
 // violation into a silent waveform substitution.
 inline double polyblepResidual(double t, double dt) {
+  // dt <= 0 is INSIDE the declared domain (dt in [0, 0.5]) and the contract above already
+  // fixes its value: exactly 0, neither window applies. Stating it here instead of letting the
+  // two comparisons below fall through keeps the divisions below unreachable with a zero
+  // divisor -- which is also what the compiler needs: given a literal dt = 0.0 at a call site,
+  // MSVC evaluates `t / 0.0` at compile time and emits C4723 (`potential divide by 0`), an
+  // ERROR under /WX, while GCC/Clang stay silent because IEEE division by zero is defined.
+  // `!(dt > 0.0)` rather than `dt <= 0.0` so a NaN dt keeps its existing value here as well.
+  // No clamp and no fallback: dt > 0.5 is still a caller contract violation, NOT handled here.
+  if (!(dt > 0.0)) return 0.0;
   if (t < dt) {
     const double u = t / dt;
     return u + u - u * u - 1.0;             // 2u - u^2 - 1, from -1 at t=0 to 0 at t=dt
