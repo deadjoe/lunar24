@@ -1,0 +1,55 @@
+# S2 NAIVE classic-saw baseline -- the Delta denominator for the acceptance gate.
+#   PROVENANCE: rendered by the probe's self-built DroneBank (ruling B, @Kimi f260fd91),
+#   driftEnabled=false, BEFORE any polyBLEP correction was applied to the product.
+#   The in-production runtime path was NOT modified to produce these numbers.
+#   FIDELITY: gh19_fidelity.tsv in the same probe cache asserts, per cell, that the
+#   self-built drift-ON arm is BIT-IDENTICAL to the runtime render and that flipping the
+#   drift flag alone changes it. So this arm differs from the shipped path by exactly one
+#   known quantity (the drift flag) and by nothing else.
+#   source   : s2_h2_analysis.txt
+#   src_sha  : e877b0697ac2256a
+#   analyzer : a0f8450633933208
+#   probe    : 0ab966ce39bf59b4
+#   cells    : 36 (drone1_classic 12 LOW / drone4_classic 12 LOW / drone4_classic_v0 12 HIGH)
+#   LANES ARE NOT INTERCHANGEABLE: drone4_classic and drone4_classic_v0 are the same
+#   generator group at different VOLT settings, so they occupy DIFFERENT bands (97-224 Hz
+#   vs ~551-1266 Hz). The volt lane is part of the cell id for exactly this reason.
+#   Delta_cell = blpin_full_db(current corrected run) - blpin_full_db(this table);
+#   the gate requires Delta_cell >= its per-cell threshold. On this table Delta is 0.
+id	path	sr	f0_target	f0_refined	blf0_model_hz	blpin_full_db	blpin_amp	blpin_phi_rad
+drone1_classic_44100_t20	drone1_classic	44100	12	13.20	13.171837	-37.08	0.0612253054	2.807300057
+drone1_classic_44100_t50	drone1_classic	44100	19	19.99	19.964772	-33.71	0.0612226382	4.452571403
+drone1_classic_44100_t80	drone1_classic	44100	29	30.28	30.260935	-32.26	0.0612226884	3.903493884
+drone1_classic_48000_t20	drone1_classic	48000	12	13.29	13.171837	-39.39	0.0612269923	1.558189315
+drone1_classic_48000_t50	drone1_classic	48000	19	20.01	19.964772	-34.13	0.0612227259	2.559273558
+drone1_classic_48000_t80	drone1_classic	48000	29	30.26	30.260935	-32.84	0.0612236441	1.033790975
+drone1_classic_88200_t20	drone1_classic	88200	12	13.52	13.171837	-40.57	0.0612248573	1.403650028
+drone1_classic_88200_t50	drone1_classic	88200	19	20.01	19.964772	-36.97	0.0612236366	5.367878355
+drone1_classic_88200_t80	drone1_classic	88200	28	30.32	30.260935	-35.11	0.0612234342	5.093339596
+drone1_classic_96000_t20	drone1_classic	96000	11	13.20	13.171837	-41.39	0.0612248028	0.779094657
+drone1_classic_96000_t50	drone1_classic	96000	19	20.05	19.964772	-36.85	0.0612231913	4.421229432
+drone1_classic_96000_t80	drone1_classic	96000	29	30.37	30.260935	-35.70	0.0612233974	3.658488141
+drone4_classic_44100_t20	drone4_classic	44100	96	97.38	97.369374	-27.44	0.788791128	0.548519586
+drone4_classic_44100_t50	drone4_classic	44100	147	147.59	147.584373	-25.61	0.788798853	2.608902019
+drone4_classic_44100_t80	drone4_classic	44100	223	223.67	223.696080	-23.75	0.788786183	3.479016051
+drone4_classic_48000_t20	drone4_classic	48000	96	97.35	97.369374	-27.90	0.788803939	3.881164472
+drone4_classic_48000_t50	drone4_classic	48000	147	147.61	147.584373	-26.03	0.788804801	1.179561577
+drone4_classic_48000_t80	drone4_classic	48000	223	223.69	223.696080	-24.14	0.788786728	1.115040864
+drone4_classic_88200_t20	drone4_classic	88200	96	97.27	97.369374	-30.55	0.78879246	0.274259793
+drone4_classic_88200_t50	drone4_classic	88200	147	147.54	147.584373	-28.51	0.788782429	4.446043663
+drone4_classic_88200_t80	drone4_classic	88200	222	223.67	223.696080	-26.73	0.78877871	4.881100679
+drone4_classic_96000_t20	drone4_classic	96000	95	97.42	97.369374	-30.91	0.788786313	1.940582236
+drone4_classic_96000_t50	drone4_classic	96000	146	147.64	147.584373	-29.05	0.788793307	3.731373442
+drone4_classic_96000_t80	drone4_classic	96000	222	223.72	223.696080	-27.23	0.788796536	0.557520432
+drone4_classic_v0_44100_t20	drone4_classic_v0	44100	549	550.78	550.804358	-19.90	0.788793951	1.993137111
+drone4_classic_v0_44100_t50	drone4_classic_v0	44100	834	834.86	834.863290	-18.01	0.788761803	0.527170502
+drone4_classic_v0_44100_t80	drone4_classic_v0	44100	1265	1265.43	1265.416119	-16.25	0.788826353	0.397343264
+drone4_classic_v0_48000_t20	drone4_classic_v0	48000	550	550.80	550.804358	-20.14	0.788781786	0.024778945
+drone4_classic_v0_48000_t50	drone4_classic_v0	48000	833	834.88	834.863290	-18.28	0.788689061	3.036881930
+drone4_classic_v0_48000_t80	drone4_classic_v0	48000	1264	1265.44	1265.416119	-16.47	0.788782571	6.059195808
+drone4_classic_v0_88200_t20	drone4_classic_v0	88200	549	550.78	550.804358	-22.86	0.788780316	0.996568556
+drone4_classic_v0_88200_t50	drone4_classic_v0	88200	834	834.92	834.863290	-20.98	0.788765086	3.405177905
+drone4_classic_v0_88200_t80	drone4_classic_v0	88200	1265	1265.47	1265.416119	-19.19	0.788798756	3.340264286
+drone4_classic_v0_96000_t20	drone4_classic_v0	96000	550	550.78	550.804358	-23.15	0.78878659	0.012389473
+drone4_classic_v0_96000_t50	drone4_classic_v0	96000	833	834.85	834.863290	-20.68	0.78826476	1.518440965
+drone4_classic_v0_96000_t80	drone4_classic_v0	96000	1263	1265.44	1265.416119	-19.55	0.788785816	6.171190558

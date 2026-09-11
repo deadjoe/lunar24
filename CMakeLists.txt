@@ -301,6 +301,11 @@ endif()
 
 lunar_add_test(test_state_persistence tests/core/test_state_persistence.cpp)
 lunar_add_test(test_drone_bank tests/core/test_drone_bank.cpp)
+# task#110 (GH#19 S2): the polyBLEP kernel's identities plus the two-layer discharge of its
+# `0 <= dt <= 0.5` contract precondition. The second half drives the real DroneBank over the
+# declared TUNE/VOLT box AND the registry-unbounded CV MOD input, so it is a measurement, not
+# a restatement of constants -- expect a few seconds, not a few milliseconds.
+lunar_add_test(test_polyblep_kernel tests/core/test_polyblep_kernel.cpp)
 lunar_add_test(test_drone_classic tests/core/test_drone_classic.cpp)
 lunar_add_test(test_drone_mod tests/core/test_drone_mod.cpp)
 lunar_add_test(test_vco tests/core/test_vco.cpp)
@@ -478,6 +483,45 @@ add_test(NAME gh19_schmitt_blamp_acceptance
     --gate-wants-raws --gate-self-check)
 # Same `slow` rationale as the VCO pair above: this gate re-runs the full-chain probe.
 set_tests_properties(gh19_schmitt_blamp_acceptance PROPERTIES LABELS "slow")
+
+# task #110 (GH #19 S2): RED->GREEN acceptance gate for the CLASSIC-DRONE sawtooth value-jump
+# correction. Same probe / analyzer / pipeline driver as the two gates above; a different
+# criterion file and a different baseline. The 36 in-scope cells (3 classic lanes x 4 sample
+# rates x 3 frequency roles) are pinned in the gate's SOURCE, and the pinned-phi residual is
+# the acceptance column -- NOT the in-band or full-band BL reference, which are carried as
+# DIAGNOSTICS only (@Kimi cd345dbb). Running it on the pre-S2 naive saw is RED (every delta is
+# exactly 0.0 dB); the corrected saw must improve every in-scope cell by >= its role's
+# threshold.
+#
+# The per-role thresholds are CMake arguments, not gate constants, so the numbers this file
+# applies and the numbers the S2 report quotes are the same numbers by construction. They are
+# set from the measured fixed arm, strictly BELOW the weakest gain in each role so the gate is
+# not pinned at the measurement itself: LOW (24 cells, drone1_classic + drone4_classic) weakest
+# +5.88 dB -> 5.0; HIGH (12 cells, drone4_classic_v0, the @Kimi e6e645d2 ruling-1 lane) weakest
+# +7.85 dB -> 7.0. The gate's own `--min-gain-db` default of 6.0 applies to BOTH roles and is
+# therefore NOT usable here: it would fail the LOW lane, whose floor is 5.88 dB.
+#
+# ROLE IS THE MEASURED BAND, NOT THE GENERATOR'S STRUCTURAL CLASS. drone_4's gen 3 is a kHigh
+# generator (drone_bank.h:373-378) but the group's shared VOLT knob transposes the whole group,
+# and at the runtime default of 30 semis down it lands at 97-224 Hz -- inside the LOW band. So
+# drone4_classic is a LOW cell and the ruling-3 HIGH coverage is drone4_classic_v0 (volt 0),
+# exactly as the gate's CANONICAL table records.
+#
+# `--gate-self-check` makes the gate's own non-vacuity cases run on every CI invocation rather
+# than only by hand.
+add_test(NAME gh19_classic_saw_acceptance
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_blamp_pipeline.py
+    --probe $<TARGET_FILE:gh19_alias_probe>
+    --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_manifest.tsv
+    --baseline ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_classic_saw_naive_baseline.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_alias_analyze.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_gh19_classic_saw_acceptance.py
+    --gate-self-check
+    --gate-extra-arg=--min-gain-low-db  --gate-extra-arg=5.0
+    --gate-extra-arg=--min-gain-high-db --gate-extra-arg=7.0)
+# Same `slow` rationale as the two gates above: this gate re-runs the full-chain probe.
+set_tests_properties(gh19_classic_saw_acceptance PROPERTIES LABELS "slow")
 
 # task #86 (GH #19): the PRODUCTION BLAMP LUT must match the generator's analytic g.
 # @Codex (msg 1a8ed7f2) flagged the generator's self-consistency as self-referential

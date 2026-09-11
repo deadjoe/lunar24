@@ -52,6 +52,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "lunar24/core/polyblep_kernel.h"
 #include "lunar24/core/seeded_random.h"
 
 namespace lunar24::core {
@@ -299,7 +300,20 @@ class DroneBank {
       }
       if (effFreq < 0.0) effFreq = 0.0;
 
-      const double s = v.muted ? 0.0 : v.amplitude * nonlinearity(sawtooth(v.phase));
+      // task#110 (GH#19 S2): the classic sawtooth is a VALUE jump, so it is band-limited with
+      // the polyBLEP family (core/polyblep_kernel.h), not BLAMP -- a sloped kernel leaves a
+      // value jump in place. `phaseInc` is the SAME increment the accumulator takes two lines
+      // below, so the correction windows sit exactly on the rollover this sample is about to
+      // cross. `dt` is deliberately NOT reused: drone_bank.h:258 already names the ENVELOPE
+      // time step `dt`, and the two are different quantities by five orders of magnitude.
+      // polyblepSaw is a pure function of (t, phaseInc) -- it does NOT touch v.phase, so the
+      // phase trajectory (and the pinned-phi comparison) is unchanged (@Kimi 69b64ff6 pin 2).
+      // Outside +/-phaseInc the residual is exactly 0, so this is bit-identical to the naive
+      // ramp everywhere else; measured on the emitted signal the correction moves at most 2
+      // consecutive samples per generator (scratch/s2_integration_preview.txt).
+      const double phaseInc = effFreq / sampleRate_;
+      const double s =
+          v.muted ? 0.0 : v.amplitude * nonlinearity(polyblepSaw(v.phase / twoPi_, phaseInc));
       lastSample_[i] = s;          // RAW pre-group-VCA: mutual-FM peers use the oscillator value.
       out[i - begin] = s * gLvl;   // the group's envelope/VCA gates the final audio.
       v.phase += twoPi_ * effFreq / sampleRate_;

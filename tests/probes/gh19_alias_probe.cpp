@@ -17,12 +17,25 @@
 //   dryA  = VCO A, tapped BEFORE the chain  (core/include/lunar24/core/machine_runtime.h:117)
 //   dryB  = VCO B, tapped BEFORE the chain  (machine_runtime.h:118)
 //   droneChannel(0) = pre-mixer classic drone-1 channel bus (machine_runtime.h:1633)
+//   droneChannel(2) = pre-mixer classic drone-4 channel bus (classicGroupOfDrone_(drone_4) == 2)
 //   drone3Channel()/drone6Channel() = new-drone PapaVoice audio bus (machine_runtime.h:1642-1643)
 //   wetL  = the WET mix output channel (device_layout WET_L=0)
 //
 // CELLS (all required=1 in the manifest; every one must be produced — none are declared blocked):
 //   * vco_a_tri / vco_b_tri — VCO A/B default triangle, f by oct_sel x tune, tap dryA / dryB.
 //   * drone1_classic        — classic drone gen-1 single carrier (mute_2..5=1), tap droneChannel(0).
+//                             Role LOW: group 0 gen 0 (drone_bank.h:373-378 band 30-120 Hz).
+//   * drone4_classic        — classic drone gen-4 single carrier on drone_4 (mute_1..3,5=1), tap
+//                             droneChannel(2). Group 2 gen 3, but at the same 30-semis-down VOLT as
+//                             the LOW cell its generators land at 97-224 Hz — i.e. inside the LOW
+//                             band, so this row alone does NOT discharge RULING ③ (@Kimi cd345dbb);
+//                             it is kept as a non-vacuity probe of the same accessor.
+//   * drone4_classic_v0     — the row that DOES discharge RULING ③: same drone_4 gen 4 recipe with
+//                             the VOLT knob at 0.0 => 0 semis down, so the excited generators land at
+//                             ~551/835/1266 Hz inside the 420-1800 Hz kHigh band (@Kimi e6e645d2
+//                             ruling 1, approving these 12 cells). The `_v0` suffix is load-bearing:
+//                             a cell id must name its volt lane or baseline and acceptance rows can
+//                             be paired across lanes and still look entirely plausible.
 //   * drone3_schmitt / drone6_schmitt — new-drone clean periodic Schmitt tone (pitch>0, fm/am/noise=0).
 //   * preamp_ac             — preamp tanh input stage on the WET bus, driven by an AC sine on ch1.
 //   * wet_chain             — composite kVcfPath WET output (COMPOSITE cell, not a module attribution).
@@ -35,10 +48,15 @@
 //   gh19_scenarios.tsv    one metadata row per recorded cell (with measured f0 / peak)
 //   gh19_scnNNN.raw       little-endian f64 samples of that cell's observation window
 //   gh19_cpu.tsv          four-output finite/block-consistency + block-partition + prep/callback cost.
+//   gh19_fidelity.tsv     classic cells only: runtime raw vs probe-built drift-ON raw (must be bit
+//                         identical) and drift-ON vs drift-OFF (must differ) -- the provenance proof
+//                         for ruling B, where the classic cells' emitted raw is the drift-OFF
+//                         self-built render. See the classic block below.
 //
 // EXIT CODE (BLOCK item ⑤: production failure / raw-write failure / block mismatch must surface):
 //   0 = all good; non-zero = any required cell not produced, a raw write failed, a four-output
-//   finite/block-consistency check failed, or a block-partition mismatch was observed.
+//   finite/block-consistency check failed, a block-partition mismatch was observed, or (bit 16) a
+//   classic-cell probe-fidelity assertion failed.
 
 // This probe writes .raw/.tsv with std::fopen, which MSVC's secure-CRT deprecation
 // (C4996) promotes to an error under this repo's /W4 /WX warning policy. No other test
@@ -49,6 +67,7 @@
 #endif
 
 #include <lunar24/core/device_state.h>
+#include <lunar24/core/drone_bank.h>   // probe-built classic bank (ruling B, driftEnabled=false)
 #include <lunar24/core/state_default.h>
 #include <lunar24/registry_ids.hpp>
 
@@ -144,13 +163,17 @@ Cap capture(const DeviceStateV1& st, double sr, std::size_t frames, const std::s
   EngineHarness h;
   if (!h.load(st, sr)) { c.signal = "load-rejected"; return c; }
   if (h.runtime() == nullptr) { c.signal = "no-runtime"; return c; }
-  if (tap == "drone1" || tap == "drone3" || tap == "drone6") {
+  if (tap == "drone1" || tap == "drone4" || tap == "drone3" || tap == "drone6") {
     std::vector<double> d;
     d.reserve(frames);
     bool ok = h.renderSampled(static_cast<int>(frames), preampV,
         [&](const lunar24::core::SynthRuntime& rt) {
           double v;
           if (tap == "drone1") v = rt.droneChannel(0);
+          // classicGroupOfDrone_(drone_4) == 2 (machine_runtime.h:3456-3463), so the drone-4 cell
+          // reads VoiceMixer::kChannelDrone4 via droneChannel(2) -- the same accessor the drone-1
+          // cell uses, not a re-derivation.
+          else if (tap == "drone4") v = rt.droneChannel(2);
           else if (tap == "drone3") v = rt.drone3Channel();
           else v = rt.drone6Channel();
           d.push_back(v);
@@ -228,6 +251,82 @@ bool writeRaw(const std::string& path, const std::vector<double>& x) {
 
 std::string safeTsv(const std::string& s) { return s.empty() ? "-" : s; }
 
+// ---------------------------------------------------------------------------------------------
+// Classic-cell render off the SHIPPED runtime path (ruling B, @Kimi f260fd91).
+//
+// The S2 acceptance column pins phi ANALYTICALLY at the frequency the accumulator actually ran at.
+// That frequency is a CONSTANT only when the drift model is inert: with drift off, tickGroup's
+// `effFreq = base*(1+tolerance) + driftNow` collapses to `base*(1+tolerance)` (drone_bank.h:275-283),
+// so phi enters as 2*pi*frac(warm*f0/sr) exactly and the only free parameter left is the scale. With
+// drift on, the same accumulator is frequency-MODULATED and no constant-frequency reference can
+// represent it (measured: the free-phase best fit on those arms is -1 dB order vs -33..-44 dB on the
+// drift-off arms -- ~30 dB apart, with no oracle involved).
+//
+// driftEnabled=false is UNREACHABLE through the product: SynthRuntime's member is constructed with
+// the default (drift ON, machine_runtime.h:428) and DroneBank exposes no setter. So the classic cells
+// are rendered here by a probe-built bank. That swap is only admissible if the self-built bank IS the
+// shipped path, which is not assumed: the probe renders BOTH ways and asserts the drift-ON raws are
+// bit-identical (gh19_fidelity.tsv). The configuration below therefore replicates the runtime's
+// control mapping and its canonical execution block line for line:
+//   * mute gens 1..4                    -- runtime: drone_1_mute_2..5 = 1
+//   * setTune(0, (n-0.5)*24.0)          -- runtime: classicDroneTuneSemisFromNorm (machine_runtime.h:2789)
+//   * setVolt(0, 30.0)                  -- runtime: classicDroneVoltSemisDownFromNorm(0.5) (machine_runtime.h:2792)
+//   * setGroupHold/setGroupGate(0,true) -- runtime: drone_1_gate_hold=1 (the gate is never set from
+//                                          params, so it stays at kDefaultGroupGateOpen = true)
+//   * tickGroup(0, out5) per frame, channel = sum of the 5 group samples
+//                                       -- runtime: machine_runtime.h:3069-3078, droneChannel(0)
+struct ClassicSelf {
+  Cap cap;
+  double f0_model = 0.0;   // analytic accumulator rate used below ONLY when drift is off; else 0.
+};
+
+// `group` is a CLASSIC group index (0..3) and `gen` a generator WITHIN it (0..4). The ROLE is a
+// property of the generator, not of the group (drone_bank.h:373-378: gen 0,1 = kLow 30-120 Hz,
+// gen 2 = kMedium 140-380, gens 3,4 = kHigh 420-1800), so a HIGH-role cell is this same recipe with
+// `gen` pointing at a high generator of its own group -- nothing else about the render changes.
+ClassicSelf captureClassicSelf(int group, std::size_t gen, double sr, double tuneNorm,
+                               double voltSemisDown, bool driftEnabled) {
+  const double lo = 1e-3;   // same "volt"-domain scale guard as capture(...)
+  const double hi = 5.5;
+  ClassicSelf out;
+  lunar24::core::DroneBank bank(kProbeSeed, sr, lunar24::core::DroneBank::kMaxVoices, driftEnabled);
+  const std::size_t flat = static_cast<std::size_t>(group) * lunar24::core::DroneBank::kGensPerVoice + gen;
+  // setMute/setTune take the FLAT voice index; setVolt takes the GROUP (drone_bank.h:201-211). Only
+  // `group` is ever ticked below, so the other groups' mute flags cannot enter this raw.
+  for (std::size_t i = 0; i < lunar24::core::DroneBank::kMaxVoices; ++i) bank.setMute(i, i != flat);
+  bank.setTune(flat, (tuneNorm - 0.5) * 24.0);
+  bank.setVolt(group, voltSemisDown);
+  bank.setGroupHold(group, true);
+  bank.setGroupGate(group, true);
+  const std::size_t total = kWarm + kWin;
+  std::vector<double> d;
+  d.reserve(total);
+  for (std::size_t i = 0; i < total; ++i) {
+    double out5[lunar24::core::DroneBank::kGensPerVoice] = {};
+    bank.tickGroup(group, out5);
+    double s = 0.0;
+    for (std::size_t g = 0; g < lunar24::core::DroneBank::kGensPerVoice; ++g) s += out5[g];
+    d.push_back(s);
+  }
+  // The analytic constant rate, read from the SAME instance that produced the samples (never
+  // re-derived from the requested tune): base*2^(tune/12)*2^(-volt/12)*(1+tolerance). NOTE:
+  // DroneBank::effectiveFreqHz (drone_bank.h:317-321) is NOT this value -- it applies tolerance to
+  // freqBaseHz instead of to the transposed base, so it must not be used as the frequency oracle.
+  if (!driftEnabled) {
+    const double tune = bank.tuneOf(flat), volt = bank.voltOf(flat);
+    out.f0_model = bank.freqBaseHz(flat) * std::pow(2.0, tune / 12.0) * std::pow(2.0, -volt / 12.0) *
+                   (1.0 + bank.toleranceOf(flat));
+  }
+  out.cap.x = std::move(d);
+  out.cap.peak = peakOf(out.cap.x);
+  out.cap.f0 = zcrFreq(out.cap.x, sr);
+  if (!allFinite(out.cap.x)) { out.cap.signal = "non-finite"; return out; }
+  if (out.cap.peak < lo) { out.cap.signal = "silent"; return out; }
+  if (out.cap.peak > hi) { out.cap.signal = "over-scale"; return out; }
+  out.cap.ok = true;
+  return out;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -241,14 +340,30 @@ int main(int argc, char** argv) {
   int gCode = 0;   // 0 = clean; OR-in failure flags on any produced-but-failed / write-fail / block mismatch.
 
   std::vector<std::string> rows;
-  rows.push_back("id\tpath\tsignal\tsr_hz\tf0_target_hz\tf0_meas_hz\tpeak\tchannel\twave\traw\tsamples");
+  rows.push_back("id\tpath\tsignal\tsr_hz\tf0_target_hz\tf0_meas_hz\tpeak\tchannel\twave\traw\tsamples"
+                 "\tf0_model_hz");
   int scnIdx = 0;
+
+  // Classic-cell provenance evidence (ruling B): one row per classic cell, written to
+  // gh19_fidelity.tsv and asserted by the analyzer's probe-contract gate.
+  std::vector<std::string> frows;
+  frows.push_back("id\tsamples\trt_vs_selfON_max_abs_diff\tbit_identical"
+                  "\tdriftON_vs_OFF_max_abs_diff\tdrift_off_differs");
+
+  auto fmtNum = [](double v, int prec) {
+    char b[64];
+    std::snprintf(b, sizeof(b), "%.*g", prec, v);
+    return std::string(b);
+  };
 
   // Emit a scenario row. Every PRODUCED cell gets an indexed raw sample file. A required cell that
   // is NOT produced is a hard failure (exit non-zero) — the analyzer is the final gate, but the probe
   // must fail loudly so a silent/over-scale/non-finite/rejected cell never masquerades as success.
+  // `f0_model_hz` (classic cells only) is the analytic constant accumulator rate the emitted raw ran
+  // at; the analyzer pins phi with it. It is "-" for every other cell.
   auto emit = [&](const std::string& id, const std::string& path, double sr, double ft, const Cap& c,
-                  const std::string& channel, const std::string& wave) {
+                  const std::string& channel, const std::string& wave,
+                  const std::string& f0_model = "-") {
     std::string raw = "";
     if (c.ok) {
       raw = "gh19_scn" + std::to_string(++scnIdx) + ".raw";
@@ -266,7 +381,8 @@ int main(int argc, char** argv) {
                    "\t" + std::to_string(c.f0) +
                    "\t" + std::to_string(c.peak) +
                    "\t" + channel + "\t" + wave +
-                   "\t" + raw + "\t" + std::to_string(c.x.size()));
+                   "\t" + raw + "\t" + std::to_string(c.x.size()) +
+                   "\t" + f0_model);
   };
 
   // ---- VCO A default triangle: 4 SRS x 3 frequencies. Reachable, clean, periodic (analytic target).
@@ -306,21 +422,125 @@ int main(int argc, char** argv) {
   }
 
   // ---- Classic drone gen-1 SINGLE carrier: mute_2..5=1 (only gen-1 audible), gate hold on. ----
-  for (double sr : kSrs) {
-    for (double tuneNorm : {0.20, 0.50, 0.80}) {
-      DeviceStateV1 st = make_default_device_state(kProbeSeed);
-      slot(st, ParameterId::drone_1_mute_1) = 0.0;
-      slot(st, ParameterId::drone_1_mute_2) = 1.0;
-      slot(st, ParameterId::drone_1_mute_3) = 1.0;
-      slot(st, ParameterId::drone_1_mute_4) = 1.0;
-      slot(st, ParameterId::drone_1_mute_5) = 1.0;
-      slot(st, ParameterId::drone_1_gate_hold) = 1.0;
-      slot(st, ParameterId::drone_1_tune_1) = tuneNorm;
-      Cap c = capture(st, sr, kWarm + kWin, "drone1", 0.0, "volt");
-      emit("drone1_classic_" + std::to_string((int)sr) + "_t" + std::to_string(std::lround(tuneNorm * 100)),
-           "drone1_classic", sr, c.f0, c, "drone1", "sawcubic");
+  //
+  // RULING B (@Kimi f260fd91): the raw this cell SHIPS is the probe-built bank's drift-OFF render,
+  // not the runtime render -- the analytic phi pin is exact only where the accumulator rate is a
+  // constant, and driftEnabled=false is unreachable from the product. The runtime render is still
+  // taken, and `gh19_fidelity.tsv` asserts (a) runtime == self-built drift-ON bit for bit (the fork
+  // detector: it is what proves the self-built bank is the same path) and (b) drift-ON != drift-OFF
+  // (the non-vacuity control: it is what proves the shipped arm really is the drift-OFF arm). Both
+  // are hard failures here and in the analyzer's probe-contract gate. See captureClassicSelf.
+  // Roles are a property of the generator WITHIN a group (drone_bank.h:373-378). RULING ③
+  // (@Kimi cd345dbb) requires a HIGH-role classic cell in the acceptance gate, so the same recipe is
+  // run across three lanes: the LOW cell on drone_1's gen 1 (group 0, gen 0 -- the 30-120 Hz band),
+  // and the HIGH cell on drone_4's gen 4 (group 2, gen 3, classicGroupOfDrone_(drone_4) == 2) at
+  // TWO volt settings.
+  //
+  // `voltSemisDown` is the CLASSIC VOLT setting in semitones down, i.e. the value the runtime
+  // derives from the *_volt knob via classicDroneVoltSemisDownFromNorm (machine_runtime.h:2791:
+  // 60*n, so 0.5 -> 30 and 0.0 -> 0). It is a parameter rather than a constant because the HIGH
+  // ROLE CELL MUST LAND IN ITS OWN BAND. This is the one place where "the same recipe at a
+  // different setting" would be wrong: with the LOW lane's 30 semis down, drone_4's gen 3 lands at
+  // 97-224 Hz, which duplicates the LOW band and makes the HIGH cell HIGH in name only. The probe's
+  // first 12 HIGH rows did exactly that, and the honest reading of them is "a second LOW cell with
+  // a different base frequency", not a HIGH-role cell (@Kimi e6e645d2 ruling 1, approving the
+  // fix). At 0 semis down the same generators land at ~551/835/1266 Hz -- inside the 420-1800 Hz
+  // kHigh band the role is DEFINED by. So `volt=0` is the volt setting that makes the HIGH lane an
+  // actual HIGH lane; the 30-semis-down HIGH rows are kept (they are a valid LOW-adjacent probe of
+  // the same accessor and cost nothing to keep) but they are NOT what discharges ruling ③.
+  //
+  // Consequence for the gate, stated here because it is easy to get backwards: the two HIGH volt
+  // lanes are NOT interchangeable rows and their pathName prefix carries the distinction
+  // (`drone4_classic` vs `drone4_classic_v0`). A cell id must say which volt it was rendered at,
+  // or the baseline row and the acceptance row can be paired across lanes and every number will
+  // still look plausible.
+  auto classicCells = [&](const std::string& pathName, const std::string& tap, int group,
+                          std::size_t gen, const ParameterId (&mute)[5], ParameterId tuneId,
+                          ParameterId holdId, ParameterId voltId, double voltNorm,
+                          double voltSemisDown) {
+    for (double sr : kSrs) {
+      for (double tuneNorm : {0.20, 0.50, 0.80}) {
+        DeviceStateV1 st = make_default_device_state(kProbeSeed);
+        for (int k = 0; k < 5; ++k)
+          slot(st, mute[k]) = (static_cast<std::size_t>(k) == gen) ? 0.0 : 1.0;
+        slot(st, holdId) = 1.0;
+        slot(st, tuneId) = tuneNorm;
+        // The VOLT knob must be set on the STATE as well, not only on the self-built bank: the
+        // runtime capture below is what the fork detector compares against, and a state left at the
+        // default 0.5 would render volt=30 while the self-built bank renders voltSemisDown. That
+        // mismatch would fail the detector for the right reason but with the wrong diagnosis (looks
+        // like a fork, is actually a recipe divergence), so the two are threaded from ONE argument.
+        slot(st, voltId) = voltNorm;
+        const std::string cid = pathName + "_" + std::to_string((int)sr) + "_t" +
+                                std::to_string(std::lround(tuneNorm * 100));
+
+        Cap c_rt = capture(st, sr, kWarm + kWin, tap, 0.0, "volt");
+        ClassicSelf on = captureClassicSelf(group, gen, sr, tuneNorm, voltSemisDown,
+                                            /*driftEnabled=*/true);
+        ClassicSelf off = captureClassicSelf(group, gen, sr, tuneNorm, voltSemisDown,
+                                             /*driftEnabled=*/false);
+
+        // (a) fork detector: the runtime raw and the self-built drift-ON raw must be identical.
+        double d_on = -1.0;
+        bool same = c_rt.ok && on.cap.ok && c_rt.x.size() == on.cap.x.size();
+        if (same) {
+          double m = 0.0;
+          for (std::size_t i = 0; i < c_rt.x.size(); ++i) {
+            const double d = std::fabs(c_rt.x[i] - on.cap.x[i]);
+            if (d > m) m = d;
+          }
+          d_on = m;
+          same = (m == 0.0);
+        }
+        // (b) non-vacuity: flipping ONLY the drift flag must change the render.
+        double d_off = -1.0;
+        bool differs = false;
+        if (on.cap.ok && off.cap.ok && on.cap.x.size() == off.cap.x.size()) {
+          double m = 0.0;
+          for (std::size_t i = 0; i < on.cap.x.size(); ++i) {
+            const double d = std::fabs(on.cap.x[i] - off.cap.x[i]);
+            if (d > m) m = d;
+          }
+          d_off = m;
+          differs = (m > 0.0);
+        }
+        if (!same || !differs) {
+          std::fprintf(stderr,
+                       "FATAL %s: probe fidelity failed (bit_identical=%s, drift_off_differs=%s)\n",
+                       cid.c_str(), same ? "YES" : "NO", differs ? "YES" : "NO");
+          gCode |= 16;
+        }
+        frows.push_back(cid + "\t" + std::to_string(off.cap.x.size()) + "\t" + fmtNum(d_on, 6) + "\t" +
+                        (same ? "YES" : "NO") + "\t" + fmtNum(d_off, 6) + "\t" +
+                        (differs ? "YES" : "NO"));
+
+        const std::string f0_model = (off.f0_model > 0.0) ? fmtNum(off.f0_model, 12) : std::string("-");
+        emit(cid, pathName, sr, off.cap.f0, off.cap, tap, "sawcubic", f0_model);
+      }
     }
-  }
+  };
+
+  // LOW role: drone_1 gen 1 (group 0, gen 0), volt knob at its runtime default 0.5 => 30 semis down.
+  classicCells("drone1_classic", "drone1", 0, 0,
+               {ParameterId::drone_1_mute_1, ParameterId::drone_1_mute_2, ParameterId::drone_1_mute_3,
+                ParameterId::drone_1_mute_4, ParameterId::drone_1_mute_5},
+               ParameterId::drone_1_tune_1, ParameterId::drone_1_gate_hold,
+               ParameterId::drone_1_volt, /*voltNorm=*/0.5, /*voltSemisDown=*/30.0);
+  // HIGH role at 30 semis down: drone_4 gen 4 (group 2, gen 3). Kept -- but this lane's generators
+  // land at 97-224 Hz, inside the LOW band, so it does NOT discharge ruling ③ (see the block above).
+  classicCells("drone4_classic", "drone4", 2, 3,
+               {ParameterId::drone_4_mute_1, ParameterId::drone_4_mute_2, ParameterId::drone_4_mute_3,
+                ParameterId::drone_4_mute_4, ParameterId::drone_4_mute_5},
+               ParameterId::drone_4_tune_4, ParameterId::drone_4_gate_hold,
+               ParameterId::drone_4_volt, /*voltNorm=*/0.5, /*voltSemisDown=*/30.0);
+  // HIGH role, THE LANE THAT DISCHARGES RULING ③: same drone_4 gen 4, volt knob at 0.0 => 0 semis
+  // down, so the excited generators land at ~551/835/1266 Hz inside the 420-1800 Hz kHigh band.
+  // Rendered on the UNFIXED tree like every other baseline row -- that is what makes it a baseline.
+  classicCells("drone4_classic_v0", "drone4", 2, 3,
+               {ParameterId::drone_4_mute_1, ParameterId::drone_4_mute_2, ParameterId::drone_4_mute_3,
+                ParameterId::drone_4_mute_4, ParameterId::drone_4_mute_5},
+               ParameterId::drone_4_tune_4, ParameterId::drone_4_gate_hold,
+               ParameterId::drone_4_volt, /*voltNorm=*/0.0, /*voltSemisDown=*/0.0);
 
   // ---- New-drone drone-3 Schmitt: clean periodic tone (pitch>0, fm/am/noise=0), 2 pitch levels. ----
   for (double sr : kSrs) {
@@ -563,6 +783,14 @@ int main(int argc, char** argv) {
   std::string tsv = out + "/gh19_scenarios.tsv";
   if (!writeTsv(tsv, rows)) {
     std::fprintf(stderr, "FATAL: could not write %s\n", tsv.c_str());
+    gCode |= 2;
+  }
+
+  // Classic-cell provenance evidence (ruling B), in its own file so gh19_scenarios.tsv stays a
+  // signal-cell record. The analyzer's probe-contract gate fails closed if this file is absent.
+  std::string fidTsv = out + "/gh19_fidelity.tsv";
+  if (!writeTsv(fidTsv, frows)) {
+    std::fprintf(stderr, "FATAL: could not write %s\n", fidTsv.c_str());
     gCode |= 2;
   }
 

@@ -3165,8 +3165,12 @@ int main() {
           "product drone channel VARIES (a constant drone[q]=0.5 bypass is flat; non-vacuous)");
 
     // NONLINEARITY: the product drone channel differs from the pure-sawtooth LINEAR
-    // superposition forecast. An identity nonlinearity would collapse prod to lin and
-    // red here.
+    // superposition forecast. Since task #110 the two sides are no longer separated by the
+    // nonlinearity ALONE: `lin` is built from the bank's NAIVE DroneBank::sawtooth() sample
+    // while the product path band-limits that saw (core/polyblep_kernel.h), so `gap` carries
+    // the polyBLEP correction as well. The assertion stays valid as a lower bound -- both
+    // sides still call the same bank code, so the maxDiff<1e-9 check above is unaffected and
+    // this one only grows -- but it is no longer a measurement of the nonlinearity alone.
     double gap = 0.0, absProd = 0.0;
     for (std::size_t i = 0; i < kN; ++i) {
       gap = std::max(gap, std::fabs(prod[i] - lin[i]));

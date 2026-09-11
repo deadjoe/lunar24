@@ -50,6 +50,12 @@ def main():
     ap.add_argument("--gate-self-check", action="store_true",
                     help="also pass --self-check to the gate, so the gate's own "
                          "non-vacuity cases are exercised on every CI run")
+    ap.add_argument("--gate-extra-arg", action="append", default=[],
+                    help="pass one more argument through to the gate, in order; repeat "
+                         "once per argument. Used by the task #110 classic-saw gate, "
+                         "which takes per-role thresholds (--min-gain-low-db / "
+                         "--min-gain-high-db) that the VCO and Schmitt gates do not "
+                         "have. Additive and default-empty, so neither sibling changes.")
     ap.add_argument("--out", default=None,
                     help="scratch dir (default: a tempdir, removed on exit)")
     args = ap.parse_args()
@@ -70,6 +76,7 @@ def main():
             gate_cmd += ["--current-raws", probe_dir]
         if args.gate_self_check:
             gate_cmd += ["--self-check"]
+        gate_cmd += list(args.gate_extra_arg)
         g = run(gate_cmd)
         # Echo the gate's verdict table even on success. Otherwise a passing CTest entry
         # records only "rc=0" and the per-cell numbers -- the actual evidence -- exist

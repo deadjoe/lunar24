@@ -61,8 +61,13 @@ static std::vector<double> render_channel(core::DroneBank& bank, std::size_t ch,
 
 // -------------------------------------------------- 1. waveform = sawtooth ------
 
-// A discontinuous wave (sawtooth) has one sample-to-sample step ~2x its peak level
-// (the wrap); a continuous wave (sine) has a step bounded by 2*pi*peak*f/fs << peak.
+// A discontinuous wave (sawtooth) has one sample-to-sample step approaching 2x its peak
+// level (the wrap); a continuous wave (sine) has a step bounded by 2*pi*peak*f/fs << peak.
+// The task #110 polyBLEP correction spreads that wrap over the correction window, so the
+// ratio is measured at 2.000 naive and 1.800..1.828 corrected (scratch/s2_integration_preview.txt)
+// -- still far above the 1.0x the assertion below requires, which is why this test is not
+// expected to move. The threshold is deliberately kept at 1.0x rather than tightened to
+// track the corrected number, so the assertion keeps its meaning as a discontinuity test.
 static void test_classic_waveform_sawtooth() {
   const std::uint64_t seed = 0x51A3B0ULL;
   const double sr = 48000.0;
