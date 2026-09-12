@@ -67,8 +67,9 @@ testable logical unit.
 
 ## Status
 
-**P0 — auditable foundation vertical slice, in review.** It establishes the canonical
-machine registry, the framework-free core contract, `DeviceStateV1`, a field-evidence
-policy, and the gates that keep them consistent and switch-clean. This is a reviewed basis
-to build on, **not** a frozen/locked final implementation; the concrete P0–P8 plan is in
-`design/06-master-plan.md`.
+**P0 is closed out and P1/P2 have exited MET; the work in flight is the GH#19 anti-aliasing
+slices.** P0 established the canonical machine registry, the framework-free core contract,
+`DeviceStateV1`, a field-evidence policy, and the gates that keep them consistent and
+switch-clean. This is a reviewed basis to build on, **not** a frozen/locked final
+implementation; the concrete P0–P8 plan is in `design/06-master-plan.md`, and the live
+reconnection point is [`design/00-status.md`](design/00-status.md).
