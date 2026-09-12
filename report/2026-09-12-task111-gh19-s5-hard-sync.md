@@ -4,7 +4,7 @@
 - 分支 `fix/19-vcoa-hard-sync`，隔离 worktree，基线 `main@6f4481ae31af4f11b355c0b880cc2f802225bb7d`（= S2 merge）。
 - 授权：@Kimi `70d37944`（批「开工」+ 五条裁决 Q1–Q5）。
 - 工作线程：`#Lunar24:4adaa9f8`。计划与验收契约：`a85e81d0`（落盘 `scratch/task111_s5_plan_contract.md`）。
-- **本报告写于未提交工作树**：`git rev-parse HEAD` = 上述基线；改动为 7 个已跟踪文件 + 2 个新文件（`tools/check_gh19_hardsync_acceptance.py`、`tests/mutation/run_vcoa_hardsync_mutation.sh`）。
+- 改动集：8 个已跟踪文件（`machine_runtime.h` / `machine_definition.h` / `vco.h` / `test_vco.cpp` / `gh19_alias_probe.cpp` / `gh19_alias_analyze.py` / `gh19_manifest.tsv` / `CMakeLists.txt`）+ 4 个新文件（`tools/check_gh19_hardsync_acceptance.py`、`tools/gh19_hardsync_naive_baseline.tsv`、`tests/mutation/run_vcoa_hardsync_mutation.sh`、本报告）。改动已提交在本分支：`6eb3584`（切片本体）→ `287fd01`（门禁注册 + 假绿修复）；**未 push**。
 - **状态口径：GH#19 仍 OPEN；未 merge / 未关 / 未发布 / 未宣称 MET。**
 
 ## 0. 证据口径
