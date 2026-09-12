@@ -257,7 +257,7 @@ python3 tools/check_gh19_hardsync_acceptance.py \
 
 `rc=0`，`PASS: all 12 ...`。阈值余量：LOW 最弱 +9.90 对 9.0（余 0.90）；HIGH 最弱 +12.32 对 11.5（余 0.82）；gap 最弱 13.52 对 10.0（余 3.52）；`per` 12/12 恰为 `0.000e+00`（稳态前提成立，且是**精确** M-周期）。增益与 §5 的归因表逐格一致。
 
-### 13.3 实跑抓到的第三个缺陷：门禁拿 `f0_refined` 当身份锚 `[实测]`
+### 13.3 接线暴露的缺陷之一：门禁拿 `f0_refined` 当身份锚 `[实测]`
 
 **症状**：门禁**第一次**对着真实分析器输出跑就 `rc=2`（结构性），12/12 报 `f0 mismatch in baseline (187.00 vs target 220)`。**注意这不是判据红，是结构性拒绝** —— 门禁在读到判据列之前就拒了，所以此前"门禁自检 11 臂全过"并不蕴含门禁能接受任何一条真实行。
 
@@ -287,7 +287,27 @@ python3 tools/check_gh19_hardsync_acceptance.py \
 
 **未改但记录在案**：分析器对 sync cell 仍会**打印** `f0_refined`，而它在该 cell 上是搜索边界产物、且未被任何判据使用。**本片不动分析器** —— 动它就会改变基线 provenance 里钉住的 `analyzer` 哈希，进而使本轮全部测量失效。作为诊断卫生问题交片主处置。
 
-### 13.4 负控：`tests/mutation/run_vcoa_hardsync_mutation.sh` `[待运行 — PENDING]`
+### 13.4 接线暴露的缺陷之二：`--self-check` 曾**短路判定** ⇒ CI 配置下**假绿** `[实测]`
+
+**发现路径**：在把门禁注册进 CMakeLists（第 4 条 render gate）之前，先读**消费者**的调用契约 —— `tools/run_gh19_blamp_pipeline.py:73-79` 把 `--baseline`、`--current` **和** `--self-check` 拼进**同一条** gate 命令行。而我的门禁当时是 `if args.self_check: … return 0`，**先判 self-check 就返回**。
+
+**后果（比 13.3 严重）**：在 CI 实际使用的那条命令下，门禁会打印 `self-check PASS`、退出 **0**，**从头到尾没有看过那一次渲染**。它不会在 CI 上"红"，它会**绿**。这是假绿，不是漏检；两者都可能被当成"已验证"。
+
+**同门禁家族的约定对照**：S2 的 `check_gh19_classic_saw_acceptance.py:601-603` 是**相加**语义 —— `rc = self_check(...) or rc`，判定照跑。我的实现偏离了这条已被 CI 验证过的约定。
+
+**修复（结构上只有一个返回路径）**：判定与 self-check 现在**同时**发生、`rc` 相或（`rc = rc or (1 if fails else 0)`），self-check 的失败**永不被绿色运行掩盖**；单独 `--self-check`（不给 `--baseline/--current`）仍可用，便于手工核。
+
+**实测三种调用**（`[实测]`）：
+
+| 调用 | 判定 | self-check | rc |
+|---|---|---|---|
+| `--baseline + --current + --self-check`（= CI 形状） | `PASS: all 12` | PASS | **0** |
+| 同上但 `--current` 换成 **naive** 表（= 真实数据上的移除控制） | `exact-zero deltas: YES (12/12)` + `FAIL` | PASS | **1**（修复前会是 **0**） |
+| 仅 `--self-check` | — | PASS | 0 |
+
+第二行同时是**真实数据上的移除控制**：把 naive arm 当作 current ⇒ 12/12 增益恰为 0 ⇒ 判据不满足 ⇒ `rc=1`，且 `self-check PASS` **没有**把它盖掉。
+
+### 13.5 负控：`tests/mutation/run_vcoa_hardsync_mutation.sh` `[待运行 — PENDING]`
 
 本轮运行中（实测成本：**分析器每趟约 17 min**，5 趟判据 ⇒ 整轮约 **90 min**，不是先前估的 ~30 min）。预期，并在跑完后逐条以实跑输出替换：
 

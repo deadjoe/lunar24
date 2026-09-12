@@ -523,6 +523,49 @@ add_test(NAME gh19_classic_saw_acceptance
 # Same `slow` rationale as the two gates above: this gate re-runs the full-chain probe.
 set_tests_properties(gh19_classic_saw_acceptance PROPERTIES LABELS "slow")
 
+# task #111 (GH #19 S5): RED->GREEN acceptance gate for the VCO-A HARD-SYNC reset-discontinuity
+# corrector. Same probe / analyzer / pipeline driver as the three gates above; a different
+# criterion file and a different baseline. The 12 in-scope cells (vco_a.sync_in driven by LFO-A at
+# exactly one rising edge per M samples x 4 sample rates x 3 f0 roles) are pinned in the gate's
+# SOURCE, and the hard-sync residual at the MEASURED M-offset anchor is the acceptance column --
+# not the free-running BL reference, which the analyzer does not even define for a truncated
+# waveform. Running it on the naive immediate-reset arm is RED (every delta is exactly 0.0 dB);
+# the corrected source is GREEN 12/12 with the thresholds below.
+#
+# THE BASELINE IS AN ALGORITHMIC ARM, NOT A PRE-S5 PRODUCT RENDER: the sync wiring itself is new
+# in this slice, so no pre-change render of these cells exists. tools/gh19_hardsync_naive_baseline.tsv
+# says so in its own provenance header, together with the measured claim that it differs from the
+# committed source in exactly the 12 sync cells and in nothing else.
+#
+# The per-role thresholds are CMake arguments, not gate constants, so the numbers this file
+# applies and the numbers the S5 report quotes are the same numbers by construction. They must
+# equal the gate's own --min-gain-db / --min-gain-high-db / --min-gap-db / --max-period-dev
+# DEFAULTS and the mutation runner's MIN_GAIN_DB / MIN_GAIN_HIGH_DB / MIN_GAP_DB / MAX_PER_DEV
+# defaults -- all three are set from the measured fixed arm: LOW (8 cells, 220/440 Hz) weakest
+# +9.90 dB -> 9.0, HIGH (4 cells, 880 Hz) weakest +12.32 dB -> 11.5, weakest anchor gap 13.52 dB
+# -> 10.0, M-periodicity deviation exactly 0.0e+00 -> 1e-9. Changing a threshold requires new
+# evidence, not an edit here.
+#
+# `--gate-self-check` makes the gate's own non-vacuity cases run on every CI invocation, and it is
+# ADDITIVE: the driver passes it in the SAME call as --baseline/--current, so the run is still
+# judged. A gate that short-circuited on --self-check would exit 0 without ever looking at the
+# rendered cells; that shape is asserted against by the gate's own fixed single return path.
+add_test(NAME gh19_hardsync_acceptance
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_blamp_pipeline.py
+    --probe $<TARGET_FILE:gh19_alias_probe>
+    --manifest ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_manifest.tsv
+    --baseline ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_hardsync_naive_baseline.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_alias_analyze.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_gh19_hardsync_acceptance.py
+    --gate-self-check
+    --gate-extra-arg=--min-gain-db      --gate-extra-arg=9.0
+    --gate-extra-arg=--min-gain-high-db --gate-extra-arg=11.5
+    --gate-extra-arg=--min-gap-db       --gate-extra-arg=10.0
+    --gate-extra-arg=--max-period-dev   --gate-extra-arg=1e-9)
+# Same `slow` rationale as the three gates above: this gate re-runs the full-chain probe.
+set_tests_properties(gh19_hardsync_acceptance PROPERTIES LABELS "slow")
+
 # task #86 (GH #19): the PRODUCTION BLAMP LUT must match the generator's analytic g.
 # @Codex (msg 1a8ed7f2) flagged the generator's self-consistency as self-referential
 # (it re-parsed its OWN emitted text). This gate reads the ACTUAL production vco.h,

@@ -466,33 +466,46 @@ def main():
                          "(default 1.0; f0_refined is not comparable on these cells -- see A_F0)")
     ap.add_argument("--out", default=None, help="also write the report to this path")
     ap.add_argument("--self-check", action="store_true",
-                    help="run the gate's own negative controls INSTEAD of judging a run")
+                    help="ALSO run the gate's own negative controls (with --baseline/--current "
+                         "this is additive -- the run is still judged; alone it is the only "
+                         "thing that runs)")
     args = ap.parse_args()
 
     min_high = args.min_gain_db if args.min_gain_high_db is None else args.min_gain_high_db
 
+    if not args.baseline or not args.current:
+        if not args.self_check:
+            ap.error("--baseline and --current are required unless --self-check is given")
+        rc, text = 0, None
+    else:
+        rc, lines = evaluate(args.baseline, args.current, args.min_gain_db, min_high,
+                             args.min_gap_db, args.max_period_dev, args.f0_tol)
+        text = "\n".join(lines)
+        print(text)
+        if args.out:
+            with open(args.out, "w", encoding="utf-8") as fh:
+                fh.write(text + "\n")
+
+    # --self-check ADDS the gate's own controls to this invocation; it never REPLACES the
+    # judgement. The pipeline driver (run_gh19_blamp_pipeline.py) passes --baseline/--current AND
+    # --self-check in ONE call, so a mode that short-circuited on --self-check would print
+    # "self-check PASS", exit 0, and never look at the rendered run -- a FALSE GREEN in exactly
+    # the configuration CI uses. Control failures are folded into the exit code, never masked by
+    # a green run.
     if args.self_check:
         fails = self_check(args.min_gain_db, min_high, args.min_gap_db,
                            args.max_period_dev, args.f0_tol)
+        if text is not None:
+            print("")
         for f in fails:
             print("  %s" % f)
         if fails:
             print("self-check FAILED (%d)" % len(fails))
-            return 1
-        print("self-check PASS (positive, removal/exact-zero, one-below-threshold, vacuous "
-              "anchor, broken premise, absent criterion, missing row, duplicate row, "
-              "renamed cell, empty current, zero threshold)")
-        return 0
-
-    if not args.baseline or not args.current:
-        ap.error("--baseline and --current are required unless --self-check is given")
-    rc, lines = evaluate(args.baseline, args.current, args.min_gain_db, min_high,
-                         args.min_gap_db, args.max_period_dev, args.f0_tol)
-    text = "\n".join(lines)
-    print(text)
-    if args.out:
-        with open(args.out, "w", encoding="utf-8") as fh:
-            fh.write(text + "\n")
+        else:
+            print("self-check PASS (positive, removal/exact-zero, one-below-threshold, vacuous "
+                  "anchor, broken premise, absent criterion, missing row, duplicate row, "
+                  "renamed cell, empty current, zero threshold)")
+        rc = rc or (1 if fails else 0)
     return rc
 
 
