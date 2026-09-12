@@ -30,14 +30,27 @@
 #   * the SIGN of the jump term (`nc2`: `+= 0.5*jmp` doubles the jump instead of removing it),
 #   * the SCALE of the jump term (`nc3`: `-= jmp` is the full-scale kernel, i.e. the
 #     "copied the S2 kernel" error this slice is most likely to produce — S2's
-#     `polyblepSaw`-style subtraction is full-scale by construction).
+#     `polyblepSaw`-style subtraction is full-scale by construction. ⚠️ Since 2026-09-13 the
+#     PROBE refuses nc3 before it ever reaches judgement, so nc4 carries the live SCALE control;
+#     see the nc3 note below for why, and for what nc3 witnesses instead).
 #
-# A fourth arm uses the DEFERRED reset but drops only the band-limiting term. It matters
+# A fourth arm (nc4) uses the DEFERRED reset but drops only the band-limiting term. It matters
 # because nc1 and it produce the SAME signal for a different reason: nc1 changes the
 # measurement premise (no reset => the rendered cell is not M-periodic => the analyzer fails
 # closed and the gate goes STRUCTURAL), while the deferred-reset-only arm keeps the premise
 # and is therefore a JUDGEMENT red. Those two exit codes are never interchangeable, so both
 # are asserted with their own expected rc and their own named rule.
+#
+# ⚠️ nc1 WAS RE-REGISTERED 2026-09-13, and the reason is worth keeping. Items 2 and 4 of the
+# seven-item package added probe-side reconciliations (the master-edge index, and the DeviceState
+# cable check) that fire on the SAME mutation, so nc1 is now refused by the PROBE first
+# (measured PROBE_RC=65, two named reasons) and only then reaches the gate, which still returns
+# STRUCTURAL rc=2 `NO criterion`. The arm therefore asserts BOTH surfaces, each with its own
+# name. What made the old registration wrong was not the verdict but the ROUTE: `measure` aborts
+# on any non-zero probe exit, so the arm could no longer run at all -- and an arm that cannot run
+# is not a weaker check, it is an unreachable one, which any later reader would have taken for a
+# pass. That is why `measure_keeps_render` exists and why its tolerance is bounded by a
+# completeness check rather than left open.
 #
 # WHICH SURFACE OWNS A RED. There are two, and every arm must say which one it expects:
 #   * the PROBE's substitution guard (`peak > hi`, hi = 0.55 for these audio-domain cells --
@@ -54,10 +67,31 @@
 # TWICE the deviation of simply omitting the term (which is nc4 and is in range). That is
 # enough to leave the peak guard, so the probe refuses all 12 sync cells and the gate never
 # runs on them. An earlier draft predicted a judgement rc=1 here; the first real run
-# (2026-09-12) falsified that. nc3's deviation is 0.5*jmp -- the same magnitude as omitting
-# the term -- so it is expected to stay in range and produce a judgement red, and nc4 is the
-# load-bearing judgement control. Both expectations are pre-registered below, before this
-# revision is run, so a further surprise is a finding rather than a rewrite.
+# (2026-09-12) falsified that. nc4 is the load-bearing judgement control.
+#
+# nc3 has the SAME 0.5*jmp magnitude as nc4 but the OPPOSITE sign, and an earlier draft expected it
+# to stay in range too. The second real run (2026-09-13) falsified THAT: items 2 and 4 added
+# probe-side reconciliations, and they refuse nc3 as well -- PARTIALLY (9 of the 12 sync cells),
+# through the item-4 DeviceState cable reconstruction. Its PER-CELL named reason is the item-2
+# absolute-timing one ("the reset is 1 frame(s) LATE"), because `-= jmp` makes the reset sample
+# read the PREVIOUS value, which moves the reconstructed discontinuity one frame later -- so a
+# SCALE error and nc5's genuine one-frame LATCH produce the SAME reason string. The arm's
+# pre-registered JUDGEMENT red is therefore WITHDRAWN as UNMEASURABLE rather than re-read, and nc3
+# is re-registered as probe-validity + gate-structural. What it still witnesses, and what nc1
+# (a FULL refusal) cannot, is that a PARTIAL refusal ESCALATES to rc=2 instead of downgrading to
+# the judgement code. Both expectations are pre-registered below, before this revision is run, so
+# a further surprise is a finding rather than a rewrite.
+#
+# A FIFTH arm (task #111 item 3) defers the reset by exactly ONE frame. It is the one control
+# that no dB figure could ever supply, because every figure this gate compares is computed over
+# an M-periodic signal and is therefore invariant under shifting the same samples by one cell
+# (@Codex 908f36e7 reproduced exactly that: shifting the periodic samples by one whole cell left
+# the analyzer's residual, gap and period-deviation bit-for-bit unchanged). Only an index
+# anchored OUTSIDE the signal -- the master's own published output, read per frame through the
+# runtime's `controlVoltageAt` -- can see the difference, which is why item 2 added that
+# reconciliation ahead of it. nc5 is pre-registered as a PROBE-owned validity red (the deferral
+# voids the premise every cell rests on, so the probe refuses fail-closed and names the timing
+# criterion), matching nc2's shape rather than extending the gate.
 #
 # ---------------------------------------------------------------------------------
 # [A2] / EQUIVALENCE. The plan requires nc1 to be byte-identical to the LITERAL pre-change
@@ -110,6 +144,16 @@ ANALYZE="$TREE/tools/gh19_alias_analyze.py"
 GATE="$TREE/tools/check_gh19_hardsync_acceptance.py"
 BASE="$TREE/tools/gh19_hardsync_naive_baseline.tsv"
 MANIFEST="$TREE/tools/gh19_manifest.tsv"
+# The completeness bound `measure_keeps_render` asserts against: EVERY required id must have a row
+# in the analyzer's table. Derived from the manifest, never hardcoded.
+#
+# This is deliberately a SET property rather than a row count, and the difference was measured, not
+# assumed: the analyzer's table for a 96-cell render holds 107 data rows -- 96 cell rows plus 11
+# `MACHINE` summary rows -- and it emits NO row at all for the two `required=0` ids
+# (`vco_sub`, `vco_saw_pulse_morph`). A count equality would therefore have to encode two
+# producer-side accidents at once, and would still not catch the failure that matters: a table of
+# the right LENGTH that is missing the very row the gate is about to judge.
+MANIFEST_REQUIRED="$(awk -F'\t' 'NR>1 && $0 !~ /^#/ && NF && $8=="1" {print $1}' "$MANIFEST")"
 
 # The four files S5 touches. [A2] restores ALL of them from PRE_S5_REV: the probe is as
 # load-bearing as the DSP here, because the pre-change probe has no captureSync() and so does
@@ -171,6 +215,28 @@ CONSUMER_BLOCK='        double sv = 0.0;
         }
 '
 
+# nc5 (task #111 item 3): the SAME consumer, the SAME cable and the SAME edge detection — only the
+# FRAME on which the reset is applied moves, by exactly ONE. This is the mutation the whole item-2
+# criterion exists for: no residual-based figure can see it (a criterion computed over a periodic
+# signal is invariant under a global sample shift, @Codex 908f36e7's "shift the same samples by one
+# cell -> identical answer"), so if this arm is not RED then the gate is blind to a one-frame
+# deferral no matter how many other arms pass.
+CONSUMER_BLOCK_DEFER='        double sv = 0.0;
+        if (deferSyncA_) { vcA_.requestSync(); deferSyncA_ = false; }
+        if (syncInBoundA_ && resolveControlSink_(syncInA_, sv, driveGraph)) {
+          const JackDescriptor* ds = findJackDescriptor_(syncInA_);
+          if (ds != nullptr &&
+              sink_gate_interpret(*ds, syncLatchA_, sv).edge == GateEdge::rising) {
+            deferSyncA_ = true;
+          }
+        }
+'
+# The one-frame latch the deferral needs. Spliced as a whole declaration so the mutant cannot
+# fail the build on an unused member under -Werror and be misread as "not a valid RED".
+SYNC_MEMBER_ANCHOR='  JackId syncInA_{0};         bool syncInBoundA_ = false;'
+SYNC_MEMBER_DEFER='  JackId syncInA_{0};         bool syncInBoundA_ = false;
+  bool deferSyncA_ = false;'
+
 # The jump term (vco.h tick()). The FIXED form, then the three mutations.
 JMP_FIXED='  if (synced) *out -= 0.5 * jmp;'
 JMP_NC2='  if (synced) *out += 0.5 * jmp;'
@@ -180,11 +246,12 @@ JMP_NC4='  if (synced) { (void)jmp; }'
 # A control is only meaningful if each anchor is present exactly once; if the integration text
 # and these constants ever drift apart, that must fail loudly rather than splice nothing.
 check_anchor() {
-  local n1 n2
-  read -r n1 n2 <<<"$(python3 - "$RT" "$CONSUMER_BLOCK" "$VCO" "$JMP_FIXED" <<'PY'
+  local n1 n2 n3
+  read -r n1 n2 n3 <<<"$(python3 - "$RT" "$CONSUMER_BLOCK" "$VCO" "$JMP_FIXED" "$SYNC_MEMBER_ANCHOR" <<'PY'
 import sys
 print(open(sys.argv[1], encoding="utf-8").read().count(sys.argv[2]),
-      open(sys.argv[3], encoding="utf-8").read().count(sys.argv[4]))
+      open(sys.argv[3], encoding="utf-8").read().count(sys.argv[4]),
+      open(sys.argv[1], encoding="utf-8").read().count(sys.argv[5]))
 PY
 )"
   if [ "$n1" != "1" ]; then
@@ -195,6 +262,11 @@ PY
   if [ "$n2" != "1" ]; then
     echo "ERROR: '$JMP_FIXED' appears $n2 time(s) in vco.h, expected 1." >&2
     echo "       The runner's JMP_FIXED and the implementation have drifted apart." >&2
+    exit 1
+  fi
+  if [ "$n3" != "1" ]; then
+    echo "ERROR: the sync-jack member declaration appears $n3 time(s) in machine_runtime.h, expected 1." >&2
+    echo "       nc5's member splice would otherwise silently do nothing." >&2
     exit 1
   fi
 }
@@ -258,9 +330,79 @@ measure_may_fail_closed() {  # render; a fail-closed probe is RECORDED, not fata
   fi
 }
 
-run_gate() {  # $@ = extra gate flags. Sets GRC. Exits 0 either way (RED is expected here).
+# The third outcome, which nc1 needs and neither of the other two provide: the probe REFUSES
+# (so `measure` would abort) yet its render is COMPLETE and reviewable — every cell it could not
+# produce is recorded in gh19_scenarios.tsv with its own signal string, which is exactly the
+# premise failure the gate's STRUCTURAL code exists to report. Neither "abort" nor "skip the
+# analyzer" is honest here, so this variant records the probe's exit code and ALWAYS analyzes.
+#
+# It is not a way around the stale-artifact discipline that `require_criterion` enforces: the TSV
+# this produces is written from THIS arm's own render, in THIS call, and the arm asserts the
+# probe's named refusal AND reads the gate's output from THIS call's `run_gate`. Nothing here can
+# read an earlier arm's verdict, because nothing here reads a file this call did not just write.
+#
+# The probe is not the only side that refuses here: the analyzer has its OWN coverage/validity gate
+# and exits non-zero when a required cell has no producible signal, which is the same premise
+# failure seen from the other end. That is the expected state for this arm, so a non-zero analyzer
+# exit is recorded rather than fatal -- but ONLY alongside a COMPLETE table, so a genuinely broken
+# apparatus cannot be laundered into "the gate went STRUCTURAL". The bound is stated in the function.
+measure_keeps_render() {  # render (record PROBE_RC, never fatal) + ALWAYS full-matrix analyze.
+                          # A non-zero ANALYZER exit is tolerated ONLY if the table it wrote is
+                          # COMPLETE -- see the completeness check below.
+  PROBE_RC=0
+  AN_RC=0
+  rm -rf "$WORK/probe-out"; mkdir -p "$WORK/probe-out"
   set +e
-  python3 "$GATE" --baseline "$BASE" --current "$WORK/analyze.tsv" "${GATE_ARGS[@]}" "$@" \
+  "$WORK/gh19_alias_probe" --out "$WORK/probe-out" >"$WORK/probe.log" 2>&1
+  PROBE_RC=$?
+  set -e
+  if [ "$PROBE_RC" -ne 0 ]; then
+    echo "   NOTE: the probe refused (exit $PROBE_RC); its render is still analyzed, because"
+    echo "         every cell it could not produce is recorded with its own named signal."
+  fi
+  rm -f "$WORK/analyze.tsv"
+  set +e
+  python3 "$ANALYZE" --dir "$WORK/probe-out" --manifest "$MANIFEST" \
+    > "$WORK/analyze.tsv" 2>"$WORK/analyze.err"
+  AN_RC=$?
+  set -e
+  # The analyzer exits non-zero for TWO different reasons, and only one of them is this arm's
+  # subject. It exits 1 when its OWN coverage/validity gate finds a required cell unproducible --
+  # that IS the premise failure this arm asserts, and the table it wrote is the evidence. It also
+  # exits non-zero when the apparatus itself broke (unreadable manifest, crash mid-write). Both
+  # would make the gate go STRUCTURAL, and asserting the STRUCTURAL code on a broken apparatus
+  # would be a check that cannot fail for its stated reason. So the tolerance is bounded by ONE
+  # thing: a table in which EVERY required manifest id has a row. A required id with no row is not
+  # a premise failure to be reported -- it is the apparatus failing to account for a cell it is
+  # supposed to judge, and this arm must not launder it into a STRUCTURAL red.
+  _missing="$(awk -F'\t' '
+      FNR==NR { if (FNR>1 && $0 !~ /^#/ && NF && $8=="1") req[$1]=1; next }
+      FNR>1   { seen[$1]=1 }
+      END     { for (i in req) if (!(i in seen)) printf "%s ", i }
+    ' "$MANIFEST" "$WORK/analyze.tsv")"
+  if [ -n "$_missing" ]; then
+    echo "   ERROR: the analyzer's table is MISSING rows for required id(s):" >&2
+    echo "          $_missing" >&2
+    echo "          An incomplete table is not a valid RED (analyzer rc=$AN_RC, aborting)." >&2
+    tail -5 "$WORK/analyze.err" >&2; exit 1
+  fi
+  if [ "$AN_RC" -ne 0 ]; then
+    echo "   NOTE: the analyzer exited $AN_RC but accounted for every required id ($(wc -l < "$WORK/analyze.tsv") rows):"
+    echo "         it is REPORTING the premise failure, which is the state this arm asserts."
+    head -3 "$WORK/analyze.err" | sed 's/^/   | /'
+  fi
+}
+
+run_gate() {  # [$1 = current TSV; default $WORK/analyze.tsv]  [$@:2 = extra gate flags].
+              # Sets GRC. Exits 0 either way (RED is expected here).
+  local cur="${1:-$WORK/analyze.tsv}"
+  if [ ! -s "$cur" ]; then
+    GRC=99
+    printf 'no current TSV to judge: %s\n' "$cur" > "$WORK/gate.txt"
+    return 0
+  fi
+  set +e
+  python3 "$GATE" --baseline "$BASE" --current "$cur" "${GATE_ARGS[@]}" "${@:2}" \
     > "$WORK/gate.txt" 2>&1
   GRC=$?
   set -e
@@ -379,14 +521,22 @@ report_arm() {  # $1 = arm label
 #     neither. Stating it that way is what keeps the lock correct when a cell is intentionally
 #     optional, and the vacuity guards below stop that tolerance being widened until the whole
 #     rule is empty.
-#   * the current manifest's sync cells (`part == vco_a_sync_tri`) must all be RENDERED, and must
+#   * the current manifest's sync cells (`path == vco_a_sync_tri`) must all be RENDERED, and must
 #     all be required=1. "How many new cells" is a property of the declaration, not of this script.
+#     ⚠️ The part NAME lives in the manifest's `path` column. The `part` column holds the STIMULUS
+#     (`220`/`440`/`880`, `l0`/`p20`/`t50`, or the sample rate) and NEVER a part name -- keying this
+#     clause on `part` made it unsatisfiable, so the clause was silently vacuous from the day it was
+#     written while the fixture below (hand-shaped to match the code) kept reporting it GREEN. The
+#     fixture now takes its header and its column positions FROM THE PRODUCER, and case (l) pins the
+#     exact regression: a manifest that spells the part name in the STIMULUS column declares no sync
+#     cell and must be RED.
 #   * every id present in BOTH renders must be byte-identical in its *.raw payload.
 #
 # Because the expectation comes from a manifest that neither render can edit, "the render lost a
 # declared cell", "the render invented a cell" and "both sides drifted together" are each RED --
 # none of which a shared-count comparison can see.
-ids_equivalent() {  # $1=A dir(pre-S5)  $2=B dir(product)  $3=pre-S5 manifest  $4=current manifest  $5=label
+ids_equivalent() {  # $1=A dir(pre-S5)  $2=B dir(product)  $3=pre-S5 manifest  $4=current manifest
+                    # $5=label  [$6="allow-sync-absent" — nc1 only; see the clause in the script]
   local out rc script
   # The comparison script is written to a file with a TOP-LEVEL here-document and then run BY PATH.
   # It is deliberately NOT inlined as `out="$(python3 - <<'PY' ... PY)"`: a here-document nested in a
@@ -435,10 +585,10 @@ def manifest_rows(p):
     rows = []
     with fh:
         hdr = fh.readline().rstrip("\n").split("\t")
-        for k in ("id", "required", "part"):
+        for k in ("id", "required", "path"):
             if k not in hdr:
                 sys.exit("ERROR: %s lacks the %s column" % (p, k))
-        ii, ir, ip = hdr.index("id"), hdr.index("required"), hdr.index("part")
+        ii, ir, ip = hdr.index("id"), hdr.index("required"), hdr.index("path")
         for ln in fh:
             c = ln.rstrip("\n").split("\t")
             if len(c) <= max(ii, ir, ip) or not c[ii].strip():
@@ -449,6 +599,15 @@ def manifest_rows(p):
 
 a, b = load_ids(sys.argv[1]), load_ids(sys.argv[2])
 pre_rows, cur_rows = manifest_rows(sys.argv[3]), manifest_rows(sys.argv[4])
+# argv[5] is optional: the literal token "allow-sync-absent" relaxes the sync-presence clause for
+# the ONE arm whose mutation is supposed to block the sync cells (nc1). It is a literal token, not
+# a truthy flag, so a typo'd positional argument cannot silently switch the clause off. An EMPTY
+# 6th argument counts as absent -- the shell wrapper always passes the slot, so "" must mean "not
+# set" rather than reaching the typo guard (the lock self-test caught exactly that).
+_sixth = sys.argv[5] if len(sys.argv) > 5 else ""
+if _sixth and _sixth != "allow-sync-absent":
+    sys.exit("ERROR: unrecognized 6th argument %r (only 'allow-sync-absent' is defined)" % _sixth)
+allow_sync_absent = (_sixth == "allow-sync-absent")
 # required==1 is the same column the analyzer's fail-closed coverage predicate keys on, so the
 # expectation moves with the declaration instead of being a number written down here.
 expect_pre = {i for i, req, _ in pre_rows if req == "1"}
@@ -459,7 +618,7 @@ expect_cur = {i for i, req, _ in cur_rows if req == "1"}
 # tolerance from being abused to make the whole rule empty.
 allow_pre = {i for i, _, _ in pre_rows}
 allow_cur = {i for i, _, _ in cur_rows}
-expect_new = {i for i, _, part in cur_rows if part == "vco_a_sync_tri"}
+expect_new = {i for i, _, path in cur_rows if path == "vco_a_sync_tri"}
 
 fails = []
 if not expect_pre or not expect_cur:
@@ -490,14 +649,40 @@ extra_b = sorted(set(b) - allow_cur)
 if extra_b:
     fails.append("product render produced %d id(s) its manifest does not declare: %s"
                  % (len(extra_b), extra_b[:6]))
-sync_absent = sorted(expect_new - set(b))
+# "Rendered" means the row carries a *.raw PAYLOAD. A bare set-of-ids check cannot see the third
+# state -- declared, present as a row, not rendered -- and that state is exactly how a fail-closed
+# probe records a premise failure: it writes a row per declared cell with an EMPTY raw field. Such
+# a cell must not be readable as "produced" by this lock.
+rendered_b = set(cid for cid, raw in b.items() if raw)
+sync_absent = sorted(c for c in expect_new if c not in rendered_b)
 if sync_absent:
-    fails.append("the declared sync cells were NOT rendered: %d missing %s"
-                 % (len(sync_absent), sync_absent[:6]))
+    if not allow_sync_absent:
+        fails.append("the declared sync cells were NOT rendered: %d missing %s"
+                     % (len(sync_absent), sync_absent[:6]))
+    elif len(sync_absent) != len(expect_new):
+        fails.append("allow-sync-absent was passed, but only %d of %d declared sync cells are "
+                     "absent from B -- the flag explains a WHOLE blocked group or nothing at all; "
+                     "a partial absence is a different failure, not this one"
+                     % (len(sync_absent), len(expect_new)))
+    else:
+        print("NOTE: allow-sync-absent: all %d declared sync cells are ABSENT from B. The arm "
+              "asserts that absence, and the probe's named reason for it, separately."
+              % len(sync_absent))
+elif allow_sync_absent:
+    fails.append("allow-sync-absent was passed but every declared sync cell WAS rendered -- the "
+                 "flag is not justified for this render, so it would be a silent weakening")
 
 # ---- the default behaviour must be untouched: every shared id byte-identical ---------------------
+# `sync_absent` cells are excluded here on purpose: they are still rows in B, so they enter the
+# intersection only if the A side declares them too, and their empty payload would otherwise be
+# reported as a missing file -- a confusing second failure for a cell whose absence is already
+# named above. This is a de-duplication of the message, NOT a tolerance: the clause above is what
+# decides whether that absence is legitimate, and it fails closed for every arm but the one that
+# passed the literal flag.
 differ, missing_file = [], []
 for cid in sorted(set(a) & set(b)):
+    if cid in sync_absent:
+        continue
     fa, fb = os.path.join(sys.argv[1], a[cid]), os.path.join(sys.argv[2], b[cid])
     if not (os.path.isfile(fa) and os.path.isfile(fb)):
         missing_file.append(cid)
@@ -518,7 +703,7 @@ for f in fails:
 sys.exit(1 if fails else 0)
 PY
   set +e
-  out="$(python3 "$script" "$1" "$2" "$3" "$4" 2>&1)"; rc=$?
+  out="$(python3 "$script" "$1" "$2" "$3" "$4" "${6:-}" 2>&1)"; rc=$?
   set -e
   rm -f "$script"
   echo "   $out"
@@ -526,8 +711,14 @@ PY
     echo "   FAIL: $5 — the default-behaviour id-set lock is RED (see LOCK-FAIL above)." >&2
     return 1
   fi
-  echo "   OK: $5 — every declared-required cell rendered, no undeclared cell in either render,"
-  echo "       the declared sync cells present, and every shared cell BYTE-IDENTICAL."
+  if [ "${6:-}" = "allow-sync-absent" ]; then
+    echo "   OK: $5 — every declared-required pre-existing cell rendered, no undeclared cell in"
+    echo "       either render, every shared cell BYTE-IDENTICAL, and all declared sync cells"
+    echo "       ABSENT as declared by this arm."
+  else
+    echo "   OK: $5 — every declared-required cell rendered, no undeclared cell in either render,"
+    echo "       the declared sync cells present, and every shared cell BYTE-IDENTICAL."
+  fi
   return 0
 }
 
@@ -550,23 +741,95 @@ PY
 #   (e) the sync-cell declaration empties  -> the vacuity guard on the expectation
 #   (f) an undeclared extra id in A        -> the pre-S5 side is bound by its own manifest too
 #   (g) a sync cell declared required=0    -> the declaration is internally inconsistent
+#   (control 3) the literal `allow-sync-absent` flag with the WHOLE sync group blocked stays GREEN,
+#               and (h) the same render WITHOUT the flag is RED -- together these show the flag
+#               removes exactly one red case and is not a no-op
+#   (i) the flag passed where the sync cells WERE rendered -> the flag is unjustified, RED
+#   (j) the flag passed AND a pre-existing cell missing   -> still RED: it covers the sync clause only
+#   (k) the flag passed with only PART of the sync group blocked -> RED: all of it or none of it
+#   (l) the part name spelled in the manifest's STIMULUS column -> RED: the sync declaration must be
+#       read from the producer's `path` column. Keying it on `part` made the clause unsatisfiable,
+#       i.e. silently vacuous, which is the bug this case now pins.
 ids_equivalent_selftest() {
   local d rc fails n ok
+  n=0
   d="$(mktemp -d)"
-  # pre-S5 declares c1..c3; the current manifest adds the sync cell s1 (part = vco_a_sync_tri).
-  printf 'id\trequired\tpart\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\n' > "$d/pre.tsv"
-  printf 'id\trequired\tpart\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\ns1\t1\tvco_a_sync_tri\n' > "$d/cur.tsv"
-  printf 'id\trequired\tpart\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\n' > "$d/cur-nosync.tsv"
+  # ---- the manifest fixtures -------------------------------------------------------------------
+  # The header line AND every column position are taken from the PRODUCER (`$MANIFEST`), never
+  # written by hand here. A hand-shaped header only proves this script agrees with itself, and that
+  # is exactly how the `part`/`path` mix-up survived: the old fixtures spelled the part name in
+  # `part`, which no real manifest row ever does (the producer's `part` column holds the STIMULUS:
+  # 220/440/880, l0/p20/t50, or the sample rate). Rows are given as "id:required:pathname:stim",
+  # and the stim value is written to BOTH `stim` and `part` because that is the producer's shape.
+  fx_manifest() {  # $1=out  $2...=rows
+    local out="$1"; shift
+    awk -F'\t' -v OFS='\t' -v rows="$*" '
+      NR==1 { n=NF; for (i=1;i<=NF;i++) idx[$i]=i; print; next }
+      { next }
+      END {
+        m=split(rows,R," ")
+        for (k=1;k<=m;k++) {
+          split(R[k],F,":")
+          for (i=1;i<=n;i++) col[i]="-"
+          if (idx["id"])       col[idx["id"]]=F[1]
+          if (idx["required"]) col[idx["required"]]=F[2]
+          if (idx["path"])     col[idx["path"]]=F[3]
+          if (idx["stim"])     col[idx["stim"]]=F[4]
+          if (idx["part"])     col[idx["part"]]=F[4]
+          s=""; for (i=1;i<=n;i++) s = s (i>1?OFS:"") col[i]
+          print s
+        }
+      }' "$MANIFEST" > "$out"
+    # A projection is only meaningful if the producer really carries the columns claimed above: if
+    # `path` or `required` were missing every row would read "-" and the fixture would silently be
+    # an EMPTY declaration again, i.e. the very failure this rewrite exists to prevent.
+    local ncol nrow ipos
+    ncol="$(head -1 "$out" | awk -F'\t' '{print NF}')"
+    nrow="$(( $(wc -l < "$out") - 1 ))"
+    ipos="$(head -1 "$out" | tr '\t' '\n' | grep -n -x -e path -e required | wc -l | tr -d ' ')"
+    if [ "${ipos:-0}" -ne 2 ] || [ "$nrow" -lt 1 ]; then
+      echo "   SELFTEST SETUP FAIL: fixture $out is not producer-shaped (ncol=$ncol named_cols=$ipos rows=$nrow)" >&2
+      fx_fail=1
+      return 0
+    fi
+  }
+  fx_one() {  # the single pre-existing part name, used for every non-sync fixture cell
+    echo "vco_a_tri"
+  }
+  fx_fail=0
+  # pre-S5 declares c1..c3; the current manifest adds the sync cell s1, whose part NAME is
+  # `vco_a_sync_tri` (in `path`) and whose stimulus is 220.
+  fx_manifest "$d/pre.tsv"        "c1:1:$(fx_one):220 c2:1:$(fx_one):220 c3:1:$(fx_one):220"
+  fx_manifest "$d/cur.tsv"        "c1:1:$(fx_one):220 c2:1:$(fx_one):220 c3:1:$(fx_one):220 s1:1:vco_a_sync_tri:220"
+  fx_manifest "$d/cur-nosync.tsv" "c1:1:$(fx_one):220 c2:1:$(fx_one):220 c3:1:$(fx_one):220"
   # c0 is DECLARED-BUT-OPTIONAL (required=0): produces no violation whether present or absent.
-  printf 'id\trequired\tpart\nc0\t0\t-\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\n' > "$d/pre-opt.tsv"
+  fx_manifest "$d/pre-opt.tsv"    "c0:0:$(fx_one):220 c1:1:$(fx_one):220 c2:1:$(fx_one):220 c3:1:$(fx_one):220"
   # internal inconsistency: a sync cell declared required=0 instead of 1.
-  printf 'id\trequired\tpart\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\ns1\t0\tvco_a_sync_tri\n' > "$d/cur-sync-optional.tsv"
+  fx_manifest "$d/cur-sync-optional.tsv" "c1:1:$(fx_one):220 c2:1:$(fx_one):220 c3:1:$(fx_one):220 s1:0:vco_a_sync_tri:220"
+  # TWO declared sync cells, for the "the flag explains a WHOLE blocked group or nothing" guard.
+  fx_manifest "$d/cur-2sync.tsv"  "c1:1:$(fx_one):220 c2:1:$(fx_one):220 c3:1:$(fx_one):220 s1:1:vco_a_sync_tri:220 s2:1:vco_a_sync_tri:220"
+  # (l) THE REGRESSION, pinned: the part name spelled in the STIMULUS column while `path` names a
+  #     non-sync part. This is precisely the shape the old `part == vco_a_sync_tri` predicate was
+  #     satisfied by, and no real manifest row has it -- so it must declare NO sync cell and be RED.
+  fx_manifest "$d/cur-name-in-stim.tsv" "c1:1:$(fx_one):220 c2:1:$(fx_one):220 c3:1:$(fx_one):220 s1:1:$(fx_one):vco_a_sync_tri"
+  if [ "$fx_fail" -ne 0 ]; then
+    echo "   SELFTEST RESULT: FAIL — the manifest fixtures could not be projected from the producer." >&2
+    rm -rf "$d"
+    return 1
+  fi
 
-  mk() {  # $1=dir  $2=ids  $3=c1 byte payload
+  mk() {  # $1=dir  $2=ids  $3=c1 byte payload. An id prefixed with '?' is written as a BLOCKED
+          # row -- present, with an EMPTY payload and no *.raw file -- which is exactly how the
+          # fail-closed probe records a cell whose premise did not hold.
     : > "$1/gh19_scenarios.tsv"
     printf 'id\traw\n' >> "$1/gh19_scenarios.tsv"
-    local c
-    for c in $2; do
+    local spec c
+    for spec in $2; do
+      c="${spec#\?}"
+      if [ "$spec" != "$c" ]; then
+        printf '%s\t\n' "$c" >> "$1/gh19_scenarios.tsv"
+        continue
+      fi
       printf '%s\t%s.raw\n' "$c" "$c" >> "$1/gh19_scenarios.tsv"
       if [ "$c" = "c1" ]; then printf '%s' "$3" > "$1/$c.raw"; else printf 'x' > "$1/$c.raw"; fi
     done
@@ -575,12 +838,13 @@ ids_equivalent_selftest() {
   fails=0
   # Each RED case must be red for ITS OWN NAMED REASON -- a bare "non-zero exit" would also be
   # satisfied by a crash, a missing interpreter or a typo'd path, none of which is the lock working.
-  expect_lock() {  # $1=A ids $2=B ids $3=a c1 payload $4=b c1 payload $5=want(ok|red) $6=label $7=red reason [$8=current manifest] [$9=pre-S5 manifest]
+  expect_lock() {  # $1=A ids $2=B ids $3=a c1 payload $4=b c1 payload $5=want(ok|red) $6=label $7=red reason [$8=current manifest] [$9=pre-S5 manifest] [$10="allow-sync-absent"]
     local out rc cur="${8:-$d/cur.tsv}" pre="${9:-$d/pre.tsv}"
+    n=$((n + 1))
     rm -rf "$d/A" "$d/B"; mkdir -p "$d/A" "$d/B"
     mk "$d/A" "$1" "$3"; mk "$d/B" "$2" "$4"
     set +e
-    out="$(ids_equivalent "$d/A" "$d/B" "$pre" "$cur" "$6" 2>&1)"; rc=$?
+    out="$(ids_equivalent "$d/A" "$d/B" "$pre" "$cur" "$6" "${10:-}" 2>&1)"; rc=$?
     set -e
     if [ "$5" = "ok" ]; then
       if [ "$rc" -ne 0 ]; then
@@ -635,12 +899,49 @@ ids_equivalent_selftest() {
   expect_lock "c1 c2 c3" "c1 c2 c3 s1" "v" "v" red "(g)sync_declared_optional" \
               "not all required=1" "$d/cur-sync-optional.tsv"
 
+  # ---- the `allow-sync-absent` relaxation (nc1's arm). A relaxation is the most dangerous kind of
+  # change to a lock: it removes a red case by construction, so every case below exists to show it
+  # removes EXACTLY one clause, and only where the flag was literally passed.
+  #
+  # (control 3) the flag with the WHOLE declared sync group blocked -> GREEN. This is the state nc1
+  #     produces: the probe refuses the sync cells, writes a row per cell with no payload, and
+  #     nc1 asserts that absence and its named cause itself. Without this control the flag would
+  #     look like a pure weakening.
+  expect_lock "c1 c2 c3" "c1 c2 c3 ?s1" "v" "v" ok  "control_blocked_sync_group_allowed" "" \
+              "$d/cur.tsv" "$d/pre.tsv" "allow-sync-absent"
+  # (h) THE SAME RENDER WITHOUT THE FLAG must still be RED. If it were not, the flag would be a
+  #     no-op and every other case here would be measuring nothing.
+  expect_lock "c1 c2 c3" "c1 c2 c3 ?s1" "v" "v" red "(h)blocked_without_flag" \
+              "were NOT rendered"
+  # (i) the flag passed but the sync cells ARE rendered -> RED. A flag that silently did nothing
+  #     would leave a future reader believing a relaxation was in force when it was not.
+  expect_lock "c1 c2 c3" "c1 c2 c3 s1" "v" "v" red "(i)flag_unjustified" \
+              "not justified for this render" "$d/cur.tsv" "$d/pre.tsv" "allow-sync-absent"
+  # (j) the flag passed AND a pre-existing cell is missing -> still RED. The relaxation covers the
+  #     sync-clause only; the inclusion rule that protects the 84 pre-existing cells is untouched.
+  expect_lock "c1 c2 c3" "c1 c3 ?s1" "v" "v" red "(j)flag_does_not_cover_preexisting" \
+              "product render is MISSING" "$d/cur.tsv" "$d/pre.tsv" "allow-sync-absent"
+  # (k) the flag passed with only PART of the declared sync group blocked -> RED. "All of it or
+  #     none of it" is what keeps the flag from becoming a general tolerance for absent sync cells.
+  expect_lock "c1 c2 c3" "c1 c2 c3 ?s1 s2" "v" "v" red "(k)flag_partial_absence" \
+              "only 1 of 2" "$d/cur-2sync.tsv" "$d/pre.tsv" "allow-sync-absent"
+  # (l) the part name spelled in the STIMULUS column -> RED. The lock must read the part NAME from
+  #     the producer's `path` column; a declaration that only LOOKS like one (the name sitting in
+  #     `part`, which is where the stimulus lives) is not a declaration at all. Without this case
+  #     the predicate could silently revert to `part` and every other case here would stay green,
+  #     because the fixtures are projected from the same producer and would follow it back.
+  expect_lock "c1 c2 c3" "c1 c2 c3 s1" "v" "v" red "(l)sync_name_in_stim_column" \
+              "declares NO vco_a_sync_tri cell" "$d/cur-name-in-stim.tsv"
+
   rm -rf "$d"
   if [ "$fails" -ne 0 ]; then
-    echo "   SELFTEST RESULT: FAIL — $fails case(s)" >&2
+    echo "   SELFTEST RESULT: FAIL — $fails of $n case(s)" >&2
     return 1
   fi
-  echo "   SELFTEST RESULT: PASS — controls GREEN; (a)..(g) each RED for its own named reason."
+  # The count is printed, not implied: a case that silently stopped being executed would otherwise
+  # leave this function reporting PASS on fewer cases than the list above claims to cover.
+  echo "   SELFTEST RESULT: PASS — $n case(s): controls GREEN; (a)..(l) each RED for its own named"
+  echo "   reason, and the allow-sync-absent flag removes exactly one of them."
   return 0
 }
 
@@ -666,6 +967,61 @@ else
   echo "         would be untrustworthy, so this run is aborted before any render." >&2
   echo "RESULT: FAIL — lock self-test did not pass."
   exit 1
+fi
+echo
+
+########################################################################################
+# [G] THE GATE'S OWN CONTROLS, RUN IN THIS ROUND.
+#
+# The gate ships a control suite of its own (`--self-check`) covering both failure surfaces this
+# runner also asserts from the outside: "absent criterion" must be STRUCTURAL rc=2 naming
+# "NO criterion", while "removal" and "one-below-880" must be JUDGEMENT rc=1 naming their own
+# rules. Those fixtures are synthetic, but their LAYOUT is not:
+# `self_check()` pins its column indices against the analyzer's REAL header before any control
+# runs, so a producer-side column change fails here rather than silently validating the wrong
+# field. Running it in-round means the gate is asked to account for itself in the same run whose
+# verdicts this runner reports.
+#
+# WHAT THIS ARM DOES AND DOES NOT CLAIM — stated narrowly, because the honest version is weaker
+# than it first looks:
+#   IT DOES witness that the gate's suite returns rc=0 and prints its PASS line, i.e. none of the
+#   gate's controls failed. `self_check()` appends every failure to one list and `main()` folds
+#   that list into rc, so rc=0 is behavioral rather than decorative.
+#   IT DOES NOT witness that all of the controls RAN. The PASS line is a HARDCODED string
+#   (`check_gh19_hardsync_acceptance.py:505`) printed whenever the failure list is empty, and the
+#   per-control labels ("vacuous-anchor", "premise-broken", ...) are used only inside `fails`
+#   messages -- they are never printed on a PASS. So grepping for those names would pass even if a
+#   control had been deleted from `self_check()`. That grep is deliberately NOT made here: a check
+#   that cannot fail for its stated reason is worse than no check.
+# The gap that leaves -- "did a control silently disappear?" -- is not closable from outside the
+# gate, and it is not what this slice's evidence rests on. What this runner relies on is the
+# REAL-RENDER arm below: nc1's own render is the in-round witness that the STRUCTURAL rc=2 code
+# path is live on a production mutation, and nc3/nc4 are the same for judgement rc=1.
+echo "[G] gate self-check (the acceptance gate's own controls, in this round)"
+GATE_SC_FAILED=0
+set +e
+python3 "$GATE" --self-check > "$WORK/gate-selfcheck.txt" 2>&1
+GATE_SC_RC=$?
+set -e
+if [ "$GATE_SC_RC" -ne 0 ]; then
+  echo "   FAIL: the gate's self-check is RED (rc=$GATE_SC_RC) — the gate's own controls are not" >&2
+  echo "         satisfied, so no verdict it produces in this round can be trusted." >&2
+  sed -n '1,30p' "$WORK/gate-selfcheck.txt" >&2
+  GATE_SC_FAILED=1
+else
+  _sc_fail=""
+  grep -qF "self-check PASS" "$WORK/gate-selfcheck.txt" \
+    || _sc_fail="rc=0 but the PASS line was not printed (the suite did not reach its summary)"
+  grep -qF "FAILED" "$WORK/gate-selfcheck.txt" \
+    && _sc_fail="${_sc_fail:+$_sc_fail; }rc=0 but the report says FAILED"
+  if [ -n "$_sc_fail" ]; then
+    echo "   FAIL: the gate's self-check returned rc=0 but: $_sc_fail" >&2
+    sed -n '1,30p' "$WORK/gate-selfcheck.txt" >&2
+    GATE_SC_FAILED=1
+  else
+    echo "   OK: rc=0 and PASS line present — none of the gate's own controls failed in this"
+    echo "       round. (Which controls RAN is not observable from outside the gate; see above.)"
+  fi
 fi
 echo
 
@@ -724,24 +1080,50 @@ NC1_RED=0
 NC2_RED=0
 NC3_RED=0
 NC4_RED=0
+NC5_RED=0
 
 # nc1: the consumer removed. The jack is still patched (the probe's cable and the binding are
-# untouched), so the slave free-runs at its own f0 -- which is NOT M-periodic. The analyzer
-# therefore fails closed (no criterion) and the gate must go STRUCTURAL (rc=2), NOT judgement.
-# Its 84 pre-existing cells must also be byte-identical to the literal pre-S5 render, which is
-# how "removing the consumer changes nothing else" is measured rather than assumed.
+# untouched), so the slave free-runs at its own f0 -- which is NOT M-periodic.
+#
+# RE-REGISTERED 2026-09-13 from a MEASUREMENT (`scratch/nc1_repro.sh`), not by moving the old
+# expectation to whatever the mutant did. Items 2 and 4 of the seven-item package added probe-side
+# reconciliations that fire on this exact mutation, so the consumer's removal is now caught on TWO
+# surfaces by THREE separately-named assertions:
+#   * PROBE_RC=65 = bit 1 (a required cell was not produced) | bit 64 (item 4's DeviceState cable
+#     produced no master-grid resets). Each half is asserted with its OWN reason string below.
+#   * the analyzer returns rc=1 and says `required-cell-missing ... [not-produced:sync-timing: no
+#     reset was ever applied ...]` for all 12 sync cells: it REFUSES to answer, while still writing
+#     a row for every required id. That is why this arm calls `measure_keeps_render` rather than
+#     `measure` -- `measure` aborts on ANY non-zero probe exit, so the old registration had become
+#     UNREACHABLE rather than wrong, and an unreachable arm reads as a pass for the wrong reason.
+#   * the gate then goes STRUCTURAL rc=2 naming `NO criterion`, i.e. the original registration still
+#     holds -- reached through the probe's refusal rather than instead of it.
+# A probe-owned VALIDITY red and a gate STRUCTURAL red are different claims (see the header), so
+# both are asserted here with their own names and their own expected codes; neither can pass by
+# reading the other's evidence, and `run_gate` reads only the table THIS call wrote.
 echo
 echo "[B/nc1] consumer_removed — vcA_.requestSync() call site unwired"
 restore_source
 py_splice "$RT" "$CONSUMER_BLOCK" "" 1
 build_probe
-measure
+measure_keeps_render
+expect_failclosed "nc1_consumer_removed (item 2: the per-cell timing premise)" \
+  "required cell not produced [sync-timing: no reset was ever applied" || NC_FAILED=1
+expect_failclosed "nc1_consumer_removed (item 4: the DeviceState cable)" \
+  "the sync cable declared in the DeviceState did NOT produce master-grid resets" || NC_FAILED=1
 if [ "$PRE_RENDERED" -eq 1 ]; then
-  # LOCK (replaces the old bare `raws_equal_by_id`): asserted as a SET against the manifest-declared
-  # expectation, so a cell that vanishes from BOTH sides -- or from either side -- is RED here
-  # instead of passing on a matching shared count. `raws_equal_by_id` is still run underneath.
+  # LOCK (replaces the old bare `raws_equal_by_id`, which was REMOVED entirely rather than kept
+  # underneath): asserted as a SET against the manifest-declared expectation, so a cell that
+  # vanishes from BOTH sides -- or from either side -- is RED here instead of passing on a matching
+  # shared count. Byte-identity of the shared cells is one of the clauses below.
+  #
+  # `allow-sync-absent` is passed because this is the ONE arm whose whole subject is that the
+  # declared sync cells are NOT rendered: the lock relaxes exactly that clause, only when the WHOLE
+  # declared sync group is absent, and its own self-test proves partial absence, an unjustified
+  # flag, and a missing pre-existing cell all stay RED. The arm asserts the absence and its named
+  # cause separately, in the two expect_failclosed calls above.
   if ids_equivalent "$WORK/pre-s5-out" "$WORK/probe-out" "$PRE_MANIFEST" "$MANIFEST" \
-                    "nc1_vs_pre-s5" > "$WORK/eq-nc1.txt" 2>&1; then
+                    "nc1_vs_pre-s5" "allow-sync-absent" > "$WORK/eq-nc1.txt" 2>&1; then
     cat "$WORK/eq-nc1.txt"
     echo "   OK: nc1's render is the pre-S5 set exactly, plus only the declared sync cells,"
     echo "       and every pre-existing cell is BYTE-IDENTICAL to the literal pre-S5 source."
@@ -754,8 +1136,8 @@ if [ "$PRE_RENDERED" -eq 1 ]; then
   fi
 fi
 run_gate
-# nc1's signature is the STRUCTURAL code: the analyzer refused to answer, so the gate reports a
-# required cell with no criterion instead of a cell that missed a threshold.
+# nc1's gate signature is the STRUCTURAL code: the analyzer refused to answer, so the gate reports
+# a required cell with no criterion instead of a cell that missed a threshold.
 expect_red "nc1_consumer_removed" "NO criterion" 2 || NC_FAILED=1
 NC1_RED="$(red_count)"
 report_arm nc1
@@ -782,25 +1164,38 @@ NC2_RED="n/a — probe refused; no criterion reached the gate"
 # nc3: the full-scale kernel — `out -= jmp`. This is the "copied the S2 kernel" error: S2's
 # polyblepSaw subtracts the FULL-scale residual because a saw wrap spans the whole range,
 # whereas a hard-sync jump J is arbitrary and only its causal half belongs on this sample.
-# PRE-REGISTERED before this revision was run: the probe ACCEPTS (the deviation from the
-# correct kernel is 0.5*jmp — the same magnitude as omitting the term entirely, which nc4
-# shows stays in range) and the gate produces a real criterion that misses the threshold:
-# a JUDGEMENT red, rc=1, naming `220/440:>=`.
+#
+# RE-REGISTERED 2026-09-13 from a MEASUREMENT, and the original registration is WITHDRAWN rather
+# than quietly re-read. It was pre-registered as a JUDGEMENT red (probe accepts -> gate rc=1
+# naming `220/440:>=`, which v2 did measure at red=12/12). In v3 the probe REFUSES this mutant
+# FIRST: item 4's DeviceState cable check reconstructs the reset frame from the produced audio and
+# reconciles it with the master's own published edge, and this kernel's doubled correction moves
+# that reconstruction by one frame -> `SYNC-STATE-CABLE ... reset #0 reconstructed at frame 512
+# but the master's own published output has NO rising edge there (the preceding master edge is at
+# frame 511, i.e. the reset is 1 frame(s) LATE)`, exit 65, PARTIAL: 87 cells produced / 9 of the 12
+# sync cells blocked. So the judgement verdict this arm pre-registered is UNMEASURABLE, and saying
+# so is the honest outcome: nc4 carries the judgement path (it is the load-bearing control for it),
+# and what nc3 now witnesses is that a PARTIAL refusal still escalates to the gate's STRUCTURAL
+# code -- a claim nc1, which refuses all 12, cannot make.
+# ⚠️ For @Codex's ruling: this mutant is an AMPLITUDE error, not a timing one, yet it trips a
+# criterion whose reason string names a TIMING cause. The refusal is correct (fail-closed: this
+# render does not establish that the reset lands on the master edge), but the reason is a symptom,
+# not a cause, and a reader must not take it as "this arm deferred the reset".
 echo
 echo "[B/nc3] full_scale_kernel — out -= jmp (the S2 kernel copied without the 1/2)"
 restore_source
 py_splice "$VCO" "$JMP_FIXED" "$JMP_NC3" 1
 build_probe
-measure_may_fail_closed
-NC3_RED="n/a — probe refused; no criterion reached the gate"
-if require_criterion "nc3_full_scale_kernel"; then
-  run_gate
-  expect_red "nc3_full_scale_kernel" "220/440:>=" 1 || NC_FAILED=1
-  NC3_RED="$(red_count)"
-  report_arm nc3
-else
-  NC_FAILED=1
-fi
+# `measure_keeps_render`, NOT `measure_may_fail_closed`: the latter returns before running the
+# analyzer, so `$WORK/analyze.tsv` would still hold nc1's table and the gate call below would
+# report someone else's verdict. This arm needs a table written by THIS call.
+measure_keeps_render
+expect_failclosed "nc3_full_scale_kernel (item 4: the DeviceState cable reconstruction)" \
+  "the sync cable declared in the DeviceState did NOT produce master-grid resets" || NC_FAILED=1
+run_gate
+expect_red "nc3_full_scale_kernel" "NO criterion" 2 || NC_FAILED=1
+NC3_RED="$(red_count)"
+report_arm nc3
 
 # nc4: the DEFERRED reset KEPT but the band-limiting term dropped. The premise still holds
 # (the reset still happens every M samples => the cell is still M-periodic), so this arm must
@@ -823,6 +1218,33 @@ if require_criterion "nc4_correction_absent"; then
 else
   NC_FAILED=1
 fi
+
+# nc5: the reset DEFERRED BY ONE FRAME. Same consumer, same cable, same edge detector, same
+# kernel -- only the frame on which `requestSync()` is called moves, by exactly one. This is the
+# arm the entire item-2 criterion exists for, and the reason it has to exist is that NO
+# residual-based figure can see it: a criterion evaluated over an M-periodic signal is invariant
+# under a global shift of the same samples by one cell, which is @Codex's 908f36e7 experiment
+# (shifting the periodic samples by one whole cell left the analyzer's answer bit-for-bit
+# unchanged: residual -31.7247754567 dB, gap 14.0525637166, per=0). A gate that only ever
+# compares such figures would call this mutant GREEN no matter how many other arms pass.
+# PRE-REGISTERED: the deferral breaks the cell's stated premise -- the reset is no longer applied
+# on the frame the master's own published output rises -- so the probe VOIDS the cell
+# fail-closed (per-cell signal `sync-timing: ...`, non-zero exit) and no criterion reaches the
+# gate. Its evidence is therefore the PROBE-OWNED counterpart, exactly like nc2: the refusal must
+# happen AND must name the timing criterion, not merely exit non-zero.
+echo
+echo "[B/nc5] sync_deferred_one_frame — requestSync() latched and applied on the NEXT frame"
+restore_source
+py_splice "$RT" "$CONSUMER_BLOCK" "$CONSUMER_BLOCK_DEFER" 1
+py_splice "$RT" "$SYNC_MEMBER_ANCHOR" "$SYNC_MEMBER_DEFER" 1
+build_probe
+measure_may_fail_closed
+expect_failclosed "nc5_sync_deferred_one_frame" "the reset is 1 frame(s) LATE" || NC_FAILED=1
+if [ "$PROBE_RC" -ne 0 ]; then
+  echo "   gate not run for nc5: the premise the 12 cells rest on is void, so there is nothing"
+  echo "   for the gate to judge -- and running it anyway would report nc4's stale verdict."
+fi
+NC5_RED="n/a — probe refused; no criterion reached the gate"
 echo
 
 echo "=== runner summary ==="
@@ -833,19 +1255,46 @@ elif [ "$PRE_RENDERED" -eq 1 ]; then
 else
   EQWORD="not measured (rev unavailable)"
 fi
-echo "  [0]  lock self-test     : $([ "$LOCK_SELFTEST_OK" -eq 1 ] && echo 'GREEN control + (a)..(e) each RED for its own named reason' || echo 'NOT RUN')"
+echo "  [0]  lock self-test     : $([ "$LOCK_SELFTEST_OK" -eq 1 ] && echo 'GREEN controls + (a)..(l): 15 cases, each RED for its OWN named reason (incl. the three that keep the sync-absence relaxation honest, and (l) pinning the part-name column)' || echo 'NOT RUN')"
+echo "  [G]  gate self-check    : $([ "$GATE_SC_FAILED" -eq 0 ] && echo 'rc=0 + PASS (none of the gate'\''s own controls failed in THIS round)' || echo 'FAILED — see above')"
 echo "  [A]  positive           : GREEN 12/12 (rc=0)"
-echo "  nc1  consumer removed   : RED ${NC1_RED}/12 as STRUCTURAL rc=2 (named: NO criterion);"
+echo "  nc1  consumer removed   : VALIDITY red at the PROBE (exit code + two named reasons: item-2"
+echo "                           timing premise, item-4 DeviceState cable) AND STRUCTURAL rc=2 at the"
+echo "                           gate (named: NO criterion; ${NC1_RED} per-cell RED lines, which is"
+echo "                           expected — a structural red names cells with NO criterion, not"
+echo "                           cells that missed one);"
 echo "                           pre-S5 id SET rendered exactly (manifest-derived), only the"
 echo "                           declared sync cells added, pre-existing cells *.raw-identical: $EQWORD"
 echo "  nc2  jump sign flipped  : VALIDITY red at the PROBE (substitution guard, not the gate);"
 echo "                           ${NC2_RED}"
-echo "  nc3  full-scale kernel  : RED ${NC3_RED}/12 as judgement rc=1 (scale control)"
+echo "  nc3  full-scale kernel  : VALIDITY red at the PROBE (item-4 DeviceState cable reconstruction;"
+echo "                           PARTIAL — 9 of the 12 sync cells refused, 87 produced) AND STRUCTURAL"
+echo "                           rc=2 at the gate (named: NO criterion). This arm's pre-registered"
+echo "                           JUDGEMENT red is UNMEASURABLE and is WITHDRAWN, not re-read: nc4"
+echo "                           carries the judgement path."
+echo "                           What nc3 witnesses, and nc1 (a FULL refusal) cannot, is that a"
+echo "                           PARTIAL refusal ESCALATES instead of downgrading. The gate prints a"
+echo "                           row only for a cell that HAS a criterion, so the 9 refused cells are"
+echo "                           named in its problem list and get NO row at all — while the"
+echo "                           ${NC3_RED} cells that DID reach judgement all missed it (gain"
+echo "                           +0.00 dB) and ARE RED rows. The structural bucket being non-empty"
+echo "                           is what makes the exit code 2 rather than 1, even with ${NC3_RED}"
+echo "                           RED rows in the same table."
 echo "  nc4  correction absent  : RED ${NC4_RED}/12 as judgement rc=1 (load-bearing judgement control)"
+echo "  nc5  reset deferred 1f  : VALIDITY red at the PROBE (item-2 timing criterion, not the gate);"
+echo "                           ${NC5_RED}"
+if [ "$GATE_SC_FAILED" -ne 0 ]; then
+  echo "RESULT: FAIL — the acceptance gate's OWN controls ([G]) did not all hold, so no gate verdict"
+  echo "               produced in this round is admissible. See the [G] FAIL lines above."
+  exit 1
+fi
 if [ "$NC_FAILED" -ne 0 ]; then
   echo "RESULT: FAIL — a control did not behave as pre-registered, or a verdict was read from a"
   echo "               stale artifact. See the per-arm FAIL lines above."
   exit 1
 fi
-echo "RESULT: PASS — fixed arm GREEN 12/12; nc1 structural RED ${NC1_RED}/12 (pre-S5 equivalence: $EQWORD);"
-echo "               nc2 probe-refused (validity); nc3 judgement RED ${NC3_RED}/12; nc4 judgement RED ${NC4_RED}/12."
+echo "RESULT: PASS — fixed arm GREEN 12/12; nc1 probe-refused (validity, 2 named reasons) + structural"
+echo "               rc=2 RED at the gate (pre-S5 equivalence: $EQWORD);"
+echo "               nc2 probe-refused (validity); nc3 probe-refused (validity, PARTIAL, item-4) +"
+echo "               structural rc=2; nc4 judgement RED ${NC4_RED}/12;"
+echo "               nc5 probe-refused (validity, item-2 absolute-timing criterion)."
