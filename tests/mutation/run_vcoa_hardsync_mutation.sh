@@ -32,6 +32,26 @@
 # and is therefore a JUDGEMENT red. Those two exit codes are never interchangeable, so both
 # are asserted with their own expected rc and their own named rule.
 #
+# WHICH SURFACE OWNS A RED. There are two, and every arm must say which one it expects:
+#   * the PROBE's substitution guard (`peak > hi`, hi = 0.55 for these audio-domain cells --
+#     `gh19_alias_probe.cpp:161,198`) refuses the cell before any criterion exists. That is a
+#     VALIDITY red, owned by the probe, asserted by expect_failclosed;
+#   * the acceptance GATE then either finds a criterion and the cell misses it (JUDGEMENT red,
+#     rc=1, expect_red) or finds no criterion at all (STRUCTURAL, rc=2).
+# Conflating the first with the second would let "the signal was never valid" masquerade as
+# "the gate discriminated", so the two are asserted separately and an abort is never a pass.
+#
+# nc2 belongs to the FIRST kind, and that is a MEASURED correction to this runner's original
+# design rather than a preference. What decides it is the deviation from the correct kernel:
+# nc2 applies `+0.5*jmp` where the correct term is `-0.5*jmp`, so it deviates by 1.0*jmp --
+# TWICE the deviation of simply omitting the term (which is nc4 and is in range). That is
+# enough to leave the peak guard, so the probe refuses all 12 sync cells and the gate never
+# runs on them. An earlier draft predicted a judgement rc=1 here; the first real run
+# (2026-09-12) falsified that. nc3's deviation is 0.5*jmp -- the same magnitude as omitting
+# the term -- so it is expected to stay in range and produce a judgement red, and nc4 is the
+# load-bearing judgement control. Both expectations are pre-registered below, before this
+# revision is run, so a further surprise is a finding rather than a rewrite.
+#
 # ---------------------------------------------------------------------------------
 # [A2] / EQUIVALENCE. The plan requires nc1 to be byte-identical to the LITERAL pre-change
 # source, so that "equivalent to pre-change" is MEASURED rather than asserted. This runner
@@ -205,6 +225,32 @@ measure() {  # render + full-matrix analyze. Any analyzer failure ABORTS.
   fi
 }
 
+# nc2 mutates the kernel far enough that the PROBE's own substitution guard can fire before
+# the gate ever sees a cell. That is a real, informative outcome, but it is neither a
+# judgement red nor a reason to abandon the controls that have not run yet -- so this variant
+# records the probe's verdict and keeps the run alive. It deliberately does NOT fall back to
+# running the gate: with no criteria produced there is nothing for the gate to judge, and
+# running it anyway would let nc1's stale gate output be mistaken for this arm's result.
+PROBE_RC=0
+measure_may_fail_closed() {  # render; a fail-closed probe is RECORDED, not fatal.
+  PROBE_RC=0
+  rm -rf "$WORK/probe-out"; mkdir -p "$WORK/probe-out"
+  set +e
+  "$WORK/gh19_alias_probe" --out "$WORK/probe-out" >"$WORK/probe.log" 2>&1
+  PROBE_RC=$?
+  set -e
+  if [ "$PROBE_RC" -ne 0 ]; then
+    echo "   NOTE: the probe itself refused (exit $PROBE_RC) — recorded, not fatal."
+    tail -3 "$WORK/probe.log" | sed 's/^/   | /'
+    return 0
+  fi
+  if ! python3 "$ANALYZE" --dir "$WORK/probe-out" --manifest "$MANIFEST" \
+       > "$WORK/analyze.tsv" 2>"$WORK/analyze.err"; then
+    echo "   ERROR: analyzer failed (not a valid RED — aborting)." >&2
+    tail -5 "$WORK/analyze.err" >&2; exit 1
+  fi
+}
+
 run_gate() {  # $@ = extra gate flags. Sets GRC. Exits 0 either way (RED is expected here).
   set +e
   python3 "$GATE" --baseline "$BASE" --current "$WORK/analyze.tsv" "${GATE_ARGS[@]}" "$@" \
@@ -236,6 +282,43 @@ expect_red() {  # $1 = control name, $2 = required substring, $3 = expected rc (
     return 1
   fi
   echo "   OK: $name rc=$GRC, named rule present: $needle"
+  return 0
+}
+
+# The probe-owned counterpart of expect_red. A mutated kernel violent enough to leave the peak
+# guard is REFUSED before any criterion exists, so there is no rc to assert -- what must be
+# asserted is that the refusal happened AND that it happened for the pre-registered reason.
+# Accepting "the probe exited non-zero" alone would also accept a build problem or a crash.
+expect_failclosed() {  # $1 = control name, $2 = pre-registered reason substring
+  local name="$1" needle="$2"
+  if [ "$PROBE_RC" -eq 0 ]; then
+    echo "   FAIL: $name — the probe ACCEPTED this kernel (exit 0), so it is not the validity" >&2
+    echo "         red pre-registered for this arm. Re-derive the expectation from measurement." >&2
+    return 1
+  fi
+  if ! grep -qF "$needle" "$WORK/probe.log"; then
+    echo "   FAIL: $name — the probe refused (exit $PROBE_RC) but NOT for the pre-registered" >&2
+    echo "         reason '$needle'. Actual tail of the probe log:" >&2
+    tail -3 "$WORK/probe.log" >&2
+    return 1
+  fi
+  echo "   OK: $name — probe refused (exit $PROBE_RC), pre-registered reason: $needle"
+  return 0
+}
+
+# A JUDGEMENT arm may only assert a gate verdict if the probe actually produced cells. Without
+# this guard a refused probe would leave $WORK/gate.txt holding the PREVIOUS arm's output, and
+# the following expect_red would "pass" by reading someone else's result — the same
+# stale-artifact error this runner exists to prevent. A refusal here is a FAILED prediction
+# (the arm was pre-registered as a judgement red), not a pass and not a silent skip.
+require_criterion() {  # $1 = arm name. 0 iff the probe produced cells for the gate to judge.
+  local name="$1"
+  if [ "$PROBE_RC" -ne 0 ]; then
+    echo "   FAIL: $name — the probe refused (exit $PROBE_RC), so no criterion exists and the" >&2
+    echo "         judgement verdict pre-registered for this arm is UNMEASURABLE. Probe tail:" >&2
+    tail -3 "$WORK/probe.log" >&2
+    return 1
+  fi
   return 0
 }
 
@@ -428,45 +511,68 @@ NC1_RED="$(red_count)"
 report_arm nc1
 
 # nc2: the jump term ADDED instead of subtracted => the discontinuity is doubled, not removed.
+# PRE-REGISTERED before this revision was run: a PROBE-OWNED VALIDITY red. Deviation from the
+# correct kernel is 1.0*jmp -- twice the no-correction case -- which is enough to leave the
+# audio-domain peak guard, so all 12 sync cells are refused and the gate produces no criterion
+# for them. This arm therefore says NOTHING about whether the gate discriminates; nc3 and nc4
+# carry that. `report_arm` is deliberately NOT called: it reads $WORK/gate.txt, which would
+# still hold nc1's output, and reporting that as nc2's would be a fabricated result.
 echo
 echo "[B/nc2] jump_sign_flipped — out += 0.5*jmp instead of -="
 restore_source
 py_splice "$VCO" "$JMP_FIXED" "$JMP_NC2" 1
 build_probe
-measure
-run_gate
-expect_red "nc2_jump_sign_flipped" "220/440:>=" || NC_FAILED=1
-NC2_RED="$(red_count)"
-report_arm nc2
+measure_may_fail_closed
+expect_failclosed "nc2_jump_sign_flipped" "over-scale" || NC_FAILED=1
+if [ "$PROBE_RC" -ne 0 ]; then
+  echo "   gate not run for nc2: no criterion was produced, so there is nothing for it to judge."
+fi
+NC2_RED="n/a — probe refused; no criterion reached the gate"
 
 # nc3: the full-scale kernel — `out -= jmp`. This is the "copied the S2 kernel" error: S2's
 # polyblepSaw subtracts the FULL-scale residual because a saw wrap spans the whole range,
 # whereas a hard-sync jump J is arbitrary and only its causal half belongs on this sample.
+# PRE-REGISTERED before this revision was run: the probe ACCEPTS (the deviation from the
+# correct kernel is 0.5*jmp — the same magnitude as omitting the term entirely, which nc4
+# shows stays in range) and the gate produces a real criterion that misses the threshold:
+# a JUDGEMENT red, rc=1, naming `220/440:>=`.
 echo
 echo "[B/nc3] full_scale_kernel — out -= jmp (the S2 kernel copied without the 1/2)"
 restore_source
 py_splice "$VCO" "$JMP_FIXED" "$JMP_NC3" 1
 build_probe
-measure
-run_gate
-expect_red "nc3_full_scale_kernel" "220/440:>=" || NC_FAILED=1
-NC3_RED="$(red_count)"
-report_arm nc3
+measure_may_fail_closed
+NC3_RED="n/a — probe refused; no criterion reached the gate"
+if require_criterion "nc3_full_scale_kernel"; then
+  run_gate
+  expect_red "nc3_full_scale_kernel" "220/440:>=" 1 || NC_FAILED=1
+  NC3_RED="$(red_count)"
+  report_arm nc3
+else
+  NC_FAILED=1
+fi
 
 # nc4: the DEFERRED reset KEPT but the band-limiting term dropped. The premise still holds
 # (the reset still happens every M samples => the cell is still M-periodic), so this arm must
 # produce a REAL criterion and fail as a JUDGEMENT red (rc=1). Together with nc1 this separates
-# the two failure modes the slice could hide behind.
+# the two failure modes the slice could hide behind. PRE-REGISTERED: probe accepts, rc=1,
+# naming `220/440:>=` — this is the load-bearing judgement control, since dropping the term
+# entirely is exactly the pre-S5 behaviour.
 echo
 echo "[B/nc4] correction_absent — deferred reset kept, band-limited jump term dropped"
 restore_source
 py_splice "$VCO" "$JMP_FIXED" "$JMP_NC4" 1
 build_probe
-measure
-run_gate
-expect_red "nc4_correction_absent" "220/440:>=" 1 || NC_FAILED=1
-NC4_RED="$(red_count)"
-report_arm nc4
+measure_may_fail_closed
+NC4_RED="n/a — probe refused; no criterion reached the gate"
+if require_criterion "nc4_correction_absent"; then
+  run_gate
+  expect_red "nc4_correction_absent" "220/440:>=" 1 || NC_FAILED=1
+  NC4_RED="$(red_count)"
+  report_arm nc4
+else
+  NC_FAILED=1
+fi
 echo
 
 echo "=== runner summary ==="
@@ -480,12 +586,14 @@ fi
 echo "  [A]  positive           : GREEN 12/12 (rc=0)"
 echo "  nc1  consumer removed   : RED ${NC1_RED}/12 as STRUCTURAL rc=2 (named: NO criterion);"
 echo "                           84 shared cells *.raw-identical to pre-S5: $EQWORD"
-echo "  nc2  jump sign flipped  : RED ${NC2_RED}/12 as judgement rc=1"
-echo "  nc3  full-scale kernel  : RED ${NC3_RED}/12 as judgement rc=1"
-echo "  nc4  correction absent  : RED ${NC4_RED}/12 as judgement rc=1"
+echo "  nc2  jump sign flipped  : VALIDITY red at the PROBE (substitution guard, not the gate);"
+echo "                           ${NC2_RED}"
+echo "  nc3  full-scale kernel  : RED ${NC3_RED}/12 as judgement rc=1 (scale control)"
+echo "  nc4  correction absent  : RED ${NC4_RED}/12 as judgement rc=1 (load-bearing judgement control)"
 if [ "$NC_FAILED" -ne 0 ]; then
-  echo "RESULT: FAIL — a negative control did not discriminate, or nc1 was not the pre-S5 source."
+  echo "RESULT: FAIL — a control did not behave as pre-registered, or a verdict was read from a"
+  echo "               stale artifact. See the per-arm FAIL lines above."
   exit 1
 fi
 echo "RESULT: PASS — fixed arm GREEN 12/12; nc1 structural RED ${NC1_RED}/12 (pre-S5 equivalence: $EQWORD);"
-echo "               nc2 RED ${NC2_RED}/12; nc3 RED ${NC3_RED}/12; nc4 RED ${NC4_RED}/12."
+echo "               nc2 probe-refused (validity); nc3 judgement RED ${NC3_RED}/12; nc4 judgement RED ${NC4_RED}/12."
