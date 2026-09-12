@@ -1,14 +1,22 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # 实施状态（工程总监维护 · 断线可续接点）
 
-**这份文件的用途**：@Claude（工程总监）随时可能因额度中断。中断时 @Pi **不要停**——
+**这份文件的用途**：工程总监随时可能因额度中断。中断时 @Pi **不要停**——
 从这里读出"什么已批准、什么在做、什么必须等人"，按预授权继续。
 
-**最后更新**：2026-08-26 · **代码 head** `4e8b1d4`（本文件自身的 docs commit 必然在其后，故此处永远记*代码*head，不是 tip）· 分支 `feat/p0-full-registry` · `origin/main` = `baf1e11`（PR #1 合入点）；本分支严格领先、merge-base==origin/main · 无 PR#2
+**最后更新**：2026-09-13（本次治理更新）· **代码 head** `6f4481a`（= `origin/main` tip，PR #41 合入点）——**本行永远记*代码* head，不是本 docs commit 自己的 SHA**（docs commit 必然在其后）。
+核验方式：`git fetch origin` 后 `git rev-parse --short origin/main`（**不 fetch 就会读到旧值**，规矩见 §1b）。
 
-> **当前状态（2026-09-06，工程总监裁决，详见 [report/2026-09-06-director-disposition.md](../report/2026-09-06-director-disposition.md)）**：
-> 阶段性合入 main=`34ece0d`（PR #17）。**当前唯一主实施线 = task #83 · GH #18（修复默认 DRY B 锁死）**，由 @Pi 在隔离分支 `fix/18-vco-normal-source` 依 4fe298c8 契约执行，从先红判据到实现、负控、Release/Debug/ASan+UBSan、host/generator、独立 feature push、draft PR、exact-head CI 修正均预授权，无需再等 GO。
-> **P3 默认四输出出口因 N-1 尚未满足**（默认 DRY B 仍有缺陷）；**P4 产品集成尚未完成**（模块已实现，产品 owner/实际输入集成未完成）。其余发现分别入 GH #19（混叠）/ #20（VCF 数值）/ #21（平滑）。旧流水账保留为历史，不作废。
+> **当前状态（事实快照 2026-09-12 · 治理段 2026-09-13 更新）**——本段只记**可核验**的事实（证据源：`git fetch` 后的 `origin/main` tip 与 merge PR 列表、`gh issue list` 的 OPEN 集及其最新落账、`report/` 内近两周任务报告）；**阶段出口 MET / NOT MET 不下裁决**（属 §1「必须等工程总监或 owner」三件事）。
+>
+> **已合入 `origin/main`**（截至 `6f4481a`）：GH#18 默认 DRY B 自源修复（PR #22 @ `c61b837`）· GH#21 连续控制平滑（PR #30 / #31）· GH#15 D1–D5 drone 控制接线（PR #32 / #33 / #34 / #38 / #39）· GH#12 若干切片（双侧键盘 PR #35、preset 引擎 PR #36、APP 状态持久化 PR #37；更早的键盘切片见 PR #29）· GH#19 首片 win8 三角 BLAMP（PR #24 合入 `6f2b592`，task #86）、S1 Schmitt 三角 BLAMP（PR #40）与 S2 classic saw polyBLEP（PR #41）。
+>
+> **当前主实施线 = GH#19 残余分段**（**GH#19 仍 OPEN**）：S1 / S2 已合；**S5（VCO A hard sync 接入 + 复位不连续抗混叠）= task #111 正在做**（隔离分支 `fix/19-vcoa-hard-sync`，**未 push、未合**，收口待复核）；**S0（pwm 可达性）是前置**，S3 / S6 依赖 S0；**S4 等 owner 对「是否允许过采样」的裁决**（出处：task #108 只读取证）。
+> **并行次要线**：GH#15 余量 = `vco_a_pwm`(8) / `vco_b_pwm`(30) 两条，**仍挂 GH#19**（D 系列已全闭环，见该 issue 落账）；**GH#12 仍 OPEN**（切片已合、issue 层面未收口）；GH#16（P6/P8 deferred 状态无运行时消费者）、GH#6（VCF 单位/校准/非线性）**未动**。
+> **P3 默认四输出出口**：GH#11 六个控制源（Envelope A/B、LFO A/B、Joystick、物理 5-step）已有生产实现并被真实消费（§2m，2026-08-31）；**P4 模块达成、集成未验**（§2l）。（§2 表内「P3 出口以 @Codex 复核为准」是 2026-08-31 原文；**@Codex 2026-09-13 裁定 P3 出口复核仍由他负责**（`35aad49a`）⇒ 该保留意见解除，原样有效。）
+> **治理现状（只转记 owner 决定，本文件不自裁）**：**实施总监 = @Codex**（@bearbone `d3cf4ee8`，2026-09-13 02:19 +08:00 正式恢复职责）。**（历史）**@Codex 额度中断期间曾由 **@Kimi 临时代管**（@bearbone `ecf0f13f`，2026-09-10）；该临时代管已随本次恢复结束，只作历史。§1c 的 2026-08-26 角色分工按原文保留为历史。
+>
+> **（历史）**2026-09-06 的工程总监裁决（当时主线为 GH#18 DRY B 修复，该修复已由 PR #22 完成）原文见 [report/2026-09-06-director-disposition.md](../report/2026-09-06-director-disposition.md)，保留不作废。
 
 ## 1. 预授权（@Pi 不必等 GO）
 
@@ -45,7 +53,10 @@ provisional 数值按"待校"如实交付，**不再就此提问**。
 （实例：`06` 写 negistor 非线性「预留」，`07` L151 写「**必须支持**非线性」且「**不得先用干净 saw+detune 把结构写死**」。
 我只翻了 `06`，就给恒等 `nonlinear_()` 开了脱，被 @Codex 顶回来。）
 
-## 1b. git 事实（2026-08-26 核实）
+## 1b. git 事实（2026-08-26 核实 · **本节是历史快照，当前 tip 见文首横幅**）
+
+> ⚠️ 本节记的 `baf1e11` / `feat/p0-full-registry` / PR#2 均已成历史，**当前 `origin/main` 以文首横幅为准**。
+> 保留它是因为**它立的规矩仍然有效**：问「main 动没动」时，**权威是 fetch 后的 `origin/main`，不是本地 ref**。
 
 `origin/main` = **`baf1e11`**（"Merge pull request #1 from feat/p0-foundation"）。
 本地 `main` ref = `1945878` 是**陈旧未更新**的——我和 @Pi 先前都把它当权威，**记错了**。
@@ -89,12 +100,14 @@ Codex 报此类"偏离"时，先查是否属于**已声明边界**（§4）或 p
 | P1 跨平台技术切片 | ✅ 出口 MET |
 | P2 控制时基与路由图 | ✅ 出口 MET |
 | P3 固定声音核心 | ⚠️ **改判：GH#11 已 FIXED-CANDIDATE，各控制源/出口独立关闭**（2026-08-31，见 §2m，取代 2026-08-29 §2m 的"控制源缺实现/PARTIAL"）——固定音频链已有真实 SynthRuntime 消费（task #38/#46），GH #11 六个控制源（Envelope A/B、LFO A/B、Joystick、物理 5-step）已有生产实现与消费（规范生产实例 + 35 参数 + 11 输出 + 真实 PatchGraph 汇点），鉴 `maxBlockSize/maxResources=0` 属 GH#4/#10 主机准备/资源依赖而非 GH#11 缺口；P3 出口以 @Codex 复核为准 |
-| **P4 演奏系统与输入适配** | ⚠️ **改判：模块达成，集成未验**（见 §2l）——三路等价只在测试内的 framework-free stub 上成立，host 无真实适配器、`PLUG_DOES_MIDI_IN 0`。各片实施细节见 §2c–§2i |
-| **P5 整张面板** | ▶ **进行中**：①自撰宿主+真窗消费 fit ✅（task #31）／②唯一可逆 transform ✅ **完全达成**（⑤ 于 task #36 用生成器锚重做，head `f1630a2`，ctest 43/43）／③按区域铺控件 **暂停**（task #34，等 #36） |
+| **P4 演奏系统与输入适配** | ⚠️ **改判：模块达成，集成未验**（见 §2l）——三路等价只在测试内的 framework-free stub 上成立。**@Codex 2026-09-13 裁定**（`35aad49a`）：已有产品 owner / 适配器切片（`DeviceAdapter`、APP 集成）；**完整演奏输入集成与阶段出口仍未验**。（原「host 无真实适配器 / `PLUG_DOES_MIDI_IN 0`」表述与后续 DeviceAdapter/APP 集成的实际进展冲突，已按裁定改写。）各片实施细节见 §2c–§2i |
+| **P5 整张面板** | ▶ **进行中**：①自撰宿主+真窗消费 fit ✅（task #31）／②唯一可逆 transform ✅ **完全达成**（⑤ 于 task #36 用生成器锚重做，head `f1630a2`，ctest 43/43）／③按区域铺控件 **本轮不恢复**（task #34）。（**2026-09-13 裁定**（@Codex `35aad49a`）：② 的 ⑤ 已在 task #36 达成；**③ 本轮不恢复**，继续当前声音与消费者工作；**不把旧 task #36 写成仍未完成的阻塞**。） |
 | P6 dual effector | 未开始 |
 
-门禁基线：本机 ctest **38/38**（+ASan 22/22 内存错误零）——**仅本地快照，非托管判据**；**hosted CI 以 exact 推送 head 为准**。截至 2026-08-28，`feat/p0-full-registry` 远端多次 hosted build 失败（`test_machine_runtime.cpp` 缺 `<string>` 致 Linux/Windows build 断），exact head `11e3bb2` 尚无 hosted run，故**当前不判 hosted green**；
-`full coverage (--require-full)` **按设计红**（PR#2 merge 门，非回归）。
+门禁基线（2026-09-12 核对）：**`origin/main` = `6f4481a` 的 hosted push run `conclusion=success`**（`gh run list --commit 6f4481a`）。本机快照：Release `ctest` **81/81**（含 7 条 `slow` probe/acceptance 门）、Debug 与 ASan+UBSan fast 各 **74/74** —— 该数字出自 **GH#15 D5 片落账（head `de25a839`）**，本文件**未在 `6f4481a` 上独立复跑**。**本地快照非托管判据：hosted CI 一律以 exact 推送 head 为准。**
+`full coverage (--require-full)` **仍按设计红**：既有 **12 项** `keyboard.*` 覆盖缺口（8 条非标量 must-gap + 4 条无值域；`rogue=[]` / `newRogue=[]`，无新增），**按 PR 逐次批准例外，非永久豁免**。
+
+**下一刀（建议；执行前需总监确认）**：按 GH#19 分段先做 **S0（pwm 产品可达性）**，再走 **S3 / S6**；**S0 未解前不得声称 PWM 抗混叠可达** —— `vco_a_pwm` / `vco_b_pwm` 缺的是**运行时消费者**（`transfer_unavailable` 余下的正是这两条），属**可达性**问题、不是抗混叠问题（task #108）。**S4 需 owner 先裁「是否允许过采样」**；S5 收口待复核。
 
 ## 2b. 已裁决的冻结-P0 变更（2026-08-26）
 
