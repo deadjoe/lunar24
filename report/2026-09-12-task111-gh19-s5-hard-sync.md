@@ -331,7 +331,32 @@ python3 tools/check_gh19_hardsync_acceptance.py \
 
 **修复 `e3f9861`（判据 / 阈值 / 产品代码一律未动）**：① nc2 改判探针侧有效性红，新增 `expect_failclosed`——断言"拒收**且理由匹配**"（只断言"非零退出"会把构建失败或崩溃一并收下）；② `measure_may_fail_closed`：探针拒收**记录而不中止**，使后续臂仍能执行；③ `require_criterion`：judgement 臂在探针拒收时**拒绝判读**——否则 `$WORK/gate.txt` 仍是**上一臂**的输出，`expect_red` 会"通过"别人的结果（`report_arm`/`red_count` 都读该文件），nc2 因此也不再调 `report_arm`；④ nc3/nc4 的新预期**在改动前写进脚本**（预注册纪律）。`bash -n` 通过。
 
-**v2 重跑中**（`/tmp/s5_mutation2.log`）。跑完前，本节**不主张** nc3/nc4 的任何结果，也**不主张** runner 已证明 judgement 路径——该路径目前的唯一证据是 §13.4 的 naive 移除控制（`rc=1`，`exact-zero deltas 12/12`）。
+**v2 实跑（2026-09-12，log `/tmp/s5_mutation2.log`）：五臂全部与预注册一致 ⇒ `RESULT: PASS`。**
+
+| 臂 | 预注册 | v2 实跑输出 | 判定 |
+|---|---|---|---|
+| `[A]` 正控 | GREEN 12/12 | `OK: rc=0, 12 cell(s) GREEN`；`880Hz passed=4/4, 220/440Hz passed=8/8`；`exact-zero deltas (correction absent): no (0/12)` | ✅ |
+| `[A2]` 等价锁（+nc1） | `shared=84 … differ=0` | `shared=84 a_only=0 b_only=12 differ=0` | ✅ |
+| `nc1` 去消费者 | 结构 rc=2，具名 `NO criterion` | `OK: nc1_consumer_removed rc=2, named rule present: NO criterion`；`red=0 of 12` | ✅ |
+| `nc2` 符号翻转 | **探针侧有效性红**，理由 `over-scale` | `OK: nc2_jump_sign_flipped — probe refused (exit 1), pre-registered reason: over-scale`；12/12 blocked，`gate not run` | ✅ |
+| `nc3` 全幅核 `-= jmp` | judgement rc=1，具名 `220/440:>=` | `OK: nc3_full_scale_kernel rc=1, named rule present: 220/440:>=`；`red=12 of 12`；gain `best +0.00 / worst +0.00` | ✅ |
+| `nc4` 去修正 | judgement rc=1，具名 `220/440:>=` | `OK: nc4_correction_absent rc=1, named rule present: 220/440:>=`；`red=12 of 12`；gain `best +0.52 / worst -0.04` | ✅ |
+
+⇒ **judgement 路径（rc=1）现在由 runner 自己证明**，不再只有 §13.4 的间接证据；且**同一个 runner 内** `nc1` 命中结构 rc=2、`nc3`/`nc4` 命中判据 rc=1 ⇒ **两种失效面互不冒充**是被实测的，不是被设计的。
+
+**偏离幅度模型的三条预测，v2 全部命中**（v1 只在 nc2 上验过一条）：
+
+| 臂 | 偏离正确核 | 模型预测 | v2 实测 gain | 命中 |
+|---|---|---|---|---|
+| `nc2` | 1.0·jmp | 越护栏 ⇒ 探针拒收 | —（探针未产出判据） | ✅ |
+| `nc3` | 0.5·jmp | 在带内，且残差停在 naive 水平 ⇒ gain ≈ 0 | `+0.00 / +0.00`（\|Δ\| < 0.005 dB） | ✅ |
+| `nc4` | 0.5·jmp | 同上 | `+0.52 / −0.04` | ✅ |
+
+`nc3` 与 `nc4` 是**等量异号**的偏离，模型预测两者残差**都停在 naive 水平**——实测两者都在 ±0.5 dB 内。⭐ 故 **`nc3` 的 `0.00` 不是异常读数，正是模型预测值**：1.0 倍偏离越护栏，0.5 倍偏离（无论哪个方向）与"完全不修正"停在**同一量级**。**残差级由 \|偏离\| 决定，与符号无关**——这是本片可复用的第二条量化规律（第一条见上表 nc2）。
+
+**⚠️ v2 未核到的**：`nc3`/`nc4` 的 12 格都是在**增益规则**上被判红的（判定顺序 增益 → gap → per），故这两臂的 `gap` / `per` **没有被求值** ⇒ 本节**不主张**这两臂的锚点尖锐性与 M-周期前提成立。它们只证明"该臂的残差改善 < 阈值 ⇒ 必须红"。
+
+**⭐ `nc4` 是对 §5 归因的独立复核**：`nc4` 保留延迟复位、只去掉修正，过门禁后相对 naive 基线 gain ∈ [−0.04, +0.52] dB ⇒ §5 的 **B−A ≈ 0**（诊断脚本用 `y[r]=2y[r]−y[r−1]` 解析反解构造）与 v2 的 `nc4`（**真源码变异、过门禁、非反解**）互相印证。两者装置不同、数值不逐格相同，**不声称数值恒等**，只主张结论一致：**§5 的"延迟复位单独不带来增益"成立，10–16 dB 全部来自跳变修正项。**
 
 **静态核对（与运行无关，已核）**：runner 里断言"两目录应共享 N 个 id"的辅助函数 `ids_equivalent`（`run_vcoa_hardsync_mutation.sh:325`）**定义了但无任何调用点**（全文件仅此一处出现）⇒ **共享 id 数（84）本身没有被断言**。nc1 走的是它内部的 `raws_equal_by_id`，该函数**打印** `shared=/a_only=/b_only=/differ=` 但在 `differ=0 且无缺文件` 时一律 `exit 0`——**共享集缩小（例如少渲染一格）不会让它失败**。
 该风险**已由别处覆盖**：analyzer 的 fail-closed 覆盖谓词以 manifest 的 **required** id 为准（`gh19_alias_analyze.py:16`「missing row -> a required manifest id has NO scenario row」+ `:1797` 单一真源），缺一格 ⇒ `-` ⇒ 门禁结构 rc=2。故这是**冗余缺口，不是锁上的洞**；但**"84" 这个数在 runner 内确实没有被钉住**，本节按实跑输出报数时不得声称它被断言。**本轮已改的部分**：`e3f9861` 加的 `require_criterion` 挡住了"读到上一臂陈留 `gate.txt`"这一类陈旧产物错（另一类、也是更靠近本条的），但**共享数断言本身仍未接回** ⇒ 列为复核项，不在本片声称已修。
