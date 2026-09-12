@@ -9,7 +9,7 @@
 
 > **当前状态（2026-09-12）**——本段只记**可核验**的事实（证据源：`git fetch` 后的 `origin/main` tip 与 merge PR 列表、`gh issue list` 的 OPEN 集及其最新落账、`report/` 内近两周任务报告）；**阶段出口 MET / NOT MET 不下裁决**（属 §1「必须等工程总监或 owner」三件事）。
 >
-> **已合入 `origin/main`**（截至 `6f4481a`）：GH#18 默认 DRY B 自源修复（PR #22 @ `c61b837`）· GH#21 连续控制平滑（PR #30 / #31）· GH#15 D1–D5 drone 控制接线（PR #32 / #33 / #34 / #38 / #39）· GH#12 若干切片（双侧键盘 PR #35、preset 引擎 PR #36、APP 状态持久化 PR #37；更早的键盘切片见 PR #29）· GH#19 S1 Schmitt 三角 BLAMP（PR #40）与 S2 classic saw polyBLEP（PR #41）。
+> **已合入 `origin/main`**（截至 `6f4481a`）：GH#18 默认 DRY B 自源修复（PR #22 @ `c61b837`）· GH#21 连续控制平滑（PR #30 / #31）· GH#15 D1–D5 drone 控制接线（PR #32 / #33 / #34 / #38 / #39）· GH#12 若干切片（双侧键盘 PR #35、preset 引擎 PR #36、APP 状态持久化 PR #37；更早的键盘切片见 PR #29）· GH#19 首片 win8 三角 BLAMP（PR #24 合入 `6f2b592`，task #86）、S1 Schmitt 三角 BLAMP（PR #40）与 S2 classic saw polyBLEP（PR #41）。
 >
 > **当前主实施线 = GH#19 残余分段**（**GH#19 仍 OPEN**）：S1 / S2 已合；**S5（VCO A hard sync 接入 + 复位不连续抗混叠）= task #111 正在做**（隔离分支 `fix/19-vcoa-hard-sync`，**未 push、未合**，收口待复核）；**S0（pwm 可达性）是前置**，S3 / S6 依赖 S0；**S4 等 owner 对「是否允许过采样」的裁决**（出处：task #108 只读取证）。
 > **并行次要线**：GH#15 余量 = `vco_a_pwm`(8) / `vco_b_pwm`(30) 两条，**仍挂 GH#19**（D 系列已全闭环，见该 issue 落账）；**GH#12 仍 OPEN**（切片已合、issue 层面未收口）；GH#16（P6/P8 deferred 状态无运行时消费者）、GH#6（VCF 单位/校准/非线性）**未动**。
