@@ -717,6 +717,97 @@ static bool test_vco_blamp() {
   return true;
 }
 
+// ⑦ GH#19 S5 (task #111): the PRODUCT hard-sync entry, requestSync(). ③ above covers the RAW
+// primitive syncPulse() and must keep covering exactly what it covered before — its mid-sample
+// meaning is asserted below to be UNCHANGED, so a "fix" that silently redefines syncPulse()
+// fails here instead of shipping.
+//
+// WHAT S5 CHANGES. syncPulse() zeroes the accumulator BETWEEN ticks, so the next tick() advances
+// once and reports phase `step`: the value discontinuity lands on one sample while the new cycle's
+// phase-0 sample is the NEXT one — phase and value disagree by one sample, and the emitted step is
+// unband-limited. requestSync() records the reset and lets tick() apply it AFTER its own advance,
+// so the reset sample itself reads phase 0 and tick() band-limits that jump.
+//
+// HOW THE 1/2 LAW IS CHECKED WITHOUT KNOWING E(0). No public path ever emits the phase-0 value
+// E(0) (tick() always advances first), so a test cannot obtain it to compare against. It does not
+// have to: with two resets at different phases f1 != f2 the emitted reset samples are
+// m_i = E(0) - (E(0) - E(f_i))/2, so E(0) CANCELS and the law becomes a pure slope statement
+//     m1 - m2 == (E(f1) - E(f2)) / 2.
+// That single relation pins BOTH the magnitude (1/2) and the sign at once, and each wrong kernel
+// breaks it differently: the full-scale kernel (the "copy polyblepSaw" defect) makes m_i == E(0)
+// constant, so the left side goes to 0; the sign-flipped kernel doubles it to -1/2.
+static bool test_vco_hardsync_reset_alignment() {
+  const double sr = 48000.0;
+  const double baseHz = 440.0;
+  const std::size_t k1 = 997, k2 = 1234;   // two resets at different phases.
+
+  // Never-synced twin: supplies E(f_i), the value each reset sample would have had.
+  core::Vco twin(sr);
+  twin.setBaseHz(baseHz);
+  twin.setWaveform(core::VcoWaveform::kTriangle);
+  std::vector<double> cont(k2 + 4);
+  for (std::size_t i = 0; i < cont.size(); ++i) twin.tick(&cont[i]);
+
+  // A fresh VCO's first three samples are E(step), E(2*step), E(3*step) — the trajectory the new
+  // cycle MUST follow once the reset sample has read phase 0.
+  core::Vco fresh(sr);
+  fresh.setBaseHz(baseHz);
+  fresh.setWaveform(core::VcoWaveform::kTriangle);
+  std::vector<double> head(3);
+  for (std::size_t i = 0; i < head.size(); ++i) fresh.tick(&head[i]);
+
+  const auto run = [&](std::size_t k, bool deferred, std::vector<double>& buf) {
+    core::Vco v(sr);
+    v.setBaseHz(baseHz);
+    v.setWaveform(core::VcoWaveform::kTriangle);
+    buf.assign(k + 4, 0.0);
+    for (std::size_t i = 0; i < k; ++i) v.tick(&buf[i]);
+    if (deferred) v.requestSync(); else v.syncPulse();
+    for (std::size_t i = k; i < buf.size(); ++i) v.tick(&buf[i]);
+  };
+
+  std::vector<double> p1, p2, r1, r2;
+  run(k1, true, p1);
+  run(k2, true, p2);
+  run(k1, false, r1);
+  run(k2, false, r2);
+
+  const double pre1 = cont[k1], pre2 = cont[k2];
+  const double m1 = p1[k1], m2 = p2[k2];
+
+  // Guard: the two reset phases must actually differ, or the slope check below is vacuous.
+  CHECK(std::fabs(pre1 - pre2) > 1e-6);
+
+  // (a) THE 1/2 LAW, E(0) cancelled out. This is the load-bearing assertion.
+  CHECK(std::fabs((m1 - m2) - 0.5 * (pre1 - pre2)) < 1e-12);
+
+  // (b) ALIGNMENT: after the product's reset the emitted trajectory is the FRESH cycle's, bit for
+  // bit — the next samples are phase step, 2*step. The raw primitive reaches the same values one
+  // sample EARLIER (it starts the fresh trajectory AT the reset sample), which is the documented
+  // one-sample self-inconsistency, asserted rather than described.
+  CHECK(p1[k1 + 1] == head[0]);
+  CHECK(p1[k1 + 2] == head[1]);
+  CHECK(p2[k2 + 1] == head[0]);
+  CHECK(r1[k1] == head[0]);
+  CHECK(r1[k1 + 1] == head[1]);
+  CHECK(r2[k2] == head[0]);
+
+  // (c) RED-NEGATIVE: a dead reset (no call at all) is a different render, so (a)/(b) cannot pass
+  // with the entry point silently doing nothing.
+  std::vector<double> nothing(k1 + 4);
+  for (std::size_t i = 0; i < nothing.size(); ++i) nothing[i] = cont[i];
+  CHECK_FALSE(same_render(nothing, p1));
+
+  // (d) RED-NEGATIVE: syncPulse() must keep its RAW meaning — it does NOT band-limit and does NOT
+  // make the reset sample read phase 0. If someone "fixes" syncPulse() to defer, r1[k1] becomes
+  // the midpoint and this fails.
+  CHECK(r1[k1] != p1[k1]);
+
+  std::printf("P3-3 vco-hardsync: pre1-pre2=%.6e m1-m2=%.6e ratio=%.6f (law 0.5), m1=%.6f m2=%.6f\n",
+              pre1 - pre2, m1 - m2, (m1 - m2) / (pre1 - pre2), m1, m2);
+  return true;
+}
+
 int main() {
   test_vco_voct_and_lilin();
   test_vco_sub_locked();
@@ -727,5 +818,6 @@ int main() {
   test_vco_hardsync_splatter();
   test_vco_narrowpulse_fold();
   test_vco_blamp();
+  test_vco_hardsync_reset_alignment();
   return ::test::finish("vco");
 }

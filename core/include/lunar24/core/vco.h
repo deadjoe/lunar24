@@ -134,7 +134,20 @@ class Vco {
 
   // HARD SYNC (VCO A only): reset the unwrapped pitch phase to 0. VCO B has no
   // sync input and must never call this; test guards the asymmetry.
+  //
+  // syncPulse() is the RAW primitive: it zeroes the accumulator mid-sample, so the next
+  // tick() advances once and reports phase `step` — the discontinuity and the cycle start
+  // then sit one sample apart. It is kept unchanged because the VCO's own tests drive it
+  // directly and assert that raw behaviour.
   void syncPulse() { cumPitch_ = 0.0; }
+
+  // The PRODUCT hard-sync entry (GH#19 S5). requestSync() records the reset and lets tick()
+  // apply it AFTER its advance, which makes the reset sample itself read phase 0: the value
+  // discontinuity and the cycle start then coincide on one sample instead of straddling two,
+  // and the new cycle's phase is exactly f0*(i - r)/sr for the reset sample r. tick() also
+  // sizes that discontinuity and band-limits it (see tick()). The runtime calls THIS, never
+  // syncPulse(), on the jack consumer path.
+  void requestSync() { syncPending_ = true; }
 
   // ---------------------------------------------------------------- render --
   // Advance one sample. Writes the main waveform into *out; if subOut is non-null,
@@ -184,6 +197,7 @@ class Vco {
   double fmCv_ = 0.0;
   double fmDevHz_ = 0.0;
   double cumPitch_ = 0.0;              // unwrapped pitch phase (cycles).
+  bool syncPending_ = false;           // hard-sync reset requested, applied in tick() (GH#19 S5).
 
   // Analytic-source BLAMP triangle slope correction (Esqueda, Välimäki & Bilbao,
   // "Rounding Corners with BLAMP", DAFx-16; residual R(u) from paper Eq.(6) minus
@@ -198,6 +212,16 @@ class Vco {
   // It is a pure function of phase (no cross-block state), causal/zero-latency.
   static double blampG(double u);        // windowed analytic residual, corner 8/pi^2.
   double triangleBlampCorr(double cp, double step) const;
+
+  // The sample this path EMITS at an unwrapped phase `cp`: the waveform shape at frac(cp)
+  // plus whatever band-limiting correction is already in force for the active waveform.
+  // tick() uses it both for the sample it writes and to size a hard-sync reset's jump, so
+  // the two can never drift apart.
+  double emittedAt_(double cp, double step) const {
+    double v = waveformSampleAt(frac(cp));
+    if (wave_ == VcoWaveform::kTriangle) v += triangleBlampCorr(cp, step);
+    return v;
+  }
 };
 
 inline void Vco::setOctaveSelect(int index) {
@@ -224,13 +248,38 @@ inline void Vco::tick(double* out, double* subOut) {
   const double instHz = pitch + fmDevHz_ * fmCv_;  // linear FM.
   const double step = instHz / sr_;
   cumPitch_ += step;
-  *out = waveformSampleAt(phase());
-  if (wave_ == VcoWaveform::kTriangle) {
-    // Band-limit the slope jumps (peak/valley corners) for the product-reachable
-    // A/B-shared triangle. Morphing sine<->triangle stays the naive blend (out of
-    // scope); this adds the windowed analytic BLAMP approximation (linear-interp LUT), phase-local and zero-latency.
-    *out += triangleBlampCorr(cumPitch_, step);
+  // GH#19 S5: a requested hard-sync reset lands HERE, after the advance, so this sample
+  // reads phase 0 (see requestSync()). `jmp` is the value discontinuity the reset creates,
+  // measured on the EMITTED signal (shape + the band-limiting correction already in force),
+  // not on the raw shape: the correction removes the step the emitted signal actually has.
+  bool synced = false;
+  double jmp = 0.0;
+  if (syncPending_) {
+    jmp = emittedAt_(0.0, step) - emittedAt_(cumPitch_, step);
+    cumPitch_ = 0.0;
+    syncPending_ = false;
+    synced = true;
   }
+  *out = emittedAt_(cumPitch_, step);
+  // Band-limit the reset's VALUE jump: a hard sync truncates the cycle wherever the master
+  // fires, so the emitted sample steps by an arbitrary J (up to the full peak-to-peak swing),
+  // not by the fixed -2 of a saw wrap. The truncated polyBLEP residual R(0+,dt) = -1 after the
+  // jump, so the correct term is `out -= 0.5*J` (equivalently `+= 0.5*J*R`) — one half of the
+  // jump, on the post-reset sample, which is the causal part of `b(n) = 1/2 + Si(pi*n)/pi`.
+  // NOT `polyblepSaw`-style full-scale subtraction and NOT the other sign: both were measured
+  // on the record (see report/2026-09-12-task111-gh19-s5-hard-sync.md), and `-=0.5*J` is the only
+  // one that lowers the residual. Adding the BLAMP slope-jump term at the same instant was
+  // MEASURED TO DEGRADE this residual on all 12 cells (+2.26..+4.89 dB), not to lower it --
+  // consistent with re-correcting the peak corner that emittedAt_() already band-limits, since
+  // the reset lands on phase 0. It is therefore deliberately NOT covered here and the
+  // second-order term is left UNCOVERED (same report).
+  if (synced) *out -= 0.5 * jmp;
+  // The triangle slope-jump (peak/valley corner) band-limiting correction is applied inside
+  // emittedAt_() above — for the product-reachable A/B-shared triangle only. Morphing
+  // sine<->triangle stays the naive blend (out of scope). It must NOT be added again here:
+  // doing so double-counts it on every triangle sample while leaving every other waveform
+  // correct, which is exactly what the GH#19 S5 "unwired => byte-identical" regression lock
+  // caught (see report/2026-09-12-task111-gh19-s5-hard-sync.md).
   if (subOut) {
     if (subEnabled()) {
       *subOut = 2.0 * subPhase() - 1.0;   // sub = rising SAW (2*frac(cumPitch_*0.5)-1), one octave down, phase-locked.

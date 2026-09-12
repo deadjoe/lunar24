@@ -945,6 +945,110 @@ def naive_composite(n, sr, f0, A_amp, phi=0.0):
     return [A_amp * (v - (1.0 / 3.0) * v * v * v) for v in x]
 
 
+def self_check_sync():
+    """Self-check for the GH#19 S5 hard-sync reference and its measured alignment. Returns a list of
+    failure strings (empty == pass).
+
+    This is a REFERENCE-LEGITIMACY check, not a product judgment. The S5 acceptance column
+    (blsync_full_db) is only admissible evidence if:
+      * the exact piecewise-integrated reference is the signal the estimator claims it is -- so a
+        synthetic signal built FROM the reference at a known offset must return that offset and a
+        residual at the numerical floor (recovery, not approximation);
+      * the alignment really is MEASURED: a +1 sample error must cost a large, positive amount, or a
+        plateau would make the column vacuous;
+      * the M-periodicity premise FAILS CLOSED rather than silently producing a number on a signal the
+        method does not describe (an LFO synchronous to nothing);
+      * the criterion RESPONDS to un-modeled energy -- a small injected component must raise the
+        residual off the floor by a measurable amount, or a "good" cell would be indistinguishable
+        from a perfect one.
+    """
+    fails = []
+    floor = -120.0
+    # ---- (1) recovery at a known offset, at every supported rate/f0, both rate classes (M=256, 512)
+    for sr, f0, off in ((44100, 220.0, 0), (44100, 440.0, 37), (44100, 880.0, 255),
+                        (48000, 220.0, 129), (88200, 440.0, 511), (96000, 880.0, 3)):
+        M = SYNC_M_BY_SR[int(sr)]
+        shape, _ = sync_shape(M, f0 * M / sr)
+        y = [0.5 * shape[(i - off) % M] for i in range(64 * M)]
+        r = method_bl_sync(y, sr, f0)
+        if r is None:
+            fails.append("sync: estimator returned no criterion on an EXACT synthetic signal "
+                         "(sr=%d f0=%.0f) -- the reference cannot be legitimised" % (sr, f0))
+            continue
+        if r["blsync_off"] != off:
+            fails.append("sync: measured offset %d != the known %d (sr=%d f0=%.0f) -- the aligner "
+                         "does not recover a known anchor" % (r["blsync_off"], off, sr, f0))
+        if not (r["blsync_full_db"] < floor):
+            fails.append("sync: residual %.2f dB on an EXACT synthetic signal is not at the numerical "
+                         "floor (< %.0f dB) -- the reference does not match its own signal"
+                         % (r["blsync_full_db"], floor))
+        if not (r["blsync_gap_db"] > 20.0):
+            fails.append("sync: a +1 sample anchor error costs only %.2f dB (sr=%d f0=%.0f) -- the "
+                         "residual is not sharp in the alignment, so the measured anchor is vacuous"
+                         % (r["blsync_gap_db"], sr, f0))
+        if abs(r["blsync_amp"] - 0.5) > 1e-9:
+            fails.append("sync: refit amplitude %.9f != the known 0.500000000 -- the scale authority "
+                         "is wrong" % r["blsync_amp"])
+
+    # ---- (2) the M-periodicity premise must FAIL CLOSED, not answer anyway
+    sr, f0 = 44100, 220.0
+    M = SYNC_M_BY_SR[sr]
+    shape, _ = sync_shape(M, f0 * M / sr)
+    y = [0.5 * shape[(i - 5) % M] for i in range(64 * M)]
+    y[M + 1] += 0.05                       # break exact M-periodicity at ONE sample
+    if method_bl_sync(y, sr, f0) is not None:
+        fails.append("sync: an M-periodicity violation of 0.05 (10% of peak) was ACCEPTED -- the "
+                     "method answers on a signal it does not describe (premise not fail-closed)")
+
+    # ---- (2b) the STEADY-STATE premise's own red-first evidence: a STARTUP transient must not be
+    # mistaken for aperiodicity. MEASURED on the real naive arm (immediate mid-sample reset): its
+    # blocks 1..k are bit-identical to each other while block 0 -> block 1 differs by 1.098e-02 on
+    # vco_a_sync_tri_44100_220 -- a one-sample offset. With block 0 included, that arm produced NO
+    # criterion at all, so the committed naive baseline was unmeasurable; this arm is what pins the
+    # fix. Block 0 is drawn one sample out of phase and the method must STILL answer, at the floor,
+    # on the steady anchor.
+    y2 = [0.5 * shape[(i - 5) % M] for i in range(64 * M)]
+    for i in range(M):
+        y2[i] = 0.5 * shape[(i - 6) % M]           # block 0 one sample out of phase
+    r2 = method_bl_sync(y2, sr, f0)
+    if r2 is None:
+        fails.append("sync: a one-sample STARTUP transient in block 0 was rejected as "
+                     "aperiodicity -- the premise is a whole-buffer test, so the naive baseline "
+                     "cannot be measured (premise must be steady-state)")
+    else:
+        if r2["blsync_per"] > SYNC_PERIOD_TOL:
+            fails.append("sync: steady-state deviation %.3e is above the tolerance after a startup "
+                         "transient -- the excluded region is wrong" % r2["blsync_per"])
+        if not (r2["blsync_full_db"] < floor):
+            fails.append("sync: residual %.2f dB after a startup transient is not at the floor -- "
+                         "the excluded region is wrong" % r2["blsync_full_db"])
+
+    # ---- (3) the criterion must RESPOND to un-modeled energy (non-vacuous)
+    # NOTE the injected probe is itself M-periodic, and that is forced, not a convenience: the
+    # reference retains every bin |k| <= M/2, so for an M-periodic input the model has M degrees of
+    # freedom and any APERIODIC probe would be rejected by premise (2) rather than measured. The
+    # quantity being tested here is therefore the one the gate actually consumes -- a perturbation
+    # that lives INSIDE the M-periodic basis but is not in the ideal truncated triangle's span at the
+    # fitted amplitude. (The discrimination against the real naive arm -- immediate mid-sample reset,
+    # no band-limited jump -- is measured end-to-end by the mutation runner, not modelled here.)
+    base = method_bl_sync([0.5 * shape[(i - 11) % M] for i in range(64 * M)], sr, f0)
+    eps = 1e-3
+    y3 = [v + eps * math.cos(2.0 * math.pi * 4.0 * i / M)
+          for i, v in enumerate(0.5 * shape[(i - 11) % M] for i in range(64 * M))]
+    hit = method_bl_sync(y3, sr, f0)
+    if base is None or hit is None:
+        fails.append("sync: criterion produced no value on the response test")
+    else:
+        rise = hit["blsync_full_db"] - base["blsync_full_db"]
+        if not (rise > 10.0):
+            fails.append("sync: injecting %.0e of un-modeled M-periodic tone raised the residual by "
+                         "only %.2f dB -- the criterion cannot separate a clean cell from an unclean "
+                         "one" % (eps, rise))
+    if not (SYNC_M_BY_SR.get(22050) is None):
+        fails.append("sync: an unsupported sample rate was given an M instead of failing closed")
+    return fails
+
+
 def self_check_align():
     """Self-check for the f0 aligner's determinism identity [@Kimi pin 1]. Returns a list of failure
     strings (empty == pass).
@@ -1208,6 +1312,189 @@ def self_check_probe_contract(dirpath, cells):
     if not _fidelity_fails("x", ["x", "24576", "0", "YES", "0", "NO"], pidx, "24576"):
         fails.append("probe-contract: the fidelity predicate accepts a hand-built VACUOUS row")
     return fails
+
+
+# ---------------------------------------------------------------------------
+# GH#19 S5: the band-limited reference for the HARD-SYNC (reset-discontinuity) triangle.
+#
+# An LFO-gate rising edge every M samples truncates the VCO triangle and re-anchors its phase, so the
+# produced composite is EXACTLY M-periodic as a sampled signal (asserted, see `blsync_per` below): one
+# period holds p = f0*M/sr cycles of the triangle, and
+#     g(u) = tri(frac(u*p)),   u in [0, 1),   period = M samples.
+# `g` is NOT periodic at f0 -- it is a truncated triangle -- so the ideal-triangle harmonic ladder
+# (a_tri(k), used by bandlimited_tri) does NOT describe it. Its Fourier coefficients are obtained here
+# by EXACT piecewise integration of the linear pieces, and the reference keeps |k| <= M/2 (Nyquist):
+#     ref[i] = A * sum_{|k|<=M/2} c_k * exp(2j*pi*k*u_i),   u_i = ((i - anchor) mod M)/M.
+#
+# ALIGNMENT IS MEASURED, NOT ASSUMED (rulings Q1/Q4). The reset sample holds the band-limited MIDPOINT
+# of the jump, (E(0) + E(pre))/2, so the largest single-sample step sits one sample AFTER the true
+# reset. An argmax-|diff| detector therefore reads every anchor one sample late, and fails outright at
+# high f0 where the natural slope is large. Instead the exact residual is evaluated for EVERY circular
+# offset and the argmin is the cell's cycle start. `blsync_gap_db` reports what the two neighbouring
+# offsets cost: a sharp unique minimum is the evidence that the measured anchor is real rather than a
+# plateau, and a plateau would make the column vacuous. Because the offset is minimised per arm and A is
+# refit per arm, each arm is compared at its own BEST free fit -- the comparison is "best achievable
+# reconstruction error", which is the quantity the correction is supposed to move.
+#
+# ZERO-DISTURBANCE: nothing here is reached unless the cell's `path` starts with "vco_a_sync"
+# (see cat_of / analyze_cell), so every pre-existing column of every pre-existing cell is untouched.
+SYNC_M_BY_SR = {44100: 256, 48000: 256, 88200: 512, 96000: 512}
+SYNC_PERIOD_TOL = 1.0e-9      # max |x[i]-x[i+M]| / peak allowed for the M-periodicity premise
+_SYNC_SHAPE_CACHE = {}
+
+
+def sync_is_cell(path):
+    return path.startswith("vco_a_sync")
+
+
+def _tri_at(p):
+    """The ideal triangle in the product's phase convention: +1 at phase 0 (a real peak), -1 at 0.5."""
+    p = p - math.floor(p)
+    return 4.0 * abs(p - 0.5) - 1.0
+
+
+def _sync_pieces(p):
+    """Breakpoints of g(u) = tri(frac(u*p)) on [0, 1), as (u0, u1, v0, v1) linear pieces."""
+    bps = {0.0, 1.0}
+    m = 0
+    while m / p < 1.0:
+        bps.add(m / p)
+        bps.add((m + 0.5) / p)
+        m += 1
+    u = sorted(b for b in bps if 0.0 <= b <= 1.0)
+    return [(u[i], u[i + 1], _tri_at(u[i] * p), _tri_at(u[i + 1] * p)) for i in range(len(u) - 1)]
+
+
+def sync_coeffs(p, kmax):
+    """Exact c_k = int_0^1 g(u) e^{-2j*pi*k*u} du for k = 0..kmax, by piecewise integration.
+    No oversampling knob, no fitted phase, no FFT: the integrand is piecewise LINEAR, so each piece's
+    integral is closed-form and the result is exact to double precision."""
+    pieces = _sync_pieces(p)
+    out = []
+    for k in range(kmax + 1):
+        w = 2.0 * math.pi * k
+        if k == 0:
+            tot = 0j
+            for u0, u1, v0, v1 in pieces:
+                b = (v1 - v0) / (u1 - u0)
+                a = v0 - b * u0
+                tot += a * (u1 - u0) + 0.5 * b * (u1 * u1 - u0 * u0)
+            out.append(tot)
+            continue
+        tot = 0j
+        for u0, u1, v0, v1 in pieces:
+            b = (v1 - v0) / (u1 - u0)
+            a = v0 - b * u0
+            e0 = cmath.exp(-1j * w * u0)
+            e1 = cmath.exp(-1j * w * u1)
+
+            def I0(x, e):
+                return (e - e0) / (-1j * w)
+
+            def I1(x, e):
+                return (x * e - u0 * e0) / (-1j * w) - (e0 - e) / (w * w)
+            tot += a * I0(u1, e1) + b * I1(u1, e1)
+        out.append(tot)
+    return out
+
+
+def sync_shape(M, p):
+    """One period of the UNIT-amplitude band-limited reference, plus |c_1| (the scale authority).
+    Cached: the shape is a function of (M, p) only and is rebuilt for every offset scan otherwise."""
+    key = (M, round(p, 12))
+    if key not in _SYNC_SHAPE_CACHE:
+        K = M // 2
+        c = sync_coeffs(p, K)
+        shape = []
+        for j in range(M):
+            u = j / M
+            s = c[0].real
+            for k in range(1, K + 1):
+                s += 2.0 * (c[k] * cmath.exp(2j * math.pi * k * u)).real
+            shape.append(s)
+        _SYNC_SHAPE_CACHE[key] = (shape, abs(c[1]))
+    return _SYNC_SHAPE_CACHE[key]
+
+
+def method_bl_sync(x, sr, f0):
+    """Measured-alignment reconciliation of a hard-synced triangle cell against the exact truncated
+    band-limited reference. Returns the acceptance residual `blsync_full_db` plus the evidence that the
+    measurement is not vacuous: `blsync_off` (measured cycle start, samples mod M), `blsync_gap_db`
+    (what the best of the two neighbouring offsets costs -- must be positive), `blsync_amp` (the refit
+    scale) and `blsync_per` (the MEASURED STEADY-STATE M-periodicity deviation that licenses the whole
+    method). The first period is excluded from both the premise and the analysis basis: it is the
+    VCO's startup transient, not part of the periodic steady state (see the comment at nwin).
+    Returns None (no criterion column, fail closed at the gate) if any premise is unmet."""
+    M = SYNC_M_BY_SR.get(int(round(sr)))
+    if M is None or not (f0 > 0):
+        return None
+    n = len(x) // M
+    if n < 8:
+        return None
+    # STEADY STATE ONLY. Block 0 is dropped: the VCO leaves the render start from whatever phase
+    # its own initial state gives it, so block 0 is a startup transient, not part of the periodic
+    # steady state the method is licensed on. This is MEASURED, not assumed (2026-09-12): the
+    # immediate-reset (naive) arm's blocks 1..k are bit-identical to each other (max|x[i]-x[i+M]|
+    # = 0.0) while block 0 -> block 1 differs by 1.098e-02 on vco_a_sync_tri_44100_220 -- a
+    # one-sample offset. Including block 0 made the premise reject that arm outright, so the
+    # baseline column was unmeasurable. The deferred-reset (product) arm has NO such transient
+    # (whole-buffer deviation 0.0e+00). Discriminating power is unaffected: a free-running
+    # triangle still shows 4.4e-01..1.8e+00 on the same measure, far above the tolerance.
+    ns = n - 1                 # steady-state PERIODS (this is also the per-residue-class count)
+    nwin = ns * M              # steady-state SAMPLES
+    nx = x[M:M + nwin]
+    peak = max(abs(v) for v in nx)
+    if not (peak > 0.0):
+        return None
+    # PREMISE, MEASURED: the method is only admissible on an exactly M-periodic steady state.
+    dev = max(abs(nx[i] - nx[i + M]) for i in range(nwin - M))
+    if not (dev <= SYNC_PERIOD_TOL * peak):
+        return None
+    p = f0 * M / sr
+    shape, fund = sync_shape(M, p)
+    if not (fund > 0.0):
+        return None
+    # Scale: the composite is M-periodic, so projecting at 1 cycle/M samples over an integer number of
+    # periods is EXACT (no Dirichlet leakage). |c_1| is the reference's own coefficient on that same
+    # basis, so A is the reference's amplitude.
+    X = sum(nx[i] * cmath.exp(-2j * math.pi * i / M) for i in range(len(nx))) / len(nx)
+    A = abs(X) / fund
+    if not (A > 0.0):
+        return None
+    # Exact residual for every circular offset in O(M^2) total, via the per-residue-class sums:
+    #   e(off) = sum_j [ Q[(off+j)%M] - 2A*shape[j]*S[(off+j)%M] + A^2*n*shape[j]^2 ]
+    S = [0.0] * M
+    Q = [0.0] * M
+    for i in range(len(nx)):
+        r = i % M
+        S[r] += nx[i]
+        Q[r] += nx[i] * nx[i]
+    tot = sum(Q)
+    if not (tot > 0.0):
+        return None
+    # `ns`, NOT nwin: the closed form below sums over residue classes, and each class holds exactly
+    # nwin/M = ns samples. Using the sample count here scales the constant term by M and swamps the
+    # residual (measured: the self-check's exact synthetic signal came back at +24 dB with a 0.00 dB
+    # anchor gap). The self-check caught it; it is why the reference is validated and not asserted.
+    sq = [A * A * ns * v * v for v in shape]
+    tw = [2.0 * A * v for v in shape]
+    errs = []
+    best_off, best_e = 0, float("inf")
+    for off in range(M):
+        e = 0.0
+        for j in range(M):
+            idx = off + j
+            if idx >= M:
+                idx -= M
+            e += Q[idx] - tw[j] * S[idx] + sq[j]
+        errs.append(e)
+        if e < best_e:
+            best_e, best_off = e, off
+    dbs = [10.0 * math.log10(e / tot) if e > 0.0 else float("-inf") for e in errs]
+    anchor = dbs[best_off]
+    nb = min(dbs[(best_off - 1) % M], dbs[(best_off + 1) % M])
+    return {"blsync_full_db": anchor, "blsync_off": best_off,
+            "blsync_gap_db": nb - anchor, "blsync_amp": A, "blsync_per": dev / peak}
 
 
 def sawcubic_resid_db(nx, sr, f0_snap, A_amp, phi):
@@ -1557,6 +1844,8 @@ def is_classic_saw(path):
 
 
 def cat_of(path):
+    if sync_is_cell(path):
+        return "triangle_hardsync(truncated_bl_ref)"
     if path.startswith("vco_a_tri") or path.startswith("vco_b_tri"):
         return "triangle(analytic_target)"
     if path == "preamp_ac":
@@ -1613,7 +1902,23 @@ def analyze_cell(dirpath, rec):
            "harmris_inband": ("%.2f" % ma["inband_db"]) if ma and math.isfinite(ma["inband_db"]) else "-",
            "cat": cat_of(rec["path"]), "err": None}
     path = rec["path"]
-    if (path.startswith("vco_a_tri") or path.startswith("vco_b_tri")) and ma:
+    if sync_is_cell(path):
+        # GH#19 S5: the reset-discontinuity cells. The reference is built at the DECLARED f0 -- the rate
+        # the oscillator is supposed to run at -- not at the refined estimate, so a frequency error
+        # shows up as residual instead of being absorbed into the reference (which is the same
+        # absorption defect the S2 pin exists to exclude). No theory_dedup_db: the fold-table metric
+        # above is defined for the free-running VCO cells and is not claimed for a truncated waveform.
+        out["theory_dedup_db"] = "-"
+        seed = f0_target if f0_target > 0 else f0
+        mbs = method_bl_sync(x, sr, seed) if seed > 0 else None
+        if mbs:
+            out["blsync_full_db"] = fmt_db(mbs["blsync_full_db"])
+            out["blsync_gap_db"] = ("%.2f" % mbs["blsync_gap_db"]) if math.isfinite(
+                mbs["blsync_gap_db"]) else "-"
+            out["blsync_off"] = str(mbs["blsync_off"])
+            out["blsync_amp"] = "%.6f" % mbs["blsync_amp"]
+            out["blsync_per"] = "%.3e" % mbs["blsync_per"]
+    elif (path.startswith("vco_a_tri") or path.startswith("vco_b_tri")) and ma:
         mb = method_b_tri(sr, f0, ma["a1_mag"])
         out["theory_dedup_db"] = ("%.2f" % mb["dedup_db"]) if mb else "-"
         mbl = method_bl(x, sr, f0)
@@ -1825,12 +2130,14 @@ def main():
     # ---------------------------------------------------------------- per-cell analysis + report
     hdr = ("id\tpath\tsr\tf0_target\tf0_refined\tharmris_full_db\tharmris_inband_db\t"
            "blref_inband_db\tblref_full_db\tblshape_max_db\t"
+           "blsync_full_db\tblsync_gap_db\tblsync_off\tblsync_amp\tblsync_per\t"
            "blpin_full_db\tblpin_amp\tblpin_phi_rad\tblf0_model_hz\t"
            "blf0_aligned_hz\tblf0_seed_hz\tblf0_steps\tblf0_evals\tblf0_converged\tblf0_src\t"
            "theory_dedup_db\t"
            "N\tperiods\tgap\tcategory")
     print(hdr)
-    _stub9 = ("-", "-", "-", "-", "-", "-", "-", "-", "-", "-")   # 4 blpin_* + 6 blf0_*
+    # 5 blsync_* (S5 hard-sync) + 4 slotted blpin_* + 6 blf0_* unknown at stub time.
+    _stub9 = ("-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-")
     for cid in sorted(required) + [c["id"] for c in cells if c["id"] not in required]:
         rec = by_id.get(cid)
         if rec is None:
@@ -1861,6 +2168,8 @@ def main():
             a["harmris"], a["harmris_inband"],
             a.get("blref_inband_db", "-"), a.get("blref_full_db", "-"),
             a.get("blshape_max_db", "-"),
+            a.get("blsync_full_db", "-"), a.get("blsync_gap_db", "-"),
+            a.get("blsync_off", "-"), a.get("blsync_amp", "-"), a.get("blsync_per", "-"),
             a.get("blpin_full_db", "-"), a.get("blpin_amp", "-"),
             a.get("blpin_phi_rad", "-"),
             ("%.6f" % a["blf0_model_hz"]) if a.get("blf0_model_hz") else "-",
@@ -1924,6 +2233,19 @@ def main():
                 print("  S2  %s" % f)
             if not sc_fail:
                 print("  S2  sawcubic reference: PASS (closed form, inversion, integer-bin bit-exact identity)")
+
+            # ------------------------------------------------------------------
+            # S5 ENTRY — the hard-sync (reset-discontinuity) reference: exact piecewise-integrated
+            # Fourier coefficients of the truncated triangle, plus the MEASURED cycle alignment.
+            # Failure here means the S5 cells' blsync_* columns are not admissible evidence.
+            # ------------------------------------------------------------------
+            sy_fail = self_check_sync()
+            check_fails.extend(sy_fail)
+            for f in sy_fail:
+                print("  S5  %s" % f)
+            if not sy_fail:
+                print("  S5  hard-sync reference: PASS (offset recovery at the floor, sharp anchor, "
+                      "fail-closed premise, responds to un-modeled energy)")
 
             # The f0 aligner (ruling (A)) must be a pure determinism identity: the naive-vs-corrected
             # comparison is only admissible if, with the correction removed, the two arms are

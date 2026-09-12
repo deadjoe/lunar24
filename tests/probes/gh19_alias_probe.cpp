@@ -200,6 +200,64 @@ Cap capture(const DeviceStateV1& st, double sr, std::size_t frames, const std::s
   return c;
 }
 
+// ---------------------------------------------------------------------------------------------
+// GH#19 S5 (task #111): the HARD-SYNC stimulus.
+//
+// The stimulus is a PRODUCT CABLE, not a synthetic injection: LFO A's own CV OUT jack patched into
+// vco_a.sync_in through the runtime's public connect() — the same entry a user cable takes, and one
+// the registry already declares as a real jack of this machine. Nothing about the slave's own
+// configuration is special-cased for the test.
+//
+// MASTER RATE / SAMPLE-EXACTNESS. LFO A is configured as a SQUARE (lfo_a.wave = 0) at
+// sr/(M*10) Hz with SPEED MULT = x10, so its per-sample phase step is EXACTLY 1/M with M a power of
+// two. The accumulator (lfo.h tick(): phase_ += step; if (phase_ >= 1.0) phase_ -= floor(phase_))
+// then holds exact binary fractions, so its rising edge falls exactly ON a sample-grid point and
+// repeats every M samples. Two consequences, both of which the acceptance criterion depends on:
+//   * the DETECTED edge sample and the PHYSICAL edge instant coincide — there is no sub-sample
+//     crossing ambiguity inside the stimulus, which is what makes {r_j} a pure function of the
+//     stimulus and not of the signal under test;
+//   * the slave is re-phased every M samples with nothing else entering between resets, so the
+//     composite is EXACTLY M-periodic (the steady-state / pinned-frequency case, not the
+//     aperiodic event-anchored fallback).
+// M is the largest power of two whose master rate stays inside the registry's 0.1..20 Hz RATE
+// domain, and it is chosen per sample rate (M, master Hz):
+//   44100 -> 256, 172.265625 | 48000 -> 256, 187.5 | 88200 -> 512, 172.265625 | 96000 -> 512, 187.5
+// (baseHz = sr/(M*10), all exactly representable; the 88.2/96 kHz pair needs the larger M because
+// sr/200 — the fastest in-domain master rate divided by x10 — is above 441 samples there).
+int syncMasterM(double sr) { return sr > 48000.0 ? 512 : 256; }
+double syncMasterBaseHz(double sr) { return sr / (static_cast<double>(syncMasterM(sr)) * 10.0); }
+
+// Capture dry_a from a single render with LFO A's CV OUT cabled into vco_a.sync_in. Identical to
+// capture() in every other respect (same tap, same scale guards, same frame count).
+Cap captureSync(const DeviceStateV1& st, double sr, std::size_t frames) {
+  const double lo = 1e-4, hi = 0.55;
+  Cap c;
+  EngineHarness h;
+  if (!h.load(st, sr)) { c.signal = "load-rejected"; return c; }
+  if (h.runtime() == nullptr) { c.signal = "no-runtime"; return c; }
+  lunar24::core::SynthRuntime* rt = h.producerRuntime();
+  if (rt == nullptr) { c.signal = "no-runtime"; return c; }
+  if (!rt->connect(lunar24::core::JackId::lfo_a_cv_out,
+                   lunar24::core::JackId::vco_a_sync_in)) {
+    c.signal = "sync-connect-rejected";
+    return c;
+  }
+  // The patch cable is only real once the plan is rebuilt off the audio path (the same
+  // off-thread rebuild the host performs after a repatch).
+  if (!rt->rebuild()) { c.signal = "sync-rebuild-rejected"; return c; }
+  if (!h.render(static_cast<int>(frames), 0.0)) { c.signal = "render-failed"; return c; }
+  const std::vector<double>& src = h.dryA();
+  if (src.size() < frames) { c.signal = "short-render"; return c; }
+  c.x.assign(src.begin(), src.begin() + frames);
+  c.peak = peakOf(c.x);
+  c.f0 = zcrFreq(c.x, sr);
+  if (!allFinite(c.x)) { c.signal = "non-finite"; c.ok = false; return c; }
+  if (c.peak < lo) { c.signal = "silent"; c.ok = false; return c; }
+  if (c.peak > hi) { c.signal = "over-scale"; c.ok = false; return c; }
+  c.ok = true;
+  return c;
+}
+
 // AC-input capture: feeds a zero-centred sine on physical ch1 (the preamp feed) so the nonlinear
 // input stage sees a real periodic stimulus — BLOCK item ④: production accepts an AC input via the
 // processBlock input array, so the preamp is NOT a product blocker (it only needs an AC stimulus,
@@ -418,6 +476,30 @@ int main(int argc, char** argv) {
       Cap c = capture(st, sr, kWarm + kWin, "dry_b", 0.0);
       emit("vco_b_tri_" + std::to_string((int)sr) + "_" + std::to_string((int)ft),
            "vco_b_tri", sr, ft, c, "dry_b", "tri");
+    }
+  }
+
+  // ---- VCO A HARD SYNC (GH#19 S5, task #111): LFO A's CV OUT cabled into vco_a.sync_in. ----
+  // Stimulus provenance and the sample-exactness argument live on captureSync()/
+  // syncMasterBaseHz() above. The slave is the SAME reachable VCO-A triangle arm as vco_a_tri
+  // (identical oct/tune recipe, identical dry_a tap), so a sync cell differs from its vco_a_tri
+  // sibling by exactly two things: the patch cable and the LFO A setting. The measured f0 on this
+  // family is a DIAGNOSTIC only (a re-phased triangle's zero-crossing count is not its natural
+  // frequency while the reset keeps truncating it) — the acceptance figure is the pinned-frequency
+  // residual against an analytic band-limited composite, not this column.
+  for (double sr : kSrs) {
+    for (double ft : {220.0, 440.0, 880.0}) {
+      DeviceStateV1 st = make_default_device_state(kProbeSeed);
+      slot(st, ParameterId::vco_a_oct_sel) = (ft == 220.0) ? 0.0 : 1.0;
+      slot(st, ParameterId::vco_a_tune) = (ft == 880.0) ? 1.0 : 0.0;
+      // The master: a SQUARE at sr/(M*10) Hz with SPEED MULT = x10 => per-sample phase step is
+      // exactly 1/M (M a power of two), so the rising edge sits on a sample-grid point.
+      slot(st, ParameterId::lfo_a_wave) = 0.0;
+      slot(st, ParameterId::lfo_a_rate) = syncMasterBaseHz(sr);
+      slot(st, ParameterId::lfo_a_speed_mult) = 2.0;
+      Cap c = captureSync(st, sr, kWarm + kWin);
+      emit("vco_a_sync_tri_" + std::to_string((int)sr) + "_" + std::to_string((int)ft),
+           "vco_a_sync_tri", sr, ft, c, "dry_a", "tri_sync");
     }
   }
 
