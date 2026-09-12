@@ -13,8 +13,15 @@
 # jack's own descriptor), and on a RISING edge calls `Vco::requestSync()`. tick() then applies
 # the reset AFTER its own advance, so the reset sample itself reads phase 0 — the value
 # discontinuity and the new cycle start coincide on one sample — and band-limits that
-# discontinuity with `*out -= 0.5 * jmp` (one half of the jump, the causal part of
-# `b(n) = 1/2 + Si(pi*n)/pi`).
+# discontinuity with `*out -= 0.5 * jmp` (one half of the jump, on the post-reset sample).
+#
+# SCOPE OF THAT FORMULA: `-0.5*J` is the single-point MEDIAN correction for a SAMPLE-ALIGNED step,
+# NOT the complete Si step residual `b(n) = 1/2 + Si(pi*n)/pi` — that response's tail at the
+# subsequent integer samples is not all zero, and this slice does not compute it. The master's edge
+# lands exactly on a sample grid point in these cells (per-sample step 1/M, period M samples), which
+# is what reduces the residual to that one sample HERE. The evidence on the record is the 12 declared
+# sync cells; nothing here extends to arbitrary f0, FM, or off-grid event phase, and this runner does
+# NOT test that extension.
 #
 # ---------------------------------------------------------------------------------
 # WHY the shape. Three things are load-bearing, and each gets its own control:
@@ -352,22 +359,60 @@ report_arm() {  # $1 = arm label
   [ -z "$gc" ] || echo "   NOTE: $(green_count) cell(s) stayed GREEN under $1: $gc"
 }
 
-# Signal-only, ID-KEYED render equivalence between two render dirs that may not share a cell
-# set (the pre-change render has 84 cells; S5 renders 96). Compares, for every id present in
-# BOTH dirs, that id's *.raw bytes are identical; reports the three counts. Fails closed if a
-# row is duplicated, if the scenario TSV lacks id/raw, or if a mapped file is missing.
-raws_equal_by_id() {  # $1, $2 = render dirs. 0 iff every SHARED id matches byte-for-byte.
-  python3 - "$1" "$2" <<'PY'
+# ---------------------------------------------------------------------------------------------
+# THE DEFAULT-BEHAVIOUR REGRESSION LOCK (GH#19 S5).
+#
+# S5 must change the DEFAULT (un-synced) behaviour in exactly one way -- it ADDS the declared sync
+# cells -- and in no other way. `raws_equal_by_id` alone cannot lock that: it reports counts and
+# exits 0 whenever the SHARED ids match, so a set that shrank on BOTH sides (a probe edit that
+# stops rendering a cell on each side, or a manifests/probe divergence) passes silently, and the
+# shared COUNT it prints is asserted nowhere. This lock closes both gaps by asserting the SET:
+#
+# The expectation is DERIVED from a manifest, never a literal here, and the rules are stated as
+# inclusion against the DECLARATION rather than equality between the two renders:
+#
+#   * every id the manifest marks `required=1` MUST be produced. That is the same column the
+#     analyzer's own fail-closed coverage predicate keys on, so a manifest edit moves this
+#     expectation with it instead of hiding behind a hardcoded number.
+#   * no render may produce an id its manifest does not declare at all (either required=1 or
+#     required=0). `required=0` is DECLARED-BUT-OPTIONAL: allowed on either side, demanded on
+#     neither. Stating it that way is what keeps the lock correct when a cell is intentionally
+#     optional, and the vacuity guards below stop that tolerance being widened until the whole
+#     rule is empty.
+#   * the current manifest's sync cells (`part == vco_a_sync_tri`) must all be RENDERED, and must
+#     all be required=1. "How many new cells" is a property of the declaration, not of this script.
+#   * every id present in BOTH renders must be byte-identical in its *.raw payload.
+#
+# Because the expectation comes from a manifest that neither render can edit, "the render lost a
+# declared cell", "the render invented a cell" and "both sides drifted together" are each RED --
+# none of which a shared-count comparison can see.
+ids_equivalent() {  # $1=A dir(pre-S5)  $2=B dir(product)  $3=pre-S5 manifest  $4=current manifest  $5=label
+  local out rc script
+  # The comparison script is written to a file with a TOP-LEVEL here-document and then run BY PATH.
+  # It is deliberately NOT inlined as `out="$(python3 - <<'PY' ... PY)"`: a here-document nested in a
+  # command substitution is not fully literal, because the comsub parser still tracks quote
+  # characters in its body -- so a single apostrophe in a comment (e.g. "analyzer's", "cell's")
+  # opens an unmatched quote and the ENTIRE runner fails to parse. Reproduced minimally:
+  #   out="$(python3 - <<'PY' <newline> x = 1  # it's fine <newline> PY <newline> )"   -> syntax error
+  # The failure is loud (parse error, nothing runs), but it would silently cost a whole edit-review
+  # cycle, so the hazard is removed structurally rather than by avoiding apostrophes.
+  script="$(mktemp "${TMPDIR:-/tmp}/gh19-id-lock.XXXXXX")" || return 1
+  cat > "$script" <<'PY'
 import os
 import sys
 
-def load(d):
+
+def load_ids(d):
     p = os.path.join(d, "gh19_scenarios.tsv")
     out = {}
-    with open(p, encoding="utf-8") as fh:
+    try:
+        fh = open(p, encoding="utf-8")
+    except OSError as e:
+        sys.exit("ERROR: cannot read %s (%s)" % (p, e))
+    with fh:
         hdr = fh.readline().rstrip("\n").split("\t")
         if "id" not in hdr or "raw" not in hdr:
-            sys.exit(f"ERROR: {p} lacks id/raw columns")
+            sys.exit("ERROR: %s lacks id/raw columns" % p)
         i, r = hdr.index("id"), hdr.index("raw")
         for ln in fh:
             c = ln.rstrip("\n").split("\t")
@@ -375,53 +420,227 @@ def load(d):
                 continue
             cid = c[i].strip()
             if cid in out:
-                sys.exit(f"ERROR: duplicate id {cid} in {p}")
+                sys.exit("ERROR: duplicate id %s in %s" % (cid, p))
             out[cid] = c[r].strip()
     if not out:
-        sys.exit(f"ERROR: no cells in {p}")
+        sys.exit("ERROR: no cells in %s" % p)
     return out
 
-a, b = load(sys.argv[1]), load(sys.argv[2])
-shared = sorted(set(a) & set(b))
-differ, missing = [], []
-for cid in shared:
-    fa = os.path.join(sys.argv[1], a[cid])
-    fb = os.path.join(sys.argv[2], b[cid])
+
+def manifest_rows(p):
+    try:
+        fh = open(p, encoding="utf-8")
+    except OSError as e:
+        sys.exit("ERROR: cannot read %s (%s)" % (p, e))
+    rows = []
+    with fh:
+        hdr = fh.readline().rstrip("\n").split("\t")
+        for k in ("id", "required", "part"):
+            if k not in hdr:
+                sys.exit("ERROR: %s lacks the %s column" % (p, k))
+        ii, ir, ip = hdr.index("id"), hdr.index("required"), hdr.index("part")
+        for ln in fh:
+            c = ln.rstrip("\n").split("\t")
+            if len(c) <= max(ii, ir, ip) or not c[ii].strip():
+                continue
+            rows.append((c[ii].strip(), c[ir].strip(), c[ip].strip()))
+    return rows
+
+
+a, b = load_ids(sys.argv[1]), load_ids(sys.argv[2])
+pre_rows, cur_rows = manifest_rows(sys.argv[3]), manifest_rows(sys.argv[4])
+# required==1 is the same column the analyzer's fail-closed coverage predicate keys on, so the
+# expectation moves with the declaration instead of being a number written down here.
+expect_pre = {i for i, req, _ in pre_rows if req == "1"}
+expect_cur = {i for i, req, _ in cur_rows if req == "1"}
+# `required=0` rows are DECLARED but optional: a render may omit them, so they are allowed but never
+# demanded. Deriving this from the manifest (rather than assuming the two sets are equal) is what
+# keeps the lock honest when a cell is declared optional -- and the vacuity guards below stop that
+# tolerance from being abused to make the whole rule empty.
+allow_pre = {i for i, _, _ in pre_rows}
+allow_cur = {i for i, _, _ in cur_rows}
+expect_new = {i for i, _, part in cur_rows if part == "vco_a_sync_tri"}
+
+fails = []
+if not expect_pre or not expect_cur:
+    fails.append("a manifest's required==1 rule selected NO ids -- the expectation itself is "
+                 "empty, so this lock would pass vacuously")
+if not expect_new:
+    fails.append("the current manifest declares NO vco_a_sync_tri cell -- the sync-cell declaration "
+                 "is gone, so this lock would pass vacuously")
+if not expect_new <= expect_cur:
+    fails.append("the declared sync cells are not all required=1 in the current manifest -- the "
+                 "declaration is internally inconsistent (%d of %d)"
+                 % (len(expect_new & expect_cur), len(expect_new)))
+
+# ---- A: the literal pre-S5 render -----------------------------------------------------------------
+miss_a = sorted(expect_pre - set(a))
+if miss_a:
+    fails.append("pre-S5 render is MISSING %d declared-required cell(s): %s" % (len(miss_a), miss_a[:6]))
+extra_a = sorted(set(a) - allow_pre)
+if extra_a:
+    fails.append("pre-S5 render produced %d id(s) its manifest does not declare: %s"
+                 % (len(extra_a), extra_a[:6]))
+
+# ---- B: the product render ------------------------------------------------------------------------
+miss_b = sorted(expect_cur - set(b))
+if miss_b:
+    fails.append("product render is MISSING %d declared-required cell(s): %s" % (len(miss_b), miss_b[:6]))
+extra_b = sorted(set(b) - allow_cur)
+if extra_b:
+    fails.append("product render produced %d id(s) its manifest does not declare: %s"
+                 % (len(extra_b), extra_b[:6]))
+sync_absent = sorted(expect_new - set(b))
+if sync_absent:
+    fails.append("the declared sync cells were NOT rendered: %d missing %s"
+                 % (len(sync_absent), sync_absent[:6]))
+
+# ---- the default behaviour must be untouched: every shared id byte-identical ---------------------
+differ, missing_file = [], []
+for cid in sorted(set(a) & set(b)):
+    fa, fb = os.path.join(sys.argv[1], a[cid]), os.path.join(sys.argv[2], b[cid])
     if not (os.path.isfile(fa) and os.path.isfile(fb)):
-        missing.append(cid)
+        missing_file.append(cid)
         continue
     with open(fa, "rb") as x, open(fb, "rb") as y:
         if x.read() != y.read():
             differ.append(cid)
-print("shared=%d a_only=%d b_only=%d differ=%d" %
-      (len(shared), len(set(a) - set(b)), len(set(b) - set(a)), len(differ) + len(missing)))
-if missing:
-    print("MISSING-FILE: " + " ".join(missing[:8]))
 if differ:
-    print("DIFFER: " + " ".join(differ[:8]))
-sys.exit(1 if (differ or missing) else 0)
-PY
-}
+    fails.append("shared ids are NOT byte-identical: %d %s" % (len(differ), differ[:6]))
+if missing_file:
+    fails.append("a mapped *.raw file is missing: %d %s" % (len(missing_file), missing_file[:6]))
 
-# One shared-id equivalence check: its counts, plus an assertion on how many ids the two dirs
-# are expected to share. The expected counts are MEASURED on the record, not inferred.
-ids_equivalent() {  # $1=A dir, $2=B dir, $3=expected shared count, $4=label
-  local out rc
+print("required_pre=%d required_cur=%d sync_declared=%d a_cells=%d b_cells=%d shared=%d byte_differ=%d"
+      % (len(expect_pre), len(expect_cur), len(expect_new), len(a), len(b),
+         len(set(a) & set(b)), len(differ) + len(missing_file)))
+for f in fails:
+    print("LOCK-FAIL: " + f)
+sys.exit(1 if fails else 0)
+PY
   set +e
-  out="$(raws_equal_by_id "$1" "$2")"; rc=$?
+  out="$(python3 "$script" "$1" "$2" "$3" "$4" 2>&1)"; rc=$?
   set -e
+  rm -f "$script"
   echo "   $out"
   if [ "$rc" -ne 0 ]; then
-    echo "   FAIL: $4 — the shared ids are NOT byte-identical." >&2
+    echo "   FAIL: $5 — the default-behaviour id-set lock is RED (see LOCK-FAIL above)." >&2
     return 1
   fi
-  local shared
-  shared="$(printf '%s' "$out" | sed -n '1s/.*shared=\([0-9]*\).*/\1/p')"
-  if [ "$shared" != "$3" ]; then
-    echo "   FAIL: $4 — shared id count $shared, expected $3. The cell sets have drifted." >&2
+  echo "   OK: $5 — every declared-required cell rendered, no undeclared cell in either render,"
+  echo "       the declared sync cells present, and every shared cell BYTE-IDENTICAL."
+  return 0
+}
+
+# ---------------------------------------------------------------------------------------------
+# RED-FIRST EVIDENCE FOR THE LOCK ITSELF.
+#
+# An assertion that has never been observed RED is not evidence, so the lock's own negative cases
+# are exercised on SYNTHETIC dirs -- no build, no render, milliseconds -- and each must be red for
+# ITS OWN NAMED REASON. The control case (a faithful pair) must be GREEN, or a lock that simply
+# always failed would "pass" this test. Cases, and the gap each one covers:
+#   (control 1) a faithful pair stays GREEN, or a lock that always failed would "pass" this test
+#   (control 2) a declared-OPTIONAL cell in A and absent from B stays GREEN, or an over-constrained
+#               lock would "pass" every red case while contradicting the contract
+#   (a) a shared id's bytes differ         -> byte-identity, the only thing raws_equal_by_id caught
+#   (b) a required pre-existing id is absent from B -> inclusion against the declaration; a count
+#                                             check could still "pass" if B gained another id
+#   (c) an undeclared extra id in B        -> the declaration bound, the direction S5 itself must obey
+#   (d) the pre-S5 side ALSO loses a cell  -> the manifest-derived expectation; "shrink both sides
+#                                             together" is the failure a mutual comparison cannot see
+#   (e) the sync-cell declaration empties  -> the vacuity guard on the expectation
+#   (f) an undeclared extra id in A        -> the pre-S5 side is bound by its own manifest too
+#   (g) a sync cell declared required=0    -> the declaration is internally inconsistent
+ids_equivalent_selftest() {
+  local d rc fails n ok
+  d="$(mktemp -d)"
+  # pre-S5 declares c1..c3; the current manifest adds the sync cell s1 (part = vco_a_sync_tri).
+  printf 'id\trequired\tpart\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\n' > "$d/pre.tsv"
+  printf 'id\trequired\tpart\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\ns1\t1\tvco_a_sync_tri\n' > "$d/cur.tsv"
+  printf 'id\trequired\tpart\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\n' > "$d/cur-nosync.tsv"
+  # c0 is DECLARED-BUT-OPTIONAL (required=0): produces no violation whether present or absent.
+  printf 'id\trequired\tpart\nc0\t0\t-\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\n' > "$d/pre-opt.tsv"
+  # internal inconsistency: a sync cell declared required=0 instead of 1.
+  printf 'id\trequired\tpart\nc1\t1\t-\nc2\t1\t-\nc3\t1\t-\ns1\t0\tvco_a_sync_tri\n' > "$d/cur-sync-optional.tsv"
+
+  mk() {  # $1=dir  $2=ids  $3=c1 byte payload
+    : > "$1/gh19_scenarios.tsv"
+    printf 'id\traw\n' >> "$1/gh19_scenarios.tsv"
+    local c
+    for c in $2; do
+      printf '%s\t%s.raw\n' "$c" "$c" >> "$1/gh19_scenarios.tsv"
+      if [ "$c" = "c1" ]; then printf '%s' "$3" > "$1/$c.raw"; else printf 'x' > "$1/$c.raw"; fi
+    done
+  }
+
+  fails=0
+  # Each RED case must be red for ITS OWN NAMED REASON -- a bare "non-zero exit" would also be
+  # satisfied by a crash, a missing interpreter or a typo'd path, none of which is the lock working.
+  expect_lock() {  # $1=A ids $2=B ids $3=a c1 payload $4=b c1 payload $5=want(ok|red) $6=label $7=red reason [$8=current manifest] [$9=pre-S5 manifest]
+    local out rc cur="${8:-$d/cur.tsv}" pre="${9:-$d/pre.tsv}"
+    rm -rf "$d/A" "$d/B"; mkdir -p "$d/A" "$d/B"
+    mk "$d/A" "$1" "$3"; mk "$d/B" "$2" "$4"
+    set +e
+    out="$(ids_equivalent "$d/A" "$d/B" "$pre" "$cur" "$6" 2>&1)"; rc=$?
+    set -e
+    if [ "$5" = "ok" ]; then
+      if [ "$rc" -ne 0 ]; then
+        echo "   SELFTEST FAIL: $6 — expected GREEN, got rc=$rc"; echo "$out" | sed 's/^/      /'
+        fails=$((fails + 1))
+      fi
+      return 0
+    fi
+    if [ "$rc" -eq 0 ]; then
+      echo "   SELFTEST FAIL: $6 — expected RED, got rc=0 (the lock cannot see this)"
+      fails=$((fails + 1))
+    elif ! printf '%s' "$out" | grep -qF "$7"; then
+      echo "   SELFTEST FAIL: $6 — RED, but not for the named reason '$7':"; echo "$out" | sed 's/^/      /'
+      fails=$((fails + 1))
+    fi
+  }
+
+  # (control 1) faithful pair: every required cell rendered, exactly the sync cell added, bytes equal.
+  expect_lock "c1 c2 c3" "c1 c2 c3 s1" "v" "v" ok  "control_faithful" ""
+  # (control 2) a declared-OPTIONAL (required=0) cell present in A and absent from B must stay GREEN
+  #     -- this is the control against the lock over-constraining: required=0 is allowed, not
+  #     demanded. Without it, a stricter `set(a) == set(b) - sync` rule would look "safer" and pass
+  #     every red case while being wrong about the contract.
+  expect_lock "c0 c1 c2 c3" "c1 c2 c3 s1" "v" "v" ok  "control_declared_optional_absent_in_b" "" \
+              "$d/cur.tsv" "$d/pre-opt.tsv"
+  # (a) a shared id (c2) differs byte-for-byte -> the byte-identity rule, the ONE thing the old
+  #     count-only comparison could already catch. Kept so the new rules can't regress it.
+  expect_lock "c1 c2 c3" "c1 c2 c3 s1" "v" "DIFFERENT" red "(a)byte_differ" \
+              "shared ids are NOT byte-identical"
+  # (b) a required pre-existing cell vanishes from B (B renders c1,c3 + s1) -> the inclusion rule in
+  #     the direction that matters for "S5 adds cells and removes none".
+  expect_lock "c1 c2 c3" "c1 c3 s1" "v" "v" red "(b)b_missing_required" \
+              "product render is MISSING"
+  # (c) an undeclared extra id appears in B -> the declaration bound, the direction S5 itself must
+  #     not take (an invented cell is not a fix).
+  expect_lock "c1 c2 c3" "c1 c2 c3 s1 zz" "v" "v" red "(c)b_extra_undeclared" \
+              "product render produced"
+  # (d) BOTH sides lose c3 -> the manifest-derived expectation. THE case a mutual comparison cannot
+  #     see: the shared set still matches itself perfectly, so a count/equality check stays green.
+  expect_lock "c1 c2" "c1 c2 s1" "v" "v" red "(d)both_sides_shrank" \
+              "pre-S5 render is MISSING"
+  # (e) the current manifest declares no sync cell at all -> the expectation is vacuous (this is the
+  #     guard against the whole lock silently passing on an empty rule).
+  expect_lock "c1 c2 c3" "c1 c2 c3 s1" "v" "v" red "(e)no_sync_declared" \
+              "declares NO vco_a_sync_tri" "$d/cur-nosync.tsv"
+  # (f) an undeclared extra id appears in the PRE-S5 render -> the pre-S5 side is bound by its own
+  #     manifest too; otherwise "the pre-S5 side" could be padded to make the shared set match.
+  expect_lock "c1 c2 c3 zz" "c1 c2 c3 s1" "v" "v" red "(f)a_extra_undeclared" \
+              "pre-S5 render produced"
+  # (g) a sync cell declared required=0 -> the declaration is internally inconsistent (the sync
+  #     cells are the whole point of S5, so they cannot also be optional).
+  expect_lock "c1 c2 c3" "c1 c2 c3 s1" "v" "v" red "(g)sync_declared_optional" \
+              "not all required=1" "$d/cur-sync-optional.tsv"
+
+  rm -rf "$d"
+  if [ "$fails" -ne 0 ]; then
+    echo "   SELFTEST RESULT: FAIL — $fails case(s)" >&2
     return 1
   fi
-  echo "   OK: $4 — all $shared shared ids are BYTE-IDENTICAL."
+  echo "   SELFTEST RESULT: PASS — controls GREEN; (a)..(g) each RED for its own named reason."
   return 0
 }
 
@@ -429,6 +648,25 @@ echo "=== GH#19 S5 VCO-A hard-sync mutation runner ==="
 echo "tree: $TREE"
 echo "rev for [A2]: $PRE_S5_REV"
 echo "thresholds: gain>=${MIN_GAIN_DB} dB (880: ${MIN_GAIN_HIGH_DB}), gap>=${MIN_GAP_DB} dB, per<=${MAX_PER_DEV}"
+echo
+
+########################################################################################
+# [0] THE LOCK'S OWN RED-FIRST EVIDENCE — before any build, on synthetic dirs. An assertion that
+# has never been seen RED is not evidence, so the id-set lock is required to be able to fail for
+# each named reason (mutation of a shared cell's bytes, a cell disappearing from either side, an
+# undeclared extra cell, an emptied sync declaration) while its faithful control case stays GREEN.
+# Run FIRST so a lock that cannot fail is caught in milliseconds, not after ~17 min of renders.
+########################################################################################
+echo "[0] id-set lock self-test (synthetic; no build, no render)"
+LOCK_SELFTEST_OK=0
+if ids_equivalent_selftest; then
+  LOCK_SELFTEST_OK=1
+else
+  echo "   FAIL: the id-set lock's own red-first self-test is RED — every [A2] verdict it produces" >&2
+  echo "         would be untrustworthy, so this run is aborted before any render." >&2
+  echo "RESULT: FAIL — lock self-test did not pass."
+  exit 1
+fi
 echo
 
 ########################################################################################
@@ -459,12 +697,18 @@ echo
 ########################################################################################
 echo "[A2] literal pre-S5 source (git $PRE_S5_REV) vs the committed source"
 PRE_RENDERED=0
+PRE_MANIFEST="$WORK/pre-s5-manifest.tsv"
 if git -C "$ROOT" cat-file -e "$PRE_S5_REV:core/include/lunar24/core/vco.h" 2>/dev/null; then
   for f in "${S5_FILES[@]}"; do git -C "$ROOT" show "$PRE_S5_REV:$f" > "$TREE/$f"; done
+  # The PRE-S5 manifest is the independent expectation the lock is judged against, so it is taken
+  # from the same rev as the pre-S5 source. It is NOT derived from the current manifest (that would
+  # make the expectation depend on the thing under test), and NOT written down here as a number.
+  git -C "$ROOT" show "$PRE_S5_REV:tools/gh19_manifest.tsv" > "$PRE_MANIFEST"
   build_probe
   render_only "$WORK/pre-s5-out"
   PRE_RENDERED=1
   echo "   rendered the literal pre-S5 source into $WORK/pre-s5-out"
+  echo "   pre-S5 manifest: $PRE_MANIFEST"
 else
   echo "   NOTE: rev $PRE_S5_REV not available in this clone; [A2] equivalence NOT measured." >&2
 fi
@@ -493,12 +737,18 @@ py_splice "$RT" "$CONSUMER_BLOCK" "" 1
 build_probe
 measure
 if [ "$PRE_RENDERED" -eq 1 ]; then
-  if raws_equal_by_id "$WORK/pre-s5-out" "$WORK/probe-out" > "$WORK/eq-nc1.txt" 2>&1; then
-    echo "   $(cat "$WORK/eq-nc1.txt" | tr '\n' ' ')"
-    echo "   OK: nc1's shared cells are BYTE-IDENTICAL to the literal pre-S5 source ([A2] measured)."
+  # LOCK (replaces the old bare `raws_equal_by_id`): asserted as a SET against the manifest-declared
+  # expectation, so a cell that vanishes from BOTH sides -- or from either side -- is RED here
+  # instead of passing on a matching shared count. `raws_equal_by_id` is still run underneath.
+  if ids_equivalent "$WORK/pre-s5-out" "$WORK/probe-out" "$PRE_MANIFEST" "$MANIFEST" \
+                    "nc1_vs_pre-s5" > "$WORK/eq-nc1.txt" 2>&1; then
+    cat "$WORK/eq-nc1.txt"
+    echo "   OK: nc1's render is the pre-S5 set exactly, plus only the declared sync cells,"
+    echo "       and every pre-existing cell is BYTE-IDENTICAL to the literal pre-S5 source."
     EQ_OK=1
   else
-    echo "   FAIL: nc1's render differs from the literal pre-S5 source — nc1 is not what it claims." >&2
+    echo "   FAIL: the default-behaviour id-set lock is RED for nc1 — nc1 is not a pure"
+    echo "         consumer-removal of the literal pre-S5 source." >&2
     cat "$WORK/eq-nc1.txt" >&2
     NC_FAILED=1
   fi
@@ -583,9 +833,11 @@ elif [ "$PRE_RENDERED" -eq 1 ]; then
 else
   EQWORD="not measured (rev unavailable)"
 fi
+echo "  [0]  lock self-test     : $([ "$LOCK_SELFTEST_OK" -eq 1 ] && echo 'GREEN control + (a)..(e) each RED for its own named reason' || echo 'NOT RUN')"
 echo "  [A]  positive           : GREEN 12/12 (rc=0)"
 echo "  nc1  consumer removed   : RED ${NC1_RED}/12 as STRUCTURAL rc=2 (named: NO criterion);"
-echo "                           84 shared cells *.raw-identical to pre-S5: $EQWORD"
+echo "                           pre-S5 id SET rendered exactly (manifest-derived), only the"
+echo "                           declared sync cells added, pre-existing cells *.raw-identical: $EQWORD"
 echo "  nc2  jump sign flipped  : VALIDITY red at the PROBE (substitution guard, not the gate);"
 echo "                           ${NC2_RED}"
 echo "  nc3  full-scale kernel  : RED ${NC3_RED}/12 as judgement rc=1 (scale control)"

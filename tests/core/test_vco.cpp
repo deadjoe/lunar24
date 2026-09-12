@@ -783,8 +783,11 @@ static bool test_vco_hardsync_reset_alignment() {
 
   // (b) ALIGNMENT: after the product's reset the emitted trajectory is the FRESH cycle's, bit for
   // bit — the next samples are phase step, 2*step. The raw primitive reaches the same values one
-  // sample EARLIER (it starts the fresh trajectory AT the reset sample), which is the documented
-  // one-sample self-inconsistency, asserted rather than described.
+  // sample EARLIER (it starts the fresh trajectory AT the reset sample): that is the second of the
+  // two discrete timing conventions (reset-then-advance vs request-then-apply), not a defect, and
+  // this test asserts which convention each entry point implements. Which one the PRODUCT path is
+  // required to use is fixed by the independent master-edge vs reset-frame criterion in the S5
+  // mutation runner (task #111 item 2), not by this unit test.
   CHECK(p1[k1 + 1] == head[0]);
   CHECK(p1[k1 + 2] == head[1]);
   CHECK(p2[k2 + 1] == head[0]);

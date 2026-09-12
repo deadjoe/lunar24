@@ -3025,12 +3025,23 @@ class SynthRuntime {
         // the ONE sink resolver and interpreted by the SAME `sink_gate_interpret` the sequencer's
         // EXT.CLOCK consumer uses; the threshold/hysteresis come from THIS jack's own descriptor
         // (never a hardcoded constant). A real RISING edge REQUESTES a reset, which Vco::tick()
-        // then applies after its own advance: the edge sample itself reads phase 0, so the value
-        // discontinuity and the new cycle start coincide instead of straddling two samples, and
-        // tick() band-limits that discontinuity on the same sample (Vco::requestSync). The reset
-        // is deliberately NOT applied here as an immediate syncPulse(): that would leave the
-        // emitted sample one phase step into the new cycle while the jump stayed on this sample,
-        // which is one sample of self-inconsistency between phase and value.
+        // then applies after its own advance, and tick() band-limits the resulting discontinuity
+        // on that same sample (Vco::requestSync).
+        //
+        // TWO DISCRETE TIMING CONVENTIONS — this slice picks the first, and the choice is pinned
+        // by a product timing criterion, not by an argument from self-contradiction:
+        //   (1) REQUEST, apply after the advance (what this code does). The edge sample itself
+        //       reads phase 0, so the value discontinuity and the new cycle start coincide on one
+        //       sample.
+        //   (2) reset IMMEDIATELY, then advance (the raw `syncPulse()` primitive). The jump is
+        //       emitted on the edge sample and the new cycle's first advanced sample follows one
+        //       sample later.
+        // Both are self-consistent readings of a discrete-time hard sync; they differ in which
+        // sample carries the jump relative to the cycle start. (2) is a legitimate convention, not
+        // an error, and the raw primitive is retained for the VCO's own unit tests. This slice
+        // adopts (1); the criterion that fixes it is the independent master-edge vs reset-frame
+        // reconciliation in the S5 mutation runner (task #111 item 2), which fails if the reset
+        // lands on the wrong frame.
         // Same-sample order: a source that ran earlier in this frame is consumed here. VCO B has
         // NO sync point (the hardware jack is VCO A only), so this block exists only in the kVcoA slot.
         double sv = 0.0;
