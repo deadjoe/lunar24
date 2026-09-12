@@ -307,19 +307,34 @@ python3 tools/check_gh19_hardsync_acceptance.py \
 
 第二行同时是**真实数据上的移除控制**：把 naive arm 当作 current ⇒ 12/12 增益恰为 0 ⇒ 判据不满足 ⇒ `rc=1`，且 `self-check PASS` **没有**把它盖掉。
 
-### 13.5 负控：`tests/mutation/run_vcoa_hardsync_mutation.sh` `[待运行 — PENDING]`
+### 13.5 负控：`tests/mutation/run_vcoa_hardsync_mutation.sh`
 
-本轮运行中（实测成本：**分析器每趟约 17 min**，5 趟判据 ⇒ 整轮约 **90 min**，不是先前估的 ~30 min）。预期，并在跑完后逐条以实跑输出替换：
+**v1 实跑（2026-09-12，log `/tmp/s5_mutation.log`）：三条与预注册一致，一条被证伪，且整轮中止。** 实测成本：分析器每趟约 **17 min**。
 
-- `[A]` 正控：提交源经门禁 **GREEN 12/12**；
-- `[A2]+nc1`：与**字面改前源**的渲染按 cell id 比对 `shared=84 … differ=0`（"等价于改前"是**测出来**的）；
-- `nc1`：消费者去掉 ⇒ 无复位 ⇒ 前提不成立 ⇒ 分析器 fail-closed ⇒ 门禁 **rc=2**（结构性，"NO criterion"）；
-- `nc2`（`+= 0.5*jmp`）/ `nc3`（`-= jmp`）/ `nc4`（保留延迟复位、只去掉带限项）：**rc=1**（判据红），且各自命中**具名**规则 `220/440:>=`。
+| 臂 | 预注册 | 实跑输出 | 判定 |
+|---|---|---|---|
+| `[A]` 正控 | GREEN 12/12 | `OK: rc=0, 12 cell(s) GREEN`；`880Hz passed=4/4, 220/440Hz passed=8/8` | ✅ 一致 |
+| `[A2]` 等价锁（+nc1） | `shared=84 … differ=0` | `shared=84 a_only=0 b_only=12 differ=0` | ✅ 一致（**测出来的**，非声称） |
+| `nc1` 去消费者 | 结构 rc=2，具名 `NO criterion` | `OK: nc1_consumer_removed rc=2, named rule present: NO criterion`；`red=0 of 12` | ✅ 一致 |
+| `nc2` 符号翻转 | judgement **rc=1**，具名 `220/440:>=` | **探针自己拒收**：`FATAL vco_a_sync_tri_96000_880: required cell not produced [over-scale]`；`84 cells produced, 12 blocked, exit_code=1` | ❌ **证伪** |
+| `nc3` / `nc4` | rc=1 | **未运行**——`render_only`（`:194`）对任何非零探针退出 `exit 1`，整轮在 nc2 处中止 | 无数据 |
 
-跑完前，本节**不主张**任何负控结果。
+**nc2 为什么落在探针侧而不是门禁侧。** 探针的替换护栏是 `peak > hi`（`gh19_alias_probe.cpp:161,198`；这些 audio-domain cell 的 `hi = 0.55`，源码注释即写作 *substitution detector*）。**决定红由谁拥有的是"偏离正确核的幅度"**：
+
+| 臂 | 核 | 偏离正确核 | 峰值护栏 | 红的归属 |
+|---|---|---|---|---|
+| `nc2` | `+= 0.5*jmp` | **1.0·jmp** | **越出** | 探针（有效性） |
+| `nc3` | `-= jmp` | **0.5·jmp** | 预期在带内 | 门禁（判据） |
+| `nc4` | `(void)jmp` | **0.5·jmp** | **实测在带内**（naive 基线 12 格均有有效残差 ⇒ 峰值 ≤ 0.55） | 门禁（判据） |
+
+即 `nc2` 的偏离量恰是"完全不加修正"的**两倍** ⇒ 越护栏 ⇒ **门禁根本没有拿到判据**。⇒ **臂的暴力程度决定 red 由谁拥有；这必须先算再预注册，不能默认门禁总会拿到判据。** 本节据此把 nc2 改判为**探针侧有效性红**，并**不**声称它证明门禁有鉴别力。
+
+**修复 `e3f9861`（判据 / 阈值 / 产品代码一律未动）**：① nc2 改判探针侧有效性红，新增 `expect_failclosed`——断言"拒收**且理由匹配**"（只断言"非零退出"会把构建失败或崩溃一并收下）；② `measure_may_fail_closed`：探针拒收**记录而不中止**，使后续臂仍能执行；③ `require_criterion`：judgement 臂在探针拒收时**拒绝判读**——否则 `$WORK/gate.txt` 仍是**上一臂**的输出，`expect_red` 会"通过"别人的结果（`report_arm`/`red_count` 都读该文件），nc2 因此也不再调 `report_arm`；④ nc3/nc4 的新预期**在改动前写进脚本**（预注册纪律）。`bash -n` 通过。
+
+**v2 重跑中**（`/tmp/s5_mutation2.log`）。跑完前，本节**不主张** nc3/nc4 的任何结果，也**不主张** runner 已证明 judgement 路径——该路径目前的唯一证据是 §13.4 的 naive 移除控制（`rc=1`，`exact-zero deltas 12/12`）。
 
 **静态核对（与运行无关，已核）**：runner 里断言"两目录应共享 N 个 id"的辅助函数 `ids_equivalent`（`run_vcoa_hardsync_mutation.sh:325`）**定义了但无任何调用点**（全文件仅此一处出现）⇒ **共享 id 数（84）本身没有被断言**。nc1 走的是它内部的 `raws_equal_by_id`，该函数**打印** `shared=/a_only=/b_only=/differ=` 但在 `differ=0 且无缺文件` 时一律 `exit 0`——**共享集缩小（例如少渲染一格）不会让它失败**。
-该风险**已由别处覆盖**：analyzer 的 fail-closed 覆盖谓词以 manifest 的 **required** id 为准（`gh19_alias_analyze.py:16`「missing row -> a required manifest id has NO scenario row」+ `:1797` 单一真源），缺一格 ⇒ `-` ⇒ 门禁结构 rc=2。故这是**冗余缺口，不是锁上的洞**；但**"84" 这个数在 runner 内确实没有被钉住**，本节按实跑输出报数时不得声称它被断言。**runner 正在执行 ⇒ 本片不改它**（常驻纪律），列为下一轮/复核项。
+该风险**已由别处覆盖**：analyzer 的 fail-closed 覆盖谓词以 manifest 的 **required** id 为准（`gh19_alias_analyze.py:16`「missing row -> a required manifest id has NO scenario row」+ `:1797` 单一真源），缺一格 ⇒ `-` ⇒ 门禁结构 rc=2。故这是**冗余缺口，不是锁上的洞**；但**"84" 这个数在 runner 内确实没有被钉住**，本节按实跑输出报数时不得声称它被断言。**本轮已改的部分**：`e3f9861` 加的 `require_criterion` 挡住了"读到上一臂陈留 `gate.txt`"这一类陈旧产物错（另一类、也是更靠近本条的），但**共享数断言本身仍未接回** ⇒ 列为复核项，不在本片声称已修。
 
 ## 14. 覆盖缺口与既有 GitHub issue 的对应
 
