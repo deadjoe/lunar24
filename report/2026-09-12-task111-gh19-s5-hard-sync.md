@@ -318,6 +318,9 @@ python3 tools/check_gh19_hardsync_acceptance.py \
 
 跑完前，本节**不主张**任何负控结果。
 
+**静态核对（与运行无关，已核）**：runner 里断言"两目录应共享 N 个 id"的辅助函数 `ids_equivalent`（`run_vcoa_hardsync_mutation.sh:325`）**定义了但无任何调用点**（全文件仅此一处出现）⇒ **共享 id 数（84）本身没有被断言**。nc1 走的是它内部的 `raws_equal_by_id`，该函数**打印** `shared=/a_only=/b_only=/differ=` 但在 `differ=0 且无缺文件` 时一律 `exit 0`——**共享集缩小（例如少渲染一格）不会让它失败**。
+该风险**已由别处覆盖**：analyzer 的 fail-closed 覆盖谓词以 manifest 的 **required** id 为准（`gh19_alias_analyze.py:16`「missing row -> a required manifest id has NO scenario row」+ `:1797` 单一真源），缺一格 ⇒ `-` ⇒ 门禁结构 rc=2。故这是**冗余缺口，不是锁上的洞**；但**"84" 这个数在 runner 内确实没有被钉住**，本节按实跑输出报数时不得声称它被断言。**runner 正在执行 ⇒ 本片不改它**（常驻纪律），列为下一轮/复核项。
+
 ## 14. 覆盖缺口与既有 GitHub issue 的对应
 
 - **本片新增覆盖**：manifest +12 行 `vco_a_sync_tri_{44100,48000,88200,96000}_{220,440,880}`，**全部 `required=1`**。`[代码]`
