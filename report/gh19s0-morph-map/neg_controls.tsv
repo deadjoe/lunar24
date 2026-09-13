@@ -3,4 +3,4 @@ N1	fixed waveform (real legacy chain)	M1	1	rmsA spread 0.000e+00
 N2	wrong side (cross-wired)	M5.coord	1	set A=0.90 B=0.50 read A=0.50 B=0.90
 N3	interval discontinuity	M2	1	worst jump 1.200000
 N4.equal	silence-free S0	M7	1	peak at S0 centre 0.500000
-N4.panel	silence-free S0	M7	1	peak at S0 centre 0.500000
+N4.spaced	silence-free S0	M7	1	peak at S0 centre 0.500000

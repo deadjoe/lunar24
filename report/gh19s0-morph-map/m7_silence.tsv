@@ -1,5 +1,5 @@
 candidate	norm_at_S0_centre	peak_over_phase	rms_over_phase	is_silent	peak_at_0	peak_at_1
 equal	0.1250	0.000000000e+00	0.000000000e+00	1	1.000000000	1.000000000
 equal_compensated_x1e6	0.1250	0.000000000e+00	-	1	-	-
-panel	0.1467	0.000000000e+00	0.000000000e+00	1	1.000000000	1.000000000
-panel_compensated_x1e6	0.1467	0.000000000e+00	-	1	-	-
+spaced	0.1467	0.000000000e+00	0.000000000e+00	1	1.000000000	1.000000000
+spaced_compensated_x1e6	0.1467	0.000000000e+00	-	1	-	-

@@ -78,39 +78,81 @@ c = {0.0, 0.25, 0.5, 0.75, 1.0}
 
 Pure software equal division, explicitly permitted as provisional by @Codex `ad68abb6`.
 
-### 1.3 Candidate B — `kRingPanel`
+### 1.3 How five nodes come from six names — and why the panel supports no derivation
+
+**The node count, derived (this is forced by the manual, not invented).** The manual's two morphs each
+contribute a far endpoint, and that is the only source of the fifth node:
+
+| manual name | endpoints | new node? |
+|---|---|---|
+| saw, sine, triangle, pulse ("traditional wave shapes") | — | 4 nodes |
+| "saw to inverted saw" | saw (already traditional), **invSaw** | **+1** |
+| "sine to triangle" | sine and triangle, **both already traditional** | +0 |
+
+⇒ **4 + 1 = 5 structural nodes.** `invSaw` is the only node that has no separate glyph on the panel,
+because it is reached *inside* a named morph stretch rather than at a labelled position.
+
+**What the panel actually says.** The six glyphs are at measured angles −75, −53, −20, +16, +48, +75°
+from the knob centre (`pdftoppm -r 2000` of `solar42N_panel_2400px.png`). Their identifications come
+from task #115's layer-C reading of the same image, with its confidence column:
+
+| # | angle | #115 reading | confidence |
+|---|---|---|---|
+| 1 | −75° | **sine** | **high** |
+| 2 | −53° | triangle/saw family (which one) | low on which; medium overall |
+| 3 | −20° | flat-top + falling slope — **reading not unique** | **low** |
+| 4 | +16° | **square / pulse** | **high** |
+| 5 | +48° | two crossed diagonals overlaid ⇒ **morph symbol** | medium |
+| 6 | +75° | sine merging into a crossing ⇒ **morph symbol** | medium/low |
+
+**This contradicts the node order in §1.1, and the previous revision of this report got it backwards.**
+That revision put `saw` at −75° and `triangle` at +48°. −75° is my own **high-confidence sine**, and
++48° is a **morph symbol**. An earlier draft then went further and claimed the panel was *incompatible*
+with any monotone mapping. **That step is withdrawn too**, and @Codex was right to stop it: whether a
+glyph denotes a stretch's interior, a whole morph *type*, or one representative waveform is **itself
+unknown**, so glyph positions alone cannot exclude anything. The defensible statement is the weaker
+one: **this boundary derivation has no basis.** Not "the panel disproves it".
+
+**Candidate B — `kRingSpaced` (the name is no longer `kRingPanel`).**
 
 ```
 c = {0.0, 0.2933, 0.3667, 0.8200, 1.0}
 ```
 
-Derived from the six glyph centres measured on `solar42N_panel_2400px.png`
-(`pdftoppm -r 2000`, angles from the knob centre, 0° = straight up): −75, −53, −20, +16, +48, +75 deg,
-mapped angle → norm linearly. Node boundaries are the **direct** glyph reads:
+Read the numbers off exactly one recomputable calculation, with its source stated — a plain rescaling
+of the six measured glyph **angles** onto `[0,1]` (`arc = 150°`, so `t = (θ+75)/150`), then
+`c = {t0, 2·t1, t2, t4, t5}`:
 
 ```
-t1 = 0.2933 -> invSaw   = c1 = t1       = 0.2933
-t2 = 0.3667 -> sine     = c2 = t2       = 0.3667
-t4 = 0.8200 -> triangle = c3 = t4       = 0.8200
+-75 -> 0.0000   -53 -> 0.1467   -20 -> 0.3667   +16 -> 0.6067   +48 -> 0.8200   +75 -> 1.0000
 ```
 
-`t0 = 0` → saw = `c0`, `t5 = 1` → pulse = `c4`. The stretch centre `t3 = 0.5933` is **redundant**: it
-independently predicts `c3 = 2·t3 − c2 = 0.8467` against the direct read `0.8200` — a residual of
-`0.0267` norm (≈ 4.0° of arc). That residual is this model's own consistency check and is reported as
-such; the direct node read is used because it needs no "the label sits at the stretch centre"
-assumption.
+**The previous "independent redundancy evidence" is deleted, because it was circular.** The earlier
+text cross-checked `2·t3 − c2` against `c3` and reported `0.8467` vs `0.8200`. But the value it
+substituted for `t3` was `0.5933`, which is the *interval midpoint* `(t2+t4)/2 = 0.5933` computed
+**from** `c2` and `c3` — so it reproduced `0.8199` against a directly-read `0.8200`, i.e. it checked the
+model against itself. The header meanwhile used the *measured* `t3 = 0.6067`, giving `0.8467`. The
+report and the header were running two different derivations; @Codex located exactly this. Only
+source-consistent, recomputable arithmetic remains.
 
-**The angle → norm linearity is UNVERIFIED and this is weak evidence.** Candidate B is a provisional
-candidate, not a measurement of hardware structure. It is the only one of the two that has any panel
-provenance at all.
+The rescaling also has **no measured basis**: the knob's mechanical travel was never measured, so
+mapping the glyph arc onto `[0,1]` assumes the outermost labelled glyphs sit at the sweep's extremes.
+The candidate is retained **solely** as a non-uniform-spacing specimen, so the selection can compare
+"norm 0.5 **is** a node" against "norm 0.5 falls inside a stretch". Its values are not evidence about
+the hardware and are not offered as such.
 
 ### 1.4 Explicitly NOT claimed
 
-The node **order** `[saw, invSaw, sine, triangle, pulse]` is itself provisional (P1): the panel's
-glyph order cannot be read with confidence (task #115 glyph confidences: triangle-vs-saw "low", the
-morph glyphs "medium"). Only the two named stretches' internal directions are manual-fixed
-("saw to inverted saw", "sine to triangle"). Symbols that could not be uniquely read were recorded as
-unreadable rather than guessed as confirmed.
+- **The node order** `[saw, invSaw, sine, triangle, pulse]` is provisional (P1). The manual fixes each
+  morph's **endpoint pair** ("saw to inverted saw", "sine to triangle") — it does **not** fix which
+  endpoint sits at the lower norm, i.e. it does not state the knob's rotation direction. So even S0's
+  internal direction is a software choice, not a manual fact. The panel does not settle the order
+  either (§1.3).
+- **The stretch widths** are not evidenced. Equal division asserts all four stretches are equally
+  wide; that is a claim with no more support than any other spacing, which is precisely why
+  @Codex allowed it *as a labelled provisional candidate* while forbidding it being presented as
+  hardware structure.
+- Symbols that could not be uniquely read are recorded as unreadable, not upgraded to confirmed.
 
 ---
 
@@ -265,21 +307,41 @@ normalisation — only changing the waveform pair can remove it. The existing `k
 same property today (its comment already records "passes through 0 at mid"). Both candidates carry the
 full swing at the sweep endpoints.
 
-### 2.8 Negative controls (`neg_controls.tsv`)
+### 2.8 Negative controls — two kinds, and they are not the same evidence
 
-Each control names the **one** check it must make fire, and runs the **same predicate** as that check,
-so a green check is evidence rather than the absence of a check.
+**(i) In-probe controls (`neg_controls.tsv`).** Each names the **one** check it must make fire and
+runs the **same predicate** as that check. They prove the *predicates* have discriminating power.
+Because the substitute source is written inside the probe, they prove **nothing about the production
+code** — a fixture authored alongside the code can only show the code agrees with itself.
 
 | id | defect | must fire | fired |
 |---|---|---|---|
 | N1 | fixed waveform — the REAL chain on the legacy path (`wave_` pinned to `kTriangle`), morph swept | `M1` movement | yes — `rmsA spread 0.000e+00` |
-| N2 | wrong side — a source that reads the other side's coordinate | `M5.coord` | yes |
-| N3 | interval discontinuity — a non-partition-of-unity source | `M2` continuity | yes — worst jump `1.200000` |
+| N2 | wrong side — an in-probe source that reads the other side's coordinate | `M5.coord` | yes |
+| N3 | interval discontinuity — an in-probe non-partition-of-unity source | `M2` continuity | yes — worst jump `1.200000` |
 | N4 | silence-free saw↔invSaw source, both candidates | `M7` silence | yes — peak `0.500000` |
 
-**N1 is the S0 defect measured on the product, not modelled**: on the real legacy chain the morph
-coordinate moves the rendered output by exactly nothing (`rmsA spread 0.000e+00`), because `wave_` is
-pinned to `kTriangle` and `setWaveform` has zero production callers.
+N1 is the exception among the four and the strongest of them: it runs the **real** chain, so it is the
+S0 defect *measured on the product* rather than modelled — on the legacy path the morph coordinate
+moves the rendered output by exactly nothing, because `wave_` is pinned to `kTriangle` and
+`setWaveform` has zero production callers.
+
+**(ii) Production mutants — the contract's actual requirement
+(`report/gh19s0-morph-map/run_mutation_controls.sh`, log in `mutation_controls.txt`).** Three targeted
+mutations of the **real production headers**. Each is built from a patched **copy** of `core/include`
+placed first on the include path, so **no tracked file is modified**. Each must run to completion
+(printing its `checks=` summary) *and* trip its specific named check — a mutant that merely exits
+non-zero does not count, because the failure surface has to be the named one.
+
+| mutant | production patch | result |
+|---|---|---|
+| fixed waveform | `vco.h`: `if (waveMap_ != VcoWaveMap::kLegacy) {` → `if (false) {` | runs to completion, **`checks=53 failures=14`**, `FAIL [M1.equal.44100]` … `FAIL [M1.spaced.96000]` |
+| wrong side | `machine_runtime.h`: `setVcoBMorph` also calls `vcA_.setMorph(m)` (a real cross-VCO leak) | runs to completion, **`checks=53 failures=4`**, `FAIL [M5.coord]`, **`FAIL [M5.B]`**, `FAIL [M5.shape.B]` |
+| interval discontinuity | `vco_wave_map.h`: `sampleAt` returns `a`/`b` instead of `(1−u)·a + u·b` | runs to completion, **`checks=53 failures=4`**, **`FAIL [M2cont.equal]`**, `FAIL [M2cont.spaced]`, `FAIL [M7.*]` |
+
+Reference build in the same runner: `checks=53 failures=0`. The mutant builds deliberately omit
+`-Werror` (a mutation can make a variable unused for a reason unrelated to the defect under test); the
+reference build carries the full `-Wall -Wextra -Wpedantic -Werror` set.
 
 ---
 
@@ -313,7 +375,7 @@ What *would* change if the mapping is switched on, stated separately:
 | **save bytes** | **unchanged** | **unchanged** — the map is not a `ParameterId`, not in the registry, not in `DeviceStateV1`, not persisted |
 | **restore: coordinate readback** | unchanged | unchanged — exact in both directions (§2.5) |
 | **restore: sound** | unchanged | **CHANGED** for any state whose `morph` is not the triangle node — those states previously rendered pure triangle regardless of `morph` (the S0 defect) and now render the sweep position |
-| **the existing `norm = 0.5` default** | pure triangle (because `wave_` is pinned to `kTriangle`) | `equal`: **sine** (0.5 *is* the sine node) — `panel`: `0.706·sine + 0.294·triangle` |
+| **the existing `norm = 0.5` default** | pure triangle (because `wave_` is pinned to `kTriangle`) | `equal`: **sine** (0.5 *is* the sine node) — `spaced`: `0.706·sine + 0.294·triangle` |
 | **old files' non-default `morph`** | previously inaudible | now audible |
 | `pw` / SHAPE | inaudible | becomes audible through the pulse node (§5, D-2) |
 | registry / target / wire / disposition | — | **untouched** |
@@ -324,29 +386,46 @@ while the mapping is off; the moment production enables it, an old file with a n
 sounds different from what it sounded like when it was saved. That is the honest cost of the S0 fix,
 and it is unavoidable: the whole point of S0 is that `morph` was inert.
 
-**Cost of keeping `0.5` = pure triangle.** Under this node order, `0.5` is the sine node (`equal`) or
-inside the sine→triangle stretch (`panel`). To make `0.5` emit pure triangle, the triangle node must
-sit at `0.5`, i.e. the node order must become `[saw, invSaw, triangle, sine, pulse]` or the triangle
-boundary must be moved to `0.5`. Cost: the two manual-named stretches stop being adjacent features in
-the panel's order — `sine → triangle` is a named morph, so swapping triangle and sine inverts the
-direction of a manual-evidenced morph, and `invSaw → triangle` becomes an unnamed connector where the
-named `invSaw → sine` used to be. The panel's glyph order is provisional anyway (P1), so this is a
-*possible* future candidate — but it is **not** a reason to distort the boundary vectors now, and no
-curve was invented to keep the default bit-identical.
+**Cost of keeping `0.5` = pure triangle — the real cost, corrected.** An earlier revision claimed this
+required swapping the node order and therefore "inverting a manual-evidenced morph". **That was
+wrong**, and @Codex was right to reject it: I had written the constraint of my chosen equal grid as if
+it were a mathematical necessity. **The same node order can simply move `c3` to `0.5`** and adjust the
+earlier boundaries — no order change, no inversion. Concretely, keeping
+`[saw, invSaw, sine, triangle, pulse]` and setting `c3 = 0.5` means: S0 and S1 must share `[0, 0.5]`
+instead of `[0, 0.75]`, and S3 (triangle→pulse) stretches over the whole `[0.5, 1]` — so the sweep is
+**badly unbalanced** (the last stretch alone is half the travel) and every boundary is **decoupled from
+the measured glyph angles** for the whole second half. The honest cost is therefore **spacing and
+correspondence**, not order: you lose the ability to line any boundary up with any panel measurement,
+and you get one stretch twice as wide as the others. Whether that is worth it is a legitimate thing for
+the supervisor to decide — it is not forbidden, it is just not free.
+
+What is *not* on the table is inventing an unreasonable curve to keep the default bit-identical, and I
+have not done that.
 
 ---
 
-## 5. Decision needed from the supervisor
+## 5. Decisions — D-2 is ruled; the rest are still open
 
-**D-2 — the pulse node reads `duty_` (= the `pw` panel parameter).** Consequence, reported not hidden:
-once the sweep reaches the pulse region, the SHAPE/`pw` control becomes audible. This is **not** a
-reclassification of `vco_a_pwm` / `vco_b_pwm`: both stay `transfer_unavailable`, both live lanes stay
-fail-closed, and **this slice does not judge them consumed**. The registry, the state bytes and the
-dispositions are untouched. Whether the product wants `pw` to become audible as a side effect of the
-morph knob is a supervisor ruling.
+**D-2 (pulse node reads `duty_` = the `pw` panel parameter) — RULED IN SCOPE, no longer open.**
+@Codex, 2026-09-13: this is the normal consumption of an *existing* parameter and needs no separate
+owner confirmation. So the sweep making `pw` audible past the pulse node is **approved**. It remains
+**not** a reclassification of `vco_a_pwm` / `vco_b_pwm`: both stay `transfer_unavailable`, both live
+lanes stay fail-closed, and this slice does not judge them consumed. Registry, state dispositions and
+state bytes are untouched.
 
-**P1/P2/P3** (node order, boundary vectors, BLAMP scaling) are software-provisional and need the
-supervisor's ruling as such (§1.4, §1.1).
+**Still open, and the supervisor's to rule:**
+
+- **P1 — the node order.** Which end of each named morph sits at the lower norm, i.e. the knob's
+  rotation direction. The manual fixes the endpoint *pairs* only; the panel does not settle it
+  (§1.3, §1.4).
+- **P2 — the boundary vector.** Neither candidate has evidence. This is the choice §7 is about.
+- **P3 — the BLAMP scaling.** First-order, exact only at a pure-triangle node.
+
+**NOT a production entry point (standing disclosure).** The candidate is switched on only from tests
+(`SynthRuntime::setVcoWaveMap`). It is not a `ParameterId`, not in the registry, and not persisted, so
+**no SAVE can select a candidate**. This test-injection step is acceptable for this experimental card
+only: the production slice that adopts a mapping **must remove it** and give the mapping a real,
+persisted, ruled-on entry point.
 
 ---
 
@@ -364,6 +443,26 @@ c++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
 # -> checks=53 failures=0 ; writes the 10 matrices in report/gh19s0-morph-map/
 ```
 
+The §2.8 **production** negative controls have their own runner, because they must mutate the real
+headers rather than the probe:
+
+```sh
+sh report/gh19s0-morph-map/run_mutation_controls.sh
+# -> reference 53/0 ; three mutants each run to completion and are caught BY NAME
+# -> "MUTATION CONTROLS: all 3 production mutants ran to completion and were caught by name." ; exit 0
+# saved transcript: report/gh19s0-morph-map/mutation_controls.txt
+```
+
+Note the `.txt` extension: the repo's `.gitignore:31` ignores `*.log`, so the transcript is saved with
+an extension that keeps it reviewable in the commit rather than force-adding past the ignore rule.
+
+It never touches a tracked file: each mutant is built from a `cp -R core/include` copy placed
+**first** on the include path, with the patch verified by `grep -q 'MUTANT n'` before the build. Note
+the differing warning policy — the **reference** build carries `-Wall -Wextra -Wpedantic -Werror`
+(matching the real builds), while the **mutant** builds deliberately omit `-Werror`: a mutation such
+as `if (false) {` can leave a variable unused, which `-Werror` would reject for a reason that has
+nothing to do with the mutation under test.
+
 **DISCLOSED:** the CMake target registration added to `CMakeLists.txt` (a `lunar_add_test` +
 `set_tests_properties(... LABELS "slow")`, mirroring `gh19_hardsync_acceptance`) is therefore
 **unverified locally** — it needs a worktree with the vendor submodule. The probe itself is verified.
@@ -374,30 +473,38 @@ probe gating.
 
 ## 7. Recommendation
 
-**Take `kRingPanel` (candidate B) as the provisional production shape, with the node order still open
-and D-2 ruled on separately.**
+**Take `kRingEqual` (candidate A) as the provisional production shape.**
 
-Reasoning, in the order the card asked for it:
+The previous revision recommended `kRingSpaced` on the strength of its panel provenance. **That
+recommendation is withdrawn** — the provenance is gone (§1.3), so the recommendation has to stand on
+what is actually left. Against the card's three criteria:
 
-* **Continuity** — both candidates are exactly equal here: boundary values are exact to `0.000e+00`,
-  both one-sided limits exist at every boundary, worst jump over 4000 sweep steps is `~1e-8`, and both
-  are bit-identical across block partitions and across repeated state restores. Continuity does not
-  choose between them.
-* **Panel evidence** — only candidate B has any: its boundaries come from six measured glyph centres,
-  and its own redundancy check (`t3` predicting `c3 = 0.8467` vs the direct read `0.8200`, residual
-  `0.0267 ≈ 4.0°`) is a *small* residual for a linearity that is admittedly unverified. Candidate A
-  has no panel provenance at all and is an explicitly provisional software division. When two
-  candidates are equally continuous, prefer the one with provenance.
-* **Default impact** — this is the real cost of B: `0.5` lands at `0.706·sine + 0.294·triangle`
-  instead of A's exact sine node, so the default knob position is a mix rather than a named waveform.
-  Both candidates change restore-sound for non-default `morph` (unavoidable, §4) and neither changes
-  a single saved byte.
+* **Continuity** — a tie, and not a close call: boundary values exact to `0.000e+00`, both one-sided
+  limits finite at every boundary, worst jump over 4000 sweep steps `~1e-8`, bit-identical across
+  block partitions and across repeated state restores, for both candidates. Continuity does not choose
+  between them.
+* **Panel evidence** — **neither has any.** The glyph identifications contradict the node order for
+  both, and no boundary derivation survives. So this criterion no longer separates them; what it does
+  do is *penalise* `kRingSpaced`, whose numbers came from the withdrawn derivation, relative to
+  `kRingEqual`, which claims nothing beyond "an even provisional division" — a claim @Codex explicitly
+  permitted and which does not depend on any reading of the hardware.
+* **Default impact** — `kRingEqual` puts `norm 0.5` **exactly on a named waveform** (the sine node).
+  `kRingSpaced` puts it inside a stretch (`0.706·sine + 0.294·triangle`), which is harder to explain,
+  harder to rule on, and rests on numbers with no basis. Both change restore-sound for non-default
+  `morph` (unavoidable, §4); neither changes a single saved byte.
 
-If the supervisor prefers the default position to land exactly on a named waveform, `kRingEqual` is
-the better pick and costs only the panel provenance — that is a legitimate call, and it is the one
-trade this recommendation is actually making. **One thing I would not do is tune the boundaries to
-make `0.5` bit-identical to today's triangle**, because that inverts a manual-evidenced morph
-direction (§4).
+**The trade, stated plainly:** `kRingEqual` is simpler, its default position lands on a name, and it is
+the only one of the two that does not inherit a withdrawn derivation — but it does assert that all four
+stretches are equally wide, which is unevidenced. `kRingSpaced` avoids the equal-width assertion, but
+its non-uniform spacing has no evidence either, so it trades one unevidenced claim for another while
+losing the clean default. **On a tie in evidence, prefer the candidate that claims less and lands on a
+name.** If the supervisor wants non-uniform spacing for a reason of their own, that is a legitimate
+override — but it should be *their* reason, not mine, because mine was the panel and the panel does not
+support it.
+
+Two things I would not do, both of which this slice avoided: **tune the boundaries so `0.5` stays
+bit-identical to today's triangle** (§4 shows the real cost of that), and **present any of these
+numbers as hardware structure**.
 
 *Not done and not claimed:* no merge, no push, no PR, no GH#19 closure, no release, no MET claim, no
 registry/target/wire/disposition change, and PWM is **not** judged consumed. The unrelated

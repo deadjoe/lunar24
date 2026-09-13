@@ -97,9 +97,10 @@ enum class VcoControlMode : std::uint8_t { kLinear, kExponential };
 //   kLegacy    — the production behaviour: `wave_` alone picks the waveform (production pins
 //                kTriangle, so today the morph coordinate has no audible landing point).
 //   kRingEqual — the ring map (vco_wave_map.h) with five evenly spaced nodes.
-//   kRingPanel — the ring map with boundaries derived from the measured panel glyph positions.
+//   kRingSpaced — the ring map with a NON-UNIFORM spacing (an unsupported arithmetic specimen,
+//                NOT panel-derived: see the P2 block in vco_wave_map.h for the withdrawal).
 // Default kLegacy keeps every existing call path bit-identical; see Vco::setWaveMap.
-enum class VcoWaveMap : std::uint8_t { kLegacy, kRingEqual, kRingPanel };
+enum class VcoWaveMap : std::uint8_t { kLegacy, kRingEqual, kRingSpaced };
 
 class Vco {
  public:
@@ -132,7 +133,7 @@ class Vco {
   void setMorph(double m);
   // EXPERIMENTAL (task #116): select the software mapping the single `morph` coordinate drives.
   // kLegacy (the default) leaves emittedAt_ on the pre-existing path, so this switch cannot
-  // change any current output. kRingEqual / kRingPanel route the sample through
+  // change any current output. kRingEqual / kRingSpaced route the sample through
   // wave_map::sampleAt (see vco_wave_map.h) and scale the triangle BLAMP by the triangle's
   // weight in the mix. This is a DSP-mapping switch for the experiment, never a second control
   // quantity: it is not a ParameterId, not in the registry, and not persisted.
@@ -141,7 +142,7 @@ class Vco {
   // The boundaries the active ring map uses (empty position for kLegacy: returns kRingEqual so
   // callers have a defined value; consult waveMap() first).
   static const wave_map::Boundaries& ringBoundaries(VcoWaveMap m) {
-    return (m == VcoWaveMap::kRingPanel) ? wave_map::kRingPanel : wave_map::kRingEqual;
+    return (m == VcoWaveMap::kRingSpaced) ? wave_map::kRingSpaced : wave_map::kRingEqual;
   }
   // SHAPE = pulse-width duty for kPulse. Clamped into a small (0,1) window so an
   // extreme setting can never collapse the pulse to a flat DC line / silence break

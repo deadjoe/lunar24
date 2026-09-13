@@ -48,21 +48,32 @@
 //       range leaves a second, identically configured Vco bit-identical to an untouched third. This
 //       is where the "the mapping is per-VCO state" claim is unconfounded; M5(c) is its chain echo.
 //   M9  one full period at nine norms per candidate plus the legacy triangle, so the SHAPE (not just
-//       the boundary values) can be reviewed for panel plausibility.
+//       the boundary values) can be reviewed for waveform plausibility.
 //   M6  the two named stretches reproduce the EXISTING implementations (kMorphSawInvSaw /
 //       kMorphSineTriangle at morph = u) sample-for-sample, and the triangle node reproduces the
 //       legacy pure-triangle path INCLUDING its BLAMP bit-for-bit through the real chain.
 //   M7  the S0 silence: at the exact centre of saw->invSaw the blend is identically zero for every
 //       phase, and the sweep carries NO gain compensation. Reported as measured; not normalised.
 //
-// NEGATIVE CONTROLS (each names the ONE check it must make fire, and each runs the SAME predicate
-// as that check, so a green check is evidence rather than the absence of a check):
-//   N1 the REAL chain on the legacy path (morph swept, `wave_` still pinned to kTriangle) is a
-//      fixed-waveform source: M1's "the output moves with the norm" fires. That is the S0 defect
-//      itself, measured through the product rather than modelled.
-//   N2 a source that reads the OTHER side's coordinate: M5's coordinate check fires.
-//   N3 a stepped (non-partition-of-unity) source: M2's continuity scan fires.
-//   N4 a silence-free saw<->invSaw source: M7's "the S0 centre is silent" fires.
+// NEGATIVE CONTROLS -- TWO KINDS, and they are NOT the same evidence (they are labelled as such
+// wherever they are reported):
+//   (i) IN-PROBE controls. A stand-in source inside this file that runs the SAME predicate as the
+//       check it targets. These prove the PREDICATES have discriminating power. Because the
+//       substitute source is written here by hand, they prove NOTHING about the production code:
+//       a fixture authored alongside the code can only show the code agrees with itself.
+//     N1 the REAL chain on the legacy path (morph swept, `wave_` still pinned to kTriangle) is a
+//        fixed-waveform source: M1's "the output moves with the norm" fires. This one does run the
+//        real chain -- it is the S0 defect measured through the product, not modelled.
+//     N2 a source that reads the OTHER side's coordinate: M5's coordinate check fires.
+//     N3 a stepped (non-partition-of-unity) source: M2's continuity scan fires.
+//     N4 a silence-free saw<->invSaw source: M7's "the S0 centre is silent" fires.
+//   (ii) PRODUCTION mutants -- the contract's requirement, and the stronger evidence. Three
+//        targeted mutations of the REAL production headers (fixed waveform / wrong side / interval
+//        discontinuity), each built from a patched COPY of core/include placed first on the include
+//        path, each required to run to completion AND to trip its specific named check. No tracked
+//        file is modified. Runner: report/gh19s0-morph-map/run_mutation_controls.sh.
+//        Measured: reference 53/0; fixed-waveform -> 14 failures incl. FAIL [M1.*]; wrong-side ->
+//        4 failures incl. FAIL [M5.B]; interval-discontinuity -> 4 failures incl. FAIL [M2cont.*].
 //
 // PROVENANCE SPLIT (why the two kinds of expected value are NOT the same evidence):
 //   * EXPECTED-FROM-CONVENTION (can falsify the candidate): the closed-form node values are written
@@ -440,16 +451,17 @@ int realMain(int argc, char** argv) {
   }
   std::printf("gh19s0_morph_map_probe: out=%s sweep_frames=%d\n", g_outDir.c_str(), sweepFrames);
 
-  const wm::Boundaries kCand[2] = {wm::kRingEqual, wm::kRingPanel};
-  const char* kCandName[2] = {"equal", "panel"};
-  const VcoWaveMap kMode[2] = {VcoWaveMap::kRingEqual, VcoWaveMap::kRingPanel};
+  const wm::Boundaries kCand[2] = {wm::kRingEqual, wm::kRingSpaced};
+  const char* kCandName[2] = {"equal", "spaced"};
+  const VcoWaveMap kMode[2] = {VcoWaveMap::kRingEqual, VcoWaveMap::kRingSpaced};
   const double kRates[4] = {44100.0, 48000.0, 88200.0, 96000.0};
   const int kSteps = 41;
 
   check(wm::boundariesValid(kCand[0]), "C0a",
         "equal-division boundaries strictly increasing, 0.0 .. 1.0");
   check(wm::boundariesValid(kCand[1]), "C0b",
-        "panel-derived boundaries strictly increasing, 0.0 .. 1.0");
+        "non-uniform-spacing boundaries strictly increasing, 0.0 .. 1.0 "
+        "(NOT panel-derived: that provenance is WITHDRAWN, see vco_wave_map.h P2)");
 
   // ---------------------------------------------------------------- M1 sweep --
   {
@@ -491,11 +503,11 @@ int realMain(int argc, char** argv) {
     }
     if (!havePairs) {
       check(false, "M1c",
-            "equal vs panel: the sweep series are incomplete, so the audible-difference claim has NO evidence");
+            "equal vs spaced: the sweep series are incomplete, so the audible-difference claim has NO evidence");
     } else {
       char msg[256];
       std::snprintf(msg, sizeof msg,
-                    "equal vs panel boundaries are audibly different (max |rmsA diff| over all 4 rates and 41 norms = %.6f) -> the boundary choice matters",
+                    "equal vs spaced boundaries are audibly different (max |rmsA diff| over all 4 rates and 41 norms = %.6f) -> the boundary choice matters",
                     worst);
       check(worst > 1e-3, "M1c", msg);
     }
@@ -1055,8 +1067,8 @@ int realMain(int argc, char** argv) {
   // appear in a sensible order and the transitions between them look usable.
   {
     std::FILE* f = openTsv("m9_waveform.tsv", "candidate\tnorm\tphase\tvalue");
-    const char* names[2] = {"equal", "panel"};
-    const wm::Boundaries bounds[2] = {wm::kRingEqual, wm::kRingPanel};
+    const char* names[2] = {"equal", "spaced"};
+    const wm::Boundaries bounds[2] = {wm::kRingEqual, wm::kRingSpaced};
     const double norms[9] = {0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0};
     const int kPts = 64;
     for (int ci = 0; ci < 2; ++ci) {

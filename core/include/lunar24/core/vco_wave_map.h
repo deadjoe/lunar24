@@ -31,30 +31,64 @@
 //     (S0, S2) = 6. They are NOT six fixed anchors: "6 waveforms in total" counts named
 //     features on the sweep, not detents and not equal intervals.
 //
+// WHY FIVE NODES AND NOT SIX -- the accounting, because it is not obvious and was queried:
+// the manual's two morphs each contribute a FAR ENDPOINT, and that is where the extra node
+// comes from.  "saw to inverted saw": saw is already one of the four traditional shapes,
+// invSaw is NEW -> +1 node.  "sine to triangle": BOTH ends are already traditional shapes
+// -> +0 nodes.  So 4 + 1 = 5.  invSaw is the only node with no separate glyph on the panel,
+// because it is reached inside a named morph stretch rather than at a labelled position.
+//
 // EXACTLY the two existing morph implementations are reused for the two named stretches, at
 // morph = the local coordinate u (see stretchSample below): S0 is Vco::waveformSampleAt's
 // kMorphSawInvSaw closed form, S2 is its kMorphSineTriangle closed form. No new waveform math.
 //
 // ============================ WHAT IS PROVISIONAL ===========================
 // SOFTWARE PROVISIONAL (no hardware claim, must be ruled on by the supervisor):
-//   (P1) the node ORDER [saw, invSaw, sine, triangle, pulse]. The panel's glyph order cannot
-//        be read with confidence (see the #115 report's glyph confidences: triangle-vs-saw
-//        "low", the morph glyphs "medium"). Only the two NAMED stretches' internal
-//        directions are manual-fixed ("saw to inverted saw", "sine to triangle").
-//   (P2) the boundary VECTORS. Two complete candidates are provided:
-//          kRingEqual — five nodes at k/4; a pure software equal division. Equal division is
-//                       explicitly allowed as a provisional candidate (@Codex ad68abb6);
-//                       what is forbidden is presenting equal division AS hardware structure.
-//          kRingPanel — boundaries derived from the six glyph positions measured on
-//                       solar42N_panel_2400px.png at 2000 dpi (see kRingPanel below).
+//   (P1) the node ORDER [saw, invSaw, sine, triangle, pulse]. Only the two NAMED stretches'
+//        ENDPOINT PAIRS are manual-fixed ("saw to inverted saw", "sine to triangle"); the
+//        manual does NOT fix which end sits at the lower norm, i.e. it does not state the
+//        knob's rotation direction, so even S0's internal direction is a software choice.
+//        THE PANEL IS NOT EVIDENCE FOR THIS ORDER -- it is evidence AGAINST it. The #115
+//        glyph readings (report §"layer C", on the same annotated image) identify the
+//        leftmost glyph (about -75 deg) as SINE and the fourth (about +16 deg) as
+//        SQUARE/PULSE, both with HIGH confidence, and the two right-hand glyphs (about +48
+//        and +75 deg) as MORPH symbols. That assignment contradicts this order, which puts
+//        saw at -75 deg and triangle at +48 deg. The panel's six glyphs therefore do NOT
+//        support any boundary derivation, and none is claimed (see P2).
+//   (P2) the boundary VECTORS. Two complete candidates are provided, and NEITHER has panel
+//        provenance:
+//          kRingEqual  -- five nodes at k/4; a pure software equal division. Equal division
+//                         is explicitly allowed as a provisional candidate (@Codex ad68abb6);
+//                         what is forbidden is presenting equal division AS hardware
+//                         structure.
+//          kRingSpaced -- a NON-UNIFORM spacing specimen, retained ONLY so the supervisor can
+//                         compare "norm 0.5 IS a node" against "norm 0.5 falls inside a
+//                         stretch". Its values are an arithmetic rescaling of the six
+//                         measured glyph ANGLES and are labelled `kRingSpaced`, not
+//                         "panel-derived", because that derivation is WITHDRAWN: the glyph
+//                         identification it needs contradicts the #115 readings, and the
+//                         rescaling has no measured basis either (the knob's mechanical
+//                         travel was never measured). That is the whole claim -- the evidence
+//                         shows THIS DERIVATION HAS NO BASIS. It does NOT show that the
+//                         panel is incompatible with any monotone mapping: whether a glyph
+//                         marks a stretch's interior, a whole morph type, or one
+//                         representative waveform is itself unknown, so glyph positions alone
+//                         cannot exclude anything.
 //   (P3) the BLAMP scaling: the existing triangle slope correction is scaled by the triangle's
 //        weight in the mix (wave_map::triangleWeight). First-order, provisional, and only
 //        exact at a pure-triangle node.
-//   (P4) the pulse node reads `duty_` (= the `pw` panel parameter). Consequence, reported not
-//        hidden: the sweep makes the pulse's duty audible, i.e. it also makes the `pw`
-//        parameter audible. This is NOT a reclassification of vco_a_pwm/vco_b_pwm and does not
-//        touch the registry: disposition and state bytes are unchanged. Whether the product
-//        wants that is a supervisor decision (Raft task #116 report, decision D-2).
+//   (P4) the pulse node reads `duty_` (= the `pw` panel parameter), so the sweep makes the
+//        pulse's duty audible. APPROVED AS IN SCOPE by @Codex (Raft task #116, 2026-09-13):
+//        this is the normal consumption of an EXISTING parameter and needs no separate owner
+//        ruling. It is NOT a reclassification of vco_a_pwm/vco_b_pwm: both stay
+//        transfer_unavailable, both live lanes stay fail-closed, and the registry, the state
+//        dispositions and the state bytes are untouched.
+//
+// NOT A PRODUCTION ENTRY POINT. The switch below is reachable only from tests
+// (SynthRuntime::setVcoWaveMap); it is not a ParameterId, is not in the registry, and is not
+// persisted, so nothing in a SAVE can select a candidate. The production slice that adopts one
+// of these must REMOVE this test-injection step and give the mapping a real, persisted,
+// ruled-on entry point.
 //
 // ============================ KNOWN, REPORTED, NOT HIDDEN ====================
 // S0's two endpoints are antipodal (invSaw(p) = -saw(p)), so at the exact centre of S0 the
@@ -102,26 +136,34 @@ using Boundaries = std::array<double, kBoundaryCount>;
 // Candidate 1 (P2): five nodes evenly spaced. Pure software equal division.
 inline constexpr Boundaries kRingEqual = {0.0, 0.25, 0.5, 0.75, 1.0};
 
-// Candidate 2 (P2): boundaries derived from the measured panel glyph positions.
-// Measurement (report #115 §: pdftoppm -r 2000 of solar42N_panel_2400px.png, glyph centres as
-// angles from the knob centre, 0 deg = straight up): -75, -53, -20, +16, +48, +75 deg. The six
-// glyphs occupy only a ~150 deg arc in the upper half. Assuming angle -> norm is LINEAR over a
-// +/-90 deg sweep and rescaling the measured arc onto [0,1] gives the six named-feature
-// positions t = {0, 0.1467, 0.3667, 0.6067, 0.8200, 1.0}. The node positions are then read
-// from the DIRECT node labels (sine, triangle) and the two stretch boundaries from the two
-// NAMED-morph labels, which are assumed to sit at their stretch's centre:
-//     t0 = 0      -> saw        = c0 = 0.0000
-//     t1 = 0.1467 -> S0 centre  -> c1 = 2*t1           = 0.2933
-//     t2 = 0.3667 -> sine       = c2 = t2              = 0.3667
-//     t4 = 0.8200 -> triangle   = c3 = t4              = 0.8200
-//     t5 = 1.0    -> pulse      = c4                   = 1.0000
-// t3 (S2 centre) is REDUNDANT: it independently predicts c3 = 2*t3 - c2 = 0.8467 against the
-// direct read 0.8200, a residual of 0.0267 norm ~= 4.0 deg of arc. That residual is the model's
-// consistency check, reported as such; the direct node read is used, because the direct reads
-// need no "the label sits at the stretch centre" assumption.
-// WEAK EVIDENCE, and the assumption angle->norm linear is UNVERIFIED: these numbers are a
-// provisional candidate, never a measurement of hardware structure.
-inline constexpr Boundaries kRingPanel = {0.0, 0.2933, 0.3667, 0.8200, 1.0};
+// Candidate 2 (P2): NON-UNIFORM SPACING SPECIMEN. NOT derived from the panel -- the previous
+// provenance for these numbers is WITHDRAWN (see the P1/P2 block above). Its only role now is
+// to let the supervisor compare "norm 0.5 IS a node" (kRingEqual) against "norm 0.5 falls
+// inside a stretch" (this one), because the boundary choice is measurable in the output
+// (max |delta rmsA| = 0.088968 over 4 rates x 41 norms; probe matrix m1_sweep.tsv).
+//
+// The single recomputable calculation behind the NUMBERS, with its source stated, is a plain
+// rescaling of the six measured glyph ANGLES onto [0,1] (report #115: pdftoppm -r 2000 of
+// solar42N_panel_2400px.png, glyph centres as angles from the knob centre, 0 deg = straight
+// up): -75, -53, -20, +16, +48, +75 deg. arc = 150 deg, so t = (theta + 75)/150:
+//     -75 -> 0.0000   -53 -> 0.1467   -20 -> 0.3667   +16 -> 0.6067   +48 -> 0.8200   +75 -> 1.0000
+// Read the values below off that as t = {t0, 2*t1, t2, t4, t5} and nothing else. There is NO
+// "independent redundancy evidence" here: an earlier revision of this file and the report
+// cross-checked 2*t3 - c2 against c3, but the report substituted t3 = 0.5933, which is the
+// interval MIDPOINT (t2+t4)/2 = 0.5933 computed FROM c2 and c3, so the "check" was circular
+// (0.8199 vs 0.8200). That claim is deleted. Using the MEASURED t3 = 0.6067 instead gives
+// 0.8467 against 0.8200, a 0.0267 discrepancy -- which is itself a sign that neither the
+// "glyph marks the stretch centre" assumption nor the angle->norm linearity holds, and is one
+// more reason not to present any of this as evidence.
+//
+// Two things are NOT claimed. (a) No claim that the panel is incompatible with any monotone
+// mapping: what a glyph denotes (a stretch interior, a whole morph type, or one
+// representative waveform) is unknown, so glyph positions alone exclude nothing. (b) No claim
+// that the rescaling is "refuted" -- only that it is UNSUPPORTED. An earlier revision argued
+// the last glyph at norm 1.0 must be wrong because a morph glyph has to sit inside its
+// stretch; that premise is itself unproven, so the argument is withdrawn along with it.
+// Treat the numbers as an arbitrary non-uniform spacing and nothing more.
+inline constexpr Boundaries kRingSpaced = {0.0, 0.2933, 0.3667, 0.8200, 1.0};
 
 // ------------------------------------------------------- shape primitives -----
 // The phase convention is Vco::waveformSampleAt's (core/include/lunar24/core/vco.h:303-326):

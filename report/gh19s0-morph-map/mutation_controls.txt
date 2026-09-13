@@ -1,0 +1,43 @@
+== reference build (pristine production headers) ==
+  checks=53 failures=0  (expect failures=0)
+
+== mutant 1: FIXED WAVEFORM -- emittedAt_ takes the legacy branch unconditionally ==
+   patch: vco.h  'if (waveMap_ != VcoWaveMap::kLegacy) {'  ->  'if (false) {'
+  ok             m1: checks=53 failures=14 ; FAIL [M1....] present  <-- the mutant IS caught, by name
+
+== mutant 2: WRONG SIDE -- the B morph control also writes A (cross-VCO leak) ==
+   patch: machine_runtime.h  setVcoBMorph also calls vcA_.setMorph(m)
+  ok             m2: checks=53 failures=4 ; FAIL [M5.B...] present  <-- the mutant IS caught, by name
+
+== mutant 3: INTERVAL DISCONTINUITY -- the stretch weight is a step, not a crossfade ==
+   patch: vco_wave_map.h  sampleAt returns a or b instead of (1-u)*a + u*b
+  ok             m3: checks=53 failures=4 ; FAIL [M2cont...] present  <-- the mutant IS caught, by name
+
+== detail: every FAIL line each mutant produced ==
+  [m1]
+    FAIL [M1.equal.44100] sr=44100 equal: rendered output MOVES with the norm (rmsA 0.000000 in [0.291238,0.291238]; rmsB spread 0.000000)
+    FAIL [M1.equal.48000] sr=48000 equal: rendered output MOVES with the norm (rmsA 0.000000 in [0.290125,0.290125]; rmsB spread 0.000000)
+    FAIL [M1.equal.88200] sr=88200 equal: rendered output MOVES with the norm (rmsA 0.000000 in [0.292841,0.292841]; rmsB spread 0.000000)
+    FAIL [M1.equal.96000] sr=96000 equal: rendered output MOVES with the norm (rmsA 0.000000 in [0.283391,0.283391]; rmsB spread 0.000000)
+    FAIL [M1.spaced.44100] sr=44100 spaced: rendered output MOVES with the norm (rmsA 0.000000 in [0.291238,0.291238]; rmsB spread 0.000000)
+    FAIL [M1.spaced.48000] sr=48000 spaced: rendered output MOVES with the norm (rmsA 0.000000 in [0.290125,0.290125]; rmsB spread 0.000000)
+    FAIL [M1.spaced.88200] sr=88200 spaced: rendered output MOVES with the norm (rmsA 0.000000 in [0.292841,0.292841]; rmsB spread 0.000000)
+    FAIL [M1.spaced.96000] sr=96000 spaced: rendered output MOVES with the norm (rmsA 0.000000 in [0.283391,0.283391]; rmsB spread 0.000000)
+    FAIL [M1c] equal vs spaced boundaries are audibly different (max |rmsA diff| over all 4 rates and 41 norms = 0.000000) -> the boundary choice matters
+    FAIL [M5.B] driving B (A=0.50 B=0.90): B moved=0, A moved=0 (|d rmsA| = 0.000e+00) -> A is untouched
+    FAIL [M5.A.drive] driving A (A=0.90 B=0.50): A moved=0 (|d rmsA| 0.000e+00, |d peakA| 0.000e+00); B moved by |d rms| 0.000e+00 with period 218.182 -> 218.182 frames (A->B route) and amplitude-histogram distance 0.0000
+    FAIL [M5.peak] driving A leaves B's SUP untouched (|d peakB| 0.000e+00 <= its own measured grid floor 2.095e-04) - a sup is invariant under every reparameterisation of time, so this falsifies a waveform-function change on B without being confounded by the FM route - while driving B does move it (|d peakB| 0.000e+00, 0x the floor). The histogram movement is FM density distortion, reported not asserted.
+    FAIL [M8.isolation] driving one Vco's morph across its whole range leaves a second, identically configured Vco BIT-IDENTICAL to an untouched third (8 morph values x 4096 samples), while the driven Vco's own output does change -> the mapping has no cross-VCO channel
+    FAIL [M6.wired] away from a node the ring output DIFFERS from the legacy path (the wiring is live)
+  [m2]
+    FAIL [M5.coord] driving one side never moves the OTHER side's morph coordinate (readback exact in all 3 runs)
+    FAIL [M5.B] driving B (A=0.50 B=0.90): B moved=1, A moved=1 (|d rmsA| = 3.176e-02) -> A is untouched
+    FAIL [M5.A.drive] driving A (A=0.90 B=0.50): A moved=0 (|d rmsA| 0.000e+00, |d peakA| 0.000e+00); B moved by |d rms| 0.000e+00 with period 218.182 -> 218.182 frames (A->B route) and amplitude-histogram distance 0.0000
+    FAIL [M5.shape.B] driving B leaves A BIT-IDENTICAL and shape-identical (|d rmsA| 3.176e-02, |d peakA| 7.430e-04)
+  [m3]
+    FAIL [M2cont.equal] equal: continuous in norm over the WHOLE sweep at a fixed phase (worst jump 1.200e+00 over 4000 steps)
+    FAIL [M2cont.spaced] spaced: continuous in norm over the WHOLE sweep at a fixed phase (worst jump 1.200e+00 over 4000 steps)
+    FAIL [M7.equal] equal: the saw<->invSaw centre (norm=0.1250) is EXACTLY silent over phase (peak=1.000e+00) - REPORTED, NOT compensated
+    FAIL [M7.spaced] spaced: the saw<->invSaw centre (norm=0.1467) is EXACTLY silent over phase (peak=1.000e+00) - REPORTED, NOT compensated
+
+MUTATION CONTROLS: all 3 production mutants ran to completion and were caught by name.
