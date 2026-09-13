@@ -15,13 +15,13 @@
 # discontinuity and the new cycle start coincide on one sample — and band-limits that
 # discontinuity with `*out -= 0.5 * jmp` (one half of the jump, on the post-reset sample).
 #
-# SCOPE OF THAT FORMULA: `-0.5*J` is the single-point MEDIAN correction for a SAMPLE-ALIGNED step,
-# NOT the complete Si step residual `b(n) = 1/2 + Si(pi*n)/pi` — that response's tail at the
-# subsequent integer samples is not all zero, and this slice does not compute it. The master's edge
-# lands exactly on a sample grid point in these cells (per-sample step 1/M, period M samples), which
-# is what reduces the residual to that one sample HERE. The evidence on the record is the 12 declared
-# sync cells; nothing here extends to arbitrary f0, FM, or off-grid event phase, and this runner does
-# NOT test that extension.
+# SCOPE OF THAT FORMULA: `-0.5*J` is a single-point MEDIAN correction at the reset sample, applied as
+# the approximation this slice adopts — NOT the complete Si step residual `b(n) = 1/2 + Si(pi*n)/pi`,
+# whose tail at the subsequent integer samples is not all zero and is left uncorrected here. The
+# master's edge does land on a sample grid point in these cells (per-sample step 1/M, period M
+# samples), but that alignment is NOT what removes the tail. The evidence on the record is the 12
+# declared sync cells; nothing here extends to arbitrary f0, FM, or off-grid event phase, and this
+# runner does NOT test that extension.
 #
 # ---------------------------------------------------------------------------------
 # WHY the shape. Three things are load-bearing, and each gets its own control:
@@ -1177,10 +1177,15 @@ NC2_RED="n/a — probe refused; no criterion reached the gate"
 # so is the honest outcome: nc4 carries the judgement path (it is the load-bearing control for it),
 # and what nc3 now witnesses is that a PARTIAL refusal still escalates to the gate's STRUCTURAL
 # code -- a claim nc1, which refuses all 12, cannot make.
-# ⚠️ For @Codex's ruling: this mutant is an AMPLITUDE error, not a timing one, yet it trips a
-# criterion whose reason string names a TIMING cause. The refusal is correct (fail-closed: this
-# render does not establish that the reset lands on the master edge), but the reason is a symptom,
-# not a cause, and a reader must not take it as "this arm deferred the reset".
+# ⚠️ RULED (@Codex 8296a601, 2026-09-12) -- record, do not re-litigate: this mutant is an AMPLITUDE
+# error, not a timing one, yet it trips a criterion whose reason string names a TIMING cause. Two
+# errors hitting the same symptom MAY stay; the refusal is correct (fail-closed: this render does not
+# establish that the reset lands on the master edge), but the reason is a symptom, not a cause. Do
+# NOT read the reason string as root-cause localisation -- distinguish this arm from nc5 (a genuine
+# one-frame late consumption) BY INJECTION SITE: nc3 injects into vco.h's tick() correction
+# (`*out -= jmp` instead of `- 0.5 * jmp`), nc5 injects into machine_runtime.h's consumer call site
+# (deferring the request by one frame). The shared reason string is NOT evidence of a shared cause,
+# and the reason string is deliberately NOT changed here (that would be a change of criterion text).
 echo
 echo "[B/nc3] full_scale_kernel — out -= jmp (the S2 kernel copied without the 1/2)"
 restore_source

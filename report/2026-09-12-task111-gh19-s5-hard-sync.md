@@ -4,7 +4,8 @@
 - 分支 `fix/19-vcoa-hard-sync`，隔离 worktree，基线 `main@6f4481ae31af4f11b355c0b880cc2f802225bb7d`（= S2 merge）。
 - 授权：@Kimi `70d37944`（批「开工」+ 五条裁决 Q1–Q5）。
 - 工作线程：`#Lunar24:4adaa9f8`。计划与验收契约：`a85e81d0`（落盘 `scratch/task111_s5_plan_contract.md`）。
-- 改动集：8 个已跟踪文件（`machine_runtime.h` / `machine_definition.h` / `vco.h` / `test_vco.cpp` / `gh19_alias_probe.cpp` / `gh19_alias_analyze.py` / `gh19_manifest.tsv` / `CMakeLists.txt`）+ 4 个新文件（`tools/check_gh19_hardsync_acceptance.py`、`tools/gh19_hardsync_naive_baseline.tsv`、`tests/mutation/run_vcoa_hardsync_mutation.sh`、本报告）。改动已提交在本分支：`6eb3584`（切片本体）→ `287fd01`（门禁注册 + 假绿修复）；**未 push**。
+- 改动集（vs `main@6f4481a`，共 12 files changed, 3738 insertions）：**8 个已跟踪文件** —— `core/include/lunar24/core/machine_runtime.h`（消费者接线）、`.../machine_definition.h`（`setVcoSyncBindings`）、`.../vco.h`（复位带限修正 + 单点近似口径）、`tests/core/test_vco.cpp`、`tests/probes/gh19_alias_probe.cpp`（硬同步测量 + R3/边沿对账）、`tools/gh19_alias_analyze.py`、`tools/gh19_manifest.tsv`、`CMakeLists.txt`（slow 门禁注册）；**4 个新文件** —— `tools/check_gh19_hardsync_acceptance.py`、`tools/gh19_hardsync_naive_baseline.tsv`、`tests/mutation/run_vcoa_hardsync_mutation.sh`、本报告。
+- 提交序列（本分支）：`6eb3584`（切片本体）→ `287fd01`（门禁注册 + 假绿修复）→ `bba946e` → `49a32bd` → `e3f9861` → `8f5858b` → `8b2f431` → `d611c62`（id 集锁改成真断言 + 收窄公式声明）→ `c32c7dd`（v3 负控轮修复两个真缺陷）→ 本轮定向修订（LEVEL 规则 + 注释口径）。**push / draft PR 状态见 §13.7。**
 - **状态口径：GH#19 仍 OPEN；未 merge / 未关 / 未发布 / 未宣称 MET。**
 
 ## 0. 证据口径
@@ -224,7 +225,7 @@ bash tests/mutation/run_vcoa_hardsync_mutation.sh
 4. **未测**：`vco_a.sync_in` 在**其它波形**（saw/pulse/morph）下的复位抗混叠 —— 本片只覆盖 A 的三角。
 5. **未测**：复位频率远离"恰 M 样本"工作点时的行为（本片刻意锁定精确工作点）。
 6. **VCO B 无 sync**，不在本片范围。
-7. **探针的具名理由串不能区分病因**：`nc3`（**幅度**错误）与 `nc5`（**一帧闩锁**）打出**同一句** `the reset is 1 frame(s) LATE`（§13.5.1）。两臂的**拒收判定**都正确，但理由串只描述**症状**。本片**不**改理由串（改它即改判据文本，须先裁决），已列为**交总监裁**项。
+7. **探针的具名理由串不能区分病因**：`nc3`（**幅度**错误）与 `nc5`（**一帧闩锁**）打出**同一句** `the reset is 1 frame(s) LATE`（§13.5.1）。两臂的**拒收判定**都正确，但理由串只描述**症状**。**✅ 已裁决（`8296a601`）：两个错误命中同一症状允许保留；报告按注入位置区分「幅度错误」与「真实晚消费」，不把理由串当根因定位。** ⇒ 本片**不**改理由串（改它即改判据文本），改为在本报告里**显式按注入位置**标注每条臂的病因（见 §13.5.1 的臂表），理由串本身只当**症状描述**读。
 
 ## 13. 门禁、基线与负控
 
@@ -415,11 +416,29 @@ python3 tools/check_gh19_hardsync_acceptance.py \
 
 ⇒ **本轮把两件事同时钉住**：① 判据路径（rc=1）由 `nc4` 自证；② **结构路径（rc=2）由 nc1 与 nc3 两条不同路线各自命中** —— nc1 是全拒、nc3 是**部分拒收（9/12）**，两者都升级到 rc=2。两种失效面**互不冒充**因此是被实测的，不是被设计的。
 
-**⚠️ 交总监裁的一项：nc3 与 nc5 的具名理由串相同，但病因不同。** nc3 是**幅度**错误（`0.5·jmp` 的偏离，符号与 nc4 相反），nc5 是**真的一帧闩锁延迟**。两者在**格级**打出的理由串是同一句 `the reset is 1 frame(s) LATE`（nc3 见 `[FAIL] required-cell-missing vco_a_sync_tri_44100_220`）。原因是可解释的：`-= jmp` 使复位样本读到**前一个值**，于是重建出的不连续点**后移一帧** —— 一个幅度错误**在信号上长得**就像一个晚一帧的复位。故**理由串是症状、不是病因**：它不能把这两条臂区分开。**这不影响任何判据**（两臂都被正确拒收），只影响**可读性/可诊断性**。本片**不**据此改理由串（改它就等于改判据文本，须先裁决）；已列为交总监裁项。
+**✅ 已裁决的一项（`8296a601`）：nc3 与 nc5 的具名理由串相同，但病因不同 —— 允许保留，改由「注入位置」区分。** nc3 是**幅度**错误（`0.5·jmp` 的偏离，符号与 nc4 相反），nc5 是**真的一帧闩锁延迟**。两者在**格级**打出的理由串是同一句 `the reset is 1 frame(s) LATE`（nc3 见 `[FAIL] required-cell-missing vco_a_sync_tri_44100_220`）。原因是可解释的：`-= jmp` 使复位样本读到**前一个值**，于是重建出的不连续点**后移一帧** —— 一个幅度错误**在信号上长得**就像一个晚一帧的复位。故**理由串是症状、不是病因**：它不能把这两条臂区分开。**这不影响任何判据**（两臂都被正确拒收），只影响**可读性/可诊断性**。
+**裁决口径：两个错误命中同一症状，允许保留；报告不得把理由串当根因定位，须按注入位置区分。** 据此，本报告对这两条臂一律**按注入点**陈述病因，不引用理由串作根因：
+
+| 臂 | **注入位置**（真正的病因所在） | 注入内容 | 病因此类 | 格级理由串（**只当症状读**） |
+|---|---|---|---|---|
+| `nc3` | `vco.h` tick() 的复位修正量 | `if (synced) *out -= jmp;`（应为 `-= 0.5*jmp`） | **幅度错误**（修正量放大 2×） | `the reset is 1 frame(s) LATE` |
+| `nc5` | `machine_runtime.h` 的消费者调用点 | 复位请求延后一帧发出（`deferSyncA_`） | **真实晚消费**（一帧闩锁） | `the reset is 1 frame(s) LATE` |
+
+⇒ 两条臂的**注入位置不同**（一条在振荡器内部的修正量，一条在运行时的消费时序），这才是它们的区别；**理由串相同这一点不构成「同一根因」的证据**。本片**不**据此改理由串（改它就等于改判据文本）。
 
 **⚠️ 与本轮 runner 的关系（避免误读为同一次运行）**：**§13.6.5 与 §13.6.6 不是本轮 runner 产出的**，各有自己的装置 —— §13.6.5 来自**工作区 scratch 夹具**（`scratch/build_shift2.py` → `/tmp/shift2_an.tsv`，对照原件那趟 `/tmp/biso4_an.tsv`；两个脚本**不在 repo 内**），§13.6.6 来自**探针输出目录的直接逐文件比对**。三者共用**同一工作树、同一 head**，但**是三次独立执行**。⚠️ 口径限定：§13.6.5 的「免疫」只对**严格 M-周期信号**成立（97 行里只有 31 行全列相同）。
 
-**⚠️ 本节的 log 与脚本的对应关系（如实声明）**：上面的 log 由**订正前**的脚本文本产生；跑完后我对 `run_vcoa_hardsync_mutation.sh` 做了**3 处纯文本订正**（1 条 header 注释 bullet、1 段 header 注释、nc3 汇总块的 `echo` 文案），把两处**写错了的叙述**改为与实测一致。**断言、阈值、判据、产品代码零改动**。⇒ 结论：该 log 的**判定**与现脚本一致（判定不依赖被改的文本），但**逐字对应**只有在重跑后才成立；是否值得为此重跑一轮（约 90 min），交总监裁。
+**✅ 本节的 log 与脚本的对应关系（如实声明 + 已裁决）**：上面的 log 由**订正前**的脚本文本产生；跑完后我对 `run_vcoa_hardsync_mutation.sh` 做了**3 处纯文本订正**（1 条 header 注释 bullet、1 段 header 注释、nc3 汇总块的 `echo` 文案），把两处**写错了的叙述**改为与实测一致。**断言、阈值、判据、产品代码零改动**。
+**✅ 裁决（`8296a601` 第 3 条）：这三处注释/echo 修订不值得重跑一轮（约 90 min）；保留原日志，记录对应运行版本并声明差异仅为文案。** 据此本报告**不**重跑该轮，并按下表如实登记版本：
+
+| 项 | 内容 |
+|---|---|
+| 产出上面 log 的**运行版本** | 工作树 `c32c7dd0`（probe/runner 均为订正前文本） |
+| 该轮**判定**是否仍成立 | **成立** —— 判定不读这些文本；见下表逐条 |
+| 本轮（2026-09-13）**新增**改动 | ① 探针 R3 阈值 `M/2` → `M/2 − 1`（**判据**，非文案）+ 新增 `edge_run` 诊断列；② `vco.h` 删掉自相矛盾的推断段（**注释**）；③ runner header 的 SCOPE 段同（**注释**）；④ runner `:1180` 的 `⚠️ For @Codex's ruling:` 便签改为记录裁决（**注释**） |
+| 这些改动是否改写上面 log 里的**任何判定** | **否，已实测**：R3 阈值收紧后逐臂重测（§13.6.1 的臂表，日志 `/tmp/s5_arm_check.out`），五臂的 12 格读数与红/理由**逐条不变**；R3 的唯一触发者是电平触发突变。②③④ 为注释，不参与编译语义 |
+
+⇒ 结论：该 log 的**判定**与现 head 一致（判定不依赖被改的文本），**逐字对应**仅对同版本成立；本轮差异分两类如实登记 —— **判据阈值有一处实质收紧（已逐臂实测其零影响）**，其余为**纯文案**。
 
 ### 13.6 定向修订:第 2/3/4/5/7 项(@Codex 七项包) `[实测]`
 
@@ -433,7 +452,7 @@ python3 tools/check_gh19_hardsync_acceptance.py \
 
 > ⚠️ **若按直觉硬编码「复位帧 ≡ 0 (mod M)」,判决会恰好反过来:把正确的产物判红,把延迟一帧的突变判绿。** 这就是 @Codex 要求「索引必须独立」的实证价值 —— 常数的正确性不能靠约定,只能靠测量。
 
-**判据(每条都有自己的名义理由,任一条不成立即 fail-closed 不出格):** `depart >= 0.1·peak`;`max_run < M/2`;源沿集非空;复位事件 ≥ 4;⭐**每个重建出的复位帧都必须落在主源自己的上升沿集合里**(否则报 `the reset is N frame(s) LATE`);⭐**`[d, spanEnd]` 内每一条源沿都必须有对应复位**(否则报 `the edge was missed`);③④ 分块不变性。
+**判据(每条都有自己的名义理由,任一条不成立即 fail-closed 不出格):** `depart >= 0.1·peak`;`max_run < M/2 − 1`(2026-09-13 修,见下);源沿集非空;复位事件 ≥ 4;⭐**每个重建出的复位帧都必须落在主源自己的上升沿集合里**(否则报 `the reset is N frame(s) LATE`);⭐**`[d, spanEnd]` 内每一条源沿都必须有对应复位**(否则报 `the edge was missed`);③④ 分块不变性。
 
 **实测(正确产物)**:12/12 格对账通过;`per_M=0`(**精确 0**;用 `%.6g` 打印以便与 `3e-15` 区分);63 个不规则块 `block_diff=0`;`trace_diff=0`。
 
@@ -445,12 +464,35 @@ python3 tools/check_gh19_hardsync_acceptance.py \
 | 2 | **任意边沿**(不只上升沿)都触发复位 | `no rising edge there (no preceding master edge at all)` |
 | 3 | **漏掉部分边沿** | `the edge was missed` |
 | 4 | 把**整块**交给 runtime(块边界交接) | `block-partition invariance broken … first differs at frame 255` |
-| 5 | **电平触发**(高电平期间每帧都复位) | `no rising edge there (no preceding master edge at all)` |
+| 5 | **电平触发**(高电平期间每帧都复位) | 修 R3 前：`no rising edge there (no preceding master edge at all)`（集合等式规则代抓，见下）<br>**修 R3 后（2026-09-13）**：`the reset is LEVEL-triggered, not edge-triggered`（R3 **自己**报红，具名） |
 
 > **第 5 行对应 `@Codex` 点名的「持续高电平只触发一次」**。突变 = **同一条消费者、同一条线、同一个解析器、同一次 `sink_gate_interpret()` 调用**,只把谓词从 `.edge == GateEdge::rising` 换成 `.gateHigh`(**其余一字未动**,包括 latch 的更新次数 —— 两次调用都只调 `sink_gate_interpret()` 一次)。实测 `PROBE_RC=**65**`,12 格全红(`SYNC-TIMING` 行 `[RED: …]` + `FATAL … required cell not produced`),关键读数字节可查:`reset_head=0,1,2,3`(从第 0 帧起**每帧**复位)、`resets=**10751**`(正确产物是 **95**)、`depart=0.968…0.996`、`max_run=127`(M=256)/`255`(M=512)⇒ 缺陷确实被抓,判据集对 ① **有鉴别力**。
 
-> ⚠️ **但抓它的不是那条「具名 LEVEL」的规则,这条发现本身要报。** 探针里另有一条**更早**的守卫 `maxRun >= M/2`(`gh19_alias_probe.cpp:510`),其名义理由逐字是 `the reset is LEVEL-triggered, not edge-triggered`。**实测该阈值够不到**:电平触发下最长逐字节相等 run = **M/2 − 1**(M=256 ⇒ 127,M=512 ⇒ 255),而阈值是 **M/2** ⇒ `127 >= 128` 为假,**从不触发**;真正报红的是后面那条集合等式规则 `每个复位帧必须落在源上升沿集合里`。**正确产物的实测 `max_run = 1`(12/12 格)** ⇒ 正确侧与 M/2−1 之间余量 126,**没有误红风险**。
-> **建议(未改,交总监裁)**:把 `:510` 的阈值改成 `M/2 - 1`(一段 k 个样本的 run 只占 k−1 个步长,"高电平期间被冻住"的自然判据是 `maxRun >= M/2 - 1`)。**我不单方面改它**:①覆盖没有洞(缺陷已被更强的那条规则抓到);②改判据要重跑整轮 runner;③`M/2` 是否为作者本意我只有推断、没有出处 —— 按「结构保真 ≠ 发明常数」,常数该由知情的片主定。**在这条改掉之前,不得声称 `maxRun` 那条规则被验证过。**
+> ⚠️ **但抓它的不是那条「具名 LEVEL」的规则,这条发现本身要报。** 探针里另有一条**更早**的守卫 `maxRun >= M/2`(当时 `gh19_alias_probe.cpp:510`),其名义理由逐字是 `the reset is LEVEL-triggered, not edge-triggered`。**实测该阈值够不到**:电平触发下最长逐字节相等 run = **M/2 − 1**(M=256 ⇒ 127,M=512 ⇒ 255),而阈值是 **M/2** ⇒ `127 >= 128` 为假,**从不触发**;真正报红的是后面那条集合等式规则 `每个复位帧必须落在源上升沿集合里`。**正确产物的实测 `max_run = 1`(12/12 格)** ⇒ 正确侧与 M/2−1 之间余量 126,**没有误红风险**。当时按「结构保真 ≠ 发明常数」把阈值交总监裁。
+>
+> **✅ 总监裁决(`8296a601`,2026-09-12)+ 已执行(2026-09-13)。** 裁决三条:①**允许**把这条 LEVEL 辅助规则修到能识别实际电平突变;**② 我给的解释是错的、要改**:我把 `M/2−1` 说成「一段 k 个样本的 run 只占 k−1 个步长」—— `maxRun` 的计数器**从 1 起算、每遇一个相等邻居就 +1**,**计的是样本数,不是步长**;③后面的集合等式主判据**不动**。
+>
+> **正确的机理(按「首个复位样本 vs 后续持续复位样本」解释,并已实测)。** 高电平半周期是 **M/2 个样本**;它的**第一个**复位样本携带「从上一段自由推进的相位跳进来」的 `−0.5*jmp`(`vco.h` tick():复位样本读相位 0,修正量取决于**复位前**的相位),因此与半周期其余部分**不**逐字节相等;其余 **M/2−1** 个样本每帧都做同一个 `0 → step` 推进 ⇒ 修正量是**同一个常数** ⇒ 互相逐字节相等。⇒ 逐字节 run = **M/2 − 1**,不是 M/2。判据改为 `maxRun >= M/2 − 1`(并加 `M >= 8` 的适用下限,只为让极快主源下规则仍有定义;出货格 M=256/512,不受影响)。
+>
+> **两向定向实测(2026-09-13,`gh19_alias_probe --sync-diag`,同一工作树;正控与突变各一次 build):**
+> - **正控(边沿触发,正确产物)**:12/12 格 `[OK]`,`max_run=1`、`edge_run=1`、`trace_diff=0` ⇒ 新阈值在正确侧留 **126/254 个样本**余量,**无误红**。
+> - **电平触发突变**(同一条消费者/同一条线/同一个 `sink_gate_interpret()` 调用,只把 `.edge == GateEdge::rising` 换成 `.gateHigh`,其余一字未动):12/12 格 `max_run=**127**(M=256)/**255**(M=512)` = **恰好 M/2−1**,且 **`edge_run=1`** —— ⭐**后者就是机理本身的实测**:落在主源沿那一帧(半周期的第一个复位样本)的 run 只有 **1**,而半周期其余部分连成**一条 M/2−1 的长 run。规则现在**自己报红**且理由具名(`the reset is LEVEL-triggered, not edge-triggered`),不再由集合等式规则代抓。
+> - 为此新增 `edge_run` 诊断列(与 `max_run` 并列,`syncTimingLine`):**让这条解释读自测量,而不是推自推理。**
+> - 日志:`/tmp/s5_sync_diag_pos.txt`、`/tmp/s5_sync_diag_level.txt`。
+>
+> **⚠️ 这条修改对既有五个负控臂**无**影响(实测,不是推断)。** 阈值收紧只可能让 R3 **更早**触发,因此必须逐臂确认它没有改写任何臂的**已记录**理由。做法:把五条臂的**同一份 splice 文本**各注入一次(仅探针渲染,不跑 analyzer),逐格读 `max_run`/`edge_run`(日志 `/tmp/s5_arm_check.out`、`/tmp/s5_nc5_only.out`):
+>
+> | 臂 | 12 格实测 | 谁在报红 | 与 v3 log 是否一致 |
+> |---|---|---|---|
+> | 正控 | `max_run=1 edge_run=1` 12/12 `[OK]` | —— | ✅ |
+> | `nc1` 去消费者 | `max_run=0`(R1 先返回) | `no reset was ever applied` | ✅ |
+> | `nc2` 符号翻转 | `max_run=0`(渲染即不可用) | `over-scale` | ✅ |
+> | `nc3` 全幅核 | `max_run=1 edge_run=1` 12/12 | item-4 缆线(9 格)+ 3 格 OK | ✅ |
+> | `nc4` 去修正 | `max_run=1 edge_run=1` 12/12 `[OK]` | 门禁判据 rc=1 | ✅ |
+> | `nc5` 延迟一帧 | `max_run=1 edge_run=1` 12/12 | `the reset is 1 frame(s) LATE`(12 格) | ✅ |
+>
+> ⇒ **R3 在任何一条登记臂上都不触发**(nc1/nc2 由更早的判据先返回),五臂的红与理由**逐条不变**;R3 的**唯一**触发者就是这次的电平触发突变。因此 v3 那趟 `RESULT: PASS` 的**判定**与现 head 一致(见 §13.5.1 末段的逐字对应声明)。
+> **⚠️ 边界如实写**:突变侧的 `max_run` **恰好等于**新阈值(M/2−1 = 阈值),**没有余量** —— 阈值是**实测边界**,不是留了余量的选择。一个「只在部分高电平样本上复位」的杂种突变可能落在 `1 < max_run < M/2−1` 而不被 R3 抓到(它仍会被集合等式规则抓到)。**不得**把 R3 读成对一切电平触发变体都有覆盖。
 
 > ⚠️ **③④ 的装置性发现(重要,防止误判风险等级)。** `DeviceAdapter::renderBlock`(`device_adapter.h:293`,其逐帧调用在 `:308`)把每个块**逐帧**分解成 `rt.processBlock(&in, 1, &out, true)` —— 这正是 task#101 F-1 修复所文档化的行为。因此 runtime **永远看到 n=1**,块边界缺陷**无法经约定入口到达 DSP**。③④ 因此是**那条分解的回归守卫,不是现网风险**。第一版的 ③④ 突变(只改块内检测)实测 `block_diff=0` —— **不是因为判据弱,而是因为该突变在真实调用路径上是空操作**;要做出红实证必须突变成「适配器把整块交给 runtime」,该突变实测 `block_diff=0.995364` @ frame 255,证明判据**确实能红**。
 
@@ -542,6 +584,22 @@ y[N-1] = x[N-M]      # 周期性要求 y[N-1] == y[N-1-M] == x[N-M]
 **对比方法:** 把 HEAD 探针与本次 head 探针的输出目录逐文件比对 —— **96/96 `.raw` 逐字节相同**(空集:仅 A 有 / 仅 B 有 / 内容不同),`gh19_scenarios.tsv` 与 `gh19_fidelity.tsv` 也**完全相同**。
 
 ⇒ 第 2/4/5 项**只增加测量,没有移动出货矩阵**:它们渲染到独立的 `EngineHarness` 实例、只读结果,不 emit 任何 cell。**既有改善矩阵保留**(第 7 项),且**不重跑无关慢套**。
+
+### 13.7 授权的全量检查(v3 定向修订后的最终文件集)`[实测]`
+
+按 @Codex `8296a601` 授权执行:**Release / Debug / ASan+UBSan 三配置 × 全量构建 + fast 套件(`--label-exclude slow`)**,外加 host/generator 门禁逐条核对。**全部在最终文件集上跑**(即 §13.6.1 的探针阈值 + `edge_run`、`vco.h`/runner 的文案修订都已在内)。
+
+| 配置 | 构建 | 套件 | 结果 |
+|---|---|---|---|
+| **Release**(`build-rel`) | rc=0 | `ctest --label-exclude slow` | **75/75 passed**(127.7 s) |
+| **Debug**(`build-debug`) | rc=0 | 同上 | **75/75 passed**(144.3 s) |
+| **ASan+UBSan Debug**(`build-asan`,`-fsanitize=address,undefined -fno-omit-frame-pointer`) | rc=0 | 同上 | **75/75 passed**(197.0 s);**0 条 sanitizer 报告** |
+| **探针(ASan+UBSan Debug)** | rc=0 | `gh19_alias_probe --out` | **96 cells produced, 0 blocked, exit_code=0**;**0 条 sanitizer 报告**;12 格 `SYNC-TIMING` 全 `[OK]`,`max_run=1 edge_run=1` |
+
+**host / generator 门禁**(三配置逐条 `Passed`,不是只跑一遍):`registry_regen_zero_diff`(生成器重跑零差异)、`manifest_regen_zero_diff`、`registry_complete_gate`、`registry_id_stability`、`core_headers_gate`、`spike_clean_gate`、`evidence_refs_gate`、`iplug_pin_clean_gate`、`host_windows_target_oracle`、`host_override_drift`、`host_engine_wiring_gate`、`host_script_codec`。
+`Lunar24Host` 三配置均**构建成功**(Release/Debug/ASan)。⚠️本机只有 Apple clang ⇒ **本地绿 ≠ MSVC 绿**(本片 §13.5.1 已记录的教训);MSVC 面由 push 后的四平台 CI 覆盖。
+
+**⚠️ 本表**不**覆盖的**:① **slow 套件**(`gh19_alias_probe` 等 `LABELS slow`)—— 按仓库 CI 设计只在 PR 时跑,本轮未在本地跑全,由 push 后的 `probe gate` 覆盖;② 判据矩阵全量重跑(约 90 min,见 §13.5.1 的裁决登记:不为此重跑);③ 12 项 `--require-full` 覆盖缺口(`--require-full` 不在本片范围,单列不变)。
 
 ## 14. 覆盖缺口与既有 GitHub issue 的对应
 

@@ -308,8 +308,10 @@ Cap captureSync(const DeviceStateV1& st, double sr, std::size_t frames,
 //   R1 a reset is applied at all              -> no divergence over the whole render
 //   R2 the reset is a real re-phasing         -> `depart` no bigger than float noise
 //   R3 the slave is not re-reset per sample   -> a LEVEL-triggered reset pins the slave across the
-//                                                whole M/2-long HIGH half, so the longest byte-equal
-//                                                run would be >= M/2 instead of a few samples
+//                                                HIGH half, giving a byte-equal run of M/2 - 1
+//                                                samples (the half's first reset sample still carries
+//                                                the jump of the phase it interrupted) against the
+//                                                maxRun = 1 a correct edge reset measures
 //   R4 every reset lands on a SOURCE edge, and every source edge gets a reset (set equality over the
 //      observed span). This is the frame reconciliation. A one-frame deferral gives resets at
 //      edge+1; a falling-edge-triggered impl fires on the FALLING edges; a missed or doubled edge
@@ -327,6 +329,10 @@ struct SyncTiming {
   double depart = 0.0;                // max |synced - free| over [d, d+M)
   double peak = 0.0;                  // the synced render's own peak (the scale `depart` is judged on)
   std::size_t maxRun = 0;             // longest byte-equal adjacent run over [d, d+2M)
+  std::size_t edgeRun = 0;            // byte-equal run STARTING at the first master rising edge >= d.
+                                      // Reported next to maxRun because the pair IS the R3 mechanism:
+                                      // that frame is the half's first reset sample and carries the
+                                      // interrupted phase's jump, so it is not byte-equal to what follows.
   double perM = -1.0;                 // max |S[i] - S[i+M]|   over the steady window
   double perHalf = -1.0;              // max |S[i] - S[i+M/2]| over the same window
   std::vector<std::size_t> occ;       // frames where the post-reset trajectory signature recurs
@@ -450,8 +456,16 @@ SyncTiming syncTimingReconcile(const DeviceStateV1& st, double sr, std::size_t f
     if (a > t.depart) t.depart = a;
   }
 
-  // R3 — the level-trigger signature. A reset requested on every sample of the HIGH half makes the
-  // slave emit the same post-reset value on each of those samples, i.e. a byte-equal run of M/2.
+  // R3 — the level-trigger signature, MEASURED (2026-09-13: level-triggered mutant vs the 12 shipped
+  // cells). A reset requested on every sample of the HIGH half pins the slave at phase 0 for that
+  // whole half, but the half's FIRST reset sample is not byte-equal to the rest: it carries the
+  // `-0.5*jmp` (vco.h tick()) of the jump out of the phase the slave happened to arrive with, while
+  // every later sample of the half carries the same `-0.5*jmp` for the same 0 -> step advance. The
+  // byte-equal run therefore covers the REMAINING M/2 - 1 samples of the M/2-sample half. `maxRun`
+  // counts SAMPLES — the counter starts at 1 and increments once per equal neighbour, so a run of k
+  // equal samples reads k, not k-1 — hence the signature is M/2 - 1 and not M/2: measured 127 at
+  // M=256 and 255 at M=512 on the mutant, against maxRun = 1 on all 12 shipped cells of the correct
+  // product. The threshold below is M/2 - 1; the earlier M/2 was unreachable.
   const std::size_t rw = (2 * M < frames - d) ? (2 * M) : (frames - d);
   if (rw > 0) {
     t.maxRun = 1;
@@ -459,6 +473,19 @@ SyncTiming syncTimingReconcile(const DeviceStateV1& st, double sr, std::size_t f
     for (std::size_t i = 1; i < rw; ++i) {
       if (S[d + i] == S[d + i - 1]) { ++run; if (run > t.maxRun) t.maxRun = run; }
       else run = 1;
+    }
+    // The run that STARTS at the half's first reset sample -- the first master rising edge at or
+    // after d. Reported so the M/2 - 1 signature is read off a measurement of the first-vs-subsequent
+    // reset samples rather than inferred from it: on the level-triggered mutant this measures 1 (that
+    // frame is the half's one non-conforming sample) while maxRun measures M/2 - 1.
+    std::size_t e0 = d;
+    for (std::size_t i = 0; i < t.srcEdges.size(); ++i) {
+      if (t.srcEdges[i] >= d) { e0 = t.srcEdges[i]; break; }
+    }
+    const std::size_t eo = (e0 > d) ? (e0 - d) : 0;
+    if (eo < rw) {
+      t.edgeRun = 1;
+      while (eo + t.edgeRun < rw && S[d + eo + t.edgeRun] == S[d + eo + t.edgeRun - 1]) ++t.edgeRun;
     }
   }
 
@@ -507,9 +534,15 @@ SyncTiming syncTimingReconcile(const DeviceStateV1& st, double sr, std::size_t f
                ") -- no re-phasing occurred";
     return t;
   }
-  if (t.maxRun >= M / 2) {
-    t.reason = "longest byte-equal run is " + std::to_string(t.maxRun) + " >= M/2 = " +
-               std::to_string(M / 2) + " -- the reset is LEVEL-triggered, not edge-triggered";
+  // `M >= 8` keeps the rule defined only where its signature (M/2 - 1) is still longer than the
+  // maxRun = 1 a correct edge reset measures; every shipped cell has M = 256 or 512, so the guard
+  // never weakens this slice — it only stops a caller with a much faster master from reading a
+  // saturation artefact of a too-short window as a level-triggered reset.
+  if (M >= 8 && t.maxRun >= M / 2 - 1) {
+    t.reason = "longest byte-equal run is " + std::to_string(t.maxRun) + " >= M/2-1 = " +
+               std::to_string(M / 2 - 1) + " -- the reset is LEVEL-triggered, not edge-triggered "
+               "(the half's first reset sample still carries the jump of the phase it interrupted, "
+               "so the byte-equal run is the half minus that one sample)";
     return t;
   }
   if (t.srcEdges.empty()) {
@@ -791,7 +824,8 @@ std::string syncTimingLine(const std::string& cid, double sr, const SyncTiming& 
   std::string s = cid + " sr=" + std::to_string((int)sr) + " M=" + std::to_string(t.m) +
                   " d=" + std::to_string(t.d) + " depart=" + nb[0] +
                   " peak=" + nb[1] +
-                  " max_run=" + std::to_string(t.maxRun) + " per_M=" + nb[2] +
+                  " max_run=" + std::to_string(t.maxRun) +
+                  " edge_run=" + std::to_string(t.edgeRun) + " per_M=" + nb[2] +
                   " per_half=" + nb[3] +
                   " src_edges=" + std::to_string(t.srcEdges.size()) +
                   " resets=" + std::to_string(t.resetFrames.size()) +

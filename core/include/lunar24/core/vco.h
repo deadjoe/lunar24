@@ -266,15 +266,15 @@ inline void Vco::tick(double* out, double* subOut) {
   // not by the fixed -2 of a saw wrap. The term applied is `out -= 0.5*J` (equivalently
   // `+= 0.5*J*R`) — one half of the jump, on the post-reset sample.
   //
-  // SCOPE OF THAT FORMULA (do not over-read it): `-0.5*J` is the MEDIAN correction for a
-  // SAMPLE-ALIGNED step, i.e. a single-point fix at the reset sample. It is NOT the complete
-  // Si step residual: the full response is `b(n) = 1/2 + Si(pi*n)/pi`, whose tail at the
+  // SCOPE OF THAT FORMULA (do not over-read it): `-0.5*J` is a single-point MEDIAN correction at
+  // the reset sample, applied as the approximation this implementation adopts. It is NOT the
+  // complete Si step residual: the full response is `b(n) = 1/2 + Si(pi*n)/pi`, whose tail at the
   // SUBSEQUENT integer samples is not all zero, and this implementation deliberately does not
-  // compute it (see the BLAMP note below for the measured reason). Because the master's edge
-  // lands exactly on a sample grid point in these cells (probe: per-sample step 1/M, period M
-  // samples), the residual reduces to that single sample here. Nothing in this comment generalises
-  // to arbitrary f0 / FM / event phase: the evidence on the record is the 12 declared sync cells
-  // only, and an off-grid edge is NOT covered.
+  // compute that tail -- it is left uncorrected (see the BLAMP note below for the measured
+  // reason). The master's edge does land on a sample grid point in these cells (probe: per-sample
+  // step 1/M, period M samples), but that alignment is NOT what makes the tail go away. Nothing in
+  // this comment generalises to arbitrary f0 / FM / event phase: the evidence on the record is the
+  // 12 declared sync cells only, and an off-grid edge is NOT covered.
   // NOT `polyblepSaw`-style full-scale subtraction and NOT the other sign: both were measured
   // on the record (see report/2026-09-12-task111-gh19-s5-hard-sync.md), and `-=0.5*J` is the only
   // one that lowers the residual. Adding the BLAMP slope-jump term at the same instant was
