@@ -407,6 +407,22 @@ lunar_add_test(test_vco_normal_source tests/host/test_vco_normal_source.cpp)
 target_link_libraries(test_vco_normal_source PRIVATE lunar_host)
 target_include_directories(test_vco_normal_source PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# task #117 (GH #19 S0): the morph-map + two-sided PWM ACCEPTANCE surface. Everything runs through
+# the agreed entry (codec -> decode -> StandaloneAudioEngine::applyDeviceState -> processBlock) via
+# tests/host/test_engine_harness.h: four sample rates, the full morph sweep and its five node audio
+# signatures, A/B asymmetry, PW/PWM depth 0-mid-1, legal DC and CHANGING CV duty, input inversion and
+# both clamps, no-cable/unplug restore, same-frame consumption read from an independent edge index,
+# irregular processBlock partitions, repeated restore, a rejected apply's atomicity on
+# state/format/plan/subsequent trace, four-output finiteness across the morph x depth surface, the
+# save-byte vs sound split, isolated B against the legitimate default A->B route, and the render
+# callback's zero alloc/free (the allocator TU is shared with test_state_apply_oracle — the definition
+# must stay out of the test TU to avoid GCC -Wmismatched-new-delete, which this build makes an error).
+lunar_add_test(test_gh19_s0_morph_pwm_acceptance
+  tests/host/test_gh19_s0_morph_pwm_acceptance.cpp
+  tests/host/test_state_apply_oracle_allocator.cpp)
+target_link_libraries(test_gh19_s0_morph_pwm_acceptance PRIVATE lunar_host)
+target_include_directories(test_gh19_s0_morph_pwm_acceptance PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
 # task #98 (GH #15 D3 divider): REAL-RESTORE directional acceptance (the @Codex dd57c783 gap-fill).
 # The live-lane d3 acceptance (test_machine_runtime::d3_div_actual_timing_acceptance) drives rate +
 # divider through a controlled SynthRuntime fixture; it does NOT exercise the codec -> owner ->

@@ -1242,6 +1242,274 @@ int main() {
     check(atAfterEffect, "A′④ the pitch event changes output at/after the scheduled sample");
   }
 
+  // ============ GH#19 S0 (task #117): the PWM CV jacks are PRODUCT-REACHABLE =============
+  // Ruling 4 (msg a323acad): JackId 20 / 22 (vco_a.pwm_in / vco_b.pwm_in) connect to the
+  // EXISTING binding and execution, A and B INDEPENDENTLY, with no new jack and no new route.
+  // The canonical builder now calls setVcoPwmBindings(...) — but a binding is a DECLARATION,
+  // not a connection, so this oracle drives the canonical machine and asserts the modulation is
+  // really CONSUMED per sample through the one control-sink resolver.
+  //
+  // Setup: morph A = morph B = 1.0 (the ring's PURE PULSE node — the only node whose shape reads
+  // effectiveDuty(), and at the ring's end the triangle/BLAMP weight is exactly 0, so no
+  // band-limited term confounds the comparison), base PW 0.3, PWM depth 1.0. The modulation
+  // source is the JOYSTICK: a real product panel control that publishes a DC on x_out / y_out
+  // and is driven here through the normal parameter path. Each VCO is driven from its OWN
+  // source (X for A, Y for B) — which is what "A/B independent" has to mean at product level.
+  //
+  // The trace comparisons are all between two renders with the SAME patch and the SAME depth,
+  // differing ONLY in the control value, so a divergence is attributable to the modulation and
+  // never to a plan-order/phase artifact of adding a cable in the first place.
+  {
+    constexpr double kBaseHz = 220.0;
+    constexpr double kBasePw = 0.3;
+    constexpr std::size_t kFrames = 256;  // > 1 period at 220 Hz / 48 kHz.
+    struct Probe {
+      core::RuntimeOutput o[kFrames];
+      double cvA = 0.0, cvB = 0.0, dutyA = 0.0, dutyB = 0.0, srcX = 0.0, srcY = 0.0;
+    };
+    auto renderPwm = [&](bool wireA, bool wireB, double xNorm, double yNorm, double depthA,
+                         double depthB, Probe& p) {
+      core::MachineRuntimeDefinition d(kSeed, kSr);
+      core::SynthRuntime& rt = d.runtime();
+      rt.setVcoBaseHz(kBaseHz);
+      rt.setVcoCvAmounts(1.0, 0.0);  // isolate B from the default A->B route
+      rt.setVcoControlModes(core::VcoControlMode::kExponential,
+                            core::VcoControlMode::kExponential);
+      rt.setControlVoltage(reg::JackId::vco_a_v_oct_in, 0.0);
+      rt.setControlVoltage(reg::JackId::vco_b_v_oct_in, 0.0);
+      rt.setVcoAMorph(1.0);
+      rt.setVcoBMorph(1.0);
+      rt.setVcoAPw(kBasePw);
+      rt.setVcoBPw(kBasePw);
+      rt.setVcoAPwm(depthA);
+      rt.setVcoBPwm(depthB);
+      if (wireA)
+        static_cast<void>(rt.connect(reg::JackId::joystick_x_out, reg::JackId::vco_a_pwm_in));
+      if (wireB)
+        static_cast<void>(rt.connect(reg::JackId::joystick_y_out, reg::JackId::vco_b_pwm_in));
+      static_cast<void>(rt.applyDspParam(reg::ParameterId::joystick_x, xNorm));
+      static_cast<void>(rt.applyDspParam(reg::ParameterId::joystick_y, yNorm));
+      static_cast<void>(rt.rebuild());
+      for (std::size_t i = 0; i < kFrames; ++i)
+        p.o[i] = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
+      p.cvA = rt.vcoAPwmCv();
+      p.cvB = rt.vcoBPwmCv();
+      p.dutyA = rt.vcoAEffectiveDuty();
+      p.dutyB = rt.vcoBEffectiveDuty();
+      p.srcX = rt.controlVoltageAt(reg::JackId::joystick_x_out);
+      p.srcY = rt.controlVoltageAt(reg::JackId::joystick_y_out);
+    };
+    auto sameA = [](const Probe& p, const Probe& q) {
+      for (std::size_t i = 0; i < kFrames; ++i)
+        if (p.o[i].dryA != q.o[i].dryA) return false;
+      return true;
+    };
+    auto sameB = [](const Probe& p, const Probe& q) {
+      for (std::size_t i = 0; i < kFrames; ++i)
+        if (p.o[i].dryB != q.o[i].dryB) return false;
+      return true;
+    };
+    // The software transfer ruling 3, evaluated on the CV the GRAPH actually delivered.
+    auto transfer = [](double basePw, double depth, double cv) {
+      const double d = basePw + depth * cv / 10.0;
+      return d < core::Vco::kPwDutyMin ? core::Vco::kPwDutyMin
+                                       : (d > core::Vco::kPwDutyMax ? core::Vco::kPwDutyMax : d);
+    };
+
+    Probe unpatched{}, zero{}, full{}, depthZero{}, bRef{}, bMod{}, both{};
+    renderPwm(false, false, 1.0, 1.0, 1.0, 1.0, unpatched);  // no cable; both controls at +5 V
+    renderPwm(true, false, 0.5, 1.0, 1.0, 1.0, zero);        // A wired, X at 0 V
+    renderPwm(true, false, 1.0, 1.0, 1.0, 1.0, full);        // A wired, X at +5 V
+    renderPwm(true, false, 1.0, 1.0, 0.0, 1.0, depthZero);   // A wired, X at +5 V, DEPTH 0
+    renderPwm(false, true, 1.0, 0.5, 1.0, 1.0, bRef);        // B wired, Y at 0 V
+    renderPwm(false, true, 1.0, 1.0, 1.0, 1.0, bMod);        // B wired, Y at +5 V
+    renderPwm(true, true, 1.0, 1.0, 1.0, 1.0, both);         // both wired, both at +5 V
+
+    // (i) UNPATCHED: the binding alone reads 0 and leaves both duties at the canonical base.
+    check(unpatched.cvA == 0.0 && unpatched.cvB == 0.0,
+          "GH#19 S0: an unpatched PWM sink reads exactly 0 on BOTH sides (binding is not a cable)");
+    check(unpatched.dutyA == kBasePw && unpatched.dutyB == kBasePw,
+          "GH#19 S0: unpatched, both effective duties stay at the canonical base PW");
+    check(unpatched.srcX != 0.0 && unpatched.srcY != 0.0,
+          "GH#19 S0: the joystick controls REALLY publish a non-zero DC (the next checks are non-vacuous)");
+
+    // (ii) A wired at 0 V: the cable itself perturbs nothing (same trace as no cable at all).
+    check(zero.cvA == 0.0 && zero.dutyA == kBasePw,
+          "GH#19 S0: vco_a.pwm_in patched from a source sitting at 0 V leaves duty at base PW");
+    check(sameA(zero, unpatched) && sameB(zero, unpatched),
+          "GH#19 S0: adding the PWM cable at 0 V changes NEITHER VCO's output (the cable is inert)");
+
+    // (iii) A wired at +5 V: the modulation is LIVE, reaches A only, and follows ruling 3.
+    check(full.cvA == full.srcX && full.cvA != 0.0,
+          "GH#19 S0: vco_a.pwm_in consumes the source's published value (graph-delivered CV)");
+    check(std::fabs(full.dutyA - transfer(kBasePw, 1.0, full.cvA)) < 1e-12,
+          "GH#19 S0: A's effective duty follows clamp(basePW + depth*CV/10) on the DELIVERED CV");
+    check(!sameA(full, zero),
+          "GH#19 S0: modulating A's PWM jack changes VCO A's emitted samples (RED if no consumer)");
+    check(full.cvB == 0.0 && full.dutyB == kBasePw && sameB(full, zero),
+          "GH#19 S0: A's PWM cable does NOT reach VCO B (A/B independent)");
+
+    // (iv) DEPTH 0 nulls the modulation inside the SAME graph: bit-identical to the 0 V render.
+    check(depthZero.cvA != 0.0 && depthZero.dutyA == kBasePw,
+          "GH#19 S0: PWM depth 0 keeps duty at base PW even with a live CV at the jack");
+    check(sameA(depthZero, zero),
+          "GH#19 S0: depth 0 is bit-identical to no modulation (same graph, strict equality)");
+
+    // (v) The mirror case: B's own jack drives B and only B (the two jacks are not conflated).
+    check(bMod.cvB == bMod.srcY && bMod.cvB != 0.0 && bRef.cvB == 0.0,
+          "GH#19 S0: vco_b.pwm_in reads B's OWN source, not A's");
+    check(std::fabs(bMod.dutyB - transfer(kBasePw, 1.0, bMod.cvB)) < 1e-12,
+          "GH#19 S0: B's effective duty follows the same transfer on ITS delivered CV");
+    check(!sameB(bMod, bRef),
+          "GH#19 S0: modulating B's PWM jack changes VCO B's emitted samples");
+    check(bMod.cvA == 0.0 && bMod.dutyA == kBasePw && sameA(bMod, bRef),
+          "GH#19 S0: B's PWM cable does NOT reach VCO A (the mirror independence holds)");
+
+    // (vi) Both wired at once, from two different sources: each side takes its own value.
+    check(both.cvA != 0.0 && both.cvB != 0.0,
+          "GH#19 S0: both PWM jacks modulate in the same render (no shared/one-shot sink)");
+    check(both.dutyA == full.dutyA && both.dutyB == bMod.dutyB,
+          "GH#19 S0: with both patched each duty matches its OWN single-patch value (no cross-talk)");
+    check(!sameA(both, unpatched) && !sameB(both, unpatched),
+          "GH#19 S0: both VCO outputs move when both jacks are modulated");
+
+    // (vii) SAME-FRAME CONSUMPTION — an ABSOLUTE-TIMING check, deliberately not a residual one.
+    //
+    // Every check above uses a STATIC CV, and a static CV cannot see a one-sample latency: a
+    // periodic trace shifted by one cell has identical samples-vs-reference metrics. So the
+    // consumer's latency is pinned here with an INDEPENDENT EDGE INDEX taken FROM THE RENDER.
+    //
+    // Stimulus: 400 Hz base, morph = 1.0 (the pure PULSE node — BLAMP weight is 0 there, so the
+    // emitted sample is a hard +/-1 comparator and the duty is directly visible), basePW = 0.5,
+    // depth = 1.0 on the side under test. BOTH sides are probed, because their drivers differ:
+    //   B -> vco_a_wave_out, which is REGISTERED BUT NEVER PUBLISHED by any module step, so
+    //        setControlVoltage on it is real DC that nothing overwrites between frames.
+    //   A -> joystick_x_out, a PRODUCT knob (A's own jack has NO unpublished source: a
+    //        vco_a_wave_out self-loop and vco_b_wave_out -> vco_a_pwm_in are both rejected).
+    //
+    // Step 1 measures the real period and a real LOW run from the depth-0 render, so no phase
+    // model is assumed. K is the middle of a measured LOW run one period later: at duty 0.5 that
+    // frame is LOW, at duty clamp(0.5 + 0.5) = 0.999 it must be HIGH. So the frame the CV step is
+    // CONSUMED on is visible directly: K => same-frame consumption, K+1 => one sample late.
+    {
+      constexpr double kTimingBaseHz = 400.0;
+      constexpr std::size_t kTFrames = 4096;
+      constexpr std::size_t kSearchFrom = 600;
+      constexpr std::size_t kNoStep = static_cast<std::size_t>(-1);
+      struct TimingArm {
+        double buf[kTFrames];
+        double cv = 0.0;
+        double duty = 0.0;
+      };
+      // side 'A' = joystick knob -> vco_a.pwm_in, observed on dryA;
+      // side 'B' = injected DC -> vco_b.pwm_in, observed on dryB.
+      auto renderTimingArm = [&](char side, double depth, std::size_t stepAt, TimingArm& arm) {
+        core::MachineRuntimeDefinition d(kSeed, kSr);
+        core::SynthRuntime& rt = d.runtime();
+        rt.setVcoBaseHz(kTimingBaseHz);
+        rt.setVcoCvAmounts(1.0, 0.0);   // keep the default A->B normalised route off B
+        rt.setVcoControlModes(core::VcoControlMode::kExponential,
+                              core::VcoControlMode::kExponential);
+        rt.setControlVoltage(reg::JackId::vco_a_v_oct_in, 0.0);
+        rt.setControlVoltage(reg::JackId::vco_b_v_oct_in, 0.0);
+        rt.setVcoAMorph(1.0);
+        rt.setVcoBMorph(1.0);           // pure pulse node on the side under test
+        rt.setVcoAPw(kBasePw);
+        rt.setVcoBPw(kBasePw);
+        rt.setVcoAPwm(side == 'A' ? depth : 0.0);
+        rt.setVcoBPwm(side == 'B' ? depth : 0.0);
+        if (side == 'A') {
+          static_cast<void>(rt.applyDspParam(reg::ParameterId::joystick_x, 0.5));  // 0 V
+          static_cast<void>(rt.connect(reg::JackId::joystick_x_out, reg::JackId::vco_a_pwm_in));
+        } else {
+          static_cast<void>(rt.connect(reg::JackId::vco_a_wave_out, reg::JackId::vco_b_pwm_in));
+        }
+        static_cast<void>(rt.rebuild());
+        for (std::size_t i = 0; i < kTFrames; ++i) {
+          if (i == stepAt) {
+            if (side == 'A') static_cast<void>(rt.applyDspParam(reg::ParameterId::joystick_x, 1.0));
+            else rt.setControlVoltage(reg::JackId::vco_a_wave_out, 5.0);
+          }
+          const core::RuntimeOutput o = rt.processFrame(core::RuntimeInputs{0.0, 0.0},
+                                                        /*driveGraph=*/true);
+          arm.buf[i] = (side == 'A') ? o.dryA : o.dryB;
+        }
+        arm.cv = (side == 'A') ? rt.vcoAPwmCv() : rt.vcoBPwmCv();
+        arm.duty = (side == 'A') ? rt.vcoAEffectiveDuty() : rt.vcoBEffectiveDuty();
+      };
+
+      auto probeSide = [&](char side) {
+        const char* name = (side == 'A') ? "A" : "B";
+        TimingArm ref{}, stepped{}, flat{};
+        renderTimingArm(side, 0.0, kNoStep, ref);  // depth 0 at 0 V: pulse at duty = base PW
+
+        // Measured period and the next measured LOW run, both straight out of the render.
+        std::size_t e0 = 0, e1 = 0;
+        for (std::size_t i = kSearchFrom; i + 1 < kTFrames; ++i)
+          if (ref.buf[i] <= 0.0 && ref.buf[i + 1] > 0.0) { e0 = i + 1; break; }
+        for (std::size_t i = e0 + 1; i + 1 < kTFrames; ++i)
+          if (ref.buf[i] <= 0.0 && ref.buf[i + 1] > 0.0) { e1 = i + 1; break; }
+        const std::size_t period = (e0 && e1) ? (e1 - e0) : 0;
+        std::size_t lowLo = 0, lowHi = 0;
+        for (std::size_t i = e1; i + 1 < kTFrames; ++i)
+          if (ref.buf[i] > 0.0 && ref.buf[i + 1] <= 0.0) { lowLo = i + 1; break; }
+        for (std::size_t i = lowLo + 1; i + 1 < kTFrames; ++i)
+          if (ref.buf[i] <= 0.0 && ref.buf[i + 1] > 0.0) { lowHi = i + 1; break; }
+
+        // The probe is only meaningful if the reference really is measurable: a period, a LOW run
+        // with room on both sides, and a window that is genuinely LOW at duty = base PW.
+        const std::size_t K = (lowLo && lowHi) ? lowLo + (lowHi - lowLo) / 2 : 0;
+        bool windowLow = (K >= 3) && (K + 3 < kTFrames);
+        for (std::size_t i = (K >= 3 ? K - 2 : 0); windowLow && i <= K + 3; ++i)
+          windowLow = windowLow && (ref.buf[i] <= 0.0);
+        const bool measurable =
+            period > 8 && (lowHi - lowLo) >= 8 && windowLow && K + 4 < kTFrames;
+        std::printf("P3-3 gh19-s0 same-frame %s: measurable=%d period=%zu low_run=%zu K=%zu\n",
+                    name, int(measurable), period, (lowHi > lowLo) ? lowHi - lowLo : 0, K);
+        // Cannot measure => say so loudly rather than pass an unrun check.
+        check(measurable,
+              "GH#19 S0: the same-frame probe's reference is measurable (period, LOW run, window)");
+        if (!measurable) return;
+
+        renderTimingArm(side, 1.0, K, stepped);     // depth 1, CV stepped just before frame K
+        renderTimingArm(side, 1.0, kNoStep, flat);  // depth 1, CV never stepped
+
+        auto firstHighFrom = [&](const TimingArm& a, std::size_t from) {
+          for (std::size_t i = from; i < kTFrames; ++i)
+            if (a.buf[i] > 0.0) return i;
+          return kTFrames;
+        };
+        const std::size_t hStep = firstHighFrom(stepped, K);
+        const std::size_t hFlat = firstHighFrom(flat, K);
+
+        // Non-vacuity: WITHOUT the CV step that same window stays LOW for a long stretch, so the
+        // edge below is caused by the CV and not by the pulse naturally returning high.
+        check(hFlat > K + period / 4,
+              "GH#19 S0: without the CV step the pulse stays LOW well past K (the edge is causal)");
+        // The load-bearing check: the step is consumed in the frame it was published in.
+        if (side == 'A')
+          check(hStep == K,
+                "same_frame_edge_A: GH#19 S0: A's PWM CV step is consumed in the SAME frame it is "
+                "published (a one-sample-late consumer lands on K+1)");
+        else
+          check(hStep == K,
+                "same_frame_edge_B: GH#19 S0: B's PWM CV step is consumed in the SAME frame it is "
+                "published (a one-sample-late consumer lands on K+1)");
+        // The depth is a GH#21-smoothed knob, so it converges to 1.0 asymptotically; the duty is
+        // compared with a margin rather than at exact equality (an exact-equality form here would
+        // fail on the smoother's last ulp, not on anything this check is about).
+        check(stepped.cv == 5.0 && stepped.duty > kBasePw + 0.45,
+              "GH#19 S0: the stepped arm really did reach a near-full duty on a live +5 V CV");
+        check(std::fabs(flat.duty - kBasePw) < 1e-9,
+              "GH#19 S0: the un-stepped depth-1 arm stays at base PW (the step is the only change)");
+        std::printf("P3-3 gh19-s0 same-frame %s: hStep=%zu hFlat=%zu cv=%+.6f duty=%.9f\n", name,
+                    hStep, hFlat, stepped.cv, stepped.duty);
+      };
+      probeSide('A');
+      probeSide('B');
+    }
+  }
+
   std::printf("\n[%s] %d checks, %d failed\n", g_fail == 0 ? "PASS" : "FAIL", g_checks,
               g_fail);
   return g_fail == 0 ? 0 : 1;

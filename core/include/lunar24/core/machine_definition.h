@@ -354,6 +354,20 @@ class MachineRuntimeDefinition {
     // is VCO A's alone ("Sync (VCO A only)"); VCO B is deliberately left with no sync binding.
     // Unpatched this resolves no source, so every existing render stays bit-identical.
     static_cast<void>(runtime_.setVcoSyncBindings(lunar24::registry::JackId::vco_a_sync_in));
+    // GH#19 S0 (task #117): the two PWM CV jack bindings (JackId 20 / 22, vco_a.pwm_in and
+    // vco_b.pwm_in). Binding them here is what makes each VCO's PWM depth reachable from the
+    // GRAPH in the product machine: the kVcoA / kVcoB step resolves its own bound sink through
+    // the one control-sink resolver and reads it PER SAMPLE, so a patched source modulates that
+    // side's duty. A and B are bound as two INDEPENDENT jacks — neither implies the other.
+    //
+    // This adds no jack and no route: both jacks are already registered product jacks
+    // (registry.hpp vco_a.pwm_in / vco_b.pwm_in, ±5 V nominal, evidence solar42N_manual_v15
+    // p.386-387) and the binding reuses the existing execution/sink machinery. Unpatched, each
+    // sink resolves no source and reads 0 — and 0 at any depth leaves the emitted samples
+    // untouched, so every patch-less render stays bit-identical. Cable override and unplug
+    // restore remain the graph's contract, not this builder's.
+    runtime_.setVcoPwmBindings(lunar24::registry::JackId::vco_a_pwm_in,
+                               lunar24::registry::JackId::vco_b_pwm_in);
     runtime_.setVcoOutBindings(lunar24::registry::JackId::vco_a_dry_out,
                                lunar24::registry::JackId::vco_b_vco_out);
     // NOTE (item 1, @Codex eaaf08cc): the A/B generic-CV lin/exp mode is deliberately

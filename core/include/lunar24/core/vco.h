@@ -68,18 +68,33 @@
 #include <cstdint>
 
 #include "lunar24/core/blamp_kernel.h"
+#include "lunar24/core/vco_wave_map.h"
 
 namespace lunar24::core {
 
-// The six selectable waveforms. The traditional four are an AS3340-convention
-// inference (see PROVENANCE); the two morphing are manual-evidenced.
+// The raw waveform shapes. The traditional four are an AS3340-convention inference (see
+// PROVENANCE); the two morphing are manual-evidenced.
+//
+// ⚠️ PRODUCTION vs MODULE-DEV. `kMorphRing` is the PRODUCTION rendering law and the CONSTRUCTOR
+// DEFAULT (see wave_ below): the continuous single-knob mapping of wave_map, driven by the
+// EXISTING `morph` parameter. The other six values are the MODULE-DEVELOPMENT raw-waveform
+// interface — each is one fixed shape, reachable only by an explicit setWaveform() call, and no
+// product path makes one. They exist because the module's own unit tests drive the raw shapes
+// directly (tests/core/test_vco.cpp), and they are kept for exactly that.
+//
+// There is deliberately NO runtime switch back to the pre-#117 fixed-triangle behaviour and no
+// opt-in flag: the mapping IS the default, so it takes effect on every Vco the runtime builds
+// with no extra call. See vco_wave_map.h for what is claimed, what is software-provisional, and
+// what is a known reported property (the S0 mid-stretch silence, the missing AA on the
+// mixed/saw/pulse paths).
 enum class VcoWaveform : std::uint8_t {
-  kSaw,               // traditional (AS3340 inference)
-  kTriangle,          // traditional (AS3340 inference; the triangle core itself)
-  kSine,              // traditional (AS3340 inference)
-  kPulse,             // traditional; duty from SHAPE (pw)
-  kMorphSawInvSaw,    // manual-evidenced: saw <-> inverted saw
-  kMorphSineTriangle  // manual-evidenced: sine <-> triangle
+  kSaw,               // module-dev raw shape (AS3340 inference)
+  kTriangle,          // module-dev raw shape (AS3340 inference; the triangle core itself)
+  kSine,              // module-dev raw shape (AS3340 inference)
+  kPulse,             // module-dev raw shape; duty from SHAPE (pw)
+  kMorphSawInvSaw,    // module-dev raw shape; manual-evidenced: saw <-> inverted saw
+  kMorphSineTriangle, // module-dev raw shape; manual-evidenced: sine <-> triangle
+  kMorphRing          // ⭐ PRODUCTION DEFAULT: the continuous single-knob sweep (wave_map)
 };
 
 // CV input lin/exp mode (lin_exp selector). The MODULE CONSTRUCTOR default here is index 1 =
@@ -116,15 +131,56 @@ class Vco {
   void setSubSelect(int index) { subSelect_ = index; }
 
   // ---------------------------------------------------------------- waveform --
+  // MODULE-DEVELOPMENT raw-waveform selection. NOT a product control and NOT wired to any panel
+  // control, jack, route or persisted byte: no product path calls this, and a Vco the runtime
+  // builds renders kMorphRing without it. Its only callers are the module's own unit tests, which
+  // need to isolate one raw shape at a time. Setting it does not disable the mapping's BLAMP
+  // scaling — each shape keeps exactly the band-limiting it had before #117.
   void setWaveform(VcoWaveform w) { wave_ = w; }
-  // Morph 0..1; only meaningful for the two morphing waveforms (clamped).
+  // Morph 0..1, the PRODUCTION waveform control (the panel's MORPHING WAVEFORM knob, one per
+  // side; clamped). On the default kMorphRing rendering law it is the position along the whole
+  // continuous sweep; on the module-dev raw shapes kMorphSawInvSaw / kMorphSineTriangle it is
+  // that shape's own crossfade. Same parameter, same ID, same 0..1 range, same default 0.5.
   void setMorph(double m);
-  // SHAPE = pulse-width duty for kPulse. Clamped into a small (0,1) window so an
-  // extreme setting can never collapse the pulse to a flat DC line / silence break
-  // (the two-rail swing is always present; the must-test verifies it).
+  // SHAPE = pulse-width duty for kPulse — the BASE pulse width. Clamped into a small (0,1) window
+  // so an extreme setting can never collapse the pulse to a flat DC line / silence break (the
+  // two-rail swing is always present; the must-test verifies it). This is the CANONICAL value the
+  // panel knob (and its GH#21 smoothing) drives; PWM modulation must NOT write it back (see
+  // setPwDepth/setPwCv below and effectiveDuty()).
   void setShape(double duty) {
-    constexpr double kMinDuty = 1e-3, kMaxDuty = 1.0 - 1e-3;
-    duty_ = duty < kMinDuty ? kMinDuty : (duty > kMaxDuty ? kMaxDuty : duty);
+    duty_ = duty < kPwDutyMin ? kPwDutyMin : (duty > kPwDutyMax ? kPwDutyMax : duty);
+  }
+
+  // ---------------------------------------------------------------------- PWM --
+  // GH#19 S0 (task #117): the PWM jack's product consumer. On the hardware, PWM modulates the
+  // pulse width; here it modulates the duty the pulse node (and only the pulse node) reads.
+  //
+  //   effectiveDuty = clamp(basePW + depth * cvVolts / 10, 0.001, 0.999)
+  //
+  // ⚠️ SOFTWARE PROVISIONAL TRANSFER. The ratio is NOT a hardware fact: the jack's nominal range
+  // is ±5 V (registry descriptor vco_a.pwm_in), and /10 makes a full ±5 V swing at depth 1
+  // contribute ±0.5 of duty. Positive CV RAISES the duty. Nothing in the manual or the panel
+  // evidences this law; it is this implementation's declared model, reported as such.
+  //
+  // The two inputs are deliberately separate quantities with separate timing:
+  //   * setPwDepth(depth) is the SMOOTHED PWM knob (0..1, default 0). It goes through the SAME
+  //     GH#21 seconds-smoothing family as the other panel knobs — the runtime smooths it, not this
+  //     class.
+  //   * setPwCv(volts) is THIS SAMPLE's PWM CV read from the patch graph. It is EXTERNAL audio-rate
+  //     modulation and is deliberately NOT smoothed (a smoother here would low-pass the patch and
+  //     break the same-frame consumption the graph contract guarantees).
+  // Neither writes duty_. depth = 0 therefore leaves the emitted samples BIT-IDENTICAL to the
+  // pre-#117 behaviour, exactly (0 * cv == 0, and duty_ is already inside the clamp window).
+  // No NaN passthrough: a non-finite depth or CV is treated as 0, and a non-finite sum falls back
+  // to the canonical base width rather than propagating.
+  void setPwDepth(double depth) { pwDepth_ = std::isfinite(depth) ? depth : 0.0; }
+  void setPwCv(double volts) { pwCv_ = std::isfinite(volts) ? volts : 0.0; }
+  double pwDepth() const { return pwDepth_; }
+  double pwCv() const { return pwCv_; }
+  double effectiveDuty() const {
+    const double d = duty_ + pwDepth_ * pwCv_ / kPwmCvFullScaleVolts;
+    if (!std::isfinite(d)) return duty_;   // defensive: never emit a non-finite duty.
+    return d < kPwDutyMin ? kPwDutyMin : (d > kPwDutyMax ? kPwDutyMax : d);
   }
 
   // ----------------------------------------------------------- linear FM input --
@@ -167,6 +223,12 @@ class Vco {
   // stored knob — post-clamp where the setter clamps). Never a shadow parameter bank;
   // these read the same members the render path consumes.
   double tune() const { return tune_; }        // oct, raw store (no clamp).
+  // Which rendering law this Vco is on. INSPECT ONLY, in the same readback group as the knobs
+  // below: it is the observable form of the GH#19 S0 contract that a runtime-built Vco renders
+  // kMorphRing (the continuous single-knob mapping) and has no product path back to a raw
+  // module-development shape. No product path calls setWaveform; setting it does not change the
+  // mapping's BLAMP scaling (each shape keeps the band-limiting it had before #117).
+  VcoWaveform waveform() const { return wave_; }
   double morph() const { return morph_; }      // 0..1, post-clamp.
   double shape() const { return duty_; }       // pulse-width duty, post-clamp.
   int octaveSelect() const { return octSelect_; }   // 0..2, post-clamp.
@@ -178,6 +240,11 @@ class Vco {
   static constexpr double kZeroOctave = 0.0;  // oct_sel "0".
   static constexpr double kPlus3Octave = 3.0; // oct_sel "+3" (approximately +3 oct).
   static constexpr double kTwoPi = 6.28318530717958647692528676655900577;
+  // The pulse-duty clamp window (SHAPE and effectiveDuty share it, so they cannot drift apart).
+  static constexpr double kPwDutyMin = 1e-3;
+  static constexpr double kPwDutyMax = 1.0 - 1e-3;
+  // PWM full-scale divisor: 10 V == ±0.5 duty at depth 1 (jack nominal ±5 V). PROVISIONAL.
+  static constexpr double kPwmCvFullScaleVolts = 10.0;
 
  private:
   static double frac(double v) { return v - std::floor(v); }
@@ -191,9 +258,17 @@ class Vco {
   double tune_ = 0.0;
   int subSelect_ = 1;                  // default "-1".
   VcoControlMode cvMode_ = VcoControlMode::kExponential;  // default index 1.
-  VcoWaveform wave_ = VcoWaveform::kTriangle;
+  // ⭐ PRODUCTION DEFAULT (GH#19 S0, task #117). The mapping is the rendering law, not an opt-in:
+  // constructing a Vco is enough. `morph_ = 0.5` then lands exactly on the sweep's sine node, so
+  // the default SOUND changes from triangle to sine. That is the intended, reported consequence of
+  // adopting the mapping — the parameter ID, its 0..1 range, its 0.5 default value and the saved
+  // bytes are all unchanged (the mapping is a pure function of the EXISTING morph value and is
+  // never persisted).
+  VcoWaveform wave_ = VcoWaveform::kMorphRing;
   double morph_ = 0.5;
-  double duty_ = 0.5;
+  double duty_ = 0.5;                  // CANONICAL base pulse width (SHAPE); PWM never writes it.
+  double pwDepth_ = 0.0;               // smoothed PWM knob depth, 0..1, default 0 (GH#19 S0).
+  double pwCv_ = 0.0;                  // this sample's PWM CV in volts, NOT smoothed (GH#19 S0).
   double fmCv_ = 0.0;
   double fmDevHz_ = 0.0;
   double cumPitch_ = 0.0;              // unwrapped pitch phase (cycles).
@@ -219,8 +294,28 @@ class Vco {
   // the two can never drift apart.
   double emittedAt_(double cp, double step) const {
     double v = waveformSampleAt(frac(cp));
-    if (wave_ == VcoWaveform::kTriangle) v += triangleBlampCorr(cp, step);
+    const double tw = triangleBlampWeight_();
+    if (tw > 0.0) v += tw * triangleBlampCorr(cp, step);
     return v;
+  }
+
+  // How much of the EXISTING triangle slope correction is in force for the active waveform.
+  //  * kTriangle (module-dev raw triangle): 1.0 — bit-identical to the pre-#117 behaviour.
+  //  * kMorphRing: the triangle NODE's weight in the mix (wave_map::triangleWeight). It is exactly
+  //    1.0 at the pure-triangle node (morph = 0.75) and 0.0 outside stretches 2 and 3, so the
+  //    correction is applied in full where the output IS the triangle and not at all where it is
+  //    not. First-order and software-provisional (vco_wave_map.h P3): it is NOT a normalisation of
+  //    the output level, and it changes no other node's amplitude.
+  //  * every other waveform: 0.0 — unchanged from before #117 (the naive morph shapes stay naive).
+  double triangleBlampWeight_() const {
+    switch (wave_) {
+      case VcoWaveform::kTriangle:
+        return 1.0;
+      case VcoWaveform::kMorphRing:
+        return wave_map::triangleWeight(wave_map::kRingEqual, morph_);
+      default:
+        return 0.0;
+    }
   }
 };
 
@@ -310,7 +405,9 @@ inline double Vco::waveformSampleAt(double p) const {
     case VcoWaveform::kSine:
       return std::sin(kTwoPi * p);
     case VcoWaveform::kPulse:
-      return (p < duty_) ? 1.0 : -1.0;                // bipolar pulse, duty in (0,1).
+      // bipolar pulse, duty in (0,1). The duty is effectiveDuty(), i.e. the base width plus the
+      // PWM modulation; with the PWM depth at its 0 default this is bit-identical to duty_.
+      return (p < effectiveDuty()) ? 1.0 : -1.0;
     case VcoWaveform::kMorphSawInvSaw: {
       // crossfade saw <-> inverted saw; continuous (passes through 0 at mid).
       const double inv = -a;
@@ -321,6 +418,21 @@ inline double Vco::waveformSampleAt(double p) const {
       const double t = 4.0 * std::fabs(p - 0.5) - 1.0;
       return (1.0 - morph_) * s + morph_ * t;
     }
+    case VcoWaveform::kMorphRing:
+      // ⭐ PRODUCTION LAW. The whole sweep is wave_map's, evaluated on the EXISTING morph value
+      // and the EXISTING duty (the pulse node reads the SHAPE knob). The phase convention is the
+      // one already in force here: p = frac(cumPitch_), one cycle per unit.
+      // Morph 0.25 / 0.75 land exactly ON the ring's inverted-saw node and triangle node. Those are
+      // the ENDPOINT shapes of the two stretches, so they equal the module-dev raw shapes
+      // kMorphSawInvSaw / kMorphSineTriangle at THEIR OWN morph = 1 — NOT at 0.25 / 0.75. A raw
+      // shape evaluated at the same numeric morph is a different signal: kMorphSawInvSaw at 0.25 is
+      // (1-0.25)*saw + 0.25*(-saw) = 0.5*saw, a half-amplitude saw, not the inverted saw. Inside a
+      // stretch the ring is that stretch's closed form at the stretch's LOCAL coordinate u in [0,1]
+      // (vco_wave_map.h morphSawInvSaw / morphSineTriangle, documented there as "== kMorphSawInvSaw
+      // with morph_ = u"), never at the global morph value.
+      // The pulse node reads effectiveDuty() (the base width plus this sample's PWM modulation);
+      // depth 0 leaves it bit-identical to the base width.
+      return wave_map::sampleAt(wave_map::kRingEqual, morph_, p, effectiveDuty());
   }
   return 0.0;
 }

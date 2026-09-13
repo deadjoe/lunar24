@@ -1038,6 +1038,10 @@ int main(int argc, char** argv) {
     DeviceStateV1 st = make_default_device_state(kProbeSeed);
     slot(st, ParameterId::vco_a_oct_sel) = (ft == 220.0) ? 0.0 : 1.0;
     slot(st, ParameterId::vco_a_tune) = (ft == 880.0) ? 1.0 : 0.0;
+    // GH#19 S0 (task #117): the slave must be the SAME pure-triangle stimulus the historic
+    // baselines were measured with. The default morph 0.5 is now the SINE node, so the triangle
+    // node (ring coordinate 0.75) is requested EXPLICITLY — never inferred from the default.
+    slot(st, ParameterId::vco_a_morph) = 0.75;
     // The master: a SQUARE at sr/(M*10) Hz with SPEED MULT = x10 => per-sample phase step is
     // exactly 1/M (M a power of two), so the rising edge sits on a sample-grid point.
     slot(st, ParameterId::lfo_a_wave) = 0.0;
@@ -1087,6 +1091,10 @@ int main(int argc, char** argv) {
       double tune = (ft == 880.0) ? 1.0 : 0.0;
       slot(st, ParameterId::vco_a_oct_sel) = oct;
       slot(st, ParameterId::vco_a_tune) = tune;
+      // GH#19 S0 (task #117): request the triangle node EXPLICITLY (ring coordinate 0.75). The
+      // default morph 0.5 is now the sine node, so a cell labelled "tri" that relied on the old
+      // default would silently measure the wrong shape and shift the baseline.
+      slot(st, ParameterId::vco_a_morph) = 0.75;
       Cap c = capture(st, sr, kWarm + kWin, "dry_a", 0.0);
       emit("vco_a_tri_" + std::to_string((int)sr) + "_" + std::to_string((int)ft),
            "vco_a_tri", sr, ft, c, "dry_a", "tri");
@@ -1108,6 +1116,10 @@ int main(int argc, char** argv) {
       double tune = (ft == 880.0) ? 1.0 : 0.0;
       slot(st, ParameterId::vco_b_oct_sel) = oct;
       slot(st, ParameterId::vco_b_tune) = tune;
+      // GH#19 S0 (task #117): B gets ITS OWN morph — the historic baseline was measured with B on
+      // the triangle node, and the default 0.5 is now the sine node. Setting only A would leave the
+      // B cell measuring a sine while still claiming "tri".
+      slot(st, ParameterId::vco_b_morph) = 0.75;
       slot(st, ParameterId::vco_b_cv_amt) = 0.0;   // steady single carrier (see note above)
       Cap c = capture(st, sr, kWarm + kWin, "dry_b", 0.0);
       emit("vco_b_tri_" + std::to_string((int)sr) + "_" + std::to_string((int)ft),
@@ -1377,6 +1389,7 @@ int main(int argc, char** argv) {
     DeviceStateV1 st = make_default_device_state(kProbeSeed);
     slot(st, ParameterId::vco_a_oct_sel) = 1.0;   // 440 Hz clean VCO-A triangle
     slot(st, ParameterId::vco_a_tune) = 0.0;
+    slot(st, ParameterId::vco_a_morph) = 0.75;    // GH#19 S0: keep this cell a real triangle
 
     // (a) Four outputs finite + block-consistent across every sample rate. The harness render() only
     // returns true when EVERY processBlock is Rendered (block-consistency); the four shared block

@@ -3,6 +3,12 @@
 //
 // test_state_apply_oracle_169.cpp — the FULL-169 product oracle for task #78 (commit ②).
 //
+// ⚠️ COUNT NOTE: the "169" in this file's NAME is historical (task #78's original applied_to_dsp
+// size). The live count is read from the disposition table, never from this comment. It moved
+// 169 -> 171/175/177/181/183 across GH#15 D1..D5 and 183 -> 185 at GH#19 S0 / task #117 (the
+// vco_a.pwm + vco_b.pwm pair). Every assertion below pins 185; the stale 169s in this header are
+// left as the historical narrative rather than rewritten piecemeal.
+//
 // This CTest drives the validated DeviceStateV1 -> buildMachineRuntimeCandidate path (the
 // single stopped-stream apply boundary the host uses) and verifies the WHOLE applied_to_DSP
 // set (exactly 169 stable ParameterIds) truly reached the live DSP, read back from the REAL
@@ -75,6 +81,9 @@ using lunar24::host::StandaloneAudioEngine;   // finding #3: the real stopped-st
 
 constexpr std::uint64_t kSeed = 0xC0FFEEULL;
 constexpr double kTiny = 1e-9;   // a delta well below any of the asserted expectations.
+// The engine block size the owner-engine scenarios use. Declared here with the other file-wide
+// constants so the VCO family scenarios below (which also drive the owner engine) can use it.
+constexpr int kRenderFrames = 64;
 
 // ---- helpers ---------------------------------------------------------------------------
 // Index a DeviceStateV1 parameter slot by its stable ParameterId.
@@ -280,6 +289,10 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::vco_a_morph, RdKind::Scal, -1, -1 },
   { ParameterId::vco_a_oct_sel, RdKind::SelInt, -1, -1 },
   { ParameterId::vco_a_pw, RdKind::Scal, -1, -1 },
+  // GH#19 S0 / task #117: the pwm pair is applied_to_dsp and has a real runtime readback
+  // (Vco::pwDepth, the member the per-sample effectiveDuty() consumes), so it belongs in the
+  // readback class — the partition proof below is what makes the flip legitimate.
+  { ParameterId::vco_a_pwm, RdKind::Scal, -1, -1 },
   { ParameterId::vco_a_sub_sel, RdKind::SelInt, -1, -1 },
   { ParameterId::vco_a_tune, RdKind::Scal, -1, -1 },
   { ParameterId::vco_b_cv_amt, RdKind::Scal, -1, -1 },
@@ -287,6 +300,7 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::vco_b_morph, RdKind::Scal, -1, -1 },
   { ParameterId::vco_b_oct_sel, RdKind::SelInt, -1, -1 },
   { ParameterId::vco_b_pw, RdKind::Scal, -1, -1 },
+  { ParameterId::vco_b_pwm, RdKind::Scal, -1, -1 },  // GH#19 S0 / task #117, see the A row.
   { ParameterId::vco_b_sub_sel, RdKind::SelInt, -1, -1 },
   { ParameterId::vco_b_tune, RdKind::Scal, -1, -1 },
 };   // the readback class — its size is pinned by disposition_target_set(), never by this comment.
@@ -436,6 +450,7 @@ double readBackValue(const SynthRuntime& r, ParameterId id) {
     case ParameterId::vco_a_morph: return static_cast<double>(r.vcoAMorph());
     case ParameterId::vco_a_oct_sel: return static_cast<double>(r.vcoAOctSelect());
     case ParameterId::vco_a_pw: return static_cast<double>(r.vcoAPw());
+    case ParameterId::vco_a_pwm: return static_cast<double>(r.vcoAPwm());   // GH#19 S0: real consumer readback.
     case ParameterId::vco_a_sub_sel: return static_cast<double>(r.vcoASubSelect());
     case ParameterId::vco_a_tune: return static_cast<double>(r.vcoATune());
     case ParameterId::vco_b_cv_amt: return static_cast<double>(r.vcoBCvAmt());
@@ -443,6 +458,7 @@ double readBackValue(const SynthRuntime& r, ParameterId id) {
     case ParameterId::vco_b_morph: return static_cast<double>(r.vcoBMorph());
     case ParameterId::vco_b_oct_sel: return static_cast<double>(r.vcoBOctSelect());
     case ParameterId::vco_b_pw: return static_cast<double>(r.vcoBPw());
+    case ParameterId::vco_b_pwm: return static_cast<double>(r.vcoBPwm());   // GH#19 S0: real consumer readback.
     case ParameterId::vco_b_sub_sel: return static_cast<double>(r.vcoBSubSelect());
     case ParameterId::vco_b_tune: return static_cast<double>(r.vcoBTune());
     default: return std::numeric_limits<double>::quiet_NaN();
@@ -610,17 +626,18 @@ std::unique_ptr<MachineRuntimeDefinition> acceptWithLabel(const DeviceStateV1& s
 }
 
 // -----------------------------------------------------------------------------------------
-// 1 & 4: default state -> accepted candidate, exactly 183 applied, sentinel firstFail, and
+// 1 & 4: default state -> accepted candidate, exactly 185 applied, sentinel firstFail, and
 // default(seed) readbacks are deterministic across independent builds (default==restore on the
 // canonical power-on default). GH#15 D1 adds drone_3/6_mod (169->171), D2 adds
 // drone_3/6_hi_low + drone_3/6_rate_switch (171->175), D3 adds drone_3/6_divider (175->177),
 // D4 adds drone_3/6_att + drone_3/6_rls (177->181) to applied_to_dsp, D5 adds drone_3/6_hold
-// (181->183).
+// (181->183), and GH#19 S0 / task #117 adds vco_a.pwm + vco_b.pwm (183->185) — the last two
+// transfer_unavailable ids, which now have a real consumer (Vco::setPwDepth -> effectiveDuty).
 static void full169_default_apply() {
   const DeviceStateV1 def = make_default_device_state(kSeed);
   auto d = mustAccept(def);
   CHECK(d->dspApplyOk());
-  CHECK_EQ(d->dspAppliedCount(), 183u);
+  CHECK_EQ(d->dspAppliedCount(), 185u);
   CHECK(d->dspFirstFailId() == static_cast<ParameterId>(kParameterCount));
   CHECK(d->dspFirstFailStatus() == ParameterApplyStatus::applied);
   CHECK(d->valid());
@@ -697,6 +714,85 @@ static void vco_a_b_family() {
   d = mustAccept(st);
   CHECK(std::fabs(d->runtime().vcoBTune() - (-0.5)) < kTiny);
   CHECK(std::fabs(d->runtime().vcoATune() - base->runtime().vcoATune()) < kTiny);
+}
+
+// -----------------------------------------------------------------------------------------
+// GH#19 S0 / task #117: the pwm pair's RESTORE round-trip through the REAL OWNER. The per-item
+// loop above reads the depth back through the candidate factory alone, and without a NAME; the
+// disposition flip's actual claim is narrower and stronger than "the byte survived in the state" —
+// a restore must re-reach the PWM depth SETTER on the ACTIVE runtime, i.e. the chain
+// applyDeviceState -> buildMachineRuntimeCandidate -> applyDspState -> applyDspParam ->
+// applySmoothedControl_ -> setVcoAPwm -> Vco::setPwDepth. So this scenario drives the value
+// through StandaloneAudioEngine::applyDeviceState (the owner the product uses on a stopped stream)
+// and reads the depth off e.runtime() after EVERY apply: a repeated restore of the same
+// non-default state, then a restore back to the default, so the setter must TRACK the state rather
+// than latch at the first non-default value. Both ids, both directions.
+static void vco_pwm_restore_roundtrip() {
+  const DeviceStateV1 def = make_default_device_state(kSeed);
+
+  // Probes come from the descriptors' own domains (the same probeFor the per-item loop uses), so a
+  // value is never chosen that the validation contract would legitimately reject.
+  const ParameterDescriptor* da = find_parameter(ParameterId::vco_a_pwm);
+  const ParameterDescriptor* db = find_parameter(ParameterId::vco_b_pwm);
+  CHECK(da != nullptr && db != nullptr);
+  if (da == nullptr || db == nullptr) return;
+  const double wantA = probeFor(da), wantB = probeFor(db);
+
+  // The default depth, measured through the same owner, so "it moved" can never be satisfied by
+  // the default itself nor by a value left over from a previous apply.
+  double defA = 0.0, defB = 0.0;
+  {
+    StandaloneAudioEngine e;
+    if (e.applyDeviceState(def, 48000.0, kRenderFrames, 1, 2) ==
+        StandaloneAudioEngine::StateApplyStatus::Accepted) {
+      const SynthRuntime* rt = e.runtime();
+      CHECK(rt != nullptr);
+      if (rt != nullptr) { defA = rt->vcoAPwm(); defB = rt->vcoBPwm(); }
+    }
+  }
+
+  bool restore_keeps_pwm_depth = true;
+  {
+    StandaloneAudioEngine e;
+    DeviceStateV1 st = def;
+    slot(st, ParameterId::vco_a_pwm) = wantA;
+    slot(st, ParameterId::vco_b_pwm) = wantB;
+    for (int rep = 0; rep < 2; ++rep) {   // repeated restore of the SAME non-default state
+      if (e.applyDeviceState(st, 48000.0, kRenderFrames, 1, 2) !=
+          StandaloneAudioEngine::StateApplyStatus::Accepted) {
+        std::fprintf(stderr, "  pwm restore rejected rep=%d\n", rep);
+        restore_keeps_pwm_depth = false;
+        break;
+      }
+      const SynthRuntime* rt = e.runtime();
+      if (rt == nullptr) { restore_keeps_pwm_depth = false; break; }
+      const double gotA = rt->vcoAPwm(), gotB = rt->vcoBPwm();
+      if (!(std::fabs(gotA - wantA) < kTiny) || !(std::fabs(gotB - wantB) < kTiny)) {
+        std::fprintf(stderr, "  pwm depth not restored rep=%d A=%f (want %f) B=%f (want %f)\n",
+                     rep, gotA, wantA, gotB, wantB);
+        restore_keeps_pwm_depth = false;
+      }
+    }
+    // ... and the setter TRACKS the state: restoring the default puts both back on the default.
+    if (e.applyDeviceState(def, 48000.0, kRenderFrames, 1, 2) ==
+        StandaloneAudioEngine::StateApplyStatus::Accepted) {
+      const SynthRuntime* rt = e.runtime();
+      if (rt == nullptr || !(std::fabs(rt->vcoAPwm() - defA) < kTiny) ||
+          !(std::fabs(rt->vcoBPwm() - defB) < kTiny)) {
+        std::fprintf(stderr, "  pwm depth did not return to the default on a default restore\n");
+        restore_keeps_pwm_depth = false;
+      }
+    } else {
+      restore_keeps_pwm_depth = false;
+    }
+  }
+  // Non-vacuity: the probes really are off the default, so the round-trip above cannot be
+  // satisfied by a value that merely equals the default.
+  CHECK(std::fabs(wantA - defA) > kTiny);
+  CHECK(std::fabs(wantB - defB) > kTiny);
+  std::printf("P3-3 gh19-s0 pwm restore: wantA=%.6f(default %.6f) wantB=%.6f(default %.6f)\n",
+              wantA, defA, wantB, defB);
+  CHECK(restore_keeps_pwm_depth);
 }
 
 // -----------------------------------------------------------------------------------------
@@ -978,8 +1074,8 @@ static void typed_reject_carry_first_fail() {
   CHECK(firstId == ParameterId::vco_a_pw);
   CHECK(firstStatus == ParameterApplyStatus::invalid_value);
   // applyDspState re-writes the runtime's own running count on every call (partial on a
-  // rejection); the definition's construction-time count stays 183. Read the runtime count.
-  CHECK(d->runtime().dspAppliedCount() < 183u);
+  // rejection); the definition's construction-time count stays 185. Read the runtime count.
+  CHECK(d->runtime().dspAppliedCount() < 185u);
   // Fail-closed against partial-success: the source state is NEVER mutated by the apply.
   CHECK(bad.parameters[badIdx] == pvBefore);
 
@@ -1022,22 +1118,25 @@ static void typed_reject_carry_first_fail() {
 
 }  // namespace
 
-// Whether ParameterId is one of the 148 ids covered by a per-item readback switch.
+// Whether ParameterId is one of the 150 ids covered by a per-item readback switch.
 bool hasReadback(ParameterId id) {
   for (const RdSpec& s : kRdSpecs) if (s.id == id) return true;
   return false;
 }
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #1/#2: the exact-183 gate must have a PRODUCT witness, not a bare
-// `== 183` constant inside the applicator. Recover the applied_to_DSP set from the disposition
+// REV of @Codex BLOCK finding #1/#2: the exact-count gate must have a PRODUCT witness, not a bare
+// `== N` constant inside the applicator. Recover the applied_to_DSP set from the disposition
 // table (the sole authority @Codex designated), then prove:
-//   * count_disposition(applied_to_DSP) is 183 (static contract, restated as a runtime CHECK),
-//   * the per-item readback class (148) and the control-source class (35) partition that set
+//   * count_disposition(applied_to_DSP) is 185 (static contract, restated as a runtime CHECK),
+//   * the per-item readback class (150) and the control-source class (35) partition that set
 //     EXACTLY: every applied id is in EXACTLY ONE class, no id is covered by both, no applied id
 //     is uncovered, and neither class claims a non-applied id.
 // Any migration that adds/removes an applied id, or any id that gains/loses a readback slot, now
 // breaks a real assertion here rather than silently slipping past a constant.
+// GH#19 S0 / task #117 moved the pwm pair (148->150 readback): the flip to applied_to_dsp is only
+// legitimate BECAUSE they now have a runtime readback getter, so this partition is exactly the
+// proof that the new applied rows are not a disposition-table-only change.
 static void disposition_target_set() {
   std::uint32_t appliedCount = 0, rdCount = 0, ctCount = 0;
   for (std::uint32_t i = 0; i < kParameterCount; ++i) {
@@ -1057,15 +1156,15 @@ static void disposition_target_set() {
     CHECK(!isReadback || isApplied);
     CHECK(!isControlSource || isApplied);
   }
-  CHECK(count_disposition(StateDisposition::applied_to_dsp) == 183);
-  CHECK(appliedCount == 183);
-  CHECK(rdCount == 148);
+  CHECK(count_disposition(StateDisposition::applied_to_dsp) == 185);
+  CHECK(appliedCount == 185);
+  CHECK(rdCount == 150);
   CHECK(ctCount == 35);
   CHECK(rdCount + ctCount == appliedCount);
 }
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #2: FULL-183 per-item readback. For each of the 148 readback ids,
+// REV of @Codex BLOCK finding #2: FULL-185 per-item readback. For each of the 150 readback ids,
 // apply a SINGLE mismatch-free value (probe derived from the registry descriptor: in-domain and
 // off the default) and assert BOTH:
 //   (a) MOVE  — the id's REAL readback (the member the render path consumes) moved off the value
@@ -1076,8 +1175,8 @@ static void disposition_target_set() {
 //               families and raw/selector families, and for the monotonic pitch (RdKind::Mono)
 //               the readback must still have MOVED, with no closed-form check. A wrong-transfer
 //               bug (e.g. tuning written through the volt formula) fails (b).
-// The union of these 148 readback ids + the 35 control-source ids (pinned by the 9B oracle) is
-// proven equal to exactly 183 by disposition_target_set(); control-source ids have no readback
+// The union of these 150 readback ids + the 35 control-source ids (pinned by the 9B oracle) is
+// proven equal to exactly 185 by disposition_target_set(); control-source ids have no readback
 // getter (internal EG/LFO/Joystick/Sequencer state) and are intentionally excluded here.
 static void full169_per_item() {
   const DeviceStateV1 def = make_default_device_state(kSeed);
@@ -1161,11 +1260,11 @@ static void full169_per_item() {
     }
   }
 
-  // sanity: the per-item class really covers all 183 applied_to_dsp ids (148 readback + 35 control
+  // sanity: the per-item class really covers all 185 applied_to_dsp ids (150 readback + 35 control
   // source), and no non-applied id is claimed.
   std::uint32_t n = 0;
   for (std::uint32_t i = 0; i < kParameterCount; ++i) if (isRd[i]) ++n;
-  CHECK(n == 183);
+  CHECK(n == 185);
   for (std::uint32_t i = 0; i < kParameterCount; ++i) {
     const auto id = static_cast<ParameterId>(i);
     CHECK(!isRd[i] || disposition_of(id) == StateDisposition::applied_to_dsp);
@@ -1173,7 +1272,7 @@ static void full169_per_item() {
 }
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #3: the oracle must prove the applied 169-state is on the LIVE
+// REV of @Codex BLOCK finding #3: the oracle must prove the applied whole-state is on the LIVE
 // render path (StandaloneAudioEngine::applyDeviceState -> commit -> DeviceAdapter::renderBlock via
 // processBlock), NOT just a default-codec round-trip. The failure this closes is a value that
 // survives the codec but never actually left the descriptor. So we drive the REAL engine:
@@ -1186,7 +1285,6 @@ static void full169_per_item() {
 //    first block (no partial install, no corruption of the live render). A running engine advances
 //    internal time across processBlock, so the "unchanged" comparison is between two fresh engines'
 //    first block, never a same-engine re-render.
-constexpr int kRenderFrames = 64;   // the engine block size used here.
 constexpr double kOutTiny = 1e-6;   // a live output must be genuinely above this, not digital silence.
 
 double ownerMaxAbs(const double* ch, int frames) {
@@ -1216,7 +1314,7 @@ void renderDrive(const DeviceStateV1& st, std::array<double, kRenderFrames>& l,
   CHECK(ownerRender(e, inp, o, 1, 2, kF) == StandaloneAudioEngine::Status::Rendered);
 }
 
-// finding #3(a,b): an accepted 169-state performs a REAL live render, and a differing applied value
+// finding #3(a,b): an accepted whole-state performs a REAL live render, and a differing applied value
 // reaches that render. vcf_l_freq at its two extremes is the routing-grounded discriminator.
 static void owner_engine_accepted_state_renders_live() {
   const DeviceStateV1 def = make_default_device_state(kSeed);
@@ -1328,6 +1426,7 @@ int main() {
   owner_engine_accepted_state_renders_live();
   owner_engine_rejected_apply_is_atomic();
   vco_a_b_family();
+  vco_pwm_restore_roundtrip();
   vcf_l_r_family();
   preamp_envfollower_family();
   mixer_vol_pan_family();

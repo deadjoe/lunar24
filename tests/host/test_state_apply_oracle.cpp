@@ -180,7 +180,13 @@ DeviceStateV1 conserved_composite(JackId cableSource) {
   //     (their registry initials are 0.5 and 0.0 respectively, so a drop-back would be caught).
   st.parameters[static_cast<std::uint32_t>(ParameterId::effector_x)] = 0.25;
   st.parameters[static_cast<std::uint32_t>(ParameterId::program_cathedral_1_x)] = 0.25;
-  // (b) transfer_unavailable: a landed param with NO runtime consumer (still preserved byte-exact).
+  // (b) a NON-DEFAULT value in the pwm class, still preserved byte-exact through encode/decode.
+  //     GH#19 S0 / task #117 reclassified vco_a_pwm from transfer_unavailable to applied_to_dsp
+  //     (it now reaches a real consumer: Vco::setPwDepth -> effectiveDuty), so this composite is no
+  //     longer "a landed param with NO runtime consumer" — it is an ORDINARY applied_to_dsp value,
+  //     and the byte-preservation asserted on it below is correspondingly an ordinary one. The
+  //     consumer-reachability claim itself is asserted in test_state_apply_oracle_169
+  //     (vco_pwm_restore_roundtrip) and in the four-rate acceptance surface.
   st.parameters[static_cast<std::uint32_t>(ParameterId::vco_a_pwm)] = 0.75;
 
   // (c) left/right keyboard live + preset payload (fields a later keyboard slice consumes).

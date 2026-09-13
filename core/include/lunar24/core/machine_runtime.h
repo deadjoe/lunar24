@@ -499,6 +499,18 @@ class SynthRuntime {
     cvInA_ = aCv; cvInB_ = bCv;
     cvInBoundA_ = true; cvInBoundB_ = true;
   }
+  // PWM jack bindings (vco_a.pwm_in / vco_b.pwm_in, JackId 20 / 22, ±5 V nominal). GH#19 S0
+  // (task #117). The SAME binding shape as setVcoCvBindings above: an INDEPENDENT per-side
+  // modulation path, resolved through the ONE control-sink resolver (resolveControlSink_) in the
+  // kVcoA / kVcoB step and read PER SAMPLE. A and B are independent: binding one never binds the
+  // other, and each side's modulation reaches exactly its own Vco. JackId{0} is a REAL jack
+  // (vco_a.cv_in), so the *_Bound_ flag — never a JackId{0} sentinel — is the authoritative
+  // admission state: an unbound (or graph-bypassed) jack reads 0, which at any depth leaves the
+  // emitted samples untouched.
+  void setVcoPwmBindings(JackId aPwm, JackId bPwm) {
+    pwmInA_ = aPwm; pwmInB_ = bPwm;
+    pwmInBoundA_ = true; pwmInBoundB_ = true;
+  }
   // VCO output jacks the product publishes as a source. vco_b.vco_out is VCO-B's output
   // jack, so the canonical definition binds it and the VCO-B slot publishes it through the
   // ONE write (any downstream — a normal consumer or a user-established feedback edge — then
@@ -551,6 +563,12 @@ class SynthRuntime {
   void setVcoBMorph(double m) { vcB_.setMorph(m); }
   void setVcoAPw(double duty) { vcA_.setShape(duty); }
   void setVcoBPw(double duty) { vcB_.setShape(duty); }
+  // PWM DEPTH knob per side (registry vco_a_pwm / vco_b_pwm, "PWM", 0..1, default 0). GH#19 S0
+  // (task #117): these two ids are now adopted_to_dsp, so they ride the SAME GH#21 seconds
+  // smoothing family as the other VCO panel knobs (the runtime smooths them; the DSP class does
+  // not). They set the DEPTH only — the canonical base width duty_ is never written by PWM.
+  void setVcoAPwm(double depth) { vcA_.setPwDepth(depth); }
+  void setVcoBPwm(double depth) { vcB_.setPwDepth(depth); }
   void setVcoAOctSelect(int idx) { vcA_.setOctaveSelect(idx); }
   void setVcoBOctSelect(int idx) { vcB_.setOctaveSelect(idx); }
   void setVcoASubSelect(int idx) { vcA_.setSubSelect(idx); }
@@ -564,8 +582,14 @@ class SynthRuntime {
   double vcoBTune() const { return vcB_.tune(); }
   double vcoAMorph() const { return vcA_.morph(); }
   double vcoBMorph() const { return vcB_.morph(); }
-  double vcoAPw() const { return vcA_.shape(); }
+  double vcoAPw() const { return vcA_.shape(); }        // CANONICAL base width, never PWM-modified.
   double vcoBPw() const { return vcB_.shape(); }
+  double vcoAPwm() const { return vcA_.pwDepth(); }     // smoothed PWM depth (GH#19 S0).
+  double vcoBPwm() const { return vcB_.pwDepth(); }
+  double vcoAPwmCv() const { return vcA_.pwCv(); }      // this sample's PWM CV (GH#19 S0).
+  double vcoBPwmCv() const { return vcB_.pwCv(); }
+  double vcoAEffectiveDuty() const { return vcA_.effectiveDuty(); }
+  double vcoBEffectiveDuty() const { return vcB_.effectiveDuty(); }
   int vcoAOctSelect() const { return vcA_.octaveSelect(); }
   int vcoBOctSelect() const { return vcB_.octaveSelect(); }
   int vcoASubSelect() const { return vcA_.subSelectIndex(); }
@@ -2530,13 +2554,15 @@ class SynthRuntime {
   // `smoothing == Smoothing::seconds` AND `disposition == applied_to_dsp`. This is the
   // GH#21 Surface-1+Surface-2 union — the 20 control-source seconds params (envelope a/b
   // attack/decay/release/sustain, lfo a/b rate, joystick x/y/offset_x/offset_y, sequencer
-  // step_cv_1..5, pulser) plus the 16 vco/vcf panel-knob seconds params (vco a/b tune/morph/
-  // pw/cv_amt, vcf l/r freq/res/mod, vcf dist/gain) = 36. It is deliberately NOT folded into
-  // controlSourceParamRecognized_ (that predicate is 乐音 control-source semantics; the 16
-  // are panel knobs). Applied_to_dsp naturally excludes the other three classes — read their
-  // sizes from `count_disposition(...)`, never from this comment — and the transfer-unavailable
-  // remainder is the GH#19 pwm pair. A declared-but-unwired seconds param is NOT in any smoothing
-  // route, which keeps the whole-state apply gate honest.
+  // step_cv_1..5, pulser) plus the vco/vcf panel-knob seconds params (vco a/b tune/morph/
+  // pw/cv_amt, vcf l/r freq/res/mod, vcf dist/gain) = 36, plus — since GH#19 S0 (task #117) —
+  // the vco a/b PWM depth pair (vco_a_pwm / vco_b_pwm) = 38. It is deliberately NOT folded into
+  // controlSourceParamRecognized_ (that predicate is 乐音 control-source semantics; the panel
+  // knobs are not). Applied_to_dsp naturally excludes the other three classes — read their sizes
+  // from `count_disposition(...)`, never from this comment. With the pwm pair landed there is now
+  // NO transfer_unavailable remainder at all (count_disposition(transfer_unavailable) == 0). A
+  // declared-but-unwired seconds param is NOT in any smoothing route, which keeps the whole-state
+  // apply gate honest.
   bool isContinuousSmoothingParam_(ParameterId id) const {
     const ParameterDescriptor* desc = find_parameter(id);
     return desc != nullptr &&
@@ -2671,6 +2697,11 @@ class SynthRuntime {
       case ParameterId::vco_b_morph: setVcoBMorph(v); break;
       case ParameterId::vco_b_pw:    setVcoBPw(v);    break;
       case ParameterId::vco_b_cv_amt: setVcoBCvAmt(v); break;
+      // GH#19 S0 (task #117): the PWM depth pair joined this family when their disposition moved
+      // to applied_to_dsp. They ride the SAME seconds smoother as the other panel knobs, so the
+      // DEPTH is smoothed here and only the external CV (Vco::setPwCv) is not.
+      case ParameterId::vco_a_pwm:   setVcoAPwm(v);   break;
+      case ParameterId::vco_b_pwm:   setVcoBPwm(v);   break;
       case ParameterId::vcf_l_freq: setVcfFreq(0, v); break;
       case ParameterId::vcf_l_res:  setVcfRes(0, v);  break;
       case ParameterId::vcf_l_mod:  setVcfMod(0, v);  break;
@@ -2722,6 +2753,10 @@ class SynthRuntime {
       case ParameterId::vco_b_morph:  return vcoBMorph();
       case ParameterId::vco_b_pw:     return vcoBPw();
       case ParameterId::vco_b_cv_amt: return vcoBCvAmt();
+      // GH#19 S0: the PWM depth pair primes from the DSP's live depth (the CV is per-sample
+      // external modulation and is never part of a knob smoother).
+      case ParameterId::vco_a_pwm:    return vcoAPwm();
+      case ParameterId::vco_b_pwm:    return vcoBPwm();
       case ParameterId::vcf_l_freq:   return vcfFreq(0);
       case ParameterId::vcf_l_res:    return vcfRes(0);
       case ParameterId::vcf_l_mod:    return vcfMod(0);
@@ -3052,6 +3087,17 @@ class SynthRuntime {
             vcA_.requestSync();
           }
         }
+        // GH#19 S0 (task #117): PWM MODULATION. Read the jack's value THIS SAMPLE through the ONE
+        // control-sink resolver — the same mechanism (and the same same-frame consume rule) the
+        // v_oct / cv_in / sync consumers above use, so nothing here bypasses the graph scheduler
+        // and a user cable override / unplug behaves exactly like it does on those jacks.
+        // The value is used RAW and per sample: it is EXTERNAL audio-rate modulation and is
+        // deliberately NOT smoothed (see Vco::setPwCv). The DEPTH came from the GH#21 knob
+        // smoother, applied once per frame via setVcoAPwm. Unbound or graph-bypassed reads 0,
+        // which at any depth leaves the emitted samples untouched (Vco::effectiveDuty).
+        double pwm = 0.0;
+        if (pwmInBoundA_) static_cast<void>(resolveControlSink_(pwmInA_, pwm, driveGraph));
+        vcA_.setPwCv(pwm);
         double a = 0.0;
         vcA_.tick(&a);
         dryA_ = a;
@@ -3076,6 +3122,12 @@ class SynthRuntime {
           double g = 0.0;
           if (resolveControlSink_(cvInB_, g, driveGraph)) vcB_.setCvInput(g, cvModeB_);
         }
+        // GH#19 S0 (task #117): PWM MODULATION — same rule as the kVcoA slot above, on B's OWN
+        // jack, with B's OWN depth. A and B are independent: neither side's cable or knob reaches
+        // the other VCO (the asymmetry is asserted by the product tests).
+        double pwm = 0.0;
+        if (pwmInBoundB_) static_cast<void>(resolveControlSink_(pwmInB_, pwm, driveGraph));
+        vcB_.setPwCv(pwm);
         double b = 0.0;
         vcB_.tick(&b);
         dryB_ = b;
@@ -3654,6 +3706,10 @@ class SynthRuntime {
   JackId cvInB_{0};           bool cvInBoundB_ = false;
   JackId vcoAOut_{0};         bool vcoAOutBound_ = false;
   JackId vcoBOut_{0};         bool vcoBOutBound_ = false;
+  // GH#19 S0: the PWM modulation inputs (vco_a.pwm_in / vco_b.pwm_in). Same real-jack-id-0 rule as
+  // the cv_in pair above: the flags, not a sentinel, are the admission state.
+  JackId pwmInA_{0};          bool pwmInBoundA_ = false;
+  JackId pwmInB_{0};          bool pwmInBoundB_ = false;
   // GH#19 S5: VCO A's hard-sync gate input (one jack; VCO B has none) + its own latch.
   JackId syncInA_{0};         bool syncInBoundA_ = false;
   GateClockSinkState syncLatchA_;

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Allocator-count probe for the GH#12 9B state-apply oracle (task#76). The replaceable
-// operator new/delete pair is isolated into its own TU, built ONLY into the
-// test_state_apply_oracle target, so GCC's -Wmismatched-new-delete does not misjudge the
+// operator new/delete pair is isolated into its own TU, built ONLY into the host oracle targets
+// that measure the render window (test_state_apply_oracle, and task#117's
+// test_gh19_s0_morph_pwm_acceptance), so GCC's -Wmismatched-new-delete does not misjudge the
 // malloc/free implementation as a new/delete mismatch at the ::operator new / ::operator
 // delete call sites in the test TU. An operator-new definition in the same TU as those call
 // sites is what trips the warning; a TU boundary hides it.
