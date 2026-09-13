@@ -507,6 +507,20 @@ class SynthRuntime {
     vcoAOut_ = aOut; vcoBOut_ = bOut;
     vcoAOutBound_ = true; vcoBOutBound_ = true;
   }
+  // GH#19 S5 (task #111): the HARD-SYNC gate jack VCO A READS. The hardware jack is
+  // "Sync (VCO A only)" (registry.hpp:611), so there is exactly ONE such binding and the
+  // VCO-B slot has no sync consumer at all. Same ATOMIC FAIL-CLOSED admission shape as the
+  // drone cohorts: validate, release the old binding, commit only if it passed. Unbound = no
+  // resolve at all, which is what keeps the legacy synthetic fixture and every unpatched-patch
+  // render bit-identical to pre-S5. JackId{0} is a REAL jack (vco_a.cv_in), so the *_Bound_
+  // flag — never a JackId{0} sentinel — is the authoritative admission state.
+  bool setVcoSyncBindings(JackId aSync) {
+    if (!vcoSyncBindingValid_(aSync)) { releaseVcoSync_(); return false; }
+    releaseVcoSync_();
+    syncInA_ = aSync;
+    syncInBoundA_ = true;
+    return true;
+  }
   // Runtime-held lin/exp mode for each VCO's GENERIC CV input (cv_in transfer is UNKNOWN;
   // the scaling law is a PROVISIONAL modeling choice). The mode is a runtime decision the
   // tests choose explicitly — never a hardcoded law in the executor. Independent per side.
@@ -1947,6 +1961,7 @@ class SynthRuntime {
     sink_gate_reset(envA_gate_);
     sink_gate_reset(envB_gate_);
     sink_gate_reset(seqClockLatch_);
+    sink_gate_reset(syncLatchA_);   // GH#19 S5: VCO A hard-sync latch (same no-stale rule).
     return true;
   }
 
@@ -3006,6 +3021,37 @@ class SynthRuntime {
           double g = 0.0;
           if (resolveControlSink_(cvInA_, g, driveGraph)) vcA_.setCvInput(g, cvModeA_);
         }
+        // GH#19 S5 (task #111): HARD SYNC. vco_a.sync_in is a gate-typed INPUT resolved through
+        // the ONE sink resolver and interpreted by the SAME `sink_gate_interpret` the sequencer's
+        // EXT.CLOCK consumer uses; the threshold/hysteresis come from THIS jack's own descriptor
+        // (never a hardcoded constant). A real RISING edge REQUESTES a reset, which Vco::tick()
+        // then applies after its own advance, and tick() band-limits the resulting discontinuity
+        // on that same sample (Vco::requestSync).
+        //
+        // TWO DISCRETE TIMING CONVENTIONS — this slice picks the first, and the choice is pinned
+        // by a product timing criterion, not by an argument from self-contradiction:
+        //   (1) REQUEST, apply after the advance (what this code does). The edge sample itself
+        //       reads phase 0, so the value discontinuity and the new cycle start coincide on one
+        //       sample.
+        //   (2) reset IMMEDIATELY, then advance (the raw `syncPulse()` primitive). The jump is
+        //       emitted on the edge sample and the new cycle's first advanced sample follows one
+        //       sample later.
+        // Both are self-consistent readings of a discrete-time hard sync; they differ in which
+        // sample carries the jump relative to the cycle start. (2) is a legitimate convention, not
+        // an error, and the raw primitive is retained for the VCO's own unit tests. This slice
+        // adopts (1); the criterion that fixes it is the independent master-edge vs reset-frame
+        // reconciliation in the S5 mutation runner (task #111 item 2), which fails if the reset
+        // lands on the wrong frame.
+        // Same-sample order: a source that ran earlier in this frame is consumed here. VCO B has
+        // NO sync point (the hardware jack is VCO A only), so this block exists only in the kVcoA slot.
+        double sv = 0.0;
+        if (syncInBoundA_ && resolveControlSink_(syncInA_, sv, driveGraph)) {
+          const JackDescriptor* ds = findJackDescriptor_(syncInA_);
+          if (ds != nullptr &&
+              sink_gate_interpret(*ds, syncLatchA_, sv).edge == GateEdge::rising) {
+            vcA_.requestSync();
+          }
+        }
         double a = 0.0;
         vcA_.tick(&a);
         dryA_ = a;
@@ -3309,6 +3355,26 @@ class SynthRuntime {
     return d != nullptr && std::isfinite(d->nominalMin) && std::isfinite(d->nominalMax) &&
            d->nominalMax >= d->nominalMin;
   }
+  // GH#19 S5: admission rule for VCO A's hard-sync binding — the descriptor must exist, the
+  // id must be able to index the CV source bank, the OWNING module must be exactly vco_a (a
+  // "sync" jack on any other module is a wrong-owner binding), and it must be an INPUT gate on
+  // a usable finite range (the interpreter derives threshold/hysteresis from THIS descriptor).
+  bool vcoSyncBindingValid_(JackId id) const {
+    const std::uint32_t j = static_cast<std::uint32_t>(id);
+    if (j >= kMaxEdges) return false;          // id can't index cvOut_ (out-of-capacity).
+    const JackDescriptor* d = findJackDescriptor_(id);
+    if (d == nullptr) return false;            // not a registered jack (missing id).
+    return d->module == ModuleId::vco_a && d->direction == PinDirection::input &&
+           d->signalType == SignalType::gate && validRange_(d);
+  }
+  // Release the VCO-A sync binding. The latch is reset with it so a released binding cannot
+  // hand a later rebind a stale "high" (the same no-stale-state rule the rebuild path applies
+  // to every other gate latch).
+  void releaseVcoSync_() {
+    syncInA_ = JackId{0};
+    syncInBoundA_ = false;
+    sink_gate_reset(syncLatchA_);
+  }
   // Index (0..3) of the classic group whose cv_mod_in jack is `sink`, or -1 if none.
   // Only groups admitting a live cv_mod_in binding match; a released cohort's jacks are
   // all JackId{0} so they never match (no stale read).
@@ -3588,6 +3654,9 @@ class SynthRuntime {
   JackId cvInB_{0};           bool cvInBoundB_ = false;
   JackId vcoAOut_{0};         bool vcoAOutBound_ = false;
   JackId vcoBOut_{0};         bool vcoBOutBound_ = false;
+  // GH#19 S5: VCO A's hard-sync gate input (one jack; VCO B has none) + its own latch.
+  JackId syncInA_{0};         bool syncInBoundA_ = false;
+  GateClockSinkState syncLatchA_;
   VcoControlMode cvModeA_ = VcoControlMode::kExponential;
   VcoControlMode cvModeB_ = VcoControlMode::kExponential;
   double cvAmtA_ = 1.0;   // CV AMT depth per VCO (setVcoCvAmounts). Default 1 (no attenuation).

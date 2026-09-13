@@ -1,0 +1,32 @@
+# S5 NAIVE hard-sync baseline -- the Delta DENOMINATOR for the acceptance gate.
+#   PROVENANCE: rendered by the probe from the SAME committed S5 wiring (the lfo_a_cv_out ->
+#   vco_a_sync_in patch made through the public MachineRuntime::connect) but with an IMMEDIATE
+#   reset (Vco::syncPulse()), i.e. the naive hard-sync algorithm -- the triangle is truncated
+#   and re-anchored with NO band-limited jump correction.
+#   !!! This is an ALGORITHMIC naive baseline, NOT a pre-change product render: the sync
+#   wiring itself is NEW in task #111, so no pre-S5 render of these cells exists. The arm
+#   differs from the committed source by exactly one thing (immediate vs deferred reset with
+#   the 0.5*J polyBLEP-family correction). The product path was NOT modified to produce it.
+#   MEASURED, not assumed: this arm's render differs from a fresh render of the committed
+#   source in EXACTLY the 12 vco_a_sync_tri cells and in nothing else (96 cells compared by
+#   id, 84/84 non-sync cells byte-identical), so the mutation is surgical.
+#   Delta_cell = blsync_full_db(corrected run) - blsync_full_db(this table); the gate requires
+#   Delta_cell >= its per-cell threshold. On this table Delta is 0.
+#   source   : an_naive.tsv
+#   src_sha  : 0307626dd3ffef97
+#   analyzer : 44f04d3147588bff
+#   probe    : d10b6a11341556cc
+#   cells    : 12 vco_a_sync_tri (8 LOW at 220/440 Hz, 4 HIGH at 880 Hz)
+id	sr	f0_target	blsync_full_db
+vco_a_sync_tri_44100_220	44100	220	-23.88
+vco_a_sync_tri_44100_440	44100	440	-19.51
+vco_a_sync_tri_44100_880	44100	880	-25.60
+vco_a_sync_tri_48000_220	48000	220	-28.30
+vco_a_sync_tri_48000_440	48000	440	-21.48
+vco_a_sync_tri_48000_880	48000	880	-19.24
+vco_a_sync_tri_88200_220	88200	220	-26.88
+vco_a_sync_tri_88200_440	88200	440	-22.76
+vco_a_sync_tri_88200_880	88200	880	-30.74
+vco_a_sync_tri_96000_220	96000	220	-31.31
+vco_a_sync_tri_96000_440	96000	440	-24.68
+vco_a_sync_tri_96000_880	96000	880	-23.74

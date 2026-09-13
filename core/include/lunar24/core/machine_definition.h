@@ -350,6 +350,10 @@ class MachineRuntimeDefinition {
     // is a runtime decision (explicit below; tests choose it), never a hardcoded law.
     runtime_.setVcoCvBindings(lunar24::registry::JackId::vco_a_cv_in,
                               lunar24::registry::JackId::vco_b_cv_in);
+    // GH#19 S5: VCO A's HARD-SYNC gate input. The registry declares exactly one sync jack and it
+    // is VCO A's alone ("Sync (VCO A only)"); VCO B is deliberately left with no sync binding.
+    // Unpatched this resolves no source, so every existing render stays bit-identical.
+    static_cast<void>(runtime_.setVcoSyncBindings(lunar24::registry::JackId::vco_a_sync_in));
     runtime_.setVcoOutBindings(lunar24::registry::JackId::vco_a_dry_out,
                                lunar24::registry::JackId::vco_b_vco_out);
     // NOTE (item 1, @Codex eaaf08cc): the A/B generic-CV lin/exp mode is deliberately
