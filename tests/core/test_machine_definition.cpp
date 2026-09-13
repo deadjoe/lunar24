@@ -1299,12 +1299,16 @@ int main() {
       p.srcX = rt.controlVoltageAt(reg::JackId::joystick_x_out);
       p.srcY = rt.controlVoltageAt(reg::JackId::joystick_y_out);
     };
-    auto sameA = [](const Probe& p, const Probe& q) {
+    // NOTE: these two capture kFrames. It is a function-local constexpr, and MSVC rejects an
+    // implicit odr-use of one from a lambda with NO default capture (C3493), even though the
+    // value is a constant expression -- so a bare `[]` here builds on clang/gcc and fails /WX
+    // on Windows. Keep the default capture.
+    auto sameA = [&](const Probe& p, const Probe& q) {
       for (std::size_t i = 0; i < kFrames; ++i)
         if (p.o[i].dryA != q.o[i].dryA) return false;
       return true;
     };
-    auto sameB = [](const Probe& p, const Probe& q) {
+    auto sameB = [&](const Probe& p, const Probe& q) {
       for (std::size_t i = 0; i < kFrames; ++i)
         if (p.o[i].dryB != q.o[i].dryB) return false;
       return true;
