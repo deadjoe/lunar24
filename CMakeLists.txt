@@ -566,6 +566,22 @@ add_test(NAME gh19_hardsync_acceptance
 # Same `slow` rationale as the three gates above: this gate re-runs the full-chain probe.
 set_tests_properties(gh19_hardsync_acceptance PROPERTIES LABELS "slow")
 
+# task #116 (GH #19 S0): MEASUREMENT probe for the single-knob continuous waveform mapping
+# candidate (core/include/lunar24/core/vco_wave_map.h), driven through the REAL
+# encode->decode->applyDeviceState->processBlock chain via the shared EngineHarness. It renders a
+# four-sample-rate full-norm sweep x two boundary candidates, interval-boundary limits, repeated
+# restore (state lane bit-exact / live lane phase-aligned), block partition 1/64/256/irregular,
+# A/B independence, reuse identity against the existing morph closed forms, and the S0 silence.
+# It also runs four negative controls, each naming the ONE check it must turn red. It is a
+# measurement probe, not a gate: it asserts its own verdicts and writes TSVs under
+# `report/gh19s0-morph-map/`; the pass/fail DECISION for the mapping belongs to the task #116
+# report and the supervisor. Links lunar_host (the engine lives in host/include) and needs
+# tests/host for the shared EngineHarness. Tagged `slow` for the same PR-only probe-gate reason.
+lunar_add_test(gh19s0_morph_map_probe tests/probes/gh19s0_morph_map_probe.cpp)
+target_link_libraries(gh19s0_morph_map_probe PRIVATE lunar_host)
+target_include_directories(gh19s0_morph_map_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
+set_tests_properties(gh19s0_morph_map_probe PROPERTIES LABELS "slow")
+
 # task #86 (GH #19): the PRODUCTION BLAMP LUT must match the generator's analytic g.
 # @Codex (msg 1a8ed7f2) flagged the generator's self-consistency as self-referential
 # (it re-parsed its OWN emitted text). This gate reads the ACTUAL production vco.h,

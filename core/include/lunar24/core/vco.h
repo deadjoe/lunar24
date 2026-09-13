@@ -68,6 +68,7 @@
 #include <cstdint>
 
 #include "lunar24/core/blamp_kernel.h"
+#include "lunar24/core/vco_wave_map.h"  // task #116 experimental single-knob waveform mapping
 
 namespace lunar24::core {
 
@@ -89,6 +90,16 @@ enum class VcoWaveform : std::uint8_t {
 // apply, not this constructor, decides the effective mode. (@Codex 44369539 task#78: clarify, no
 // registry or sound-behavior change.)
 enum class VcoControlMode : std::uint8_t { kLinear, kExponential };
+
+// Raft task #116 (GH #19 S0) EXPERIMENTAL single-knob waveform mapping. NOT a product control
+// and NOT persisted: it selects which software mapping the ONE existing `morph` coordinate
+// drives, so the experiment can be run without changing what `wave_` has always meant.
+//   kLegacy    — the production behaviour: `wave_` alone picks the waveform (production pins
+//                kTriangle, so today the morph coordinate has no audible landing point).
+//   kRingEqual — the ring map (vco_wave_map.h) with five evenly spaced nodes.
+//   kRingPanel — the ring map with boundaries derived from the measured panel glyph positions.
+// Default kLegacy keeps every existing call path bit-identical; see Vco::setWaveMap.
+enum class VcoWaveMap : std::uint8_t { kLegacy, kRingEqual, kRingPanel };
 
 class Vco {
  public:
@@ -119,6 +130,19 @@ class Vco {
   void setWaveform(VcoWaveform w) { wave_ = w; }
   // Morph 0..1; only meaningful for the two morphing waveforms (clamped).
   void setMorph(double m);
+  // EXPERIMENTAL (task #116): select the software mapping the single `morph` coordinate drives.
+  // kLegacy (the default) leaves emittedAt_ on the pre-existing path, so this switch cannot
+  // change any current output. kRingEqual / kRingPanel route the sample through
+  // wave_map::sampleAt (see vco_wave_map.h) and scale the triangle BLAMP by the triangle's
+  // weight in the mix. This is a DSP-mapping switch for the experiment, never a second control
+  // quantity: it is not a ParameterId, not in the registry, and not persisted.
+  void setWaveMap(VcoWaveMap m) { waveMap_ = m; }
+  VcoWaveMap waveMap() const { return waveMap_; }
+  // The boundaries the active ring map uses (empty position for kLegacy: returns kRingEqual so
+  // callers have a defined value; consult waveMap() first).
+  static const wave_map::Boundaries& ringBoundaries(VcoWaveMap m) {
+    return (m == VcoWaveMap::kRingPanel) ? wave_map::kRingPanel : wave_map::kRingEqual;
+  }
   // SHAPE = pulse-width duty for kPulse. Clamped into a small (0,1) window so an
   // extreme setting can never collapse the pulse to a flat DC line / silence break
   // (the two-rail swing is always present; the must-test verifies it).
@@ -194,6 +218,7 @@ class Vco {
   VcoWaveform wave_ = VcoWaveform::kTriangle;
   double morph_ = 0.5;
   double duty_ = 0.5;
+  VcoWaveMap waveMap_ = VcoWaveMap::kLegacy;  // task #116 experimental switch; default = legacy.
   double fmCv_ = 0.0;
   double fmDevHz_ = 0.0;
   double cumPitch_ = 0.0;              // unwrapped pitch phase (cycles).
@@ -217,7 +242,21 @@ class Vco {
   // plus whatever band-limiting correction is already in force for the active waveform.
   // tick() uses it both for the sample it writes and to size a hard-sync reset's jump, so
   // the two can never drift apart.
+  //
+  // task #116: when an experimental ring map is active, the shape comes from the single `morph`
+  // coordinate (wave_map::sampleAt) instead of `wave_`. tick() still uses emittedAt_ for BOTH the
+  // emitted sample and the hard-sync jump, so the ring map stays consistent across a sync reset;
+  // the phase advance, sync request/apply order and sub path are untouched. The triangle BLAMP is
+  // scaled by the triangle's weight in the mix — the correction belongs to the true triangle
+  // COMPONENT only, never to "any mix that contains triangle" (task #116 item 2). A mix is still
+  // NOT band-limited and is never described as such.
   double emittedAt_(double cp, double step) const {
+    if (waveMap_ != VcoWaveMap::kLegacy) {
+      const wave_map::Boundaries& c = ringBoundaries(waveMap_);
+      double v = wave_map::sampleAt(c, morph_, frac(cp), duty_);
+      v += wave_map::triangleWeight(c, morph_) * triangleBlampCorr(cp, step);
+      return v;
+    }
     double v = waveformSampleAt(frac(cp));
     if (wave_ == VcoWaveform::kTriangle) v += triangleBlampCorr(cp, step);
     return v;

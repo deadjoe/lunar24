@@ -1,0 +1,5 @@
+item	value	worst_err
+S0_vs_kMorphSawInvSaw	-	0.000e+00
+S2_vs_kMorphSineTriangle	-	0.000e+00
+triangle_node_vs_legacy_bytes	0.7500	0.000e+00
+off_node_ring_vs_legacy	0.3750	7.488e-01

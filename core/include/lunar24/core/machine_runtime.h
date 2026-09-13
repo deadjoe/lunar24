@@ -549,6 +549,16 @@ class SynthRuntime {
   void setVcoBTune(double oct) { vcB_.setTune(oct); }
   void setVcoAMorph(double m) { vcA_.setMorph(m); }
   void setVcoBMorph(double m) { vcB_.setMorph(m); }
+  // EXPERIMENTAL (Raft task #116, GH#19 S0): route BOTH VCOs' single `morph` coordinate through
+  // the candidate ring map (core/vco_wave_map.h) instead of `wave_`. This is a SOFTWARE MAPPING
+  // mode for the local experiment — deliberately NOT a ParameterId, NOT in the registry, NOT in
+  // the state bytes and NOT persisted, so it can never be mistaken for a second control quantity
+  // (task #116: one knob, no new wave selector). The A/B morph VALUES stay fully independent:
+  // this only selects which mapping the two existing independent coordinates are read through.
+  // The production form of this candidate would instead make the ring the meaning of the
+  // existing default path; see the task #116 report for that diff.
+  void setVcoWaveMap(VcoWaveMap m) { vcA_.setWaveMap(m); vcB_.setWaveMap(m); }
+  VcoWaveMap vcoWaveMap() const { return vcA_.waveMap(); }
   void setVcoAPw(double duty) { vcA_.setShape(duty); }
   void setVcoBPw(double duty) { vcB_.setShape(duty); }
   void setVcoAOctSelect(int idx) { vcA_.setOctaveSelect(idx); }
