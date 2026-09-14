@@ -68,6 +68,7 @@
 #include <cstdint>
 
 #include "lunar24/core/blamp_kernel.h"
+#include "lunar24/core/pulse_blep_kernel.h"
 #include "lunar24/core/vco_wave_map.h"
 
 namespace lunar24::core {
@@ -296,7 +297,41 @@ class Vco {
     double v = waveformSampleAt(frac(cp));
     const double tw = triangleBlampWeight_();
     if (tw > 0.0) v += tw * triangleBlampCorr(cp, step);
+    const double pw = pulseBlepWeight_();
+    if (pw > 0.0) v += pw * pulseBlepCorr_(cp, step);
     return v;
+  }
+
+  // GH#19 S3 (#118): the pulse's value-jump correction at an unwrapped phase, in the SAME
+  // normalize-by-phase terms as the triangle correction above: the kernel wants a normalized
+  // phase in [0,1) and the normalized per-sample increment, and `frac(cp)` is exactly the phase
+  // the naive shape was read at, so the correction is read at that same phase and not at a
+  // neighbouring one. `step` is the increment the phase accumulator actually advanced by, so a
+  // corrected and an uncorrected render share one phase trajectory (see pulse_blep_kernel.h).
+  //
+  // The duty is EFFECTIVE duty, the same value waveformSampleAt feeds the pulse node: the two
+  // edges of the waveform being corrected move with PWM, and a correction read against the raw
+  // `duty_` would place the B edge at the wrong phase whenever PWM depth is non-zero. This is the
+  // static-vs-moving-duty distinction -- a fixed-duty phase formula says nothing about a moving
+  // edge, so the correction has to be driven by the duty the sampler used.
+  double pulseBlepCorr_(double cp, double step) const {
+    return polyblepPulseCorrection(frac(cp), effectiveDuty(), step);
+  }
+
+  // How much of the pulse value-jump correction is in force for the active waveform.
+  //  * kMorphRing: the pulse NODE's weight in the mix (wave_map::pulseWeight). Exactly 1.0 at the
+  //    pure-pulse node (morph = 1.0) and 0.0 outside stretch 3, so the correction runs in full
+  //    where the output IS the pulse, not at all where it is not, and scaled by the node's weight
+  //    in between -- first-order and software-provisional (vco_wave_map.h P5).
+  //  * every other waveform: 0.0. The module-dev raw shapes are unchanged from before #118, so the
+  //    existing kTriangle / kMorph* / drone paths emit bit-identical samples.
+  double pulseBlepWeight_() const {
+    switch (wave_) {
+      case VcoWaveform::kMorphRing:
+        return wave_map::pulseWeight(wave_map::kRingEqual, morph_);
+      default:
+        return 0.0;
+    }
   }
 
   // How much of the EXISTING triangle slope correction is in force for the active waveform.

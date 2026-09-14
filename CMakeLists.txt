@@ -475,6 +475,18 @@ add_test(NAME gh19_blamp_acceptance
 # acceptance is the criterion-level gate — they are different assertions, not a redundant re-run.
 set_tests_properties(gh19_alias_probe gh19_blamp_acceptance PROPERTIES LABELS "slow")
 
+# task #118 (GH #19 S3): the PURE-PULSE / moving-duty measurement probe. It is a MEASUREMENT, not a
+# gate: it produces the S3 matrix (gh19_s3_scenarios.tsv + raws + the dynamic cells' per-frame
+# CV-OUT traces) and exits non-zero if any cell is missing or a trace-hook invariance guard fails.
+# It carries its own matrix and no manifest, so the committed S2/S5 required-cell contract is
+# untouched and those gates are not re-run to reach a verdict on this slice. It is labelled `slow`
+# for the same reason the probe above is (per-sample processBlock over the full matrix), so it does
+# not enter the every-push `--label-exclude slow` matrix.
+lunar_add_test(gh19_s3_pulse_probe tests/probes/gh19_s3_pulse_probe.cpp)
+target_link_libraries(gh19_s3_pulse_probe PRIVATE lunar_host)
+target_include_directories(gh19_s3_pulse_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
+set_tests_properties(gh19_s3_pulse_probe PROPERTIES LABELS "slow")
+
 # task #109 (GH #19 S1): RED->GREEN acceptance gate for the SCHMITT-OSCILLATOR slope
 # correction. Same shape as the VCO gate above -- same probe, same analyzer, same pipeline
 # driver -- but a different criterion file and a different baseline. The 12 in-scope cells

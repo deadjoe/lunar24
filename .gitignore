@@ -15,6 +15,12 @@
 # (the committed work artifact is the task#88 report .md, from the same data).
 /report/gh20-probe-trap/
 
+# task #118 (GH #19 S3) probe output — the probe's --out default, 216 .raw frames + the plan and
+# scenario TSVs, ~110 MB, deterministic and regenerable. Same treatment as the two above: the
+# committed work artifacts are report/gh19-s3-pulse-aa/*.txt|tsv, produced from these frames by
+# tools/gh19_s3_pulse_analyze.py. Ignored rather than deleted, so a `git add -A` cannot sweep it in.
+/report/gh19-s3-pulse-probe/
+
 # IDE / OS cruft
 .vscode/
 .idea/
