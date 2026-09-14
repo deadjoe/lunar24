@@ -5,121 +5,77 @@
 //
 // FORMULA (final; task #119 production authorization)
 //
-//     w                     = min(dt, kPolyblepMaxDt)          dt > 0, else no correction
+//     w                       = min(dt, kPolyblepMaxDt)          dt > 0, else no correction
 //     correction(t, duty, dt) = R(t, w) - R(frac(t - duty), w)
 //     output(t, duty, dt)     = naive(t, duty) + correction
 //
 // It is polyblep_kernel.h's residual (polyblepResidual, task #110 / S2) applied twice, once per
-// value discontinuity. The pulse has TWO jumps a cycle and each needs its own kernel with its own
-// SIGN and its own POSITION; re-deriving the residual here would fork the kernel.
+// value discontinuity, each with its OWN SIGN and its OWN POSITION:
 //
-// WHY THE SIGN IS NOT A FREE CHOICE. polyblepSaw corrects the saw, whose single jump is DOWNWARD
-// by 2 at phase 0, and it does so by SUBTRACTING the residual. Read as a rule rather than as one
-// function's algebra:
+//     phase 0     : -1 -> +1, an UPWARD  jump of +2   ->  ADD      R(t, dt)
+//     phase duty  : +1 -> -1, a DOWNWARD jump of -2   ->  SUBTRACT R(frac(t - duty), dt)
 //
-//     a -2 (downward) jump at phase x  ->  SUBTRACT  R( frac(t - x), dt )
-//     a +2 (upward)   jump at phase x  ->  ADD       R( frac(t - x), dt )
-//
-// Both follow from R(0+) = -1 and R(1-) = +1 driving the two limits to a common value. The naive
-// pulse (t < duty) ? +1 : -1 has exactly these two jumps:
-//
-//     phase 0     : -1 -> +1, an UPWARD   jump of +2   ->  +R(t, dt)
-//     phase duty  : +1 -> -1, a DOWNWARD  jump of -2   ->  -R(frac(t - duty), dt)
-//
-// giving the correction implemented below. A pulse is NOT a saw with a shifted phase, and the two
-// signs are what that difference costs.
+// Both follow from R(0+) = -1 and R(1-) = +1 driving the two limits to a common value -- the same
+// rule polyblepSaw applies to the saw's single downward jump. The residual is CALLED, not
+// re-derived: a second copy here would fork the kernel. A pulse is not a saw with a shifted phase,
+// and the two signs are what that difference costs.
 //
 // ---------------------------------------------------------------------------------
 // APPLICABILITY BOUNDARY 1: NO DUTY-DEPENDENT SWITCH. ADDING ONE IS A DEFECT.
 // ---------------------------------------------------------------------------------
 //
-// R is non-zero only on [0, dt) (after its jump) and (1 - dt, 1) (before it), so the two terms are
-// live on four phase sets:
+// The correction is UNCONDITIONAL in duty, and no code path here may branch on a duty-derived
+// regime label. `naive + correction` is continuous in duty at every fixed t and dt: the naive
+// pulse's own B-edge jump and the correction's window wrap at t = duty are equal and opposite, so a
+// guard that zeroes the correction anywhere else breaks that cancellation by the size of the
+// correction there. min(duty, 1 - duty) >= 2*dt is a real, checkable property of a CELL -- it is
+// NOT a switch and not evidence that one is safe. It survives only as a reporting label: see
+// polyblepPulseWindowsDisjoint below, which gates nothing.
 //
-//     A-after  [0, dt)          A-before  (1 - dt, 1)
-//     B-after  [duty, duty+dt)  B-before  (duty - dt, duty)          (mod 1)
-//
-// Those four sets are pairwise disjoint exactly when
-//
-//     min(duty, 1 - duty) >= 2 * dt                                    (*)
-//
-// (*) is a real, checkable property of a CELL. It is NOT a switch, and an earlier revision of this
-// header that branched on it was WRONG -- at dt = 220/44100, t = dt/4, the output jumped by 0.5625
-// between duty = 2*dt - 1e-12 and duty = 2*dt + 1e-12 although neither the phase nor the duty
-// crossed a pulse edge: a discontinuity introduced by the guard itself, on duty values the
-// product's own PWM sweep passes through continuously.
-//
-// WHY THE GUARD CANNOT BE MOVED EITHER. Vary `duty` at fixed t: the only discontinuous point of
-// R(frac(t - duty), dt) is where that argument wraps, i.e. duty = t (mod 1) -- and at that exact
-// duty the naive pulse crosses its own B edge and jumps by -2. The two jumps are equal and
-// opposite, so `naive + correction` is CONTINUOUS in duty for every fixed t and dt. A guard that
-// zeroes the correction anywhere else breaks that cancellation by the size of the correction
-// there, which is exactly the 0.5625 above. There is consequently NO duty value at which the
-// correction may be switched off, and (*) is not evidence that there is: it was never what kept
-// the output bounded. (*) survives as a REGIME LABEL only -- see polyblepPulseWindowsDisjoint,
-// which is reporting-only and gates nothing.
-//
-// The full refutation, its reproduction, and the withdrawn narrow-pulse claim are recorded in
-// report/2026-09-14-task118-gh19-s3-pulse-aa.md (the revision record). This header keeps only the
-// rule that follows from it.
-//
-// BOUNDEDNESS. For 0 < dt <= kPolyblepMaxDt and any duty in (0,1), the corrected pulse stays in
-// [-1, +1] -- the same range as the naive pulse. Each residual term is in [-1, +1], so the
-// CORRECTION alone can reach 2 in magnitude; it is the SUM that is bounded, by case analysis over
-// the half-cycle the sample is in (recorded in the report above). VERIFIED, NOT ONLY DERIVED:
-// tools/gh19_s3_pulse_kernel_sweep.cpp compiles THIS header directly and sweeps (dt, duty, t) on a
-// dense grid -- max |output|, the largest one-sided gap in duty, and the boundary / narrow-pulse /
-// moving-duty traversals. Re-run it rather than trusting this comment.
+// The withdrawn guard, its reproduction (a 0.5625 jump at duty = 2*dt with no edge crossed) and the
+// full refutation are in report/2026-09-14-task118-gh19-s3-pulse-aa.md (the revision record); the
+// production acceptance evidence is in report/2026-09-14-task119-gh19-s3-pulse-product.md.
 //
 // ---------------------------------------------------------------------------------
 // APPLICABILITY BOUNDARY 2: ABOVE kPolyblepMaxDt THE KERNEL WIDTH IS CAPPED, THE PHASE IS NOT
 // ---------------------------------------------------------------------------------
 //
-// The three regimes of dt (see the sweep driver's out-of-domain section) end the proven domain at
-// kPolyblepMaxDt = 0.5. Past it the residual ITSELF steps at t = dt -- R(dt-) = 0 against
+// Past dt = kPolyblepMaxDt = 0.5 the residual ITSELF steps at t = dt -- R(dt-) = 0 against
 // R(dt+) = (2 - 1/dt)^2, growing 0 -> 1 as dt goes 0.5 -> 1 -- and that step is not one of the
-// pulse's own edges, so `naive + correction` carries a jump the construction was never entitled
-// to add. Approaching dt = 0.5 from below gives the opposite reading: 0.5 is the LAST dt at which
-// the two branches meet on the residual's own zero, i.e. the last dt at which the residual is
-// continuous.
+// pulse's own edges, so the construction would add a jump it is not entitled to. Approaching 0.5
+// from below reads the same way: 0.5 is the LAST dt at which the residual is continuous.
 //
-// The strategy adopted here (reviewed ruling, task #118) is to cap the WIDTH OF THE CORRECTION
-// KERNEL and leave everything else alone: `w = min(dt, kPolyblepMaxDt)` in the formula above,
-// while the phase accumulator keeps advancing by the TRUE step. Nothing about the oscillator's
-// frequency, the V/OCT or CV law, the duty, the PWM transfer or the sync contract changes.
+// The adopted strategy (reviewed ruling, task #118) caps the WIDTH OF THE CORRECTION KERNEL and
+// changes nothing else: `w = min(dt, kPolyblepMaxDt)` in the formula above, while the phase
+// accumulator keeps advancing by the TRUE step. Frequency, the V/OCT and CV law, the duty, the PWM
+// transfer and the sync contract are all untouched.
 //
-// WHY THAT MAKES THE OUTPUT CONTINUOUS. At w = 0.5 the two branches of polyblepResidual meet at
-// t = 0.5 on the same value (the residual's own zero), so R(., 0.5) is continuous on the whole
-// period. The correction is a difference of two such terms, and the only remaining discontinuity
-// is the WINDOW WRAP at t = duty -- where R(frac(t - duty), w) steps down by 2 while the naive
-// pulse steps down by 2 as well. Equal and opposite: the sum cancels, exactly as it does in
-// domain. So the emitted waveform function is continuous at every dt > 0.
-//
-// WHAT THIS IS, AND WHAT IT IS NOT.
-//   * IT IS a BOUNDED CONTINUOUS WAVEFORM EXTENSION. For dt > 0.5 the output is IDENTICAL, sample
-//     for sample, to the output of this same formula at dt = 0.5: capping changes only the third
-//     argument, so every out-of-domain cell is exactly an in-domain cell's value. Boundedness and
-//     continuity therefore follow from the in-domain case analysis above rather than needing a
-//     new one, and the sweep measures max|output| = 1 including at the largest step the declared
-//     input box can produce.
-//   * IT IS NOT anti-aliasing above Nyquist, and no spectral claim is made there. The phase still
-//     advances by the TRUE step, so once dt > 0.5 the sample sequence is no longer a sampling of
-//     any band-limited signal at that rate -- a two-point step kernel has no referent for it. The
-//     extension keeps the waveform bounded and continuous; it does not make the result
-//     band-limited, and the S3 acceptance numbers apply to 0 < dt <= kPolyblepMaxDt only.
-//   * IT IS NOT the correct correction for a step of that width. Past dt = 0.5 the kernel's scale
-//     no longer matches the step it is correcting: the amplitude is still the full +/-1 but the
-//     support covers only half a period. It becomes meaningless as dt approaches the point where
-//     a step spans whole cycles; the value it buys is that no extra jump enters the product.
-//   * IT IS NOT a fallback to the naive pulse. An earlier candidate switched the correction OFF
-//     out of domain, which reintroduces a hard discontinuity at the switch point; that candidate
-//     was rejected and is retained only as a negative control (see the sweep driver), not as an
-//     alternative implementation.
+//   * IT IS a BOUNDED CONTINUOUS WAVEFORM EXTENSION. At w = 0.5 the two branches of the residual
+//     meet at t = 0.5 on the same value, so R(., 0.5) is continuous on the whole period and the only
+//     remaining discontinuity is the window wrap at t = duty -- where the naive pulse steps down by
+//     2 as well. Equal and opposite: the sum cancels, exactly as in domain, so the waveform function
+//     is continuous at every dt > 0. Capping changes only the residual's third argument, so every
+//     dt > 0.5 cell is IDENTICAL sample for sample to this formula at dt = 0.5, and boundedness
+//     follows from the in-domain case analysis rather than needing a new one.
+//   * IT IS NOT anti-aliasing above Nyquist, and no spectral claim is made there: the phase still
+//     advances by the TRUE step, so the sample sequence is no longer a sampling of any band-limited
+//     signal at that rate, and the S3 acceptance numbers apply to 0 < dt <= kPolyblepMaxDt only.
+//   * IT IS NOT the correct correction for a step of that width: the amplitude is still the full
+//     +/-1 while the support covers only half a period. It becomes meaningless as dt approaches the
+//     point where a step spans whole cycles; the value it buys is that no extra jump enters the
+//     product.
+//   * IT IS NOT a fallback to the naive pulse. Switching the correction OFF out of domain
+//     reintroduces a hard discontinuity at the switch point; that candidate was rejected and is
+//     retained only as a negative control in the sweep driver.
 //
 // IN DOMAIN, BIT-IDENTICAL. min(dt, kPolyblepMaxDt) IS dt for every dt <= 0.5 -- not merely close
 // to it -- so every cell with 0 < dt <= kPolyblepMaxDt produces exactly the samples the uncapped
-// formula produces, and the pre-cap static evidence for that range is re-checked as an exact
-// comparison, not as a tolerance.
+// formula produces, and that is re-checked as an exact comparison, not as a tolerance.
+//
+// BOUNDEDNESS AND CONTINUITY ARE VERIFIED, NOT ONLY DERIVED: tools/gh19_s3_pulse_kernel_sweep.cpp
+// compiles THIS header directly and sweeps (dt, duty, t) on a dense grid -- max |output|, the
+// largest one-sided gap in duty, and the boundary / narrow-pulse / moving-duty traversals. Re-run it
+// rather than trusting this comment.
 
 #ifndef LUNAR24_CORE_PULSE_BLEP_KERNEL_H
 #define LUNAR24_CORE_PULSE_BLEP_KERNEL_H

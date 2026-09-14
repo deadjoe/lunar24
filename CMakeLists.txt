@@ -423,6 +423,28 @@ lunar_add_test(test_gh19_s0_morph_pwm_acceptance
 target_link_libraries(test_gh19_s0_morph_pwm_acceptance PRIVATE lunar_host)
 target_include_directories(test_gh19_s0_morph_pwm_acceptance PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
 
+# task #119 (GH #19 S3): the pulse TWO-EDGE correction's ACCEPTANCE surface, at the PRODUCT entry.
+# The SAME agreed entry as S0 (codec -> decode -> StandaloneAudioEngine::applyDeviceState ->
+# processBlock) and the SAME real captured channels; no test here calls Vco / processFrame directly
+# and none slices a Vco render loop, because task #118's `VCO-BLOCK` evidence is Vco-level and cannot
+# stand in for a product-block claim. The emitted DRY sequence is compared sample by sample against a
+# reference model of `naive + R(t,w) - R(frac(t-duty),w)`, `w = min(dt, kPolyblepMaxDt)`, written out
+# longhand (the kernel's own functions are deliberately NOT called — a defect there would move the
+# product and the reference together). It asserts the accepted shape and rejects its one-line
+# neighbours (naive / wrong sign / wrong edge / uncapped width / the withdrawn duty hard switch), the
+# driven step is the step that fits, the width cap and the bounded extension above it, same-frame PWM
+# consumption, irregular processBlock partitions under a CHANGING CV, repeated restore of a saved PWM
+# cable, a rejected apply's atomicity on state/format/plan/subsequent trace, four-output finiteness
+# across the pulse surface, the hard-sync reset sized on the EMITTED signal, and the render callback's
+# zero alloc/free. The allocator TU is shared with test_gh19_s0_morph_pwm_acceptance and
+# test_state_apply_oracle — the definition must stay out of the test TU to avoid GCC
+# -Wmismatched-new-delete, which this build makes an error.
+lunar_add_test(test_gh19_s3_pulse_product_acceptance
+  tests/host/test_gh19_s3_pulse_product_acceptance.cpp
+  tests/host/test_state_apply_oracle_allocator.cpp)
+target_link_libraries(test_gh19_s3_pulse_product_acceptance PRIVATE lunar_host)
+target_include_directories(test_gh19_s3_pulse_product_acceptance PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/core")
+
 # task #98 (GH #15 D3 divider): REAL-RESTORE directional acceptance (the @Codex dd57c783 gap-fill).
 # The live-lane d3 acceptance (test_machine_runtime::d3_div_actual_timing_acceptance) drives rate +
 # divider through a controlled SynthRuntime fixture; it does NOT exercise the codec -> owner ->
