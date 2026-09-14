@@ -302,6 +302,60 @@ MUTANTS = [
         "expect": "repeatedRestoreReachesThePwmDepthSetter",
         "claim": "the acceptance surface's repeated-restore claim re-reaches the PWM setter",
     },
+    {
+        # ENDPOINT CONTROL 1 (director note ce80e516): the sink NEVER CONSUMES the PWM CV, so the
+        # duty stays at the unmodulated base width. At the clamp endpoints the emitted waveform is
+        # then the base-0.5 waveform while the independent reference predicts the 0.001 waveform, so
+        # the NEW endpoint criterion is what has to fire — not the same-frame check, which this edit
+        # also trips. The binding removal is the same edit as `acc-missing-pwm-consumer` above but it
+        # is graded on the endpoint assertion, because that is the criterion the ruling asked to see
+        # carry this class of defect.
+        "id": "acc-endpoint-pwm-not-consumed",
+        "target": "test_gh19_s0_morph_pwm_acceptance",
+        "edits": {MACHINE_DEF: [("""    runtime_.setVcoPwmBindings(lunar24::registry::JackId::vco_a_pwm_in,
+                               lunar24::registry::JackId::vco_b_pwm_in);
+""", "")]},
+        "expect": "negativeCvSaturatesAtDutyMin",
+        "claim": "the endpoint criterion rejects a sink that never consumes the PWM CV",
+    },
+    {
+        # ENDPOINT CONTROL 2 — WRONG SIDE / INVERTED POLARITY. The sink consumes the source every
+        # frame (so the same-frame check stays green) but with the polarity flipped, which is the
+        # wrong-side failure in this family: positive CV LOWERS the duty. At the -5 V endpoint the
+        # emitted waveform is then the 0.999 waveform while the independent reference predicts the
+        # 0.001 one, so the endpoint criterion must reject it on its own.
+        "id": "acc-endpoint-inverted-pwm-polarity",
+        "target": "test_gh19_s0_morph_pwm_acceptance",
+        "edits": {MACHINE_RT: [("""        if (pwmInBoundA_) static_cast<void>(resolveControlSink_(pwmInA_, pwm, driveGraph));
+        vcA_.setPwCv(pwm);""",
+                               """        if (pwmInBoundA_) static_cast<void>(resolveControlSink_(pwmInA_, pwm, driveGraph));
+        vcA_.setPwCv(-pwm);  // MUTANT: wrong side / inverted PWM polarity""")]},
+        "expect": "negativeCvSaturatesAtDutyMin",
+        "claim": "the endpoint criterion rejects a wrong-side (inverted-polarity) consumer",
+    },
+    {
+        # ENDPOINT CONTROL 3 — ONE FRAME LATE. The sink consumes the PREVIOUS frame's CV. Where the
+        # published CV is moving this is visible; at a settled DC endpoint it is not, and that is a
+        # property of the stimulus, not of the criterion — so this arm is graded where the lag can
+        # actually be seen, on the changing-CV same-frame criterion, and the endpoint criterion is
+        # additionally required to reject it if the lag ever shows up in the endpoint window.
+        "id": "acc-endpoint-cv-one-sample-late",
+        "target": "test_gh19_s0_morph_pwm_acceptance",
+        "edits": {MACHINE_RT: [
+            ("""        double pwm = 0.0;
+        if (pwmInBoundA_) static_cast<void>(resolveControlSink_(pwmInA_, pwm, driveGraph));
+        vcA_.setPwCv(pwm);""",
+             """        const double prevA = pwmLatchedA_;
+        double pwm = 0.0;
+        if (pwmInBoundA_) static_cast<void>(resolveControlSink_(pwmInA_, pwm, driveGraph));
+        pwmLatchedA_ = pwm;
+        vcA_.setPwCv(prevA);"""),
+            ("  JackId pwmInA_{0};",
+             "  JackId pwmInA_{0}; double pwmLatchedA_ = 0.0;"),
+        ]},
+        "expect": "pwmCvIsConsumedInTheSameFrameItIsPublished",
+        "claim": "the endpoint/consumption surface rejects a one-frame-late PWM consumer",
+    },
 ]
 
 

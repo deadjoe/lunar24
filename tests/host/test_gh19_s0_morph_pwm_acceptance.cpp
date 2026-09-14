@@ -26,9 +26,17 @@
 //       norm 0.75 triangle   meanAbs 0.250002  pp 0.996285         <- the only node with pp < 1
 //       norm 1.00 pulse      meanAbs 0.500000  rms 0.500000
 //   * fine sweep in steps of 0.01: worst adjacent |d meanAbs| = 0.020000, |d rms| = 0.023094.
-//   * DC duty law through joystick.x_out -> vco_a.pwm_in at all four rates: worst |audio - law|
-//     0.0022. That worst cell is the n=0.00 endpoint, whose entire high time is 0.001 of a ~218-frame
-//     period, i.e. sub-sample — so the tolerance carries one measured sample of period.
+//   * DC duty law through joystick.x_out -> vco_a.pwm_in at the INTERMEDIATE norms (0.25/0.5/0.75)
+//     at all four rates: worst |audio - law| 0.0022, measured with the zero-crossing estimator.
+//   * THE TWO CLAMP ENDPOINTS (norms 0.00 / 1.00) are measured by the FIXED-PHASE TWO-EDGE
+//     REFERENCE, not by zero crossings — at duty 0.001/0.999 the corrected pulse has no zero
+//     crossing left to count (see the instrument header below). Measured, all four rates:
+//     worst |DRY - reference| = 8.8e-12 device units, i.e. double round-off, against a tolerance of
+//     0.02; the rejected neighbours sit at 1.000 (skipped PWM), 1.000 (a wrong clamp value), 1.000
+//     (the mirror endpoint), and 0.158..0.388 (the nearest plausible mis-clamp) — every one of them
+//     printed per cell, none tabulated. The consumer's duty equals the independently computed law
+//     on its own input to 0.0 at all four rates, and the raw pre-clamp duty lands strictly outside
+//     the window, so the clamp is genuinely exercised in both cells.
 //   * CHANGING CV (lfo_a.cv_out -> vco_a.pwm_in, lfo_a.rate 5 Hz hence a measured 5.0000 Hz period,
 //     depth 0.1): worst per-period |audio duty - implied transfer| = 0.00500.
 //   * same-frame consumption: the sink readback equals the SAME frame's published source volts in
@@ -41,6 +49,9 @@
 #include "mini_test.h"
 
 #include <lunar24/core/device_state.h>      // DeviceStateV1
+#include <lunar24/core/machine_definition.h>  // kVcoBaseHzProvisional (the product's f0)
+#include <lunar24/core/vco.h>                 // Vco::kLowOctave / kZeroOctave / kPlus3Octave,
+                                              // kPwDutyMin / kPwDutyMax / kPwmCvFullScaleVolts
 #include <lunar24/core/state_default.h>     // make_default_device_state
 #include <lunar24/core/state_serializer.h>  // encode/decode_device_state
 #include <lunar24/registry_ids.hpp>         // ParameterId / JackId full enums
@@ -177,6 +188,222 @@ DeviceStateV1 pulseState(double depth) {
   return st;
 }
 
+// =============================================================================================
+// THE ENDPOINT INSTRUMENT (GH#19 S3 consequence; ruled by @Codex msg ce80e516, option (a)).
+//
+// WHY THE OLD OBSERVATION DIED. `meanAudioDuty` above recovers the duty from ZERO CROSSINGS: it
+// counts the samples above 0 between consecutive rising edges. That estimator is only valid while
+// the pulse actually crosses zero. The ruled transfer CLAMPS at 0.001 / 0.999, and at those two
+// endpoints the naive high window is 0.001 of a cycle — about 0.2 of one sample at 220 Hz, 0.9 of
+// one at 440 Hz / 48 kHz — i.e. NARROWER THAN THE BAND-LIMITING KERNEL ITSELF (w = 1/218 cycle at
+// 220 Hz). The two-edge correction therefore lifts the whole window across zero and the corrected
+// waveform never becomes positive at all (measured range [-1.0000, -0.5881] at duty 0.001). The old
+// instrument read "no zero crossing" as "PWM not consumed"; that was the instrument failing, not the
+// product. The old duty guard is NOT thereby rehabilitated: it introduced a parameter-boundary jump
+// and stays withdrawn.
+//
+// WHAT REPLACES IT. A FIXED-PHASE two-edge output reference. This file writes out the product's own
+// declared pulse law
+//
+//     v(p) = naive(p, duty) + R(p, w) - R(frac(p - duty), w),   naive = (p < duty) ? +1 : -1
+//
+// and predicts the real DRY sequence sample by sample at the phase the PRODUCT's own frame
+// convention fixes: `Vco::tick()` advances the accumulator and then publishes (`cumPitch_ += step`
+// BEFORE `emittedAt_(cumPitch_, step)`), so with an accumulator starting at 0 the sample at frame i
+// is read at phase frac((i+1)*w). That phase is not searched for and not fitted.
+//
+// The duty is built the way the ruling asks — INDEPENDENTLY, from the known base width, the depth
+// the knob actually reports, and the CV each frame publishes through the graph — and then checked
+// against what the consumer actually used. The reference is compared against the real DRY capture at
+// several discrimination arms, so passing means the emitted waveform IS the endpoint's waveform and
+// is NOT one of its neighbours:
+//   * skipped PWM  — the sink never consumed the CV, so the duty stayed at the unmodulated 0.5
+//   * wrong value  — a plausible but wrong clamp (0.05 / 0.95)
+//   * wrong side   — the mirror endpoint (1 - duty)
+//   * nearby clamp — the nearest plausible mis-clamp (0.002 / 0.998)
+// The last two are what make "the clamp is in force AND it sits at 0.001/0.999" an AUDIO statement
+// rather than a restatement of the readback. Readback alone is not accepted as sound evidence.
+//
+// Separations are MEASURED, and every one of them is printed, not tabulated.
+// =============================================================================================
+inline constexpr double kEndpointResidualTol = 0.02;  // device units
+inline constexpr double kEndpointMargin = 0.10;       // minimum separation from a rejected arm
+
+// `polyblepResidual` as the kernel defines it (core/include/lunar24/core/polyblep_kernel.h),
+// written out here so the reference does not call the code path it is checking.
+double refResidual(double t, double dt) {
+  const double w = dt < 0.5 ? dt : 0.5;
+  if (!(w > 0.0)) return 0.0;
+  if (t < w) {
+    const double x = t / w;
+    return x + x - x * x - 1.0;
+  }
+  if (t > 1.0 - w) {
+    const double x = (t - 1.0) / w;
+    return x * x + x + x + 1.0;
+  }
+  return 0.0;
+}
+
+// The naive two-rail shape, optionally carrying the two-edge correction. Returns the VCO's own
+// +-1 swing (the DRY capture is this times the device scale).
+double twoEdgeSwing(double phase, double duty, double w, bool corrected = true, double wOverride = -1.0) {
+  const double p = phase - std::floor(phase);
+  const double naive = (p < duty) ? 1.0 : -1.0;
+  if (!corrected) return naive;
+  const double ww = wOverride > 0.0 ? wOverride : w;
+  double b = p - duty;
+  b -= std::floor(b);
+  return naive + (refResidual(p, ww) - refResidual(b, ww));
+}
+
+struct EndpointEvidence {
+  bool rendered = false;
+  bool consumerSawThePublishedCv = false;   // every frame: the sink read this frame's published V
+  bool consumerDutyIsTheRuledLaw = false;   // every frame: used duty == the ruled law on its OWN input
+  bool knobDepthReachedItsSetting = false;  // the smoothed PWM depth settled to 1.0
+  bool rawDutyIsOutsideTheClampWindow = false;  // so the clamp is actually exercised
+  bool theReferenceSquareWaveWasFound = false;  // the duty-0.5 arm really produced edges
+  bool phaseAnchorAgrees = false;   // declared pitch law vs the period measured from clean edges
+  double wDeclared = 0.0, wMeasured = 0.0;
+  double dSource = 0.0;    // independent: base + depth * publishedCv / 10, clamped
+  double dConsumer = 0.0;  // the duty the VCO actually used
+  double dcActual = 0.0, dcReference = 0.0;
+  // Fixed-phase residuals of the real DRY capture against the reference and against each reject arm.
+  double rExact = 0.0, rOneStepOff = 0.0, rSkippedPwm = 0.0, rWrongValue = 0.0, rWrongSide = 0.0,
+         rNearbyClamp = 0.0;
+  double wrongValueDuty = 0.0, nearbyClampDuty = 0.0, mirrorDuty = 0.0;
+  int windowFrames = 0, windowStart = 0;
+};
+
+// The step the PRODUCT advances by, from its own declared pitch law: `Vco::tick` uses
+// step = frequencyHz() / sr, and frequencyHz() = baseHz * 2^(octave + tune) * 2^(vOct) * cv-scaling.
+// These arms patch the PWM jack ONLY, so VCO A's pitch inputs are unpatched (vOct = cv = 0) and the
+// linear-FM depth is at its default. That reasoning is not trusted on its own: `endpointDutyAt`
+// re-measures the period from a clean duty-0.5 arm and requires the two to agree.
+double declaredStep(const EngineHarness& h, double sr) {
+  const lunar24::core::SynthRuntime* rt = h.runtime();
+  const double octs[3] = {lunar24::core::Vco::kLowOctave, lunar24::core::Vco::kZeroOctave,
+                          lunar24::core::Vco::kPlus3Octave};
+  const int sel = rt->vcoAOctSelect();
+  const double oct = octs[(sel < 0 || sel > 2) ? 1 : sel];
+  return lunar24::core::kVcoBaseHzProvisional * std::pow(2.0, oct + rt->vcoATune()) / sr;
+}
+
+EndpointEvidence endpointDutyAt(double sr, double norm) {
+  EndpointEvidence ev;
+  const double base = declaredInitial(ParameterId::vco_a_pw);
+  const double depth = 1.0;
+  const int frames = 40000;
+
+  // ---- (1) the REFERENCE arm: same state and rate, PWM cable REMOVED, so the duty is the
+  // unmodulated base width (0.5) and the zero crossings are intact. Its only job is to measure the
+  // period independently of the declared pitch law above.
+  {
+    DeviceStateV1 st = pulseState(depth);
+    EngineHarness h;
+    h.reserve(static_cast<std::size_t>(frames));
+    if (!h.load(st, sr) || !h.render(frames)) return ev;
+    const auto e = risingEdges(h.dryA());
+    if (e.size() >= 3 && e.back() > e.front()) {
+      ev.theReferenceSquareWaveWasFound = true;
+      ev.wMeasured = double(e.size() - 1) / double(e.back() - e.front());
+    }
+    ev.wDeclared = declaredStep(h, sr);
+    ev.phaseAnchorAgrees = ev.theReferenceSquareWaveWasFound && ev.wDeclared > 0.0 &&
+                           std::fabs(ev.wMeasured - ev.wDeclared) / ev.wDeclared < 1e-4;
+  }
+
+  // ---- (2) the ENDPOINT arm.
+  DeviceStateV1 st = pulseState(depth);
+  slot(st, ParameterId::joystick_x) = norm;
+  setCable(st, JackId::joystick_x_out, JackId::vco_a_pwm_in);
+  EngineHarness h;
+  h.reserve(static_cast<std::size_t>(frames));
+  if (!h.load(st, sr)) return ev;
+  std::vector<double> cv, consumed, used, knob;
+  cv.reserve(static_cast<std::size_t>(frames));
+  consumed.reserve(static_cast<std::size_t>(frames));
+  used.reserve(static_cast<std::size_t>(frames));
+  knob.reserve(static_cast<std::size_t>(frames));
+  if (!h.renderSampled(frames, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
+        cv.push_back(rt.controlVoltageAt(JackId::joystick_x_out));
+        consumed.push_back(rt.vcoAPwmCv());
+        used.push_back(rt.vcoAEffectiveDuty());
+        knob.push_back(rt.vcoAPwm());
+      })) {
+    return ev;
+  }
+  ev.rendered = true;
+
+  // Per-frame: the sink saw the value the graph published THIS frame, and the duty it applied is the
+  // ruled law evaluated on the sink's OWN input. The independent duty uses the knob's own reported
+  // depth, so it never calls Vco::effectiveDuty() to check Vco::effectiveDuty().
+  bool saw = true, law = true;
+  std::size_t settled = 0;
+  for (std::size_t i = 0; i < cv.size(); ++i) {
+    if (consumed[i] != cv[i]) saw = false;
+    const double dIndep = pwmTransfer(base, knob[i], consumed[i]);
+    if (std::fabs(used[i] - dIndep) > 1e-12) law = false;
+    if (settled == 0 && i > 0 && std::fabs(knob[i] - depth) < 1e-9) settled = i;
+  }
+  ev.consumerSawThePublishedCv = saw;
+  ev.consumerDutyIsTheRuledLaw = law;
+  ev.knobDepthReachedItsSetting = settled > 0;
+  if (settled == 0) return ev;
+
+  ev.windowStart = static_cast<int>(settled);
+  ev.windowFrames = static_cast<int>(std::ceil(3.0 / ev.wDeclared));
+  if (ev.windowStart + ev.windowFrames >= frames) return ev;
+
+  const double d = used[static_cast<std::size_t>(ev.windowStart)];
+  const double indep = pwmTransfer(base, knob[static_cast<std::size_t>(ev.windowStart)],
+                                  consumed[static_cast<std::size_t>(ev.windowStart)]);
+  ev.dConsumer = d;
+  ev.dSource = indep;
+  ev.mirrorDuty = 1.0 - d;
+  ev.wrongValueDuty = (d < 0.5) ? 0.05 : 0.95;
+  ev.nearbyClampDuty = (d < 0.5) ? 0.002 : 0.998;
+  // The clamp is only exercised if the RAW (pre-clamp) duty is strictly outside the window.
+  const double rawDuty =
+      base + knob[static_cast<std::size_t>(ev.windowStart)] *
+                 consumed[static_cast<std::size_t>(ev.windowStart)] /
+                 lunar24::core::Vco::kPwmCvFullScaleVolts;
+  ev.rawDutyIsOutsideTheClampWindow =
+      rawDuty < lunar24::core::Vco::kPwDutyMin || rawDuty > lunar24::core::Vco::kPwDutyMax;
+
+  const std::vector<double>& a = h.dryA();
+  double dcA = 0.0;
+  int dcN = 0;
+  for (int k = 0; k < ev.windowFrames; ++k) {
+    const std::size_t i = static_cast<std::size_t>(ev.windowStart + k);
+    const double p = double(i + 1) * ev.wDeclared;  // the product's own frame-0 phase convention
+    const double actual = a[i];
+    // The reference is driven by the INDEPENDENT duty for THIS frame — base width, the depth the
+    // knob reports, and the CV the graph published this frame — NOT by the consumer's readback. If
+    // it were driven by the readback, a consumer that lagged or ignored the source would drag the
+    // reference along with it and the comparison would agree with its own defect.
+    const double dIndepFrame = pwmTransfer(base, knob[i], cv[i]);
+    auto res = [&](double dd, double phase, bool corrected) {
+      return std::fabs(actual - 0.5 * twoEdgeSwing(phase, dd, ev.wDeclared, corrected));
+    };
+    ev.rExact = std::max(ev.rExact, res(dIndepFrame, p, true));
+    ev.rOneStepOff = std::max(ev.rOneStepOff, res(d, p + ev.wDeclared, true));
+    ev.rSkippedPwm = std::max(ev.rSkippedPwm, res(base, p, true));
+    ev.rWrongValue = std::max(ev.rWrongValue, res(ev.wrongValueDuty, p, true));
+    ev.rWrongSide = std::max(ev.rWrongSide, res(ev.mirrorDuty, p, true));
+    ev.rNearbyClamp = std::max(ev.rNearbyClamp, res(ev.nearbyClampDuty, p, true));
+    dcA += actual;
+    ++dcN;
+  }
+  ev.dcActual = dcN ? dcA / double(dcN) : 0.0;
+  // REPORT ONLY, never a criterion: the two-rail mean is 2*duty-1 (the BLEP residuals integrate to
+  // zero over a cycle), in device units. It is printed beside the measured DC so the endpoint's
+  // level is visible, but no exact duty is ever back-derived from a finite-window mean here.
+  ev.dcReference = 0.5 * (2.0 * d - 1.0);
+  return ev;
+}
+
 constexpr double kRate44k1 = 44100.0;
 constexpr double kRate48k = 48000.0;
 constexpr double kRate88k2 = 88200.0;
@@ -294,12 +521,53 @@ void changing_cv_tracks_the_ruled_transfer() {
 // (2) DC CV law at four rates: joystick.x_out -> vco_a.pwm_in, all five norm points, plus input
 //     INVERSION (negative CV lowers duty) and SATURATION (both clamp endpoints).
 // =============================================================================================
+// Does the emitted waveform really carry this endpoint, judged on the AUDIO? Everything the ruling
+// asked for in one place: the independent duty, the actual consumer value, and the fixed-phase
+// two-edge reconciliation against a set of rejected neighbours.
+bool endpointIsCarriedByTheAudio(const EndpointEvidence& ev) {
+  return ev.rendered && ev.consumerSawThePublishedCv && ev.consumerDutyIsTheRuledLaw &&
+         ev.knobDepthReachedItsSetting && ev.rawDutyIsOutsideTheClampWindow &&
+         ev.theReferenceSquareWaveWasFound && ev.phaseAnchorAgrees &&
+         std::fabs(ev.dConsumer - ev.dSource) <= 1e-12 &&
+         ev.rExact <= kEndpointResidualTol &&       // the emitted waveform IS the endpoint's
+         ev.rSkippedPwm > kEndpointMargin &&        // ... and NOT the unmodulated base
+         ev.rWrongValue > kEndpointMargin &&        // ... and NOT a wrong clamp value
+         ev.rWrongSide > kEndpointMargin &&         // ... and NOT the mirror endpoint
+         ev.rNearbyClamp > kEndpointResidualTol &&  // ... and NOT the nearest mis-clamp
+         ev.rOneStepOff > kEndpointResidualTol;     // the fixed phase anchor is load-bearing
+}
+
 bool dcCvLawHoldsAt(double sr, const char* tag) {
   const double base = declaredInitial(ParameterId::vco_a_pw);
   const double tol = oneSampleDutyTol(sr);
   const double kNorm[5] = {0.0, 0.25, 0.5, 0.75, 1.0};
   bool all = true;
   for (int i = 0; i < 5; ++i) {
+    if (kNorm[i] <= 0.0 || kNorm[i] >= 1.0) {
+      // The two CLAMP ENDPOINTS: the zero-crossing estimator above has no edges to count here, so
+      // they are judged by the fixed-phase two-edge reference instead. The intermediate norms below
+      // keep their existing, still-discriminating edge-count observation.
+      const EndpointEvidence ev = endpointDutyAt(sr, kNorm[i]);
+      const bool ok = endpointIsCarriedByTheAudio(ev);
+      std::printf(
+          "  dc-cv %-4s norm=%.2f ENDPOINT used=%.9f indep=%.9f (mirror %.3f, wrong %.2f, near "
+          "%.3f) w=%.9f/%.9f | exact=%.3e stepOff=%.3e skipped=%.3e wrongVal=%.3e side=%.3e "
+          "near=%.3e | dc=%.6f ref=%.6f | win=%d@%d rawsOfWindow=%d\n",
+          tag, kNorm[i], ev.dConsumer, ev.dSource, ev.mirrorDuty, ev.wrongValueDuty,
+          ev.nearbyClampDuty, ev.wDeclared, ev.wMeasured, ev.rExact, ev.rOneStepOff, ev.rSkippedPwm,
+          ev.rWrongValue, ev.rWrongSide, ev.rNearbyClamp, ev.dcActual, ev.dcReference,
+          ev.windowFrames, ev.windowStart, ev.rawDutyIsOutsideTheClampWindow ? 1 : 0);
+      if (!ok) {
+        all = false;
+        std::printf("  dc-cv %-4s norm=%.2f ENDPOINT REJECTED (rendered=%d saw=%d law=%d knob=%d "
+                    "rawOutside=%d refFound=%d anchor=%d)\n",
+                    tag, kNorm[i], ev.rendered ? 1 : 0, ev.consumerSawThePublishedCv ? 1 : 0,
+                    ev.consumerDutyIsTheRuledLaw ? 1 : 0, ev.knobDepthReachedItsSetting ? 1 : 0,
+                    ev.rawDutyIsOutsideTheClampWindow ? 1 : 0,
+                    ev.theReferenceSquareWaveWasFound ? 1 : 0, ev.phaseAnchorAgrees ? 1 : 0);
+      }
+      continue;
+    }
     DeviceStateV1 st = pulseState(1.0);
     slot(st, ParameterId::joystick_x) = kNorm[i];
     setCable(st, JackId::joystick_x_out, JackId::vco_a_pwm_in);
@@ -328,30 +596,49 @@ void dc_cv_law_and_inversion_and_saturation() {
   CHECK(dcCvLawHolds88k2);
   CHECK(dcCvLawHolds96k);
 
+  // ---------------------------------------------------------------------------------------------
+  // INVERSION and SATURATION, judged on the AUDIO at the two clamp endpoints. These used to read
+  // the duty off zero crossings; at duty 0.001 / 0.999 there are none left to read (see the
+  // instrument header above), so each statement is now made against the fixed-phase two-edge
+  // reference instead — and made STRONGER, because "the emitted waveform is the 0.001 waveform and
+  // is not the 0.5 / 0.05 / 0.999 / 0.002 waveform" says more than "some duty number is smaller
+  // than another".
+  // ---------------------------------------------------------------------------------------------
   const double sr = kRate48k;
   const double base = declaredInitial(ParameterId::vco_a_pw);
-  const double tol = oneSampleDutyTol(sr);
+  const EndpointEvidence low = endpointDutyAt(sr, 0.0);   // -5 V -> raw 0.0001, clamped to 0.001
+  const EndpointEvidence high = endpointDutyAt(sr, 1.0);  // +5 V -> raw 0.9999, clamped to 0.999
+  std::printf(
+      "  dc-cv inversion/saturation (audio): -5V duty=%.9f dc=%.6f | base=%.6f | +5V duty=%.9f "
+      "dc=%.6f (clamp window %.3f/%.3f)\n",
+      low.dConsumer, low.dcActual, base, high.dConsumer, high.dcActual,
+      lunar24::core::Vco::kPwDutyMin, lunar24::core::Vco::kPwDutyMax);
 
-  auto dutyAtVolts = [&](double norm) {
-    DeviceStateV1 st = pulseState(1.0);
-    slot(st, ParameterId::joystick_x) = norm;
-    setCable(st, JackId::joystick_x_out, JackId::vco_a_pwm_in);
-    EngineHarness h;
-    h.reserve(20000);
-    if (!h.load(st, sr) || !h.render(20000)) return -1.0;
-    return meanAudioDuty(h.dryA());
-  };
-  const double lowDuty = dutyAtVolts(0.0);   // -5 V
-  const double highDuty = dutyAtVolts(1.0);  // +5 V
-  std::printf("  dc-cv inversion/saturation: -5V=%.6f base=%.6f +5V=%.6f (clamps 0.001/0.999)\n",
-              lowDuty, base, highDuty);
-
-  const bool negativeCvLowersDuty = lowDuty >= 0.0 && lowDuty < base - 0.01;
+  // Negative CV LOWERS the duty: the emitted waveform is the low endpoint's, and it is neither the
+  // unmodulated base width nor the mirror endpoint.
+  const bool negativeCvLowersDuty = endpointIsCarriedByTheAudio(low) &&
+                                    low.dConsumer < base - 0.01 && low.rSkippedPwm > kEndpointMargin;
   CHECK(negativeCvLowersDuty);
-  const bool positiveCvSaturatesAtDutyMax = highDuty > 0.0 && std::fabs(highDuty - 0.999) <= tol;
+  // Positive CV SATURATES at the top of the clamp window.
+  const bool positiveCvSaturatesAtDutyMax = endpointIsCarriedByTheAudio(high) &&
+                                            std::fabs(high.dConsumer - 0.999) <= 1e-9 &&
+                                            high.rawDutyIsOutsideTheClampWindow;
   CHECK(positiveCvSaturatesAtDutyMax);
-  const bool negativeCvSaturatesAtDutyMin = lowDuty >= 0.0 && std::fabs(lowDuty - 0.001) <= tol;
+  // Negative CV SATURATES at the bottom of the clamp window.
+  const bool negativeCvSaturatesAtDutyMin = endpointIsCarriedByTheAudio(low) &&
+                                            std::fabs(low.dConsumer - 0.001) <= 1e-9 &&
+                                            low.rawDutyIsOutsideTheClampWindow;
   CHECK(negativeCvSaturatesAtDutyMin);
+  // The endpoints are the CLAMPED values, not whatever the raw transfer happened to land on: both
+  // raws sit strictly outside the window, which is what makes the two checks above about the clamp.
+  const bool bothRawsFallOutsideTheClampWindow =
+      low.rawDutyIsOutsideTheClampWindow && high.rawDutyIsOutsideTheClampWindow;
+  CHECK(bothRawsFallOutsideTheClampWindow);
+  // The two endpoints are genuinely different waveforms, so neither check can pass by accident.
+  const bool theTwoEndpointsAreNotTheSameWaveform = low.rExact <= kEndpointResidualTol &&
+                                                    high.rExact <= kEndpointResidualTol &&
+                                                    std::fabs(low.dcActual - high.dcActual) > 0.5;
+  CHECK(theTwoEndpointsAreNotTheSameWaveform);
 }
 
 // =============================================================================================

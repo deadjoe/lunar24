@@ -407,6 +407,73 @@ The gate still measures a **frozen-duty** per-cell approximation; the pipeline m
 reproducible from the head, it does not widen what the verdict covers. The 12 pre-existing
 `--require-full` coverage gaps are **unchanged and still listed separately**.
 
+---
+
+## 10. THE S0 ENDPOINT CRITERIA REVISION (ruled by @Codex msg `ce80e516`, option (a))
+
+### 10.1 Why the old observation method failed
+
+The S0 PWM acceptance test measured the duty the VCO actually consumed by counting **zero crossings**
+in the rendered pulse and taking their fraction. That method is only valid while the pulse still has
+two edges *straddling zero*. With the S3 correction in place the endpoints `duty = 0.001 / 0.999`
+clamp to a pulse so narrow that it can lie entirely on one side of zero: there is no crossing left to
+count, the estimator returns the constant `-1.0000`, and the test failed on a **correct** product.
+
+That is a defect in the observation, not in the product — and it also invalidated the *reason* the
+old duty guard used to be called necessary, since "no zero crossing" was being read as "PWM not
+consumed". The intermediate-duty observations (norms 0.25 / 0.50 / 0.75), which the crossing
+estimator measured correctly, are **retained unchanged**.
+
+### 10.2 Before / after, for the seven checks that changed
+
+| check | BEFORE (retired zero-crossing estimator) | AFTER (fixed-phase two-edge reference) |
+| --- | --- | --- |
+| `dcCvLawHolds44k1` | `got=-1.0000 want=0.0010 tol=0.0085` (norm 0.00) and `got=-1.0000 want=0.9990` (norm 1.00) | `used=0.001000000 indep=0.001000000`, residual `1.749e-12` vs tol `0.02`; norm 1.00 gives `0.999000000` |
+| `dcCvLawHolds48k` | `got=-1.0000 want=0.0010 tol=0.0079` / `got=-1.0000 want=0.9990` | `used=indep=0.001000000`, residual `1.015e-12` |
+| `dcCvLawHolds88k2` | `got=-1.0000 want=0.0010 tol=0.0047` / `… 0.9990` | `used=indep=0.001000000`, residual `5.972e-12` (norm 1.00: `8.779e-12`) |
+| `dcCvLawHolds96k` | `got=-1.0000 want=0.0010 tol=0.0044` / `… 0.9990` | `used=indep=0.001000000`, residual `5.750e-12` |
+| `negativeCvLowersDuty` | `-5V=-1.000000 base=0.500000` — the inverted side read as `-1` | `-5V duty=0.001000000 dc=-0.499001` vs `ref=-0.499000` |
+| `positiveCvSaturatesAtDutyMax` | `+5V=-1.000000` — saturation invisible | `+5V duty=0.999000000 dc=0.499001` vs `ref=0.499000` |
+| `negativeCvSaturatesAtDutyMin` | same `-1.000000`, indistinguishable from the mirror endpoint | `-5V duty=0.001000000`, distinct from `0.999000000` by the full window |
+
+The measured separation across all four rates is `1.0e-12 … 8.8e-12` **device units** against a
+tolerance of `0.02` — double round-off, four orders of margin. The rejected neighbours are printed
+per cell and sit at `1.000` (`skipped` PWM), `1.000` (a wrong clamp value), `1.000` (the mirror
+endpoint) and `0.158 … 0.388` (the nearest plausible mis-clamp), against a `0.10` margin.
+
+### 10.3 The seven requirements, mapped to where each is now asserted
+
+| # | requirement | where |
+| --- | --- | --- |
+| 1 | the clamped duty computed **independently** from known basePW, depth and the frame's actual graph CV | `EndpointEvidence::indep` — recomputed from `basePW`, `depth` and the per-frame captured CV, never read back from the DSP |
+| 2 | check the **actual consumer** value | `used` — sampled at the point the PWM sink reads it, the same frame it is published |
+| 3 | an **independent two-edge output reference** reconciled at a **fixed phase** against the real DRY sequence | `exact` — a longhand two-edge model at the pinned origin phase, no free parameter; `stepOff` is the same comparison one step off, printed as the control |
+| 4 | coverage of both sides, ±saturation, **no cable**, and `depth0` | norms `0.00` and `1.00` at 44k1/48k/88k2/96k (both sides, both saturation ends); `restore:` uncabled duties; the S0 `depth0` cells |
+| 5 | readback must **not** stand in for audio evidence | the audio is the object of record (`dc=±0.499001` measured on the rendered signal); the readback is printed beside it as corroboration only |
+| 6 | the endpoints must distinguish `0.001`/`0.999` from a **wrong value** or **skipped PWM** | `wrongVal=1.000`, `skipped=1.000`, `side=1.000` (mirror endpoint), `near=0.158…0.388` — each a separate printed discriminator |
+| 7 | retain the existing discriminating **intermediate-duty** observations | `dcCvLawHolds*` at norms 0.25/0.50/0.75, unchanged in method and threshold |
+
+### 10.4 Negative controls — the new criteria really do bite
+
+`report/gh19-s3-pulse-product/s0_endpoint_negative_controls.txt` (full FAIL lists). Under the **new**
+criteria the three named controls the ruling requires now trip, each on the checks that carry the
+endpoint claim:
+
+| control | failures | representative named checks |
+| --- | --- | --- |
+| `acc-missing-pwm-consumer` | 23 | `dcCvLawHolds*`, `positiveCvSaturatesAtDutyMax`, `negativeCvSaturatesAtDutyMin`, `bothRawsFallOutsideTheClampWindow`, `theTwoEndpointsAreNotTheSameWaveform` |
+| `acc-endpoint-inverted-pwm-polarity` | 17 | all four `dcCvLawHolds*`, `negativeCvLowersDuty`, `positiveCvSaturatesAtDutyMax`, `negativeCvSaturatesAtDutyMin` |
+| `acc-cv-one-sample-late` | 9 | `dcCvLawHolds*`, `negativeCvLowersDuty`, `positiveCvSaturatesAtDutyMax`, `negativeCvSaturatesAtDutyMin` |
+
+`readback` alone is not accepted as the sound evidence for these cells: the controls above are
+rejected on the **audio** assertions, and the independent-reference row is what carries the endpoint.
+
+The remaining S0 assertions are unchanged. This is a test revision required by the S3 sound change
+and belongs to this slice's regression repair; the old test and its failure record are kept as the
+**historical evidence of the uncorrected waveform**, not deleted.
+
+---
+
 ## 11. EVIDENCE FILES
 
 | file | what it is |
@@ -425,5 +492,7 @@ reproducible from the head, it does not widen what the verdict covers. The 12 pr
 | `report/gh19-s3-pulse-product/pipeline_mutant_run.txt` | the same pipeline on the bypass-correction mutant (rc 1, `ACCEPT-FAIL-IMPROVEMENT`, `verdict=RED`) |
 | `tools/run_gh19_s3_pulse_pipeline.py` | the slow pipeline (probe → analyze → reconcile → 72-cell gate) |
 | `tools/run_gh19_s3_pulse_pipeline_mutant.py` | the pipeline's rejection self-test |
+| `report/gh19-s3-pulse-product/s0_acceptance_run.txt` | the S0 acceptance test's own output (84 checks OK, rc 0) |
+| `report/gh19-s3-pulse-product/s0_endpoint_negative_controls.txt` | the three S0 endpoint controls' full FAIL lists under the new criteria |
 | `report/gh19-s3-pulse-product/product_acceptance_run.txt` | the CMake-built acceptance test's own output (122 checks OK, rc 0) |
 | `tests/host/test_gh19_s3_pulse_product_acceptance.cpp` | the product acceptance surface (122 checks) |
