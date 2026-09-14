@@ -1,0 +1,167 @@
+# GH#19 S3 (task #119) — PINNED PRODUCTION ACCEPTANCE CRITERIA for the pulse two-edge correction.
+#
+# This file is the EXPECTATION. tools/gh19_s3_pulse_acceptance.py reads it and never writes it. Two
+# independently produced artifacts are cross-checked against it, so neither the criteria nor a run
+# can quietly shrink the matrix:
+#   * the probe's own declared stimulus plan (gh19_s3_plan.tsv), written by the probe from its
+#     compiled-in axes BEFORE the first render, and
+#   * the `axis` rows below, from which the gate RE-DERIVES the required cell set and requires it to
+#     equal the `cell` enumeration exactly.
+# A cell deleted from the enumeration, or an axis edited to shrink the product, makes the two
+# disagree and the gate REFUSES instead of accepting a smaller matrix.
+#
+# THRESHOLDS (task #119 authorization). Each of the 72 required cells must clear BOTH residual
+# thresholds against the PRESERVED PR44 UNCORRECTED baseline, with the same fixed reference, phase
+# and denominator, no re-fitting and no threshold change. The four guard rows are the ways an
+# improvement can be faked; they are checked on the same cells, in the same pass.
+#
+# The two improvement columns are `dreseffbd_db` (effective full band) and `dres1k5k_db` (100-5000 Hz)
+# from tools/gh19_s3_pulse_delta.py, i.e. candidate MINUS baseline, so an improvement is NEGATIVE.
+#
+# GUARD DERIVATIONS, so a reader can check the numbers rather than trust them:
+#   * max_fund_amp_rel_change / max_scale_rel_change = 1%, the authorized level bound. `fund` is the
+#     analyzer's direct projection at f0 (2|sum v e^{-i p}|/n, raw device units) and `A` its robust
+#     fitted scale; both are per-cell columns of the analyzer matrix, so the gate computes these
+#     ratios from the two arms rather than reading a delta.
+#   * max_dc_abs_delta = 0.0015 device output units, the authorized DC bound, on the same matrix
+#     column (that column IS in device units: a unit pulse fits A = 0.5).
+#   * max_freq_shift_cycles_per_window = 1.0. The correction changes WAVEFORM VALUES only, so a
+#     crossing can move by at most one sample per edge; over a window of `win` frames that bounds
+#     the measurable frequency shift at sr/win, i.e. one cycle per window. This is a DERIVED bound
+#     (sr/win), not a chosen tolerance, and it is applied to the PROBE's own zero-crossing reading
+#     (f0_meas_hz in gh19_s3_scenarios.tsv), which is produced by the product render and not by the
+#     analyzer whose projection the residual columns come from.
+#
+# report_only_cell rows: static cells the probe renders and the report covers in full, but which
+# are NOT in the 6 dB gate (the high-frequency set: they are past the point where a two-point step
+# kernel has a band-limited referent, so an improvement threshold there would not mean what the
+# gate's threshold means). They are pinned here so that the plan reconciliation below is EXACT:
+#   plan_static  ==  {cell rows}  U  {report_only_cell rows}
+# A cell that silently disappears from either group makes that equation fail, so a shrink cannot be
+# absorbed by the other group. The gate never judges these cells; it only requires that they exist
+# and that the analyzer measured them.
+#
+# `report` rows are quantities the gate MUST emit and MUST NOT judge. They exist because the
+# authorization reports the FITTED scale separately from the real fundamental amplitude rather than
+# gating it: `max_fund_amp_rel_change` is a criterion and is applied to the analyzer's `fund` column
+# (the direct projection at f0, device output units), while the fitted broadband scale A is reported.
+# A `report` row that the gate fails to emit is a REFUSAL, so "reported separately" cannot quietly
+# become "not reported".
+#
+# WHY THE FITTED SCALE IS NOT GATED, AND WHY NOTHING IS HIDDEN BY LEAVING IT UNGATED. A is the
+# least-squares scale of the arm's own waveform against the ANALYTIC reference, so it is not a free
+# parameter: `res_db` = 10*log10(||e||^2 / ||A r||^2) with e = x - A r and <e, r> = 0, which makes
+# every one of the residual ratios EXACTLY invariant under a uniform rescale of the arm (a rescale
+# is absorbed by the fit, numerator and denominator moving together). A dB of improvement therefore
+# cannot be manufactured by A drifting. What A drifting CAN do is shrink the numerator slightly
+# relative to a pinned scale, so the gate also computes the improvement with A pinned to the
+# baseline's value -- exact in the unwindowed full band, by the orthogonality identity above -- and
+# reports it as the RECT-band pair named below. Those are report-only because the authorization sets
+# no threshold on them; they are the number a reader needs in order to see how much of each cell's
+# improvement the fit is responsible for.
+#
+# THE PINNED FIGURE CARRIES ITS BAND IN ITS NAME. The closed form is exact only in the unwindowed
+# full band (`res_db`), because that is the band the single fitted A is the least-squares scale in;
+# the gate's own two columns are Hann-weighted band powers of that same fitted reference, and with
+# only one A published per cell the orthogonality does not carry over to them unchanged. So the
+# pinned figure is reported as the RECT-band pair below -- pinned and unpinned in ONE band, which is
+# the comparison that answers "how much of the gain is the fit responsible for" -- and the gate's
+# Hann columns are reported separately, unlabelled as pinned because no exact pinned value for them
+# is derivable and none is claimed. The gate measures and prints the rect-vs-Hann gap it is bridging
+# (`ACCEPT-EVIDENCE band_rect_vs_effbd_max_gap_db`) rather than leaving the reader to assume the two
+# columns are the same measurement.
+criterion	band_1k5k_min_improvement_db	6.0
+criterion	full_band_min_improvement_db	6.0
+criterion	max_dc_abs_delta	0.0015
+criterion	max_freq_shift_cycles_per_window	1.0
+criterion	max_fund_amp_rel_change	0.01
+report	max_abs_fitted_scale_delta
+report	max_pinned_scale_cost_db
+report	worst_band_1k5k_improvement_db
+report	worst_full_band_improvement_db
+report	worst_pinned_scale_rect_full_band_improvement_db
+report	worst_rect_full_band_improvement_db
+axis	sides	a,b
+axis	sample_rates	44100,48000,88200,96000
+axis	frequencies	220,440,880
+axis	duties	0.1,0.5,0.9
+cell	vco_a_pulse_44100_220_pw10
+cell	vco_a_pulse_44100_220_pw50
+cell	vco_a_pulse_44100_220_pw90
+cell	vco_a_pulse_44100_440_pw10
+cell	vco_a_pulse_44100_440_pw50
+cell	vco_a_pulse_44100_440_pw90
+cell	vco_a_pulse_44100_880_pw10
+cell	vco_a_pulse_44100_880_pw50
+cell	vco_a_pulse_44100_880_pw90
+cell	vco_a_pulse_48000_220_pw10
+cell	vco_a_pulse_48000_220_pw50
+cell	vco_a_pulse_48000_220_pw90
+cell	vco_a_pulse_48000_440_pw10
+cell	vco_a_pulse_48000_440_pw50
+cell	vco_a_pulse_48000_440_pw90
+cell	vco_a_pulse_48000_880_pw10
+cell	vco_a_pulse_48000_880_pw50
+cell	vco_a_pulse_48000_880_pw90
+cell	vco_a_pulse_88200_220_pw10
+cell	vco_a_pulse_88200_220_pw50
+cell	vco_a_pulse_88200_220_pw90
+cell	vco_a_pulse_88200_440_pw10
+cell	vco_a_pulse_88200_440_pw50
+cell	vco_a_pulse_88200_440_pw90
+cell	vco_a_pulse_88200_880_pw10
+cell	vco_a_pulse_88200_880_pw50
+cell	vco_a_pulse_88200_880_pw90
+cell	vco_a_pulse_96000_220_pw10
+cell	vco_a_pulse_96000_220_pw50
+cell	vco_a_pulse_96000_220_pw90
+cell	vco_a_pulse_96000_440_pw10
+cell	vco_a_pulse_96000_440_pw50
+cell	vco_a_pulse_96000_440_pw90
+cell	vco_a_pulse_96000_880_pw10
+cell	vco_a_pulse_96000_880_pw50
+cell	vco_a_pulse_96000_880_pw90
+cell	vco_b_pulse_44100_220_pw10
+cell	vco_b_pulse_44100_220_pw50
+cell	vco_b_pulse_44100_220_pw90
+cell	vco_b_pulse_44100_440_pw10
+cell	vco_b_pulse_44100_440_pw50
+cell	vco_b_pulse_44100_440_pw90
+cell	vco_b_pulse_44100_880_pw10
+cell	vco_b_pulse_44100_880_pw50
+cell	vco_b_pulse_44100_880_pw90
+cell	vco_b_pulse_48000_220_pw10
+cell	vco_b_pulse_48000_220_pw50
+cell	vco_b_pulse_48000_220_pw90
+cell	vco_b_pulse_48000_440_pw10
+cell	vco_b_pulse_48000_440_pw50
+cell	vco_b_pulse_48000_440_pw90
+cell	vco_b_pulse_48000_880_pw10
+cell	vco_b_pulse_48000_880_pw50
+cell	vco_b_pulse_48000_880_pw90
+cell	vco_b_pulse_88200_220_pw10
+cell	vco_b_pulse_88200_220_pw50
+cell	vco_b_pulse_88200_220_pw90
+cell	vco_b_pulse_88200_440_pw10
+cell	vco_b_pulse_88200_440_pw50
+cell	vco_b_pulse_88200_440_pw90
+cell	vco_b_pulse_88200_880_pw10
+cell	vco_b_pulse_88200_880_pw50
+cell	vco_b_pulse_88200_880_pw90
+cell	vco_b_pulse_96000_220_pw10
+cell	vco_b_pulse_96000_220_pw50
+cell	vco_b_pulse_96000_220_pw90
+cell	vco_b_pulse_96000_440_pw10
+cell	vco_b_pulse_96000_440_pw50
+cell	vco_b_pulse_96000_440_pw90
+cell	vco_b_pulse_96000_880_pw10
+cell	vco_b_pulse_96000_880_pw50
+cell	vco_b_pulse_96000_880_pw90
+report_only_cell	vco_a_pulsehi_44100_3520_pw10
+report_only_cell	vco_a_pulsehi_44100_3520_pw50
+report_only_cell	vco_a_pulsehi_44100_5000_pw10
+report_only_cell	vco_a_pulsehi_44100_5000_pw50
+report_only_cell	vco_a_pulsehi_96000_3520_pw10
+report_only_cell	vco_a_pulsehi_96000_3520_pw50
+report_only_cell	vco_a_pulsehi_96000_5000_pw10
+report_only_cell	vco_a_pulsehi_96000_5000_pw50
