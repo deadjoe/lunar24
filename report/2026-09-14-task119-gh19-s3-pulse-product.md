@@ -448,7 +448,7 @@ endpoint) and `0.158 … 0.388` (the nearest plausible mis-clamp), against a `0.
 | 1 | the clamped duty computed **independently** from known basePW, depth and the frame's actual graph CV | `EndpointEvidence::indep` — recomputed from `basePW`, `depth` and the per-frame captured CV, never read back from the DSP |
 | 2 | check the **actual consumer** value | `used` — sampled at the point the PWM sink reads it, the same frame it is published |
 | 3 | an **independent two-edge output reference** reconciled at a **fixed phase** against the real DRY sequence | `exact` — a longhand two-edge model at the pinned origin phase, no free parameter; `stepOff` is the same comparison one step off, printed as the control |
-| 4 | coverage of both sides, ±saturation, **no cable**, and `depth0` | norms `0.00` and `1.00` at 44k1/48k/88k2/96k (both sides, both saturation ends); `restore:` uncabled duties; the S0 `depth0` cells |
+| 4 | coverage of both sides, ±saturation, **no cable**, and `depth0` | both sides and both saturation ends by the endpoint cells themselves (norms `0.00` / `1.00` at 44k1/48k/88k2/96k); no cable by `unpluggingThePwmJackRestoresTheRenderBitExactly` and the unpatched-sink assertion (the sink reads exactly 0, duty is the declared base pw); `depth0` by `depthZeroIsStrictlyInert` **with a live moving cable** (`sourceSpan > 5 V`, so inertness is tested against a real stimulus, not a dead source) |
 | 5 | readback must **not** stand in for audio evidence | the audio is the object of record (`dc=±0.499001` measured on the rendered signal); the readback is printed beside it as corroboration only |
 | 6 | the endpoints must distinguish `0.001`/`0.999` from a **wrong value** or **skipped PWM** | `wrongVal=1.000`, `skipped=1.000`, `side=1.000` (mirror endpoint), `near=0.158…0.388` — each a separate printed discriminator |
 | 7 | retain the existing discriminating **intermediate-duty** observations | `dcCvLawHolds*` at norms 0.25/0.50/0.75, unchanged in method and threshold |
@@ -468,13 +468,43 @@ endpoint claim:
 `readback` alone is not accepted as the sound evidence for these cells: the controls above are
 rejected on the **audio** assertions, and the independent-reference row is what carries the endpoint.
 
+DC is reported, never a criterion: `EndpointEvidence::dcReference` (the two-rail mean `2*duty-1`) is printed beside the measured `dcActual` for visibility only, and **no exact duty is back-derived from a finite-window mean** — the criterion is `rExact`, which compares the emitted samples against the independent two-edge reference sample by sample.
+
 The remaining S0 assertions are unchanged. This is a test revision required by the S3 sound change
 and belongs to this slice's regression repair; the old test and its failure record are kept as the
 **historical evidence of the uncorrected waveform**, not deleted.
 
 ---
 
-## 11. EVIDENCE FILES
+## 11. THE FULL REGRESSION, ON THE DELIVERED HEAD
+
+| configuration | tests | result |
+| --- | --- | --- |
+| Release, `ctest --label-exclude slow` | 77 | **77 / 77 passed**, rc 0 |
+| Debug, `ctest --label-exclude slow` | 77 | **77 / 77 passed**, rc 0 |
+| Debug + **ASan/UBSan**, `ctest --label-exclude slow` | 77 | **77 / 77 passed**, rc 0, zero sanitizer reports |
+| Release, `ctest -L slow`, the full label | 13 | **13 / 13 passed**, rc 0, 5249.8 s |
+| &nbsp;&nbsp;of which the two NEW entries | 2 | `gh19_s3_pulse_acceptance` **Passed** 35.87 s, `gh19_s3_pulse_pipeline_mutant` **Passed** 75.43 s |
+| &nbsp;&nbsp;and the four pre-existing GH#19 gates | 4 | `gh19_blamp_acceptance` 1060.50 s, `gh19_schmitt_blamp_acceptance` 1064.71 s, `gh19_classic_saw_acceptance` 1060.21 s, `gh19_hardsync_acceptance` 1061.66 s -- **all passed**, so the production delta did not move the S1 / S2 / S5 baselines |
+| &nbsp;&nbsp;and GH#20 | 2 | `gh20_vcf_probe` 433.26 s, `gh20_vcf_acceptance` 427.04 s -- passed |
+
+`test_gh19_s0_morph_pwm_acceptance` passes in all three configurations. It was the **one red** in the
+first Release run of this slice — 7 / 82, on the retired zero-crossing estimator — and §10 is what
+fixed it. That earlier failure is retained as the historical record of the uncorrected waveform, not
+deleted.
+
+The real host target (`Lunar24Host`) builds in all three configurations. Running
+`tools/generate_registry.py` over the delivered head rewrites `generated/lunar24/registry_ids.hpp`
+and `generated/lunar24/registry.hpp` **byte-identically** (`git diff generated/` is empty), and the
+`registry_regen_zero_diff` test passes — i.e. the production delta did not move the registry or the
+wire. **Local macOS/clang green is not MSVC green**; the four-platform check is the PR-time gate.
+
+The **12 pre-existing `--require-full` coverage gaps remain listed separately and unchanged**; the
+full coverage gate was not touched.
+
+---
+
+## 12. EVIDENCE FILES
 
 | file | what it is |
 | --- | --- |
@@ -492,6 +522,7 @@ and belongs to this slice's regression repair; the old test and its failure reco
 | `report/gh19-s3-pulse-product/pipeline_mutant_run.txt` | the same pipeline on the bypass-correction mutant (rc 1, `ACCEPT-FAIL-IMPROVEMENT`, `verdict=RED`) |
 | `tools/run_gh19_s3_pulse_pipeline.py` | the slow pipeline (probe → analyze → reconcile → 72-cell gate) |
 | `tools/run_gh19_s3_pulse_pipeline_mutant.py` | the pipeline's rejection self-test |
+| `report/gh19-s3-pulse-product/regression.txt` | the full regression's per-configuration and per-gate numbers |
 | `report/gh19-s3-pulse-product/s0_acceptance_run.txt` | the S0 acceptance test's own output (84 checks OK, rc 0) |
 | `report/gh19-s3-pulse-product/s0_endpoint_negative_controls.txt` | the three S0 endpoint controls' full FAIL lists under the new criteria |
 | `report/gh19-s3-pulse-product/product_acceptance_run.txt` | the CMake-built acceptance test's own output (122 checks OK, rc 0) |
