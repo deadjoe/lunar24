@@ -111,7 +111,7 @@ cells continue to be reported in full and are **not** counted into the 72-cell t
 ## 2. THE PRODUCT ACCEPTANCE SURFACE
 
 `tests/host/test_gh19_s3_pulse_product_acceptance.cpp` (registered in `CMakeLists.txt`).
-**119 checks, exit 0** on the current head — built and run through the project's own CMake Release
+**122 checks, exit 0** on the current head — built and run through the project's own CMake Release
 target, not only through the mutant runner's compiler invocation.
 
 Everything runs through the ONE agreed entry — `encode_device_state → decode_device_state →
@@ -170,20 +170,50 @@ fitted check reports (up to 3.9e-8), because the grid search is the limiting fac
 Both numbers and their difference are printed per cell (`origin[...]`), so the reconciliation is
 readable in the run rather than asserted in prose.
 
-**(c) The sync-frame reconciliation is REPORTED, not asserted — and that is deliberate.**
-The test prints the frame the emitted reset landed on against the frame the **published** sync source
-crossed its 5 V gate (measured: divergence at frame 47, source crossing at frame 0). It is not turned
-into a criterion because that offset is derived from a **floating-point threshold crossing** in
-pre-existing product scheduling; pinning it as an integer constant would make a cross-platform
-constant load-bearing on a claim this change does not own (this project has been burned by exactly
-that class of constant before — local macOS/clang green is not MSVC green). The origin anchor in (b)
-already provides the source-frame / phase-advance reconciliation the note asks for, and §4 shows it
-**discriminates**. If the director wants the sync offset asserted anyway, say so and it becomes one
-line — with the portability caveat recorded next to it.
+**(c) The sync-frame reconciliation is ASSERTED, against a reference rebuilt from the published
+source — and the earlier "report-only" form was WRONG.** The first revision of this test derived the
+sync event by *scanning for the first output divergence* and compared it against "the frame the
+published source crossed 5 V", printing a 47-vs-0 mismatch as an incidental observation. That
+comparison had the wrong comparison object: the product's sync sink does not threshold at 5 V. It is
+a **hysteresis latch with first-sample priming** (`core/include/lunar24/core/sink_interpret.h:68–96`):
+the low state rises only at `threshold + hysteresis` and then holds until it falls below
+`threshold − hysteresis`, and `st.primed` means the **very first sample can only prime** — it can
+never emit an edge. This jack's own descriptor declares 5 V / 0.2 V, so the rise is at **5.2 V** and
+the hold floor is **4.8 V**. Deriving the event by looking at where the *output* first disagrees is
+also circular: it reads the divergence back out of the thing under test.
+
+The criterion is therefore rebuilt from the source, in three independent steps:
+
+1. `find_jack(vco_a_sync_in)` fetches the jack's **own declared** `gateThresholdVolts` /
+   `hysteresisVolts` and the test first requires that they describe a real hysteresis gate
+   (`thr > 0 && hyst > 0`) — if the descriptor is not one, the prediction is not attempted and the
+   check fails rather than silently passing on a degenerate reference.
+2. From the **published** sync volts alone, a fresh `high`/`prev`/`primed` state machine replays the
+   same law and yields `predictedEdgeFrame`. No output is consulted.
+3. At that frame, and only there, the reset is checked on the audio: `aSync[predicted] ==
+   0.5 * aFree[predicted]` (the half-amplitude restart), the jump magnitude `> 0.1` (so the reset is
+   sized on the **emitted** signal, not the raw shape), every frame **before** the predicted frame is
+   bit-identical between the synced and free runs, the **first** divergence is exactly the predicted
+   frame, and the post-edge divergence remains `> 0.1` (the slave genuinely restarted rather than
+   glitched once).
+
+Measured: `thr=5.0000 hyst=0.2000`, holds above `4.8000`, frame 0 primes, the hysteresis reference
+raises its first rising edge at **frame 47** — and the first output divergence is **also frame 47**,
+with `sync=0.250000000000` against `0.5*free=0.250000000000`. The 5 V reading was the error; the
+frame-47 agreement is now a prediction confirmed at the frame it named, not a scan.
+
+**Record correction:** the test wires `lfo_a_cv_out` into `vco_a_sync_in`. An earlier note of mine
+wrote `lfo_b`; that was wrong (`lfo_b_cv_out` belongs to a different allocator test). The `lfo_a`
+record under §7 is the accurate one.
+
+The removed scan is replaced by an isolated mutation, `sync-consumer-one-frame-late` (§4), which
+delays the *detected* edge by one frame while leaving detection otherwise intact; it is rejected by
+name on `theResetLandsOnTheFrameTheHysteresisReferencePredicted` — i.e. the criterion really is
+pinned to the frame the hysteresis law predicts, not merely to "some divergence happened".
 
 ---
 
-## 4. THE ISOLATED-PRODUCTION MUTANT MATRIX — 9 mutations, 9 RED, 0 INVALID
+## 4. THE ISOLATED-PRODUCTION MUTANT MATRIX — 10 mutations, 10 RED, 0 INVALID
 
 `tools/run_gh19_s3_pulse_mutants.py`. Every load-bearing claim is re-run against a production
 **header** mutated away from it, in an **isolated shadow include tree**: the committed tree is never
@@ -197,25 +227,26 @@ written to. What counts as RED is defined so that the two failure surfaces stay 
 
 | mutation | file | named check it must trip | result |
 | --- | --- | --- | --- |
-| bypass-correction | `pulse_blep_kernel.h` | `theProductPulseEqualsTheTwoEdgeFormula` | RED 29/119 |
-| wrong-sign | `pulse_blep_kernel.h` | `theProductPulseIsNotTheWrongSignVariant` | RED 25/119 |
-| wrong-position | `pulse_blep_kernel.h` | `theProductPulseIsNotTheWrongEdgePositionVariant` | RED 10/119 |
-| restore-duty-hard-switch | `pulse_blep_kernel.h` | `theProductPulseIsNotTheWithdrawnDutyGuardedVariant` | RED 15/119 |
-| remove-width-cap | `pulse_blep_kernel.h` | `theProductPulseIsNotTheUncappedKernelVariant` | RED 11/119 |
-| pwm-one-frame-late | `machine_runtime.h` | `thePwmSinkConsumesTheSameFramesPublishedCv` | RED 2/119 |
-| block-boundary-graph-drive | `device_adapter.h` | `irregularBlocksReproduceTheUniformPartitionExactly` | RED 1/119 |
-| phase-reset-per-sample | `machine_runtime.h` | `thePartitionStimulusIsChanging` | RED 22/118 |
-| **output-one-frame-late** | `device_adapter.h` | **`theEmittedOriginPhaseIsTheProductsOwnPhaseAdvance`** | **RED 9/119** |
+| bypass-correction | `pulse_blep_kernel.h` | `theProductPulseEqualsTheTwoEdgeFormula` | RED 31/122 |
+| wrong-sign | `pulse_blep_kernel.h` | `theProductPulseIsNotTheWrongSignVariant` | RED 25/122 |
+| wrong-position | `pulse_blep_kernel.h` | `theProductPulseIsNotTheWrongEdgePositionVariant` | RED 10/122 |
+| restore-duty-hard-switch | `pulse_blep_kernel.h` | `theProductPulseIsNotTheWithdrawnDutyGuardedVariant` | RED 15/122 |
+| remove-width-cap | `pulse_blep_kernel.h` | `theProductPulseIsNotTheUncappedKernelVariant` | RED 11/122 |
+| pwm-one-frame-late | `machine_runtime.h` | `thePwmSinkConsumesTheSameFramesPublishedCv` | RED 2/122 |
+| block-boundary-graph-drive | `device_adapter.h` | `irregularBlocksReproduceTheUniformPartitionExactly` | RED 1/122 |
+| phase-reset-per-sample | `machine_runtime.h` | `thePartitionStimulusIsChanging` | RED 22/121 |
+| **output-one-frame-late** | `device_adapter.h` | **`theEmittedOriginPhaseIsTheProductsOwnPhaseAdvance`** | **RED 12/122** |
+| **sync-consumer-one-frame-late** | `machine_runtime.h` | **`theResetLandsOnTheFrameTheHysteresisReferencePredicted`** | **RED 3/122** |
 
-(`phase-reset-per-sample` reports 118 rather than 119 because the frozen capture it produces never
+(`phase-reset-per-sample` reports 121 rather than 122 because the frozen capture it produces never
 reaches the edge-index check, which is skipped when fewer than 8 edges are measured — an expected
 consequence of that mutation, not a truncated run: the summary line is still complete.)
 
 A mutant tripping *more* checks than its target is normal and does not weaken the classification —
 what matters is that each mutation trips **its own** named check. The converse is the interesting
-one, and it is exactly the ninth mutation's result below.
+one, and it is exactly the `output-one-frame-late` result below.
 
-### 4.1 The ninth mutation is the demonstration the note asked for
+### 4.1 `output-one-frame-late` is the demonstration the note asked for
 
 `output-one-frame-late` holds the product's output back one frame at its **real output boundary**
 (`DeviceAdapter::renderBlock`, a per-adapter latch, so the delay persists across the engine's block
@@ -227,7 +258,7 @@ calls). It is the one mutation here that **a phase fit cannot see**, and the run
 | one frame late | **0.000000000** (the fit slid one whole step left) | **−step**, exactly | **0.197 … 0.750** | **still GREEN** |
 
 So a uniformly late emission passes the fitted check — by construction, not by accident — and is
-rejected **only** by the origin anchor: in that arm all **9** failures are
+rejected **only** by the origin anchor: in that arm all **12** failures are
 `theEmittedOriginPhaseIsTheProductsOwnPhaseAdvance` (5 in-domain + 4 capped cells) and
 `theProductPulseEqualsTheTwoEdgeFormula` does not appear among the failures at all. That is the
 concrete evidence that the absolute-timing criterion is not decorative.
@@ -276,8 +307,8 @@ the 123-line historical preamble was condensed to the final formula + the two ap
 boundaries, with pointers to this report and to `report/2026-09-14-task118-gh19-s3-pulse-aa.md` for
 the history. The full mutant matrix was **re-run on the slimmed header** and reproduced the run on
 the un-slimmed one exactly (same arms, same named checks, same failure counts, 0 INVALID, reference
-GREEN); the ninth mutation and the origin anchor were added afterwards and the matrix re-run again,
-which is the 9/9 result in §4.
+GREEN); the one-frame-late mutants and the origin anchor were added afterwards and the matrix
+re-run again, which is the 10/10 result in §4.
 
 ---
 
@@ -293,7 +324,90 @@ which is the 9/9 result in §4.
 
 ---
 
-## 9. EVIDENCE FILES
+## 9. THE VERDICT IS NOW PRODUCED FROM THE CURRENT HEAD, NOT READ FROM A CHECKED-IN FILE
+
+The gap this section closes was real and stated plainly: `CMakeLists.txt` registered only the
+**measurement probe** (`gh19_s3_pulse_probe`, label `slow`) and the product acceptance test. Nothing
+in the repository's build or CI ever invoked `tools/gh19_s3_pulse_acceptance.py`. The 72-cell
+verdict lived in a **checked-in** `cand_report.txt` / `deltas.tsv` pair, so "the gate passes" was a
+statement about a file, and a later edit to the kernel would not have moved it. The 9-arm mutant
+runner did not cover this either: it runs the C++ product assertions, not the gate.
+
+### 9.1 `tools/run_gh19_s3_pulse_pipeline.py` — the slow pipeline
+
+One driver, five steps, every artifact regenerated from the tree under test:
+
+0. **Baseline pin.** `--baseline-arm/gh19_s3_scenarios.tsv` is sha256-checked against
+   `BASELINE_SCENARIOS_SHA256 = f3075e7e…`; any drift prints `REFUSE BASELINE-PIN` and exits **4**.
+   The historical baseline is a fixed reference the candidate is *compared against*, so it may not
+   silently move with the tree.
+1. **Fresh probe** → the candidate arm's scenarios + plan.
+2. **Fresh analyzer** (`--align-check --self-check --taps 2001`) → the candidate report.
+3. **Fresh delta** against the pinned base report and the pinned expected-cell manifest.
+4. **Gate**, handed the **fresh** plan and the **fresh** report, its stdout echoed.
+
+`--cand-report` is deliberately **not** an argument of the driver: there is no way to ask it to judge
+a checked-in file, so "the gate is judging committed output" is not a reachable state.
+
+Evidence, from the current head (`report/gh19-s3-pulse-product/pipeline_run.txt`):
+
+```
+ACCEPT-PIPELINE baseline_pin=OK sha256=f3075e7ea021953a487ada97b9c8249ec4466c9ad47d0cb0ea3078f2a79d61bc
+ACCEPT-PIPELINE fresh_arm=/tmp/gh19s3-pipe-ref/cand plan_sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811
+ACCEPT-PIPELINE fresh_report=… sha256=27589bd045549b366a9c2b29424cacc24bfef1629b51b2c9cbfee9ddf12d35fc
+ACCEPT-PIPELINE deltas=… sha256=ea3755033164d37fbbcb72b2b1ca096b9805db0291eef332a322698202f6a12b
+ACCEPT-GATE verdict=PASS refusals=0 failures=0
+NEGCTL-GATE ok=22 bad=0 controls=22
+NEGCTL-GATE verdict=ALL-HIT
+```
+
+The freshly rendered report's sha256 is **identical** to the committed `cand_report.txt` — the
+committed artifact is corroborated by a re-render, not merely trusted. The 22 refusal controls are
+run inside the same pipeline invocation on the same artifacts.
+
+### 9.2 `tools/run_gh19_s3_pulse_pipeline_mutant.py` — the pipeline must be able to say no
+
+A gate that only ever says PASS is indistinguishable from one that cannot fail. This runner compiles
+the probe **twice** — same source, same compiler, same flags — differing only in a shadow include
+root holding one mutated header, and puts **each** through the same driver CMake invokes. The
+mutation is `bypass-correction`: `polyblepPulseCorrection()` returns `0.0` immediately, so the
+product emits the naive pulse. That is exactly the thing this slice exists to prevent.
+
+Grading separates the three outcomes that are always in danger of being conflated:
+
+* the **reference** arm must exit **0** — otherwise a red mutant would only prove the pipeline broke;
+* the **mutant** arm must exit **exactly 1** (the gate's RED);
+* a refusal (exit **4**) is **explicitly not** a catch: it means the artifacts failed an input check
+  and *no judgement was issued*. It is rejected as evidence by the runner's own grading;
+* the mutant must print the **named** `ACCEPT-FAIL-IMPROVEMENT` and `ACCEPT-GATE verdict=RED` —
+  "non-zero exit" alone would pass on any other failure.
+
+The mutation anchor is verified to occur **exactly once** before anything is compiled: a stale anchor
+would stage a pristine "mutant" that passes, which would read as "the pipeline cannot see this
+defect" when in fact the defect was never applied.
+
+Result (`report/gh19-s3-pulse-product/pipeline_mutant_run.txt`):
+
+```
+[reference         ] pipeline rc=0  named_improvement_failure=False  verdict_red=False
+[bypass-correction ] pipeline rc=1  named_improvement_failure=True   verdict_red=True
+ACCEPT-FAIL-IMPROVEMENT vco_a_pulse_44100_220_pw10: dreseffbd_db=+0.00 (need <= -6.00) dres1k5k_db=+0.00 (need <= -6.00)
+…
+ACCEPT-GATE verdict=RED refusals=0 failures=72
+PIPELINE-MUTANT PASS
+```
+
+Both runners are registered in `CMakeLists.txt` with label `slow`, alongside the measurement probe,
+so the PR-only `probe-gate` job (`ctest --label-regex slow`) runs probe → analyze → fix-baseline
+reconciliation → 72-cell acceptance, and the rejection self-test, on the current head.
+
+### 9.3 What this does not claim
+
+The gate still measures a **frozen-duty** per-cell approximation; the pipeline makes the verdict
+reproducible from the head, it does not widen what the verdict covers. The 12 pre-existing
+`--require-full` coverage gaps are **unchanged and still listed separately**.
+
+## 11. EVIDENCE FILES
 
 | file | what it is |
 | --- | --- |
@@ -304,7 +418,12 @@ which is the 9/9 result in §4.
 | `report/gh19-s3-pulse-product/deltas.tsv` | the per-cell delta matrix (94 referenced cells) |
 | `report/gh19-s3-pulse-product/gh19_s3_plan.tsv` | the static plan (80 cells) |
 | `tools/gh19_s3_pulse_acceptance.py` | the gate |
-| `tools/run_gh19_s3_pulse_mutants.py` | the 9-mutation matrix (isolated shadow include tree) |
-| `report/gh19-s3-pulse-product/mutants.txt` | that matrix's full output (9 RED, 0 INVALID, reference 119 checks OK) |
-| `report/gh19-s3-pulse-product/product_acceptance_run.txt` | the CMake-built acceptance test's own output (119 checks OK, rc 0) |
-| `tests/host/test_gh19_s3_pulse_product_acceptance.cpp` | the product acceptance surface (119 checks) |
+| `tools/run_gh19_s3_pulse_mutants.py` | the 10-mutation matrix (isolated shadow include tree) |
+| `report/gh19-s3-pulse-product/mutants.txt` | that matrix's full output (10 RED, 0 INVALID, reference 122 checks OK) |
+| `report/gh19-s3-pulse-product/baseline_arm/gh19_s3_scenarios.tsv` | the **pinned historical baseline** (`f3075e7e…`), byte-identical across two independent renders |
+| `report/gh19-s3-pulse-product/pipeline_run.txt` | the slow pipeline's full output from the current head (pin OK, fresh report sha, PASS, 22/22 controls) |
+| `report/gh19-s3-pulse-product/pipeline_mutant_run.txt` | the same pipeline on the bypass-correction mutant (rc 1, `ACCEPT-FAIL-IMPROVEMENT`, `verdict=RED`) |
+| `tools/run_gh19_s3_pulse_pipeline.py` | the slow pipeline (probe → analyze → reconcile → 72-cell gate) |
+| `tools/run_gh19_s3_pulse_pipeline_mutant.py` | the pipeline's rejection self-test |
+| `report/gh19-s3-pulse-product/product_acceptance_run.txt` | the CMake-built acceptance test's own output (122 checks OK, rc 0) |
+| `tests/host/test_gh19_s3_pulse_product_acceptance.cpp` | the product acceptance surface (122 checks) |

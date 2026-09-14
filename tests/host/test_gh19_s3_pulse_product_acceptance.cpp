@@ -74,6 +74,7 @@
 #include <lunar24/core/state_default.h>       // make_default_device_state
 #include <lunar24/core/state_disposition.h>   // find_parameter / ParameterDescriptor
 #include <lunar24/core/state_serializer.h>    // encode/decode_device_state
+#include <lunar24/core/state_validation.h>    // find_jack (the jack's OWN declared gate threshold/hysteresis)
 #include <lunar24/registry.hpp>               // kNormalizedRoutes (the patch-override rule)
 #include <lunar24/core/vco.h>               // Vco::kLowOctave / kZeroOctave / kPlus3Octave ONLY
 #include <lunar24/registry_ids.hpp>         // ParameterId / JackId full enums
@@ -1190,50 +1191,96 @@ void hard_sync_reset_is_sized_on_the_emitted_signal() {
   const bool theSyncedPulseStaysFinite = bounded;
   CHECK(theSyncedPulseStaysFinite);
 
-  // Locate the FIRST reset. Before it the two arms execute the same arithmetic on the same state, so
-  // they are bit-identical; the first frame where they differ IS the frame the reset was applied.
-  // Scanning for the divergence rather than for the identity keeps the scan inside the regime where
-  // the two arms still share ONE phase trajectory — the only regime in which the identity below is a
-  // statement about this code rather than about two drifted trajectories.
-  std::size_t resetFrame = aSync.size();
+  // -----------------------------------------------------------------------------------------------
+  // THE SYNC EVENT IS RECONSTRUCTED FROM ITS SOURCE, NOT SEARCHED FOR IN THE OUTPUT.
+  //
+  // Director note (msg `df6b7937`): "sync should be reconciled against the ACTUAL source
+  // threshold-crossing event, not by pinning the constant 47 ... do not infer the event by scanning
+  // for the first output divergence." The earlier revision of this test did exactly the wrong thing
+  // twice over: it scanned the OUTPUT for the divergence, and it compared the source against the
+  // bare 5 V threshold.
+  //
+  // The sink is a GATE, and `sink_gate_interpret` (core/include/lunar24/core/sink_interpret.h) is
+  // not a bare comparison: it is a HYSTERESIS LATCH — the low state must clear `thr + hyst` to rise,
+  // the high state holds while the input stays above `thr - hyst` — and its FIRST sample only
+  // PRIMES, emitting no edge. With the declared 5 V threshold and 0.2 V hysteresis the rise is at
+  // 5.2 V and the fall at 4.8 V, so a "first sample >= 5 V" scan names a frame that is not the edge
+  // frame at all. The reference below rebuilds that law INDEPENDENTLY over the published source
+  // trace, and it runs BEFORE the output is consulted: the frame it predicts is the frame the reset
+  // must land on. The threshold and hysteresis are read from the jack's own descriptor, never
+  // hardcoded, and the gate is asserted to be a real hysteresis gate so this arm cannot go vacuous.
+  const lunar24::core::JackDescriptor* syncSinkDesc =
+      lunar24::core::validate_detail::find_jack(
+          static_cast<std::uint32_t>(JackId::vco_a_sync_in));
+  const double syncThr = (syncSinkDesc != nullptr) ? syncSinkDesc->gateThresholdVolts : -1.0;
+  const double syncHyst = (syncSinkDesc != nullptr && syncSinkDesc->hysteresisVolts >= 0.0)
+                              ? syncSinkDesc->hysteresisVolts
+                              : 0.0;
+  const bool theSyncSinkDeclaresARealHysteresisGate =
+      syncSinkDesc != nullptr && syncThr > 0.0 && syncHyst > 0.0;
+  CHECK(theSyncSinkDeclaresARealHysteresisGate);
+
+  std::size_t predictedEdgeFrame = syncVolts.size();
+  if (theSyncSinkDeclaresARealHysteresisGate) {
+    bool high = false, prev = false, primed = false;
+    for (std::size_t r = 0; r < syncVolts.size(); ++r) {
+      high = (!high) ? (syncVolts[r] >= (syncThr + syncHyst)) : (syncVolts[r] > (syncThr - syncHyst));
+      if (primed && !prev && high) {
+        predictedEdgeFrame = r;
+        break;
+      }
+      prev = high;
+      primed = true;
+    }
+  }
+  const bool theRisingEdgeFrameIsPredictableFromTheSource = predictedEdgeFrame < aSync.size();
+  CHECK(theRisingEdgeFrameIsPredictableFromTheSource);
+
+  // Everything BEFORE the predicted edge must be bit-identical: the two arms share one phase
+  // trajectory up to the reset, so an earlier difference would mean something else moved. This is
+  // the half of the criterion that a phase fit cannot supply.
+  bool identicalBeforeThePredictedEdge = true;
+  for (std::size_t i = 0; theRisingEdgeFrameIsPredictableFromTheSource && i < predictedEdgeFrame;
+       ++i) {
+    if (aSync[i] != aFree[i]) {
+      identicalBeforeThePredictedEdge = false;
+      break;
+    }
+  }
+  CHECK(identicalBeforeThePredictedEdge);
+
+  // REPORTED cross-check, not the derivation: the first frame at which the two arms differ. It is
+  // computed AFTER the prediction so that the prediction cannot be read off it.
+  std::size_t firstDivergence = aSync.size();
   for (std::size_t r = 1; r < aSync.size(); ++r) {
     if (aSync[r] != aFree[r]) {
-      resetFrame = r;
+      firstDivergence = r;
       break;
     }
   }
-  // REPORT ONLY, not a criterion: the frame the PUBLISHED sync source first crosses the declared 5 V
-  // gate threshold. It is printed so that the frame the reset landed on can be compared with the
-  // frame its source crossed on; the assertion below deliberately does not depend on that ordering,
-  // which is pre-existing product scheduling rather than part of this change.
-  std::size_t crossingFrame = syncVolts.size();
-  for (std::size_t r = 0; r < syncVolts.size(); ++r) {
-    if (syncVolts[r] >= 5.0) {
-      crossingFrame = r;
-      break;
-    }
-  }
-  const bool theFirstResetSampleWasLocated = resetFrame < aSync.size();
-  CHECK(theFirstResetSampleWasLocated);
-  if (theFirstResetSampleWasLocated) {
+
+  if (theRisingEdgeFrameIsPredictableFromTheSource) {
     std::printf(
-        "  sync: divergence at frame %zu (published source crossed 5 V at frame %zu) | "
-        "sync=%.12f  0.5*free=%.12f\n",
-        static_cast<unsigned long>(resetFrame), static_cast<unsigned long>(crossingFrame),
-        aSync[resetFrame], 0.5 * aFree[resetFrame]);
+        "  sync: hysteresis reference rise at frame %zu (thr=%.4f hyst=%.4f, holds above %.4f; "
+        "frame 0 primes) | first output divergence at frame %zu | sync=%.12f  0.5*free=%.12f\n",
+        static_cast<unsigned long>(predictedEdgeFrame), syncThr, syncHyst, syncThr - syncHyst,
+        static_cast<unsigned long>(firstDivergence), aSync[predictedEdgeFrame],
+        0.5 * aFree[predictedEdgeFrame]);
     // The reset sample is `emittedAt(0) - 0.5*(emittedAt(0) - free[r])`, and at a 50% duty with
     // w < 0.5 the two-edge formula makes emittedAt(0) exactly 0 (naive +1 cancels the residual of
     // the edge at t = 0), so the identity is `reset == 0.5 * free[r]` EXACTLY — not to a tolerance
-    // that could hide a jump sized on the pre-correction shape.
-    const bool theResetSampleIsMidwayBetweenTheRestartAndTheFreeValue =
-        aSync[resetFrame] == 0.5 * aFree[resetFrame];
-    CHECK(theResetSampleIsMidwayBetweenTheRestartAndTheFreeValue);
+    // that could hide a jump sized on the pre-correction shape. The frame is the PREDICTED one.
+    const bool theResetLandsOnTheFrameTheHysteresisReferencePredicted =
+        aSync[predictedEdgeFrame] == 0.5 * aFree[predictedEdgeFrame];
+    CHECK(theResetLandsOnTheFrameTheHysteresisReferencePredicted);
     const bool theResetJumpIsSizedOnTheEmittedSignalNotTheRawShape =
-        std::fabs(aSync[resetFrame] - aFree[resetFrame]) > 0.1;
+        std::fabs(aSync[predictedEdgeFrame] - aFree[predictedEdgeFrame]) > 0.1;
     CHECK(theResetJumpIsSizedOnTheEmittedSignalNotTheRawShape);
+    const bool theFirstDivergenceIsThePredictedFrame = firstDivergence == predictedEdgeFrame;
+    CHECK(theFirstDivergenceIsThePredictedFrame);
     // ... and the reset really restarted the slave: after it, the two arms stay apart.
     double after = 0.0;
-    for (std::size_t i = resetFrame; i < aSync.size(); ++i) {
+    for (std::size_t i = predictedEdgeFrame; i < aSync.size(); ++i) {
       after = std::max(after, std::fabs(aFree[i] - aSync[i]));
     }
     const bool theResetActuallyRestartedTheSlave = after > 0.1;

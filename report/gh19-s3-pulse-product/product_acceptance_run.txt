@@ -28,6 +28,6 @@ GH#19 S3 acceptance: the pulse two-edge correction through the agreed entry
   pwm sink: last source cv=3.000000 | final duty modulated=0.650000 idle=0.500000
   restore: cabled duty=0.700000 uncabled duty=0.500000 (base pw 0.500000)
   surface cells 16/16/16/16 | peak |any| 0.500000000/0.500000000/0.500000000/0.500000000 | peak |DRY| 0.500000000/0.500000000/0.500000000/0.500000000
-  sync: divergence at frame 47 (published source crossed 5 V at frame 0) | sync=0.250000000000  0.5*free=0.250000000000
+  sync: hysteresis reference rise at frame 47 (thr=5.0000 hyst=0.2000, holds above 4.8000; frame 0 primes) | first output divergence at frame 47 | sync=0.250000000000  0.5*free=0.250000000000
   allocator surface: DRY_A vs free-running arm: first diff at frame 0, 512/512 frames differ, max |diff| 0.000866
-[test_gh19_s3_pulse_product_acceptance] 119 checks OK
+[test_gh19_s3_pulse_product_acceptance] 122 checks OK

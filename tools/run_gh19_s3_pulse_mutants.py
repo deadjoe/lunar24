@@ -256,6 +256,52 @@ MUTANTS = [
         "expect": "theEmittedOriginPhaseIsTheProductsOwnPhaseAdvance",
         "claim": "the emitted sequence starts at the product's OWN frame-0 phase (no latency)",
     },
+    {
+        # THE SYNC CONSUMER, ONE FRAME LATE (director note `df6b7937` item 1): "add an isolated
+        # mutation where the ACTUAL sync consumer is one frame late."
+        #
+        # ISOLATION IS THE POINT. The gate law is NOT touched: `sink_gate_interpret` is still called
+        # on every frame with the same latch and the same published value, so the EDGE IS DETECTED
+        # on exactly the frame the independent hysteresis reference predicts. Only the DELIVERY of
+        # that edge to the oscillator slips by one frame — the request is parked in a member and
+        # issued at the top of the next frame (a member, not a local, so it survives the frame
+        # boundary: `MachineRuntime::processBlock` is entered once per frame on the product path).
+        #
+        # This is the mutant the OLD revision of the sync check could not see. That revision located
+        # the reset by scanning the OUTPUT for the first divergence and compared the source against
+        # the bare 5 V threshold, so a one-frame-late delivery would have moved the divergence and
+        # the scan would simply have followed it. The rewritten check PREDICTS the frame from the
+        # source before the output is consulted, so the reset is required to land on the predicted
+        # frame and this arm is rejected by name.
+        "id": "sync-consumer-one-frame-late",
+        "target": ACCEPT,
+        "edits": {MACHINE_RT: [
+            ("""        double sv = 0.0;
+        if (syncInBoundA_ && resolveControlSink_(syncInA_, sv, driveGraph)) {
+          const JackDescriptor* ds = findJackDescriptor_(syncInA_);
+          if (ds != nullptr &&
+              sink_gate_interpret(*ds, syncLatchA_, sv).edge == GateEdge::rising) {
+            vcA_.requestSync();
+          }
+        }""",
+             """        const bool lateSyncEdgeA = syncPendingA_;  // MUTANT: deliver the PREVIOUS frame's edge
+        syncPendingA_ = false;
+        double sv = 0.0;
+        if (syncInBoundA_ && resolveControlSink_(syncInA_, sv, driveGraph)) {
+          const JackDescriptor* ds = findJackDescriptor_(syncInA_);
+          if (ds != nullptr &&
+              sink_gate_interpret(*ds, syncLatchA_, sv).edge == GateEdge::rising) {
+            syncPendingA_ = true;  // MUTANT: DETECTED here, DELIVERED one frame later
+          }
+        }
+        if (lateSyncEdgeA) vcA_.requestSync();"""),
+            ("  GateClockSinkState syncLatchA_;",
+             "  GateClockSinkState syncLatchA_;\n"
+             "  bool syncPendingA_ = false;  // MUTANT: one frame of sync delivery latency"),
+        ]},
+        "expect": "theResetLandsOnTheFrameTheHysteresisReferencePredicted",
+        "claim": "the sync edge is CONSUMED on the frame the hysteresis law raises it, not one later",
+    },
 ]
 
 

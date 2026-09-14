@@ -509,6 +509,56 @@ target_link_libraries(gh19_s3_pulse_probe PRIVATE lunar_host)
 target_include_directories(gh19_s3_pulse_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
 set_tests_properties(gh19_s3_pulse_probe PROPERTIES LABELS "slow")
 
+# task #119 (GH #19 S3): the ACCEPTANCE gate for the pulse correction, driven end to end.
+# The probe above answers "was the matrix produced"; this answers "is it good enough" -- which is
+# a different assertion and was, until now, made by a checked-in file that no run could contradict.
+# `run_gh19_s3_pulse_pipeline.py` re-renders the candidate arm from the CURRENT head with the binary
+# CMake just built, analyses it, computes the deltas against the FIXED historical baseline
+# (report/gh19-s3-pulse-product/baseline_arm + base_report.txt, whose matrix sha256 is pinned in the
+# driver), and runs the 72-cell gate over the result. `--negcontrol` also runs the gate's own 22
+# refusal controls on those same artifacts, so a gate that has stopped refusing is caught here too.
+# `--taps 2001` is not cosmetic: at the analyzer's default the effective-band check fails and the
+# `res_effbd_db` gate column would silently cover half the band it is named after.
+add_test(NAME gh19_s3_pulse_acceptance
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_s3_pulse_pipeline.py
+    --probe $<TARGET_FILE:gh19_s3_pulse_probe>
+    --baseline-arm ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/baseline_arm
+    --base-report ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/base_report.txt
+    --criteria ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/acceptance_criteria.tsv
+    --manifest ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-aa/expected_cells.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_analyze.py
+    --delta ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_delta.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_acceptance.py
+    --negcontrol ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_gate_negcontrol.py)
+
+# The gate above is only worth its runtime if it can FAIL. This entry is the demonstration: it
+# compiles the SAME probe source twice, same compiler, same flags, differing only in one shadow
+# include root -- pristine, and with `pulse_blep_kernel.h`'s polyblepPulseCorrection() returning
+# 0.0 immediately (the two-edge correction bypassed). The reference must be ACCEPTED by the same
+# driver; the mutant must be rejected with the NAMED improvement failure, and specifically NOT by a
+# refusal (exit 4 means no judgement was issued) and not by a crash. Without this, "the pipeline is
+# green" is a statement about a pipeline that has never been observed rejecting anything.
+add_test(NAME gh19_s3_pulse_pipeline_mutant
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_s3_pulse_pipeline_mutant.py
+    --compiler ${CMAKE_CXX_COMPILER}
+    --repo-root ${CMAKE_CURRENT_SOURCE_DIR}
+    --pipeline ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_s3_pulse_pipeline.py
+    --baseline-arm ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/baseline_arm
+    --base-report ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/base_report.txt
+    --criteria ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/acceptance_criteria.tsv
+    --manifest ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-aa/expected_cells.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_analyze.py
+    --delta ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_delta.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_acceptance.py)
+
+# Both re-render the full S3 matrix (the mutant entry renders it twice), so they carry the same
+# `slow` label as the probe and stay out of the every-push `--label-exclude slow` matrix. They are
+# PR/merge-time gates, exactly like the VCO/Schmitt/classic-saw acceptance entries above.
+set_tests_properties(gh19_s3_pulse_acceptance gh19_s3_pulse_pipeline_mutant
+  PROPERTIES LABELS "slow")
+
 # task #109 (GH #19 S1): RED->GREEN acceptance gate for the SCHMITT-OSCILLATOR slope
 # correction. Same shape as the VCO gate above -- same probe, same analyzer, same pipeline
 # driver -- but a different criterion file and a different baseline. The 12 in-scope cells
