@@ -166,6 +166,24 @@ static bool gh21_is_seconds(reg::ParameterId pid) {
   return false;
 }
 
+// The SIZE of the shared continuous-smoothing family, COUNTED FROM THE PRODUCERS rather than
+// written down: registry `Smoothing::seconds` AND `disposition == applied_to_dsp` — the exact
+// predicate SynthRuntime::isContinuousSmoothingParam_ uses to build controlSmoothOrdinals_
+// (machine_runtime.h). Hand-written family sizes in these messages have already drifted once
+// (20 -> 36 was written when the panel-knob set landed; GH#19 S0 / task #117 then added the
+// vco_a/b.pwm pair, 36 -> 38), so the number is now derived and asserted, and the T4 message
+// prints this value. A family that outgrows kMaxControlSmoothParams would silently DROP members
+// (the ctor's defensive cap), which is exactly what this count makes visible.
+static std::size_t gh21_smoothing_family_size() {
+  std::size_t n = 0;
+  for (const reg::ParameterDescriptor& d : reg::kParameters) {
+    if (d.smoothing != reg::Smoothing::seconds) continue;
+    if (core::disposition_of(d.id) != core::StateDisposition::applied_to_dsp) continue;
+    ++n;
+  }
+  return n;
+}
+
 // The GH#21 acceptance settle frame count, derived from the DECLARED tau and settle
 // tolerance (rule 2: N = ceil(fs * tau * ln(1/relTol)); nothing magic). This is the minimum
 // number of pole steps for the one-pole residual (1-a)^N to reach relTol * span, at which
@@ -2580,7 +2598,9 @@ static void test_17_gh21_smoothing_negative_controls(void) {
 
 // ===========================================================================
 // 18. GH#21 Surface-2 acceptance (task #94 g). The 16 vco/vcf panel-knob seconds
-//     params are now members of the shared continuous-smoothing family (20 -> 36).
+//     params are now members of the shared continuous-smoothing family (20 -> 36;
+//     GH#19 S0 / task #117 added the vco_a/b.pwm pair, 36 -> 38 — see
+//     gh21_smoothing_family_size(), which counts it from the registry + disposition).
 //     Whole-state apply (applyDspParam) SNAPS; live apply (setControlParamValue)
 //     RAMPS over the tau-derived settle window. Pins:
 //       T1  trajectory: whole-state snap-exact + live reach-exact inside the tau window;
@@ -2715,7 +2735,12 @@ static void test_18_gh21_surface2_acceptance(void) {
           "T3 the knob ramp began identically (event delivered + smoothed, not a silent no-op)");
   }
 
-  // ---- T4 zero-alloc across the 36-member smoothing family advancing. ----
+  // ---- T4 zero-alloc across the whole smoothing family advancing. ----
+  //      Family size is COUNTED from the producers (never hard-coded): a member dropped by the
+  //      ctor's kMaxControlSmoothParams cap would move this count without any other symptom.
+  const std::size_t famSize = gh21_smoothing_family_size();
+  check(famSize <= core::kMaxControlSmoothParams,
+        "T4 the seconds&&applied_to_dsp family fits kMaxControlSmoothParams (no silent cap drop)");
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
@@ -2732,7 +2757,10 @@ static void test_18_gh21_surface2_acceptance(void) {
       sink += o.wetL;  // consume so the optimizer cannot elide the render
     }
     const std::size_t after = g_allocCount;
-    check(after == before, "T4 render path allocates ZERO with all 36 smoothers advancing (A′)");
+    char t4msg[160];
+    std::snprintf(t4msg, sizeof(t4msg),
+                  "T4 render path allocates ZERO with all %zu smoothers advancing (A′)", famSize);
+    check(after == before, t4msg);
     check(std::isfinite(sink), "T4 sustained render stays finite (no NaN blow-up)");
   }
 

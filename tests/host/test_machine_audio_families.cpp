@@ -151,13 +151,35 @@ void test_vco_voices() {
 }
 
 // --- 4. MIXER / 5. VCF / 6. PREAMP ---------------------------------------------------------
+// STIMULUS PIN (GH#19 S0, task #117). These three sub-cases test the MIXER, the VCF and the PREAMP.
+// Their input is VCO A, and until #117 they inherited a triangle from the VCO's constructor default.
+// #117 made the production default the continuous morph sweep, whose `morph = 0.5` default lands on
+// the SINE node — so the same tests would now be running on a different source spectrum, and these
+// thresholds were tuned against the triangle's harmonic content (the PREAMP one moves by 4%).
+// The waveform is NOT what these sub-cases are about, so it is pinned EXPLICITLY instead of being
+// inherited from a default. BOTH main VCOs are pinned — WET carries both, so pinning only A leaves
+// B's default spectrum in the measurement (measured: pinning A alone still moved the WET peaks by
+// ~6%, because B's default changed from triangle to sine too).
+// `morph = 0.75` is the sweep's pure-triangle node, and the samples emitted there are bit-identical
+// to the pre-#117 triangle INCLUDING its BLAMP correction (asserted in tests/core/test_vco.cpp).
+// The thresholds are left EXACTLY as they were.
+constexpr double kTriNode = 0.75;  // the sweep's pure-triangle node (wave_map kRingEqual[3]).
+
+// Restore the pre-#117 VCO stimulus: both sides on the pure-triangle node.
+void pin_triangle_stimulus(DeviceStateV1& st) {
+  slot(st, ParameterId::vco_a_morph) = kTriNode;
+  slot(st, ParameterId::vco_b_morph) = kTriNode;
+}
+
 void test_level_families() {
   // MIXER: mixer_ch5_vol (channel 4 == VCO-A) moves the real WET level.
   {
     DeviceStateV1 m0 = make_default_device_state(kSeed);
     slot(m0, ParameterId::mixer_ch5_vol) = 0.0;
+    pin_triangle_stimulus(m0);
     DeviceStateV1 m1 = make_default_device_state(kSeed);
     slot(m1, ParameterId::mixer_ch5_vol) = 0.7;
+    pin_triangle_stimulus(m1);
     EngineHarness h0, h1;
     CHECK(h0.load(m0)); CHECK(h1.load(m1));
     CHECK(h0.render(kF)); CHECK(h1.render(kF));
@@ -171,8 +193,10 @@ void test_level_families() {
   {
     DeviceStateV1 vLo = make_default_device_state(kSeed);
     slot(vLo, ParameterId::vcf_l_freq) = 0.1;
+    pin_triangle_stimulus(vLo);   // see the stimulus pin above.
     DeviceStateV1 vHi = make_default_device_state(kSeed);
     slot(vHi, ParameterId::vcf_l_freq) = 0.9;
+    pin_triangle_stimulus(vHi);
     EngineHarness hLo, hHi;
     CHECK(hLo.load(vLo)); CHECK(hHi.load(vHi));
     CHECK(hLo.render(kF)); CHECK(hHi.render(kF));
@@ -184,8 +208,10 @@ void test_level_families() {
   {
     DeviceStateV1 p0 = make_default_device_state(kSeed);
     slot(p0, ParameterId::preamp_gain) = 0.0;
+    pin_triangle_stimulus(p0);   // see the stimulus pin above.
     DeviceStateV1 p1 = make_default_device_state(kSeed);
     slot(p1, ParameterId::preamp_gain) = 0.9;
+    pin_triangle_stimulus(p1);
     EngineHarness h0, h1;
     CHECK(h0.load(p0)); CHECK(h1.load(p1));
     CHECK(h0.render(kF, 1.0)); CHECK(h1.render(kF, 1.0));   // hold a 1.0 V preamp feed on ch1.

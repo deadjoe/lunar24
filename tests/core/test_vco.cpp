@@ -486,6 +486,306 @@ static bool test_vco_cross_sr_and_buffer() {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// GH#19 S0 (task #117) — the PRODUCTION continuous-waveform law and the PWM consumer.
+//
+// The three load-bearing claims of the production entry, each with its own red-negative:
+//   (1) A runtime-built Vco renders kMorphRing, and the DEFAULT position (morph = 0.5) is the
+//       SINE node. The reference is this file's own std::sin — NOT wave_map — so a law that
+//       kept the old fixed triangle (the "fixed old triangle" mutant) fails here.
+//   (2) morph = 0.75 on the ring is BIT-IDENTICAL to the module-dev raw kTriangle ACROSS A FULL
+//       RENDER, BLAMP correction included. This is what lets the pre-#117 triangle/BLAMP gates
+//       be re-pointed at norm=.75 and reproduce their historical numbers, so it is asserted at
+//       bit equality rather than at a tolerance.
+//   (3) The PWM transfer: effectiveDuty = clamp(basePW + depth*cv/10, 0.001, 0.999), depth 0
+//       STRICTLY unchanged, basePW never written back, non-finite never propagated.
+// The "wrong side" and "mapping jump" mutants are caught by (1)'s endpoint table and the
+// continuity sweep respectively.
+// ---------------------------------------------------------------------------
+static bool test_vco_gh19_s0_morph_ring_and_pwm() {
+  const double sr = 48000.0;
+  const double baseHz = 440.0;
+  const std::size_t n = 4800;  // ~44 cycles of 440 Hz — long enough for BLAMP to matter.
+  const double p = 0.3;        // fixed probe phase for the pure-shape checks.
+
+  // (1a) The rendering law of a default-constructed Vco is the ring, not a raw shape.
+  {
+    core::Vco v(sr);
+    CHECK(v.waveform() == core::VcoWaveform::kMorphRing);
+    CHECK(std::fabs(v.morph() - 0.5) < 1e-12);   // the registry default position.
+  }
+
+  // (1b) DEFAULT == the SINE node, against an INDEPENDENT reference (std::sin, this file's),
+  //      never wave_map. tick() emits the shape UNSCALED (the 0.5 DRY clamp lives in the
+  //      DeviceAdapter, not here), and the phase convention is pre-increment: sample i reads
+  //      frac((i+1)*f0/sr).
+  {
+    core::Vco v(sr);
+    v.setBaseHz(baseHz);          // without this the oscillator is at 0 Hz and emits silence.
+    CHECK(v.waveform() == core::VcoWaveform::kMorphRing);
+    std::vector<double> buf;
+    render_vco(v, n, buf);
+    // The reference ACCUMULATES the phase the way the producer does (`cumPitch_ += step`, never
+    // re-derived as i*step), so the comparison is bit-level rather than limited by the
+    // accumulation-vs-product rounding difference — measured at ~2e-11 when the product form is
+    // used, which is real but would be indistinguishable from a tiny waveform error.
+    const double step = baseHz / sr;
+    double cum = 0.0;
+    double maxErr = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+      cum += step;                                     // tick() advances before emitting.
+      const double ref = std::sin(core::Vco::kTwoPi * (cum - std::floor(cum)));
+      maxErr = std::max(maxErr, std::fabs(buf[i] - ref));
+    }
+    std::printf("P3-3 gh19-s0 default-vs-sine: max|err| = %.6e\n", maxErr);
+    CHECK(maxErr < 1e-12);   // the default really is the sine node.
+    // RED-NEGATIVE: the pre-#117 default (a triangle at the same pitch) is a DIFFERENT buffer,
+    // so the check above cannot pass with the old fixed-triangle law left in place.
+    const std::vector<double> tri = [&] {
+      core::Vco t(sr);
+      t.setBaseHz(baseHz);
+      t.setWaveform(core::VcoWaveform::kTriangle);
+      std::vector<double> out;
+      render_vco(t, n, out);
+      return out;
+    }();
+    double vs = 0.0;
+    for (std::size_t i = 0; i < n; ++i) vs = std::max(vs, std::fabs(buf[i] - tri[i]));
+    CHECK(vs > 0.1);         // sine vs triangle is a large, unmistakable difference.
+  }
+
+  // (1c) The ring's five NODE positions land on the five expected shapes (the "wrong side" /
+  //      node-order mutant fails at least one of these). Reference = wave_map's own node
+  //      generators, which is legitimate here: this asserts the ROUTING (which node each
+  //      coordinate selects), not the node formula.
+  {
+    core::Vco v(sr);
+    v.setShape(0.25);
+    struct NodeCase { double at; core::wave_map::Node node; const char* name; };
+    const NodeCase cases[] = {
+        {0.00, core::wave_map::Node::kSaw, "saw"},
+        {0.25, core::wave_map::Node::kInvSaw, "invSaw"},
+        {0.50, core::wave_map::Node::kSine, "sine"},
+        {0.75, core::wave_map::Node::kTriangle, "triangle"},
+        {1.00, core::wave_map::Node::kPulse, "pulse"},
+    };
+    for (const NodeCase& c : cases) {
+      v.setMorph(c.at);
+      const double got = v.waveformSampleAt(p);
+      const double want = core::wave_map::nodeSample(c.node, p, 0.25);
+      if (!(std::fabs(got - want) < 1e-15))
+        std::printf("  gh19-s0 node mismatch at morph=%.2f (%s): got=%.17g want=%.17g\n",
+                    c.at, c.name, got, want);
+      CHECK(std::fabs(got - want) < 1e-15);
+    }
+  }
+
+  // (1d) CONTINUITY across the whole ring (the "mapping jump" mutant fires here): no single
+  //      morph step may move the sample by a full-swing amount.
+  {
+    core::Vco v(sr);
+    const int steps = 1000;
+    v.setMorph(0.0);   // start the sweep AT 0 — the default 0.5 is a different node (sine).
+    double prev = v.waveformSampleAt(p);
+    double maxStep = 0.0;
+    for (int i = 1; i <= steps; ++i) {
+      v.setMorph(static_cast<double>(i) / steps);
+      const double val = v.waveformSampleAt(p);
+      maxStep = std::max(maxStep, std::fabs(val - prev));
+      prev = val;
+    }
+    std::printf("P3-3 gh19-s0 ring continuity: max step = %.6f over %d steps\n", maxStep, steps);
+    CHECK(maxStep < 0.05);
+  }
+
+  // (1e) The two NAMED stretches against INDEPENDENT closed forms (this file's own arithmetic),
+  //      never against wave_map's node generators. This block exists because (1c) is
+  //      self-referenced BY CONSTRUCTION: it asks whether the ring ROUTES coordinate k/4 to node
+  //      k, and uses the same header for both sides, so a swap of two node FORMULAS cancels
+  //      there and passes. Measured: with sawShape/invSawShape bodies exchanged, (1c) is green.
+  //      Such a swap is visible HERE and nowhere else in this suite: the saw stretch must be
+  //      (1-2u)(2p-1) exactly, and sine->triangle (1-u)sin(2*pi*p) + u(4|p-0.5|-1) exactly.
+  {
+    double worstSaw = 0.0, worstST = 0.0;
+    for (int i = 0; i <= 64; ++i) {
+      const double u = static_cast<double>(i) / 64.0;
+      for (int j = 0; j < 16; ++j) {
+        const double q = static_cast<double>(j) / 16.0;
+        const double ramp = 2.0 * q - 1.0;
+        worstSaw = std::max(
+            worstSaw, std::fabs(core::wave_map::morphSawInvSaw(u, q) - (1.0 - 2.0 * u) * ramp));
+        const double ref = (1.0 - u) * std::sin(core::Vco::kTwoPi * q) +
+                           u * (4.0 * std::fabs(q - 0.5) - 1.0);
+        worstST = std::max(worstST, std::fabs(core::wave_map::morphSineTriangle(u, q) - ref));
+      }
+    }
+    std::printf("P3-3 gh19-s0 stretch closed forms: saw=%.3e sine->tri=%.3e\n", worstSaw, worstST);
+    CHECK(worstSaw < 1e-15);
+    CHECK(worstST < 1e-15);
+  }
+
+  // (2) morph = 0.75 on the ring == the raw module-dev kTriangle, BIT-IDENTICAL over the render.
+  {
+    core::Vco ring(sr);
+    ring.setBaseHz(baseHz);
+    ring.setShape(0.5);
+    ring.setMorph(0.75);
+    std::vector<double> ringBuf;
+    render_vco(ring, n, ringBuf);
+
+    core::Vco raw(sr);
+    raw.setBaseHz(baseHz);
+    raw.setShape(0.5);
+    raw.setWaveform(core::VcoWaveform::kTriangle);
+    std::vector<double> rawBuf;
+    render_vco(raw, n, rawBuf);
+
+    std::size_t bitDiffs = 0;
+    double maxDiff = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+      if (ringBuf[i] != rawBuf[i]) ++bitDiffs;
+      maxDiff = std::max(maxDiff, std::fabs(ringBuf[i] - rawBuf[i]));
+    }
+    std::printf("P3-3 gh19-s0 tri-node: bit-diffs=%zu max|diff|=%.6e over %zu samples\n",
+                bitDiffs, maxDiff, n);
+    CHECK(bitDiffs == 0);            // the re-point at norm=.75 is EXACT, BLAMP included.
+    CHECK(ringBuf == rawBuf);
+    // RED-NEGATIVE: the same comparison at morph=0.5 (the sine node) is NOT identical, so the
+    // bit-equality above is a property of the .75 node and not of a comparison that ignores the
+    // waveform. (This is the control that makes the .75 claim non-vacuous.)
+    core::Vco wrong(sr);
+    wrong.setBaseHz(baseHz);
+    wrong.setShape(0.5);
+    wrong.setMorph(0.5);
+    std::vector<double> wrongBuf;
+    render_vco(wrong, n, wrongBuf);
+    CHECK(wrongBuf != rawBuf);
+  }
+
+  // (2b) The ring's triangle BLAMP weight is the real triangle weight (1 at the node, 0 away).
+  {
+    using core::wave_map::triangleWeight;
+    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.75) - 1.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.5) - 0.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 1.0) - 0.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.0) - 0.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.875) - 0.5) < 1e-15);
+    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.625) - 0.5) < 1e-15);
+  }
+
+  // (3) PWM transfer. depth 0 is STRICTLY unchanged; the ±5 V @ depth 1 ratio is ±0.5; positive
+  //     CV raises the duty; the clamp holds; nothing non-finite reaches the emitted duty; and
+  //     basePW (the canonical knob value) is never written back by modulation.
+  {
+    core::Vco v(sr);
+    v.setBaseHz(baseHz);
+    v.setWaveform(core::VcoWaveform::kPulse);
+
+    for (const double pw : {0.1, 0.5, 0.9}) {
+      v.setShape(pw);
+      const double canonical = v.shape();
+      CHECK(std::fabs(canonical - pw) < 1e-15);
+
+      // depth 0: unchanged for ANY cv, including a hostile one.
+      for (const double cv : {0.0, 5.0, -5.0, 1e9}) {
+        v.setPwDepth(0.0);
+        v.setPwCv(cv);
+        CHECK(v.effectiveDuty() == canonical);   // EXACT equality, not a tolerance.
+      }
+
+      // ±5 V @ depth 1 adds exactly ±0.5 to the duty — asserted on whichever side stays inside
+      // [0.001, 0.999]. Both sides at pw = 0.5 would sit exactly ON the window edge (0.5+0.5 is
+      // 1.0, which the clamp pulls to 0.999), so the clamp, not the ratio, would be measured;
+      // the clamp has its own check at the end of this block.
+      v.setPwDepth(1.0);
+      if (canonical + 0.5 <= core::Vco::kPwDutyMax) {
+        v.setPwCv(5.0);
+        CHECK(std::fabs(v.effectiveDuty() - (canonical + 0.5)) < 1e-15);
+      } else {
+        v.setPwCv(5.0);
+        CHECK(v.effectiveDuty() == core::Vco::kPwDutyMax);
+      }
+      if (canonical - 0.5 >= core::Vco::kPwDutyMin) {
+        v.setPwCv(-5.0);
+        CHECK(std::fabs(v.effectiveDuty() - (canonical - 0.5)) < 1e-15);
+      } else {
+        v.setPwCv(-5.0);
+        CHECK(v.effectiveDuty() == core::Vco::kPwDutyMin);
+      }
+      // Half depth == half the contribution (the ratio is linear in depth, not just at 1).
+      v.setPwDepth(0.5);
+      v.setPwCv(5.0);
+      CHECK(std::fabs(v.effectiveDuty() - std::min(core::Vco::kPwDutyMax, canonical + 0.25)) < 1e-15);
+
+      // positive CV RAISES the duty (the declared sign).
+      v.setPwDepth(0.5);
+      v.setPwCv(0.0);
+      const double flat = v.effectiveDuty();
+      v.setPwCv(5.0);
+      CHECK(v.effectiveDuty() > flat);
+
+      // the modulation never writes the canonical base width back.
+      CHECK(v.shape() == canonical);
+      v.setPwCv(0.0);
+      v.setPwDepth(0.0);
+      CHECK(v.effectiveDuty() == canonical);
+    }
+
+    // Clamp window: a huge CV saturates at 0.999 / 0.001, never 0 or 1 (a flat DC line).
+    v.setShape(0.5);
+    v.setPwDepth(1.0);
+    v.setPwCv(1e6);
+    CHECK(v.effectiveDuty() == core::Vco::kPwDutyMax);
+    v.setPwCv(-1e6);
+    CHECK(v.effectiveDuty() == core::Vco::kPwDutyMin);
+
+    // Non-finite NEVER passes through: a non-finite cv/depth is treated as 0.
+    v.setPwCv(std::numeric_limits<double>::quiet_NaN());
+    CHECK(std::isfinite(v.effectiveDuty()));
+    CHECK(v.pwCv() == 0.0);
+    v.setPwCv(0.0);
+    v.setPwDepth(std::numeric_limits<double>::infinity());
+    CHECK(std::isfinite(v.effectiveDuty()));
+    CHECK(v.pwDepth() == 0.0);
+    CHECK(v.effectiveDuty() == v.shape());
+
+    // The clamp/NaN contract holds on the REAL emitted samples too — a pulse at an extreme
+    // effective duty still swings to both rails (no DC collapse).
+    v.setPwDepth(1.0);
+    v.setPwCv(5.0);
+    v.setShape(0.6);   // 0.6 + 0.5 -> clamped to 0.999
+    std::vector<double> buf;
+    render_vco(v, 4800, buf);
+    double mn = 1e18, mx = -1e18;
+    for (const double x : buf) { mn = std::min(mn, x); mx = std::max(mx, x); }
+    CHECK(std::isfinite(mn) && std::isfinite(mx));
+    CHECK(mx > 0.4 && mn < -0.4);   // both excursions present — not a flat line.
+  }
+
+  // (3b) The PWM consumer is only the PULSE node: on the ring, modulation reaches the pulse
+  //      node (morph = 1) and must NOT perturb the other four nodes.
+  {
+    const auto atMorph = [&](double morph, double depth, double cv) {
+      core::Vco v(sr);
+      v.setMorph(morph);
+      v.setPwDepth(depth);
+      v.setPwCv(cv);
+      return v.waveformSampleAt(p);
+    };
+    // pulse node: duty really moves the sample (p=0.3 is inside a 0.5-wide pulse's high half).
+    const double pLo = atMorph(1.0, 1.0, -5.0);   // duty 0.001 -> phase .3 is LOW
+    const double pHi = atMorph(1.0, 1.0, +5.0);   // duty 0.999 -> phase .3 is HIGH
+    CHECK(pLo != pHi);
+    // every non-pulse node is bit-unchanged by the modulation.
+    for (const double m : {0.0, 0.25, 0.5, 0.75}) {
+      CHECK(atMorph(m, 0.0, 0.0) == atMorph(m, 1.0, 5.0));
+      CHECK(atMorph(m, 0.0, 0.0) == atMorph(m, 1.0, -5.0));
+    }
+  }
+
+  return true;
+}
+
 // ⑥ PWM extreme duty never collapses to DC or silence.
 static bool test_vco_pwm_extreme_duty() {
   const double sr = 48000.0;
@@ -822,5 +1122,6 @@ int main() {
   test_vco_narrowpulse_fold();
   test_vco_blamp();
   test_vco_hardsync_reset_alignment();
+  test_vco_gh19_s0_morph_ring_and_pwm();
   return ::test::finish("vco");
 }

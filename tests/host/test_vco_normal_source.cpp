@@ -33,6 +33,7 @@
 
 #include <lunar24/core/device_state.h>        // DeviceStateV1
 #include <lunar24/core/state_default.h>        // make_default_device_state
+#include <lunar24/core/vco_wave_map.h>         // the production VCO rendering law (GH#19 S0 #117)
 #include <lunar24/registry_ids.hpp>            // JackId / RouteId full enums
 
 #include "test_engine_harness.h"
@@ -264,26 +265,42 @@ void test_acyclic_no_artificial_delay() {
 //     Non-degeneracy guards (so the test can never silently go vacuous on a symmetric/static A):
 //         CHECK(maxAStep > kDegenTol)         -> A actually changes between consecutive samples
 //         CHECK(maxDiffSamePrev > kDegenTol)  -> refSame and refPrev really differ (observable delay)
-//     The reference mirrors the Vco DSP (vco.h:193-245: linear `p*=(1+cv*cvAmt)`, triangle
-//     `4|frac(.5-p)|-1`), baseHz==kVcoBaseHzProvisional(440), vOct==0 (no route feeds vco_b_v_oct_in),
-//     no linear-FM (a plain VCO), and the device-normalise `*0.5` (kDeviceScaleProvisional,
-//     device_adapter.h:90-94) that maps volts to the captured DRY_B channel. It is a READBACK-driven
-//     reference — it does NOT re-run A, so it is insensitive to A's own (unmodeled) phase.
+//     The reference mirrors the Vco DSP (vco.h: linear `p*=(1+cv*cvAmt)`, then the waveform),
+//     baseHz==kVcoBaseHzProvisional(440), vOct==0 (no route feeds vco_b_v_oct_in), no linear-FM (a
+//     plain VCO), and the device-normalise `*0.5` (kDeviceScaleProvisional, device_adapter.h:90-94)
+//     that maps volts to the captured DRY_B channel. It is a READBACK-driven reference — it does NOT
+//     re-run A, so it is insensitive to A's own (unmodeled) phase.
+//
+//     ⚠️ WAVEFORM (GH#19 S0, task #117). This reference used to hardcode the triangle
+//     `4|frac(.5-p)|-1`, which was right only because the VCO's constructor default WAS a fixed
+//     triangle. #117 made the production default the continuous morph sweep, so B renders
+//     `wave_map::sampleAt(kRingEqual, morph, p, duty)` and the hardcoded triangle no longer
+//     describes the signal under test (measured: madSame 0.418 instead of ~1e-16 — the reference,
+//     not the product, was stale). The reference is therefore updated to the ACTUAL production law,
+//     driven by B's OWN applied readback (morph + pw), exactly as it already is for tune/oct/cvAmt.
+//     WHAT THIS TEST CLAIMS IS UNCHANGED: it is the same-frame CONSUMPTION timing of the A->B
+//     route, not the shape. The shape itself is asserted independently in tests/core/test_vco.cpp,
+//     and the non-degeneracy guards below keep the same/previous discriminator live.
 
 // One sample of the reference B: advance `cum` (cycles) by B's instant pitch under CV=cv and return the
-// device-normalised triangle. Mirrors machine_runtime kVcoB -> Vco::tick/frequencyHz/waveformSampleAt.
-double refB(double& cum, double cv, double sr, double baseHz, int octSel, double tune, double cvAmt) {
-  static constexpr double kOct[3] = {-1.0, 0.0, 3.0};  // "low"/"0"/"+3" (PROVISIONAL, vco.h:162-164).
+// device-normalised production waveform. Mirrors machine_runtime kVcoB -> Vco::tick/frequencyHz + the
+// kMorphRing rendering law. `morph`/`duty` are B's OWN applied readbacks (vcoBMorph()/vcoBPw()), so the
+// reference cannot drift from the product law without the readback drifting with it.
+double refB(double& cum, double cv, double sr, double baseHz, int octSel, double tune, double cvAmt,
+            double morph, double duty) {
+  static constexpr double kOct[3] = {-1.0, 0.0, 3.0};  // "low"/"0"/"+3" (PROVISIONAL).
   const double oct = kOct[octSel < 0 ? 0 : (octSel > 2 ? 2 : octSel)];
   double p = baseHz * std::pow(2.0, oct + tune);   // baseHz * 2^octs * 2^tune.
   // vOct == 0 (default: no route feeds vco_b_v_oct_in) => p *= 2^0 == 1.
   const double eff = cv * cvAmt;
-  p *= (1.0 + eff);                                 // LINEAR generic-CV law (vco.h:201).
+  p *= (1.0 + eff);                                 // LINEAR generic-CV law.
   // No linear-FM on a plain VCO => instHz == p.
   cum += p / sr;
   const double ph = cum - std::floor(cum);
-  const double tri = 4.0 * std::fabs(ph - 0.5) - 1.0;   // triangle (vco.h:228).
-  return 0.5 * tri;                                     // volts -> device-normalised (kDeviceScale=0.5).
+  // The production sweep, evaluated at B's applied morph/pw (default morph 0.5 -> the sine node).
+  const double shape = lunar24::core::wave_map::sampleAt(
+      lunar24::core::wave_map::kRingEqual, morph, ph, duty);
+  return 0.5 * shape;                               // volts -> device-normalised (kDeviceScale=0.5).
 }
 
 void test_b_same_sample_vs_previous() {
@@ -309,6 +326,8 @@ void test_b_same_sample_vs_previous() {
   const double tune = rt->vcoBTune();
   const int octSel = rt->vcoBOctSelect();
   const double cvAmt = rt->vcoBCvAmt();
+  const double morph = rt->vcoBMorph();   // B's applied morph: the production default, 0.5.
+  const double duty = rt->vcoBPw();       // B's applied pw (read by the sweep's pulse node).
   const double baseHz = 440.0;  // kVcoBaseHzProvisional (machine_definition.h:197).
 
   double cumSame = 0.0, cumPrev = 0.0;          // per-sample phase accumulators of the two references.
@@ -321,8 +340,8 @@ void test_b_same_sample_vs_previous() {
     const double aN = r.controlVoltageAt(JackId::vco_a_dry_out);  // A's live published value, this frame.
     const double bN = h.dryB()[static_cast<std::size_t>(n)];      // captured DRY_B (device-normalised).
     if (n > 0 && std::fabs(aN - prevA) > maxAStep) maxAStep = std::fabs(aN - prevA);
-    const double refSame = refB(cumSame, aN, sr, baseHz, octSel, tune, cvAmt);    // CV = A(n).
-    const double refPrev = refB(cumPrev, prevA, sr, baseHz, octSel, tune, cvAmt); // CV = A(n-1).
+    const double refSame = refB(cumSame, aN, sr, baseHz, octSel, tune, cvAmt, morph, duty);    // CV = A(n).
+    const double refPrev = refB(cumPrev, prevA, sr, baseHz, octSel, tune, cvAmt, morph, duty); // CV = A(n-1).
     if (std::fabs(refSame - refPrev) > maxDiffSamePrev) maxDiffSamePrev = std::fabs(refSame - refPrev);
     madSame += std::fabs(refSame - bN);
     madPrev += std::fabs(refPrev - bN);

@@ -547,15 +547,25 @@ static void detached_old_error_categories() {
   }
 }
 
-// A deferred/unavailable parameter is NOT masqueraded as an applied-to-DSP live control,
-// yet a valid in-range stored value is still a legal (landed) parameter. So its
-// disposition must be transfer_unavailable (not applied_to_dsp) while validate returns ok.
-static void deferred_unavailable_not_masqueraded_as_applied() {
+// A deferred parameter is NOT masqueraded as an applied-to-DSP live control, yet a valid
+// in-range stored value is still a legal (landed) parameter. So its disposition must be
+// preserved_deferred_p6_p8 (not applied_to_dsp) while validate returns ok.
+//
+// GH#19 S0 / task #117: this sub-case previously used vco_a.pwm as its subject, because the
+// pwm pair was the last transfer_unavailable id. That class is now EMPTY — pwm acquired a
+// consumer — so the subject moved to the program-owner range, which is the deferral that
+// still exists. The pwm pair is asserted SEPARATELY as the flip it now is; a return to
+// transfer_unavailable (consumer removed) would be red at its own line rather than silently
+// absorbed here.
+static void deferred_not_masqueraded_as_applied() {
   core::DeviceStateV1 st = core::make_default_device_state(0x60UL);
-  st.parameters[pid_index(core::ParameterId::vco_a_pwm)] = 0.5;  // valid in-range, no consumer
+  st.parameters[pid_index(core::ParameterId::program_orche_3_z)] = 0.5;  // valid in-range, deferred
   CHECK_TRUE(core::validate_device_state(st).ok);
-  CHECK(core::disposition_of(core::ParameterId::vco_a_pwm) == core::StateDisposition::transfer_unavailable);
   CHECK(core::disposition_of(core::ParameterId::program_orche_3_z) == core::StateDisposition::preserved_deferred_p6_p8);
+  // The GH#19 S0 flip: pwm is a live DSP control now, and it is not the deferred class.
+  CHECK(core::disposition_of(core::ParameterId::vco_a_pwm) == core::StateDisposition::applied_to_dsp);
+  CHECK(core::disposition_of(core::ParameterId::vco_b_pwm) == core::StateDisposition::applied_to_dsp);
+  CHECK(core::count_disposition(core::StateDisposition::transfer_unavailable) == 0u);
 }
 
 // Migration hook: current passes through (out = copy, ok), an older/newer version fails
@@ -608,7 +618,7 @@ int main() {
   first_failure_is_deterministic();
   validator_never_mutates_the_candidate();
   detached_old_error_categories();
-  deferred_unavailable_not_masqueraded_as_applied();
+  deferred_not_masqueraded_as_applied();
   migration_hook_fails_closed_zero_mutation();
   expanded_bad_value_matrix();
   return ::test::finish("state validation (task #75 r4)");
