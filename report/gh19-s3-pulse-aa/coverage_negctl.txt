@@ -1,0 +1,46 @@
+=== COVERAGE LOCK 1/2: the expectation is a pinned artifact ===
+  plan_pin_intact    rc=0 (want 0)  GREEN
+    the plan the probe emitted just now is byte-identical to expected_cells.tsv (155 lines)
+  plan_pin_drift     rc=1 (want 1)  RED
+    the probe's plan DIFFERS from the pinned manifest -- a declared axis changed without re-pinning:
+    --- pinned/expected_cells.tsv
+    +++ fresh/gh19_s3_plan.tsv
+    @@ -1,6 +1,5 @@
+     plan_rev	1
+     block	id
+    -static	vco_a_pulse_44100_220_pw10
+     static	vco_a_pulse_44100_220_pw50
+     static	vco_a_pulse_44100_220_pw90
+     static	vco_a_pulse_44100_440_pw10
+
+=== COVERAGE LOCK 2/2: both arms reconciled against it (manifest held fixed) ===
+target cell vco_a_pulse_44100_220_pw10 in the static block; no control edits the manifest
+  pristine           rc=0 (want 0)  GREEN
+  drop_both          rc=4 (want 4)  RED
+      FATAL: base: vco_a_pulse_44100_220_pw10 is declared in the manifest but consumed by nothing (not produced, or not parsed)
+      FATAL: cand: vco_a_pulse_44100_220_pw10 is declared in the manifest but consumed by nothing (not produced, or not parsed)
+  rename_both        rc=4 (want 4)  RED
+      FATAL: base: vco_a_pulse_44100_220_pw10 is declared in the manifest but consumed by nothing (not produced, or not parsed)
+      FATAL: base: vco_a_pulse_44100_225_pw10 was consumed but is not declared in the manifest
+      FATAL: cand: vco_a_pulse_44100_220_pw10 is declared in the manifest but consumed by nothing (not produced, or not parsed)
+      FATAL: cand: vco_a_pulse_44100_225_pw10 was consumed but is not declared in the manifest
+  drop_one_arm       rc=4 (want 4)  RED
+      FATAL: cand: vco_a_pulse_44100_220_pw10 is declared in the manifest but consumed by nothing (not produced, or not parsed)
+  unparsed_row       rc=4 (want 4)  RED
+      FATAL: cand.txt:400: static parsed 79 rows != emitted=80
+  skip_launder       rc=4 (want 4)  RED
+      FATAL: cand: vco_a_pulse_44100_220_pw10 was declared skipped as 'no source trace', but that is not true of this cell (a static cell records no trace at all, so it cannot be missing one)
+  skip_noharm        rc=4 (want 4)  RED
+      FATAL: cand: vco_a_pulse_44100_220_pw10 was declared skipped as 'no harmonic below Nyquist', but that is not true of this cell (floor((sr/2)/f0) = floor(22050/220) = 100 >= 1)
+
+=== SUMMARY ===
+  plan_pin_intact    GREEN    as declared
+  plan_pin_drift     RED      as declared
+  pristine           GREEN    as declared
+  drop_both          RED      as declared
+  rename_both        RED      as declared
+  drop_one_arm       RED      as declared
+  unparsed_row       RED      as declared
+  skip_launder       RED      as declared
+  skip_noharm        RED      as declared
+  9 of 9 controls behaved as declared (0 invalid)

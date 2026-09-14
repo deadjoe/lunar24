@@ -1,0 +1,9 @@
+cell	arm	runA_ns	runB_ns	min_across_runs_ns	spread_ns
+bench_pulse_pw50_44100_220	base	636.6	634.9	634.9	1.7
+bench_pulse_pw10_44100_220	base	633.8	635.4	633.8	1.6
+bench_pulse_pw10_44100_5000	base	634.1	640.2	634.1	6.1
+bench_triangle_44100_220	base	635.7	638.9	635.7	3.2
+bench_pulse_pw50_44100_220	cand	623.8	635.3	623.8	11.5
+bench_pulse_pw10_44100_220	cand	636.2	624.0	624.0	12.2
+bench_pulse_pw10_44100_5000	cand	634.7	630.9	630.9	3.8
+bench_triangle_44100_220	cand	631.5	629.6	629.6	2.0
