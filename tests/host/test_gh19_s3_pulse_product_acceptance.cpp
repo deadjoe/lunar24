@@ -1263,8 +1263,8 @@ void hard_sync_reset_is_sized_on_the_emitted_signal() {
     std::printf(
         "  sync: hysteresis reference rise at frame %zu (thr=%.4f hyst=%.4f, holds above %.4f; "
         "frame 0 primes) | first output divergence at frame %zu | sync=%.12f  0.5*free=%.12f\n",
-        static_cast<unsigned long>(predictedEdgeFrame), syncThr, syncHyst, syncThr - syncHyst,
-        static_cast<unsigned long>(firstDivergence), aSync[predictedEdgeFrame],
+        predictedEdgeFrame, syncThr, syncHyst, syncThr - syncHyst,
+        firstDivergence, aSync[predictedEdgeFrame],
         0.5 * aFree[predictedEdgeFrame]);
     // The reset sample is `emittedAt(0) - 0.5*(emittedAt(0) - free[r])`, and at a 50% duty with
     // w < 0.5 the two-edge formula makes emittedAt(0) exactly 0 (naive +1 cancels the residual of
