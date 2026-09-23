@@ -3,6 +3,7 @@
 
 --- reference pipeline output ---
 ACCEPT-PIPELINE baseline_pin=OK sha256=f3075e7ea021953a487ada97b9c8249ec4466c9ad47d0cb0ea3078f2a79d61bc path=report/gh19-s3-pulse-product/baseline_arm/gh19_s3_scenarios.tsv
+ACCEPT-PIPELINE base_report_pin=OK sha256=eab2aa0d9b6f4294fcbd543efce113fa6039e94177b5887e6b78bdd2214b22ca path=report/gh19-s3-pulse-product/base_report.txt
 ACCEPT-PIPELINE fresh_arm=/tmp/gh19s3-pipe-mut/pipe_reference/cand plan_sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811
 ACCEPT-PIPELINE fresh_report=/tmp/gh19s3-pipe-mut/pipe_reference/cand_report.txt sha256=27589bd045549b366a9c2b29424cacc24bfef1629b51b2c9cbfee9ddf12d35fc
 ACCEPT-PIPELINE deltas=/tmp/gh19s3-pipe-mut/pipe_reference/deltas.tsv sha256=ea3755033164d37fbbcb72b2b1ca096b9805db0291eef332a322698202f6a12b
@@ -27,6 +28,7 @@ ACCEPT-GATE verdict=PASS refusals=0 failures=0
 
 --- bypass-correction pipeline output ---
 ACCEPT-PIPELINE baseline_pin=OK sha256=f3075e7ea021953a487ada97b9c8249ec4466c9ad47d0cb0ea3078f2a79d61bc path=report/gh19-s3-pulse-product/baseline_arm/gh19_s3_scenarios.tsv
+ACCEPT-PIPELINE base_report_pin=OK sha256=eab2aa0d9b6f4294fcbd543efce113fa6039e94177b5887e6b78bdd2214b22ca path=report/gh19-s3-pulse-product/base_report.txt
 ACCEPT-PIPELINE fresh_arm=/tmp/gh19s3-pipe-mut/pipe_bypass-correction/cand plan_sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811
 ACCEPT-PIPELINE fresh_report=/tmp/gh19s3-pipe-mut/pipe_bypass-correction/cand_report.txt sha256=a21e5db783d0ed755d1325dd73f89618381da29d5eb003632ba73482e9910a37
 ACCEPT-PIPELINE deltas=/tmp/gh19s3-pipe-mut/pipe_bypass-correction/deltas.tsv sha256=ebf9825e7ab4bbc264e3d216c6c6898c7c66cbb8d0495402729710227f4be82c

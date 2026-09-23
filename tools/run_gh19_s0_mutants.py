@@ -356,6 +356,47 @@ MUTANTS = [
         "expect": "pwmCvIsConsumedInTheSameFrameItIsPublished",
         "claim": "the endpoint/consumption surface rejects a one-frame-late PWM consumer",
     },
+    {
+        # ENDPOINT CONTROL 4 — B NEVER CONSUMES ITS PWM CV (director note be0b1b61: the endpoint
+        # fixture is now parameterised over the side, so B's 0.001/0.999 endpoints are judged the way
+        # A's already were). This edit removes ONLY B's resolve call; A's block is untouched, so the
+        # ONLY checks that can fire are the `vcoB*` ones. That is what makes this control
+        # non-degenerate: it shows the B endpoint criterion is load-bearing ON ITS OWN rather than
+        # riding on A's checks turning red alongside it. B's duty then stays at the unmodulated base
+        # width, so the emitted DRY_B is the 0.5 waveform while the independent reference predicts the
+        # 0.001 waveform — and the audio, not the readback, is what rejects it.
+        "id": "acc-endpoint-b-pwm-not-consumed",
+        "target": "test_gh19_s0_morph_pwm_acceptance",
+        "edits": {MACHINE_RT: [
+            ("""        double pwm = 0.0;
+        if (pwmInBoundB_) static_cast<void>(resolveControlSink_(pwmInB_, pwm, driveGraph));
+        vcB_.setPwCv(pwm);""",
+             """        double pwm = 0.0;
+        vcB_.setPwCv(pwm);  // MUTANT: B never consumes its PWM CV"""),
+        ]},
+        "expect": "vcoBNegativeCvSaturatesAtDutyMin",
+        "claim": "the B endpoint criterion rejects a B-side sink that never consumes the PWM CV",
+    },
+    {
+        # ENDPOINT CONTROL 5 — A/B MIS-WIRED SINK. B's consumer resolves A's sink instead of its own:
+        # it consumes every frame (so a same-frame check cannot see it) but reads the WRONG SIDE. In
+        # the B endpoint arm the A PWM jack carries no cable, so B's duty stays at the base width and
+        # the emitted DRY_B is again not the predicted endpoint waveform. This is the same production
+        # edit as `wrong-side-cable` above, re-graded on the new B endpoint surface, because that is
+        # the criterion the director asked to see carry this class of defect.
+        "id": "acc-endpoint-b-wrong-side-cable",
+        "target": "test_gh19_s0_morph_pwm_acceptance",
+        "edits": {MACHINE_RT: [
+            ("""        double pwm = 0.0;
+        if (pwmInBoundB_) static_cast<void>(resolveControlSink_(pwmInB_, pwm, driveGraph));
+        vcB_.setPwCv(pwm);""",
+             """        double pwm = 0.0;
+        if (pwmInBoundB_) static_cast<void>(resolveControlSink_(pwmInA_, pwm, driveGraph));
+        vcB_.setPwCv(pwm);  // MUTANT: B reads A's sink — the two PWM sides mis-wired"""),
+        ]},
+        "expect": "vcoBNegativeCvSaturatesAtDutyMin",
+        "claim": "the B endpoint criterion rejects an A/B mis-wired PWM sink",
+    },
 ]
 
 

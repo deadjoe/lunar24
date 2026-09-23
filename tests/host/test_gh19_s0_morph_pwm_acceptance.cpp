@@ -37,6 +37,18 @@
 //     printed per cell, none tabulated. The consumer's duty equals the independently computed law
 //     on its own input to 0.0 at all four rates, and the raw pre-clamp duty lands strictly outside
 //     the window, so the clamp is genuinely exercised in both cells.
+//   * THE SAME TWO-EDGE OBSERVATION ON VCO B. `endpointDutyAt` is parameterised over the side; B is
+//     driven through its OWN PWM sink with the default A->B route isolated (vco_b.cv_amt = 0), and
+//     the NON-driven side's sink is read in the same runs, so "this endpoint is B's" is measured
+//     rather than assumed. Measured at 48 kHz: both endpoints land on the clamped duty exactly
+//     (0.001000000 / 0.999000000), the DC means are the mirror pair (-0.499001 / +0.499001), worst
+//     |DRY_B - reference| = 1.0e-12 device units against the same 0.02 tolerance, the rejected
+//     neighbours sit at 1.000 (skipped PWM, a wrong clamp value, the mirror endpoint) and
+//     0.190 / 0.205 (the nearest plausible mis-clamp), the declared and measured period agree
+//     (0.004583333 vs 0.004583344), and the non-driven sink read exactly 0.0 throughout. B's two
+//     endpoint criteria are separately shown to be load-bearing by two production mutants that leave
+//     every A-side check green (tools/run_gh19_s0_mutants.py: acc-endpoint-b-pwm-not-consumed,
+//     acc-endpoint-b-wrong-side-cable).
 //   * CHANGING CV (lfo_a.cv_out -> vco_a.pwm_in, lfo_a.rate 5 Hz hence a measured 5.0000 Hz period,
 //     depth 0.1): worst per-period |audio duty - implied transfer| = 0.00500.
 //   * same-frame consumption: the sink readback equals the SAME frame's published source volts in
@@ -177,14 +189,24 @@ double pwmTransfer(double basePw, double depth, double cvVolts) {
   return d < 0.001 ? 0.001 : (d > 0.999 ? 0.999 : d);
 }
 
+// WHICH VCO an endpoint arm drives. The endpoint instrument is parameterised over this so the SAME
+// observation is made on both sides rather than only on A. Both builders below DEFAULT to A, so every
+// pre-existing call site keeps the exact stimulus it had.
+enum class EndpointSide { A, B };
+
 // A pulse-node state with B isolated (vco_b.cv_amt = 0), so B's own duty claims are not confounded by
-// the legitimate default A->B frequency modulation.
-DeviceStateV1 pulseState(double depth) {
+// the legitimate default A->B frequency modulation. `depth` is written to the CHOSEN side's PWM depth
+// knob; the other side keeps its own default, so an A arm and a B arm differ only in their side.
+DeviceStateV1 pulseState(double depth, EndpointSide side = EndpointSide::A) {
   DeviceStateV1 st = make_default_device_state(kSeed);
   slot(st, ParameterId::vco_a_morph) = 1.0;  // pulse node
   slot(st, ParameterId::vco_b_morph) = 1.0;
   slot(st, ParameterId::vco_b_cv_amt) = 0.0;  // isolate B from the default A->B route
-  slot(st, ParameterId::vco_a_pwm) = depth;
+  if (side == EndpointSide::A) {
+    slot(st, ParameterId::vco_a_pwm) = depth;
+  } else {
+    slot(st, ParameterId::vco_b_pwm) = depth;
+  }
   return st;
 }
 
@@ -258,6 +280,7 @@ double twoEdgeSwing(double phase, double duty, double w, bool corrected = true, 
 }
 
 struct EndpointEvidence {
+  EndpointSide side = EndpointSide::A;  // which VCO this evidence was measured on
   bool rendered = false;
   bool consumerSawThePublishedCv = false;   // every frame: the sink read this frame's published V
   bool consumerDutyIsTheRuledLaw = false;   // every frame: used duty == the ruled law on its OWN input
@@ -268,6 +291,7 @@ struct EndpointEvidence {
   double wDeclared = 0.0, wMeasured = 0.0;
   double dSource = 0.0;    // independent: base + depth * publishedCv / 10, clamped
   double dConsumer = 0.0;  // the duty the VCO actually used
+  double otherSinkMaxAbs = 0.0;  // the NON-driven side's PWM sink readback, max |.| over the run
   double dcActual = 0.0, dcReference = 0.0;
   // Fixed-phase residuals of the real DRY capture against the reference and against each reject arm.
   double rExact = 0.0, rOneStepOff = 0.0, rSkippedPwm = 0.0, rWrongValue = 0.0, rWrongSide = 0.0,
@@ -278,21 +302,26 @@ struct EndpointEvidence {
 
 // The step the PRODUCT advances by, from its own declared pitch law: `Vco::tick` uses
 // step = frequencyHz() / sr, and frequencyHz() = baseHz * 2^(octave + tune) * 2^(vOct) * cv-scaling.
-// These arms patch the PWM jack ONLY, so VCO A's pitch inputs are unpatched (vOct = cv = 0) and the
-// linear-FM depth is at its default. That reasoning is not trusted on its own: `endpointDutyAt`
-// re-measures the period from a clean duty-0.5 arm and requires the two to agree.
-double declaredStep(const EngineHarness& h, double sr) {
+// These arms patch the PWM jack ONLY, so the CHOSEN side's pitch inputs are unpatched (vOct = cv = 0
+// on A; on B the default A->B route is switched off by `vco_b.cv_amt = 0`, which is what makes B's
+// pitch inputs equally unpatched) and the linear-FM depth is at its default. That reasoning is not
+// trusted on its own: `endpointDutyAt` re-measures the period from a clean duty-0.5 arm and requires
+// the two to agree, on whichever side it was asked to drive.
+double declaredStep(const EngineHarness& h, double sr, EndpointSide side = EndpointSide::A) {
   const lunar24::core::SynthRuntime* rt = h.runtime();
   const double octs[3] = {lunar24::core::Vco::kLowOctave, lunar24::core::Vco::kZeroOctave,
                           lunar24::core::Vco::kPlus3Octave};
-  const int sel = rt->vcoAOctSelect();
+  const int sel = (side == EndpointSide::A) ? rt->vcoAOctSelect() : rt->vcoBOctSelect();
+  const double tune = (side == EndpointSide::A) ? rt->vcoATune() : rt->vcoBTune();
   const double oct = octs[(sel < 0 || sel > 2) ? 1 : sel];
-  return lunar24::core::kVcoBaseHzProvisional * std::pow(2.0, oct + rt->vcoATune()) / sr;
+  return lunar24::core::kVcoBaseHzProvisional * std::pow(2.0, oct + tune) / sr;
 }
 
-EndpointEvidence endpointDutyAt(double sr, double norm) {
+EndpointEvidence endpointDutyAt(double sr, double norm, EndpointSide side = EndpointSide::A) {
   EndpointEvidence ev;
-  const double base = declaredInitial(ParameterId::vco_a_pw);
+  ev.side = side;
+  const bool onB = (side == EndpointSide::B);
+  const double base = declaredInitial(onB ? ParameterId::vco_b_pw : ParameterId::vco_a_pw);
   const double depth = 1.0;
   const int frames = 40000;
 
@@ -300,24 +329,25 @@ EndpointEvidence endpointDutyAt(double sr, double norm) {
   // unmodulated base width (0.5) and the zero crossings are intact. Its only job is to measure the
   // period independently of the declared pitch law above.
   {
-    DeviceStateV1 st = pulseState(depth);
+    DeviceStateV1 st = pulseState(depth, side);
     EngineHarness h;
     h.reserve(static_cast<std::size_t>(frames));
     if (!h.load(st, sr) || !h.render(frames)) return ev;
-    const auto e = risingEdges(h.dryA());
+    const auto e = risingEdges(onB ? h.dryB() : h.dryA());
     if (e.size() >= 3 && e.back() > e.front()) {
       ev.theReferenceSquareWaveWasFound = true;
       ev.wMeasured = double(e.size() - 1) / double(e.back() - e.front());
     }
-    ev.wDeclared = declaredStep(h, sr);
+    ev.wDeclared = declaredStep(h, sr, side);
     ev.phaseAnchorAgrees = ev.theReferenceSquareWaveWasFound && ev.wDeclared > 0.0 &&
                            std::fabs(ev.wMeasured - ev.wDeclared) / ev.wDeclared < 1e-4;
   }
 
   // ---- (2) the ENDPOINT arm.
-  DeviceStateV1 st = pulseState(depth);
+  DeviceStateV1 st = pulseState(depth, side);
   slot(st, ParameterId::joystick_x) = norm;
-  setCable(st, JackId::joystick_x_out, JackId::vco_a_pwm_in);
+  setCable(st, JackId::joystick_x_out,
+           onB ? JackId::vco_b_pwm_in : JackId::vco_a_pwm_in);
   EngineHarness h;
   h.reserve(static_cast<std::size_t>(frames));
   if (!h.load(st, sr)) return ev;
@@ -326,15 +356,21 @@ EndpointEvidence endpointDutyAt(double sr, double norm) {
   consumed.reserve(static_cast<std::size_t>(frames));
   used.reserve(static_cast<std::size_t>(frames));
   knob.reserve(static_cast<std::size_t>(frames));
+  double otherMax = 0.0;
   if (!h.renderSampled(frames, 0.0, [&](const lunar24::core::SynthRuntime& rt) {
         cv.push_back(rt.controlVoltageAt(JackId::joystick_x_out));
-        consumed.push_back(rt.vcoAPwmCv());
-        used.push_back(rt.vcoAEffectiveDuty());
-        knob.push_back(rt.vcoAPwm());
+        consumed.push_back(onB ? rt.vcoBPwmCv() : rt.vcoAPwmCv());
+        used.push_back(onB ? rt.vcoBEffectiveDuty() : rt.vcoAEffectiveDuty());
+        knob.push_back(onB ? rt.vcoBPwm() : rt.vcoAPwm());
+        // The side that was NOT driven: its PWM sink must read exactly nothing, so "this endpoint is
+        // B's" is established inside the same run rather than inferred from the other side's test.
+        const double other = onB ? rt.vcoAPwmCv() : rt.vcoBPwmCv();
+        if (std::fabs(other) > otherMax) otherMax = std::fabs(other);
       })) {
     return ev;
   }
   ev.rendered = true;
+  ev.otherSinkMaxAbs = otherMax;
 
   // Per-frame: the sink saw the value the graph published THIS frame, and the duty it applied is the
   // ruled law evaluated on the sink's OWN input. The independent duty uses the knob's own reported
@@ -372,7 +408,7 @@ EndpointEvidence endpointDutyAt(double sr, double norm) {
   ev.rawDutyIsOutsideTheClampWindow =
       rawDuty < lunar24::core::Vco::kPwDutyMin || rawDuty > lunar24::core::Vco::kPwDutyMax;
 
-  const std::vector<double>& a = h.dryA();
+  const std::vector<double>& a = onB ? h.dryB() : h.dryA();
   double dcA = 0.0;
   int dcN = 0;
   for (int k = 0; k < ev.windowFrames; ++k) {
@@ -603,6 +639,9 @@ void dc_cv_law_and_inversion_and_saturation() {
   // reference instead — and made STRONGER, because "the emitted waveform is the 0.001 waveform and
   // is not the 0.5 / 0.05 / 0.999 / 0.002 waveform" says more than "some duty number is smaller
   // than another".
+  //
+  // BOTH VCOs are measured this way. The A arms come first; the B arms follow them and repeat the
+  // same statements on the other side rather than substituting an intermediate-duty observation.
   // ---------------------------------------------------------------------------------------------
   const double sr = kRate48k;
   const double base = declaredInitial(ParameterId::vco_a_pw);
@@ -639,6 +678,70 @@ void dc_cv_law_and_inversion_and_saturation() {
                                                     high.rExact <= kEndpointResidualTol &&
                                                     std::fabs(low.dcActual - high.dcActual) > 0.5;
   CHECK(theTwoEndpointsAreNotTheSameWaveform);
+
+  // ---------------------------------------------------------------------------------------------
+  // THE SAME OBSERVATION ON VCO B. The ruled transfer is a statement about the PWM SOFTWARE path and
+  // `Vco` is ONE class instantiated twice (machine_runtime.h: `Vco vcA_; Vco vcB_;`), so B's endpoints
+  // are the same claim made on the other side, not a separate feature. Until now B was only ever
+  // observed at INTERMEDIATE duty (the A/B asymmetry and default-route arms), and that cannot stand in
+  // for the 0.001 / 0.999 endpoints: at an endpoint the naive high window is NARROWER than the
+  // band-limiting kernel, which is precisely the regime the two-edge correction exists for.
+  //
+  // B is driven by its OWN depth knob and its OWN sink, with the default A->B route switched off
+  // (`vco_b.cv_amt = 0`, inside `pulseState`) — otherwise A frequency-modulates B and B's phase stops
+  // following the declared pitch law the fixed-phase reference is anchored to. That isolation is not
+  // assumed: `otherSinkMaxAbs` reads the NON-driven side's sink in this same run and must be exactly 0.
+  // The names carry a `vcoB` prefix rather than an A-style suffix on purpose: the A names above are
+  // targeted by string from tools/run_gh19_s0_mutants.py, and a suffix would make "…DutyMin" a
+  // substring of both sides, so a mutant aimed at A could be reported as having tripped B's check.
+  // ---------------------------------------------------------------------------------------------
+  const double baseB = declaredInitial(ParameterId::vco_b_pw);
+  const EndpointEvidence lowB = endpointDutyAt(sr, 0.0, EndpointSide::B);   // -5 V -> raw 0.0001
+  const EndpointEvidence highB = endpointDutyAt(sr, 1.0, EndpointSide::B);  // +5 V -> raw 0.9999
+  std::printf(
+      "  dc-cv inversion/saturation B (audio): -5V dutyB=%.9f dcB=%.6f | baseB=%.6f | +5V "
+      "dutyB=%.9f dcB=%.6f (other-sink max %.3e)\n",
+      lowB.dConsumer, lowB.dcActual, baseB, highB.dConsumer, highB.dcActual,
+      std::max(lowB.otherSinkMaxAbs, highB.otherSinkMaxAbs));
+  std::printf(
+      "  dc-cv B endpoint separations: -5V exact=%.3e skipped=%.3e wrongVal=%.3e side=%.3e "
+      "near=%.3e | +5V exact=%.3e skipped=%.3e wrongVal=%.3e side=%.3e near=%.3e | w=%.9f/%.9f\n",
+      lowB.rExact, lowB.rSkippedPwm, lowB.rWrongValue, lowB.rWrongSide, lowB.rNearbyClamp,
+      highB.rExact, highB.rSkippedPwm, highB.rWrongValue, highB.rWrongSide, highB.rNearbyClamp,
+      lowB.wDeclared, lowB.wMeasured);
+
+  // Negative CV LOWERS B's duty: the emitted waveform is the low endpoint's, and it is neither the
+  // unmodulated base width nor the mirror endpoint.
+  const bool vcoBNegativeCvLowersDuty = endpointIsCarriedByTheAudio(lowB) &&
+                                        lowB.dConsumer < baseB - 0.01 &&
+                                        lowB.rSkippedPwm > kEndpointMargin;
+  CHECK(vcoBNegativeCvLowersDuty);
+  // Positive CV SATURATES at the top of the clamp window — on B.
+  const bool vcoBPositiveCvSaturatesAtDutyMax = endpointIsCarriedByTheAudio(highB) &&
+                                                std::fabs(highB.dConsumer - 0.999) <= 1e-9 &&
+                                                highB.rawDutyIsOutsideTheClampWindow;
+  CHECK(vcoBPositiveCvSaturatesAtDutyMax);
+  // Negative CV SATURATES at the bottom of the clamp window — on B.
+  const bool vcoBNegativeCvSaturatesAtDutyMin = endpointIsCarriedByTheAudio(lowB) &&
+                                                std::fabs(lowB.dConsumer - 0.001) <= 1e-9 &&
+                                                lowB.rawDutyIsOutsideTheClampWindow;
+  CHECK(vcoBNegativeCvSaturatesAtDutyMin);
+  // Both of B's raws sit strictly outside the window, which is what makes the two checks above about
+  // the clamp rather than about wherever the raw transfer happened to land.
+  const bool vcoBBothRawsFallOutsideTheClampWindow = lowB.rawDutyIsOutsideTheClampWindow &&
+                                                     highB.rawDutyIsOutsideTheClampWindow;
+  CHECK(vcoBBothRawsFallOutsideTheClampWindow);
+  // B's two endpoints are genuinely different waveforms too.
+  const bool vcoBTheTwoEndpointsAreNotTheSameWaveform =
+      lowB.rExact <= kEndpointResidualTol && highB.rExact <= kEndpointResidualTol &&
+      std::fabs(lowB.dcActual - highB.dcActual) > 0.5;
+  CHECK(vcoBTheTwoEndpointsAreNotTheSameWaveform);
+  // The fixture drove B through B's OWN sink and nothing else: the non-driven side's PWM sink read
+  // exactly nothing for the whole of BOTH runs. An A/B mis-wire — in the fixture or in the product's
+  // sink bindings — fails here, so "this endpoint is B's" is measured rather than assumed.
+  const bool vcoBEndpointsAreDrivenThroughBsOwnSink =
+      lowB.otherSinkMaxAbs == 0.0 && highB.otherSinkMaxAbs == 0.0;
+  CHECK(vcoBEndpointsAreDrivenThroughBsOwnSink);
 }
 
 // =============================================================================================

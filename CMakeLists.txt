@@ -514,9 +514,10 @@ set_tests_properties(gh19_s3_pulse_probe PROPERTIES LABELS "slow")
 # a different assertion and was, until now, made by a checked-in file that no run could contradict.
 # `run_gh19_s3_pulse_pipeline.py` re-renders the candidate arm from the CURRENT head with the binary
 # CMake just built, analyses it, computes the deltas against the FIXED historical baseline
-# (report/gh19-s3-pulse-product/baseline_arm + base_report.txt, whose matrix sha256 is pinned in the
-# driver), and runs the 72-cell gate over the result. `--negcontrol` also runs the gate's own 22
-# refusal controls on those same artifacts, so a gate that has stopped refusing is caught here too.
+# (report/gh19-s3-pulse-product/baseline_arm + base_report.txt, BOTH of whose sha256 are pinned in
+# the driver under two separately named refusals), and runs the 72-cell gate over the result.
+# `--negcontrol` also runs the gate's own 22 refusal controls on those same artifacts, so a gate
+# that has stopped refusing is caught here too.
 # `--taps 2001` is not cosmetic: at the analyzer's default the effective-band check fails and the
 # `res_effbd_db` gate column would silently cover half the band it is named after.
 add_test(NAME gh19_s3_pulse_acceptance
@@ -553,10 +554,33 @@ add_test(NAME gh19_s3_pulse_pipeline_mutant
     --delta ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_delta.py
     --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_acceptance.py)
 
-# Both re-render the full S3 matrix (the mutant entry renders it twice), so they carry the same
+# The baseline side of the gate is TWO committed artifacts -- the stimulus matrix and the report the
+# improvement columns are read out of -- and the driver pins and refuses each by its own name. This
+# entry is the demonstration that the second pin does something. It hands the driver a copy of the
+# baseline report whose three residual columns are shifted by the same amount in every row (which
+# keeps |res_effbd_db - res_db| inside BAND_SLACK_DB, i.e. a WELL-FORMED report carrying different
+# numbers, not a malformed-input test) and requires: refusal by name, no verdict, nothing measured;
+# and, with the pin bypassed, that the same edit moves the delta columns and is still ACCEPTED --
+# which is the state the pin removes. Without this, "the report is pinned" is untested and the pin
+# could be decorative. It compiles nothing and renders the matrix once, through the same driver.
+add_test(NAME gh19_s3_pulse_baseline_report_pin
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_s3_pulse_baseline_report_pin.py
+    --probe $<TARGET_FILE:gh19_s3_pulse_probe>
+    --pipeline ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_s3_pulse_pipeline.py
+    --baseline-arm ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/baseline_arm
+    --base-report ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/base_report.txt
+    --criteria ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-product/acceptance_criteria.tsv
+    --manifest ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s3-pulse-aa/expected_cells.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_analyze.py
+    --delta ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_delta.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_acceptance.py)
+
+# All three re-render the full S3 matrix (the mutant entry renders it twice), so they carry the same
 # `slow` label as the probe and stay out of the every-push `--label-exclude slow` matrix. They are
 # PR/merge-time gates, exactly like the VCO/Schmitt/classic-saw acceptance entries above.
 set_tests_properties(gh19_s3_pulse_acceptance gh19_s3_pulse_pipeline_mutant
+  gh19_s3_pulse_baseline_report_pin
   PROPERTIES LABELS "slow")
 
 # task #109 (GH #19 S1): RED->GREEN acceptance gate for the SCHMITT-OSCILLATOR slope

@@ -43,6 +43,16 @@
 # pinned constant below and a mismatch is a REFUSAL (exit 4) before any judgement is issued --
 # otherwise editing the baseline would silently move the criterion instead of failing it.
 #
+# BOTH halves of the baseline are pinned, and that is not redundant. The scenarios matrix is the
+# stimulus; the REPORT is what the numbers are actually read out of. The gate's improvement
+# columns (`dreseffbd_db`, `dres1k5k_db`) and every `ACCEPT-REPORT` figure are computed from the
+# two reports' residual columns and never re-derived from the matrix, so a consistent edit to the
+# report's three residual columns -- the same shift applied to `res_db`, `res_1k5k_db` and
+# `res_effbd_db`, which keeps `|res_effbd_db - res_db|` inside BAND_SLACK_DB and the instrument
+# self-check untouched -- moves the published improvement of all 72 cells while the pin above
+# still matches. Two independent artifacts, two independently named refusals
+# (`BASELINE-PIN` / `BASELINE-REPORT-PIN`), both before any measurement.
+#
 # ---------------------------------------------------------------------------------------------
 # EXACT INVOCATIONS. These are not guesses: each was recovered by reproducing the committed
 # artifacts byte-for-byte from the pinned arms (base_report.txt eab2aa0d..., cand_report.txt
@@ -71,6 +81,12 @@ import tempfile
 # changed, and the run must say so rather than quietly judging against a different baseline.
 BASELINE_SCENARIOS_SHA256 = \
     "f3075e7ea021953a487ada97b9c8249ec4466c9ad47d0cb0ea3078f2a79d61bc"
+
+# The pinned baseline REPORT -- the other half of the same baseline. Pinned separately, and
+# refused separately, because it protects a different failure: the matrix above fixes the
+# stimulus, this fixes the numbers every improvement column is read out of. See the header note.
+BASELINE_REPORT_SHA256 = \
+    "eab2aa0d9b6f4294fcbd543efce113fa6039e94177b5887e6b78bdd2214b22ca"
 
 EXIT_PASS = 0
 EXIT_RED = 1
@@ -142,6 +158,28 @@ def main():
             % (pinned, BASELINE_SCENARIOS_SHA256, got))
         return EXIT_REFUSE
     sys.stdout.write("ACCEPT-PIPELINE baseline_pin=OK sha256=%s path=%s\n" % (got, pinned))
+
+    # The baseline REPORT is pinned with the same force and its own name. Every improvement column
+    # the gate judges (`dreseffbd_db`, `dres1k5k_db`) and every `ACCEPT-REPORT` figure is read out
+    # of this file's residual columns, not re-derived from the matrix above -- so with only the
+    # matrix pinned, a consistent shift of all three residual columns changes the published
+    # improvement of all 72 cells, keeps `|res_effbd_db - res_db|` within BAND_SLACK_DB, leaves the
+    # instrument self-check intact, and passes. That state is what this refusal removes.
+    if not os.path.exists(args.base_report):
+        sys.stderr.write("REFUSE BASELINE-REPORT-PIN: %s does not exist\n" % args.base_report)
+        return EXIT_REFUSE
+    got_report = sha256_of(args.base_report)
+    if got_report != BASELINE_REPORT_SHA256:
+        sys.stderr.write(
+            "REFUSE BASELINE-REPORT-PIN: the committed baseline report is not the pinned one.\n"
+            "  path   %s\n  pinned %s\n  actual %s\n"
+            "The improvement of every gate cell is computed from this report's residual columns, "
+            "so editing it moves the criterion the 72 gate cells are judged against while the "
+            "baseline matrix pin still matches. The run refuses instead.\n"
+            % (args.base_report, BASELINE_REPORT_SHA256, got_report))
+        return EXIT_REFUSE
+    sys.stdout.write("ACCEPT-PIPELINE base_report_pin=OK sha256=%s path=%s\n"
+                     % (got_report, args.base_report))
 
     tmp = tempfile.mkdtemp(prefix="gh19s3pipe-") if args.out is None else args.out
     try:

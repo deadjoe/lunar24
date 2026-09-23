@@ -12,6 +12,8 @@ GH#19 S0 acceptance: morph map + two-sided PWM through the agreed entry
   dc-cv 96k  norm=0.00 ENDPOINT used=0.001000000 indep=0.001000000 (mirror 0.999, wrong 0.05, near 0.002) w=0.002291667/0.002291651 | exact=5.750e-12 stepOff=3.724e-01 skipped=1.000e+00 wrongVal=1.000e+00 side=1.000e+00 near=3.884e-01 | dc=-0.499001 ref=-0.499000 | win=1310@1 rawsOfWindow=1
   dc-cv 96k  norm=1.00 ENDPOINT used=0.999000000 indep=0.999000000 (mirror 0.001, wrong 0.95, near 0.998) w=0.002291667/0.002291651 | exact=5.581e-12 stepOff=3.684e-01 skipped=1.000e+00 wrongVal=1.000e+00 side=1.000e+00 near=3.835e-01 | dc=0.499001 ref=0.499000 | win=1310@1 rawsOfWindow=1
   dc-cv inversion/saturation (audio): -5V duty=0.001000000 dc=-0.499001 | base=0.500000 | +5V duty=0.999000000 dc=0.499001 (clamp window 0.001/0.999)
+  dc-cv inversion/saturation B (audio): -5V dutyB=0.001000000 dcB=-0.499001 | baseB=0.500000 | +5V dutyB=0.999000000 dcB=0.499001 (other-sink max 0.000e+00)
+  dc-cv B endpoint separations: -5V exact=1.015e-12 skipped=1.000e+00 wrongVal=1.000e+00 side=1.000e+00 near=1.904e-01 | +5V exact=1.015e-12 skipped=1.000e+00 wrongVal=1.000e+00 side=1.000e+00 near=2.050e-01 | w=0.004583333/0.004583344
   depth 0 with a live cable: duty=0.499937 spread=0.004566 sourceSpan=9.9979 V
   depth arms: d0=0.499937 d0.5=0.624974 d1=0.750001 (want 0.625000 / 0.750000)
   same-frame: same=9599/9599 oneLate=0/9599
@@ -27,4 +29,4 @@ GH#19 S0 acceptance: morph map + two-sided PWM through the agreed entry
   cable: |base-patched|=8694.254693 |base-restored|=0.000e+00
   default route: B audio high-time=0.249967 readback duty=0.500000
   isolated B: audio=0.499937 readback=0.500000
-[test_gh19_s0_morph_pwm_acceptance] 84 checks OK
+[test_gh19_s0_morph_pwm_acceptance] 90 checks OK
