@@ -55,7 +55,12 @@
 //        behaviour, not this curve.
 //   (P3) the BLAMP scaling: the existing triangle slope correction is scaled by the triangle's
 //        weight in the mix (triangleWeight below). First-order, provisional, and exact only at
-//        the pure-triangle node. No other node is band-limited.
+//        the pure-triangle node.
+//   (P5) the pulse-BLEP scaling (added by task #118, GH#19 S3): the pulse's value-jump correction
+//        (pulse_blep_kernel.h) is scaled by the pulse's weight in the mix (pulseWeight below),
+//        with the same first-order provisional status and the same exactness at its own node.
+//        Exact only at the pure-pulse node (norm = 1.0). It is NOT a band-limiting of the mixed
+//        output, and it does not correct the saw / invSaw / sine nodes, which remain naive.
 //   (P4) the pulse node reads `duty_` (= the `pw` panel parameter), so the sweep makes the
 //        pulse's duty audible. Approved as in scope by @Codex (task #116): the normal
 //        consumption of an EXISTING parameter.
@@ -77,9 +82,10 @@
 // `norm` at every boundary (left limit = right limit = the node shape) but its derivative is
 // not, so the sweep corners at the nodes. Continuity is the requirement; C1 is not claimed.
 //
-// The mixed output is a convex combination of a band-limited triangle and NAIVE saw / sine /
-// pulse / invSaw. It is NOT band-limited and is never called band-limited. Only the pure
-// triangle component is corrected, and only in proportion to its weight.
+// The mixed output is a convex combination of band-limited triangle and pulse nodes with NAIVE
+// saw / invSaw / sine. It is NOT band-limited and is never called band-limited. Only the two
+// corrected nodes (triangle via BLAMP, pulse via BLEP) are corrected, each in proportion to its
+// own weight in the mix, and each exactly at its own node.
 
 #ifndef LUNAR24_CORE_VCO_WAVE_MAP_H
 #define LUNAR24_CORE_VCO_WAVE_MAP_H
@@ -200,6 +206,27 @@ inline double triangleWeight(const Boundaries& c, double norm) {
                 "triangleWeight assumes kTriangle is the second-to-last node (stretch 2->3)");
   if (pos.stretch == kNodeCount - 3) return pos.u;        // stretch 2: rising into triangle
   if (pos.stretch == kNodeCount - 2) return 1.0 - pos.u;  // stretch 3: falling out of triangle
+  return 0.0;
+}
+
+// The weight the pure-PULSE node carries in the mix at this norm, with the same contract as
+// triangleWeight above and for the same reason: it is the weight of a NODE in a convex blend, not
+// a normalisation of the output. kPulse is the last node, so it is the right end of the last
+// stretch (3, triangle -> pulse); the weight is u there, 0 elsewhere, and exactly 1.0 at the pulse
+// node itself. Used ONLY to scale the pulse BLEP correction (pulse_blep_kernel.h, task #118);
+// it changes no node's level.
+//
+// The two weights are complementary on stretch 3: triangleWeight = 1-u and pulseWeight = u, so at
+// u = 1 the triangle BLAMP is exactly 0 and the pulse BLEP exactly full, and at u = 0 the reverse.
+// Only ONE of the two node corrections is ever in force at either end of the stretch, and in
+// between both run scaled by their own node's weight -- the same first-order provisional law P3
+// already states for the triangle, applied to the second corrected node. Neither weight makes the
+// MIXED output band-limited.
+inline double pulseWeight(const Boundaries& c, double norm) {
+  const Position pos = locate(c, norm);
+  static_assert(static_cast<int>(Node::kPulse) == kNodeCount - 1,
+                "pulseWeight assumes kPulse is the last node (stretch 3)");
+  if (pos.stretch == kNodeCount - 2) return pos.u;  // stretch 3: rising into pulse
   return 0.0;
 }
 

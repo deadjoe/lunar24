@@ -1,0 +1,148 @@
+GH#19 S0 endpoint-criterion negative controls (task #119)
+One block per production mutation actually built and run on test_gh19_s0_morph_pwm_acceptance, each showing the
+FULL FAIL list -- which checks fired, not only the first -- and the instrument's own
+`N/<total> checks FAILED` line. The check each mutation is REQUIRED to trip is printed as
+`requires:` and is asserted to be present in the list below it, so a block here cannot be a
+reformatting of a run that failed some other way.
+Marks: [dir] = named by director note ce80e516; [B] = the two VCO B controls added under
+director note be0b1b61; unmarked = the A-side same-frame/polarity arm.
+
+== acc-missing-pwm-consumer : 28 failures on target test_gh19_s0_morph_pwm_acceptance
+   requires: pwmCvIsConsumedInTheSameFrameItIsPublished
+   claim:    the acceptance surface requires the graph CV to actually reach the VCO
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:532: changingCvTracksTransfer44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:533: changingCvTracksTransfer48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:534: changingCvTracksTransfer88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:535: changingCvTracksTransfer96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:541: changingCvModulatesDuty44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:542: changingCvModulatesDuty48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:543: changingCvModulatesDuty88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:544: changingCvModulatesDuty96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:630: dcCvLawHolds44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:631: dcCvLawHolds48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:632: dcCvLawHolds88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:633: dcCvLawHolds96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:660: negativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:665: positiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:670: negativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:675: bothRawsFallOutsideTheClampWindow
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:680: theTwoEndpointsAreNotTheSameWaveform
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:718: vcoBNegativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:723: vcoBPositiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:728: vcoBNegativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:733: vcoBBothRawsFallOutsideTheClampWindow
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:738: vcoBTheTwoEndpointsAreNotTheSameWaveform
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:800: pwmDepthMidMatchesHalfTheModulation
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:802: pwmDepthOneMatchesTheFullModulation
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:804: pwmDepthArmsAreOrdered
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:843: pwmCvIsConsumedInTheSameFrameItIsPublished
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:999: vcoAPwmInReceivesTheASourceVolts
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:1383: patchingThePwmJackChangesTheRender
+[test_gh19_s0_morph_pwm_acceptance] 28/90 checks FAILED
+
+== acc-endpoint-inverted-pwm-polarity : 17 failures on target test_gh19_s0_morph_pwm_acceptance  [dir]
+   requires: negativeCvSaturatesAtDutyMin
+   claim:    the endpoint criterion rejects a wrong-side (inverted-polarity) consumer
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:532: changingCvTracksTransfer44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:533: changingCvTracksTransfer48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:534: changingCvTracksTransfer88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:535: changingCvTracksTransfer96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:630: dcCvLawHolds44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:631: dcCvLawHolds48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:632: dcCvLawHolds88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:633: dcCvLawHolds96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:660: negativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:665: positiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:670: negativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:680: theTwoEndpointsAreNotTheSameWaveform
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:800: pwmDepthMidMatchesHalfTheModulation
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:802: pwmDepthOneMatchesTheFullModulation
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:804: pwmDepthArmsAreOrdered
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:843: pwmCvIsConsumedInTheSameFrameItIsPublished
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:999: vcoAPwmInReceivesTheASourceVolts
+[test_gh19_s0_morph_pwm_acceptance] 17/90 checks FAILED
+
+== acc-cv-one-sample-late : 12 failures on target test_gh19_s0_morph_pwm_acceptance
+   requires: pwmCvIsConsumedInTheSameFrameItIsPublished
+   claim:    the acceptance surface's same-frame check is a real discriminator (not a residual)
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:630: dcCvLawHolds44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:631: dcCvLawHolds48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:632: dcCvLawHolds88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:633: dcCvLawHolds96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:660: negativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:665: positiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:670: negativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:718: vcoBNegativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:723: vcoBPositiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:728: vcoBNegativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:843: pwmCvIsConsumedInTheSameFrameItIsPublished
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:845: pwmCvIsNotThePreviousFramesValue
+[test_gh19_s0_morph_pwm_acceptance] 12/90 checks FAILED
+
+== acc-endpoint-pwm-not-consumed : 28 failures on target test_gh19_s0_morph_pwm_acceptance  [dir]
+   requires: negativeCvSaturatesAtDutyMin
+   claim:    the endpoint criterion rejects a sink that never consumes the PWM CV
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:532: changingCvTracksTransfer44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:533: changingCvTracksTransfer48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:534: changingCvTracksTransfer88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:535: changingCvTracksTransfer96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:541: changingCvModulatesDuty44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:542: changingCvModulatesDuty48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:543: changingCvModulatesDuty88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:544: changingCvModulatesDuty96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:630: dcCvLawHolds44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:631: dcCvLawHolds48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:632: dcCvLawHolds88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:633: dcCvLawHolds96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:660: negativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:665: positiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:670: negativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:675: bothRawsFallOutsideTheClampWindow
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:680: theTwoEndpointsAreNotTheSameWaveform
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:718: vcoBNegativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:723: vcoBPositiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:728: vcoBNegativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:733: vcoBBothRawsFallOutsideTheClampWindow
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:738: vcoBTheTwoEndpointsAreNotTheSameWaveform
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:800: pwmDepthMidMatchesHalfTheModulation
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:802: pwmDepthOneMatchesTheFullModulation
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:804: pwmDepthArmsAreOrdered
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:843: pwmCvIsConsumedInTheSameFrameItIsPublished
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:999: vcoAPwmInReceivesTheASourceVolts
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:1383: patchingThePwmJackChangesTheRender
+[test_gh19_s0_morph_pwm_acceptance] 28/90 checks FAILED
+
+== acc-endpoint-cv-one-sample-late : 9 failures on target test_gh19_s0_morph_pwm_acceptance  [dir]
+   requires: pwmCvIsConsumedInTheSameFrameItIsPublished
+   claim:    the endpoint/consumption surface rejects a one-frame-late PWM consumer
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:630: dcCvLawHolds44k1
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:631: dcCvLawHolds48k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:632: dcCvLawHolds88k2
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:633: dcCvLawHolds96k
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:660: negativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:665: positiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:670: negativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:843: pwmCvIsConsumedInTheSameFrameItIsPublished
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:845: pwmCvIsNotThePreviousFramesValue
+[test_gh19_s0_morph_pwm_acceptance] 9/90 checks FAILED
+
+== acc-endpoint-b-pwm-not-consumed : 5 failures on target test_gh19_s0_morph_pwm_acceptance  [B]
+   requires: vcoBNegativeCvSaturatesAtDutyMin
+   claim:    the B endpoint criterion rejects a B-side sink that never consumes the PWM CV
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:718: vcoBNegativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:723: vcoBPositiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:728: vcoBNegativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:733: vcoBBothRawsFallOutsideTheClampWindow
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:738: vcoBTheTwoEndpointsAreNotTheSameWaveform
+[test_gh19_s0_morph_pwm_acceptance] 5/90 checks FAILED
+
+== acc-endpoint-b-wrong-side-cable : 6 failures on target test_gh19_s0_morph_pwm_acceptance  [B]
+   requires: vcoBNegativeCvSaturatesAtDutyMin
+   claim:    the B endpoint criterion rejects an A/B mis-wired PWM sink
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:718: vcoBNegativeCvLowersDuty
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:723: vcoBPositiveCvSaturatesAtDutyMax
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:728: vcoBNegativeCvSaturatesAtDutyMin
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:733: vcoBBothRawsFallOutsideTheClampWindow
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:738: vcoBTheTwoEndpointsAreNotTheSameWaveform
+FAIL ./tests/host/test_gh19_s0_morph_pwm_acceptance.cpp:1001: vcoBPwmInStaysUnpatchedWhenOnlyAIsDriven
+[test_gh19_s0_morph_pwm_acceptance] 6/90 checks FAILED

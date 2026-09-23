@@ -1,0 +1,18 @@
+ACCEPT-GATE tool=gh19_s3_pulse_acceptance.py
+ACCEPT-GATE base_report=/tmp/gh19-s3-119/an/base_report.txt
+ACCEPT-GATE cand_report=/tmp/gh19-s3-119/an/cand_report.txt
+ACCEPT-INPUT criteria sha256=1446b9c1b37b27ecc97310dc7cf882505e25969018e75eee5c99bebeecdf3542 path=report/gh19-s3-pulse-product/acceptance_criteria.tsv
+ACCEPT-INPUT plan sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811 path=/tmp/gh19-s3-119/base/gh19_s3_plan.tsv
+ACCEPT-INPUT deltas sha256=ea3755033164d37fbbcb72b2b1ca096b9805db0291eef332a322698202f6a12b path=/tmp/gh19-s3-119/an/deltas.tsv
+ACCEPT-INPUT base_report sha256=eab2aa0d9b6f4294fcbd543efce113fa6039e94177b5887e6b78bdd2214b22ca path=/tmp/gh19-s3-119/an/base_report.txt
+ACCEPT-INPUT cand_report sha256=27589bd045549b366a9c2b29424cacc24bfef1629b51b2c9cbfee9ddf12d35fc path=/tmp/gh19-s3-119/an/cand_report.txt
+ACCEPT-GATE criteria=acceptance_criteria.tsv cells=72 report_only=8 plan_static=80
+ACCEPT-REPORT max_abs_fitted_scale_delta=0.006300
+ACCEPT-REPORT max_pinned_scale_cost_db=+0.1205
+ACCEPT-REPORT worst_band_1k5k_improvement_db=-24.15
+ACCEPT-REPORT worst_full_band_improvement_db=-7.66
+ACCEPT-REPORT worst_pinned_scale_rect_full_band_improvement_db=-7.632
+ACCEPT-REPORT worst_rect_full_band_improvement_db=-7.680
+ACCEPT-EVIDENCE improvement_cells=72 worst_dreseffbd_db=-7.66 worst_dres1k5k_db=-24.15 worst_dres_db=-7.68 band_rect_vs_effbd_max_gap_db=0.1500
+ACCEPT-NOTE the two ``worst_..._rect_full_band...`` reports are one band's pair: the same gate cells, the same fixed reference, phase and denominator, once with each arm's own fitted scale and once with the scale pinned to the BASELINE arm's value. The difference is the part of the rect-band improvement the fit accounts for. The ``worst_full_band`` and ``worst_band_1k5k`` reports are the gate's own Hann columns, unchanged; no pinned-scale value is claimed for them because the published single A is not that band's least-squares scale. All six are report-only: the authorization sets no threshold on any of them.
+ACCEPT-GATE verdict=PASS refusals=0 failures=0

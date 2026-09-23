@@ -1,0 +1,121 @@
+candidate tree hashes before (these must not move):
+  9efad15a34ea6348 core/include/lunar24/core/vco.h
+  dd7c30a9baba855e core/include/lunar24/core/vco_wave_map.h
+  788e8fc077bef3f3 core/include/lunar24/core/pulse_blep_kernel.h
+  89942e94548bf8b1 core/include/lunar24/core/machine_runtime.h
+duty-slew rule: 13 dynamic cells move the duty by >= 100 correction windows per frame (dt = f0/sr); these carry the pwm_late criterion:
+    vco_a_dynpwm_44100_220_sq_r20_b25_d100             150.14 windows/frame
+    vco_a_dynpwm_44100_220_sq_r20_b50_d50              100.03 windows/frame
+    vco_a_dynpwm_44100_220_sq_r2_b50_d50               100.03 windows/frame
+    vco_a_dynpwm_96000_220_sq_r20_b25_d100             326.84 windows/frame
+    vco_a_dynpwm_96000_220_sq_r20_b50_d50              217.75 windows/frame
+    vco_a_dynpwm_96000_220_sq_r2_b50_d50               217.75 windows/frame
+    vco_a_dynpwm_96000_440_sq_r20_b25_d100             163.42 windows/frame
+    vco_a_dynpwm_96000_440_sq_r20_b50_d50              108.87 windows/frame
+    vco_a_dynpwm_96000_440_sq_r2_b50_d50               108.87 windows/frame
+    vco_b_dynpwm_44100_220_sq_r20_b50_d50              100.03 windows/frame
+    vco_b_dynpwm_44100_220_sq_r2_b50_d50               100.03 windows/frame
+    vco_b_dynpwm_96000_220_sq_r20_b50_d50              217.75 windows/frame
+    vco_b_dynpwm_96000_220_sq_r2_b50_d50               217.75 windows/frame
+predicted-visibility rule: 2 of those have >= 1 frame(s) where the stale read must flip the naive sign OUTSIDE the permitted edge class; these are the cells the reconciliation half is asserted on:
+    vco_a_dynpwm_44100_220_sq_r20_b25_d100             15 step frame(s),  7 predicted unexplained   predicted first_bad frame=9922 (+,6 more)
+    vco_a_dynpwm_44100_220_sq_r20_b50_d50              15 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_a_dynpwm_44100_220_sq_r2_b50_d50                2 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_a_dynpwm_96000_220_sq_r20_b25_d100              7 step frame(s),  3 predicted unexplained   predicted first_bad frame=11999 (+,2 more)
+    vco_a_dynpwm_96000_220_sq_r20_b50_d50               7 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_a_dynpwm_96000_220_sq_r2_b50_d50                1 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_a_dynpwm_96000_440_sq_r20_b25_d100              7 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_a_dynpwm_96000_440_sq_r20_b50_d50               7 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_a_dynpwm_96000_440_sq_r2_b50_d50                1 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_b_dynpwm_44100_220_sq_r20_b50_d50              15 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_b_dynpwm_44100_220_sq_r2_b50_d50                2 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_b_dynpwm_96000_220_sq_r20_b50_d50               7 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+    vco_b_dynpwm_96000_220_sq_r2_b50_d50                1 step frame(s),  0 predicted unexplained   (predicted 0 unexplained frames: reported, not judged -- see the PRED_MIN comment)
+
+reading the two reference arms with the criterion reference construction...
+  baseline: 26 cells   candidate: 26 cells
+  the candidate's own claim, on these cells: 26 of 26 improved by > 0.50 dB (median -7.56 dB)
+
+-- declaration preflight: every anchor must occur exactly once in the candidate tree --
+  all 6 anchors present exactly once across 4 mutations
+
+=== NEGCTL bypass — the correction is computed nowhere; the arm must equal the baseline exactly ===
+  envelope: max peak over the criterion cells = 0.5000 (candidate default bound 0.55, widened to 4.00 for this arm)
+  max |mutation - baseline| over 8 static + 3 dynamic + 2 mixed cells = 0.0000 dB
+  criterion bypass_must_be_indistinguishable_from_baseline: FAILS AS PREDICTED (red, ok)
+
+=== NEGCTL wrong_sign — the -2 B edge is added instead of subtracted ===
+  envelope: max peak over the criterion cells = 1.0000 (candidate default bound 0.55, widened to 4.00 for this arm)
+    vco_a_pulse_44100_220_pw10               +2.92 dB vs baseline
+    vco_a_pulse_44100_220_pw50               +2.91 dB vs baseline
+    vco_a_pulse_44100_440_pw10               +2.97 dB vs baseline
+    vco_a_pulse_44100_440_pw50               +2.96 dB vs baseline
+    vco_a_pulse_44100_880_pw50               +3.06 dB vs baseline
+    vco_a_pulse_44100_880_pw90               +3.04 dB vs baseline
+    vco_a_pulsehi_44100_3520_pw50            +2.91 dB vs baseline
+    vco_a_ringmix_44100_440_pw050_m87500     +2.96 dB vs baseline
+    vco_a_ringmix_44100_440_pw050_m93750     +2.96 dB vs baseline
+    vco_b_pulse_44100_220_pw50               +2.91 dB vs baseline
+  criterion wrong_sign_must_worsen_vs_baseline: FAILS AS PREDICTED (red, ok)
+
+=== NEGCTL wrong_position — the moving edge is corrected at 1-duty instead of duty ===
+  envelope: max peak over the criterion cells = 1.0000 (candidate default bound 0.55, widened to 4.00 for this arm)
+    vco_a_pulse_44100_220_pw10               +7.86 dB vs candidate  (duty != 0.5)
+    vco_a_pulse_44100_220_pw50               +0.00 dB vs candidate  (duty == 0.5)
+    vco_a_pulse_44100_440_pw10               +7.92 dB vs candidate  (duty != 0.5)
+    vco_a_pulse_44100_440_pw50               +0.00 dB vs candidate  (duty == 0.5)
+    vco_a_pulse_44100_880_pw50               +0.00 dB vs candidate  (duty == 0.5)
+    vco_a_pulse_44100_880_pw90               +7.73 dB vs candidate  (duty != 0.5)
+    vco_a_pulsehi_44100_3520_pw50            +0.00 dB vs candidate  (duty == 0.5)
+    vco_a_ringmix_44100_440_pw050_m87500     +0.00 dB vs candidate  (duty == 0.5)
+    vco_a_ringmix_44100_440_pw050_m93750     +0.00 dB vs candidate  (duty == 0.5)
+    vco_b_pulse_44100_220_pw50               +0.00 dB vs candidate  (duty == 0.5)
+  criterion wrong_position_must_worsen_iff_duty_differs_from_half: FAILS AS PREDICTED (red, ok)
+
+=== NEGCTL pwm_late — the PWM CV is consumed one frame late, at the runtime site where the product consumes it ===
+  envelope: max peak over the criterion cells = 0.5000 (candidate default bound 0.55, widened to 4.00 for this arm)
+    max |static movement vs candidate| = 0.0000 dB (must stay <= 0.05: a stationary duty cannot see a stale read)
+    vco_a_dynpwm_44100_220_sq_r20_b25_d100               +0.41 dB vs candidate
+    vco_a_dynpwm_44100_220_sq_r20_b50_d50                +1.23 dB vs candidate
+    vco_a_dynpwm_44100_220_sq_r2_b50_d50                 -0.39 dB vs candidate
+    vco_a_dynpwm_96000_220_sq_r20_b25_d100               +0.87 dB vs candidate
+    vco_a_dynpwm_96000_220_sq_r20_b50_d50                +2.80 dB vs candidate
+    vco_a_dynpwm_96000_220_sq_r2_b50_d50                 -0.15 dB vs candidate
+    vco_a_dynpwm_96000_440_sq_r20_b25_d100               -1.39 dB vs candidate
+    vco_a_dynpwm_96000_440_sq_r20_b50_d50                -1.38 dB vs candidate
+    vco_a_dynpwm_96000_440_sq_r2_b50_d50                 -0.85 dB vs candidate
+    vco_b_dynpwm_44100_220_sq_r20_b50_d50                +1.23 dB vs candidate
+    vco_b_dynpwm_44100_220_sq_r2_b50_d50                 -0.39 dB vs candidate
+    vco_b_dynpwm_96000_220_sq_r20_b50_d50                +2.80 dB vs candidate
+    vco_b_dynpwm_96000_220_sq_r2_b50_d50                 -0.15 dB vs candidate
+    sign split: 7 cells better, 6 cells worse -- the 'must worsen' prediction is FALSIFIED (see the criterion comment); the judged claim is sensitivity, not direction
+    smooth-PWM cells carrying the improvement claim (slew <= 0.182 windows/frame), reported NOT judged:
+      vco_a_dynpwm_44100_220_tri_r20_b50_d50             -0.26 dB vs candidate
+      vco_a_dynpwm_44100_220_tri_r2_b25_d50              +0.00 dB vs candidate
+      vco_a_dynpwm_44100_220_tri_r2_b50_d50              +0.00 dB vs candidate
+    same-frame reconciliation (product output vs the model of the recorded source frames):
+      candidate arm: 146/146 cells align (unexplained == 0)
+      mutant arm, static cells (a stationary duty cannot see a stale read): 8/8 still align
+      vco_a_dynpwm_44100_220_sq_r20_b25_d100         RED  unexplained=7   (predicted >=7) first_bad frame=9922 (predicted 9922, MATCH) i=1730 phase=0.502494331 duty=0.250000000 err=1.000000000
+      vco_a_dynpwm_96000_220_sq_r20_b25_d100         RED  unexplained=3   (predicted >=3) first_bad frame=11999 (predicted 11999, MATCH) i=3807 phase=0.500000000 duty=0.250000000 err=1.000000000
+      predicted to leave `unexplained` at ZERO (steps land where the two duties agree, or inside the permitted edge class), reported NOT judged:
+        vco_a_dynpwm_44100_220_sq_r20_b50_d50            15 step frame(s), predicted 0, mutant unexplained=0
+        vco_a_dynpwm_44100_220_sq_r2_b50_d50              2 step frame(s), predicted 0, mutant unexplained=0
+        vco_a_dynpwm_96000_220_sq_r20_b50_d50             7 step frame(s), predicted 0, mutant unexplained=0
+        vco_a_dynpwm_96000_220_sq_r2_b50_d50              1 step frame(s), predicted 0, mutant unexplained=0
+        vco_a_dynpwm_96000_440_sq_r20_b25_d100            7 step frame(s), predicted 0, mutant unexplained=0
+        vco_a_dynpwm_96000_440_sq_r20_b50_d50             7 step frame(s), predicted 0, mutant unexplained=0
+        vco_a_dynpwm_96000_440_sq_r2_b50_d50              1 step frame(s), predicted 0, mutant unexplained=0
+        vco_b_dynpwm_44100_220_sq_r20_b50_d50            15 step frame(s), predicted 0, mutant unexplained=0
+        vco_b_dynpwm_44100_220_sq_r2_b50_d50              2 step frame(s), predicted 0, mutant unexplained=0
+        vco_b_dynpwm_96000_220_sq_r20_b50_d50             7 step frame(s), predicted 0, mutant unexplained=0
+        vco_b_dynpwm_96000_220_sq_r2_b50_d50              1 step frame(s), predicted 0, mutant unexplained=0
+  criterion late_cv_consume_must_break_the_same_frame_reconciliation_on_stepping_cells_only: FAILS AS PREDICTED (red, ok)
+
+=== NEGCTL SUMMARY ===
+  bypass           bypass_must_be_indistinguishable_from_baseline       RED 
+  wrong_sign       wrong_sign_must_worsen_vs_baseline                   RED 
+  wrong_position   wrong_position_must_worsen_iff_duty_differs_from_half RED 
+  pwm_late         late_cv_consume_must_break_the_same_frame_reconciliation_on_stepping_cells_only RED 
+  candidate tree unchanged (all 4 headers byte-identical)
+  4/4 red as predicted, 0 invalid, 0 unexpectedly green

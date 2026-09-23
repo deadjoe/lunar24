@@ -1,0 +1,10 @@
+[tamper worse ] 3 block(s), 94 row(s), residual columns shifted +3.0 dB  sha256=fc2c460859d42d8b
+[tamper better] 3 block(s), 94 row(s), residual columns shifted -30.0 dB  sha256=e46b494cfc454d02
+[pin        ] pipeline with the tampered baseline report: rc=4
+[reference  ] pristine baseline through the pipeline: rc=0 (PASS)
+[bypass worse ] the SAME report edit, pin bypassed: deltas moved; worst |d improvement| among the three judged columns = 3.000 dB
+[bypass worse ] gate on the tampered baseline: rc=0 verdict=PASS
+[bypass better] the SAME report edit, pin bypassed: deltas moved; worst |d improvement| among the three judged columns = 30.000 dB
+[bypass better] gate on the tampered baseline: rc=1 verdict=RED
+
+BASELINE-REPORT-PIN PASS: an edited baseline report is refused by name before any measurement and issues no verdict, while the stimulus pin reports OK first so the two surfaces are distinguishable; and the edit that was refused is not inert. With the pin bypassed, the same well-formed report -- the stimulus pin still green -- is ACCEPTED when the baseline is made to look worse (and publishes +3.0 dB more improvement than it earned) and is REJECTED by the gate's own 6 dB criterion when the baseline is made to look better. The report carries the verdict in both directions, so the SHA pin removes a state the gate demonstrably accepts.

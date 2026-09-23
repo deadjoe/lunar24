@@ -1,0 +1,190 @@
+$ c++ -std=c++17 -O2 -I core/include tools/gh19_s3_pulse_kernel_sweep.cpp -o /tmp/gh19_s3_sweep
+$ /tmp/gh19_s3_sweep
+BOX-SRC spec vco_a.tune       min=-1.0 max=1.0
+BOX-SRC spec vco_a.oct_sel    min=0.0 max=2.0
+BOX-SRC spec vco_a.cv_amt     min=0.0 max=1.0
+BOX-SRC spec vco_a.cv_in      nominal=[-5.0, 5.0] transfer=None
+BOX-SRC spec vco_a.v_oct_in   nominal=[0.0, 8.0] transfer=exponential
+BOX-SRC header inline constexpr double kVcoBaseHzProvisional = 440.0;
+BOX-SRC fm  tools/gh19_s3_pulse_kernel_sweep.cpp:618: // `instHz = frequencyHz() + fmDevHz_ * fmCv_`; `setFmDepth`/`setFmCv` have no caller anywhere in the  (declaration/mention only, not a call site)
+BOX-SRC fm  core/include/lunar24/core/vco.h:189: void setFmCv(double volts) { fmCv_ = volts; }  (declaration/mention only, not a call site)
+BOX-SRC fm  core/include/lunar24/core/vco.h:190: void setFmDepth(double fDevHz) { fmDevHz_ = fDevHz; }  (declaration/mention only, not a call site)
+gh19_s3_pulse_kernel_sweep: header compiled directly, no product link
+kPolyblepMaxDt=0.500000
+REPRO dt=220/44100=0.004988662131519  t=dt/4=0.001247165532880
+REPRO duty=2dt-1e-12  guarded=1.000000000000000  current=0.437500000000000  disjoint=0
+REPRO duty=2dt+1e-12  guarded=0.437500000000000  current=0.437500000000000  disjoint=1
+REPRO jump guarded=0.562500000000000   current=0.000000000000000
+REFINE guarded(58f41be) dt=0.004988662 t=0.001247166 duty=0.008979592..0.010975057
+REFINE   N=1000     maxgap=0.562500000000000 at duty=0.009977324263
+REFINE   N=10000    maxgap=0.562500000000000 at duty=0.009977324263
+REFINE   N=100000   maxgap=0.562500000000000 at duty=0.009977324263
+REFINE   N=1000000  maxgap=0.562500000000000 at duty=0.009977324263
+REFINE current-header dt=0.004988662 t=0.001247166 duty=0.008979592..0.010975057
+REFINE   N=1000     maxgap=0.000000000000000 at duty=0.000000000000
+REFINE   N=10000    maxgap=0.000000000000000 at duty=0.000000000000
+REFINE   N=100000   maxgap=0.000000000000000 at duty=0.000000000000
+REFINE   N=1000000  maxgap=0.000000000000000 at duty=0.000000000000
+REFINE guarded(58f41be) dt=0.004988662 t=0.400000000 duty=0.300000000..0.500000000
+REFINE   N=1000     maxgap=0.078574537190096 at duty=0.400000000000
+REFINE   N=10000    maxgap=0.008002109008272 at duty=0.400000000000
+REFINE   N=100000   maxgap=0.000801657453720 at duty=0.400000000000
+REFINE   N=1000000  maxgap=0.000080180210903 at duty=0.400000000000
+REFINE current-header dt=0.004988662 t=0.400000000 duty=0.300000000..0.500000000
+REFINE   N=1000     maxgap=0.078574537190096 at duty=0.400000000000
+REFINE   N=10000    maxgap=0.008002109008272 at duty=0.400000000000
+REFINE   N=100000   maxgap=0.000801657453720 at duty=0.400000000000
+REFINE   N=1000000  maxgap=0.000080180210903 at duty=0.400000000000
+GRID maxabs current  nDt=64 nDuty=1500 nT=1500  max=1.000000000000000 excess_over_1=0.000e+00 at dt=0.007812 duty=0.000333333 t=0.008333333
+GRID maxabs guarded  (same grid, refuted formula)  max=1.000000000000000 excess_over_1=0.000e+00
+GRID maxabs product-duty (duty in [1e-3, 1-1e-3], the vco.h clamp)  max=1.000000000000000 excess_over_1=0.000e+00 at dt=0.007812 duty=0.001000000 t=0.009000000
+GRID dutygap_coarse nDuty=20001   nT=512   current=0.001599600034776 (dt=0.062500 duty=0.030298485 t=0.030273438)   guarded=2.000000000000000
+GRID dutygap_fine nDuty=160001  nT=64    current=0.000199993748851 (dt=0.062500 duty=0.507815576 t=0.507812500)   guarded=2.000000000000000
+NARROW dt=0.004988662 duty in [1.0e-03, 4dt]  max|out|=1.000000000000000 at duty=0.001000000 t=0.006250000
+NARROW duty=0.000e+00    range=[-1.000000000, -1.000000000]
+NARROW duty=1.000e-09    range=[-1.000000000, -0.999999601]
+NARROW duty=1.000e-06    range=[-1.000000000, -0.999601060]
+NARROW duty=1.000e-04    range=[-1.000000000, -0.960160229]
+NARROW duty=4.989e-04    range=[-1.000000000, -0.805047975]
+NARROW duty=4.989e-03    range=[-1.000000000, 0.499969969]
+NARROW duty=9.977e-03    range=[-1.000000000, 0.999992500]
+NARROW duty=1.497e-02    range=[-1.000000000, 1.000000000]
+MOVING dt=0.004988662  worst |out(n+1)-out(n)| over duty 0.001 -> 0.95 and 512 phases
+MOVING 400.00000000   win/frame (n=     1)  guarded maxstep=0.000000000 at duty=0.000000000 t=0.000000000   current maxstep=0.000000000 at duty=0.000000000 t=0.000000000
+MOVING 100.00000000   win/frame (n=     2)  guarded maxstep=2.000000000 at duty=0.499866213 t=0.006835938   current maxstep=2.000000000 at duty=0.499866213 t=0.006835938
+MOVING 25.00000000    win/frame (n=     8)  guarded maxstep=2.000000000 at duty=0.125716553 t=0.006835938   current maxstep=2.000000000 at duty=0.125716553 t=0.006835938
+MOVING 6.25000000     win/frame (n=    31)  guarded maxstep=2.000000000 at duty=0.032179138 t=0.006835938   current maxstep=2.000000000 at duty=0.032179138 t=0.006835938
+MOVING 1.56250000     win/frame (n=   122)  guarded maxstep=2.000000000 at duty=0.008794785 t=0.002929688   current maxstep=1.904296741 at duty=0.874015873 t=0.870117188
+MOVING 0.39062500     win/frame (n=   487)  guarded maxstep=2.000000000 at duty=0.002948696 t=0.002929688   current maxstep=0.704955920 at duty=0.441405329 t=0.440429688
+MOVING 0.09765625     win/frame (n=  1948)  guarded maxstep=2.000000000 at duty=0.002948696 t=0.002929688   current maxstep=0.190543994 at duty=0.118408943 t=0.118164062
+MOVING 0.02441406     win/frame (n=  7792)  guarded maxstep=2.000000000 at duty=0.002948696 t=0.002929688   current maxstep=0.048530099 at duty=0.145568895 t=0.145507812
+MOVING dt=0.113378685  worst |out(n+1)-out(n)| over duty 0.001 -> 0.95 and 512 phases
+MOVING 400.00000000   win/frame (n=     1)  guarded maxstep=0.000000000 at duty=0.000000000 t=0.000000000   current maxstep=0.000000000 at duty=0.000000000 t=0.000000000
+MOVING 100.00000000   win/frame (n=     1)  guarded maxstep=0.000000000 at duty=0.000000000 t=0.000000000   current maxstep=0.000000000 at duty=0.000000000 t=0.000000000
+MOVING 25.00000000    win/frame (n=     1)  guarded maxstep=0.000000000 at duty=0.000000000 t=0.000000000   current maxstep=0.000000000 at duty=0.000000000 t=0.000000000
+MOVING 6.25000000     win/frame (n=     2)  guarded maxstep=2.000000000 at duty=0.709616780 t=0.114257812   current maxstep=2.000000000 at duty=0.709616780 t=0.116210938
+MOVING 1.56250000     win/frame (n=     6)  guarded maxstep=2.000000000 at duty=0.178154195 t=0.002929688   current maxstep=1.904294257 at duty=0.355308390 t=0.266601562
+MOVING 0.39062500     win/frame (n=    22)  guarded maxstep=2.000000000 at duty=0.045288549 t=0.002929688   current maxstep=0.704955666 at duty=0.089577098 t=0.067382812
+MOVING 0.09765625     win/frame (n=    86)  guarded maxstep=2.000000000 at duty=0.012072137 t=0.002929688   current maxstep=0.190544123 at duty=0.776049603 t=0.770507812
+MOVING 0.02441406     win/frame (n=   343)  guarded maxstep=2.000000000 at duty=0.003768034 t=0.002929688   current maxstep=0.048530102 at duty=0.144937783 t=0.143554688
+OVER-STOP  dt <= 0 must return the naive pulse BIT-IDENTICALLY (not merely to 1e-15)
+OVER-STOP  dt=0          non-identical samples=0  (of 4002000)
+OVER-STOP  dt=-0         non-identical samples=0  (of 4002000)
+OVER-STOP  dt=-1e-300    non-identical samples=0  (of 4002000)
+OVER-STOP  dt=-1e-09     non-identical samples=0  (of 4002000)
+OVER-STOP  dt=-0.3       non-identical samples=0  (of 4002000)
+OVER-STOP  dt=-0.75      non-identical samples=0  (of 4002000)
+OVER-STOP  dt=-4         non-identical samples=0  (of 4002000)
+OVER-STOP  total non-identical=0 of 28014000 over 7 dt values
+OVER-REPRO dt=0.75 duty=0.20  eps=1e-10  closed(2-1/dt)^2=0.444444444444445
+OVER-REPRO-CAP   t=0.75-1e-10  out=-0.760000000160000   t=0.75+1e-10  out=-0.759999999840000   diff=3.20000026476919e-10  (linear in eps => continuous)
+OVER-REPRO-UNC   t=0.75-1e-10  out=-0.928888888817778   t=0.75+1e-10  out=-0.484444444337778   diff=0.444444444480000  (sits at the closed form => the control is live)
+OVER-REPRO-TERMS t=0.75 naive=-1.0  R(t)=0.444444444444444  R(frac(t-duty))=-0.071111111111111  cap_corr=+0.240000000000000  unc_corr=+0.515555555555556
+OVER-REPRO-GUARDED t=0.75 guarded=-1.000000000000000 naive=-1.0  (switch-off arm = naive)
+OVER-REPRO-X0    dt=0.5 duty=0.750000 eps=1e-10  cap_diff=-4.00000033096148e-10  unc_diff=-4.00000033096148e-10
+OVER-RESIDUAL signed output jump across t=dt, duty>dt (naive constant there)
+OVER-RESIDUAL-CAP dt        jump(e=1e-6)  jump(e=1e-9)  jump(e=1e-10) jump(e=1e-12)  duty
+OVER-RESIDUAL-UNC dt        jump(e=1e-10)  closed (2-1/dt)^2  duty
+OVER-RESIDUAL-CAP 0.5            -3.999992000e-06 -4.000000109e-09 -4.000000331e-10 -3.999911513e-12  0.750000
+OVER-RESIDUAL-UNC 0.5            -4.000000331e-10 +0.000000000e+00  0.750000
+OVER-RESIDUAL-CAP 0.5000001      -3.999992720e-06 -3.999999110e-09 -3.999999221e-10 -3.999911513e-12  0.750000
+OVER-RESIDUAL-UNC 0.5000001      -3.998400500e-10 +1.599999359e-13  0.750000
+OVER-RESIDUAL-CAP 0.51           -3.920000000e-06 -3.919999991e-09 -3.920000990e-10 -3.919864433e-12  0.755000
+OVER-RESIDUAL-UNC 0.51           +1.537869658e-03 +1.537870050e-03  0.755000
+OVER-RESIDUAL-CAP 0.55           -3.600000000e-06 -3.599999743e-09 -3.600000298e-10 -3.599898157e-12  0.775000
+OVER-RESIDUAL-UNC 0.55           +3.305785088e-02 +3.305785124e-02  0.775000
+OVER-RESIDUAL-CAP 0.6            -3.200000000e-06 -3.199999821e-09 -3.200000265e-10 -3.199884802e-12  0.800000
+OVER-RESIDUAL-UNC 0.6            +1.111111108e-01 +1.111111111e-01  0.800000
+OVER-RESIDUAL-CAP 0.6666667      -2.666666667e-06 -2.666666443e-09 -2.666666887e-10 -2.666755705e-12  0.833333
+OVER-RESIDUAL-UNC 0.6666667      +2.499999997e-01 +2.500000000e-01  0.833333
+OVER-RESIDUAL-CAP 0.7            -2.400000000e-06 -2.400000088e-09 -2.400000199e-10 -2.399969112e-12  0.850000
+OVER-RESIDUAL-UNC 0.7            +3.265306120e-01 +3.265306122e-01  0.850000
+OVER-RESIDUAL-CAP 0.75           -2.000000000e-06 -1.999999943e-09 -2.000000165e-10 -1.999955757e-12  0.875000
+OVER-RESIDUAL-UNC 0.75           +4.444444442e-01 +4.444444444e-01  0.875000
+OVER-RESIDUAL-CAP 0.8            -1.600000000e-06 -1.599999799e-09 -1.600000132e-10 -1.599942401e-12  0.900000
+OVER-RESIDUAL-UNC 0.8            +5.624999998e-01 +5.625000000e-01  0.900000
+OVER-RESIDUAL-CAP 0.9            -8.000000000e-07 -7.999999552e-10 -8.000000662e-11 -8.000267115e-13  0.950000
+OVER-RESIDUAL-UNC 0.9            +7.901234566e-01 +7.901234568e-01  0.950000
+OVER-RESIDUAL-CAP 0.99           -8.000000007e-08 -8.000000662e-11 -7.999934049e-12 -8.004708008e-14  0.995000
+OVER-RESIDUAL-UNC 0.99           +9.799000100e-01 +9.799000102e-01  0.995000
+OVER-GRID out-of-domain cells: max|out| over duty in [1e-3,1-1e-3] and the t-gap floor
+OVER-GRID-CAP   dt         maxabs     excess_over_1  worst_duty  t_gap(1e3)   (1e4)        (1e5)        ratio(1e3/1e5)
+OVER-GRID-UNC   dt         maxabs     t_gap(1e3)   (1e4)        (1e5)        ratio(1e3/1e5)  closed_re
+OVER-GRID-CAP 0.5               0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 0.5               0.999994    0.0016000    0.0001600    0.0000160        100.00          n/a
+OVER-GRID-CAP 0.6               0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 0.6               0.999996    0.1100000    0.1110000    0.1111000          0.99  0.111111111
+OVER-GRID-CAP 0.6666667         0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 0.6666667         0.999996    0.2496005    0.2499600    0.2499960          1.00  0.250000000
+OVER-GRID-CAP 0.75              0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 0.75              0.999997    0.4437333    0.4443733    0.4444373          1.00  0.444444444
+OVER-GRID-CAP 0.9               0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 0.9               0.999998    0.7896296    0.7900741    0.7901185          1.00  0.790123457
+OVER-GRID-CAP 0.999             0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 0.999             0.999998    0.9975982    0.9979589    0.9979950          1.00  0.997999000
+OVER-GRID-CAP 1                 0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 1                 0.999998    0.9984000    0.9998400    0.9999840          1.00          n/a
+OVER-GRID-CAP 1.01              0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 1.01              0.999979    0.9985296    0.9999412    1.0000823          1.00          n/a
+OVER-GRID-CAP 1.5               0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 1.5               0.999555    1.1104000    1.1110400    1.1111040          1.00          n/a
+OVER-GRID-CAP 2                 0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 2                 0.999500    1.2496000    1.2499600    1.2499960          1.00          n/a
+OVER-GRID-CAP 4                 0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 4                 0.999625    1.5624000    1.5624900    1.5624990          1.00          n/a
+OVER-GRID-CAP 13                0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 13                0.999858    1.8520615    1.8520701    1.8520709          1.00          n/a
+OVER-GRID-CAP 1307.748          0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 1307.748          0.999998    1.9984712    1.9984712    1.9984712          1.00          n/a
+OVER-GRID-CAP 10000             0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 10000             1.000000    1.9998000    1.9998000    1.9998000          1.00          n/a
+OVER-GRID-CAP 1e+300            0.999994     -6.000e-06  0.001000       0.0016000    0.0001600    0.0000160        100.00
+OVER-GRID-UNC 1e+300            1.000000    2.0000000    2.0000000    2.0000000          1.00          n/a
+OVER-STRUCT-CAPISIDENTITY in-domain samples=3606000 bit-different=0  (cap == uncapped for every dt <= kPolyblepMaxDt)
+OVER-STRUCT-EXTENSION dt in {0.5,5e-7 over,0.51,0.75,1,2,13,1307.747846,1e4,1e300} samples=14412000 bit-different=0 worst_per_dt=0  (out(dt) IS out(0.5), sample for sample)
+OVER-STRUCT-LABEL cells=160801 disagreements=0  (the shipped predicate equals the honest m >= 2*min(dt,cap) form)
+OVER-STRUCT-SUP in-domain closed grid cells=320800000 sup=1.000000000000011 excess_over_1=1.066e-14 at dt=0.004500000 duty=1.000000000 t=0.002500000
+BOX kPolyblepMaxDt=0.500000  (dt is the argument handed to polyblepPulseCorrection)
+BOX panel max (oct+3, tune+1)          sr=44100  f=       7040.000000 Hz  dt=f/sr=   0.159637188  inside
+BOX leaves the contract at V/OCT = 1.647131 V  (panel oct+3 tune+1, sr=44100); dt(1.647131 V)=0.500000000  dt(1.647131 V)=0.500000000
+BOX declared max, CV exp (+5V)         sr=44100  f=   57671680.000000 Hz  dt=f/sr=1307.747845805  OUTSIDE kernel contract
+BOX declared max, CV lin (+5V)         sr=44100  f=   10813440.000000 Hz  dt=f/sr= 245.202721088  OUTSIDE kernel contract
+BOX CV lin -2V (clamp -> stop)         sr=44100  f=          0.000000 Hz  dt=f/sr=   0.000000000  inside
+BOX CV exp -5V (never negative)        sr=44100  f=        220.000000 Hz  dt=f/sr=   0.004988662  inside
+BOX V/OCT -8V (jack below range)       sr=44100  f=         27.500000 Hz  dt=f/sr=   0.000623583  inside
+BOX panel max (oct+3, tune+1)          sr=48000  f=       7040.000000 Hz  dt=f/sr=   0.146666667  inside
+BOX leaves the contract at V/OCT = 1.769387 V  (panel oct+3 tune+1, sr=48000); dt(1.769387 V)=0.500000000  dt(1.769387 V)=0.500000000
+BOX declared max, CV exp (+5V)         sr=48000  f=   57671680.000000 Hz  dt=f/sr=1201.493333333  OUTSIDE kernel contract
+BOX declared max, CV lin (+5V)         sr=48000  f=   10813440.000000 Hz  dt=f/sr= 225.280000000  OUTSIDE kernel contract
+BOX CV lin -2V (clamp -> stop)         sr=48000  f=          0.000000 Hz  dt=f/sr=   0.000000000  inside
+BOX CV exp -5V (never negative)        sr=48000  f=        220.000000 Hz  dt=f/sr=   0.004583333  inside
+BOX V/OCT -8V (jack below range)       sr=48000  f=         27.500000 Hz  dt=f/sr=   0.000572917  inside
+BOX panel max (oct+3, tune+1)          sr=88200  f=       7040.000000 Hz  dt=f/sr=   0.079818594  inside
+BOX leaves the contract at V/OCT = 2.647131 V  (panel oct+3 tune+1, sr=88200); dt(2.647131 V)=0.500000000  dt(2.647131 V)=0.500000000
+BOX declared max, CV exp (+5V)         sr=88200  f=   57671680.000000 Hz  dt=f/sr= 653.873922902  OUTSIDE kernel contract
+BOX declared max, CV lin (+5V)         sr=88200  f=   10813440.000000 Hz  dt=f/sr= 122.601360544  OUTSIDE kernel contract
+BOX CV lin -2V (clamp -> stop)         sr=88200  f=          0.000000 Hz  dt=f/sr=   0.000000000  inside
+BOX CV exp -5V (never negative)        sr=88200  f=        220.000000 Hz  dt=f/sr=   0.002494331  inside
+BOX V/OCT -8V (jack below range)       sr=88200  f=         27.500000 Hz  dt=f/sr=   0.000311791  inside
+BOX panel max (oct+3, tune+1)          sr=96000  f=       7040.000000 Hz  dt=f/sr=   0.073333333  inside
+BOX leaves the contract at V/OCT = 2.769387 V  (panel oct+3 tune+1, sr=96000); dt(2.769387 V)=0.500000000  dt(2.769387 V)=0.500000000
+BOX declared max, CV exp (+5V)         sr=96000  f=   57671680.000000 Hz  dt=f/sr= 600.746666667  OUTSIDE kernel contract
+BOX declared max, CV lin (+5V)         sr=96000  f=   10813440.000000 Hz  dt=f/sr= 112.640000000  OUTSIDE kernel contract
+BOX CV lin -2V (clamp -> stop)         sr=96000  f=          0.000000 Hz  dt=f/sr=   0.000000000  inside
+BOX CV exp -5V (never negative)        sr=96000  f=        220.000000 Hz  dt=f/sr=   0.002291667  inside
+BOX V/OCT -8V (jack below range)       sr=96000  f=         27.500000 Hz  dt=f/sr=   0.000286458  inside
+BOX stop: baseHz=0 over 64 ticks -> first=1.000000000000000  max deviation=0.000000000000000  (naive pulse at the held phase, correction exactly 0)
+BOX stop: frequencyHz()=0.000000000000000  step=0.000000000000000
+VCO-WIRING samples=40960 bit-mismatches=0 worst_abs=0 sup|out|=1.000000000000000  (tick_out == polyblepPulse(phase(), effectiveDuty(), step))
+VCO-WIRING weights at morph=1.0: pulseWeight=1 triangleWeight=0  (exact collapse to the pulse node is what makes the identity bit-exact)
+VCO-BLOCK samples=4096 bit-different=0  (1 x 4096 vs 64 x 64, voct=1.7 => dt beyond the cap)
+VCO-SYNC resets=201  phase_after_reset_nonzero=0  formula_mismatches=0  sup|out|=0.500000000000000
+VCO-SYNC solved e0=0  polyblepPulse(0,duty,step)=0  bitmatch=1  step=0.079818594104308388 duty=0.34999999999999998
+VCO-STOP lin CV -1.0V (bracket exactly 0)   freq=0  step=0  samples!=first=0  range=[1.000000000000000, 1.000000000000000]  phase=0
+VCO-STOP lin CV -5.0V (bracket negative)    freq=0  step=0  samples!=first=0  range=[1.000000000000000, 1.000000000000000]  phase=0
+VCO-STOP exp V/OCT -1200V (underflow)       freq=0  step=0  samples!=first=0  range=[1.000000000000000, 1.000000000000000]  phase=0
+VCO-STOP negative_pitch_returns=0  (frequencyHz() clamps, so the kernel's dt<0 branch is unreachable from the product)
+VCO-CROSSOVER max |out(dt+d)-out(dt)| over dt in [0.499,0.501] step 2.5e-7 = 4.97781e-07 at dt=0.499000250  (bounded by ~2*d => continuous turn-on, no jump)
+VCO-CROSSOVER contract V/OCT 1.647131 V -> f=22049.995082 Hz  dt=0.499999888470  capped=0
+VCO-CROSSOVER contract V/OCT 1.769387 V -> f=23999.998805 Hz  dt=0.544217659968  capped=1
+VCO-CROSSOVER far side: samples=4096 mismatches_vs_out(dt=cap)=0 sup|out|=0.819930285021071 (dt=0.544217660)

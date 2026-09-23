@@ -1,0 +1,91 @@
+task #118 (GH #19 S3) — negative controls for the OUT-OF-DOMAIN and REACHABLE-BOX checks
+scratch              /tmp/gh19-s3/over-negctl
+candidate worktree   /Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-118-gh19-s3-pulse-aa
+runner under test    tools/run_gh19_s3_kernel_sweep.py
+
+verdict rule: RED requires the arm to BUILD, the driver to EXIT 0 and the NAMED criterion
+to fail. A compile error, a dead driver, a missing criterion, a missed prediction or a
+broken isolation prediction is INVALID and is never counted as a hit.
+
+-- declaration preflight: every criterion/reach/forbidden string must exist in the producer --
+  all 37 declared strings present in tools/run_gh19_s3_kernel_sweep.py or tools/gh19_s3_pulse_kernel_sweep.cpp
+
+-- group A: header mutations (each on its own COPY; no tracked file is touched) --
+
+[pristine_copy] expect=GREEN -> GREEN-OK  rc=0
+  why: THE REFERENCE ARM. Nothing is mutated: this is the candidate's own headers, reached through the scratch copy. Every RED below is measured against this arm, so if the copying/mutating machinery itself disturbed a check, this is where it shows up as a red arm that no mutation explains.
+
+[c3a_fallback] expect=RED -> RED  rc=1
+  why: the C3a candidate, i.e. the strategy @Codex's ruling REJECTED: the pulse kernel adopts the TRIANGLE path's out-of-domain fallback verbatim (`if (polyblepSupportReachesHalfPeriod(dt)) return 0.0;`). This control does double duty. As a control it shows the out-of-domain claims are anchored to the correction path rather than to the naive pulse. As a MEASUREMENT it is the effect the rejected candidate would have had on the product: the reviewer's own argument against it was that switching the correction off reintroduces a hard discontinuity at the switch point, and the VCO-CROSSOVER check measures exactly that on the real Vco object (1.81 in one 2.5e-7 grid step). The cap is the alternative that does not do this, and the pair -- this arm red, cap_always green out of domain -- is the comparison.
+  | *** OVER-REPRO-X0 cap == unc at dt=0.5: measured 0, expected -4.00000033096148e-10 (tol 0). dt=0.5 is the boundary the cap takes its value from, so the two arms must agree there exactly; a difference means the cap is not w = min(dt, cap) ***
+  | *** OVER-GRID-CAP dt=0.5: the t-gap ratio (1e3/1e5) is 1, so the t-gap did NOT fall with resolution. Under the cap every dt uses w = min(dt, 0.5), and w = 0.5 is continuous on the whole period, so a flat gap at ANY dt contradicts the cap. ***
+  | *** OVER-GRID-CAP dt=0.6: the t-gap ratio (1e3/1e5) is 1, so the t-gap did NOT fall with resolution. Under the cap every dt uses w = min(dt, 0.5), and w = 0.5 is continuous on the whole period, so a flat gap at ANY dt contradicts the cap. ***
+  | *** OVER-GRID-CAP dt=0.6666667: the t-gap ratio (1e3/1e5) is 1, so the t-gap did NOT fall with resolution. Under the cap every dt uses w = min(dt, 0.5), and w = 0.5 is continuous on the whole period, so a flat gap at ANY dt contradicts the cap. ***
+  | *** OVER-GRID-CAP dt=0.75: the t-gap ratio (1e3/1e5) is 1, so the t-gap did NOT fall with resolution. Under the cap every dt uses w = min(dt, 0.5), and w = 0.5 is continuous on the whole period, so a flat gap at ANY dt contradicts the cap. ***
+  | *** OVER-GRID-CAP dt=0.9: the t-gap ratio (1e3/1e5) is 1, so the t-gap did NOT fall with resolution. Under the cap every dt uses w = min(dt, 0.5), and w = 0.5 is continuous on the whole period, so a flat gap at ANY dt contradicts the cap. ***
+  | ... and 12 more *** lines (full stdout is the runner's own --out capture)
+
+[no_cap] expect=RED -> RED  rc=1
+  why: the cap is removed (`w = dt`), which is exactly the PRE-CAP HEADER: the residual's own step at t = dt re-enters the emitted waveform past dt = 0.5. In the previous revision this arm was the header under test; here it is the control that says the in-domain samples were never the thing the cap changed. The criterion is the t-gap discriminator, because that check measures the emitted WAVEFORM (a jump's t-gap is flat in the t resolution, a continuous function's falls as 1/nT) rather than any single coordinate.
+  | *** OVER-REPRO-CAP: the capped arm is BIT-IDENTICAL to the uncapped one at dt=0.75, so the cap did not reach this coordinate and the whole out-of-domain section is measuring the pre-cap header. ***
+  | *** OVER-REPRO-CAP: the capped step across t=dt is 0.444444, more than 10*eps (1e-09). A continuous function's two-sided difference is O(eps) with a small constant; this is large enough to be a jump. ***
+  | *** OVER-RESIDUAL-CAP dt=0.5100000: the difference goes 1.534e-03 (eps=1e-06) -> 1.538e-03 (eps=1e-09), a ratio of 0.9975, but a continuous output's difference is proportional to eps and the eps ratio is 1000. Not proportional => there is a jump in these columns. ***
+  | *** OVER-RESIDUAL-CAP dt=0.5100000: the difference goes 1.538e-03 (eps=1e-09) -> 1.538e-03 (eps=1e-10), a ratio of 1, but a continuous output's difference is proportional to eps and the eps ratio is 10. Not proportional => there is a jump in these columns. ***
+  | *** OVER-RESIDUAL-CAP dt=0.5100000: the difference goes 1.538e-03 (eps=1e-10) -> 1.538e-03 (eps=1e-12), a ratio of 1, but a continuous output's difference is proportional to eps and the eps ratio is 100. Not proportional => there is a jump in these columns. ***
+  | *** OVER-RESIDUAL-CAP dt=0.5100000: the difference at eps=1e-6 is 0.00153395, which is not O(eps) for any constant below 10 -- larger than the eps itself by more than the slope can explain. ***
+  | ... and 48 more *** lines (full stdout is the runner's own --out capture)
+
+[cap_always] expect=RED -> RED  rc=1
+  why: the cap is applied UNCONDITIONALLY (`w = kPolyblepMaxDt`), a plausible misreading of 'cap the width'. Past dt = 0.5 this changes nothing -- w = 0.5 is what the cap gives there anyway -- so every out-of-domain claim must stay green, and the arm isolates the one claim it does break: that the cap is the IDENTITY in domain, i.e. that the static evidence for 0 < step <= 0.5 is bit-unchanged.
+  | *** OVER-STRUCT-CAPISIDENTITY: measured 3235179, expected 0 (tol 0). min(dt, kPolyblepMaxDt) IS dt for dt <= 0.5, so the cap must be BIT-IDENTICAL to the uncapped formula in domain, not merely close. A non-zero count means the in-domain samples moved and the whole static evidence set is invalidated by this edit ***
+
+[label_drift] expect=RED -> RED  rc=1
+  why: polyblepPulseWindowsDisjoint -- the regime LABEL, which no code path branches on -- is widened by 0.01. The label's whole reason for existing is that a caller can interpret a cell by it, so a drift has to be visible somewhere; the sweep checks the shipped predicate against the honest `m >= 2*min(dt, cap)` form cell by cell. This control is the only thing in the file that shows that check is connected to the predicate rather than to a restatement of it.
+  | *** OVER-STRUCT-LABEL: measured 1325, expected 0 (tol 0). polyblepPulseWindowsDisjoint must keep returning the same value now that the live width is w rather than dt; a disagreement means a cell's regime LABEL changed, which would silently reinterpret every static row keyed on disjointness ***
+
+[stop_regressed] expect=RED -> RED  rc=1
+  why: the correction's dt <= 0 exit returns a constant instead of zero. The kernel's first claim -- a non-positive step leaves the naive pulse BIT-IDENTICAL -- is the one the stop/reverse strategy rests on, and this is the smallest edit that breaks it. The constant is deliberately not a function of t: `R(t) - R(b)` with a t-independent constant would cancel and the arm would stay green, i.e. the control would be dead. Returning it from the correction's own early exit makes the output naive + 0.25 on every sample of a stopped oscillator.
+  | *** OVER-STOP bit-identical naive: measured 28014000, expected 0 (tol 0). a non-positive step must return the naive pulse EXACTLY; anything else means the correction is doing arithmetic on a step it has no kernel for ***
+
+[box_law_change] expect=RED -> RED  rc=1
+  why: the V/OCT exponent in the production pitch law is doubled in a COPY of vco.h. The box section claims its numbers come from the real Vco object driven through the real law, and cross-checks the bisected threshold against log2(0.5*sr/panel_max). Doubling the exponent moves the two apart while leaving the panel maximum (V/OCT = 0) exactly where it was -- so the arm cannot pass by accident on a different sample rate or by the panel cell having moved.
+  | *** VCO-CROSSOVER: 'VCO-CROSSOVER contract V/OCT 1.647131 V -> f=69062.824303 Hz  dt=1.566050437717  capped=1' -- the contract point's cap state moved. The two contract voltages bracket dt = kPolyblepMaxDt; if they no longer straddle it, the crossover is not where the contract says it is. ***
+  | *** BOX declared max CV exp: measured 14763950080, expected 57671680 (tol 1e-06). the declared box's exponential-CV maximum moved ***
+  | *** BOX declared max CV lin: measured 2768240640, expected 10813440 (tol 1e-06). the declared box's linear-CV maximum moved ***
+  | *** BOX V/OCT threshold sr=44100: measured 0.823566, expected 1.64713132180759 (tol 0.0001). the measured threshold voltage disagrees with log2(0.5*sr/panel_max): the bisection and the law it is measuring are not the same object ***
+  | *** BOX V/OCT threshold sr=48000: measured 0.884694, expected 1.76938707185858 (tol 0.0001). the measured threshold voltage disagrees with log2(0.5*sr/panel_max): the bisection and the law it is measuring are not the same object ***
+  | *** BOX V/OCT threshold sr=88200: measured 1.323566, expected 2.64713132180759 (tol 0.0001). the measured threshold voltage disagrees with log2(0.5*sr/panel_max): the bisection and the law it is measuring are not the same object ***
+  | ... and 1 more *** lines (full stdout is the runner's own --out capture)
+
+-- group B: INSTRUMENT controls (these do NOT claim a defect; they ask whether the check can see anything) --
+
+[fm_caller_planted] expect=RED (instrument) -> RED  rc=1
+  why: a scratch tree with one planted `.setFmCv(` member call and one prose-only mention. The scan must find the call (which is what makes the production run's empty result a measurement rather than a silence) and must NOT count the mention as a call.
+  planted entries seen: ['BOX-SRC fm  negctl_planted/planted_mention.h:2: // This file only NAMES setFmCv and setFmDepth in prose, with no member access and no call.  (declaration/mention only, not a call site)', 'BOX-SRC fm  negctl_planted/planted_mention.h:4: // setFmCv( setFmDepth(  (declaration/mention only, not a call site)', 'BOX-SRC fm  negctl_planted/planted_caller.cpp:4: v.setFmCv(0.5);  (declaration/mention only, not a call site)']
+
+[fm_scan_blind] expect=GREEN (instrument) -> INSTRUMENT-OK  rc=0
+  why: the same pristine headers scanned against an EMPTY root. This is the arm that proves B1's result comes from the planted file and not from the scan firing unconditionally.
+
+[fm_scan_production] -> INSTRUMENT-OK: the real tree reports 3 setter mention(s) and 0 callers
+  BOX-SRC fm  tools/gh19_s3_pulse_kernel_sweep.cpp:618: // `instHz = frequencyHz() + fmDevHz_ * fmCv_`; `setFmDepth`/`setFmCv` have no caller anywhere in the  (declaration/mention only, not a call site)
+  BOX-SRC fm  core/include/lunar24/core/vco.h:189: void setFmCv(double volts) { fmCv_ = volts; }  (declaration/mention only, not a call site)
+  BOX-SRC fm  core/include/lunar24/core/vco.h:190: void setFmDepth(double fDevHz) { fmDevHz_ = fDevHz; }  (declaration/mention only, not a call site)
+
+-- worktree guard --
+all 7 candidate files byte-identical before and after (polyblep_kernel.h, pulse_blep_kernel.h, vco.h, machine_runtime.h, vco_wave_map.h, gh19_s3_pulse_kernel_sweep.cpp, run_gh19_s3_kernel_sweep.py)
+`git status --short` unchanged (no tracked file created, modified or removed)
+HEAD a839b5dfd549627ed9e4d92cbf64da22250c8aa0
+
+-- verdict --
+  pristine_copy          GREEN-OK
+  c3a_fallback           RED
+  no_cap                 RED
+  cap_always             RED
+  label_drift            RED
+  stop_regressed         RED
+  box_law_change         RED
+  fm_caller_planted      RED
+  fm_scan_blind          INSTRUMENT-OK
+  fm_scan_production     INSTRUMENT-OK
+
+RED 7 / clean 3 / INVALID 0

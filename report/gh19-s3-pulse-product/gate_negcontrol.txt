@@ -1,0 +1,25 @@
+CONTROL pristine            exit=0 expected=0  PASS
+CONTROL empty_deltas                     exit=4 expected=4 code=DELTAS-SHAPE           RED-HIT
+CONTROL deltas_header_only               exit=4 expected=4 code=DELTAS-SHAPE           RED-HIT
+CONTROL empty_cand_matrix                exit=4 expected=4 code=MATRIX-SHAPE           RED-HIT
+CONTROL gate_cell_missing_both_arms      exit=4 expected=4 code=DELTAS-UNKNOWN-ID      RED-HIT
+CONTROL gate_cell_missing_one_arm        exit=4 expected=4 code=MATRIX-SHAPE           RED-HIT
+CONTROL delta_row_duplicated             exit=4 expected=4 code=DELTAS-SHAPE           RED-HIT
+CONTROL id_swap                          exit=4 expected=4 code=DELTAS-METADATA        RED-HIT
+CONTROL nonfinite_delta                  exit=4 expected=4 code=DELTAS-SHAPE           RED-HIT
+CONTROL nonfinite_matrix                 exit=4 expected=4 code=MATRIX-SHAPE           RED-HIT
+CONTROL wrong_kind                       exit=4 expected=4 code=DELTAS-METADATA        RED-HIT
+CONTROL wrong_metadata                   exit=4 expected=4 code=DELTAS-METADATA        RED-HIT
+CONTROL arms_not_from_these_matrices     exit=4 expected=4 code=ORDERING               RED-HIT
+CONTROL power_unit_tripwire_removed      exit=4 expected=4 code=ARMSELFCHECK           RED-HIT
+CONTROL align_gate_fails                 exit=4 expected=4 code=ARMSELFCHECK           RED-HIT
+CONTROL instrument_failure_marker        exit=4 expected=4 code=ARMSELFCHECK           RED-HIT
+CONTROL criteria_drop_criterion          exit=4 expected=4 code=CRITERIA               RED-HIT
+CONTROL criteria_invented_threshold      exit=4 expected=4 code=CRITERIA               RED-HIT
+CONTROL criteria_drop_report             exit=4 expected=4 code=CRITERIA               RED-HIT
+CONTROL criteria_duplicate_cell          exit=4 expected=4 code=CRITERIA               RED-HIT
+CONTROL criteria_shrunk_enumeration      exit=4 expected=4 code=CRITERIA-ENUMERATION   RED-HIT
+CONTROL plan_drops_gate_cell             exit=4 expected=4 code=PLAN                   RED-HIT
+CONTROL plan_drops_report_only_cell      exit=4 expected=4 code=PLAN                   RED-HIT
+NEGCTL-GATE ok=22 bad=0 controls=22
+NEGCTL-GATE verdict=ALL-HIT

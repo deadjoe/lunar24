@@ -1,0 +1,33 @@
+GH#19 S3 acceptance: the pulse two-edge correction through the agreed entry
+  ab_asym: readback A=0.2500 B=0.7000 | rail fraction A=0.9825 B=0.9825 | audio duty A=0.2500 B=0.7000
+  model[a_48k_220_pw50/A] step=0.004583333 duty=0.500000 phi=0.004583333 | capped=3.929e-08 naive=5.000e-01 uncapped=3.929e-08 sign=8.347e-01 pos=3.929e-08 guarded=3.929e-08 (variants at their own best phase)
+  origin[a_48k_220_pw50/A] pinned phi=frac(step)=0.004583333333  fitted-pinned=-1.801e-10  residual AT the pinned phase=1.889e-11
+  model[a_44k1_440_pw10/A] step=0.009977324 duty=0.100000 phi=0.009977324 | capped=1.340e-08 naive=4.775e-01 uncapped=1.340e-08 sign=9.117e-01 pos=4.775e-01 guarded=1.340e-08 (variants at their own best phase)
+  origin[a_44k1_440_pw10/A] pinned phi=frac(step)=0.009977324263  fitted-pinned=+1.371e-10  residual AT the pinned phase=2.384e-11
+  model[a_44k1_440_pw005/A] step=0.009977324 duty=0.005000 phi=0.009977324 | capped=6.880e-09 naive=6.037e-01 uncapped=6.880e-09 sign=8.761e-01 pos=4.561e-01 guarded=6.037e-01 (variants at their own best phase)
+  origin[a_44k1_440_pw005/A] pinned phi=frac(step)=0.009977324263  fitted-pinned=+1.371e-10  residual AT the pinned phase=1.428e-11
+  model[a_96k_880_pw90/A] step=0.009166667 duty=0.900000 phi=0.009166667 | capped=1.152e-08 naive=5.000e-01 uncapped=1.152e-08 sign=9.132e-01 pos=5.000e-01 guarded=1.152e-08 (variants at their own best phase)
+  origin[a_96k_880_pw90/A] pinned phi=frac(step)=0.009166666667  fitted-pinned=+1.055e-10  residual AT the pinned phase=1.889e-11
+  model[b_48k_220_pw25/B] step=0.004583333 duty=0.250000 phi=0.004583333 | capped=3.573e-08 naive=4.132e-01 uncapped=3.573e-08 sign=6.157e-01 pos=4.132e-01 guarded=3.573e-08 (variants at their own best phase)
+  origin[b_48k_220_pw25/B] pinned phi=frac(step)=0.004583333333  fitted-pinned=-1.801e-10  residual AT the pinned phase=1.889e-11
+  model[voct_48k_step055/A] step=0.547379355 duty=0.500000 phi=0.547379355 | capped=1.849e-10 naive=4.994e-01 uncapped=4.515e-02 sign=9.979e-01 pos=1.849e-10 guarded=4.994e-01 (variants at their own best phase)
+  origin[voct_48k_step055/A] pinned phi=frac(step)=0.547379355035  fitted-pinned=-8.861e-11  residual AT the pinned phase=4.810e-11
+  model[voct_48k_step089/A] step=0.889220386 duty=0.500000 phi=0.889220386 | capped=2.602e-10 naive=4.984e-01 uncapped=1.907e-01 sign=9.956e-01 pos=2.602e-10 guarded=4.984e-01 (variants at their own best phase)
+  origin[voct_48k_step089/A] pinned phi=frac(step)=0.889220385686  fitted-pinned=+1.261e-10  residual AT the pinned phase=3.928e-11
+  model[voct_96k_step059/A] step=0.586666667 duty=0.500000 phi=0.586666667 | capped=4.850e-10 naive=5.000e-01 uncapped=7.931e-02 sign=9.735e-01 pos=4.850e-10 guarded=5.000e-01 (variants at their own best phase)
+  origin[voct_96k_step059/A] pinned phi=frac(step)=0.586666666667  fitted-pinned=+2.359e-10  residual AT the pinned phase=2.943e-11
+  model[voct_44k1_step181/A] step=1.806088613 duty=0.500000 phi=0.806088613 | capped=2.654e-10 naive=4.998e-01 uncapped=2.997e-01 sign=9.974e-01 pos=2.654e-10 guarded=4.998e-01 (variants at their own best phase)
+  origin[voct_44k1_step181/A] pinned phi=frac(step)=0.806088612990  fitted-pinned=-1.093e-10  residual AT the pinned phase=7.000e-11
+  cap cells: step range 0.547379 .. 1.806089
+  voct sweep: published volts 0.0001 .. 9.9999 -> driven steps 0.1467 .. 150.1758
+  voct sweep: peak |any output| = 0.500000000, peak |DRY| = 0.500000000 (device scale 0.500)
+  step sensitivity: exact=1.152e-08  -1e-6=1.198e-03  +1e-6=1.198e-03  -1e-3=9.429e-01  +1e-3=9.298e-01
+  step timing: measured period 109.083333 frames, driven 109.090909
+  partition: uniform 6144 frames, irregular 6144 frames, |dryA| span 0.767561983, differing 0, max |diff| 0.000000000
+  pwm sink: same-frame 4800/4800, previous-frame 0
+  pwm sink: last source cv=3.000000 | final duty modulated=0.650000 idle=0.500000
+  restore: cabled duty=0.700000 uncabled duty=0.500000 (base pw 0.500000)
+  surface cells 16/16/16/16 | peak |any| 0.500000000/0.500000000/0.500000000/0.500000000 | peak |DRY| 0.500000000/0.500000000/0.500000000/0.500000000
+  sync: hysteresis reference rise at frame 47 (thr=5.0000 hyst=0.2000, holds above 4.8000; frame 0 primes) | first output divergence at frame 47 | sync=0.250000000000  0.5*free=0.250000000000
+  allocator surface: DRY_A vs free-running arm: first diff at frame 0, 512/512 frames differ, max |diff| 0.000866
+[test_gh19_s3_pulse_product_acceptance] 122 checks OK
