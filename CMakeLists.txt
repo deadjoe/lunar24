@@ -583,6 +583,23 @@ set_tests_properties(gh19_s3_pulse_acceptance gh19_s3_pulse_pipeline_mutant
   gh19_s3_pulse_baseline_report_pin
   PROPERTIES LABELS "slow")
 
+# task #120 (GH #19 S6): the SAW / invSaw morph-ring measurement probe.
+# Same shape and the same reason as the S3 probe above: this is a MEASUREMENT, not a gate. It renders
+# the product's own output across the morph knob on the two ring stretches that carry NO correction
+# (stretch 0 saw->invSaw, stretch 1 invSaw->sine), writes its declared stimulus plan BEFORE the first
+# render, and exits non-zero if any declared cell is missing or a cell leaves the validity envelope.
+# It is a separate file rather than more cells in the S3 probe because S3's evidence is SHA-pinned
+# (tools/gh19_s3_pulse_acceptance.py refuses to measure once the pinned baseline report moves): adding
+# cells there would invalidate that pin and force the S3 verdict to be re-run to reach a conclusion
+# about an unrelated slice. `tools/gh19_s6_saw_analyze.py` IMPORTS the S3 instrument rather than
+# forking it, so the phase convention and the residual definition are literally the same code.
+# Labelled `slow` for the same reason as the probes above (per-sample processBlock over the full
+# matrix), so it stays out of the every-push `--label-exclude slow` matrix.
+lunar_add_test(gh19_s6_saw_probe tests/probes/gh19_s6_saw_probe.cpp)
+target_link_libraries(gh19_s6_saw_probe PRIVATE lunar_host)
+target_include_directories(gh19_s6_saw_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
+set_tests_properties(gh19_s6_saw_probe PROPERTIES LABELS "slow")
+
 # task #109 (GH #19 S1): RED->GREEN acceptance gate for the SCHMITT-OSCILLATOR slope
 # correction. Same shape as the VCO gate above -- same probe, same analyzer, same pipeline
 # driver -- but a different criterion file and a different baseline. The 12 in-scope cells

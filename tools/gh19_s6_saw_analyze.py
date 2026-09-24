@@ -56,9 +56,13 @@
 # missing or malformed.
 
 import argparse
+import contextlib
 import importlib.util
+import io
 import math
 import os
+import re
+import struct
 import sys
 
 TWO_PI = 2.0 * math.pi
@@ -133,6 +137,30 @@ def stretch_of(morph):
 
 
 # ------------------------------------------------------------------------------- node references
+#
+# THE RING'S NODE ORDER IS DATA HERE, NOT A CHOICE RESTATED AT EACH USE SITE.
+#
+# It is declared once, below, and BOTH the band-limited reference family and the closed-form naive
+# model read the nodes of a stretch out of it. That is deliberate, and it is the fix for a real
+# defect this instrument shipped and then caught: `ref_mix_saw` and `naive_mix` each independently
+# hardcoded the SAW as the LOWER node of every stretch, which is right on stretch 0 (saw -> invSaw)
+# and wrong on stretch 1 (INVSAW -> sine, invSawShape = -(2p-1)). Two consequences, both measured:
+#   * the two functions agreed with each other on stretch 1, so neither could expose the other;
+#   * every reference-family self-check collapsed at u = 1, where the lower node's weight is 0 and
+#     the wrong node is invisible -- a degenerate identity, not a check.
+# The arm alignment gate -- which reconstructs the product's OWN law and so is not party to that
+# agreement -- is what surfaced it, on all 32 stretch-1 interior cells at once. Restating the node
+# order at a use site is the mechanism; keeping it in one place removes the mechanism.
+NODE_SAW, NODE_INVSAW, NODE_SINE = 0, 1, 2
+NODE_ORDER = (NODE_SAW, NODE_INVSAW, NODE_SINE)   # == Node::kSaw, kInvSaw, kSine (vco_wave_map.h:102)
+
+
+def stretch_nodes(k):
+    """The (lower, upper) NODES of stretch k, taken from the ring's declared order above."""
+    if k + 1 >= len(NODE_ORDER):
+        raise ValueError("stretch %d is past this instrument's two covered stretches" % k)
+    return NODE_ORDER[k], NODE_ORDER[k + 1]
+
 
 def kmax_for(f0, sr, cap=None):
     k = int(math.floor((sr / 2.0) / f0))
@@ -174,21 +202,43 @@ def bl_sine(n0, count, f0, sr, kmax_override=None):
     return [math.sin(TWO_PI * phi_at(n0 + i, f0, sr)) for i in range(count)]
 
 
+def bl_node(node, n0, count, f0, sr, kmax_override=None):
+    """The band-limited form of ONE node, selected by the node itself rather than by the caller."""
+    if node == NODE_SAW:
+        return bl_saw(n0, count, f0, sr, kmax_override)
+    if node == NODE_INVSAW:
+        return bl_inv_saw(n0, count, f0, sr, kmax_override)
+    if node == NODE_SINE:
+        return bl_sine(n0, count, f0, sr, kmax_override)
+    raise ValueError("node %r is not one of the ring's first three" % (node,))
+
+
+def exact_node(node, p):
+    """The same node, evaluated by the product's OWN closed form (vco_wave_map.h sawShape /
+    invSawShape / sineShape). No series and no truncation: this is what the current product emits."""
+    if node == NODE_SAW:
+        return 2.0 * p - 1.0
+    if node == NODE_INVSAW:
+        return -(2.0 * p - 1.0)
+    if node == NODE_SINE:
+        return math.sin(TWO_PI * p)
+    raise ValueError("node %r is not one of the ring's first three" % (node,))
+
+
 def ref_mix_saw(n0, count, f0, sr, morph, kmax_override=None):
-    """The band-limited reference for a saw/invSaw stretch cell, built from THAT cell's own mix law.
-    Stretch 2 and above are refused rather than approximated: this instrument covers stretches 0
-    and 1, and a reference from the wrong stretch is the cross-family error S3 named."""
+    """The band-limited reference for a saw/invSaw stretch cell, built from THAT cell's own mix law
+    and from the nodes `stretch_nodes` names for that stretch. Stretch 2 and above are refused rather
+    than approximated: this instrument covers stretches 0 and 1, and a reference from the wrong
+    stretch is the cross-family error S3 named."""
     k, u = stretch_of(morph)
     if k > 1:
         raise ValueError("morph=%.6f is on stretch %d; gh19_s6_saw_analyze covers stretches 0-1"
                          % (morph, k))
-    a = bl_saw(n0, count, f0, sr, kmax_override)
-    if a is None:
+    lo, hi = stretch_nodes(k)
+    a = bl_node(lo, n0, count, f0, sr, kmax_override)
+    b = bl_node(hi, n0, count, f0, sr, kmax_override)
+    if a is None or b is None:
         return None
-    if k == 0:
-        b = bl_inv_saw(n0, count, f0, sr, kmax_override)
-    else:
-        b = bl_sine(n0, count, f0, sr, kmax_override)
     return [(1.0 - u) * x + u * y for x, y in zip(a, b)]
 
 
@@ -200,17 +250,13 @@ def naive_mix(n0, count, f0, sr, morph):
     ref_mix_saw (no series, no truncation), which is what makes it usable as the sensitivity probe
     in self-check (d) rather than a restatement of the reference."""
     k, u = stretch_of(morph)
+    if k > 1:
+        raise ValueError("morph=%.6f is not on stretch 0-1" % morph)
+    lo, hi = stretch_nodes(k)
     out = []
     for i in range(count):
         p = phi_at(n0 + i, f0, sr)
-        s = 2.0 * p - 1.0
-        if k == 0:
-            b = -s
-        elif k == 1:
-            b = math.sin(TWO_PI * p)
-        else:
-            raise ValueError("morph=%.6f is not on stretch 0-1" % morph)
-        out.append((1.0 - u) * s + u * b)
+        out.append((1.0 - u) * exact_node(lo, p) + u * exact_node(hi, p))
     return out
 
 
@@ -280,6 +326,52 @@ def self_check(verbose=True):
             ok |= 3
         say("    morph=%.4f vs %-9s  max|diff|=%.3g  %s"
             % (morph, name, d, "EXACT (ok)" if good else "*** MIX LAW DISAGREES ***"))
+
+    # (a2) THE NODE TABLE vs THE WEIGHT HELPERS, AT INTERIOR MORPHS. (a) above collapses at u = 1,
+    # where the lower node's weight is 0 and its identity cannot matter -- so (a) passes for a
+    # reference built on the WRONG lower node, which is exactly the defect this instrument shipped.
+    # This check is the non-degenerate one: it rebuilds each reference as
+    #     sum_k  w_k(morph) * bl_node(k)
+    # from the weight helpers, which encode the node roles by NAME and independently of
+    # `stretch_nodes`. Two separate encodings of "which node is the lower one" must agree at a
+    # morph where BOTH weights are nonzero. The wrong-node alternative is printed alongside, so the
+    # check's discriminating power is visible and not merely asserted.
+    say("  (a2) reference == sum of named-node references, at INTERIOR morphs (where (a) is blind):")
+    for morph in (0.0625, 0.1875, 0.3125, 0.375, 0.4375):
+        k, u = stretch_of(morph)
+        r = ref_mix_saw(n0, count, f0, sr, morph)
+        w = {NODE_SAW: saw_node_weight(morph), NODE_INVSAW: invsaw_node_weight(morph),
+             NODE_SINE: sine_node_weight(morph)}
+        bl = {nd: bl_node(nd, n0, count, f0, sr) for nd in w}
+        acc = [0.0] * count
+        for nd, wt in w.items():
+            if wt:
+                acc = [a + wt * b for a, b in zip(acc, bl[nd])]
+        d = max_abs([x - y for x, y in zip(r, acc)])
+        # The same reconstruction with the LOWER node replaced by the one node that is neither the
+        # stretch's lower nor its upper -- for stretch 0 that is the sine, for stretch 1 the saw.
+        # (Using the saw unconditionally would make this a no-op on stretch 0, where the saw IS the
+        # correct lower node, and "the check did not fire" would be misread as "the check is sound";
+        # the shipped defect was itself a wrong-node choice, so the perturbation must be a real one.)
+        lo, hi = stretch_nodes(k)
+        alt = (set(NODE_ORDER) - {lo, hi}).pop()
+        wrong = dict(w)
+        wrong[alt] = w[lo]
+        wrong[lo] = 0.0
+        acc_w = [0.0] * count
+        for nd, wt in wrong.items():
+            if wt:
+                acc_w = [a + wt * b for a, b in zip(acc_w, bl[nd])]
+        dw = max_abs([x - y for x, y in zip(r, acc_w)])
+        good = d < 1e-12 and dw > 0.01
+        if not good:
+            ok |= 3
+        say("    morph=%.4f lower=%-7s max|ref-sum| =%.3g   same check with %-7s as lower node: "
+            "%.3g  %s" % (morph, {NODE_SAW: "saw", NODE_INVSAW: "invSaw",
+                                  NODE_SINE: "sine"}[lo], d,
+                          {NODE_SAW: "saw", NODE_INVSAW: "invSaw", NODE_SINE: "sine"}[alt], dw,
+                          "AGREES, and the wrong node is REJECTED (ok)" if good
+                          else "*** NOT A DISCRIMINATING CHECK ***"))
 
     # (b) convexity: the two active node weights sum to 1, and each is 0 outside its stretches.
     say("  (b) weights must be a convex blend on each stretch:")
@@ -399,19 +491,271 @@ def baseline_ladder(verbose=True):
     return rows
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description="GH#19 S6 saw/invSaw reference instrument")
-    ap.add_argument("--arm", default=None, help="directory written by gh19_s6_saw_probe --out")
-    ap.add_argument("--label", default="arm")
-    ap.add_argument("--out", default=None)
-    ap.add_argument("--self-check", action="store_true")
-    ap.add_argument("--baseline-ladder", action="store_true",
-                    help="analytic naive-baseline residual for every (sr, f0) in the grid")
-    ap.add_argument("--kmax-cap", type=int, default=None,
-                    help="DEV/SMOKE ONLY: truncate the reference series. A capped run is NOT a "
-                         "full-band measurement and the report says so; the gate refuses it.")
-    args = ap.parse_args(argv)
+# ------------------------------------------------------------------------- S6 arm measurement (--arm)
 
+# Pinned here and NOT imported from S3: the gate keeps its own literal copy of this tuple, so a change
+# to the column order in this file becomes a REFUSAL in the gate rather than being absorbed silently.
+MATRIX_COLS = ("id", "sr", "f0", "morph", "stretch", "A", "fund", "dc", "res_db",
+               "res_1k5k_db", "res_effbd_db", "kmax", "max_abs_out")
+
+# vco_a_sawmix_44100_220_m0 / vco_a_sawmixhi_44100_3520_m0. `sawmixhi` is FIRST in the alternation:
+# `sawmix` is a prefix of it, so the other order would parse every high-frequency cell as a plain
+# sawmix cell whose sr/f0/tag fields had swallowed a stray "hi".
+CELL_RE = re.compile(r"^vco_(?P<side>[ab])_(?P<fam>sawmixhi|sawmix)_(?P<sr>\d+)_(?P<f0>\d+)_"
+                     r"(?P<tag>m\d+)$")
+
+
+def load_s6_manifest(d):
+    """The S6 counterpart of S3's load_manifest. S3's is imported everywhere else in this file, but
+    this one cannot be: it hardcodes the S3 manifest's FILENAME. The column set and the numeric
+    coercions are identical, so the coercion list is copied verbatim rather than restated -- a
+    manifest whose columns drifted then fails here loudly instead of being quietly re-typed."""
+    path = os.path.join(d, "gh19_s6_scenarios.tsv")
+    with open(path) as fh:
+        lines = [l.rstrip("\n") for l in fh if l.strip()]
+    head = lines[0].split("\t")
+    rows = []
+    for n, l in enumerate(lines[1:], 2):
+        f = l.split("\t")
+        if len(f) != len(head):
+            raise ValueError("%s:%d: %d fields, header has %d" % (path, n, len(f), len(head)))
+        r = dict(zip(head, f))
+        for k in ("sr_hz", "f_target_hz", "duty_param", "morph", "pw_depth", "f0_meas_hz",
+                  "phi0_model", "peak", "warm", "win", "samples"):
+            r[k] = float(r[k])
+        r["warm"] = int(r["warm"])
+        r["win"] = int(r["win"])
+        r["samples"] = int(r["samples"])
+        rows.append(r)
+    return rows
+
+
+def measure_cell(c, kmax_cap=None):
+    """The S6 analogue of S3's static-cell block, with the SAME call sequence and the same columns, so
+    that a difference between an S3 number and an S6 number is attributable to the WAVEFORM FAMILY
+    rather than to a different instrument.
+
+    The reference is the cell's OWN mix law (`ref_mix_saw`), never a single-node series used on a
+    mixed cell -- S3's named cross-family error. The two band columns and `res_db` share the same
+    fitted scale A, one per cell, exactly as in S3; `res_effbd_db` is the Hann-windowed band residual
+    over the EFFECTIVE full band, which for an analytic (non-decimated) reference is sr/2. Keeping
+    the column even though the reference is never decimated is deliberate: the S3 gate's report rows
+    name it, and a column that exists in one instrument and not the other would make the two
+    instruments' reports un-diffable."""
+    x = c.window()
+    r = ref_mix_saw(c.warm, len(x), c.f0, c.sr, c.morph, kmax_cap)
+    if r is None:
+        return None
+    fund, dc = S3.measure_fundamental_dc(x, c.warm, c.f0, c.sr)
+    st = residual_stats(x, r)
+    row = {"id": c.id, "sr": c.sr, "f0": c.f0, "morph": c.morph,
+           "stretch": stretch_of(c.morph)[0], "fund": fund, "dc": dc,
+           "kmax": kmax_for(c.f0, c.sr, kmax_cap), "max_abs_out": max_abs(x),
+           "A": None, "res_db": None, "res_1k5k_db": None, "res_effbd_db": None}
+    if st is not None:
+        A = st["A"]
+        b1 = S3.band_residual_db(x, r, A, c.sr, S3.B1_LO_HZ, S3.B1_HI_HZ)
+        bf = S3.band_residual_db(x, r, A, c.sr, 0.0, c.sr / 2.0)
+        row["A"] = A
+        row["res_db"] = st["res_db"]
+        row["res_1k5k_db"] = b1["db"] if b1 else None
+        row["res_effbd_db"] = bf["db"] if bf else None
+    return row
+
+
+def align_check_s6(c, tol_rel=1e-6):
+    """THE GATE THAT LICENSES EVERY NUMBER THE S6 ANALYZER PRINTS.
+
+    Reconstruct the product's OWN pre-S6 law (`naive_mix` -- the ring's closed forms, no series, no
+    truncation) and require the rendered arm to equal it, except inside the wrap window where a
+    floor-limited correction is entitled to act. This pins the phase convention (S3's `n+1` rule), the
+    stretch selection and the scale in one place: without it a residual could be small because the
+    reference happened to line up with whatever the product did.
+
+    THE SCALE IS A MEDIAN OF PER-SAMPLE RATIOS, NOT A LEAST-SQUARES FIT, and this is the same
+    argument that made S3 take a median of |x| rather than a fit. A ramp spends every sample at a
+    different magnitude, so no single |x| IS the amplitude; but x_i/m_i is a CONSTANT for a correctly
+    scaled arm, so its median is that constant and is unmoved by the two anomalous wrap samples. A
+    least-squares fit would let exactly those samples move the scale, after which every ordinary
+    sample "disagrees" by that amount and the report would show a full window of mismatches -- the
+    exact opposite of the truth. It applies to BOTH arms, which is what lets one check serve both.
+
+    Mismatches are CLASSIFIED, not merely counted:
+      - `wrap`: model phase within 1e-9 of 0 or 1. The C++ accumulator lands about one ulp below the
+        integer at exact-wrap frames while the closed form returns exactly 0.0, so the two
+        legitimately differ by one step there. Measured, not assumed.
+      - `edge`: within dt = f0/sr of the wrap. This is the window a floor-limited candidate is
+        ALLOWED to differ in, and therefore where the candidate arm's mismatches must live -- and
+        where the baseline arm's must NOT, because the baseline has no correction to place there.
+      - `unexplained`: everything else. Must be ZERO. This is the load-bearing number.
+
+    morph = 0.125 IS A DEGENERATE CELL AND IS HANDLED AS ONE, not as a failure. There the ring's own
+    law is identically zero (0.5*saw + 0.5*(-saw)), so there is no scale to recover and no ratio to
+    take (`residual_stats` returns None for the same reason). The only alignment statement that still
+    means anything is that the rendered output is zero too, and that is what is checked. Returning
+    "no scale" instead would make the anti-phase-midpoint equality criterion unmeasurable by
+    construction, which is the opposite of what that cell is in the matrix for.
+    """
+    x = c.window()
+    n0 = c.warm
+    m = naive_mix(n0, len(x), c.f0, c.sr, c.morph)
+    dt = c.f0 / c.sr
+    base = {"scale": 1.0, "n": len(x), "dt": dt, "wrap": 0, "edge": 0,
+            "first_n": None, "first_i": None, "first_phase": 0.0, "first_err": 0.0,
+            "degenerate": False}
+    if max_abs(m) == 0.0:
+        worst = max_abs(x)
+        out = dict(base)
+        out.update({"ok": worst == 0.0, "degenerate": True, "worst": worst,
+                    "unexplained": 0 if worst == 0.0 else len(x)})
+        return out
+    ratios = sorted(x[i] / m[i] for i in range(len(x)) if m[i] != 0.0)
+    scale = ratios[len(ratios) // 2]
+    tol = tol_rel * abs(scale)
+    wrap = edge = unexplained = 0
+    worst = 0.0
+    first_n = first_i = None
+    first_phase = first_err = 0.0
+    for i in range(len(x)):
+        e = abs(x[i] - scale * m[i])
+        if e > worst:
+            worst = e
+        if e <= tol:
+            continue
+        p = phi_at(n0 + i, c.f0, c.sr)
+        near = min(abs(p), abs(p - 1.0))
+        if near < 1e-9:
+            wrap += 1
+        elif near < dt:
+            edge += 1
+        else:
+            unexplained += 1
+            if first_n is None:
+                first_n, first_i, first_phase, first_err = n0 + i, i, p, e
+    out = dict(base)
+    out.update({"ok": unexplained == 0, "scale": scale, "wrap": wrap, "edge": edge,
+                "unexplained": unexplained, "worst": worst,
+                "first_n": first_n, "first_i": first_i, "first_phase": first_phase,
+                "first_err": first_err})
+    return out
+
+
+def parseval_check(sr=48000.0, f0=440.0, count=4096, n0=8192, verbose=True):
+    """(e) THE POWER-UNIT TRIPWIRE, inherited from S3's self-check so the S6 gate can run the same
+    check on the same terms. Two halves, because the first alone has a blind spot:
+
+      * with a RECTANGULAR window, `band_residual_db` over [0, sr/2] must reproduce `res_db`
+        (the unwindowed ratio, computed by `residual_stats` with no transform at all at any point);
+      * for BOTH windows, each band power must equal a DIRECT time-domain mean square,
+        sum_i (w_i y_i)^2 / sum_i w_i^2, computed with no transform. This is the half that pins the
+        power UNITS: the first comparison divides two transform quantities by each other and is
+        therefore completely blind to the 2/N coefficient that makes them physical.
+
+    A metric whose units are wrong is not a metric, and a residual column printed in the wrong units
+    would still look like a plausible dB number. Returns 0 if both halves held, else a bitmask, and
+    prints the OK line the gate requires to see."""
+    ok = 0
+    x = naive_mix(n0, count, f0, sr, 0.1875)
+    r = ref_mix_saw(n0, count, f0, sr, 0.1875)
+    st = residual_stats(x, r)
+    A = st["A"]
+    rect = [1.0] * count
+    for lbl, w in (("rect", rect), ("hann", S3.hann(count))):
+        b = S3.band_residual_db(x, r, A, sr, 0.0, sr / 2.0, w)
+        sw2 = sum(v * v for v in w)
+        want_q = sum((A * r[i] * w[i]) ** 2 for i in range(count)) / sw2
+        want_e = sum(((x[i] - A * r[i]) * w[i]) ** 2 for i in range(count)) / sw2
+        good = (b is not None
+                and abs(b["pq"] - want_q) <= 1e-12 * abs(want_q)
+                and abs(b["pe"] - want_e) <= 1e-12 * max(abs(want_e), 1e-300))
+        if not good:
+            ok |= 4
+        if verbose:
+            print("    (e) Parseval absolute, %-4s window: band pq=%.12g vs direct %.12g  %s"
+                  % (lbl, b["pq"] if b else float("nan"), want_q,
+                     "MEAN SQUARES AGREE (ok)" if good else "*** UNITS WRONG ***"))
+    b = S3.band_residual_db(x, r, A, sr, 0.0, sr / 2.0, rect)
+    d = abs(b["db"] - st["res_db"])
+    good = d <= 1e-12 * max(abs(st["res_db"]), 1.0)
+    if not good:
+        ok |= 4
+    if verbose:
+        print("    (e) Parseval ratio, rect window: band db=%.12f vs res_db=%.12f  max|diff|=%.3g  %s"
+              % (b["db"], st["res_db"], d,
+                 "BAND == RECT (ok)" if good else "*** BAND COLUMN IS NOT THE RECT RATIO ***"))
+    if verbose:
+        print("    (e) %s" % ("PASSED" if ok == 0 else "*** FAILED (rc=%d) ***" % ok))
+    return ok
+
+
+def _fmt(v):
+    """One token per column, always. `nan` for a quantity that DOES NOT EXIST: the anti-phase
+    midpoint's reference is identically zero, `residual_stats` returns None, and printing 0.0 or -inf
+    there would both be claims the instrument is not entitled to make. A blank field would instead
+    shift every later column left and the gate's fixed-width parse would read the wrong numbers as
+    the right ones."""
+    if v is None:
+        return "nan"
+    if isinstance(v, bool):
+        return "1" if v else "0"
+    if isinstance(v, int):
+        return str(v)
+    return "%.17g" % v
+
+
+def analyze_arm(armdir, label, kmax_cap=None, verbose=True):
+    """Measure one rendered arm and return its matrix rows, or None if a cell has no reference. A
+    cell without a reference is not skippable: the gate reconciles the matrix against the probe's
+    declared plan, so a silently dropped cell would look like a smaller matrix rather than a
+    broken run."""
+    rows = []
+    for row in load_s6_manifest(armdir):
+        c = S3.Cell(row, armdir)
+        meas = measure_cell(c, kmax_cap)
+        if meas is None:
+            sys.stderr.write("FATAL %s: no band-limited reference exists (kmax < 1)\n" % c.id)
+            return None
+        al = align_check_s6(c)
+        meas["align"] = al
+        rows.append(meas)
+    nbad = sum(1 for r in rows if not r["align"]["ok"])
+    if verbose:
+        first = next((r["id"] for r in rows if not r["align"]["ok"]), "-")
+        print("ALIGN-GATE ok=%d checked=%d bad=%d first_bad=%s"
+              % (len(rows) - nbad, len(rows), nbad, first))
+        for r in rows:
+            if not r["align"]["ok"]:
+                al = r["align"]
+                print("  ALIGN-FAIL %s scale=%.12g wrap=%d edge=%d unexplained=%d worst=%.6g "
+                      "first_n=%s first_phase=%s"
+                      % (r["id"], al["scale"], al["wrap"], al["edge"], al["unexplained"],
+                         al["worst"], al["first_n"], al["first_phase"]))
+    if verbose:
+        print("ARM-MEASURED arm=%s cells=%d" % (label, len(rows)))
+    return rows
+
+
+def render_report(rows, label, kmax_cap):
+    """The matrix block, printed into the SAME artifact as the instrument lines on purpose: a matrix
+    and a self-check taken from different runs would let a failed instrument be paired with a passing
+    matrix. The gate reads one file per arm and requires both in it."""
+    print("-- BEGIN MATRIX static")
+    print("  Columns are inherited unchanged from S3's static block, with `stretch` and")
+    print("  `max_abs_out` added: `stretch` says which segment of the morph ring the cell sits on")
+    print("  (the reference must come from THAT stretch's own mix law), and `max_abs_out` is the")
+    print("  quantity the anti-phase-midpoint equality criterion is stated on.")
+    print("  Columns are printed to 17 significant digits: the two arms' matrices are compared cell")
+    print("  by cell, and a rounded column would make 'the arms agree' a statement about the")
+    print("  rounding rather than about the DSP.")
+    print("")
+    print(" ".join(MATRIX_COLS))
+    for r in rows:
+        print(" ".join([r["id"]] + [_fmt(r[k]) for k in MATRIX_COLS[1:]]))
+    print("-- END MATRIX static declared=%d emitted=%d skipped=%d capped=%d"
+          % (len(rows), len(rows), 0, 1 if kmax_cap is not None else 0))
+
+
+def _run(args):
     rc = 0
     if args.self_check:
         rc |= self_check()
@@ -423,8 +767,61 @@ def main(argv=None):
                              "--baseline-ladder)\n")
             return 2
         return rc
-    sys.stderr.write("FATAL: the full-matrix route is not wired yet in this revision\n")
-    return 2
+
+    print("-- GH#19 S6 (task #120) saw/invSaw reference instrument --")
+    print("ARM %s" % args.label)
+    print("REFERENCE-FAMILY every reference is built from the cell's OWN stretch mix law; "
+          "kmax = floor((sr/2)/f0); no cross-stretch and no cross-family borrowing.")
+    print("BAND-DECL b1_lo=%.3f b1_hi=%.3f eff_lo=%.3f eff_rule=analytic eff_hi_cycles=%.9f"
+          % (S3.B1_LO_HZ, S3.B1_HI_HZ, 0.0, 0.5))
+    if args.kmax_cap is not None:
+        print("CAPPED kmax_cap=%d : the reference series was truncated below Nyquist, so this is "
+              "NOT a full-band measurement." % args.kmax_cap)
+
+    # The (e) tripwire and the alignment gate run UNCONDITIONALLY on the arm route rather than behind
+    # switches: the gate refuses a report lacking either, and a report missing them because a caller
+    # forgot a flag is indistinguishable from an instrument that never ran.
+    rc |= parseval_check()
+    rows = analyze_arm(args.arm, args.label, args.kmax_cap)
+    if rows is None:
+        return 3
+    nbad = sum(1 for r in rows if not r["align"]["ok"])
+    render_report(rows, args.label, args.kmax_cap)
+    if rc != 0 or nbad:
+        # An arm whose output is not the model it claims to be is not measurable: every residual below
+        # it would be a statement about a different signal. The marker also makes the gate REFUSE
+        # rather than judge, which is the point -- this is not a red verdict, it is no verdict.
+        print("*** INSTRUMENT self_check_rc=%d align_bad=%d: the instrument or the rendered arm "
+              "failed its own gate, so no number below it is a statement about the DSP." % (rc, nbad))
+        return 1
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="GH#19 S6 saw/invSaw reference instrument")
+    ap.add_argument("--arm", default=None, help="directory written by gh19_s6_saw_probe --out")
+    ap.add_argument("--label", default="arm")
+    ap.add_argument("--out", default=None, help="report file for --arm (the gate reads this)")
+    ap.add_argument("--self-check", action="store_true")
+    ap.add_argument("--baseline-ladder", action="store_true",
+                    help="analytic naive-baseline residual for every (sr, f0) in the grid")
+    ap.add_argument("--kmax-cap", type=int, default=None,
+                    help="DEV/SMOKE ONLY: truncate the reference series. A capped run is NOT a "
+                         "full-band measurement and the report says so; the gate refuses it.")
+    args = ap.parse_args(argv)
+
+    # Everything the run says is captured and then emitted twice -- once to the console, once to the
+    # report file -- so the file the gate reads cannot be missing an instrument line that the console
+    # showed, and vice versa.
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = _run(args)
+    text = buf.getvalue()
+    sys.stdout.write(text)
+    if args.out and args.arm is not None:
+        with open(args.out, "w") as fh:
+            fh.write(text)
+    return rc
 
 
 if __name__ == "__main__":
