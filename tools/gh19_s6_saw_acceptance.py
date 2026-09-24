@@ -50,6 +50,13 @@ import sys
 EXIT_PASS = 0
 EXIT_RED = 1
 EXIT_REFUSE = 4
+# NOT a verdict. Python exits 1 on an uncaught exception, which is EXIT_RED's value, so a crash
+# inside this gate used to be indistinguishable from a legitimate RED by exit code alone. The S6
+# baseline arm is committed PARTIALLY on purpose (only the sine cells' raw windows are read from
+# it, see report/gh19-s6-saw-aa/baseline_arm/README.md), which makes "this file is not here" a
+# reachable state rather than a hypothetical one. Unreadable inputs are therefore refused BY NAME
+# and anything else unexpected lands here, so no failure can wear a verdict's exit code.
+EXIT_CRASH = 3
 
 # Pinned literals rather than imports from the analyzer, for S3's stated reason: a change to the
 # analyzer's column order then becomes a REFUSAL here (the report no longer parses against the
@@ -343,9 +350,17 @@ def read_arm_index(path):
 
 
 def read_window(armdir, raw, warm, win):
-    with open(os.path.join(armdir, raw), "rb") as fh:
+    """None when the window cannot be read. The caller turns that into a named refusal: an absent
+    or truncated raw is an input problem, and an input problem must not be able to reach the
+    equality criteria as a comparison against a shorter or empty capture."""
+    path = os.path.join(armdir, raw)
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as fh:
         buf = fh.read()
     n = len(buf) // 8
+    if n < warm + win:
+        return None
     vals = struct.unpack("<%dd" % n, buf[:n * 8])
     return vals[warm:warm + win]
 
@@ -534,8 +549,19 @@ def main(argv):
             break
 
     # ---- MEASUREMENTS --------------------------------------------------------------------------
-    base_idx = read_arm_index(os.path.join(args.base_arm, "gh19_s6_scenarios.tsv"))
-    cand_idx = read_arm_index(os.path.join(args.cand_arm, "gh19_s6_scenarios.tsv"))
+    base_idx = cand_idx = None
+    for label, armdir, sink in (("base", args.base_arm, "base"), ("cand", args.cand_arm, "cand")):
+        try:
+            idx = read_arm_index(os.path.join(armdir, "gh19_s6_scenarios.tsv"))
+        except (OSError, ValueError) as exc:
+            g.refuse("ARM-MANIFEST", "%s arm: cannot read its scenario manifest: %s" % (label, exc))
+            continue
+        if sink == "base":
+            base_idx = idx
+        else:
+            cand_idx = idx
+    if g.refusals:
+        return finish(g, "REFUSE", EXIT_REFUSE)
 
     def _finite(v):
         return v is not None and math.isfinite(v)
@@ -631,6 +657,15 @@ def main(argv):
             continue
         a = read_window(args.base_arm, bw[0], bw[1], bw[2])
         b = read_window(args.cand_arm, cw[0], cw[1], cw[2])
+        if a is None or b is None:
+            # The baseline arm is committed with ONLY these cells' raw windows (Q2(a)); anything
+            # else read from it is an input problem, and it is refused by name rather than being
+            # compared as a shorter or empty capture.
+            g.refuse("EQUALITY-SINE", "%s: could not read the %s window (%s in %s)"
+                     % (cid, "base" if a is None else "cand",
+                        bw[0] if a is None else cw[0],
+                        args.base_arm if a is None else args.cand_arm))
+            continue
         n = bit_diff_count(a, b)
         if n < 0:
             g.refuse("EQUALITY-SINE", "%s: the two arms' windows are not the same length" % cid)
@@ -652,8 +687,16 @@ def main(argv):
     worst_band = min(dband[c] for c in cells)
     worst_full = min(dfeff[c] for c in cells)
     worst_rect = min(dres[c] for c in cells)
-    worst_pinned = min(pinned_res_db(base[c]["A"], cand[c]["A"], cand[c]["res_db"])
-                       - base[c]["res_db"] for c in cells)
+    # `res_db` is a residual-to-signal ratio, so MORE NEGATIVE IS BETTER and an improvement is
+    # `base - scored`. Spelled the same way as `worst_rect` directly above: the first version of
+    # this line wrote `pinned - base`, one operand order away from its sibling, which both inverted
+    # the sign and -- because `min` over a negated improvement selects its maximum -- reported the
+    # BEST cell under a name that says worst. The figure is report-only either way, so the gate
+    # stayed PASS while the row read -7.59 dB where the truth was +7.30 dB; the sign convention is
+    # not cosmetic here. Do not "simplify" this into a cost.
+    worst_pinned = min(base[c]["res_db"]
+                       - pinned_res_db(base[c]["A"], cand[c]["A"], cand[c]["res_db"])
+                       for c in cells)
     got_reports = {
         "max_abs_fitted_scale_delta": "%.6f" % max_dA,
         "max_pinned_scale_cost_db": "%+.4f" % max_cost,
@@ -684,4 +727,15 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    # An uncaught exception exits 1, which is EXIT_RED: the gate would be reporting a RED it never
+    # judged. Everything expected is refused by name inside main(); this catches the rest and gives
+    # it an exit code no verdict can produce, with a marker a driver can look for.
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except SystemExit:
+        raise
+    except BaseException as exc:  # noqa: BLE001 -- the point is to catch everything
+        sys.stderr.write("ACCEPT-GATE CRASH %s: %s\n" % (type(exc).__name__, exc))
+        sys.stderr.write("ACCEPT-GATE CRASH no verdict was issued; exit %d is not PASS/RED/REFUSE\n"
+                         % EXIT_CRASH)
+        raise SystemExit(EXIT_CRASH)

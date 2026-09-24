@@ -1,0 +1,28 @@
+# S6 baseline pins (task #120, GH #19) — sha256
+#
+# These are the values tools/run_gh19_s6_saw_pipeline.py holds as constants and refuses on, each
+# under its own refusal name. Regenerate with: shasum -a 256 <file>
+#
+# --- pin 1: REFUSE BASELINE-PIN (the stimulus manifest) -------------------------------------
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scenarios.tsv               09b5a2c03d8f43096220391bbf86c20a670af89ab52a65db5237679e065ba55b
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_plan.tsv                    4f8c4691afc0ff05f1e7dd57651835391ba585c2c0ec6f4aefb612fc019ea7ca
+#
+# --- pin 2: REFUSE BASELINE-REPORT-PIN (the numbers every improvement column is read from) ---
+report/gh19-s6-saw-aa/base_report.txt                                  de30d2d3079473e80425f974a74b6da37066aa77f4afc8f3c71a540c44ee3696
+#
+# --- pin 3: REFUSE BASELINE-RAW-PIN (the samples `sine_node_bit_diff_count` compares) --------
+# The eight `m50000` cells: the sine node at four sample rates on two VCOs. NOTE: measured, not
+# assumed — the two sides are byte-identical at each sample rate, so these eight entries carry four
+# distinct digests. All eight are listed because the map is file -> digest and the criterion
+# iterates all eight cells; the duplicate pairs are called out here so the cell count is not read
+# as eight independent windows.
+#   scn125 == scn133 (vco_a/vco_b @44100)   scn126 == scn134 (@48000)
+#   scn127 == scn135 (@88200)               scn128 == scn136 (@96000)
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn125.raw                  be8224478487ef1dabeb074ad9e747474e7965ad0f7835dbdfe1d153317e9e99
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn126.raw                  32cd07fca93f9482088a5d7e2fd6a8e41bb58b9eb84a3ab71bac8e16047f2c37
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn127.raw                  ca032312b2bef91fae78d8c4b3da12837130749c5587e15f6a58b9061fd0acde
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn128.raw                  1f998e1a37ac2e1432999857e7cd47ddded26094fdf711d9873d5159c4f09e7d
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn133.raw                  be8224478487ef1dabeb074ad9e747474e7965ad0f7835dbdfe1d153317e9e99
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn134.raw                  32cd07fca93f9482088a5d7e2fd6a8e41bb58b9eb84a3ab71bac8e16047f2c37
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn135.raw                  ca032312b2bef91fae78d8c4b3da12837130749c5587e15f6a58b9061fd0acde
+report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn136.raw                  1f998e1a37ac2e1432999857e7cd47ddded26094fdf711d9873d5159c4f09e7d

@@ -43,13 +43,43 @@
 #     already smooth) cannot be told apart by a ratio of their residuals.
 #
 # WHY THE MIDPOINT IS STILL IN THE MATRIX AT ALL. It is a necessary-but-insufficient REGRESSION
-# guard, and it is cheap: it catches a SIGN error (using invSaw's correction with the wrong sign
-# makes the output immediately non-zero) and it catches leakage of a correction that should be
-# absent. It does NOT discriminate "correct per-node weight scaling" from "copy the kernel
-# unscaled", because the unscaled arm also evaluates to 0 there and the naive arm was 0 anyway.
-# The discriminating power for that question lives entirely OFF-centre (norm 0.0625 / 0.1875 /
-# 0.3125 / 0.375 / 0.4375) -- see the NC1 negative control, which is built on those cells and not
-# on the midpoint. No cell in this file is asked to do more than it can.
+# guard, and it is cheap: it catches leakage of a correction that should be absent. It does NOT
+# discriminate "correct per-node weight scaling" from "copy the kernel unscaled", because the
+# unscaled arm also evaluates to 0 there and the naive arm was 0 anyway. The discriminating power
+# for that question lives entirely OFF-centre (norm 0.0625 / 0.1875 / 0.3125 / 0.375 / 0.4375) --
+# see the NC1 negative control, which is built on those cells and not on the midpoint. No cell in
+# this file is asked to do more than it can.
+#
+# WHERE A SIGN ERROR IS ACTUALLY CAUGHT (amended after the mutant matrix was measured, not before).
+# This file previously said the midpoint row "catches a SIGN error". The measurement says otherwise,
+# and the row's role is restated here to match the evidence rather than the intent:
+#   * A sign error (`invsaw-sign-flip`: the invSaw term added with the wrong sign) is caught by the
+#     ANALYZER'S ALIGNMENT LICENSE, at the midpoint's own degenerate branch: the pre-S6 law is
+#     identically 0 there, so the license demands the candidate be exactly 0 and refuses the arm --
+#     align_bad = 8, and the 8 refused cells ARE the morph-0.125 set (named by id, not merely
+#     counted). That refusal happens a layer BEFORE this gate: an unlicensed arm produces no report
+#     and therefore no verdict.
+#   * `EQUALITY-ANTIPHASE` therefore exists as a SECOND-LINE assertion and is STRUCTURALLY
+#     UNREACHABLE from the product side: any mutation that would make it fire makes the midpoint
+#     non-zero, and that is exactly what the license's degenerate branch refuses first. It is kept
+#     because the gate is a standalone artifact that can be run against a report it did not render,
+#     and its reachability is demonstrated there (gate-only synthetic input; NOT a product negative
+#     control; not counted as a mutant arm). No threshold or cell membership is changed by this
+#     amendment -- only which surface is credited with catching what.
+#   * The same layer ordering explains the DC guard: `GUARD-DC`'s quantity is also fed by the
+#     report, and a product-wide additive offset is refused by the license on all 168 cells before
+#     the gate sees it. Its reachability is demonstrated the same way.
+#   * It explains the frequency guard too, which was measured AFTER this amendment was first
+#     written and is the reason the paragraph says "three" rather than "two": `phase-drift` (the
+#     rendered step changed by 2%) is refused by the license on 160 of the 168 cells. The 8 that
+#     survive are the exact-zero midpoint cells, and they survive for a reason worth stating -- the
+#     license's degenerate branch asks only `0 == 0`, which a changed step cannot disturb. So the
+#     same 8 cells that cannot discriminate a sign error cannot witness a frequency fault either;
+#     a cell carrying no signal there cannot report on what happened to the signal. `GUARD-FREQ`
+#     is fed by the PROBE's own zero-crossing column rather than by the report, so its gate-side
+#     reachability demonstration aims at that column instead (same label: gate-only synthetic
+#     input, not a product negative control, not counted as a mutant arm). No threshold or cell
+#     membership is changed by this amendment.
 #
 # ---------------------------------------------------------------------------------------------
 # THRESHOLDS. Each improvement cell must clear BOTH residual thresholds against the PRESERVED
