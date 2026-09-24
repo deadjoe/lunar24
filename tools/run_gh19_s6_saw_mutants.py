@@ -13,9 +13,22 @@ firing in ANY run:
     an "improvement" by moving the signal instead of cleaning it; in the red-first run the two arms
     were the same binary, so all three passed trivially and proved nothing;
   * the whole EQUALITY layer (`antiphase_midpoint_max_abs_output`, `sine_node_bit_diff_count`), for
-    the same reason -- a naive head is trivially equal to itself.
+    the same reason -- a naive head is trivially equal to itself. The SINE half of that layer is now
+    an A/B against a neutralised arm (see ARM B below), so its second side no longer comes from a
+    committed macOS snapshot; the mutation that lights it up (NC3) is unchanged.
 
 A green light on an unfired criterion is not evidence. This runner lights each one up.
+
+ARM B. Every gate run in this matrix is given `--neutral-arm` as well as `--cand-arm`: the equality
+criterion compares the arm under test against the SAME BUILD with the two correction terms
+neutralised, not against the committed pre-S6 snapshot (that comparison was not portable -- the
+default patch evaluates std::sin and the two libms disagree by 1 ULP on 3.76% of arguments; see the
+task report). Arm B is built ONCE from the PRODUCT header, not from a mutant's shadow: the
+neutralisation anchor is the same two lines `unscaled-kernel` and `invsaw-sign-flip` rewrite, so
+staging it on top of those shadows would fail the anchor-exactly-once assertion -- and arm B does not
+depend on which mutant is under test, by definition it is the product minus the correction. It is
+staged by tools/stage_gh19_s6_shadow.py, the same tool the product's own CMake target uses, so the
+pipeline and this matrix cannot drift into running two different A/Bs under one name.
 
 HOW IT MUTATES. Exactly as `run_gh19_s3_pulse_mutant.py` does: the probe SOURCE is unchanged, and
 one header is copied into a shadow include root that is placed FIRST on the command line, so the
@@ -47,7 +60,9 @@ THE MUTANTS, and the layer each one is aimed at:
                         1e-9 against a signal of order 1 is invisible to every dB criterion in the
                         file -- 1e-6 dB on a residual a few tens of dB down -- and it is far above
                         double precision, so it is bit-visible. Aimed at EQUALITY-SINE: the exact-bit
-                        criterion catches what no threshold can. This is its non-vacuity proof.
+                        criterion catches what no threshold can. This is its non-vacuity proof. Under
+                        the A/B the two sides are the leak and its absence, which is the same pair
+                        the old snapshot comparison used, so the mutation's aim is unchanged.
   NC4 output-gain       Every emitted sample scaled by 1.02. The fundamental moves 2% (limit 1%), so
                         a candidate can "improve" its residual-to-signal ratio simply by being
                         louder, and GUARD-AMP is what refuses it. The improvement columns stay green
@@ -73,6 +88,7 @@ Usage (used by CMake; also runnable by hand):
 
 import argparse
 import concurrent.futures
+import hashlib
 import os
 import platform
 import re
@@ -80,6 +96,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The neutralisation edit is NOT re-spelled here: the A/B's arm B is one edit, and it is defined in
+# one place (tools/stage_gh19_s6_shadow.py), shared with the CMake target that builds the product's
+# arm B. Two spellings of "the correction is neutralised" could drift, and then the pipeline and this
+# matrix would be running two different A/Bs under one name.
+import stage_gh19_s6_shadow as shadow_stage
 
 PROBE_SRC = "tests/probes/gh19_s6_saw_probe.cpp"
 # ONE header carries every mutation, because every mutation is in the (P6) implementation or in the
@@ -169,7 +192,9 @@ MUTANTS = (
         forbid=(),
         why_reachable="this one DOES reach the gate: 1e-9 is below the license's tolerance band "
                       "(1e-6 * scale), so the arm stays licensed, while the equality criterion's "
-                      "tolerance is exact -- the designed 'dB-invisible, bit-visible' case.",
+                      "tolerance is exact -- the designed 'dB-invisible, bit-visible' case. It is "
+                      "the leak that differs between the two A/B sides: arm A carries it, arm B "
+                      "(neutralised) does not.",
     ),
     dict(
         tag="output-gain",
@@ -411,7 +436,9 @@ def reachability(tmp, ref, args, crit, bad):
                             "--base-report", base_report,
                             "--cand-report", cand_report,
                             "--base-arm", args.baseline_arm,
-                            "--cand-arm", cand_arm], capture_output=True, text=True)
+                            "--cand-arm", cand_arm,
+                            "--neutral-arm", args.neutral_arm,
+                            "--repo-root", args.repo_root], capture_output=True, text=True)
         pr = parse_gate((g.stdout or "").splitlines())
         fired = sorted(pr["fail_counts"])
         print("%-20s %-7s %-9s %s" % ("tamper:" + code, g.returncode, pr["verdict"],
@@ -466,6 +493,156 @@ def reachability(tmp, ref, args, crit, bad):
     return n_fired
 
 
+def wiring_control(tmp, ref, args, bad):
+    """Exercise the `wiring` declaration -- the STATIC half of the equality layer -- as an A/B whose
+    only difference is one planted caller.
+
+    WHY THIS EXISTS. `S6-WIRING` is a judged criterion with its own code and its own reason string,
+    and like the three criteria `reachability()` covers, a criterion that is silent on success and
+    has never been seen firing cannot be told apart from one that cannot fire. What is different here
+    is that its input is not a number: it is the SHAPE of the product source, so the tamper is a
+    source tree, not a report column.
+
+    THE A/B. Two copies of the same three scanned roots (core, host, generated -- ~1.5 MB, cheap).
+    The gate is run with `--repo-root` pointing at each, with EVERY other input held fixed: the same
+    criteria, the same plan, the same reports, the same arms, including the neutral arm. The pristine
+    copy must reproduce the reference arm's verdict exactly (same inputs, only the scanned tree
+    differs, and it differs by nothing) -- if it does not, then the scan is not measuring the tree
+    and the second half below would prove nothing. The planted copy carries ONE added line that
+    references `invSawWeight` from an existing file, and must go RED with `S6-WIRING` and no other
+    change of verdict. An extra call site is the exact failure the declaration exists to catch, and
+    it is planted in a file the declaration already covers (so the failure is a COUNT that moved, not
+    an undeclared file).
+
+    Returns the number of firings observed (0, 1, or 2 -- the second only if the negative half also
+    misbehaves), so the caller's summary reports what happened rather than what was intended.
+    """
+    report = ref.get("report")
+    arm = ref.get("arm")
+    if not report or not arm or not os.path.exists(report):
+        bad.append("wiring: the reference arm produced no report to reuse (this stage runs the gate "
+                   "on FIXED inputs and varies only the scanned tree)")
+        return 0
+
+    planted_rel = "core/include/lunar24/core/vco.h"
+    planted_line = ("// GH#19 S6 wiring control: one extra caller, planted by "
+                    "run_gh19_s6_saw_mutants.py\n"
+                    "static double wiring_control_ghost_(const Boundaries& c, double n) {\n"
+                    "  return wave_map::invSawWeight(c, n);\n"
+                    "}\n")
+    verdicts = {}
+    for label, plant in (("pristine", False), ("planted", True)):
+        root = os.path.join(tmp, "wiretree_" + label)
+        for sub in ("core", "host", "generated"):
+            src = os.path.join(args.repo_root, sub)
+            if not os.path.isdir(src):
+                bad.append("wiring: %s does not exist under --repo-root %s, so the scanned tree "
+                           "cannot be reproduced for the control" % (sub, args.repo_root))
+                return 0
+            shutil.copytree(src, os.path.join(root, sub),
+                            ignore=shutil.ignore_patterns(".git", "build"))
+        if plant:
+            with open(os.path.join(root, planted_rel), "a") as fh:
+                fh.write(planted_line)
+        g = subprocess.run([sys.executable, args.gate,
+                            "--criteria", args.criteria,
+                            "--plan", args.plan or os.path.join(args.baseline_arm,
+                                                                "gh19_s6_plan.tsv"),
+                            "--base-report", args.base_report,
+                            "--cand-report", report,
+                            "--base-arm", args.baseline_arm,
+                            "--cand-arm", arm,
+                            "--neutral-arm", args.neutral_arm,
+                            "--repo-root", root], capture_output=True, text=True)
+        pr = parse_gate((g.stdout or "").splitlines())
+        verdicts[label] = (g.returncode, pr, (g.stdout or "").splitlines())
+        print("WIRING-CONTROL %-8s rc=%-3s verdict=%-7s fired=%s"
+              % (label, g.returncode, pr["verdict"],
+                 ",".join(sorted(pr["fail_counts"])) or "-"), flush=True)
+
+    rc0, pr0, _ = verdicts["pristine"]
+    rc1, pr1, so1 = verdicts["planted"]
+    n_fired = 0
+    # The negative half. The pristine copy is the same tree the reference arm was judged on, so it
+    # must give the same verdict; anything else means the control is not varying what it claims to.
+    if rc0 != ref.get("rc") or pr0["verdict"] != ref["parsed"]["verdict"]:
+        bad.append("wiring/pristine: the copied tree produced rc=%s verdict=%s, but the reference arm "
+                   "produced rc=%s verdict=%s on the same inputs; the control would then be "
+                   "attributing to the planted line what the copy itself changed"
+                   % (rc0, pr0["verdict"], ref.get("rc"), ref["parsed"]["verdict"]))
+    elif "S6-WIRING" in pr0["fail_counts"]:
+        bad.append("wiring/pristine: S6-WIRING fired on the UNMODIFIED tree, so it fires for "
+                   "something other than an extra caller and the planted half below proves nothing")
+    else:
+        n_fired += 1
+    # The positive half, and the reason it is unconditional: this is the firing the declaration
+    # exists for, and a control that only reports its own success would hide its absence.
+    if rc1 != PIPE_RED or pr1["verdict"] != "RED" or "S6-WIRING" not in pr1["fail_counts"]:
+        bad.append("wiring/planted: one added caller of invSawWeight was expected to make the gate "
+                   "RED with S6-WIRING; got rc=%s verdict=%s fired=%s"
+                   % (rc1, pr1["verdict"], ",".join(sorted(pr1["fail_counts"])) or "-"))
+    else:
+        fires = [l for l in so1 if l.startswith("FAIL-S6-WIRING")]
+        print("WIRING-CONTROL        %s" % (fires[0] if fires else
+                                            "(S6-WIRING counted, detail line not captured)"),
+              flush=True)
+        n_fired += 1
+    return n_fired
+
+
+def sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def build_neutral_arm(repo_root, tmp, compiler, plan_path):
+    """Compile + render arm B ONCE, and share it across every arm of the matrix.
+
+    WHY ONCE, AND WHY FROM THE PRODUCT HEADER. The neutralisation anchor is the same two lines two of
+    the mutants rewrite (`unscaled-kernel`, `invsaw-sign-flip`), so staging the neutral edit on top of
+    THOSE shadows would fail the anchor-exactly-once assertion -- and the fix is not a second anchor,
+    it is the observation that arm B does not depend on which mutant is under test: by definition it
+    is arm A minus the correction, and arm A is the product. Building it from the product header also
+    means the seven mutant runs share ONE compile and ONE render instead of seven.
+
+    The plan identity and the witness non-vacuity are the GATE's refusals (NEUTRAL-ARM), and they run
+    for every arm; the check here is the cheap early one, so a mis-staged shadow fails with a clear
+    message before seven arms have been rendered. Returns (arm_dir, None) or (None, reason)."""
+    shadow = os.path.join(tmp, "inc_neutral")
+    os.makedirs(shadow, exist_ok=True)
+    staged = shadow_stage.stage_neutral(repo_root, shadow, quiet=True)
+    if staged is None:
+        return None, ("the neutral arm's shadow header could not be staged (the INVALID line above "
+                      "names the reason): without it arm B would be the product, and the equality "
+                      "criterion would compare the product against itself")
+    probe = os.path.join(tmp, "probe_neutral")
+    b = subprocess.run(compile_cmd(repo_root, shadow, probe, compiler),
+                       capture_output=True, text=True)
+    if b.returncode != 0:
+        return None, ("the neutral probe did not compile (arm B must build under the SAME command as "
+                      "the arms): %s" % (b.stderr or b.stdout)[-2000:])
+    arm = os.path.join(tmp, "arm_neutral")
+    os.makedirs(arm, exist_ok=True)
+    p = subprocess.run([probe, "--out", arm], capture_output=True, text=True)
+    if p.returncode != 0:
+        return None, ("the neutral probe failed to render (rc=%d): %s"
+                      % (p.returncode, (p.stdout or "")[-2000:]))
+    neutral_plan = os.path.join(arm, "gh19_s6_plan.tsv")
+    if not os.path.exists(neutral_plan):
+        return None, "the neutral arm rendered no plan at %s" % neutral_plan
+    if not os.path.exists(plan_path):
+        return None, "no plan to compare the neutral arm against at %s" % plan_path
+    if sha256_of(neutral_plan) != sha256_of(plan_path):
+        return None, ("the neutral arm's plan is not the one the other arms are judged against "
+                      "(%s vs %s)" % (sha256_of(neutral_plan), sha256_of(plan_path)))
+    print("NEUTRAL-ARM %s shadow_tree_sha256=%s neutral_sha256=%s plan_sha256=%s"
+          % (arm, staged[1], staged[2], sha256_of(neutral_plan)), flush=True)
+    return arm, None
+
+
 def run_arm(tag, repo_root, tmp, compiler, args):
     """Compile + render + analyze + gate one arm. Returns a result dict, never raises."""
     res = {"tag": tag, "stage": "", "ok": False}
@@ -515,7 +692,9 @@ def run_arm(tag, repo_root, tmp, compiler, args):
                         "--base-report", args.base_report,
                         "--cand-report", report,
                         "--base-arm", args.baseline_arm,
-                        "--cand-arm", arm], capture_output=True, text=True)
+                        "--cand-arm", arm,
+                        "--neutral-arm", args.neutral_arm,
+                        "--repo-root", repo_root], capture_output=True, text=True)
     res["rc"] = g.returncode
     res["parsed"] = parse_gate((g.stdout or "").splitlines())
     res["stdout"] = g.stdout or ""
@@ -554,6 +733,18 @@ def main():
 
         wanted = ["reference"] + [m["tag"] for m in MUTANTS
                                   if args.only is None or m["tag"] == args.only]
+        # Arm B of the equality criterion, built and rendered ONCE for the whole matrix, before any
+        # arm is judged. Every arm's gate run reads it, including the reference's: if it were staged
+        # from a mutant's shadow the reference would be judged against a mutated arm B, and if it
+        # failed to stage at all, every arm would be compared against the product and the equality
+        # criterion would become the degenerate identity. Both are refused here rather than reported.
+        neutral_arm, err = build_neutral_arm(root, tmp, args.compiler,
+                                            args.plan or os.path.join(args.baseline_arm,
+                                                                      "gh19_s6_plan.tsv"))
+        if neutral_arm is None:
+            print("\nS6-MUTANT FAILED:\n  * %s" % err, flush=True)
+            return 1
+        args.neutral_arm = neutral_arm
         # The arms are independent by construction -- each has its own shadow include root, its own
         # probe binary, its own arm directory and its own report -- so they run concurrently. The
         # ANALYZER is the cost (a pure-Python band-limited series per cell, minutes per arm), and
@@ -683,8 +874,13 @@ def main():
         if results and results[0]["stage"] == "GATED":
             print("", flush=True)
             n_reach = reachability(tmp, results[0], args, crit, bad)
+            # The wiring declaration is the other gate criterion that can be silent because nothing
+            # fired, and it is exercised the same way: on fixed inputs, varying only the scanned tree.
+            print("", flush=True)
+            n_wire = wiring_control(tmp, results[0], args, bad)
         else:
             n_reach = 0
+            n_wire = 0
 
         try:
             shutil.rmtree(tmp)
@@ -702,10 +898,13 @@ def main():
         n_align = sum(1 for m in checked if m.get("expect_align") is not None)
         print("\nS6-MUTANT PASS: the reference went through the gate and was ACCEPTED; each of the "
               "%d defects was rejected by the layer named for it -- %d by a verdict on the gate and "
-              "%d by the alignment license, which answers first -- and the %d criteria no product "
+              "%d by the alignment license, which answers first -- the %d criteria no product "
               "mutant can reach were exercised directly on the gate and fired under their own "
-              "names. The anti-phase midpoint did NOT fire on the defect it cannot see."
-              % (len(checked), len(checked) - n_align, n_align, n_reach))
+              "names, and the wiring declaration was exercised by planting one extra caller into a "
+              "copy of the scanned tree and observing S6-WIRING fire (and not fire on the same tree "
+              "unplanted, %d of 2 halves). The anti-phase midpoint did NOT fire on the defect it "
+              "cannot see."
+              % (len(checked), len(checked) - n_align, n_align, n_reach, n_wire))
         return 0
     finally:
         if args.out is None:

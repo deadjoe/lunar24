@@ -10,26 +10,37 @@ This is the unedited stdout of the canonical invocation registered as the CMake 
     --gate     <worktree>/tools/gh19_s6_saw_acceptance.py \
     --criteria <worktree>/report/gh19-s6-saw-aa/acceptance_criteria.tsv \
     --baseline-arm <worktree>/report/gh19-s6-saw-aa/baseline_arm \
-    --base-report  <worktree>/report/gh19-s6-saw-aa/base_report.txt \
-    --out /tmp/s6-mut-full4
+    --base-report  <worktree>/report/gh19-s6-saw-aa/base_report.txt
 
-Two things a reader should know before drawing conclusions from it.
+NOTE ON `--out`: it is deliberately NOT passed here, so the runner used a `mkdtemp`
+scratch dir and the arm paths printed below are ephemeral. The verdict lines are not:
+`ARM <tag>: rc=… verdict=… fired=…`, the `WIRING-CONTROL` pair and the final
+`S6-MUTANT PASS` line carry no scratch path. The launcher recorded the runner's own
+exit status, reproduced as the `EXIT=` line appended after the stdout.
+
+Three things a reader should know before drawing conclusions from it.
 
 1. The arms run concurrently, so the ORDER of the blocks below is nondeterministic.
-   Two independent full runs were compared as multisets of lines: they are identical
-   except for the final `EXIT=0` line, which the first run did not capture because of
-   how it was launched. Compare content, not line order.
+   Two independent full runs of the SAME revision are identical as multisets of lines.
+   Two runs of DIFFERENT revisions are not, and should not be: this revision added the
+   `NEUTRAL-ARM` line, the `WIRING-CONTROL` pair, one extra `sine_bit_diff` row (for
+   `unscaled-kernel`), and reworded the final PASS line. Compare content, not line order.
 
-2. `phase-drift` spends three lines on its `ANALYZE-FAILED` block whose cell rows are
-   the tail of the analyzer's own stdout. Those rows are the instrument reporting the
-   cells it refused; they are not a measurement of the DSP. The same applies to the
-   other two license-refused arms.
+2. `phase-drift`, `dc-offset` and `invsaw-sign-flip` spend several lines on their
+   `ANALYZE-FAILED` blocks whose cell rows are the tail of the analyzer's own stdout.
+   Those rows are the instrument reporting the cells it refused; they are not a
+   measurement of the DSP, and the `*** INSTRUMENT` line above each block says so.
 
-The `EXIT=0` line is present because the run was launched as
-`sh -c '... ; echo "EXIT=$?"'`. It is a measurement, not a transcription: the
-sentence used for the first run came from the driver's own PASS branch and the exit
-code was not captured at all, so it was re-run to obtain it.
+3. Every gate invocation below is given `--neutral-arm` as well as `--cand-arm`: the
+   equality criterion compares the arm under test against the SAME BUILD with the two
+   correction terms neutralised, not against the committed pre-S6 snapshot. Arm B is
+   built once from the PRODUCT header (not from a mutant's shadow) and its identity is
+   printed as the `NEUTRAL-ARM` line: `plan_sha256=4f8c4691…` is the pinned stimulus
+   plan, i.e. the plan every other arm is judged against too.
 
+NEUTRAL-ARM /var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s6mut-us84qild/arm_neutral shadow_tree_sha256=62a728b3fcdbc96761aef8afebc88830518c9c7c4a99453c28de3307cb591447 neutral_sha256=7fe046363f986a8f65073f5fe84c6236f81df9b0513337e0c6adf719f6d17a01 plan_sha256=4f8c4691afc0ff05f1e7dd57651835391ba585c2c0ec6f4aefb612fc019ea7ca
+ARM sine-node-leak: rc=1 verdict=RED fired=EQUALITY-SINE
+ARM unscaled-kernel: rc=1 verdict=RED fired=IMPROVE-BAND,IMPROVE-FULL
 ARM invsaw-sign-flip: ANALYZE-FAILED rc=1
 999999986912064
 vco_b_sawmixhi_96000_5000_m6250 96000 5000 0.0625 0 0.45419722197331514 0.15641386441703528 0.001208496046465253 -9.8574775141473285 -16.069831759083538 -9.8598367990668336 9 0.24999999999149625
@@ -44,9 +55,7 @@ vco_b_sawmixhi_96000_5000_m31250 96000 5000 0.3125 1 0.51224329588410189 0.36577
 -- END MATRIX static declared=168 emitted=168 skipped=0 capped=0
 *** INSTRUMENT self_check_rc=0 align_bad=8: the instrument or the rendered arm failed its own gate, so no number below it is a statement about the DSP.
 
-ARM unscaled-kernel: rc=1 verdict=RED fired=IMPROVE-BAND,IMPROVE-FULL
 ARM output-gain: rc=1 verdict=RED fired=EQUALITY-SINE,GUARD-AMP
-ARM sine-node-leak: rc=1 verdict=RED fired=EQUALITY-SINE
 ARM reference: rc=0 verdict=PASS fired=-
 ARM dc-offset: ANALYZE-FAILED rc=1
 .23266666673458281
@@ -94,5 +103,9 @@ tamper:EQUALITY-ANTIPHASE 1       RED       EQUALITY-ANTIPHASE
 REACHABILITY (GATE-ONLY SYNTHETIC INPUT; NOT a product negative control; NOT an arm of the mutant matrix): GUARD-FREQ -- all 168 scenario rows' f0_meas_hz shifted by 10.0 x the gate's own bound sr/win (smallest bound applied 2.69165 Hz)
 tamper:GUARD-FREQ    1       RED       GUARD-FREQ
 
-S6-MUTANT PASS: the reference went through the gate and was ACCEPTED; each of the 6 defects was rejected by the layer named for it -- 3 by a verdict on the gate and 3 by the alignment license, which answers first -- and the 3 criteria no product mutant can reach were exercised directly on the gate and fired under their own names. The anti-phase midpoint did NOT fire on the defect it cannot see.
+WIRING-CONTROL pristine rc=0   verdict=PASS    fired=-
+WIRING-CONTROL planted  rc=1   verdict=RED     fired=S6-WIRING
+WIRING-CONTROL        FAIL-S6-WIRING core/include/lunar24/core/vco.h: declared 1 code hit(s) of invSawWeight, found 2 at lines 382,590
+
+S6-MUTANT PASS: the reference went through the gate and was ACCEPTED; each of the 6 defects was rejected by the layer named for it -- 3 by a verdict on the gate and 3 by the alignment license, which answers first -- the 3 criteria no product mutant can reach were exercised directly on the gate and fired under their own names, and the wiring declaration was exercised by planting one extra caller into a copy of the scanned tree and observing S6-WIRING fire (and not fire on the same tree unplanted, 2 of 2 halves). The anti-phase midpoint did NOT fire on the defect it cannot see.
 EXIT=0

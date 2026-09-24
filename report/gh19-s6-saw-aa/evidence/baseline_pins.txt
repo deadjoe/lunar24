@@ -10,12 +10,21 @@ report/gh19-s6-saw-aa/baseline_arm/gh19_s6_plan.tsv                    4f8c4691a
 # --- pin 2: REFUSE BASELINE-REPORT-PIN (the numbers every improvement column is read from) ---
 report/gh19-s6-saw-aa/base_report.txt                                  de30d2d3079473e80425f974a74b6da37066aa77f4afc8f3c71a540c44ee3696
 #
-# --- pin 3: REFUSE BASELINE-RAW-PIN (the samples `sine_node_bit_diff_count` compares) --------
-# The eight `m50000` cells: the sine node at four sample rates on two VCOs. NOTE: measured, not
-# assumed — the two sides are byte-identical at each sample rate, so these eight entries carry four
-# distinct digests. All eight are listed because the map is file -> digest and the criterion
-# iterates all eight cells; the duplicate pairs are called out here so the cell count is not read
-# as eight independent windows.
+# --- pin 3: REFUSE BASELINE-RAW-PIN (committed EVIDENCE — PROVENANCE, not a judged basis) -----
+# The eight `m50000` cells: the sine node at four sample rates on two VCOs. `sine_node_bit_diff_count`
+# USED to compare these bytes frame by frame; it does not any more. It is now a same-build A/B against
+# `--neutral-arm` (the same sources with the two correction terms neutralised), because this snapshot
+# was rendered on Apple libm while CI is glibc and the two disagree by exactly 1 ULP on 3.76% of
+# identical `std::sin` arguments — the criterion read 0 locally and 652 in CI, and a literal pre-S6
+# tree reproduced the same 652 under the CI compiler. See report/2026-09-25-task120-gh19-s6-morph-aa.md
+# §2. The pin is KEPT because these are committed claims: the task report makes statements ABOUT
+# these bytes, and an edited artifact would make those statements unverifiable — so a checkout whose
+# evidence has been edited is refused rather than silently accepted. Nothing judged reads them;
+# `run_gh19_s6_saw_baseline_report_pin.py` §5 asserts that inertness (and §5b asserts the criterion's
+# real input, the freshly rendered arm B, instead).
+# NOTE: measured, not assumed — the two sides are byte-identical at each sample rate, so these eight
+# entries carry four distinct digests. All eight are listed because the map is file -> digest; the
+# duplicate pairs are called out here so the cell count is not read as eight independent windows.
 #   scn125 == scn133 (vco_a/vco_b @44100)   scn126 == scn134 (@48000)
 #   scn127 == scn135 (@88200)               scn128 == scn136 (@96000)
 report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scn125.raw                  be8224478487ef1dabeb074ad9e747474e7965ad0f7835dbdfe1d153317e9e99

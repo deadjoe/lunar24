@@ -600,6 +600,49 @@ target_link_libraries(gh19_s6_saw_probe PRIVATE lunar_host)
 target_include_directories(gh19_s6_saw_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
 set_tests_properties(gh19_s6_saw_probe PROPERTIES LABELS "slow")
 
+# task #120 (GH #19 S6): ARM B of the equality criterion -- the SAME probe source, compiled against a
+# shadow include root in which vco.h's two value-jump correction terms are neutralised. The shadow
+# header is GENERATED at build time by tools/stage_gh19_s6_shadow.py, which reads the tree's own
+# vco.h and refuses (non-zero exit, so the build fails) if its anchor does not occur exactly once or
+# if the result is byte-identical to the input: a stale anchor would stage a PRISTINE header under
+# arm B's name, both arms would then agree trivially, and `EQUALITY-SINE` would pass while measuring
+# nothing.
+#
+# WHY A GENERATED SHADOW ROOT AND NOT A COMMITTED COPY, AND NOT A `#ifdef` IN THE PRODUCT. A
+# committed copy of the corrected header would be a second encoding of the same code, free to drift;
+# a `#ifdef` in vco.h would put a build-time configuration branch into the shipped DSP, which is the
+# "no hidden switches" hard edge S0 carries. This target touches the product source not at all: the
+# shadow root is placed BEFORE the product include dirs, so exactly one header is overridden and
+# every other header still resolves from core/include. Same compiler, same flags, same sources --
+# only the include order differs, which is what makes the A/B a same-build comparison.
+set(GH19_S6_SHADOW_ROOT "${CMAKE_CURRENT_BINARY_DIR}/gh19_s6_shadow")
+add_custom_command(
+  OUTPUT "${GH19_S6_SHADOW_ROOT}/lunar24/core/vco.h"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${GH19_S6_SHADOW_ROOT}"
+  COMMAND ${Python3_EXECUTABLE}
+          "${CMAKE_CURRENT_SOURCE_DIR}/tools/stage_gh19_s6_shadow.py"
+          --repo-root "${CMAKE_CURRENT_SOURCE_DIR}"
+          --out "${GH19_S6_SHADOW_ROOT}"
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/vco.h"
+          "${CMAKE_CURRENT_SOURCE_DIR}/tools/stage_gh19_s6_shadow.py"
+  COMMENT "Staging the GH#19 S6 neutral arm's shadow include root")
+add_custom_target(gh19_s6_shadow DEPENDS "${GH19_S6_SHADOW_ROOT}/lunar24/core/vco.h")
+# Built but NOT registered as a test of its own: the probe renders the full 168-cell matrix (minutes
+# of work) and nothing is asserted about arm B in isolation -- its windows are read by the gate, in
+# the acceptance test below. Registering it as a test would re-render the matrix a second time inside
+# the same probe-gate run and assert nothing with it.
+#
+# The link line and the warning flags are written to be IDENTICAL, character for character, to the
+# product probe's above: the A/B's claim is "same compiler, same flags, same sources, only the
+# include order differs", and a link line that differed would be a second difference for a reviewer
+# to have to rule out.
+add_executable(gh19_s6_saw_probe_neutral tests/probes/gh19_s6_saw_probe.cpp)
+add_dependencies(gh19_s6_saw_probe_neutral gh19_s6_shadow)
+target_link_libraries(gh19_s6_saw_probe_neutral PRIVATE lunar_host)
+lunar_enable_warnings(gh19_s6_saw_probe_neutral)
+target_include_directories(gh19_s6_saw_probe_neutral BEFORE PRIVATE "${GH19_S6_SHADOW_ROOT}")
+target_include_directories(gh19_s6_saw_probe_neutral PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
+
 # task #120 (GH #19 S6): the ACCEPTANCE gate for the morph-ring correction, driven end to end.
 # The probe above answers "was the matrix produced"; this answers "is it good enough" -- which is a
 # different assertion and was, until now, made by a checked-in file that no run could contradict.
@@ -610,19 +653,26 @@ set_tests_properties(gh19_s6_saw_probe PROPERTIES LABELS "slow")
 #
 # The baseline side is THREE committed artifacts, each pinned by sha256 under its own named refusal:
 # the stimulus manifest (REFUSE BASELINE-PIN), the report every improvement column is read from
-# (REFUSE BASELINE-REPORT-PIN), and the eight raw windows the sine-node equality criterion compares
-# frame by frame (REFUSE BASELINE-RAW-PIN). S3 pins two; S6 pins three because it has one criterion
-# fed by samples rather than by a report column, and neither of the other two pins covers a byte of
-# that input.
+# (REFUSE BASELINE-REPORT-PIN), and the eight raw windows of the historical arm
+# (REFUSE BASELINE-RAW-PIN). The third is now PROVENANCE rather than a judged input: the
+# sine-node equality criterion is a SAME-BUILD A/B and reads no committed sample (see below), but
+# those windows are committed evidence, and a checkout whose evidence has been edited should be
+# refused rather than silently accepted.
+#
+# The equality criterion's second side is `--neutral-probe`: the same probe source compiled against
+# the generated shadow root (target `gh19_s6_saw_probe_neutral`, same flags, same compiler, only the
+# include order differs), rendered fresh by the driver on every run. Arm A is the shipped binary.
 add_test(NAME gh19_s6_saw_acceptance
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_s6_saw_pipeline.py
     --probe $<TARGET_FILE:gh19_s6_saw_probe>
+    --neutral-probe $<TARGET_FILE:gh19_s6_saw_probe_neutral>
     --baseline-arm ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s6-saw-aa/baseline_arm
     --base-report ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s6-saw-aa/base_report.txt
     --criteria ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s6-saw-aa/acceptance_criteria.tsv
     --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s6_saw_analyze.py
-    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s6_saw_acceptance.py)
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s6_saw_acceptance.py
+    --repo-root ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The gate above is only worth its runtime if it can FAIL. This entry is the demonstration, and it
 # carries SIX mutants rather than S3's one, because in this slice five judged criteria had never been
@@ -656,14 +706,17 @@ add_test(NAME gh19_s6_saw_pipeline_mutant
 # that both earlier pins reported OK first, so a first-pin abort cannot be mistaken for a third-pin
 # catch. With the pins bypassed it requires that each edit actually moves the answer: the report edit
 # is still ACCEPTED when the baseline is made to look worse (the state the pin removes) and is
-# REJECTED by the gate's own 6 dB criterion when made to look better; the window edit fails the
-# EQUALITY-SINE criterion while leaving the improvement columns untouched, which is what makes the raw
-# pin a separate surface rather than a second copy of the report pin.
+# REJECTED by the gate's own 6 dB criterion when made to look better; the raw pin's edit is INERT to
+# the verdict -- no judged criterion reads the committed windows any more -- and the criterion's real
+# input, the freshly rendered arm B, is tampered in its place: one ulp in one of arm B's windows must
+# fire EQUALITY-SINE with the improvement columns untouched.
 add_test(NAME gh19_s6_saw_baseline_report_pin
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_s6_saw_baseline_report_pin.py
     --probe $<TARGET_FILE:gh19_s6_saw_probe>
+    --neutral-probe $<TARGET_FILE:gh19_s6_saw_probe_neutral>
     --pipeline ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_s6_saw_pipeline.py
+    --repo-root ${CMAKE_CURRENT_SOURCE_DIR}
     --baseline-arm ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s6-saw-aa/baseline_arm
     --base-report ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s6-saw-aa/base_report.txt
     --criteria ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-s6-saw-aa/acceptance_criteria.tsv

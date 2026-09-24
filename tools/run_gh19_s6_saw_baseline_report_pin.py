@@ -24,12 +24,19 @@
 #      mirrors the product-side rule used everywhere else in this slice: a negative control that
 #      cannot be shown to change the answer is not a control, it is decoration.
 #
-# WHY THE RAW PIN HAS ITS OWN PAIR OF CHECKS. `sine_node_bit_diff_count` is the one judged criterion
-# fed by SAMPLES rather than by a report column, and neither of the other two pins covers a byte of
-# its input. Its bypass check is therefore the one that shows the raw pin protecting a surface the
-# report pin does not: with the report pin green and only one baseline window moved, the improvement
-# columns are untouched and the equality criterion is the one that fires. If that check were skipped,
-# "the raw pin is redundant with the report pin" would be an untested assumption.
+# WHY THE RAW PIN HAS ITS OWN PAIR OF CHECKS, AND WHAT CHANGED IN THEM. The equality criterion once
+# read the committed baseline windows, so moving one of them fired `EQUALITY-SINE` and the raw pin
+# was numerically load-bearing. It is not any more: the criterion is a SAME-BUILD A/B, because the
+# committed snapshot was rendered on macOS and the default patch evaluates `std::sin`, whose two
+# libms disagree by exactly 1 ULP on 3.76% of identical arguments -- so the snapshot can never be
+# reproduced bit-for-bit by the CI toolchain, and comparing against it was measuring the toolchain.
+# The raw pin is therefore PROVENANCE: it refuses a checkout whose committed evidence has been
+# edited, and nothing judged reads those bytes. Asserting the old claim would assert something false,
+# and dropping the check would leave the demotion untested, so the check is INVERTED -- the moved
+# baseline window must be INERT to the verdict -- and the criterion's REAL input is exercised
+# separately: one ulp moved in one window of arm B, the arm the pipeline renders fresh, which must
+# fire `FAIL-EQUALITY-SINE` with the improvement columns untouched. Both halves run through the same
+# gate invocation, so the difference between them is the input, not the harness.
 #
 # HOW THE REPORT TAMPER STAYS INSIDE THE PARSE CONTRACT. `gh19_s6_saw_acceptance.py` carries S6's
 # residual columns through the same band-slack contract S3's delta tool enforced: for each row the
@@ -43,7 +50,9 @@
 #
 # Usage (used by CMake; also runnable by hand):
 #   python3 run_gh19_s6_saw_baseline_report_pin.py --probe <path-to-gh19_s6_saw_probe> \
+#       --neutral-probe <path-to-gh19_s6_saw_probe_neutral> \
 #       --pipeline tools/run_gh19_s6_saw_pipeline.py \
+#       --repo-root . \
 #       --baseline-arm report/gh19-s6-saw-aa/baseline_arm \
 #       --base-report report/gh19-s6-saw-aa/base_report.txt \
 #       --criteria report/gh19-s6-saw-aa/acceptance_criteria.tsv \
@@ -204,6 +213,11 @@ def runner_main():
     ap.add_argument("--probe", required=True, help="path to the gh19_s6_saw_probe binary; this "
                     "runner compiles nothing itself, it only feeds the pipeline tampered baselines")
     ap.add_argument("--pipeline", required=True, help="tools/run_gh19_s6_saw_pipeline.py")
+    ap.add_argument("--neutral-probe", required=True,
+                    help="path to the gh19_s6_saw_probe_neutral binary (arm B of the equality A/B); "
+                         "the pipeline requires it, and the raw-pin check below needs the pipeline's "
+                         "freshly rendered neutral arm to tamper with")
+    ap.add_argument("--repo-root", default=".", help="checkout the gate's wiring check reads")
     ap.add_argument("--baseline-arm", required=True)
     ap.add_argument("--base-report", required=True)
     ap.add_argument("--criteria", required=True)
@@ -301,6 +315,8 @@ def runner_main():
         # ---- 1. the REPORT pin must refuse, by name, with no verdict --------------------------
         p = subprocess.run(
             [sys.executable, args.pipeline, "--probe", args.probe,
+             "--neutral-probe", args.neutral_probe,
+             "--repo-root", args.repo_root,
              "--baseline-arm", args.baseline_arm,
              "--base-report", tampers["worse"]["path"],
              "--criteria", args.criteria, "--analyzer", args.analyzer, "--gate", args.gate,
@@ -331,6 +347,8 @@ def runner_main():
         # ---- 2. the RAW pin must refuse, by name, with no verdict, and be the THIRD pin --------
         q = subprocess.run(
             [sys.executable, args.pipeline, "--probe", args.probe,
+             "--neutral-probe", args.neutral_probe,
+             "--repo-root", args.repo_root,
              "--baseline-arm", tampered_arm,
              "--base-report", args.base_report,
              "--criteria", args.criteria, "--analyzer", args.analyzer, "--gate", args.gate,
@@ -362,6 +380,8 @@ def runner_main():
         ref = os.path.join(tmp, "pipeline_pristine")
         r = subprocess.run(
             [sys.executable, args.pipeline, "--probe", args.probe,
+             "--neutral-probe", args.neutral_probe,
+             "--repo-root", args.repo_root,
              "--baseline-arm", args.baseline_arm,
              "--base-report", args.base_report,
              "--criteria", args.criteria, "--analyzer", args.analyzer, "--gate", args.gate,
@@ -379,18 +399,28 @@ def runner_main():
         cand_arm = os.path.join(ref, "cand")
         cand_report = os.path.join(ref, "cand_report.txt")
         cand_plan = os.path.join(cand_arm, "gh19_s6_plan.tsv")
+        # The pipeline rendered arm B fresh (it is handed --neutral-probe and does so on every run),
+        # and the equality criterion reads those windows. Section 5 below tampers ONE of them.
+        ref_neutral_arm = os.path.join(ref, "neutral")
+        if not os.path.exists(os.path.join(ref_neutral_arm, TAMPER_RAW)):
+            sys.stderr.write("INVALID: the pipeline's reference run left no neutral arm to tamper "
+                             "with at %s; the equality criterion's own input cannot be exercised\n"
+                             % ref_neutral_arm)
+            return 2
         ref_rows = read_report_rows(r.stdout, JUDGED_IMPROVEMENT_REPORTS)
         for name in JUDGED_IMPROVEMENT_REPORTS:
             if name not in ref_rows:
                 problems.append("the gate's own PASS output does not carry `ACCEPT-REPORT %s=`, so "
                                 "the tamper movement below cannot be measured" % name)
 
-        def gate(base_report, base_arm, outdir):
+        def gate(base_report, base_arm, outdir, neutral_arm=None):
             os.makedirs(outdir, exist_ok=True)
             return subprocess.run(
                 [sys.executable, args.gate, "--criteria", args.criteria, "--plan", cand_plan,
                  "--base-report", base_report, "--cand-report", cand_report,
-                 "--base-arm", base_arm, "--cand-arm", cand_arm],
+                 "--base-arm", base_arm, "--cand-arm", cand_arm,
+                 "--neutral-arm", neutral_arm or ref_neutral_arm,
+                 "--repo-root", args.repo_root],
                 capture_output=True, text=True)
 
         # ---- 4. the refused REPORT edit must be numerically load-bearing -----------------------
@@ -434,31 +464,94 @@ def runner_main():
                                     % (args.shift_better_db, g.returncode,
                                        ",".join(verdicts) or "none", -args.shift_better_db))
 
-        # ---- 5. the refused RAW edit must be load-bearing, on a surface the report pin misses ----
+        # ---- 5. the raw pin is PROVENANCE, and the equality criterion's live input is arm B -----
+        # This section used to assert the opposite of what it asserts now, and the change is a
+        # finding rather than a convenience. The equality criterion once read the committed baseline
+        # windows, so a moved window fired it and the raw pin was numerically load-bearing. The
+        # criterion is now a same-build A/B (the committed snapshot was rendered by a different libm
+        # and cannot be reproduced bit-for-bit; see the task report), so NO judged criterion reads
+        # these bytes any more. Asserting the old claim would be asserting something false, and
+        # deleting the check would leave the demotion untested -- so the check is INVERTED: the moved
+        # baseline window must be INERT to the verdict, and the pin that now guards the criterion's
+        # real input is exercised separately, on the freshly rendered arm B below.
         g = gate(args.base_report, tampered_arm, os.path.join(tmp, "bypass_raw"))
         verdicts = [v for v in ("PASS", "RED", "REFUSE") if VERDICT_MARK + v in g.stdout]
         rows = read_report_rows(g.stdout, JUDGED_IMPROVEMENT_REPORTS)
-        print("[bypass raw        ] gate with the pinned report but one baseline window moved: "
+        print("[bypass raw        ] gate with the pinned report but one BASELINE window moved: "
               "rc=%d verdict=%s" % (g.returncode, ",".join(verdicts) or "?"))
-        if g.returncode != EXIT_RED or verdicts != ["RED"]:
+        if g.returncode != EXIT_PASS or verdicts != ["PASS"]:
             problems.append("with the report pin green and one baseline window moved, the gate did "
-                            "not go RED (rc=%d, verdict=%s). `sine_node_bit_diff_count` is supposed "
-                            "to read that window; if it is not the criterion that fires, the raw "
-                            "pin protects nothing the manifest and report pins do not."
-                            % (g.returncode, ",".join(verdicts) or "none"))
-        if "FAIL-EQUALITY-SINE" not in g.stdout:
-            problems.append("the raw-tamper RED did not name `FAIL-EQUALITY-SINE`; the failure "
-                            "surface must be the equality criterion, not an incidental one. "
-                            "Stderr was:\n%s" % g.stderr[-1500:])
+                            "not PASS (rc=%d, verdict=%s). Since the equality criterion became a "
+                            "same-build A/B, no judged criterion reads the committed windows, so a "
+                            "verdict change here would mean some criterion still does -- and the "
+                            "raw pin's classification in the pipeline header (PROVENANCE, not a "
+                            "judged basis) would be wrong." % (g.returncode,
+                                                               ",".join(verdicts) or "none"))
+        if "FAIL-EQUALITY-SINE" in g.stdout or "FAIL-EQUALITY-ANTIPHASE" in g.stdout:
+            problems.append("moving a committed baseline window fired an equality criterion; those "
+                            "criteria are supposed to read the candidate arm and arm B, not the "
+                            "committed artifact. Stderr was:\n%s" % g.stderr[-1500:])
         else:
-            print("[bypass raw        ] the failure that fired is FAIL-EQUALITY-SINE, naming %s"
-                  % TAMPER_CELL)
-        # The improvement columns must NOT have moved: this is what makes the raw pin a separate
-        # surface rather than a second copy of the report pin.
+            print("[bypass raw        ] no equality criterion fired, which is the claim: no judged "
+                  "criterion reads the committed windows any more")
+        # The improvement columns must NOT have moved either: the improvement criteria read the
+        # REPORT, which is untouched here.
         if rows and ref_rows and any(abs(rows[n] - ref_rows[n]) > 1e-9 for n in ref_rows):
             problems.append("moving a baseline WINDOW also moved the judged improvement columns; "
                             "the improvement criteria read the report, so a movement here means "
                             "the two pins are not separating the surfaces this runner claims")
+
+        # ---- 5b. the equality criterion's REAL input: arm B, rendered by this run ---------------
+        # One frame of one window in the neutral arm, moved by one ulp. The criterion must fire,
+        # naming EQUALITY-SINE, with the improvement columns still untouched -- the same shape of
+        # assertion section 5 used to make about the committed artifact, aimed at the input the
+        # criterion actually reads now. Its manifest comes with the copied directory, so the window
+        # geometry the criterion reads it through is arm B's own.
+        neutral_tampered = os.path.join(tmp, "neutral_tampered")
+        shutil.copytree(ref_neutral_arm, neutral_tampered)
+        # The frame moved must be inside the window the criterion reads. `warm` comes from the
+        # baseline manifest; arm B's own manifest is consulted and must agree, rather than assumed to
+        # (the plan is byte-identical by the gate's NEUTRAL-ARM refusal, but a geometry that differs
+        # per arm would silently move the edit outside the compared window).
+        b_warm, b_win = window_geometry(os.path.join(ref_neutral_arm, "gh19_s6_scenarios.tsv"),
+                                        TAMPER_CELL)
+        if (b_warm, b_win) != (warm, win):
+            problems.append("arm B's window geometry for %s is (warm=%d, win=%d), the baseline "
+                            "manifest says (warm=%d, win=%d); the ulp edit below would be made at a "
+                            "different offset than the one section 5 uses"
+                            % (TAMPER_CELL, b_warm, b_win, warm, win))
+        nt_path = os.path.join(neutral_tampered, TAMPER_RAW)
+        b_before, b_after = tamper_window(os.path.join(ref_neutral_arm, TAMPER_RAW), nt_path, warm)
+        print("[bypass neutral    ] arm B's %s frame %d moved one ulp: %.17g -> %.17g"
+              % (TAMPER_RAW, warm, b_before, b_after))
+        if b_before == b_after:
+            problems.append("the neutral-arm tamper moved nothing (%.17g -> %.17g), so the check "
+                            "below would be measuring an unedited arm" % (b_before, b_after))
+        else:
+            gn = gate(args.base_report, args.baseline_arm, os.path.join(tmp, "bypass_neutral"),
+                      neutral_arm=neutral_tampered)
+            nv = [v for v in ("PASS", "RED", "REFUSE") if VERDICT_MARK + v in gn.stdout]
+            nrows = read_report_rows(gn.stdout, JUDGED_IMPROVEMENT_REPORTS)
+            print("[bypass neutral    ] gate with one arm-B window moved: rc=%d verdict=%s"
+                  % (gn.returncode, ",".join(nv) or "?"))
+            if gn.returncode != EXIT_RED or nv != ["RED"]:
+                problems.append("with one ulp moved in ONE window of arm B, the gate did not go RED "
+                                "(rc=%d, verdict=%s). `sine_node_bit_diff_count` compares the "
+                                "candidate's window against arm B's frame by frame; if an edit to "
+                                "arm B does not fire it, the criterion's input is not what the "
+                                "criteria file says it is."
+                                % (gn.returncode, ",".join(nv) or "none"))
+            elif "FAIL-EQUALITY-SINE" not in gn.stdout:
+                problems.append("the arm-B tamper went RED without naming `FAIL-EQUALITY-SINE`; "
+                                "the failure surface must be the equality criterion. Stderr was:"
+                                "\n%s" % gn.stderr[-1500:])
+            elif nrows and ref_rows and any(abs(nrows[n] - ref_rows[n]) > 1e-9 for n in ref_rows):
+                problems.append("moving an arm-B window also moved the judged improvement columns; "
+                                "the improvement criteria read the report, and arm B is not part "
+                                "of them, so the two layers are not separating as claimed")
+            else:
+                print("[bypass neutral    ] the failure that fired is FAIL-EQUALITY-SINE, with the "
+                      "improvement columns untouched")
 
         if problems:
             print("\nBASELINE-PIN FAILED:")
@@ -471,11 +564,14 @@ def runner_main():
               "the pin bypassed, the same well-formed report -- the other pins still green -- is "
               "ACCEPTED when the baseline is made to look worse (and publishes %+.1f dB more "
               "improvement than it earned) and is REJECTED by the gate's own 6 dB criterion when "
-              "the baseline is made to look better. Moving a single baseline WINDOW is likewise "
-              "refused by name as the THIRD pin, after both earlier pins report OK, and with the "
-              "pin bypassed it is the equality criterion -- not an improvement column -- that "
-              "fires. Each pin removes a state the gate demonstrably accepts, and each protects a "
-              "different one." % args.shift_worse_db)
+              "the baseline is made to look better. The raw pin is refused by name as the THIRD pin, "
+              "after both earlier pins report OK -- and, since the equality criterion became a "
+              "same-build A/B, moving a committed baseline window is INERT to the verdict, which is "
+              "asserted rather than glossed: that criterion is now fed by the freshly rendered arm "
+              "B, and one ulp moved in one of ITS windows fires FAIL-EQUALITY-SINE with the "
+              "improvement columns untouched. The raw pin therefore guards committed evidence, and "
+              "the arm-B half guards the judged input; each pin removes a state the gate "
+              "demonstrably accepts, and each protects a different one." % args.shift_worse_db)
         return 0
     finally:
         if args.out is None:

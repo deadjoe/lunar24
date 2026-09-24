@@ -41,6 +41,7 @@
 # this is not a catch and not a red verdict, and re-running it unchanged cannot turn it green).
 
 import argparse
+import hashlib
 import math
 import os
 import re
@@ -79,10 +80,41 @@ REQUIRED_REPORTS = ("max_abs_fitted_scale_delta",
                     "worst_pinned_scale_rect_full_band_improvement_db",
                     "worst_rect_full_band_improvement_db",
                     "antiphase_midpoint_worst_abs_output",
-                    "sine_node_worst_bit_diff_count")
+                    "sine_node_worst_bit_diff_count",
+                    "s6_wiring_call_sites")
 
 REQUIRED_AXES = ("sides", "sample_rates", "frequencies")
 PLAN_REV = "1"
+
+# ---- THE S6 WIRING DECLARATION -----------------------------------------------------------------
+#
+# WHY THIS IS PART OF THE EQUALITY LAYER. `EQUALITY-SINE` is a same-build A/B: arm A is the product,
+# arm B is the same source with the two value-jump corrections neutralised, and the two must agree
+# bit-for-bit on the eight default sine-node windows. That comparison is conclusive only together
+# with one structural fact -- that those two applications are the ONLY product code that consumes
+# what S6 introduces. If some other path also read those weights or that residual, neutralising the
+# two applications would not be the whole difference between the arms, and a bit-equal A/B could
+# coexist with a default output the correction still influenced elsewhere.
+#
+# So the callers of every name S6 introduces are DECLARED, and the declaration is DATA in the pinned
+# criteria file (`wiring <file> <name> <code-hit-count>` rows) rather than a table in this source
+# file: the expectation lives where every other expectation lives, and a reviewer reads it there.
+# The gate requires the declaration to equal the tree. An undeclared call site, a count that moved,
+# a name that vanished, or a hit outside the guard block and the six declarations is a FAIL naming
+# the file, the line and the identifier -- a different failure surface from "the A/B windows are not
+# bit-identical", with its own code and its own reason string, because the two mean different things:
+# one says the correction is not inert on the default patch, the other says this gate can no longer
+# see all of the places it would have to be inert in.
+S6_WIRE_NAMES = ("nodeWeight", "sawWeight", "invSawWeight",
+                 "sawJumpResidual_", "sawBlepWeight_", "invSawBlepWeight_")
+# Scanned relative to --repo-root. The claim is about the SHIPPED product, so tests and tools are not
+# scanned; the scope is printed on every run rather than left implicit.
+S6_WIRE_ROOTS = ("core", "host", "generated")
+S6_WIRE_SUFFIXES = (".h", ".hpp", ".hh", ".cpp", ".cc", ".cxx")
+# The S6 guard block, located by this anchor (which must occur exactly once) and closed by brace
+# matching. Every code hit that is not inside one of the six declarations themselves must be inside
+# it: the guard is the only place the correction is allowed to reach the signal.
+S6_GUARD_ANCHOR = "if (sw > 0.0 || iw > 0.0) {"
 
 # The gate cell id is the probe's own sawCellId, reproduced here so the id and the axes can be checked
 # against each other. `sawmixhi` first: `sawmix` is a prefix of it.
@@ -98,6 +130,14 @@ MAX_DETAIL = 6
 
 def tag_morph(tag):
     return int(tag[1:]) / TAG_DIVISOR
+
+
+def sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 class Gate:
@@ -149,6 +189,7 @@ def _rows(path):
 
 def parse_criteria(g, path):
     crit, axis, sets, cells, eq, report_only, reports = {}, {}, {}, [], [], [], set()
+    wiring = {}
     for n, f in _rows(path):
         if len(f) < 2:
             g.refuse("CRITERIA", "%s:%d: row has fewer than 2 fields" % (path, n))
@@ -201,6 +242,25 @@ def parse_criteria(g, path):
             if f[1] in reports:
                 g.refuse("CRITERIA", "%s:%d: duplicate report %s" % (path, n, f[1]))
             reports.add(f[1])
+        elif key == "wiring":
+            # `wiring <file> <identifier> <code-hit-count>`: the declared number of times `identifier`
+            # appears in the CODE of `file` (comments and string contents do not count, see code_only).
+            if len(f) != 4:
+                g.refuse("CRITERIA", "%s:%d: wiring row needs exactly 4 fields" % (path, n))
+                continue
+            if f[2] not in S6_WIRE_NAMES:
+                g.refuse("CRITERIA", "%s:%d: wiring row names %r, which is not one of the six names "
+                                     "S6 introduces (%s)" % (path, n, f[2], ", ".join(S6_WIRE_NAMES)))
+                continue
+            try:
+                cnt = int(f[3])
+            except ValueError:
+                g.refuse("CRITERIA", "%s:%d: wiring count %r is not an integer" % (path, n, f[3]))
+                continue
+            if (f[1], f[2]) in wiring:
+                g.refuse("CRITERIA", "%s:%d: duplicate wiring row for %s in %s" % (path, n, f[2], f[1]))
+                continue
+            wiring[(f[1], f[2])] = cnt
         else:
             g.refuse("CRITERIA", "%s:%d: unknown row key %r" % (path, n, key))
 
@@ -222,7 +282,14 @@ def parse_criteria(g, path):
         if len(set(lst)) != len(lst):
             dup = sorted({x for x in lst if lst.count(x) > 1})
             g.refuse("CRITERIA", "%s rows contain duplicates: %s" % (label, ",".join(dup[:3])))
-    return crit, axis, sets, cells, eq, report_only
+    # The wiring declaration must cover ALL six names S6 introduces. A declaration that dropped one
+    # would leave that name unconstrained while the structural half of the equality layer read as if
+    # it were checking six, and the gap would be invisible in a passing run.
+    undeclared = [n for n in S6_WIRE_NAMES if not any(k[1] == n for k in wiring)]
+    if undeclared:
+        g.refuse("CRITERIA", "no `wiring` row declares %s; every name S6 introduces must be declared"
+                 % ",".join(undeclared))
+    return crit, axis, sets, cells, eq, report_only, wiring
 
 
 def derive_group(name, grp, axis):
@@ -378,6 +445,183 @@ def bit_diff_count(a, b):
     return n
 
 
+# --------------------------------------------------------------- the S6 wiring check (static)
+
+def code_only(text):
+    """The text with comments, and the CONTENTS of string and char literals, blanked out -- newlines
+    and per-line lengths preserved. A comment or a message string that mentions a wired name is not
+    a caller of it: counting those would make the declaration follow prose, and the declaration is
+    supposed to be a statement about code."""
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        elif c == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append("".join(ch if ch == "\n" else " " for ch in text[i:j]))
+            i = j
+        elif c in "\"'":
+            j = i + 1
+            while j < n and text[j] != c and text[j] != "\n":
+                j += 2 if text[j] == "\\" else 1
+            if j < n and text[j] == c:
+                out.append(c + " " * (j - i - 1) + c)  # keep the quotes, blank the contents
+                i = j + 1
+            else:  # unterminated on this line: kept verbatim rather than silently dropped
+                out.append(text[i:j])
+                i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _brace_span(lines, start):
+    """(first, last) 1-based lines of the block opened at or after `start`, by brace matching, or None
+    when the braces do not balance before the text ends. Called on comment/literal-stripped lines, so
+    a brace inside a message string cannot move the span."""
+    depth, seen = 0, False
+    for k in range(start, len(lines) + 1):
+        depth += lines[k - 1].count("{") - lines[k - 1].count("}")
+        seen = seen or "{" in lines[k - 1]
+        if seen and depth <= 0:
+            return (start, k)
+    return None
+
+
+def wiring_scan(repo_root):
+    """({(relpath, name): {line: count}}, {(relpath, name): [lines]}, n_files) over the scanned
+    product roots, CODE only. A DECLARATION is identified by its own shape -- a code line that opens
+    a block and names the symbol -- rather than by a pinned line number, so the check says "the
+    declaration moved" instead of silently accepting a file whose numbers shifted."""
+    hits, defs, n_files = {}, {}, 0
+    for root in S6_WIRE_ROOTS:
+        for dirpath, dirnames, filenames in os.walk(os.path.join(repo_root, root)):
+            dirnames[:] = sorted(d for d in dirnames if d not in (".git", "build"))
+            for fn in sorted(filenames):
+                if not fn.endswith(S6_WIRE_SUFFIXES):
+                    continue
+                full = os.path.join(dirpath, fn)
+                rel = os.path.relpath(full, repo_root)
+                with open(full, errors="replace") as fh:
+                    lines = code_only(fh.read()).splitlines()
+                n_files += 1
+                for name in S6_WIRE_NAMES:
+                    pat = re.compile(r"\b%s\b" % re.escape(name))
+                    for i, line in enumerate(lines, 1):
+                        c = len(pat.findall(line))
+                        if c:
+                            hits.setdefault((rel, name), {})[i] = c
+                        if _decl_line(line, name):
+                            defs.setdefault((rel, name), []).append(i)
+    return hits, defs, n_files
+
+
+def _decl_line(line, name):
+    """A declaration of `name`: a code line that opens a block, names the symbol, and has only
+    SPECIFIERS AND A TYPE before it. The last clause is what separates a declaration from a call
+    that happens to open a block -- `if (sawWeight(c, n) > 0.0) {` also ends in a brace and also
+    names the symbol, but its prefix contains `(`, which no return type does."""
+    s = line.strip()
+    if not s.endswith("{"):
+        return False
+    m = re.search(r"\b%s\s*\(" % re.escape(name), s)
+    if not m:
+        return False
+    return re.match(r"^[\w:<>,\s\*&]+$", s[:m.start()]) is not None
+
+
+def check_wiring(g, repo_root, wiring):
+    """Compare the pinned declaration against the tree. Structural discrepancies are FAILURES (they
+    are facts about the product: a caller moved, or a name is no longer where the declaration says);
+    only 'the source cannot be read' is a REFUSAL, because that is an input problem and no judgement
+    about the product can be issued from it. Returns the number of code hits found, or None when the
+    scan could not be made at all."""
+    vco = "core/include/lunar24/core/vco.h"
+    for rel, name in sorted(wiring):
+        if not os.path.exists(os.path.join(repo_root, rel)):
+            g.refuse("WIRING-SOURCE", "the criteria declare %d hits of %s in %s, but that file does "
+                                      "not exist under --repo-root %s" % (wiring[(rel, name)], name,
+                                                                         rel, repo_root))
+    if g.refusals:
+        return None
+    hits, defs, n_files = wiring_scan(repo_root)
+    g.say("ACCEPT-WIRING roots=%s files_scanned=%d names=%d declared_rows=%d"
+          % (",".join(S6_WIRE_ROOTS), n_files, len(S6_WIRE_NAMES), len(wiring)))
+
+    # 1. The declaration, per file and name, must equal the tree -- in both directions. A missing row
+    #    and an extra caller are the same class of error (the declaration no longer describes the
+    #    product) and are reported with the same code, but named separately so a log says which.
+    for (rel, name), want in sorted(wiring.items()):
+        got = sum(hits.get((rel, name), {}).values())
+        if got != want:
+            lines = ",".join(str(i) for i in sorted(hits.get((rel, name), {})))
+            g.fail("S6-WIRING", "%s: declared %d code hit(s) of %s, found %d%s"
+                   % (rel, want, name, got, (" at lines " + lines) if lines else ""))
+    for (rel, name), per_line in sorted(hits.items()):
+        if (rel, name) not in wiring:
+            g.fail("S6-WIRING", "%s: %d code hit(s) of %s at lines %s are NOT declared"
+                   % (rel, sum(per_line.values()), name,
+                      ",".join(str(i) for i in sorted(per_line))))
+
+    # 2. Non-vacuity of the scan itself. A rename, or a scanner that lost a file, would otherwise turn
+    #    "nothing unexpected was found" into "nothing was looked at", which is the same false reading
+    #    this whole layer exists to avoid.
+    total = sum(sum(v.values()) for v in hits.values())
+    for name in S6_WIRE_NAMES:
+        if not any(k[1] == name for k in hits):
+            g.fail("S6-WIRING", "no code hit at all for %s: the declaration names a symbol that is "
+                                "not in the scanned product tree" % name)
+
+    # 3. Structure. The guard block is located by its anchor (exactly once) and must be the only place
+    #    outside the declarations themselves that the three corrected names are read; each name must
+    #    still have exactly one declaration line, found by its own shape rather than by a line number.
+    vco_lines = code_only(open(os.path.join(repo_root, vco), errors="replace").read()).splitlines()
+    anchors = [i for i, ln in enumerate(vco_lines, 1) if S6_GUARD_ANCHOR in ln]
+    if len(anchors) != 1:
+        g.fail("S6-WIRING", "the guard anchor %r occurs %d times in %s (expected exactly 1); the A/B's "
+                            "neutralisation anchor is the same block, so this gate cannot place the "
+                            "one region the correction is allowed to reach"
+               % (S6_GUARD_ANCHOR, len(anchors), vco))
+    else:
+        span = _brace_span(vco_lines, anchors[0])
+        if span is None:
+            g.fail("S6-WIRING", "the guard block opened at %s:%d does not close" % (vco, anchors[0]))
+        else:
+            # The region extends upward over the CONTIGUOUS lines that already name one of the six
+            # symbols: the guard tests `sw` and `iw`, and those two are bound by the statements
+            # directly above it (the guard's read of the weights is therefore part of the same
+            # statement group, and a region starting at the anchor alone would report the two
+            # bindings as hits "outside the guard" when they are what the guard is about). The walk
+            # cannot widen the region over ordinary code: it stops at the first line without a hit.
+            lo = anchors[0]
+            while lo > 1 and any(re.search(r"\b%s\b" % re.escape(n), vco_lines[lo - 2])
+                                 for n in S6_WIRE_NAMES):
+                lo -= 1
+            inside = sorted({n for (rel, n), per_line in hits.items() if rel == vco
+                             for i in per_line if lo <= i <= span[1]})
+            for name in ("sawBlepWeight_", "invSawBlepWeight_", "sawJumpResidual_"):
+                if name not in inside:
+                    g.fail("S6-WIRING", "the guard region at %s:%d-%d does not read %s; the block "
+                                        "that is supposed to be the only consumer of the correction "
+                                        "is not" % (vco, lo, span[1], name))
+    for name in S6_WIRE_NAMES:
+        found = sorted((rel, i) for (rel, n), lines in defs.items() if n == name for i in lines)
+        if len(found) != 1:
+            g.fail("S6-WIRING", "%s: %d declaration lines in the scanned product tree (expected "
+                                "exactly 1; a declaration is a line that opens a block and has only "
+                                "specifiers and a type before the symbol): %s"
+                   % (name, len(found),
+                      " ".join("%s:%d" % f for f in found) if found else "-"))
+    return total
+
+
 def finish(g, verdict, code):
     for label, bucket in (("REFUSE", g.refusals), ("FAIL", g.failures)):
         g.dump(label, bucket)
@@ -418,6 +662,16 @@ def main(argv):
     ap.add_argument("--cand-report", required=True, help="analyzer --out for the candidate arm")
     ap.add_argument("--base-arm", required=True, help="probe --out directory of the baseline arm")
     ap.add_argument("--cand-arm", required=True, help="probe --out directory of the candidate arm")
+    # The NEUTRAL ARM is the same build with the two S6 correction terms neutralised; it is what
+    # `EQUALITY-SINE` compares the candidate against (see the criterion's comment in the criteria
+    # file). It is REQUIRED rather than optional: an absent neutral arm would silently turn the
+    # equality layer into "no criterion was evaluated", which is the failure mode that layer exists
+    # to prevent. Rendered by tools/run_gh19_s6_saw_pipeline.py (and, for the mutant matrix, by
+    # tools/run_gh19_s6_saw_mutants.py) from tools/stage_gh19_s6_shadow.py's shadow include root.
+    ap.add_argument("--neutral-arm", required=True,
+                    help="probe --out directory of the neutralised-correction arm (B)")
+    ap.add_argument("--repo-root", required=True,
+                    help="checkout the PINNED WIRING DECLARATION is checked against (see `wiring` rows)")
     ap.add_argument("--out", default=None, help="also write the full transcript here")
     args = ap.parse_args(argv)
 
@@ -428,16 +682,26 @@ def main(argv):
     g.say("ACCEPT-GATE cand_report=%s" % args.cand_report)
     g.say("ACCEPT-GATE base_arm=%s" % args.base_arm)
     g.say("ACCEPT-GATE cand_arm=%s" % args.cand_arm)
+    g.say("ACCEPT-GATE neutral_arm=%s" % args.neutral_arm)
+    g.say("ACCEPT-GATE repo_root=%s" % args.repo_root)
 
     for name, path in (("criteria", args.criteria), ("plan", args.plan),
                        ("base_report", args.base_report), ("cand_report", args.cand_report),
-                       ("base_arm", args.base_arm), ("cand_arm", args.cand_arm)):
+                       ("base_arm", args.base_arm), ("cand_arm", args.cand_arm),
+                       ("neutral_arm", args.neutral_arm), ("repo_root", args.repo_root)):
         if not os.path.exists(path):
             g.refuse("INPUT-MISSING", "%s: %s does not exist" % (name, path))
     if g.refusals:
         return finish(g, "REFUSE", EXIT_REFUSE)
 
-    crit, axis, sets, cells, eq, report_only = parse_criteria(g, args.criteria)
+    crit, axis, sets, cells, eq, report_only, wiring = parse_criteria(g, args.criteria)
+    # The wiring declaration is the STATIC half of the equality layer: the A/B below can only show
+    # that the correction does not reach the default patch, while this shows that the correction has
+    # no other reachable caller at all. It is checked before the matrices are read, so a product
+    # whose wiring drifted fails on that fact rather than on a downstream number.
+    wiring_hits = check_wiring(g, args.repo_root, wiring)
+    if g.refusals:
+        return finish(g, "REFUSE", EXIT_REFUSE)
     plan = parse_plan(g, args.plan)
     base, base_decl = parse_matrix(g, args.base_report)
     cand, cand_decl = parse_matrix(g, args.cand_report)
@@ -549,8 +813,15 @@ def main(argv):
             break
 
     # ---- MEASUREMENTS --------------------------------------------------------------------------
-    base_idx = cand_idx = None
-    for label, armdir, sink in (("base", args.base_arm, "base"), ("cand", args.cand_arm, "cand")):
+    base_idx = cand_idx = neutral_idx = None
+    # The neutral arm's manifest is read exactly as the other two are. It carries MEASURED columns
+    # (`peak`, `f0_meas_hz`) which differ from the candidate's on the off-default cells -- measured
+    # here, and expected: those columns describe what was rendered, and B's rendering differs from
+    # A's wherever the correction is in force. What must match is the PLAN (checked above, byte for
+    # byte) and the per-cell stimulus triple (raw, warm, win), which is what the windows are read
+    # through; requiring whole-file equality would refuse every legitimate run.
+    for label, armdir, sink in (("base", args.base_arm, "base"), ("cand", args.cand_arm, "cand"),
+                                ("neutral", args.neutral_arm, "neutral")):
         try:
             idx = read_arm_index(os.path.join(armdir, "gh19_s6_scenarios.tsv"))
         except (OSError, ValueError) as exc:
@@ -558,8 +829,10 @@ def main(argv):
             continue
         if sink == "base":
             base_idx = idx
-        else:
+        elif sink == "cand":
             cand_idx = idx
+        else:
+            neutral_idx = idx
     if g.refusals:
         return finish(g, "REFUSE", EXIT_REFUSE)
 
@@ -649,22 +922,78 @@ def main(argv):
     if anti_worst != crit["antiphase_midpoint_max_abs_output"]:
         g.fail("EQUALITY-ANTIPHASE", "anti-phase midpoint worst |output| = %.17g, criterion %.17g"
                % (anti_worst, crit["antiphase_midpoint_max_abs_output"]))
+    # ---- THE A/B's SECOND SIDE, AND WHY IT IS NOT THE FIRST ------------------------------------
+    # `EQUALITY-SINE` compares arm A (the product, both correction terms in force) against arm B
+    # (the same build with those two terms neutralised). Both sides come from one compiler with one
+    # set of flags, so the identity is decidable on any platform; the previous form compared against
+    # a committed macOS snapshot and was not (the default patch evaluates std::sin, and Apple's libm
+    # and glibc disagree by exactly 1 ULP on 3.76% of identical arguments -- 0 locally, 652 in CI,
+    # reproduced against a literal pre-S6 tree; see report/2026-09-25-task120-gh19-s6-morph-aa.md).
+    #
+    # ARM B MUST BE NON-VACUOUS, and that is why this block runs BEFORE the identity it guards. If
+    # the neutralisation failed to take effect (a stale shadow include root, a wrong include order)
+    # then B IS A, the windows agree trivially, and the gate would pass while measuring nothing --
+    # the degenerate identity this layer exists to refuse. Two independent checks rule that out: the
+    # two arms' plan files must be byte-identical (same scenario list), and the arms must DIFFER at
+    # morph 0.0, where the correction IS in force (the saw node: sawWeight = 1, invSawWeight = 0).
+    # Both are REFUSALS rather than failures: they say this run cannot judge, not that the product
+    # is wrong.
+    neutral_plan = os.path.join(args.neutral_arm, "gh19_s6_plan.tsv")
+    if not os.path.exists(neutral_plan):
+        g.refuse("NEUTRAL-ARM", "the neutral arm declares no plan at %s: arm B was not rendered by "
+                                "the probe, so the A/B has no second side" % neutral_plan)
+    elif sha256_of(neutral_plan) != sha256_of(args.plan):
+        g.refuse("NEUTRAL-ARM", "the neutral arm's plan is not the candidate's (%s vs %s): the two "
+                                "arms did not render the same scenario list"
+                 % (sha256_of(neutral_plan), sha256_of(args.plan)))
+    witness = [c for c in cells if abs(tag_morph(CELL_RE.match(c).group("tag"))) < 1e-12]
+    if not witness:
+        g.refuse("NEUTRAL-ARM", "no gated cell sits at morph 0.0, so the witness that the two arms "
+                                "differ where the correction is in force cannot be taken")
+    elif neutral_idx is not None:
+        w_unreadable, w_same = [], 0
+        for cid in sorted(witness):
+            cm, nm = cand_idx.get(cid), neutral_idx.get(cid)
+            if cm is None or nm is None:
+                w_unreadable.append(cid)
+                continue
+            a = read_window(args.cand_arm, cm[0], cm[1], cm[2])
+            b = read_window(args.neutral_arm, nm[0], nm[1], nm[2])
+            if a is None or b is None:
+                w_unreadable.append(cid)
+                continue
+            n = bit_diff_count(a, b)
+            if n <= 0:
+                w_same += 1
+        if w_unreadable:
+            g.refuse("NEUTRAL-ARM", "%d of %d witness cells at morph 0.0 cannot be read from both "
+                                    "arms, e.g. %s" % (len(w_unreadable), len(witness),
+                                                       w_unreadable[0]))
+        elif w_same == len(witness):
+            g.refuse("NEUTRAL-ARM", "arm A and arm B are IDENTICAL on all %d witness cells at morph "
+                                    "0.0, where the two correction terms are in force: the "
+                                    "neutralisation did not take effect, so B is A and the equality "
+                                    "criterion below would compare the product against itself"
+                     % len(witness))
+    if g.refusals:
+        return finish(g, "REFUSE", EXIT_REFUSE)
+
     sine_worst = 0
     for cid in sorted(sine):
-        bw, cw = base_idx.get(cid), cand_idx.get(cid)
-        if bw is None or cw is None:
-            g.refuse("MATRIX-SHAPE", "%s: no manifest row in one of the arms" % cid)
+        cm, nm = cand_idx.get(cid), neutral_idx.get(cid)
+        if cm is None or nm is None:
+            g.refuse("MATRIX-SHAPE", "%s: no manifest row in one of the two A/B arms" % cid)
             continue
-        a = read_window(args.base_arm, bw[0], bw[1], bw[2])
-        b = read_window(args.cand_arm, cw[0], cw[1], cw[2])
+        a = read_window(args.cand_arm, cm[0], cm[1], cm[2])
+        b = read_window(args.neutral_arm, nm[0], nm[1], nm[2])
         if a is None or b is None:
-            # The baseline arm is committed with ONLY these cells' raw windows (Q2(a)); anything
-            # else read from it is an input problem, and it is refused by name rather than being
-            # compared as a shorter or empty capture.
+            # Named refusal rather than a comparison against a shorter or empty capture. Arm B is
+            # rendered fresh by this run's driver, so an unreadable window here is an input problem
+            # and never a statement about the product.
             g.refuse("EQUALITY-SINE", "%s: could not read the %s window (%s in %s)"
-                     % (cid, "base" if a is None else "cand",
-                        bw[0] if a is None else cw[0],
-                        args.base_arm if a is None else args.cand_arm))
+                     % (cid, "cand" if a is None else "neutral",
+                        cm[0] if a is None else nm[0],
+                        args.cand_arm if a is None else args.neutral_arm))
             continue
         n = bit_diff_count(a, b)
         if n < 0:
@@ -675,9 +1004,10 @@ def main(argv):
     if g.refusals:
         return finish(g, "REFUSE", EXIT_REFUSE)
     if sine_worst != crit["sine_node_bit_diff_count"]:
-        g.fail("EQUALITY-SINE", "sine-node worst bit-difference count = %d, criterion %d; the "
-                                "default output is NOT bit-identical to pre-S6"
-               % (sine_worst, crit["sine_node_bit_diff_count"]))
+        g.fail("EQUALITY-SINE", "sine-node worst bit-difference count = %d, criterion %d; at morph "
+                                "0.5 the neutralised-correction arm and the product arm do NOT agree "
+                                "bit for bit, so the two correction terms are not inert on the "
+                                "default patch" % (sine_worst, crit["sine_node_bit_diff_count"]))
 
     # ---- REPORTS: emitted before the verdict, because an uncomputable report is a REFUSAL ------
     max_dA = max(abs(cand[c]["A"] - base[c]["A"]) for c in cells)
@@ -706,6 +1036,11 @@ def main(argv):
         "worst_rect_full_band_improvement_db": "%+.2f" % worst_rect,
         "antiphase_midpoint_worst_abs_output": "%.17g" % anti_worst,
         "sine_node_worst_bit_diff_count": "%d" % sine_worst,
+        # The static half of the equality layer, as a number the log carries: how many code hits of
+        # the six names S6 introduces the scanned product tree actually contains. The A/B above can
+        # only show the correction does not reach the DEFAULT patch; this is the count behind the
+        # statement that it has no other reachable caller (pinned per file and name by `wiring` rows).
+        "s6_wiring_call_sites": "%s" % ("UNSCANNED" if wiring_hits is None else wiring_hits),
     }
     for name in REQUIRED_REPORTS:
         if name not in got_reports or got_reports[name] is None:

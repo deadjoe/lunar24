@@ -37,10 +37,24 @@
 #       - norm = 0.5 (the SINE node, u = 1 on stretch 1): the naive waveform is already smooth, so
 #         there is no jump to remove and no improvement to demand. The invariant that DOES hold
 #         exactly is that the new correction terms have coefficient 0 there, so the default output
-#         must be BIT-IDENTICAL to pre-S6.
+#         must be BIT-IDENTICAL to the SAME BUILD with those two terms neutralised (arm A vs arm B,
+#         one compiler, one set of flags). See the head of this file's criterion block: the
+#         comparison is an A/B and not a comparison against the committed pre-S6 snapshot, because
+#         a snapshot rendered by another libm cannot be reproduced bit-for-bit from this one.
 #     These are asserted as equalities, not thresholds. Putting them in the improvement group would
 #     have been a degenerate-identity error: two arms that are both identically zero (or both
 #     already smooth) cannot be told apart by a ratio of their residuals.
+#
+# WHY THE A/B ALONE IS NOT ENOUGH, AND WHAT THE `wiring` ROWS ADD. An A/B at morph 0.5 shows that
+# the correction does not reach the DEFAULT patch. It cannot show that the correction has no other
+# reachable caller: the two terms could be applied on some path the A/B never renders, and arm A
+# and arm B would still agree on the eight windows. The `wiring` rows below therefore DECLARE, as
+# code-hit counts per file and name, where the six symbols S6 introduces are referenced at all, and
+# the gate requires the declaration to equal the tree (an undeclared caller, a moved count, or a
+# vanished symbol is a FAIL naming the file, the line and the identifier). Together the two layers
+# cover the whole claim: the A/B covers "the correction changes nothing at the default node", the
+# wiring declaration covers "the correction is reachable only from the one guard block, and only
+# those six symbols are involved".
 #
 # WHY THE MIDPOINT IS STILL IN THE MATRIX AT ALL. It is a necessary-but-insufficient REGRESSION
 # guard, and it is cheap: it catches leakage of a correction that should be absent. It does NOT
@@ -119,6 +133,29 @@ criterion	max_freq_shift_cycles_per_window	1.0
 criterion	max_fund_amp_rel_change	0.01
 # Equality criteria. Tolerance is exact (0.0); these are identities, not measurements, so
 # there is no level bound to derive and none is claimed.
+#
+# `sine_node_bit_diff_count` is a SAME-BUILD A/B and NOT a comparison against a committed
+# snapshot: the gate is given `--cand-arm` (arm A: this tree's product, both S6 correction terms in
+# force) and `--neutral-arm` (arm B: the same source with those two terms neutralised by
+# tools/stage_gh19_s6_shadow.py, same compiler, same flags), and requires the eight default
+# sine-node windows to agree bit for bit. The criterion, the threshold (0) and the claim are
+# unchanged from the original -- "at the sine node the two correction terms have coefficient 0, so
+# the default output does not move" -- but the second side is now produced by THIS run instead of
+# read from the committed pre-S6 arm.
+#
+# WHY IT HAD TO CHANGE. The committed baseline was rendered on macOS. The default patch evaluates
+# `std::sin(kTwoPi * p)`, Apple's libm and glibc disagree by exactly 1 ULP on 3.76% of identical
+# arguments, and the criterion therefore read 0 locally and 652 on the CI toolchain -- the same 652
+# that a literal pre-S6 tree produces there, i.e. the gap is the toolchain and not the change.
+# Measured, not reasoned: see report/2026-09-25-task120-gh19-s6-morph-aa.md, which is where the
+# four compiler/platform pits this project has hit (C4996, C3493, C4723, and this sin-ULP one) are
+# written down together.
+#
+# ARM B MUST BE NON-VACUOUS. If the neutralisation failed to take effect, B would BE A and the
+# identity would hold trivially. The gate therefore refuses (code NEUTRAL-ARM, not a failure) when
+# the two arms' plan files differ, when a witness window cannot be read, or when the arms are
+# identical on the morph-0.0 witness cells -- the saw node, where the two terms ARE in force and
+# therefore where A and B must visibly differ.
 criterion	antiphase_midpoint_max_abs_output	0.0
 criterion	sine_node_bit_diff_count	0
 report	max_abs_fitted_scale_delta
@@ -129,6 +166,37 @@ report	worst_pinned_scale_rect_full_band_improvement_db
 report	worst_rect_full_band_improvement_db
 report	antiphase_midpoint_worst_abs_output
 report	sine_node_worst_bit_diff_count
+report	s6_wiring_call_sites
+# `wiring <file> <symbol> <code-hit-count>`: where the six symbols S6 introduces are REFERENCED in
+# the product, as code hits (comments and the contents of string/char literals blanked before
+# counting, so a symbol named in a comment or a static_assert message is not a caller). The gate
+# requires these declarations to equal the tree in BOTH directions -- a hit not declared, a declared
+# hit that is gone, a count that moved, a symbol with no declaration line, or a region other than
+# the guard block referencing the three corrected names is FAIL S6-WIRING, naming file, line and
+# identifier. A file that cannot be read is REFUSE WIRING-SOURCE instead: that is an input problem,
+# and no judgement about the product follows from it. Scanned roots: core, host, generated.
+#
+# A DECLARATION IS ITSELF A CODE HIT, which is why most rows are not 1. In vco.h the two
+# `*BlepWeight_` methods and `sawJumpResidual_` each count 2: their definition plus their one read
+# (`sawBlepWeight_` / `invSawBlepWeight_` are bound at 310/311 immediately above the guard, and
+# `sawJumpResidual_` is called at 313 inside it). The two wave_map weights count 1 each in vco.h --
+# the read inside the corresponding `*BlepWeight_` body (369, 382) -- and `nodeWeight` counts 0
+# there at all: it is only ever reached through the two named weights. In vco_wave_map.h `nodeWeight`
+# counts 3 (declaration at 283, called at 296 and 305 by sawWeight and invSawWeight), the other two
+# named weights count 1 each (their declarations at 294 and 303), and the three `_` symbols count 0:
+# the correction's kernel is a Vco member and is not reachable from the wave-map header.
+wiring	core/include/lunar24/core/vco.h	nodeWeight	0
+wiring	core/include/lunar24/core/vco.h	sawWeight	1
+wiring	core/include/lunar24/core/vco.h	invSawWeight	1
+wiring	core/include/lunar24/core/vco.h	sawJumpResidual_	2
+wiring	core/include/lunar24/core/vco.h	sawBlepWeight_	2
+wiring	core/include/lunar24/core/vco.h	invSawBlepWeight_	2
+wiring	core/include/lunar24/core/vco_wave_map.h	nodeWeight	3
+wiring	core/include/lunar24/core/vco_wave_map.h	sawWeight	1
+wiring	core/include/lunar24/core/vco_wave_map.h	invSawWeight	1
+wiring	core/include/lunar24/core/vco_wave_map.h	sawJumpResidual_	0
+wiring	core/include/lunar24/core/vco_wave_map.h	sawBlepWeight_	0
+wiring	core/include/lunar24/core/vco_wave_map.h	invSawBlepWeight_	0
 axis	sides	a,b
 axis	sample_rates	44100,48000,88200,96000
 axis	frequencies	220,440,880

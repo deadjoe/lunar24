@@ -70,3 +70,6 @@ design/reference/*.pdf
 # task#120 (GH#19 S6): the S6 build tree, a regenerable artifact like the ones above. Named
 # per-task so the S6 slice can be built without disturbing the S3 tree.
 /build-120/
+# task#120 (GH#19 S6): the second S6 tree, built with -ffp-contract=fast to reproduce the CI
+# compiler's arm64 side of the libm/FMA experiment in the task report. Same class of artifact.
+/build-120-ffp/

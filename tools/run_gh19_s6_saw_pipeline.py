@@ -19,8 +19,7 @@
 # reachable state.
 #
 # THREE PINS, THREE NAMED REFUSALS, ALL BEFORE ANY MEASUREMENT.
-# S3 pins two artifacts (its stimulus matrix and its report). S6 pins THREE, because S6 has a
-# criterion that reads SAMPLES and not just a report column:
+# S3 pins two artifacts (its stimulus matrix and its report). S6 pins THREE:
 #
 #   BASELINE-PIN        report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scenarios.tsv
 #                       the manifest: id -> raw file, warm, win, f0_meas_hz. Fixes the stimulus,
@@ -32,11 +31,22 @@
 #                       published improvement of all 120 cells while leaving the manifest pin and
 #                       the instrument self-check intact -- that state is what this refusal removes.
 #   BASELINE-RAW-PIN    the eight `m50000` raw windows under baseline_arm/
-#                       `sine_node_bit_diff_count` is the one criterion that compares SAMPLES: it
-#                       reads the baseline's window frame by frame. Neither pin above covers a byte
-#                       of it, so a window is pinned by digest too. Without this, the only judged
-#                       criterion fed by raw data would be the only judged criterion whose input is
-#                       not pinned.
+#                       PROVENANCE, NOT A JUDGED BASIS. These windows are the bytes the equality
+#                       criterion used to read, back when it compared the candidate against the
+#                       committed pre-S6 arm. That comparison was not portable (see below), so the
+#                       criterion is now a same-build A/B and takes its second side from a freshly
+#                       rendered arm A/B -- nothing judged reads these files any more. The pin is
+#                       kept because they are COMMITTED EVIDENCE: it refuses a run whose checkout
+#                       has had the historical artifact edited, which is a different failure from
+#                       "the product changed" and would otherwise be invisible in the verdict.
+#
+# WHY THE EQUALITY CRITERION IS AN A/B. The default patch evaluates `std::sin`; the committed
+# baseline was rendered on macOS, the CI toolchain is glibc, and the two libms disagree by exactly
+# 1 ULP on 3.76% of identical arguments. The criterion therefore read 0 locally and 652 in CI, and a
+# literal pre-S6 tree rendered by the CI compiler reproduced the same 652 -- the gap was the
+# toolchain, not the change. Comparing the product against a SAME-BUILD neutralised variant
+# (`--neutral-probe`) asserts the same property -- the two correction terms have coefficient 0 at
+# morph 0.5 -- with a second side that no libm can move.
 #
 # The instruments self-check on every run: the analyzer's per-arm report carries its own
 # alignment gate and Parseval tripwires (which the gate re-checks and refuses on), and
@@ -45,11 +55,13 @@
 #
 # Usage (used by CMake; also runnable by hand):
 #   python3 run_gh19_s6_saw_pipeline.py --probe build/gh19_s6_saw_probe \
+#       --neutral-probe build/gh19_s6_saw_probe_neutral \
 #       --baseline-arm report/gh19-s6-saw-aa/baseline_arm \
 #       --base-report report/gh19-s6-saw-aa/base_report.txt \
 #       --criteria report/gh19-s6-saw-aa/acceptance_criteria.tsv \
 #       --analyzer tools/gh19_s6_saw_analyze.py \
 #       --gate tools/gh19_s6_saw_acceptance.py \
+#       --repo-root . \
 #       --out <scratch-dir>
 import argparse
 import hashlib
@@ -69,11 +81,12 @@ BASELINE_SCENARIOS_SHA256 = \
 BASELINE_REPORT_SHA256 = \
     "de30d2d3079473e80425f974a74b6da37066aa77f4afc8f3c71a540c44ee3696"
 
-# The pinned baseline RAW WINDOWS -- the samples `sine_node_bit_diff_count` compares. The eight
+# The pinned baseline RAW WINDOWS. PROVENANCE: no judged criterion reads these bytes any more (the
+# equality criterion is a same-build A/B -- see the header), but they are committed evidence, and a
+# checkout in which they have been edited should be refused rather than silently accepted. The eight
 # `m50000` cells are the sine node at four sample rates on two VCOs. NOTE: the two sides are
 # byte-identical at each sample rate (this was measured, not assumed), so these eight entries hold
-# four distinct digests; all eight are listed because the map is file -> digest and the criterion
-# iterates all eight cells.
+# four distinct digests; all eight are listed because the map is file -> digest.
 BASELINE_RAW_SHA256 = {
     "gh19_s6_scn125.raw": "be8224478487ef1dabeb074ad9e747474e7965ad0f7835dbdfe1d153317e9e99",
     "gh19_s6_scn126.raw": "32cd07fca93f9482088a5d7e2fd6a8e41bb58b9eb84a3ab71bac8e16047f2c37",
@@ -114,6 +127,12 @@ def main():
     ap = argparse.ArgumentParser(description="GH#19 S6 real-product acceptance pipeline (CTest gate)")
     # The candidate side: built by CMake from THIS tree. There is no --cand-report.
     ap.add_argument("--probe", required=True, help="path to the gh19_s6_saw_probe binary")
+    # The neutral arm: the SAME probe source compiled against tools/stage_gh19_s6_shadow.py's shadow
+    # include root, i.e. arm B of the equality criterion's same-build A/B. Built by CMake from the
+    # same sources with the same flags (only the include path differs), so "same build" holds by
+    # construction rather than by an argument in a comment.
+    ap.add_argument("--neutral-probe", required=True,
+                    help="path to the gh19_s6_saw_probe_neutral binary (correction terms neutralised)")
     # The baseline side: the pinned pre-correction product, as committed artifacts.
     ap.add_argument("--baseline-arm", required=True,
                     help="dir holding the pinned baseline manifests and raw windows")
@@ -122,6 +141,8 @@ def main():
     ap.add_argument("--criteria", required=True, help="pinned expectation TSV")
     ap.add_argument("--analyzer", required=True, help="tools/gh19_s6_saw_analyze.py")
     ap.add_argument("--gate", required=True, help="tools/gh19_s6_saw_acceptance.py")
+    ap.add_argument("--repo-root", default=".",
+                    help="checkout the gate's `wiring` declaration is checked against")
     ap.add_argument("--label", default="cand", help="analyzer label for the fresh arm")
     ap.add_argument("--out", default=None,
                     help="scratch dir (default: a tempdir, removed on exit)")
@@ -171,8 +192,10 @@ def main():
             sys.stderr.write(
                 "REFUSE BASELINE-RAW-PIN: %s is not the pinned window.\n"
                 "  pinned %s\n  actual %s\n"
-                "`sine_node_bit_diff_count` reads this window frame by frame, and neither the "
-                "manifest pin nor the report pin covers a byte of it.\n"
+                "This is committed evidence, not a judged input: no criterion reads these bytes any "
+                "more (the equality criterion compares two freshly rendered arms). The refusal "
+                "stands because an edited historical artifact makes every claim made ABOUT that "
+                "artifact unverifiable -- including the one in the task report.\n"
                 % (p, BASELINE_RAW_SHA256[name], got_raw))
             return EXIT_REFUSE
     sys.stdout.write("ACCEPT-PIPELINE base_raw_pin=OK n=%d path=%s\n"
@@ -184,6 +207,8 @@ def main():
             os.makedirs(tmp, exist_ok=True)
         cand_arm = os.path.join(tmp, "cand")
         os.makedirs(cand_arm, exist_ok=True)
+        neutral_arm = os.path.join(tmp, "neutral")
+        os.makedirs(neutral_arm, exist_ok=True)
 
         # ---- 1. the REAL current head, rendered by the binary this tree just built ----------
         run([args.probe, "--out", cand_arm])
@@ -193,6 +218,28 @@ def main():
             return EXIT_REFUSE
         sys.stdout.write("ACCEPT-PIPELINE fresh_arm=%s plan_sha256=%s\n"
                          % (cand_arm, sha256_of(cand_plan)))
+
+        # ---- 1b. the SAME source with the two correction terms neutralised (arm B) ----------
+        # Rendered here, once, and passed to the gate as --neutral-arm. It is not analysed: the
+        # equality criterion compares SAMPLES, so the only thing needed from this arm is its
+        # windows. Both arms are rendered in the same process tree by binaries built from one CMake
+        # configuration, which is what "same build" means for this criterion.
+        run([args.neutral_probe, "--out", neutral_arm])
+        neutral_plan = os.path.join(neutral_arm, "gh19_s6_plan.tsv")
+        if not os.path.exists(neutral_plan):
+            sys.stderr.write("REFUSE PROBE-PLAN: the neutral arm declares no plan at %s\n"
+                             % neutral_plan)
+            return EXIT_REFUSE
+        sys.stdout.write("ACCEPT-PIPELINE neutral_arm=%s plan_sha256=%s\n"
+                         % (neutral_arm, sha256_of(neutral_plan)))
+        if sha256_of(neutral_plan) != sha256_of(cand_plan):
+            sys.stderr.write(
+                "REFUSE NEUTRAL-ARM: the neutral arm's plan is not the candidate's.\n"
+                "  cand    %s\n  neutral %s\n"
+                "The two arms must have rendered the same scenario list, or the A/B in the gate "
+                "would compare windows that do not correspond.\n"
+                % (sha256_of(cand_plan), sha256_of(neutral_plan)))
+            return EXIT_REFUSE
 
         # ---- 2. the instrument's own self-check, on the reference family ---------------------
         sc = run([sys.executable, args.analyzer, "--self-check"])
@@ -216,10 +263,14 @@ def main():
                             "--base-report", args.base_report,
                             "--cand-report", cand_report,
                             "--base-arm", args.baseline_arm,
-                            "--cand-arm", cand_arm], capture_output=True, text=True)
-        # Echo the gate's verdict table even on success. Otherwise a passing CTest entry records
-        # only "rc=0" and the per-cell numbers -- the actual evidence -- exist nowhere in the CI
-        # log. Costs ~20 lines.
+                            "--cand-arm", cand_arm,
+                            "--neutral-arm", neutral_arm,
+                            "--repo-root", args.repo_root], capture_output=True, text=True)
+        # Echo the gate's verdict table. On a FAILED gate this is what puts the per-cell numbers
+        # into the CI log at all: CTest runs this entry with --output-on-failure, which prints a
+        # failed test's captured output and DISCARDS a passing test's, so the two cases differ. On a
+        # passing gate the echo reaches the terminal of a by-hand run instead -- which is how
+        # report/gh19-s6-saw-aa/evidence/acceptance_run.txt was produced. Costs ~20 lines.
         sys.stdout.write(g.stdout)
         if g.stderr:
             sys.stderr.write(g.stderr)
