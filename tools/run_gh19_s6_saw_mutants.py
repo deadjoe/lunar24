@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
 """GH#19 S6 (task #120): the saw/invSaw acceptance gate must REJECT each way the candidate can be
 wrong -- and it must be visible WHICH LAYER does the rejecting.
 
