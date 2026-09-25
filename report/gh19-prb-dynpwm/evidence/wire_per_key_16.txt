@@ -1,0 +1,95 @@
+# PER-KEY LIVENESS -- ALL SIXTEEN rows, re-run at the shipped gate.
+#
+# wire_per_key.txt recorded this probe over the NINE rows the 9-row criteria revision carried. The
+# criteria now carries sixteen (the director's ruling that the vocabulary must be complete), so the same
+# probe is re-run over all sixteen. It is not a new instrument: it is the same one, whose producer reads
+# the criteria and the gate at run time -- which is also why it had to be re-run rather than assumed
+# (the rev-1 shape of defect 7). Its only change is that the closing line now counts the rows it
+# actually tested instead of saying "nine".
+#
+# WHAT IT PROVES. For every `code_*` row: the map is consulted at the record site, and the recorded
+# string reaches BOTH printed surfaces (detail line and counts line) while the criteria' default value
+# reaches neither.
+#
+# WHAT IT DOES NOT PROVE. Reachability in a real run. A code that only ever appears at a literal call
+# site cannot be renamed by the criteria, so this probe can show its map entry is live but not that a
+# run reaches it. That is a code-reading fact and is established separately, by the vocabulary proof in
+# code_vocabulary_16.txt. The two instruments are not substitutes for each other.
+#
+# gate sha256     : 0c09ee537773a41565af09db4b0afe1f1c6da56056b94f3605d0c017d809eda2
+# criteria sha256 : 0e11bb9af6a657b19d6ad48098f0593cdf947dc37db27ef6364c402dafa41cdb
+#
+# Producer, run from the repo root (the wire_per_key.py producer with the count made dynamic):
+#
+#   """Per-key liveness: for EACH criteria `code_*` row (sixteen as shipped), rename it to a sentinel in a copy of
+#   the criteria, parse that copy with the gate's own parser, record a refusal under the recorded suffix,
+#   and require the sentinel on BOTH printed surfaces.
+#   
+#   WHAT THIS DOES AND DOES NOT PROVE. It proves the mechanism is live for every row present: the map is consulted at
+#   `refuse()`/`fail()` and the recorded string feeds both surfaces. It does NOT prove that a real run
+#   reaches each code -- reachability is a property of the controls, not of the wiring, and is reported
+#   separately. Reachability of the seven literal-only codes is a CODE-READING fact (a literal at the call
+#   site cannot be renamed by the criteria), which is why the runtime probe and the vocabulary proof are two
+#   different instruments and neither is offered as a substitute for the other. The map is keyed by the suffix DERIVED FROM THE KEY NAME (`code_missing_arm` -> `MISSING-ARM`),
+#   which is also the value the call sites record -- including the one that records through a local variable
+#   rather than a literal.
+#   """
+#   import importlib.util, io, contextlib, re
+#   
+#   SENT = "LIVENESS-SENTINEL-7Q4Z"
+#   src = "report/gh19-prb-dynpwm/acceptance_criteria.tsv"
+#   base = open(src, encoding="utf-8").read()
+#   crit = "/tmp/wire_per_key_criteria.tsv"
+#   
+#   spec = importlib.util.spec_from_file_location("gate", "tools/gh19_prb_dynpwm_acceptance.py")
+#   m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+#   
+#   rows = [(f[1], f[2]) for f in (l.split("\t") for l in base.splitlines())
+#           if f[0] == "criterion" and f[1].startswith("code_")]
+#   print("criteria code_* rows: %d" % len(rows))
+#   print("%-24s %-18s %-6s %-6s %-6s" % ("key", "value", "detail", "counts", "default"))
+#   all_ok = True
+#   for key, val in rows:
+#       suffix = key[len("code_"):].replace("_", "-").upper()
+#       text = base.replace("criterion\t%s\t%s\n" % (key, val),
+#                           "criterion\t%s\t%s\n" % (key, SENT))
+#       assert SENT in text, key
+#       open(crit, "w", encoding="utf-8", newline="\n").write(text)
+#       buf = io.StringIO()
+#       with contextlib.redirect_stdout(buf):
+#           g = m.Gate()
+#           m.parse_criteria(g, crit)
+#           g.refuse(suffix, "per-key probe")
+#           m.finish(g, "REFUSE", m.EXIT_REFUSE)   # the gate's own constant; the return value is discarded here
+#       out = buf.getvalue()
+#       det = [l for l in out.splitlines() if l.startswith("PRB-REFUSE-")]
+#       cnt = [l for l in out.splitlines() if " COUNT " in l]
+#       d = any(SENT in l for l in det)
+#       c = any(SENT in l for l in cnt)
+#       dflt = any(val in l for l in det + cnt)
+#       ok = d and c and not dflt
+#       all_ok = all_ok and ok
+#       print("%-24s %-18s %-6s %-6s %-6s %s" % (key, val, d, c, dflt, "OK" if ok else "FAIL"))
+#   print("ALL %d LIVE ON BOTH SURFACES: %s" % (len(rows), all_ok))
+#
+# Output:
+#
+#   criteria code_* rows: 16
+#   key                      value              detail counts default
+#   code_floor_missing       FLOOR-MISSING      True   True   False  OK
+#   code_floor_unresolved    FLOOR-UNRESOLVED   True   True   False  OK
+#   code_trace               TRACE              True   True   False  OK
+#   code_band                BAND               True   True   False  OK
+#   code_cellset             CELLSET            True   True   False  OK
+#   code_missing_arm         MISSING-ARM        True   True   False  OK
+#   code_improvement         IMPROVEMENT        True   True   False  OK
+#   code_degen_identity      DEGEN-IDENTITY     True   True   False  OK
+#   code_degen_nonvacuous    DEGEN-NONVACUOUS   True   True   False  OK
+#   code_criteria            CRITERIA           True   True   False  OK
+#   code_plan                PLAN               True   True   False  OK
+#   code_matrix_shape        MATRIX-SHAPE       True   True   False  OK
+#   code_matrix_exit         MATRIX-EXIT        True   True   False  OK
+#   code_scenarios           SCENARIOS          True   True   False  OK
+#   code_trace_shape         TRACE-SHAPE        True   True   False  OK
+#   code_window              WINDOW             True   True   False  OK
+#   ALL 16 LIVE ON BOTH SURFACES: True

@@ -1,0 +1,11 @@
+CRITERIA sentinel_applied=True sha256=f96012ffc3f78f8fb47c25e93f577a30546e71b5160bdcc9aefd54cdd9602999
+--- shipped ---
+  codes_map={'FLOOR-MISSING': 'FLOOR-MISSING', 'FLOOR-UNRESOLVED': 'FLOOR-UNRESOLVED', 'TRACE': 'TRACE', 'BAND': 'BAND', 'CELLSET': 'LIVENESS-SENTINEL-7Q4Z', 'MISSING-ARM': 'MISSING-ARM', 'IMPROVEMENT': 'IMPROVEMENT', 'DEGEN-IDENTITY': 'DEGEN-IDENTITY', 'DEGEN-NONVACUOUS': 'DEGEN-NONVACUOUS'}
+  detail_lines=['PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z unit-test refusal']
+  counts_lines=['PRB COUNT REFUSE PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z n=1']
+  sentinel_on_detail=True sentinel_on_counts=True default_on_either=False
+--- prewiring ---
+  codes_map={}
+  detail_lines=['PRB-REFUSE-CELLSET unit-test refusal']
+  counts_lines=['PRB COUNT REFUSE PRB-REFUSE-CELLSET n=1']
+  sentinel_on_detail=False sentinel_on_counts=False default_on_either=True

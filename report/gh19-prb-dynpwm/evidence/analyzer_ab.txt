@@ -1,0 +1,31 @@
+ANALYZER A/B -- does this slice's analyzer change move a byte of its own output?
+
+What changed on the branch: tools/gh19_s3_pulse_analyze.py gains `--taps2`, so the reference
+decimator's tap count can be set independently for the 2L level (`taps2 = args.taps if args.taps2 is
+None else args.taps2`, then `design_decimator(taps2, ...)`). The claim under test is that with the flag
+unset the analyzer's output is byte-for-byte what main produces.
+
+Method: the same arm (/tmp/prb-pipe/cand) analysed by both revisions, at two flag sets, stdout
+compared byte for byte. `--taps2` is never passed, so both runs take the `args.taps2 is None` path.
+
+    analyzer @ main  sha256 a1f786da2470281de5176803093c60fb14a03a49c4793d86cd583757110263f1
+    analyzer @ branch sha256 36226a259020a44c393e3629aa900b9ed4df3931a28d28abeec7fcb5ec383edb
+
+    cheap  flags --taps 65   --dynamic-cells 8  --conv-cells 3
+        main exit=3  branch exit=3  IDENTICAL  sha256 0d7f8e7fa4f6d2a8e57028837bec21a0e2780f4620f221b1d7b0f745df00565b  20974 B
+        real 149.42 s / real 146.68 s
+
+    pinned flags --taps 2001 --dynamic-cells 56 --conv-cells 56
+        main exit=0  branch exit=0  IDENTICAL  sha256 4bd6911353d26d1dc5980911ead7758405af9cafafbdd030635b533029d516f6  26897 B
+        real 559.04 s / real 565.92 s
+
+IDENTICAL on both, so the change is inert at the flag settings the slice actually uses.
+
+Two things a reader should not misread:
+  * exit=3 at the cheap flags is the analyzer's own status for a short-tap survey, identical on both
+    revisions. It is NOT a failure of the comparison, and it is NOT the gate's RED (1) or REFUSE (4).
+  * the two shas DIFFER BETWEEN FLAG SETS, as they must: a 65-tap, 8-cell survey is a different matrix
+    from a 2001-tap, 56-cell one. The comparison is main-vs-branch WITHIN a flag set, never across.
+
+Cost, for the budget in the report: the pinned pair is 559.04 + 565.92 = 1124.96 s of analyzer time for
+one A/B. This leg is NOT part of the slice's test entries; it was run once, here.

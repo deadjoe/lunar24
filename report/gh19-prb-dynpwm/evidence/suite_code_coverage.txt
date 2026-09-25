@@ -1,0 +1,35 @@
+controls in the suite: 15
+
+control -> code it must produce (and codes it must NOT produce)
+  criteria_drop_criterion        PRB-REFUSE-CRITERIA          forbidden=-
+  criteria_drop_negcontrol_row   PRB-REFUSE-CRITERIA          forbidden=-
+  criteria_unknown_key           PRB-REFUSE-CRITERIA          forbidden=-
+  criteria_drop_degen_pair       PRB-REFUSE-CELLSET           forbidden=-
+  criteria_code_key_is_read      PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z forbidden=PRB-REFUSE-CELLSET
+  plan_truncated_row             PRB-REFUSE-PLAN              forbidden=-
+  plan_drops_dynamic_cell        PRB-REFUSE-CELLSET           forbidden=-
+  report_exit_code_nonzero       PRB-REFUSE-MATRIX-EXIT       forbidden=-
+  report_column_dropped          PRB-REFUSE-MATRIX-SHAPE      forbidden=-
+  report_cell_row_dropped        PRB-REFUSE-MATRIX-SHAPE      forbidden=-
+  report_cell_id_renamed         PRB-REFUSE-CELLSET           forbidden=-
+  trace_truncated                PRB-REFUSE-TRACE             forbidden=-
+  scenario_row_dropped           PRB-REFUSE-CELLSET           forbidden=-
+  degen_identity_one_ulp         PRB-FAIL-DEGEN-IDENTITY      forbidden=PRB-FAIL-DEGEN-NONVACUOUS
+  degen_nonvacuous_collapse      PRB-FAIL-DEGEN-NONVACUOUS    forbidden=PRB-FAIL-DEGEN-IDENTITY
+
+codes the suite exercises: CELLSET, CRITERIA, DEGEN-IDENTITY, DEGEN-NONVACUOUS, LIVENESS-SENTINEL-7Q4Z, MATRIX-EXIT, MATRIX-SHAPE, PLAN, TRACE
+
+reconciliation against the nine criteria-named suffixes:
+  BAND               named=BAND               exercised_by_suite=False
+  CELLSET            named=CELLSET            exercised_by_suite=True
+  DEGEN-IDENTITY     named=DEGEN-IDENTITY     exercised_by_suite=True
+  DEGEN-NONVACUOUS   named=DEGEN-NONVACUOUS   exercised_by_suite=True
+  FLOOR-MISSING      named=FLOOR-MISSING      exercised_by_suite=False
+  FLOOR-UNRESOLVED   named=FLOOR-UNRESOLVED   exercised_by_suite=False
+  IMPROVEMENT        named=IMPROVEMENT        exercised_by_suite=False
+  MISSING-ARM        named=MISSING-ARM        exercised_by_suite=False
+  TRACE              named=TRACE              exercised_by_suite=True
+
+codes the gate can print that NO criteria row names (7):
+  CRITERIA, MATRIX-EXIT, MATRIX-SHAPE, PLAN, SCENARIOS, TRACE-SHAPE, WINDOW
+  of those, the suite exercises: CRITERIA, MATRIX-EXIT, MATRIX-SHAPE, PLAN

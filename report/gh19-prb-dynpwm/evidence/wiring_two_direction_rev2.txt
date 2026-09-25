@@ -1,0 +1,236 @@
+task #121 -- GH#19 S6 PR-B -- the code-wiring TWO-DIRECTION ACCEPTANCE, rev 2.
+
+WHY A SECOND REVISION, stated because the first one is still on the record and still has its own file.
+The rev-1 record (17:16-17:19, kept as wiring_two_direction.txt) paired a pre-wiring copy derived from
+the gate as it stood at 16:51 with the gate as it stood at 17:18, against the 9-row criteria revision.
+Both moved afterwards: the director's ruling that the code vocabulary must be COMPLETE added seven more
+`code_*` suffixes and rewrote the wiring's comment (gate mtime 19:27), and the criteria gained those
+seven rows (431 lines, sha 0e11bb9a...). Measured, the rev-1 pre-wiring copy no longer differs from the
+shipped gate by the wiring alone -- it differs by 8 hunks. An identity established against a superseded
+pair is evidence about the superseded pair, not about the artifact under review, so the whole comparison
+is re-derived from the current tree. The rev-1 files are not deleted: they are what the reported defect
+is visible in.
+
+WHAT THIS FILE IS. A complete, re-runnable record: the two builds, the isolation the comparison rests
+on (asserted, not assumed), then both directions. Nothing here is a summary of a run -- each block is
+the run's own output, and the producer is reproduced verbatim at the end.
+
+BUILDS
+  shipped      tools/gh19_prb_dynpwm_acceptance.py
+    sha256 0c09ee537773a41565af09db4b0afe1f1c6da56056b94f3605d0c017d809eda2
+  pre-wiring   /tmp/gate_prewiring_rev2.py
+    sha256 548c41b3ed78470e00ce2041c50455b91e0a9b13759bc6fc4cb3ba31a329162a
+  criteria     report/gh19-prb-dynpwm/acceptance_criteria.tsv
+    sha256 0e11bb9af6a657b19d6ad48098f0593cdf947dc37db27ef6364c402dafa41cdb
+
+ISOLATION -- the producer asserts the two builds differ by the wiring hunk and nothing else. If they do
+not, the comparison is not about the wiring and the producer says so. Printed by the producer:
+
+ISOLATION diff_hunks=1 wired_lines=3 removed_lines=1
+ISOLATION   +    for key, value in sval.items():
+ISOLATION   +        if key.startswith("code_"):
+ISOLATION   +            g.codes[key[len("code_"):].replace("_", "-").upper()] = value
+ISOLATION   -    # PRE-WIRING CONTROL COPY: map population removed. g.codes stays {}.
+ISOLATION wiring_only=True
+
+DIRECTION 1 -- IDENTITY. Both builds run the gate DIRECTLY, at the pinned criteria, over the same
+artifacts. The transcripts must be byte-identical, and that is the whole claim: while the criteria holds
+the default values, the wiring cannot change a byte of this gate's output. Both exit 0.
+
+  shipped   exit=0  sha256 df292f312b20461dda146fea17b974799e65431e125270014b3dda5dcb98c7d2
+  pre-wiring exit=0 sha256 df292f312b20461dda146fea17b974799e65431e125270014b3dda5dcb98c7d2
+  diff (pre-wiring -> shipped): empty
+
+  Non-degeneracy, because an identity between two identical ERROR transcripts proves nothing: this
+  transcript is 32 lines, carries 23 `PRB REPORT` lines, `cells=56 pairs=6 plan_dynamic=56`,
+  `refused_cells=0` and its own verdict `PRB GATE verdict=PASS refusals=0 failures=0`. It is a real
+  verdict table, and -- unlike rev 1, whose shared transcript was a 36-line RED from blocker 1 -- it is
+  the shipped PASS.
+
+  | PRB GATE tool=gh19_prb_dynpwm_acceptance.py
+  | PRB INPUT criteria sha256=0e11bb9af6a657b19d6ad48098f0593cdf947dc37db27ef6364c402dafa41cdb path=report/gh19-prb-dynpwm/acceptance_criteria.tsv
+  | PRB INPUT plan sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811 path=/tmp/prb-pipe/cand/gh19_s3_plan.tsv
+  | PRB INPUT cand_report sha256=3efee15b95d4567c2b1af557fecc71cb488f704831c9bb6757192bc02a4c61aa path=/tmp/prb-pipe/cand_report.txt
+  | PRB INPUT neut_report sha256=07a181884f273de461ac5c320ad9b4ac3d2c5fe1ca1a6c6cc28e66d11b660da7 path=/tmp/prb-pipe/neut_report.txt
+  | PRB INPUT degen_static_manifest sha256=181dd75c7f3c6afb98f9ecc18eb920130b0c0ed43c7eae68f8bda05e2b1b8f92 path=/tmp/prb-pipe/cand/gh19_s3_scenarios.tsv
+  | PRB INPUT degen_dyn_manifest sha256=c380467a6e3c6ba7a390baf2955f57306b03e7fecef6378974b385b4c8cdf911 path=/tmp/prb-pipe/degen/gh19_prb_degen_scenarios.tsv
+  | PRB GATE criteria=acceptance_criteria.tsv cells=56 pairs=6 plan_dynamic=56
+  | PRB REPORT refconv_rms_db=-37.1800 at vco_b_dynpwm_44100_880_sq_r20_b50_d50
+  | PRB REPORT refconv_peak=0.0933 at vco_a_dynpwm_96000_440_tri_r20_b25_d100
+  | PRB REPORT res_effbd_db=-38.7900 at vco_a_dynpwm_96000_880_sq_r2_b50_d50
+  | PRB REPORT res_effbd2L_db=-40.8300 at vco_a_dynpwm_96000_880_sq_r2_b50_d50
+  | PRB REPORT report_floor_margin_db=7.2400 at vco_a_dynpwm_96000_440_sq_r2_b50_d50 (computed res_db - refconv_rms_db)
+  | PRB REPORT report_floor_margin_band_db=4.9900 at vco_a_dynpwm_96000_880_sq_r2_b50_d50 (companion axis, not judged)
+  | PRB REPORT refused_cells=0 (cells refused on the floor; 56 were scanned)
+  | PRB REPORT improvement_min=4.7000 dB at vco_a_dynpwm_44100_220_sq_r20_b25_d100 (corrected -30.1600 vs neutralised -25.4600, pinned 4.0)
+  | PRB REPORT max_abs_fitted_scale_delta=0.007 (reported, not gated)
+  | PRB REPORT degen_moving_duty_measured_delta=1 (largest separation of any moving-duty pair from its static twin, in product units)
+  | PRB REPORT refconv_rms_db=-37.1800
+  | PRB REPORT refconv_peak=0.0933
+  | PRB REPORT res_effbd_db=-38.7900
+  | PRB REPORT res_effbd2L_db=-40.8300
+  | PRB REPORT report_floor_margin_db=7.2400
+  | PRB REPORT report_floor_margin_band_db=4.9900
+  | PRB REPORT margin_source_column=computed:res_db-refconv_rms_db
+  | PRB REPORT worst_floor_margin_db=vco_a_dynpwm_96000_440_sq_r2_b50_d50=7.2400
+  | PRB REPORT refused_cells=0
+  | PRB REPORT improvement_corrected_db=-30.1600
+  | PRB REPORT improvement_neutralized_db=-25.4600
+  | PRB REPORT degen_moving_duty_measured_delta=1
+  | PRB REPORT max_abs_fitted_scale_delta=0.007
+  | PRB GATE verdict=PASS refusals=0 failures=0
+
+DIRECTION 2 -- LIVENESS. The control renames a code the gate reaches through the wiring, so the wired
+build must print the criteria's sentinel and the pre-wiring build must MISS and print its own literal.
+Run through the real control machinery (`gh19_prb_dynpwm_gate_negcontrol.py --only
+criteria_code_key_is_read`), both builds:
+
+  LIVE  shipped    exit=0 sha256=5e92e916f7e49c9dfe9ce67deb2fb9a45cf74abf97caadbea2404eec58256f1c /tmp/prb-ab-rev2/liveness_shipped.txt
+  LIVE  prewiring  exit=1 sha256=3b2987c15918142a71181630e86fc8fba3aef610f6e290d6a99f1eec9fd27beb /tmp/prb-ab-rev2/liveness_prewiring.txt
+  LIVENESS shipped    exit=0 CONTROL criteria_code_key_is_read      exit=4 expected=4 code=PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z HIT
+  LIVENESS prewiring  exit=1 CONTROL criteria_code_key_is_read      exit=4 expected=4 code=PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z MISS  (ALSO FIRED PRB-REFUSE-CELLSET)  (ABSENT FROM detail-line,counts-line)
+
+  The liveness pair is byte-identical to the rev-1 pair (shipped sha 5e92e916f7e49c9d, pre-wiring sha
+  3b2987c15918142a) -- i.e. the vocabulary completion did not touch this transcript, which is itself a
+  small zero-disturbance check on that later change. The shipped direction is HIT; the pre-wiring build
+  is the negative control that shows this control CAN fail.
+
+  The shipped liveness transcript:
+  | NEGCTL-PRB victims static=vco_a_pulse_44100_220_pw50 const=dynroute_const_duty_44100_220_b50_d0 moving=dynroute_moving_duty_44100_220_b50_d50 victim_cell=vco_a_dynpwm_44100_220_tri_r2_b50_d50
+  | CONTROL pristine                       exit=0 expected=0  PASS
+  | NEGCTL-PRB skipped=(none)
+  | CONTROL criteria_code_key_is_read      exit=4 expected=4 code=PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z HIT
+  | NEGCTL-PRB ok=1 bad=0 controls=1
+  | NEGCTL-PRB verdict=ALL-HIT
+
+  The pre-wiring build, the negative control:
+  | NEGCTL-PRB victims static=vco_a_pulse_44100_220_pw50 const=dynroute_const_duty_44100_220_b50_d0 moving=dynroute_moving_duty_44100_220_b50_d50 victim_cell=vco_a_dynpwm_44100_220_tri_r2_b50_d50
+  | CONTROL pristine                       exit=0 expected=0  PASS
+  | NEGCTL-PRB skipped=(none)
+  | CONTROL criteria_code_key_is_read      exit=4 expected=4 code=PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z MISS  (ALSO FIRED PRB-REFUSE-CELLSET)  (ABSENT FROM detail-line,counts-line)
+  |          the gate did not print PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z. Its own verdict lines:
+  |          | PRB-REFUSE-CELLSET axis degen_pair_count=6 but there are 0 degen_pair rows
+  |          | PRB COUNT REFUSE PRB-REFUSE-CELLSET n=1
+  |          | PRB GATE verdict=REFUSE refusals=1 failures=0
+  | NEGCTL-PRB ok=0 bad=1 controls=1
+  | NEGCTL-PRB verdict=INCOMPLETE
+
+ALSO RUN, and recorded because it is a second, independent form of the identity claim: the control
+runner's whole suite except the liveness control, run against both builds. The two runner transcripts
+are byte-identical (sha 0278117bc5028576cae8fba4ba53a823a27fc1cd6632cf8c11c7507ca15ae135), 19 lines
+each, 14 controls, `ok=14 bad=0`, `verdict=ALL-HIT`. It is the same claim reached through the control
+machinery rather than through a bare gate invocation, and both forms agree.
+
+PRODUCER, verbatim -- /tmp/ab_wiring_rev2.py, whose `--pre` default is the rev-2 copy:
+
+---8<--- ab_wiring_rev2.py ---8<---
+"""A/B the code-wiring change -- REV 2, against the gate and criteria as they stand now.
+
+Why a second revision exists: the 17:18 run paired a pre-wiring copy derived from the gate as it stood
+at 16:51 with the gate as it stood at 17:18. The shipped gate moved again afterwards (the director's
+ruling that the code vocabulary must be complete: seven more `code_*` suffixes named), so the old copy
+no longer differs from the shipped gate by the wiring alone -- measured, it differs by 8 hunks. An
+identity established against a superseded pair is not evidence about the artifact under review, so the
+comparison is re-derived from the current tree rather than carried forward.
+
+IDENTITY  -- both builds run the control suite EXCEPT the liveness control; the two transcripts must be
+             byte-identical. That is the whole claim: the wiring cannot change a byte of this gate's
+             output while the criteria holds the default values.
+LIVENESS  -- both builds run ONLY the liveness control. The wired build must print the criteria's
+             sentinel on both surfaces; the pre-wiring build must MISS and print its default literal.
+The criteria is copied from the repo and the copy is asserted byte-identical before use, so neither
+build is ever handed a file this script invented.
+"""
+import argparse, hashlib, os, shutil, subprocess, sys
+
+def sha(p):
+    return hashlib.sha256(open(p, "rb").read()).hexdigest()
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--tmp", default="/tmp/prb-pipe")
+ap.add_argument("--repo", default=".")
+ap.add_argument("--work", default="/tmp/prb-ab-rev2")
+ap.add_argument("--pre", default="/tmp/gate_prewiring_rev2.py",
+                help="the pre-wiring gate build; must differ from --shipped by the wiring alone")
+a = ap.parse_args()
+
+repo = os.path.abspath(a.repo)
+crit_src = os.path.join(repo, "report/gh19-prb-dynpwm/acceptance_criteria.tsv")
+shipped = os.path.join(repo, "tools/gh19_prb_dynpwm_acceptance.py")
+pre = a.pre
+nc = os.path.join(repo, "tools/gh19_prb_dynpwm_gate_negcontrol.py")
+
+os.makedirs(a.work, exist_ok=True)
+crit = os.path.join(a.work, "criteria.tsv")
+shutil.copyfile(crit_src, crit)
+assert sha(crit) == sha(crit_src), "the sandbox copy must be the repo file byte for byte"
+print("CRITERIA src_sha256=%s copy_sha256=%s" % (sha(crit_src), sha(crit)))
+print("GATE shipped_sha256=%s" % sha(shipped))
+print("GATE prewiring_sha256=%s path=%s" % (sha(pre), pre))
+
+# The isolation this whole comparison rests on, asserted rather than assumed: the two builds must differ
+# by the wiring hunk and nothing else. If they do not, the comparison is not about the wiring.
+d = subprocess.run(["diff", "-u", pre, shipped], capture_output=True, text=True)
+hunks = [l for l in d.stdout.splitlines() if l.startswith("@@")]
+wired = [l[1:] for l in d.stdout.splitlines()
+         if l.startswith("+") and not l.startswith("+++")]
+stripped = [l[1:] for l in d.stdout.splitlines()
+            if l.startswith("-") and not l.startswith("---")]
+print("ISOLATION diff_hunks=%d wired_lines=%d removed_lines=%d" % (len(hunks), len(wired), len(stripped)))
+for l in wired:
+    print("ISOLATION   +%s" % l)
+for l in stripped:
+    print("ISOLATION   -%s" % l)
+ok_isolation = (len(hunks) == 1 and len(wired) == 3 and len(stripped) == 1
+                and stripped[0].strip().startswith("# PRE-WIRING CONTROL COPY"))
+print("ISOLATION wiring_only=%s" % ok_isolation)
+
+tmp = a.tmp
+common = ["--criteria", crit,
+          "--plan", os.path.join(tmp, "cand", "gh19_s3_plan.tsv"),
+          "--cand-report", os.path.join(tmp, "cand_report.txt"),
+          "--cand-arm", os.path.join(tmp, "cand"),
+          "--neut-report", os.path.join(tmp, "neut_report.txt"),
+          "--neut-arm", os.path.join(tmp, "neut"),
+          "--degen-static-arm", os.path.join(tmp, "cand"),
+          "--degen-dyn-arm", os.path.join(tmp, "degen")]
+
+def run(gate, extra):
+    p = subprocess.run([sys.executable, nc] + common + ["--gate", gate] + extra,
+                       capture_output=True, text=True, encoding="utf-8")
+    return p.returncode, p.stdout
+
+out = {}
+for tag, gate in (("shipped", shipped), ("prewiring", pre)):
+    rc, txt = run(gate, ["--skip", "criteria_code_key_is_read"])
+    f = os.path.join(a.work, "suite_%s.txt" % tag)
+    open(f, "w").write(txt)
+    out[("suite", tag)] = (rc, txt, f)
+    print("SUITE %-10s exit=%d sha256=%s %s" % (tag, rc, sha(f), f))
+    rc, txt = run(gate, ["--only", "criteria_code_key_is_read"])
+    f = os.path.join(a.work, "liveness_%s.txt" % tag)
+    open(f, "w").write(txt)
+    out[("live", tag)] = (rc, txt, f)
+    print("LIVE  %-10s exit=%d sha256=%s %s" % (tag, rc, sha(f), f))
+
+s_sh, s_pre = out[("suite", "shipped")][1], out[("suite", "prewiring")][1]
+print("IDENTITY suite_transcripts_identical=%s" % (s_sh == s_pre))
+print("IDENTITY shipped_lines=%d prewiring_lines=%d" % (len(s_sh.splitlines()), len(s_pre.splitlines())))
+# An identity of two empty or near-empty transcripts proves nothing, so the shape is printed too.
+n_report = len([l for l in s_sh.splitlines() if "PRB REPORT" in l])
+print("IDENTITY shipped_report_lines=%d shipped_ok_lines=%d"
+      % (n_report, len([l for l in s_sh.splitlines() if l.startswith("NEGCTL-PRB ok=")])))
+print("IDENTITY shipped_verdict=%s" % [l for l in s_sh.splitlines() if l.startswith("NEGCTL-PRB verdict=")])
+if s_sh != s_pre:
+    import difflib
+    for ln in list(difflib.unified_diff(s_pre.splitlines(), s_sh.splitlines(),
+                                        "prewiring", "shipped", lineterm=""))[:40]:
+        print("  | " + ln)
+
+for tag in ("shipped", "prewiring"):
+    rc, txt, _ = out[("live", tag)]
+    hit = [l for l in txt.splitlines() if l.startswith("CONTROL criteria_code_key_is_read")]
+    print("LIVENESS %-10s exit=%d %s" % (tag, rc, hit[0].strip() if hit else "(no control line)"))
+    print("           sentinel_in_transcript=%s default_literal_in_transcript=%s"
+          % ("LIVENESS-SENTINEL-7Q4Z" in txt, "PRB-REFUSE-CELLSET" in txt))
+---8<--- end producer ---8<---

@@ -1,0 +1,31 @@
+produced by: gh19_prb_dynpwm_acceptance.py, criteria = a copy of the pinned file with the
+single line 'criterion<TAB>improvement_min_db<TAB>6.0' removed (sandbox sha 210e339b...,
+one line shorter). The gate RECORDS a PRB-REFUSE-CRITERIA refusal for the missing numeric key
+and then indexes that key anyway, so the run dies with a KeyError and Python exits 1 -- which
+is the gate's RED code, not its REFUSE code. No PRB GATE verdict= line is ever printed.
+
+PRB GATE tool=gh19_prb_dynpwm_acceptance.py
+PRB INPUT criteria sha256=9a800d7355758472b56b83503e36111b0d395ac73f29a2ea7a12b041ac6f3a2a path=/tmp/prb-ab/crit_drop_floor.tsv
+PRB INPUT plan sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811 path=/tmp/prb-pipe/cand/gh19_s3_plan.tsv
+PRB INPUT cand_report sha256=3efee15b95d4567c2b1af557fecc71cb488f704831c9bb6757192bc02a4c61aa path=/tmp/prb-pipe/cand_report.txt
+PRB INPUT neut_report sha256=07a181884f273de461ac5c320ad9b4ac3d2c5fe1ca1a6c6cc28e66d11b660da7 path=/tmp/prb-pipe/neut_report.txt
+PRB INPUT degen_static_manifest sha256=181dd75c7f3c6afb98f9ecc18eb920130b0c0ed43c7eae68f8bda05e2b1b8f92 path=/tmp/prb-pipe/cand/gh19_s3_scenarios.tsv
+PRB INPUT degen_dyn_manifest sha256=c380467a6e3c6ba7a390baf2955f57306b03e7fecef6378974b385b4c8cdf911 path=/tmp/prb-pipe/degen/gh19_prb_degen_scenarios.tsv
+PRB-REFUSE-CRITERIA criterion/numeric keys missing=floor_margin_min_db unexpected=-
+PRB GATE criteria=crit_drop_floor.tsv cells=56 pairs=6 plan_dynamic=56
+Traceback (most recent call last):
+  File "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_prb_dynpwm_acceptance.py", line 961, in <module>
+    sys.exit(main(sys.argv[1:]))
+             ~~~~^^^^^^^^^^^^^^
+  File "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_prb_dynpwm_acceptance.py", line 957, in main
+    return run(g, args)
+  File "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_prb_dynpwm_acceptance.py", line 730, in run
+    margins, band_margins, _mf = check_floor_and_shape(
+                                 ~~~~~~~~~~~~~~~~~~~~~^
+        g, "cand", cand, cells, crit, args.cand_arm, scn, crit["trace_min_frames"])
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_prb_dynpwm_acceptance.py", line 573, in check_floor_and_shape
+    if margin < crit["floor_margin_min_db"]:
+                ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'floor_margin_min_db'
+EXIT=1

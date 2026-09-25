@@ -1,0 +1,144 @@
+THREE INDEPENDENT BLOCKERS, all in this slice's own artifacts, all found by running it.
+None is a product defect. None is waived here. Nothing in this slice can go green until all three
+are resolved or explicitly excepted by the director.
+
+================================================================================
+BLOCKER 1 -- the pinned improvement threshold is above the pristine arm's own measured minimum
+================================================================================
+Every acceptance-orientation run REDs on the same three cells. Four independent instruments agree,
+and they are not the same run wearing four hats:
+
+  1. tools/run_gh19_prb_dynpwm_pipeline.py  (fresh arms it renders itself)
+       verdict=RED refusals=0 failures=3, PIPELINE-EXIT=1
+       evidence/pipeline_leg_full.txt
+  2. tools/run_gh19_prb_dynpwm_mutants.py, acceptance orientation (cand=probe_A neut=probe_B)
+       verdict=RED refusals=0 failures=3  -> leg 3 declared ITSELF failed, see below
+       evidence/leg3_mutant_full.txt
+  3. tools/gh19_prb_dynpwm_gate_negcontrol.py, its `pristine` control (unmutated artifacts, expects 0)
+       CONTROL pristine exit=1 expected=0  MISMATCH -> NEGCTL-PRB verdict=INVALID
+       evidence/negcontrol_suite_abort.txt
+  4. the gate run directly on the pinned criteria
+       evidence/wiring_identity_pinned.txt
+
+The three cells and their measured improvement:
+
+    vco_a_dynpwm_44100_220_sq_r20_b50_d50   corrected -30.89 vs neutralised -25.10 -> 5.79 dB
+    vco_a_dynpwm_44100_220_sq_r20_b25_d100  corrected -30.16 vs neutralised -25.46 -> 4.70 dB
+    vco_b_dynpwm_44100_220_sq_r20_b50_d50   corrected -30.89 vs neutralised -25.10 -> 5.79 dB
+    pinned improvement_min_db = 6.0
+
+THE WHOLE DISTRIBUTION, not just the part under the line (evidence/improvement_distribution.txt,
+computed from the two analyzer reports by the gate's own definition `d = neut.res_db - cand.res_db`,
+acceptance.py:818, and calibrated against the gate: it reproduces the gate's printed
+`improvement_min=4.7000` at the same cell and all three named failing cells):
+
+    all 56 judged dynamic cells: min 4.70, max 12.61 dB, 3 below the pin
+    r2  n=22: min  6.52  max 12.61     <- every r2 cell clears the pin
+    r20 n=34: min  4.70  max  9.33     <- the three sub-pin cells live here
+    tri n=30: min  6.52  max  9.20     <- no tri cell is below the pin
+    sq  n=26: min  4.70  max 12.61
+
+So the pin does not separate a broken corner from a working one; it cuts 1.3 dB into the bottom of one
+tail (44100 Hz, square, ratio 20). Everything else clears it.
+
+WHY THIS IS A CRITERIA PROBLEM AND NOT A PRODUCT PROBLEM. The criteria says so itself, at
+acceptance_criteria.tsv:138-147 and :304:
+
+    improvement_min_db = 6.0 is the S3-authorized bound ... pinned here by EXPLICIT REFERENCE to
+    [S3] ... the neutralised arm has the correction disabled, so its improvement over itself is ~0 dB
+    by construction, while the corrected arm's improvement is a large positive number. ANY THRESHOLD
+    STRICTLY BETWEEN THE TWO SEPARATES THEM
+
+and the value carries its own provenance row: `improvement_provenance  borrowed_from_s3_not_derived_here`.
+The criterion's stated requirement is SEPARATION, and separation is satisfied by anything in (0, 4.70).
+The pinned 6.0 is a number borrowed from a different slice's cell mix, and this slice's own full-coverage
+measurement refutes its transfer: the quantity class matches, the magnitude does not. The label
+"borrowed" was necessary and was not sufficient.
+
+Separately, the separation itself is measured and large in both directions: in the mutant orientation
+(cand/neut swapped) the same two reports give improvement_min = -12.61 dB and all 56 cells below the
+pin, i.e. the corrected arm sits 12.61 dB above the neutralised arm at its best cell and 4.70 dB at its
+worst, both far from the ~0 dB the criterion attributes to a bypassed correction.
+
+WHY IT IS NEWLY VISIBLE. This slice takes dynamic-PWM reference coverage from 8 cells (the analyzer's
+`--dynamic-cells` default, which S3 ran at) to all 56. The three cells did not change; they entered the
+judged set for the first time.
+
+================================================================================
+BLOCKER 2 -- the gate records a refusal for a missing criterion and then indexes it anyway
+================================================================================
+    tools/gh19_prb_dynpwm_acceptance.py:573, inside check_floor_and_shape:
+        if margin < crit["floor_margin_min_db"]:
+    KeyError: 'floor_margin_min_db'
+
+The gate has already emitted `PRB-REFUSE-CRITERIA criterion/numeric keys missing=floor_margin_min_db`
+at that point -- the refusal is RECORDED and not ACTED ON. The run dies with a traceback, so Python
+exits 1: the gate's RED code, not its REFUSE code. No `PRB GATE verdict=` line, no COUNT lines and no
+REPORT lines are ever printed, so the transcript is truncated and the refusal is not even summarised.
+Full capture: evidence/gate_crash_dropped_criterion.txt
+
+Consequence: the control `criteria_drop_criterion` ("a missing criterion must not become a criterion
+that passed") MUST hit and cannot. In a full suite run it reports
+`exit=1 expected=4 code=PRB-REFUSE-CRITERIA  MISS  (CRASHED)`. This is independent of BLOCKER 1 and
+survives its resolution: even with a pin that passes, tools/run_gh19_prb_dynpwm_pipeline.py step 5 runs
+the control suite with `check=True`, so a MISS there propagates and the pipeline exits non-zero.
+NOTE: the leg-2 pipeline run itself never reached step 5 -- it exited at step 4 on BLOCKER 1, and its
+transcript carries no NEGCTL lines at all. The control-suite captures here are from running that suite
+directly.
+
+================================================================================
+BLOCKER 3 -- the control suite's sandbox restores the file but not its in-memory text cache
+================================================================================
+tools/gh19_prb_dynpwm_gate_negcontrol.py, class Sandbox:
+
+    :113  def restore(self):
+    :114      problems = []
+    :115      for p, before in self.undo.items():
+    :116          with open(p, "wb") as fh: fh.write(before)   # the FILE is restored ...
+    :123      self.undo = {}                                   # ... self.text is never rolled back
+
+`text_file(key, text)` writes the file AND sets `self.text[key]` (:97, :107). `restore()` rewrites only
+the file and clears `undo`; `self.text` keeps the mutated value for the rest of the run. So every
+mutation after the first reads the previous mutation's text and compounds it.
+
+The gate reads the FILE, so each gate run really does see the single intended change. It is the
+MUTATIONS that compound, and the mutations' own header claims otherwise:
+
+    :170  # Mutations. Each takes the sandbox and the resolved arm paths and changes EXACTLY ONE thing.
+
+THE GATE'S OWN OUTPUT CARRIES THE PROOF. `criteria_unknown_key` appends exactly one invented row; its
+gate output shows THREE accumulated refusals, two of them from earlier controls:
+
+    | PRB-REFUSE-CRITERIA /tmp/prb-ab/criteria_sandbox_pin4.tsv:394: unknown criterion key 'improvement_min_db_invented'
+    | PRB-REFUSE-CRITERIA criterion/numeric keys missing=floor_margin_min_db unexpected=-
+    | PRB-REFUSE-CRITERIA criterion/string keys missing=negcontrol_degen_identity_tamper unexpected=-
+    | PRB-REFUSE-CRITERIA the identity's falsifiability control names no tamper mechanism, ...
+
+`floor_margin_min_db` was dropped by control 1 (`criteria_drop_criterion`); `negcontrol_degen_identity_tamper`
+by control 2 (`criteria_drop_negcontrol_row`). Both are still missing in control 3's sandbox text.
+
+BY CONTROL 5 the accumulated text no longer carries the six `degen_pair` rows that control 4 dropped, so
+`m_criteria_code_key_is_read`'s own guard (:245) fires while the suite is PREPARING it, and SystemExit
+ends the run:
+
+    control setup: the criteria do not carry six degen_pair rows
+
+A full suite run therefore completes 5 of its 15 controls -- `pristine` plus four mutation controls, all
+four MISS (CRASHED) on BLOCKER 2 -- and exits non-zero via SystemExit rather than via a verdict. The
+suite's own summary line (`NEGCTL-PRB verdict=...`) is never printed, so the run reports nothing about
+its own incompleteness. Capture: evidence/negcontrol_suite_abort.txt.
+
+TWO THINGS THIS DOES NOT MEAN. It is not a false HIT: no control reported HIT that had not earned it. And
+`--only` masks it: a single-control run has no earlier mutation to compound, which is exactly how the
+liveness direction in wiring_two_direction.txt was obtained -- that evidence stands, and this blocker is
+why it could not be obtained from a full-suite run.
+
+All three blockers are in this slice's own new files. None touches core/, host/ or tests/probes/.
+
+================================================================================
+WHAT WAS NOT DONE, DELIBERATELY
+================================================================================
+The pinned criteria is NOT edited. Its sha is the slice's pinned expectation, and the identity
+evidence in wiring_two_direction.txt is taken against it. Changing `improvement_min_db` is a director
+decision, not an implementer's. The sandbox copy at 4.0 exists only so a control could be exercised;
+it is not a proposal for the pinned value.

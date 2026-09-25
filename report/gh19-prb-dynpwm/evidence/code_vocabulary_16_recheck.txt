@@ -1,0 +1,21 @@
+# RE-CHECK of code_vocabulary_16.txt, run because its producer reads the gate source at run time.
+#
+# code_vocabulary_16.txt was produced at 19:26 and the gate file was last modified at 19:27, so the
+# proof was against a gate one edit older than the shipped one. That is the rev-1 shape of defect 7
+# (a comparison partner that moved), so it was re-run rather than assumed still valid.
+#
+# gate sha256 at re-check : 0c09ee537773a41565af09db4b0afe1f1c6da56056b94f3605d0c017d809eda2
+# criteria sha256         : 0e11bb9af6a657b19d6ad48098f0593cdf947dc37db27ef6364c402dafa41cdb
+#
+# The producer is the one embedded in code_vocabulary_16.txt, run verbatim from the repo root.
+# Its output, compared byte-for-byte against the block recorded there:
+#
+#   code_* rows in criteria : 16
+#   derived map entries     : 16
+#   non-identity entries    : (none -> output byte-unchanged)
+#   literal call-site codes : 15
+#   literals NOT named      : (none)
+#   named but not a literal : ['MISSING-ARM'] (reached through a variable: gates on the criteria-held name)
+#   STR_CRITERIA has all?   : True
+#
+# diff (recorded block -> this run): empty. The proof still stands at the shipped gate.

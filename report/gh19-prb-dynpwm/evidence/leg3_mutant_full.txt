@@ -1,0 +1,121 @@
+PRB-SHADOW mutation=improvement-bypass path=/tmp/prb-mut/inc_improvement_bypass/lunar24/core/pulse_blep_kernel.h anchor_hits=1
+PRB-SHADOW tree_sha256=08fde1f63daf46ae6dd1ac0313bd37fa51186bc3e57e9bec11b34a53b7cbea75
+PRB-SHADOW mutated_sha256=8ae91eb657886c4132ab57d43e54277ba1b71c8a9a94630d245213261618686b differs=yes
+MUTANT shadow mutation=improvement-bypass root=/tmp/prb-mut/inc_improvement_bypass mutated_sha256=8ae91eb657886c4132ab57d43e54277ba1b71c8a9a94630d245213261618686b
+PRB-SHADOW mutation=degen-dispatch path=/tmp/prb-mut/inc_degen_dispatch/lunar24/core/vco.h anchor_hits=1
+PRB-SHADOW tree_sha256=62a728b3fcdbc96761aef8afebc88830518c9c7c4a99453c28de3307cb591447
+PRB-SHADOW mutated_sha256=02d0b9a0e199220c80327ce9f105bb7c0802506b50cc2e3569beca7a03a9fdc4 differs=yes
+MUTANT shadow mutation=degen-dispatch root=/tmp/prb-mut/inc_degen_dispatch mutated_sha256=02d0b9a0e199220c80327ce9f105bb7c0802506b50cc2e3569beca7a03a9fdc4
+PRB-DEGEN-PLAN plan_rev=1 cells=12
+PRB-DEGEN dynroute_const_duty_44100_220_b50_d0           duty=0 peak=0.500000 src_span=10.000000 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_44100_220_b50_d50         duty=0.49899999999959521 peak=0.500000 src_span=10.000000 duty_span=0.49899999999959521 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_44100_440_b50_d0           duty=0 peak=0.500000 src_span=10.000000 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_44100_440_b50_d50         duty=0.49899999999959521 peak=0.500000 src_span=10.000000 duty_span=0.49899999999959521 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_44100_880_b50_d0           duty=0 peak=0.500000 src_span=10.000000 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_44100_880_b50_d50         duty=0.49899999999959521 peak=0.500000 src_span=10.000000 duty_span=0.49899999999959521 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_96000_220_b50_d0           duty=0 peak=0.500000 src_span=9.999583 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_96000_220_b50_d50         duty=0.49897916666666664 peak=0.500000 src_span=9.999583 duty_span=0.49897916666666664 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_96000_440_b50_d0           duty=0 peak=0.500000 src_span=9.999583 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_96000_440_b50_d50         duty=0.49897916666666664 peak=0.500000 src_span=9.999583 duty_span=0.49897916666666664 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_96000_880_b50_d0           duty=0 peak=0.500000 src_span=9.999583 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_96000_880_b50_d50         duty=0.49897916666666664 peak=0.500000 src_span=9.999583 duty_span=0.49897916666666664 hook_diff=0 companion_diff=0 src_diff=0
+MUTANT degen_pristine_exit=0 (must be 0: otherwise the premise bit below is a permanently-firing alarm rather than a check)
+PRB-DEGEN-PLAN plan_rev=1 cells=12
+PRB-DEGEN dynroute_const_duty_44100_220_b50_d0           duty=0.49899999999919042 peak=0.500000 src_span=10.000000 duty_span=0.49899999999919042 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_44100_220_b50_d50         duty=0.49899999999919042 peak=0.500000 src_span=10.000000 duty_span=0.49899999999919042 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_44100_440_b50_d0           duty=0.49899999999919042 peak=0.500000 src_span=10.000000 duty_span=0.49899999999919042 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_44100_440_b50_d50         duty=0.49899999999919042 peak=0.500000 src_span=10.000000 duty_span=0.49899999999919042 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_44100_880_b50_d0           duty=0.49899999999919042 peak=0.500000 src_span=10.000000 duty_span=0.49899999999919042 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_44100_880_b50_d50         duty=0.49899999999919042 peak=0.500000 src_span=10.000000 duty_span=0.49899999999919042 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_96000_220_b50_d0           duty=0.49895833333333328 peak=0.500000 src_span=9.999583 duty_span=0.49895833333333328 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_96000_220_b50_d50         duty=0.49895833333333328 peak=0.500000 src_span=9.999583 duty_span=0.49895833333333328 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_96000_440_b50_d0           duty=0.49895833333333328 peak=0.500000 src_span=9.999583 duty_span=0.49895833333333328 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_96000_440_b50_d50         duty=0.49895833333333328 peak=0.500000 src_span=9.999583 duty_span=0.49895833333333328 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_const_duty_96000_880_b50_d0           duty=0.49895833333333328 peak=0.500000 src_span=9.999583 duty_span=0.49895833333333328 hook_diff=0 companion_diff=0 src_diff=0
+PRB-DEGEN dynroute_moving_duty_96000_880_b50_d50         duty=0.49895833333333328 peak=0.500000 src_span=9.999583 duty_span=0.49895833333333328 hook_diff=0 companion_diff=0 src_diff=0
+MUTANT degen_dispatch_exit=64 stimulus_bit=False premise_bit=True fatal_premise=6 fatal_stimulus=0 measured_src_span=10,10,10,9.99958,9.99958,9.99958
+MUTANT plan_sha probe_A=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811 probe_B=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811
+MUTANT analysed label=probe_A report=/tmp/prb-mut/probe_A_report.txt sha256=15bc6c94aab5d5b226d00ee6a6e3afcfee9bec2a2f80f246743b1a41e6e5272e
+MUTANT analysed label=probe_B report=/tmp/prb-mut/probe_B_report.txt sha256=82ac1c7fd18251201effba2f6151cdc14698ea1f464170fe8250ca82709cb6c2
+MUTANT orientation=acceptance cand=probe_A neut=probe_B exit=1 verdict=RED refusals=0 fail=PRB-FAIL-IMPROVEMENT=3
+PRB GATE tool=gh19_prb_dynpwm_acceptance.py
+PRB INPUT criteria sha256=06579ae8008131588a0d00e31b93384b23065d13b3d7fa7aa21557b5248e0c02 path=report/gh19-prb-dynpwm/acceptance_criteria.tsv
+PRB INPUT plan sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811 path=/tmp/prb-mut/arm_probe_A/gh19_s3_plan.tsv
+PRB INPUT cand_report sha256=15bc6c94aab5d5b226d00ee6a6e3afcfee9bec2a2f80f246743b1a41e6e5272e path=/tmp/prb-mut/probe_A_report.txt
+PRB INPUT neut_report sha256=82ac1c7fd18251201effba2f6151cdc14698ea1f464170fe8250ca82709cb6c2 path=/tmp/prb-mut/probe_B_report.txt
+PRB INPUT degen_static_manifest sha256=181dd75c7f3c6afb98f9ecc18eb920130b0c0ed43c7eae68f8bda05e2b1b8f92 path=/tmp/prb-mut/arm_probe_A/gh19_s3_scenarios.tsv
+PRB INPUT degen_dyn_manifest sha256=c380467a6e3c6ba7a390baf2955f57306b03e7fecef6378974b385b4c8cdf911 path=/tmp/prb-mut/arm_degen_A2/gh19_prb_degen_scenarios.tsv
+PRB GATE criteria=acceptance_criteria.tsv cells=56 pairs=6 plan_dynamic=56
+PRB REPORT refconv_rms_db=-37.1800 at vco_b_dynpwm_44100_880_sq_r20_b50_d50
+PRB REPORT refconv_peak=0.0933 at vco_a_dynpwm_96000_440_tri_r20_b25_d100
+PRB REPORT res_effbd_db=-38.7900 at vco_a_dynpwm_96000_880_sq_r2_b50_d50
+PRB REPORT res_effbd2L_db=-40.8300 at vco_a_dynpwm_96000_880_sq_r2_b50_d50
+PRB REPORT report_floor_margin_db=7.2400 at vco_a_dynpwm_96000_440_sq_r2_b50_d50 (computed res_db - refconv_rms_db)
+PRB REPORT report_floor_margin_band_db=4.9900 at vco_a_dynpwm_96000_880_sq_r2_b50_d50 (companion axis, not judged)
+PRB REPORT refused_cells=0 (cells refused on the floor; 56 were scanned)
+PRB-FAIL-IMPROVEMENT vco_a_dynpwm_44100_220_sq_r20_b50_d50: corrected -30.89 dB vs neutralised -25.10 dB -> improvement 5.79 dB, below the pinned 6.0 dB
+PRB-FAIL-IMPROVEMENT vco_a_dynpwm_44100_220_sq_r20_b25_d100: corrected -30.16 dB vs neutralised -25.46 dB -> improvement 4.70 dB, below the pinned 6.0 dB
+PRB-FAIL-IMPROVEMENT vco_b_dynpwm_44100_220_sq_r20_b50_d50: corrected -30.89 dB vs neutralised -25.10 dB -> improvement 5.79 dB, below the pinned 6.0 dB
+PRB REPORT improvement_min=4.7000 dB at vco_a_dynpwm_44100_220_sq_r20_b25_d100 (corrected -30.1600 vs neutralised -25.4600, pinned 6.0)
+PRB REPORT max_abs_fitted_scale_delta=0.007 (reported, not gated)
+PRB REPORT degen_moving_duty_measured_delta=1 (largest separation of any moving-duty pair from its static twin, in product units)
+PRB REPORT refconv_rms_db=-37.1800
+PRB REPORT refconv_peak=0.0933
+PRB REPORT res_effbd_db=-38.7900
+PRB REPORT res_effbd2L_db=-40.8300
+PRB REPORT report_floor_margin_db=7.2400
+PRB REPORT report_floor_margin_band_db=4.9900
+PRB REPORT margin_source_column=computed:res_db-refconv_rms_db
+PRB REPORT worst_floor_margin_db=vco_a_dynpwm_96000_440_sq_r2_b50_d50=7.2400
+PRB REPORT refused_cells=0
+PRB REPORT improvement_corrected_db=-30.1600
+PRB REPORT improvement_neutralized_db=-25.4600
+PRB REPORT degen_moving_duty_measured_delta=1
+PRB REPORT max_abs_fitted_scale_delta=0.007
+PRB COUNT FAIL PRB-FAIL-IMPROVEMENT n=3
+PRB GATE verdict=RED refusals=0 failures=3
+MUTANT orientation=mutant     cand=probe_B neut=probe_A exit=1 verdict=RED refusals=0 fail=PRB-FAIL-IMPROVEMENT=56
+PRB GATE tool=gh19_prb_dynpwm_acceptance.py
+PRB INPUT criteria sha256=06579ae8008131588a0d00e31b93384b23065d13b3d7fa7aa21557b5248e0c02 path=report/gh19-prb-dynpwm/acceptance_criteria.tsv
+PRB INPUT plan sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811 path=/tmp/prb-mut/arm_probe_B/gh19_s3_plan.tsv
+PRB INPUT cand_report sha256=82ac1c7fd18251201effba2f6151cdc14698ea1f464170fe8250ca82709cb6c2 path=/tmp/prb-mut/probe_B_report.txt
+PRB INPUT neut_report sha256=15bc6c94aab5d5b226d00ee6a6e3afcfee9bec2a2f80f246743b1a41e6e5272e path=/tmp/prb-mut/probe_A_report.txt
+PRB INPUT degen_static_manifest sha256=181dd75c7f3c6afb98f9ecc18eb920130b0c0ed43c7eae68f8bda05e2b1b8f92 path=/tmp/prb-mut/arm_probe_A/gh19_s3_scenarios.tsv
+PRB INPUT degen_dyn_manifest sha256=c380467a6e3c6ba7a390baf2955f57306b03e7fecef6378974b385b4c8cdf911 path=/tmp/prb-mut/arm_degen_A2/gh19_prb_degen_scenarios.tsv
+PRB GATE criteria=acceptance_criteria.tsv cells=56 pairs=6 plan_dynamic=56
+PRB REPORT refconv_rms_db=-37.1800 at vco_b_dynpwm_44100_880_sq_r20_b50_d50
+PRB REPORT refconv_peak=0.0934 at vco_a_dynpwm_96000_440_tri_r20_b25_d100
+PRB REPORT res_effbd_db=-27.4200 at vco_a_dynpwm_96000_220_tri_r2_b50_d50
+PRB REPORT res_effbd2L_db=-27.4100 at vco_a_dynpwm_96000_220_tri_r2_b50_d50
+PRB REPORT report_floor_margin_db=17.6300 at vco_a_dynpwm_44100_220_sq_r20_b25_d100 (computed res_db - refconv_rms_db)
+PRB REPORT report_floor_margin_band_db=17.5300 at vco_a_dynpwm_44100_220_sq_r20_b25_d100 (companion axis, not judged)
+PRB REPORT refused_cells=0 (cells refused on the floor; 56 were scanned)
+PRB-FAIL-IMPROVEMENT vco_a_dynpwm_44100_220_tri_r2_b50_d50: corrected -23.72 dB vs neutralised -31.20 dB -> improvement -7.48 dB, below the pinned 6.0 dB
+PRB-FAIL-IMPROVEMENT vco_a_dynpwm_44100_440_tri_r2_b50_d50: corrected -20.83 dB vs neutralised -28.21 dB -> improvement -7.38 dB, below the pinned 6.0 dB
+PRB-FAIL-IMPROVEMENT vco_a_dynpwm_44100_880_tri_r2_b50_d50: corrected -15.90 dB vs neutralised -24.46 dB -> improvement -8.56 dB, below the pinned 6.0 dB
+PRB-FAIL-IMPROVEMENT vco_a_dynpwm_96000_220_tri_r2_b50_d50: corrected -27.26 dB vs neutralised -34.62 dB -> improvement -7.36 dB, below the pinned 6.0 dB
+PRB-FAIL-IMPROVEMENT vco_a_dynpwm_96000_440_tri_r2_b50_d50: corrected -24.13 dB vs neutralised -31.51 dB -> improvement -7.38 dB, below the pinned 6.0 dB
+PRB-FAIL-IMPROVEMENT vco_a_dynpwm_96000_880_tri_r2_b50_d50: corrected -21.11 dB vs neutralised -28.58 dB -> improvement -7.47 dB, below the pinned 6.0 dB
+PRB-FAIL-IMPROVEMENT ... further examples suppressed; the counts line carries the total
+PRB REPORT improvement_min=-12.6100 dB at vco_a_dynpwm_96000_880_sq_r2_b50_d50 (corrected -23.6800 vs neutralised -36.2900, pinned 6.0)
+PRB REPORT max_abs_fitted_scale_delta=0.007 (reported, not gated)
+PRB REPORT degen_moving_duty_measured_delta=1 (largest separation of any moving-duty pair from its static twin, in product units)
+PRB REPORT refconv_rms_db=-37.1800
+PRB REPORT refconv_peak=0.0934
+PRB REPORT res_effbd_db=-27.4200
+PRB REPORT res_effbd2L_db=-27.4100
+PRB REPORT report_floor_margin_db=17.6300
+PRB REPORT report_floor_margin_band_db=17.5300
+PRB REPORT margin_source_column=computed:res_db-refconv_rms_db
+PRB REPORT worst_floor_margin_db=vco_a_dynpwm_44100_220_sq_r20_b25_d100=17.6300
+PRB REPORT refused_cells=0
+PRB REPORT improvement_corrected_db=-23.6800
+PRB REPORT improvement_neutralized_db=-36.2900
+PRB REPORT degen_moving_duty_measured_delta=1
+PRB REPORT max_abs_fitted_scale_delta=0.007
+PRB COUNT FAIL PRB-FAIL-IMPROVEMENT n=56
+PRB GATE verdict=RED refusals=0 failures=56
+
+PRB-MUTANT FAILED:
+  - the corrected arm did not PASS in the acceptance orientation (exit=1, verdict=RED): a red mutant would then only prove the gate is broken
+MUTANT-EXIT=1

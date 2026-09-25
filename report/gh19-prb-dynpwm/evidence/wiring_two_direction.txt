@@ -1,0 +1,70 @@
+THE CODE-WIRING (④) TWO-DIRECTION ACCEPTANCE, both directions now RUN end-to-end.
+
+Question being answered. The wiring derives a code suffix from the criteria KEY NAME and maps it at the
+two bucket-recording sites, so that the criteria -- not the tool -- owns the printed code vocabulary.
+"Output unchanged" is necessary and NOT sufficient: a gate that builds the map and never consults it
+prints exactly the same bytes. So identity alone cannot tell a live read from a dead one.
+
+--------------------------------------------------------------------------------
+(a) IDENTITY direction -- AT THE PINNED CRITERIA, no sandbox
+--------------------------------------------------------------------------------
+    gate under test A: tools/gh19_prb_dynpwm_acceptance.py  sha256 b48e32a00b69666f...
+    gate under test B: the pre-wiring build of the same tool    sha256 10a6405707ea9a23...
+    criteria          : report/gh19-prb-dynpwm/acceptance_criteria.tsv
+                        sha256 06579ae8008131588a0d00e31b93384b23065d13b3d7fa7aa21557b5248e0c02
+    artifacts         : /tmp/prb-pipe/{cand,neut,degen} + their two analyzer reports
+
+    both exit 1 (RED); diff of the two full transcripts is EMPTY;
+    transcript sha256 f88a49d9682c07fae654ed98047de32a3ad74f5283811c32fcba685a0bc99c0d (both).
+
+    ANTI-DEGENERACY. Two byte-identical transcripts are worthless if both are the same *error*. These
+    are a real verdict table: 36 lines, 23 `PRB REPORT` lines, `cells=56 pairs=6 plan_dynamic=56`,
+    `PRB COUNT FAIL PRB-FAIL-IMPROVEMENT n=3`, `PRB GATE verdict=RED refusals=0 failures=3`.
+    (An earlier attempt in this slice compared four transcripts that were all one setup error and
+    printed `IDENTITY ... True` -- a degenerate pass. That run is superseded by this one.)
+
+--------------------------------------------------------------------------------
+(b) LIVENESS direction -- end-to-end, on a SANDBOX criteria
+--------------------------------------------------------------------------------
+    Run through the real control machinery:
+        tools/gh19_prb_dynpwm_gate_negcontrol.py --only criteria_code_key_is_read
+    which renames `code_cellset` to the sentinel LIVENESS-SENTINEL-7Q4Z and, in the same edit, drops
+    the degen_pair rows to force the gate to EMIT a CELLSET refusal.
+
+    shipped    gate: CONTROL pristine exit=0 PASS
+                     CONTROL criteria_code_key_is_read exit=4 expected=4
+                             code=PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z  HIT
+                     NEGCTL-PRB verdict=ALL-HIT          (runner exit 0)
+    pre-wiring gate: CONTROL pristine exit=0 PASS
+                     CONTROL criteria_code_key_is_read exit=4 expected=4
+                             code=PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z  MISS
+                             (ALSO FIRED PRB-REFUSE-CELLSET)
+                             (ABSENT FROM detail-line,counts-line)
+                     NEGCTL-PRB verdict=INCOMPLETE       (runner exit 1)
+
+    So the wired gate prints the CRITERIA's string on BOTH surfaces and drops the tool's own literal;
+    the pre-wiring build does the exact opposite. The pre-wiring build is the negative control that
+    shows this control CAN fail -- without it, "it HIT" would be untestable.
+
+    PER-CODE breakdown (all nine `code_*` rows): evidence/wire_per_key.txt,
+    `ALL NINE LIVE ON BOTH SURFACES: True`. That instrument is unit-level (it calls the gate's own
+    parser and refuse() directly); (b) above is the end-to-end counterpart.
+
+    WHY A SANDBOX CRITERIA. The control runner runs `pristine` FIRST and declares the whole suite
+    INVALID unless the unmutated artifacts PASS. At the pinned criteria the pristine run is RED (see
+    acceptance_orientation_blocker.txt), so the suite aborts before reaching this control and the
+    liveness direction cannot be exercised at the pinned value at all. The sandbox copy differs from
+    the pinned criteria on exactly ONE line (`improvement_min_db` 6.0 -> 4.0):
+        sha256 210e339bcd05ec2acd205d20343330c3d45525ff677770d115bcb14825e4a17d
+    `diff` against the pinned file is that one line and nothing else, and both files are 395 lines.
+    The wiring's mechanism does not depend on that number: the map is keyed by the criterion's KEY
+    NAME, and the liveness control works by renaming a code's VALUE. Stated anyway, because a reader
+    is entitled to know the pin under which the evidence was produced.
+
+    NOT ESTABLISHED: the other controls. With `pristine` passing, the suite still cannot reach this
+    control in a full run: its four mutation controls all MISS (CRASHED) because the gate crashes at
+    `criteria_drop_criterion` -- see gate_crash_dropped_criterion.txt -- and the run then dies PREPARING
+    the fifth one (`control setup: the criteria do not carry six degen_pair rows`) because the sandbox
+    does not roll back its in-memory text cache -- see acceptance_orientation_blocker.txt, BLOCKER 3.
+    So 5 of 15 controls are reached, `--only` is the only way to exercise this one, and "all 15 controls
+    hit" is NOT claimed and is not true.

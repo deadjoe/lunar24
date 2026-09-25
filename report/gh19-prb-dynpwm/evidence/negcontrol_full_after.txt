@@ -1,0 +1,20 @@
+NEGCTL-PRB victims static=vco_a_pulse_44100_220_pw50 const=dynroute_const_duty_44100_220_b50_d0 moving=dynroute_moving_duty_44100_220_b50_d50 victim_cell=vco_a_dynpwm_44100_220_tri_r2_b50_d50
+CONTROL pristine                       exit=0 expected=0  PASS
+NEGCTL-PRB skipped=(none)
+CONTROL criteria_drop_criterion        exit=4 expected=4 code=PRB-REFUSE-CRITERIA        HIT
+CONTROL criteria_drop_negcontrol_row   exit=4 expected=4 code=PRB-REFUSE-CRITERIA        HIT
+CONTROL criteria_unknown_key           exit=4 expected=4 code=PRB-REFUSE-CRITERIA        HIT
+CONTROL criteria_drop_degen_pair       exit=4 expected=4 code=PRB-REFUSE-CELLSET         HIT
+CONTROL criteria_code_key_is_read      exit=4 expected=4 code=PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z HIT
+CONTROL plan_truncated_row             exit=4 expected=4 code=PRB-REFUSE-PLAN            HIT
+CONTROL plan_drops_dynamic_cell        exit=4 expected=4 code=PRB-REFUSE-CELLSET         HIT
+CONTROL report_exit_code_nonzero       exit=4 expected=4 code=PRB-REFUSE-MATRIX-EXIT     HIT
+CONTROL report_column_dropped          exit=4 expected=4 code=PRB-REFUSE-MATRIX-SHAPE    HIT
+CONTROL report_cell_row_dropped        exit=4 expected=4 code=PRB-REFUSE-MATRIX-SHAPE    HIT
+CONTROL report_cell_id_renamed         exit=4 expected=4 code=PRB-REFUSE-CELLSET         HIT
+CONTROL trace_truncated                exit=4 expected=4 code=PRB-REFUSE-TRACE           HIT
+CONTROL scenario_row_dropped           exit=4 expected=4 code=PRB-REFUSE-CELLSET         HIT
+CONTROL degen_identity_one_ulp         exit=1 expected=1 code=PRB-FAIL-DEGEN-IDENTITY    HIT
+CONTROL degen_nonvacuous_collapse      exit=1 expected=1 code=PRB-FAIL-DEGEN-NONVACUOUS  HIT
+NEGCTL-PRB ok=15 bad=0 controls=15
+NEGCTL-PRB verdict=ALL-HIT

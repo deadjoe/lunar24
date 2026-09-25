@@ -1,0 +1,25 @@
+NEGCTL-PRB victims static=vco_a_pulse_44100_220_pw50 const=dynroute_const_duty_44100_220_b50_d0 moving=dynroute_moving_duty_44100_220_b50_d50 victim_cell=vco_a_dynpwm_44100_220_tri_r2_b50_d50
+CONTROL pristine                       exit=0 expected=0  PASS
+NEGCTL-PRB skipped=(none)
+CONTROL criteria_drop_criterion        exit=1 expected=4 code=PRB-REFUSE-CRITERIA        MISS  (CRASHED)
+         the gate exited 1 where 4 was required. Its verdict lines:
+         | PRB-REFUSE-CRITERIA criterion/numeric keys missing=floor_margin_min_db unexpected=-
+CONTROL criteria_drop_negcontrol_row   exit=1 expected=4 code=PRB-REFUSE-CRITERIA        MISS  (CRASHED)
+         the gate exited 1 where 4 was required. Its verdict lines:
+         | PRB-REFUSE-CRITERIA criterion/numeric keys missing=floor_margin_min_db unexpected=-
+         | PRB-REFUSE-CRITERIA criterion/string keys missing=negcontrol_degen_identity_tamper unexpected=-
+         | PRB-REFUSE-CRITERIA the identity's falsifiability control names no tamper mechanism, so nothing would falsify the identity (criteria key 'negcontrol_degen_identity_tamper')
+CONTROL criteria_unknown_key           exit=1 expected=4 code=PRB-REFUSE-CRITERIA        MISS  (CRASHED)
+         the gate exited 1 where 4 was required. Its verdict lines:
+         | PRB-REFUSE-CRITERIA /tmp/prb-ab/criteria_sandbox_pin4.tsv:394: unknown criterion key 'improvement_min_db_invented'
+         | PRB-REFUSE-CRITERIA criterion/numeric keys missing=floor_margin_min_db unexpected=-
+         | PRB-REFUSE-CRITERIA criterion/string keys missing=negcontrol_degen_identity_tamper unexpected=-
+         | PRB-REFUSE-CRITERIA the identity's falsifiability control names no tamper mechanism, so nothing would falsify the identity (criteria key 'negcontrol_degen_identity_tamper')
+CONTROL criteria_drop_degen_pair       exit=1 expected=4 code=PRB-REFUSE-CELLSET         MISS  (CRASHED)
+         the gate exited 1 where 4 was required. Its verdict lines:
+         | PRB-REFUSE-CRITERIA /tmp/prb-ab/criteria_sandbox_pin4.tsv:388: unknown criterion key 'improvement_min_db_invented'
+         | PRB-REFUSE-CRITERIA criterion/numeric keys missing=floor_margin_min_db unexpected=-
+         | PRB-REFUSE-CRITERIA criterion/string keys missing=negcontrol_degen_identity_tamper unexpected=-
+         | PRB-REFUSE-CELLSET axis degen_pair_count=6 but there are 0 degen_pair rows
+         | PRB-REFUSE-CRITERIA the identity's falsifiability control names no tamper mechanism, so nothing would falsify the identity (criteria key 'negcontrol_degen_identity_tamper')
+control setup: the criteria do not carry six degen_pair rows
