@@ -1,0 +1,111 @@
+# S6 mutant-matrix acceptance run -- RAW STDOUT, verbatim (no editing)
+
+This is the unedited stdout of the canonical invocation registered as the CMake test
+`gh19_s6_saw_pipeline_mutant` (see CMakeLists.txt), run from the S6 worktree:
+
+  tools/run_gh19_s6_saw_mutants.py \
+    --compiler /usr/bin/c++ \
+    --repo-root <worktree> \
+    --analyzer <worktree>/tools/gh19_s6_saw_analyze.py \
+    --gate     <worktree>/tools/gh19_s6_saw_acceptance.py \
+    --criteria <worktree>/report/gh19-s6-saw-aa/acceptance_criteria.tsv \
+    --baseline-arm <worktree>/report/gh19-s6-saw-aa/baseline_arm \
+    --base-report  <worktree>/report/gh19-s6-saw-aa/base_report.txt
+
+NOTE ON `--out`: it is deliberately NOT passed here, so the runner used a `mkdtemp`
+scratch dir and the arm paths printed below are ephemeral. The verdict lines are not:
+`ARM <tag>: rc=… verdict=… fired=…`, the `WIRING-CONTROL` pair and the final
+`S6-MUTANT PASS` line carry no scratch path. The launcher recorded the runner's own
+exit status, reproduced as the `EXIT=` line appended after the stdout.
+
+Three things a reader should know before drawing conclusions from it.
+
+1. The arms run concurrently, so the ORDER of the blocks below is nondeterministic.
+   Two independent full runs of the SAME revision are identical as multisets of lines.
+   Two runs of DIFFERENT revisions are not, and should not be: this revision added the
+   `NEUTRAL-ARM` line, the `WIRING-CONTROL` pair, one extra `sine_bit_diff` row (for
+   `unscaled-kernel`), and reworded the final PASS line. Compare content, not line order.
+
+2. `phase-drift`, `dc-offset` and `invsaw-sign-flip` spend several lines on their
+   `ANALYZE-FAILED` blocks whose cell rows are the tail of the analyzer's own stdout.
+   Those rows are the instrument reporting the cells it refused; they are not a
+   measurement of the DSP, and the `*** INSTRUMENT` line above each block says so.
+
+3. Every gate invocation below is given `--neutral-arm` as well as `--cand-arm`: the
+   equality criterion compares the arm under test against the SAME BUILD with the two
+   correction terms neutralised, not against the committed pre-S6 snapshot. Arm B is
+   built once from the PRODUCT header (not from a mutant's shadow) and its identity is
+   printed as the `NEUTRAL-ARM` line: `plan_sha256=4f8c4691…` is the pinned stimulus
+   plan, i.e. the plan every other arm is judged against too.
+
+NEUTRAL-ARM /var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s6mut-us84qild/arm_neutral shadow_tree_sha256=62a728b3fcdbc96761aef8afebc88830518c9c7c4a99453c28de3307cb591447 neutral_sha256=7fe046363f986a8f65073f5fe84c6236f81df9b0513337e0c6adf719f6d17a01 plan_sha256=4f8c4691afc0ff05f1e7dd57651835391ba585c2c0ec6f4aefb612fc019ea7ca
+ARM sine-node-leak: rc=1 verdict=RED fired=EQUALITY-SINE
+ARM unscaled-kernel: rc=1 verdict=RED fired=IMPROVE-BAND,IMPROVE-FULL
+ARM invsaw-sign-flip: ANALYZE-FAILED rc=1
+999999986912064
+vco_b_sawmixhi_96000_5000_m6250 96000 5000 0.0625 0 0.45419722197331514 0.15641386441703528 0.001208496046465253 -9.8574775141473285 -16.069831759083538 -9.8598367990668336 9 0.24999999999149625
+vco_b_sawmixhi_44100_3520_m25000 44100 3520 0.25 0 0.53738972808213403 0.32489785410404115 -4.1645284336772916e-06 -4.6988698783650946 -10.497782409803389 -4.6967541846405467 6 0.99999999947400331
+vco_b_sawmixhi_44100_5000_m25000 44100 5000 0.25 0 0.55262329223789464 0.33158899170028416 -0.0022006280689085478 -3.1939915762347533 -4.6404752560129827 -3.1911931681916688 4 0.99999999850066845
+vco_b_sawmixhi_96000_3520_m25000 96000 3520 0.25 0 0.51618242113237989 0.31965187501622377 0.00061667702186558252 -7.7365372549564091 -16.059985484954701 -7.7330443140453164 13 0.99999999986178789
+vco_b_sawmixhi_96000_5000_m25000 96000 5000 0.25 0 0.52135712985712823 0.32107850292964774 0.00450439434195704 -5.9824496170617092 -12.619012794032997 -5.9849678492748746 9 0.99999999999081413
+vco_b_sawmixhi_44100_3520_m31250 44100 3520 0.3125 1 0.52176166105711863 0.36865927108064961 1.8151389597736958e-05 -7.1754029200090041 -13.934527548787655 -7.1735114112745926 6 0.74999999963603958
+vco_b_sawmixhi_44100_5000_m31250 44100 5000 0.3125 1 0.53125872597513624 0.3736819400168605 -0.0016333425313166932 -5.6765981213428693 -7.9675868418352742 -5.6740630141130488 4 0.74999999899541714
+vco_b_sawmixhi_96000_3520_m31250 96000 3520 0.3125 1 0.50918372003210699 0.36470529956066539 0.00041529237754270819 -10.258003457705238 -19.636207249286034 -10.255092844919261 13 0.7499999999001804
+vco_b_sawmixhi_96000_5000_m31250 96000 5000 0.3125 1 0.51224329588410189 0.36577937457650461 0.0033469414603016284 -8.5086970210552728 -16.15317124707266 -8.5113846422217581 9 0.74999999999346778
+-- END MATRIX static declared=168 emitted=168 skipped=0 capped=0
+*** INSTRUMENT self_check_rc=0 align_bad=8: the instrument or the rendered arm failed its own gate, so no number below it is a statement about the DSP.
+
+ARM output-gain: rc=1 verdict=RED fired=EQUALITY-SINE,GUARD-AMP
+ARM reference: rc=0 verdict=PASS fired=-
+ARM dc-offset: ANALYZE-FAILED rc=1
+.23266666673458281
+vco_b_sawmixhi_96000_5000_m6250 96000 5000 0.0625 0 0.47658531719862562 0.15775602785533407 0.0010549316406505088 -19.665380209389639 -28.002181164697472 -19.662839573122522 9 0.22495833348161887
+vco_b_sawmixhi_44100_3520_m25000 44100 3520 0.25 0 0.46263632791496223 0.3116589711751282 0.0010554836746476291 -17.753821033639053 -24.686703590556704 -17.7535697099073 6 0.42436687257607308
+vco_b_sawmixhi_44100_5000_m25000 44100 5000 0.25 0 0.44737672347736962 0.30508183609086559 0.0010332579320357523 -16.536553777943222 -22.951924594103247 -16.534202211007418 4 0.39402675736048415
+vco_b_sawmixhi_96000_3520_m25000 96000 3520 0.25 0 0.48353735265731074 0.31685737290295796 0.00090090110072261413 -21.136613403244127 -30.609187831414847 -21.135617142893043 13 0.46433333353834405
+vco_b_sawmixhi_96000_5000_m25000 96000 5000 0.25 0 0.47658312830257155 0.31551055024310259 0.00089013671869851425 -19.682437676965474 -28.001139009356098 -19.679843830017969 9 0.44891666674046837
+vco_b_sawmixhi_44100_3520_m31250 44100 3520 0.3125 1 0.478252644083274 0.35873019810313611 0.0010628875419088045 -20.224020994040583 -30.113956853687242 -20.224135866015601 6 0.37624583165840941
+vco_b_sawmixhi_44100_5000_m31250 44100 5000 0.3125 1 0.46874002395299486 0.35380915116586797 0.0010420719693916239 -19.001836042217345 -28.495608350504526 -18.999969921553571 4 0.37286511788653853
+vco_b_sawmixhi_96000_3520_m31250 96000 3520 0.3125 1 0.49065672211198219 0.3626100288718852 0.00087846043668560398 -23.650006393787901 -35.869181245737934 -23.649656373322621 13 0.37712897461831429
+vco_b_sawmixhi_96000_5000_m31250 96000 5000 0.3125 1 0.48658309213178969 0.36163679716870673 0.000886248242857841 -22.185006633091962 -33.320458770362727 -22.182644811154937 9 0.37711743316335888
+-- END MATRIX static declared=168 emitted=168 skipped=0 capped=0
+*** INSTRUMENT self_check_rc=0 align_bad=168: the instrument or the rendered arm failed its own gate, so no number below it is a statement about the DSP.
+
+ARM phase-drift: ANALYZE-FAILED rc=1
+000_5000_m6250 96000 5000 0.0625 0 -0.0022015299186017114 0.00057559523975243842 -1.6874425555118828e-05 46.738764189348423 0.08138091012333673 46.741098963303074 9 0.2241349481132488
+vco_b_sawmixhi_44100_3520_m25000 44100 3520 0.25 0 0.00074751368217464077 0.0018103132787595023 2.735901515593153e-05 55.882674825495826 56.31720995098506 55.882931988095372 6 0.42189922313166306
+vco_b_sawmixhi_44100_5000_m25000 44100 5000 0.25 0 -0.00085251176327777803 0.0011874599579704942 -2.5754930708213187e-05 54.461729838853337 1.9124727478647667 54.462149403055193 4 0.39103876846519148
+vco_b_sawmixhi_96000_3520_m25000 96000 3520 0.25 0 0.00066692080850687505 0.00035739943137163134 -8.5476113138826994e-05 57.231139217436677 57.457933969167726 57.231077853403775 13 0.46329937945065375
+vco_b_sawmixhi_96000_5000_m25000 96000 5000 0.25 0 -0.0022015299186017158 0.0011511904795048768 3.3748851110237778e-05 46.738764189348423 0.081380910123340505 46.74109896330306 9 0.44826989622649754
+vco_b_sawmixhi_44100_3520_m31250 44100 3520 0.3125 1 0.0011348690320848033 0.0020800260455036651 2.3669968161390311e-05 52.523095618660363 52.756390693417224 52.523002741764238 6 0.37514778009775263
+vco_b_sawmixhi_44100_5000_m31250 44100 5000 0.3125 1 -0.00096604274164267031 0.00137483918287987 -3.3638668080829995e-05 53.754042880202533 0.74509894506725427 53.754416511628051 4 0.37130934096917817
+vco_b_sawmixhi_96000_3520_m31250 96000 3520 0.3125 1 0.000609375817118658 0.00039307983145666161 -0.00010761986037151005 58.131407005016563 58.255476914895027 58.131335107443213 13 0.37613019769714162
+vco_b_sawmixhi_96000_5000_m31250 96000 5000 0.3125 1 -0.00197227368128376 0.0013377494742725256 4.4758145326956124e-05 47.860502619803285 0.088685970887465743 47.862321791627153 9 0.37611002244765751
+-- END MATRIX static declared=168 emitted=168 skipped=0 capped=0
+*** INSTRUMENT self_check_rc=0 align_bad=160: the instrument or the rendered arm failed its own gate, so no number below it is a statement about the DSP.
+
+
+mutant               rc      verdict   fired criteria
+unscaled-kernel      1       RED       IMPROVE-BAND,IMPROVE-FULL
+invsaw-sign-flip     -       ANALYZE-REFUSED align_bad=8 of 168 [antiphase]
+sine-node-leak       1       RED       EQUALITY-SINE
+output-gain          1       RED       EQUALITY-SINE,GUARD-AMP
+dc-offset            -       ANALYZE-REFUSED align_bad=168 of 168 [every]
+phase-drift          -       ANALYZE-REFUSED align_bad=160 of 168 [all-but-antiphase]
+unscaled-kernel      midpoint=0 (reference 0) sine_bit_diff=0
+sine-node-leak       midpoint=0 (reference 0) sine_bit_diff=320
+output-gain          midpoint=0 (reference 0) sine_bit_diff=16384
+
+REACHABILITY (GATE-ONLY SYNTHETIC INPUT; NOT a product negative control; NOT an arm of the mutant matrix): GUARD-DC -- every cell's dc column shifted by +0.003 (the limit is 0.0015)
+tamper:GUARD-DC      1       RED       GUARD-DC
+REACHABILITY (GATE-ONLY SYNTHETIC INPUT; NOT a product negative control; NOT an arm of the mutant matrix): EQUALITY-ANTIPHASE -- the 8 anti-phase-midpoint cells' max_abs_out set to 0.001 (the criterion is exactly 0)
+tamper:EQUALITY-ANTIPHASE 1       RED       EQUALITY-ANTIPHASE
+REACHABILITY (GATE-ONLY SYNTHETIC INPUT; NOT a product negative control; NOT an arm of the mutant matrix): GUARD-FREQ -- all 168 scenario rows' f0_meas_hz shifted by 10.0 x the gate's own bound sr/win (smallest bound applied 2.69165 Hz)
+tamper:GUARD-FREQ    1       RED       GUARD-FREQ
+
+WIRING-CONTROL pristine rc=0   verdict=PASS    fired=-
+WIRING-CONTROL planted  rc=1   verdict=RED     fired=S6-WIRING
+WIRING-CONTROL        FAIL-S6-WIRING core/include/lunar24/core/vco.h: declared 1 code hit(s) of invSawWeight, found 2 at lines 382,590
+
+S6-MUTANT PASS: the reference went through the gate and was ACCEPTED; each of the 6 defects was rejected by the layer named for it -- 3 by a verdict on the gate and 3 by the alignment license, which answers first -- the 3 criteria no product mutant can reach were exercised directly on the gate and fired under their own names, and the wiring declaration was exercised by planting one extra caller into a copy of the scanned tree and observing S6-WIRING fire (and not fire on the same tree unplanted, 2 of 2 halves). The anti-phase midpoint did NOT fire on the defect it cannot see.
+EXIT=0

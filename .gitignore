@@ -66,3 +66,10 @@ design/reference/*.pdf
 # It was accidentally swept into c435c2e by a `git add -A`; untracked here so the review diff
 # carries only source + tests + reports.
 /build-release/
+
+# task#120 (GH#19 S6): the S6 build tree, a regenerable artifact like the ones above. Named
+# per-task so the S6 slice can be built without disturbing the S3 tree.
+/build-120/
+# task#120 (GH#19 S6): the second S6 tree, built with -ffp-contract=fast to reproduce the CI
+# compiler's arm64 side of the libm/FMA experiment in the task report. Same class of artifact.
+/build-120-ffp/

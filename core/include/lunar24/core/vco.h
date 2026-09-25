@@ -68,6 +68,7 @@
 #include <cstdint>
 
 #include "lunar24/core/blamp_kernel.h"
+#include "lunar24/core/polyblep_kernel.h"  // polyblepResidual, read DIRECTLY by sawJumpResidual_
 #include "lunar24/core/pulse_blep_kernel.h"
 #include "lunar24/core/vco_wave_map.h"
 
@@ -299,6 +300,20 @@ class Vco {
     if (tw > 0.0) v += tw * triangleBlampCorr(cp, step);
     const double pw = pulseBlepWeight_();
     if (pw > 0.0) v += pw * pulseBlepCorr_(cp, step);
+    // GH#19 S6 (task #120): the two VALUE jumps on the ring's first two stretches, each scaled by
+    // its own node's weight (P6 in vco_wave_map.h, where the identity that justifies the scaling
+    // is written out). The residual is the same for both nodes -- they jump at the same phase, by
+    // the same magnitude, in opposite directions -- so it is read once and given one sign each.
+    // The outer guard is what makes the DEFAULT patch bit-identical: at morph_ = 0.5 (the sine
+    // node) BOTH weights are exactly 0.0, so nothing is added at all, in the same way and for the
+    // same reason as vco.h's kMorphSawInvSaw/kMorphSineTriangle endpoints.
+    const double sw = sawBlepWeight_();
+    const double iw = invSawBlepWeight_();
+    if (sw > 0.0 || iw > 0.0) {
+      const double r = sawJumpResidual_(cp, step);
+      if (sw > 0.0) v -= sw * r;   // the saw's jump is DOWNWARD (-2) -> subtract R
+      if (iw > 0.0) v += iw * r;   // the invSaw's is UPWARD (+2) -> add R
+    }
     return v;
   }
 
@@ -316,6 +331,58 @@ class Vco {
   // edge, so the correction has to be driven by the duty the sampler used.
   double pulseBlepCorr_(double cp, double step) const {
     return polyblepPulseCorrection(frac(cp), effectiveDuty(), step);
+  }
+
+  // GH#19 S6 (task #120): the SAW / INVSAW value-jump residual at an unwrapped phase, in the same
+  // normalize-by-phase terms as the two corrections above and for the same reason: the naive shape
+  // was read at frac(cp), so the residual is read at that same phase and not at a neighbouring one.
+  //
+  // ONE residual serves both nodes. saw(p) = 2p-1 and invSaw(p) = -(2p-1) jump at the SAME phase
+  // (the wrap) by the SAME magnitude (2, downward for the saw, upward for the invSaw), so the
+  // kernel output is identical for the two and only the sign of its application differs. That is
+  // exactly the reason invSawShape is written as the negation of sawShape rather than re-derived.
+  //
+  // THE KERNEL WIDTH IS CAPPED AT kPolyblepMaxDt, exactly as the pulse sibling does and for the
+  // same reason: polyblepResidual's own contract puts dt > 0.5 outside its domain (its two windows
+  // would overlap), while the product's `step` is |instHz|/sr with no clamp anywhere on the way.
+  // Capping the WIDTH handed to the residual while the caller still advances by the true `step` is
+  // the pulse path's already-established policy, so all three polyBLEP-corrected nodes share one
+  // policy rather than two. The ternary is spelled out, not std::min, so the in-domain case is
+  // visibly the identity: for dt <= kPolyblepMaxDt the comparison is false and `w` IS `dt`, bit for
+  // bit (the same construction, and the same intent, as polyblepPulseCorrection's).
+  static double sawJumpResidual_(double cp, double step) {
+    const double dt = std::fabs(step);                  // |instHz| / sr; finite on reversal.
+    if (!(dt > 0.0) || !std::isfinite(dt)) return 0.0;  // zero/NaN step -> no correction.
+    const double w = (dt < kPolyblepMaxDt) ? dt : kPolyblepMaxDt;
+    return polyblepResidual(frac(cp), w);
+  }
+
+  // How much of the SAW node's value-jump correction is in force for the active waveform.
+  //  * kMorphRing: the saw NODE's weight in the mix (wave_map::sawWeight). Exactly 1.0 at the
+  //    pure-saw node (morph = 0.0) and 0.0 outside stretch 0 -- the saw is a left end of one
+  //    stretch and a right end of none, so it is never in force past the invSaw node.
+  //  * every other waveform: 0.0. The module-dev raw shapes (including kMorphSawInvSaw, which is
+  //    the same saw<->invSaw pair but NOT the ring) are unchanged by (P6) and stay naive.
+  double sawBlepWeight_() const {
+    switch (wave_) {
+      case VcoWaveform::kMorphRing:
+        return wave_map::sawWeight(wave_map::kRingEqual, morph_);
+      default:
+        return 0.0;
+    }
+  }
+
+  // How much of the INVSAW node's value-jump correction is in force for the active waveform.
+  // Same contract; the invSaw is the one node in (P6) that spans TWO stretches -- right end of
+  // stretch 0, left end of stretch 1 -- so this weight is non-zero on both, and exactly 1.0 at the
+  // invSaw node itself (morph = 0.25).
+  double invSawBlepWeight_() const {
+    switch (wave_) {
+      case VcoWaveform::kMorphRing:
+        return wave_map::invSawWeight(wave_map::kRingEqual, morph_);
+      default:
+        return 0.0;
+    }
   }
 
   // How much of the pulse value-jump correction is in force for the active waveform.

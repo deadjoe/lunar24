@@ -1,0 +1,379 @@
+# GH#19 S6 (task #120) — PINNED PRODUCTION ACCEPTANCE CRITERIA for saw/invSaw anti-aliasing
+# in the continuous wave-morph ring, and for the dynamic-PWM reference convergence.
+#
+# This file is the EXPECTATION. tools/gh19_s6_saw_acceptance.py reads it and never writes it. As in
+# S3, two independently produced artifacts are cross-checked against it, so neither the criteria nor
+# a run can quietly shrink the matrix:
+#   * the probe's own declared stimulus plan (gh19_s6_plan.tsv), written by the probe from its
+#     compiled-in axes BEFORE the first render, and
+#   * the `axis` rows below, from which the gate RE-DERIVES the required cell set and requires it to
+#     equal the `cell` / `equality_cell` enumeration exactly.
+# A cell deleted from an enumeration, or an axis edited to shrink the product, makes the two
+# disagree and the gate REFUSES instead of accepting a smaller matrix.
+#
+# ---------------------------------------------------------------------------------------------
+# THE TWO CRITERION FAMILIES ARE NOT INTERCHANGEABLE, AND WHY (this is the S6 correction).
+#
+# The morph ring renders  y = (1-u) * node_k(p) + u * node_{k+1}(p)  on each stretch. On stretch 0
+# (saw -> invSaw) the naive mixture's true jump at the phase wrap is
+#
+#       J(u) = (1-u) * (-2) + u * (+2) = -2 + 4u ,
+#
+# and its peak amplitude is |1 - 2u|. BOTH vanish together at u = 0.5, i.e. norm = 0.125: there the
+# mixture is identically zero for every phase (0.5*saw + 0.5*(-saw) == 0).
+#
+# That single fact splits the matrix in two, and it is why the anti-phase midpoint CANNOT be an
+# improvement cell:
+#
+#   * IMPROVEMENT cells  -- positions where the uncorrected arm genuinely jumps, so "at least 6 dB
+#     of residual reduction versus the preserved uncorrected baseline" is a well-posed, satisfiable
+#     demand. Required: every one of the 120 improvement cells clears BOTH residual thresholds.
+#
+#   * EQUALITY cells     -- the two positions where an improvement threshold is UNSATISFIABLE and
+#     therefore meaningless:
+#       - norm = 0.125 (u = 0.5): amplitude 0 AND jump 0, so the baseline residual is already ~0 and
+#         the correct arm's residual is ~0 too. A 6 dB criterion here would be RED for a CORRECT
+#         implementation: it measures nothing, it only fails.
+#       - norm = 0.5 (the SINE node, u = 1 on stretch 1): the naive waveform is already smooth, so
+#         there is no jump to remove and no improvement to demand. The invariant that DOES hold
+#         exactly is that the new correction terms have coefficient 0 there, so the default output
+#         must be BIT-IDENTICAL to the SAME BUILD with those two terms neutralised (arm A vs arm B,
+#         one compiler, one set of flags). See the head of this file's criterion block: the
+#         comparison is an A/B and not a comparison against the committed pre-S6 snapshot, because
+#         a snapshot rendered by another libm cannot be reproduced bit-for-bit from this one.
+#     These are asserted as equalities, not thresholds. Putting them in the improvement group would
+#     have been a degenerate-identity error: two arms that are both identically zero (or both
+#     already smooth) cannot be told apart by a ratio of their residuals.
+#
+# WHY THE A/B ALONE IS NOT ENOUGH, AND WHAT THE `wiring` ROWS ADD. An A/B at morph 0.5 shows that
+# the correction does not reach the DEFAULT patch. It cannot show that the correction has no other
+# reachable caller: the two terms could be applied on some path the A/B never renders, and arm A
+# and arm B would still agree on the eight windows. The `wiring` rows below therefore DECLARE, as
+# code-hit counts per file and name, where the six symbols S6 introduces are referenced at all, and
+# the gate requires the declaration to equal the tree (an undeclared caller, a moved count, or a
+# vanished symbol is a FAIL naming the file, the line and the identifier). Together the two layers
+# cover the whole claim: the A/B covers "the correction changes nothing at the default node", the
+# wiring declaration covers "the correction is reachable only from the one guard block, and only
+# those six symbols are involved".
+#
+# WHY THE MIDPOINT IS STILL IN THE MATRIX AT ALL. It is a necessary-but-insufficient REGRESSION
+# guard, and it is cheap: it catches leakage of a correction that should be absent. It does NOT
+# discriminate "correct per-node weight scaling" from "copy the kernel unscaled", because the
+# unscaled arm also evaluates to 0 there and the naive arm was 0 anyway. The discriminating power
+# for that question lives entirely OFF-centre (norm 0.0625 / 0.1875 / 0.3125 / 0.375 / 0.4375) --
+# see the NC1 negative control, which is built on those cells and not on the midpoint. No cell in
+# this file is asked to do more than it can.
+#
+# WHERE A SIGN ERROR IS ACTUALLY CAUGHT (amended after the mutant matrix was measured, not before).
+# This file previously said the midpoint row "catches a SIGN error". The measurement says otherwise,
+# and the row's role is restated here to match the evidence rather than the intent:
+#   * A sign error (`invsaw-sign-flip`: the invSaw term added with the wrong sign) is caught by the
+#     ANALYZER'S ALIGNMENT LICENSE, at the midpoint's own degenerate branch: the pre-S6 law is
+#     identically 0 there, so the license demands the candidate be exactly 0 and refuses the arm --
+#     align_bad = 8, and the 8 refused cells ARE the morph-0.125 set (named by id, not merely
+#     counted). That refusal happens a layer BEFORE this gate: an unlicensed arm produces no report
+#     and therefore no verdict.
+#   * `EQUALITY-ANTIPHASE` therefore exists as a SECOND-LINE assertion and is STRUCTURALLY
+#     UNREACHABLE from the product side: any mutation that would make it fire makes the midpoint
+#     non-zero, and that is exactly what the license's degenerate branch refuses first. It is kept
+#     because the gate is a standalone artifact that can be run against a report it did not render,
+#     and its reachability is demonstrated there (gate-only synthetic input; NOT a product negative
+#     control; not counted as a mutant arm). No threshold or cell membership is changed by this
+#     amendment -- only which surface is credited with catching what.
+#   * The same layer ordering explains the DC guard: `GUARD-DC`'s quantity is also fed by the
+#     report, and a product-wide additive offset is refused by the license on all 168 cells before
+#     the gate sees it. Its reachability is demonstrated the same way.
+#   * It explains the frequency guard too, which was measured AFTER this amendment was first
+#     written and is the reason the paragraph says "three" rather than "two": `phase-drift` (the
+#     rendered step changed by 2%) is refused by the license on 160 of the 168 cells. The 8 that
+#     survive are the exact-zero midpoint cells, and they survive for a reason worth stating -- the
+#     license's degenerate branch asks only `0 == 0`, which a changed step cannot disturb. So the
+#     same 8 cells that cannot discriminate a sign error cannot witness a frequency fault either;
+#     a cell carrying no signal there cannot report on what happened to the signal. `GUARD-FREQ`
+#     is fed by the PROBE's own zero-crossing column rather than by the report, so its gate-side
+#     reachability demonstration aims at that column instead (same label: gate-only synthetic
+#     input, not a product negative control, not counted as a mutant arm). No threshold or cell
+#     membership is changed by this amendment.
+#
+# ---------------------------------------------------------------------------------------------
+# THRESHOLDS. Each improvement cell must clear BOTH residual thresholds against the PRESERVED
+# UNCORRECTED baseline, with the same fixed reference, phase and denominator, no re-fitting and no
+# threshold change. The guard rows are the ways an improvement can be faked; they are checked on the
+# same cells, in the same pass. Columns and their derivations are inherited unchanged from S3, so a
+# reader who checked the S3 numbers can check these.
+#
+# `report` rows are quantities the gate MUST emit and MUST NOT judge. A `report` row the gate fails
+# to emit is a REFUSAL, so "reported separately" cannot quietly become "not reported".
+#
+# ---------------------------------------------------------------------------------------------
+# REFERENCE FAMILY ATTRIBUTION (S3's lesson, applied). Each cell's reference is constructed from
+# THAT CELL'S OWN mix law: on stretch 0 the reference is (1-u)*bl_saw + u*bl_invSaw with
+# bl_saw = sum_{k=1..kmax} -2/(pi*k) * sin(2*pi*k*p) and bl_invSaw = -bl_saw (exact), and on
+# stretch 1 it is (1-u)*bl_invSaw + u*bl_sine with bl_sine = sin(2*pi*p) (exact), each truncated at
+# kmax = floor(sr/2/f0). A single-waveform model is NOT the model of a mixed cell, so no reference
+# is borrowed across stretches or across families; the u=0 and u=1 limits are asserted in the
+# analyzer's --self-check, which is what keeps this a second reference rather than a second guess.
+#
+# THE `axis`/`axis_set` ROWS DRIVE THE RECONCILIATION. S6's cell set is a UNION of two
+# cross-products (the A layer over three frequencies, the B layer over one), so it is declared as
+# two `axis_set` groups; the gate derives each group's product separately and requires
+#   {cell rows} == (product of axis_set A) U (product of axis_set B)
+# with no cell in both. The equality group is reconciled the same way against axis_set EQ.
+#
+# report_only_cell rows: positions the probe renders and the report covers, but which are in NEITHER
+# gated group (the high-frequency set, past the point where a two-point step kernel has a
+# band-limited referent). They are pinned so the plan reconciliation stays EXACT:
+#   plan_static == {cell rows} U {equality_cell rows} U {report_only_cell rows}
+# A cell that disappears from one group cannot be absorbed by another: the equation fails.
+
+criterion	band_1k5k_min_improvement_db	6.0
+criterion	full_band_min_improvement_db	6.0
+criterion	max_dc_abs_delta	0.0015
+criterion	max_freq_shift_cycles_per_window	1.0
+criterion	max_fund_amp_rel_change	0.01
+# Equality criteria. Tolerance is exact (0.0); these are identities, not measurements, so
+# there is no level bound to derive and none is claimed.
+#
+# `sine_node_bit_diff_count` is a SAME-BUILD A/B and NOT a comparison against a committed
+# snapshot: the gate is given `--cand-arm` (arm A: this tree's product, both S6 correction terms in
+# force) and `--neutral-arm` (arm B: the same source with those two terms neutralised by
+# tools/stage_gh19_s6_shadow.py, same compiler, same flags), and requires the eight default
+# sine-node windows to agree bit for bit. The criterion, the threshold (0) and the claim are
+# unchanged from the original -- "at the sine node the two correction terms have coefficient 0, so
+# the default output does not move" -- but the second side is now produced by THIS run instead of
+# read from the committed pre-S6 arm.
+#
+# WHY IT HAD TO CHANGE. The committed baseline was rendered on macOS. The default patch evaluates
+# `std::sin(kTwoPi * p)`, Apple's libm and glibc disagree by exactly 1 ULP on 3.76% of identical
+# arguments, and the criterion therefore read 0 locally and 652 on the CI toolchain -- the same 652
+# that a literal pre-S6 tree produces there, i.e. the gap is the toolchain and not the change.
+# Measured, not reasoned: see report/2026-09-25-task120-gh19-s6-morph-aa.md, which is where the
+# four compiler/platform pits this project has hit (C4996, C3493, C4723, and this sin-ULP one) are
+# written down together.
+#
+# ARM B MUST BE NON-VACUOUS. If the neutralisation failed to take effect, B would BE A and the
+# identity would hold trivially. The gate therefore refuses (code NEUTRAL-ARM, not a failure) when
+# the two arms' plan files differ, when a witness window cannot be read, or when the arms are
+# identical on the morph-0.0 witness cells -- the saw node, where the two terms ARE in force and
+# therefore where A and B must visibly differ.
+criterion	antiphase_midpoint_max_abs_output	0.0
+criterion	sine_node_bit_diff_count	0
+report	max_abs_fitted_scale_delta
+report	max_pinned_scale_cost_db
+report	worst_band_1k5k_improvement_db
+report	worst_full_band_improvement_db
+report	worst_pinned_scale_rect_full_band_improvement_db
+report	worst_rect_full_band_improvement_db
+report	antiphase_midpoint_worst_abs_output
+report	sine_node_worst_bit_diff_count
+report	s6_wiring_call_sites
+# `wiring <file> <symbol> <code-hit-count>`: where the six symbols S6 introduces are REFERENCED in
+# the product, as code hits (comments and the contents of string/char literals blanked before
+# counting, so a symbol named in a comment or a static_assert message is not a caller). The gate
+# requires these declarations to equal the tree in BOTH directions -- a hit not declared, a declared
+# hit that is gone, a count that moved, a symbol with no declaration line, or a region other than
+# the guard block referencing the three corrected names is FAIL S6-WIRING, naming file, line and
+# identifier. A file that cannot be read is REFUSE WIRING-SOURCE instead: that is an input problem,
+# and no judgement about the product follows from it. Scanned roots: core, host, generated.
+#
+# A DECLARATION IS ITSELF A CODE HIT, which is why most rows are not 1. In vco.h the two
+# `*BlepWeight_` methods and `sawJumpResidual_` each count 2: their definition plus their one read
+# (`sawBlepWeight_` / `invSawBlepWeight_` are bound at 310/311 immediately above the guard, and
+# `sawJumpResidual_` is called at 313 inside it). The two wave_map weights count 1 each in vco.h --
+# the read inside the corresponding `*BlepWeight_` body (369, 382) -- and `nodeWeight` counts 0
+# there at all: it is only ever reached through the two named weights. In vco_wave_map.h `nodeWeight`
+# counts 3 (declaration at 283, called at 296 and 305 by sawWeight and invSawWeight), the other two
+# named weights count 1 each (their declarations at 294 and 303), and the three `_` symbols count 0:
+# the correction's kernel is a Vco member and is not reachable from the wave-map header.
+wiring	core/include/lunar24/core/vco.h	nodeWeight	0
+wiring	core/include/lunar24/core/vco.h	sawWeight	1
+wiring	core/include/lunar24/core/vco.h	invSawWeight	1
+wiring	core/include/lunar24/core/vco.h	sawJumpResidual_	2
+wiring	core/include/lunar24/core/vco.h	sawBlepWeight_	2
+wiring	core/include/lunar24/core/vco.h	invSawBlepWeight_	2
+wiring	core/include/lunar24/core/vco_wave_map.h	nodeWeight	3
+wiring	core/include/lunar24/core/vco_wave_map.h	sawWeight	1
+wiring	core/include/lunar24/core/vco_wave_map.h	invSawWeight	1
+wiring	core/include/lunar24/core/vco_wave_map.h	sawJumpResidual_	0
+wiring	core/include/lunar24/core/vco_wave_map.h	sawBlepWeight_	0
+wiring	core/include/lunar24/core/vco_wave_map.h	invSawBlepWeight_	0
+axis	sides	a,b
+axis	sample_rates	44100,48000,88200,96000
+axis	frequencies	220,440,880
+# Axis groups. A = the 9-point grid reduced to the positions with a genuine uncorrected
+# jump, three frequencies; B = the remaining off-centre positions, one frequency. The
+# frequency dimension is NOT cut: every A-layer position keeps all three.
+axis_set	A	positions	m0,m6250,m18750,m25000
+axis_set	A	frequencies	220,440,880
+axis_set	B	positions	m31250,m37500,m43750
+axis_set	B	frequencies	440
+axis_set	EQ	positions	m12500,m50000
+axis_set	EQ	frequencies	440
+cell	vco_a_sawmix_44100_220_m0
+cell	vco_a_sawmix_44100_440_m0
+cell	vco_a_sawmix_44100_880_m0
+cell	vco_a_sawmix_48000_220_m0
+cell	vco_a_sawmix_48000_440_m0
+cell	vco_a_sawmix_48000_880_m0
+cell	vco_a_sawmix_88200_220_m0
+cell	vco_a_sawmix_88200_440_m0
+cell	vco_a_sawmix_88200_880_m0
+cell	vco_a_sawmix_96000_220_m0
+cell	vco_a_sawmix_96000_440_m0
+cell	vco_a_sawmix_96000_880_m0
+cell	vco_b_sawmix_44100_220_m0
+cell	vco_b_sawmix_44100_440_m0
+cell	vco_b_sawmix_44100_880_m0
+cell	vco_b_sawmix_48000_220_m0
+cell	vco_b_sawmix_48000_440_m0
+cell	vco_b_sawmix_48000_880_m0
+cell	vco_b_sawmix_88200_220_m0
+cell	vco_b_sawmix_88200_440_m0
+cell	vco_b_sawmix_88200_880_m0
+cell	vco_b_sawmix_96000_220_m0
+cell	vco_b_sawmix_96000_440_m0
+cell	vco_b_sawmix_96000_880_m0
+cell	vco_a_sawmix_44100_220_m6250
+cell	vco_a_sawmix_44100_440_m6250
+cell	vco_a_sawmix_44100_880_m6250
+cell	vco_a_sawmix_48000_220_m6250
+cell	vco_a_sawmix_48000_440_m6250
+cell	vco_a_sawmix_48000_880_m6250
+cell	vco_a_sawmix_88200_220_m6250
+cell	vco_a_sawmix_88200_440_m6250
+cell	vco_a_sawmix_88200_880_m6250
+cell	vco_a_sawmix_96000_220_m6250
+cell	vco_a_sawmix_96000_440_m6250
+cell	vco_a_sawmix_96000_880_m6250
+cell	vco_b_sawmix_44100_220_m6250
+cell	vco_b_sawmix_44100_440_m6250
+cell	vco_b_sawmix_44100_880_m6250
+cell	vco_b_sawmix_48000_220_m6250
+cell	vco_b_sawmix_48000_440_m6250
+cell	vco_b_sawmix_48000_880_m6250
+cell	vco_b_sawmix_88200_220_m6250
+cell	vco_b_sawmix_88200_440_m6250
+cell	vco_b_sawmix_88200_880_m6250
+cell	vco_b_sawmix_96000_220_m6250
+cell	vco_b_sawmix_96000_440_m6250
+cell	vco_b_sawmix_96000_880_m6250
+cell	vco_a_sawmix_44100_220_m18750
+cell	vco_a_sawmix_44100_440_m18750
+cell	vco_a_sawmix_44100_880_m18750
+cell	vco_a_sawmix_48000_220_m18750
+cell	vco_a_sawmix_48000_440_m18750
+cell	vco_a_sawmix_48000_880_m18750
+cell	vco_a_sawmix_88200_220_m18750
+cell	vco_a_sawmix_88200_440_m18750
+cell	vco_a_sawmix_88200_880_m18750
+cell	vco_a_sawmix_96000_220_m18750
+cell	vco_a_sawmix_96000_440_m18750
+cell	vco_a_sawmix_96000_880_m18750
+cell	vco_b_sawmix_44100_220_m18750
+cell	vco_b_sawmix_44100_440_m18750
+cell	vco_b_sawmix_44100_880_m18750
+cell	vco_b_sawmix_48000_220_m18750
+cell	vco_b_sawmix_48000_440_m18750
+cell	vco_b_sawmix_48000_880_m18750
+cell	vco_b_sawmix_88200_220_m18750
+cell	vco_b_sawmix_88200_440_m18750
+cell	vco_b_sawmix_88200_880_m18750
+cell	vco_b_sawmix_96000_220_m18750
+cell	vco_b_sawmix_96000_440_m18750
+cell	vco_b_sawmix_96000_880_m18750
+cell	vco_a_sawmix_44100_220_m25000
+cell	vco_a_sawmix_44100_440_m25000
+cell	vco_a_sawmix_44100_880_m25000
+cell	vco_a_sawmix_48000_220_m25000
+cell	vco_a_sawmix_48000_440_m25000
+cell	vco_a_sawmix_48000_880_m25000
+cell	vco_a_sawmix_88200_220_m25000
+cell	vco_a_sawmix_88200_440_m25000
+cell	vco_a_sawmix_88200_880_m25000
+cell	vco_a_sawmix_96000_220_m25000
+cell	vco_a_sawmix_96000_440_m25000
+cell	vco_a_sawmix_96000_880_m25000
+cell	vco_b_sawmix_44100_220_m25000
+cell	vco_b_sawmix_44100_440_m25000
+cell	vco_b_sawmix_44100_880_m25000
+cell	vco_b_sawmix_48000_220_m25000
+cell	vco_b_sawmix_48000_440_m25000
+cell	vco_b_sawmix_48000_880_m25000
+cell	vco_b_sawmix_88200_220_m25000
+cell	vco_b_sawmix_88200_440_m25000
+cell	vco_b_sawmix_88200_880_m25000
+cell	vco_b_sawmix_96000_220_m25000
+cell	vco_b_sawmix_96000_440_m25000
+cell	vco_b_sawmix_96000_880_m25000
+cell	vco_a_sawmix_44100_440_m31250
+cell	vco_a_sawmix_48000_440_m31250
+cell	vco_a_sawmix_88200_440_m31250
+cell	vco_a_sawmix_96000_440_m31250
+cell	vco_b_sawmix_44100_440_m31250
+cell	vco_b_sawmix_48000_440_m31250
+cell	vco_b_sawmix_88200_440_m31250
+cell	vco_b_sawmix_96000_440_m31250
+cell	vco_a_sawmix_44100_440_m37500
+cell	vco_a_sawmix_48000_440_m37500
+cell	vco_a_sawmix_88200_440_m37500
+cell	vco_a_sawmix_96000_440_m37500
+cell	vco_b_sawmix_44100_440_m37500
+cell	vco_b_sawmix_48000_440_m37500
+cell	vco_b_sawmix_88200_440_m37500
+cell	vco_b_sawmix_96000_440_m37500
+cell	vco_a_sawmix_44100_440_m43750
+cell	vco_a_sawmix_48000_440_m43750
+cell	vco_a_sawmix_88200_440_m43750
+cell	vco_a_sawmix_96000_440_m43750
+cell	vco_b_sawmix_44100_440_m43750
+cell	vco_b_sawmix_48000_440_m43750
+cell	vco_b_sawmix_88200_440_m43750
+cell	vco_b_sawmix_96000_440_m43750
+equality_cell	vco_a_sawmix_44100_440_m12500
+equality_cell	vco_a_sawmix_48000_440_m12500
+equality_cell	vco_a_sawmix_88200_440_m12500
+equality_cell	vco_a_sawmix_96000_440_m12500
+equality_cell	vco_b_sawmix_44100_440_m12500
+equality_cell	vco_b_sawmix_48000_440_m12500
+equality_cell	vco_b_sawmix_88200_440_m12500
+equality_cell	vco_b_sawmix_96000_440_m12500
+equality_cell	vco_a_sawmix_44100_440_m50000
+equality_cell	vco_a_sawmix_48000_440_m50000
+equality_cell	vco_a_sawmix_88200_440_m50000
+equality_cell	vco_a_sawmix_96000_440_m50000
+equality_cell	vco_b_sawmix_44100_440_m50000
+equality_cell	vco_b_sawmix_48000_440_m50000
+equality_cell	vco_b_sawmix_88200_440_m50000
+equality_cell	vco_b_sawmix_96000_440_m50000
+report_only_cell	vco_a_sawmixhi_44100_3520_m0
+report_only_cell	vco_a_sawmixhi_44100_5000_m0
+report_only_cell	vco_a_sawmixhi_44100_3520_m6250
+report_only_cell	vco_a_sawmixhi_44100_5000_m6250
+report_only_cell	vco_a_sawmixhi_44100_3520_m25000
+report_only_cell	vco_a_sawmixhi_44100_5000_m25000
+report_only_cell	vco_a_sawmixhi_44100_3520_m31250
+report_only_cell	vco_a_sawmixhi_44100_5000_m31250
+report_only_cell	vco_b_sawmixhi_44100_3520_m0
+report_only_cell	vco_b_sawmixhi_44100_5000_m0
+report_only_cell	vco_b_sawmixhi_44100_3520_m6250
+report_only_cell	vco_b_sawmixhi_44100_5000_m6250
+report_only_cell	vco_b_sawmixhi_44100_3520_m25000
+report_only_cell	vco_b_sawmixhi_44100_5000_m25000
+report_only_cell	vco_b_sawmixhi_44100_3520_m31250
+report_only_cell	vco_b_sawmixhi_44100_5000_m31250
+report_only_cell	vco_a_sawmixhi_96000_3520_m0
+report_only_cell	vco_a_sawmixhi_96000_5000_m0
+report_only_cell	vco_a_sawmixhi_96000_3520_m6250
+report_only_cell	vco_a_sawmixhi_96000_5000_m6250
+report_only_cell	vco_a_sawmixhi_96000_3520_m25000
+report_only_cell	vco_a_sawmixhi_96000_5000_m25000
+report_only_cell	vco_a_sawmixhi_96000_3520_m31250
+report_only_cell	vco_a_sawmixhi_96000_5000_m31250
+report_only_cell	vco_b_sawmixhi_96000_3520_m0
+report_only_cell	vco_b_sawmixhi_96000_5000_m0
+report_only_cell	vco_b_sawmixhi_96000_3520_m6250
+report_only_cell	vco_b_sawmixhi_96000_5000_m6250
+report_only_cell	vco_b_sawmixhi_96000_3520_m25000
+report_only_cell	vco_b_sawmixhi_96000_5000_m25000
+report_only_cell	vco_b_sawmixhi_96000_3520_m31250
+report_only_cell	vco_b_sawmixhi_96000_5000_m31250

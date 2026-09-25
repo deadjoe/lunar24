@@ -1,0 +1,36 @@
+ACCEPT-PIPELINE baseline_pin=OK sha256=09b5a2c03d8f43096220391bbf86c20a670af89ab52a65db5237679e065ba55b path=report/gh19-s6-saw-aa/baseline_arm/gh19_s6_scenarios.tsv
+ACCEPT-PIPELINE base_report_pin=OK sha256=de30d2d3079473e80425f974a74b6da37066aa77f4afc8f3c71a540c44ee3696 path=report/gh19-s6-saw-aa/base_report.txt
+ACCEPT-PIPELINE base_raw_pin=OK n=8 path=report/gh19-s6-saw-aa/baseline_arm
+ACCEPT-PIPELINE fresh_arm=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s6pipe-qn2vptv2/cand plan_sha256=4f8c4691afc0ff05f1e7dd57651835391ba585c2c0ec6f4aefb612fc019ea7ca
+ACCEPT-PIPELINE neutral_arm=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s6pipe-qn2vptv2/neutral plan_sha256=4f8c4691afc0ff05f1e7dd57651835391ba585c2c0ec6f4aefb612fc019ea7ca
+ACCEPT-PIPELINE self_check=OK
+ACCEPT-PIPELINE fresh_report=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s6pipe-qn2vptv2/cand_report.txt sha256=55bfb7df1d1edb9351fee31a376b04a39dd6ed9d8e183a8f96b2ac600105235f
+ACCEPT-GATE tool=gh19_s6_saw_acceptance.py
+ACCEPT-GATE criteria=report/gh19-s6-saw-aa/acceptance_criteria.tsv
+ACCEPT-GATE base_report=report/gh19-s6-saw-aa/base_report.txt
+ACCEPT-GATE cand_report=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s6pipe-qn2vptv2/cand_report.txt
+ACCEPT-GATE base_arm=report/gh19-s6-saw-aa/baseline_arm
+ACCEPT-GATE cand_arm=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s6pipe-qn2vptv2/cand
+ACCEPT-GATE neutral_arm=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s6pipe-qn2vptv2/neutral
+ACCEPT-GATE repo_root=.
+ACCEPT-WIRING roots=core,host,generated files_scanned=79 names=6 declared_rows=12
+ACCEPT-REPORT max_abs_fitted_scale_delta=0.009140
+ACCEPT-REPORT max_pinned_scale_cost_db=+0.1719
+ACCEPT-REPORT worst_band_1k5k_improvement_db=+12.52
+ACCEPT-REPORT worst_full_band_improvement_db=+7.42
+ACCEPT-REPORT worst_pinned_scale_rect_full_band_improvement_db=+7.30
+ACCEPT-REPORT worst_rect_full_band_improvement_db=+7.41
+ACCEPT-REPORT antiphase_midpoint_worst_abs_output=0
+ACCEPT-REPORT sine_node_worst_bit_diff_count=0
+ACCEPT-REPORT s6_wiring_call_sites=13
+ACCEPT-REPORT antiphase_midpoint_worst_abs_output_base=0
+ACCEPT-REPORT n_improvement=120 n_equality=16 n_report_only=32
+ACCEPT-EQUALITY anti vco_a_sawmix_44100_440_m12500 base_max_abs=0 cand_max_abs=0
+ACCEPT-EQUALITY anti vco_a_sawmix_48000_440_m12500 base_max_abs=0 cand_max_abs=0
+ACCEPT-EQUALITY anti vco_a_sawmix_88200_440_m12500 base_max_abs=0 cand_max_abs=0
+ACCEPT-EQUALITY anti vco_a_sawmix_96000_440_m12500 base_max_abs=0 cand_max_abs=0
+ACCEPT-EQUALITY anti vco_b_sawmix_44100_440_m12500 base_max_abs=0 cand_max_abs=0
+ACCEPT-EQUALITY anti vco_b_sawmix_48000_440_m12500 base_max_abs=0 cand_max_abs=0
+ACCEPT-EQUALITY anti vco_b_sawmix_88200_440_m12500 base_max_abs=0 cand_max_abs=0
+ACCEPT-EQUALITY anti vco_b_sawmix_96000_440_m12500 base_max_abs=0 cand_max_abs=0
+ACCEPT-GATE verdict=PASS refusals=0 failures=0

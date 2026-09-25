@@ -60,7 +60,41 @@
 //        (pulse_blep_kernel.h) is scaled by the pulse's weight in the mix (pulseWeight below),
 //        with the same first-order provisional status and the same exactness at its own node.
 //        Exact only at the pure-pulse node (norm = 1.0). It is NOT a band-limiting of the mixed
-//        output, and it does not correct the saw / invSaw / sine nodes, which remain naive.
+//        output. When it was added it corrected no other node; the saw and the invSaw were
+//        corrected afterwards by (P6) below, and the sine node, which has no discontinuity at
+//        all, is still deliberately left naive.
+//   (P6) the saw / invSaw value-jump scaling (added by task #120, GH#19 S6): the morph ring's
+//        first two stretches contain exactly two value jumps -- the saw's (-2, downward) and the
+//        invSaw's (+2, upward). Each is corrected by the residual of the standard polyBLEP kernel
+//        (polyblep_kernel.h; the same kernel the drone saw uses, and the value-jump sibling of the
+//        pulse's), scaled by THAT NODE's weight in the mix (sawWeight / invSawWeight below) --
+//        the (P3)/(P5) law applied to the two remaining discontinuous nodes. Exact at each of
+//        those two nodes (norm = 0.0 and norm = 0.25).
+//
+//        WHY THIS IS A SCALING AND NOT A FIT. A stretch's mixed waveform jumps by the weighted
+//        sum of its two nodes' jumps: on stretch 0 that is J(u) = (1-u)(-2) + u(+2) = -2 + 4u.
+//        The kernel prescribes (jump/2) * R for a jump of magnitude `jump` (its residual R is
+//        calibrated to the unit saw, whose jump is -2: the saw's correction is -R = (-2/2)R, the
+//        invSaw's is +R = (+2/2)R). Scaling each node's own correction by its own weight therefore
+//        applies (1-u)(-R) + u(+R) = (2u-1)R, and J(u)/2 * R = (2u-1)R too -- EQUAL FOR EVERY u,
+//        not fitted at any of them. The unscaled arm ("copy the kernel, scale nothing") applies
+//        (-2 + 2)R = 0, i.e. precisely the naive waveform: that identity is why this candidate can
+//        be proved rather than preferred. On stretch 1 only the invSaw is discontinuous (the sine
+//        has no jump), so there the correction is (1-u)R for a jump of (1-u)·2 -- the same law
+//        with one term surviving.
+//
+//        WHAT IS STILL NOT CLAIMED: the MIXED output is not band-limited, exactly as in (P3)/(P5).
+//        The correction is first-order and software-provisional, and stretches 0 and 1 are
+//        software connectors, not hardware structure. The saw and invSaw nodes of the OTHER morph
+//        waveforms (kMorphSawInvSaw) are NOT corrected by (P6) and remain naive.
+//   (P6-note) THE ANTI-PHASE MIDPOINT IS NOT A DISCRIMINATING TEST OF (P6) and is not asked to
+//        be one. At norm = 0.125 (u = 0.5) the naive blend is identically 0.0 for every phase AND
+//        the two scaled corrections cancel exactly, so the unscaled arm also reads 0.0 there. It
+//        is a NECESSARY regression guard -- it is the only cell that catches a SIGN error, which
+//        makes the output non-zero at once -- and nothing more. Every discriminating cell is off
+//        the midpoint. Likewise the sine node (norm = 0.5) is where BOTH new weights are exactly
+//        0.0, so it is the cell that proves the correction does not leak, not a cell that measures
+//        its size.
 //   (P4) the pulse node reads `duty_` (= the `pw` panel parameter), so the sweep makes the
 //        pulse's duty audible. Approved as in scope by @Codex (task #116): the normal
 //        consumption of an EXISTING parameter.
@@ -82,10 +116,11 @@
 // `norm` at every boundary (left limit = right limit = the node shape) but its derivative is
 // not, so the sweep corners at the nodes. Continuity is the requirement; C1 is not claimed.
 //
-// The mixed output is a convex combination of band-limited triangle and pulse nodes with NAIVE
-// saw / invSaw / sine. It is NOT band-limited and is never called band-limited. Only the two
-// corrected nodes (triangle via BLAMP, pulse via BLEP) are corrected, each in proportion to its
-// own weight in the mix, and each exactly at its own node.
+// The mixed output is a convex combination of the four corrected nodes (triangle via BLAMP;
+// pulse, saw and invSaw via BLEP) with a NAIVE sine -- the sine is the one node with no
+// discontinuity, so there is nothing in it for a value-jump or slope-jump kernel to correct. The
+// output is NOT band-limited and is never called band-limited. Each correction runs in proportion
+// to its own node's weight in the mix, and each is exact at its own node.
 
 #ifndef LUNAR24_CORE_VCO_WAVE_MAP_H
 #define LUNAR24_CORE_VCO_WAVE_MAP_H
@@ -228,6 +263,46 @@ inline double pulseWeight(const Boundaries& c, double norm) {
                 "pulseWeight assumes kPulse is the last node (stretch 3)");
   if (pos.stretch == kNodeCount - 2) return pos.u;  // stretch 3: rising into pulse
   return 0.0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The GENERIC node weight, and the (P6) pair built on it.
+//
+// ⚠️ WHY THIS EXISTS INSTEAD OF TWO MORE HAND-WRITTEN FUNCTIONS. A node's weight is fully
+// determined by the ring's ORDER: node i is the LEFT end of the stretch that starts at it (weight
+// 1-u there) and the RIGHT end of the stretch that ends at it (weight u). Spelling those two
+// stretches out per node means writing the same fact down once per node -- and task #120 found the
+// hard way what that costs: an instrument that hardcoded "the lower node of every stretch is the
+// saw" in two places agreed with itself on stretch 0 (where it is true) and was jointly wrong on
+// stretch 1 (whose lower node is the invSaw), so NEITHER copy could falsify the other. Here the
+// stretch indices are READ FROM `Node`, so there is no second place for the order to be wrong in.
+//
+// triangleWeight / pulseWeight above predate this helper and keep their own literal spellings:
+// their callers' emitted samples must not move, and the probe checks that the three agree on the
+// nodes they share (an agreement between two independent derivations, not a tautology).
+inline double nodeWeight(const Boundaries& c, double norm, Node n) {
+  const int i = static_cast<int>(n);
+  if (i < 0 || i >= kNodeCount) return 0.0;
+  const Position pos = locate(c, norm);
+  if (pos.stretch == i) return 1.0 - pos.u;      // left end of stretch i: falling out of node i
+  if (pos.stretch == i - 1) return pos.u;        // right end of stretch i-1: rising into node i
+  return 0.0;
+}
+
+// The weight the pure-SAW node carries in the mix (P6). Exactly 1.0 at the saw node (norm = 0.0),
+// and non-zero on stretch 0 only: the saw is a left end of one stretch and a right end of none.
+inline double sawWeight(const Boundaries& c, double norm) {
+  static_assert(static_cast<int>(Node::kSaw) == 0, "sawWeight assumes kSaw is node 0");
+  return nodeWeight(c, norm, Node::kSaw);
+}
+
+// The weight the pure-INVSAW node carries in the mix (P6). Exactly 1.0 at the invSaw node
+// (norm = 0.25), and non-zero on BOTH stretches that touch it -- as a right end on stretch 0 and
+// as a left end on stretch 1. This spanning of two stretches is the whole reason a hand-written
+// "lower node" rule got it wrong; deriving it removes the chance.
+inline double invSawWeight(const Boundaries& c, double norm) {
+  static_assert(static_cast<int>(Node::kInvSaw) == 1, "invSawWeight assumes kInvSaw is node 1");
+  return nodeWeight(c, norm, Node::kInvSaw);
 }
 
 // ---- The two NAMED stretches, written as the EXISTING morph implementations ----
