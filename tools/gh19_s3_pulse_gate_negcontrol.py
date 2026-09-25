@@ -37,6 +37,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.join(HERE, "gh19_s3_pulse_acceptance.py")
@@ -56,12 +57,12 @@ FILES = ("criteria.tsv", "plan.tsv", "deltas.tsv", "base_report.txt", "cand_repo
 
 
 def read(p):
-    with open(p, "r") as fh:
+    with open_text(p) as fh:
         return fh.read()
 
 
 def write(p, s):
-    with open(p, "w") as fh:
+    with open_text(p, "w") as fh:
         fh.write(s)
 
 

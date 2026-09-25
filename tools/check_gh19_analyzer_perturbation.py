@@ -31,13 +31,14 @@ import argparse
 import os
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 DEFAULT_SCOPE = ("drone3_schmitt", "drone6_schmitt")
 
 
 def load(path):
     """Return (header, cell_rows, other_keys)."""
-    with open(path) as fh:
+    with open_text(path) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     if not lines:
         raise SystemExit("FATAL: %s is empty" % path)
@@ -139,7 +140,7 @@ def self_check(before, after, scope):
 
     def with_row(idx, col, value, drop=False, rename=None):
         """Rewrite the `after` report with one cell row mutated."""
-        with open(after) as fh:
+        with open_text(after) as fh:
             raw = [l.rstrip("\n") for l in fh if l.strip()]
         outr = []
         seen = 0
@@ -165,7 +166,7 @@ def self_check(before, after, scope):
         return fh.name
 
     def with_header(col, value):
-        with open(after) as fh:
+        with open_text(after) as fh:
             raw = [l.rstrip("\n") for l in fh if l.strip()]
         cols = raw[0].split("\t")
         cols[col] = value
@@ -236,7 +237,7 @@ def main():
         rc = rc or src
 
     if args.out:
-        with open(args.out, "w") as fh:
+        with open_text(args.out, "w") as fh:
             fh.write("\n".join(lines) + "\n")
     return rc
 

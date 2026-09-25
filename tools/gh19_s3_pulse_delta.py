@@ -61,6 +61,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gh19_s3_pulse_analyze as A  # noqa: E402  (single source of truth for pulse_node_weight)
+from _gh19_textio import open_text
 
 # (labels, optional v-indices, required v-indices). The two report blocks have different column counts
 # and DIFFERENT COLUMN MEANINGS -- the mixed block replaces duty with u -- so they are parsed by their
@@ -392,7 +393,7 @@ def parse(path, arm):
     dyn_of = None
     decls = {}
 
-    with open(path) as fh:
+    with open_text(path) as fh:
         for lineno, raw in enumerate(fh, 1):
             ln = raw.rstrip("\n")
             f = ln.split()
@@ -704,7 +705,7 @@ def load_plan(path):
     seen = set()
     plan_rev = None
     name = os.path.basename(path)
-    with open(path) as fh:
+    with open_text(path) as fh:
         for lineno, raw in enumerate(fh, 1):
             ln = raw.rstrip("\n")
             if not ln:
@@ -894,7 +895,7 @@ def main(argv):
     # ---- the analyzer's own identity verdicts must have RUN, in every arm ----
     for path, arm in ((args.base, "base"), (args.cand, "cand")):
         gates = {}
-        with open(path) as fh:
+        with open_text(path) as fh:
             for ln in fh:
                 mg = IDENTITY_GATE.match(ln.strip())
                 if mg:
@@ -992,7 +993,7 @@ def main(argv):
 
     if args.out:
         try:
-            with open(args.out, "w") as fh:
+            with open_text(args.out, "w") as fh:
                 fh.write("\n".join(lines) + "\n")
         except OSError as e:
             print("FATAL: could not write %s: %s" % (args.out, e), file=sys.stderr)

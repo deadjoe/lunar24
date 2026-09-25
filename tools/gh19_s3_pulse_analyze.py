@@ -70,6 +70,7 @@ import operator
 import os
 import struct
 import sys
+from _gh19_textio import open_text
 
 TWO_PI = 2.0 * math.pi
 
@@ -87,7 +88,7 @@ def read_raw(path):
 def read_trace(path):
     """gh19_s3_srcNNN.tsv: header + `frame<TAB>volts`, 17 significant digits."""
     out = []
-    with open(path) as fh:
+    with open_text(path) as fh:
         for i, line in enumerate(fh):
             if i == 0:
                 continue
@@ -115,7 +116,7 @@ def max_abs_diff(a, b):
 
 def load_manifest(d):
     path = os.path.join(d, "gh19_s3_scenarios.tsv")
-    with open(path) as fh:
+    with open_text(path) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     head = lines[0].split("\t")
     rows = []
@@ -793,7 +794,7 @@ def say(*parts):
 
 
 def write_report(path):
-    with open(path, "w") as fh:
+    with open_text(path, "w") as fh:
         fh.write("\n".join(_REPORT) + "\n")
 
 

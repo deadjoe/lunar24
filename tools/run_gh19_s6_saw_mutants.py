@@ -103,6 +103,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # arm B. Two spellings of "the correction is neutralised" could drift, and then the pipeline and this
 # matrix would be running two different A/Bs under one name.
 import stage_gh19_s6_shadow as shadow_stage
+from _gh19_textio import open_text, read_text
 
 PROBE_SRC = "tests/probes/gh19_s6_saw_probe.cpp"
 # ONE header carries every mutation, because every mutation is in the (P6) implementation or in the
@@ -265,7 +266,7 @@ def stage_shadow(repo_root, shadow_root, edits):
     if not os.path.exists(src):
         print("INVALID: %s does not exist in %s" % (VCO_H, repo_root))
         return None
-    text = open(src).read()
+    text = read_text(src)
     for old, new in edits:
         n = text.count(old)
         if n != 1:
@@ -274,7 +275,7 @@ def stage_shadow(repo_root, shadow_root, edits):
         text = text.replace(old, new)
     dst = os.path.join(shadow_root, VCO_H[len("core/include/"):])
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    with open(dst, "w") as f:
+    with open_text(dst, "w") as f:
         f.write(text)
     return dst
 
@@ -311,12 +312,13 @@ def read_criteria(path):
     thresholds the reachability stage aims its tampers at -- read here rather than re-typed, so a
     tamper can never be built to a stale limit."""
     groups = {"cell": [], "equality_cell": [], "report_only_cell": []}
-    for line in open(path):
-        t = line.split()
-        if t and t[0] in groups:
-            groups[t[0]].append(t[1])
-        elif len(t) == 3 and t[0] == "criterion":
-            groups[t[1]] = float(t[2])
+    with open_text(path) as fh:
+        for line in fh:
+            t = line.split()
+            if t and t[0] in groups:
+                groups[t[0]].append(t[1])
+            elif len(t) == 3 and t[0] == "criterion":
+                groups[t[1]] = float(t[2])
     anti = [c for c in groups["equality_cell"] if c.rsplit("_m", 1)[-1] == "12500"]
     groups["anti"] = anti
     groups["all"] = groups["cell"] + groups["equality_cell"] + groups["report_only_cell"]
@@ -334,7 +336,7 @@ def tamper_report(src, dst, col, transform):
     rows actually rewritten: a call that matched nothing must not be able to pass as a tamper.
     """
     n = 0
-    with open(src) as fin, open(dst, "w") as fout:
+    with open_text(src) as fin, open_text(dst, "w") as fout:
         idx = None
         for line in fin:
             t = line.split()
@@ -372,7 +374,7 @@ def tamper_scenarios(src_dir, dst_dir, cycles):
                        os.path.join(dst_dir, name))
     n, min_bound = 0, None
     src = os.path.join(src_dir, "gh19_s6_scenarios.tsv")
-    with open(src) as fin, open(os.path.join(dst_dir, "gh19_s6_scenarios.tsv"), "w") as fout:
+    with open_text(src) as fin, open_text(os.path.join(dst_dir, "gh19_s6_scenarios.tsv"), "w") as fout:
         lines = [l.rstrip("\n") for l in fin if l.strip()]
         head = lines[0].split("\t")
         col = {k: i for i, k in enumerate(head)}
@@ -542,7 +544,7 @@ def wiring_control(tmp, ref, args, bad):
             shutil.copytree(src, os.path.join(root, sub),
                             ignore=shutil.ignore_patterns(".git", "build"))
         if plant:
-            with open(os.path.join(root, planted_rel), "a") as fh:
+            with open_text(os.path.join(root, planted_rel), "a") as fh:
                 fh.write(planted_line)
         g = subprocess.run([sys.executable, args.gate,
                             "--criteria", args.criteria,

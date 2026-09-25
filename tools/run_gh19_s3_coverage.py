@@ -71,6 +71,7 @@ import re
 import shutil
 import subprocess
 import sys
+from _gh19_textio import open_text
 
 COVERAGE_TOOL = "tools/gh19_s3_pulse_delta.py"
 PROBE_TARGET = "gh19_s3_pulse_probe"
@@ -100,12 +101,12 @@ class Invalid(Exception):
 
 
 def read_lines(path):
-    with open(path) as fh:
+    with open_text(path) as fh:
         return fh.read().split("\n")
 
 
 def write_lines(path, lines):
-    with open(path, "w") as fh:
+    with open_text(path, "w") as fh:
         fh.write("\n".join(lines))
 
 

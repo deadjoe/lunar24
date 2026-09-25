@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+from _gh19_textio import Gh19TextIOError, open_text
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = "tools/gh19_s3_pulse_kernel_sweep.cpp"
@@ -73,10 +74,10 @@ def preflight_box_sources():
             raise RuntimeError("box source %s (%s) is missing" % (path, what))
         if path.endswith(".json"):
             if spec is None:
-                with open(full) as fh:
+                with open_text(full) as fh:
                     spec = json.load(fh)
             continue
-        with open(full) as fh:
+        with open_text(full) as fh:
             txt = fh.read()
         if needle not in txt:
             raise RuntimeError("box source %s no longer contains %r (%s)" % (path, needle, what))
@@ -110,7 +111,7 @@ def preflight_box_sources():
             lines.append("BOX-SRC spec %-16s nominal=[%s, %s] transfer=%s"
                          % (sid, j["nominalMin"], j["nominalMax"], j.get("transfer")))
     # The base Hz the whole box hangs off, read out of the production header rather than restated.
-    with open(os.path.join(ROOT, "core/include/lunar24/core/machine_definition.h")) as fh:
+    with open_text(os.path.join(ROOT, "core/include/lunar24/core/machine_definition.h")) as fh:
         for ln in fh:
             if "kVcoBaseHzProvisional" in ln and "constexpr" in ln:
                 lines.append("BOX-SRC header %s" % ln.strip())
@@ -125,27 +126,39 @@ def fm_scan(scan_root=None):
     this script fails closed rather than reporting a stale conclusion.
 
     The call regex requires a member access, so the declarations in vco.h and any prose that merely
-    names the setters do not count as callers. Returns (calls, mentions)."""
+    names the setters do not count as callers. Returns (calls, mentions, unreadable).
+
+    unreadable is the list of files that could not be read as UTF-8. Their bytes raise rather than
+    substitute U+FFFD, and a file contributes to `calls`/`mentions` only after it has been read in
+    full: a mention holding a substituted byte would be quoted in the evidence file as if it were
+    the source text, and the half of a file that was read before the bad byte must not stand in for
+    the file -- "could not be read" must not read as "had no mention"."""
     call_re = re.compile(r"(\.|->)setFm(Depth|Cv)\s*\(")
-    calls, mentions = [], []
+    calls, mentions, unreadable = [], [], []
     for base, dirs, files in os.walk(scan_root or ROOT):
         dirs[:] = [d for d in dirs if not d.startswith("build")]
         for f in files:
             if not f.endswith((".h", ".hpp", ".cpp", ".cc")):
                 continue
             p = os.path.join(base, f)
+            local_calls, local_mentions = [], []
             try:
-                with open(p, errors="replace") as fh:
+                with open_text(p) as fh:
                     for i, ln in enumerate(fh, 1):
                         if "setFmDepth" not in ln and "setFmCv" not in ln:
                             continue
                         rec = "%s:%d: %s" % (os.path.relpath(p, scan_root or ROOT), i, ln.strip())
-                        mentions.append(rec)
+                        local_mentions.append(rec)
                         if call_re.search(ln):
-                            calls.append(rec)
+                            local_calls.append(rec)
+            except Gh19TextIOError as exc:
+                unreadable.append(str(exc))
+                continue
             except OSError:
-                pass
-    return calls, mentions
+                continue
+            calls.extend(local_calls)
+            mentions.extend(local_mentions)
+    return calls, mentions, unreadable
 
 
 def main(argv):
@@ -225,7 +238,13 @@ def main(argv):
               "the files they came from. ***" % e)
         box_lines = []
         ok = False
-    fm_calls, fm_mentions = fm_scan(args.fm_scan_root)
+    fm_calls, fm_mentions, fm_unreadable = fm_scan(args.fm_scan_root)
+    if fm_unreadable:
+        print("\n*** FM SCAN INCOMPLETE: %d source file(s) could not be read as UTF-8: %s. Both "
+              "setters being declared and never CALLED is a claim about the whole scanned tree, so "
+              "it cannot be made from a partial scan. ***"
+              % (len(fm_unreadable), "; ".join(fm_unreadable)))
+        ok = False
     if fm_calls:
         print("\n*** FM SETTER GAINED A CALLER: %s. `instHz = frequencyHz() + fmDevHz_*fmCv_` is no "
               "longer identically frequencyHz(), so dt = frequencyHz()/sr (the identity the whole box "
@@ -674,7 +693,7 @@ def main(argv):
         d = os.path.dirname(args.out)
         if d:
             os.makedirs(d, exist_ok=True)
-        with open(args.out, "w") as fh:
+        with open_text(args.out, "w") as fh:
             fh.write("$ %s\n$ %s\n" % (" ".join(cmd), args.binary))
             fh.write("".join(ln + "\n" for ln in anchor))
             fh.write(out)

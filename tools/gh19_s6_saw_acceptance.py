@@ -47,6 +47,7 @@ import os
 import re
 import struct
 import sys
+from _gh19_textio import Gh19TextIOError, open_text, read_text
 
 EXIT_PASS = 0
 EXIT_RED = 1
@@ -178,7 +179,7 @@ class Gate:
 def _rows(path):
     """Data rows of a tab-separated file: comments (`#`) and blanks dropped."""
     out = []
-    with open(path) as fh:
+    with open_text(path) as fh:
         for n, raw in enumerate(fh, 1):
             line = raw.rstrip("\n")
             if not line.strip() or line.lstrip().startswith("#"):
@@ -324,7 +325,7 @@ def parse_plan(g, path):
 
 def parse_matrix(g, path):
     """One arm's report: the instrument lines and the static matrix, from the SAME file on purpose."""
-    text = open(path).read().splitlines()
+    text = read_text(path).splitlines()
     begin = end = None
     for i, line in enumerate(text):
         if line.strip() == "-- BEGIN MATRIX static":
@@ -372,7 +373,7 @@ def parse_matrix(g, path):
 
 
 def parse_instrument(g, path):
-    text = open(path).read().splitlines()
+    text = read_text(path).splitlines()
     for line in text:
         if "***" in line:
             g.refuse("ARMSELFCHECK", "%s: instrument failure marker: %s" % (path, line.strip()))
@@ -396,7 +397,7 @@ def read_arm_index(path):
     """id -> (raw filename, warm, win, f0_meas_hz) from a probe-written manifest. `f0_meas_hz` is the
     PROBE's own zero-crossing measurement, carried here so the frequency guard reads the instrument
     that did not produce the residual columns under test."""
-    with open(path) as fh:
+    with open_text(path) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     head = lines[0].split("\t")
     idx = {k: i for i, k in enumerate(head)}
@@ -509,7 +510,7 @@ def wiring_scan(repo_root):
                     continue
                 full = os.path.join(dirpath, fn)
                 rel = os.path.relpath(full, repo_root)
-                with open(full, errors="replace") as fh:
+                with open_text(full) as fh:
                     lines = code_only(fh.read()).splitlines()
                 n_files += 1
                 for name in S6_WIRE_NAMES:
@@ -551,7 +552,15 @@ def check_wiring(g, repo_root, wiring):
                                                                          rel, repo_root))
     if g.refusals:
         return None
-    hits, defs, n_files = wiring_scan(repo_root)
+    try:
+        hits, defs, n_files = wiring_scan(repo_root)
+    except Gh19TextIOError as exc:
+        g.refuse("WIRING-SOURCE", "the scanned product tree could not be read as UTF-8: %s. The "
+                                  "wiring declaration is a claim about the text of %s, so a file "
+                                  "whose bytes are not that text cannot be checked against it -- and "
+                                  "must not be read with substitution, which would silently rewrite "
+                                  "the evidence this gate is reading" % (exc, ", ".join(S6_WIRE_ROOTS)))
+        return None
     g.say("ACCEPT-WIRING roots=%s files_scanned=%d names=%d declared_rows=%d"
           % (",".join(S6_WIRE_ROOTS), n_files, len(S6_WIRE_NAMES), len(wiring)))
 
@@ -582,7 +591,14 @@ def check_wiring(g, repo_root, wiring):
     # 3. Structure. The guard block is located by its anchor (exactly once) and must be the only place
     #    outside the declarations themselves that the three corrected names are read; each name must
     #    still have exactly one declaration line, found by its own shape rather than by a line number.
-    vco_lines = code_only(open(os.path.join(repo_root, vco), errors="replace").read()).splitlines()
+    try:
+        vco_text = read_text(os.path.join(repo_root, vco))
+    except Gh19TextIOError as exc:
+        g.refuse("WIRING-SOURCE", "%s could not be read as UTF-8: %s. The guard region is placed by "
+                                  "reading this file's text, so it cannot be placed in a file whose "
+                                  "bytes are not that text" % (vco, exc))
+        return total
+    vco_lines = code_only(vco_text).splitlines()
     anchors = [i for i, ln in enumerate(vco_lines, 1) if S6_GUARD_ANCHOR in ln]
     if len(anchors) != 1:
         g.fail("S6-WIRING", "the guard anchor %r occurs %d times in %s (expected exactly 1); the A/B's "
@@ -631,7 +647,7 @@ def finish(g, verdict, code):
         g.say("ACCEPT-NOTE no judgement is issued: the artifacts failed an input check, so a red or "
               "green verdict here would not be a statement about the DSP.")
     if g.out:
-        with open(g.out, "w") as fh:
+        with open_text(g.out, "w") as fh:
             fh.write("\n".join(g.lines) + "\n")
     return code
 
