@@ -23,6 +23,17 @@ four legs are **green at that tree** — legs 1 and 2 through the registered ent
 `gh19_prb_dynpwm_pipeline_mutant` (exit 0, `PRB-MUTANT PASS`), leg 4 by re-running the two standing
 surfaces unchanged (§6.8).
 
+**An eighth was found by CI rather than by running anything, and it is why this report has a §5.1.** The
+first push of this branch was red on exactly one of the four platform jobs — `windows-latest`, failing in
+**3m18s**, i.e. build time, not test time — because the `improvement-bypass` stager emitted the shipped
+function body beneath its own `return`, and MSVC reports the unreachable remainder at `/W4` (C4702) which
+`/WX` turns fatal, while clang's and gcc's `-Wall -Wextra` do not diagnose unreachable code at all. **The
+same mutation text had been compiling green for months inside the ubuntu-only `probe-gate` job**; this
+branch is what first made the four-platform matrix compile it. The fix deletes the unreachable remainder
+and *asserts* the cut rather than assuming it, and the measurement is unchanged — four byte-identical
+report digests and a byte-identical rebuilt neutral probe (§5.1). Counting it, this slice surfaced
+**eight** defects, all of them in this slice's own new files, none in the product.
+
 1. **The pinned `improvement_min_db = 6.0` sat above the pristine corrected arm's own measured minimum.**
    Four independent instruments reported the same three `44100 Hz / square / ratio 20` cells below it
    (worst 4.70 dB), out of 56 judged dynamic cells; every other cell cleared. The criteria itself labelled
@@ -72,12 +83,20 @@ the director reviews the legs first.
 ```
 $ git diff --name-only c422197e9362a56fb6fea127da888536977a37a4 -- core host tests/probes
 $ git diff --stat c422197e9362a56fb6fea127da888536977a37a4
- CMakeLists.txt                 | 106 +++++++++++++++++++++++++++++++++++++++++
+ CMakeLists.txt                 | 114 +++++++++++++++++++++++++++++++++++++++++
  tools/gh19_s3_pulse_analyze.py |  21 ++++++--
- 2 files changed, 124 insertions(+), 3 deletions(-)
+ 2 files changed, 132 insertions(+), 3 deletions(-)
 ```
 
-`CMakeLists.txt` (+106, additions only) declares the two new binaries
+Correction, kept visible rather than quietly fixed: this block carried **106** and **124 insertions** in an
+earlier revision — numbers taken from a run of this command made **before** the last edits to
+`CMakeLists.txt`, and presented here as the command's output ever since. It is the same defect §6.7 is
+about, in this report's own §0: a recorded artifact that was true when recorded, cited later as if it were
+current. The block and the sentence below now carry the values this tree actually reports (`114`, `132`),
+re-derived by running both commands again. §11 carried `+114/-0` throughout, so that column and this block
+now agree instead of contradicting each other.
+
+`CMakeLists.txt` (+114, additions only) declares the two new binaries
 (`gh19_prb_degen_probe`, `gh19_s3_pulse_probe_neutral`), the header-staging target
 (`gh19_prb_shadow`, a `add_custom_command` running `tools/stage_gh19_prb_shadow.py
 --mutation improvement-bypass`), and **three** `slow` CTest entries — `gh19_prb_degen_probe`,
@@ -242,32 +261,123 @@ and the gate's `DEGEN-IDENTITY` criterion is never reached by that arm.
 | C `degen_C` | `gh19_prb_degen_probe.cpp` with the staged `degen-dispatch` header | PREMISE-LIVE (fires bit 6) |
 | A2 `degen_A2` | `gh19_prb_degen_probe.cpp`, pristine | the identity's stabilising side |
 
-`tools/stage_gh19_prb_shadow.py` (167 lines) performs the header staging and refuses unless the anchor
-occurs exactly once and the result differs from the input. Its output for the improvement-bypass
-mutation, verbatim (every line carries the `PRB-SHADOW ` prefix; the shadow root in the path is the
-caller's `--out`, not a fixed name):
+`tools/stage_gh19_prb_shadow.py` (304 lines) performs the header staging. It refuses unless the anchor
+occurs exactly once and the result differs from the input — and, for the bypass mutation, unless the
+region it *deletes* is pinned at both ends to statements of the shipped body (§5.1). Its output for the
+improvement-bypass mutation, verbatim (every line carries the `PRB-SHADOW ` prefix; the shadow root in
+the path is the caller's `--out`, not a fixed name):
 
 ```
-PRB-SHADOW mutation=improvement-bypass path=/tmp/shadow-recheck/lunar24/core/pulse_blep_kernel.h anchor_hits=1
+PRB-SHADOW mutation=improvement-bypass path=/tmp/shadow-recheck-rev3/lunar24/core/pulse_blep_kernel.h anchor_hits=1
 PRB-SHADOW tree_sha256=08fde1f63daf46ae6dd1ac0313bd37fa51186bc3e57e9bec11b34a53b7cbea75
-PRB-SHADOW mutated_sha256=8ae91eb657886c4132ab57d43e54277ba1b71c8a9a94630d245213261618686b differs=yes
+PRB-SHADOW mutated_sha256=afbc1a1f7bad115d169a338c9bca6a984a990b91afd5f29ce6a750fc7e4fecda differs=yes
+PRB-SHADOW dead_body_removed_bytes=982 unreachable_under_bypass=yes
 ```
 
-That output was re-produced while writing this report: the stager was run again and both hashes matched
-the ones above, so the mutation is reproducible from the shipped stager and the shipped header rather
-than recorded from a run whose inputs have since moved.
+`tree_sha256` is **unchanged** from the value this report recorded before the Windows fix
+(`08fde1f6…`, §5.1), and that is the independent confirmation that the fix edited the *generator* rather
+than the shipped header: the header's own bytes are the same file, here and in the shadow root. What
+moved is the mutation text — `mutated_sha256` went from `8ae91eb6…` to `afbc1a1f…`, and the fourth line,
+reporting the deleted region, is new. The output was re-produced after the fix, so the mutation is
+reproducible from the shipped stager and the shipped header rather than recorded from a run whose inputs
+have since moved.
 
-What the bypass does, verbatim: the stager writes a short control banner into the function body and then
-`return 0.0;  // CONTROL: the two-edge correction bypassed entirely`, directly above the function's first
-statement (`if (!(dt > 0.0)) return 0.0;`). So the correction contributes nothing and everything else in
-the function stays put. The generated file lives only in a shadow include root; the shipped header is
-untouched — confirmed by `git diff --name-only main -- core host tests/probes` being empty.
+What the bypass does, verbatim: the stager replaces the function head with one whose parameters are
+**unnamed** (`double /*t*/, double /*duty*/, double /*dt*/`), writes a short control banner into the
+body, and then `return 0.0;  // CONTROL: the two-edge correction bypassed entirely`. The statements the
+shipped header carries below that point — the `dt` guard, the capped kernel width, and the two-edge
+residual — are **not re-emitted**; the stager cuts them out and asserts the cut, 982 bytes (§5.1). So
+the correction contributes nothing and everything else in the function stays put. The generated file
+lives only in a shadow include root; the shipped header is untouched — confirmed by
+`git diff --name-only main -- core host tests/probes` being empty and by `tree_sha256` above.
 
-The idiom is not new here, which matters for the build: `main` already carries the same construction —
-`tools/stage_gh19_s6_shadow.py` generating a shadow root for `gh19_s6_saw_probe_neutral`, declared with
-the same `BEFORE PRIVATE` include order and `lunar_enable_warnings`. S6's PR-A (#46) merged with all
-four platforms green, so an unreachable statement of this shape is already known to pass this repo's
-`/W4 /WX` build on MSVC. This slice's stager is a deliberate sibling of that one.
+The idiom is not new here: `main` already carries the same construction — `tools/stage_gh19_s6_shadow.py`
+generating a shadow root for `gh19_s6_saw_probe_neutral`, declared with the same `BEFORE PRIVATE`
+include order and `lunar_enable_warnings`. **But that is an argument about the idiom, not about this
+mutation text, and an earlier revision of this report drew the wrong conclusion from it** — it said that
+S6's PR-A (#46) merging with all four platforms green proved an unreachable statement of this shape
+passes this repo's `/W4 /WX` build on MSVC. It proves no such thing, and the difference is what §5.1
+records: S6's substitution deletes statements **inside a live block** — its replacement keeps the body
+reachable and drops a `(void)r;` use — so it creates no unreachable code at all, whereas this slice's
+bypass did. The text this stager reuses is S3's, and S3's mutated compile happens **only inside the
+ubuntu-only `probe-gate` job**, so the four-platform matrix had never compiled it before this slice
+turned the same mutation into a CMake target.
+
+### 5.1 The Windows build break on the first push, and what the fix changed
+
+This is the **eighth** defect of this slice (the preamble counts seven found by running it); this one was
+found by CI, on the first push, and it is the one whose repair had to be shown not to move any measurement.
+
+The first push of this slice was red on exactly one of the four platform jobs and green on the other
+three. `windows-latest (cl)` failed in **3m18s** — build time, not test time — with
+
+```
+build/gh19_prb_shadow/lunar24/core/pulse_blep_kernel.h(128,1): error C2220: the following warning is treated as an error [gh19_s3_pulse_probe_neutral.vcxproj]
+build/gh19_prb_shadow/lunar24/core/pulse_blep_kernel.h(128,1): warning C4702: unreachable code
+build/gh19_prb_shadow/lunar24/core/pulse_blep_kernel.h(135,1): warning C4702: unreachable code
+build/gh19_prb_shadow/lunar24/core/pulse_blep_kernel.h(138,1): warning C4702: unreachable code
+```
+
+verbatim from the job log apart from the runner's timestamp prefix, the `D:\a\lunar24\lunar24\`
+checkout prefix and the backslash separators. **Three** sites, one per statement the bypass left beneath
+itself — which is the mechanism stated rather than described. The mechanism is a property of the tools, not of the product:
+the bypass replacement emitted `return 0.0;` and then the shipped body beneath it, so every statement in
+that body was dead code. **MSVC reports unreachable code at `/W4` (C4702), and `/WX` makes that fatal
+(C2220); clang's and gcc's `-Wall -Wextra` do not diagnose unreachable code at all.** Three platforms
+green and one red is therefore the expected shape of this mistake rather than evidence against it — and
+because the four-platform matrix runs with `--label-exclude slow`, unlike `probe-gate` it compiles this
+arm on every push.
+
+Two repairs were rejected on purpose. An MSVC-only `/wd4702` would be this repo's **first** warning
+suppression in a non-`third_party` file (there are zero today), and it would also falsify the arms'
+"identical flags" property that the comparison rests on. Moving the compile out of the matrix would hide
+the red and leave the control arm uncompiled on four platforms. The fix is in the generator: **delete
+the unreachable remainder rather than suppress the warning about it.**
+
+Deleting it introduces a second-order trap, which is why the deletion is *asserted* and not merely
+performed. With the body gone, nothing references the parameters, so `/W4` emits **C4100** unreferenced
+formal parameter — the obvious repair would trade one fatal warning for another. Both are fixed in one
+pass, by unnamed parameters. Then five refusals guard the cut, each because the failure it prevents
+yields a control arm that **builds and passes while measuring a different experiment than the report
+describes**: the cut must start at the replacement's own end and at a line break; exactly one
+closing-brace landmark may follow it; the cut must end at that landmark; no closing brace may appear
+inside the cut before its end; each named body statement must occur exactly once within it; above the
+body's first statement only blanks and comments may be discarded; and the region must be byte-identical
+to the same region derived from the **shipped** text through the anchor. Each refusal was exercised
+against the shipped text before the fix was committed, and it fires with its own named reason rather than
+staging a wrong arm.
+
+**The neutrality of the deletion is evidenced by artifact identity, not by reports.** The neutral probe
+was rebuilt from the new shadow header and compared to the pre-fix build byte for byte. Both binaries are
+still on this host and hash equal today:
+
+```
+fea9601cff31866b96decdb787181cf2b6723324941920884d03484a0827a935  /tmp/prb-rev1/gh19_s3_pulse_probe_neutral   (preserved before the fix)
+fea9601cff31866b96decdb787181cf2b6723324941920884d03484a0827a935  build-prb/gh19_s3_pulse_probe_neutral        (built from the fixed stager)
+```
+
+Had the removed statements ever reached the emitted code, removing them would have changed the binary. That is stronger *and* cheaper than "the two runs' reports agree", because it does not depend
+on the report format, the `--label`, or the analyzer.
+
+**And the reports agree anyway.** Legs 1+2 and leg 3 were re-run at the fixed tree through their
+**registered CTest entries** (#76 and #77), and all four report digests are byte-identical to the values
+this report recorded before the fix — which are committed in
+`evidence/leg1_leg2_registered_entry_green.txt` and `evidence/leg3_registered_entry_green.txt`. The
+post-fix transcripts are `evidence/leg1_leg2_registered_entry_green_windowsfix.txt` and
+`evidence/leg3_registered_entry_green_windowsfix.txt`; those two pre-fix files are left in place rather
+than overwritten, because they are the comparison partner this table cites.
+
+| report | pre-fix (committed) | post-fix (re-run) |
+| --- | --- | --- |
+| `cand` (legs 1+2) | `3efee15b…` | `3efee15b95d4567c2b1af557fecc71cb488f704831c9bb6757192bc02a4c61aa` |
+| `neut` (legs 1+2) | `07a18188…` | `07a181884f273de461ac5c320ad9b4ac3d2c5fe1ca1a6c6cc28e66d11b660da7` |
+| `probe_A` (leg 3) | `15bc6c94…` | `15bc6c94aab5d5b226d00ee6a6e3afcfee9bec2a2f80f246743b1a41e6e5272e` |
+| `probe_B` (leg 3) | `82ac1c7f…` | `82ac1c7fd18251201effba2f6151cdc14698ea1f464170fe8250ca82709cb6c2` |
+
+Both entries exit 0 — `gh19_prb_dynpwm_acceptance` in 1733.33 s (`verdict=PASS refusals=0 failures=0`,
+`NEGCTL-PRB verdict=ALL-HIT ok=15 bad=0 controls=15 skipped=(none)`) and `gh19_prb_dynpwm_pipeline_mutant`
+in 1727.39 s (`verdict=RED refusals=0 fail=PRB-FAIL-IMPROVEMENT=56`, `PRB-MUTANT PASS`). Those runtimes
+are longer than the pre-fix 1557.65 s / 1554.34 s because both re-runs ran concurrently on this host.
 
 Leg 3 does not use the CMake binaries at all. It stages its own include roots and compiles every arm
 itself with the compiler CMake uses (`--compiler`), so that the pristine arms get an **empty** include
@@ -609,6 +719,31 @@ mutation to compound (which is exactly how the §6.2 liveness direction was obta
    check that fires on the correct state is worse than no check — it gets switched off), and it re-reads
    through the same reader instead of re-encoding a string, so universal-newline translation on a Windows
    runner cannot manufacture a mismatch.
+
+**A residual limit of that check, named rather than fixed.** The rollback is verified by *re-reading the
+file*, so a second process mutating the same path between the restore write and that read makes the suite
+report its own restore as failed. That is not hypothetical: it happened while this slice's legs were
+re-run, when the hand-invocation control (R1) ran concurrently with the registered entry `#76` against the
+same worktree. The file the control suite mutates is the **worktree's** criteria file — `Sandbox.write()`
+writes `self.paths[key]`, and the registered entry passes the relative path
+`report/gh19-prb-dynpwm/acceptance_criteria.tsv` — so two pipeline legs running at once are genuinely
+racing for one file. R1's two error strings corroborate each other:
+
+```
+CONTROL criteria_drop_criterion SETUP FAILED: restoration did not take for
+  report/gh19-prb-dynpwm/acceptance_criteria.tsv (the text cache was not rolled back:
+  one text is a prefix of the other (want 30714 bytes, got 30030))
+control setup: the criteria do not carry six degen_pair rows          # stderr
+```
+
+The second line is exactly the transient text of a sibling suite running `criteria_drop_degen_pair`.
+**CI cannot hit this**: both ctest invocations in `.github/workflows/ci.yml` (`:76` and `:128`) run without
+`-j`, so the two `slow` entries are serial there. The resolution is the cheap one — re-run the same argv
+with no sibling process. That run exits **0**, `NEGCTL-PRB ok=15 bad=0 controls=15`, `verdict=ALL-HIT`,
+with **zero** `SETUP FAILED` lines, and it reproduces both report digests (`3efee15b…`, `07a18188…`)
+(`evidence/hand_invocation_repeatability_windowsfix.txt`). So the earlier exit 1 is reproduced as a
+concurrency artifact rather than argued away; it is a limit of running two legs at once against one
+worktree, not a measurement difference, and not something CI can reach.
 
 What matters is not "three fixes landed" but that **the suite now runs to the end and says so**:
 `NEGCTL-PRB ok=15 bad=0 controls=15`, `NEGCTL-PRB verdict=ALL-HIT`, with a printed summary line the
@@ -994,7 +1129,7 @@ builds) is not in any number above. It remains ≈ 25-30 min, and it remains an 
 | `tools/gh19_prb_dynpwm_gate_negcontrol.py` | `0dd52ac6360822c1` | 683 | new |
 | `tools/run_gh19_prb_dynpwm_pipeline.py` | `74722094783db0e2` | 271 | new |
 | `tools/run_gh19_prb_dynpwm_mutants.py` | `cde170119abc2813` | 396 | new |
-| `tools/stage_gh19_prb_shadow.py` | `9e17c5bc2c15c463` | 167 | new |
+| `tools/stage_gh19_prb_shadow.py` | `f838c8cd4b4e34b1` | 304 | new |
 | `tools/gh19_prb_degen_probe.cpp` | `c7e806dd0b890ddf` | 683 | new |
 | `report/gh19-prb-dynpwm/acceptance_criteria.tsv` | `0e11bb9af6a657b1` | 431 | new |
 | `tools/gh19_s3_pulse_analyze.py` | `36226a259020a44c` | +21/-3 | modified |
@@ -1085,8 +1220,36 @@ an instrument that states a wrong exit code, is the same defect §3 had to fix.
 | `analyzer_ab.txt` | `9d16c2b27a70a7de` | 2013 | §8's byte-identity A/B at both flag sets, with the costs |
 | `pipeline_leg_full.txt` | `ecf17bda4796230c` | 6026 | the pipeline leg's complete log, unedited — the **blocked** run, kept as the record of blocker 1 |
 | `leg3_mutant_full.txt` | `dead2e3fb9ffc885` | 12948 | leg 3's complete log, unedited, including the failure that stops it — the **blocked** run, and the hand-invocation that §6.5 defect 6 is about |
-| `leg1_leg2_registered_entry_green.txt` | `15a8b3547ec42e8c` | 100 | legs 1+2 at the fixed tree, **as the registered CTest entry `#76`**: `product_diff=OK`, `verdict=PASS refusals=0 failures=0`, all 15 controls `ok=15 bad=0 controls=15 verdict=ALL-HIT`, `skipped=(none)`, `improvement_min=4.7000` against the re-pinned 4.0, 1557.65 s (§6.1, §6.2) |
-| `leg3_registered_entry_green.txt` | `760c9722dd801a15` | 108 | leg 3 at the fixed tree, **as the registered CTest entry `#77`**: acceptance orientation `exit=0 verdict=PASS`, mutant orientation `exit=1 verdict=RED refusals=0 fail=PRB-FAIL-IMPROVEMENT=56`, `PRB-MUTANT PASS`; the degen arm's `degen_pristine_exit=0` / `exit=64 premise_bit=True fatal_premise=6 fatal_stimulus=0`, 1554.34 s (§6.3) |
+| `leg1_leg2_registered_entry_green.txt` | `15a8b3547ec42e8c` | 10437 | legs 1+2 at the fixed tree, **as the registered CTest entry `#76`**: `product_diff=OK`, `verdict=PASS refusals=0 failures=0`, all 15 controls `ok=15 bad=0 controls=15 verdict=ALL-HIT`, `skipped=(none)`, `improvement_min=4.7000` against the re-pinned 4.0, 1557.65 s (§6.1, §6.2) |
+| `leg3_registered_entry_green.txt` | `760c9722dd801a15` | 12971 | leg 3 at the fixed tree, **as the registered CTest entry `#77`**: acceptance orientation `exit=0 verdict=PASS`, mutant orientation `exit=1 verdict=RED refusals=0 fail=PRB-FAIL-IMPROVEMENT=56`, `PRB-MUTANT PASS`; the degen arm's `degen_pristine_exit=0` / `exit=64 premise_bit=True fatal_premise=6 fatal_stimulus=0`, 1554.34 s (§6.3) |
+
+**Added for the Windows build fix** (§5.1). These are new files rather than overwrites of the two
+pre-fix transcripts above, because the pre-fix rows are the comparison partner §5.1's digest table cites:
+
+| file | sha256 | bytes | what it establishes |
+| --- | --- | --- | --- |
+| `stage_gh19_prb_shadow_windowsfix.txt` | `2f04c67be18650c8` | 375 | the stager's output after the fix, verbatim: `tree_sha256` unchanged (`08fde1f6…`), `mutated_sha256=afbc1a1f…`, `dead_body_removed_bytes=982` (§5, §5.1) |
+| `leg1_leg2_registered_entry_green_windowsfix.txt` | `917e8e9c9820510c` | 10451 | legs 1+2 re-run at the fixed tree through registered entry `#76`: exit 0, `verdict=PASS refusals=0 failures=0`, `ok=15 bad=0 controls=15 verdict=ALL-HIT`, `skipped=(none)`, and `cand`/`neut` digests identical to the pre-fix row above, 1733.33 s (§5.1) |
+| `leg3_registered_entry_green_windowsfix.txt` | `7d973dbd20177f03` | 13056 | leg 3 re-run at the fixed tree through registered entry `#77`: exit 0, `PRB-MUTANT PASS`, mutant orientation `verdict=RED refusals=0 fail=PRB-FAIL-IMPROVEMENT=56`, and `probe_A`/`probe_B` digests identical to the pre-fix row above, 1727.39 s (§5.1) |
+| `hand_invocation_repeatability_windowsfix.txt` | `b52c76ec099dcbe5` | 7305 | the hand invocation re-run **alone** — the same argv as the concurrent one, no sibling process: `R1b_RC=0`, `PRB GATE verdict=PASS refusals=0 failures=0`, `NEGCTL-PRB ok=15 bad=0 controls=15 verdict=ALL-HIT`, **0** `SETUP FAILED` lines, and both digests identical to the pre-fix row above (`3efee15b…`, `07a18188…`). This is the discriminator for §6.4's residual limit: the earlier exit 1 does not survive removing the sibling process (§6.4) |
+
+Correction, kept visible rather than quietly fixed. Every row of these tables was reconciled mechanically
+against the files it names — sha256 and byte count read from the files, compared to the cells — and that
+surfaced two defects in **this report's own tables**. First, the two rows for
+`leg1_leg2_registered_entry_green.txt` and `leg3_registered_entry_green.txt` carried **line counts** (100
+and 108) in the column headed *bytes*; the cells now carry the byte counts, and the other 25 evidence rows
+reconciled unchanged. Second, §11's row for `tools/stage_gh19_prb_shadow.py` carried the sha and line
+count of that file **before** §5.1's fix (`9e17c5bc…`, 167 lines); it now carries the shipped file's
+(`f838c8cd…`, 304 lines), the other eight rows of §11 reconciling unchanged. The reconciliation is stated
+because a table of shas is exactly the kind of artifact a reader trusts instead of checking, which is the
+property §6.7 was about.
+**Re-run after the last evidence row was added: 38 rows checked, 0 mismatched, 0 skipped** — 31 of them
+§12's evidence rows (name, sha256 prefix and byte count all read from the file, including the new
+`hand_invocation_repeatability_windowsfix.txt`) and 7 of §11's, the remaining two §11 rows being
+excluded because their third column is a diffstat (`+21/-3`) or a dash rather than a count. Two further
+facts the same run settles: every §12 row's third column is genuinely **bytes**, not lines, in a table
+whose predecessor had the two confused; and the whole check is mechanical — it reads the files, not
+this report.
 
 The blocked-run transcripts are kept rather than replaced: they are the evidence for §6.4 and §6.5, and a
 reader should be able to see the defect and the fix rather than take the fix on trust. For the same reason

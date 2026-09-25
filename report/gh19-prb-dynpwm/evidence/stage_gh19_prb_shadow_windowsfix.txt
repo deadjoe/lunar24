@@ -1,0 +1,4 @@
+PRB-SHADOW mutation=improvement-bypass path=/tmp/shadow-recheck-rev3/lunar24/core/pulse_blep_kernel.h anchor_hits=1
+PRB-SHADOW tree_sha256=08fde1f63daf46ae6dd1ac0313bd37fa51186bc3e57e9bec11b34a53b7cbea75
+PRB-SHADOW mutated_sha256=afbc1a1f7bad115d169a338c9bca6a984a990b91afd5f29ce6a750fc7e4fecda differs=yes
+PRB-SHADOW dead_body_removed_bytes=982 unreachable_under_bypass=yes
