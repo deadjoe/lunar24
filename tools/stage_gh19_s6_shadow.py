@@ -78,7 +78,12 @@ def stage_neutral(repo_root, shadow_root, edits=NEUTRAL_EDITS, quiet=False):
     if not os.path.exists(src):
         print("INVALID: %s does not exist in %s" % (VCO_H, repo_root))
         return None
-    with open(src) as fh:
+    # encoding= is not optional here. vco.h is UTF-8 and carries 47 non-ASCII characters (em dashes
+    # in the prose comments), and Python's text-mode default is the LOCALE codec -- UTF-8 on Linux
+    # and macOS, but cp1252 on Windows, where this tool runs as a build input and raises
+    # UnicodeDecodeError on the first one. It fails as an MSB8066 custom-build error, i.e. as a
+    # broken WINDOWS BUILD rather than as a bad read, which is a long way from the real cause.
+    with open(src, encoding="utf-8") as fh:
         text = fh.read()
     staged = text
     for old, new in edits:
@@ -97,7 +102,11 @@ def stage_neutral(repo_root, shadow_root, edits=NEUTRAL_EDITS, quiet=False):
         return None
     dst = os.path.join(shadow_root, VCO_H[len("core/include/"):])
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    with open(dst, "w") as fh:
+    # newline="\n" for the same reason the read pins its codec: text-mode writing translates "\n" to
+    # os.linesep, so on Windows the staged header would come out CRLF while the digest printed below
+    # (and compared across arms) is taken from the untranslated string. Pinning it makes the staged
+    # bytes a function of the input alone, so one digest describes one file on every platform.
+    with open(dst, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(staged)
     if not quiet:
         print("S6-SHADOW path=%s anchor_hits=1" % dst)
