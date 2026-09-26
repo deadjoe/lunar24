@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 
 def run(cmd, check=True):
@@ -68,7 +69,7 @@ def main():
         tsv = os.path.join(tmp, "analyze.tsv")
         an = run([sys.executable, args.analyzer, "--dir", probe_dir,
                   "--manifest", args.manifest])
-        with open(tsv, "w", encoding="utf-8") as f:
+        with open_text(tsv, "w") as f:
             f.write(an.stdout)
         gate_cmd = [sys.executable, args.gate, "--baseline", args.baseline,
                     "--current", tsv]

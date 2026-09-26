@@ -42,6 +42,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import read_text, write_text
 
 # The only file the negatives mutate. Everything else is read from the real (committed) tree.
 VCF_HEADER = "core/include/lunar24/core/polivoks_vcf.h"
@@ -50,8 +51,7 @@ PROBE_INCLUDE_DIRS = ["tests/host", "core/include", "generated", "host/include"]
 
 
 def load_header(root):
-    with open(os.path.join(root, VCF_HEADER)) as fh:
-        return fh.read()
+    return read_text(os.path.join(root, VCF_HEADER))
 
 
 def vcf_abs(root, include_root):
@@ -110,8 +110,7 @@ def write_mutated(root, get_a, get_b, shadow_dir, base):
     """Copy the VCF header into a shadow include dir applying the two string replacement hooks."""
     path = vcf_abs(root, shadow_dir)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as fh:
-        fh.write(get_b(get_a(base)))
+    write_text(path, get_b(get_a(base)))
 
 
 def main():
@@ -160,7 +159,7 @@ def main():
                       lambda b: b.replace("static constexpr double kFreqMaxHz = 20000.0;",
                                           "static constexpr double kFreqMaxHz = 5000.0;"),
                       os.path.join(neg1, "include"), base)
-        assert "kFreqMaxHz = 5000.0" in open(vcf_abs(root, os.path.join(neg1, "include"))).read()
+        assert "kFreqMaxHz = 5000.0" in read_text(vcf_abs(root, os.path.join(neg1, "include")))
         n1_bin = os.path.join(td, "probe_neg1")
         rc, tail = build_probe(root, os.path.join(neg1, "include"), n1_bin, args.compiler)
         if args.verbose:
@@ -211,7 +210,7 @@ def main():
                       lambda b: b.replace("const double baseFc = baseFreqHz_(c.freq, sr_);",
                                           "const double baseFc = baseFreqHz_((&c == &channel_[1]) ? channel_[0].freq : c.freq, sr_);"),
                       os.path.join(neg2, "include"), base)
-        assert "channel_[0].freq : c.freq" in open(vcf_abs(root, os.path.join(neg2, "include"))).read()
+        assert "channel_[0].freq : c.freq" in read_text(vcf_abs(root, os.path.join(neg2, "include")))
         n2_bin = os.path.join(td, "probe_neg2")
         rc, tail = build_probe(root, os.path.join(neg2, "include"), n2_bin, args.compiler)
         if args.verbose:

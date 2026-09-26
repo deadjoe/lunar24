@@ -96,18 +96,26 @@ def write_text(path, text):
 
 
 @contextlib.contextmanager
-def open_text(path, mode="r"):
+def open_text(path, mode="r", newline=None):
     """Yield a UTF-8 text file object opened in `mode`; codec failures become Gh19TextIOError.
 
     The yielded object is the real file object, so iteration and `with` semantics are unchanged
     from `open(path, mode, encoding="utf-8")`. Decode/encode failures raised anywhere in the body
     are converted, which is what lets a line-iterating loop fail loudly instead of midway.
+
+    `newline` is None for this module's policy: universal newlines on a read, LF on a write. Pass
+    it explicitly only where the caller's own line handling is the point -- csv is the case that
+    exists here, and it asks to be given a file opened with newline="". Passed explicitly on a
+    read it replaces universal-newline translation rather than adding to it, which is exactly the
+    difference such a caller wants; on a write it replaces the LF policy.
     """
     if "b" in mode:
         raise ValueError("open_text is text-only; mode %r asks for binary" % mode)
     kwargs = {"encoding": ENCODING}
     if any(c in mode for c in "wax+"):
-        kwargs["newline"] = NEWLINE
+        kwargs["newline"] = NEWLINE if newline is None else newline
+    elif newline is not None:
+        kwargs["newline"] = newline
     fh = open(path, mode, **kwargs)
     try:
         yield fh

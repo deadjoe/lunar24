@@ -24,6 +24,7 @@
 import os, sys, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gen_gh19_blamp as G
+from _gh19_textio import open_text
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -124,7 +125,7 @@ def build(L, N):
     out = replace_function(out, OLD_CORR_START, new_corr)
     os.makedirs(OUTDIR, exist_ok=True)
     dst = os.path.join(OUTDIR, f".vco_blamp_win{L:g}.h")
-    with open(dst, "w", encoding="utf-8") as f:
+    with open_text(dst, "w") as f:
         f.write(out)
     # sanity: the new blampG must define kLut and the corr must loop over n.
     assert "kLut[]" in out, "blampG LUT missing"
@@ -189,7 +190,7 @@ def build_naive():
     out = src.replace(NAIVE_ANCHOR, NAIVE_REPL)
     os.makedirs(OUTDIR, exist_ok=True)
     dst = os.path.join(OUTDIR, ".vco_blamp_naive.h")
-    with open(dst, "w", encoding="utf-8") as f:
+    with open_text(dst, "w") as f:
         f.write(out)
     o, c = out.count("{"), out.count("}")
     assert o == c, f"brace imbalance: open={o} close={c}"
@@ -204,7 +205,7 @@ def build_poly():
     out = replace_function(out, OLD_CORR_START, POLY_CORR + "\n")
     os.makedirs(OUTDIR, exist_ok=True)
     dst = os.path.join(OUTDIR, ".vco_blamp_poly.h")
-    with open(dst, "w", encoding="utf-8") as f:
+    with open_text(dst, "w") as f:
         f.write(out)
     assert "7.0 / 30.0" in out, "poly blampG corner missing"
     assert "uPeak < 2.0" in out, "poly single-peak corr missing"

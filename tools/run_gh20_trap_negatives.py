@@ -44,6 +44,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import read_text, write_text
 
 # The only file the negatives mutate; everything else is read from the real (committed) tree.
 VCF_HEADER = "core/include/lunar24/core/polivoks_vcf.h"
@@ -225,7 +226,7 @@ def main():
 
     root = os.path.abspath(args.root)
     compiler = args.compiler or os.environ.get("CXX", "c++")
-    real_text = open(os.path.join(root, VCF_HEADER)).read()
+    real_text = read_text(os.path.join(root, VCF_HEADER))
 
     results = {}
     for name in ["real"] + MUTATIONS:
@@ -233,8 +234,7 @@ def main():
             shadow = os.path.join(td, "shadow")
             os.makedirs(shadow, exist_ok=True)
             patched = real_text if name == "real" else apply_patch(real_text, name)
-            with open(os.path.join(shadow, "polivoks_vcf.h"), "w") as fh:
-                fh.write(patched)
+            write_text(os.path.join(shadow, "polivoks_vcf.h"), patched)
             binpath = os.path.join(td, "driver")
             try:
                 compile_driver(root, shadow, compiler, binpath)

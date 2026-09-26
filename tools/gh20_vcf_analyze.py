@@ -79,6 +79,7 @@ import argparse
 import math
 import os
 import sys
+from _gh19_textio import open_text
 
 # ---------------------------------------------------------------------------
 # Tolerances — set FROM MEASUREMENT (the probe is run first, then the real values below are read off
@@ -113,7 +114,7 @@ OVERSCALE_PEAK = 1.0     # amp_peak upper bound. Real measured max across the re
 # IO
 # ---------------------------------------------------------------------------
 def read_rows(path):
-    with open(path) as fh:
+    with open_text(path) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     if not lines:
         return []

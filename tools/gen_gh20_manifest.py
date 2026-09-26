@@ -20,6 +20,7 @@
 #   python3 tools/gen_gh20_manifest.py --out tools/gh20_manifest.tsv
 
 import argparse
+from _gh19_textio import write_text
 
 # ---- SHARED matrix spec (must byte-match tests/probes/gh20_vcf_probe.cpp normGrid() AND the
 #      analyzer normval table). 21 points, step 0.05 (per the GH#20 mandate "norm>=21 points"). ----
@@ -140,8 +141,7 @@ def main():
             cid, col["group"], str(col["sr"]), col["mode"], col["res"],
             col["norm"], col["norm_label"], col["lvl"], col["freq"], col["channel"],
             str(col["required"])]))
-    with open(args.out, "w") as fh:
-        fh.write("\n".join(rows) + "\n")
+    write_text(args.out, "\n".join(rows) + "\n")
     print("gen_gh20_manifest: wrote %d required cells to %s" % (len(rows) - 1, args.out))
 
 

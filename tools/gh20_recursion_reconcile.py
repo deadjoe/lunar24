@@ -30,6 +30,7 @@ import argparse
 import cmath
 import csv
 import math
+from _gh19_textio import open_text
 
 # res value -> probe/manifest id token. MUST byte-match the probe's kSweepRes and the
 # generator's RES_TABLE (id token is the 3rd element there).
@@ -78,7 +79,7 @@ def main():
     args = ap.parse_args()
 
     rows = {}
-    with open(args.scenario, newline="") as fh:
+    with open_text(args.scenario, newline="") as fh:
         for row in csv.DictReader(fh, delimiter="\t"):
             rows[row["id"]] = row
 
