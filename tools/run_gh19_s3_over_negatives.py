@@ -55,6 +55,7 @@ import re
 import shutil
 import subprocess
 import sys
+from _gh19_textio import open_text
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT, "tools", "run_gh19_s3_kernel_sweep.py")
@@ -341,7 +342,7 @@ def label_preflight():
     Returns (checked_count, [problems])."""
     src = ""
     for rel in (os.path.join("tools", "run_gh19_s3_kernel_sweep.py"), SWEEP_SRC):
-        with open(os.path.join(ROOT, rel)) as fh:
+        with open_text(os.path.join(ROOT, rel)) as fh:
             src += fh.read()
     problems = []
     checked = 0
@@ -374,7 +375,7 @@ def apply_edits(path, edits, name):
     """Apply exact-text edits under a copy. Returns None on success or a reason string. Each `old`
     must occur EXACTLY once: an edit that matched nowhere means the header moved under this control,
     and one that matched twice means the control cannot say which site it broke. Both are INVALID."""
-    with open(path) as fh:
+    with open_text(path) as fh:
         txt = fh.read()
     for old, new in edits:
         n = txt.count(old)
@@ -382,7 +383,7 @@ def apply_edits(path, edits, name):
             return "%s: the edit anchor occurs %d times (need exactly 1) in %s" % (name, n,
                                                                                    os.path.basename(path))
         txt = txt.replace(old, new, 1)
-    with open(path, "w") as fh:
+    with open_text(path, "w") as fh:
         fh.write(txt)
     return None
 
@@ -547,9 +548,9 @@ def main(argv):
         "can see anything) --")
     scan_dir = os.path.join(scratch, "scan")
     os.makedirs(os.path.join(scan_dir, "negctl_planted"), exist_ok=True)
-    with open(os.path.join(scan_dir, PLANTED_CALLER), "w") as fh:
+    with open_text(os.path.join(scan_dir, PLANTED_CALLER), "w") as fh:
         fh.write(PLANTED_CALLER_TEXT)
-    with open(os.path.join(scan_dir, PLANTED_MENTION), "w") as fh:
+    with open_text(os.path.join(scan_dir, PLANTED_MENTION), "w") as fh:
         fh.write(PLANTED_MENTION_TEXT)
 
     # B1: the scan sees a planted CALL. RED on the FM criterion is the correct outcome for this arm
@@ -682,7 +683,7 @@ def main(argv):
         d = os.path.dirname(args.out)
         if d:
             os.makedirs(d, exist_ok=True)
-        with open(args.out, "w") as fh:
+        with open_text(args.out, "w") as fh:
             fh.write("\n".join(transcript) + "\n")
         print("captured to %s" % args.out)
 

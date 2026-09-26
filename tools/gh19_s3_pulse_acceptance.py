@@ -38,6 +38,7 @@ import math
 import os
 import re
 import sys
+from _gh19_textio import open_text, read_text
 
 EXIT_PASS = 0
 EXIT_RED = 1
@@ -138,7 +139,7 @@ class Gate(object):
 def _rows(path):
     """Data rows of a tab-separated file, comments (`#`) and blanks dropped, split in place."""
     out = []
-    with open(path, "r") as fh:
+    with open_text(path) as fh:
         for n, raw in enumerate(fh, 1):
             line = raw.rstrip("\n")
             if not line.strip() or line.lstrip().startswith("#"):
@@ -326,7 +327,7 @@ def _num(g, code, path, line, col, val):
 
 def parse_matrix(g, path):
     """The `static` block of an analyzer report, plus the instrument lines from the same file."""
-    text = open(path, "r").read().splitlines()
+    text = read_text(path).splitlines()
     begin = end = None
     for i, line in enumerate(text):
         if line.strip() == "-- BEGIN MATRIX static":
@@ -378,7 +379,7 @@ def parse_matrix(g, path):
 
 def parse_instrument(g, path):
     """The instrument's own verdict lines. These are the power-unit tripwire."""
-    text = open(path, "r").read().splitlines()
+    text = read_text(path).splitlines()
     ok = 0
     for line in text:
         if "MEAN SQUARES AGREE (ok)" in line:
@@ -707,7 +708,7 @@ def finish(g, verdict, code):
         g.say("ACCEPT-NOTE no judgement is issued: the artifacts failed an input check, so a red or "
               "green verdict here would not be a statement about the DSP.")
     if g.out:
-        with open(g.out, "w") as fh:
+        with open_text(g.out, "w") as fh:
             fh.write("\n".join(g.lines) + "\n")
     return code
 

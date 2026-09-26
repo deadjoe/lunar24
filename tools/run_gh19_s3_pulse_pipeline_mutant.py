@@ -42,6 +42,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import open_text, read_text
 
 PROBE_SRC = "tests/probes/gh19_s3_pulse_probe.cpp"
 KERNEL = "core/include/lunar24/core/pulse_blep_kernel.h"
@@ -90,7 +91,7 @@ def stage_shadow(repo_root, shadow_root, mutate):
     if not os.path.exists(src):
         sys.stderr.write("INVALID: %s does not exist in %s\n" % (KERNEL, repo_root))
         return None
-    text = open(src).read()
+    text = read_text(src)
     rel = KERNEL[len("core/include/"):]
     dst = os.path.join(shadow_root, rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -103,7 +104,7 @@ def stage_shadow(repo_root, shadow_root, mutate):
                              "and the run would prove nothing\n" % (n, KERNEL))
             return None
         text = text.replace(old, new)
-    with open(dst, "w") as f:
+    with open_text(dst, "w") as f:
         f.write(text)
     return dst
 

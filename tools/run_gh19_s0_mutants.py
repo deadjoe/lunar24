@@ -60,6 +60,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 # ---- test targets (mirrors CMakeLists: both are header-only consumers, no libraries to link) ----
 TARGETS = {
@@ -463,7 +464,7 @@ def apply_edits(root, edits, shadow_root):
     is asserted to land exactly once, so a silently-stale mutation cannot be graded as a red."""
     for rel, subs in edits.items():
         src = os.path.join(root, rel)
-        with open(src) as fh:
+        with open_text(src) as fh:
             text = fh.read()
         for old, new in subs:
             if text.count(old) != 1:
@@ -473,7 +474,7 @@ def apply_edits(root, edits, shadow_root):
         inner = rel[len("core/include/"):] if rel.startswith("core/include/") else rel
         dst = os.path.join(shadow_root, inner)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
-        with open(dst, "w") as fh:
+        with open_text(dst, "w") as fh:
             fh.write(text)
     return shadow_root
 

@@ -80,6 +80,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gh19_s3_pulse_analyze as A  # noqa: E402
+from _gh19_textio import read_text, write_text
 
 HDR_VCO = "core/include/lunar24/core/vco.h"
 HDR_MAP = "core/include/lunar24/core/vco_wave_map.h"
@@ -464,7 +465,7 @@ def declaration_preflight(cand):
         if not os.path.exists(path):
             problems.append("%s: %s does not exist in the candidate tree" % (mut["name"], mut["file"]))
             continue
-        text = open(path).read()
+        text = read_text(path)
         for find, _repl in mut["edits"]:
             n = text.count(find)
             if n != 1:
@@ -721,7 +722,7 @@ def main(argv):
             for rel in (HDR_VCO, HDR_MAP, HDR_KERNEL, HDR_RUNTIME, PROBE):
                 shutil.copyfile(os.path.join(args.cand, rel), os.path.join(args.scratch, rel))
             path = os.path.join(args.scratch, mut["file"])
-            text = open(path).read()
+            text = read_text(path)
             for find, repl in mut["edits"]:
                 n = text.count(find)
                 if n != 1:
@@ -730,7 +731,7 @@ def main(argv):
                     break
                 text = text.replace(find, repl)
             else:
-                open(path, "w").write(text)
+                write_text(path, text)
                 mut["step"] = mut["name"]
                 ok, detail = build_and_run(args.scratch,
                                            os.path.join(args.work, mut["name"]), mut["name"],

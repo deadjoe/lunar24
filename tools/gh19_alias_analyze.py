@@ -96,6 +96,7 @@ import math
 import os
 import struct
 import sys
+from _gh19_textio import open_text
 
 BAND_LO, BAND_HI = 100.0, 5000.0     # reporting band (Hz)
 NYQ_FRAC = 0.98                       # guard the Nyquist bin
@@ -1266,7 +1267,7 @@ def self_check_probe_contract(dirpath, cells):
                      "acceptance column is not admissible evidence")
         return fails
 
-    with open(fpath) as fh:
+    with open_text(fpath) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     if not lines:
         fails.append("probe-contract: gh19_fidelity.tsv is empty")
@@ -1777,7 +1778,7 @@ def steady(x):
 def read_cells(dirpath):
     tsv = os.path.join(dirpath, "gh19_scenarios.tsv")
     rows = []
-    with open(tsv) as fh:
+    with open_text(tsv) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     if not lines:
         return []
@@ -1814,7 +1815,7 @@ def load_manifest(path):
     probes that legitimately produce no product cell)."""
     required, allowed = {}, {}
     parsed = []
-    with open(path) as fh:
+    with open_text(path) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     if not lines:
         raise SystemExit("FATAL: manifest is empty")
@@ -2191,7 +2192,7 @@ def main():
     cpu_recs = []
     cpu_tsv = os.path.join(args.dir, "gh19_cpu.tsv")
     if os.path.exists(cpu_tsv):
-        with open(cpu_tsv) as fh:
+        with open_text(cpu_tsv) as fh:
             lines = [l.rstrip("\n") for l in fh if l.strip()]
         if lines:
             h = lines[0].split("\t")

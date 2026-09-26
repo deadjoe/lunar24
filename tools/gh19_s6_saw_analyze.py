@@ -64,6 +64,7 @@ import os
 import re
 import struct
 import sys
+from _gh19_textio import open_text
 
 TWO_PI = 2.0 * math.pi
 
@@ -511,7 +512,7 @@ def load_s6_manifest(d):
     coercions are identical, so the coercion list is copied verbatim rather than restated -- a
     manifest whose columns drifted then fails here loudly instead of being quietly re-typed."""
     path = os.path.join(d, "gh19_s6_scenarios.tsv")
-    with open(path) as fh:
+    with open_text(path) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     head = lines[0].split("\t")
     rows = []
@@ -819,7 +820,7 @@ def main(argv=None):
     text = buf.getvalue()
     sys.stdout.write(text)
     if args.out and args.arm is not None:
-        with open(args.out, "w") as fh:
+        with open_text(args.out, "w") as fh:
             fh.write(text)
     return rc
 
