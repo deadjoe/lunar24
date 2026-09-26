@@ -98,6 +98,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import read_text, write_text
 
 TEST_SRC = os.path.join("tests", "host", "test_app_state_store.cpp")
 
@@ -972,8 +973,7 @@ def apply_chain(root, names):
             continue
         src, dst, transform = MUTATIONS[name]
         if dst not in texts:
-            with open(os.path.join(root, src)) as fh:
-                texts[dst] = fh.read()
+            texts[dst] = read_text(os.path.join(root, src))
         texts[dst] = transform(texts[dst], name)
     return texts
 
@@ -984,8 +984,7 @@ def build_and_run(root, compiler, shadow_texts):
         for header, text in shadow_texts.items():
             dest = os.path.join(shadow, header)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with open(dest, "w") as fh:
-                fh.write(text)
+            write_text(dest, text)
         binpath = os.path.join(td, "test_app_state_store")
         cmd = [compiler, "-O1", "-std=c++17",
                "-I", shadow,
@@ -1025,8 +1024,7 @@ def build_shadow_repo(root, td, mutated):
     for rel, text in mutated.items():
         dest = os.path.join(shadow, rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "w") as fh:
-            fh.write(text)
+        write_text(dest, text)
     for rel in GATE_INPUTS:
         if rel in mutated:
             continue
@@ -1039,8 +1037,7 @@ def build_shadow_repo(root, td, mutated):
 def run_wiring_gate(root, mutate, target=HOST_OVR):
     """Run the wiring gate on a shadow tree whose `target` file is (optionally) mutated."""
     try:
-        with open(os.path.join(root, target)) as fh:
-            text = fh.read()
+        text = read_text(os.path.join(root, target))
     except OSError as exc:
         return {"error": str(exc)}
     if mutate is not None:

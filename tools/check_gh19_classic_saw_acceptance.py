@@ -91,6 +91,7 @@ import math
 import os
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 # The canonical in-scope set: 3 lanes x 4 sample rates x 3 taps = 36.
 # Each entry maps a cell id to its expected sample rate and its role. This is the SINGLE
@@ -603,7 +604,7 @@ def main():
         rc = self_check(args.baseline, args.current, min_low, min_high) or rc
 
     if args.out:
-        with open(args.out, "w", encoding="utf-8") as fh:
+        with open_text(args.out, "w") as fh:
             fh.write("\n".join(lines) + "\n")
     return rc
 

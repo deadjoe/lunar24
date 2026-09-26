@@ -27,6 +27,7 @@
 #   {version, source, width, height, method, anchors:[{site,x0,y0,x1,y1}, ...]}
 
 import os, sys, json, re, subprocess, tempfile
+from _gh19_textio import open_text, read_text, write_text
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGE = os.path.join(REPO, "design/reference/solar42N_panel_2400px.png")
@@ -62,14 +63,16 @@ def card_blobs(work):
        f"-define connected-components:verbose=true -define connected-components:area-threshold=600 "
        f"-connected-components 8 null: > {cp} 2>/dev/null")
     blobs = []
-    for line in open(cp):
-        m = re.match(
-            r"\s*\d+:\s*(\d+)x(\d+)\+(\d+)\+(\d+)\s+([\d.,-]+),([\d.,-]+)\s+([\d.]+e?[+-]?\d*)\s+gray", line)
-        if not m:
-            continue
-        w, h, x, y = map(int, m.groups()[:4])
-        blobs.append(dict(x=x, y=y, x1=x + w - 1, y1=y + h - 1,
-                          cx=x + w / 2, cy=y + h / 2, w=w, h=h, a=float(m.group(7))))
+    with open_text(cp) as fh:
+        for line in fh:
+            m = re.match(
+                r"\s*\d+:\s*(\d+)x(\d+)\+(\d+)\+(\d+)\s+([\d.,-]+),([\d.,-]+)\s+([\d.]+e?[+-]?\d*)\s+gray",
+                line)
+            if not m:
+                continue
+            w, h, x, y = map(int, m.groups()[:4])
+            blobs.append(dict(x=x, y=y, x1=x + w - 1, y1=y + h - 1,
+                              cx=x + w / 2, cy=y + h / 2, w=w, h=h, a=float(m.group(7))))
     # drop the full-canvas background component and degenerate wrappers
     return [b for b in blobs if b["a"] >= 300 and b["w"] < W - 4 and b["h"] < H - 4]
 
@@ -411,11 +414,11 @@ def main(argv):
     drift = []
     if not os.path.exists(OUT):
         if check: return 1
-    elif check and open(OUT).read() != jtxt:
+    elif check and read_text(OUT) != jtxt:
         drift.append("panel_regions.json")
     if not os.path.exists(HDR):
         if check: return 1
-    elif check and open(HDR).read() != htxt:
+    elif check and read_text(HDR) != htxt:
         drift.append("panel_anchors.generated.h")
     if drift:
         print("DRIFT: regenerated " + " + ".join(drift) + " differs from committed artifact.")
@@ -424,8 +427,8 @@ def main(argv):
         print(f"regen zero-diff OK ({len(anchors)} anchors) for {OUT} + {HDR}")
         return 0
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    open(OUT, "w").write(jtxt)
-    open(HDR, "w").write(htxt)
+    write_text(OUT, jtxt)
+    write_text(HDR, htxt)
     print(f"wrote {OUT} + {HDR} with {len(anchors)} anchors")
     for a in doc["anchors"]:
         print(f"  {a['site']:<22} [{a['rule']:<7}] x{a['x0']}-{a['x1']} y{a['y0']}-{a['y1']}")

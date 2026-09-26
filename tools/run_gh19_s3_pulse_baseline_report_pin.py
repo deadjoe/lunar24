@@ -45,6 +45,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 # The two pinned baseline SHAs, mirrored from run_gh19_s3_pulse_pipeline.py. Duplicated on purpose:
 # if this file imported them, an edit to the driver's constant would move both sides at once and
@@ -180,7 +181,7 @@ def runner_main():
                                  "anything\n" % (tag, args.base_report))
                 return 2
             path = os.path.join(tmp, "base_report_%s.txt" % tag)
-            with open(path, "w", encoding="utf-8") as f:
+            with open_text(path, "w") as f:
                 f.write(new_text)
             tampers[tag] = {"path": path, "sha": sha256_of(path), "rows": n_rows,
                             "blocks": n_blocks, "db": db}

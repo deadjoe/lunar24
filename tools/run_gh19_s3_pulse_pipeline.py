@@ -76,6 +76,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 # The pinned baseline matrix. Not a convenience default: if this file changes, the CRITERION
 # changed, and the run must say so rather than quietly judging against a different baseline.
@@ -201,7 +202,7 @@ def main():
         cand_report = os.path.join(tmp, "cand_report.txt")
         an = run([sys.executable, args.analyzer, "--arm", cand_arm, "--label", args.label,
                   "--align-check", "--self-check", "--taps", args.taps])
-        with open(cand_report, "w", encoding="utf-8") as f:
+        with open_text(cand_report, "w") as f:
             f.write(an.stdout)
         sys.stdout.write("ACCEPT-PIPELINE fresh_report=%s sha256=%s\n"
                          % (cand_report, sha256_of(cand_report)))

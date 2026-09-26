@@ -83,6 +83,7 @@ import os
 import struct
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 # The canonical in-scope set: 3 required Schmitt cells x 4 sample rates = 12.
 # Each entry maps a cell id to its expected sample rate. This is the SINGLE SOURCE OF
@@ -581,7 +582,7 @@ def main():
                         args.current_raws) or rc
 
     if args.out:
-        with open(args.out, "w", encoding="utf-8") as fh:
+        with open_text(args.out, "w") as fh:
             fh.write("\n".join(lines) + "\n")
     return rc
 

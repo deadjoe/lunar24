@@ -31,6 +31,7 @@ import json
 import os
 import re
 import sys
+from _gh19_textio import open_text
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPEC_PATH = os.path.join(ROOT, "spec", "machine", "lunar24.json")
@@ -531,9 +532,9 @@ def main():
             return 1
         return 0
 
-    with open(IDS_HPP, "w", encoding="utf-8") as fh:
+    with open_text(IDS_HPP, "w") as fh:
         fh.write(ids_text)
-    with open(REG_HPP, "w", encoding="utf-8") as fh:
+    with open_text(REG_HPP, "w") as fh:
         fh.write(reg_text)
     print(f"counts: {len(reg.modules)} modules, {len(reg.parameters)} params, "
           f"{len(reg.jacks)} jacks, {len(reg.routes)} routes, {len(reg.programs)} programs")

@@ -50,6 +50,7 @@ import os
 import re
 import sys
 import tempfile
+from _gh19_textio import open_text
 
 # The canonical in-scope set: one A lane x 4 sample rates x 3 f0 targets = 12. Each entry maps a
 # cell id to its (expected_sr, expected_f0_target). SINGLE SOURCE OF TRUTH for coverage; the gate
@@ -319,7 +320,7 @@ def _write_cur(path, over=None, crit_raw=None):
         rm[A_GAP] = f"{gap:.2f}"
         rm[A_PER] = f"{per:.2e}"
         lines.append("\t".join(rm))
-    with open(path, "w", encoding="utf-8") as fh:
+    with open_text(path, "w") as fh:
         fh.write("\n".join(lines) + "\n")
 
 
@@ -328,7 +329,7 @@ def _write_base(path, over=None):
     for cid, (sr, f0) in sorted(CANONICAL.items()):
         crit = over.get(cid, _SYN_BASE) if over else _SYN_BASE
         lines.append(f"{cid}\t{sr}\t{f0}\t{crit:.2f}")
-    with open(path, "w", encoding="utf-8") as fh:
+    with open_text(path, "w") as fh:
         fh.write("\n".join(lines) + "\n")
 
 
@@ -402,7 +403,7 @@ def self_check(min_low, min_high, min_gap, max_per, f0_tol):
     with open(cur, encoding="utf-8") as fh:
         keep = [l for l in fh.read().split("\n")
                 if not l.startswith("vco_a_sync_tri_48000_220\t")]
-    with open(cur, "w", encoding="utf-8") as fh:
+    with open_text(cur, "w") as fh:
         fh.write("\n".join(keep))
     run("missing-row", 2, "MISSING from current")
     _write_cur(cur)
@@ -410,7 +411,7 @@ def self_check(min_low, min_high, min_gap, max_per, f0_tol):
         allc = fh.read().split("\n")
     dup = [l for l in allc if l.startswith("vco_a_sync_tri_48000_220\t")][0]
     allc.insert(allc.index(dup) + 1, dup)
-    with open(cur, "w", encoding="utf-8") as fh:
+    with open_text(cur, "w") as fh:
         fh.write("\n".join(allc))
     run("duplicate-row", 2, "duplicate row")
 
@@ -419,12 +420,12 @@ def self_check(min_low, min_high, min_gap, max_per, f0_tol):
     _write_cur(cur)
     with open(cur, encoding="utf-8") as fh:
         allc = fh.read().replace("vco_a_sync_tri_96000_880", "vco_a_sync_tri_96000_881").split("\n")
-    with open(cur, "w", encoding="utf-8") as fh:
+    with open_text(cur, "w") as fh:
         fh.write("\n".join(allc))
     run("renamed-cell", 2, "NOT in the canonical")
 
     # (10) EMPTY current (header only) -> structural, never "checked 0/12 -> PASS".
-    with open(cur, "w", encoding="utf-8") as fh:
+    with open_text(cur, "w") as fh:
         fh.write("id\tpath\tsr\n")
     run("empty-current", 2, "MISSING from current")
 
@@ -483,7 +484,7 @@ def main():
         text = "\n".join(lines)
         print(text)
         if args.out:
-            with open(args.out, "w", encoding="utf-8") as fh:
+            with open_text(args.out, "w") as fh:
                 fh.write(text + "\n")
 
     # --self-check ADDS the gate's own controls to this invocation; it never REPLACES the

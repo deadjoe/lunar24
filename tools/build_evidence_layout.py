@@ -38,6 +38,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_evidence_refs as gate
+from _gh19_textio import open_text
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "generated", "lunar24", "evidence_layout.json")
@@ -105,7 +106,7 @@ def main():
     data = build()
     text = json.dumps(data, indent=2) + "\n"
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w", encoding="utf-8") as fh:
+    with open_text(OUT, "w") as fh:
         fh.write(text)
     print(f"wrote {OUT}")
     return 0

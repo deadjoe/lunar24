@@ -58,6 +58,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from _gh19_textio import read_text, write_text
 
 TEST_SRC = "tests/host/test_preset_engine_actions.cpp"
 
@@ -487,7 +488,7 @@ def apply_chain(root, names):
             continue
         src, dst, transform = MUTATIONS[name]
         if dst not in texts:
-            texts[dst] = open(os.path.join(root, src)).read()
+            texts[dst] = read_text(os.path.join(root, src))
         texts[dst] = transform(texts[dst], name)
     return texts
 
@@ -498,8 +499,7 @@ def build_and_run(root, compiler, shadow_texts):
         for header, text in shadow_texts.items():
             dest = os.path.join(shadow, header)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with open(dest, "w") as fh:
-                fh.write(text)
+            write_text(dest, text)
         binpath = os.path.join(td, "test_preset_engine_actions")
         cmd = [compiler, "-O1", "-std=c++17",
                "-I", shadow,

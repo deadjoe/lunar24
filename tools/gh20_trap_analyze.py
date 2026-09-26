@@ -48,6 +48,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gh20_trap_reference as ref
+from _gh19_textio import open_text
 
 # ---------------------------------------------------------------------------
 # Tolerances — set FROM MEASUREMENT: the real trapezoidal product matches the reference to <= 0.03 dB
@@ -68,7 +69,7 @@ OVERSCALE_PEAK = 1.0       # amp_peak upper bound (real res=1 resonance peak 0.7
 # IO
 # ---------------------------------------------------------------------------
 def read_rows(path):
-    with open(path) as fh:
+    with open_text(path) as fh:
         lines = [l.rstrip("\n") for l in fh if l.strip()]
     if not lines:
         return []

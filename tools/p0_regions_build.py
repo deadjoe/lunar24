@@ -41,6 +41,7 @@ import difflib
 import json
 import os
 import sys
+from _gh19_textio import open_text
 
 REF = "solar42N_manual_v15"
 MANIFEST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -1233,7 +1234,7 @@ def main():
             print("  " + line, file=sys.stderr)
         return 1
 
-    with open(MANIFEST, "w", encoding="utf-8") as fh:
+    with open_text(MANIFEST, "w") as fh:
         fh.write(out)
 
     print("panelControls:", len(tgt["panelControls"]),
