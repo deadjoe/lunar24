@@ -1,0 +1,100 @@
+UpdateCTestConfiguration  from :/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb/DartConfiguration.tcl
+Test project /Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 76
+    Start 76: gh19_prb_dynpwm_acceptance
+
+76: Test command: /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14 "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/run_gh19_prb_dynpwm_pipeline.py" "--probe" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb/gh19_s3_pulse_probe" "--neutral-probe" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb/gh19_s3_pulse_probe_neutral" "--degen-probe" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb/gh19_prb_degen_probe" "--criteria" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-prb-dynpwm/acceptance_criteria.tsv" "--analyzer" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_s3_pulse_analyze.py" "--gate" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_prb_dynpwm_acceptance.py" "--negcontrol" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_prb_dynpwm_gate_negcontrol.py" "--repo-root" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm"
+76: Working Directory: /Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb
+76: Test timeout computed to be: 10000000
+76: PLAN degen_const declared=6 emitted=6 missing=0 extra=0
+76: PLAN degen_moving declared=6 emitted=6 missing=0 extra=0
+76: PLAN-TOTAL blocks=2 declared=12 emitted=12 missing=0 extra=0 orphans=0 duplicates=0 plan_duplicates=0
+76: gh19_prb_degen_probe: 12 cells produced, 0 failed, exit_code=0.
+76: PRB-PIPELINE PRECONDITION product_diff=OK no product path differs from main
+76: PRB-PIPELINE fresh_arm=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/cand plan_sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811
+76: PRB-PIPELINE neutral_arm=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/neut plan_sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811
+76: PRB-DEGEN-PLAN plan_rev=1 cells=12
+76: PRB-DEGEN dynroute_const_duty_44100_220_b50_d0           duty=0 peak=0.500000 src_span=10.000000 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_moving_duty_44100_220_b50_d50         duty=0.49899999999959521 peak=0.500000 src_span=10.000000 duty_span=0.49899999999959521 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_const_duty_44100_440_b50_d0           duty=0 peak=0.500000 src_span=10.000000 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_moving_duty_44100_440_b50_d50         duty=0.49899999999959521 peak=0.500000 src_span=10.000000 duty_span=0.49899999999959521 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_const_duty_44100_880_b50_d0           duty=0 peak=0.500000 src_span=10.000000 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_moving_duty_44100_880_b50_d50         duty=0.49899999999959521 peak=0.500000 src_span=10.000000 duty_span=0.49899999999959521 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_const_duty_96000_220_b50_d0           duty=0 peak=0.500000 src_span=9.999583 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_moving_duty_96000_220_b50_d50         duty=0.49897916666666664 peak=0.500000 src_span=9.999583 duty_span=0.49897916666666664 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_const_duty_96000_440_b50_d0           duty=0 peak=0.500000 src_span=9.999583 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_moving_duty_96000_440_b50_d50         duty=0.49897916666666664 peak=0.500000 src_span=9.999583 duty_span=0.49897916666666664 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_const_duty_96000_880_b50_d0           duty=0 peak=0.500000 src_span=9.999583 duty_span=0 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-DEGEN dynroute_moving_duty_96000_880_b50_d50         duty=0.49897916666666664 peak=0.500000 src_span=9.999583 duty_span=0.49897916666666664 hook_diff=0 companion_diff=0 src_diff=0
+76: PRB-PIPELINE degen_arm=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/degen manifest_sha256=c380467a6e3c6ba7a390baf2955f57306b03e7fecef6378974b385b4c8cdf911
+76: PRB-PIPELINE fresh_report=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/cand_report.txt sha256=3efee15b95d4567c2b1af557fecc71cb488f704831c9bb6757192bc02a4c61aa
+76: PRB-PIPELINE neutral_report=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/neut_report.txt sha256=07a181884f273de461ac5c320ad9b4ac3d2c5fe1ca1a6c6cc28e66d11b660da7
+76: PRB GATE tool=gh19_prb_dynpwm_acceptance.py
+76: PRB INPUT criteria sha256=0e11bb9af6a657b19d6ad48098f0593cdf947dc37db27ef6364c402dafa41cdb path=/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-prb-dynpwm/acceptance_criteria.tsv
+76: PRB INPUT plan sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811 path=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/cand/gh19_s3_plan.tsv
+76: PRB INPUT cand_report sha256=3efee15b95d4567c2b1af557fecc71cb488f704831c9bb6757192bc02a4c61aa path=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/cand_report.txt
+76: PRB INPUT neut_report sha256=07a181884f273de461ac5c320ad9b4ac3d2c5fe1ca1a6c6cc28e66d11b660da7 path=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/neut_report.txt
+76: PRB INPUT degen_static_manifest sha256=181dd75c7f3c6afb98f9ecc18eb920130b0c0ed43c7eae68f8bda05e2b1b8f92 path=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/cand/gh19_s3_scenarios.tsv
+76: PRB INPUT degen_dyn_manifest sha256=c380467a6e3c6ba7a390baf2955f57306b03e7fecef6378974b385b4c8cdf911 path=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19prbpipe-uh4e3ud1/degen/gh19_prb_degen_scenarios.tsv
+76: PRB GATE criteria=acceptance_criteria.tsv cells=56 pairs=6 plan_dynamic=56
+76: PRB REPORT refconv_rms_db=-37.1800 at vco_b_dynpwm_44100_880_sq_r20_b50_d50
+76: PRB REPORT refconv_peak=0.0933 at vco_a_dynpwm_96000_440_tri_r20_b25_d100
+76: PRB REPORT res_effbd_db=-38.7900 at vco_a_dynpwm_96000_880_sq_r2_b50_d50
+76: PRB REPORT res_effbd2L_db=-40.8300 at vco_a_dynpwm_96000_880_sq_r2_b50_d50
+76: PRB REPORT report_floor_margin_db=7.2400 at vco_a_dynpwm_96000_440_sq_r2_b50_d50 (computed res_db - refconv_rms_db)
+76: PRB REPORT report_floor_margin_band_db=4.9900 at vco_a_dynpwm_96000_880_sq_r2_b50_d50 (companion axis, not judged)
+76: PRB REPORT refused_cells=0 (cells refused on the floor; 56 were scanned)
+76: PRB REPORT improvement_min=4.7000 dB at vco_a_dynpwm_44100_220_sq_r20_b25_d100 (corrected -30.1600 vs neutralised -25.4600, pinned 4.0)
+76: PRB REPORT max_abs_fitted_scale_delta=0.007 (reported, not gated)
+76: PRB REPORT degen_moving_duty_measured_delta=1 (largest separation of any moving-duty pair from its static twin, in product units)
+76: PRB REPORT refconv_rms_db=-37.1800
+76: PRB REPORT refconv_peak=0.0933
+76: PRB REPORT res_effbd_db=-38.7900
+76: PRB REPORT res_effbd2L_db=-40.8300
+76: PRB REPORT report_floor_margin_db=7.2400
+76: PRB REPORT report_floor_margin_band_db=4.9900
+76: PRB REPORT margin_source_column=computed:res_db-refconv_rms_db
+76: PRB REPORT worst_floor_margin_db=vco_a_dynpwm_96000_440_sq_r2_b50_d50=7.2400
+76: PRB REPORT refused_cells=0
+76: PRB REPORT improvement_corrected_db=-30.1600
+76: PRB REPORT improvement_neutralized_db=-25.4600
+76: PRB REPORT degen_moving_duty_measured_delta=1
+76: PRB REPORT max_abs_fitted_scale_delta=0.007
+76: PRB GATE verdict=PASS refusals=0 failures=0
+76: NEGCTL-PRB victims static=vco_a_pulse_44100_220_pw50 const=dynroute_const_duty_44100_220_b50_d0 moving=dynroute_moving_duty_44100_220_b50_d50 victim_cell=vco_a_dynpwm_44100_220_tri_r2_b50_d50
+76: CONTROL pristine                       exit=0 expected=0  PASS
+76: NEGCTL-PRB skipped=(none)
+76: CONTROL criteria_drop_criterion        exit=4 expected=4 code=PRB-REFUSE-CRITERIA        HIT
+76: CONTROL criteria_drop_negcontrol_row   exit=4 expected=4 code=PRB-REFUSE-CRITERIA        HIT
+76: CONTROL criteria_unknown_key           exit=4 expected=4 code=PRB-REFUSE-CRITERIA        HIT
+76: CONTROL criteria_drop_degen_pair       exit=4 expected=4 code=PRB-REFUSE-CELLSET         HIT
+76: CONTROL criteria_code_key_is_read      exit=4 expected=4 code=PRB-REFUSE-LIVENESS-SENTINEL-7Q4Z HIT
+76: CONTROL plan_truncated_row             exit=4 expected=4 code=PRB-REFUSE-PLAN            HIT
+76: CONTROL plan_drops_dynamic_cell        exit=4 expected=4 code=PRB-REFUSE-CELLSET         HIT
+76: CONTROL report_exit_code_nonzero       exit=4 expected=4 code=PRB-REFUSE-MATRIX-EXIT     HIT
+76: CONTROL report_column_dropped          exit=4 expected=4 code=PRB-REFUSE-MATRIX-SHAPE    HIT
+76: CONTROL report_cell_row_dropped        exit=4 expected=4 code=PRB-REFUSE-MATRIX-SHAPE    HIT
+76: CONTROL report_cell_id_renamed         exit=4 expected=4 code=PRB-REFUSE-CELLSET         HIT
+76: CONTROL trace_truncated                exit=4 expected=4 code=PRB-REFUSE-TRACE           HIT
+76: CONTROL scenario_row_dropped           exit=4 expected=4 code=PRB-REFUSE-CELLSET         HIT
+76: CONTROL degen_identity_one_ulp         exit=1 expected=1 code=PRB-FAIL-DEGEN-IDENTITY    HIT
+76: CONTROL degen_nonvacuous_collapse      exit=1 expected=1 code=PRB-FAIL-DEGEN-NONVACUOUS  HIT
+76: NEGCTL-PRB ok=15 bad=0 controls=15
+76: NEGCTL-PRB verdict=ALL-HIT
+1/1 Test #76: gh19_prb_dynpwm_acceptance .......   Passed  1557.65 sec
+
+The following tests passed:
+	gh19_prb_dynpwm_acceptance
+
+100% tests passed out of 1
+
+Label Time Summary:
+slow    = 1557.65 sec*proc (1 test)
+
+Total Test time (real) = 1557.66 sec

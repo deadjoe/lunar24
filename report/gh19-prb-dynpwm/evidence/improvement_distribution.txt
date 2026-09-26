@@ -1,0 +1,41 @@
+cells in cand=152 neut=152 matched=152 judged_dynamic=56
+improvement = neut.res_db - cand.res_db  (gate's definition, acceptance.py:818)
+min=4.7000 max=12.6100  below 6.0 dB: 3 of 56
+median=7.4850  (n=56, even/odd=even -> mean of the two central, statistics.median on the same 56 values)
+
+by ratio token (rN):
+  r2   n=22  min=   6.52 max=  12.61
+  r20  n=34  min=   4.70 max=   9.33
+
+by waveform:
+  sq   n=26  min=   4.70 max=  12.61
+  tri  n=30  min=   6.52 max=   9.20
+
+the 8 lowest cells:
+  vco_a_dynpwm_44100_220_sq_r20_b25_d100               improvement=   4.70  cand=-30.16 neut=-25.46
+  vco_a_dynpwm_44100_220_sq_r20_b50_d50                improvement=   5.79  cand=-30.89 neut=-25.10
+  vco_b_dynpwm_44100_220_sq_r20_b50_d50                improvement=   5.79  cand=-30.89 neut=-25.10
+  vco_a_dynpwm_44100_880_tri_r2_b25_d50                improvement=   6.52  cand=-25.95 neut=-19.43
+  vco_a_dynpwm_44100_880_tri_r20_b50_d50               improvement=   6.73  cand=-25.82 neut=-19.09
+  vco_a_dynpwm_44100_440_tri_r20_b50_d50               improvement=   6.77  cand=-28.56 neut=-21.79
+  vco_a_dynpwm_44100_220_tri_r20_b25_d100              improvement=   6.80  cand=-30.67 neut=-23.87
+  vco_a_dynpwm_44100_220_tri_r20_b50_d50               improvement=   6.89  cand=-30.95 neut=-24.06
+
+the 3 highest cells:
+  vco_a_dynpwm_96000_440_sq_r2_b50_d50                 improvement=  11.94  cand=-36.94 neut=-25.00
+  vco_a_dynpwm_96000_880_sq_r2_b50_d50                 improvement=  12.61  cand=-36.29 neut=-23.68
+  vco_b_dynpwm_96000_880_sq_r2_b50_d50                 improvement=  12.61  cand=-36.29 neut=-23.68
+
+cross-check vs the gate's printed improvement_min=4.7000 at vco_a_dynpwm_44100_220_sq_r20_b25_d100: here 4.7000 at vco_a_dynpwm_44100_220_sq_r20_b25_d100 -> AGREE
+cross-check vs the gate's three named failing cells:
+  vco_a_dynpwm_44100_220_sq_r20_b50_d50                here=5.79 below the pin
+  vco_a_dynpwm_44100_220_sq_r20_b25_d100               here=4.70 below the pin
+  vco_b_dynpwm_44100_220_sq_r20_b50_d50                here=5.79 below the pin
+
+# ADDENDUM 2026-09-25 -- the `median=` line, third line from the top. Everything else in this file is
+# the original run's output, byte-unchanged. The median was added because `acceptance_criteria.tsv`
+# cites it in its section 4 distribution block, and a number the criteria cites has to be readable
+# here. It is `statistics.median` over the SAME 56 improvement values that produced `min` and `max`
+# above, so it needs no new input: re-running the instrument with that one line added, against the
+# same two analyzer reports and the same 56-cell plan, gives a `diff` whose only entry is this line.
+# Definition unchanged from the gate's own: improvement = neut.res_db - cand.res_db (acceptance.py:818).

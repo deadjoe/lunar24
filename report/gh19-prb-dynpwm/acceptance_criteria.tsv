@@ -1,0 +1,431 @@
+# GH#19 S6 PR-B (task #121) -- PINNED ACCEPTANCE CRITERIA for the MOVING-DUTY (dynamic-PWM) slice.
+#
+# This file is the EXPECTATION. tools/gh19_prb_dynpwm_acceptance.py READS it and NEVER writes it.
+# The gate must REFUSE BEFORE IT JUDGES: every precondition below is checked for every cell first, and
+# a cell that fails a precondition gets a NAMED REFUSAL and NO verdict. Refusing is not a verdict
+# about the product; it means this instrument, on this cell, is not entitled to an opinion.
+#
+# ===================================================================================================
+# 1. WHY A FLOOR PRECONDITION EXISTS AT ALL
+# Every number this slice judges is a residual of the rendered output against a REFERENCE built on an
+# oversampled grid. A reference that is not sharp enough contaminates the residual it is used to
+# measure, and the contamination is INVISIBLE in the residual itself -- it makes the product look
+# better, never worse. So before any cell may be judged, the reference's own movement between two
+# resolution levels must be shown to sit BELOW the residual by a margin.
+#
+#
+# HOW CODES ARE PRINTED. This file pins each code as a BARE SUFFIX; the gate derives the printed
+# token from the BUCKET it was raised in, so a refusal can never be printed as a judgement:
+#   refusal bucket -> <refuse_class_prefix><suffix>   e.g. PRB-REFUSE-FLOOR-UNRESOLVED
+#   judgement bucket -> <fail_class_prefix><suffix>    e.g. PRB-FAIL-IMPROVEMENT
+# The prefixed form is what a mutation runner greps for. `negcontrol_degen_dispatch_arm` is NOT a
+# code: it is the NAME OF AN ARM (a shadow-include variant), used to attribute a control run. The
+# `negcontrol_*` rows that follow it say what that run must DEMONSTRATE, in separate fields rather than
+# one conflated one, because a control whose claim and whose arm name share a single cell can only be
+# checked by reading the prose:
+#   negcontrol_degen_dispatch_class            the class of claim the arm supports (PREMISE-LIVE)
+#   negcontrol_degen_dispatch_expect_exit_bit  the driver bit that must be SET in the control run
+#   negcontrol_degen_identity_tamper           the mechanism of the identity's falsifiability control
+#   negcontrol_degen_identity_tamper_expect_token  the FULL token (bucket included) that tamper must
+#                                              produce -- pinned with its bucket because a refusal
+#                                              would be the WRONG outcome here, not merely a different
+#                                              spelling of the right one
+# The gate REFUSES if any of them is absent, so dropping one cannot silently remove a control.
+# `degen_driver_stimulus_exit_bit` / `degen_driver_premise_exit_bit` pin the driver's two declaration
+# surfaces by NUMBER, so a runner asserting "the mutation fired the premise bit" cites this file rather
+# than a literal of its own.
+# ===================================================================================================
+# 2. THE CELL SET: AN EXPLICIT ENUMERATION, WHICH IS NOT A PRODUCT OF AXES
+# Five PAIRS of the 56 cells agree in EVERY column of the renderer's scenario table
+#   (vco_a_dynpwm_*_tri_r2_b25_d50  vs  vco_a_dynpwm_*_tri_r20_b25_d50, in 5 of the 6 sr x f0 slots)
+# and differ ONLY in the probe's COMPILED-IN LFO rate -- hence only in the CV trace they carry.
+# A re-derivation from manifest columns would therefore return 51, not 56, and would be wrong. The
+# `axis` rows below are declared RANGES that every cell must lie inside; they do NOT generate it.
+#
+# SO THE SET IS PINNED TWICE FROM TWO INDEPENDENT PRODUCERS, AND ALL THREE MUST AGREE EXACTLY:
+#   (a) the `cell` rows below                                -- this file, the expectation;
+#   (b) the probe's own declared plan, block `dynamic` (gh19_s3_plan.tsv, written by the probe from its
+#       compiled-in axes BEFORE the first render);
+#   (c) the renderer's scenario table, rows whose `path` is one of the two dynpwm paths (name_2).
+# Deleting a cell from the enumeration, or editing either producer, makes them disagree, and the gate
+# REFUSES (code_refuse_cellset -> PRB-REFUSE-CELLSET) instead of silently accepting a smaller matrix.
+#
+# SCOPE BOUNDARY, DECLARED BY NAME -- 10 cells are OUT, and this is a NAMED FAILURE SURFACE:
+#   66 scenario ids CONTAIN the substring `dynpwm`; only 56 have a dynpwm `path`. The 10 extra are
+#     * 8 `vco_a_dynpwm_*_viaConnect`          (path `vco_a_dynpwm_connect`)
+#     * 2 `vco_b_dynpwm_*_unpatched_under_a_cable` (path `vco_b_ab_asymmetry`)
+#   The 2 have the fewest cells but are the sharper trap: their ids are shaped EXACTLY like
+#   in-scope moving-duty cells. The gate SELECTS BY `path` and COMPARES BY EXACT ID -- never by
+#   prefix -- and the count it requires is len(`cell` rows) in this file. (cf. plan section 1, line 32:
+#   "declare the above 2 + 8 cells out of scope BY NAME".)
+#   NOTE on a loose number in the plan: the plan's section 9 line 200 says the id-fold and the path-fold
+#   give "66 vs 64". 64 = the three dynpwm-ish paths TOGETHER (48 + 8 connect + 8). The operative
+#   moving-duty set is 56, which the probe's own fence confirms independently: on the full-coverage run
+#   the fence read `declared=56 emitted=56 skipped=0 unreferenced=0`. This file pins 56; the 8 connect
+#   cells are out by name, not by omission.
+#
+# ORDERING CONTRACT: the `cell` rows are enumerated in the RENDERER'S scenario-table order, so a plain
+#   `diff` of those rows against the scenario table is a clean line-by-line check. The PROBE's declared
+#   plan lists the same 56 in a DIFFERENT order (first divergence at index 30), so the gate compares it
+#   as a SET and the renderer's table as an ORDERED SEQUENCE. Both were verified equal here.
+# ===================================================================================================
+# 3. THRESHOLDS. Rules were pinned first; the numbers were pinned AFTER the survey that measures them
+# (task #121, 2026-09-25). Each number names its provenance. No number was chosen so a cell would pass.
+#
+# floor_margin_min_db = 6.0   [DERIVED, not fitted]
+#   The floor and the residual add in AMPLITUDE, so a floor M dB below the residual inflates the
+#   reported residual by  10*log10(1 + 10**(-M/10))  dB.  M = 6 bounds that contamination at 0.97 dB,
+#   i.e. "at most 1 dB", which is the budget this slice pins.  (M = 10 would give 0.41 dB.)
+#   THE SURVEY, over all 56 cells, with the judged axis pinned below:
+#     margin on `res_db`        (JUDGED):     min 7.24  p5 7.49  median 12.31  max 13.57
+#     margin on `res_effbd_db`  (REPORTED):   min 4.99  p5 5.82  median 12.26  max 13.86
+#     binding cell (smallest judged margin):  vco_a_dynpwm_96000_440_sq_r2_b50_d50, 7.24 dB
+#     refusal count vs MARGIN, on the judged axis:
+#       3 dB -> 0/56   6 dB -> 0/56   8 dB -> 3/56   10 dB -> 8/56   12 dB -> 23/56
+#   At 6 dB no cell is refused: on this arm the reference stands on all 56. That is a MEASUREMENT
+#   RESULT, not a relaxed threshold -- the sensitivity row above is printed so a reader can see
+#   exactly how much refusal any other choice would buy.
+#   Percentiles are quoted as the harness PRINTED them (index-based, no interpolation). A re-runner
+#   using an interpolating percentile will get p5 = 8.59 on the judged axis and should not read that
+#   as drift. min/median/max agree under either convention.
+#   The tight cells are structural, not scattered: all 8 cells under 10 dB are at sr = 96000
+#   (44.1 kHz min 10.03 vs 96 kHz min 7.24), and the tighter family is the square wave
+#   (sq min 4.99 on the band axis vs tri min 9.13).
+#
+# floor_margin_axis = res_db   [the S3-authored full-band residual column = the judged axis]
+#   `res_effbd_db` is printed beside it and is NOT used for a verdict (names: report_floor_margin_band_db).
+#   The two must never be silently conflated: at 6 dB the band axis would refuse 3 cells.
+#   *** THIS IS A REAL TRAP, NOT A STYLE NOTE. *** The analyzer prints a PER-CELL column literally named
+#   `floor_margin_db`, and that column is the BAND-axis margin (res_effbd_db - refconv_rms_db). The
+#   judged-axis margin appears ONLY in the summary block. A gate that compared the per-cell column to
+#   6.0 would turn 0 refusals into 3 -- on 3 real named cells:
+#     vco_a_dynpwm_96000_440_sq_r2_b50_d50 (5.82), vco_a_dynpwm_96000_880_sq_r2_b50_d50 (4.99),
+#     vco_b_dynpwm_96000_880_sq_r2_b50_d50 (4.99).
+#   So the gate must COMPUTE the judged margin as (res_db - refconv_rms_db) from the primary columns.
+#   It must never read a column because of its name.
+#
+# require_skipped_zero = 1 and require_unreferenced_zero = 1   [THIRD SILENT SURFACE]
+#   The analyzer's matrix fence prints declared/emitted/skipped/unreferenced. A cell with no source
+#   trace is counted `skipped` but STAYS INSIDE the analyzed subset, so "raise the budget but do not
+#   supply the trace" moves a hole from `unreferenced` to `skipped` without changing anything a
+#   reader would notice. Pinning BOTH to zero is what makes the covered set equal the declared set;
+#   a criterion that pinned only `unreferenced` would look satisfied while measuring a different 56.
+#
+# oversample_L / taps_L / oversample_L2 / taps_L2   [R1, ruled by the implementation director]
+#   L = 8 with 2001 taps against L = 16 with 4001 taps: taps PROPORTIONAL TO L, ratio (4001-1)/(2001-1)
+#   = 2.000. Reason: the floor must attribute to RESOLUTION ALONE. The registered S3 analyzer builds
+#   both references with the SAME tap count (gh19_s3_pulse_analyze.py:1432-1433), which makes the two
+#   levels differ in grid resolution AND filter sharpness at once.
+#   MEASURED, so the magnitude is on the record rather than assumed: moving the 2L tap count from 2001
+#   to 4001 moved the floor by only -0.25 .. -0.38 dB (mean -0.30) over the cells measured both ways,
+#   and made edge_eff = edge_L = 0.491875 (from 0.483750). SO R1's VALUE IS THAT IT ISOLATES THE
+#   VARIABLE; IT IS NOT A SOURCE OF ACCURACY, and this file says so to stop a later reader from
+#   treating "more taps" as "more precise". (The analyzer records the same fact at :346-359.)
+#   S3's published refconv_* numbers are NOT reused: same column name, different instrument.
+#
+# window_warm_frames / window_len_frames / samples_frames / peak   [PINNED CONSTANTS]
+#   All 56 cells render warm = 8192, win = 16384, samples = 24576, peak = 0.5. These are PINNED, not
+#   merely self-consistent: a window that quietly changed length is a changed metric, not a re-run.
+#   Note samples == warm + win exactly, which is what makes the trace-coverage precondition below
+#   (trace length >= warm + win) a statement about the WHOLE recorded window.
+#
+# edge_eff_expected = 0.491875   [SURVEY-DERIVED, and it is the band-nesting bound]
+#   With taps ∝ L the two reference levels share one effective band; R1 moved it from 0.483750 to
+#   0.491875, i.e. WIDER. The `PRB-REFUSE-BAND` check requires the b1 band columns to nest inside it.
+#
+# ---------------------------------------------------------------------------------------------------
+# 4. THE IMPROVEMENT FLOOR -- DERIVED FROM THIS SLICE'S OWN SURVEY, NOT BORROWED
+#   improvement_min_db = 4.0, provenance `derived_from_prb_survey`.
+#
+#   HISTORY, because this number has an instructive one. It was first pinned at 6.0 by EXPLICIT
+#   REFERENCE to S3 (`borrowed_from_s3_not_derived_here`): same quantity class (a dB improvement
+#   between two arms), but NOT re-derived here, on the argument that the neutralized arm does not exist
+#   until the pipeline renders it. When the full 56-cell coverage was first run, 6.0 REDed on three
+#   cells -- 44100 Hz / square / ratio 20 -- whose measured improvement is 5.79, 4.70 and 5.79 dB,
+#   every other cell clearing 6.0. The floor was refuted by measurement, not by argument: 6.0 does not
+#   separate a broken corner from a working one, it cuts 1.3 dB into the bottom of one distribution
+#   tail. Refusing to move a threshold to fit a measurement is a rule about FAILURES; here the
+#   measurement showed the threshold was never this slice's to borrow.
+#
+#   WHAT REPLACES IT, AND THE REQUIREMENT IT MUST STILL MEET. This file's own separation argument still
+#   governs: the neutralized arm has its correction disabled, so its improvement over itself is ~0 dB by
+#   construction, while the corrected arm's improvement is a large positive number, and ANY THRESHOLD
+#   STRICTLY BETWEEN THE TWO SEPARATES THEM. Separation holds across (0, 4.70]. 4.0 sits 0.70 dB below
+#   the measured minimum, which leaves margin for run-to-run movement while staying far above the ~0 dB
+#   the neutralized arm produces by construction.
+#
+#   THE DISTRIBUTION IT IS DERIVED FROM (all 56 judged dynamic cells, `d = neutralised - corrected` in
+#   res_db, the gate's own definition; the survey reproduces the gate's printed improvement_min and all
+#   three of its named failures):
+#       all 56 : min 4.70   max 12.61   median 7.485
+#       r2  n=22: min 6.52  max 12.61
+#       r20 n=34: min 4.70  max  9.33   <- the three sub-6.0 cells live in this ratio
+#       tri n=30: min 6.52  max  9.20
+#       sq  n=26: min 4.70  max 12.61
+#   The sub-4.0 region is EMPTY: the floor is a floor, not an exception list, and no cell is named here
+#   individually. A per-cell waiver would put the discrimination in this file's prose instead of in the
+#   number, which is the shape this slice has twice removed elsewhere.
+#
+#   The same two reports, read in the mutant orientation (cand/neut = swapped), give
+#   improvement_min = -12.61 with all 56 cells below the floor, so the separation is measured in both
+#   directions and is not an artefact of which arm is called the candidate.
+#
+#   *** max_abs_fitted_scale_delta IS REPORTED, NOT GATED -- approved by the director 2026-09-25 ***
+#   S3 puts this quantity in REQUIRED_REPORTS: printed every run, given NO threshold. This slice follows
+#   that precedent. The reason is the audit's own finding -- inventing a threshold for a quantity the
+#   authorization left unbounded is the defect itself, not the fix for it. The guardrail's job here is to
+#   PRINT the fitted-scale movement next to the improvement so that a forged improvement is visible to a
+#   reader; it is not to decide the run. S3's reported value is the precedent of record. The row below is
+#   therefore a `report` row: the gate must print it, and must NOT turn a large value into a failure.
+#   `scale_delta_provenance` stays a criterion because it is the marker that keeps the borrowed number
+#   from being mistaken for a survey output.
+#
+#   *** ONE FLAGGED OPEN POINT, default pinned, one-line override available ***
+#   WHICH COLUMN CARRIES THE IMPROVEMENT. S3's improvement columns are 2L-reference residuals
+#   (`res_1k5k2L_db`, `res_effbd2L_db`); this slice's JUDGED axis is `res_db`. Default pinned here:
+#   improvement_db(cell) = res_db[neutralized] - res_db[corrected]  (same column that is judged, same
+#   cell, corrected minus neutralized). The alternative is to compute it on the 2L column. Both are
+#   reported; only the pinned one drives `PRB-FAIL-IMPROVEMENT`. If the director wants the 2L column,
+#   it is a one-line change to improvement_axis, not a re-render.
+#
+# Each `degen_pair` row carries THREE ids, in this order: the STATIC side (a real cell in the arm), the
+# CONSTANT-DUTY dynamic-route side (constructed by the pipeline), and a MOVING-DUTY dynamic-route side
+# (also constructed) that exists ONLY to keep the identity from being vacuous. The third id is not
+# decoration: without it, "the two routes agree" is an assertion nothing could have contradicted, since
+# a comparison that cannot fail is not evidence. The non-vacuity control is the SAME comparison applied
+# to the moving cell, and it must DIFFER -- `PRB-FAIL-DEGEN-NONVACUOUS` fires if it does not, and the
+# measured separation is printed either way.
+# The constructed ids deliberately do NOT look like arm ids: `dynroute_` is not a path in the scenario
+# table, which is how the self-check proves they are constructed rather than drawn.
+#
+# ---------------------------------------------------------------------------------------------------
+# 5. THE DEGENERATE-IDENTITY CRITERION, AND WHY ITS PAIRS ARE CONSTRUCTED, NOT DRAWN
+# `PRB-DEGEN-IDENTITY` asserts that the static pulse route is a SPECIAL CASE of the dynamic route:
+# on a cell where the duty track is CONSTANT, the dynamic route's output must be BYTE-IDENTICAL to the
+# static route's output. It proves that the two routes share one normalisation, denominator, bandwidth
+# declaration and dispatch -- i.e. that "static = dynamic with constant duty" is TRUE IN THE CODE, not
+# a coincidence.
+#   ITS RANGE IS WIRING, NOT ACCURACY. It does NOT show that the dynamic reference is numerically
+#   right; the floor in section 1 is what does that. Wiring evidence must be reported as wiring.
+#   THE ARM CONTAINS NO CONSTANT-DUTY DYNAMIC CELL, so this pair set cannot be enumerated from the
+#   arm. The `degen_pair` rows below name the STATIC side by its real arm id and declare the DYNAMIC
+#   side as a construction: same sr, same f0, constant duty 0.5, pw_depth 0 (no depth) through the
+#   dynamic route. 6 pairs = the static `vco_a_pulse_<sr>_<f0>_pw50` cells whose (sr, f0) lie on this
+#   slice's grid (sr in {44100, 96000}, f0 in {220, 440, 880}). The static side is pinned from the arm;
+#   the dynamic side is pinned by this rule and must be RENDERED by the pipeline.
+#   NON-VACUITY IS MANDATORY (names: fail_degen_nonvacuous_code). The same comparison must be shown to
+#   DIFFER on a cell whose duty genuinely moves, and the measured difference must be PRINTED. If the
+#   moving-duty cell also compares identical, the identity is vacuous and the gate FAILS
+#   `PRB-FAIL-DEGEN-NONVACUOUS` -- an identity nobody can break is not evidence of anything.
+#   FALSIFIABILITY, IN TWO SEPARATELY-NAMED CLASSES (revised 2026-09-25 by the implementation director;
+#   the original single-class clause was unsatisfiable -- see the note at the end of section 5):
+#   1. IDENTITY class -- `negcontrol_degen_identity_tamper` * `..._expect_token`:
+#      a ONE-ULP TAMPER of the constructed cell's rendered output must make the gate go red BY NAME on
+#      `PRB-FAIL-DEGEN-IDENTITY`, and the improvement columns must NOT move. This is the S6 precedent
+#      (tools/run_gh19_s6_saw_baseline_report_pin.py: "one ulp in one of arm B's windows must fire
+#      EQUALITY-SINE"). The tamper is of the INSTRUMENT's input, which is the only place it can be:
+#      at depth 0 the product's duty is independent of the CV BY CONSTRUCTION (see the note below), so
+#      no product mutation can break this identity while leaving its antecedent standing.
+#   2. PREMISE-LIVE class -- `negcontrol_degen_dispatch_arm` * `..._class` * `..._expect_exit_bit`:
+#      a shadow-include variant (tools/stage_gh19_prb_shadow.py --mutation degen-dispatch; the S6-
+#      approved mechanism: shadow include root FIRST on the compile line, product headers untouched)
+#      that removes the `pwDepth_` factor from `effectiveDuty()`. It must be reported as demonstrating
+#      that the PREMISE CHECK IS LIVE -- never as "the identity was falsified". Its evidence is that the
+#      constructed-cell driver refuses with the PREMISE exit bit set (`FATAL-PREMISE`, bit 6) and the
+#      measured duty span, which has to be quoted as a number. It reaches no verdict about the identity
+#      because the antecedent is gone: with the duty no longer constant there is no constant-duty
+#      dynamic cell to judge, so no judgement may be issued. A refusal here is the CORRECT outcome.
+#   *** WHY THE ORIGINAL CLAUSE WAS UNSATISFIABLE (measured, 2026-09-25; ruled by @Kimi) ***
+#   It required the dispatch-removing variant to "go red BY NAME on `PRB-DEGEN-IDENTITY`", and offered
+#   "perturbs the shared denominator" as an alternative. Neither can do it. `effectiveDuty()` is
+#   `duty_ + pwDepth_ * pwCv_ / kPwmCvFullScaleVolts`, and a non-finite depth or CV is forced to 0.0, so
+#   at `pwDepth_ == 0` the modulation term is `0.0 * finite == 0.0` EXACTLY in IEEE-754 on every sample:
+#   the CV value is irrelevant BY ARITHMETIC, not by wiring convention. Hence (a) dropping the depth
+#   factor lets the cable's value reach the duty, so the "constant-duty" cell stops being constant --
+#   the criterion's own ANTECEDENT is destroyed rather than its consequent falsified, and reporting that
+#   as "the identity was broken" would report "the premise did not hold" as a different fact about a
+#   different thing; and (b) perturbing the shared denominator multiplies the CV by zero at depth 0 and
+#   has NO effect at all, so it falsifies nothing. The measured evidence for (a) is recorded in the
+#   slice report: driver exit 64 (bit 6, PREMISE) with 6 `FATAL-PREMISE` lines and 0 `FATAL-STIMULUS`
+#   lines, the constant cells' measured duty span moving from exactly 0 to 0.49899999999919042.
+#   The two exit bits exist so this classification is MECHANICAL rather than a reading of prose: bit 5
+#   is the stimulus (the traced source, an INPUT) and bit 6 is the premise (the traced effectiveDuty(),
+#   what the product did with that input).
+#
+# ---------------------------------------------------------------------------------------------------
+# 6. THE FOUR LEGS THIS CRITERIA FILE IS EVALUATED AGAINST (structure aligned with S3 and S6)
+#   leg 1  reference:  a NEW CMake `slow` entry -- render the fresh arm at the current head, analyze
+#                      `--dynamic-cells 56 --conv-cells 56`, then run this gate. Existing entries and
+#                      their flags are UNTOUCHED; this slice adds an entry, it does not edit one.
+#   leg 2  refusal self-test: the gate's own named-refusal controls (--negcontrol). It must be shown
+#                      that the gate STILL REFUSES; a gate whose refusals are never exercised is
+#                      indistinguishable from a gate with no preconditions.
+#   leg 3  mutant:     the same-build corrected-neutralized arm (S3 precedent: polyblepPulseCorrection()
+#                      returns 0; or an S6-style shadow include). The corrected arm must PASS; the
+#                      neutralized arm must go red BY NAME as `PRB-FAIL-IMPROVEMENT` -- and must be
+#                      NEITHER a refusal NOR a crash. A refusal means no verdict was issued; a crash
+#                      means no verdict was issued either. Neither counts as "the gate discriminated".
+#   leg 4  zero-disturbance: S3's existing 72-cell gate and the 12-item `--require-full` gap surface
+#                      re-run AS-IS. This slice reports "unchanged" and does NOT re-adjudicate them.
+#   HARD PRECONDITION (checked before any leg runs): `git diff main -- core/ host/ tests/probes/` is
+#   empty. This slice adds tools, a report and criteria; it does not touch product code.
+#
+# ---------------------------------------------------------------------------------------------------
+# 7. SURVEY PROVENANCE for every number cited above
+#   instrument  lunar24-task121/survey_res_floor.py -- imports the analyzer's OWN functions and changes
+#               exactly one argument (the 2L decimator's tap count). VALIDATED BEFORE TRUSTED: at
+#               taps2 == taps every column must equal the pinned S3 report's own column for the same
+#               cell; on 5 cells it did (VERDICT: HARNESS REPRODUCES THE PINNED REPORT; max |delta| per
+#               column: res_db 4.3e-3, eb_db 3.6e-3, crms 4.3e-3, cpeak 4.7e-7, eb2_db 4.3e-3).
+#   legs        lunar24-task121/survey/{validate.txt, r1_survey.txt, log.txt, *.time}
+#   summary     lunar24-task121/survey/analysis.txt
+#   arm         the S3 arm /tmp/gh19-s3-arm (152 cells); this slice analyzes the 56 with a dynpwm path.
+#   control     res_db did NOT move between the two legs (max |drift| < 1e-6 on the shared cells),
+#               confirming the R1 leg changed ONLY the 2L reference and nothing else.
+#   NOTE        absolute wall-clock from the survey is a LOCAL reading (macOS arm64, CPython 3.14.7) and
+#               is NOT a CI prediction. The transferable quantity is the ratio, not the seconds.
+# ===================================================================================================
+criterion	gate_code_prefix	PRB
+criterion	refuse_class_prefix	PRB-REFUSE-
+criterion	fail_class_prefix	PRB-FAIL-
+criterion	code_floor_missing	FLOOR-MISSING
+criterion	code_floor_unresolved	FLOOR-UNRESOLVED
+criterion	code_trace	TRACE
+criterion	code_band	BAND
+criterion	code_cellset	CELLSET
+criterion	code_missing_arm	MISSING-ARM
+criterion	code_improvement	IMPROVEMENT
+criterion	code_degen_identity	DEGEN-IDENTITY
+criterion	code_degen_nonvacuous	DEGEN-NONVACUOUS
+# The remaining seven suffixes the gate can emit. Until 2026-09-25 the `code_*` block above named only
+# the nine codes the gate reaches through a variable, so a reader of this file could rename
+# `code_criteria` -- or of any of these -- and change nothing, because there was no such row to rename.
+# These seven were emitted as bare literals at their call sites. Naming them completes the vocabulary:
+# every suffix `PRB-REFUSE-`/`PRB-FAIL-` can print is now a row in this file, so "the criteria decides
+# the code vocabulary" is a claim a reader can check rather than a claim about the easy half.
+criterion	code_criteria	CRITERIA
+criterion	code_plan	PLAN
+criterion	code_matrix_shape	MATRIX-SHAPE
+criterion	code_matrix_exit	MATRIX-EXIT
+criterion	code_scenarios	SCENARIOS
+criterion	code_trace_shape	TRACE-SHAPE
+criterion	code_window	WINDOW
+criterion	negcontrol_degen_dispatch_arm	PRB-DEGEN-DISPATCH-MUTANT
+criterion	negcontrol_degen_dispatch_class	PREMISE-LIVE
+criterion	negcontrol_degen_dispatch_expect_exit_bit	6
+criterion	negcontrol_degen_identity_tamper	one_ulp_render_tamper
+criterion	negcontrol_degen_identity_tamper_expect_token	PRB-FAIL-DEGEN-IDENTITY
+criterion	degen_driver_stimulus_exit_bit	5
+criterion	degen_driver_premise_exit_bit	6
+criterion	floor_margin_min_db	6.0
+criterion	floor_margin_axis	res_db
+criterion	max_res_db_contamination_db	1.0
+criterion	floor_margin_band_axis_reported_only	res_effbd_db
+criterion	require_skipped_zero	1
+criterion	require_unreferenced_zero	1
+criterion	oversample_L	8
+criterion	taps_L	2001
+criterion	oversample_L2	16
+criterion	taps_L2	4001
+criterion	taps_ratio_min	2.0
+criterion	decimator_cutoff	0.06
+criterion	edge_eff_expected	0.491875
+criterion	trace_min_frames	24576
+criterion	window_warm_frames	8192
+criterion	window_len_frames	16384
+criterion	samples_frames	24576
+criterion	peak	0.5
+criterion	improvement_min_db	4.0
+criterion	improvement_axis	res_db
+criterion	improvement_provenance	derived_from_prb_survey
+criterion	scale_delta_provenance	borrowed_from_s3_not_derived_here
+report	max_abs_fitted_scale_delta
+criterion	degen_identity_compare	byte_identical
+criterion	degen_nonvacuous_required	1
+report	refconv_rms_db
+report	refconv_peak
+report	res_effbd_db
+report	res_effbd2L_db
+report	report_floor_margin_db
+report	report_floor_margin_band_db
+report	margin_source_column
+report	worst_floor_margin_db
+report	refused_cells
+report	improvement_corrected_db
+report	improvement_neutralized_db
+report	degen_moving_duty_measured_delta
+axis	plan_block	dynamic
+axis	scenarios_path	vco_a_dynpwm,vco_b_dynpwm
+axis	out_of_scope_path	vco_a_dynpwm_connect,vco_b_ab_asymmetry
+axis	lfo_wave	tri,sq
+axis	sample_rates_hz	44100,96000
+axis	frequencies_hz	220,440,880
+axis	duty_param	0.25,0.5
+axis	pw_depth	0.5,1
+axis	morph	1
+axis	warm_frames	8192
+axis	win_frames	16384
+axis	cell_count	56
+axis	degen_pair_count	6
+cell	vco_a_dynpwm_44100_220_tri_r2_b50_d50
+cell	vco_a_dynpwm_44100_440_tri_r2_b50_d50
+cell	vco_a_dynpwm_44100_880_tri_r2_b50_d50
+cell	vco_a_dynpwm_96000_220_tri_r2_b50_d50
+cell	vco_a_dynpwm_96000_440_tri_r2_b50_d50
+cell	vco_a_dynpwm_96000_880_tri_r2_b50_d50
+cell	vco_a_dynpwm_44100_220_tri_r20_b50_d50
+cell	vco_a_dynpwm_44100_440_tri_r20_b50_d50
+cell	vco_a_dynpwm_44100_880_tri_r20_b50_d50
+cell	vco_a_dynpwm_96000_220_tri_r20_b50_d50
+cell	vco_a_dynpwm_96000_440_tri_r20_b50_d50
+cell	vco_a_dynpwm_96000_880_tri_r20_b50_d50
+cell	vco_a_dynpwm_44100_220_tri_r2_b25_d50
+cell	vco_a_dynpwm_44100_440_tri_r2_b25_d50
+cell	vco_a_dynpwm_44100_880_tri_r2_b25_d50
+cell	vco_a_dynpwm_96000_220_tri_r2_b25_d50
+cell	vco_a_dynpwm_96000_440_tri_r2_b25_d50
+cell	vco_a_dynpwm_96000_880_tri_r2_b25_d50
+cell	vco_a_dynpwm_44100_220_tri_r20_b25_d50
+cell	vco_a_dynpwm_44100_440_tri_r20_b25_d50
+cell	vco_a_dynpwm_44100_880_tri_r20_b25_d50
+cell	vco_a_dynpwm_96000_220_tri_r20_b25_d50
+cell	vco_a_dynpwm_96000_440_tri_r20_b25_d50
+cell	vco_a_dynpwm_96000_880_tri_r20_b25_d50
+cell	vco_a_dynpwm_44100_220_sq_r2_b50_d50
+cell	vco_a_dynpwm_44100_440_sq_r2_b50_d50
+cell	vco_a_dynpwm_44100_880_sq_r2_b50_d50
+cell	vco_a_dynpwm_96000_220_sq_r2_b50_d50
+cell	vco_a_dynpwm_96000_440_sq_r2_b50_d50
+cell	vco_a_dynpwm_96000_880_sq_r2_b50_d50
+cell	vco_a_dynpwm_44100_220_sq_r20_b50_d50
+cell	vco_a_dynpwm_44100_440_sq_r20_b50_d50
+cell	vco_a_dynpwm_44100_880_sq_r20_b50_d50
+cell	vco_a_dynpwm_96000_220_sq_r20_b50_d50
+cell	vco_a_dynpwm_96000_440_sq_r20_b50_d50
+cell	vco_a_dynpwm_96000_880_sq_r20_b50_d50
+cell	vco_a_dynpwm_44100_220_tri_r20_b25_d100
+cell	vco_a_dynpwm_44100_440_tri_r20_b25_d100
+cell	vco_a_dynpwm_44100_880_tri_r20_b25_d100
+cell	vco_a_dynpwm_96000_220_tri_r20_b25_d100
+cell	vco_a_dynpwm_96000_440_tri_r20_b25_d100
+cell	vco_a_dynpwm_96000_880_tri_r20_b25_d100
+cell	vco_a_dynpwm_44100_220_sq_r20_b25_d100
+cell	vco_a_dynpwm_44100_440_sq_r20_b25_d100
+cell	vco_a_dynpwm_44100_880_sq_r20_b25_d100
+cell	vco_a_dynpwm_96000_220_sq_r20_b25_d100
+cell	vco_a_dynpwm_96000_440_sq_r20_b25_d100
+cell	vco_a_dynpwm_96000_880_sq_r20_b25_d100
+cell	vco_b_dynpwm_44100_220_sq_r2_b50_d50
+cell	vco_b_dynpwm_44100_880_sq_r2_b50_d50
+cell	vco_b_dynpwm_96000_220_sq_r2_b50_d50
+cell	vco_b_dynpwm_96000_880_sq_r2_b50_d50
+cell	vco_b_dynpwm_44100_220_sq_r20_b50_d50
+cell	vco_b_dynpwm_44100_880_sq_r20_b50_d50
+cell	vco_b_dynpwm_96000_220_sq_r20_b50_d50
+cell	vco_b_dynpwm_96000_880_sq_r20_b50_d50
+degen_pair	vco_a_pulse_44100_220_pw50	dynroute_const_duty_44100_220_b50_d0	dynroute_moving_duty_44100_220_b50_d50
+degen_pair	vco_a_pulse_44100_440_pw50	dynroute_const_duty_44100_440_b50_d0	dynroute_moving_duty_44100_440_b50_d50
+degen_pair	vco_a_pulse_44100_880_pw50	dynroute_const_duty_44100_880_b50_d0	dynroute_moving_duty_44100_880_b50_d50
+degen_pair	vco_a_pulse_96000_220_pw50	dynroute_const_duty_96000_220_b50_d0	dynroute_moving_duty_96000_220_b50_d50
+degen_pair	vco_a_pulse_96000_440_pw50	dynroute_const_duty_96000_440_b50_d0	dynroute_moving_duty_96000_440_b50_d50
+degen_pair	vco_a_pulse_96000_880_pw50	dynroute_const_duty_96000_880_b50_d0	dynroute_moving_duty_96000_880_b50_d50

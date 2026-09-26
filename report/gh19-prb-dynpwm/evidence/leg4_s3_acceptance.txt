@@ -1,0 +1,73 @@
+UpdateCTestConfiguration  from :/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb/DartConfiguration.tcl
+Test project /Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 72
+    Start 72: gh19_s3_pulse_acceptance
+
+72: Test command: /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14 "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/run_gh19_s3_pulse_pipeline.py" "--probe" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb/gh19_s3_pulse_probe" "--baseline-arm" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-product/baseline_arm" "--base-report" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-product/base_report.txt" "--criteria" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-product/acceptance_criteria.tsv" "--manifest" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-aa/expected_cells.tsv" "--analyzer" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_s3_pulse_analyze.py" "--delta" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_s3_pulse_delta.py" "--gate" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_s3_pulse_acceptance.py" "--negcontrol" "/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/tools/gh19_s3_pulse_gate_negcontrol.py"
+72: Working Directory: /Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/build-prb
+72: Test timeout computed to be: 10000000
+72: ACCEPT-PIPELINE baseline_pin=OK sha256=f3075e7ea021953a487ada97b9c8249ec4466c9ad47d0cb0ea3078f2a79d61bc path=/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-product/baseline_arm/gh19_s3_scenarios.tsv
+72: ACCEPT-PIPELINE base_report_pin=OK sha256=eab2aa0d9b6f4294fcbd543efce113fa6039e94177b5887e6b78bdd2214b22ca path=/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-product/base_report.txt
+72: ACCEPT-PIPELINE fresh_arm=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s3pipe-e2zcd0ri/cand plan_sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811
+72: ACCEPT-PIPELINE fresh_report=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s3pipe-e2zcd0ri/cand_report.txt sha256=27589bd045549b366a9c2b29424cacc24bfef1629b51b2c9cbfee9ddf12d35fc
+72: ACCEPT-PIPELINE deltas=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s3pipe-e2zcd0ri/deltas.tsv sha256=ea3755033164d37fbbcb72b2b1ca096b9805db0291eef332a322698202f6a12b
+72: ACCEPT-GATE tool=gh19_s3_pulse_acceptance.py
+72: ACCEPT-GATE base_report=/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-product/base_report.txt
+72: ACCEPT-GATE cand_report=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s3pipe-e2zcd0ri/cand_report.txt
+72: ACCEPT-INPUT criteria sha256=1446b9c1b37b27ecc97310dc7cf882505e25969018e75eee5c99bebeecdf3542 path=/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-product/acceptance_criteria.tsv
+72: ACCEPT-INPUT plan sha256=621b0c758959b20623e0b4596a789f266aad3d6aef9dc1a271144f975eb57811 path=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s3pipe-e2zcd0ri/cand/gh19_s3_plan.tsv
+72: ACCEPT-INPUT deltas sha256=ea3755033164d37fbbcb72b2b1ca096b9805db0291eef332a322698202f6a12b path=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s3pipe-e2zcd0ri/deltas.tsv
+72: ACCEPT-INPUT base_report sha256=eab2aa0d9b6f4294fcbd543efce113fa6039e94177b5887e6b78bdd2214b22ca path=/Users/joe/.slock/agents/13b7db58-a660-42c2-8def-ab194df11e08/wt-121-gh19-s6-prb-dynpwm/report/gh19-s3-pulse-product/base_report.txt
+72: ACCEPT-INPUT cand_report sha256=27589bd045549b366a9c2b29424cacc24bfef1629b51b2c9cbfee9ddf12d35fc path=/var/folders/rt/xxbqg_fj7y1g58dr0vt_jqfm0000gn/T/gh19s3pipe-e2zcd0ri/cand_report.txt
+72: ACCEPT-GATE criteria=acceptance_criteria.tsv cells=72 report_only=8 plan_static=80
+72: ACCEPT-REPORT max_abs_fitted_scale_delta=0.006300
+72: ACCEPT-REPORT max_pinned_scale_cost_db=+0.1205
+72: ACCEPT-REPORT worst_band_1k5k_improvement_db=-24.15
+72: ACCEPT-REPORT worst_full_band_improvement_db=-7.66
+72: ACCEPT-REPORT worst_pinned_scale_rect_full_band_improvement_db=-7.632
+72: ACCEPT-REPORT worst_rect_full_band_improvement_db=-7.680
+72: ACCEPT-EVIDENCE improvement_cells=72 worst_dreseffbd_db=-7.66 worst_dres1k5k_db=-24.15 worst_dres_db=-7.68 band_rect_vs_effbd_max_gap_db=0.1500
+72: ACCEPT-NOTE the two ``worst_..._rect_full_band...`` reports are one band's pair: the same gate cells, the same fixed reference, phase and denominator, once with each arm's own fitted scale and once with the scale pinned to the BASELINE arm's value. The difference is the part of the rect-band improvement the fit accounts for. The ``worst_full_band`` and ``worst_band_1k5k`` reports are the gate's own Hann columns, unchanged; no pinned-scale value is claimed for them because the published single A is not that band's least-squares scale. All six are report-only: the authorization sets no threshold on any of them.
+72: ACCEPT-GATE verdict=PASS refusals=0 failures=0
+72: CONTROL pristine            exit=0 expected=0  PASS
+72: CONTROL empty_deltas                     exit=4 expected=4 code=DELTAS-SHAPE           RED-HIT
+72: CONTROL deltas_header_only               exit=4 expected=4 code=DELTAS-SHAPE           RED-HIT
+72: CONTROL empty_cand_matrix                exit=4 expected=4 code=MATRIX-SHAPE           RED-HIT
+72: CONTROL gate_cell_missing_both_arms      exit=4 expected=4 code=DELTAS-UNKNOWN-ID      RED-HIT
+72: CONTROL gate_cell_missing_one_arm        exit=4 expected=4 code=MATRIX-SHAPE           RED-HIT
+72: CONTROL delta_row_duplicated             exit=4 expected=4 code=DELTAS-SHAPE           RED-HIT
+72: CONTROL id_swap                          exit=4 expected=4 code=DELTAS-METADATA        RED-HIT
+72: CONTROL nonfinite_delta                  exit=4 expected=4 code=DELTAS-SHAPE           RED-HIT
+72: CONTROL nonfinite_matrix                 exit=4 expected=4 code=MATRIX-SHAPE           RED-HIT
+72: CONTROL wrong_kind                       exit=4 expected=4 code=DELTAS-METADATA        RED-HIT
+72: CONTROL wrong_metadata                   exit=4 expected=4 code=DELTAS-METADATA        RED-HIT
+72: CONTROL arms_not_from_these_matrices     exit=4 expected=4 code=ORDERING               RED-HIT
+72: CONTROL power_unit_tripwire_removed      exit=4 expected=4 code=ARMSELFCHECK           RED-HIT
+72: CONTROL align_gate_fails                 exit=4 expected=4 code=ARMSELFCHECK           RED-HIT
+72: CONTROL instrument_failure_marker        exit=4 expected=4 code=ARMSELFCHECK           RED-HIT
+72: CONTROL criteria_drop_criterion          exit=4 expected=4 code=CRITERIA               RED-HIT
+72: CONTROL criteria_invented_threshold      exit=4 expected=4 code=CRITERIA               RED-HIT
+72: CONTROL criteria_drop_report             exit=4 expected=4 code=CRITERIA               RED-HIT
+72: CONTROL criteria_duplicate_cell          exit=4 expected=4 code=CRITERIA               RED-HIT
+72: CONTROL criteria_shrunk_enumeration      exit=4 expected=4 code=CRITERIA-ENUMERATION   RED-HIT
+72: CONTROL plan_drops_gate_cell             exit=4 expected=4 code=PLAN                   RED-HIT
+72: CONTROL plan_drops_report_only_cell      exit=4 expected=4 code=PLAN                   RED-HIT
+72: NEGCTL-GATE ok=22 bad=0 controls=22
+72: NEGCTL-GATE verdict=ALL-HIT
+1/1 Test #72: gh19_s3_pulse_acceptance .........   Passed  236.28 sec
+
+The following tests passed:
+	gh19_s3_pulse_acceptance
+
+100% tests passed out of 1
+
+Label Time Summary:
+slow    = 236.28 sec*proc (1 test)
+
+Total Test time (real) = 236.30 sec

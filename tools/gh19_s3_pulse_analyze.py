@@ -807,6 +807,12 @@ def main(argv):
                     help="how many moving-duty cells get the full high-rate reference")
     ap.add_argument("--oversample", type=int, default=8)
     ap.add_argument("--taps", type=int, default=65)
+    # The 2L reference's own tap count. SEPARATE from --taps so that the two reference levels can be
+    # scaled together (taps proportional to L), which is the only way the movement between them, R1,
+    # attributes to RESOLUTION ALONE. Defaulting to None and falling back to --taps keeps every existing
+    # invocation byte-identical: absent, this flag changes nothing (proved by a same-arm two-run diff).
+    ap.add_argument("--taps2", type=int, default=None,
+                    help="taps for the 2L reference (default: same as --taps)")
     ap.add_argument("--conv-cells", type=int, default=3,
                     help="how many of the referenced dynamic cells also get the 2L reference, to "
                          "report reference convergence rather than assume it")
@@ -1430,10 +1436,19 @@ def main(argv):
         dyn.sort(key=lambda c: (c.lfo_wave != "tri", c.sr, c.f0))
         subset = dyn[:args.dynamic_cells]
         h = design_decimator(args.taps, args.oversample, 0.06)
-        h2 = design_decimator(args.taps, args.oversample * 2, 0.06)
-        say("  L=%d, taps=%d; declared reference subset: %d of %d moving-duty cells; "
+        # R1's instrument. With --taps2 unset this is the line it always was, and the transcript below is
+        # byte-identical to what earlier runs produced -- the printed line only grows a `taps2=` field when
+        # the two levels actually differ, so a reader can tell at a glance which of the two modes produced
+        # this report without hashing it against an older one.
+        taps2 = args.taps if args.taps2 is None else args.taps2
+        if taps2 % 2 != 1:
+            raise SystemExit("--taps2 must be odd, like --taps (got %d): the decimator's group delay "
+                             "is (taps-1)//2 and even taps would make it a half-sample" % taps2)
+        h2 = design_decimator(taps2, args.oversample * 2, 0.06)
+        say("  L=%d, taps=%d%s; declared reference subset: %d of %d moving-duty cells; "
               "convergence-checked: %d" %
-              (args.oversample, args.taps, len(subset), len(dyn), min(args.conv_cells, len(subset))))
+              (args.oversample, args.taps, "" if taps2 == args.taps else ", taps2=%d" % taps2,
+               len(subset), len(dyn), min(args.conv_cells, len(subset))))
         say("  reference movement is scaled by the fitted A and divided by ref_rms, so"
               " refconv_rms_db / refconv_peak are in the SAME units as res_db (device units)")
         # ---- the effective band of a DECIMATED reference, measured rather than assumed ----

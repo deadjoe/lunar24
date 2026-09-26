@@ -1,0 +1,42 @@
+# RULING ④ -- THE VOCABULARY IS COMPLETE, AND COMPLETING IT CHANGED NO BYTES.
+#
+# (1) All sixteen suffixes the gate can emit are now rows in the criteria.
+# (2) The map those rows build is the IDENTITY on the shipped criteria -- which is exactly the
+#     zero-disturbance property, and it is checkable statically, without running anything: if every
+#     row's value equals its own derived key, `codes.get(s, s)` returns `s` for every suffix, so the
+#     gate's output cannot change. The runtime counterpart is the transcript diff (wire_per_key.txt,
+#     wiring_identity_pinned.txt); this is the cheap proof that says why it must be so.
+#
+# Producer, run from the repo root -- the whole thing, so this file is re-checkable without the report:
+
+python3 - <<'PY'
+import importlib.util, re
+spec = importlib.util.spec_from_file_location("acc", "tools/gh19_prb_dynpwm_acceptance.py")
+acc = importlib.util.module_from_spec(spec); spec.loader.exec_module(acc)
+
+rows = [l.rstrip("\n").split("\t") for l in open("report/gh19-prb-dynpwm/acceptance_criteria.tsv", encoding="utf-8")
+        if l.strip() and not l.lstrip().startswith("#")]
+code_rows = [r for r in rows if r[0] == "criterion" and r[1].startswith("code_")]
+print("code_* rows in criteria :", len(code_rows))
+m = {}
+for r in code_rows:
+    m[r[1][len("code_"):].replace("_", "-").upper()] = r[2]
+print("derived map entries     :", len(m))
+print("non-identity entries    :", [k for k, v in m.items() if k != v] or "(none -> output byte-unchanged)")
+
+src = open("tools/gh19_prb_dynpwm_acceptance.py", encoding="utf-8").read()
+lit = set(re.findall(r'\bg\.(?:refuse|fail)\(\s*"([A-Z][A-Z0-9-]*)"', src))
+print("literal call-site codes :", len(lit))
+print("literals NOT named      :", sorted(lit - set(m)) or "(none)")
+print("named but not a literal :", sorted(set(m) - lit), "(reached through a variable: gates on the criteria-held name)")
+print("STR_CRITERIA has all?   :", all(r[1] in acc.STR_CRITERIA for r in code_rows))
+PY
+
+# Output, 2026-09-25, macOS arm64, CPython 3.14.7:
+code_* rows in criteria : 16
+derived map entries     : 16
+non-identity entries    : (none -> output byte-unchanged)
+literal call-site codes : 15
+literals NOT named      : (none)
+named but not a literal : ['MISSING-ARM'] (reached through a variable: gates on the criteria-held name)
+STR_CRITERIA has all?   : True

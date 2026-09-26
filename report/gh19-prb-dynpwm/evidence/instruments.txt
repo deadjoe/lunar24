@@ -1,0 +1,209 @@
+INSTRUMENTS FOR THE EVIDENCE IN THIS DIRECTORY
+=============================================
+
+Why this file exists: each claim in ../2026-09-25-task121-gh19-prb-dynpwm.md is backed by an output
+file in this directory, and an output is only re-checkable if its producer is on the record too. The
+producers were scratch files under /tmp during the run; they are reproduced verbatim below so a reader
+can re-derive every output without reconstructing the instrument from prose.
+
+Every producer below reads the criteria from its repository path and, where it needs a modified
+criteria, writes the modified copy to /tmp -- the repository file is never the sandbox target. The
+criteria sha is recorded in the report so a re-run can confirm it ran against the same pinned input:
+  06579ae8008131588a0d00e31b93384b23065d13b3d7fa7aa21557b5248e0c02
+   report/gh19-prb-dynpwm/acceptance_criteria.tsv (395 lines)
+
+EDITED AFTER THE FIRST RUN, and the outputs were re-verified byte-identical afterwards: the two
+instruments that call the gate's finish() passed the literal 5 as its exit code, which is not this
+gate's REFUSE code (it is 4). The return value is discarded at those call sites, so nothing observable
+moved -- but shipping a misleading literal in an instrument that is now on the record would repeat
+exactly the exit-code confusion the report had to correct, so each now passes m.EXIT_REFUSE.
+
+Python used: /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14
+
+-------------------------------------------------------------
+[1] instrument_wire_unit.py  sha256=04b5e52de17d6fb8...
+    produced -> wire_unit.txt  sha256=3b1858729078443d...  (re-run: diff empty)
+-------------------------------------------------------------
+"""Unit-level proof of the wiring's TWO SURFACES, against the gate's own code: parse a criteria whose
+`code_cellset` is a sentinel, record one CELLSET refusal through the real `refuse()`, and require the
+sentinel on the per-code detail line AND on the counts line. The pre-wiring copy is run through the same
+script, where the same call must print the DEFAULT literal instead -- which is what makes this a
+discrimination rather than a demonstration of the sentinel's existence."""
+import hashlib, importlib.util, io, sys, contextlib
+
+def load(path, name):
+    spec = importlib.util.spec_from_file_location(name, path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+SENT = "LIVENESS-SENTINEL-7Q4Z"
+src = "report/gh19-prb-dynpwm/acceptance_criteria.tsv"
+crit = "/tmp/wire_unit_criteria.tsv"
+open(crit, "w").write(open(src).read().replace("criterion\tcode_cellset\tCELLSET\n",
+                                               "criterion\tcode_cellset\t%s\n" % SENT))
+print("CRITERIA sentinel_applied=%s sha256=%s" % (SENT in open(crit).read(),
+      hashlib.sha256(open(crit, "rb").read()).hexdigest()))
+
+for tag, path in (("shipped", "tools/gh19_prb_dynpwm_acceptance.py"),
+                  ("prewiring", "/tmp/gate_prewiring.py")):
+    m = load(path, "gate_" + tag)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        g = m.Gate()
+        r = m.parse_criteria(g, crit)
+        g.refuse("CELLSET", "unit-test refusal")
+        m.finish(g, "REFUSE", m.EXIT_REFUSE)   # the gate's own constant; the return value is discarded here
+    out = buf.getvalue()
+    detail = [l for l in out.splitlines() if l.startswith("PRB-REFUSE-")]
+    counts = [l for l in out.splitlines() if " COUNT " in l]
+    print("--- %s ---" % tag)
+    print("  codes_map=%s" % (g.codes,))
+    print("  detail_lines=%r" % (detail,))
+    print("  counts_lines=%r" % (counts,))
+    print("  sentinel_on_detail=%s sentinel_on_counts=%s default_on_either=%s"
+          % (any(SENT in l for l in detail), any(SENT in l for l in counts),
+             any("CELLSET" in l for l in detail + counts)))
+
+
+-------------------------------------------------------------
+
+
+[2] instrument_wire_per_key.py  sha256=0db90b3f511bd19d...
+
+
+    produced -> wire_per_key.txt  sha256=de7800a9f2f54f75...  (re-run: diff empty)
+
+
+-------------------------------------------------------------
+"""Per-key liveness: for EACH of the nine criteria `code_*` rows, rename it to a sentinel in a copy of
+the criteria, parse that copy with the gate's own parser, record a refusal under the recorded suffix,
+and require the sentinel on BOTH printed surfaces.
+
+WHAT THIS DOES AND DOES NOT PROVE. It proves the mechanism is live for all nine: the map is consulted at
+`refuse()`/`fail()` and the recorded string feeds both surfaces. It does NOT prove that a real run
+reaches each code -- reachability is a property of the controls, not of the wiring, and is reported
+separately. The map is keyed by the suffix DERIVED FROM THE KEY NAME (`code_missing_arm` -> `MISSING-ARM`),
+which is also the value the call sites record -- including the one that records through a local variable
+rather than a literal.
+"""
+import importlib.util, io, contextlib, re
+
+SENT = "LIVENESS-SENTINEL-7Q4Z"
+src = "report/gh19-prb-dynpwm/acceptance_criteria.tsv"
+base = open(src, encoding="utf-8").read()
+crit = "/tmp/wire_per_key_criteria.tsv"
+
+spec = importlib.util.spec_from_file_location("gate", "tools/gh19_prb_dynpwm_acceptance.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+rows = [(f[1], f[2]) for f in (l.split("\t") for l in base.splitlines())
+        if f[0] == "criterion" and f[1].startswith("code_")]
+print("criteria code_* rows: %d" % len(rows))
+print("%-24s %-18s %-6s %-6s %-6s" % ("key", "value", "detail", "counts", "default"))
+all_ok = True
+for key, val in rows:
+    suffix = key[len("code_"):].replace("_", "-").upper()
+    text = base.replace("criterion\t%s\t%s\n" % (key, val),
+                        "criterion\t%s\t%s\n" % (key, SENT))
+    assert SENT in text, key
+    open(crit, "w", encoding="utf-8", newline="\n").write(text)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        g = m.Gate()
+        m.parse_criteria(g, crit)
+        g.refuse(suffix, "per-key probe")
+        m.finish(g, "REFUSE", m.EXIT_REFUSE)   # the gate's own constant; the return value is discarded here
+    out = buf.getvalue()
+    det = [l for l in out.splitlines() if l.startswith("PRB-REFUSE-")]
+    cnt = [l for l in out.splitlines() if " COUNT " in l]
+    d = any(SENT in l for l in det)
+    c = any(SENT in l for l in cnt)
+    dflt = any(val in l for l in det + cnt)
+    ok = d and c and not dflt
+    all_ok = all_ok and ok
+    print("%-24s %-18s %-6s %-6s %-6s %s" % (key, val, d, c, dflt, "OK" if ok else "FAIL"))
+print("ALL NINE LIVE ON BOTH SURFACES: %s" % all_ok)
+
+
+-------------------------------------------------------------
+
+
+[3] instrument_suite_code_coverage.py  sha256=c5bfc7f21423edda...
+
+
+    produced -> suite_code_coverage.txt  sha256=640e73a712aca0c1...
+
+
+    (re-confirmed byte-identical on a second run: diff empty)
+
+
+-------------------------------------------------------------
+"""What codes does the control suite EXERCISE? Read from the CONTROLS table itself rather than from a
+promise: each entry names the token its mutation must produce. The gate's own output is not reprinted on
+a HIT, so the declaration is the only per-control attribution available -- and it is the declaration the
+suite is judged against, so a suite that fired a different code would MISS."""
+import importlib.util, re
+spec = importlib.util.spec_from_file_location("nc", "tools/gh19_prb_dynpwm_gate_negcontrol.py")
+nc = importlib.util.module_from_spec(spec); spec.loader.exec_module(nc)
+
+crit = open("report/gh19-prb-dynpwm/acceptance_criteria.tsv", encoding="utf-8").read()
+named = {}
+for ln in crit.splitlines():
+    f = ln.split("\t")
+    if f[0] == "criterion" and f[1].startswith("code_"):
+        named[f[1][len("code_"):].replace("_", "-").upper()] = f[2]
+src = open("tools/gh19_prb_dynpwm_acceptance.py", encoding="utf-8").read()
+emitted = sorted(set(re.findall(r'g\.(?:refuse|fail)\("([^"]+)"', src)))
+print("controls in the suite: %d" % len(nc.CONTROLS))
+print("\ncontrol -> code it must produce (and codes it must NOT produce)")
+for c in nc.CONTROLS:
+    print("  %-30s %-28s forbidden=%s" % (c[0], c[3], ",".join(c[4]) or "-"))
+exercised = sorted({c[3].split("PRB-REFUSE-")[-1].split("PRB-FAIL-")[-1] for c in nc.CONTROLS})
+print("\ncodes the suite exercises: %s" % ", ".join(exercised))
+print("\nreconciliation against the nine criteria-named suffixes:")
+for s in sorted(named):
+    print("  %-18s named=%-18s exercised_by_suite=%s" % (s, named[s], s in exercised))
+print("\ncodes the gate can print that NO criteria row names (%d):" % len(set(emitted) - set(named)))
+print("  %s" % ", ".join(sorted(set(emitted) - set(named))))
+print("  of those, the suite exercises: %s"
+      % (", ".join(sorted((set(emitted) - set(named)) & set(exercised))) or "(none)"))
+
+
+-------------------------------------------------------------
+
+
+[4] leg 1 alignment report  (no wrapper script: a single analyzer invocation)
+
+
+    produced -> leg1_alignment_report.txt  sha256=2acd027d1ad19e29...
+
+
+-------------------------------------------------------------
+
+
+The instrument is tools/gh19_s3_pulse_analyze.py itself, unmodified, at the sha recorded in the report.
+
+
+The arm it read is /tmp/gh19-s3-arm, which carries its own plan (gh19_s3_plan.tsv, plan_rev 1, 152 data
+
+
+rows: 80 static + 6 mixed + 56 dynamic + 8 connect + 2 ab_asymmetry). The 48 moving-duty cells named in
+
+
+../lunar24-task121/reference_reachability_48.tsv are all present in that arm (comm -23 returns 0), so
+
+
+leg 1 exercises exactly the cells this slice is about. Exact command:
+
+
+
+
+
+  python3.14 tools/gh19_s3_pulse_analyze.py --arm /tmp/gh19-s3-arm --label prb_leg1 \
+
+
+      --align-check --self-check --taps 2001 --taps2 4001 --dynamic-cells 56 --conv-cells 56 \
+
+
+      --out /tmp/prb-leg1/report.txt

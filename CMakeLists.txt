@@ -583,6 +583,120 @@ set_tests_properties(gh19_s3_pulse_acceptance gh19_s3_pulse_pipeline_mutant
   gh19_s3_pulse_baseline_report_pin
   PROPERTIES LABELS "slow")
 
+# task #121 (GH #19 S6 PR-B): the DEGENERATE-DISPATCH driver for the moving-duty slice.
+# It renders the 12 CONSTRUCTED cells the S6/PR-B identity criterion needs and that the S3 arm cannot
+# supply: the arm's cell table is a compiled-in literal (gh19_s3_pulse_probe.cpp:159-165 kDynSpecs)
+# whose depth axis is {0.5, 1.0}, so it holds no constant-duty dynamic cell, and shadow-include
+# cannot reach a .cpp literal. It lives in tools/ rather than tests/probes/ on purpose: the two arms
+# of the S3 comparison are the SAME probe source compiled against two trees, so adding cells to the
+# probe would change the instrument the published S3 report was produced with. This driver renders
+# the static route's degenerate dynamic twin plus the moving-duty non-vacuity twin, carries the
+# state-fact vs connect() companion control and the trace-hook invariance guard, and exits non-zero
+# (its own named bits) if any of them breaks. Labelled `slow` for the same reason as the probes above
+# (per-sample processBlock over its matrix).
+lunar_add_test(gh19_prb_degen_probe tools/gh19_prb_degen_probe.cpp)
+target_link_libraries(gh19_prb_degen_probe PRIVATE lunar_host)
+target_include_directories(gh19_prb_degen_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
+set_tests_properties(gh19_prb_degen_probe PROPERTIES LABELS "slow")
+
+# task #121 (GH #19 S6 PR-B): the NEUTRALISED arm of the improvement criterion -- the SAME S3 probe
+# source, compiled against a shadow include root in which the two-edge pulse correction is bypassed.
+# The mechanism is S6's, unchanged: the shadow root is placed BEFORE the product include dirs so
+# exactly one header is overridden, the header itself is GENERATED at build time by
+# tools/stage_gh19_prb_shadow.py (which refuses -- non-zero exit, so the build FAILS -- if its anchor
+# does not occur exactly once or if the result is byte-identical to the tree's own copy, because a
+# stale anchor would stage a PRISTINE header under the control arm's name and the control would then
+# measure the product against itself), and the link line and warning flags below are IDENTICAL,
+# character for character, to the product probe's. Same compiler, same flags, same sources, only the
+# include order differs -- that is what makes the A/B a same-build comparison rather than a cross-build
+# one, and a link line that differed would be a second difference for a reviewer to rule out.
+#
+# WHY A GENERATED SHADOW ROOT AND NOT A COMMITTED COPY, AND NOT A `#ifdef`. A committed copy of a
+# product header is a second encoding of the same code, free to drift from the one that ships; an
+# `#ifdef` in the shipped header would be a build-time configuration branch inside the DSP, which is
+# the "no hidden switches" hard edge S0 carries.
+set(GH19_PRB_SHADOW_ROOT "${CMAKE_CURRENT_BINARY_DIR}/gh19_prb_shadow")
+add_custom_command(
+  OUTPUT "${GH19_PRB_SHADOW_ROOT}/lunar24/core/pulse_blep_kernel.h"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${GH19_PRB_SHADOW_ROOT}"
+  COMMAND ${Python3_EXECUTABLE}
+          "${CMAKE_CURRENT_SOURCE_DIR}/tools/stage_gh19_prb_shadow.py"
+          --repo-root "${CMAKE_CURRENT_SOURCE_DIR}"
+          --out "${GH19_PRB_SHADOW_ROOT}"
+          --mutation improvement-bypass
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/core/include/lunar24/core/pulse_blep_kernel.h"
+          "${CMAKE_CURRENT_SOURCE_DIR}/tools/stage_gh19_prb_shadow.py"
+  COMMENT "Staging the GH#19 S6 PR-B neutral arm's shadow include root")
+add_custom_target(gh19_prb_shadow DEPENDS
+  "${GH19_PRB_SHADOW_ROOT}/lunar24/core/pulse_blep_kernel.h")
+# Built but NOT registered as a test of its own: nothing is asserted about the neutralised arm in
+# isolation -- its cells are read by the gate, in the acceptance test below. Registering it would
+# re-render the matrix a second time inside the same probe-gate run and assert nothing with it.
+add_executable(gh19_s3_pulse_probe_neutral tests/probes/gh19_s3_pulse_probe.cpp)
+add_dependencies(gh19_s3_pulse_probe_neutral gh19_prb_shadow)
+target_link_libraries(gh19_s3_pulse_probe_neutral PRIVATE lunar_host)
+lunar_enable_warnings(gh19_s3_pulse_probe_neutral)
+target_include_directories(gh19_s3_pulse_probe_neutral BEFORE PRIVATE "${GH19_PRB_SHADOW_ROOT}")
+target_include_directories(gh19_s3_pulse_probe_neutral PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/host")
+
+# task #121 (GH #19 S6 PR-B): LEG 1, the acceptance gate, driven end to end.
+# `run_gh19_prb_dynpwm_pipeline.py` renders BOTH arms of the improvement comparison from the binaries
+# CMake just built, renders the 12 constructed cells the identity criterion needs, analyses all of it
+# with the pinned R1 recipe (taps proportional to L, so the floor attributes to RESOLUTION ALONE), and
+# runs the moving-duty gate over the result. It has no `--cand-report` / `--neut-report` argument on
+# purpose: "the gate is judging a checked-in file" is not a reachable state, and if the reports were
+# inputs the two arms could come from different builds while the transcript still claimed a comparison
+# between them.
+set(GH19_PRB_PIPELINE "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_prb_dynpwm_pipeline.py")
+add_test(NAME gh19_prb_dynpwm_acceptance
+  COMMAND ${Python3_EXECUTABLE}
+    ${GH19_PRB_PIPELINE}
+    --probe $<TARGET_FILE:gh19_s3_pulse_probe>
+    --neutral-probe $<TARGET_FILE:gh19_s3_pulse_probe_neutral>
+    --degen-probe $<TARGET_FILE:gh19_prb_degen_probe>
+    --criteria ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-prb-dynpwm/acceptance_criteria.tsv
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_analyze.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_prb_dynpwm_acceptance.py
+    --negcontrol ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_prb_dynpwm_gate_negcontrol.py
+    --repo-root ${CMAKE_CURRENT_SOURCE_DIR})
+
+# task #121 (GH #19 S6 PR-B): LEG 3, the mutant run. The gate above is only worth its runtime if it can
+# FAIL, and `--negcontrol` above only shows that it REFUSES; this entry is the demonstration that it
+# issues a NAMED RED. Three arms, one compiler, one set of flags, differing only in which shadow
+# include root is FIRST on the compile line: the corrected arm (must PASS), the neutralised arm (must
+# go red BY NAME as `PRB-FAIL-IMPROVEMENT`, and must be NEITHER a refusal NOR a crash -- a refusal
+# means no verdict was issued and a crash means no verdict was issued either, and neither counts as
+# "the gate discriminated"), and the degenerate-dispatch variant, which is reported under its own named
+# class rather than as a verdict about the identity (see the criteria file's section 5 for the ruling:
+# it destroys the identity's ANTECEDENT, so it can only demonstrate that the premise check is live).
+# The identity criterion's own falsifiability is exercised by a one-ulp tamper of the constructed
+# cell's render, which is where it has to live: at pwDepth == 0 the product's duty is `duty_ + 0.0 * cv`
+# exactly, so no CV-side or depth-side mutation can break that identity while leaving its antecedent
+# standing.
+#
+# NO PROBE BINARIES ON THIS COMMAND LINE, and that is the isolation, not an omission: the runner
+# compiles all three arms itself from the same sources with the same compiler and the same flags,
+# differing only in which shadow include root is first. Handing it the already-built
+# `gh19_prb_degen_probe` (as the acceptance entry above does, where the pipeline is rendering arms
+# rather than recompiling them) would put a second, unstated difference on the compile line -- the
+# arms would no longer have been compiled by the same invocation that the comparison claims to be
+# about. It would also break this entry outright: the runner takes `--compiler` and `--repo-root`, and
+# `--degen-probe` is not an argument it accepts.
+add_test(NAME gh19_prb_dynpwm_pipeline_mutant
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_gh19_prb_dynpwm_mutants.py
+    --compiler ${CMAKE_CXX_COMPILER}
+    --repo-root ${CMAKE_CURRENT_SOURCE_DIR}
+    --analyzer ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_s3_pulse_analyze.py
+    --gate ${CMAKE_CURRENT_SOURCE_DIR}/tools/gh19_prb_dynpwm_acceptance.py
+    --criteria ${CMAKE_CURRENT_SOURCE_DIR}/report/gh19-prb-dynpwm/acceptance_criteria.tsv)
+
+# Both re-render the S3 matrix and re-analyse it (the mutant entry renders and analyses three arms), so
+# they carry the same `slow` label as the probes above and stay out of the every-push
+# `--label-exclude slow` matrix. They are PR/merge-time gates, exactly like the S3 and S6 entries.
+set_tests_properties(gh19_prb_dynpwm_acceptance gh19_prb_dynpwm_pipeline_mutant
+  PROPERTIES LABELS "slow")
+
 # task #120 (GH #19 S6): the SAW / invSaw morph-ring measurement probe.
 # Same shape and the same reason as the S3 probe above: this is a MEASUREMENT, not a gate. It renders
 # the product's own output across the morph knob on the two ring stretches that carry NO correction

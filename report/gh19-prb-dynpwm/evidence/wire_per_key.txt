@@ -1,0 +1,12 @@
+criteria code_* rows: 9
+key                      value              detail counts default
+code_floor_missing       FLOOR-MISSING      True   True   False  OK
+code_floor_unresolved    FLOOR-UNRESOLVED   True   True   False  OK
+code_trace               TRACE              True   True   False  OK
+code_band                BAND               True   True   False  OK
+code_cellset             CELLSET            True   True   False  OK
+code_missing_arm         MISSING-ARM        True   True   False  OK
+code_improvement         IMPROVEMENT        True   True   False  OK
+code_degen_identity      DEGEN-IDENTITY     True   True   False  OK
+code_degen_nonvacuous    DEGEN-NONVACUOUS   True   True   False  OK
+ALL NINE LIVE ON BOTH SURFACES: True
