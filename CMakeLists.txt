@@ -83,8 +83,8 @@ lunar_add_test(test_device_adapter_oracle tests/core/test_device_adapter_oracle.
 
 # These tests build large fixed-capacity runtimes on the stack; give them room.
 if(MSVC)
-  target_link_options(test_machine_runtime PRIVATE /STACK:4194304)
-  target_link_options(test_machine_definition PRIVATE /STACK:4194304)
+  target_link_options(test_machine_runtime PRIVATE /STACK:16777216)
+  target_link_options(test_machine_definition PRIVATE /STACK:16777216)
 elseif(APPLE)
   target_link_options(test_machine_runtime PRIVATE -Wl,-stack_size,0x1000000)
 endif()
