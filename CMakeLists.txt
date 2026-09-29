@@ -124,6 +124,7 @@ foreach(t IN ITEMS
     panel_layout
     state_disposition
     state_validation
+    effector
 )
   lunar_add_test(test_${t} tests/core/test_${t}.cpp)
 endforeach()
@@ -145,6 +146,11 @@ lunar_add_host_test(test_preset_engine_actions tests/host/test_preset_engine_act
 lunar_add_host_test(test_app_state_store tests/host/test_app_state_store.cpp)
 lunar_add_host_test(test_host_stream_plan tests/host/test_host_stream_plan.cpp)
 lunar_add_host_test(test_host_window_layout tests/host/test_host_window_layout.cpp)
+
+# Offline renderer: listen to the engine without the app (see CLAUDE.md).
+add_executable(lunar24_render tools/lunar24_render.cpp)
+target_link_libraries(lunar24_render PRIVATE lunar_host)
+lunar_enable_warnings(lunar24_render)
 
 if(APPLE)
   lunar_add_test(test_coreaudio_output tests/core/test_coreaudio_output.cpp)

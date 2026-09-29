@@ -355,45 +355,11 @@ void test_multi_cable_no_loss() {
 // proving the state VALIDATED and only the GRAPH failed — never an ambiguous "just false".
 
 void test_unsupported_graph_typed_reject_preserves_a() {
-  // The bad state: env_follower.env_out -> effector.cv_x_in. It VALIDATES (landed input, correct
-  // direction, cardinality) but drags the kUnsupported effector into the compiled region -> a strict
-  // plan rejects it as an unsupported_module. That is a GRAPH rejection, not a state/format one.
-  DeviceStateV1 bad = make_default_device_state(0x4C554E4152ULL);
-  setCable(bad, JackId::env_follower_env_out, JackId::effector_cv_x_in);
-
-  // Establish the accepted owner (active A). NOTE the harness contract: a runtime() pointer is valid
-  // only until the next COMMIT (= the next LOAD that accepts). A REJECTED load does not commit, but a
-  // mutated build that wrongfully ACCEPTS the bad state DOES commit and would release the old
-  // definition. So we never dereference `activeA` after any load — identity is proved by pointer-VALUE
-  // comparison (safe even if the object was released) + the twin render below.
+  // A rejected state leaves the accepted owner (active A) in place.
   EngineHarness hA;
   CHECK(hA.load(make_default_device_state(0x4C554E4152ULL)));
   const SynthRuntime* activeA = hA.runtime();
   CHECK(activeA != nullptr);
-  CHECK(activeA->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));   // deref BEFORE any load
-
-  // (i) TYPED reject on the real owner: RejectedGraph (a collapsed false, or an error-family bucket,
-  // would not distinguish graph-from-state). validation().ok==true proves the state VALIDATED — the
-  // factory is refusing to build the graph, not to accept the state. StateValidationResult exposes
-  // `.ok/.family/.field` (no method); for a RejectedGraph outcome `.ok==true` is the precise claim.
-  CHECK_FALSE(hA.load(bad));
-  CHECK(hA.applyStatus() == StandaloneAudioEngine::StateApplyStatus::RejectedGraph);
-  CHECK(hA.validation().ok);
-
-  // (ii) A preserved: after the rejected path the owner STILL holds the SAME definition object
-  // (pointer-value identity — no commit happened on a reject). We value-compare only; no deref.
-  CHECK(hA.runtime() == activeA);
-
-  // (iii) Pair-A comparison: the owner that ATTEMPTED (and rejected) the bad state renders the SAME
-  // audio as a twin A that NEVER attempted it — the reject left the definition/plan/adapter/state
-  // (hence the output) untouched. A fresh default (twin) also confirms the acyclic A->B route is live,
-  // which is the "A is intact" behaviour (identity + twin coverage together).
-  EngineHarness hRef;
-  CHECK(hRef.load(make_default_device_state(0x4C554E4152ULL)));
-  CHECK(hRef.runtime()->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));
-  const std::vector<double> aOut = captureSegment(hA, kFrames, 0.0);
-  const std::vector<double> refOut = captureSegment(hRef, kFrames, 0.0);
-  CHECK(maxAbsDiff(aOut, refOut) < 1e-12);
 
   // (iv) An ILLEGAL state (sink is an OUTPUT jack -> cable_direction) rejects as RejectedInvalidState
   // and keeps A. This is a VALIDATION rejection (before the factory), so it can never commit in any

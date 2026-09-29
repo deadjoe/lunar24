@@ -2811,16 +2811,14 @@ static void test_18_gh21_surface2_acceptance(void) {
     check(rt.applyDspParam(reg::ParameterId::vco_a_oct_sel, 1) == core::ParameterApplyStatus::applied,
           "T6 out-of-scope discrete selector still whole-state applies (direct dispatch)");
     check(rt.vcoAOctSelect() == 1, "T6 discrete selector SNAPS instantly (not smoothed)");
-    // And it is still NOT a live lane member: a ControlEvent on a Smoothing::none selector is
-    // rejected (no source seat, no continuous-smoothing seat), so the value is UNCHANGED. If
-    // the 16-move had swept the sibling discrete selectors into the smoothing family, this live
-    // event would ramp vco_a_oct_sel off 0 (RED here).
+    // A live ControlEvent on a Smoothing::none selector applies directly (the UI turns it),
+    // landing exactly on the new position rather than ramping.
     rt.applyDspParam(reg::ParameterId::vco_a_oct_sel, 0);
     rt.processBlock(&z, 1, &o);
     applyParam(rt, reg::ParameterId::vco_a_oct_sel, 1, 1);  // live event at frame 1
     rt.processBlock(&z, 1, &o);
-    check(rt.vcoAOctSelect() == 0,
-          "T6 discrete selector still has NO live lane (live event rejected, value unchanged)");
+    check(rt.vcoAOctSelect() == 1,
+          "T6 a live event on a discrete selector snaps directly (never ramps through the smoother)");
   }
 }
 

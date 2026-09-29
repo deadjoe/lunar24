@@ -92,6 +92,7 @@
 #include <lunar24/core/drone_bank.h>
 #include <lunar24/core/ar_envelope.h>  // GH#15 D4: the Papa Srapa voice AR VCA envelope.
 #include <lunar24/core/drone_noise.h>
+#include <lunar24/core/effector.h>
 #include <lunar24/core/envelope_follower.h>
 #include <lunar24/core/event_timebase.h>
 #include <lunar24/core/fm_am.h>
@@ -201,6 +202,7 @@ enum class ExecutionKind : std::uint8_t {
   // PatchGraph consumes them, and the module is always-executed so its glide advances
   // every sample even unwired.
   kKeyboard,   // keyboard: note ControlEvents -> note CV/gate publish.
+  kEffector,   // dual effector: reads its CV X/Y/Z inputs (audio is processed after the chain).
   // Legacy-compat kinds (synthetic fixture only; never emitted by the canonical table).
   kExtIn,
   kVcf,
@@ -451,6 +453,7 @@ class SynthRuntime {
     // applyKeyboardState behaves exactly as before. The sample rate is retained because the
     // side configure happens after construction (state apply), not in the ctor.
     sampleRate_ = sampleRate;
+    effector_.init(sampleRate);
     for (std::uint32_t s = 0; s < 2; ++s) {
       keyboardArpSeq_[s].configure(ArpSeqParams{}, sampleRate);
       keyboardBeh_[s].configure(KeyboardBehaviourParams{}, sampleRate);
@@ -771,6 +774,39 @@ class SynthRuntime {
   void setVcfMode(int ch, bool bp)     { vcf_.setMode(ch, bp); }
   void setVcfMod(int ch, double mod)   { vcf_.setMod(ch, mod); }
   void setVcfLink(bool on)             { vcf_.setLink(on); }
+  // ---- dual effector ----
+  void setEffectorEnabled(bool on) { effectorEnabled_ = on; }
+  bool effectorEnabled() const { return effectorEnabled_; }
+  // `program` is any program of the inserted cartridge; the side's 1-2-3 switch picks within it.
+  void setEffectorProgram(int side, ProgramId program) {
+    effector_.setCartridge(side, static_cast<int>(static_cast<std::uint32_t>(program) / 3u));
+  }
+  int effectorProgram(int side) const { return effector_.program(side); }
+  const DualEffector& effector() const { return effector_; }
+  // Effector panel knobs (X/Y/Z/BLEND/MASTER/PHONE and the two 1-2-3 switches).
+  bool applyEffectorParam(ParameterId id, double v) {
+    switch (id) {
+      case ParameterId::effector_x: effector_.setX(v); return true;
+      case ParameterId::effector_y: effector_.setY(v); return true;
+      case ParameterId::effector_z: effector_.setZ(v); return true;
+      case ParameterId::effector_blend: effector_.setBlend(v); return true;
+      case ParameterId::effector_master: effector_.setMaster(v); return true;
+      case ParameterId::effector_phone: return true;  // headphone level: no separate output here
+      case ParameterId::effector_select_l: effector_.setSelect(0, static_cast<int>(std::lround(v))); return true;
+      case ParameterId::effector_select_r: effector_.setSelect(1, static_cast<int>(std::lround(v))); return true;
+      default: return false;
+    }
+  }
+  void applyEffectorState(const DeviceStateV1& st) {
+    static constexpr ParameterId kIds[] = {
+        ParameterId::effector_x, ParameterId::effector_y, ParameterId::effector_z,
+        ParameterId::effector_blend, ParameterId::effector_master, ParameterId::effector_phone,
+        ParameterId::effector_select_l, ParameterId::effector_select_r};
+    for (ParameterId id : kIds) (void)applyEffectorParam(id, st.parameters[static_cast<std::uint32_t>(id)]);
+    setEffectorProgram(0, st.leftEffector.program);
+    setEffectorProgram(1, st.rightEffector.program);
+  }
+
   void setDistortion(double dist, double gain) {
     distortion_.setDist(dist);
     distortion_.setGain(gain);
@@ -910,6 +946,8 @@ class SynthRuntime {
   // "real_path" repair). Returns false only if the fixed event queue is full (the
   // audio thread is never blocked — design/07 §5).
   bool enqueueControlEvent(const TimedControlEvent& e) { return eventTimebase_.enqueue(e); }
+  // Absolute sample index of the next block (for live events that should act "now").
+  std::uint64_t currentSample() const { return eventTimebase_.blockStart(); }
 
   // DRONE panel controls (#39 panel-binding half): knob -> bank. `voiceGroup` is
   // 0..3 (classic drone voices 1/2/4/5), `gen` is 0..4. The runtime owns the
@@ -2009,7 +2047,12 @@ class SynthRuntime {
     // one ModuleId one slot; deduping by kind would drop a module). driveGraph=false
     // bypasses the CONTROL layer: slots still run, but no CV sink is resolved from the
     // graph (criterion-① negative).
+    effCv_[0] = effCv_[1] = effCv_[2] = 0.0;
     for (std::uint32_t i = 0; i < execSlotCount_; ++i) step_(execSlots_[i], driveGraph);
+    if (effectorEnabled_) {
+      for (int i = 0; i < 3; ++i) effector_.setCv(i, effCv_[i]);
+      effector_.process(wetL_, wetR_);
+    }
     return RuntimeOutput{wetL_, wetR_, dryA_, dryB_};
   }
 
@@ -2393,7 +2436,13 @@ class SynthRuntime {
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the
       // const/no-alloc readback surface (lastApplyStatus_) — no separate param bank.
-      default: setControlParamValue(e.parameter, v); break;  // records its own precise status.
+      default:
+        if (applyEffectorParam(e.parameter, v)) { lastApplyStatus_ = ParameterApplyStatus::applied; break; }
+        // Control-source and panel-knob params ramp through the smoothers; every other
+        // panel parameter (mixer, drones, VCO, VCF, effector...) applies directly.
+        if (setControlParamValue(e.parameter, v) == ParameterApplyStatus::unsupported_parameter)
+          (void)applyDspParam(e.parameter, v);
+        break;
     }
   }
 
@@ -3347,6 +3396,12 @@ class SynthRuntime {
         }
         break;
       }
+      case ExecutionKind::kEffector: {
+        effCv_[0] = resolveSinkValue_(JackId::effector_cv_x_in, 0.0);
+        effCv_[1] = resolveSinkValue_(JackId::effector_cv_y_in, 0.0);
+        effCv_[2] = resolveSinkValue_(JackId::effector_cv_z_in, 0.0);
+        break;
+      }
       case ExecutionKind::kUnsupported:
         break;
     }
@@ -3672,6 +3727,7 @@ class SynthRuntime {
       case ExecutionKind::kJoystick:   return FixedChainRole::kNone;
       case ExecutionKind::kSequencer:  return FixedChainRole::kNone;
       case ExecutionKind::kKeyboard:   return FixedChainRole::kNone;  // control-only, not a chain role.
+      case ExecutionKind::kEffector:   return FixedChainRole::kNone;
       case ExecutionKind::kUnsupported:return FixedChainRole::kNone;
     }
     return FixedChainRole::kNone;
@@ -3766,6 +3822,11 @@ class SynthRuntime {
   // Per-frame render state (preallocated, RT-safe).
   double chIn_[VoiceMixer::kNumChannels] = {};
   double wetL_ = 0.0, wetR_ = 0.0;
+  // Dual effector after the distortion (WET L/R). Enabled by the canonical machine
+  // definition; synthetic test fixtures keep WET = distortion output.
+  DualEffector effector_;
+  bool effectorEnabled_ = false;
+  double effCv_[3] = {0.0, 0.0, 0.0};
   double dryA_ = 0.0, dryB_ = 0.0;
   double preampInResolved_ = 0.0;
   double mixL_ = 0.0, mixR_ = 0.0;

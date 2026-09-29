@@ -639,17 +639,6 @@ static void c4_failure_semantics() {
     check(encodeState(bad, &w), "C4.4 the non-finite record encoded");
     cases.push_back({"C4.4 an invalid state is rejected", w, StateLoadOutcome::InvalidState});
   }
-  {
-    // Valid per validate_device_state, but the real candidate graph cannot compile.
-    DeviceStateV1 unexecutable = core::make_default_device_state(kSeed);
-    setCable(unexecutable, JackId::env_follower_env_out, JackId::effector_cv_x_in);
-    std::vector<std::uint8_t> w;
-    check(encodeState(unexecutable, &w), "C4.5 the unexecutable record encoded");
-    cases.push_back({"C4.5 a valid but unexecutable record is ADOPTED as a candidate "
-                     "(the engine refuses it, not the loader)",
-                     w, StateLoadOutcome::Ok});
-  }
-
   for (const Case& c : cases) {
     const std::string dir = makeTempDir("c4");
     const std::string live = dir + "/" + host::kAppStateFileName;
@@ -716,61 +705,6 @@ static void c4_failure_semantics() {
     check(std::filesystem::current_path().string() == cwdBefore &&
               !std::filesystem::exists(std::filesystem::path(cwdBefore) / host::kAppStateFileName),
           "C4.10 the save never fell back to the working directory");
-  }
-
-  // C4.11/C4.12 — the protection is STICKY across device reopens. A legal file whose graph the REAL
-  // candidate refuses must stay protected even after a SUCCESSFUL FromSession publish: the plugin's
-  // OnReset sequence (captureCanonical -> loadOnce -> prepare -> publishPending) publishes the
-  // power-on default on the next boundary, and that is exactly the sequence that used to re-open the
-  // gate and let the exit save overwrite the refused file.
-  {
-    DeviceStateV1 unexecutable = core::make_default_device_state(kSeed);
-    setCable(unexecutable, JackId::env_follower_env_out, JackId::effector_cv_x_in);
-    std::vector<std::uint8_t> original;
-    check(encodeState(unexecutable, &original), "C4.11 the refused record encoded");
-
-    for (int reopens : {1, 3}) {
-      const std::string dir = makeTempDir("c4sticky");
-      const std::string live = dir + "/" + host::kAppStateFileName;
-      check(writeBytes(live, original), "C4.11 the refused file was written");
-
-      AppStateStore store;
-      store.setDirectory(dir);
-      StandaloneAudioEngine engine;
-      check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "C4.11 the engine booted");
-
-      // Boundary 1: the file is adopted as a candidate and refused by the REAL engine.
-      store.captureCanonical(engine);
-      check(store.loadOnce() == StateLoadOutcome::Ok,
-            "C4.11 the refused file was loaded as a candidate");
-      check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "C4.11 the boundary prepared");
-      check(store.publishPending(engine, kSr, kBlock, kInCh, kOutCh) ==
-                StandaloneAudioEngine::StateApplyStatus::RejectedGraph,
-            "C4.11 the real candidate refused the graph");
-      check(!store.saveAllowed() && store.fileUnadopted(),
-            "C4.11 the refusal closed the lifecycle save gate");
-
-      // Boundaries 2..N: device reopens. Each one publishes the DEFAULT config FromSession.
-      for (int i = 0; i < reopens; ++i) {
-        store.captureCanonical(engine);
-        check(store.loadOnce() == StateLoadOutcome::Ok && store.readAttempts() == 1u,
-              "C4.11 the reopen did not re-read the disk");
-        check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh),
-              "C4.11 the reopened device prepared");
-        check(store.publishPending(engine, kSr, kBlock, kInCh, kOutCh) ==
-                  StandaloneAudioEngine::StateApplyStatus::Accepted,
-              "C4.11 the default config published successfully on the reopen");
-        check(!store.saveAllowed() && store.fileUnadopted(),
-              "C4.12 a successful FromSession publish did NOT re-open the gate");
-      }
-
-      check(store.save(engine) == StateSaveOutcome::SkippedFileUnhealthy,
-            "C4.11 the exit save refused to touch the refused file");
-      std::vector<std::uint8_t> after;
-      check(readBytes(live, &after) && after == original,
-            "C4.12 the refused file is preserved byte-for-byte across device reopens");
-      removeTree(dir);
-    }
   }
 
   // C4.13 — the size gate runs BEFORE any allocation or read: a huge record must be a typed

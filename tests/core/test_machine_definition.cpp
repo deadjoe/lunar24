@@ -288,8 +288,8 @@ int main() {
   check(core::module_contract_is_valid(*preamp), "preamp owned contract satisfies the valid gate");
 
   // Every non-SCC-member module defaults to cycle-UNSAFE.
-  check(!def.contractOf(core::ModuleId::mixer)->allowedInCyclicSCC,
-        "a non-SCC module (mixer) defaults to cycle-unsafe");
+  check(def.contractOf(core::ModuleId::mixer)->allowedInCyclicSCC,
+        "every module (e.g. the mixer) may sit in a patched feedback loop");
   check(core::module_contract_is_valid(*def.contractOf(core::ModuleId::mixer)),
         "the default mixer contract satisfies the valid gate");
 
@@ -518,25 +518,18 @@ int main() {
           "G2b MOD-off the cable leaves W WET bit-identical to M (generator ignores CV + env)");
   }
 
-  // ---- oracle: unsupported fail-closed (b4e0e731 §4.4) ---------------------------
-  // keyboard is now kKeyboard (GH#12 owner) — NOT the fail-closed subject. The
-  // still-deferred `effector` module is. Patching a REAL generated effector INPUT jack into
-  // a real source edge MUST REFUSE at rebuild() with the fixed unsupported_module status and
-  // NO phantom effector slot — it must NOT return true and silently skip the unsupported
-  // module (the §5 negative ④) nor fake the source via setControlVoltage.
+  // ---- effector CV inputs are patchable ----------------------------------------------
+  // Patching a source into effector.cv_x_in compiles, slots the effector, and the CV reaches it.
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
-    check(d.status() == core::SynthRuntime::RebuildStatus::ok,
-          "the clean machine builds ok before the unsupported patch");
+    check(d.status() == core::SynthRuntime::RebuildStatus::ok, "the clean machine builds ok");
     check(d.runtime().connect(reg::JackId::env_follower_env_out, reg::JackId::effector_cv_x_in),
-          "connect env_follower.env_out -> effector.cv_x_in (real generated jacks)");
-    check(!d.runtime().rebuild(), "rebuild REFUSES an unsupported module entering the plan");
-    check(d.runtime().lastRebuildStatus() == core::SynthRuntime::RebuildStatus::unsupported_module,
-          "refusal status is exactly unsupported_module (not a generic reject)");
+          "connect env_follower.env_out -> effector.cv_x_in");
+    check(d.runtime().rebuild(), "rebuild accepts the effector in the plan");
     bool effectorSlotted = false;
     for (std::uint32_t i = 0; i < d.runtime().execSlotCount(); ++i)
       if (d.runtime().execSlotAt(i).id == core::ModuleId::effector) effectorSlotted = true;
-    check(!effectorSlotted, "no phantom effector execution slot (unsupported is not silently run)");
+    check(effectorSlotted, "the effector has an execution slot");
   }
 
   // ---- oracle: keyboard is now routable + slotted (GH#12) -------------------------

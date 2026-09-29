@@ -35,6 +35,8 @@
 #include <cstdint>
 #include <memory>
 
+#include <lunar24/core/live_command_queue.h>
+#include <lunar24/core/state_edit.h>
 #include <lunar24/core/device_adapter.h>
 #include <lunar24/core/keyboard_presets.h>    // load/save/initialise preset transfer helpers
 #include <lunar24/core/machine_candidate.h>   // buildMachineRuntimeCandidate (state-aware builder)
@@ -198,6 +200,24 @@ class StandaloneAudioEngine {
   Status processBlock(const double* const* inputs, double* const* outputs, int inCh, int outCh,
                       int frames);
 
+  // ---- live control (UI / MIDI) ------------------------------------------------------------
+  // Non-audio thread (UI): change a knob, play a note, plug a cable, pick an effector program.
+  // Each call updates the saved state immediately and hands the change to the audio thread
+  // through a lock-free queue; it is applied at the start of the next audio block.
+  bool postParameter(ParameterId id, double value);
+  bool postEvent(const lunar24::core::ControlEvent& e);
+  bool postConnect(lunar24::core::JackId source, lunar24::core::JackId sink);
+  bool postDisconnect(lunar24::core::JackId sink);
+  bool postEffectorProgram(int side, lunar24::core::ProgramId program);
+  // Audio thread only (e.g. MIDI delivered inside the audio callback): schedule a note/clock
+  // event at the current block.
+  bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e);
+  // Current value of a parameter as the user last set it (UI readback).
+  double parameterValue(ParameterId id) const {
+    const DeviceStateV1* st = canonicalState();
+    return st ? st->parameters[static_cast<std::uint32_t>(id)] : 0.0;
+  }
+
   // ---- inspectable (never mutated on the audio path beyond the monotonic counters) ----
   bool isReady() const { return ready_; }
   double sampleRate() const { return sampleRate_; }
@@ -308,6 +328,10 @@ class StandaloneAudioEngine {
   int inputCapability_ = 0;
   int outputCapability_ = 0;
   bool ready_ = false;
+
+  // UI -> audio live command queue (single producer: the UI thread).
+  lunar24::core::SpscQueue<1024> liveQueue_;
+  void drainLive_(SynthRuntime& rt);
 
   // Monotonic RT counters (plain, no lock).
   std::uint64_t renderedBlocks_ = 0;
@@ -547,6 +571,7 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
   // THE single production delegate (task#71). The owner forwards the whole block to the
   // frozen adapter and does nothing else — no frame loop, no scaling, no mapping, no
   // pass-through. A second output bank / a host-side scale would be a wiring defect.
+  drainLive_(definition_->runtime());
   adapter_.renderBlock(definition_->runtime(), inputs, outputs, frames);
   ++renderedBlocks_;
   return Status::Rendered;
@@ -630,6 +655,110 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   inputCapability_ = inputCapability;
   outputCapability_ = outputCapability;
   ready_ = true;
+}
+
+
+// ---- live control ---------------------------------------------------------
+inline bool StandaloneAudioEngine::postParameter(ParameterId id, double value) {
+  if (!definition_) return false;
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  if (!lunar24::core::state_set_param(st, id, value)) return false;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::Parameter;
+  c.parameter = id;
+  c.value = st.parameters[static_cast<std::uint32_t>(id)];
+  return liveQueue_.push(c);
+}
+
+inline bool StandaloneAudioEngine::postEvent(const lunar24::core::ControlEvent& e) {
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::Event;
+  c.event = e;
+  return liveQueue_.push(c);
+}
+
+inline bool StandaloneAudioEngine::postConnect(lunar24::core::JackId source,
+                                               lunar24::core::JackId sink) {
+  if (!definition_) return false;
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  const auto i = static_cast<std::uint32_t>(sink);
+  const bool hadOld = i < lunar24::core::kDevicePatchCapacity && st.inputCable[i] != 0u;
+  const lunar24::core::JackId oldSource = hadOld ? st.cableSource[i] : lunar24::core::JackId{0};
+  if (!lunar24::core::state_connect(st, source, sink)) return false;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::Connect;
+  c.source = source;
+  c.sink = sink;
+  c.oldSource = oldSource;
+  c.hadOld = hadOld;
+  return liveQueue_.push(c);
+}
+
+inline bool StandaloneAudioEngine::postDisconnect(lunar24::core::JackId sink) {
+  if (!definition_) return false;
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  const auto i = static_cast<std::uint32_t>(sink);
+  if (i >= lunar24::core::kDevicePatchCapacity || st.inputCable[i] == 0u) return false;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::Disconnect;
+  c.source = st.cableSource[i];
+  c.sink = sink;
+  lunar24::core::state_disconnect(st, sink);
+  return liveQueue_.push(c);
+}
+
+inline bool StandaloneAudioEngine::postEffectorProgram(int side, lunar24::core::ProgramId program) {
+  if (!definition_ || lunar24::core::find_program(program) == nullptr) return false;
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  (side == 0 ? st.leftEffector : st.rightEffector).program = program;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::EffectorProgram;
+  c.side = side == 0 ? 0u : 1u;
+  c.program = program;
+  return liveQueue_.push(c);
+}
+
+inline bool StandaloneAudioEngine::enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e) {
+  if (!definition_) return false;
+  SynthRuntime& rt = definition_->runtime();
+  return rt.enqueueControlEvent(lunar24::core::TimedControlEvent{e, rt.currentSample()});
+}
+
+inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
+  using lunar24::core::LiveCommand;
+  LiveCommand c;
+  bool graphChanged = false;
+  while (liveQueue_.pop(c)) {
+    switch (c.kind) {
+      case LiveCommand::Kind::Parameter: {
+        lunar24::core::ControlEvent e{};
+        e.kind = lunar24::core::ControlEventKind::parameter;
+        e.parameter = c.parameter;
+        e.value = static_cast<lunar24::core::SignalSample>(c.value);
+        e.source = 100;  // the UI producer
+        (void)rt.enqueueControlEvent(lunar24::core::TimedControlEvent{e, rt.currentSample()});
+        break;
+      }
+      case LiveCommand::Kind::Event:
+        (void)rt.enqueueControlEvent(lunar24::core::TimedControlEvent{c.event, rt.currentSample()});
+        break;
+      case LiveCommand::Kind::Connect:
+        if (c.hadOld) (void)rt.disconnect(c.oldSource, c.sink);
+        (void)rt.connect(c.source, c.sink);
+        graphChanged = true;
+        break;
+      case LiveCommand::Kind::Disconnect:
+        (void)rt.disconnect(c.source, c.sink);
+        graphChanged = true;
+        break;
+      case LiveCommand::Kind::EffectorProgram:
+        rt.setEffectorProgram(static_cast<int>(c.side), c.program);
+        break;
+    }
+  }
+  // Known compromise: recompiling the patch graph allocates a few small vectors. It only
+  // happens when the user plugs/unplugs a cable, never in steady-state rendering.
+  if (graphChanged) (void)rt.rebuild();
 }
 
 }  // namespace lunar24::host
