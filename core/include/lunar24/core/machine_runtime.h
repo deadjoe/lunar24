@@ -81,6 +81,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -654,9 +655,7 @@ class SynthRuntime {
   //     RIGHT. The bank resolution is the existing choke point — no new per-side id.
   //   * the non-scalar side paths reuse the same side_bank() resolution: the 12-bit scale
   //     editor, the 16 seqSteps record, and the four no-domain clock/rhythm selectors.
-  //   * keyboard.clock_bpm (129) is PARSED into ArpSeqParams::bpm and stops there: the registry
-  //     value is a norm with NO evidenced norm->BPM law, so it never drives a clock and is not
-  //     counted as a consumed parameter (contract §3).
+  //   * keyboard.clock_bpm (129) sets the internal keyboard clock (tickKeyboardClock_).
   //
   // Shared CONFIGURATION is not shared PERFORMANCE STATE: Single/Twin install the same bank
   // into both instances, but each instance keeps its own held notes, chord, glide and envelope.
@@ -664,6 +663,9 @@ class SynthRuntime {
   // failure branch because every input it reads is already validated by the candidate chain
   // (validate_device_state ran before the state ctor) and every setter it calls is total.
   void applyKeyboardState(const DeviceStateV1& state) {
+    // Keep a copy so live menu edits (applyKeyboardParam_) can reconfigure the keyboard
+    // on the audio thread without touching the UI-owned state. 7 KB, no allocation.
+    if (&state != &kbdState_) kbdState_ = state;
     keyboardMode_ = mode_from_behaviour(state.keyboardSettings.pressureBehaviour);
     // (bankIndex, id) -> double: bank 0 is the live parameters[] (left/shared), bank 1 is the
     // keyboardScalarRight mirror. An id outside the 22-scalar set has no bank-1 slot and reads
@@ -721,9 +723,8 @@ class SynthRuntime {
   ArpSeqMode keyboardArpSeqMode(KeyboardSide side) const {
     return keyboardArpSeq_[keyboardSideIndex_(side)].mode();
   }
-  // PARSED CONFIG READBACK — NOT AN APPLIED BEHAVIOUR. keyboard.clock_bpm (129) has no
-  // evidenced norm->BPM law, so it is parsed into the arp/seq param set and consumed by
-  // NOTHING. Do not cite this as a consumed parameter and do not derive a tempo from it.
+  // The keyboard.clock_bpm knob value as parsed into the arp/seq params (norm 0..1);
+  // keyboardBpm() turns it into the internal clock tempo.
   double keyboardParsedBpm(KeyboardSide side) const {
     return keyboardArpSeq_[keyboardSideIndex_(side)].bpm();
   }
@@ -2335,6 +2336,70 @@ class SynthRuntime {
   // registry unit differs from the setter (tune/volt/rate: norm -> semitones/Hz) would
   // need an UNEVIDENCED scale, so they are deliberately NOT wired here (FINDINGS §7) —
   // that is the separately-scheduled parameter-mapping work, not this dispatch pass.
+  // A keyboard menu setting changed live: update the keyboard's state copy and
+  // reconfigure both sides (held notes restart). Changing the tempo also switches the
+  // keyboard back to its internal clock (manual p.19). Returns false for other parameters.
+  bool applyKeyboardParam_(ParameterId id, double v) {
+    const ParameterDescriptor* d = find_parameter(id);
+    if (d == nullptr || d->stable_id.substr(0, 9) != "keyboard.") return false;
+    kbdState_.parameters[static_cast<std::size_t>(id)] = v;
+    if (id == ParameterId::keyboard_behaviour)
+      kbdState_.keyboardSettings.pressureBehaviour = static_cast<std::uint8_t>(v);
+    if (id == ParameterId::keyboard_clock_bpm) kbdExtClock_ = false;
+    applyKeyboardState(kbdState_);
+    return true;
+  }
+
+  // Keyboard tempo: 10..300 BPM (manual p.19), linear over the knob.
+  static double keyboardBpm(double norm) { return 10.0 + 290.0 * std::clamp(norm, 0.0, 1.0); }
+  // Arp / sequencer steps per beat of the internal clock: 16th notes.  // tuned by ear
+  static constexpr double kKeyboardStepsPerBeat = 4.0;
+
+  // Drive the arpeggiator / 16-step sequencer clock, one sample. The internal clock runs at
+  // the menu BPM; a rising edge on the CLOCK jack switches to that external clock until the
+  // BPM is changed again (manual p.13, p.19). A rising edge on RESET restarts the pattern.
+  // Each clock high starts a step, each clock low ends its gate.
+  void tickKeyboardClock_() {
+    const double clk = resolveSinkValue_(JackId::keyboard_clock_in, 0.0);
+    const double rst = resolveSinkValue_(JackId::keyboard_reset_in, 0.0);
+    bool rise = false, fall = false;
+    const bool extHigh = kbdExtHigh_ ? clk > 0.5 : clk > 1.5;  // hysteresis
+    if (extHigh != kbdExtHigh_) {
+      kbdExtHigh_ = extHigh;
+      if (extHigh) kbdExtClock_ = true;
+      if (kbdExtClock_) (extHigh ? rise : fall) = true;
+    }
+    if (!kbdExtClock_) {
+      const double bpm = keyboardBpm(kbdState_.parameters[static_cast<std::size_t>(ParameterId::keyboard_clock_bpm)]);
+      kbdClockPhase_ += bpm / 60.0 * kKeyboardStepsPerBeat / sampleRate_;
+      if (kbdClockPhase_ >= 1.0) {
+        kbdClockPhase_ -= std::floor(kbdClockPhase_);
+        rise = true;
+      } else if (kbdClockPhase_ >= 0.5 && kbdClockPhase_ - bpm / 60.0 * kKeyboardStepsPerBeat / sampleRate_ < 0.5) {
+        fall = true;
+      }
+    }
+    const bool resetHigh = kbdResetHigh_ ? rst > 0.5 : rst > 1.5;
+    if (resetHigh && !kbdResetHigh_) {
+      ControlEvent r{};
+      r.kind = ControlEventKind::reset;
+      applyControlEvent_(r);
+    }
+    kbdResetHigh_ = resetHigh;
+    if (rise) {
+      ControlEvent c{};
+      c.kind = ControlEventKind::clock;
+      c.value = 1;
+      applyControlEvent_(c);
+    }
+    if (fall) {
+      for (std::uint32_t s = 0; s < 2; ++s) {
+        auto kbdSink = [this, s](const ControlEvent& nkb) { keyboardBeh_[s].handleControlEvent(nkb); };
+        keyboardArpSeq_[s].clockLow(kbdSink);
+      }
+    }
+  }
+
   void applyControlEvent_(const ControlEvent& e) {
     // GH#12 keyboard product owner (@Codex direction, @Kimi option A): the keyboard is
     // a REAL executed control source that consumes the canonical note ControlEvents
@@ -2382,9 +2447,8 @@ class SynthRuntime {
       }
       case ControlEventKind::clock:
       case ControlEventKind::sync: {
-        // GH#12 task#101: the arp/seq modes are only reachable from an EXPLICIT external
-        // clock/sync edge — this slice invents no internal BPM clock and no clock division
-        // (contract §3). The registered keyboard.clock_in is ONE jack feeding the device, so
+        // The arp/seq modes step on clock edges from tickKeyboardClock_ (internal BPM clock
+        // or the CLOCK jack) or from a MIDI clock. There is ONE clock, so
         // under Twin/Split both independent arp/seq engines consume the same edge; under
         // Single there is one performer, so only LEFT. In the default Keyboard mode the
         // forwarded event reaches KeyboardBehaviour, which ignores clock/sync — so the
@@ -2404,6 +2468,10 @@ class SynthRuntime {
     if (e.kind != ControlEventKind::parameter) return;
     const double v = static_cast<double>(e.value);
     lastApplyParamId_ = e.parameter;
+    if (applyKeyboardParam_(e.parameter, v)) {
+      lastApplyStatus_ = ParameterApplyStatus::applied;
+      return;
+    }
     switch (e.parameter) {
       // Existing drone_3/6 path: the setter here is void and already admits the
       // registry-AGREEING units quoted above, so a handled drone case records `applied`.
@@ -3391,6 +3459,7 @@ class SynthRuntime {
         // two sides would diverge by block partition). The four published jacks are the four
         // registered keyboard outputs; which signal lands on pressure_out depends on the mode
         // (contract §4 / manual BEHAVIOUR: single = pressure, twin/split = right V/oct).
+        tickKeyboardClock_();
         double pitchL = 0.0, pressL = 0.0, pitchR = 0.0, pressR = 0.0;
         keyboardBeh_[0].tick(&pitchL, &pressL);
         keyboardBeh_[1].tick(&pitchR, &pressR);
@@ -3938,6 +4007,11 @@ class SynthRuntime {
   KeyboardBehaviour keyboardBeh_[2];
   KeyboardMode keyboardMode_ = KeyboardMode::Single;
   double sampleRate_ = 48000.0;  // retained for applyKeyboardState (state apply is post-ctor)
+  DeviceStateV1 kbdState_{};     // keyboard settings copy (live menu edits)
+  double kbdClockPhase_ = 0.0;   // internal keyboard clock, 0..1 per step
+  bool kbdExtClock_ = false;     // following the CLOCK jack instead of the BPM
+  bool kbdExtHigh_ = false;      // CLOCK jack level (with hysteresis)
+  bool kbdResetHigh_ = false;    // RESET jack level
 
   // Always-execute admission list (six control-source module ids). Unwired sources
   // must still execute once per sample, so the compiler force-includes them. Sized

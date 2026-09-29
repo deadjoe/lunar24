@@ -316,9 +316,9 @@ void test_b_same_sample_vs_previous() {
   DeviceStateV1 st = make_default_device_state(kSeed);
   // Make A FAST + asymmetric so consecutive A samples differ strongly (non-degenerate): any one-sample
   // delay in B's read of A becomes a LARGE divergence between refSame and refPrev. Reachable panel
-  // controls (oct_sel "+3" = baseHz*8, tune +1 oct = baseHz*16 -> ~7 kHz, ~0.5 per-sample A delta).
+  // controls (oct_sel "+3" = baseHz*8, tune +1/2 oct -> ~5 kHz, a large per-sample A delta).
   slot(st, ParameterId::vco_a_oct_sel) = 2.0;   // oct_sel "+3".
-  slot(st, ParameterId::vco_a_tune) = 1.0;         // +1 oct.
+  slot(st, ParameterId::vco_a_tune) = 0.5;         // +1/2 oct (the tune knob spans one octave).
   slot(st, ParameterId::vco_b_lin_exp) = 0.0;      // linear (reachable; the reference matches the law).
   slot(st, ParameterId::vco_b_cv_amt) = 1.0;       // full generic-CV depth (default, non-degenerate).
 

@@ -47,6 +47,9 @@ inline bool state_set_param(DeviceStateV1& st, ParameterId id, double value) noe
   double v = value < d->min ? d->min : (value > d->max ? d->max : value);
   if (d->step > 0.0) v = d->min + std::round((v - d->min) / d->step) * d->step;
   st.parameters[static_cast<std::uint32_t>(id)] = v;
+  // keyboard.behaviour mirrors the keyboard's global single/twin/split setting.
+  if (id == ParameterId::keyboard_behaviour)
+    st.keyboardSettings.pressureBehaviour = static_cast<std::uint8_t>(v);
   return true;
 }
 

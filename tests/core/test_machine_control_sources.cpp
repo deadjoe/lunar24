@@ -813,6 +813,11 @@ static void test_6_seq_stages_clock_out(void) {
       applyParam(rt, reg::ParameterId::sequencer_step_cv_2, s1, 0);
       applyParam(rt, reg::ParameterId::sequencer_step_cv_3, s2, 0);
       applyParam(rt, reg::ParameterId::sequencer_step_gate_1, 1.0, 0);
+      // Only step 1 gates (the factory setting has every gate on).
+      applyParam(rt, reg::ParameterId::sequencer_step_gate_2, 0.0, 0);
+      applyParam(rt, reg::ParameterId::sequencer_step_gate_3, 0.0, 0);
+      applyParam(rt, reg::ParameterId::sequencer_step_gate_4, 0.0, 0);
+      applyParam(rt, reg::ParameterId::sequencer_step_gate_5, 0.0, 0);
       for (const auto& step : sched) applyParam(rt, reg::ParameterId::joystick_x, step.second,
                                                 static_cast<uint64_t>(step.first));
       for (int i = 0; i < kN; ++i) {
@@ -2822,6 +2827,50 @@ static void test_18_gh21_surface2_acceptance(void) {
   }
 }
 
+// ===========================================================================
+// 19. Keyboard clock (manual p.16, p.19): in ARPEGGIATOR mode the internal clock steps the
+//     held chord at the menu BPM (16th notes), each step a fresh gate; a changed BPM is heard
+//     live; a patched CLOCK jack takes over from the internal clock.
+// ===========================================================================
+static int count_gate_rises(core::SynthRuntime& rt, int frames) {
+  int rises = 0;
+  bool prev = false;
+  for (int i = 0; i < frames; ++i) {
+    core::RuntimeOutput o;
+    const core::RuntimeInputs z{0.0, 0.0};
+    rt.processBlock(&z, 1, &o);
+    const bool g = rt.controlVoltageAt(reg::JackId::keyboard_gate_left_main_out) > 5.0;
+    if (g && !prev) ++rises;
+    prev = g;
+  }
+  return rises;
+}
+static void test_19_keyboard_clock(void) {
+  std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
+  core::SynthRuntime& rt = def->runtime();
+  applyParam(rt, reg::ParameterId::keyboard_mode, 1.0, 0);                         // arpeggiator
+  applyParam(rt, reg::ParameterId::keyboard_clock_bpm, (120.0 - 10.0) / 290.0, 0);  // 120 BPM
+  core::ControlEvent pitch{};
+  pitch.kind = core::ControlEventKind::pitch;
+  pitch.value = 0.25f;
+  pitch.source = 7;
+  pitch.noteId = 1;
+  pitch.producerSequence = 900000;
+  core::ControlEvent on = pitch;
+  on.kind = core::ControlEventKind::gate_on;
+  on.value = 1.0f;
+  on.producerSequence = 900001;
+  rt.enqueueControlEvent(core::TimedControlEvent{pitch, 1});
+  rt.enqueueControlEvent(core::TimedControlEvent{on, 1});
+  // 120 BPM x 4 steps per beat = 8 steps per second.
+  const int rises = count_gate_rises(rt, static_cast<int>(kSr));
+  check(rises >= 7 && rises <= 9, "t19 internal clock: 8 arp steps per second at 120 BPM");
+  // Faster tempo, applied live.
+  applyParam(rt, reg::ParameterId::keyboard_clock_bpm, (240.0 - 10.0) / 290.0, rt.currentSample());
+  const int fast = count_gate_rises(rt, static_cast<int>(kSr));
+  check(fast >= 15 && fast <= 17, "t19 BPM change is heard live (16 steps per second at 240 BPM)");
+}
+
 int main(void) {
   test_1_slots_presence_phase();
   test_2_lfo_drone_mod_same_sample();
@@ -2842,6 +2891,7 @@ int main(void) {
   test_16_ext_clock_in_freeze();
   test_17_gh21_smoothing_negative_controls();
   test_18_gh21_surface2_acceptance();
+  test_19_keyboard_clock();
 
   std::printf("\n[%s] %d checks, %d failed\n", g_fail == 0 ? "PASS" : "FAIL", g_checks,
               g_fail);

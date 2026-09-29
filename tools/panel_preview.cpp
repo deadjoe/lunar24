@@ -14,6 +14,7 @@
 #include <string>
 
 #include <host/panel_art.generated.h>
+#include <host/panel_format.h>
 #include <host/panel_theme.h>
 #include <host/panel_ui_layout.h>
 #include <lunar24/core/state_default.h>
@@ -111,7 +112,10 @@ int indexOf(std::uint32_t id) {
 
 void toggle(const Widget& w) {
   const int n = positions(w.id), idx = indexOf(w.id);
-  const double t = n <= 1 ? 0.0 : static_cast<double>(idx) / (n - 1);  // 0 = up
+  int pos = 0;
+  for (int p = 0; p < n && p < 3; ++p)
+    if (w.leverIndex[p] == idx) pos = p;
+  const double t = n <= 1 ? 0.0 : static_cast<double>(pos) / (n - 1);  // 0 = up
   std::printf("<circle cx='%.1f' cy='%.1f' r='9' fill='%s'/>\n", w.cx, w.cy, col({60, 60, 60}).c_str());
   const double ly = w.cy + (t - 0.5) * 30;
   std::printf("<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='%s' stroke-width='8' stroke-linecap='round'/>\n",
@@ -251,6 +255,7 @@ int main(int argc, char** argv) {
         text(w.cx, w.cy, 11, theme::kMenuText, opt.substr(0, 10));
       }
       text(w.cx, w.cy + 42, 12, theme::kMenuText, w.label);
+      if (w.kind == WidgetKind::Knob) text(w.cx, w.cy + 58, 11, theme::kAmber, formatParam(w.id, defaults().parameters[w.id]));
     }
   }
   std::printf("</svg>\n");

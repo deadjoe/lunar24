@@ -180,11 +180,30 @@ static void arp_emits_one_note_per_clock() {
   // the pitch target arrives before the gate that latches it); no leading gate_off.
   CHECK_TRUE(r.ev[0].kind == core::ControlEventKind::pitch);
   CHECK_TRUE(r.ev[1].kind == core::ControlEventKind::gate_on);
-  // Forward direction over chord [C, E]: C+i, E+i, C+i (wraps).
-  const double i0 = static_cast<double>(core::arp_interval_semitones(p.arpInterval));
-  CHECK_TRUE(r.near(r.pitchAt(0), 0.0 / 12.0 + i0 / 12.0));
-  CHECK_TRUE(r.near(r.pitchAt(1), 4.0 / 12.0 + i0 / 12.0));
-  CHECK_TRUE(r.near(r.pitchAt(2), 0.0 / 12.0 + i0 / 12.0));
+  // Forward direction over chord [C, E] with VARIATION off: C, E, C (wraps).
+  CHECK_TRUE(r.near(r.pitchAt(0), 0.0 / 12.0));
+  CHECK_TRUE(r.near(r.pitchAt(1), 4.0 / 12.0));
+  CHECK_TRUE(r.near(r.pitchAt(2), 0.0 / 12.0));
+}
+
+// Manual p.16: VARIATION x1 plays the progression again transposed by INTERVAL.
+static void arp_variation_repeats_transposed() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 1;
+  p.arpDirection = 0;
+  p.arpVariation = 1;   // x1
+  p.arpInterval = 1.0;  // 12 semitones
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  note_on(s, r, 0.0 / 12.0, 1);
+  note_on(s, r, 4.0 / 12.0, 2);
+  for (int i = 0; i < 5; ++i) clock_edge(s, r);
+  CHECK_TRUE(r.near(r.pitchAt(0), 0.0));
+  CHECK_TRUE(r.near(r.pitchAt(1), 4.0 / 12.0));
+  CHECK_TRUE(r.near(r.pitchAt(2), 1.0));
+  CHECK_TRUE(r.near(r.pitchAt(3), 1.0 + 4.0 / 12.0));
+  CHECK_TRUE(r.near(r.pitchAt(4), 0.0));
 }
 
 static void arp_hold_keeps_chord_through_release() {
@@ -291,7 +310,7 @@ static void per_side_instantiation_independent() {
     CHECK_EQ(rl.count(core::ControlEventKind::gate_on), 1u);
     CHECK_EQ(rr.count(core::ControlEventKind::pitch), 1u);   // right: plate pitch passthrough
     CHECK_EQ(rr.count(core::ControlEventKind::gate_on), 1u);
-    CHECK_TRUE(rl.near(rl.pitchAt(0), core::arp_interval_semitones(left.arpInterval) / 12.0));
+    CHECK_TRUE(rl.near(rl.pitchAt(0), 0.0));
     CHECK_TRUE(rr.near(rr.pitchAt(0), 0.0));
   }
   {
@@ -315,12 +334,11 @@ static void per_side_instantiation_independent() {
     clock_edge(sl, rl);
     clock_edge(sr, rr);
 
-    const double i0 = core::arp_interval_semitones(left.arpInterval) / 12.0;
-    // LEFT (correct) = C + interval; RIGHT (correct) = G + interval.
-    CHECK_TRUE(rl.near(rl.pitchAt(0), 0.0 + i0));
-    CHECK_TRUE(rr.near(rr.pitchAt(0), 7.0 / 12.0 + i0));
+    // LEFT (correct) = C; RIGHT (correct) = G.
+    CHECK_TRUE(rl.near(rl.pitchAt(0), 0.0));
+    CHECK_TRUE(rr.near(rr.pitchAt(0), 7.0 / 12.0));
     // The two streams differ — a shared chord buffer makes left read chord_[0]==G and
-    // emit G+interval instead of C+interval, so the equal-pitch values are the tell.
+    // emit G instead of C, so the equal-pitch values are the tell.
     CHECK_TRUE(!rl.near(rl.pitchAt(0), rr.pitchAt(0)));
   }
 }
@@ -392,6 +410,7 @@ int main() {
   mode_mux_and_keyboard_passthrough();
   arp_emits_one_note_per_clock();
   arp_hold_keeps_chord_through_release();
+  arp_variation_repeats_transposed();
   seq_advances_steps_and_gates();
   seq_continuous_cv_always_gates();
   per_side_instantiation_independent();

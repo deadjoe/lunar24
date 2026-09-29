@@ -32,6 +32,7 @@
 #include "IGraphics.h"
 
 #include <host/panel_art.generated.h>
+#include <host/panel_format.h>
 #include <host/panel_theme.h>
 #include <host/panel_ui_layout.h>
 #include <host/standalone_audio_engine.h>
@@ -74,18 +75,6 @@ inline int positionsOf(const core::ParameterDescriptor* d) {
 inline std::string upper(std::string s) {
   for (auto& ch : s) ch = char(std::toupper(static_cast<unsigned char>(ch)));
   return s;
-}
-inline std::string formatValue(const core::ParameterDescriptor* d, double v) {
-  char b[48];
-  if (d == nullptr) return "";
-  const std::string unit(d->unit);
-  if (unit == "norm") std::snprintf(b, sizeof b, "%.0f%%", 100.0 * (v - d->min) / (d->max - d->min));
-  else if (unit == "seconds") std::snprintf(b, sizeof b, v < 1.0 ? "%.0f ms" : "%.2f s", v < 1.0 ? v * 1000.0 : v);
-  else if (unit == "hz") std::snprintf(b, sizeof b, "%.2f Hz", v);
-  else if (unit == "oct") std::snprintf(b, sizeof b, "%+.2f oct", v);
-  else if (unit == "volts") std::snprintf(b, sizeof b, "%.2f V", v);
-  else std::snprintf(b, sizeof b, "%.2f", v);
-  return b;
 }
 
 class CableLayer;
@@ -281,7 +270,11 @@ class KnobControl : public IControl {
     const core::ParameterDescriptor* d = desc(w_.id);
     if (d == nullptr) return;
     drawKnob(g, w_, (s_.value(w_.id) - d->min) / (d->max - d->min), mMouseIsOver || dragging_);
-    if (w_.menu) g.DrawText(txt(12, theme::kMenuText), w_.label.c_str(), float(w_.cx), float(w_.cy + 42));
+    if (w_.menu) {
+      g.DrawText(txt(12, theme::kMenuText), w_.label.c_str(), float(w_.cx), float(w_.cy + 42));
+      g.DrawText(txt(11, theme::kAmber, false), formatParam(w_.id, s_.value(w_.id)).c_str(), float(w_.cx),
+                 float(w_.cy + 58));
+    }
   }
   void OnMouseOver(float x, float y, const IMouseMod& mod) override {
     IControl::OnMouseOver(x, y, mod);
@@ -309,7 +302,7 @@ class KnobControl : public IControl {
     showReadout();
   }
   void showReadout() {
-    s_.readout = formatValue(desc(w_.id), s_.value(w_.id));
+    s_.readout = formatParam(w_.id, s_.value(w_.id));
     s_.readoutX = float(w_.cx);
     s_.readoutY = float(w_.y() - 16);
     GetUI()->SetAllControlsDirty();
@@ -340,7 +333,7 @@ class ButtonControl : public IControl {
   Widget w_;
 };
 
-// Lever switch (2 or 3 positions; first option = lever up). Click the upper half to move the
+// Lever switch (2 or 3 positions, pointing at the panel labels). Click the upper half to move the
 // lever up, the lower half to move it down. On the menu overlay: a box showing the option.
 class ToggleControl : public IControl {
  public:
@@ -356,7 +349,8 @@ class ToggleControl : public IControl {
       g.DrawText(txt(12, theme::kMenuText), w_.label.c_str(), float(w_.cx), float(w_.cy + 42));
       return;
     }
-    const float t = n <= 1 ? 0.f : float(idx) / float(n - 1);  // 0 = up
+    const int pos = leverPos(idx, n);
+    const float t = n <= 1 ? 0.f : float(pos) / float(n - 1);  // 0 = up
     const float cx = float(w_.cx), cy = float(w_.cy);
     g.FillCircle(col({60, 60, 60}), cx, cy, 9);
     const float ly = cy + (t - 0.5f) * 30.f;
@@ -365,9 +359,20 @@ class ToggleControl : public IControl {
   }
   void OnMouseDown(float, float y, const IMouseMod& mod) override {
     const int n = positionsOf(desc(w_.id)), idx = s_.index(w_.id);
-    if (w_.menu) s_.setIndex(w_.id, (idx + ((mod.R || mod.S) ? n - 1 : 1)) % n);
-    else s_.setIndex(w_.id, idx + (y < float(w_.cy) ? -1 : 1));
+    if (w_.menu) {
+      s_.setIndex(w_.id, (idx + ((mod.R || mod.S) ? n - 1 : 1)) % n);
+    } else {
+      const int pos = std::clamp(leverPos(idx, n) + (y < float(w_.cy) ? -1 : 1), 0, n - 1);
+      s_.setIndex(w_.id, w_.leverIndex[pos]);
+    }
     SetDirty(false);
+  }
+
+  // Lever position (0 = top) that shows parameter index `idx`.
+  int leverPos(int idx, int n) const {
+    for (int p = 0; p < n && p < 3; ++p)
+      if (w_.leverIndex[p] == idx) return p;
+    return 0;
   }
 
  private:

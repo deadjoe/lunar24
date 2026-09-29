@@ -190,10 +190,13 @@ inline std::uint8_t seq_rhythm_length_steps(double norm) noexcept {  // 1..8
 // generates the sequence.
 class ArpSeq {
  public:
+  // Only a MODE change restarts the run, so live menu edits (tempo, direction, interval)
+  // keep the held chord and the running pattern.
   void configure(const ArpSeqParams& p, double sample_rate) {
+    const bool restart = p.mode != params_.mode;
     params_ = p;
     fs_ = sample_rate;
-    reset();
+    if (restart) reset();
   }
 
   void reset() {
@@ -215,6 +218,15 @@ class ArpSeq {
   // the LAST configure() actually installed (the same struct handleControlEvent reads),
   // never a separately-written mirror — so an acceptance can pin what this side runs.
   const ArpSeqParams& params() const { return params_; }
+
+  // The clock's low half: close the note the last clock edge opened, so every arp/sequencer
+  // step retriggers the envelopes (50% gate length).
+  template <typename Sink>
+  void clockLow(Sink&& sink) {
+    if (arp_seq_mode(params_.mode) == ArpSeqMode::Keyboard || !runningGate_) return;
+    ControlEvent src{};
+    emitRelease(sink, runningGate_, src);
+  }
 
   // Feed one canonical event from translate(). `sink` receives each ControlEvent the
   // downstream KeyboardBehaviour should observe. In keyboard mode the event is
@@ -401,21 +413,35 @@ class ArpSeq {
     ++arpIndex_;
   }
 
-  // Select the next arp pitch from the held chord, by direction then interval and a
-  // variation octave shift. The chord is ordered by PITCH (PROVISIONAL — the manual's
-  // "sequence number of pressed plates" ordering is UN-RESOLVED, header FINDINGS).
+  // Select the next arp pitch from the held chord. Manual p.16: the chord is played by
+  // DIRECTION; VARIATION (OFF, x1, x2, x3) then repeats the whole progression that many
+  // more times, each pass transposed up by INTERVAL (1..12 semitones). The chord is ordered
+  // by pitch (the plate order the manual mentions is the same thing on a 12-plate keyboard
+  // tuned upward).
   double nextArpPitch() const {
     const std::uint32_t n = chordSize_;
-    std::uint32_t idx = 0;
+    const std::uint32_t passes = 1u + static_cast<std::uint32_t>(params_.arpVariation % 4u);
+    const std::uint32_t pass = (arpIndex_ / n) % passes;
+    const std::uint32_t i = arpIndex_ % n;
+    std::uint32_t idx = i;
     switch (params_.arpDirection % 4u) {
-      case 1:  idx = (n > 0) ? (n - 1 - (arpIndex_ % n)) : 0; break;
-      case 2:  idx = (arpIndex_ % (n * 2)); if (idx >= n) idx = (n * 2 - 1) - idx; break;
-      case 3:  idx = arpIndex_ % n; break;  // random held as a deterministic walk (PROVISIONAL)
-      default: idx = arpIndex_ % n; break;
+      case 1: idx = n - 1 - i; break;                                       // backward
+      case 2: {                                                             // ping-pong
+        const std::uint32_t period = n > 1 ? 2 * n - 2 : 1;
+        const std::uint32_t m = arpIndex_ % period;
+        idx = m < n ? m : period - m;
+        break;
+      }
+      case 3: idx = randomIndex_(n); break;                                 // random
+      default: break;                                                       // forward
     }
     const double semitone = static_cast<double>(arp_interval_semitones(params_.arpInterval));
-    const double octave = static_cast<double>(params_.arpVariation);  // x0/x1/x2/x3 octaves
-    return chord_[idx].pitch + (semitone + octave * 12.0) / 12.0;  // CV: 1 V/oct
+    return chord_[idx].pitch + pass * semitone / 12.0;  // CV: 1 V/oct
+  }
+  std::uint32_t randomIndex_(std::uint32_t n) const {
+    std::uint32_t x = (arpIndex_ + 1u) * 2654435761u;  // deterministic hash of the step
+    x ^= x >> 15;
+    return x % n;
   }
 
   // -- sequencer ---------------------------------------------------------------- --

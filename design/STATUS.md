@@ -32,13 +32,24 @@ _Last updated: 2026-09-29 (project refocus)._
   like a piano: `A W S E D F T G Y H U J K O L P ;`. Octave: the arrow buttons next to
   the encoder, or `Z` / `X`; the display shows it.
 - Keyboard settings (play mode, scale, arp, sequencer, glide, vibrato, ...): click the
-  red encoder to open the KEYBOARD MENU over the plates, click it again to close.
+  red encoder to open the KEYBOARD MENU over the plates, click it again to close. Values
+  show in the manual's units (BPM, note, steps, 0-255 / 0-127) and apply at once.
+- Arpeggiator / 16-step sequencer: MODE = ARPEGGIATOR or SEQUENCER, hold plates. The
+  internal clock runs at BPM (10-300, 16th notes); a cable into the keyboard CLOCK jack
+  takes over until BPM is changed again; RESET restarts the pattern.
 - MIDI keyboard: plugged-in devices are picked up automatically. Mod wheel / CC74 =
   filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master.
 - Effector: click the cartridge slot (or the button below it) to load the next cartridge
   (right-click = previous; hover shows both program names); the L / R switches beside
   the button pick program 1-2-3 per side.
 - DRONE VOICES keys 1-6 switch each drone voice on/off (LED lit = on).
+
+## Checked against the official manual (v15)
+Mixer channel order, the 39 effector programs and their X/Y/Z roles, output voltage
+ranges, normalled connections and the keyboard ranges all match the manual. Not given by
+the manual, so still guesses: arp/seq clock multiply/divide ratios and RHYTHM patterns (not
+applied yet), the 16-step sequencer's step editor (steps all 0 for now), and the exact
+note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Known gaps / next steps
 1. Tune the sound by ear (owner listening sessions) — every curve is a first guess.

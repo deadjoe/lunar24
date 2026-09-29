@@ -51,6 +51,9 @@ struct Widget {
   std::uint32_t id2 = 0;
   Cap cap = Cap::Black;
   bool menu = false;           // lives on the keyboard menu overlay
+  // Lever switches: the parameter index at each lever position, top to bottom, so the
+  // lever points at the matching panel label (e.g. VCO octave: up = "+3", down = "low").
+  std::uint8_t leverIndex[3] = {0, 1, 2};
   std::string label;           // drawn for menu items (panel labels come from the art)
   double x() const { return cx - w / 2; }
   double y() const { return cy - h / 2; }
@@ -87,8 +90,11 @@ inline std::vector<Widget> build_panel_layout() {
   auto button = [&](P id, double cx, double cy, double size = 32) {
     add(WidgetKind::Button, cx, cy, size, size, static_cast<std::uint32_t>(id));
   };
-  auto toggle = [&](P id, double cx, double cy) {
+  auto toggle = [&](P id, double cx, double cy, std::uint8_t top = 0, std::uint8_t mid = 1, std::uint8_t bottom = 2) {
     add(WidgetKind::Toggle, cx, cy, 24, 40, static_cast<std::uint32_t>(id));
+    ws.back().leverIndex[0] = top;
+    ws.back().leverIndex[1] = mid;
+    ws.back().leverIndex[2] = bottom;
   };
   auto jack = [&](J id, double cx, double cy, double size = 40) {
     add(WidgetKind::Jack, cx, cy, size, size, static_cast<std::uint32_t>(id));
@@ -189,8 +195,8 @@ inline std::vector<Widget> build_panel_layout() {
   for (const Vco& v : vcos) {
     const double o = v.dx;
     knob(v.cvAmt, 487 + o, 652, Cap::Green);
-    toggle(v.oct, 573 + o, 652);
-    toggle(v.sub, 648 + o, 652);
+    toggle(v.oct, 573 + o, 652, 2, 1, 0);      // +3 / 0 / low
+    toggle(v.sub, 648 + o, 652, 1, 0);         // -1 / off
     knob(v.tune, 735 + o, 652, Cap::Green);
     toggle(v.linExp, 445 + o, 708);
     knob(v.pwm, 487 + o, 763, Cap::Green);
@@ -271,7 +277,7 @@ inline std::vector<Widget> build_panel_layout() {
   // ---- bottom row -------------------------------------------------------------------------------------
   knob(P::lfo_a_wave, 66, 933, Cap::Red);
   jack(J::lfo_a_cv_out, 137, 933);
-  toggle(P::lfo_a_speed_mult, 193, 945);
+  toggle(P::lfo_a_speed_mult, 193, 945, 1, 0, 2);  // x6 / x1 / x10
   knob(P::lfo_a_rate, 252, 933, Cap::Red);
   knob(P::joystick_offset_x, 354, 933, Cap::Red);
   jack(J::joystick_x_out, 452, 908);
@@ -280,7 +286,7 @@ inline std::vector<Widget> build_panel_layout() {
   knob(P::sequencer_pulser, 651, 933, Cap::Red);
   jack(J::sequencer_clock_out, 739, 908);
   jack(J::sequencer_ext_clock_in, 739, 958);
-  toggle(P::sequencer_stages, 807, 933);
+  toggle(P::sequencer_stages, 807, 933, 1, 2, 0);  // 4 / 5 / 3 steps
   {
     const double sx[5] = {877, 996, 1114, 1233, 1351};
     const double gx[5] = {937, 1055, 1173, 1291, 1409};
@@ -290,7 +296,7 @@ inline std::vector<Widget> build_panel_layout() {
                      P::sequencer_step_gate_4, P::sequencer_step_gate_5};
     for (int i = 0; i < 5; ++i) {
       knob(cv[i], sx[i], 933, Cap::Red);
-      toggle(gt[i], gx[i], 945);
+      toggle(gt[i], gx[i], 945, 1, 0);  // gate on / off
     }
   }
   jack(J::sequencer_cv_out, 1487, 908);
@@ -303,7 +309,7 @@ inline std::vector<Widget> build_panel_layout() {
   jack(J::env_follower_gate_out, 2061, 933);
   knob(P::lfo_b_wave, 2149, 933, Cap::Red);
   jack(J::lfo_b_cv_out, 2221, 933);
-  toggle(P::lfo_b_speed_mult, 2275, 945);
+  toggle(P::lfo_b_speed_mult, 2275, 945, 1, 0, 2);
   knob(P::lfo_b_rate, 2334, 933, Cap::Red);
 
   // ---- keyboard: stick, plates, jacks, encoder, display, DRONE VOICES ----------------------------
