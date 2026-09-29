@@ -35,6 +35,7 @@
 
 namespace lunar24::core {
 
+
 inline DeviceStateV1 make_default_device_state(std::uint64_t seed) noexcept {
   DeviceStateV1 st{};  // value-init: schema v5, calibration 1.0, everything zeroed
   st.identitySeed.seed = seed;

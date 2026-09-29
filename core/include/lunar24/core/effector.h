@@ -764,6 +764,7 @@ class DualEffector {
     slot_[0].init(sampleRate, 0);
     slot_[1].init(sampleRate, 1);
     for (auto& s : smooth_) { s.setTime(0.03, sampleRate); s.y = 0.5; }
+    dcPole_ = 1.0 - fx::kTwoPi * 5.0 / sampleRate;
   }
 
   // Panel knobs, all 0..1 (registry `norm`).
@@ -803,8 +804,12 @@ class DualEffector {
     const double dryG = std::cos(0.5 * fx::kPi * k[3]);
     const double wetG = std::sin(0.5 * fx::kPi * k[3]);
     const double m = 2.0 * k[4];
-    l = fx::softLimit(m * (dryG * l + wetG * wl), 1.9);
-    r = fx::softLimit(m * (dryG * r + wetG * wr), 1.9);
+    // AC-coupled output (like the hardware line out): block DC below ~5 Hz.
+    const double ol = m * (dryG * l + wetG * wl), orr = m * (dryG * r + wetG * wr);
+    dcL_ = ol - dcXl_ + dcPole_ * dcL_; dcXl_ = ol;
+    dcR_ = orr - dcXr_ + dcPole_ * dcR_; dcXr_ = orr;
+    l = fx::softLimit(dcL_, 1.9);
+    r = fx::softLimit(dcR_, 1.9);
   }
 
  private:
@@ -816,6 +821,7 @@ class DualEffector {
   double cv_[3] = {0.0, 0.0, 0.0};
   int cart_[2] = {0, 0};
   int sel_[2] = {0, 0};
+  double dcPole_ = 0.999, dcL_ = 0.0, dcR_ = 0.0, dcXl_ = 0.0, dcXr_ = 0.0;
 };
 
 }  // namespace lunar24::core

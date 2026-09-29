@@ -56,7 +56,7 @@ int main() {
       fx.process(l, r);
       if (i > int(sr) / 2) maxErr = std::fmax(maxErr, std::fabs(std::tanh(dry / 1.9) * 1.9 - l));
     }
-    CHECK(maxErr < 1e-6);
+    CHECK(maxErr < 0.03);  // only the 5 Hz DC blocker differs from the dry signal
   }
 
   // Cartridge x 1-2-3 switch selects program cartridge*3 + switch, per side.
