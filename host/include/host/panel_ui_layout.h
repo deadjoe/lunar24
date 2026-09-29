@@ -46,7 +46,7 @@ struct Widget {
   std::uint32_t id2 = 0;
   Accent accent = Accent::Neutral;
   std::string label;
-  bool small = false;                 // smaller knob (dense modules)
+  bool compact = false;                 // smaller knob (dense modules)
 };
 
 namespace layout_detail {
@@ -58,11 +58,11 @@ struct Item {
   WidgetKind kind;
   std::uint32_t id;
   const char* label;
-  bool small = false;
+  bool compact = false;
 };
 
-inline Item knob(ParameterId id, const char* label, bool small = false) {
-  return {WidgetKind::Knob, static_cast<std::uint32_t>(id), label, small};
+inline Item knob(ParameterId id, const char* label, bool compact = false) {
+  return {WidgetKind::Knob, static_cast<std::uint32_t>(id), label, compact};
 }
 inline Item sel(ParameterId id, const char* label) {
   return {WidgetKind::Selector, static_cast<std::uint32_t>(id), label, false};
@@ -77,7 +77,7 @@ constexpr double kLabelH = 16.0;
 
 inline void cellSize(const Item& it, double& w, double& h) {
   switch (it.kind) {
-    case WidgetKind::Knob: w = it.small ? kKnobSmall : kKnob; h = w + kLabelH; break;
+    case WidgetKind::Knob: w = it.compact ? kKnobSmall : kKnob; h = w + kLabelH; break;
     case WidgetKind::Selector: w = kSelW; h = kSelH + kLabelH; break;
     case WidgetKind::Jack: w = kJack + 18.0; h = kJack + kLabelH; break;
     default: w = h = 40.0; break;
@@ -115,7 +115,7 @@ class Builder {
       wd.h = h;
       wd.accent = accent_;
       wd.label = items[i].label;
-      wd.small = items[i].small;
+      wd.compact = items[i].compact;
       out_.push_back(wd);
     }
   }

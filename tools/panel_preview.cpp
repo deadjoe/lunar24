@@ -75,7 +75,7 @@ void knob(const Widget& w) {
   std::printf("<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='%s' stroke-width='2.5' stroke-linecap='round'/>\n",
               cx + (r - 14) * std::cos(t) * 0.2, cy + (r - 14) * std::sin(t) * 0.2, cx + (r - 5) * std::cos(t),
               cy + (r - 5) * std::sin(t), rgb(theme::kText).c_str());
-  text(cx, w.y + w.h - 3, w.small ? 9.5 : 10.5, theme::kTextDim, w.label);
+  text(cx, w.y + w.h - 3, w.compact ? 9.5 : 10.5, theme::kTextDim, w.label);
 }
 
 void selector(const Widget& w) {

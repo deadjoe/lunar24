@@ -162,7 +162,7 @@ class KnobControl : public IControl {
     g.DrawLine(col(theme::kText), cx + std::cos(t) * (rad - 14) * 0.2f, cy + std::sin(t) * (rad - 14) * 0.2f,
                cx + std::cos(t) * (rad - 5), cy + std::sin(t) * (rad - 5), nullptr, 2.5f);
     const std::string label = dragging_ || mMouseIsOver ? formatValue(d, v) : w_.label;
-    g.DrawText(txt(w_.small ? 9.5f : 10.5f, dragging_ ? theme::kText : theme::kTextDim), label.c_str(),
+    g.DrawText(txt(w_.compact ? 9.5f : 10.5f, dragging_ ? theme::kText : theme::kTextDim), label.c_str(),
                mRECT.MW(), mRECT.B - 8);
   }
   void OnMouseDown(float, float, const IMouseMod&) override { dragging_ = true; SetDirty(false); }
