@@ -33,11 +33,10 @@ _Last updated: 2026-09-29 (project refocus)._
 
 ## Known gaps / next steps
 1. Tune the sound by ear (owner listening sessions) — every curve is a first guess.
-2. MIDI CC moves are heard but not yet shown on the panel knobs or saved.
-3. Plugging/unplugging a cable recompiles the patch graph on the audio thread (a few
+2. Plugging/unplugging a cable recompiles the patch graph on the audio thread (a few
    small allocations, only at that moment). Move it off the audio thread later.
-4. Windows: build is tested in CI; real audio/MIDI device testing still to do.
-5. The panel layout is our own arrangement inside the measured module areas, not a
+3. Windows: build is tested in CI; real audio/MIDI device testing still to do.
+4. The panel layout is our own arrangement inside the measured module areas, not a
    copy of the original panel artwork.
 
 ## Known limits (by design)
