@@ -15,7 +15,7 @@ _Last updated: 2026-09-29 (project refocus)._
     (single/twin/split, arp, 16-step, glide, vibrato, quantiser, 4 presets).
   - Patch cables, normalled connections and feedback loops.
 - **App (host/)**: macOS/Windows standalone with the full panel UI, MIDI input, and the
-  machine state saved on exit / restored on launch. The panel follows the official
+  machine state restored on launch (saved on exit and every 30 s after an edit). The panel follows the official
   Solar 42N panel drawing: same module frames, labels and control positions (taken from
   the PDF by `tools/gen_panel_art.py`), branded Lunar 24. `panel_preview > panel.svg`
   renders it without building the app. CI attaches a downloadable app to
@@ -38,7 +38,8 @@ _Last updated: 2026-09-29 (project refocus)._
   internal clock runs at BPM (10-300, 16th notes); a cable into the keyboard CLOCK jack
   takes over until BPM is changed again; RESET restarts the pattern.
 - MIDI keyboard: plugged-in devices are picked up automatically. Mod wheel / CC74 =
-  filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master.
+  filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master; pitch bend +/-2
+  semitones; sustain pedal; MIDI clock drives the arpeggiator / sequencer (START / STOP).
 - Effector: click the cartridge slot (or the button below it) to load the next cartridge
   (right-click = previous; hover shows both program names); the L / R switches beside
   the button pick program 1-2-3 per side.
