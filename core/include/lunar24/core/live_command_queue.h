@@ -16,12 +16,12 @@
 namespace lunar24::core {
 
 struct LiveCommand {
-  enum class Kind : std::uint8_t { Parameter, Event, Connect, Disconnect, EffectorProgram };
+  enum class Kind : std::uint8_t { Parameter, Event, Connect, Disconnect, EffectorProgram, DroneKey };
   Kind kind = Kind::Parameter;
   ParameterId parameter = ParameterId{0};
   double value = 0.0;
   ControlEvent event{};           // Kind::Event
-  std::uint32_t side = 0;         // Kind::EffectorProgram: 0 = left, 1 = right
+  std::uint32_t side = 0;         // EffectorProgram: 0 = left, 1 = right; DroneKey: voice 0..5
   ProgramId program = ProgramId{0};
   JackId source = JackId{0};      // Kind::Connect / Disconnect
   JackId sink = JackId{0};

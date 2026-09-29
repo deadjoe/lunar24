@@ -27,6 +27,7 @@
 #include <type_traits>
 #include <lunar24/core/host_window_fit.h>
 #include <host/window_layout.h>
+#include "panel_editor.h"
 
 using namespace iplug::igraphics;
 
@@ -76,7 +77,10 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     if (pGraphics->NControls() > 0) {
       return;  // already laid out; don't re-attach on a resize relayout
     }
-    pGraphics->AttachPanelBackground(COLOR_GRAY);
+    // The whole panel (host/panel_editor.h). The shared editor state lives as long as the plugin.
+    auto shared = std::make_shared<lunar24::host::ui::EditorShared>(engine_);
+    uiState_ = shared;
+    lunar24::host::ui::BuildPanel(pGraphics, *shared);
   };
 #endif
 }
@@ -179,5 +183,51 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
   engine_.processBlock(reinterpret_cast<const double* const*>(inputs),
                        reinterpret_cast<double* const*>(outputs),
                        NInChansConnected(), NOutChansConnected(), nFrames);
+}
+
+void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
+{
+  using namespace lunar24::core;
+  PerformanceInput in{};
+  in.source = 3;  // MIDI producer
+  in.channel = static_cast<std::uint8_t>(msg.Channel());
+  in.seq = ++midiSeq_;
+  const int note = msg.NoteNumber();
+  switch (msg.StatusMsg())
+  {
+    case IMidiMsg::kNoteOn:
+      if (msg.Velocity() > 0)
+      {
+        in.kind = PerfInputKind::note_on;
+        in.pitch = static_cast<SignalSample>((note - 57) / 12.0);  // A3 (MIDI 57) = 0 V = 220 Hz
+        in.value = static_cast<SignalSample>(msg.Velocity() / 127.0);
+        in.noteId = static_cast<NoteId>(note + 1);
+        break;
+      }
+      [[fallthrough]];  // note-on with velocity 0 is a note-off
+    case IMidiMsg::kNoteOff:
+      in.kind = PerfInputKind::note_off;
+      in.noteId = static_cast<NoteId>(note + 1);
+      break;
+    case IMidiMsg::kPolyAftertouch:
+      in.kind = PerfInputKind::aftertouch;
+      in.value = static_cast<SignalSample>(msg.PolyAfterTouch() / 127.0);
+      in.noteId = static_cast<NoteId>(note + 1);
+      break;
+    case IMidiMsg::kChannelAftertouch:
+      in.kind = PerfInputKind::aftertouch;
+      in.value = static_cast<SignalSample>(msg.ChannelAfterTouch() / 127.0);
+      break;
+    case IMidiMsg::kControlChange:
+      in.kind = PerfInputKind::cc;
+      in.controller = static_cast<std::uint16_t>(msg.ControlChangeIdx());
+      in.value = static_cast<SignalSample>(msg.ControlChange(msg.ControlChangeIdx()));
+      break;
+    default:
+      return;
+  }
+  ControlEvent ev[3];
+  const std::uint32_t n = midiInput_.translate(in, ev, 3);
+  for (std::uint32_t i = 0; i < n; ++i) engine_.enqueueEventFromAudioThread(ev[i]);
 }
 #endif

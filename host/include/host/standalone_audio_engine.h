@@ -209,6 +209,12 @@ class StandaloneAudioEngine {
   bool postConnect(lunar24::core::JackId source, lunar24::core::JackId sink);
   bool postDisconnect(lunar24::core::JackId sink);
   bool postEffectorProgram(int side, lunar24::core::ProgramId program);
+  // DRONE VOICES key: open/close drone voice 0..5 (not saved; all open at power-on).
+  bool postDroneKey(int voice, bool open);
+  bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
+  // Bumped whenever a whole new machine state is committed (startup restore, preset load),
+  // so the UI knows to redraw every control.
+  std::uint64_t stateVersion() const { return stateVersion_; }
   // Audio thread only (e.g. MIDI delivered inside the audio callback): schedule a note/clock
   // event at the current block.
   bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e);
@@ -331,6 +337,8 @@ class StandaloneAudioEngine {
 
   // UI -> audio live command queue (single producer: the UI thread).
   lunar24::core::SpscQueue<1024> liveQueue_;
+  bool droneKeys_[6] = {true, true, true, true, true, true};
+  std::uint64_t stateVersion_ = 0;
   void drainLive_(SynthRuntime& rt);
 
   // Monotonic RT counters (plain, no lock).
@@ -655,6 +663,8 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   inputCapability_ = inputCapability;
   outputCapability_ = outputCapability;
   ready_ = true;
+  for (int v = 0; v < 6; ++v) definition_->runtime().setDroneVoiceKey(v, droneKeys_[v]);
+  ++stateVersion_;
 }
 
 
@@ -718,6 +728,16 @@ inline bool StandaloneAudioEngine::postEffectorProgram(int side, lunar24::core::
   return liveQueue_.push(c);
 }
 
+inline bool StandaloneAudioEngine::postDroneKey(int voice, bool open) {
+  if (voice < 0 || voice > 5) return false;
+  droneKeys_[voice] = open;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::DroneKey;
+  c.side = static_cast<std::uint32_t>(voice);
+  c.value = open ? 1.0 : 0.0;
+  return liveQueue_.push(c);
+}
+
 inline bool StandaloneAudioEngine::enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e) {
   if (!definition_) return false;
   SynthRuntime& rt = definition_->runtime();
@@ -753,6 +773,9 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
         break;
       case LiveCommand::Kind::EffectorProgram:
         rt.setEffectorProgram(static_cast<int>(c.side), c.program);
+        break;
+      case LiveCommand::Kind::DroneKey:
+        rt.setDroneVoiceKey(static_cast<int>(c.side), c.value > 0.5);
         break;
     }
   }

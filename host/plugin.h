@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// host/plugin.h — the Lunar 24 host standalone plugin (blank editor). This is the
+// host/plugin.h — the Lunar 24 host standalone plugin. This is the
 // IPlugAPP plugin class the host opens. Its editor is intentionally empty for
 // P5-①: the mandate is to prove the self-authored host bootstrap opens a real
 // macOS window sized by the geometry choke point, not to render controls yet.
@@ -12,8 +12,11 @@
 
 #include "IPlug_include_in_plug_hdr.h"
 
+#include <memory>
+
 #include <host/app_state_store.h>
 #include <host/standalone_audio_engine.h>
+#include <lunar24/core/input_state_machine.h>
 
 using namespace iplug;
 
@@ -28,6 +31,9 @@ public:
   // the ONE place the host (re)prepares the runtime owner for the REAL device format.
   void OnReset() override;
   void ProcessBlock(sample** inputs, sample** outputs, int nFrames) override;
+  // MIDI arrives on the audio thread (before ProcessBlock). Notes / velocity / aftertouch
+  // go through the keyboard's input state machine; a few CCs drive existing panel knobs.
+  void ProcessMidiMsg(const IMidiMsg& msg) override;
 
   // GH#4 8B3 (task#73): install the ACTUAL connected channel plan with fail-closed ADMISSION.
   // A derived class is the ONLY place the real host can drive the protected
@@ -64,4 +70,19 @@ private:
   // the lifecycle-save gate) + the real FileOps. It holds NO second editable state bank and does
   // NO file IO on the audio path.
   lunar24::host::AppStateStore stateStore_;
+
+  // The panel editor's shared state (host/panel_editor.h), type-erased so this header stays
+  // free of IGraphics types.
+  std::shared_ptr<void> uiState_;
+
+  // MIDI -> keyboard. Mod wheel / CC74 = filter cutoff, CC71 = resonance, CC91 = effector
+  // blend, CC7 = master (CC learn only ever targets existing panel controls).
+  static constexpr lunar24::core::CcBinding kMidiCc[5] = {
+      {1, lunar24::core::ParameterId::vcf_l_freq},
+      {74, lunar24::core::ParameterId::vcf_l_freq},
+      {71, lunar24::core::ParameterId::vcf_l_res},
+      {91, lunar24::core::ParameterId::effector_blend},
+      {7, lunar24::core::ParameterId::effector_master}};
+  lunar24::core::InputStateMachine midiInput_{kMidiCc, 5};
+  std::uint64_t midiSeq_ = 0;
 };

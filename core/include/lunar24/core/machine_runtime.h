@@ -1027,6 +1027,15 @@ class SynthRuntime {
   // product path reads every frame in step_(kDrone). ATT/RLS take the registry's
   // NORMALIZED 0..1 control (the bank does the single monotonic norm->seconds map).
   void setDroneGroupGate(int voiceGroup, bool on) { drone_.setGroupGate(voiceGroup, on); }
+  // DRONE VOICES keys 1..6 (index 0..5 = drone 1..6): open or close that voice's gate.
+  // A cable in the voice's GATE input still takes over for drones 3/6.
+  void setDroneVoiceKey(int voice, bool open) {
+    static constexpr int kClassicGroup[6] = {0, 1, -1, 2, 3, -1};
+    if (voice < 0 || voice > 5) return;
+    droneKeyOpen_[voice] = open;
+    if (kClassicGroup[voice] >= 0) drone_.setGroupGate(kClassicGroup[voice], open);
+  }
+  bool droneVoiceKey(int voice) const { return voice >= 0 && voice < 6 && droneKeyOpen_[voice]; }
   void setDroneGroupHold(int voiceGroup, bool on) { drone_.setGroupHold(voiceGroup, on); }
   void setDroneGroupAtt(int voiceGroup, double norm) { drone_.setGroupAtt(voiceGroup, norm); }
   void setDroneGroupRls(int voiceGroup, double norm) { drone_.setGroupRls(voiceGroup, norm); }
@@ -3675,7 +3684,7 @@ class SynthRuntime {
   // from the bound JackDescriptor. The level->volts transfer is PROVISIONAL (no measured
   // hardware transfer) — the SAME provisional convention the classic ENV OUT already uses.
   void tickPapaVoice_(PapaVoice& pv, int voice, int channel, double& shCvOut, bool driveGraph) {
-    bool gateHigh = DroneBank::kDefaultGroupGateOpen;
+    bool gateHigh = DroneBank::kDefaultGroupGateOpen && droneKeyOpen_[voice == 0 ? 2 : 5];
     if (voiceGateBound_[voice]) {
       double volts = 0.0;
       // driveGraph=false (the criterion-① negative) bypasses the control layer, so a
@@ -3841,7 +3850,8 @@ class SynthRuntime {
   // definition; synthetic test fixtures keep WET = distortion output.
   DualEffector effector_;
   bool effectorEnabled_ = false;
-  bool vcoVcaEnabled_ = false;  // VCO A/B VCAs driven by Envelope A/B (canonical machine)
+  bool vcoVcaEnabled_ = false;
+  bool droneKeyOpen_[6] = {true, true, true, true, true, true};  // DRONE VOICES keys  // VCO A/B VCAs driven by Envelope A/B (canonical machine)
   double effCv_[3] = {0.0, 0.0, 0.0};
   double dryA_ = 0.0, dryB_ = 0.0;
   double preampInResolved_ = 0.0;
