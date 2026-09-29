@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// panel_ui_layout.h — where every control sits on the 2400 x 1551 panel.
+// panel_ui_layout.h — where every control sits on the 2400 x 1552 panel.
 //
-// Framework-free (no iPlug2): the IGraphics editor draws from this list, the offline
-// preview tool renders it to SVG, and tests check it (every panel parameter and jack
-// has exactly one control, nothing overlaps, everything stays inside its module).
+// Positions are taken from the official Solar 42N panel drawing (control centres and
+// sizes measured from the PDF's vector shapes); labels, frames and title tabs come from
+// panel_art.generated.h. Framework-free: the IGraphics editor draws from this list, the
+// SVG preview tool renders it, and tests check it.
 //
-// Module rectangles come from the measured panel regions (generated/.../panel_anchors);
-// inside each module the controls are laid out in rows: knobs on top, switches in the
-// middle, jacks at the bottom — the usual Eurorack-style reading order.
+// The keyboard's 35 menu parameters live behind the display/encoder on the hardware; here
+// they are knobs/switches on a KEYBOARD MENU overlay that the encoder opens (`menu` = true).
 
 #pragma once
 
@@ -25,430 +25,359 @@ using core::JackId;
 using core::ParameterId;
 
 enum class WidgetKind : std::uint8_t {
-  Module,     // a module card (title + frame); id unused
-  Knob,       // continuous parameter
-  Selector,   // switch with 2..N positions (click cycles)
-  Jack,       // patch point (id = JackId)
-  Plates,     // the 12 touch plates of the keyboard
-  Joystick,   // XY pad driving joystick.x / joystick.y (id = x param, id2 = y param)
-  Cartridge,  // effector cartridge slot (id = side 0/1)
-  DroneKey,   // one of the six DRONE VOICE keys (id = 0..5)
-  Title,      // the LUNAR 24 name plate
+  Knob,        // continuous parameter (id = ParameterId)
+  Button,      // round latching push button for a 2-position parameter
+  Toggle,      // lever switch for a 2- or 3-position parameter
+  Jack,        // patch point (id = JackId)
+  Plate,       // one of the 12 touch plates (id = 0..11)
+  Joystick,    // the stick (id = joystick.x, id2 = joystick.y)
+  Cartridge,   // effector cartridge slot (id 0) and its button (id 1): click = next cartridge
+  DroneKey,    // DRONE VOICES key (id = 0..5 -> drone 1..6)
+  Encoder,     // keyboard encoder: opens the keyboard menu
+  OctaveKey,   // keyboard arrow buttons (id 0 = down, 1 = up)
+  Display,     // keyboard display (shows octave / menu state)
+  Decor,       // non-interactive art: 0 = photo sensor, 1 = LED bar (id2 = first mute param),
+               // 2 = hardware knob / 3 = hardware jack with no function in Lunar 24
 };
 
-// Function colours (the five accent families + neutral).
-enum class Accent : std::uint8_t { Neutral, Drone, Vco, Filter, Modulation, Keyboard };
+// Knob cap colours of the panel sections.
+enum class Cap : std::uint8_t { Black, Teal, Green, Orange, Red, Grey, Dark };
 
 struct Widget {
   WidgetKind kind = WidgetKind::Knob;
-  double x = 0, y = 0, w = 0, h = 0;  // design-space rectangle (label included)
-  std::uint32_t id = 0;               // ParameterId / JackId / index, per kind
+  double cx = 0, cy = 0;       // centre (panel units)
+  double w = 0, h = 0;         // hit box, centred on (cx, cy)
+  std::uint32_t id = 0;
   std::uint32_t id2 = 0;
-  Accent accent = Accent::Neutral;
-  std::string label;
-  bool compact = false;                 // smaller knob (dense modules)
+  Cap cap = Cap::Black;
+  bool menu = false;           // lives on the keyboard menu overlay
+  std::string label;           // drawn for menu items (panel labels come from the art)
+  double x() const { return cx - w / 2; }
+  double y() const { return cy - h / 2; }
 };
 
-namespace layout_detail {
+// The keyboard menu overlay area (covers the touch plates while open).
+inline constexpr double kMenuX0 = 410, kMenuY0 = 1112, kMenuX1 = 1990, kMenuY1 = 1482;
 
-struct Rect { double x0, y0, x1, y1; double w() const { return x1 - x0; } double h() const { return y1 - y0; } };
+// Registry jacks that the official panel does not show (kept in the engine, not patchable
+// from the UI): the VCOs' separate wave outputs and the envelopes' VCA-CV outputs.
+inline constexpr JackId kJacksNotOnPanel[] = {
+    JackId::vco_a_wave_out, JackId::vco_b_wave_out,
+    JackId::envelope_a_vca_cv_out, JackId::envelope_b_vca_cv_out};
 
-// One item to place in a row.
-struct Item {
-  WidgetKind kind;
-  std::uint32_t id;
-  const char* label;
-  bool compact = false;
-};
-
-inline Item knob(ParameterId id, const char* label, bool compact = false) {
-  return {WidgetKind::Knob, static_cast<std::uint32_t>(id), label, compact};
-}
-inline Item sel(ParameterId id, const char* label) {
-  return {WidgetKind::Selector, static_cast<std::uint32_t>(id), label, false};
-}
-inline Item jack(JackId id, const char* label) {
-  return {WidgetKind::Jack, static_cast<std::uint32_t>(id), label, false};
-}
-
-// Cell sizes (design units). A knob cell is square plus a label line.
-constexpr double kKnob = 58.0, kKnobSmall = 44.0, kSelW = 56.0, kSelH = 30.0, kJack = 34.0;
-constexpr double kLabelH = 16.0;
-
-inline void cellSize(const Item& it, double& w, double& h) {
-  switch (it.kind) {
-    case WidgetKind::Knob: w = it.compact ? kKnobSmall : kKnob; h = w + kLabelH; break;
-    case WidgetKind::Selector: w = kSelW; h = kSelH + kLabelH; break;
-    case WidgetKind::Jack: w = kJack + 18.0; h = kJack + kLabelH; break;
-    default: w = h = 40.0; break;
-  }
-}
-
-class Builder {
- public:
-  explicit Builder(std::vector<Widget>& out) : out_(out) {}
-
-  void module(const Rect& r, const char* title, Accent a) {
-    Widget m;
-    m.kind = WidgetKind::Module;
-    m.x = r.x0; m.y = r.y0; m.w = r.w(); m.h = r.h();
-    m.accent = a;
-    m.label = title;
-    out_.push_back(m);
-    accent_ = a;
-  }
-
-  // Spread `items` evenly across [x0, x1], vertically centred on `cy`.
-  void row(double cy, double x0, double x1, const std::vector<Item>& items) {
-    if (items.empty()) return;
-    const double step = (x1 - x0) / static_cast<double>(items.size());
-    for (std::size_t i = 0; i < items.size(); ++i) {
-      double w = 0, h = 0;
-      cellSize(items[i], w, h);
-      const double cx = x0 + step * (static_cast<double>(i) + 0.5);
-      Widget wd;
-      wd.kind = items[i].kind;
-      wd.id = items[i].id;
-      wd.x = cx - w / 2;
-      wd.y = cy - h / 2;
-      wd.w = w;
-      wd.h = h;
-      wd.accent = accent_;
-      wd.label = items[i].label;
-      wd.compact = items[i].compact;
-      out_.push_back(wd);
-    }
-  }
-
-  void add(WidgetKind k, double x, double y, double w, double h, std::uint32_t id,
-           std::uint32_t id2, const char* label) {
-    Widget wd;
-    wd.kind = k; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.id = id; wd.id2 = id2;
-    wd.accent = accent_;
-    wd.label = label;
-    out_.push_back(wd);
-  }
-
- private:
-  std::vector<Widget>& out_;
-  Accent accent_ = Accent::Neutral;
-};
-
-constexpr double kTitleH = 30.0;  // module title strip
-
-}  // namespace layout_detail
-
-// Build the whole panel. Deterministic, called once when the editor opens.
 inline std::vector<Widget> build_panel_layout() {
-  using namespace layout_detail;
   using P = ParameterId;
   using J = JackId;
-  std::vector<Widget> w;
-  w.reserve(400);
-  Builder b(w);
+  std::vector<Widget> ws;
+  ws.reserve(420);
 
-  // ---- name plate -------------------------------------------------------------------------
-  b.add(WidgetKind::Title, 20, 20, 780, 150, 0, 0, "LUNAR 24");
-
-  // ---- classic drones 1 / 2 / 4 / 5 -------------------------------------------------------
-  struct ClassicIds {
-    Rect r; const char* title;
-    P tune[5], mute[5], mod[5], volt, att, rls, hold;
-    J cv, gate, env;
+  auto add = [&ws](WidgetKind k, double cx, double cy, double w, double h, std::uint32_t id,
+                   Cap cap = Cap::Black, std::uint32_t id2 = 0) {
+    Widget wd;
+    wd.kind = k; wd.cx = cx; wd.cy = cy; wd.w = w; wd.h = h; wd.id = id; wd.id2 = id2; wd.cap = cap;
+    ws.push_back(wd);
   };
-  const ClassicIds classic[4] = {
-      {{20, 258, 408, 560}, "DRONE 1",
+  // Knob sizes: skirted knob (cap 46), small plain knob (cap 39), big knobs.
+  auto knob = [&](P id, double cx, double cy, Cap cap, double size = 60) {
+    add(WidgetKind::Knob, cx, cy, size, size, static_cast<std::uint32_t>(id), cap);
+  };
+  auto plain = [&](P id, double cx, double cy, double size = 40) {
+    add(WidgetKind::Knob, cx, cy, size, size, static_cast<std::uint32_t>(id), Cap::Black);
+  };
+  auto button = [&](P id, double cx, double cy, double size = 32) {
+    add(WidgetKind::Button, cx, cy, size, size, static_cast<std::uint32_t>(id));
+  };
+  auto toggle = [&](P id, double cx, double cy) {
+    add(WidgetKind::Toggle, cx, cy, 24, 40, static_cast<std::uint32_t>(id));
+  };
+  auto jack = [&](J id, double cx, double cy, double size = 40) {
+    add(WidgetKind::Jack, cx, cy, size, size, static_cast<std::uint32_t>(id));
+  };
+
+  // ---- classic drones 1 / 2 / 4 / 5 ---------------------------------------------------------
+  struct Classic { double x[5]; double volt; P tune[5], mute[5], mod[5], vol, att, rls, hold; J cv, gate, env; };
+  const Classic classic[4] = {
+      {{62, 124, 185, 247, 308}, 370,
        {P::drone_1_tune_1, P::drone_1_tune_2, P::drone_1_tune_3, P::drone_1_tune_4, P::drone_1_tune_5},
        {P::drone_1_mute_1, P::drone_1_mute_2, P::drone_1_mute_3, P::drone_1_mute_4, P::drone_1_mute_5},
        {P::drone_1_mod_1, P::drone_1_mod_2, P::drone_1_mod_3, P::drone_1_mod_4, P::drone_1_mod_5},
        P::drone_1_volt, P::drone_1_att, P::drone_1_rls, P::drone_1_gate_hold,
        J::drone_1_cv_mod_in, J::drone_1_gate_in, J::drone_1_env_out},
-      {{414, 258, 803, 560}, "DRONE 2",
+      {{456, 518, 580, 641, 703}, 764,
        {P::drone_2_tune_1, P::drone_2_tune_2, P::drone_2_tune_3, P::drone_2_tune_4, P::drone_2_tune_5},
        {P::drone_2_mute_1, P::drone_2_mute_2, P::drone_2_mute_3, P::drone_2_mute_4, P::drone_2_mute_5},
        {P::drone_2_mod_1, P::drone_2_mod_2, P::drone_2_mod_3, P::drone_2_mod_4, P::drone_2_mod_5},
        P::drone_2_volt, P::drone_2_att, P::drone_2_rls, P::drone_2_gate_hold,
        J::drone_2_cv_mod_in, J::drone_2_gate_in, J::drone_2_env_out},
-      {{1597, 258, 1985, 561}, "DRONE 4",
+      {{1638, 1700, 1761, 1823, 1885}, 1946,
        {P::drone_4_tune_1, P::drone_4_tune_2, P::drone_4_tune_3, P::drone_4_tune_4, P::drone_4_tune_5},
        {P::drone_4_mute_1, P::drone_4_mute_2, P::drone_4_mute_3, P::drone_4_mute_4, P::drone_4_mute_5},
        {P::drone_4_mod_1, P::drone_4_mod_2, P::drone_4_mod_3, P::drone_4_mod_4, P::drone_4_mod_5},
        P::drone_4_volt, P::drone_4_att, P::drone_4_rls, P::drone_4_gate_hold,
        J::drone_4_cv_mod_in, J::drone_4_gate_in, J::drone_4_env_out},
-      {{1991, 258, 2380, 561}, "DRONE 5",
+      {{2033, 2094, 2156, 2217, 2279}, 2340,
        {P::drone_5_tune_1, P::drone_5_tune_2, P::drone_5_tune_3, P::drone_5_tune_4, P::drone_5_tune_5},
        {P::drone_5_mute_1, P::drone_5_mute_2, P::drone_5_mute_3, P::drone_5_mute_4, P::drone_5_mute_5},
        {P::drone_5_mod_1, P::drone_5_mod_2, P::drone_5_mod_3, P::drone_5_mod_4, P::drone_5_mod_5},
        P::drone_5_volt, P::drone_5_att, P::drone_5_rls, P::drone_5_gate_hold,
        J::drone_5_cv_mod_in, J::drone_5_gate_in, J::drone_5_env_out},
   };
-  static const char* kTuneL[5] = {"TUNE 1", "TUNE 2", "TUNE 3", "TUNE 4", "TUNE 5"};
-  static const char* kMuteL[5] = {"MUTE 1", "MUTE 2", "MUTE 3", "MUTE 4", "MUTE 5"};
-  static const char* kModL[5] = {"MOD 1", "MOD 2", "MOD 3", "MOD 4", "MOD 5"};
-  for (const auto& c : classic) {
-    b.module(c.r, c.title, Accent::Drone);
-    const double x0 = c.r.x0 + 6, x1 = c.r.x1 - 6, y = c.r.y0 + kTitleH;
-    std::vector<Item> tunes, mutes, mods;
+  for (const Classic& c : classic) {
     for (int i = 0; i < 5; ++i) {
-      tunes.push_back(knob(c.tune[i], kTuneL[i], true));
-      mutes.push_back(sel(c.mute[i], kMuteL[i]));
-      mods.push_back(sel(c.mod[i], kModL[i]));
+      button(c.mute[i], c.x[i], 295);
+      plain(c.tune[i], c.x[i], 344);
+      button(c.mod[i], c.x[i], 406);
     }
-    tunes.push_back(knob(c.volt, "VOLT"));
-    const double genX1 = x1 - (x1 - x0) / 6.0;  // the five generator columns; VOLT/HOLD after
-    b.row(y + 40, x0, x1, tunes);
-    b.row(y + 106, x0, genX1, mutes);
-    b.row(y + 106, genX1, x1, {sel(c.hold, "HOLD")});
-    b.row(y + 154, x0, genX1, mods);
-    b.row(y + 226, x0, x1, {knob(c.att, "ATT"), knob(c.rls, "RLS"),
-                            jack(c.cv, "CV MOD"), jack(c.gate, "GATE"), jack(c.env, "ENV")});
+    knob(c.vol, c.volt, 381, Cap::Teal);
+    add(WidgetKind::Decor, c.volt, 295, 69, 54, 1, Cap::Black, static_cast<std::uint32_t>(c.mute[0]));
+    button(c.hold, c.x[0], 455);
+    plain(c.att, c.x[1], 455);
+    plain(c.rls, c.x[2], 455);
+    jack(c.gate, c.x[0], 529);
+    jack(c.env, c.x[2], 529);
+    jack(c.cv, c.x[3], 529);
+    add(WidgetKind::Decor, c.volt - 31, 498, 113, 113, 0);  // photo sensor (the MOD light input)
+    add(WidgetKind::Decor, c.x[3], 455, 40, 40, 2);           // CV amount knob (not modelled)
   }
-  // ---- NEW drones 3 / 6 (Papa Srapa) --------------------------------------------------------
-  struct NewIds {
-    Rect r; const char* title;
-    P rate, mod, divider, pitch, noise, att, rls, hilo, fm, am, rateSw, hold;
-    J cv, env, gate, clock, noiseIn;
+
+  // ---- NEW drones 3 / 6 ---------------------------------------------------------------------------
+  struct Papa { double dx; P rate, rateSw, fm, am, mod, divider, pitch, hilo, hold, att, rls, noise;
+                J gate, env, noiseIn, clock, cv; };
+  const Papa papa[2] = {
+      {0, P::drone_3_rate, P::drone_3_rate_switch, P::drone_3_fm, P::drone_3_am, P::drone_3_mod,
+       P::drone_3_divider, P::drone_3_pitch, P::drone_3_hi_low, P::drone_3_hold, P::drone_3_att,
+       P::drone_3_rls, P::drone_3_noise, J::drone_3_gate_in, J::drone_3_env_out, J::drone_3_noise_in,
+       J::drone_3_clock_in, J::drone_3_cv_out},
+      {1971, P::drone_6_rate, P::drone_6_rate_switch, P::drone_6_fm, P::drone_6_am, P::drone_6_mod,
+       P::drone_6_divider, P::drone_6_pitch, P::drone_6_hi_low, P::drone_6_hold, P::drone_6_att,
+       P::drone_6_rls, P::drone_6_noise, J::drone_6_gate_in, J::drone_6_env_out, J::drone_6_noise_in,
+       J::drone_6_clock_in, J::drone_6_cv_out},
   };
-  const NewIds news[2] = {
-      {{20, 566, 408, 881}, "DRONE 3", P::drone_3_rate, P::drone_3_mod, P::drone_3_divider,
-       P::drone_3_pitch, P::drone_3_noise, P::drone_3_att, P::drone_3_rls, P::drone_3_hi_low,
-       P::drone_3_fm, P::drone_3_am, P::drone_3_rate_switch, P::drone_3_hold, J::drone_3_cv_out,
-       J::drone_3_env_out, J::drone_3_gate_in, J::drone_3_clock_in, J::drone_3_noise_in},
-      {{1991, 566, 2380, 880}, "DRONE 6", P::drone_6_rate, P::drone_6_mod, P::drone_6_divider,
-       P::drone_6_pitch, P::drone_6_noise, P::drone_6_att, P::drone_6_rls, P::drone_6_hi_low,
-       P::drone_6_fm, P::drone_6_am, P::drone_6_rate_switch, P::drone_6_hold, J::drone_6_cv_out,
-       J::drone_6_env_out, J::drone_6_gate_in, J::drone_6_clock_in, J::drone_6_noise_in},
+  for (const Papa& d : papa) {
+    const double o = d.dx;
+    knob(d.rate, 62 + o, 652, Cap::Teal);
+    button(d.rateSw, 113 + o, 615, 28);
+    button(d.fm, 216 + o, 615, 28);
+    button(d.am, 318 + o, 615, 28);
+    knob(d.mod, 165 + o, 652, Cap::Teal);
+    knob(d.divider, 267 + o, 652, Cap::Teal);
+    knob(d.pitch, 369 + o, 652, Cap::Teal);
+    button(d.hilo, 318 + o, 689, 28);
+    button(d.hold, 62 + o, 763);
+    plain(d.att, 124 + o, 763);
+    plain(d.rls, 185 + o, 763);
+    knob(d.noise, 278 + o, 763, Cap::Teal);
+    jack(d.gate, 62 + o, 837);
+    jack(d.env, 185 + o, 837);
+    jack(d.noiseIn, 247 + o, 837);
+    jack(d.clock, 308 + o, 837);
+    jack(d.cv, 370 + o, 837);
+    add(WidgetKind::Decor, 114 + o, 707, 40, 40, 3);  // LFO out / CV in: not modelled
+    add(WidgetKind::Decor, 216 + o, 707, 40, 40, 3);
+  }
+
+  // ---- VCO A / VCO B ------------------------------------------------------------------------------
+  struct Vco { double dx; P cvAmt, oct, sub, tune, linExp, pwm, morph, pw; J voct, cv, pwmIn, last; };
+  const Vco vcos[2] = {
+      {0, P::vco_a_cv_amt, P::vco_a_oct_sel, P::vco_a_sub_sel, P::vco_a_tune, P::vco_a_lin_exp,
+       P::vco_a_pwm, P::vco_a_morph, P::vco_a_pw, J::vco_a_v_oct_in, J::vco_a_cv_in, J::vco_a_pwm_in,
+       J::vco_a_sync_in},
+      {1182, P::vco_b_cv_amt, P::vco_b_oct_sel, P::vco_b_sub_sel, P::vco_b_tune, P::vco_b_lin_exp,
+       P::vco_b_pwm, P::vco_b_morph, P::vco_b_pw, J::vco_b_v_oct_in, J::vco_b_cv_in, J::vco_b_pwm_in,
+       J::vco_b_vco_out},
   };
-  for (const auto& n : news) {
-    b.module(n.r, n.title, Accent::Drone);
-    const double x0 = n.r.x0 + 6, x1 = n.r.x1 - 6, y = n.r.y0 + kTitleH;
-    b.row(y + 42, x0, x1, {knob(n.rate, "RATE"), knob(n.mod, "MOD"), knob(n.divider, "DIVIDER"),
-                           knob(n.pitch, "PITCH"), knob(n.noise, "NOISE")});
-    b.row(y + 116, x0, x1, {knob(n.att, "ATT", true), knob(n.rls, "RLS", true),
-                            sel(n.hilo, "RANGE"), sel(n.rateSw, "RATE SW")});
-    b.row(y + 176, x0, x1, {sel(n.fm, "FM"), sel(n.am, "AM"), sel(n.hold, "HOLD")});
-    b.row(y + 244, x0, x1, {jack(n.gate, "GATE"), jack(n.clock, "CLOCK"), jack(n.noiseIn, "NOISE"),
-                            jack(n.cv, "CV OUT"), jack(n.env, "ENV")});
+  for (const Vco& v : vcos) {
+    const double o = v.dx;
+    knob(v.cvAmt, 487 + o, 652, Cap::Green);
+    toggle(v.oct, 573 + o, 652);
+    toggle(v.sub, 648 + o, 652);
+    knob(v.tune, 735 + o, 652, Cap::Green);
+    toggle(v.linExp, 445 + o, 708);
+    knob(v.pwm, 487 + o, 763, Cap::Green);
+    knob(v.morph, 610 + o, 763, Cap::Green, 92);
+    knob(v.pw, 735 + o, 763, Cap::Green);
+    jack(v.voct, 456 + o, 837);
+    jack(v.cv, 567 + o, 837);
+    jack(v.pwmIn, 653 + o, 837);
+    jack(v.last, 766 + o, 837);
   }
 
-  // ---- VCO A / VCO B -------------------------------------------------------------------------
-  {
-    const Rect r{414, 566, 803, 880};
-    b.module(r, "VCO A", Accent::Vco);
-    const double x0 = r.x0 + 6, x1 = r.x1 - 6, y = r.y0 + kTitleH;
-    b.row(y + 42, x0, x1, {knob(P::vco_a_tune, "TUNE"), knob(P::vco_a_morph, "MORPH"),
-                           knob(P::vco_a_pw, "PW"), knob(P::vco_a_pwm, "PWM"),
-                           knob(P::vco_a_cv_amt, "CV AMT")});
-    b.row(y + 110, x0, x1, {sel(P::vco_a_oct_sel, "OCTAVE"), sel(P::vco_a_sub_sel, "SUB"),
-                            sel(P::vco_a_lin_exp, "LIN/EXP")});
-    b.row(y + 172, x0, x1, {jack(J::vco_a_v_oct_in, "V/OCT"), jack(J::vco_a_cv_in, "CV"),
-                            jack(J::vco_a_pwm_in, "PWM"), jack(J::vco_a_sync_in, "SYNC")});
-    b.row(y + 240, x0, x1, {jack(J::vco_a_vca_ctl, "VCA CV"), jack(J::vco_a_wave_out, "WAVE"),
-                            jack(J::vco_a_dry_out, "DRY OUT")});
-  }
-  {
-    const Rect r{1597, 566, 1985, 880};
-    b.module(r, "VCO B", Accent::Vco);
-    const double x0 = r.x0 + 6, x1 = r.x1 - 6, y = r.y0 + kTitleH;
-    b.row(y + 42, x0, x1, {knob(P::vco_b_tune, "TUNE"), knob(P::vco_b_morph, "MORPH"),
-                           knob(P::vco_b_pw, "PW"), knob(P::vco_b_pwm, "PWM"),
-                           knob(P::vco_b_cv_amt, "CV AMT")});
-    b.row(y + 110, x0, x1, {sel(P::vco_b_oct_sel, "OCTAVE"), sel(P::vco_b_sub_sel, "SUB"),
-                            sel(P::vco_b_lin_exp, "LIN/EXP")});
-    b.row(y + 172, x0, x1, {jack(J::vco_b_v_oct_in, "V/OCT"), jack(J::vco_b_cv_in, "CV"),
-                            jack(J::vco_b_pwm_in, "PWM"), jack(J::vco_b_vca_ctl, "VCA CV")});
-    b.row(y + 240, x0, x1, {jack(J::vco_b_vco_out, "VCO OUT"), jack(J::vco_b_wave_out, "WAVE"),
-                            jack(J::vco_b_dry_out, "DRY OUT")});
-  }
+  // ---- envelopes A / B (with the VCO VCA input and the VCO output) ---------------------------------
+  button(P::envelope_a_hold, 885, 744);
+  button(P::envelope_a_self_gen, 963, 744);
+  knob(P::envelope_a_a, 845, 790, Cap::Green, 54);
+  knob(P::envelope_a_d, 924, 790, Cap::Green, 54);
+  knob(P::envelope_a_s, 1003, 790, Cap::Green, 54);
+  knob(P::envelope_a_r, 1082, 790, Cap::Green, 54);
+  jack(J::envelope_a_gate_in, 885, 850);
+  jack(J::envelope_a_env_out, 964, 850);
+  jack(J::vco_a_vca_ctl, 1042, 850);
+  jack(J::vco_a_dry_out, 1122, 850);
+  button(P::envelope_b_hold, 1358, 744);
+  button(P::envelope_b_self_gen, 1437, 744);
+  knob(P::envelope_b_a, 1319, 790, Cap::Green, 54);
+  knob(P::envelope_b_d, 1398, 790, Cap::Green, 54);
+  knob(P::envelope_b_s, 1477, 790, Cap::Green, 54);
+  knob(P::envelope_b_r, 1555, 790, Cap::Green, 54);
+  jack(J::vco_b_dry_out, 1279, 850);
+  jack(J::envelope_b_gate_in, 1358, 850);
+  jack(J::envelope_b_env_out, 1436, 850);
+  jack(J::vco_b_vca_ctl, 1515, 850);
 
-  // ---- dual effector ---------------------------------------------------------------------------
+  // ---- voice mixer ------------------------------------------------------------------------------------
   {
-    const Rect r{807, 181, 1592, 410};
-    b.module(r, "DUAL EFFECTOR", Accent::Filter);
-    const double y = r.y0 + kTitleH;
-    b.add(WidgetKind::Cartridge, r.x0 + 14, y + 10, 190, 100, 0, 0, "LEFT");
-    b.add(WidgetKind::Cartridge, r.x1 - 204, y + 10, 190, 100, 1, 0, "RIGHT");
-    b.row(y + 52, r.x0 + 214, r.x1 - 214, {knob(P::effector_x, "X"), knob(P::effector_y, "Y"),
-                                           knob(P::effector_z, "Z")});
-    b.row(y + 150, r.x0 + 8, r.x0 + 214, {sel(P::effector_select_l, "PROGRAM L")});
-    b.row(y + 150, r.x1 - 214, r.x1 - 8, {sel(P::effector_select_r, "PROGRAM R")});
-    b.row(y + 150, r.x0 + 214, r.x1 - 214,
-          {jack(J::effector_cv_x_in, "CV X"), jack(J::effector_cv_y_in, "CV Y"),
-           jack(J::effector_cv_z_in, "CV Z"), knob(P::effector_blend, "BLEND", true),
-           knob(P::effector_master, "MASTER", true), knob(P::effector_phone, "PHONE", true)});
-  }
-
-  // ---- dual VCF + distortion -----------------------------------------------------------------
-  {
-    const Rect r{807, 414, 1592, 531};
-    b.module(r, "DUAL POLIVOKS FILTER", Accent::Filter);
-    b.row(r.y0 + kTitleH + 42, r.x0 + 4, r.x1 - 4,
-          {jack(J::vcf_cv_l_in, "CV L"), knob(P::vcf_l_freq, "FREQ L", true),
-           knob(P::vcf_l_res, "RES L", true), knob(P::vcf_l_mod, "MOD L", true),
-           sel(P::vcf_l_bp_lp, "BP/LP L"), knob(P::vcf_dist, "DIST", true),
-           knob(P::vcf_gain, "GAIN", true), sel(P::vcf_link, "LINK"),
-           sel(P::vcf_r_bp_lp, "BP/LP R"), knob(P::vcf_r_mod, "MOD R", true),
-           knob(P::vcf_r_res, "RES R", true), knob(P::vcf_r_freq, "FREQ R", true),
-           jack(J::vcf_cv_r_in, "CV R")});
-  }
-
-  // ---- voice mixer ------------------------------------------------------------------------------
-  {
-    const Rect r{807, 535, 1592, 707};
-    b.module(r, "VOICE MIXER", Accent::Neutral);
-    const P vol[10] = {P::mixer_ch1_vol, P::mixer_ch2_vol, P::mixer_ch3_vol, P::mixer_ch4_vol,
-                       P::mixer_ch5_vol, P::mixer_ch6_vol, P::mixer_ch7_vol, P::mixer_ch8_vol,
-                       P::mixer_ch9_vol, P::mixer_ch10_vol};
+    const double mx[10] = {845, 924, 1003, 1082, 1161, 1239, 1318, 1397, 1476, 1555};
     const P pan[10] = {P::mixer_ch1_pan, P::mixer_ch2_pan, P::mixer_ch3_pan, P::mixer_ch4_pan,
                        P::mixer_ch5_pan, P::mixer_ch6_pan, P::mixer_ch7_pan, P::mixer_ch8_pan,
                        P::mixer_ch9_pan, P::mixer_ch10_pan};
-    static const char* kCh[10] = {"DRONE 1", "DRONE 2", "DRONE 3", "EXT", "VCO A",
-                                  "VCO B",   "PREAMP",  "DRONE 4", "DRONE 5", "DRONE 6"};
-    std::vector<Item> vols, pans;
+    const P vol[10] = {P::mixer_ch1_vol, P::mixer_ch2_vol, P::mixer_ch3_vol, P::mixer_ch4_vol,
+                       P::mixer_ch5_vol, P::mixer_ch6_vol, P::mixer_ch7_vol, P::mixer_ch8_vol,
+                       P::mixer_ch9_vol, P::mixer_ch10_vol};
     for (int i = 0; i < 10; ++i) {
-      vols.push_back(knob(vol[i], kCh[i]));
-      pans.push_back(knob(pan[i], "PAN", true));
+      knob(pan[i], mx[i], 578, Cap::Dark, 58);
+      knob(vol[i], mx[i], 675, Cap::Grey);
     }
-    b.row(r.y0 + kTitleH + 36, r.x0 + 4, r.x1 - 4, vols);
-    b.row(r.y0 + kTitleH + 106, r.x0 + 4, r.x1 - 4, pans);
   }
 
-  // ---- envelopes A / B ----------------------------------------------------------------------------
-  struct EnvIds { Rect r; const char* title; P a, d, s, rl, hold, self; J gate, env, vca; };
-  const EnvIds envs[2] = {
-      {{807, 711, 1188, 880}, "ENVELOPE A", P::envelope_a_a, P::envelope_a_d, P::envelope_a_s,
-       P::envelope_a_r, P::envelope_a_hold, P::envelope_a_self_gen, J::envelope_a_gate_in,
-       J::envelope_a_env_out, J::envelope_a_vca_cv_out},
-      {{1211, 711, 1592, 880}, "ENVELOPE B", P::envelope_b_a, P::envelope_b_d, P::envelope_b_s,
-       P::envelope_b_r, P::envelope_b_hold, P::envelope_b_self_gen, J::envelope_b_gate_in,
-       J::envelope_b_env_out, J::envelope_b_vca_cv_out},
-  };
-  for (const auto& e : envs) {
-    b.module(e.r, e.title, Accent::Modulation);
-    const double x0 = e.r.x0 + 4, x1 = e.r.x1 - 4, y = e.r.y0 + kTitleH;
-    b.row(y + 38, x0, x1, {knob(e.a, "ATTACK", true), knob(e.d, "DECAY", true),
-                           knob(e.s, "SUSTAIN", true), knob(e.rl, "RELEASE", true)});
-    b.row(y + 106, x0, x1, {sel(e.hold, "HOLD"), sel(e.self, "SELF-GEN"), jack(e.gate, "GATE"),
-                            jack(e.env, "ENV"), jack(e.vca, "VCA CV")});
-  }
+  // ---- dual effector + dual filter ------------------------------------------------------------------
+  jack(J::effector_cv_x_in, 846, 279);
+  jack(J::effector_cv_y_in, 964, 279);
+  jack(J::effector_cv_z_in, 1081, 279);
+  knob(P::effector_x, 845, 356, Cap::Orange);
+  knob(P::effector_y, 964, 356, Cap::Orange);
+  knob(P::effector_z, 1082, 356, Cap::Orange);
+  add(WidgetKind::Cartridge, 1200, 264, 116, 54, 0);   // the slot (click: next cartridge)
+  add(WidgetKind::Cartridge, 1200, 323, 34, 34, 1);    // the button between the switches (same)
+  toggle(P::effector_select_l, 1157, 323);
+  toggle(P::effector_select_r, 1243, 323);
+  knob(P::effector_blend, 1318, 356, Cap::Orange);
+  knob(P::effector_master, 1436, 356, Cap::Orange, 96);
+  knob(P::effector_phone, 1554, 356, Cap::Orange);
+  add(WidgetKind::Decor, 1555, 279, 40, 40, 3);  // headphone socket
+  plain(P::vcf_l_mod, 1158, 382, 40);
+  plain(P::vcf_r_mod, 1244, 382, 40);
+  knob(P::vcf_l_freq, 885, 481, Cap::Orange);
+  button(P::vcf_l_bp_lp, 944, 454);
+  knob(P::vcf_l_res, 1003, 481, Cap::Orange);
+  jack(J::vcf_cv_l_in, 1059, 481);
+  knob(P::vcf_dist, 1117, 481, Cap::Orange);
+  button(P::vcf_link, 1200, 481);
+  knob(P::vcf_gain, 1283, 481, Cap::Orange);
+  jack(J::vcf_cv_r_in, 1341, 481);
+  knob(P::vcf_r_freq, 1397, 481, Cap::Orange);
+  button(P::vcf_r_bp_lp, 1456, 454);
+  knob(P::vcf_r_res, 1515, 481, Cap::Orange);
 
-  // ---- bottom row: LFO A, joystick, 5-step, preamp, env follower, LFO B ----------------------------
-  const double by = 884, bh = 146, bcy = by + kTitleH + (bh - kTitleH) / 2;
+  // ---- bottom row -------------------------------------------------------------------------------------
+  knob(P::lfo_a_wave, 66, 933, Cap::Red);
+  jack(J::lfo_a_cv_out, 137, 933);
+  toggle(P::lfo_a_speed_mult, 193, 945);
+  knob(P::lfo_a_rate, 252, 933, Cap::Red);
+  knob(P::joystick_offset_x, 354, 933, Cap::Red);
+  jack(J::joystick_x_out, 452, 908);
+  jack(J::joystick_y_out, 452, 958);
+  knob(P::joystick_offset_y, 548, 933, Cap::Red);
+  knob(P::sequencer_pulser, 651, 933, Cap::Red);
+  jack(J::sequencer_clock_out, 739, 908);
+  jack(J::sequencer_ext_clock_in, 739, 958);
+  toggle(P::sequencer_stages, 807, 933);
   {
-    const Rect r{19, by, 292, by + bh};
-    b.module(r, "LFO A", Accent::Modulation);
-    b.row(bcy, r.x0 + 4, r.x1 - 4, {knob(P::lfo_a_wave, "WAVE", true), knob(P::lfo_a_rate, "RATE", true),
-                                    sel(P::lfo_a_speed_mult, "x1/6/10"), jack(J::lfo_a_cv_out, "CV")});
-  }
-  {
-    const Rect r{296, by, 596, by + bh};
-    b.module(r, "JOYSTICK", Accent::Modulation);
-    b.add(WidgetKind::Joystick, r.x0 + 10, by + kTitleH + 4, 104, 104,
-          static_cast<std::uint32_t>(P::joystick_x), static_cast<std::uint32_t>(P::joystick_y), "");
-    b.row(by + kTitleH + 31, r.x0 + 118, r.x1 - 4,
-          {knob(P::joystick_offset_x, "OFFSET X", true), knob(P::joystick_offset_y, "OFFSET Y", true)});
-    b.row(by + bh - 28, r.x0 + 118, r.x1 - 4,
-          {jack(J::joystick_x_out, "X OUT"), jack(J::joystick_y_out, "Y OUT")});
-  }
-  {
-    const Rect r{600, by, 1545, by + bh};
-    b.module(r, "5-STEP SEQUENCER", Accent::Modulation);
-    const double x0 = r.x0 + 4;
-    b.row(bcy, x0, x0 + 190, {knob(P::sequencer_pulser, "PULSER", true), sel(P::sequencer_clock, "CLOCK"),
-                              sel(P::sequencer_stages, "STAGES")});
+    const double sx[5] = {877, 996, 1114, 1233, 1351};
+    const double gx[5] = {937, 1055, 1173, 1291, 1409};
     const P cv[5] = {P::sequencer_step_cv_1, P::sequencer_step_cv_2, P::sequencer_step_cv_3,
                      P::sequencer_step_cv_4, P::sequencer_step_cv_5};
     const P gt[5] = {P::sequencer_step_gate_1, P::sequencer_step_gate_2, P::sequencer_step_gate_3,
                      P::sequencer_step_gate_4, P::sequencer_step_gate_5};
-    static const char* kStep[5] = {"STEP 1", "STEP 2", "STEP 3", "STEP 4", "STEP 5"};
-    static const char* kGate[5] = {"GATE 1", "GATE 2", "GATE 3", "GATE 4", "GATE 5"};
-    std::vector<Item> steps;
     for (int i = 0; i < 5; ++i) {
-      steps.push_back(knob(cv[i], kStep[i], true));
-      steps.push_back(sel(gt[i], kGate[i]));
+      knob(cv[i], sx[i], 933, Cap::Red);
+      toggle(gt[i], gx[i], 945);
     }
-    b.row(bcy, x0 + 190, r.x1 - 230, steps);
-    b.row(bcy, r.x1 - 230, r.x1 - 4, {jack(J::sequencer_ext_clock_in, "CLK IN"),
-                                      jack(J::sequencer_clock_out, "CLK OUT"),
-                                      jack(J::sequencer_cv_out, "CV"), jack(J::sequencer_gate_out, "GATE")});
   }
+  jack(J::sequencer_cv_out, 1487, 908);
+  jack(J::sequencer_gate_out, 1487, 958);
+  jack(J::preamp_ext_source_in, 1576, 933);
+  knob(P::preamp_gain, 1647, 933, Cap::Red);
+  knob(P::env_follower_attack, 1765, 933, Cap::Red);
+  knob(P::env_follower_release, 1884, 933, Cap::Red);
+  jack(J::env_follower_env_out, 1987, 933);
+  jack(J::env_follower_gate_out, 2061, 933);
+  knob(P::lfo_b_wave, 2149, 933, Cap::Red);
+  jack(J::lfo_b_cv_out, 2221, 933);
+  toggle(P::lfo_b_speed_mult, 2275, 945);
+  knob(P::lfo_b_rate, 2334, 933, Cap::Red);
+
+  // ---- keyboard: stick, plates, jacks, encoder, display, DRONE VOICES ----------------------------
+  add(WidgetKind::Joystick, 180, 1297, 250, 250, static_cast<std::uint32_t>(P::joystick_x), Cap::Black,
+      static_cast<std::uint32_t>(P::joystick_y));
   {
-    const Rect r{1548, by, 1723, by + bh};
-    b.module(r, "PREAMP", Accent::Neutral);
-    b.row(bcy, r.x0 + 4, r.x1 - 4, {knob(P::preamp_gain, "GAIN", true), jack(J::preamp_ext_source_in, "SOURCE")});
+    // Staggered plates, left to right (x0, y0, x1, y1).
+    const double pl[12][4] = {{420, 1190, 509, 1430},  {536, 1152, 628, 1394},  {655, 1118, 746, 1358},
+                              {774, 1152, 863, 1394},  {892, 1190, 982, 1430},  {1010, 1226, 1099, 1466},
+                              {1302, 1226, 1391, 1466}, {1420, 1190, 1508, 1430}, {1537, 1152, 1627, 1394},
+                              {1656, 1118, 1745, 1358}, {1774, 1152, 1864, 1394}, {1892, 1190, 1981, 1430}};
+    for (std::uint32_t i = 0; i < 12; ++i)
+      add(WidgetKind::Plate, (pl[i][0] + pl[i][2]) / 2, (pl[i][1] + pl[i][3]) / 2, pl[i][2] - pl[i][0],
+          pl[i][3] - pl[i][1], i);
   }
+  jack(J::keyboard_clock_in, 894, 1137, 34);
+  jack(J::keyboard_reset_in, 955, 1151, 34);
+  jack(J::keyboard_gate_left_main_out, 1016, 1167, 34);
+  jack(J::keyboard_gate_right_out, 1384, 1167, 34);
+  jack(J::keyboard_pressure_out, 1445, 1151, 34);
+  jack(J::keyboard_v_oct_out, 1506, 1137, 34);
+  add(WidgetKind::OctaveKey, 1093, 1186, 46, 46, 0);
+  add(WidgetKind::Encoder, 1200, 1188, 70, 70, 0);
+  add(WidgetKind::OctaveKey, 1307, 1186, 46, 46, 1);
+  add(WidgetKind::Display, 1200, 1274, 116, 38, 0);
   {
-    const Rect r{1727, by, 2099, by + bh};
-    b.module(r, "ENVELOPE FOLLOWER", Accent::Modulation);
-    b.row(bcy, r.x0 + 4, r.x1 - 4, {knob(P::env_follower_attack, "ATTACK", true),
-                                    knob(P::env_follower_release, "RELEASE", true),
-                                    jack(J::env_follower_env_out, "ENV"), jack(J::env_follower_gate_out, "GATE")});
-  }
-  {
-    const Rect r{2103, by, 2379, by + bh};
-    b.module(r, "LFO B", Accent::Modulation);
-    b.row(bcy, r.x0 + 4, r.x1 - 4, {knob(P::lfo_b_wave, "WAVE", true), knob(P::lfo_b_rate, "RATE", true),
-                                    sel(P::lfo_b_speed_mult, "x1/6/10"), jack(J::lfo_b_cv_out, "CV")});
+    const double kx[2] = {2167, 2264};
+    const double ky[3] = {1166, 1296, 1427};
+    for (std::uint32_t i = 0; i < 6; ++i)  // keys 1,2,3 left column; 4,5,6 right column
+      add(WidgetKind::DroneKey, kx[i / 3], ky[i % 3], 82, 80, i);
   }
 
-  // ---- keyboard: menu parameters (left), plates (centre), jacks (right) ------------------------------
+  // ---- keyboard menu overlay (opened by the encoder) --------------------------------------------------
   {
-    const Rect r{19, 1040, 395, 1540};
-    b.module(r, "KEYBOARD", Accent::Keyboard);
-    const std::vector<Item> kb = {
-        sel(P::keyboard_behaviour, "PLAY"), sel(P::keyboard_mode, "MODE"),
-        sel(P::keyboard_quantise_load_scale, "SCALE"), knob(P::keyboard_root_note, "ROOT", true),
-        knob(P::keyboard_clock_bpm, "BPM", true),
-        knob(P::keyboard_portamento_speed, "GLIDE", true), sel(P::keyboard_portamento_legato, "LEGATO"),
-        knob(P::keyboard_vibrato_speed, "VIB RATE", true), knob(P::keyboard_vibrato_depth, "VIB DEPTH", true),
-        knob(P::keyboard_vibrato_delay, "VIB DELAY", true),
-        knob(P::keyboard_vibrato_pressure, "VIB PRESS", true), sel(P::keyboard_pressure_output, "PRESSURE"),
-        knob(P::keyboard_pressure_rise, "P RISE", true), knob(P::keyboard_pressure_fall, "P FALL", true),
-        sel(P::keyboard_arp_hold, "ARP HOLD"),
-        sel(P::keyboard_arp_direction, "ARP DIR"), sel(P::keyboard_arp_variation, "ARP VAR"),
-        knob(P::keyboard_arp_interval, "ARP INT", true), knob(P::keyboard_arp_length, "ARP LEN", true),
-        sel(P::keyboard_seq_run, "SEQ RUN"),
-        knob(P::keyboard_seq_length, "SEQ LEN", true), sel(P::keyboard_seq_direction, "SEQ DIR"),
-        sel(P::keyboard_seq_cv_output, "SEQ CV"), knob(P::keyboard_seq_rhythm_length, "RHYTHM", true),
-        sel(P::keyboard_encoder_direction, "ENCODER"),
-        knob(P::keyboard_calibration_v_oct, "CAL V/OCT", true),
-        knob(P::keyboard_calibration_pressure, "CAL PRESS", true), sel(P::keyboard_dac_vref, "DAC REF"),
-        knob(P::keyboard_touch_threshold, "TOUCH", true), knob(P::keyboard_release_threshold, "RELEASE", true),
-        knob(P::keyboard_pressure_min, "P MIN", true), knob(P::keyboard_pressure_max, "P MAX", true),
-        knob(P::keyboard_mpr121_charge, "CHARGE", true), knob(P::keyboard_mpr121_discharge, "DISCHARGE", true),
-        knob(P::keyboard_debounce, "DEBOUNCE", true),
+    struct M { P id; const char* label; bool sw; };
+    const M items[] = {
+        {P::keyboard_behaviour, "PLAY", true}, {P::keyboard_mode, "MODE", true},
+        {P::keyboard_quantise_load_scale, "SCALE", true}, {P::keyboard_root_note, "ROOT", false},
+        {P::keyboard_clock_bpm, "BPM", false}, {P::keyboard_portamento_speed, "GLIDE", false},
+        {P::keyboard_portamento_legato, "LEGATO", true}, {P::keyboard_vibrato_speed, "VIB RATE", false},
+        {P::keyboard_vibrato_depth, "VIB DEPTH", false}, {P::keyboard_vibrato_delay, "VIB DELAY", false},
+        {P::keyboard_vibrato_pressure, "VIB PRESS", false}, {P::keyboard_pressure_output, "PRESSURE", true},
+        {P::keyboard_pressure_rise, "P RISE", false}, {P::keyboard_pressure_fall, "P FALL", false},
+        {P::keyboard_arp_hold, "ARP HOLD", true}, {P::keyboard_arp_direction, "ARP DIR", true},
+        {P::keyboard_arp_variation, "ARP VAR", true}, {P::keyboard_arp_interval, "ARP INT", false},
+        {P::keyboard_arp_length, "ARP LEN", false}, {P::keyboard_seq_run, "SEQ RUN", true},
+        {P::keyboard_seq_length, "SEQ LEN", false}, {P::keyboard_seq_direction, "SEQ DIR", true},
+        {P::keyboard_seq_cv_output, "SEQ CV", true}, {P::keyboard_seq_rhythm_length, "RHYTHM", false},
+        {P::keyboard_encoder_direction, "ENCODER", true}, {P::keyboard_calibration_v_oct, "CAL V/OCT", false},
+        {P::keyboard_calibration_pressure, "CAL PRESS", false}, {P::keyboard_dac_vref, "DAC REF", true},
+        {P::keyboard_touch_threshold, "TOUCH", false}, {P::keyboard_release_threshold, "RELEASE", false},
+        {P::keyboard_pressure_min, "P MIN", false}, {P::keyboard_pressure_max, "P MAX", false},
+        {P::keyboard_mpr121_charge, "CHARGE", false}, {P::keyboard_mpr121_discharge, "DISCHARGE", false},
+        {P::keyboard_debounce, "DEBOUNCE", false}, {P::sequencer_clock, "5-STEP CLK", true},
     };
-    const int cols = 5;
-    const double rowH = (r.h() - kTitleH - 6) / 7.0;
-    for (int row = 0; row < 7; ++row) {
-      std::vector<Item> items(kb.begin() + row * cols, kb.begin() + row * cols + cols);
-      b.row(r.y0 + kTitleH + rowH * (row + 0.5), r.x0 + 2, r.x1 - 2, items);
+    const int cols = 12;
+    const double cw = (kMenuX1 - kMenuX0 - 20) / cols, rh = (kMenuY1 - kMenuY0 - 50) / 3.0;
+    int i = 0;
+    for (const M& m : items) {
+      Widget wd;
+      wd.kind = m.sw ? WidgetKind::Toggle : WidgetKind::Knob;
+      wd.cx = kMenuX0 + 10 + cw * (i % cols + 0.5);
+      wd.cy = kMenuY0 + 44 + rh * (i / cols + 0.42);
+      wd.w = m.sw ? 70 : 50;
+      wd.h = m.sw ? 30 : 50;
+      wd.id = static_cast<std::uint32_t>(m.id);
+      wd.cap = Cap::Red;
+      wd.menu = true;
+      wd.label = m.label;
+      ws.push_back(wd);
+      ++i;
     }
   }
-  {
-    const Rect r{399, 1104, 1999, 1491};
-    b.module(r, "TOUCH PLATES", Accent::Keyboard);
-    b.add(WidgetKind::Plates, r.x0 + 8, r.y0 + kTitleH + 4, r.w() - 16, r.h() - kTitleH - 12, 0, 0, "");
-  }
-  {
-    const Rect r{2003, 1104, 2122, 1491};
-    b.module(r, "KBD I/O", Accent::Keyboard);
-    const double cx = (r.x0 + r.x1) / 2, top = r.y0 + kTitleH, step = (r.h() - kTitleH) / 6.0;
-    const Item io[6] = {jack(J::keyboard_v_oct_out, "V/OCT"), jack(J::keyboard_gate_left_main_out, "GATE L"),
-                        jack(J::keyboard_gate_right_out, "GATE R"), jack(J::keyboard_pressure_out, "PRESSURE"),
-                        jack(J::keyboard_clock_in, "CLOCK"), jack(J::keyboard_reset_in, "RESET")};
-    for (int i = 0; i < 6; ++i) b.row(top + step * (i + 0.5), cx - 40, cx + 40, {io[i]});
-  }
-  {
-    const Rect r{2126, 1104, 2379, 1491};
-    b.module(r, "DRONE VOICES", Accent::Drone);
-    const double top = r.y0 + kTitleH + 8, kh = (r.h() - kTitleH - 16) / 6.0;
-    static const char* kKey[6] = {"1", "2", "3", "4", "5", "6"};
-    for (int i = 0; i < 6; ++i)
-      b.add(WidgetKind::DroneKey, r.x0 + 20, top + kh * i + 4, r.w() - 40, kh - 8,
-            static_cast<std::uint32_t>(i), 0, kKey[i]);
-  }
-  return w;
+  return ws;
 }
 
 }  // namespace lunar24::host

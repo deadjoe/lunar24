@@ -3,24 +3,27 @@
 //
 // panel_editor.h — the Lunar 24 panel, drawn with iPlug2 IGraphics.
 //
-// Every control comes from host/include/host/panel_ui_layout.h (positions) and draws with
-// the colours in panel_theme.h. Controls do not use iPlug parameters: they read the
-// machine state from the engine and send changes through its live-control queue
-// (StandaloneAudioEngine::postParameter / postConnect / postEvent ...), so the saved
-// state always matches what the user sees and hears.
+// The panel follows the official Solar 42N panel drawing: labels, module frames and title
+// tabs come from panel_art.generated.h, control positions from panel_ui_layout.h, colours
+// from panel_theme.h. Controls do not use iPlug parameters: they read the machine state
+// from the engine and send changes through its live-control queue
+// (StandaloneAudioEngine::postParameter / postConnect / postEvent ...), so the saved state
+// always matches what the user sees and hears.
 //
-// Playing: click the touch plates, or use the computer keyboard like a piano
-// (A W S E D F T G Y H U J K O L P ; — Z / X shift the octave).
+// Playing: click the touch plates (lower on a plate = more pressure), or use the computer
+// keyboard like a piano (A W S E D F T G Y H U J K O L P ; — Z / X or the arrow keys on the
+// panel shift the octave). The encoder opens the KEYBOARD MENU with the keyboard settings.
 // Patching: drag from any jack to another; drag a cable off an input to unplug it.
+// Knobs: drag up/down (Shift = fine), mouse wheel, double-click = factory value.
 
 #pragma once
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
-#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -28,6 +31,7 @@
 #include "IControl.h"
 #include "IGraphics.h"
 
+#include <host/panel_art.generated.h>
 #include <host/panel_theme.h>
 #include <host/panel_ui_layout.h>
 #include <host/standalone_audio_engine.h>
@@ -43,14 +47,48 @@ using core::ParameterId;
 
 constexpr const char* kFont = "lunar-regular";
 constexpr const char* kFontBold = "lunar-bold";
+constexpr float kPi = 3.14159265f;
 
 inline IColor col(theme::Rgb c, int alpha = 255) { return IColor(alpha, c.r, c.g, c.b); }
-inline IText txt(float size, theme::Rgb c, bool bold = false, EAlign align = EAlign::Center) {
-  return IText(size, col(c), bold ? kFontBold : kFont, align, EVAlign::Middle);
+inline IText txt(float size, theme::Rgb c, bool bold = true, float angle = 0.f) {
+  return IText(size, col(c), bold ? kFontBold : kFont, EAlign::Center, EVAlign::Middle, angle);
+}
+inline IRECT rectOf(const Widget& w) {
+  return IRECT(float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
+}
+// Point at `r` from (cx, cy) in direction `deg` (0 = 12 o'clock, clockwise).
+inline void polar(float cx, float cy, float r, float deg, float& x, float& y) {
+  const float t = (deg - 90.f) * kPi / 180.f;
+  x = cx + r * std::cos(t);
+  y = cy + r * std::sin(t);
+}
+
+inline const core::ParameterDescriptor* desc(std::uint32_t id) {
+  return core::find_parameter(static_cast<ParameterId>(id));
+}
+inline int positionsOf(const core::ParameterDescriptor* d) {
+  if (d == nullptr) return 2;
+  if (d->optionCount > 0) return int(d->optionCount);
+  return std::max(2, int(std::lround((d->max - d->min) / (d->step > 0 ? d->step : 1.0))) + 1);
+}
+inline std::string upper(std::string s) {
+  for (auto& ch : s) ch = char(std::toupper(static_cast<unsigned char>(ch)));
+  return s;
+}
+inline std::string formatValue(const core::ParameterDescriptor* d, double v) {
+  char b[48];
+  if (d == nullptr) return "";
+  const std::string unit(d->unit);
+  if (unit == "norm") std::snprintf(b, sizeof b, "%.0f%%", 100.0 * (v - d->min) / (d->max - d->min));
+  else if (unit == "seconds") std::snprintf(b, sizeof b, v < 1.0 ? "%.0f ms" : "%.2f s", v < 1.0 ? v * 1000.0 : v);
+  else if (unit == "hz") std::snprintf(b, sizeof b, "%.2f Hz", v);
+  else if (unit == "oct") std::snprintf(b, sizeof b, "%+.2f oct", v);
+  else if (unit == "volts") std::snprintf(b, sizeof b, "%.2f V", v);
+  else std::snprintf(b, sizeof b, "%.2f", v);
+  return b;
 }
 
 class CableLayer;
-class PlatesControl;
 class JackControl;
 
 // Shared by every control of one editor instance.
@@ -58,16 +96,40 @@ struct EditorShared {
   explicit EditorShared(StandaloneAudioEngine& e) : engine(e) {}
   StandaloneAudioEngine& engine;
   std::vector<JackControl*> jacks;
-  std::map<std::uint32_t, IRECT> jackRects;  // JackId -> rect (for cable drawing)
+  std::map<std::uint32_t, IRECT> jackRects;  // JackId -> socket rect (for cable drawing)
   CableLayer* cables = nullptr;
-  PlatesControl* plates = nullptr;
+  std::vector<IControl*> menuControls;       // shown while the keyboard menu is open
+  std::vector<IControl*> plates;
+  bool menuOpen = false;
+  int octave = 0;
+  std::set<int> lit;                         // plates currently sounding (0..11)
+  std::map<int, int> heldKeys;               // computer key semitone -> sounding semitone
+  // Value readout for the knob under the mouse (drawn by the top layer).
+  std::string readout;
+  float readoutX = 0, readoutY = 0;
   core::InputStateMachine input{nullptr, 0};
   std::uint64_t seq = 0;
   std::uint64_t seenStateVersion = ~0ull;
 
+  static constexpr core::NoteId kMouseId = 1000;
+  static constexpr core::NoteId kKeyIdBase = 2000;
+  static constexpr core::ControlSourceId kMouseSource = 1;
+  static constexpr core::ControlSourceId kKeySource = 2;
+
   const core::DeviceStateV1* state() const { return engine.canonicalState(); }
   double value(std::uint32_t id) const { return engine.parameterValue(static_cast<ParameterId>(id)); }
   void set(std::uint32_t id, double v) { engine.postParameter(static_cast<ParameterId>(id), v); }
+  int index(std::uint32_t id) const {
+    const core::ParameterDescriptor* d = desc(id);
+    if (d == nullptr) return 0;
+    return int(std::lround((value(id) - d->min) / (d->step > 0 ? d->step : 1.0)));
+  }
+  void setIndex(std::uint32_t id, int idx) {
+    const core::ParameterDescriptor* d = desc(id);
+    if (d == nullptr) return;
+    idx = std::clamp(idx, 0, positionsOf(d) - 1);
+    set(id, d->min + idx * (d->step > 0 ? d->step : 1.0));
+  }
 
   // Keyboard notes (plates, computer keys): through the same input state machine as MIDI.
   void note(bool on, int semitoneFromC3, core::NoteId id, double pressure, core::ControlSourceId source) {
@@ -92,86 +154,151 @@ struct EditorShared {
     core::ControlEvent ev[1];
     if (input.translate(in, ev, 1) == 1) engine.postEvent(ev[0]);
   }
+  void shiftOctave(int d) { octave = std::clamp(octave + d, -3, 3); }
+  void showMenu(bool open) {
+    menuOpen = open;
+    for (IControl* c : menuControls) c->Hide(!open);
+  }
+
+  // Computer keyboard: returns true if the key was used.
+  bool key(const IKeyPress& k, bool up) {
+    static const char kKeys[] = "awsedftgyhujkolp;";
+    const char c = char(std::tolower(static_cast<unsigned char>(k.utf8[0])));
+    if (!up && (c == 'z' || c == 'x')) {
+      shiftOctave(c == 'x' ? 1 : -1);
+      return true;
+    }
+    const char* p = c ? std::strchr(kKeys, c) : nullptr;
+    if (p == nullptr) return false;
+    const int semi = int(p - kKeys);
+    const core::NoteId id = static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(semi));
+    if (!up && heldKeys.count(semi) == 0) {
+      heldKeys[semi] = semi + 12 * octave;
+      note(true, heldKeys[semi], id, 0.8, kKeySource);
+      lit.insert(semi % 12);
+    } else if (up && heldKeys.count(semi) > 0) {
+      note(false, heldKeys[semi], id, 0.0, kKeySource);
+      heldKeys.erase(semi);
+      lit.erase(semi % 12);
+    }
+    return true;
+  }
 };
 
-inline const core::ParameterDescriptor* desc(std::uint32_t id) {
-  return core::find_parameter(static_cast<ParameterId>(id));
-}
-
-inline std::string formatValue(const core::ParameterDescriptor* d, double v) {
-  char b[48];
-  if (d == nullptr) return "";
-  const std::string unit(d->unit);
-  if (unit == "norm") std::snprintf(b, sizeof b, "%.0f%%", 100.0 * (v - d->min) / (d->max - d->min));
-  else if (unit == "seconds") std::snprintf(b, sizeof b, v < 1.0 ? "%.0f ms" : "%.2f s", v < 1.0 ? v * 1000.0 : v);
-  else if (unit == "hz") std::snprintf(b, sizeof b, "%.2f Hz", v);
-  else if (unit == "oct") std::snprintf(b, sizeof b, "%+.2f oct", v);
-  else if (unit == "volts") std::snprintf(b, sizeof b, "%.2f V", v);
-  else std::snprintf(b, sizeof b, "%.2f", v);
-  return b;
-}
-
 // ---------------------------------------------------------------------------------------------
-// Static background: module cards and the name plate.
+// Static panel art: panel colour, keybed, module frames, title tabs, labels, name plate.
+// Drawn once into a cached layer.
 class BackgroundControl : public IControl {
  public:
-  BackgroundControl(const IRECT& r, std::vector<Widget> cards) : IControl(r), cards_(std::move(cards)) {
-    SetIgnoreMouse(true);
-  }
+  explicit BackgroundControl(const IRECT& r) : IControl(r) { SetIgnoreMouse(true); }
   void Draw(IGraphics& g) override {
-    for (const Widget& w : cards_) {
-      const theme::Rgb a = theme::accent(w.accent);
-      const IRECT r(static_cast<float>(w.x), static_cast<float>(w.y), static_cast<float>(w.x + w.w),
-                    static_cast<float>(w.y + w.h));
-      if (w.kind == WidgetKind::Title) {
-        g.FillCircle(col({205, 202, 194}), r.L + 70, r.T + 75, 52);
-        g.FillCircle(col(theme::kBackground), r.L + 92, r.T + 62, 52);
-        g.DrawText(txt(64, theme::kText, false, EAlign::Near), "LUNAR 24", r.L + 150, r.T + 72);
-        g.DrawText(txt(16, theme::kTextDim, false, EAlign::Near), "AMBIENT  DRONE  MACHINE", r.L + 154, r.T + 118);
-        continue;
-      }
-      g.FillRoundRect(col(theme::kCard), r.GetPadded(-1), 10);
-      g.DrawRoundRect(col(theme::kCardEdge), r.GetPadded(-1), 10, nullptr, 1.5f);
-      g.DrawText(txt(13, a, true, EAlign::Near), w.label.c_str(), r.L + 12, r.T + 15);
-      g.DrawLine(col(a, 90), r.L + 12, r.T + 28, r.R - 12, r.T + 28, nullptr, 1.5f);
+    if (!g.CheckLayer(layer_)) {
+      g.StartLayer(this, mRECT);
+      drawArt(g);
+      layer_ = g.EndLayer();
     }
+    g.DrawLayer(layer_);
   }
 
  private:
-  std::vector<Widget> cards_;
+  static void drawArt(IGraphics& g) {
+    g.FillRect(col(theme::kPanel), IRECT(0, 0, 2400, 1552));
+    g.FillRect(col(theme::kKeybed), IRECT(400, 1103, 1998, 1490));
+    for (const auto& f : art::kFrames) {
+      g.PathClear();
+      for (std::uint32_t i = 0; i < f.count; ++i) {
+        const float x = art::kFramePoints[2 * (f.first + i)], y = art::kFramePoints[2 * (f.first + i) + 1];
+        if (i == 0) g.PathMoveTo(x, y);
+        else g.PathLineTo(x, y);
+      }
+      g.PathStroke(IPattern(col(theme::kInk)), 3.f);
+    }
+    for (const auto& b : art::kTabs) g.FillRoundRect(col(theme::kInk), IRECT(b.x0, b.y0, b.x1, b.y1), 4.f);
+    for (const auto& t : art::kTexts)
+      g.DrawText(txt(t.size * 0.92f, theme::rgb(t.rgb), true, t.vertical ? -90.f : 0.f), t.text, t.x, t.y);
+    // Lunar 24 name plate and marks (in place of the original brand marks).
+    g.FillCircle(col(theme::kInk), 118, 180, 62);
+    g.FillCircle(col(theme::kPanel), 146, 164, 60);
+    g.DrawText(txt(112, theme::kInk), "LUNAR", 390, 184);
+    g.DrawText(txt(112, theme::kRed), "24", 668, 184);
+    g.DrawText(txt(44, theme::kInk), "AMBIENT DRONE MACHINE", 2010, 184);
+    g.DrawText(txt(26, theme::kRed), "LUNAR 24", 1918, 1075);
+    g.FillCircle(col(theme::kInk), 1199, 792, 30);
+    g.FillCircle(col(theme::kPanel), 1213, 784, 28);
+    g.FillCircle(col(theme::kPlate), 1200, 1410, 58);
+    g.FillCircle(col(theme::kKeybed), 1222, 1396, 55);
+  }
+  ILayerPtr layer_;
 };
 
 // ---------------------------------------------------------------------------------------------
+// Knob drawing shared by the real knobs and the inert decor knobs.
+inline void drawKnob(IGraphics& g, const Widget& w, double norm, bool hover) {
+  const float cx = float(w.cx), cy = float(w.cy), R = float(w.w / 2);
+  const float ang = float(theme::kKnobMinDeg + std::clamp(norm, 0.0, 1.0) * (theme::kKnobMaxDeg - theme::kKnobMinDeg));
+  const bool skirted = w.cap != Cap::Black;
+  float cr = R;
+  if (skirted) {
+    for (int i = 0; i <= 10; ++i) {  // scale ticks
+      float x0, y0, x1, y1;
+      const float a = float(theme::kKnobMinDeg + i * (theme::kKnobMaxDeg - theme::kKnobMinDeg) / 10.0);
+      polar(cx, cy, R * 0.98f, a, x0, y0);
+      polar(cx, cy, R * 1.16f, a, x1, y1);
+      g.DrawLine(col(w.menu ? theme::kMenuText : theme::kSkirt), x0, y0, x1, y1, nullptr, 3.f);
+    }
+    g.FillCircle(col(theme::kSkirt), cx, cy, R);
+    cr = R * 0.78f;
+  }
+  g.FillCircle(col(theme::cap(w.cap)), cx, cy, cr);
+  if (hover) g.DrawCircle(col(theme::kAmber, 200), cx, cy, R + 2, nullptr, 2.f);
+  float x0, y0, x1, y1;
+  polar(cx, cy, cr * (skirted ? 0.35f : 0.55f), ang, x0, y0);
+  polar(cx, cy, cr * 0.9f, ang, x1, y1);
+  if (skirted) {
+    g.DrawLine(col(theme::kPointer), x0, y0, x1, y1, nullptr, std::max(3.f, R * 0.12f));
+  } else {
+    g.FillCircle(col(theme::kPointer), (x1 + x0 * 0.4f) / 1.4f, (y1 + y0 * 0.4f) / 1.4f, R * 0.12f);
+  }
+}
+
+inline void drawJack(IGraphics& g, float cx, float cy, float r, bool hover) {
+  float xs[6], ys[6];
+  for (int i = 0; i < 6; ++i) {
+    xs[i] = cx + r * std::cos(kPi / 3 * i);
+    ys[i] = cy + r * std::sin(kPi / 3 * i);
+  }
+  g.FillConvexPolygon(col(hover ? theme::kAmber : theme::kNutLight), xs, ys, 6);
+  g.DrawConvexPolygon(col(theme::kNutDark), xs, ys, 6, nullptr, 1.5f);
+  g.FillCircle(col({70, 70, 70}), cx, cy, r * 0.62f);
+  g.FillCircle(col(theme::kHole), cx, cy, r * 0.46f);
+}
+
 class KnobControl : public IControl {
  public:
-  KnobControl(EditorShared& s, const Widget& w)
-      : IControl(IRECT(float(w.x), float(w.y), float(w.x + w.w), float(w.y + w.h))), s_(s), w_(w) {}
+  KnobControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
 
   void Draw(IGraphics& g) override {
     const core::ParameterDescriptor* d = desc(w_.id);
     if (d == nullptr) return;
-    const float dia = mRECT.W(), cx = mRECT.MW(), cy = mRECT.T + dia / 2, rad = dia / 2 - 5;
-    const double v = s_.value(w_.id);
-    const double n = std::clamp((v - d->min) / (d->max - d->min), 0.0, 1.0);
-    const float ang = float(theme::kKnobMinDeg + n * (theme::kKnobMaxDeg - theme::kKnobMinDeg));
-    g.DrawArc(col(theme::kKnobTrack), cx, cy, rad + 2, float(theme::kKnobMinDeg), float(theme::kKnobMaxDeg), nullptr, 3);
-    if (n > 0.001) g.DrawArc(col(theme::accent(w_.accent)), cx, cy, rad + 2, float(theme::kKnobMinDeg), ang, nullptr, 3);
-    g.FillCircle(col(theme::kKnobBody), cx, cy, rad - 3);
-    g.DrawCircle(col(mMouseIsOver || dragging_ ? theme::kTextDim : theme::kCardEdge), cx, cy, rad - 3, nullptr, 1.5f);
-    const float t = (ang - 90.f) * 3.14159265f / 180.f;
-    g.DrawLine(col(theme::kText), cx + std::cos(t) * (rad - 14) * 0.2f, cy + std::sin(t) * (rad - 14) * 0.2f,
-               cx + std::cos(t) * (rad - 5), cy + std::sin(t) * (rad - 5), nullptr, 2.5f);
-    const std::string label = dragging_ || mMouseIsOver ? formatValue(d, v) : w_.label;
-    g.DrawText(txt(w_.compact ? 9.5f : 10.5f, dragging_ ? theme::kText : theme::kTextDim), label.c_str(),
-               mRECT.MW(), mRECT.B - 8);
+    drawKnob(g, w_, (s_.value(w_.id) - d->min) / (d->max - d->min), mMouseIsOver || dragging_);
+    if (w_.menu) g.DrawText(txt(12, theme::kMenuText), w_.label.c_str(), float(w_.cx), float(w_.cy + 42));
   }
-  void OnMouseDown(float, float, const IMouseMod&) override { dragging_ = true; SetDirty(false); }
+  void OnMouseOver(float x, float y, const IMouseMod& mod) override {
+    IControl::OnMouseOver(x, y, mod);
+    showReadout();
+  }
+  void OnMouseOut() override {
+    IControl::OnMouseOut();
+    if (!dragging_) s_.readout.clear();
+    GetUI()->SetAllControlsDirty();
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override { dragging_ = true; showReadout(); }
   void OnMouseUp(float, float, const IMouseMod&) override { dragging_ = false; SetDirty(false); }
   void OnMouseDrag(float, float, float, float dY, const IMouseMod& mod) override { nudge(-dY / (mod.S ? 2000.0 : 250.0)); }
   void OnMouseWheel(float, float, const IMouseMod& mod, float d) override { nudge(d / (mod.S ? 500.0 : 60.0)); }
   void OnMouseDblClick(float, float, const IMouseMod&) override {
     if (const core::ParameterDescriptor* d = desc(w_.id)) s_.set(w_.id, d->initial);
-    SetDirty(false);
+    showReadout();
   }
 
  private:
@@ -179,59 +306,77 @@ class KnobControl : public IControl {
     const core::ParameterDescriptor* d = desc(w_.id);
     if (d == nullptr) return;
     s_.set(w_.id, s_.value(w_.id) + fractionOfRange * (d->max - d->min));
-    SetDirty(false);
+    showReadout();
+  }
+  void showReadout() {
+    s_.readout = formatValue(desc(w_.id), s_.value(w_.id));
+    s_.readoutX = float(w_.cx);
+    s_.readoutY = float(w_.y() - 16);
+    GetUI()->SetAllControlsDirty();
   }
   EditorShared& s_;
   Widget w_;
   bool dragging_ = false;
 };
 
-// ---------------------------------------------------------------------------------------------
-class SelectorControl : public IControl {
+// Round latching push button (2-position parameter): amber ring when on.
+class ButtonControl : public IControl {
  public:
-  SelectorControl(EditorShared& s, const Widget& w)
-      : IControl(IRECT(float(w.x), float(w.y), float(w.x + w.w), float(w.y + w.h))), s_(s), w_(w) {}
-
+  ButtonControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    const core::ParameterDescriptor* d = desc(w_.id);
-    if (d == nullptr) return;
-    const theme::Rgb a = theme::accent(w_.accent);
-    const IRECT box(mRECT.L + 2, mRECT.T + 2, mRECT.R - 2, mRECT.B - 18);
-    const int idx = index_(d);
-    const bool on = idx > 0 && count_(d) == 2;
-    g.FillRoundRect(on ? col(a, 70) : col(theme::kKnobBody), box, 5);
-    g.DrawRoundRect(col(a, mMouseIsOver ? 255 : 200), box, 5, nullptr, 1.2f);
-    std::string opt = (d->optionCount > 0 && idx >= 0 && idx < int(d->optionCount)) ? d->options[idx]
-                                                                                   : std::to_string(idx + 1);
-    for (auto& ch : opt) ch = char(std::toupper(static_cast<unsigned char>(ch)));
-    const float size = opt.size() > 6 ? std::max(7.5f, 10.f - float(opt.size() - 6) * 0.6f) : 10.f;
-    if (opt.size() > 10) opt = opt.substr(0, 10);
-    g.DrawText(txt(size, a, true), opt.c_str(), box);
-    g.DrawText(txt(9.5f, theme::kTextDim), w_.label.c_str(), mRECT.MW(), mRECT.B - 8);
+    const float r = float(w_.w / 2);
+    g.FillCircle(col(theme::kInk), float(w_.cx), float(w_.cy), r);
+    g.FillCircle(col({44, 44, 44}), float(w_.cx), float(w_.cy), r * 0.7f);
+    if (s_.index(w_.id) > 0) g.DrawCircle(col(theme::kAmber), float(w_.cx), float(w_.cy), r + 3, nullptr, 3.f);
+    if (mMouseIsOver) g.DrawCircle(col(theme::kPointer, 160), float(w_.cx), float(w_.cy), r * 0.7f, nullptr, 1.5f);
   }
-  void OnMouseDown(float, float, const IMouseMod& mod) override {
-    const core::ParameterDescriptor* d = desc(w_.id);
-    if (d == nullptr) return;
-    const int n = count_(d);
-    const int idx = (index_(d) + ((mod.R || mod.S) ? n - 1 : 1)) % n;
-    s_.set(w_.id, d->min + idx * (d->step > 0 ? d->step : 1.0));
+  void OnMouseDown(float, float, const IMouseMod&) override {
+    s_.setIndex(w_.id, s_.index(w_.id) > 0 ? 0 : 1);
     SetDirty(false);
   }
 
  private:
-  int count_(const core::ParameterDescriptor* d) const {
-    if (d->optionCount > 0) return int(d->optionCount);
-    return std::max(2, int(std::lround((d->max - d->min) / (d->step > 0 ? d->step : 1.0))) + 1);
+  EditorShared& s_;
+  Widget w_;
+};
+
+// Lever switch (2 or 3 positions; first option = lever up). Click the upper half to move the
+// lever up, the lower half to move it down. On the menu overlay: a box showing the option.
+class ToggleControl : public IControl {
+ public:
+  ToggleControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  void Draw(IGraphics& g) override {
+    const core::ParameterDescriptor* d = desc(w_.id);
+    const int n = positionsOf(d), idx = std::clamp(s_.index(w_.id), 0, n - 1);
+    if (w_.menu) {
+      g.DrawRoundRect(col(mMouseIsOver ? theme::kAmber : theme::kMenuText), mRECT, 5.f, nullptr, 1.5f);
+      std::string opt = d && d->optionCount > 0 ? upper(std::string(d->options[idx])) : std::to_string(idx + 1);
+      if (opt.size() > 10) opt = opt.substr(0, 10);
+      g.DrawText(txt(11, theme::kMenuText), opt.c_str(), mRECT);
+      g.DrawText(txt(12, theme::kMenuText), w_.label.c_str(), float(w_.cx), float(w_.cy + 42));
+      return;
+    }
+    const float t = n <= 1 ? 0.f : float(idx) / float(n - 1);  // 0 = up
+    const float cx = float(w_.cx), cy = float(w_.cy);
+    g.FillCircle(col({60, 60, 60}), cx, cy, 9);
+    const float ly = cy + (t - 0.5f) * 30.f;
+    g.DrawLine(col(mMouseIsOver ? theme::kAmber : theme::Rgb{110, 110, 110}), cx, cy, cx, ly, nullptr, 8.f);
+    g.FillCircle(col({150, 150, 150}), cx, ly, 5.5f);
   }
-  int index_(const core::ParameterDescriptor* d) const {
-    return int(std::lround((s_.value(w_.id) - d->min) / (d->step > 0 ? d->step : 1.0)));
+  void OnMouseDown(float, float y, const IMouseMod& mod) override {
+    const int n = positionsOf(desc(w_.id)), idx = s_.index(w_.id);
+    if (w_.menu) s_.setIndex(w_.id, (idx + ((mod.R || mod.S) ? n - 1 : 1)) % n);
+    else s_.setIndex(w_.id, idx + (y < float(w_.cy) ? -1 : 1));
+    SetDirty(false);
   }
+
+ private:
   EditorShared& s_;
   Widget w_;
 };
 
 // ---------------------------------------------------------------------------------------------
-// Draws every patch cable (and the one being dragged) on top of the panel.
+// Draws every patch cable (and the one being dragged) and the knob value readout on top.
 class CableLayer : public IControl {
  public:
   CableLayer(EditorShared& s, const IRECT& r) : IControl(r), s_(s) { SetIgnoreMouse(true); }
@@ -248,11 +393,15 @@ class CableLayer : public IControl {
         auto a = s_.jackRects.find(static_cast<std::uint32_t>(st->cableSource[sink]));
         auto b = s_.jackRects.find(sink);
         if (a == s_.jackRects.end() || b == s_.jackRects.end()) continue;
-        drawCable(g, a->second.MW(), a->second.T + 17, b->second.MW(), b->second.T + 17,
-                  theme::kCables[sink % 6]);
+        drawCable(g, a->second.MW(), a->second.MH(), b->second.MW(), b->second.MH(), theme::kCables[sink % 6]);
       }
     }
     if (drag_) drawCable(g, dx0_, dy0_, dx1_, dy1_, {235, 235, 235});
+    if (!s_.readout.empty()) {
+      const IRECT r(s_.readoutX - 52, s_.readoutY - 13, s_.readoutX + 52, s_.readoutY + 13);
+      g.FillRoundRect(col(theme::kMenuBg, 235), r, 5.f);
+      g.DrawText(txt(15, theme::kMenuText), s_.readout.c_str(), r);
+    }
   }
 
  private:
@@ -263,12 +412,12 @@ class CableLayer : public IControl {
       g.PathClear();
       g.PathMoveTo(x0, y0);
       g.PathCubicBezierTo(x0, y0 + sag, x1, y1 + sag, x1, y1);
-      g.PathStroke(pass == 0 ? IPattern(IColor(110, 0, 0, 0)) : IPattern(col(c, 225)), pass == 0 ? 8.f : 5.f);
+      g.PathStroke(pass == 0 ? IPattern(IColor(110, 0, 0, 0)) : IPattern(col(c, 225)), pass == 0 ? 10.f : 7.f);
     }
-    g.FillCircle(col(c), x0, y0, 7);
-    g.FillCircle(col(c), x1, y1, 7);
-    g.FillCircle(IColor(255, 20, 20, 22), x0, y0, 3);
-    g.FillCircle(IColor(255, 20, 20, 22), x1, y1, 3);
+    g.FillCircle(col(c), x0, y0, 10);
+    g.FillCircle(col(c), x1, y1, 10);
+    g.FillCircle(IColor(255, 20, 20, 22), x0, y0, 4);
+    g.FillCircle(IColor(255, 20, 20, 22), x1, y1, 4);
   }
   EditorShared& s_;
   bool drag_ = false;
@@ -278,23 +427,16 @@ class CableLayer : public IControl {
 // ---------------------------------------------------------------------------------------------
 class JackControl : public IControl {
  public:
-  JackControl(EditorShared& s, const Widget& w)
-      : IControl(IRECT(float(w.x), float(w.y), float(w.x + w.w), float(w.y + w.h))), s_(s), w_(w) {
+  JackControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {
     for (const auto& d : registry::kJacks)
       if (static_cast<std::uint32_t>(d.id) == w.id) desc_ = &d;
   }
   JackId id() const { return static_cast<JackId>(w_.id); }
   bool isOutput() const { return desc_ != nullptr && desc_->direction == core::PinDirection::output; }
-  float cx() const { return mRECT.MW(); }
-  float cy() const { return mRECT.T + 17; }
+  float cx() const { return float(w_.cx); }
+  float cy() const { return float(w_.cy); }
 
-  void Draw(IGraphics& g) override {
-    const theme::Rgb a = theme::accent(w_.accent);
-    if (isOutput()) g.FillRoundRect(col(a, 90), IRECT(cx() - 17, cy() - 17, cx() + 17, cy() + 17), 6);
-    g.FillCircle(col(mMouseIsOver ? theme::kText : theme::kJackRing), cx(), cy(), 13);
-    g.FillCircle(col(theme::kJackHole), cx(), cy(), 7);
-    g.DrawText(txt(9, isOutput() ? a : theme::kTextDim, isOutput()), w_.label.c_str(), mRECT.MW(), mRECT.B - 7);
-  }
+  void Draw(IGraphics& g) override { drawJack(g, cx(), cy(), float(w_.w / 2), mMouseIsOver); }
 
   void OnMouseDown(float, float, const IMouseMod&) override {
     const core::DeviceStateV1* st = s_.state();
@@ -317,7 +459,7 @@ class JackControl : public IControl {
     JackControl* target = nullptr;
     for (JackControl* j : s_.jacks)
       if (j->GetRECT().Contains(x, y)) target = j;
-    if (target != nullptr && target != origin_ && target->isOutput() != origin_->isOutput()) {
+    if (origin_ != nullptr && target != nullptr && target != origin_ && target->isOutput() != origin_->isOutput()) {
       JackControl* out = origin_->isOutput() ? origin_ : target;
       JackControl* in = origin_->isOutput() ? target : origin_;
       connect(out, in);
@@ -350,106 +492,57 @@ class JackControl : public IControl {
 };
 
 // ---------------------------------------------------------------------------------------------
-// The 12 touch plates. Click/drag to play (lower on the plate = more pressure); the computer
-// keyboard plays them too.
-class PlatesControl : public IControl {
+// One touch plate (semitone id from C). Lower on the plate = more pressure.
+class PlateControl : public IControl {
  public:
-  PlatesControl(EditorShared& s, const Widget& w)
-      : IControl(IRECT(float(w.x), float(w.y), float(w.x + w.w), float(w.y + w.h))), s_(s) {}
-
+  PlateControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    static const char* kNote[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-    const float pw = mRECT.W() / 12.f;
-    for (int i = 0; i < 12; ++i) {
-      const IRECT p(mRECT.L + i * pw + 4, mRECT.T, mRECT.L + (i + 1) * pw - 4, mRECT.B);
-      const bool lit = lit_.count(i) > 0;
-      g.FillRoundRect(col(lit ? theme::kPlateLit : theme::kPlate), p, 8);
-      g.DrawRoundRect(col(lit ? theme::accent(Accent::Keyboard) : theme::kCardEdge), p, 8, nullptr, lit ? 2.f : 1.f);
-      g.DrawText(txt(14, lit ? theme::kText : theme::kTextDim), kNote[i], p.MW(), p.B - 16);
-    }
-    char oct[32];
-    std::snprintf(oct, sizeof oct, "OCTAVE %+d   (Z / X)", octave_);
-    g.DrawText(txt(11, theme::kTextDim), oct, mRECT.MW(), mRECT.T + 14);
+    const bool lit = s_.lit.count(int(w_.id)) > 0;
+    g.FillRect(col(lit ? theme::kPlateLit : theme::kPlate), mRECT);
+    for (float y = mRECT.T + 10; y < mRECT.B - 8; y += 12)
+      g.DrawLine(col(theme::kPlateRib), mRECT.L + 9, y, mRECT.R - 9, y, nullptr, 5.f);
   }
-
-  void OnMouseDown(float x, float y, const IMouseMod&) override { mouseNote(plateAt(x), y); }
-  void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override {
-    const int p = plateAt(x);
-    if (p != mousePlate_) mouseNote(p, y);
-    else if (mousePlate_ >= 0) s_.pressure(kMouseId, pressureAt(y), kMouseSource);
-  }
-  void OnMouseUp(float, float, const IMouseMod&) override { mouseNote(-1, 0); }
-
-  // Computer keyboard: returns true if the key was used.
-  bool key(const IKeyPress& k, bool up) {
-    static const char kKeys[] = "awsedftgyhujkolp;";
-    const char c = char(std::tolower(static_cast<unsigned char>(k.utf8[0])));
-    if (!up && (c == 'z' || c == 'x')) {
-      octave_ = std::clamp(octave_ + (c == 'x' ? 1 : -1), -3, 3);
-      SetDirty(false);
-      return true;
-    }
-    const char* p = c ? std::strchr(kKeys, c) : nullptr;
-    if (p == nullptr) return false;
-    const int semi = int(p - kKeys);
-    const core::NoteId id = static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(semi));
-    if (!up && heldKeys_.count(semi) == 0) {
-      heldKeys_[semi] = semi + 12 * octave_;
-      s_.note(true, heldKeys_[semi], id, 0.8, kKeySource);
-      lit_.insert(semi % 12);
-    } else if (up && heldKeys_.count(semi) > 0) {
-      s_.note(false, heldKeys_[semi], id, 0.0, kKeySource);
-      heldKeys_.erase(semi);
-      lit_.erase(semi % 12);
-    }
+  void OnMouseDown(float, float y, const IMouseMod&) override {
+    semi_ = int(w_.id) + 12 * s_.octave;
+    s_.note(true, semi_, EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource);
+    s_.lit.insert(int(w_.id));
     SetDirty(false);
-    return true;
   }
+  void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override {
+    if (semi_ == kNone) return;
+    if (!mRECT.Contains(x, y)) release();
+    else s_.pressure(EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource);
+  }
+  void OnMouseUp(float, float, const IMouseMod&) override { release(); }
 
  private:
-  static constexpr core::NoteId kMouseId = 1000;
-  static constexpr core::NoteId kKeyIdBase = 2000;
-  static constexpr core::ControlSourceId kMouseSource = 1;
-  static constexpr core::ControlSourceId kKeySource = 2;
-
-  int plateAt(float x) const {
-    if (x < mRECT.L || x >= mRECT.R) return -1;
-    return std::clamp(int((x - mRECT.L) / (mRECT.W() / 12.f)), 0, 11);
-  }
-  double pressureAt(float y) const { return std::clamp(double((y - mRECT.T) / mRECT.H()), 0.1, 1.0); }
-  void mouseNote(int plate, float y) {
-    if (mousePlate_ >= 0) {
-      s_.note(false, mousePlate_ + 12 * octave_, kMouseId, 0.0, kMouseSource);
-      lit_.erase(mousePlate_);
-    }
-    mousePlate_ = plate;
-    if (plate >= 0) {
-      s_.note(true, plate + 12 * octave_, kMouseId, pressureAt(y), kMouseSource);
-      lit_.insert(plate);
-    }
+  static constexpr int kNone = -1000;
+  void release() {
+    if (semi_ == kNone) return;
+    s_.note(false, semi_, EditorShared::kMouseId, 0.0, EditorShared::kMouseSource);
+    s_.lit.erase(int(w_.id));
+    semi_ = kNone;
     SetDirty(false);
   }
+  double pressureAt(float y) const { return std::clamp(double((y - mRECT.T) / mRECT.H()), 0.1, 1.0); }
   EditorShared& s_;
-  int mousePlate_ = -1;
-  int octave_ = 0;
-  std::map<int, int> heldKeys_;  // key semitone -> sounding semitone (octave at press time)
-  std::set<int> lit_;
+  Widget w_;
+  int semi_ = kNone;
 };
 
 // ---------------------------------------------------------------------------------------------
+// The joystick: drag the stick inside its gate; double-click centres it.
 class JoystickControl : public IControl {
  public:
-  JoystickControl(EditorShared& s, const Widget& w)
-      : IControl(IRECT(float(w.x), float(w.y), float(w.x + w.w), float(w.y + w.h))), s_(s), w_(w) {}
+  JoystickControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    const theme::Rgb a = theme::accent(w_.accent);
-    g.FillRoundRect(col(theme::kKnobBody), mRECT, 8);
-    g.DrawRoundRect(col(a, 180), mRECT, 8, nullptr, 1.5f);
-    g.DrawLine(col(theme::kCardEdge), mRECT.MW(), mRECT.T + 6, mRECT.MW(), mRECT.B - 6);
-    g.DrawLine(col(theme::kCardEdge), mRECT.L + 6, mRECT.MH(), mRECT.R - 6, mRECT.MH());
-    const float x = mRECT.L + float(s_.value(w_.id)) * mRECT.W();
-    const float y = mRECT.B - float(s_.value(w_.id2)) * mRECT.H();
-    g.FillCircle(col(a), x, y, 9);
+    const float cx = float(w_.cx), cy = float(w_.cy);
+    g.FillCircle(col({50, 50, 50}), cx, cy, 55);
+    g.DrawCircle(col({80, 80, 80}), cx, cy, kTravel, nullptr, 1.5f);
+    const float x = cx + float(s_.value(w_.id) * 2.0 - 1.0) * kTravel;
+    const float y = cy - float(s_.value(w_.id2) * 2.0 - 1.0) * kTravel;
+    g.DrawLine(col({30, 30, 30}), cx, cy, x, y, nullptr, 14.f);
+    g.FillCircle(col(mMouseIsOver ? theme::Rgb{110, 110, 110} : theme::Rgb{85, 85, 85}), x, y, 24);
   }
   void OnMouseDown(float x, float y, const IMouseMod&) override { move(x, y); }
   void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override { move(x, y); }
@@ -460,9 +553,10 @@ class JoystickControl : public IControl {
   }
 
  private:
+  static constexpr float kTravel = 90.f;
   void move(float x, float y) {
-    s_.set(w_.id, std::clamp(double((x - mRECT.L) / mRECT.W()), 0.0, 1.0));
-    s_.set(w_.id2, std::clamp(double((mRECT.B - y) / mRECT.H()), 0.0, 1.0));
+    s_.set(w_.id, std::clamp(0.5 + double((x - float(w_.cx)) / (2 * kTravel)), 0.0, 1.0));
+    s_.set(w_.id2, std::clamp(0.5 - double((y - float(w_.cy)) / (2 * kTravel)), 0.0, 1.0));
     SetDirty(false);
   }
   EditorShared& s_;
@@ -470,54 +564,125 @@ class JoystickControl : public IControl {
 };
 
 // ---------------------------------------------------------------------------------------------
-// An effector cartridge slot: the arrows swap the cartridge, the PROGRAM switch picks 1-2-3.
+// The effector cartridge slot (id 0, shows the cartridge and both programs) and its button
+// (id 1). Clicking either loads the next cartridge into both effector sides (right-click or
+// Shift = previous); the L / R switches pick the program 1-2-3 on each side.
 class CartridgeControl : public IControl {
  public:
-  CartridgeControl(EditorShared& s, const Widget& w)
-      : IControl(IRECT(float(w.x), float(w.y), float(w.x + w.w), float(w.y + w.h))), s_(s), w_(w) {}
+  CartridgeControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    const theme::Rgb a = theme::accent(w_.accent);
-    g.FillRoundRect(col(theme::kKnobBody), mRECT, 8);
-    g.DrawRoundRect(col(a, 200), mRECT, 8, nullptr, 1.5f);
-    const core::ProgramDescriptor* p = core::find_program(static_cast<core::ProgramId>(cartridge() * 3 + select()));
-    g.DrawText(txt(10, theme::kTextDim), (w_.label + " CARTRIDGE").c_str(), mRECT.MW(), mRECT.T + 18);
-    g.DrawText(txt(18, a, true), p ? std::string(p->cartridge).c_str() : "?", mRECT.MW(), mRECT.T + 48);
-    g.DrawText(txt(12, theme::kText), p ? std::string(p->name).c_str() : "", mRECT.MW(), mRECT.T + 74);
-    g.DrawText(txt(18, mMouseIsOver ? theme::kText : theme::kTextDim), "<", mRECT.L + 14, mRECT.T + 48);
-    g.DrawText(txt(18, mMouseIsOver ? theme::kText : theme::kTextDim), ">", mRECT.R - 14, mRECT.T + 48);
+    if (w_.id == 1) {
+      g.FillCircle(col(theme::kInk), float(w_.cx), float(w_.cy), 16);
+      g.FillCircle(col(mMouseIsOver ? theme::kAmber : theme::Rgb{60, 60, 60}), float(w_.cx), float(w_.cy), 10);
+      return;
+    }
+    g.FillRect(col(theme::kInk), IRECT(1143, 238, 1257, 289));
+    g.FillRect(col(mMouseIsOver ? theme::Rgb{190, 142, 58} : theme::Rgb{160, 118, 46}), IRECT(1150, 247, 1250, 280));
+    const core::ProgramDescriptor* p = core::find_program(static_cast<core::ProgramId>(cartridge() * 3));
+    g.DrawText(txt(12, theme::kInk), p ? upper(std::string(p->cartridge)).c_str() : "", 1200, 256);
+    char progs[64];
+    std::snprintf(progs, sizeof progs, "L%d  R%d", s_.index(static_cast<std::uint32_t>(ParameterId::effector_select_l)) + 1,
+                  s_.index(static_cast<std::uint32_t>(ParameterId::effector_select_r)) + 1);
+    g.DrawText(txt(10, theme::kInk, false), progs, 1200, 271);
   }
-  void OnMouseDown(float x, float, const IMouseMod&) override {
-    const int step = x < mRECT.MW() ? -1 : 1;
-    const int next = (cartridge() + step + 13) % 13;
-    s_.engine.postEffectorProgram(int(w_.id), static_cast<core::ProgramId>(next * 3));
-    SetDirty(false);
+  void OnMouseOver(float x, float y, const IMouseMod& mod) override {
+    IControl::OnMouseOver(x, y, mod);
+    const core::DeviceStateV1* st = s_.state();
+    if (st == nullptr) return;
+    const core::ProgramDescriptor* l = core::find_program(st->leftEffector.program);
+    const core::ProgramDescriptor* r = core::find_program(st->rightEffector.program);
+    s_.readout = (l ? std::string(l->name) : "?") + " | " + (r ? std::string(r->name) : "?");
+    s_.readoutX = 1200;
+    s_.readoutY = 214;
+    GetUI()->SetAllControlsDirty();
+  }
+  void OnMouseOut() override {
+    IControl::OnMouseOut();
+    s_.readout.clear();
+    GetUI()->SetAllControlsDirty();
+  }
+  void OnMouseDown(float x, float y, const IMouseMod& mod) override {
+    const int next = (cartridge() + ((mod.R || mod.S) ? 12 : 1)) % 13;
+    s_.engine.postEffectorProgram(0, static_cast<core::ProgramId>(next * 3));
+    s_.engine.postEffectorProgram(1, static_cast<core::ProgramId>(next * 3));
+    OnMouseOver(x, y, mod);
   }
 
  private:
   int cartridge() const {
     const core::DeviceStateV1* st = s_.state();
-    if (st == nullptr) return 0;
-    return int(static_cast<std::uint32_t>(w_.id == 0 ? st->leftEffector.program : st->rightEffector.program) / 3u);
-  }
-  int select() const {
-    return int(std::lround(s_.value(static_cast<std::uint32_t>(
-        w_.id == 0 ? ParameterId::effector_select_l : ParameterId::effector_select_r))));
+    return st == nullptr ? 0 : int(static_cast<std::uint32_t>(st->leftEffector.program) / 3u);
   }
   EditorShared& s_;
   Widget w_;
 };
 
 // ---------------------------------------------------------------------------------------------
+// Keyboard encoder (opens / closes the keyboard menu), octave arrows, display.
+class EncoderControl : public IControl {
+ public:
+  EncoderControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  void Draw(IGraphics& g) override {
+    g.FillCircle(col({120, 120, 120}), float(w_.cx), float(w_.cy), 35);
+    g.FillCircle(col(s_.menuOpen || mMouseIsOver ? theme::kAmber : theme::kRed), float(w_.cx), float(w_.cy), 20);
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override {
+    s_.showMenu(!s_.menuOpen);
+    GetUI()->SetAllControlsDirty();
+  }
+  void OnMouseWheel(float, float, const IMouseMod&, float d) override {
+    s_.shiftOctave(d > 0 ? 1 : -1);
+    GetUI()->SetAllControlsDirty();
+  }
+
+ private:
+  EditorShared& s_;
+  Widget w_;
+};
+
+class OctaveKeyControl : public IControl {
+ public:
+  OctaveKeyControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  void Draw(IGraphics& g) override {
+    const float cx = float(w_.cx), cy = float(w_.cy);
+    g.FillCircle(col(mMouseIsOver ? theme::kPlateLit : theme::kPlate), cx, cy, 23);
+    if (w_.id == 1) g.FillTriangle(col(theme::kKeybed), cx - 9, cy + 5, cx + 9, cy + 5, cx, cy - 9);
+    else g.FillTriangle(col(theme::kKeybed), cx - 9, cy - 5, cx + 9, cy - 5, cx, cy + 9);
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override {
+    s_.shiftOctave(w_.id == 1 ? 1 : -1);
+    GetUI()->SetAllControlsDirty();
+  }
+
+ private:
+  EditorShared& s_;
+  Widget w_;
+};
+
+class DisplayControl : public IControl {
+ public:
+  DisplayControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s) { SetIgnoreMouse(true); }
+  void Draw(IGraphics& g) override {
+    g.FillRect(col(theme::kDisplay), mRECT);
+    char b[32];
+    if (s_.menuOpen) std::snprintf(b, sizeof b, "MENU");
+    else std::snprintf(b, sizeof b, "OCT %+d", s_.octave);
+    g.DrawText(txt(18, {235, 240, 255}), b, mRECT);
+  }
+
+ private:
+  EditorShared& s_;
+};
+
+// ---------------------------------------------------------------------------------------------
+// DRONE VOICES key: opens / closes drone 1..6 (the LED is lit while the voice is open).
 class DroneKeyControl : public IControl {
  public:
-  DroneKeyControl(EditorShared& s, const Widget& w)
-      : IControl(IRECT(float(w.x), float(w.y), float(w.x + w.w), float(w.y + w.h))), s_(s), w_(w) {}
+  DroneKeyControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    const theme::Rgb a = theme::accent(w_.accent);
     const bool open = s_.engine.droneKey(int(w_.id));
-    g.FillRoundRect(open ? col(a, 80) : col(theme::kPlate), mRECT, 8);
-    g.DrawRoundRect(col(a, open ? 255 : 120), mRECT, 8, nullptr, open ? 2.f : 1.f);
-    g.DrawText(txt(20, open ? theme::kText : a, true), w_.label.c_str(), mRECT);
+    g.FillRoundRect(col(mMouseIsOver ? theme::Rgb{70, 70, 70} : theme::Rgb{52, 52, 52}), mRECT, 4.f);
+    g.FillRect(col(open ? theme::kLedOn : theme::kPlate), IRECT(float(w_.cx - 5), mRECT.T + 4, float(w_.cx + 5), mRECT.T + 16));
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     s_.engine.postDroneKey(int(w_.id), !s_.engine.droneKey(int(w_.id)));
@@ -527,6 +692,44 @@ class DroneKeyControl : public IControl {
  private:
   EditorShared& s_;
   Widget w_;
+};
+
+// Non-interactive panel hardware: photo sensor, the drone LED bar (lit per unmuted tone),
+// and knobs / jacks that have no function in Lunar 24.
+class DecorControl : public IControl {
+ public:
+  DecorControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) { SetIgnoreMouse(true); }
+  void Draw(IGraphics& g) override {
+    switch (w_.id) {
+      case 0:
+        g.FillCircle(IColor(255, 255, 255, 255), float(w_.cx), float(w_.cy), float(w_.w / 2));
+        g.DrawCircle(col(theme::kInk), float(w_.cx), float(w_.cy), float(w_.w / 2), nullptr, 2.f);
+        break;
+      case 1:
+        for (std::uint32_t i = 0; i < 5; ++i) {
+          const bool muted = s_.value(w_.id2 + i) > 0.5;
+          g.FillRect(col(muted ? theme::kLedOff : theme::kLedOn),
+                     IRECT(float(w_.x() + 5 + i * 12.5), float(w_.y() + 8), float(w_.x() + 14 + i * 12.5), float(w_.y() + 38)));
+        }
+        break;
+      case 2: drawKnob(g, w_, 0.5, false); break;
+      default: drawJack(g, float(w_.cx), float(w_.cy), float(w_.w / 2), false); break;
+    }
+  }
+
+ private:
+  EditorShared& s_;
+  Widget w_;
+};
+
+// The keyboard menu background: covers the plates (and swallows their clicks) while open.
+class MenuBackground : public IControl {
+ public:
+  MenuBackground() : IControl(IRECT(float(kMenuX0), float(kMenuY0), float(kMenuX1), float(kMenuY1))) {}
+  void Draw(IGraphics& g) override {
+    g.FillRoundRect(col(theme::kMenuBg, 248), mRECT, 10.f);
+    g.DrawText(txt(18, theme::kMenuText), "KEYBOARD MENU  (click the encoder to close)", mRECT.MW(), mRECT.T + 22);
+  }
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -539,21 +742,22 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
 #endif
   g->LoadFont(kFont, face, ETextStyle::Normal);
   g->LoadFont(kFontBold, face, ETextStyle::Bold);
-  g->AttachPanelBackground(col(theme::kBackground));
+  g->AttachPanelBackground(col(theme::kPanel));
 
   const std::vector<Widget> widgets = build_panel_layout();
-  std::vector<Widget> cards;
-  for (const Widget& w : widgets)
-    if (w.kind == WidgetKind::Module || w.kind == WidgetKind::Title) cards.push_back(w);
   const IRECT all = g->GetBounds();
-  g->AttachControl(new BackgroundControl(all, cards));
+  g->AttachControl(new BackgroundControl(all));
 
   shared.jacks.clear();
   shared.jackRects.clear();
+  shared.menuControls.clear();
+  shared.plates.clear();
   for (const Widget& w : widgets) {
+    if (w.menu) continue;
     switch (w.kind) {
       case WidgetKind::Knob: g->AttachControl(new KnobControl(shared, w)); break;
-      case WidgetKind::Selector: g->AttachControl(new SelectorControl(shared, w)); break;
+      case WidgetKind::Button: g->AttachControl(new ButtonControl(shared, w)); break;
+      case WidgetKind::Toggle: g->AttachControl(new ToggleControl(shared, w)); break;
       case WidgetKind::Jack: {
         auto* j = new JackControl(shared, w);
         shared.jacks.push_back(j);
@@ -561,24 +765,41 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
         g->AttachControl(j);
         break;
       }
-      case WidgetKind::Plates: {
-        auto* p = new PlatesControl(shared, w);
-        shared.plates = p;
+      case WidgetKind::Plate: {
+        auto* p = new PlateControl(shared, w);
+        shared.plates.push_back(p);
         g->AttachControl(p);
         break;
       }
       case WidgetKind::Joystick: g->AttachControl(new JoystickControl(shared, w)); break;
       case WidgetKind::Cartridge: g->AttachControl(new CartridgeControl(shared, w)); break;
       case WidgetKind::DroneKey: g->AttachControl(new DroneKeyControl(shared, w)); break;
-      case WidgetKind::Module:
-      case WidgetKind::Title: break;
+      case WidgetKind::Encoder: g->AttachControl(new EncoderControl(shared, w)); break;
+      case WidgetKind::OctaveKey: g->AttachControl(new OctaveKeyControl(shared, w)); break;
+      case WidgetKind::Display: g->AttachControl(new DisplayControl(shared, w)); break;
+      case WidgetKind::Decor: g->AttachControl(new DecorControl(shared, w)); break;
     }
   }
+  // The keyboard menu on top of the plates, hidden until the encoder opens it.
+  auto* menuBg = new MenuBackground();
+  g->AttachControl(menuBg);
+  shared.menuControls.push_back(menuBg);
+  for (const Widget& w : widgets) {
+    if (!w.menu) continue;
+    IControl* c = w.kind == WidgetKind::Knob ? static_cast<IControl*>(new KnobControl(shared, w))
+                                             : static_cast<IControl*>(new ToggleControl(shared, w));
+    g->AttachControl(c);
+    shared.menuControls.push_back(c);
+  }
+  shared.showMenu(false);
+
   shared.cables = new CableLayer(shared, all);
   g->AttachControl(shared.cables);
 
-  g->SetKeyHandlerFunc([&shared](const IKeyPress& key, bool isUp) {
-    return shared.plates != nullptr && shared.plates->key(key, isUp);
+  g->SetKeyHandlerFunc([&shared, g](const IKeyPress& key, bool isUp) {
+    const bool used = shared.key(key, isUp);
+    if (used) g->SetAllControlsDirty();
+    return used;
   });
   // Redraw when MIDI CC moved knobs, or a whole new machine state lands (startup restore).
   g->SetDisplayTickFunc([&shared, g]() {
