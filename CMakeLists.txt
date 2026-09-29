@@ -156,6 +156,11 @@ lunar_enable_warnings(lunar24_render)
 add_executable(panel_preview tools/panel_preview.cpp)
 target_link_libraries(panel_preview PRIVATE lunar_host)
 lunar_enable_warnings(panel_preview)
+if(MSVC)
+  # Plain fopen/sscanf are fine for these command-line tools.
+  target_compile_definitions(lunar24_render PRIVATE _CRT_SECURE_NO_WARNINGS)
+  target_compile_definitions(panel_preview PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 
 if(APPLE)
   lunar_add_test(test_coreaudio_output tests/core/test_coreaudio_output.cpp)
