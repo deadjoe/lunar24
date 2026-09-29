@@ -26,21 +26,19 @@
 // rather than the full voice group.
 //
 // FREQUENCY MODEL (kept separable so tolerance vs drift stays testable):
-//   effFreq(t) = roleBase * tuneScale * voltScale * (1 + tolerance) + drift(t)
-//             + mod(t) + fm(t)
-//   * roleBase  — seeded within a role band (low < medium < high), the per-part
-//                 nominal pitch.
-//   * tuneScale — per-generator TUNE, semitone offset: 2^(tune/12).
-//   * voltScale — shared VOLT transpose (down): 2^(-volt/12).
-//   * tolerance — STATIC seeded fraction of the role base.
-//   * drift(t)  — dynamic slow sub-acoustic sum (unchanged from P3-①).
-//   * mod(t)    — per-generator MOD: modAmount * modCv (button on => CV/photo
-//                 detunes; button off => the generator runs stably).
-//   * fm(t)     — mutual FM between generators, active only past the VOLT halfturn.
+//   effFreq(t) = base * tuneScale * voltScale * (1 + tolerance) + drift(t) + mod(t)
+//                then x (1 + mutualFM(t)) x (1 + cycleJitter)
+//   * base      — default just-intonation stack per voice (1 : 1.5 : 2 : 3 : 4 on the
+//                 voice root), keeping the manual's low / medium / high roles.
+//   * tolerance — STATIC seeded component error (about +-1.2 %): the slow beating.
+//   * drift(t)  — slow Ornstein-Uhlenbeck random walk (a few cents over ~20 s).
+//   * mod(t)    — per-generator MOD: CV/photo detune when the MOD button is on.
+//   * mutualFM  — past half the VOLT stroke, each generator frequency-modulates the
+//                 next one in its group (relative depth, so it never stalls).
+//   * cycleJitter — the negistor's noisy firing threshold: each period differs a bit.
 //
-// WAVEFORM: sapply_() is a true sawtooth (2*(phase/2pi)-1). nonlinear_() is a real
-// negistor-shaped transfer, NOT identity (a monotonic saturation proxy for the
-// single-transistor negative-resistance region; coefficients provisional).
+// WAVEFORM: a capacitor-charge ramp (exponentially bent sawtooth) with a band-limited
+// discharge step, through a soft cubic saturation. All constants are tuned by ear.
 //
 // Realtime-safe: tick() never allocates or blocks; all control writes (setMute/
 // setTune/setMod/setVolt) are plain field stores. SPDX.
@@ -71,12 +69,10 @@ class DroneBank {
     double freqBaseHz;   // nominal frequency from the ROLE BAND, seeded, static.
     double tolerance;    // STATIC fractional tolerance of freqBase, seeded.
     double amplitude;    // output gain, seeded.
-    double driftF1Hz;    // drift sine-1 rate, seeded (Hz of the sub-drift osc).
-    double driftF2Hz;    // drift sine-2 rate, seeded.
-    double driftA1;      // drift sine-1 amplitude, seeded (fraction of base).
-    double driftA2;      // drift sine-2 amplitude, seeded.
-    double driftPh1;     // drift sine-1 phase, seeded.
-    double driftPh2;     // drift sine-2 phase, seeded.
+    double driftState;   // slow random-walk pitch deviation (fraction of base), OU process.
+    double driftDepth;   // this oscillator's drift depth (fraction), seeded.
+    double shapeCurve;   // capacitor-charge curvature of the ramp, seeded (0 = straight saw).
+    double cycleJitter;  // this cycle's small period deviation (fraction), redrawn each cycle.
     double phase;        // phase accumulator, radians, advanced each tick.
     double driftNow;     // current drifted Hertz offset.
     Role role;           // role within the voice (1,2=low; 3=med; 4,5=high).
@@ -85,6 +81,12 @@ class DroneBank {
     double modAmount;    // per-generator MOD button depth (0 => runs stably).
     double modCv;        // live CV/photo detune input (0 => no external detune).
     double volt;         // shared VOLT transpose of the whole 5-gen group (semitones).
+    // Per-sample constants, recomputed only when their inputs change (never in tick).
+    double tuneScale;    // 2^(tune/12)
+    double voltScale;    // 2^(-volt/12)
+    double shapeDen;     // 1 - exp(-shapeCurve)   (chargeShape denominator)
+    double shapeMean;    // chargeShapeMeanOffset(shapeCurve)
+    double muteGain;     // 0..1, glides toward muted ? 0 : 1 so a MUTE press does not click
   };
 
   // ---- CLASSIC group gate/ATT/RLS/HOLD envelope + dynamic variation (batch 4A) ----
@@ -119,6 +121,10 @@ class DroneBank {
   // They are arbitrary non-zero constants, not meanings.
   static constexpr std::uint64_t kStreamOsc = 0x4F534356ULL;    // "OSCV"
   static constexpr std::uint64_t kStreamJitter = 0x4A495454ULL; // "JITT"
+  static constexpr std::uint64_t kStreamDrift = 0x44524946ULL;  // "DRIF"
+  static constexpr std::uint64_t kStreamCycle = 0x4359434CULL;  // "CYCL"
+  static constexpr double kDriftPullPerSecond = 1.0 / 20.0;     // drift wanders over ~20 s
+  static constexpr double kCycleJitter = 0.0015;                // +-0.15 % period noise
 
   // Named PROVISIONAL default for the group gate: a host that never touches the gate
   // hears the voice (the pre-batch structure tests probe the raw bank). The default is
@@ -148,6 +154,8 @@ class DroneBank {
         driftEnabled_(driftEnabled),
         seed_(seed) {
     groupCount_ = (voiceCount_ + kGensPerVoice - 1) / kGensPerVoice;
+    driftNoiseScale_ = std::sqrt(2.0 * kDriftPullPerSecond * (1.0 / sampleRate_));
+    muteGlide_ = 1.0 - std::exp(-1.0 / (0.003 * sampleRate_));
     for (std::size_t g = 0; g < kMaxGroups; ++g) {
       groupEnv_[g].gate = kDefaultGroupGateOpen;  // named provisional default (not evidence).
       groupEnv_[g].hold = false;
@@ -168,31 +176,38 @@ class DroneBank {
       // stream below by domain). The per-voice draw keeps the structure tests' ROLE
       // bands and value ranges unchanged (provisional bands/orders are structural).
       SeededRandom vrng(deriveSeed_(seed, static_cast<std::uint64_t>(i), kStreamOsc));
-      // Role band (provisional; manual says only "approximate data"). The ORDER
-      // is what is structural: low < medium < high, guaranteed by the bands.
-      switch (role) {
-        case Role::kLow:    v.freqBaseHz = 30.0 + vrng.nextUnit(0.0, 1.0) * 90.0; break;   // 30-120
-        case Role::kMedium: v.freqBaseHz = 140.0 + vrng.nextUnit(0.0, 1.0) * 240.0; break; // 140-380
-        case Role::kHigh:   v.freqBaseHz = 420.0 + vrng.nextUnit(0.0, 1.0) * 1380.0; break;// 420-1800
+      // Default tuning: each classic voice is a just-intonation stack on its own root
+      // (1 : 1.5 : 2 : 3 : 4 = root, fifth, octave, twelfth, two octaves), so the low /
+      // medium / high roles of the manual hold and the machine starts on a consonant
+      // A-minor-pentatonic drone. The TUNE knobs move each generator from here.
+      // Tuned by ear; the manual gives no frequencies.
+      {
+        static constexpr double kVoiceRootHz[kClassicVoices] = {55.0, 82.41, 73.42, 65.41};
+        static constexpr double kGenRatio[kGensPerVoice] = {1.0, 1.5, 2.0, 3.0, 4.0};
+        const std::size_t group = (i / kGensPerVoice) % kClassicVoices;
+        v.freqBaseHz = kVoiceRootHz[group] * kGenRatio[i % kGensPerVoice];
       }
-      v.tolerance = vrng.nextUnit(0.0, 0.02);
-      v.amplitude = vrng.nextUnit(0.05, 1.0);
-      v.driftF1Hz = vrng.nextUnit(0.01, 0.3);
-      v.driftF2Hz = vrng.nextUnit(0.01, 0.3);
-      v.driftA1 = vrng.nextUnit(0.0005, 0.01);
-      v.driftA2 = vrng.nextUnit(0.0005, 0.01);
-      v.driftPh1 = vrng.nextUnit(0.0, 6.283185307179586);
-      v.driftPh2 = vrng.nextUnit(0.0, 6.283185307179586);
+      // Component tolerance: each generator sits a little off its nominal pitch, which
+      // gives the slow beating of a hand-tuned analog drone.
+      v.tolerance = vrng.nextUnit(-0.012, 0.012);
+      v.amplitude = vrng.nextUnit(0.55, 1.0);
+      v.driftDepth = vrng.nextUnit(0.0015, 0.0045);   // ~3-8 cents of wander
+      v.shapeCurve = vrng.nextUnit(0.8, 2.2);
+      v.shapeDen = 1.0 - std::exp(-v.shapeCurve);
+      v.shapeMean = chargeShapeMeanOffset(v.shapeCurve);
+      v.driftState = vrng.nextUnit(-1.0, 1.0) * v.driftDepth;
+      v.cycleJitter = 0.0;
       v.phase = 0.0;
-      v.driftNow = driftEnabled_
-                       ? v.freqBaseHz * (v.driftA1 * std::sin(v.driftPh1) + v.driftA2 * std::sin(v.driftPh2))
-                       : 0.0;
+      v.driftNow = driftEnabled_ ? v.freqBaseHz * v.driftState : 0.0;
       // Controls default neutral: nothing muted, no tune, MOD off, VOLT nominal.
       v.muted = false;
       v.tune = 0.0;
       v.modAmount = 0.0;
       v.modCv = 0.0;
       v.volt = 0.0;
+      v.tuneScale = 1.0;
+      v.voltScale = 1.0;
+      v.muteGain = 1.0;
       lastSample_[i] = 0.0;
       lastJitterHz_[i] = 0.0;  // "no jitter applied yet" (nothing has been ticked).
     }
@@ -200,7 +215,15 @@ class DroneBank {
 
   // ---------- panel CONTROL binding (structure; the runtime forwards these) ------
   void setMute(std::size_t gen, bool on) { if (gen < voiceCount_) voices_[gen].muted = on; }
-  void setTune(std::size_t gen, double semitones) { if (gen < voiceCount_) voices_[gen].tune = semitones; }
+  // Land every MUTE fade on its end point now (a whole-state load is not a button press).
+  void snapMutes() {
+    for (std::size_t i = 0; i < voiceCount_; ++i) voices_[i].muteGain = voices_[i].muted ? 0.0 : 1.0;
+  }
+  void setTune(std::size_t gen, double semitones) {
+    if (gen >= voiceCount_) return;
+    voices_[gen].tune = semitones;
+    voices_[gen].tuneScale = std::pow(2.0, semitones / 12.0);
+  }
   void setMod(std::size_t gen, double amount) { if (gen < voiceCount_) voices_[gen].modAmount = amount; }
   void setModCv(std::size_t gen, double cv) { if (gen < voiceCount_) voices_[gen].modCv = cv; }
   // Shared VOLT transpose: a single turn applies to all glider generators of that
@@ -208,7 +231,11 @@ class DroneBank {
   void setVolt(std::size_t voiceGroup, double semitonesDown) {
     const std::size_t gs = voiceGroup * kGensPerVoice;
     const std::size_t end = std::min(voiceCount_, gs + kGensPerVoice);
-    for (std::size_t i = gs; i < end; ++i) voices_[i].volt = semitonesDown;
+    const double scale = std::pow(2.0, -semitonesDown / 12.0);
+    for (std::size_t i = gs; i < end; ++i) {
+      voices_[i].volt = semitonesDown;
+      voices_[i].voltScale = scale;
+    }
   }
 
   // ---- CLASSIC group gate/ATT/RLS/HOLD + shared CV MOD + environment (batch 4A) ----
@@ -257,6 +284,7 @@ class DroneBank {
     // oscillators keep free-running; the envelope only scales the group's final audio
     // below, never resetting phase (design/07 §7). Linear + monotonic.
     const double dt = 1.0 / sampleRate_;
+    const double driftNoiseScale = driftNoiseScale_;
     GroupEnv& e = groupEnv_[g];
     const double target = (e.gate || e.hold) ? 1.0 : 0.0;
     double& lvl = e.level;
@@ -273,14 +301,18 @@ class DroneBank {
     const std::size_t end = std::min(begin + kGensPerVoice, voiceCount_);
     for (std::size_t i = begin; i < end; ++i) {
       Voice& v = voices_[i];
-      v.driftNow = driftEnabled_
-                       ? v.freqBaseHz *
-                             (v.driftA1 * std::sin(driftPhase1_(v, sample)) +
-                              v.driftA2 * std::sin(driftPhase2_(v, sample)))
-                       : 0.0;
-      const double tuneScale = std::pow(2.0, v.tune / 12.0);      // TUNE (semitones up).
-      const double voltScale = std::pow(2.0, -v.volt / 12.0);     // VOLT transposes down.
-      const double base = v.freqBaseHz * tuneScale * voltScale;
+      if (driftEnabled_) {
+        // Ornstein-Uhlenbeck random walk: wanders slowly (tens of seconds) and is pulled
+        // back toward the nominal pitch. Deterministic per (seed, generator, sample).
+        const double u = jitterUnit_(seed_ ^ kStreamDrift, static_cast<double>(i), sample);
+        v.driftState += -kDriftPullPerSecond * v.driftState * dt +
+                        v.driftDepth * driftNoiseScale * u * 1.732;
+        v.driftNow = v.freqBaseHz * v.driftState;
+      } else {
+        v.driftNow = 0.0;
+      }
+      // TUNE (semitones up) and VOLT (transposes down), cached by setTune / setVolt.
+      const double base = v.freqBaseHz * v.tuneScale * v.voltScale;
       double effFreq = base * (1.0 + v.tolerance) + v.driftNow;
       // MOD: button on => the shared CV MOD (group) or per-gen CV detunes; off => stable.
       effFreq += v.modAmount * (v.modCv + modCvG_[g]);
@@ -295,8 +327,10 @@ class DroneBank {
       effFreq += lastJitterHz_[i];
       // Mutual FM: active only past half the VOLT stroke (manual). Pair generators
       // within a voice by a 5-ring. Provisional depth law.
+      // The depth is relative to the generator's own pitch, so a deep FM swings the
+      // frequency between ~0.1x and ~1.9x and can never stall the oscillator ring.
       if (v.volt > kVvoltMid && fmDepth_(v.volt) > 0.0) {
-        effFreq += fmDepth_(v.volt) * lastSample_[peerIndex_(i)];
+        effFreq *= 1.0 + fmDepth_(v.volt) * std::max(-1.0, std::min(1.0, lastSample_[peerIndex_(i)]));
       }
       if (effFreq < 0.0) effFreq = 0.0;
 
@@ -311,14 +345,28 @@ class DroneBank {
       // Outside +/-phaseInc the residual is exactly 0, so this is bit-identical to the naive
       // ramp everywhere else; measured on the emitted signal the correction moves at most 2
       // consecutive samples per generator (scratch/s2_integration_preview.txt).
+      effFreq *= 1.0 + v.cycleJitter;
       const double phaseInc = effFreq / sampleRate_;
-      const double s =
-          v.muted ? 0.0 : v.amplitude * nonlinearity(polyblepSaw(v.phase / twoPi_, phaseInc));
+      const double t = v.phase / twoPi_;
+      // Negistor relaxation: the capacitor charges along an exponential curve and then
+      // discharges almost at once. The curve bends the ramp; the band-limited discharge
+      // step is the same polyBLEP-corrected jump a sawtooth has (the curve itself is
+      // continuous across the wrap because shape(0)=0 and shape(1)=1).
+      // chargeShape bends the ramp upward, so remove its mean (the curve's DC offset).
+      const double shaped = v.shapeCurve < 1e-6 ? t : (1.0 - std::exp(-v.shapeCurve * t)) / v.shapeDen;
+      const double bent = polyblepSaw(t, phaseInc) + 2.0 * (shaped - t - v.shapeMean);
+      v.muteGain += muteGlide_ * ((v.muted ? 0.0 : 1.0) - v.muteGain);
+      const double s = v.muteGain < 1e-9 ? 0.0 : v.amplitude * nonlinearity(bent) * v.muteGain;
       lastSample_[i] = s;          // RAW pre-group-VCA: mutual-FM peers use the oscillator value.
       out[i - begin] = s * gLvl;   // the group's envelope/VCA gates the final audio.
       v.phase += twoPi_ * effFreq / sampleRate_;
-      v.phase = std::fmod(v.phase, twoPi_);
-      if (v.phase < 0.0) v.phase += twoPi_;
+      if (driftEnabled_ && v.phase >= twoPi_) {
+        // New cycle: the firing threshold is noisy, so each period differs a little.
+        v.cycleJitter = kCycleJitter * jitterUnit_(seed_ ^ kStreamCycle, static_cast<double>(i), sample);
+      }
+      // Wrap (exact: phase < 2 * twoPi_, so the subtraction loses nothing).
+      while (v.phase >= twoPi_) v.phase -= twoPi_;
+      if (v.phase < 0.0) v.phase = std::fmod(v.phase, twoPi_) + twoPi_;
     }
     ++groupSample_[g];
   }
@@ -364,6 +412,17 @@ class DroneBank {
   // the product path, not a shadow judge.
   static double sawtooth(double phase) { return 2.0 * (phase / twoPi_) - 1.0; }
   static double nonlinearity(double x) { return x - (1.0 / 3.0) * x * x * x; }
+  // Normalised capacitor-charge curve on [0,1): shape(0)=0, shape(1)=1, concave for k>0.
+  static double chargeShape(double t, double k) {
+    if (k < 1e-6) return t;
+    return (1.0 - std::exp(-k * t)) / (1.0 - std::exp(-k));
+  }
+  // Mean of (chargeShape(t,k) - t) over one cycle.
+  static double chargeShapeMeanOffset(double k) {
+    if (k < 1e-6) return 0.0;
+    const double e = std::exp(-k);
+    return (1.0 - (1.0 - e) / k) / (1.0 - e) - 0.5;
+  }
 
   // ---- centralized, PROVISIONAL, monotonic norm→seconds mappings (design/07: no
   // hardware value claimed; a larger normalized knob always yields a longer stage) ----
@@ -382,7 +441,8 @@ class DroneBank {
  private:
   static constexpr double twoPi_ = 6.283185307179586;
   static constexpr double kVvoltMid = 30.0;         // provisional: VOLT halfturn (semitones down).
-  static constexpr double kFmDepthMax = 4.0;        // provisional: FM Hz at max excess.
+  static constexpr double kFmDepthPerSemitone = 0.06;  // relative FM depth per semitone past half (by ear).
+  static constexpr double kFmDepthMax = 0.9;           // never reaches 1: the pitch stays > 0.
 
   Role roleOfIndex_(std::size_t i) const {
     const std::size_t gen = i % kGensPerVoice;      // 0,1=low; 2=med; 3,4=high.
@@ -398,16 +458,7 @@ class DroneBank {
     return gs + (inGroup + 1) % groupCount;
   }
   double fmDepth_(double volt) const {
-    return (volt > kVvoltMid) ? kFmDepthMax * (volt - kVvoltMid) : 0.0;
-  }
-
-  double driftPhase1_(const Voice& v, double sample) const {
-    const double t = sample / sampleRate_;
-    return twoPi_ * v.driftF1Hz * t + v.driftPh1;
-  }
-  double driftPhase2_(const Voice& v, double sample) const {
-    const double t = sample / sampleRate_;
-    return twoPi_ * v.driftF2Hz * t + v.driftPh2;
+    return (volt > kVvoltMid) ? std::min(kFmDepthMax, kFmDepthPerSemitone * (volt - kVvoltMid)) : 0.0;
   }
 
   // ---- batch 4A: group gate/ATT/RLS/HOLD + CV MOD + environment helpers ----
@@ -456,6 +507,8 @@ class DroneBank {
   }
 
   double sampleRate_;
+  double driftNoiseScale_ = 0.0;  // sqrt(2 * kDriftPullPerSecond / sampleRate)
+  double muteGlide_ = 1.0;        // MUTE fade coefficient (~3 ms, tuned by ear)
   std::size_t voiceCount_;
   bool driftEnabled_;
   double groupSample_[kMaxGroups] = {};  // per-classic-group sample counter (bit-exact per-group tick).

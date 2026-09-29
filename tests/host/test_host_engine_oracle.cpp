@@ -212,6 +212,9 @@ void real_4way() {
   CHECK(eA.prepare(kSeed, 48000.0, kF, 1, 4));
   CHECK(eB.prepare(kSeed, 48000.0, kF, 1, 4));
   CHECK(eA.plan().outputCount == 4);
+  // Listen to the raw VCOs on DRY A/B (their VCAs are otherwise closed until a key is played).
+  const_cast<SynthRuntime*>(eA.runtime())->setVcoVcaEnabled(false);
+  const_cast<SynthRuntime*>(eB.runtime())->setVcoVcaEnabled(false);
 
   double outA[4][kF] = {{0}}, outB[4][kF] = {{0}};
   double* outPA[4] = {outA[0], outA[1], outA[2], outA[3]};

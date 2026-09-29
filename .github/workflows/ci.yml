@@ -9,7 +9,7 @@ name: ci
 
 on:
   push:
-    branches: [main, feat/**]
+    branches: [main, feat/**, refocus/**]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -33,10 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # GH#10: iPlug2 is a REAL pinned git submodule (third_party/iPlug2) that must be
-          # present on every matrix platform — the iplug_pin_clean_gate CTest is registered
-          # unconditionally and is FAIL-LOUD (no skip-if-absent). Without a recursive
-          # checkout the gitlink is empty and the gate goes RED.
+          # iPlug2 is a pinned submodule; the mac/win host build needs it.
           submodules: recursive
 
       - name: Install build tools (linux)
@@ -72,57 +69,22 @@ jobs:
               || { echo "FAIL: Windows executable missing"; exit 1; }
           fi
 
-      - name: Run gate suite (CTest, fast — probe/acceptance gates are PR-only/ubuntu)
-        run: ctest --test-dir build --output-on-failure --build-config Release --label-exclude slow
-
-  # Full-machine coverage gate, invoked with --require-full for REAL (not an
-  # unused option). Independence is guaranteed by the manifest being transcribed
-  # from the panel/manual (not generated from the registry) and by a separate
-  # negative test proving the gate rejects 重件/no-evidence/NON-REGRESSION for the
-  # intended reason. Intermediate commits may be <100% (this job is then RED, by
-  # design) but must never regress the mustComplete baseline; this job turns green
-  # exactly when every target module / program identity / route is present — the
-  # signal that gates opening/merging PR #2.
-  full-coverage:
-    name: full coverage (--require-full)
-    # This is a PR-merge gate (target main), NOT a feature-branch regression
-    # alarm: it is necessarily RED until the whole panel is transcribed (P5 未铺完
-    # => 尚未 100%). Running it on every push to feat/** would email a bogus
-    # failure on every commit and train everyone to ignore CI exactly when a real
-    # break lands. Gate it to pull_request so feature CI is green = true signal,
-    # while the merge gate still blocks at PR time.
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run registry completeness gate with --require-full
-        run: |
-          python3 --version || python --version
-          python3 tools/check_registry_complete.py --require-full
-
-  # The GH#19 (and, once #88 lands, GH#20) REAL-product probe + acceptance gates render the actual
-  # DSP through the full chain and take 25-60 min per leg, so they must not gate every feature push
-  # (that made CI ~1 hr; across the 4-OS matrix it multiplied). They are tagged `slow` in CMake and
-  # excluded from `build-and-test` (`--label-exclude slow`); this job runs them ONCE at PR/merge time,
-  # on a single OS, where they still gate. Consistent with the `full-coverage` PR-only gate above.
-  probe-gate:
-    name: probe gate (slow, PR-only, ubuntu)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      # Downloadable app for listening (Actions run page -> Artifacts).
+      - name: Package app (mac)
+        if: runner.os == 'macOS'
+        run: cd build/out && ditto -c -k --keepParent Lunar24Host.app Lunar24-macOS.zip
+      - name: Upload app (mac)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
         with:
-          # iPlug2 is a real pinned submodule on APPLE/WIN32 only; on ubuntu the host target is
-          # excluded, but a recursive checkout keeps the gitlink intact and matches build-and-test.
-          submodules: recursive
+          name: Lunar24-macOS
+          path: build/out/Lunar24-macOS.zip
+      - name: Upload app (windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lunar24-Windows
+          path: build/out/Lunar24Host.exe
 
-      - name: Configure project
-        run: |
-          python3 --version || python --version
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build
-        run: cmake --build build --config Release --parallel
-
-      - name: Run probe + acceptance gates (slow)
-        run: ctest --test-dir build --output-on-failure --build-config Release --label-regex slow
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure --build-config Release

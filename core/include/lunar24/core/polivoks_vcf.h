@@ -169,6 +169,10 @@ class PolivoksFilter {
     double ic1eq = 0.0, ic2eq = 0.0;  // two-integrator trapezoidal (TPT/ZDF) states.
     double sr = 0.0;
     double inputDrive = 0.0;  // GH#6 per-channel input-stage drive (L/R independent).
+    // Coefficient memo (pure caches of pow/tan results; see effCutoffHz_ / tick_).
+    mutable double memoFreq = -1.0, memoSr = 0.0, memoBaseFc = 0.0;
+    mutable double memoShift = 0.0, memoShiftScale = 1.0;
+    mutable double memoFc = -1.0, memoG = 0.0;
   };
 
   static bool idx_(int ch) { return ch == 0 || ch == 1; }
@@ -195,9 +199,19 @@ class PolivoksFilter {
   // Effective cutoff for a channel, given the resolved CV for THAT channel and the
   // channel's own MOD depth. CV shifts cutoff multiplicatively (2^cv/oct, provisional).
   double effCutoffHz_(const Channel& c, double cvEff) const {
-    const double baseFc = baseFreqHz_(c.freq, sr_);
+    // FREQ and the CV shift change far less often than every sample: memoise the pow.
+    if (c.freq != c.memoFreq || c.memoSr != sr_) {
+      c.memoFreq = c.freq;
+      c.memoSr = sr_;
+      c.memoBaseFc = baseFreqHz_(c.freq, sr_);
+    }
+    const double baseFc = c.memoBaseFc;
     const double shift = c.mod * cvEff / kCvVoltsPerOctave;
-    double fc = baseFc * std::pow(2.0, shift);
+    if (shift != c.memoShift) {
+      c.memoShift = shift;
+      c.memoShiftScale = std::pow(2.0, shift);
+    }
+    double fc = baseFc * c.memoShiftScale;
     const double cap = cutoffCapHz_(sr_);
     if (fc > cap) fc = cap;
     if (fc < kFreqMinHz) fc = kFreqMinHz;
@@ -225,7 +239,11 @@ class PolivoksFilter {
     if (c.sr != sr_) { c.sr = sr_; }
     x = inputStage_(c, x);  // GH#6: level-dependent, per-channel input nonlinearity.
     const double fc = effCutoffHz_(c, cvEffFor_(c));
-    const double g = std::tan(3.14159265358979323846 * fc / sr_);
+    if (fc != c.memoFc) {
+      c.memoFc = fc;
+      c.memoG = std::tan(3.14159265358979323846 * fc / sr_);
+    }
+    const double g = c.memoG;
     const double damp = kDampMax + (kDampMin - kDampMax) * c.res;
     const double k = damp;  // same-damp definition (2−1.9·res), as in the Chamberlin.
     const double a1 = 1.0 / (1.0 + g * (g + k));

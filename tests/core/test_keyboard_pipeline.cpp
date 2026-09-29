@@ -566,12 +566,12 @@ static void arp_release_uses_held_identity() {
   h.schedule(noteOff(1, 64));
   h.render(64);
 
-  // Clock -> the arp emits B + interval (1 semitone) as the sound.
+  // Clock -> the arp plays B as the sound.
   h.schedule(clockAt(128));
   h.render(64);
   CHECK_TRUE(h.kb.gate());
-  // B survived the release, so the arpeggiated pitch is B+interval, NOT A+interval.
-  CHECK_TRUE(near(h.glideSettle(96000), 1.5 + 1.0 / 12.0, 5e-4));
+  // B survived the release, so the arpeggiated pitch is B, NOT A.
+  CHECK_TRUE(near(h.glideSettle(96000), 1.5, 5e-4));
 }
 
 static void seq_base_release_uses_remaining() {

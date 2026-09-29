@@ -130,6 +130,9 @@ static void test_classic_mute() {
   const double sr = 48000.0;
   core::DroneBank bank = make_bank(seed, sr, 5, false);
   bank.setMute(1, true);
+  // A MUTE press fades out over a few ms (no click), then the generator is silent.
+  const auto fade = render_channel(bank, 1, 4800);
+  CHECK(std::abs(fade.front()) > 0.0 || std::abs(fade[1]) > 0.0);  // not an instant cut
   const auto muted = render_channel(bank, 1, 4096);
   const auto alive = render_channel(bank, 0, 4096);
   for (const double x : muted) CHECK(x == 0.0);   // muted generator is silent.

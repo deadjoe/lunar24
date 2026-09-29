@@ -43,10 +43,10 @@ namespace lunar24::core {
 // amplified by a normalized GAIN and softly saturated by the amp's clip stage.
 class Preamp {
  public:
-  // sampleRate is carried for parity with the other P3 DSP headers and to keep a
-  // single configuration point if gain smoothing is ever added; the current
-  // memoryless path does not use it. Must be > 0.
-  explicit Preamp(double sampleRate) : sr_(sampleRate) {}
+  // The sample rate sets the GAIN glide (a dragged GAIN knob moves over ~10 ms instead of
+  // stepping, tuned by ear). Must be > 0.
+  explicit Preamp(double sampleRate)
+      : sr_(sampleRate), glide_(sampleRate > 0.0 ? 1.0 - std::exp(-1.0 / (0.010 * sampleRate)) : 1.0) {}
 
   // ------------------------------------------------------------------- gain --
   // GAIN knob, normalized 0..1 (the registry's unit "norm"). 0 => mute, 1 => +40 dB
@@ -60,7 +60,8 @@ class Preamp {
   // in=0 (no source / muted) returns exactly 0 — the nonlinearity is pass-through
   // at zero, so there is no residual noise, DC, or NaN.
   double tick(double in) {
-    const double linear = gainLinear() * in;
+    appliedGain_ += glide_ * (gainLinear() - appliedGain_);
+    const double linear = appliedGain_ * in;
     return kSaturationVoltage * std::tanh(linear / kSaturationVoltage);
   }
 
@@ -70,6 +71,8 @@ class Preamp {
   // PROVISIONAL taper: normalized knob -> dB (linear in amplitude, not dB).
   double gainDb() const { return gainNorm_ * kMaxGainDb; }
   double gainLinear() const { return gainNorm_ * kMaxGainLinear; }
+  // Land on the set GAIN now (a whole-state load is not a knob move).
+  void snap() { appliedGain_ = gainLinear(); }
 
   static constexpr double kMaxGainDb = 40.0;      // manual CONFIRMED ceiling (L544).
   static constexpr double kMaxGainLinear = 100.0;  // x100 == +40 dB.
@@ -79,7 +82,9 @@ class Preamp {
 
  private:
   double sr_ = 0.0;
+  double glide_ = 1.0;
   double gainNorm_ = 0.5;  // registry default.
+  double appliedGain_ = 0.5 * kMaxGainLinear;  // the gliding gain the audio uses
 };
 
 }  // namespace lunar24::core

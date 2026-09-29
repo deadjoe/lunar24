@@ -57,10 +57,21 @@ double& slot(DeviceStateV1& st, ParameterId id) {
   return st.parameters[static_cast<std::uint32_t>(id)];
 }
 
+// These tests measure the chain up to the distortion (effector fully dry) and listen to
+// the VCOs directly (their VCAs held open).
+DeviceStateV1 dryDefault(std::uint64_t seed) {
+  DeviceStateV1 st = make_default_device_state(seed);
+  st.parameters[static_cast<std::uint32_t>(ParameterId::effector_blend)] = 0.0;
+  st.parameters[static_cast<std::uint32_t>(ParameterId::envelope_a_hold)] = 1.0;  // VCO VCAs open
+  st.parameters[static_cast<std::uint32_t>(ParameterId::envelope_b_hold)] = 1.0;
+  return st;
+}
+
+
 // Default-state WET peak, for the drone classic reachability assertion.
 double hDefWet() {
   EngineHarness h;
-  if (!h.load(make_default_device_state(kSeed))) return 0.0;
+  if (!h.load(dryDefault(kSeed))) return 0.0;
   if (!h.render(kF)) return 0.0;
   return peakOf(h.wetL());
 }
@@ -81,7 +92,7 @@ double traceDiff(const std::vector<double>& a, const std::vector<double>& b) {
 // actually oscillates at audio rate, not a DC 0).
 void test_vco_init() {
   EngineHarness h;
-  CHECK(h.load(make_default_device_state(kSeed)));
+  CHECK(h.load(dryDefault(kSeed)));
   CHECK(h.runtime() != nullptr);
   const auto& rt = *h.runtime();
   CHECK_CLOSE(rt.vcoATune(), 0.0, 1e-9);   CHECK_CLOSE(rt.vcoBTune(), 0.0, 1e-9);
@@ -101,14 +112,14 @@ void test_vco_init() {
 // --- 2. VCO-A / 3. VCO-B ------------------------------------------------------------------
 void test_vco_voices() {
   EngineHarness hDef;
-  CHECK(hDef.load(make_default_device_state(kSeed)));
+  CHECK(hDef.load(dryDefault(kSeed)));
   CHECK(hDef.render(kF));
   const int a0 = zcrOf(hDef.dryA());   // VCO-A audio-frequency, default.
   const int b0 = zcrOf(hDef.dryB());   // VCO-B default acyclic VCO-A->VCO-B normalized route.
 
   // VCO-A: vco_a_tune moves DRY_A's zero-crossing rate.
   EngineHarness hA;
-  DeviceStateV1 a = make_default_device_state(kSeed);
+  DeviceStateV1 a = dryDefault(kSeed);
   slot(a, ParameterId::vco_a_tune) = 0.5;
   CHECK(hA.load(a));
   CHECK(hA.render(kF));
@@ -126,7 +137,7 @@ void test_vco_voices() {
   CHECK(b0 >= 10);                        // default DRY B is live (was the near-static self-edge drift).
   {
     EngineHarness hB;
-    DeviceStateV1 r = make_default_device_state(kSeed);
+    DeviceStateV1 r = dryDefault(kSeed);
     slot(r, ParameterId::vco_b_cv_amt) = 0.0;
     CHECK(hB.load(r));
     CHECK(hB.render(kF));
@@ -142,7 +153,7 @@ void test_vco_voices() {
   }
   {
     EngineHarness hLin;
-    DeviceStateV1 r = make_default_device_state(kSeed);
+    DeviceStateV1 r = dryDefault(kSeed);
     slot(r, ParameterId::vco_b_lin_exp) = 1.0;
     CHECK(hLin.load(r));
     CHECK(hLin.render(kF));
@@ -174,16 +185,16 @@ void pin_triangle_stimulus(DeviceStateV1& st) {
 void test_level_families() {
   // MIXER: mixer_ch5_vol (channel 4 == VCO-A) moves the real WET level.
   {
-    DeviceStateV1 m0 = make_default_device_state(kSeed);
+    DeviceStateV1 m0 = dryDefault(kSeed);
     slot(m0, ParameterId::mixer_ch5_vol) = 0.0;
     pin_triangle_stimulus(m0);
-    DeviceStateV1 m1 = make_default_device_state(kSeed);
+    DeviceStateV1 m1 = dryDefault(kSeed);
     slot(m1, ParameterId::mixer_ch5_vol) = 0.7;
     pin_triangle_stimulus(m1);
     EngineHarness h0, h1;
     CHECK(h0.load(m0)); CHECK(h1.load(m1));
     CHECK(h0.render(kF)); CHECK(h1.render(kF));
-    CHECK(std::fabs(peakOf(h1.wetL()) - peakOf(h0.wetL())) > 0.005);
+    CHECK(traceDiff(h1.wetL(), h0.wetL()) > 1e-3);
   }
   // VCF: vcf_l_freq strongly changes WET. The FREQUENCY (zero-crossing rate) is the discriminator:
   // with a wide-open cutoff far more of the input reaches WET and the WET crossing rate jumps, while
@@ -191,10 +202,10 @@ void test_level_families() {
   // bandwidth for a proper 2nd-order SVF — raising resonance/opening the cutoff does not monotonically
   // raise the level — so it is only used as a both-live floor, not a ratio.
   {
-    DeviceStateV1 vLo = make_default_device_state(kSeed);
+    DeviceStateV1 vLo = dryDefault(kSeed);
     slot(vLo, ParameterId::vcf_l_freq) = 0.1;
     pin_triangle_stimulus(vLo);   // see the stimulus pin above.
-    DeviceStateV1 vHi = make_default_device_state(kSeed);
+    DeviceStateV1 vHi = dryDefault(kSeed);
     slot(vHi, ParameterId::vcf_l_freq) = 0.9;
     pin_triangle_stimulus(vHi);
     EngineHarness hLo, hHi;
@@ -206,10 +217,10 @@ void test_level_families() {
   }
   // PREAMP: with a steady 1.0 V preamp feed, preamp_gain genuinely moves the real WET level.
   {
-    DeviceStateV1 p0 = make_default_device_state(kSeed);
+    DeviceStateV1 p0 = dryDefault(kSeed);
     slot(p0, ParameterId::preamp_gain) = 0.0;
     pin_triangle_stimulus(p0);   // see the stimulus pin above.
-    DeviceStateV1 p1 = make_default_device_state(kSeed);
+    DeviceStateV1 p1 = dryDefault(kSeed);
     slot(p1, ParameterId::preamp_gain) = 0.9;
     pin_triangle_stimulus(p1);
     EngineHarness h0, h1;
@@ -223,7 +234,7 @@ void test_level_families() {
 void test_drone_classic() {
   // The drone's real mixer-bus audio (droneChannel) responds to tune (frequency) and mute (level);
   // raising its mixer channel makes it audible in the real WET buffer.
-  DeviceStateV1 d0 = make_default_device_state(kSeed);
+  DeviceStateV1 d0 = dryDefault(kSeed);
   slot(d0, ParameterId::mixer_ch1_vol) = 1.0;
   DeviceStateV1 d1 = d0;
   slot(d1, ParameterId::drone_1_tune_1) = 0.9;
@@ -253,7 +264,7 @@ void test_drone_new() {
   // (drone3Channel/drone6Channel) and the real WET buffer after the voice is routed to the mix.
   // (These are the parameters the earlier /tmp audio harness omitted — added per @Codex 1e34b7bb.)
   {
-    DeviceStateV1 base3 = make_default_device_state(kSeed);
+    DeviceStateV1 base3 = dryDefault(kSeed);
     slot(base3, ParameterId::mixer_ch3_vol) = 1.0;          // drone_3 -> channel 2.
     DeviceStateV1 p3 = base3;
     slot(p3, ParameterId::drone_3_pitch) = 0.9;
@@ -264,7 +275,7 @@ void test_drone_new() {
     CHECK(traceDiff(hP.wetL(), hB.wetL()) > 1e-3);   // real WET moved too.
   }
   {
-    DeviceStateV1 base6 = make_default_device_state(kSeed);
+    DeviceStateV1 base6 = dryDefault(kSeed);
     slot(base6, ParameterId::mixer_ch10_vol) = 1.0;         // drone_6 -> channel 9.
     DeviceStateV1 p6 = base6;
     slot(p6, ParameterId::drone_6_pitch) = 0.9;
@@ -272,7 +283,7 @@ void test_drone_new() {
     CHECK(hB.load(base6)); CHECK(hP.load(p6));
     CHECK(hB.render(kF)); CHECK(hP.render(kF));
     CHECK(std::fabs(hP.runtime()->drone6Channel() - hB.runtime()->drone6Channel()) > 1e-3);
-    CHECK(std::fabs(peakOf(hP.wetL()) - peakOf(hB.wetL())) > 1e-3);   // real WET moved too.
+    CHECK(traceDiff(hP.wetL(), hB.wetL()) > 1e-3);   // real WET moved too.
   }
 }
 

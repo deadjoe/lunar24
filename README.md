@@ -41,35 +41,25 @@ dependencies keep their own licenses (inventory: `third_party/licenses/`).
 ## Project layout
 
 ```
-core/        framework-free synth core (public contract headers + implementation)
-app/         standalone app / device / MIDI / UI adapter  (P1)
-spec/machine/  canonical machine registry source of truth (JSON)
-generated/   committed C++ headers generated from spec/machine/ (regenerate via tools/)
-tools/       stdlib-only gates (generate_registry.py, check_core_headers.py, check_registry_negative.py)
-tests/core/  framework-free unit + validation + regression tests
-design/      design specifications and reference index
-third_party/ dependency license inventory
+core/          framework-free synth engine (header-only C++17)
+host/          macOS/Windows standalone app (iPlug2: audio, MIDI, UI)
+spec/machine/  machine registry (modules, parameters, jacks, programs) — source of truth
+generated/     C++ headers generated from spec/ (tools/generate_registry.py)
+tests/         unit and engine tests
+design/        design notes; design/STATUS.md is the plain-language progress page
 ```
 
 ## Build
 
 ```sh
+git submodule update --init --recursive   # iPlug2 (needed for the mac/win app)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-## Governance
-
-Design/engineering direction is set in the design docs. Development flows through feature
-branches and PRs; commits follow Conventional Commits and each commit is a buildable,
-testable logical unit.
+CI builds the macOS and Windows apps and attaches them to each run as downloadable artifacts.
 
 ## Status
 
-**P0 is closed out and P1/P2 have exited MET; the work in flight is the GH#19 anti-aliasing
-slices.** P0 established the canonical machine registry, the framework-free core contract,
-`DeviceStateV1`, a field-evidence policy, and the gates that keep them consistent and
-switch-clean. This is a reviewed basis to build on, **not** a frozen/locked final
-implementation; the concrete P0–P8 plan is in `design/06-master-plan.md`, and the live
-reconnection point is [`design/00-status.md`](design/00-status.md).
+See [`design/STATUS.md`](design/STATUS.md).

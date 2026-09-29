@@ -81,6 +81,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -92,6 +93,7 @@
 #include <lunar24/core/drone_bank.h>
 #include <lunar24/core/ar_envelope.h>  // GH#15 D4: the Papa Srapa voice AR VCA envelope.
 #include <lunar24/core/drone_noise.h>
+#include <lunar24/core/effector.h>
 #include <lunar24/core/envelope_follower.h>
 #include <lunar24/core/event_timebase.h>
 #include <lunar24/core/fm_am.h>
@@ -201,6 +203,7 @@ enum class ExecutionKind : std::uint8_t {
   // PatchGraph consumes them, and the module is always-executed so its glide advances
   // every sample even unwired.
   kKeyboard,   // keyboard: note ControlEvents -> note CV/gate publish.
+  kEffector,   // dual effector: reads its CV X/Y/Z inputs (audio is processed after the chain).
   // Legacy-compat kinds (synthetic fixture only; never emitted by the canonical table).
   kExtIn,
   kVcf,
@@ -451,6 +454,8 @@ class SynthRuntime {
     // applyKeyboardState behaves exactly as before. The sample rate is retained because the
     // side configure happens after construction (state apply), not in the ctor.
     sampleRate_ = sampleRate;
+    mixer_.setSampleRate(sampleRate);
+    effector_.init(sampleRate);
     for (std::uint32_t s = 0; s < 2; ++s) {
       keyboardArpSeq_[s].configure(ArpSeqParams{}, sampleRate);
       keyboardBeh_[s].configure(KeyboardBehaviourParams{}, sampleRate);
@@ -651,9 +656,7 @@ class SynthRuntime {
   //     RIGHT. The bank resolution is the existing choke point — no new per-side id.
   //   * the non-scalar side paths reuse the same side_bank() resolution: the 12-bit scale
   //     editor, the 16 seqSteps record, and the four no-domain clock/rhythm selectors.
-  //   * keyboard.clock_bpm (129) is PARSED into ArpSeqParams::bpm and stops there: the registry
-  //     value is a norm with NO evidenced norm->BPM law, so it never drives a clock and is not
-  //     counted as a consumed parameter (contract §3).
+  //   * keyboard.clock_bpm (129) sets the internal keyboard clock (tickKeyboardClock_).
   //
   // Shared CONFIGURATION is not shared PERFORMANCE STATE: Single/Twin install the same bank
   // into both instances, but each instance keeps its own held notes, chord, glide and envelope.
@@ -661,6 +664,9 @@ class SynthRuntime {
   // failure branch because every input it reads is already validated by the candidate chain
   // (validate_device_state ran before the state ctor) and every setter it calls is total.
   void applyKeyboardState(const DeviceStateV1& state) {
+    // Keep a copy so live menu edits (applyKeyboardParam_) can reconfigure the keyboard
+    // on the audio thread without touching the UI-owned state. 7 KB, no allocation.
+    if (&state != &kbdState_) kbdState_ = state;
     keyboardMode_ = mode_from_behaviour(state.keyboardSettings.pressureBehaviour);
     // (bankIndex, id) -> double: bank 0 is the live parameters[] (left/shared), bank 1 is the
     // keyboardScalarRight mirror. An id outside the 22-scalar set has no bank-1 slot and reads
@@ -718,9 +724,8 @@ class SynthRuntime {
   ArpSeqMode keyboardArpSeqMode(KeyboardSide side) const {
     return keyboardArpSeq_[keyboardSideIndex_(side)].mode();
   }
-  // PARSED CONFIG READBACK — NOT AN APPLIED BEHAVIOUR. keyboard.clock_bpm (129) has no
-  // evidenced norm->BPM law, so it is parsed into the arp/seq param set and consumed by
-  // NOTHING. Do not cite this as a consumed parameter and do not derive a tempo from it.
+  // The keyboard.clock_bpm knob value as parsed into the arp/seq params (norm 0..1);
+  // keyboardBpm() turns it into the internal clock tempo.
   double keyboardParsedBpm(KeyboardSide side) const {
     return keyboardArpSeq_[keyboardSideIndex_(side)].bpm();
   }
@@ -771,6 +776,40 @@ class SynthRuntime {
   void setVcfMode(int ch, bool bp)     { vcf_.setMode(ch, bp); }
   void setVcfMod(int ch, double mod)   { vcf_.setMod(ch, mod); }
   void setVcfLink(bool on)             { vcf_.setLink(on); }
+  // ---- dual effector ----
+  void setEffectorEnabled(bool on) { effectorEnabled_ = on; }
+  void setVcoVcaEnabled(bool on) { vcoVcaEnabled_ = on; }
+  bool effectorEnabled() const { return effectorEnabled_; }
+  // `program` is any program of the inserted cartridge; the side's 1-2-3 switch picks within it.
+  void setEffectorProgram(int side, ProgramId program) {
+    effector_.setCartridge(side, static_cast<int>(static_cast<std::uint32_t>(program) / 3u));
+  }
+  int effectorProgram(int side) const { return effector_.program(side); }
+  const DualEffector& effector() const { return effector_; }
+  // Effector panel knobs (X/Y/Z/BLEND/MASTER/PHONE and the two 1-2-3 switches).
+  bool applyEffectorParam(ParameterId id, double v) {
+    switch (id) {
+      case ParameterId::effector_x: effector_.setX(v); return true;
+      case ParameterId::effector_y: effector_.setY(v); return true;
+      case ParameterId::effector_z: effector_.setZ(v); return true;
+      case ParameterId::effector_blend: effector_.setBlend(v); return true;
+      case ParameterId::effector_master: effector_.setMaster(v); return true;
+      case ParameterId::effector_phone: return true;  // headphone level: no separate output here
+      case ParameterId::effector_select_l: effector_.setSelect(0, static_cast<int>(std::lround(v))); return true;
+      case ParameterId::effector_select_r: effector_.setSelect(1, static_cast<int>(std::lround(v))); return true;
+      default: return false;
+    }
+  }
+  void applyEffectorState(const DeviceStateV1& st) {
+    static constexpr ParameterId kIds[] = {
+        ParameterId::effector_x, ParameterId::effector_y, ParameterId::effector_z,
+        ParameterId::effector_blend, ParameterId::effector_master, ParameterId::effector_phone,
+        ParameterId::effector_select_l, ParameterId::effector_select_r};
+    for (ParameterId id : kIds) (void)applyEffectorParam(id, st.parameters[static_cast<std::uint32_t>(id)]);
+    setEffectorProgram(0, st.leftEffector.program);
+    setEffectorProgram(1, st.rightEffector.program);
+  }
+
   void setDistortion(double dist, double gain) {
     distortion_.setDist(dist);
     distortion_.setGain(gain);
@@ -910,6 +949,8 @@ class SynthRuntime {
   // "real_path" repair). Returns false only if the fixed event queue is full (the
   // audio thread is never blocked — design/07 §5).
   bool enqueueControlEvent(const TimedControlEvent& e) { return eventTimebase_.enqueue(e); }
+  // Absolute sample index of the next block (for live events that should act "now").
+  std::uint64_t currentSample() const { return eventTimebase_.blockStart(); }
 
   // DRONE panel controls (#39 panel-binding half): knob -> bank. `voiceGroup` is
   // 0..3 (classic drone voices 1/2/4/5), `gen` is 0..4. The runtime owns the
@@ -948,6 +989,18 @@ class SynthRuntime {
   void setDrone3Fm(bool on) { pv3_.setFm(on); }
   void setDrone3Am(bool on) { pv3_.setAm(on); }
   void setDrone3Noise(double amp) { pv3_.setNoise(amp); }
+  // Level controls (mixer VOL/PAN, preamp GAIN, drone MUTE, drone 3/6 NOISE) glide when a
+  // knob moves live. After a whole-state load, land them on their values at once.
+  // MIDI pitch bend, in volts on the keyboard V/OCT output (1 V = 1 octave). Audio thread.
+  void setKeyboardBendVolts(double v) { kbdBendVolts_ = std::isfinite(v) ? v : 0.0; }
+
+  void snapSmoothedLevels() {
+    mixer_.snap();
+    preamp_.snap();
+    drone_.snapMutes();
+    pv3_.snapNoise();
+    pv6_.snapNoise();
+  }
   void setDrone3Divider(double norm) { pv3_.setDivider(norm); }
   // GH#15 D1 (mod knob): norm [0,1] -> audio-oscillator modulation depth = modNorm
   // (linear, marked PROVISIONAL below as kModDepthFromNorm). Registry-AGREEING unit:
@@ -988,6 +1041,15 @@ class SynthRuntime {
   // product path reads every frame in step_(kDrone). ATT/RLS take the registry's
   // NORMALIZED 0..1 control (the bank does the single monotonic norm->seconds map).
   void setDroneGroupGate(int voiceGroup, bool on) { drone_.setGroupGate(voiceGroup, on); }
+  // DRONE VOICES keys 1..6 (index 0..5 = drone 1..6): open or close that voice's gate.
+  // A cable in the voice's GATE input still takes over for drones 3/6.
+  void setDroneVoiceKey(int voice, bool open) {
+    static constexpr int kClassicGroup[6] = {0, 1, -1, 2, 3, -1};
+    if (voice < 0 || voice > 5) return;
+    droneKeyOpen_[voice] = open;
+    if (kClassicGroup[voice] >= 0) drone_.setGroupGate(kClassicGroup[voice], open);
+  }
+  bool droneVoiceKey(int voice) const { return voice >= 0 && voice < 6 && droneKeyOpen_[voice]; }
   void setDroneGroupHold(int voiceGroup, bool on) { drone_.setGroupHold(voiceGroup, on); }
   void setDroneGroupAtt(int voiceGroup, double norm) { drone_.setGroupAtt(voiceGroup, norm); }
   void setDroneGroupRls(int voiceGroup, double norm) { drone_.setGroupRls(voiceGroup, norm); }
@@ -2009,7 +2071,12 @@ class SynthRuntime {
     // one ModuleId one slot; deduping by kind would drop a module). driveGraph=false
     // bypasses the CONTROL layer: slots still run, but no CV sink is resolved from the
     // graph (criterion-① negative).
+    effCv_[0] = effCv_[1] = effCv_[2] = 0.0;
     for (std::uint32_t i = 0; i < execSlotCount_; ++i) step_(execSlots_[i], driveGraph);
+    if (effectorEnabled_) {
+      for (int i = 0; i < 3; ++i) effector_.setCv(i, effCv_[i]);
+      effector_.process(wetL_, wetR_);
+    }
     return RuntimeOutput{wetL_, wetR_, dryA_, dryB_};
   }
 
@@ -2114,6 +2181,7 @@ class SynthRuntime {
       // constructor value reproduces the pre-D2 sound exactly.
       baseRateHz_ = kNewDroneLfFreqHz;
       applyRate();
+      noiseGlide_ = 1.0 - std::exp(-1.0 / (0.010 * sr));
     }
     void setPitch(double pct) {
       pitchSemis_ = pct <= 0.0 ? SchmittOsc::kSilenceSt
@@ -2145,7 +2213,9 @@ class SynthRuntime {
     void applyRate() { lf.setFreqHz(baseRateHz_ * rateMult_); }
     void setFm(bool on) { fmOn_ = on; }
     void setAm(bool on) { amOn_ = on; }
-    void setNoise(double amp) { noise.setAmplitude(amp); }
+    // NOISE glides to its new level (~10 ms, tuned by ear) so a dragged knob does not click.
+    void setNoise(double amp) { noiseTarget_ = amp; }
+    void snapNoise() { noise.setAmplitude(noiseTarget_); }
     // GH#15 D3 (DIVIDER knob). The lane OWNS the S&H clock source; the old setShClock
     // field-injection seam (a pure test hook) is voided. divN = 1 + (kNewDroneDivMax-1)*norm
     // (linear). Default norm 0.5 -> divN = 8.5: the S&H CV readback (sampleHold*Cv) goes from
@@ -2200,8 +2270,13 @@ class SynthRuntime {
     double divider() const { return divN_; }
     bool fmOn() const { return fmOn_; }
     bool amOn() const { return amOn_; }
-    double noiseAmp() const { return noise.amplitude(); }
+    double noiseAmp() const { return noiseTarget_; }
     void tick(double* out) {
+      const double amp = noise.amplitude();
+      if (amp != noiseTarget_) {
+        const double next = amp + noiseGlide_ * (noiseTarget_ - amp);
+        noise.setAmplitude(std::fabs(noiseTarget_ - next) < 1e-7 ? noiseTarget_ : next);
+      }
       double lv = 0.0;
       lf.tick(&lv);
       const double sq = lf.square();  // ±1 LF-square level (read-only tap).
@@ -2256,6 +2331,8 @@ class SynthRuntime {
     double lfPrevLevel_ = 0.0;  // previous LF-square level, for rising-edge detection.
     double lfEdgeAcc_ = 0.0;    // fractional LF-edge counter, scaled by divN_ into captures.
     double shCv_ = 0.0;
+    double noiseTarget_ = kNewDroneNoiseAmp;
+    double noiseGlide_ = 1.0;
     // MOD knob depth (GH#15 D1). Default 0.5 = the registered drone_3/6.mod default,
     // so the post-wire default sound is half-depth modulation (was the raw ±1 square).
     double mod_ = 0.5;
@@ -2282,6 +2359,95 @@ class SynthRuntime {
   // registry unit differs from the setter (tune/volt/rate: norm -> semitones/Hz) would
   // need an UNEVIDENCED scale, so they are deliberately NOT wired here (FINDINGS §7) —
   // that is the separately-scheduled parameter-mapping work, not this dispatch pass.
+  // A keyboard menu setting changed live: update the keyboard's state copy and
+  // reconfigure both sides (held notes restart). Changing the tempo also switches the
+  // keyboard back to its internal clock (manual p.19). Returns false for other parameters.
+  bool applyKeyboardParam_(ParameterId id, double v) {
+    const ParameterDescriptor* d = find_parameter(id);
+    if (d == nullptr || d->stable_id.substr(0, 9) != "keyboard.") return false;
+    kbdState_.parameters[static_cast<std::size_t>(id)] = v;
+    if (id == ParameterId::keyboard_behaviour)
+      kbdState_.keyboardSettings.pressureBehaviour = static_cast<std::uint8_t>(v);
+    if (id == ParameterId::keyboard_clock_bpm) kbdExtClock_ = false;
+    applyKeyboardState(kbdState_);
+    return true;
+  }
+
+  // Keyboard tempo: 10..300 BPM (manual p.19), linear over the knob.
+  static double keyboardBpm(double norm) { return 10.0 + 290.0 * std::clamp(norm, 0.0, 1.0); }
+  // Arp / sequencer steps per beat of the internal clock: 16th notes.  // tuned by ear
+  static constexpr double kKeyboardStepsPerBeat = 4.0;
+
+  // Drive the arpeggiator / 16-step sequencer clock, one sample. The internal clock runs at
+  // the menu BPM; a rising edge on the CLOCK jack switches to that external clock until the
+  // BPM is changed again (manual p.13, p.19). A rising edge on RESET restarts the pattern.
+  // Each clock high starts a step, each clock low ends its gate.
+  void tickKeyboardClock_() {
+    const double clk = resolveSinkValue_(JackId::keyboard_clock_in, 0.0);
+    const double rst = resolveSinkValue_(JackId::keyboard_reset_in, 0.0);
+    bool rise = false, fall = false;
+    const bool extHigh = kbdExtHigh_ ? clk > 0.5 : clk > 1.5;  // hysteresis
+    if (extHigh != kbdExtHigh_) {
+      kbdExtHigh_ = extHigh;
+      if (extHigh) kbdExtClock_ = true;
+      if (kbdExtClock_) (extHigh ? rise : fall) = true;
+    }
+    if (!kbdExtClock_) {
+      const double bpm = keyboardBpm(kbdState_.parameters[static_cast<std::size_t>(ParameterId::keyboard_clock_bpm)]);
+      kbdClockPhase_ += bpm / 60.0 * kKeyboardStepsPerBeat / sampleRate_;
+      if (kbdClockPhase_ >= 1.0) {
+        kbdClockPhase_ -= std::floor(kbdClockPhase_);
+        rise = true;
+      } else if (kbdClockPhase_ >= 0.5 && kbdClockPhase_ - bpm / 60.0 * kKeyboardStepsPerBeat / sampleRate_ < 0.5) {
+        fall = true;
+      }
+    }
+    const bool resetHigh = kbdResetHigh_ ? rst > 0.5 : rst > 1.5;
+    if (resetHigh && !kbdResetHigh_) {
+      ControlEvent r{};
+      r.kind = ControlEventKind::reset;
+      applyControlEvent_(r);
+    }
+    kbdResetHigh_ = resetHigh;
+    // A clock pulse from MIDI has no falling edge of its own: end its gate half a period later.
+    if (kbdPulseFallAt_ != 0 && kbdSampleCount_ >= kbdPulseFallAt_) {
+      kbdPulseFallAt_ = 0;
+      fall = true;
+    }
+    if (rise) keyboardClockRise_();
+    if (fall) keyboardClockFall_();
+    ++kbdSampleCount_;
+  }
+
+  void keyboardClockRise_() {
+    ControlEvent c{};
+    c.kind = ControlEventKind::clock;
+    c.value = 1;
+    const std::uint32_t n = (keyboardMode_ == KeyboardMode::Single) ? 1u : 2u;
+    for (std::uint32_t s = 0; s < n; ++s) {
+      auto kbdSink = [this, s](const ControlEvent& nkb) { keyboardBeh_[s].handleControlEvent(nkb); };
+      keyboardArpSeq_[s].handleControlEvent(c, kbdSink);
+    }
+  }
+  void keyboardClockFall_() {
+    for (std::uint32_t s = 0; s < 2; ++s) {
+      auto kbdSink = [this, s](const ControlEvent& nkb) { keyboardBeh_[s].handleControlEvent(nkb); };
+      keyboardArpSeq_[s].clockLow(kbdSink);
+    }
+  }
+  // A clock EVENT (MIDI clock step, or a test/host event): follow it like the CLOCK jack
+  // (the internal BPM clock stops until BPM changes), and close its gate half the measured
+  // pulse period later.
+  void externalClockPulse_() {
+    kbdExtClock_ = true;
+    if (kbdLastPulseAt_ != 0) {
+      const std::uint64_t period = kbdSampleCount_ - kbdLastPulseAt_;
+      kbdPulseFallAt_ = kbdSampleCount_ + (period > 1 ? period / 2 : 1);
+    }
+    kbdLastPulseAt_ = kbdSampleCount_ == 0 ? 1 : kbdSampleCount_;
+    keyboardClockRise_();
+  }
+
   void applyControlEvent_(const ControlEvent& e) {
     // GH#12 keyboard product owner (@Codex direction, @Kimi option A): the keyboard is
     // a REAL executed control source that consumes the canonical note ControlEvents
@@ -2328,10 +2494,11 @@ class SynthRuntime {
         return;  // a reset is fully consumed by the keyboard owner.
       }
       case ControlEventKind::clock:
+        externalClockPulse_();
+        return;
       case ControlEventKind::sync: {
-        // GH#12 task#101: the arp/seq modes are only reachable from an EXPLICIT external
-        // clock/sync edge — this slice invents no internal BPM clock and no clock division
-        // (contract §3). The registered keyboard.clock_in is ONE jack feeding the device, so
+        // The arp/seq modes step on clock edges from tickKeyboardClock_ (internal BPM clock
+        // or the CLOCK jack) or from a MIDI clock. There is ONE clock, so
         // under Twin/Split both independent arp/seq engines consume the same edge; under
         // Single there is one performer, so only LEFT. In the default Keyboard mode the
         // forwarded event reaches KeyboardBehaviour, which ignores clock/sync — so the
@@ -2351,6 +2518,10 @@ class SynthRuntime {
     if (e.kind != ControlEventKind::parameter) return;
     const double v = static_cast<double>(e.value);
     lastApplyParamId_ = e.parameter;
+    if (applyKeyboardParam_(e.parameter, v)) {
+      lastApplyStatus_ = ParameterApplyStatus::applied;
+      return;
+    }
     switch (e.parameter) {
       // Existing drone_3/6 path: the setter here is void and already admits the
       // registry-AGREEING units quoted above, so a handled drone case records `applied`.
@@ -2393,7 +2564,13 @@ class SynthRuntime {
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the
       // const/no-alloc readback surface (lastApplyStatus_) — no separate param bank.
-      default: setControlParamValue(e.parameter, v); break;  // records its own precise status.
+      default:
+        if (applyEffectorParam(e.parameter, v)) { lastApplyStatus_ = ParameterApplyStatus::applied; break; }
+        // Control-source and panel-knob params ramp through the smoothers; every other
+        // panel parameter (mixer, drones, VCO, VCF, effector...) applies directly.
+        if (setControlParamValue(e.parameter, v) == ParameterApplyStatus::unsupported_parameter)
+          (void)applyDspParam(e.parameter, v);
+        break;
     }
   }
 
@@ -3100,8 +3277,8 @@ class SynthRuntime {
         vcA_.setPwCv(pwm);
         double a = 0.0;
         vcA_.tick(&a);
-        dryA_ = a;
-        chIn_[VoiceMixer::kChannelVcoA] = a;
+        dryA_ = a * vcoVcaGain_(0);
+        chIn_[VoiceMixer::kChannelVcoA] = dryA_;
         if (vcoAOutBound_) publishSourceValue_(vcoAOut_, a);
         break;
       }
@@ -3130,8 +3307,8 @@ class SynthRuntime {
         vcB_.setPwCv(pwm);
         double b = 0.0;
         vcB_.tick(&b);
-        dryB_ = b;
-        chIn_[VoiceMixer::kChannelVcoB] = b;
+        dryB_ = b * vcoVcaGain_(1);
+        chIn_[VoiceMixer::kChannelVcoB] = dryB_;
         // Publish the real vco_b.vco_out so any downstream (a normal consumer, or a
         // user-established B->B feedback edge) reads THIS frame's value through the single
         // write (@Codex correction 4).
@@ -3332,19 +3509,26 @@ class SynthRuntime {
         // two sides would diverge by block partition). The four published jacks are the four
         // registered keyboard outputs; which signal lands on pressure_out depends on the mode
         // (contract §4 / manual BEHAVIOUR: single = pressure, twin/split = right V/oct).
+        tickKeyboardClock_();
         double pitchL = 0.0, pressL = 0.0, pitchR = 0.0, pressR = 0.0;
         keyboardBeh_[0].tick(&pitchL, &pressL);
         keyboardBeh_[1].tick(&pitchR, &pressR);
         if (kbdBound_) {
           const bool single = (keyboardMode_ == KeyboardMode::Single);
-          publishSourceValue_(kbdVOctOut_, pitchL);
+          publishSourceValue_(kbdVOctOut_, pitchL + kbdBendVolts_);
           publishSourceValue_(kbdGateLeftOut_, keyboardBeh_[0].gate() ? 10.0 : 0.0);
           // An unused side is held at an EXPLICIT low rail, never left unpublished (a stale
           // frame in the CV bank would read as a held gate to a downstream interpreter).
           publishSourceValue_(kbdGateRightOut_,
                               (!single && keyboardBeh_[1].gate()) ? 10.0 : 0.0);
-          publishSourceValue_(kbdPressureOut_, single ? pressL : pitchR);
+          publishSourceValue_(kbdPressureOut_, single ? pressL : pitchR + kbdBendVolts_);
         }
+        break;
+      }
+      case ExecutionKind::kEffector: {
+        effCv_[0] = resolveSinkValue_(JackId::effector_cv_x_in, 0.0);
+        effCv_[1] = resolveSinkValue_(JackId::effector_cv_y_in, 0.0);
+        effCv_[2] = resolveSinkValue_(JackId::effector_cv_z_in, 0.0);
         break;
       }
       case ExecutionKind::kUnsupported:
@@ -3373,6 +3557,20 @@ class SynthRuntime {
     } else if (lFed) {
       vcf_.setCvR(l);           // R unplugged: R follows the already-resolved L this frame.
     }
+  }
+
+  // VCO A/B each have a VCA. Envelope A (B) controls it; a cable into the VCO's VCA CV
+  // input takes over. 0..8 V opens the VCA fully. The raw oscillator still feeds its
+  // own output jack (e.g. the VCO A -> VCO B FM normalling).
+  double vcoVcaGain_(int side) const {
+    if (!vcoVcaEnabled_) return 1.0;
+    const JackId j = side == 0 ? JackId::vco_a_vca_ctl : JackId::vco_b_vca_ctl;
+    bool patched = false;
+    (void)sourceOfSink_(j, patched);
+    const double v = patched ? resolveSinkValue_(j, 0.0)
+                             : (side == 0 ? envGenA_ : envGenB_).vcaCvVolts();
+    const double g = v / 8.0;
+    return g < 0.0 ? 0.0 : (g > 1.0 ? 1.0 : g);
   }
 
   double cvAt_(JackId jack) const {
@@ -3605,7 +3803,7 @@ class SynthRuntime {
   // from the bound JackDescriptor. The level->volts transfer is PROVISIONAL (no measured
   // hardware transfer) — the SAME provisional convention the classic ENV OUT already uses.
   void tickPapaVoice_(PapaVoice& pv, int voice, int channel, double& shCvOut, bool driveGraph) {
-    bool gateHigh = DroneBank::kDefaultGroupGateOpen;
+    bool gateHigh = DroneBank::kDefaultGroupGateOpen && droneKeyOpen_[voice == 0 ? 2 : 5];
     if (voiceGateBound_[voice]) {
       double volts = 0.0;
       // driveGraph=false (the criterion-① negative) bypasses the control layer, so a
@@ -3672,6 +3870,7 @@ class SynthRuntime {
       case ExecutionKind::kJoystick:   return FixedChainRole::kNone;
       case ExecutionKind::kSequencer:  return FixedChainRole::kNone;
       case ExecutionKind::kKeyboard:   return FixedChainRole::kNone;  // control-only, not a chain role.
+      case ExecutionKind::kEffector:   return FixedChainRole::kNone;
       case ExecutionKind::kUnsupported:return FixedChainRole::kNone;
     }
     return FixedChainRole::kNone;
@@ -3766,6 +3965,13 @@ class SynthRuntime {
   // Per-frame render state (preallocated, RT-safe).
   double chIn_[VoiceMixer::kNumChannels] = {};
   double wetL_ = 0.0, wetR_ = 0.0;
+  // Dual effector after the distortion (WET L/R). Enabled by the canonical machine
+  // definition; synthetic test fixtures keep WET = distortion output.
+  DualEffector effector_;
+  bool effectorEnabled_ = false;
+  bool vcoVcaEnabled_ = false;
+  bool droneKeyOpen_[6] = {true, true, true, true, true, true};  // DRONE VOICES keys  // VCO A/B VCAs driven by Envelope A/B (canonical machine)
+  double effCv_[3] = {0.0, 0.0, 0.0};
   double dryA_ = 0.0, dryB_ = 0.0;
   double preampInResolved_ = 0.0;
   double mixL_ = 0.0, mixR_ = 0.0;
@@ -3851,6 +4057,15 @@ class SynthRuntime {
   KeyboardBehaviour keyboardBeh_[2];
   KeyboardMode keyboardMode_ = KeyboardMode::Single;
   double sampleRate_ = 48000.0;  // retained for applyKeyboardState (state apply is post-ctor)
+  DeviceStateV1 kbdState_{};     // keyboard settings copy (live menu edits)
+  double kbdClockPhase_ = 0.0;   // internal keyboard clock, 0..1 per step
+  bool kbdExtClock_ = false;     // following the CLOCK jack instead of the BPM
+  bool kbdExtHigh_ = false;      // CLOCK jack level (with hysteresis)
+  bool kbdResetHigh_ = false;    // RESET jack level
+  std::uint64_t kbdSampleCount_ = 0;   // samples since start (clock-event timing)
+  std::uint64_t kbdLastPulseAt_ = 0;   // sample of the last clock event (0 = none yet)
+  std::uint64_t kbdPulseFallAt_ = 0;   // when to end that pulse's gate (0 = none pending)
+  double kbdBendVolts_ = 0.0;          // MIDI pitch bend on the keyboard V/OCT (1 V/oct)
 
   // Always-execute admission list (six control-source module ids). Unwired sources
   // must still execute once per sample, so the compiler force-includes them. Sized

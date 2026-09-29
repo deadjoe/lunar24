@@ -182,7 +182,7 @@ inline constexpr MachineDispositionEntry kMachineDisposition[] = {
   {ModuleId::lfo_b,         ExecutionKind::kLfo},
   {ModuleId::joystick,      ExecutionKind::kJoystick},
   {ModuleId::sequencer,     ExecutionKind::kSequencer},
-  {ModuleId::effector,      ExecutionKind::kUnsupported},
+  {ModuleId::effector,      ExecutionKind::kEffector},
   {ModuleId::voices,        ExecutionKind::kUnsupported},
 };
 inline constexpr std::uint32_t kMachineDispositionCount =
@@ -518,6 +518,11 @@ class MachineRuntimeDefinition {
       dspFirstFailId_ = ok ? static_cast<ParameterId>(kParameterCount) : firstFailId;
       dspFirstFailStatus_ = ok ? ParameterApplyStatus::applied : firstFailStatus;
     }
+    // The dual effector sits after the distortion on WET L/R.
+    runtime_.setEffectorEnabled(true);
+    // VCO A/B VCAs follow Envelope A/B (the keyboard gate is normalled to both EGs).
+    runtime_.setVcoVcaEnabled(true);
+    runtime_.applyEffectorState(state_);
     // GH#12 task#101: restore the keyboard's per-side PERFORMANCE STATE (mode + both sides'
     // behaviour/arp-seq configuration) from the SAME owned state, after the DSP apply so the
     // parsed config lands on the instance that will actually be ticked. This is configuration
@@ -527,6 +532,7 @@ class MachineRuntimeDefinition {
     // enumerator with no reachable false) would be a vacuous pass. The non-vacuous evidence is
     // the per-side readback (keyboardMode()/keyboardArpSeqParams()/keyboardBehaviourParams()).
     runtime_.applyKeyboardState(state_);
+    runtime_.snapSmoothedLevels();
   }
 
   // The validated state-aware builder (machine_candidate.h) is the ONLY public path from a
@@ -561,6 +567,8 @@ class MachineRuntimeDefinition {
   // it is backed by the definition's own owned copy, so a holder reads it without a second
   // snapshot living elsewhere. Never null.
   const DeviceStateV1& deviceState() const { return state_; }
+  // Live edits (UI/MIDI thread) keep the saved state in step with what the user hears.
+  DeviceStateV1& mutableDeviceState() { return state_; }
   // Whether the GH#6 identity/calibration profile was actually configured on the VCF->distortion
   // path from this state. A valid candidate always configures it; a false means the ctor's
   // fail-closed path left it off (a degraded candidate the factory rejects). Named precisely:
@@ -638,7 +646,9 @@ class MachineRuntimeDefinition {
       c.intrinsicLatencySamples = 0;
       c.hasDirectThroughPath = false;
       c.maxResources = 0;           // sentinel: unprepared/unspecified
-      c.allowedInCyclicSCC = false; // default: a module is NOT cycle-safe until declared
+      // Every module may sit in a patched feedback loop (the compiler breaks the loop with a
+      // one-sample delay). None of them needs a whole-window/FFT lookahead.
+      c.allowedInCyclicSCC = true;
       c.pathDelayCount = 0;
       modules_[i].id = kMachineDisposition[i].id;
       modules_[i].contract = &contracts_[i];

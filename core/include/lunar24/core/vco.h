@@ -258,6 +258,9 @@ class Vco {
   double cvAmt_ = 1.0;
   int octSelect_ = 1;                  // default "0".
   double tune_ = 0.0;
+  // frequencyHz() memo (see there); NaN-free sentinels force the first computation.
+  mutable double memoPitchOct_ = -1e300, memoBaseHz_ = -1e300, memoPitchHz_ = 0.0;
+  mutable double memoVOct_ = -1e300, memoVOctScale_ = 1.0;
   int subSelect_ = 1;                  // default "-1".
   VcoControlMode cvMode_ = VcoControlMode::kExponential;  // default index 1.
   // ⭐ PRODUCTION DEFAULT (GH#19 S0, task #117). The mapping is the rendering law, not an opt-in:
@@ -429,8 +432,20 @@ inline void Vco::setMorph(double m) { morph_ = m < 0.0 ? 0.0 : (m > 1.0 ? 1.0 : 
 
 inline double Vco::frequencyHz() const {
   const double octs[3] = {kLowOctave, kZeroOctave, kPlus3Octave};
-  double p = baseHz_ * std::pow(2.0, octs[octSelect_] + tune_);
-  p *= std::pow(2.0, vOct_);                       // V/OCT: confirmed, 1 V = 1 oct.
+  // The two exponentials only change when octave/tune/base or V/OCT move, so they are
+  // memoised (identical values, far fewer pow calls per sample).
+  const double pitchOct = octs[octSelect_] + tune_;
+  if (pitchOct != memoPitchOct_ || baseHz_ != memoBaseHz_) {
+    memoPitchOct_ = pitchOct;
+    memoBaseHz_ = baseHz_;
+    memoPitchHz_ = baseHz_ * std::pow(2.0, pitchOct);
+  }
+  if (vOct_ != memoVOct_) {
+    memoVOct_ = vOct_;
+    memoVOctScale_ = std::pow(2.0, vOct_);
+  }
+  double p = memoPitchHz_;
+  p *= memoVOctScale_;                             // V/OCT: confirmed, 1 V = 1 oct.
   const double cvEff = cv_ * cvAmt_;
   if (cvMode_ == VcoControlMode::kExponential) {
     p *= std::pow(2.0, cvEff);                     // PROVISIONAL exp scaling.

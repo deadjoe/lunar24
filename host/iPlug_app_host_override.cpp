@@ -54,6 +54,7 @@
 // host may drive the protected IPlugProcessor::SetChannelConnections); stream_plan.h is the shared
 // pure negotiation the host + oracle both call.
 #include "plugin.h"
+#include <host/midi_timing.h>
 #include <host/stream_plan.h>
 
 using namespace iplug;
@@ -124,6 +125,19 @@ bool IPlugAPPHost::Init()
   ProbeAudioIO(); // find out what audio IO devs are available and put their IDs in the global variables gAudioInputDevs / gAudioOutputDevs
   InitMidi(); // creates RTMidiIn and RTMidiOut objects
   ProbeMidiIO(); // find out what midi IO devs are available and put their names in the global variables gMidiInputDevs / gMidiOutputDevs
+  // Lunar 24: with no saved choice, listen to the first real MIDI input so a keyboard
+  // works as soon as it is plugged in (the Preferences dialog can still change it).
+  if (strcmp(mState.mMidiInDev.Get(), "no input") == 0 || strcmp(mState.mMidiInDev.Get(), OFF_TEXT) == 0)
+  {
+    for (const auto& name : mMidiInputDevNames)
+    {
+      if (name != OFF_TEXT && name != "virtual input")
+      {
+        mState.mMidiInDev.Set(name.c_str());
+        break;
+      }
+    }
+  }
   SelectMIDIDevice(ERoute::kInput, mState.mMidiInDev.Get());
   SelectMIDIDevice(ERoute::kOutput, mState.mMidiOutDev.Get());
   
@@ -949,6 +963,9 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
     msg.mStatus = pMsg->at(0);
     pMsg->size() > 1 ? msg.mData1 = pMsg->at(1) : msg.mData1 = 0;
     pMsg->size() > 2 ? msg.mData2 = pMsg->at(2) : msg.mData2 = 0;
+    // Lunar 24: stamp the arrival time; AppProcess turns it into the note's position inside
+    // the next audio block, so MIDI timing does not jitter by up to a whole buffer.
+    msg.mOffset = lunar24::host::midiArrivalStamp();
 
     _this->mIPlug->mMidiMsgsFromCallback.Push(msg);
   }

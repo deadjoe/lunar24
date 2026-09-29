@@ -58,12 +58,9 @@ set(HOST_APP_NAME "Lunar24Host")
 set(HOST_OUT_DIR "${CMAKE_BINARY_DIR}/out")
 
 # ---------------------------------------------------------------------------
-# GH#4 8B3 (task#73): the two repo-owned overrides that REPLACE the pinned upstream
-# IPlugAPP.cpp / IPlugAPP_host.cpp. They are forks of those TUs at the submodule pin d54f6905 plus
-# ONLY the allowlisted hunks (AppProcess; InitAudio/AudioCallback; the failure-invalidation
-# helper; the plugin.h/stream_plan.h includes). tools/check_host_override_drift.py proves
-# override == upstream + allowlisted hunks, so the host never carries two divergent truths. The
-# upstream IPlugAPP_dialog.cpp / IPlugAPP_main.cpp stay as the pinned submodule files (unchanged).
+# Two repo-owned copies of iPlug2's IPlugAPP.cpp / IPlugAPP_host.cpp (at the submodule pin)
+# with small Lunar changes: real channel plan, MIDI input auto-select, engine wiring. The
+# upstream IPlugAPP_dialog.cpp / IPlugAPP_main.cpp are used unchanged.
 # ---------------------------------------------------------------------------
 set(LUNAR_IPLUG_APP_OVERRIDES
   "${CMAKE_CURRENT_SOURCE_DIR}/iPlug_app_override.cpp"

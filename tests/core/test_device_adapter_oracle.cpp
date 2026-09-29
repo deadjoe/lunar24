@@ -81,7 +81,9 @@ CaseDiff routedDiff(std::uint64_t seed, const DeviceLayout& layout, int inputCap
                     const OutputMapping& mapping, int outputCount, InputRoute route,
                     int extCh, int preampCh, const PlanarBuf& inB, int measF, int frames) {
   MachineRuntimeDefinition da(seed, 48000.0);
+  da.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   MachineRuntimeDefinition db(seed, 48000.0);
+  db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
 
@@ -209,7 +211,9 @@ void output_placement() {
     constexpr std::uint64_t kSeed = 33u;
     constexpr double kExtNorm = 0.25;  // +0.5V EXT at every frame.
     MachineRuntimeDefinition da(kSeed, 48000.0);
+    da.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     MachineRuntimeDefinition db(kSeed, 48000.0);
+    db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
 
     DeviceLayout quad{BufferLayoutKind::NonInterleaved, 4};
     DeviceAdapter ada, adb;
@@ -242,7 +246,9 @@ void output_placement() {
     constexpr double kSentinel = 0.123;
     constexpr double kExtNorm = 0.25;
     MachineRuntimeDefinition da(kSeed, 48000.0);
+    da.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     MachineRuntimeDefinition db(kSeed, 48000.0);
+    db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
 
     DeviceLayout six{BufferLayoutKind::NonInterleaved, 6};
     DeviceLayout quad{BufferLayoutKind::NonInterleaved, 4};
@@ -297,6 +303,7 @@ void output_2_3_render() {
 
   // Same-seed 4-channel WET+DRY reference -> the four logicals (layout-independent).
   MachineRuntimeDefinition dref(kSeed, 48000.0);
+  dref.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   DeviceLayout quad{BufferLayoutKind::NonInterleaved, 4};
   DeviceAdapter adref;
   CHECK(adref.prepare(quad, 1, canon, 4, InputRoute::ExtOnly, 0, -1));
@@ -311,6 +318,7 @@ void output_2_3_render() {
   // this proves a 2-output plan writes the WET logicals, not a 4-way.
   {
     MachineRuntimeDefinition d2(kSeed, 48000.0);
+    d2.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     DeviceLayout stereo{BufferLayoutKind::NonInterleaved, 2};
     DeviceAdapter ad2;
     CHECK(ad2.prepare(stereo, 1, canon, 2, InputRoute::ExtOnly, 0, -1));
@@ -331,6 +339,7 @@ void output_2_3_render() {
   // out-of-bounds 4th write is caught by the sanitizer, not hidden behind an extra pointer.
   {
     MachineRuntimeDefinition d3(kSeed, 48000.0);
+    d3.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     DeviceLayout three{BufferLayoutKind::NonInterleaved, 3};
     DeviceAdapter ad3;
     CHECK(ad3.prepare(three, 1, canon, 2, InputRoute::ExtOnly, 0, -1));
@@ -477,12 +486,14 @@ void render_scale_end_to_end() {
 
   // Reference machine: direct processFrame with KNOWN VOLTS at each frame.
   MachineRuntimeDefinition drf(kSeed, 48000.0);
+  drf.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& rtf = drf.runtime();
   RuntimeOutput ref[kF];
   for (int f = 0; f < kF; ++f) ref[f] = rtf.processFrame(RuntimeInputs{kExtVolts, 0.0}, true);
 
   // Render machine: device-normalized input through renderBlock (the host path).
   MachineRuntimeDefinition dren(kSeed, 48000.0);
+  dren.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   DeviceAdapter ad;
   DeviceLayout quad{BufferLayoutKind::NonInterleaved, 4};
   OutputMapping canon = OutputMapping::canonical();
@@ -528,6 +539,7 @@ void non_finite() {
   double out[4][kF] = {{0}};
   double* outP[4] = {out[0], out[1], out[2], out[3]};
   MachineRuntimeDefinition def(202u, 48000.0);
+  def.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   ad.renderBlock(def.runtime(), (const double* const*)inP, (double* const*)outP, kF);
   CHECK(ad.nonFiniteSamples() == 2);  // NaN + Inf each counted once.
 
@@ -569,12 +581,18 @@ void nonfinite_failsafe() {
   double* outAP[4] = {outA[0], outA[1], outA[2], outA[3]};
   double* outBP[4] = {outB[0], outB[1], outB[2], outB[3]};
 
-  MachineRuntimeDefinition defA(kSeed, 48000.0);  DeviceAdapter adA;
+  MachineRuntimeDefinition defA(kSeed, 48000.0);
+
+  defA.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+  DeviceAdapter adA;
   CHECK(adA.prepare(quad, 2, canon, 4, InputRoute::Distinct, 0, 1));
   adA.renderBlock(defA.runtime(), (const double* const*)inAP, (double* const*)outAP, kF);
   CHECK(adA.nonFiniteSamples() == 2);
 
-  MachineRuntimeDefinition defB(kSeed, 48000.0);  DeviceAdapter adB;
+  MachineRuntimeDefinition defB(kSeed, 48000.0);
+
+  defB.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+  DeviceAdapter adB;
   CHECK(adB.prepare(quad, 2, canon, 4, InputRoute::Distinct, 0, 1));
   adB.renderBlock(defB.runtime(), (const double* const*)inBP, (double* const*)outBP, kF);
   CHECK(adB.nonFiniteSamples() == 0);
@@ -599,11 +617,14 @@ void partition_invariance() {
 
   // (a) Runtime partition independence: processFrame-per-frame == processBlock chunked.
   MachineRuntimeDefinition asOne(424242u, 48000.0);
+  asOne.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& rtOne = asOne.runtime();
   RuntimeOutput outs[2][kFrames];
   for (int i = 0; i < kFrames; ++i) outs[0][i] = rtOne.processFrame(ramp[i], true);
 
   MachineRuntimeDefinition asChunks(424242u, 48000.0);
+
+  asChunks.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& rtChunks = asChunks.runtime();
   int cursor = 0;
   const int chunk[5] = {7, 3, 11, 5, kFrames - 26};
@@ -631,7 +652,10 @@ void partition_invariance() {
   DeviceLayout quad{BufferLayoutKind::NonInterleaved, 4};
 
   MachineRuntimeDefinition full(kSeed, 48000.0);
+
+  full.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   MachineRuntimeDefinition chunked(kSeed, 48000.0);
+  chunked.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   DeviceAdapter aFull, aChunked;
   CHECK(aFull.prepare(quad, 1, canon, 4, InputRoute::ExtOnly, 0, -1));
   CHECK(aChunked.prepare(quad, 1, canon, 4, InputRoute::ExtOnly, 0, -1));
@@ -667,6 +691,7 @@ void partition_invariance() {
 // ---- F. zero-alloc on the host render path ----------------------------------------------
 void zero_alloc() {
   MachineRuntimeDefinition def(777777u, 48000.0);
+  def.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& rt = def.runtime();
   DeviceLayout quad{BufferLayoutKind::NonInterleaved, 4};
   OutputMapping canon = OutputMapping::canonical();
@@ -710,7 +735,10 @@ CaseDiff renderDualTerminal(TerminalCase tc) {
   constexpr int kMeasF = 400;  // 400 warmup frames (identical input), then measure at 400.
 
   MachineRuntimeDefinition da(kSeed, 48000.0);
+
+  da.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   MachineRuntimeDefinition db(kSeed, 48000.0);
+  db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
 
@@ -803,7 +831,10 @@ void block_delegate_reflects_runtime() {
   constexpr int kMeasF = 400;
 
   MachineRuntimeDefinition da(kSeed, 48000.0);
+
+  da.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   MachineRuntimeDefinition db(kSeed, 48000.0);
+  db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
   CHECK(ra.rebuild());

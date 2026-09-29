@@ -69,6 +69,22 @@ class VoiceMixer {
     for (int i = 0; i < kNumChannels; ++i) {
       vol_[i] = 0.5;  // registry default.
       pan_[i] = 0.5;  // registry default (0.5 = center).
+      updateTarget_(i);
+      gainL_[i] = targetL_[i];
+      gainR_[i] = targetR_[i];
+    }
+  }
+
+  // Knob moves glide to their new gain over ~10 ms so a dragged VOL or PAN does not click
+  // (tuned by ear). Without a sample rate (unit tests) a change lands at once.
+  void setSampleRate(double sr) {
+    glide_ = sr > 0.0 ? 1.0 - std::exp(-1.0 / (0.010 * sr)) : 1.0;
+  }
+  // Land every channel on its target now (a whole-state load is not a knob move).
+  void snap() {
+    for (int i = 0; i < kNumChannels; ++i) {
+      gainL_[i] = targetL_[i];
+      gainR_[i] = targetR_[i];
     }
   }
 
@@ -76,10 +92,12 @@ class VoiceMixer {
   void setChannelVol(int ch, double v) {
     if (ch < 0 || ch >= kNumChannels) return;
     vol_[ch] = clamp01_(v);
+    updateTarget_(ch);
   }
   void setChannelPan(int ch, double p) {
     if (ch < 0 || ch >= kNumChannels) return;
     pan_[ch] = clamp01_(p);
+    updateTarget_(ch);
   }
 
   double channelVol(int ch) const { return (ch >= 0 && ch < kNumChannels) ? vol_[ch] : 0.0; }
@@ -87,15 +105,13 @@ class VoiceMixer {
 
   // Render one frame: 10 mono channel samples -> stereo (L, R).
   // Each channel: L += in*vol*panL, R += in*vol*panR, with the equal-power law.
-  void tick(const double in[kNumChannels], double& outL, double& outR) const {
+  void tick(const double in[kNumChannels], double& outL, double& outR) {
     double l = 0.0, r = 0.0;
     for (int i = 0; i < kNumChannels; ++i) {
-      const double theta = 0.5 * kPi * pan_[i];   // equal-power pan (provisional).
-      const double panL = std::cos(theta);
-      const double panR = std::sin(theta);
-      const double g = in[i] * vol_[i];
-      l += g * panL;
-      r += g * panR;
+      gainL_[i] += glide_ * (targetL_[i] - gainL_[i]);
+      gainR_[i] += glide_ * (targetR_[i] - gainR_[i]);
+      l += in[i] * gainL_[i];
+      r += in[i] * gainR_[i];
     }
     outL = l;
     outR = r;
@@ -109,10 +125,19 @@ class VoiceMixer {
   static double clamp01_(double v) {
     return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
   }
+  // Equal-power pan (provisional): computed once per knob move, not per sample.
+  void updateTarget_(int ch) {
+    const double theta = 0.5 * kPi * pan_[ch];
+    targetL_[ch] = vol_[ch] * std::cos(theta);
+    targetR_[ch] = vol_[ch] * std::sin(theta);
+  }
   static constexpr double kPi = 3.14159265358979323846;
 
   double vol_[kNumChannels];
   double pan_[kNumChannels];
+  double targetL_[kNumChannels], targetR_[kNumChannels];
+  double gainL_[kNumChannels], gainR_[kNumChannels];
+  double glide_ = 1.0;
 };
 
 }  // namespace lunar24::core
