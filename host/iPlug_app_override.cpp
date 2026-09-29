@@ -35,6 +35,7 @@
 
 #include "IPlugAPP.h"
 #include "IPlugAPP_host.h"
+#include <host/midi_timing.h>
 
 #if defined OS_MAC || defined OS_LINUX
 #include <IPlugSWELL.h>
@@ -163,9 +164,13 @@ void IPlugAPP::AppProcess(double** inputs, double** outputs, int nFrames)
   if (mMidiMsgsFromCallback.ElementsAvailable())
   {
     IMidiMsg msg;
+    const int now = lunar24::host::midiArrivalStamp();
     
     while (mMidiMsgsFromCallback.Pop(msg))
     {
+      // Lunar 24: the callback stamped the arrival time into mOffset; place the message at
+      // the same distance from the end of this block as it arrived before now.
+      msg.mOffset = lunar24::host::midiBlockOffset(msg.mOffset, now, GetSampleRate(), nFrames);
       ProcessMidiMsg(msg);
       mMidiMsgsFromProcessor.Push(msg); // queue incoming MIDI for UI
     }

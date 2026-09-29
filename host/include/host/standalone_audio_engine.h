@@ -248,8 +248,12 @@ class StandaloneAudioEngine {
   // the host can autosave only when something changed.
   std::uint64_t editCount() const { return editCount_ + stateVersion_; }
   // Audio thread only (e.g. MIDI delivered inside the audio callback): schedule a note/clock
-  // event at the current block.
-  bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e);
+  // event `offset` samples into the coming block.
+  bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e, int offset = 0);
+  // Audio thread only: MIDI pitch bend in semitones, applied to the keyboard V/OCT output.
+  void pitchBendFromAudioThread(double semitones) {
+    if (definition_) definition_->runtime().setKeyboardBendVolts(semitones / 12.0);
+  }
   // Audio thread only: a knob changed by MIDI CC. The value is heard at once (as a live event)
   // and handed back to the UI thread, which records it in the saved state and redraws.
   bool parameterFromAudioThread(ParameterId id, double value);
@@ -810,10 +814,12 @@ inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
   return n;
 }
 
-inline bool StandaloneAudioEngine::enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e) {
+inline bool StandaloneAudioEngine::enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e,
+                                                               int offset) {
   if (!definition_) return false;
   SynthRuntime& rt = definition_->runtime();
-  return rt.enqueueControlEvent(lunar24::core::TimedControlEvent{e, rt.currentSample()});
+  const std::uint64_t at = rt.currentSample() + static_cast<std::uint64_t>(offset > 0 ? offset : 0);
+  return rt.enqueueControlEvent(lunar24::core::TimedControlEvent{e, at});
 }
 
 inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {

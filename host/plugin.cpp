@@ -199,6 +199,37 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
 void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
 {
   using namespace lunar24::core;
+  const int offset = msg.mOffset > 0 ? msg.mOffset : 0;  // sample position inside the block
+  auto sendEvent = [&](ControlEventKind kind) {
+    ControlEvent e{};
+    e.kind = kind;
+    e.value = 1;
+    e.source = 3;
+    e.producerSequence = ++midiSeq_;
+    engine_.enqueueEventFromAudioThread(e, offset);
+  };
+
+  // System real-time: MIDI clock (24 per quarter note) steps the keyboard arpeggiator /
+  // sequencer every 6 ticks (16th notes, like the internal clock); START restarts the
+  // pattern, STOP releases the running note.
+  switch (msg.mStatus)
+  {
+    case 0xF8:
+      if (midiClockTicks_++ % 6 == 0) sendEvent(ControlEventKind::clock);
+      return;
+    case 0xFA:
+      midiClockTicks_ = 0;
+      sendEvent(ControlEventKind::reset);
+      return;
+    case 0xFB:
+      return;  // CONTINUE: carry on counting
+    case 0xFC:
+      sendEvent(ControlEventKind::sync);
+      return;
+    default:
+      break;
+  }
+
   PerformanceInput in{};
   in.source = 3;  // MIDI producer
   in.channel = static_cast<std::uint8_t>(msg.Channel());
@@ -209,6 +240,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
     case IMidiMsg::kNoteOn:
       if (msg.Velocity() > 0)
       {
+        sustainedNotes_[note & 127] = false;  // pressed again: no longer held only by the pedal
         in.kind = PerfInputKind::note_on;
         in.pitch = static_cast<SignalSample>((note - 57) / 12.0);  // A3 (MIDI 57) = 0 V = 220 Hz
         in.value = static_cast<SignalSample>(msg.Velocity() / 127.0);
@@ -217,6 +249,11 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       }
       [[fallthrough]];  // note-on with velocity 0 is a note-off
     case IMidiMsg::kNoteOff:
+      if (sustainOn_)
+      {
+        sustainedNotes_[note & 127] = true;  // the pedal keeps it sounding
+        return;
+      }
       in.kind = PerfInputKind::note_off;
       in.noteId = static_cast<NoteId>(note + 1);
       break;
@@ -229,7 +266,17 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       in.kind = PerfInputKind::aftertouch;
       in.value = static_cast<SignalSample>(msg.ChannelAfterTouch() / 127.0);
       break;
+    case IMidiMsg::kPitchWheel:
+      engine_.pitchBendFromAudioThread(kPitchBendSemitones * msg.PitchWheel());
+      return;
     case IMidiMsg::kControlChange:
+      if (msg.ControlChangeIdx() == IMidiMsg::kSustainOnOff)
+      {
+        const bool on = msg.ControlChange(IMidiMsg::kSustainOnOff) >= 0.5;
+        if (sustainOn_ && !on) releaseSustainedNotes_(offset);
+        sustainOn_ = on;
+        return;
+      }
       in.kind = PerfInputKind::cc;
       in.controller = static_cast<std::uint16_t>(msg.ControlChangeIdx());
       in.value = static_cast<SignalSample>(msg.ControlChange(msg.ControlChangeIdx()));
@@ -247,8 +294,26 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       if (d != nullptr)
         engine_.parameterFromAudioThread(ev[i].parameter, d->min + double(ev[i].value) * (d->max - d->min));
     } else {
-      engine_.enqueueEventFromAudioThread(ev[i]);
+      engine_.enqueueEventFromAudioThread(ev[i], offset);
     }
+  }
+}
+
+// Sustain pedal released: send the note-offs it was holding back.
+void LunarHostPlugin::releaseSustainedNotes_(int offset)
+{
+  using namespace lunar24::core;
+  for (int note = 0; note < 128; ++note)
+  {
+    if (!sustainedNotes_[note]) continue;
+    sustainedNotes_[note] = false;
+    PerformanceInput in{};
+    in.kind = PerfInputKind::note_off;
+    in.source = 3;
+    in.noteId = static_cast<NoteId>(note + 1);
+    in.seq = ++midiSeq_;
+    ControlEvent ev[1];
+    if (midiInput_.translate(in, ev, 1) == 1) engine_.enqueueEventFromAudioThread(ev[0], offset);
   }
 }
 #endif

@@ -54,6 +54,7 @@
 // host may drive the protected IPlugProcessor::SetChannelConnections); stream_plan.h is the shared
 // pure negotiation the host + oracle both call.
 #include "plugin.h"
+#include <host/midi_timing.h>
 #include <host/stream_plan.h>
 
 using namespace iplug;
@@ -962,6 +963,9 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
     msg.mStatus = pMsg->at(0);
     pMsg->size() > 1 ? msg.mData1 = pMsg->at(1) : msg.mData1 = 0;
     pMsg->size() > 2 ? msg.mData2 = pMsg->at(2) : msg.mData2 = 0;
+    // Lunar 24: stamp the arrival time; AppProcess turns it into the note's position inside
+    // the next audio block, so MIDI timing does not jitter by up to a whole buffer.
+    msg.mOffset = lunar24::host::midiArrivalStamp();
 
     _this->mIPlug->mMidiMsgsFromCallback.Push(msg);
   }

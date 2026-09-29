@@ -88,6 +88,12 @@ private:
       {91, lunar24::core::ParameterId::effector_blend},
       {7, lunar24::core::ParameterId::effector_master}};
   lunar24::core::InputStateMachine midiInput_{kMidiCc, 5};
+  // Pitch bend range (the common default), sustain pedal state and MIDI clock tick count.
+  static constexpr double kPitchBendSemitones = 2.0;
+  bool sustainOn_ = false;
+  bool sustainedNotes_[128] = {};
+  std::uint32_t midiClockTicks_ = 0;
+  void releaseSustainedNotes_(int offset);
   std::uint64_t savedEditCount_ = 0;
   std::chrono::steady_clock::time_point lastAutosave_ = std::chrono::steady_clock::now();
   std::uint64_t midiSeq_ = 0;

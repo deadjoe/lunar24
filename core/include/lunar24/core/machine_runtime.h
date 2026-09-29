@@ -991,6 +991,9 @@ class SynthRuntime {
   void setDrone3Noise(double amp) { pv3_.setNoise(amp); }
   // Level controls (mixer VOL/PAN, preamp GAIN, drone MUTE, drone 3/6 NOISE) glide when a
   // knob moves live. After a whole-state load, land them on their values at once.
+  // MIDI pitch bend, in volts on the keyboard V/OCT output (1 V = 1 octave). Audio thread.
+  void setKeyboardBendVolts(double v) { kbdBendVolts_ = std::isfinite(v) ? v : 0.0; }
+
   void snapSmoothedLevels() {
     mixer_.snap();
     preamp_.snap();
@@ -2406,18 +2409,43 @@ class SynthRuntime {
       applyControlEvent_(r);
     }
     kbdResetHigh_ = resetHigh;
-    if (rise) {
-      ControlEvent c{};
-      c.kind = ControlEventKind::clock;
-      c.value = 1;
-      applyControlEvent_(c);
+    // A clock pulse from MIDI has no falling edge of its own: end its gate half a period later.
+    if (kbdPulseFallAt_ != 0 && kbdSampleCount_ >= kbdPulseFallAt_) {
+      kbdPulseFallAt_ = 0;
+      fall = true;
     }
-    if (fall) {
-      for (std::uint32_t s = 0; s < 2; ++s) {
-        auto kbdSink = [this, s](const ControlEvent& nkb) { keyboardBeh_[s].handleControlEvent(nkb); };
-        keyboardArpSeq_[s].clockLow(kbdSink);
-      }
+    if (rise) keyboardClockRise_();
+    if (fall) keyboardClockFall_();
+    ++kbdSampleCount_;
+  }
+
+  void keyboardClockRise_() {
+    ControlEvent c{};
+    c.kind = ControlEventKind::clock;
+    c.value = 1;
+    const std::uint32_t n = (keyboardMode_ == KeyboardMode::Single) ? 1u : 2u;
+    for (std::uint32_t s = 0; s < n; ++s) {
+      auto kbdSink = [this, s](const ControlEvent& nkb) { keyboardBeh_[s].handleControlEvent(nkb); };
+      keyboardArpSeq_[s].handleControlEvent(c, kbdSink);
     }
+  }
+  void keyboardClockFall_() {
+    for (std::uint32_t s = 0; s < 2; ++s) {
+      auto kbdSink = [this, s](const ControlEvent& nkb) { keyboardBeh_[s].handleControlEvent(nkb); };
+      keyboardArpSeq_[s].clockLow(kbdSink);
+    }
+  }
+  // A clock EVENT (MIDI clock step, or a test/host event): follow it like the CLOCK jack
+  // (the internal BPM clock stops until BPM changes), and close its gate half the measured
+  // pulse period later.
+  void externalClockPulse_() {
+    kbdExtClock_ = true;
+    if (kbdLastPulseAt_ != 0) {
+      const std::uint64_t period = kbdSampleCount_ - kbdLastPulseAt_;
+      kbdPulseFallAt_ = kbdSampleCount_ + (period > 1 ? period / 2 : 1);
+    }
+    kbdLastPulseAt_ = kbdSampleCount_ == 0 ? 1 : kbdSampleCount_;
+    keyboardClockRise_();
   }
 
   void applyControlEvent_(const ControlEvent& e) {
@@ -2466,6 +2494,8 @@ class SynthRuntime {
         return;  // a reset is fully consumed by the keyboard owner.
       }
       case ControlEventKind::clock:
+        externalClockPulse_();
+        return;
       case ControlEventKind::sync: {
         // The arp/seq modes step on clock edges from tickKeyboardClock_ (internal BPM clock
         // or the CLOCK jack) or from a MIDI clock. There is ONE clock, so
@@ -3485,13 +3515,13 @@ class SynthRuntime {
         keyboardBeh_[1].tick(&pitchR, &pressR);
         if (kbdBound_) {
           const bool single = (keyboardMode_ == KeyboardMode::Single);
-          publishSourceValue_(kbdVOctOut_, pitchL);
+          publishSourceValue_(kbdVOctOut_, pitchL + kbdBendVolts_);
           publishSourceValue_(kbdGateLeftOut_, keyboardBeh_[0].gate() ? 10.0 : 0.0);
           // An unused side is held at an EXPLICIT low rail, never left unpublished (a stale
           // frame in the CV bank would read as a held gate to a downstream interpreter).
           publishSourceValue_(kbdGateRightOut_,
                               (!single && keyboardBeh_[1].gate()) ? 10.0 : 0.0);
-          publishSourceValue_(kbdPressureOut_, single ? pressL : pitchR);
+          publishSourceValue_(kbdPressureOut_, single ? pressL : pitchR + kbdBendVolts_);
         }
         break;
       }
@@ -4032,6 +4062,10 @@ class SynthRuntime {
   bool kbdExtClock_ = false;     // following the CLOCK jack instead of the BPM
   bool kbdExtHigh_ = false;      // CLOCK jack level (with hysteresis)
   bool kbdResetHigh_ = false;    // RESET jack level
+  std::uint64_t kbdSampleCount_ = 0;   // samples since start (clock-event timing)
+  std::uint64_t kbdLastPulseAt_ = 0;   // sample of the last clock event (0 = none yet)
+  std::uint64_t kbdPulseFallAt_ = 0;   // when to end that pulse's gate (0 = none pending)
+  double kbdBendVolts_ = 0.0;          // MIDI pitch bend on the keyboard V/OCT (1 V/oct)
 
   // Always-execute admission list (six control-source module ids). Unwired sources
   // must still execute once per sample, so the compiler force-includes them. Sized

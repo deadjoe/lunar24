@@ -147,6 +147,7 @@ lunar_add_host_test(test_app_state_store tests/host/test_app_state_store.cpp)
 lunar_add_host_test(test_host_stream_plan tests/host/test_host_stream_plan.cpp)
 lunar_add_host_test(test_host_window_layout tests/host/test_host_window_layout.cpp)
 lunar_add_host_test(test_panel_ui_layout tests/host/test_panel_ui_layout.cpp)
+lunar_add_host_test(test_midi_timing tests/host/test_midi_timing.cpp)
 
 # Offline renderer: listen to the engine without the app (see CLAUDE.md).
 add_executable(lunar24_render tools/lunar24_render.cpp)
