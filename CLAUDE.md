@@ -31,6 +31,9 @@ good-sounding instrument with a usable panel UI.
 - `core/` — framework-free C++17 synth engine (header-only). No iPlug2/platform includes
   (enforced by `tools/check_core_headers.py`). Audio thread: no allocation, no locks, no I/O.
 - `host/` — iPlug2 standalone app (macOS/Windows): audio device, MIDI, IGraphics UI.
+  The panel layout is framework-free (`host/include/host/panel_ui_layout.h`, tested);
+  `host/panel_editor.h` draws it. UI/MIDI changes go through the engine's live queue
+  (`StandaloneAudioEngine::post*`), never by touching the runtime directly.
 - `spec/machine/lunar24.json` → `tools/generate_registry.py` → `generated/` (parameter,
   jack and program IDs). Edit the JSON, regenerate, commit both.
 - Signal flow: 6 drones + VCO A/B + ext/preamp → 10-ch mixer → dual VCF → distortion →
@@ -40,4 +43,5 @@ good-sounding instrument with a usable panel UI.
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build && ctest --test-dir build
 ./build/lunar24_render --seconds 20 --out wet.wav      # listen to the engine offline
+./build/panel_preview > panel.svg                      # look at the panel layout
 ```
