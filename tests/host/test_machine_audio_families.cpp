@@ -57,10 +57,13 @@ double& slot(DeviceStateV1& st, ParameterId id) {
   return st.parameters[static_cast<std::uint32_t>(id)];
 }
 
-// These tests measure the chain up to the distortion, so the effector is set fully dry.
+// These tests measure the chain up to the distortion (effector fully dry) and listen to
+// the VCOs directly (their VCAs held open).
 DeviceStateV1 dryDefault(std::uint64_t seed) {
   DeviceStateV1 st = make_default_device_state(seed);
   st.parameters[static_cast<std::uint32_t>(ParameterId::effector_blend)] = 0.0;
+  st.parameters[static_cast<std::uint32_t>(ParameterId::envelope_a_hold)] = 1.0;  // VCO VCAs open
+  st.parameters[static_cast<std::uint32_t>(ParameterId::envelope_b_hold)] = 1.0;
   return st;
 }
 
@@ -191,7 +194,7 @@ void test_level_families() {
     EngineHarness h0, h1;
     CHECK(h0.load(m0)); CHECK(h1.load(m1));
     CHECK(h0.render(kF)); CHECK(h1.render(kF));
-    CHECK(std::fabs(peakOf(h1.wetL()) - peakOf(h0.wetL())) > 0.005);
+    CHECK(traceDiff(h1.wetL(), h0.wetL()) > 1e-3);
   }
   // VCF: vcf_l_freq strongly changes WET. The FREQUENCY (zero-crossing rate) is the discriminator:
   // with a wide-open cutoff far more of the input reaches WET and the WET crossing rate jumps, while
@@ -280,7 +283,7 @@ void test_drone_new() {
     CHECK(hB.load(base6)); CHECK(hP.load(p6));
     CHECK(hB.render(kF)); CHECK(hP.render(kF));
     CHECK(std::fabs(hP.runtime()->drone6Channel() - hB.runtime()->drone6Channel()) > 1e-3);
-    CHECK(std::fabs(peakOf(hP.wetL()) - peakOf(hB.wetL())) > 1e-3);   // real WET moved too.
+    CHECK(traceDiff(hP.wetL(), hB.wetL()) > 1e-3);   // real WET moved too.
   }
 }
 

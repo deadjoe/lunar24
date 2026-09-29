@@ -776,6 +776,7 @@ class SynthRuntime {
   void setVcfLink(bool on)             { vcf_.setLink(on); }
   // ---- dual effector ----
   void setEffectorEnabled(bool on) { effectorEnabled_ = on; }
+  void setVcoVcaEnabled(bool on) { vcoVcaEnabled_ = on; }
   bool effectorEnabled() const { return effectorEnabled_; }
   // `program` is any program of the inserted cartridge; the side's 1-2-3 switch picks within it.
   void setEffectorProgram(int side, ProgramId program) {
@@ -3149,8 +3150,8 @@ class SynthRuntime {
         vcA_.setPwCv(pwm);
         double a = 0.0;
         vcA_.tick(&a);
-        dryA_ = a;
-        chIn_[VoiceMixer::kChannelVcoA] = a;
+        dryA_ = a * vcoVcaGain_(0);
+        chIn_[VoiceMixer::kChannelVcoA] = dryA_;
         if (vcoAOutBound_) publishSourceValue_(vcoAOut_, a);
         break;
       }
@@ -3179,8 +3180,8 @@ class SynthRuntime {
         vcB_.setPwCv(pwm);
         double b = 0.0;
         vcB_.tick(&b);
-        dryB_ = b;
-        chIn_[VoiceMixer::kChannelVcoB] = b;
+        dryB_ = b * vcoVcaGain_(1);
+        chIn_[VoiceMixer::kChannelVcoB] = dryB_;
         // Publish the real vco_b.vco_out so any downstream (a normal consumer, or a
         // user-established B->B feedback edge) reads THIS frame's value through the single
         // write (@Codex correction 4).
@@ -3428,6 +3429,20 @@ class SynthRuntime {
     } else if (lFed) {
       vcf_.setCvR(l);           // R unplugged: R follows the already-resolved L this frame.
     }
+  }
+
+  // VCO A/B each have a VCA. Envelope A (B) controls it; a cable into the VCO's VCA CV
+  // input takes over. 0..8 V opens the VCA fully. The raw oscillator still feeds its
+  // own output jack (e.g. the VCO A -> VCO B FM normalling).
+  double vcoVcaGain_(int side) const {
+    if (!vcoVcaEnabled_) return 1.0;
+    const JackId j = side == 0 ? JackId::vco_a_vca_ctl : JackId::vco_b_vca_ctl;
+    bool patched = false;
+    (void)sourceOfSink_(j, patched);
+    const double v = patched ? resolveSinkValue_(j, 0.0)
+                             : (side == 0 ? envGenA_ : envGenB_).vcaCvVolts();
+    const double g = v / 8.0;
+    return g < 0.0 ? 0.0 : (g > 1.0 ? 1.0 : g);
   }
 
   double cvAt_(JackId jack) const {
@@ -3826,6 +3841,7 @@ class SynthRuntime {
   // definition; synthetic test fixtures keep WET = distortion output.
   DualEffector effector_;
   bool effectorEnabled_ = false;
+  bool vcoVcaEnabled_ = false;  // VCO A/B VCAs driven by Envelope A/B (canonical machine)
   double effCv_[3] = {0.0, 0.0, 0.0};
   double dryA_ = 0.0, dryB_ = 0.0;
   double preampInResolved_ = 0.0;

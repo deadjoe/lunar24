@@ -62,6 +62,7 @@ core::RuntimeOutput churnSnapshot(double baseHz) {
   constexpr std::uint64_t kS = 0x5EED;
   constexpr double kRate = 48000.0;
   core::MachineRuntimeDefinition d(kS, kRate);
+  d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   core::SynthRuntime& rt = d.runtime();
   rt.setVcoBaseHz(baseHz);
   rt.setVcoCvAmounts(1.0, 0.0);
@@ -97,6 +98,7 @@ int main() {
   constexpr double kSr = 48000.0;
   constexpr std::uint64_t kSeed = 0x5EED;
   core::MachineRuntimeDefinition def(kSeed, kSr);
+  def.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
 
   check(def.valid(), "definition builds the strict machine (status ok/graph_unchanged)");
   check(def.moduleCount() == core::kModuleCount, "owns exactly the 21-module inventory");
@@ -353,7 +355,9 @@ int main() {
   // primitive (asserted above); this oracle pins routing + staging, not that discriminator.
   {
     core::MachineRuntimeDefinition d1(kSeed, kSr);
+    d1.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     core::MachineRuntimeDefinition d2(kSeed, kSr);
+    d2.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     // item 1: the B->B cable drives vco_b's generic CV input — be EXPLICIT about the mode.
     d1.runtime().setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
     d2.runtime().setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
@@ -399,6 +403,7 @@ int main() {
   // feeds the sink).
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
+    d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     d.runtime().setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
     check(d.runtime().connect(reg::JackId::env_follower_env_out, reg::JackId::drone_2_cv_mod_in),
           "connect env_follower.env_out -> drone_2.cv_mod_in (real product edge)");
@@ -430,6 +435,7 @@ int main() {
   {
     auto renderDroneMod = [&](bool wired, double amount, core::RuntimeOutput* seq, std::size_t n) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       rt.setDroneMod(1, 0, amount);   // asymmetric: group 1 gen 0 carries the MOD amount.
@@ -484,6 +490,7 @@ int main() {
     };
     auto renderSameSample = [&](double amount, core::RuntimeOutput* wSeq, core::RuntimeOutput* mSeq) {
       core::MachineRuntimeDefinition s(kSeed, kSr), m(kSeed, kSr), w(kSeed, kSr);
+      s.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& sr = s.runtime();
       core::SynthRuntime& mr = m.runtime();
       core::SynthRuntime& wr = w.runtime();
@@ -522,6 +529,7 @@ int main() {
   // Patching a source into effector.cv_x_in compiles, slots the effector, and the CV reaches it.
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
+    d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     check(d.status() == core::SynthRuntime::RebuildStatus::ok, "the clean machine builds ok");
     check(d.runtime().connect(reg::JackId::env_follower_env_out, reg::JackId::effector_cv_x_in),
           "connect env_follower.env_out -> effector.cv_x_in");
@@ -538,6 +546,7 @@ int main() {
   // must be present as a real execution slot — not phantom and not silently dropped.
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
+    d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     check(d.status() == core::SynthRuntime::RebuildStatus::ok,
           "the machine builds ok before the keyboard-route patch");
     check(d.runtime().connect(reg::JackId::keyboard_v_oct_out, reg::JackId::vcf_cv_l_in),
@@ -563,6 +572,7 @@ int main() {
     const double drv = 0.6;
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::vcf_cv_l_in),
@@ -575,6 +585,7 @@ int main() {
     }
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::vcf_cv_l_in),
@@ -614,8 +625,12 @@ int main() {
   //       -> this assertion goes RED.
   {
     constexpr double kBaseHz = 220.0;
-    core::MachineRuntimeDefinition d0(kSeed, kSr);  // host drive = 0.0
-    core::MachineRuntimeDefinition dN(kSeed, kSr);  // host drive = 0.5
+    core::MachineRuntimeDefinition d0(kSeed, kSr);
+    d0.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+  // host drive = 0.0
+    core::MachineRuntimeDefinition dN(kSeed, kSr);
+    dN.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+  // host drive = 0.5
     auto config = [&](core::SynthRuntime& rt) {
       rt.setVcoBaseHz(kBaseHz);
       rt.setVcoCvAmounts(1.0, 0.0);
@@ -654,6 +669,7 @@ int main() {
   //       a fresh definition built in a recycled frame reproduces identical output.
   {
     core::MachineRuntimeDefinition d0(kSeed, kSr);
+    d0.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     core::SynthRuntime& r0 = d0.runtime();
     r0.setVcoBaseHz(220.0);
     r0.setVcoCvAmounts(1.0, 0.0);
@@ -663,6 +679,7 @@ int main() {
     // churn: build + tear down many definitions in nested frames, recycling the stack region.
     for (int i = 0; i < 8; ++i) {
       core::MachineRuntimeDefinition tmp(kSeed, kSr);
+      tmp.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       tmp.runtime().setVcoBaseHz(220.0);
       void(tmp.runtime().rebuild());
     }
@@ -694,7 +711,10 @@ int main() {
   {
     constexpr double baseHz = 220.0;
     core::MachineRuntimeDefinition dA(kSeed, kSr);
-    core::MachineRuntimeDefinition dB(kSeed, kSr);  // fresh same-seed -> reproducibility.
+    dA.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+    core::MachineRuntimeDefinition dB(kSeed, kSr);
+    dB.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+  // fresh same-seed -> reproducibility.
     auto cfg = [&](core::SynthRuntime& rt) {
       rt.setVcoBaseHz(baseHz);
       rt.setVcoCvAmounts(1.0, 0.0);  // neutralize the VCO-B self-edge contribution (route stays).
@@ -742,6 +762,7 @@ int main() {
     // VCO phase is identical between comparisons — no frame-phase tautology).
     auto renderWetFp = [&](bool cabled) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       cfg(d.runtime());
       if (cabled)
         check(d.runtime().connect(reg::JackId::env_follower_env_out,
@@ -780,6 +801,7 @@ int main() {
     core::RuntimeOutput frameOut[kN];
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       newSimilar(d);
       const std::size_t before = g_allocCount;
       for (std::size_t i = 0; i < kN; ++i) frameOut[i] = d.runtime().processFrame(core::RuntimeInputs{extArr[i], extArr[i]}, true);
@@ -788,6 +810,7 @@ int main() {
     core::RuntimeOutput blockOut[kN];
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       newSimilar(d);
       const std::size_t before = g_allocCount;
       d.runtime().processBlock(extArrRi, kN, blockOut, true);
@@ -801,6 +824,7 @@ int main() {
     check(same, "A′② frame-loop and processBlock renders are bit-identical (partition invariance)");
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       newSimilar(d);
       check(d.runtime().rebuild() &&
                 d.runtime().lastRebuildStatus() == core::SynthRuntime::RebuildStatus::graph_unchanged,
@@ -847,6 +871,7 @@ int main() {
     // fixes the drive-offset bug: each chunk must read drv[b..], NOT drv[0..] from frame b.
     auto renderCycle = [&](std::size_t block, core::RuntimeOutput* seq) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
@@ -871,6 +896,7 @@ int main() {
     // so we exercise the joined classic gate path, not a per-voice shortcut.
     auto renderGate = [&](bool gateOn, core::RuntimeOutput* seq) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       rt.setDroneGroupGate(/*voiceGroup=*/0, gateOn);
@@ -895,6 +921,7 @@ int main() {
     // under the old "non-silent" test — this pins the real contract.
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
             "item7: connect env->preamp return cable (feedback-edge pin)");
@@ -919,6 +946,7 @@ int main() {
     // frames (a live envelope, not a frozen constant).
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       rt.setDroneGroupGate(0, true);
       bool envLive = false, envSteady = true, envConsistent = true;
@@ -944,6 +972,7 @@ int main() {
     // step, which writes dryB_ not dryA_ => dryA stays 0 => RED. Canonical VCO-B stays live.
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       rt.setVcoBaseHz(110.0);
@@ -978,6 +1007,7 @@ int main() {
       struct WarmUpProbe { double warmEnv; double firstPost; };
       auto probe = [&](double warmDrv) -> WarmUpProbe {
         core::MachineRuntimeDefinition d(kSeed, kSr);
+        d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
         for (int i = 0; i < 12; ++i) (void)rt.processFrame(core::RuntimeInputs{warmDrv, warmDrv}, true);  // no return cable yet.
@@ -1020,6 +1050,7 @@ int main() {
     {
       auto wetDifferential = [&](bool wireReturn, core::RuntimeOutput* seq, std::size_t n) {
         core::MachineRuntimeDefinition d(kSeed, kSr);
+        d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
         // task #83 / GH #18: the default A->B route is ACYCLIC, so the feedback line this block
@@ -1083,6 +1114,7 @@ int main() {
   // A′ bullet ⑥: GH#6 VCF identity config, fail-closed, L/R isolation through canonical vcf_path.
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
+    d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
     core::SynthRuntime& rt = d.runtime();
     core::CalibrationState calib{};
     calib.vcfLeftTrim = 1.0f;
@@ -1113,6 +1145,7 @@ int main() {
     // instances; ONLY the LEFT trim differs -> L wet moves, R stays bit-identical.
     auto renderIdenWet = [&](double leftTrim, double rightTrim) {
       core::MachineRuntimeDefinition dd(kSeed, kSr);
+      dd.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::CalibrationState c{};
       c.vcfLeftTrim = static_cast<float>(leftTrim);
       c.vcfRightTrim = static_cast<float>(rightTrim);
@@ -1147,12 +1180,14 @@ int main() {
     core::RuntimeOutput idenFrame[kN6];
     {
       core::MachineRuntimeDefinition dd(kSeed, kSr);
+      dd.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       idenSimilar(dd);
       for (std::size_t i = 0; i < kN6; ++i) idenFrame[i] = dd.runtime().processFrame(core::RuntimeInputs{drv6[i], drv6[i]}, true);
     }
     core::RuntimeOutput idenBlock[kN6];
     {
       core::MachineRuntimeDefinition dd(kSeed, kSr);
+      dd.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       idenSimilar(dd);
       dd.runtime().processBlock(drv6Ri, kN6, idenBlock, /*driveGraph=*/true);
     }
@@ -1194,6 +1229,7 @@ int main() {
     // modulation value and therefore not a per-frame sample-timing signal.
     auto renderOut = [&](std::size_t block, core::RuntimeOutput* seq, bool withEvent) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       if (withEvent) static_cast<void>(rt.enqueueControlEvent(pitchEvent()));
       for (std::size_t b = 0; b < kTot; b += block) {
@@ -1263,6 +1299,7 @@ int main() {
     auto renderPwm = [&](bool wireA, bool wireB, double xNorm, double yNorm, double depthA,
                          double depthB, Probe& p) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoBaseHz(kBaseHz);
       rt.setVcoCvAmounts(1.0, 0.0);  // isolate B from the default A->B route
@@ -1402,6 +1439,7 @@ int main() {
       // side 'B' = injected DC -> vco_b.pwm_in, observed on dryB.
       auto renderTimingArm = [&](char side, double depth, std::size_t stepAt, TimingArm& arm) {
         core::MachineRuntimeDefinition d(kSeed, kSr);
+        d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoBaseHz(kTimingBaseHz);
         rt.setVcoCvAmounts(1.0, 0.0);   // keep the default A->B normalised route off B

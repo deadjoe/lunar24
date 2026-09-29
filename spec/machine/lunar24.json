@@ -2369,7 +2369,7 @@
           "unit": "seconds",
           "min": 0.0,
           "max": 10.0,
-          "default": 0.01,
+          "default": 0.04,
           "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
@@ -2393,7 +2393,7 @@
           "unit": "seconds",
           "min": 0.0,
           "max": 10.0,
-          "default": 0.1,
+          "default": 1.5,
           "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
@@ -2417,7 +2417,7 @@
           "unit": "seconds",
           "min": 0.0,
           "max": 10.0,
-          "default": 0.1,
+          "default": 0.6,
           "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
@@ -2441,7 +2441,7 @@
           "unit": "norm",
           "min": 0.0,
           "max": 1.0,
-          "default": 0.5,
+          "default": 0.7,
           "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
@@ -2615,7 +2615,7 @@
           "unit": "seconds",
           "min": 0.0,
           "max": 10.0,
-          "default": 0.01,
+          "default": 0.08,
           "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
@@ -2639,7 +2639,7 @@
           "unit": "seconds",
           "min": 0.0,
           "max": 10.0,
-          "default": 0.1,
+          "default": 2.0,
           "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
@@ -2663,7 +2663,7 @@
           "unit": "seconds",
           "min": 0.0,
           "max": 10.0,
-          "default": 0.1,
+          "default": 0.8,
           "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
@@ -2687,7 +2687,7 @@
           "unit": "norm",
           "min": 0.0,
           "max": 1.0,
-          "default": 0.5,
+          "default": 0.6,
           "smoothing": "seconds",
           "persistence": "deviceState",
           "evidence": {
@@ -4117,7 +4117,7 @@
           "unit": "norm",
           "min": 0.0,
           "max": 1.0,
-          "default": 0.0,
+          "default": 0.45,
           "step": 0.0,
           "smoothing": "none",
           "persistence": "deviceState",
@@ -4165,7 +4165,7 @@
           "unit": "norm",
           "min": 0.0,
           "max": 1.0,
-          "default": 0.0,
+          "default": 0.35,
           "step": 0.0,
           "smoothing": "none",
           "persistence": "deviceState",

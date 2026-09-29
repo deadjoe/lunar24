@@ -520,6 +520,8 @@ class MachineRuntimeDefinition {
     }
     // The dual effector sits after the distortion on WET L/R.
     runtime_.setEffectorEnabled(true);
+    // VCO A/B VCAs follow Envelope A/B (the keyboard gate is normalled to both EGs).
+    runtime_.setVcoVcaEnabled(true);
     runtime_.applyEffectorState(state_);
     // GH#12 task#101: restore the keyboard's per-side PERFORMANCE STATE (mode + both sides'
     // behaviour/arp-seq configuration) from the SAME owned state, after the DSP apply so the

@@ -47,7 +47,13 @@ using lunar24::core::DeviceStateV1;
 using lunar24::core::JackId;
 using lunar24::core::ParameterId;
 using lunar24::core::RouteId;
-using lunar24::core::make_default_device_state;
+// These tests listen to the VCOs directly, so both VCO VCAs are held open (envelope HOLD).
+inline lunar24::core::DeviceStateV1 make_default_device_state(std::uint64_t seed) {
+  lunar24::core::DeviceStateV1 st = lunar24::core::make_default_device_state(seed);
+  st.parameters[static_cast<std::uint32_t>(lunar24::core::ParameterId::envelope_a_hold)] = 1.0;
+  st.parameters[static_cast<std::uint32_t>(lunar24::core::ParameterId::envelope_b_hold)] = 1.0;
+  return st;
+}
 
 namespace {
 
