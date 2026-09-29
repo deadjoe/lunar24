@@ -98,7 +98,27 @@ class Distortion {
     double driveState = 0.0;  // per-channel filter state (the nonlinearity state).
     double driveFold = 0.0;   // GH#6 per-channel folding strength (set in ctor).
     double rail = 0.0;        // GH#6 per-channel saturation ceiling (set in ctor).
+    double prevU = 0.0;       // previous shaper input (antiderivative anti-aliasing)
+    double prevF = 0.0;       // log(cosh(prevU))
   };
+
+  // log(cosh(u)), overflow-free: the antiderivative of tanh.
+  static double logCosh_(double u) {
+    const double a = std::fabs(u);
+    return a + std::log1p(std::exp(-2.0 * a)) - 0.69314718055994530942;
+  }
+  // First-order antiderivative anti-aliasing of tanh: the AVERAGE of tanh over the segment
+  // between the previous and the current input, (F(u) - F(u')) / (u - u'), instead of tanh(u).
+  // It suppresses the aliasing a hard-driven tanh folds back into the audio band (about
+  // 20-30 dB less for high notes) at the cost of half a sample of delay on the shaped path.
+  static double tanhAdaa_(Channel& c, double u) {
+    const double f = logCosh_(u);
+    const double du = u - c.prevU;
+    const double y = std::fabs(du) > 1e-6 ? (f - c.prevF) / du : std::tanh(0.5 * (u + c.prevU));
+    c.prevU = u;
+    c.prevF = f;
+    return y;
+  }
 
   Channel& channel_(int ch) { return ch == 1 ? channelR_ : channelL_; }
   const Channel& channel_(int ch) const { return ch == 1 ? channelR_ : channelL_; }
@@ -114,7 +134,7 @@ class Distortion {
     const double driveTarget = gain_ * std::fabs(x);
     c.driveState += coeff_ * (driveTarget - c.driveState);
     const double fold = 1.0 + c.driveFold * c.driveState;
-    const double wet = c.rail * std::tanh(fold * x / c.rail);
+    const double wet = c.rail * tanhAdaa_(c, fold * x / c.rail);
     return (1.0 - dist_) * x + dist_ * wet;
   }
 

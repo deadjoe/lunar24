@@ -644,8 +644,29 @@ void test_mixer_vol_glides() {
   CHECK(std::fabs(l - std::cos(0.25 * 3.14159265358979323846)) < 1e-3);  // settled (centre pan)
 }
 
+// Hard-driven distortion keeps aliasing down (antiderivative anti-aliasing): a 7919 Hz
+// tone's 5th harmonic folds back to 8405 Hz; that alias must stay 25 dB under the tone
+// (a plain tanh leaves it only ~15 dB under).
+void test_distortion_alias_suppressed() {
+  const double sr = 48000.0, f = 7919.0, alias = 48000.0 - 5.0 * f;
+  lunar24::core::Distortion d(sr);
+  d.setDist(1.0);
+  d.setGain(1.0);
+  double reT = 0, imT = 0, reA = 0, imA = 0;
+  for (int i = 0; i < 4800 + 48000; ++i) {
+    const double y = d.tickL(2.0 * std::sin(2.0 * 3.14159265358979323846 * f * i / sr));
+    if (i < 4800) continue;
+    const double t = 2.0 * 3.14159265358979323846 * i / sr;
+    reT += y * std::cos(f * t); imT += y * std::sin(f * t);
+    reA += y * std::cos(alias * t); imA += y * std::sin(alias * t);
+  }
+  const double ratioDb = 20.0 * std::log10(std::hypot(reA, imA) / std::hypot(reT, imT));
+  CHECK(ratioDb < -25.0);
+}
+
 int main() {
   test_mixer_vol_glides();
+  test_distortion_alias_suppressed();
   test_resonance_does_not_lose_lows();
   test_dist_independent_of_gain();
   test_lr_state_independent();
