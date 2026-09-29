@@ -228,6 +228,16 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
   }
   ControlEvent ev[3];
   const std::uint32_t n = midiInput_.translate(in, ev, 3);
-  for (std::uint32_t i = 0; i < n; ++i) engine_.enqueueEventFromAudioThread(ev[i]);
+  for (std::uint32_t i = 0; i < n; ++i) {
+    if (ev[i].kind == ControlEventKind::parameter) {
+      // CC -> an existing panel knob: map the 0..1 controller onto the knob's range, play it
+      // now and let the UI thread record it (so the knob moves and the value is saved).
+      const ParameterDescriptor* d = find_parameter(ev[i].parameter);
+      if (d != nullptr)
+        engine_.parameterFromAudioThread(ev[i].parameter, d->min + double(ev[i].value) * (d->max - d->min));
+    } else {
+      engine_.enqueueEventFromAudioThread(ev[i]);
+    }
+  }
 }
 #endif

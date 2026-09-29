@@ -218,6 +218,11 @@ class StandaloneAudioEngine {
   // Audio thread only (e.g. MIDI delivered inside the audio callback): schedule a note/clock
   // event at the current block.
   bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e);
+  // Audio thread only: a knob changed by MIDI CC. The value is heard at once (as a live event)
+  // and handed back to the UI thread, which records it in the saved state and redraws.
+  bool parameterFromAudioThread(ParameterId id, double value);
+  // UI thread: apply the MIDI-CC knob moves queued by the audio thread. Returns how many.
+  int syncParametersFromAudioThread();
   // Current value of a parameter as the user last set it (UI readback).
   double parameterValue(ParameterId id) const {
     const DeviceStateV1* st = canonicalState();
@@ -337,6 +342,7 @@ class StandaloneAudioEngine {
 
   // UI -> audio live command queue (single producer: the UI thread).
   lunar24::core::SpscQueue<1024> liveQueue_;
+  lunar24::core::SpscQueue<256> fromAudioQueue_;  // audio -> UI (MIDI CC knob moves)
   bool droneKeys_[6] = {true, true, true, true, true, true};
   std::uint64_t stateVersion_ = 0;
   void drainLive_(SynthRuntime& rt);
@@ -736,6 +742,33 @@ inline bool StandaloneAudioEngine::postDroneKey(int voice, bool open) {
   c.side = static_cast<std::uint32_t>(voice);
   c.value = open ? 1.0 : 0.0;
   return liveQueue_.push(c);
+}
+
+inline bool StandaloneAudioEngine::parameterFromAudioThread(ParameterId id, double value) {
+  if (!definition_) return false;
+  lunar24::core::ControlEvent e{};
+  e.kind = lunar24::core::ControlEventKind::parameter;
+  e.parameter = id;
+  e.value = static_cast<lunar24::core::SignalSample>(value);
+  e.source = 101;  // MIDI CC producer
+  SynthRuntime& rt = definition_->runtime();
+  (void)rt.enqueueControlEvent(lunar24::core::TimedControlEvent{e, rt.currentSample()});
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::Parameter;
+  c.parameter = id;
+  c.value = value;
+  return fromAudioQueue_.push(c);
+}
+
+inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
+  if (!definition_) return 0;
+  int n = 0;
+  lunar24::core::LiveCommand c;
+  while (fromAudioQueue_.pop(c)) {
+    lunar24::core::state_set_param(definition_->mutableDeviceState(), c.parameter, c.value);
+    ++n;
+  }
+  return n;
 }
 
 inline bool StandaloneAudioEngine::enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e) {

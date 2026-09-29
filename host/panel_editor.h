@@ -580,8 +580,9 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   g->SetKeyHandlerFunc([&shared](const IKeyPress& key, bool isUp) {
     return shared.plates != nullptr && shared.plates->key(key, isUp);
   });
-  // Redraw everything when a whole new machine state lands (startup restore, preset load).
+  // Redraw when MIDI CC moved knobs, or a whole new machine state lands (startup restore).
   g->SetDisplayTickFunc([&shared, g]() {
+    if (shared.engine.syncParametersFromAudioThread() > 0) g->SetAllControlsDirty();  // MIDI CC
     if (shared.engine.stateVersion() != shared.seenStateVersion) {
       shared.seenStateVersion = shared.engine.stateVersion();
       g->SetAllControlsDirty();
