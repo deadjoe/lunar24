@@ -12,6 +12,7 @@
 
 #include "IPlug_include_in_plug_hdr.h"
 
+#include <chrono>
 #include <memory>
 
 #include <host/app_state_store.h>
@@ -54,11 +55,14 @@ public:
   // (W17). Passing nullptr/"" means "no path": the store reports NoPath and performs no IO.
   void setStateDirectory(const char* dir);
 
-  // The exit/lifecycle save. Called by IPlugAPPHost's destructor AFTER CloseAudio() has returned
-  // (audio callbacks are quiesced) and before the plugin is destroyed, so the engine and its
-  // canonical state are still alive. It is NOT a running-stream operation, NOT a debounce and NOT
-  // crash recovery; the typed outcome is returned for the host to record.
+  // Save the machine state. Called by IPlugAPPHost's destructor AFTER CloseAudio() has returned
+  // (the exit save) and from OnIdle while running (the autosave). Both run on the UI thread,
+  // the only thread that edits the saved state, so the save never races an edit.
   lunar24::host::StateSaveOutcome saveDeviceState();
+
+  // UI thread, every ~20 ms: autosave at most every 30 s, and only after an edit, so a crash
+  // or power cut loses at most the last half minute.
+  void OnIdle() override;
 
 private:
   // The framework-free runtime owner, held BY VALUE. It owns the address-stable
@@ -84,5 +88,7 @@ private:
       {91, lunar24::core::ParameterId::effector_blend},
       {7, lunar24::core::ParameterId::effector_master}};
   lunar24::core::InputStateMachine midiInput_{kMidiCc, 5};
+  std::uint64_t savedEditCount_ = 0;
+  std::chrono::steady_clock::time_point lastAutosave_ = std::chrono::steady_clock::now();
   std::uint64_t midiSeq_ = 0;
 };

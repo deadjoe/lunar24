@@ -35,6 +35,10 @@
 #include <cstdint>
 #include <memory>
 
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+#include <xmmintrin.h>
+#endif
+
 #include <lunar24/core/live_command_queue.h>
 #include <lunar24/core/state_edit.h>
 #include <lunar24/core/device_adapter.h>
@@ -73,6 +77,31 @@ using lunar24::core::kParameterCount;
 // reproducible default, not an authoritative machine-program identity (that is #12's
 // job, out of scope for this slice). "LUNAR" as hex, so it is greppable and stable.
 inline constexpr std::uint64_t kLunarStartupSeed = 0x4C554E4152ULL;
+
+// Flush denormal floats to zero for the duration of a block (restores the caller's mode).
+// Filter and reverb tails that decay toward zero otherwise enter the denormal range, where
+// x86 CPUs slow down sharply. ARM64 sets FPCR.FZ; other targets do nothing.
+class ScopedFlushDenormals {
+ public:
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+  ScopedFlushDenormals() : saved_(_mm_getcsr()) { _mm_setcsr(saved_ | 0x8040u); }  // FTZ | DAZ
+  ~ScopedFlushDenormals() { _mm_setcsr(saved_); }
+ private:
+  unsigned int saved_;
+#elif defined(__aarch64__)
+  ScopedFlushDenormals() {
+    __asm__ __volatile__("mrs %0, fpcr" : "=r"(saved_));
+    __asm__ __volatile__("msr fpcr, %0" : : "r"(saved_ | (1ull << 24)));
+  }
+  ~ScopedFlushDenormals() { __asm__ __volatile__("msr fpcr, %0" : : "r"(saved_)); }
+ private:
+  unsigned long long saved_ = 0;
+#else
+  ScopedFlushDenormals() = default;
+#endif
+  ScopedFlushDenormals(const ScopedFlushDenormals&) = delete;
+  ScopedFlushDenormals& operator=(const ScopedFlushDenormals&) = delete;
+};
 
 // The one repo-owned standalone host runtime owner. Held BY VALUE by LunarHostPlugin.
 class StandaloneAudioEngine {
@@ -215,6 +244,9 @@ class StandaloneAudioEngine {
   // Bumped whenever a whole new machine state is committed (startup restore, preset load),
   // so the UI knows to redraw every control.
   std::uint64_t stateVersion() const { return stateVersion_; }
+  // UI thread: bumped by every edit of the saved state (knob, cable, cartridge, MIDI CC), so
+  // the host can autosave only when something changed.
+  std::uint64_t editCount() const { return editCount_ + stateVersion_; }
   // Audio thread only (e.g. MIDI delivered inside the audio callback): schedule a note/clock
   // event at the current block.
   bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e);
@@ -345,6 +377,7 @@ class StandaloneAudioEngine {
   lunar24::core::SpscQueue<256> fromAudioQueue_;  // audio -> UI (MIDI CC knob moves)
   bool droneKeys_[6] = {true, true, true, true, true, true};
   std::uint64_t stateVersion_ = 0;
+  std::uint64_t editCount_ = 0;
   void drainLive_(SynthRuntime& rt);
 
   // Monotonic RT counters (plain, no lock).
@@ -585,6 +618,7 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
   // THE single production delegate (task#71). The owner forwards the whole block to the
   // frozen adapter and does nothing else — no frame loop, no scaling, no mapping, no
   // pass-through. A second output bank / a host-side scale would be a wiring defect.
+  const ScopedFlushDenormals noDenormals;  // decaying tails never hit slow denormal math
   drainLive_(definition_->runtime());
   adapter_.renderBlock(definition_->runtime(), inputs, outputs, frames);
   ++renderedBlocks_;
@@ -679,6 +713,7 @@ inline bool StandaloneAudioEngine::postParameter(ParameterId id, double value) {
   if (!definition_) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   if (!lunar24::core::state_set_param(st, id, value)) return false;
+  ++editCount_;
   lunar24::core::LiveCommand c;
   c.kind = lunar24::core::LiveCommand::Kind::Parameter;
   c.parameter = id;
@@ -701,6 +736,7 @@ inline bool StandaloneAudioEngine::postConnect(lunar24::core::JackId source,
   const bool hadOld = i < lunar24::core::kDevicePatchCapacity && st.inputCable[i] != 0u;
   const lunar24::core::JackId oldSource = hadOld ? st.cableSource[i] : lunar24::core::JackId{0};
   if (!lunar24::core::state_connect(st, source, sink)) return false;
+  ++editCount_;
   lunar24::core::LiveCommand c;
   c.kind = lunar24::core::LiveCommand::Kind::Connect;
   c.source = source;
@@ -720,6 +756,7 @@ inline bool StandaloneAudioEngine::postDisconnect(lunar24::core::JackId sink) {
   c.source = st.cableSource[i];
   c.sink = sink;
   lunar24::core::state_disconnect(st, sink);
+  ++editCount_;
   return liveQueue_.push(c);
 }
 
@@ -727,6 +764,7 @@ inline bool StandaloneAudioEngine::postEffectorProgram(int side, lunar24::core::
   if (!definition_ || lunar24::core::find_program(program) == nullptr) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   (side == 0 ? st.leftEffector : st.rightEffector).program = program;
+  ++editCount_;
   lunar24::core::LiveCommand c;
   c.kind = lunar24::core::LiveCommand::Kind::EffectorProgram;
   c.side = side == 0 ? 0u : 1u;
@@ -766,6 +804,7 @@ inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
   lunar24::core::LiveCommand c;
   while (fromAudioQueue_.pop(c)) {
     lunar24::core::state_set_param(definition_->mutableDeviceState(), c.parameter, c.value);
+    ++editCount_;
     ++n;
   }
   return n;

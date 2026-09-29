@@ -137,6 +137,17 @@ lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
   return stateStore_.save(engine_);
 }
 
+void LunarHostPlugin::OnIdle()
+{
+  constexpr auto kAutosaveInterval = std::chrono::seconds(30);
+  const auto now = std::chrono::steady_clock::now();
+  if (!engine_.isReady() || engine_.editCount() == savedEditCount_ || now - lastAutosave_ < kAutosaveInterval)
+    return;
+  lastAutosave_ = now;
+  savedEditCount_ = engine_.editCount();
+  (void)saveDeviceState();
+}
+
 bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
 {
   // GH#4 8B3 (task#73): disconnect ALL declared max channels first, then connect only
