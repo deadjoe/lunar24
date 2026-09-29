@@ -532,6 +532,7 @@ class MachineRuntimeDefinition {
     // enumerator with no reachable false) would be a vacuous pass. The non-vacuous evidence is
     // the per-side readback (keyboardMode()/keyboardArpSeqParams()/keyboardBehaviourParams()).
     runtime_.applyKeyboardState(state_);
+    runtime_.snapSmoothedLevels();
   }
 
   // The validated state-aware builder (machine_candidate.h) is the ONLY public path from a

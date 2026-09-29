@@ -81,6 +81,12 @@ class DroneBank {
     double modAmount;    // per-generator MOD button depth (0 => runs stably).
     double modCv;        // live CV/photo detune input (0 => no external detune).
     double volt;         // shared VOLT transpose of the whole 5-gen group (semitones).
+    // Per-sample constants, recomputed only when their inputs change (never in tick).
+    double tuneScale;    // 2^(tune/12)
+    double voltScale;    // 2^(-volt/12)
+    double shapeDen;     // 1 - exp(-shapeCurve)   (chargeShape denominator)
+    double shapeMean;    // chargeShapeMeanOffset(shapeCurve)
+    double muteGain;     // 0..1, glides toward muted ? 0 : 1 so a MUTE press does not click
   };
 
   // ---- CLASSIC group gate/ATT/RLS/HOLD envelope + dynamic variation (batch 4A) ----
@@ -148,6 +154,8 @@ class DroneBank {
         driftEnabled_(driftEnabled),
         seed_(seed) {
     groupCount_ = (voiceCount_ + kGensPerVoice - 1) / kGensPerVoice;
+    driftNoiseScale_ = std::sqrt(2.0 * kDriftPullPerSecond * (1.0 / sampleRate_));
+    muteGlide_ = 1.0 - std::exp(-1.0 / (0.003 * sampleRate_));
     for (std::size_t g = 0; g < kMaxGroups; ++g) {
       groupEnv_[g].gate = kDefaultGroupGateOpen;  // named provisional default (not evidence).
       groupEnv_[g].hold = false;
@@ -185,6 +193,8 @@ class DroneBank {
       v.amplitude = vrng.nextUnit(0.55, 1.0);
       v.driftDepth = vrng.nextUnit(0.0015, 0.0045);   // ~3-8 cents of wander
       v.shapeCurve = vrng.nextUnit(0.8, 2.2);
+      v.shapeDen = 1.0 - std::exp(-v.shapeCurve);
+      v.shapeMean = chargeShapeMeanOffset(v.shapeCurve);
       v.driftState = vrng.nextUnit(-1.0, 1.0) * v.driftDepth;
       v.cycleJitter = 0.0;
       v.phase = 0.0;
@@ -195,6 +205,9 @@ class DroneBank {
       v.modAmount = 0.0;
       v.modCv = 0.0;
       v.volt = 0.0;
+      v.tuneScale = 1.0;
+      v.voltScale = 1.0;
+      v.muteGain = 1.0;
       lastSample_[i] = 0.0;
       lastJitterHz_[i] = 0.0;  // "no jitter applied yet" (nothing has been ticked).
     }
@@ -202,7 +215,15 @@ class DroneBank {
 
   // ---------- panel CONTROL binding (structure; the runtime forwards these) ------
   void setMute(std::size_t gen, bool on) { if (gen < voiceCount_) voices_[gen].muted = on; }
-  void setTune(std::size_t gen, double semitones) { if (gen < voiceCount_) voices_[gen].tune = semitones; }
+  // Land every MUTE fade on its end point now (a whole-state load is not a button press).
+  void snapMutes() {
+    for (std::size_t i = 0; i < voiceCount_; ++i) voices_[i].muteGain = voices_[i].muted ? 0.0 : 1.0;
+  }
+  void setTune(std::size_t gen, double semitones) {
+    if (gen >= voiceCount_) return;
+    voices_[gen].tune = semitones;
+    voices_[gen].tuneScale = std::pow(2.0, semitones / 12.0);
+  }
   void setMod(std::size_t gen, double amount) { if (gen < voiceCount_) voices_[gen].modAmount = amount; }
   void setModCv(std::size_t gen, double cv) { if (gen < voiceCount_) voices_[gen].modCv = cv; }
   // Shared VOLT transpose: a single turn applies to all glider generators of that
@@ -210,7 +231,11 @@ class DroneBank {
   void setVolt(std::size_t voiceGroup, double semitonesDown) {
     const std::size_t gs = voiceGroup * kGensPerVoice;
     const std::size_t end = std::min(voiceCount_, gs + kGensPerVoice);
-    for (std::size_t i = gs; i < end; ++i) voices_[i].volt = semitonesDown;
+    const double scale = std::pow(2.0, -semitonesDown / 12.0);
+    for (std::size_t i = gs; i < end; ++i) {
+      voices_[i].volt = semitonesDown;
+      voices_[i].voltScale = scale;
+    }
   }
 
   // ---- CLASSIC group gate/ATT/RLS/HOLD + shared CV MOD + environment (batch 4A) ----
@@ -259,6 +284,7 @@ class DroneBank {
     // oscillators keep free-running; the envelope only scales the group's final audio
     // below, never resetting phase (design/07 §7). Linear + monotonic.
     const double dt = 1.0 / sampleRate_;
+    const double driftNoiseScale = driftNoiseScale_;
     GroupEnv& e = groupEnv_[g];
     const double target = (e.gate || e.hold) ? 1.0 : 0.0;
     double& lvl = e.level;
@@ -280,14 +306,13 @@ class DroneBank {
         // back toward the nominal pitch. Deterministic per (seed, generator, sample).
         const double u = jitterUnit_(seed_ ^ kStreamDrift, static_cast<double>(i), sample);
         v.driftState += -kDriftPullPerSecond * v.driftState * dt +
-                        v.driftDepth * std::sqrt(2.0 * kDriftPullPerSecond * dt) * u * 1.732;
+                        v.driftDepth * driftNoiseScale * u * 1.732;
         v.driftNow = v.freqBaseHz * v.driftState;
       } else {
         v.driftNow = 0.0;
       }
-      const double tuneScale = std::pow(2.0, v.tune / 12.0);      // TUNE (semitones up).
-      const double voltScale = std::pow(2.0, -v.volt / 12.0);     // VOLT transposes down.
-      const double base = v.freqBaseHz * tuneScale * voltScale;
+      // TUNE (semitones up) and VOLT (transposes down), cached by setTune / setVolt.
+      const double base = v.freqBaseHz * v.tuneScale * v.voltScale;
       double effFreq = base * (1.0 + v.tolerance) + v.driftNow;
       // MOD: button on => the shared CV MOD (group) or per-gen CV detunes; off => stable.
       effFreq += v.modAmount * (v.modCv + modCvG_[g]);
@@ -328,9 +353,10 @@ class DroneBank {
       // step is the same polyBLEP-corrected jump a sawtooth has (the curve itself is
       // continuous across the wrap because shape(0)=0 and shape(1)=1).
       // chargeShape bends the ramp upward, so remove its mean (the curve's DC offset).
-      const double bent = polyblepSaw(t, phaseInc) +
-                          2.0 * (chargeShape(t, v.shapeCurve) - t - chargeShapeMeanOffset(v.shapeCurve));
-      const double s = v.muted ? 0.0 : v.amplitude * nonlinearity(bent);
+      const double shaped = v.shapeCurve < 1e-6 ? t : (1.0 - std::exp(-v.shapeCurve * t)) / v.shapeDen;
+      const double bent = polyblepSaw(t, phaseInc) + 2.0 * (shaped - t - v.shapeMean);
+      v.muteGain += muteGlide_ * ((v.muted ? 0.0 : 1.0) - v.muteGain);
+      const double s = v.muteGain < 1e-9 ? 0.0 : v.amplitude * nonlinearity(bent) * v.muteGain;
       lastSample_[i] = s;          // RAW pre-group-VCA: mutual-FM peers use the oscillator value.
       out[i - begin] = s * gLvl;   // the group's envelope/VCA gates the final audio.
       v.phase += twoPi_ * effFreq / sampleRate_;
@@ -338,8 +364,9 @@ class DroneBank {
         // New cycle: the firing threshold is noisy, so each period differs a little.
         v.cycleJitter = kCycleJitter * jitterUnit_(seed_ ^ kStreamCycle, static_cast<double>(i), sample);
       }
-      v.phase = std::fmod(v.phase, twoPi_);
-      if (v.phase < 0.0) v.phase += twoPi_;
+      // Wrap (exact: phase < 2 * twoPi_, so the subtraction loses nothing).
+      while (v.phase >= twoPi_) v.phase -= twoPi_;
+      if (v.phase < 0.0) v.phase = std::fmod(v.phase, twoPi_) + twoPi_;
     }
     ++groupSample_[g];
   }
@@ -480,6 +507,8 @@ class DroneBank {
   }
 
   double sampleRate_;
+  double driftNoiseScale_ = 0.0;  // sqrt(2 * kDriftPullPerSecond / sampleRate)
+  double muteGlide_ = 1.0;        // MUTE fade coefficient (~3 ms, tuned by ear)
   std::size_t voiceCount_;
   bool driftEnabled_;
   double groupSample_[kMaxGroups] = {};  // per-classic-group sample counter (bit-exact per-group tick).

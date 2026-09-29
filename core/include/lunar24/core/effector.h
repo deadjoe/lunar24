@@ -208,7 +208,12 @@ class Reverb {
     for (auto& a : ap_) a.clear();
     for (auto& d : damp_) d.reset();
   }
+  // Called every sample by the programs; the 8 gains and dampers are only recomputed when
+  // the (smoothed) knob value actually changed.
   void set(double t60Seconds, double dampHz) {
+    if (t60Seconds == lastT60Arg_ && dampHz == lastDampArg_) return;
+    lastT60Arg_ = t60Seconds;
+    lastDampArg_ = dampHz;
     t60_ = clamp(t60Seconds, 0.1, 120.0);
     for (int i = 0; i < 8; ++i) {
       gain_[i] = std::pow(10.0, -3.0 * baseLen_[i] / (t60_ * sr_));
@@ -254,6 +259,7 @@ class Reverb {
     for (int i = 0; i < 8; ++i) v[i] *= n;
   }
   double sr_ = 48000.0, t60_ = 3.0;
+  double lastT60Arg_ = -1.0, lastDampArg_ = -1.0;
   DelayLine lines_[8];
   DelayLine ap_[4];
   double baseLen_[8] = {}, apLen_[4] = {}, gain_[8] = {};

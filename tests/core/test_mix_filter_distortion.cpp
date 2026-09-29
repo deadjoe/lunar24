@@ -626,7 +626,26 @@ void test_gh6_distortion_lr_microdiff() {
 
 }  // namespace
 
+// A dragged VOL knob glides (~10 ms) instead of stepping, so it does not click; a
+// whole-state load (snap) lands at once.
+void test_mixer_vol_glides() {
+  VoiceMixer m;
+  m.setSampleRate(48000.0);
+  double in[VoiceMixer::kNumChannels] = {1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  double l = 0.0, r = 0.0;
+  m.setChannelVol(0, 0.0);
+  m.snap();
+  m.tick(in, l, r);
+  CHECK(l == 0.0);
+  m.setChannelVol(0, 1.0);
+  m.tick(in, l, r);
+  CHECK(l > 0.0 && l < 0.05);  // first sample moves only a little
+  for (int i = 0; i < 4800; ++i) m.tick(in, l, r);
+  CHECK(std::fabs(l - std::cos(0.25 * 3.14159265358979323846)) < 1e-3);  // settled (centre pan)
+}
+
 int main() {
+  test_mixer_vol_glides();
   test_resonance_does_not_lose_lows();
   test_dist_independent_of_gain();
   test_lr_state_independent();

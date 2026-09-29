@@ -454,6 +454,7 @@ class SynthRuntime {
     // applyKeyboardState behaves exactly as before. The sample rate is retained because the
     // side configure happens after construction (state apply), not in the ctor.
     sampleRate_ = sampleRate;
+    mixer_.setSampleRate(sampleRate);
     effector_.init(sampleRate);
     for (std::uint32_t s = 0; s < 2; ++s) {
       keyboardArpSeq_[s].configure(ArpSeqParams{}, sampleRate);
@@ -988,6 +989,15 @@ class SynthRuntime {
   void setDrone3Fm(bool on) { pv3_.setFm(on); }
   void setDrone3Am(bool on) { pv3_.setAm(on); }
   void setDrone3Noise(double amp) { pv3_.setNoise(amp); }
+  // Level controls (mixer VOL/PAN, preamp GAIN, drone MUTE, drone 3/6 NOISE) glide when a
+  // knob moves live. After a whole-state load, land them on their values at once.
+  void snapSmoothedLevels() {
+    mixer_.snap();
+    preamp_.snap();
+    drone_.snapMutes();
+    pv3_.snapNoise();
+    pv6_.snapNoise();
+  }
   void setDrone3Divider(double norm) { pv3_.setDivider(norm); }
   // GH#15 D1 (mod knob): norm [0,1] -> audio-oscillator modulation depth = modNorm
   // (linear, marked PROVISIONAL below as kModDepthFromNorm). Registry-AGREEING unit:
@@ -2168,6 +2178,7 @@ class SynthRuntime {
       // constructor value reproduces the pre-D2 sound exactly.
       baseRateHz_ = kNewDroneLfFreqHz;
       applyRate();
+      noiseGlide_ = 1.0 - std::exp(-1.0 / (0.010 * sr));
     }
     void setPitch(double pct) {
       pitchSemis_ = pct <= 0.0 ? SchmittOsc::kSilenceSt
@@ -2199,7 +2210,9 @@ class SynthRuntime {
     void applyRate() { lf.setFreqHz(baseRateHz_ * rateMult_); }
     void setFm(bool on) { fmOn_ = on; }
     void setAm(bool on) { amOn_ = on; }
-    void setNoise(double amp) { noise.setAmplitude(amp); }
+    // NOISE glides to its new level (~10 ms, tuned by ear) so a dragged knob does not click.
+    void setNoise(double amp) { noiseTarget_ = amp; }
+    void snapNoise() { noise.setAmplitude(noiseTarget_); }
     // GH#15 D3 (DIVIDER knob). The lane OWNS the S&H clock source; the old setShClock
     // field-injection seam (a pure test hook) is voided. divN = 1 + (kNewDroneDivMax-1)*norm
     // (linear). Default norm 0.5 -> divN = 8.5: the S&H CV readback (sampleHold*Cv) goes from
@@ -2254,8 +2267,13 @@ class SynthRuntime {
     double divider() const { return divN_; }
     bool fmOn() const { return fmOn_; }
     bool amOn() const { return amOn_; }
-    double noiseAmp() const { return noise.amplitude(); }
+    double noiseAmp() const { return noiseTarget_; }
     void tick(double* out) {
+      const double amp = noise.amplitude();
+      if (amp != noiseTarget_) {
+        const double next = amp + noiseGlide_ * (noiseTarget_ - amp);
+        noise.setAmplitude(std::fabs(noiseTarget_ - next) < 1e-7 ? noiseTarget_ : next);
+      }
       double lv = 0.0;
       lf.tick(&lv);
       const double sq = lf.square();  // ±1 LF-square level (read-only tap).
@@ -2310,6 +2328,8 @@ class SynthRuntime {
     double lfPrevLevel_ = 0.0;  // previous LF-square level, for rising-edge detection.
     double lfEdgeAcc_ = 0.0;    // fractional LF-edge counter, scaled by divN_ into captures.
     double shCv_ = 0.0;
+    double noiseTarget_ = kNewDroneNoiseAmp;
+    double noiseGlide_ = 1.0;
     // MOD knob depth (GH#15 D1). Default 0.5 = the registered drone_3/6.mod default,
     // so the post-wire default sound is half-depth modulation (was the raw ±1 square).
     double mod_ = 0.5;
