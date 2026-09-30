@@ -40,6 +40,10 @@ Keep these unless a listening test or a real bug says otherwise.
 - **Drone ATT/RLS span 1 ms..10 s on a cubic taper** (`DroneBank::mapAttSeconds`, shared by
   drones 1-6; the manual gives no range). The old 1 s ceiling was too short for drone swells;
   the cubic keeps the lower half fine for short times (0.5 -> 1.25 s). Tuned by ear.
+- **VCO waveform knob follows the panel icons** (`core/include/lunar24/core/vco_wave_map.h`):
+  pointing at an icon gives that shape (sine, triangle, saw, pulse, inverted saw), neighbours
+  crossfade, and the last stretch morphs sine -> triangle. Icon positions measured from the
+  panel drawing. Replaced an equal-spaced order that did not match the icons (owner's test).
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also

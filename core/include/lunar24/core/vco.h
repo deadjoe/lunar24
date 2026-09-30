@@ -303,13 +303,9 @@ class Vco {
     if (tw > 0.0) v += tw * triangleBlampCorr(cp, step);
     const double pw = pulseBlepWeight_();
     if (pw > 0.0) v += pw * pulseBlepCorr_(cp, step);
-    // GH#19 S6 (task #120): the two VALUE jumps on the ring's first two stretches, each scaled by
-    // its own node's weight (P6 in vco_wave_map.h, where the identity that justifies the scaling
-    // is written out). The residual is the same for both nodes -- they jump at the same phase, by
-    // the same magnitude, in opposite directions -- so it is read once and given one sign each.
-    // The outer guard is what makes the DEFAULT patch bit-identical: at morph_ = 0.5 (the sine
-    // node) BOTH weights are exactly 0.0, so nothing is added at all, in the same way and for the
-    // same reason as vco.h's kMorphSawInvSaw/kMorphSineTriangle endpoints.
+    // The saw and inverted-saw value jumps, each scaled by that shape's weight in the mix. They
+    // jump at the same phase by the same size in opposite directions, so the residual is read
+    // once and given one sign each.
     const double sw = sawBlepWeight_();
     const double iw = invSawBlepWeight_();
     if (sw > 0.0 || iw > 0.0) {
@@ -361,44 +357,39 @@ class Vco {
   }
 
   // How much of the SAW node's value-jump correction is in force for the active waveform.
-  //  * kMorphRing: the saw NODE's weight in the mix (wave_map::sawWeight). Exactly 1.0 at the
-  //    pure-saw node (morph = 0.0) and 0.0 outside stretch 0 -- the saw is a left end of one
-  //    stretch and a right end of none, so it is never in force past the invSaw node.
+  //  * kMorphRing: the saw's weight in the mix (wave_map::sawWeight): 1.0 at the saw icon,
+  //    0.0 where no saw is mixed in.
   //  * every other waveform: 0.0. The module-dev raw shapes (including kMorphSawInvSaw, which is
   //    the same saw<->invSaw pair but NOT the ring) are unchanged by (P6) and stay naive.
   double sawBlepWeight_() const {
     switch (wave_) {
       case VcoWaveform::kMorphRing:
-        return wave_map::sawWeight(wave_map::kRingEqual, morph_);
+        return wave_map::sawWeight(wave_map::kRingPanel, morph_);
       default:
         return 0.0;
     }
   }
 
   // How much of the INVSAW node's value-jump correction is in force for the active waveform.
-  // Same contract; the invSaw is the one node in (P6) that spans TWO stretches -- right end of
-  // stretch 0, left end of stretch 1 -- so this weight is non-zero on both, and exactly 1.0 at the
-  // invSaw node itself (morph = 0.25).
+  // Same contract: 1.0 at the saw<>invSaw icon, 0.0 where no inverted saw is mixed in.
   double invSawBlepWeight_() const {
     switch (wave_) {
       case VcoWaveform::kMorphRing:
-        return wave_map::invSawWeight(wave_map::kRingEqual, morph_);
+        return wave_map::invSawWeight(wave_map::kRingPanel, morph_);
       default:
         return 0.0;
     }
   }
 
   // How much of the pulse value-jump correction is in force for the active waveform.
-  //  * kMorphRing: the pulse NODE's weight in the mix (wave_map::pulseWeight). Exactly 1.0 at the
-  //    pure-pulse node (morph = 1.0) and 0.0 outside stretch 3, so the correction runs in full
-  //    where the output IS the pulse, not at all where it is not, and scaled by the node's weight
-  //    in between -- first-order and software-provisional (vco_wave_map.h P5).
+  //  * kMorphRing: the pulse's weight in the mix (wave_map::pulseWeight): 1.0 at the pulse icon,
+  //    0.0 where no pulse is mixed in, scaled in between.
   //  * every other waveform: 0.0. The module-dev raw shapes are unchanged from before #118, so the
   //    existing kTriangle / kMorph* / drone paths emit bit-identical samples.
   double pulseBlepWeight_() const {
     switch (wave_) {
       case VcoWaveform::kMorphRing:
-        return wave_map::pulseWeight(wave_map::kRingEqual, morph_);
+        return wave_map::pulseWeight(wave_map::kRingPanel, morph_);
       default:
         return 0.0;
     }
@@ -406,18 +397,16 @@ class Vco {
 
   // How much of the EXISTING triangle slope correction is in force for the active waveform.
   //  * kTriangle (module-dev raw triangle): 1.0 — bit-identical to the pre-#117 behaviour.
-  //  * kMorphRing: the triangle NODE's weight in the mix (wave_map::triangleWeight). It is exactly
-  //    1.0 at the pure-triangle node (morph = 0.75) and 0.0 outside stretches 2 and 3, so the
-  //    correction is applied in full where the output IS the triangle and not at all where it is
-  //    not. First-order and software-provisional (vco_wave_map.h P3): it is NOT a normalisation of
-  //    the output level, and it changes no other node's amplitude.
+  //  * kMorphRing: the triangle's weight in the mix (wave_map::triangleWeight): 1.0 at the
+  //    triangle icon and at the end of travel, 0.0 where no triangle is mixed in. It is not a
+  //    gain on the output.
   //  * every other waveform: 0.0 — unchanged from before #117 (the naive morph shapes stay naive).
   double triangleBlampWeight_() const {
     switch (wave_) {
       case VcoWaveform::kTriangle:
         return 1.0;
       case VcoWaveform::kMorphRing:
-        return wave_map::triangleWeight(wave_map::kRingEqual, morph_);
+        return wave_map::triangleWeight(wave_map::kRingPanel, morph_);
       default:
         return 0.0;
     }
@@ -539,17 +528,10 @@ inline double Vco::waveformSampleAt(double p) const {
       // ⭐ PRODUCTION LAW. The whole sweep is wave_map's, evaluated on the EXISTING morph value
       // and the EXISTING duty (the pulse node reads the SHAPE knob). The phase convention is the
       // one already in force here: p = frac(cumPitch_), one cycle per unit.
-      // Morph 0.25 / 0.75 land exactly ON the ring's inverted-saw node and triangle node. Those are
-      // the ENDPOINT shapes of the two stretches, so they equal the module-dev raw shapes
-      // kMorphSawInvSaw / kMorphSineTriangle at THEIR OWN morph = 1 — NOT at 0.25 / 0.75. A raw
-      // shape evaluated at the same numeric morph is a different signal: kMorphSawInvSaw at 0.25 is
-      // (1-0.25)*saw + 0.25*(-saw) = 0.5*saw, a half-amplitude saw, not the inverted saw. Inside a
-      // stretch the ring is that stretch's closed form at the stretch's LOCAL coordinate u in [0,1]
-      // (vco_wave_map.h morphSawInvSaw / morphSineTriangle, documented there as "== kMorphSawInvSaw
-      // with morph_ = u"), never at the global morph value.
+      // Each panel icon position gives its own shape; between icons the two neighbours crossfade.
       // The pulse node reads effectiveDuty() (the base width plus this sample's PWM modulation);
       // depth 0 leaves it bit-identical to the base width.
-      return wave_map::sampleAt(wave_map::kRingEqual, morph_, p, effectiveDuty());
+      return wave_map::sampleAt(wave_map::kRingPanel, morph_, p, effectiveDuty());
   }
   return 0.0;
 }

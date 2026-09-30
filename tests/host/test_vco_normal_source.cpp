@@ -280,7 +280,7 @@ void test_acyclic_no_artificial_delay() {
 //     ⚠️ WAVEFORM (GH#19 S0, task #117). This reference used to hardcode the triangle
 //     `4|frac(.5-p)|-1`, which was right only because the VCO's constructor default WAS a fixed
 //     triangle. #117 made the production default the continuous morph sweep, so B renders
-//     `wave_map::sampleAt(kRingEqual, morph, p, duty)` and the hardcoded triangle no longer
+//     `wave_map::sampleAt(kRingPanel, morph, p, duty)` and the hardcoded triangle no longer
 //     describes the signal under test (measured: madSame 0.418 instead of ~1e-16 — the reference,
 //     not the product, was stale). The reference is therefore updated to the ACTUAL production law,
 //     driven by B's OWN applied readback (morph + pw), exactly as it already is for tune/oct/cvAmt.
@@ -303,9 +303,9 @@ double refB(double& cum, double cv, double sr, double baseHz, int octSel, double
   // No linear-FM on a plain VCO => instHz == p.
   cum += p / sr;
   const double ph = cum - std::floor(cum);
-  // The production sweep, evaluated at B's applied morph/pw (default morph 0.5 -> the sine node).
+  // The production sweep, evaluated at B's applied morph/pw (the sine icon: no anti-aliasing terms).
   const double shape = lunar24::core::wave_map::sampleAt(
-      lunar24::core::wave_map::kRingEqual, morph, ph, duty);
+      lunar24::core::wave_map::kRingPanel, morph, ph, duty);
   return 0.5 * shape;                               // volts -> device-normalised (kDeviceScale=0.5).
 }
 
@@ -321,6 +321,7 @@ void test_b_same_sample_vs_previous() {
   slot(st, ParameterId::vco_a_tune) = 0.5;         // +1/2 oct (the tune knob spans one octave).
   slot(st, ParameterId::vco_b_lin_exp) = 0.0;      // linear (reachable; the reference matches the law).
   slot(st, ParameterId::vco_b_cv_amt) = 1.0;       // full generic-CV depth (default, non-degenerate).
+  slot(st, ParameterId::vco_b_morph) = lunar24::core::wave_map::kIconSine;  // plain sine: no AA terms.
 
   EngineHarness h;
   const bool ok = h.load(st, sr);
@@ -332,7 +333,7 @@ void test_b_same_sample_vs_previous() {
   const double tune = rt->vcoBTune();
   const int octSel = rt->vcoBOctSelect();
   const double cvAmt = rt->vcoBCvAmt();
-  const double morph = rt->vcoBMorph();   // B's applied morph: the production default, 0.5.
+  const double morph = rt->vcoBMorph();   // B's applied morph: the sine icon.
   const double duty = rt->vcoBPw();       // B's applied pw (read by the sweep's pulse node).
   const double baseHz = 440.0;  // kVcoBaseHzProvisional (machine_definition.h:197).
 

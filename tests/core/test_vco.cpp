@@ -490,13 +490,10 @@ static bool test_vco_cross_sr_and_buffer() {
 // GH#19 S0 (task #117) — the PRODUCTION continuous-waveform law and the PWM consumer.
 //
 // The three load-bearing claims of the production entry, each with its own red-negative:
-//   (1) A runtime-built Vco renders kMorphRing, and the DEFAULT position (morph = 0.5) is the
-//       SINE node. The reference is this file's own std::sin — NOT wave_map — so a law that
-//       kept the old fixed triangle (the "fixed old triangle" mutant) fails here.
-//   (2) morph = 0.75 on the ring is BIT-IDENTICAL to the module-dev raw kTriangle ACROSS A FULL
-//       RENDER, BLAMP correction included. This is what lets the pre-#117 triangle/BLAMP gates
-//       be re-pointed at norm=.75 and reproduce their historical numbers, so it is asserted at
-//       bit equality rather than at a tolerance.
+//   (1) A runtime-built Vco renders kMorphRing, and each panel icon position gives its shape
+//       (the sine icon checked against this file's own std::sin, not wave_map).
+//   (2) The triangle icon on the ring is BIT-IDENTICAL to the module-dev raw kTriangle ACROSS A
+//       FULL RENDER, BLAMP correction included.
 //   (3) The PWM transfer: effectiveDuty = clamp(basePW + depth*cv/10, 0.001, 0.999), depth 0
 //       STRICTLY unchanged, basePW never written back, non-finite never propagated.
 // The "wrong side" and "mapping jump" mutants are caught by (1)'s endpoint table and the
@@ -515,13 +512,14 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
     CHECK(std::fabs(v.morph() - 0.5) < 1e-12);   // the registry default position.
   }
 
-  // (1b) DEFAULT == the SINE node, against an INDEPENDENT reference (std::sin, this file's),
-  //      never wave_map. tick() emits the shape UNSCALED (the 0.5 DRY clamp lives in the
+  // (1b) The knob pointing at the SINE icon == a sine, against an INDEPENDENT reference
+  //      (std::sin, this file's), never wave_map. tick() emits the shape UNSCALED (the 0.5 DRY clamp lives in the
   //      DeviceAdapter, not here), and the phase convention is pre-increment: sample i reads
   //      frac((i+1)*f0/sr).
   {
     core::Vco v(sr);
     v.setBaseHz(baseHz);          // without this the oscillator is at 0 Hz and emits silence.
+    v.setMorph(core::wave_map::kIconSine);
     CHECK(v.waveform() == core::VcoWaveform::kMorphRing);
     std::vector<double> buf;
     render_vco(v, n, buf);
@@ -537,8 +535,8 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
       const double ref = std::sin(core::Vco::kTwoPi * (cum - std::floor(cum)));
       maxErr = std::max(maxErr, std::fabs(buf[i] - ref));
     }
-    std::printf("P3-3 gh19-s0 default-vs-sine: max|err| = %.6e\n", maxErr);
-    CHECK(maxErr < 1e-12);   // the default really is the sine node.
+    std::printf("P3-3 gh19-s0 sine-icon-vs-sine: max|err| = %.6e\n", maxErr);
+    CHECK(maxErr < 1e-12);   // the sine icon really is the sine node.
     // RED-NEGATIVE: the pre-#117 default (a triangle at the same pitch) is a DIFFERENT buffer,
     // so the check above cannot pass with the old fixed-triangle law left in place.
     const std::vector<double> tri = [&] {
@@ -554,8 +552,7 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
     CHECK(vs > 0.1);         // sine vs triangle is a large, unmistakable difference.
   }
 
-  // (1c) The ring's five NODE positions land on the five expected shapes (the "wrong side" /
-  //      node-order mutant fails at least one of these). Reference = wave_map's own node
+  // (1c) Each panel icon position lands on its shape (the knob sounds like what it points at). Reference = wave_map's own node
   //      generators, which is legitimate here: this asserts the ROUTING (which node each
   //      coordinate selects), not the node formula.
   {
@@ -563,18 +560,21 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
     v.setShape(0.25);
     struct NodeCase { double at; core::wave_map::Node node; const char* name; };
     const NodeCase cases[] = {
-        {0.00, core::wave_map::Node::kSaw, "saw"},
-        {0.25, core::wave_map::Node::kInvSaw, "invSaw"},
-        {0.50, core::wave_map::Node::kSine, "sine"},
-        {0.75, core::wave_map::Node::kTriangle, "triangle"},
-        {1.00, core::wave_map::Node::kPulse, "pulse"},
+        {0.0, core::wave_map::Node::kSine, "sine (start of travel)"},
+        {core::wave_map::kIconSine, core::wave_map::Node::kSine, "sine icon"},
+        {core::wave_map::kIconTriangle, core::wave_map::Node::kTriangle, "triangle icon"},
+        {core::wave_map::kIconSaw, core::wave_map::Node::kSaw, "saw icon"},
+        {core::wave_map::kIconPulse, core::wave_map::Node::kPulse, "pulse icon"},
+        {core::wave_map::kIconSawInvSaw, core::wave_map::Node::kInvSaw, "saw<>invSaw icon"},
+        {core::wave_map::kIconSineTriangle, core::wave_map::Node::kSine, "sine<>tri icon"},
+        {1.0, core::wave_map::Node::kTriangle, "triangle (end of travel)"},
     };
     for (const NodeCase& c : cases) {
       v.setMorph(c.at);
       const double got = v.waveformSampleAt(p);
       const double want = core::wave_map::nodeSample(c.node, p, 0.25);
       if (!(std::fabs(got - want) < 1e-15))
-        std::printf("  gh19-s0 node mismatch at morph=%.2f (%s): got=%.17g want=%.17g\n",
+        std::printf("  gh19-s0 node mismatch at morph=%.3f (%s): got=%.17g want=%.17g\n",
                     c.at, c.name, got, want);
       CHECK(std::fabs(got - want) < 1e-15);
     }
@@ -585,7 +585,7 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
   {
     core::Vco v(sr);
     const int steps = 1000;
-    v.setMorph(0.0);   // start the sweep AT 0 — the default 0.5 is a different node (sine).
+    v.setMorph(0.0);
     double prev = v.waveformSampleAt(p);
     double maxStep = 0.0;
     for (int i = 1; i <= steps; ++i) {
@@ -624,12 +624,13 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
     CHECK(worstST < 1e-15);
   }
 
-  // (2) morph = 0.75 on the ring == the raw module-dev kTriangle, BIT-IDENTICAL over the render.
+  // (2) The triangle icon on the ring == the raw module-dev kTriangle, BIT-IDENTICAL over the
+  //     render (the triangle anti-aliasing runs in full there, nothing else does).
   {
     core::Vco ring(sr);
     ring.setBaseHz(baseHz);
     ring.setShape(0.5);
-    ring.setMorph(0.75);
+    ring.setMorph(core::wave_map::kIconTriangle);
     std::vector<double> ringBuf;
     render_vco(ring, n, ringBuf);
 
@@ -648,11 +649,9 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
     }
     std::printf("P3-3 gh19-s0 tri-node: bit-diffs=%zu max|diff|=%.6e over %zu samples\n",
                 bitDiffs, maxDiff, n);
-    CHECK(bitDiffs == 0);            // the re-point at norm=.75 is EXACT, BLAMP included.
+    CHECK(bitDiffs == 0);            // EXACT, BLAMP included.
     CHECK(ringBuf == rawBuf);
-    // RED-NEGATIVE: the same comparison at morph=0.5 (the sine node) is NOT identical, so the
-    // bit-equality above is a property of the .75 node and not of a comparison that ignores the
-    // waveform. (This is the control that makes the .75 claim non-vacuous.)
+    // RED-NEGATIVE: the same comparison at another knob position is NOT identical.
     core::Vco wrong(sr);
     wrong.setBaseHz(baseHz);
     wrong.setShape(0.5);
@@ -665,12 +664,23 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
   // (2b) The ring's triangle BLAMP weight is the real triangle weight (1 at the node, 0 away).
   {
     using core::wave_map::triangleWeight;
-    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.75) - 1.0) < 1e-15);
-    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.5) - 0.0) < 1e-15);
-    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 1.0) - 0.0) < 1e-15);
-    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.0) - 0.0) < 1e-15);
-    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.875) - 0.5) < 1e-15);
-    CHECK(std::fabs(triangleWeight(core::wave_map::kRingEqual, 0.625) - 0.5) < 1e-15);
+    namespace wm = core::wave_map;
+    const wm::Ring& r = wm::kRingPanel;
+    CHECK(wm::ringValid(r));
+    CHECK(std::fabs(triangleWeight(r, wm::kIconTriangle) - 1.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(r, 1.0) - 1.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(r, 0.0) - 0.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(r, wm::kIconSine) - 0.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(r, wm::kIconSaw) - 0.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(r, wm::kIconSineTriangle) - 0.0) < 1e-15);
+    CHECK(std::fabs(triangleWeight(r, 0.5 * (wm::kIconSine + wm::kIconTriangle)) - 0.5) < 1e-12);
+    CHECK(std::fabs(triangleWeight(r, 0.5 * (wm::kIconSineTriangle + 1.0)) - 0.5) < 1e-12);
+    // The other corrected shapes: full weight at their own icon, none at the sine icon.
+    CHECK(std::fabs(wm::sawWeight(r, wm::kIconSaw) - 1.0) < 1e-15);
+    CHECK(std::fabs(wm::pulseWeight(r, wm::kIconPulse) - 1.0) < 1e-15);
+    CHECK(std::fabs(wm::invSawWeight(r, wm::kIconSawInvSaw) - 1.0) < 1e-15);
+    CHECK(wm::sawWeight(r, wm::kIconSine) == 0.0 && wm::pulseWeight(r, wm::kIconSine) == 0.0 &&
+          wm::invSawWeight(r, wm::kIconSine) == 0.0);
   }
 
   // (3) PWM transfer. depth 0 is STRICTLY unchanged; the ±5 V @ depth 1 ratio is ±0.5; positive
@@ -763,7 +773,7 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
   }
 
   // (3b) The PWM consumer is only the PULSE node: on the ring, modulation reaches the pulse
-  //      node (morph = 1) and must NOT perturb the other four nodes.
+  //      icon and must NOT perturb the other nodes.
   {
     const auto atMorph = [&](double morph, double depth, double cv) {
       core::Vco v(sr);
@@ -773,11 +783,13 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
       return v.waveformSampleAt(p);
     };
     // pulse node: duty really moves the sample (p=0.3 is inside a 0.5-wide pulse's high half).
-    const double pLo = atMorph(1.0, 1.0, -5.0);   // duty 0.001 -> phase .3 is LOW
-    const double pHi = atMorph(1.0, 1.0, +5.0);   // duty 0.999 -> phase .3 is HIGH
+    const double pLo = atMorph(core::wave_map::kIconPulse, 1.0, -5.0);  // duty 0.001: .3 is LOW
+    const double pHi = atMorph(core::wave_map::kIconPulse, 1.0, +5.0);  // duty 0.999: .3 is HIGH
     CHECK(pLo != pHi);
     // every non-pulse node is bit-unchanged by the modulation.
-    for (const double m : {0.0, 0.25, 0.5, 0.75}) {
+    for (const double m : {0.0, core::wave_map::kIconSine, core::wave_map::kIconTriangle,
+                           core::wave_map::kIconSaw, core::wave_map::kIconSawInvSaw,
+                           core::wave_map::kIconSineTriangle, 1.0}) {
       CHECK(atMorph(m, 0.0, 0.0) == atMorph(m, 1.0, 5.0));
       CHECK(atMorph(m, 0.0, 0.0) == atMorph(m, 1.0, -5.0));
     }
