@@ -159,16 +159,16 @@ inline std::vector<Widget> build_panel_layout() {
 
   // ---- NEW drones 3 / 6 ---------------------------------------------------------------------------
   struct Papa { double dx; P rate, rateSw, fm, am, mod, divider, pitch, hilo, hold, att, rls, noise;
-                J gate, env, noiseIn, clock, cv; };
+                J gate, env, noiseIn, clock, lfoOut, shOut, cvIn; };
   const Papa papa[2] = {
       {0, P::drone_3_rate, P::drone_3_rate_switch, P::drone_3_fm, P::drone_3_am, P::drone_3_mod,
        P::drone_3_divider, P::drone_3_pitch, P::drone_3_hi_low, P::drone_3_hold, P::drone_3_att,
        P::drone_3_rls, P::drone_3_noise, J::drone_3_gate_in, J::drone_3_env_out, J::drone_3_noise_in,
-       J::drone_3_clock_in, J::drone_3_cv_out},
+       J::drone_3_clock_in, J::drone_3_cv_out, J::drone_3_sh_out, J::drone_3_cv_in},
       {1971, P::drone_6_rate, P::drone_6_rate_switch, P::drone_6_fm, P::drone_6_am, P::drone_6_mod,
        P::drone_6_divider, P::drone_6_pitch, P::drone_6_hi_low, P::drone_6_hold, P::drone_6_att,
        P::drone_6_rls, P::drone_6_noise, J::drone_6_gate_in, J::drone_6_env_out, J::drone_6_noise_in,
-       J::drone_6_clock_in, J::drone_6_cv_out},
+       J::drone_6_clock_in, J::drone_6_cv_out, J::drone_6_sh_out, J::drone_6_cv_in},
   };
   for (const Papa& d : papa) {
     const double o = d.dx;
@@ -188,9 +188,9 @@ inline std::vector<Widget> build_panel_layout() {
     jack(d.env, 185 + o, 837);
     jack(d.noiseIn, 247 + o, 837);
     jack(d.clock, 308 + o, 837);
-    jack(d.cv, 370 + o, 837);
-    add(WidgetKind::Decor, 114 + o, 707, 40, 40, 3);  // LFO out / CV in: not modelled
-    add(WidgetKind::Decor, 216 + o, 707, 40, 40, 3);
+    jack(d.shOut, 370 + o, 837);   // S&H: IN (noise_in), CLOCK, OUT
+    jack(d.lfoOut, 114 + o, 707);  // the LFO square (manual: the modulator's CV OUT)
+    jack(d.cvIn, 216 + o, 707);    // CV into the tone's pitch
   }
 
   // ---- VCO A / VCO B ------------------------------------------------------------------------------

@@ -281,7 +281,7 @@ static void frozen_counts() {
                                          // plate_tune, pushbutton_value, preset_a..d, arp_clock,
                                          // seq_clock, arp_rhythm, seq_rhythm + remaining module
                                          // ranges)
-  CHECK_EQ(core::kJackCount, 64u);       // vco_b registry correction (task #24, append-only per
+  CHECK_EQ(core::kJackCount, 68u);  // + drone 3/6 S&H OUT and CV IN (ids 67-70);       // vco_b registry correction (task #24, append-only per
                                          // @Claude "只追加，绝不重排"): +1 jack for the manual L411
                                          // mirror rule — vco_b.vca_ctl (id 66). The other
                                          // mirror-rule candidate vco_b.fm_in (id 65) was REMOVED as

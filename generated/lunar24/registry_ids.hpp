@@ -448,11 +448,15 @@ enum class JackId : std::uint32_t {
     drone_3_gate_in = 57,
     drone_3_clock_in = 58,
     drone_3_noise_in = 59,
+    drone_3_sh_out = 67,
+    drone_3_cv_in = 68,
     drone_6_cv_out = 60,
     drone_6_env_out = 61,
     drone_6_gate_in = 62,
     drone_6_clock_in = 63,
-    drone_6_noise_in = 64
+    drone_6_noise_in = 64,
+    drone_6_sh_out = 69,
+    drone_6_cv_in = 70
 };
 
 enum class ProgramId : std::uint32_t {
@@ -508,13 +512,13 @@ enum class RouteId : std::uint32_t {
 
 inline constexpr std::uint32_t kModuleCount = 21;
 inline constexpr std::uint32_t kParameterCount = 349;
-inline constexpr std::uint32_t kJackCount = 64;
+inline constexpr std::uint32_t kJackCount = 68;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
 inline constexpr std::uint64_t kParameterIdSpace = 416;
-inline constexpr std::uint64_t kJackIdSpace = 67;
+inline constexpr std::uint64_t kJackIdSpace = 71;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
 
@@ -965,11 +969,15 @@ inline constexpr std::string_view jack_id_string(JackId id) {
     case JackId::drone_3_gate_in: return "drone_3.gate_in";
     case JackId::drone_3_clock_in: return "drone_3.clock_in";
     case JackId::drone_3_noise_in: return "drone_3.noise_in";
+    case JackId::drone_3_sh_out: return "drone_3.sh_out";
+    case JackId::drone_3_cv_in: return "drone_3.cv_in";
     case JackId::drone_6_cv_out: return "drone_6.cv_out";
     case JackId::drone_6_env_out: return "drone_6.env_out";
     case JackId::drone_6_gate_in: return "drone_6.gate_in";
     case JackId::drone_6_clock_in: return "drone_6.clock_in";
     case JackId::drone_6_noise_in: return "drone_6.noise_in";
+    case JackId::drone_6_sh_out: return "drone_6.sh_out";
+    case JackId::drone_6_cv_in: return "drone_6.cv_in";
   }
   return "(unknown Jack)";
 }

@@ -50,9 +50,11 @@ inline constexpr std::size_t kDeviceParamCapacity = 424;
 // 66, vco_b.vca_ctl) is 67 — NOT 64 — because the id-space is max-id+1 and jack
 // id 12 is a legacy hole (non-dense): the bank is indexed by serialized JackId,
 // so it must be sized to the id-space (67), never to the entity count (64). Sized
-// to exactly 67 (not rounded to 96/128): the id space here is final and the ruling
-// is precision, not headroom.
-inline constexpr std::size_t kDevicePatchCapacity = 67;
+// to exactly 67 (not rounded to 96/128). It grew to 71 when drone 3/6 gained their
+// S&H OUT and CV IN jacks (ids 67-70); saved states from the 67 layout are upgraded
+// on load (state_serializer.h, upgrade_legacy_patch67).
+inline constexpr std::size_t kDevicePatchCapacity = 71;
+inline constexpr std::size_t kLegacyPatchCapacity67 = 67;
 inline constexpr std::size_t kDeviceRouteCapacity = 32;
 
 // The keyboard subsystem owns exactly four native presets.

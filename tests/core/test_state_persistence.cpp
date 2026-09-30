@@ -444,6 +444,36 @@ static void round_trip_fidelity() {
   CHECK(edges_equal(capture_edges(gOriginals), capture_edges(gLoaded)));
 }
 
+// A file saved before the patch bank grew 67 -> 71 (the drone 3/6 jacks) still loads:
+// the 6297-byte record is upgraded to the current layout with the new jack slots empty.
+static void legacy_patch67_record_upgrades() {
+  CHECK_EQ(core::legacy_patch67_wire_bytes(), 6297u);
+  core::DeviceStateV1 orig;
+  fill_state(orig);
+  for (std::size_t i = core::kLegacyPatchCapacity67; i < core::kDevicePatchCapacity; ++i) {
+    orig.inputCable[i] = 0u;
+    orig.cableSource[i] = core::JackId{0};
+  }
+  std::vector<std::uint8_t> now(core::kDeviceStorageSchema.totalBytesHint);
+  CHECK(core::encode_device_state(orig, now.data(), now.size()));
+  // Write the same record in the legacy layout: each per-jack array cut to 67 entries.
+  std::vector<std::uint8_t> legacy;
+  std::uint32_t off = 0u;
+  for (std::uint32_t i = 0; i < core::kDeviceStorageSchema.fieldCount; ++i) {
+    const core::StorageField& f = core::kDeviceStorageSchema.fields[i];
+    const std::uint32_t b = core::storage_field_bytes(f);
+    const std::uint32_t keep = core::is_patch_bank_field(f)
+                                   ? b / static_cast<std::uint32_t>(core::kDevicePatchCapacity) * 67u
+                                   : b;
+    legacy.insert(legacy.end(), now.begin() + off, now.begin() + off + keep);
+    off += b;
+  }
+  CHECK_EQ(legacy.size(), static_cast<std::size_t>(core::legacy_patch67_wire_bytes()));
+  std::vector<std::uint8_t> upgraded(now.size(), 0xAAu);
+  core::upgrade_legacy_patch67(legacy.data(), upgraded.data());
+  CHECK(upgraded == now);
+}
+
 // Negative: a serializer that OMITS cable_source (writes zeros there) in encode.
 // The decoded state's cable facts no longer reproduce the original topology -> the
 // fidelity check catches it. This is what separates "a real round trip" from "a
@@ -576,6 +606,7 @@ int main() {
   no_debounce_is_caught();
   tail_dropping_debounce_is_caught();
   round_trip_fidelity();
+  legacy_patch67_record_upgrades();
   omitted_field_breaks_round_trip();
   live_side_bank_is_tail_and_independent();
   persistence_never_on_audio_thread();

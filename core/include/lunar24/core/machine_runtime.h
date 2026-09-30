@@ -1148,6 +1148,18 @@ class SynthRuntime {
     }
     return true;
   }
+  // Drone 3/6 LFO OUT, S&H OUT, CV IN, S&H IN and S&H CLOCK jacks ([0] = drone 3, [1] = 6).
+  void setDroneVoicePanelJacks(const JackId lfoOut[2], const JackId shOut[2], const JackId cvIn[2],
+                               const JackId shIn[2], const JackId shClock[2]) {
+    for (int v = 0; v < kPapaVoiceCount; ++v) {
+      papaLfoOut_[v] = lfoOut[v];
+      papaShOut_[v] = shOut[v];
+      papaCvIn_[v] = cvIn[v];
+      papaShIn_[v] = shIn[v];
+      papaShClock_[v] = shClock[v];
+    }
+    papaJacksBound_ = true;
+  }
   // Post-admission state, decided by the EXPLICIT bound flags (never a JackId{0}
   // sentinel — id 0 is a real vco_a.cv_in jack), mirroring droneEnvOutBound.
   bool droneVoiceGateBound(int voice) const {
@@ -2234,6 +2246,15 @@ class SynthRuntime {
     }
     void applyRate() { lf.setFreqHz(baseRateHz_ * rateMult_); }
     void setFm(bool on) { fmOn_ = on; }
+    // Panel jacks, set every sample by the runtime. Unpatched: the S&H samples the voice's
+    // noise on the divided LF clock, and the tone follows only its knobs.
+    void setPitchCv(double volts) { audio.setPitchCvOctaves(std::clamp(volts, -10.0, 10.0)); }  // 1 V/oct
+    void setShInput(bool patched, double volts) { extShIn_ = patched; shInVolts_ = volts; }
+    void setShClock(bool patched, double volts) { extShClock_ = patched; shClockVolts_ = volts; }
+    // LFO OUT: the LF square as 0 / +12 V (manual: modulator 0..+12 V).
+    double lfoOutVolts() const { return lf.square() > 0.0 ? 12.0 : 0.0; }
+    // S&H OUT in volts, -5..+5 (manual spec table).
+    double shOutVolts() const { return std::clamp(shCv_ * kShVoltsPerUnit, -5.0, 5.0); }
     void setAm(bool on) { amOn_ = on; }
     // NOISE glides to its new level (~10 ms, tuned by ear) so a dragged knob does not click.
     void setNoise(double amp) { noiseTarget_ = amp; }
@@ -2327,7 +2348,7 @@ class SynthRuntime {
         }
       }
       lfPrevLevel_ = sq;
-      sh.tick(n, shClock_, &shCv_);
+      sh.tick(extShIn_ ? shInVolts_ / kShVoltsPerUnit : n, extShClock_ ? shClockVolts_ : shClock_, &shCv_);
       // GH#15 D4: advance the voice's AR VCA envelope FIRST and multiply the voice's
       // summed audio by its gain — the SAME order and the SAME law as DroneBank::
       // tickGroup (advance the group envelope, then scale the group's final audio).
@@ -2346,6 +2367,9 @@ class SynthRuntime {
     ArEnvelope ar;
     bool fmOn_ = false;
     bool amOn_ = false;
+    static constexpr double kShVoltsPerUnit = 10.0;  // voice noise (about +/-0.5) -> +/-5 V
+    bool extShIn_ = false, extShClock_ = false;
+    double shInVolts_ = 0.0, shClockVolts_ = 0.0;
     double shClock_ = 0.0;  // S&H clock level (derived from the divided LF square, GH#15 D3).
     double divN_ = 8.5;     // S&H division ratio (1 + (kNewDroneDivMax-1)*norm), GH#15 D3.
                             // = 注册默认 norm 0.5 映射.
@@ -3832,10 +3856,24 @@ class SynthRuntime {
       }
     }
     pv.setVoiceGate(gateHigh);
+    if (papaJacksBound_) {
+      double v = 0.0;
+      pv.setPitchCv(resolveControlSink_(papaCvIn_[voice], v, driveGraph) ? v : 0.0);
+      v = 0.0;
+      const bool shIn = resolveControlSink_(papaShIn_[voice], v, driveGraph);
+      pv.setShInput(shIn, v);
+      v = 0.0;
+      const bool shClk = resolveControlSink_(papaShClock_[voice], v, driveGraph);
+      pv.setShClock(shClk, v);
+    }
     double n = 0.0;
     pv.tick(&n);
     chIn_[channel] = n;
     shCvOut = pv.lastShCv();
+    if (papaJacksBound_) {
+      publishSourceValue_(papaLfoOut_[voice], pv.lfoOutVolts());
+      publishSourceValue_(papaShOut_[voice], pv.shOutVolts());
+    }
     if (voiceEnvOutBound_[voice]) {
       const JackId envOut = voiceEnvOutJack_[voice];
       const JackDescriptor* d = findJackDescriptor_(envOut);
@@ -3951,6 +3989,9 @@ class SynthRuntime {
   // uses) and the env_out jacks it WRITES. Same explicit-flag admission contract as the
   // classic cohort above — a released/failed cohort clears the jack AND the bound flag.
   JackId voiceGateJack_[kPapaVoiceCount] = {JackId{0}, JackId{0}};
+  bool papaJacksBound_ = false;
+  JackId papaLfoOut_[kPapaVoiceCount] = {}, papaShOut_[kPapaVoiceCount] = {}, papaCvIn_[kPapaVoiceCount] = {},
+         papaShIn_[kPapaVoiceCount] = {}, papaShClock_[kPapaVoiceCount] = {};
   JackId voiceEnvOutJack_[kPapaVoiceCount] = {JackId{0}, JackId{0}};
   bool voiceGateBound_[kPapaVoiceCount] = {false, false};
   bool voiceEnvOutBound_[kPapaVoiceCount] = {false, false};

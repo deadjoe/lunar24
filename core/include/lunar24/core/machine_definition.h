@@ -399,6 +399,15 @@ class MachineRuntimeDefinition {
                                        lunar24::registry::JackId::drone_6_gate_in);
     runtime_.setDroneVoiceEnvOutBindings(lunar24::registry::JackId::drone_3_env_out,
                                          lunar24::registry::JackId::drone_6_env_out);
+    {
+      using J = lunar24::registry::JackId;
+      const J lfoOut[2] = {J::drone_3_cv_out, J::drone_6_cv_out};
+      const J shOut[2] = {J::drone_3_sh_out, J::drone_6_sh_out};
+      const J cvIn[2] = {J::drone_3_cv_in, J::drone_6_cv_in};
+      const J shIn[2] = {J::drone_3_noise_in, J::drone_6_noise_in};
+      const J shClock[2] = {J::drone_3_clock_in, J::drone_6_clock_in};
+      runtime_.setDroneVoicePanelJacks(lfoOut, shOut, cvIn, shIn, shClock);
+    }
 
     // GH#11 FIXED-CANDIDATE (D1/D2): the six control sources are NOW real DSP
     // instances, so the owning definition binds their REGISTRY jacks (the same identity

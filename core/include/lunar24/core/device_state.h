@@ -295,12 +295,14 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // (the same 96 + 2 + 48 + 32 + 4 = 182 bytes again, appended, versionFrom=4).
 // It rose 6121 -> 6297 for P4-③ per-side scalar bank (Decis B, msg c0d9e9be): the
 // 22 keyboard scalars' right bank is appended as one f64 array (22 x 8 = 176 bytes).
+// It rose 6297 -> 6317 when kDevicePatchCapacity went 67 -> 71 (drone 3/6 S&H OUT and
+// CV IN): `input_cable` +4, `cable_source` +16. Files in the 6297 layout still load.
 inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     kDeviceStorageSchemaVersion,
     kDeviceStorageInitialRevision,
     kDeviceStorageFieldCount,
     kDeviceStorageFields,
-    6297u,
+    6317u,
 };
 
 // Fixed per-unit constitution, not re-randomized per launch (design/07 §7).
