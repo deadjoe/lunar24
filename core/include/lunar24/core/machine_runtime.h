@@ -3357,7 +3357,14 @@ class SynthRuntime {
         // Publish the real vco_b.vco_out so any downstream (a normal consumer, or a
         // user-established B->B feedback edge) reads THIS frame's value through the single
         // write (@Codex correction 4).
-        if (vcoBOutBound_) publishSourceValue_(vcoBOut_, b);
+        // The jack carries volts: the unit waveform spans the jack's nominal range (±5 V), so a
+        // VCO B cable into SYNC or a CV input behaves like the hardware output.
+        if (vcoBOutBound_) {
+          double bVolts = b;
+          if (const JackDescriptor* d = findJackDescriptor_(vcoBOut_))
+            bVolts = b * 0.5 * (d->nominalMax - d->nominalMin);
+          publishSourceValue_(vcoBOut_, bVolts);
+        }
         break;
       }
       case ExecutionKind::kDroneBank: {

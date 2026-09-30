@@ -385,11 +385,37 @@ int main() {
       if (!std::isfinite(o1.dryB) || !std::isfinite(o2.dryB)) finite = false;
       if (o1.dryB != o2.dryB) identical = false;
       if (i > 0 && g != prevPub) routeOk = false;  // D=1: this frame's cv_in == last frame's vco_out.
-      prevPub = o1.dryB;
+      prevPub = d1.runtime().controlVoltageAt(reg::JackId::vco_b_vco_out);  // the published volts.
     }
     check(finite, "canonical B->B feedback renders finite output (no NaN/Inf)");
     check(identical, "B->B feedback render is bit-identical across a same-seed fresh run");
     check(routeOk, "the B->B D-sample line delivers the previous frame's vco_out to cv_in");
+  }
+
+  // ---- VCO B OUT -> VCO A SYNC (the manual's sync patch) actually resets VCO A ----
+  // VCO B's output is published in volts (±5 V) and must cross the SYNC input's threshold.
+  {
+    const auto render = [&](bool cable, double& maxBOut) {
+      core::MachineRuntimeDefinition d(kSeed, kSr);
+      d.runtime().setVcoVcaEnabled(false);
+      if (cable) {
+        check(d.runtime().connect(reg::JackId::vco_b_vco_out, reg::JackId::vco_a_sync_in) &&
+                  d.runtime().rebuild(),
+              "sync: VCO B OUT -> VCO A SYNC cable accepted");
+      }
+      std::vector<double> out;
+      maxBOut = 0.0;
+      for (int i = 0; i < 4800; ++i) {
+        out.push_back(d.runtime().processFrame(core::RuntimeInputs{0.0, 0.0}, true).dryA);
+        maxBOut = std::max(maxBOut, d.runtime().controlVoltageAt(reg::JackId::vco_b_vco_out));
+      }
+      return out;
+    };
+    double bPeak = 0.0, unused = 0.0;
+    const std::vector<double> synced = render(true, bPeak);
+    const std::vector<double> free = render(false, unused);
+    check(bPeak > 1.5, "VCO B OUT is in volts (±5 V scale), not the raw ±1 waveform");
+    check(synced != free, "a VCO B -> SYNC cable changes VCO A (the sync input triggers)");
   }
 
   // ---- oracle: same-sample real path (b4e0e731 §4.2) ------------------------------

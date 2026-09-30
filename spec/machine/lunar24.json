@@ -285,7 +285,7 @@
           "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 10.0,
-          "gateThresholdVolts": 5.0,
+          "gateThresholdVolts": 1.0,
           "hysteresisVolts": 0.2,
           "coupling": "unknown",
           "evidence": {
