@@ -1840,7 +1840,8 @@ class SynthRuntime {
 
     // Which applied_to_DSP ids applyDspParam actually admitted, so the whole-state gate can
     // LOCATE the first missing id rather than reporting a bare count mismatch (finding 1).
-    std::uint32_t appliedBits[(kParameterCount + 31u) / 32u] = {};
+    // Indexed by ParameterId, so sized by the id space (ids are sparse: > the count).
+    std::uint32_t appliedBits[(kParameterIdSpace + 31u) / 32u] = {};
 
     std::uint32_t applied = 0;
     for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i) {
