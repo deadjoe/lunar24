@@ -1614,7 +1614,7 @@ Timing measure(core::SynthRuntime& rt, bool six, double divNorm, std::size_t fra
                                        : core::ParameterId::drone_3_rate;
   const core::ParameterId divId = six ? core::ParameterId::drone_6_divider
                                       : core::ParameterId::drone_3_divider;
-  check(send(rt, rateId, 0.5, 1), "d3 timing: legal RATE ControlEvent (norm 0.5) admitted");
+  check(send(rt, rateId, 0.9, 1), "d3 timing: legal RATE ControlEvent (norm 0.9) admitted");
   check(send(rt, divId, divNorm, 2), "d3 timing: divider ControlEvent admitted");
   std::vector<core::RuntimeInputs> in(frames, core::RuntimeInputs{0.0, 0.0});
   std::vector<core::RuntimeOutput> out(frames);
@@ -1637,7 +1637,7 @@ Timing measure(core::SynthRuntime& rt, bool six, double divNorm, std::size_t fra
 }  // namespace d3timing
 
 IJU_TEST_NOINLINE void d3_div_actual_timing_acceptance() {
-  constexpr std::size_t kWin = 800000;  // ~16.7 s at the legal default 6 Hz -> ~100 LF edges.
+  constexpr std::size_t kWin = 800000;  // ~16.7 s at RATE norm 0.9 (11.8 Hz) -> ~200 LF edges.
   constexpr std::size_t kSlack = 2;     // boundary/phase tolerance (the analytic reference is ±1 edge).
 
   // (A) INTEGER divider endpoints (norm 0 -> divN=1, norm 1 -> divN=16) on BOTH drones, each on a
@@ -1647,14 +1647,14 @@ IJU_TEST_NOINLINE void d3_div_actual_timing_acceptance() {
   {
     core::SynthRuntime rt3 = makeRuntime();
     d3timing::Timing a = d3timing::measure(rt3, /*six=*/false, /*divNorm=*/1.0, kWin, kBlock);  // N=16.
-    check(std::fabs(a.rateHz - 6.0) < 1e-9, "d3 timing: drone3 LIVE RATE is the legal default 6 Hz");
+    check(std::fabs(a.rateHz - 0.1 * std::pow(200.0, 0.9)) < 1e-4, "d3 timing: drone3 LIVE RATE follows RATE norm 0.9");
     check(a.divN == 16.0, "d3 timing: norm=1 -> exact divN=16");
     check(std::fabs(double(a.captures) - double(a.totalEdges) / 16.0) <= kSlack,
           "d3 timing N=16: real captures == LF-edges/16 (integer division)");
 
     core::SynthRuntime rt6 = makeRuntime();
     d3timing::Timing b = d3timing::measure(rt6, /*six=*/true, /*divNorm=*/0.0, kWin, kBlock);  // N=1.
-    check(std::fabs(b.rateHz - 6.0) < 1e-9, "d3 timing: drone6 LIVE RATE is the legal default 6 Hz");
+    check(std::fabs(b.rateHz - 0.1 * std::pow(200.0, 0.9)) < 1e-4, "d3 timing: drone6 LIVE RATE follows RATE norm 0.9");
     check(b.divN == 1.0, "d3 timing: norm=0 -> exact divN=1");
     check(std::fabs(double(b.captures) - double(b.totalEdges) / 1.0) <= kSlack,
           "d3 timing N=1: real captures == LF-edges (capture every edge)");
@@ -3369,13 +3369,13 @@ int main() {
     constexpr std::size_t kBlocks[3] = {64, 128, 256};
     static const core::RuntimeInputs kSilence[kTotFrames] = {core::RuntimeInputs{0.0, 0.0}};  // extSource = 0, as runFrames() uses.
 
-    // A single drone_3.pitch = 0.5 event at absolute sample kEventSample. The runtime's
-    // default pitch is silence, so a nonzero pitch turns the tone on THERE.
+    // A single drone_3.pitch = 0.9 event at absolute sample kEventSample: the tone jumps
+    // from the default pitch (0.5) THERE.
     auto pitchEvent = [&]() {
       core::ControlEvent ev;
       ev.kind = core::ControlEventKind::parameter;
       ev.parameter = core::ParameterId::drone_3_pitch;
-      ev.value = 0.5;
+      ev.value = 0.9;
       ev.source = 1;
       ev.producerSequence = 1;
       core::TimedControlEvent te;
@@ -3561,8 +3561,8 @@ int main() {
         d = std::max(d, std::fabs(a[i] - b[i]));
       return d;
     };
-    constexpr double kRangeRatio = 0.25;   // 2^(-24/12) — the PROVISIONAL low-band shift.
-    constexpr double kRateRatio = 2.0;     // kNewDroneRateSwitchMult — the ON multiplier.
+    constexpr double kRangeRatio = 16.35 / 164.8;  // low band starts at C0, hi band at E3.
+    constexpr double kRateRatio = 10.0;            // the panel's "1 : 10" rate switch.
 
     // (a) batch lane, two positions on the REAL getter. Position 0 is the identity default,
     // positioning 1 must differ (and by the exact declared ratio). Both drones.
@@ -3573,22 +3573,22 @@ int main() {
       static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_hi_low, 1.0));
       const double p1 = rt.drone3PitchHz();
       check(std::fabs(p1 / p0 - kRangeRatio) < 1e-3,
-            "d3 hi_low low position drops the pitch band by 2 oct (pitchHz ratio 0.25)");
+            "d3 hi_low low position moves the pitch to the low band");
       const double r0 = rt.drone3RateHz();    // rate_switch=0 (off, default): ×1.
       static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rate_switch, 1.0));
       const double r1 = rt.drone3RateHz();
       check(std::fabs(r1 / r0 - kRateRatio) < 1e-6,
-            "d3 rate_switch on position doubles the LF rate (rateHz ratio 2.0)");
+            "d3 rate_switch on position multiplies the LF rate by 10");
 
       core::SynthRuntime rt6 = makeRuntime(); rt6.rebuild();
       const double q0 = rt6.drone6PitchHz();
       static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_hi_low, 1.0));
       check(std::fabs(rt6.drone6PitchHz() / q0 - kRangeRatio) < 1e-3,
-            "d6 hi_low low position drops the pitch band by 2 oct (pitchHz ratio 0.25)");
+            "d6 hi_low low position moves the pitch to the low band");
       const double s0 = rt6.drone6RateHz();
       static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_rate_switch, 1.0));
       check(std::fabs(rt6.drone6RateHz() / s0 - kRateRatio) < 1e-6,
-            "d6 rate_switch on position doubles the LF rate (rateHz ratio 2.0)");
+            "d6 rate_switch on position multiplies the LF rate by 10");
     }
     // (b) live lane, non-vacuous. A scheduled parameter ControlEvent must reach the SAME
     // getter via applyControlEvent_. te.sample=0 fires at frame 0, before the frame ticks.
@@ -3610,7 +3610,7 @@ int main() {
       check(rt.enqueueControlEvent(te), "d3 hi_low live ControlEvent is admitted");
       rt.processBlock(kSil, kTot, out, /*driveGraph=*/true);
       check(std::fabs(rt.drone3PitchHz() / p0 - kRangeRatio) < 1e-3,
-            "d3 hi_low live lane reaches the pitch field (2-oct drop)");
+            "d3 hi_low live lane reaches the pitch field (low band)");
     }
     // (c) hi_low is a REAL audio lever. FM OFF (default): the audio tone itself shifts band,
     // so position 0 vs 1 differ on drone3Channel() immediately.
