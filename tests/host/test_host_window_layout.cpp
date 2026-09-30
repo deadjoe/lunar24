@@ -162,7 +162,33 @@ int run(const char* suite) {
 }
 }  // namespace
 
+// The panel inside the mac metal case: fits, keeps its proportions, sits inside the case.
+static void case_placement() {
+  using lunar24::host::place_panel;
+  const auto m = lunar24::host::kMacCase;
+  const double W = 2400.0, H = 1551.0;
+  // A window of exactly panel + case at 0.6: the panel lands at the case margins.
+  auto p = place_panel((W + 2 * m.side) * 0.6, (H + m.top + m.bottom) * 0.6, W, H, m);
+  CHECK(std::fabs(p.scale - 0.6) < 1e-9);
+  CHECK(std::fabs(p.x - m.side * 0.6) < 1e-9);
+  CHECK(std::fabs(p.y - m.top * 0.6) < 1e-9);
+  // A wider window (full screen on a 16:10 display): centred left/right.
+  p = place_panel(1728.0, 1117.0, W, H, m);
+  const double left = p.x, right = 1728.0 - (p.x + p.w);
+  CHECK(std::fabs(left - right) < 1e-6);
+  CHECK(p.y >= m.top * p.scale - 1e-9);
+  CHECK(p.y + p.h <= 1117.0);
+  // Full screen uses the thin rim: the panel gets bigger on the same screen.
+  CHECK(place_panel(1728.0, 1117.0, W, H, lunar24::host::kMacCaseFullScreen).scale > p.scale);
+  // Never below the smallest zoom; no case: plain centred fit.
+  CHECK(place_panel(100.0, 100.0, W, H, m).scale == lunar24::host::kMinPanelScale);
+  p = place_panel(1200.0, 1000.0, W, H);
+  CHECK(std::fabs(p.scale - 0.5) < 1e-9);
+  CHECK(std::fabs(p.x) < 1e-9);
+}
+
 int main() {
   std::printf("== P5-1 host window layout: consume core fit + #15 reachability ==\n");
+  case_placement();
   return run("host_window_layout");
 }

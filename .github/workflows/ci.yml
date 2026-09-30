@@ -70,9 +70,14 @@ jobs:
           fi
 
       # Downloadable app for listening (Actions run page -> Artifacts).
+      # Apple Silicon refuses to run a bundle whose signature was broken by the post-link
+      # bundle steps ("is damaged"). Re-sign ad hoc (no developer identity) and check it.
       - name: Package app (mac)
         if: runner.os == 'macOS'
-        run: cd build/out && ditto -c -k --keepParent Lunar24Host.app Lunar24-macOS.zip
+        run: |
+          codesign --force --deep --sign - build/out/Lunar24Host.app
+          codesign --verify --deep --strict --verbose=2 build/out/Lunar24Host.app
+          cd build/out && ditto -c -k --keepParent Lunar24Host.app Lunar24-macOS.zip
       - name: Upload app (mac)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4

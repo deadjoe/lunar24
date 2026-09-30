@@ -32,7 +32,7 @@
 
 #pragma once
 
-#include <algorithm>  // std::min
+#include <algorithm>  // std::min, std::max
 
 #include <lunar24/core/host_window_fit.h>
 
@@ -99,6 +99,37 @@ inline WindowLayout compute_window_layout(double designW, double designH,
       bottomRow, out.drawScale, out.effectiveLogicalW, out.effectiveLogicalH);
 
   return out;
+}
+
+// ---- the metal case round the panel (macOS) ----------------------------------------------
+// The mac window draws a black metal case round the panel (host/main.mm). Its width in panel
+// units on each edge; the top edge also carries the window buttons. Tuned by eye.
+struct CaseMargins {
+  double side = 0.0, top = 0.0, bottom = 0.0;
+};
+inline constexpr CaseMargins kMacCase{70.0, 70.0, 80.0};
+// Full screen: no window buttons to carry and every pixel counts, so only a thin rim.
+inline constexpr CaseMargins kMacCaseFullScreen{16.0, 16.0, 16.0};
+// IGraphics' smallest zoom (DEFAULT_MIN_DRAW_SCALE): the panel stops shrinking here.
+inline constexpr double kMinPanelScale = 0.5;
+
+// Where the panel goes in a window of windowW x windowH (logical units, origin top left):
+// the largest zoom at which panel + case fit, the case centred in the window.
+struct PanelPlacement {
+  double scale = 0.0;
+  double x = 0.0, y = 0.0;  // panel top-left corner
+  double w = 0.0, h = 0.0;  // panel size
+};
+inline PanelPlacement place_panel(double windowW, double windowH, double designW, double designH,
+                                  CaseMargins m = {}) {
+  const double totalW = designW + 2.0 * m.side, totalH = designH + m.top + m.bottom;
+  PanelPlacement p;
+  p.scale = std::max(kMinPanelScale, std::min(windowW / totalW, windowH / totalH));
+  p.w = designW * p.scale;
+  p.h = designH * p.scale;
+  p.x = (windowW - totalW * p.scale) / 2.0 + m.side * p.scale;
+  p.y = (windowH - totalH * p.scale) / 2.0 + m.top * p.scale;
+  return p;
 }
 
 }  // namespace lunar24::host

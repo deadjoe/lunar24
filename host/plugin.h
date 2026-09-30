@@ -26,6 +26,13 @@ class LunarHostPlugin final : public Plugin
 public:
   LunarHostPlugin(const InstanceInfo& info);
 
+#if IPLUG_EDITOR
+  // The window was resized (also once when it opens). iPlug2's default turns the window
+  // size into the drawing size at scale 1, which crops the fixed 2400 x 1552 panel; keep the
+  // panel's size and scale it to fit the window instead.
+  void OnParentWindowResize(int width, int height) override;
+#endif
+
 #if IPLUG_DSP
   // GH#4 8B2 lifecycle gate: OnReset() runs at the stopped-stream boundary (CloseAudio
   // callbacks done -> SetBlockSize/SetSampleRate -> OnReset -> openStream/startStream). It is

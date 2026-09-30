@@ -23,6 +23,7 @@
 #include "plugin.h"
 #include "IPlug_include_in_plug_src.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 #include <lunar24/core/host_window_fit.h>
@@ -38,6 +39,8 @@ extern "C" double lunar_host_avail_logical_w();
 extern "C" double lunar_host_avail_logical_h();
 extern "C" double lunar_host_screen_scale();
 extern "C" bool lunar_host_force_clamp();
+extern "C" void lunar_host_place_view(void* view, double x, double y);
+extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom);
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
@@ -84,6 +87,24 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
   };
 #endif
 }
+
+#if IPLUG_EDITOR
+void LunarHostPlugin::OnParentWindowResize(int width, int height)
+{
+  // Zoom the panel to the window (iPlug2's default would reset the zoom to 1 and crop it).
+  // On macOS the window also draws a metal case round the panel (host/main.mm).
+  IGraphics* g = GetUI();
+  if (g == nullptr || width <= 0 || height <= 0) return;
+  const double windowScale = g->GetPlatformWindowScale();
+  lunar24::host::CaseMargins margins;
+  lunar_host_case_margins(g->GetWindow(), &margins.side, &margins.top, &margins.bottom);
+  const auto p = lunar24::host::place_panel(width / windowScale, height / windowScale, lunar24::core::kDesignWidth,
+                                            lunar24::core::kDesignHeight, margins);
+  g->Resize(static_cast<int>(lunar24::core::kDesignWidth), static_cast<int>(lunar24::core::kDesignHeight),
+            static_cast<float>(p.scale), false);
+  lunar_host_place_view(g->GetWindow(), p.x * windowScale, p.y * windowScale);
+}
+#endif
 
 #if IPLUG_DSP
 // GH#4 8B2: the ProcessBlock bridge below casts sample** <-> double** . That relabeling is only

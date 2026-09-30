@@ -37,6 +37,7 @@ a `LOCAL-MODIFICATIONS.md` note as required by that dependency's license.
 > upstream licenses recorded here. Boundary is clean w.r.t. the
 > permissive-license requirement.
 | Saira font (Omnibus-Type) | Letterforms of the Lunar 24 name plates on the panel. Not shipped as a font file: `tools/gen_panel_logo.py` converts the few letters used into outlines in `host/include/host/panel_logo.generated.h`. | **SIL Open Font License 1.1** — `Saira-OFL.txt` in this directory. | Google Fonts `ofl/saira` (variable font), instance wdth 125 / wght 640. | OK — OFL allows embedding in software; the font is not renamed or sold. |
+| Noto Sans font (Google) | Panel label text in the app. `tools/gen_ui_font.py` builds Regular and Bold instances, subset to the characters the panel uses, into `host/include/host/ui_font.generated.h`; the app loads them from memory. | **SIL Open Font License 1.1** — `NotoSans-OFL.txt` in this directory. | Google Fonts `ofl/notosans` (variable font), instances wght 400 / 700, wdth 100. | OK — OFL allows embedding and subsetting; Noto has no Reserved Font Name; not sold on its own. |
 | CMake | Build system (host tool, not linked). | BSD-3-Clause (host tool) | not vendored | OK |
 | C++17 runtime / STL | Language runtime, shipped by the platform toolchain, not a Lunar dependency. | platform / toolchain | not vendored | OK |
 

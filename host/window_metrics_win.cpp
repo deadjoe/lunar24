@@ -104,6 +104,26 @@ static double lunar_work_area_span_h()
   return static_cast<double>(h) / lunar_win_scale();
 }
 
+// Put the panel view at (x, y) client pixels (a maximised window is wider or taller than the panel).
+extern "C" void lunar_host_place_view(void* view, double x, double y)
+{
+  HWND child = static_cast<HWND>(view);
+  if (child == nullptr) {
+    return;
+  }
+  SetWindowPos(child, nullptr, static_cast<int>(x), static_cast<int>(y), 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// No case round the panel on Windows.
+extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom)
+{
+  static_cast<void>(view);
+  *side = 0.0;
+  *top = 0.0;
+  *bottom = 0.0;
+}
+
 extern "C" double lunar_host_avail_logical_w()
 {
   return lunar_work_area_span_w();
