@@ -123,7 +123,7 @@ void test_stages_wrap_and_step1_first() {
     for (int sample = 0; sample <= 60; ++sample) {
       s.tick(false);
       // Every gate is enabled, so +10V marks exactly an advance sample.
-      if (s.gateOut() == kGateNominalVolt) {
+      if (s.gateRising()) {
         advance.push_back(sample);
         cvAt.push_back(s.cvOut());
       }
@@ -174,38 +174,64 @@ void test_gate_mask_only_affects_gate() {
       const int entered = edgesDone % 5;
       // CV is always the entered step's CV, even on a gate-disabled step.
       CHECK(std::fabs(s.cvOut() - kCv[entered]) < 1e-12);
+      CHECK_EQ(s.gateRising(), gateOn(entered));
       CHECK_EQ(s.gateOut(), gateOn(entered) ? kGateNominalVolt : 0.0);
       ++edgesDone;
     } else {
-      // Non-advance sample: gate is off, and CV holds the current step's value (the
+      // Non-advance sample: no new gate starts, and CV holds the current step's value (the
       // gate-disable never disturbs the CV output between advances).
-      CHECK_EQ(s.gateOut(), 0.0);
+      CHECK_FALSE(s.gateRising());
       CHECK(std::fabs(s.cvOut() - kCv[s.currentStep()]) < 1e-12);
     }
   }
   CHECK_EQ(edgesDone, 6);
 }
 
-// --- ④ : GATE is a 0..+10V ONE-sample pulse --------------------------------------
+// --- ④ : GATE is 0..+10V and stays high for half a step --------------------------
+// A one-sample pulse could not open an envelope, so the gate holds for half the step
+// (5 of the 10 samples here), then drops so the next step retriggers cleanly. CLOCK OUT
+// is a -10/+10 V square with the same period.
 
-void test_gate_one_sample_pulse() {
+void test_gate_holds_half_a_step() {
   FiveStepSequencer s = makeSeq(100.0, 10.0, 5);
-  std::vector<double> gate;
+  std::vector<double> gate, clk;
   for (int sample = 0; sample <= 60; ++sample) {
     s.tick(false);
     gate.push_back(s.gateOut());
+    clk.push_back(s.clockOutVolts());
   }
-  int pulses = 0;
+  int highRuns = 0;
   for (std::size_t i = 0; i < gate.size(); ++i) {
-    if (gate[i] == 0.0 || std::fabs(gate[i]) < 1e-12) continue;
-    // Off-advance samples are 0; an advance emits ONLY the +10V rail.
-    CHECK_EQ(gate[i], kGateNominalVolt);
-    // Cleared on the very next sample — but only read the successor when it exists,
-    // else this is a container-overflow on the final element (ASan-red).
-    if (i + 1 < gate.size()) CHECK_EQ(gate[i + 1], 0.0);
-    ++pulses;
+    CHECK(gate[i] == 0.0 || gate[i] == kGateNominalVolt);
+    CHECK(clk[i] == -10.0 || clk[i] == 10.0);
+    if (gate[i] == kGateNominalVolt && (i == 0 || gate[i - 1] == 0.0)) {
+      std::size_t len = 0;
+      while (i + len < gate.size() && gate[i + len] == kGateNominalVolt) ++len;
+      if (i + len < gate.size()) {           // a complete run
+        CHECK(len >= 4 && len <= 6);         // about half the 10-sample step
+        ++highRuns;
+      }
+    }
   }
-  CHECK_TRUE(pulses >= 5);
+  CHECK_TRUE(highRuns >= 4);
+  int clkHigh = 0;
+  for (std::size_t i = 10; i < 50; ++i) clkHigh += clk[i] > 0.0 ? 1 : 0;
+  CHECK(clkHigh >= 18 && clkHigh <= 22);     // 50% duty over four periods
+}
+
+// --- ④b : a cable in EXT. CLOCK takes over from the PULSER ------------------------
+void test_patched_ext_clock_takes_over() {
+  FiveStepSequencer s = makeSeq(100.0, 10.0, 5);  // internal source selected
+  int advances = 0;
+  for (int sample = 0; sample < 60; ++sample) {
+    const bool edge = (sample % 25) == 5;          // external edges at 5, 30, 55
+    s.tick(edge, /*externalPatched=*/true);
+    if (s.gateRising()) {
+      CHECK_TRUE(edge);                            // never a PULSER-driven advance
+      ++advances;
+    }
+  }
+  CHECK_EQ(advances, 3);
 }
 
 // --- ⑤ : clock source isolation; the right source advances, the other never does -
@@ -235,7 +261,7 @@ void test_clock_source_no_double_advance() {
       // canonical edge from the interpreter). It is the OTHER source, so it must
       // never add an advance while CLOCK=internal.
       s.tick(sample == 5);
-      if (s.gateOut() == kGateNominalVolt) advance.push_back(sample);
+      if (s.gateRising()) advance.push_back(sample);
       if (s.clockOutRising()) clockOut.push_back(sample);
     }
     CHECK_TRUE(advance.size() >= 5u);        // the PULSER wrapped several times
@@ -252,7 +278,7 @@ void test_clock_source_no_double_advance() {
     for (int sample = 0; sample <= 40; ++sample) {
       // Single-sample-high edges at 3, 12, 21 (clean risings, spaced apart).
       s.tick(sample == 3 || sample == 12 || sample == 21);
-      if (s.gateOut() == kGateNominalVolt) advance.push_back(sample);
+      if (s.gateRising()) advance.push_back(sample);
       if (s.clockOutRising()) ++clockCount;
     }
     const int want[3] = {3, 12, 21};
@@ -277,7 +303,7 @@ void test_pulser_clock_out_independent() {
   int clockCount = 0;
   for (int sample = 0; sample <= 40; ++sample) {
     s.tick(sample == 2 || sample == 12);  // two external risings
-    if (s.gateOut() == kGateNominalVolt) seqAdvance.push_back(sample);
+    if (s.gateRising()) seqAdvance.push_back(sample);
     if (s.clockOutRising()) ++clockCount;
   }
   const int wantSeq[2] = {2, 12};
@@ -310,7 +336,7 @@ void test_external_real_descriptor_sample_accuracy() {
   for (int sample = 0; sample < 20; ++sample) {
     const SinkSample ss = core::sink_gate_interpret(desc, st, volts[sample]);
     s.tick(ss.edge == core::GateEdge::rising);
-    if (s.gateOut() == kGateNominalVolt) advance.push_back(sample);
+    if (s.gateRising()) advance.push_back(sample);
   }
   const int want[3] = {3, 8, 14};
   CHECK_EQ(advance.size(), 3u);
@@ -327,7 +353,7 @@ void test_four_sample_rates_wallclock() {
     std::vector<int> advance;
     for (int sample = 0; sample < 5000; ++sample) {
       s.tick(false);
-      if (s.gateOut() == kGateNominalVolt) advance.push_back(sample);
+      if (s.gateRising()) advance.push_back(sample);
       if (advance.size() >= 4u) break;
     }
     CHECK_TRUE(advance.size() >= 3u);
@@ -606,7 +632,7 @@ void test_external_phantom_edge_and_first_sample() {
     const SinkSample held = core::sink_gate_interpret(desc, st, 5.0);  // sustained high
     CHECK_EQ(held.edge, core::GateEdge::none);
     s.tick(held.edge == core::GateEdge::rising);
-    CHECK_EQ(s.gateOut(), 0.0);
+    CHECK_FALSE(s.gateRising());
     CHECK_EQ(s.currentStep(), 0);
   }
 }
@@ -649,7 +675,8 @@ void test_set_sample_rate_whole_candidate_fail_closed() {
 int main() {
   test_stages_wrap_and_step1_first();
   test_gate_mask_only_affects_gate();
-  test_gate_one_sample_pulse();
+  test_gate_holds_half_a_step();
+  test_patched_ext_clock_takes_over();
   test_clock_source_no_double_advance();
   test_pulser_clock_out_independent();
   test_external_real_descriptor_sample_accuracy();

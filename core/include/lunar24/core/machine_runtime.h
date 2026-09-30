@@ -3531,20 +3531,21 @@ class SynthRuntime {
         // Resolve the continuous ext_clock_in volts through the REAL jack descriptor gate
         // interpreter (provisional canonical sink semantics); advance ONLY on a real rising
         // edge (first sample primes, never a phantom advance). The internal PULSER still
-        // runs every sample (phase continuity) and now publishes CLOCK OUT as its
-        // virtual-volts one-sample -10/+10 pulse (rail confirmed, width provisional); the
-        // discrete rising bool (clockOutRising()) remains the single edge truth.
+        // runs every sample (phase continuity) and publishes CLOCK OUT as a -10/+10 V
+        // square; the discrete rising bool (clockOutRising()) remains the single edge truth.
         bool clockRising = false;
+        bool extPatched = false;
         double volts = 0.0;
         if (resolveControlSink_(seqExtClockIn_, volts, driveGraph)) {
+          extPatched = true;  // a cable in EXT. CLOCK takes over the clock (manual p.11)
           const JackDescriptor* d = findJackDescriptor_(seqExtClockIn_);
           clockRising = (d != nullptr) &&
                         (sink_gate_interpret(*d, seqClockLatch_, volts).edge == GateEdge::rising);
         }
-        sequencer_.tick(clockRising);
+        sequencer_.tick(clockRising, extPatched);
         publishSourceValue_(seqCvOut_, sequencer_.cvOut());      // 0..+5V (confirmed).
-        publishSourceValue_(seqGateOut_, sequencer_.gateOut());  // 0/+10V one-sample (provisional pulse).
-        publishSourceValue_(seqClockOut_, sequencer_.clockOutVolts());  // -10/+10 one-sample (rail confirmed, width provisional).
+        publishSourceValue_(seqGateOut_, sequencer_.gateOut());  // 0/+10V, held for half a step.
+        publishSourceValue_(seqClockOut_, sequencer_.clockOutVolts());  // -10/+10 V square.
         break;
       }
       case ExecutionKind::kKeyboard: {  // GH#12 keyboard product owner.
