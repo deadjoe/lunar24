@@ -628,14 +628,14 @@ bool IPlugAPPHost::TryToChangeAudio()
 
   // Lunar 24 (task#73): output-only open keeps the inert inputID (0). InitAudio uses the channel
   // plan to decide the input stream: a 0-in VALID plan means the input is disabled, never a failure.
-  // Open a device at the rate it already runs at: forcing another rate makes some devices
-  // reconfigure (Bluetooth headphones drop and reconnect, which kills the stream). The engine
-  // runs at any rate. A rate chosen in Preferences is kept for that session.
+  // Open a device at the rate it already runs at (forcing another rate makes some devices
+  // reconfigure: Bluetooth headphones drop and reconnect, which kills the stream), but never
+  // below music quality (choose_sample_rate). A rate chosen in Preferences holds for the session.
   if (automatic)
   {
-    const uint32_t current = mDAC->getDeviceInfo(outputID.value()).currentSampleRate;
-    if (current > 0)
-      mState.mAudioSR = current;
+    const RtAudio::DeviceInfo info = mDAC->getDeviceInfo(outputID.value());
+    mState.mAudioSR = choose_sample_rate(info.currentSampleRate, info.preferredSampleRate, info.sampleRates.data(),
+                                         info.sampleRates.size());
     UpdateINI();
   }
 
@@ -661,10 +661,12 @@ bool IPlugAPPHost::TryToChangeAudio()
     outputs.push_back(mDefaultOutputDev.value());
   for (uint32_t out : outputs)
   {
-    const uint32_t preferred = mDAC->getDeviceInfo(out).preferredSampleRate;
+    const RtAudio::DeviceInfo info = mDAC->getDeviceInfo(out);
+    const uint32_t preferred = choose_sample_rate(info.currentSampleRate, info.preferredSampleRate,
+                                                  info.sampleRates.data(), info.sampleRates.size());
     for (uint32_t sr : {mState.mAudioSR, preferred})
     {
-      if (sr == 0 || (out == outputID.value() && sr == mState.mAudioSR))
+      if (sr < kMinMusicSampleRate || (out == outputID.value() && sr == mState.mAudioSR))
         continue;  // the first attempt above already tried this one
       if (InitAudio(0, out, sr, mState.mBufferSize))
       {
@@ -674,6 +676,15 @@ bool IPlugAPPHost::TryToChangeAudio()
         return true;
       }
     }
+  }
+  // Last resort: the device's own rate even if low (a headset held in call mode by another app).
+  // Rough sound beats none.
+  const uint32_t lowRate = mDAC->getDeviceInfo(outputID.value()).currentSampleRate;
+  if (lowRate > 0 && lowRate < kMinMusicSampleRate && InitAudio(0, outputID.value(), lowRate, mState.mBufferSize))
+  {
+    mState.mAudioSR = lowRate;
+    UpdateINI();
+    return true;
   }
   return false;
 }
