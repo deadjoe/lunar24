@@ -8,7 +8,9 @@ _Last updated: 2026-09-30 (priorities reset)._
     capacitor-charge ramp, slow random-walk drift, per-cycle jitter; VOLT past half its
     stroke makes the oscillators frequency-modulate each other. A cable into CV MOD bends
     the MOD-on oscillators by up to an octave; the CV knob sets how much.
-  - 2 "Papa Srapa" noise / S&H drones, VCO A/B (morph, PWM, sync, sub) with their VCAs
+  - 2 "Papa Srapa" noise / S&H drones (LFO OUT, CV IN at 1 V/oct, S&H IN / CLOCK / OUT
+    patchable; unpatched, the S&H samples the voice's noise on the divided LFO),
+    VCO A/B (morph, PWM, sync, sub) with their VCAs
     driven by Envelope A/B, 10-channel mixer, dual Polivoks-style filter, distortion.
   - **Dual effector: all 13 cartridges x 3 programs** (reverbs, shimmer, pitch/reverse
     delays, chorus/flanger/phaser, filters, ring mod, bit-crush, mini synths).
@@ -56,8 +58,8 @@ applied yet), and the exact note patterns of the Folk / Japanese / Gamelan / Gyp
 
 ## Next steps (in order)
 1. Sound feedback from the owner's listening comes first — every curve is a first guess.
-2. Core playability and UI, checked against the manual: panel parts shown but not functional (drone 3/6 LFO-out /
-   CV-in jacks, photo sensor, headphone socket); re-check the manual for the
+2. Core playability and UI, checked against the manual: panel parts shown but not functional (photo sensor,
+   headphone socket); re-check the manual for the
    arp/seq clock ratios, RHYTHM patterns and scale note sets listed above.
 3. Real-time safety: plugging/unplugging a cable recompiles the patch graph on the audio
    thread (small allocations, only at that moment). Compile on the UI thread and swap.

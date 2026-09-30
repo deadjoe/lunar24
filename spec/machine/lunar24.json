@@ -7476,7 +7476,7 @@
         {
           "id": 55,
           "stable_id": "drone_3.cv_out",
-          "name": "CV OUT",
+          "name": "LFO OUT",
           "direction": "output",
           "signalType": "cv",
           "polarity": "unipolar",
@@ -7594,6 +7594,56 @@
             "saturation": "unverified",
             "transfer": "unverified",
             "signalType": "unverified",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 67,
+          "stable_id": "drone_3.sh_out",
+          "name": "S&H OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 158
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 68,
+          "stable_id": "drone_3.cv_in",
+          "name": "CV",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 368
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "provisional",
             "polarity": "unverified",
             "coupling": "unverified"
           }
@@ -7926,7 +7976,7 @@
         {
           "id": 60,
           "stable_id": "drone_6.cv_out",
-          "name": "CV OUT",
+          "name": "LFO OUT",
           "direction": "output",
           "signalType": "cv",
           "polarity": "unknown",
@@ -8044,6 +8094,56 @@
             "saturation": "unverified",
             "transfer": "unverified",
             "signalType": "unverified",
+            "polarity": "unverified",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 69,
+          "stable_id": "drone_6.sh_out",
+          "name": "S&H OUT",
+          "direction": "output",
+          "signalType": "cv",
+          "polarity": "bipolar",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 346
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "confirmed",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "confirmed",
+            "polarity": "confirmed",
+            "coupling": "unverified"
+          }
+        },
+        {
+          "id": 70,
+          "stable_id": "drone_6.cv_in",
+          "name": "CV",
+          "direction": "input",
+          "signalType": "cv",
+          "polarity": "unknown",
+          "nominalMin": -5.0,
+          "nominalMax": 5.0,
+          "coupling": "unknown",
+          "evidence": {
+            "line": 368
+          },
+          "status": "confirmed",
+          "fieldEvidence": {
+            "nominalRange": "unverified",
+            "toleratedRange": "unverified",
+            "threshold": "unverified",
+            "saturation": "unverified",
+            "transfer": "unverified",
+            "signalType": "provisional",
             "polarity": "unverified",
             "coupling": "unverified"
           }

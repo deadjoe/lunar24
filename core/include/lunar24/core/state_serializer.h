@@ -443,6 +443,40 @@ inline void read_keyboard_seq(const std::uint8_t* base, KeyboardSeq* s) {
   }
 }
 
+// ---- saved states from before the patch bank grew 67 -> 71 --------------------------------
+// Same fields in the same order; only the two per-jack arrays (input_cable, cable_source)
+// were shorter. upgrade_legacy_patch67 copies such a record into the current layout, the
+// new jack slots empty (no cable).
+inline bool is_patch_bank_field(const StorageField& f) {
+  return std::string_view(f.name) == "input_cable" || std::string_view(f.name) == "cable_source";
+}
+inline std::uint32_t legacy_patch67_wire_bytes() {
+  std::uint32_t total = 0u;
+  for (std::uint32_t i = 0; i < kDeviceStorageSchema.fieldCount; ++i) {
+    const StorageField& f = kDeviceStorageSchema.fields[i];
+    const std::uint32_t b = storage_field_bytes(f);
+    total += is_patch_bank_field(f) ? b / static_cast<std::uint32_t>(kDevicePatchCapacity) *
+                                          static_cast<std::uint32_t>(kLegacyPatchCapacity67)
+                                    : b;
+  }
+  return total;
+}
+// `in` holds legacy_patch67_wire_bytes() bytes, `out` totalBytesHint bytes.
+inline void upgrade_legacy_patch67(const std::uint8_t* in, std::uint8_t* out) {
+  std::uint32_t src = 0u, dst = 0u;
+  for (std::uint32_t i = 0; i < kDeviceStorageSchema.fieldCount; ++i) {
+    const StorageField& f = kDeviceStorageSchema.fields[i];
+    const std::uint32_t b = storage_field_bytes(f);
+    const std::uint32_t old = is_patch_bank_field(f) ? b / static_cast<std::uint32_t>(kDevicePatchCapacity) *
+                                                           static_cast<std::uint32_t>(kLegacyPatchCapacity67)
+                                                     : b;
+    std::memcpy(out + dst, in + src, old);
+    std::memset(out + dst + old, 0, b - old);
+    src += old;
+    dst += b;
+  }
+}
+
 // Encode `state` into the canonical schema record at `out`. `out` must hold at
 // least kDeviceStorageSchema.totalBytesHint bytes; returns false (and writes
 // nothing) if `capacity` is too small. On success `*written` (if given) is the

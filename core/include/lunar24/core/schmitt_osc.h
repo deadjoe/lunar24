@@ -109,6 +109,13 @@ class SchmittOsc {
   void setFmDevHz(double hz) { fmDevHz_ = (hz < 0.0 ? 0.0 : hz); }
   // Exponential FM: the frequency is multiplied by 2^(fmOctaves * mod).
   void setFmOctaves(double oct) { fmOct_ = oct < 0.0 ? 0.0 : oct; }
+  // An external pitch CV in octaves (1 V/oct at the jack): frequency x 2^oct.
+  void setPitchCvOctaves(double oct) {
+    if (oct != pitchCvOct_) {
+      pitchCvOct_ = oct;
+      pitchCvScale_ = std::exp2(oct);
+    }
+  }
   void setAmDepth(double ad) { amDepth_ = (ad < 0.0 ? 0.0 : (ad > 1.0 ? 1.0 : ad)); }
   // Override the nominal frequency (Hz) from a control such as RATE. Resets the
   // pitch scale to neutral so the target frequency is absolute.
@@ -128,7 +135,7 @@ class SchmittOsc {
     if (toneGate_ <= 0.0) { *out = 0.0; return; }  // PITCH-at-floor: tone silent.
     // dt-scaled rate. NEVER a fixed per-sample step (see file comment).
     const double expFm = fmOct_ > 0.0 ? std::exp2(fmOct_ * mod_) : 1.0;
-    const double instRate = chargeRate_ * pitchScale_ * expFm +
+    const double instRate = chargeRate_ * pitchScale_ * pitchCvScale_ * expFm +
                             4.0 * kWindowVolts * fmDevHz_ * mod_;
     const double rate = instRate > 0.0 ? instRate : 0.0;  // per-second ramp rate.
     // NOTE: this ramp update keeps the pre-existing association
@@ -282,6 +289,7 @@ class SchmittOsc {
   double pitchScale_ = 1.0;  // PITCH semitone factor (2^(st/12)); neutral = 1.0.
   double fmDevHz_ = 0.0;     // FM peak deviation in Hz (0 = no FM).
   double fmOct_ = 0.0;       // exponential FM depth in octaves per unit of mod (0 = off).
+  double pitchCvOct_ = 0.0, pitchCvScale_ = 1.0;  // external pitch CV (octaves, factor)
   double amDepth_ = 0.0;     // AM index [0,1] (0 = no AM).
   double mod_ = 0.0;         // external modulation source, set per frame via setMod.
   double toneGate_ = 1.0;    // 0 = PITCH-at-floor silence, 1 = on.

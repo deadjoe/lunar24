@@ -380,8 +380,9 @@ class AppStateStore {
   // gate, which is a snapshot, not a lock, so the size gate alone never decides completeness.
   // `*ioError` distinguishes a read error (Unreadable) from a length problem.
   static bool readExactRecord(std::FILE* f, std::vector<std::uint8_t>* out,
-                              std::uint64_t* bytesRead, bool* ioError) {
-    out->assign(kAppStateWireBytes, 0u);
+                              std::uint64_t* bytesRead, bool* ioError,
+                              std::size_t length = kAppStateWireBytes) {
+    out->assign(length, 0u);
     const std::size_t got = std::fread(out->data(), 1u, out->size(), f);
     *bytesRead += got;
     const int extra = (got == out->size()) ? std::fgetc(f) : EOF;
@@ -434,8 +435,11 @@ class AppStateStore {
       saveAllowed_ = false;
       return loadOutcome_;
     }
-    if (static_cast<std::uintmax_t>(st.st_size) !=
-        static_cast<std::uintmax_t>(kAppStateWireBytes)) {
+    // A file saved before the patch bank grew (67 jack slots) is upgraded below.
+    const std::size_t legacyBytes = lunar24::core::legacy_patch67_wire_bytes();
+    const bool legacy = static_cast<std::uintmax_t>(st.st_size) == static_cast<std::uintmax_t>(legacyBytes);
+    if (!legacy && static_cast<std::uintmax_t>(st.st_size) !=
+                       static_cast<std::uintmax_t>(kAppStateWireBytes)) {
       std::fclose(f);
       loadOutcome_ = StateLoadOutcome::LengthMismatch;
       fileUnadopted_ = true;
@@ -445,8 +449,14 @@ class AppStateStore {
 
     std::vector<std::uint8_t> bytes;
     bool ioError = false;
-    const bool exact = readExactRecord(f, &bytes, &bytesRead_, &ioError);
+    const bool exact =
+        readExactRecord(f, &bytes, &bytesRead_, &ioError, legacy ? legacyBytes : kAppStateWireBytes);
     std::fclose(f);
+    if (exact && legacy) {
+      std::vector<std::uint8_t> upgraded(kAppStateWireBytes, 0u);
+      lunar24::core::upgrade_legacy_patch67(bytes.data(), upgraded.data());
+      bytes.swap(upgraded);
+    }
     if (!exact) {
       loadOutcome_ = ioError ? StateLoadOutcome::Unreadable : StateLoadOutcome::LengthMismatch;
       fileUnadopted_ = true;
