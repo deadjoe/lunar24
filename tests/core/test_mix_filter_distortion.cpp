@@ -664,7 +664,40 @@ void test_distortion_alias_suppressed() {
   CHECK(ratioDb < -25.0);
 }
 
+// ----------------------------------------------------------------------------
+// GAIN really distorts: at full DIST, the 3rd harmonic of a 0.5 V sine grows from nothing at
+// GAIN 0 to a clearly audible level at GAIN 1, and the level stays within a few dB.
+static void test_gain_audibly_distorts() {
+  const double sr = 48000.0;
+  const double f0 = 375.0;                        // 128 samples per cycle, whole cycles below
+  const std::size_t n = 128 * 64;
+  const auto measure = [&](double gain, double& h3ratio, double& rms) {
+    Distortion d(sr);
+    d.setDist(1.0);
+    d.setGain(gain);
+    double re1 = 0, im1 = 0, re3 = 0, im3 = 0, sq = 0;
+    for (std::size_t i = 0; i < n + 1280; ++i) {
+      const double ph = drone_test::kTwoPi * f0 * (static_cast<double>(i) / sr);
+      const double y = d.tickL(0.5 * std::sin(ph));
+      if (i < 1280) continue;                       // settle
+      re1 += y * std::cos(ph); im1 += y * std::sin(ph);
+      re3 += y * std::cos(3 * ph); im3 += y * std::sin(3 * ph);
+      sq += y * y;
+    }
+    h3ratio = std::hypot(re3, im3) / std::hypot(re1, im1);
+    rms = std::sqrt(sq / static_cast<double>(n));
+  };
+  double h0 = 0, r0 = 0, h1 = 0, r1 = 0;
+  measure(0.0, h0, r0);
+  measure(1.0, h1, r1);
+  std::printf("gain audible: h3/h1 gain0 %.4f gain1 %.4f, rms %.3f -> %.3f\n", h0, h1, r0, r1);
+  CHECK(h0 < 0.01);                     // GAIN 0: essentially clean.
+  CHECK(h1 > 0.15);                     // GAIN 1: heavy distortion (the old law gave ~0.01).
+  CHECK(r1 < 2.0 * r0 && r1 > 0.5 * r0);  // the make-up keeps the level within +-6 dB.
+}
+
 int main() {
+  test_gain_audibly_distorts();
   test_mixer_vol_glides();
   test_distortion_alias_suppressed();
   test_resonance_does_not_lose_lows();

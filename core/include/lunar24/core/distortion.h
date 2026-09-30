@@ -21,16 +21,12 @@
 //   * DIST and GAIN are TWO INDEPENDENT controls. Nothing in the manual couples
 //     them: changing GAIN must not change the mix ratio, and dist=0 must be dry
 //     regardless of gain. This is must-test #2.
-//   * NONLINEAR CURVE / RAIL — the manual gives NO saturation curve / rail / fold
-//     figure. The tanh soft-clip with rail kSaturationVoltage and the small-signal
-//     unity-gain fold (1 + kDrive*drive) and the per-channel one-pole drive
-//     SMOOTHER are all PROVISIONAL modeling choices, NOT manual facts. Recorded.
-//   * PER-CHANNEL STATE — the nonlinear state is a SIGNAL-DRIVEN drive (a smoothed
-//     gain_ × |x|) per channel. L and R keep SEPARATE states; a shared state would
-//     let a hot left signal raise the right channel's drive (must-test #3). The
-//     drive is smoothed toward gain_×|x| (not toward gain_ alone), so a hot channel
-//     saturates only its own non-linearity and the amount of distortion genuinely
-//     depends on both GAIN and the instantaneous signal level.
+//   * NONLINEAR CURVE — the manual gives no curve. A tanh soft clip at rail
+//     kSaturationVoltage, driven by 1 + kDriveFold * GAIN^2 (the square keeps the lower
+//     half of the knob fine), with a make-up gain so GAIN changes the character more than
+//     the volume. Tuned by ear. (An earlier signal-level-dependent drive topped
+//     out at about 3% distortion, so the knobs mostly changed the volume.)
+//   * PER-CHANNEL STATE — L and R keep separate anti-aliasing state.
 //   * The MASTER VOLUME / PHONE VOLUME suggestion in the manual (L1152-1153) is a
 //     separate control, out of this header's scope.
 //
@@ -43,7 +39,7 @@
 namespace lunar24::core {
 
 // Post-filter distortion. DIST = dry/wet balance (0..1), GAIN = distortion amount
-// (0..1). The two are independent. L and R each carry their own smoothed-drive
+// (0..1). The two are independent. L and R each carry their own anti-aliasing
 // (nonlinear) state.
 class Distortion {
  public:
@@ -54,18 +50,23 @@ class Distortion {
     channelR_.driveFold = kDriveFold;
     channelL_.rail = kSaturationVoltage;
     channelR_.rail = kSaturationVoltage;
+    updateDrive_(channelL_);
+    updateDrive_(channelR_);
     setSampleRate(sampleRate);
   }
 
   void setSampleRate(double sr) {
     if (sr > 0.0) sr_ = sr;
-    recomputeCoefficient_();
   }
 
   // dist (id16) dry<->wet balance. 0.0 = fully dry. Clamped to [0,1].
   void setDist(double d) { dist_ = clamp01_(d); }
   // gain (id17) distortion amount. 0.0 = no distortion (distorted term = dry).
-  void setGain(double g) { gain_ = clamp01_(g); }
+  void setGain(double g) {
+    gain_ = clamp01_(g);
+    updateDrive_(channelL_);
+    updateDrive_(channelR_);
+  }
 
   double dist() const { return dist_; }
   double gain() const { return gain_; }
@@ -79,7 +80,10 @@ class Distortion {
   // identity profile as the VCF drive. L and R are independent; the drive_ scales
   // the folding strength and rail_ is the saturation ceiling for that channel. If
   // never set, each channel keeps the shared PROVISIONAL defaults below.
-  void setChannelDrive(int ch, double drive) { channel_(ch).driveFold = drive < 0.0 ? 0.0 : drive; }
+  void setChannelDrive(int ch, double drive) {
+    channel_(ch).driveFold = drive < 0.0 ? 0.0 : drive;
+    updateDrive_(channel_(ch));
+  }
   void setChannelRail(int ch, double rail) { channel_(ch).rail = rail > 0.0 ? rail : kSaturationVoltage; }
   double channelDrive(int ch) const { return channel_(ch).driveFold; }
   double channelRail(int ch) const { return channel_(ch).rail; }
@@ -87,19 +91,21 @@ class Distortion {
   // PROVISIONAL distortion rail (no manual curve/rail). Chosen to sit at the WET
   // OUT nominal max (design/07 WET max 2 V); the exact rail is un-evidenced.
   static constexpr double kSaturationVoltage = 2.0;
-  // PROVISIONAL fold at gain=1 (small-signal unity at gain=0). Un-evidenced.
-  static constexpr double kDriveFold = 8.0;
-  // PROVISIONAL smoothing time (seconds) for the per-channel drive moved between
-  // target and state (a modest AC smoothing; no manual value).
-  static constexpr double kSmoothSeconds = 0.005;
+  // Extra drive at full GAIN (small-signal unity at gain=0). Tuned by ear.
+  static constexpr double kDriveFold = 40.0;
+  // Make-up: the wet term is divided by min(drive^kMakeupPower, kMakeupMax), so turning
+  // GAIN up changes the character much more than the volume. Tuned by ear.
+  static constexpr double kMakeupPower = 0.75;
+  static constexpr double kMakeupMax = 6.0;
 
  private:
   struct Channel {
-    double driveState = 0.0;  // per-channel filter state (the nonlinearity state).
     double driveFold = 0.0;   // GH#6 per-channel folding strength (set in ctor).
     double rail = 0.0;        // GH#6 per-channel saturation ceiling (set in ctor).
     double prevU = 0.0;       // previous shaper input (antiderivative anti-aliasing)
     double prevF = 0.0;       // log(cosh(prevU))
+    double drive = 1.0;       // 1 + driveFold * gain^2 (cached)
+    double makeup = 1.0;      // 1 / min(drive^kMakeupPower, kMakeupMax) (cached)
   };
 
   // log(cosh(u)), overflow-free: the antiderivative of tanh.
@@ -125,23 +131,17 @@ class Distortion {
 
   // dist=0 -> output is exactly the dry term `x` (gain has NO effect).
   // gain=0 -> the distorted term reduces to ~x (unity small-signal), so dist no
-  // longer changes the level. Independent axes. The nonlinear state is a
-  // SIGNAL-DRIVEN per-channel drive (gain_ × |x| smoothed), so a hot channel
-  // saturates only its own non-linearity (must-test #3). GH#6: the folding strength
-  // and rail are per-channel (driveFold/rail) so a level-dependent path micro-diff
-  // can be applied independently on L and R.
+  // longer changes the level. Independent axes. GH#6: the drive and rail are
+  // per-channel (driveFold/rail) for the small L/R path difference.
   double tick_(Channel& c, double x) {
-    const double driveTarget = gain_ * std::fabs(x);
-    c.driveState += coeff_ * (driveTarget - c.driveState);
-    const double fold = 1.0 + c.driveFold * c.driveState;
-    const double wet = c.rail * tanhAdaa_(c, fold * x / c.rail);
+    const double wet = c.makeup * c.rail * tanhAdaa_(c, c.drive * x / c.rail);
     return (1.0 - dist_) * x + dist_ * wet;
   }
 
-  void recomputeCoefficient_() {
-    coeff_ = (sr_ > 0.0 && kSmoothSeconds > 0.0)
-                 ? 1.0 - std::exp(-1.0 / (sr_ * kSmoothSeconds))
-                 : 0.0;
+  void updateDrive_(Channel& c) const {
+    c.drive = 1.0 + c.driveFold * gain_ * gain_;
+    const double d = std::pow(c.drive, kMakeupPower);
+    c.makeup = 1.0 / (d < kMakeupMax ? d : kMakeupMax);
   }
   static double clamp01_(double v) {
     return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
@@ -150,7 +150,6 @@ class Distortion {
   double sr_ = 0.0;
   double dist_ = 0.0;  // registry default 0.0.
   double gain_ = 0.0;  // registry default 0.0.
-  double coeff_ = 0.0;
   Channel channelL_;
   Channel channelR_;
 };

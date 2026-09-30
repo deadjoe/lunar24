@@ -48,6 +48,10 @@ Keep these unless a listening test or a real bug says otherwise.
   ±5 V scale (like the pressure out), and VCO A SYNC rises at 1 V (hysteresis 0.2 V; tuned by
   ear). The old 5 V threshold was never crossed by a VCO, so the manual's B -> A sync patch was
   silent.
+- **Distortion GAIN is a fixed drive, not a level-dependent one** (`distortion.h`): tanh at a
+  drive of 1 + 40*GAIN^2 with a make-up gain, so GAIN changes the character (clean -> heavy
+  fuzz) while the level stays within a few dB. The old law scaled drive with the signal level
+  and peaked at ~3% distortion, so the knobs mostly changed the volume. Tuned by ear.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also
