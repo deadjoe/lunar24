@@ -342,15 +342,29 @@ class ArpSeq {
   void emitNote(Sink& sink, double pitch_cv, bool previousGate, const ControlEvent& src) {
     NoteId id = ++arpNoteId_;
     emitPitch_(sink, pitch_cv, id, src);              // phase 1: new pitch target
-    if (previousGate) emitGateOff_(sink, lastArpNoteId_, src);  // phase 2: release old
+    if (previousGate) emitLastGateOff_(sink, src);     // phase 2: release old
     emitGateOn_(sink, id, src);                        // phase 4: latch the new note
     lastArpNoteId_ = id;
+    lastNoteSrc_ = src;
     runningGate_ = true;
+  }
+  // Release the constructed note that is sounding, under the SAME identity (source,
+  // channel, side) it was latched with. The trigger of the release (a clock fall, a
+  // released plate from another source) must not lend its identity: KeyboardBehaviour
+  // keys notes by (source, channel, noteId), so a mismatched release left the note stuck
+  // and the arpeggio droning after every key was let go.
+  template <typename Sink>
+  void emitLastGateOff_(Sink& sink, const ControlEvent& src) {
+    ControlEvent at = src;
+    at.source = lastNoteSrc_.source;
+    at.channel = lastNoteSrc_.channel;
+    at.side = lastNoteSrc_.side;
+    emitGateOff_(sink, lastArpNoteId_, at);
   }
   // Close the currently-sounding constructed note (if any) and clear the running gate.
   template <typename Sink>
   void emitRelease(Sink& sink, bool previousGate, const ControlEvent& src) {
-    if (previousGate) emitGateOff_(sink, lastArpNoteId_, src);
+    if (previousGate) emitLastGateOff_(sink, src);
     runningGate_ = false;
   }
 
@@ -363,8 +377,15 @@ class ArpSeq {
   void releaseRun_(Sink& sink, const ControlEvent& ev) {
     const bool prev = runningGate_;
     const NoteId pid = lastArpNoteId_;
+    const ControlEvent psrc = lastNoteSrc_;
     reset();
-    if (prev) emitGateOff_(sink, pid, ev);
+    if (prev) {
+      ControlEvent at = ev;
+      at.source = psrc.source;
+      at.channel = psrc.channel;
+      at.side = psrc.side;
+      emitGateOff_(sink, pid, at);
+    }
   }
 
   // -- arpeggiator ----------------------------------------------------------------
@@ -525,6 +546,7 @@ class ArpSeq {
   bool runningGate_ = false;
   NoteId arpNoteId_ = 0;      // synthetic identity for each constructed note
   NoteId lastArpNoteId_ = 0;  // the currently-sounding constructed note's id
+  ControlEvent lastNoteSrc_{};  // the identity (source, channel, side) that note was latched with
 };
 
 }  // namespace lunar24::core

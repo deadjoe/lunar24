@@ -152,6 +152,33 @@ static void mode_mux_and_keyboard_passthrough() {
   CHECK_EQ(r.count(core::ControlEventKind::gate_off), 1u);
 }
 
+// ------------------------------------------ release matches the sounding note --
+// The arp latches its notes under the CLOCK's identity (source 9 here) but the last plate
+// is released under the PLAYER's identity (source 1). The closing gate_off must carry the
+// sounding note's identity, or KeyboardBehaviour (which keys notes by source, channel and
+// noteId) never releases it and the arpeggio drones on after every key is let go.
+static void arp_release_uses_the_sounding_notes_identity() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 1;  // arpeggiator
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  note_on(s, r, 0.0, 1);
+  note_on(s, r, 0.25, 2);
+  clock_edge(s, r);              // a note sounds, latched under the clock's source
+  core::ControlEvent on{};
+  for (std::uint32_t i = 0; i < r.n; ++i)
+    if (r.ev[i].kind == core::ControlEventKind::gate_on) on = r.ev[i];
+  CHECK_EQ(on.source, 9u);
+  note_off(s, r, 1);
+  note_off(s, r, 2);             // last plate released while the note sounds
+  const core::ControlEvent& off = r.ev[r.n - 1];
+  CHECK_TRUE(off.kind == core::ControlEventKind::gate_off);
+  CHECK_EQ(off.noteId, on.noteId);
+  CHECK_EQ(off.source, on.source);  // the old code sent source 1: a stuck note
+  CHECK_EQ(off.channel, on.channel);
+}
+
 // ------------------------------------------------- arpeggiator one-note-per-clock --
 
 static void arp_emits_one_note_per_clock() {
@@ -408,6 +435,7 @@ static void side_drop_produces_divergent_stream() {
 
 int main() {
   mode_mux_and_keyboard_passthrough();
+  arp_release_uses_the_sounding_notes_identity();
   arp_emits_one_note_per_clock();
   arp_hold_keeps_chord_through_release();
   arp_variation_repeats_transposed();
