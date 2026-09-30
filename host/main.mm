@@ -437,6 +437,40 @@ int main(int argc, char* argv[])
     }
 
     [app setDelegate:ctrl];
+
+    // The application menu. Without MainMenu.xib the app had no menu at all, so Preferences
+    // (the audio device / microphone dialog) could not be opened. Command items carry the
+    // Windows command id as their tag and go through SWELLAppController's
+    // onSysMenuCommand: -> SWELLAPP_ONCOMMAND -> the main dialog's WM_COMMAND handler.
+    {
+      NSMenu* mainMenu = [[NSMenu alloc] initWithTitle:@""];
+      NSMenuItem* appItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+      NSMenu* appMenu = [[NSMenu alloc] initWithTitle:@"Lunar 24"];
+      auto addCommand = [&](NSString* title, NSString* key, int command) {
+        NSMenuItem* item = [[NSMenuItem alloc] initWithTitle:title
+                                                      action:@selector(onSysMenuCommand:)
+                                               keyEquivalent:key];
+        [item setTarget:ctrl];
+        [item setTag:command];
+        [appMenu addItem:item];
+      };
+      addCommand(@"About Lunar 24", @"", ID_ABOUT);
+      [appMenu addItem:[NSMenuItem separatorItem]];
+      addCommand(@"Preferences…", @",", ID_PREFERENCES);
+      [appMenu addItem:[NSMenuItem separatorItem]];
+      [appMenu addItemWithTitle:@"Hide Lunar 24" action:@selector(hide:) keyEquivalent:@"h"];
+      NSMenuItem* hideOthers = [appMenu addItemWithTitle:@"Hide Others"
+                                                  action:@selector(hideOtherApplications:)
+                                           keyEquivalent:@"h"];
+      [hideOthers setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagOption];
+      [appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+      [appMenu addItem:[NSMenuItem separatorItem]];
+      addCommand(@"Quit Lunar 24", @"q", ID_QUIT);
+      [appItem setSubmenu:appMenu];
+      [mainMenu addItem:appItem];
+      [app setMainMenu:mainMenu];
+    }
+
     [ctrl performSelector:@selector(awakeFromNib)];   // -> SWELLAPP_ONLOAD
 
     [app activateIgnoringOtherApps:YES];

@@ -59,8 +59,8 @@ The mac app is signed ad hoc, not notarized: after downloading, clear the quaran
 once with `xattr -cr Lunar24Host.app` (otherwise macOS reports it as damaged).
 
 Audio: the app plays through the system's current output device (headphones, AirPods)
-unless another one is chosen in Preferences; the audio input (microphone) stays off until
-it is switched on there. Devices open at the rate they already run at. When the output
+unless another one is chosen in Preferences (app menu > Preferences…, or ⌘,); the audio
+input (microphone) stays off until it is switched on there. Devices open at the rate they already run at. When the output
 device changes or drops out (AirPods connected or put away), the app reopens on the current
 one. If the saved setup cannot open, it falls back to one that can; if nothing opens, the
 keyboard display reads NO AUDIO.
