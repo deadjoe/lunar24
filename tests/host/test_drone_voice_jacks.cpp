@@ -116,5 +116,17 @@ int main() {
     cable(st, "lfo_a.cv_out", "drone_3.clock_in");
     CHECK(jumps(crossings(st, 2, 6.0, 0.2)) >= 2);
   }
+  // The S&H samples the voice's white noise even with NOISE (what is heard) at zero.
+  {
+    core::DeviceStateV1 st = core::make_default_device_state(1);
+    set(st, "envelope_a.hold", 1);
+    set(st, "drone_3.rate", 0);
+    set(st, "drone_3.noise", 0);
+    set(st, "lfo_a.rate", 0.8);
+    set(st, "lfo_a.wave", 1);
+    cable(st, "drone_3.sh_out", "vco_a.v_oct_in");
+    cable(st, "lfo_a.cv_out", "drone_3.clock_in");
+    CHECK(jumps(crossings(st, 2, 6.0, 0.2)) >= 2);
+  }
   return test::finish("test_drone_voice_jacks");
 }
