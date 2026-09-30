@@ -303,6 +303,9 @@ class SynthRuntime {
   // PAPA SRAPA (NEW) drone voices (drone 3/6), index 0 == drone_3, index 1 == drone_6.
   // GH#15 D4: each has a landed gate_in consumer and a landed env_out publisher.
   static constexpr int kPapaVoiceCount = 2;
+  // Classic drone CV MOD: at CV knob = 1, 10 V (an LFO's full swing) moves MOD-on
+  // generators by one octave.  // tuned by ear
+  static constexpr double kClassicCvOctPerVolt = DroneBank::kDefaultModOctPerVolt * 2.0;
   // VCO SUB switch (-1): a square one octave down, mixed under the main wave.  // tuned by ear
   static constexpr double kVcoSubMix = 0.5;
   // Band-limited with polyBLEP at both edges (+2 at phase 0, -2 at phase 0.5).
@@ -968,6 +971,11 @@ class SynthRuntime {
   void setDroneModCv(int voiceGroup, int gen, double cv) {
     if (inDroneRange_(voiceGroup, gen)) drone_.setModCv(flatGen_(voiceGroup, gen), cv);
   }
+  // CV knob above a classic drone's CV MOD jack (0..1).
+  void setDroneCvAmount(int voiceGroup, double amount) {
+    if (voiceGroup >= 0 && voiceGroup < kClassicDroneVoices)
+      drone_.setGroupModOctavesPerVolt(voiceGroup, amount * kClassicCvOctPerVolt);
+  }
   void setDroneVolt(int voiceGroup, double semitonesDown) {
     if (voiceGroup >= 0 && voiceGroup < kClassicDroneVoices)
       drone_.setVolt(static_cast<std::size_t>(voiceGroup), semitonesDown);
@@ -1528,6 +1536,9 @@ class SynthRuntime {
       case ParameterId::drone_1_volt:
         setDroneVolt(0, classicDroneVoltSemisDownFromNorm(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_1_cv_amt:
+        setDroneCvAmount(0, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_1_att:
         setDroneGroupAtt(0, v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
@@ -1584,6 +1595,9 @@ class SynthRuntime {
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_2_volt:
         setDroneVolt(1, classicDroneVoltSemisDownFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_2_cv_amt:
+        setDroneCvAmount(1, v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_2_att:
         setDroneGroupAtt(1, v);
@@ -1642,6 +1656,9 @@ class SynthRuntime {
       case ParameterId::drone_4_volt:
         setDroneVolt(2, classicDroneVoltSemisDownFromNorm(v));
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_4_cv_amt:
+        setDroneCvAmount(2, v);
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_4_att:
         setDroneGroupAtt(2, v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
@@ -1698,6 +1715,9 @@ class SynthRuntime {
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_5_volt:
         setDroneVolt(3, classicDroneVoltSemisDownFromNorm(v));
+        lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
+      case ParameterId::drone_5_cv_amt:
+        setDroneCvAmount(3, v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_5_att:
         setDroneGroupAtt(3, v);
@@ -1820,7 +1840,8 @@ class SynthRuntime {
 
     // Which applied_to_DSP ids applyDspParam actually admitted, so the whole-state gate can
     // LOCATE the first missing id rather than reporting a bare count mismatch (finding 1).
-    std::uint32_t appliedBits[(kParameterCount + 31u) / 32u] = {};
+    // Indexed by ParameterId, so sized by the id space (ids are sparse: > the count).
+    std::uint32_t appliedBits[(kParameterIdSpace + 31u) / 32u] = {};
 
     std::uint32_t applied = 0;
     for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i) {

@@ -18,8 +18,9 @@
 // and D5 (the drone3/6 HOLD OR term on that envelope's target) moved 2 from
 // transfer_unavailable -> applied_to_dsp. GH#19 S0 (Raft task #117) moved the last 2 —
 // vco_a.pwm(8) and vco_b.pwm(30) — on the same path, so the class is now EMPTY:
-//   185 applied_to_DSP / 35 applied_to_keyboard / 125 preserved_deferred_P6_P8 /
-//   0 transfer_unavailable / 0 invalid_unlanded == 345 landed.
+//   189 applied_to_DSP / 35 applied_to_keyboard / 125 preserved_deferred_P6_P8 /
+//   0 transfer_unavailable / 0 invalid_unlanded == 349 landed (incl. the classic drones'
+//   CV knobs, ids 412-415).
 // The chain so far is 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) -> (D5) -> (#117)
 // 183/35/125/2/0 -> 185/35/125/0/0.
 // The 185 must each reach a real DSP apply; the software norm->DSP mappings are marked
@@ -208,6 +209,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::drone_1_mod_5, StateDisposition::applied_to_dsp },
     { ParameterId::drone_1_volt, StateDisposition::applied_to_dsp },
     { ParameterId::drone_1_att, StateDisposition::applied_to_dsp },
+    { ParameterId::drone_1_cv_amt, StateDisposition::applied_to_dsp },
     { ParameterId::drone_1_rls, StateDisposition::applied_to_dsp },
     { ParameterId::drone_1_gate_hold, StateDisposition::applied_to_dsp },
     { ParameterId::drone_2_tune_1, StateDisposition::applied_to_dsp },
@@ -227,6 +229,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::drone_2_mod_5, StateDisposition::applied_to_dsp },
     { ParameterId::drone_2_volt, StateDisposition::applied_to_dsp },
     { ParameterId::drone_2_att, StateDisposition::applied_to_dsp },
+    { ParameterId::drone_2_cv_amt, StateDisposition::applied_to_dsp },
     { ParameterId::drone_2_rls, StateDisposition::applied_to_dsp },
     { ParameterId::drone_2_gate_hold, StateDisposition::applied_to_dsp },
     { ParameterId::drone_4_tune_1, StateDisposition::applied_to_dsp },
@@ -246,6 +249,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::drone_4_mod_5, StateDisposition::applied_to_dsp },
     { ParameterId::drone_4_volt, StateDisposition::applied_to_dsp },
     { ParameterId::drone_4_att, StateDisposition::applied_to_dsp },
+    { ParameterId::drone_4_cv_amt, StateDisposition::applied_to_dsp },
     { ParameterId::drone_4_rls, StateDisposition::applied_to_dsp },
     { ParameterId::drone_4_gate_hold, StateDisposition::applied_to_dsp },
     { ParameterId::drone_5_tune_1, StateDisposition::applied_to_dsp },
@@ -265,6 +269,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::drone_5_mod_5, StateDisposition::applied_to_dsp },
     { ParameterId::drone_5_volt, StateDisposition::applied_to_dsp },
     { ParameterId::drone_5_att, StateDisposition::applied_to_dsp },
+    { ParameterId::drone_5_cv_amt, StateDisposition::applied_to_dsp },
     { ParameterId::drone_5_rls, StateDisposition::applied_to_dsp },
     { ParameterId::drone_5_gate_hold, StateDisposition::applied_to_dsp },
     { ParameterId::drone_3_rate, StateDisposition::applied_to_dsp },
@@ -405,21 +410,21 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
 };
 
 // Compile-time class counts lock the classification. The chain so far is
-// 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) -> (D5) -> (#117 pwm pair) 185/35/125/0/0.
+// 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) -> (D5) -> (#117 pwm pair) 185/35/125/0/0 -> (classic drone CV knobs) 189/35/125/0/0.
 inline constexpr std::uint32_t count_disposition(StateDisposition d) noexcept {
   std::uint32_t n = 0;
   for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i)
     if (kDeviceStateDisposition[i].disposition == d) ++n;
   return n;
 }
-static_assert(count_disposition(StateDisposition::applied_to_dsp) == 185, "applied_to_DSP count");
+static_assert(count_disposition(StateDisposition::applied_to_dsp) == 189, "applied_to_DSP count");
 static_assert(count_disposition(StateDisposition::applied_to_keyboard) == 35, "applied_to_keyboard count");
 static_assert(count_disposition(StateDisposition::preserved_deferred_p6_p8) == 125, "preserved_deferred_P6_P8 count");
 static_assert(count_disposition(StateDisposition::transfer_unavailable) == 0, "transfer_unavailable count");
 static_assert(count_disposition(StateDisposition::invalid_unlanded) == 0, "invalid_unlanded count");
 
 // Disposition of a ParameterId. A landed id -> its class; a hole/slack/unknown id
-// (anything not in the table, including the 412..423 capacity slack) ->
+// (anything not in the table, including the 416..423 capacity slack) ->
 // invalid_unlanded.
 inline constexpr StateDisposition disposition_of(ParameterId id) noexcept {
   for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i)

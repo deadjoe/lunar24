@@ -184,6 +184,7 @@ enum class ParameterId : std::uint32_t {
     drone_1_att = 217,
     drone_1_rls = 218,
     drone_1_gate_hold = 219,
+    drone_1_cv_amt = 412,
     drone_2_tune_1 = 220,
     drone_2_tune_2 = 221,
     drone_2_tune_3 = 222,
@@ -203,6 +204,7 @@ enum class ParameterId : std::uint32_t {
     drone_2_att = 236,
     drone_2_rls = 237,
     drone_2_gate_hold = 238,
+    drone_2_cv_amt = 413,
     drone_4_tune_1 = 239,
     drone_4_tune_2 = 240,
     drone_4_tune_3 = 241,
@@ -222,6 +224,7 @@ enum class ParameterId : std::uint32_t {
     drone_4_att = 255,
     drone_4_rls = 256,
     drone_4_gate_hold = 257,
+    drone_4_cv_amt = 414,
     drone_5_tune_1 = 258,
     drone_5_tune_2 = 259,
     drone_5_tune_3 = 260,
@@ -241,6 +244,7 @@ enum class ParameterId : std::uint32_t {
     drone_5_att = 274,
     drone_5_rls = 275,
     drone_5_gate_hold = 276,
+    drone_5_cv_amt = 415,
     drone_3_rate = 277,
     drone_3_mod = 278,
     drone_3_divider = 279,
@@ -503,13 +507,13 @@ enum class RouteId : std::uint32_t {
 };
 
 inline constexpr std::uint32_t kModuleCount = 21;
-inline constexpr std::uint32_t kParameterCount = 345;
+inline constexpr std::uint32_t kParameterCount = 349;
 inline constexpr std::uint32_t kJackCount = 64;
 inline constexpr std::uint32_t kProgramCount = 39;
 inline constexpr std::uint32_t kRouteCount = 6;
 
 inline constexpr std::uint64_t kModuleIdSpace = 21;
-inline constexpr std::uint64_t kParameterIdSpace = 412;
+inline constexpr std::uint64_t kParameterIdSpace = 416;
 inline constexpr std::uint64_t kJackIdSpace = 67;
 inline constexpr std::uint64_t kProgramIdSpace = 39;
 inline constexpr std::uint64_t kRouteIdSpace = 6;
@@ -694,6 +698,7 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::drone_1_att: return "drone_1.att";
     case ParameterId::drone_1_rls: return "drone_1.rls";
     case ParameterId::drone_1_gate_hold: return "drone_1.gate_hold";
+    case ParameterId::drone_1_cv_amt: return "drone_1.cv_amt";
     case ParameterId::drone_2_tune_1: return "drone_2.tune_1";
     case ParameterId::drone_2_tune_2: return "drone_2.tune_2";
     case ParameterId::drone_2_tune_3: return "drone_2.tune_3";
@@ -713,6 +718,7 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::drone_2_att: return "drone_2.att";
     case ParameterId::drone_2_rls: return "drone_2.rls";
     case ParameterId::drone_2_gate_hold: return "drone_2.gate_hold";
+    case ParameterId::drone_2_cv_amt: return "drone_2.cv_amt";
     case ParameterId::drone_4_tune_1: return "drone_4.tune_1";
     case ParameterId::drone_4_tune_2: return "drone_4.tune_2";
     case ParameterId::drone_4_tune_3: return "drone_4.tune_3";
@@ -732,6 +738,7 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::drone_4_att: return "drone_4.att";
     case ParameterId::drone_4_rls: return "drone_4.rls";
     case ParameterId::drone_4_gate_hold: return "drone_4.gate_hold";
+    case ParameterId::drone_4_cv_amt: return "drone_4.cv_amt";
     case ParameterId::drone_5_tune_1: return "drone_5.tune_1";
     case ParameterId::drone_5_tune_2: return "drone_5.tune_2";
     case ParameterId::drone_5_tune_3: return "drone_5.tune_3";
@@ -751,6 +758,7 @@ inline constexpr std::string_view parameter_id_string(ParameterId id) {
     case ParameterId::drone_5_att: return "drone_5.att";
     case ParameterId::drone_5_rls: return "drone_5.rls";
     case ParameterId::drone_5_gate_hold: return "drone_5.gate_hold";
+    case ParameterId::drone_5_cv_amt: return "drone_5.cv_amt";
     case ParameterId::drone_3_rate: return "drone_3.rate";
     case ParameterId::drone_3_mod: return "drone_3.mod";
     case ParameterId::drone_3_divider: return "drone_3.divider";

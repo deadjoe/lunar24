@@ -37,7 +37,7 @@ enum class WidgetKind : std::uint8_t {
   OctaveKey,   // keyboard arrow buttons (id 0 = down, 1 = up)
   Display,     // keyboard display (shows octave / menu state)
   Decor,       // non-interactive art: 0 = photo sensor, 1 = LED bar (id2 = first mute param),
-               // 2 = hardware knob / 3 = hardware jack with no function in Lunar 24
+               // 3 = hardware jack with no function in Lunar 24
 };
 
 // Knob cap colours of the panel sections.
@@ -112,31 +112,31 @@ inline std::vector<Widget> build_panel_layout() {
   };
 
   // ---- classic drones 1 / 2 / 4 / 5 ---------------------------------------------------------
-  struct Classic { double x[5]; double volt; P tune[5], mute[5], mod[5], vol, att, rls, hold; J cv, gate, env; };
+  struct Classic { double x[5]; double volt; P tune[5], mute[5], mod[5], vol, att, rls, hold, cvAmt; J cv, gate, env; };
   const Classic classic[4] = {
       {{62, 124, 185, 247, 308}, 370,
        {P::drone_1_tune_1, P::drone_1_tune_2, P::drone_1_tune_3, P::drone_1_tune_4, P::drone_1_tune_5},
        {P::drone_1_mute_1, P::drone_1_mute_2, P::drone_1_mute_3, P::drone_1_mute_4, P::drone_1_mute_5},
        {P::drone_1_mod_1, P::drone_1_mod_2, P::drone_1_mod_3, P::drone_1_mod_4, P::drone_1_mod_5},
-       P::drone_1_volt, P::drone_1_att, P::drone_1_rls, P::drone_1_gate_hold,
+       P::drone_1_volt, P::drone_1_att, P::drone_1_rls, P::drone_1_gate_hold, P::drone_1_cv_amt,
        J::drone_1_cv_mod_in, J::drone_1_gate_in, J::drone_1_env_out},
       {{456, 518, 580, 641, 703}, 764,
        {P::drone_2_tune_1, P::drone_2_tune_2, P::drone_2_tune_3, P::drone_2_tune_4, P::drone_2_tune_5},
        {P::drone_2_mute_1, P::drone_2_mute_2, P::drone_2_mute_3, P::drone_2_mute_4, P::drone_2_mute_5},
        {P::drone_2_mod_1, P::drone_2_mod_2, P::drone_2_mod_3, P::drone_2_mod_4, P::drone_2_mod_5},
-       P::drone_2_volt, P::drone_2_att, P::drone_2_rls, P::drone_2_gate_hold,
+       P::drone_2_volt, P::drone_2_att, P::drone_2_rls, P::drone_2_gate_hold, P::drone_2_cv_amt,
        J::drone_2_cv_mod_in, J::drone_2_gate_in, J::drone_2_env_out},
       {{1638, 1700, 1761, 1823, 1885}, 1946,
        {P::drone_4_tune_1, P::drone_4_tune_2, P::drone_4_tune_3, P::drone_4_tune_4, P::drone_4_tune_5},
        {P::drone_4_mute_1, P::drone_4_mute_2, P::drone_4_mute_3, P::drone_4_mute_4, P::drone_4_mute_5},
        {P::drone_4_mod_1, P::drone_4_mod_2, P::drone_4_mod_3, P::drone_4_mod_4, P::drone_4_mod_5},
-       P::drone_4_volt, P::drone_4_att, P::drone_4_rls, P::drone_4_gate_hold,
+       P::drone_4_volt, P::drone_4_att, P::drone_4_rls, P::drone_4_gate_hold, P::drone_4_cv_amt,
        J::drone_4_cv_mod_in, J::drone_4_gate_in, J::drone_4_env_out},
       {{2033, 2094, 2156, 2217, 2279}, 2340,
        {P::drone_5_tune_1, P::drone_5_tune_2, P::drone_5_tune_3, P::drone_5_tune_4, P::drone_5_tune_5},
        {P::drone_5_mute_1, P::drone_5_mute_2, P::drone_5_mute_3, P::drone_5_mute_4, P::drone_5_mute_5},
        {P::drone_5_mod_1, P::drone_5_mod_2, P::drone_5_mod_3, P::drone_5_mod_4, P::drone_5_mod_5},
-       P::drone_5_volt, P::drone_5_att, P::drone_5_rls, P::drone_5_gate_hold,
+       P::drone_5_volt, P::drone_5_att, P::drone_5_rls, P::drone_5_gate_hold, P::drone_5_cv_amt,
        J::drone_5_cv_mod_in, J::drone_5_gate_in, J::drone_5_env_out},
   };
   for (const Classic& c : classic) {
@@ -154,7 +154,7 @@ inline std::vector<Widget> build_panel_layout() {
     jack(c.env, c.x[2], 529);
     jack(c.cv, c.x[3], 529);
     add(WidgetKind::Decor, c.volt - 31, 498, 113, 113, 0);  // photo sensor (the MOD light input)
-    add(WidgetKind::Decor, c.x[3], 455, 40, 40, 2);           // CV amount knob (not modelled)
+    plain(c.cvAmt, c.x[3], 455);                               // CV amount for the CV MOD jack
   }
 
   // ---- NEW drones 3 / 6 ---------------------------------------------------------------------------

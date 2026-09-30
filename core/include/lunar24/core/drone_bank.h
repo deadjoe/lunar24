@@ -163,6 +163,7 @@ class DroneBank {
       groupEnv_[g].rlsSeconds = mapRlsSeconds(kDefaultRlsNorm);
       groupEnv_[g].level = 1.0;  // neutral default OPEN (pre-batch tests expect sound).
       modCvG_[g] = 0.0;
+      modOctPerVoltG_[g] = kDefaultModOctPerVolt;
     }
     environmentHz_ = 0.0;
     for (std::size_t i = 0; i < voiceCount_; ++i) {
@@ -250,7 +251,12 @@ class DroneBank {
   // runtime's CV source bank (the value resolved at the group's cv_mod_in patch jack), NOT a
   // normalized 0..1 upstream scale. Applied only to generators whose MOD button is on (the
   // existing modAmount gate); MOD-off generators ignore CV and environment (design/07 §7).
+  static constexpr double kDefaultModOctPerVolt = 0.05;  // the CV knob's default (0.5) depth
   void setGroupModCv(int group, double cv) { if (inGroup_(group)) modCvG_[group] = cv; }
+  // Depth of the shared CV MOD input (the panel's CV knob): MOD-on generators move by
+  // groupModCv x this many octaves — exponential, so low and high generators swing by the
+  // same musical amount.
+  void setGroupModOctavesPerVolt(int group, double k) { if (inGroup_(group)) modOctPerVoltG_[group] = k; }
   // Shared/correlated environment term a desktop host can provide (design/07 §7). It
   // detunes MOD-on generators together; MOD-off generators are unchanged.
   void setEnvironment(double hz) { environmentHz_ = hz; }
@@ -315,7 +321,9 @@ class DroneBank {
       const double base = v.freqBaseHz * v.tuneScale * v.voltScale;
       double effFreq = base * (1.0 + v.tolerance) + v.driftNow;
       // MOD: button on => the shared CV MOD (group) or per-gen CV detunes; off => stable.
-      effFreq += v.modAmount * (v.modCv + modCvG_[g]);
+      effFreq += v.modAmount * v.modCv;
+      if (v.modAmount > 0.0 && modCvG_[g] != 0.0)
+        effFreq *= std::exp2(v.modAmount * modCvG_[g] * modOctPerVoltG_[g]);
       // Environment: shared/correlated term detunes MOD-on generators together; MOD-off
       // generators are unchanged (design/07 §7 — the MOD-off generator ignores CV/env).
       if (v.modAmount > 0.0) effFreq += environmentHz_;
@@ -521,6 +529,7 @@ class DroneBank {
   std::size_t groupCount_ = 0;
   GroupEnv groupEnv_[kMaxGroups];
   double modCvG_[kMaxGroups];
+  double modOctPerVoltG_[kMaxGroups];
   double environmentHz_ = 0.0;
 };
 

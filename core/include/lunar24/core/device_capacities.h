@@ -28,7 +28,8 @@ namespace lunar24::core {
 // non-scalar (vector/record/mask — Root A must-gap; they belong in DeviceState
 // structured fields per design/07 §6) and 4 are selector-toggles whose frozen
 // target omits positions (no evidenced value domain, and the manual gives no
-// options). So the last landed id is 411 and kParameterIdSpace == 412.
+// options). The classic drones' CV knobs later took 412-415, so the last landed id
+// is 415 and kParameterIdSpace == 416.
 // The completeness gate PERMANENTLY holds capacity >= idSpace (never tightened to
 // ==): the 12 empty slots (424-412) are exactly these structural keyboard-complex
 // left-outs, NOT reserved expansion (@Claude fb7841e6, 方案1 land 0 / gap 12).

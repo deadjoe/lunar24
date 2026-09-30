@@ -200,7 +200,7 @@ template <class Sink>
 void drawSeqStep(Sink& s, float x0, float x1, float sliderTop, float sliderBottom, float gateY, int step,
                  int note, int maxNote, bool gate, bool hover) {
   const float cx = (x0 + x1) / 2;
-  char buf[8];
+  char buf[16];
   std::snprintf(buf, sizeof buf, "%d", step + 1);
   s.text(cx, sliderTop - 16, 13, hover ? kMenuAmberRgb : kMenuTextRgb, false, buf);
   s.fillRect(cx - 4, sliderTop, cx + 4, sliderBottom, 0x3a393f, 3.f);

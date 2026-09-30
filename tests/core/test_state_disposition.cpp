@@ -68,8 +68,8 @@ static core::StateDisposition oracle_classify(core::ParameterId id) {
 }
 
 static void class_counts_and_sum() {
-  CHECK_EQ(core::kDeviceStateDispositionCount, 345u);
-  CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_dsp), 185u);
+  CHECK_EQ(core::kDeviceStateDispositionCount, 349u);
+  CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_dsp), 189u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::applied_to_keyboard), 35u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::preserved_deferred_p6_p8), 125u);
   CHECK_EQ(core::count_disposition(core::StateDisposition::transfer_unavailable), 0u);
@@ -106,7 +106,7 @@ static void per_id_matches_independent_oracle() {
     for (std::uint32_t b = a + 1; b < core::kDeviceStateDispositionCount; ++b)
       CHECK(core::kDeviceStateDisposition[b].id != ea.id);
   }
-  CHECK_EQ(dsp, 185u);
+  CHECK_EQ(dsp, 189u);
   CHECK_EQ(kbd, 35u);
   CHECK_EQ(deferred, 125u);
   CHECK_EQ(unavailable, 0u);
@@ -161,14 +161,14 @@ static void no_hole_or_slack_row() {
 }
 
 static void hole_and_slack_resolve_invalid() {
-  // pid 4 is an ID hole (vco_a.oct_sel = 3, vco_a.sub_sel = 5). pid 412 is the
-  // first capacity-slack id (> last landed 411). Both must be unlanded.
+  // pid 4 is an ID hole (vco_a.oct_sel = 3, vco_a.sub_sel = 5). pid 416 is the
+  // first capacity-slack id (> last landed 415). Both must be unlanded.
   CHECK(core::find_parameter(static_cast<core::ParameterId>(4)) == nullptr);
-  CHECK(core::find_parameter(static_cast<core::ParameterId>(412)) == nullptr);
+  CHECK(core::find_parameter(static_cast<core::ParameterId>(416)) == nullptr);
   CHECK(core::disposition_of(static_cast<core::ParameterId>(4)) == core::StateDisposition::invalid_unlanded);
-  CHECK(core::disposition_of(static_cast<core::ParameterId>(412)) == core::StateDisposition::invalid_unlanded);
+  CHECK(core::disposition_of(static_cast<core::ParameterId>(416)) == core::StateDisposition::invalid_unlanded);
   CHECK(core::is_landed_parameter(static_cast<core::ParameterId>(4)) == false);
-  CHECK(core::is_landed_parameter(static_cast<core::ParameterId>(412)) == false);
+  CHECK(core::is_landed_parameter(static_cast<core::ParameterId>(416)) == false);
   // The pinned unavailable set is empty (GH#19 S0 / task #117), so the historical
   // "not a hole/slack id" walk has nothing to iterate. It is kept as a positive
   // assertion on the two ids that used to be in it: they are LANDED registry ids and
@@ -216,8 +216,8 @@ static void landed_slot_arithmetic() {
   std::uint32_t landed = 0;
   for (std::uint32_t i = 0; i < core::kParameterIdSpace; ++i)
     if (core::is_landed_parameter(static_cast<core::ParameterId>(i))) ++landed;
-  CHECK_EQ(landed, core::kParameterCount);  // 345
-  CHECK_EQ(core::kDeviceParamCapacity, core::kParameterIdSpace + 12u);
+  CHECK_EQ(landed, core::kParameterCount);  // 349
+  CHECK_EQ(core::kDeviceParamCapacity, core::kParameterIdSpace + 8u);
 }
 
 int main() {
