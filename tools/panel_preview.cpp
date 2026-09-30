@@ -94,6 +94,47 @@ struct SvgSink {
   void text(float x, float y, float size, std::uint32_t c, bool vertical, const char* s) {
     ::text(x, y, size, theme::rgb(c), s, vertical);
   }
+  void circle(float cx, float cy, float r) {
+    char b[160];
+    std::snprintf(b, sizeof b, "M%.2f %.2fa%.2f %.2f 0 1 0 %.2f 0a%.2f %.2f 0 1 0 %.2f 0Z", cx - r, cy, r, r, 2 * r, r,
+                  r, -2 * r);
+    d += b;
+  }
+  // Emits the gradient definition and returns the paint reference for it.
+  std::string paint(const art::Grad& g) {
+    auto rgba = [](std::uint32_t c, float a) {
+      char b[64];
+      std::snprintf(b, sizeof b, "stop-color='%s' stop-opacity='%.3f'", hex(c).c_str(), a);
+      return std::string(b);
+    };
+    if (g.c0 == g.c1 && g.a0 == g.a1 && !g.radial) {
+      char b[80];
+      std::snprintf(b, sizeof b, "%s' fill-opacity='%.3f' stroke-opacity='%.3f", hex(g.c0).c_str(), g.a0, g.a0);
+      return b;
+    }
+    char id[16];
+    std::snprintf(id, sizeof id, "g%d", ++grads);
+    if (g.radial)
+      std::printf("<defs><radialGradient id='%s' gradientUnits='userSpaceOnUse' cx='%.2f' cy='%.2f' r='%.2f'>"
+                  "<stop offset='%.3f' %s/><stop offset='1' %s/></radialGradient></defs>\n",
+                  id, g.x0, g.y0, g.y1, g.y1 > 0 ? g.x1 / g.y1 : 0.f, rgba(g.c0, g.a0).c_str(), rgba(g.c1, g.a1).c_str());
+    else
+      std::printf("<defs><linearGradient id='%s' gradientUnits='userSpaceOnUse' x1='%.2f' y1='%.2f' x2='%.2f' "
+                  "y2='%.2f'><stop offset='0' %s/><stop offset='1' %s/></linearGradient></defs>\n",
+                  id, g.x0, g.y0, g.x1, g.y1, rgba(g.c0, g.a0).c_str(), rgba(g.c1, g.a1).c_str());
+    return std::string("url(#") + id + ")";
+  }
+  void fillGrad(const art::Grad& g) {
+    std::printf("<path d='%s' fill='%s'/>\n", d.c_str(), paint(g).c_str());
+    d.clear();
+  }
+  void strokeGrad(const art::Grad& g, float width) {
+    std::printf("<path d='%s' fill='none' stroke='%s' stroke-width='%.2f' stroke-linecap='round' "
+                "stroke-linejoin='round'/>\n",
+                d.c_str(), paint(g).c_str(), width);
+    d.clear();
+  }
+  int grads = 0;
   void point(char op, float x, float y) {
     char b[40];
     std::snprintf(b, sizeof b, "%c%.1f %.1f", op, x, y);
@@ -101,40 +142,17 @@ struct SvgSink {
   }
 };
 
-void polar(double cx, double cy, double r, double deg, double& x, double& y) {
-  const double t = (deg - 90.0) * kPi / 180.0;
-  x = cx + r * std::cos(t);
-  y = cy + r * std::sin(t);
+SvgSink& svg() {
+  static SvgSink sink;
+  return sink;
 }
 
 void knob(const Widget& w) {
-  const double cx = w.cx, cy = w.cy, R = w.w / 2;
-  const double v = norm01(w.id);
-  const double ang = theme::kKnobMinDeg + v * (theme::kKnobMaxDeg - theme::kKnobMinDeg);
-  const bool skirted = w.cap != Cap::Black;
-  double cr = R;
-  if (skirted) {
-    for (int i = 0; i <= 10; ++i) {  // scale ticks
-      double x0, y0, x1, y1;
-      const double a = theme::kKnobMinDeg + i * (theme::kKnobMaxDeg - theme::kKnobMinDeg) / 10.0;
-      polar(cx, cy, R * 0.98, a, x0, y0);
-      polar(cx, cy, R * 1.16, a, x1, y1);
-      std::printf("<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='%s' stroke-width='3'/>\n", x0, y0, x1, y1,
-                  col(theme::kSkirt).c_str());
-    }
-    std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='%s'/>\n", cx, cy, R, col(theme::kSkirt).c_str());
-    cr = R * 0.78;
-  }
-  std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='%s'/>\n", cx, cy, cr, col(theme::cap(w.cap)).c_str());
-  double x0, y0, x1, y1;
-  polar(cx, cy, cr * (skirted ? 0.35 : 0.55), ang, x0, y0);
-  polar(cx, cy, cr * 0.9, ang, x1, y1);
-  if (skirted)
-    std::printf("<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='%s' stroke-width='%.1f' stroke-linecap='round'/>\n",
-                x0, y0, x1, y1, col(theme::kPointer).c_str(), std::max(3.0, R * 0.12));
-  else
-    std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='%s'/>\n", (x1 + x0 * 0.4) / 1.4, (y1 + y0 * 0.4) / 1.4,
-                R * 0.12, col(theme::kPointer).c_str());
+  const double ang = theme::kKnobMinDeg + norm01(w.id) * (theme::kKnobMaxDeg - theme::kKnobMinDeg);
+  const theme::Rgb c = theme::cap(w.cap), t = w.menu ? theme::kMenuText : theme::kSkirt;
+  art::drawKnob(svg(), float(w.cx), float(w.cy), float(w.w / 2), (std::uint32_t(c.r) << 16) | (c.g << 8) | c.b,
+                w.cap != Cap::Black, float(ang), (std::uint32_t(t.r) << 16) | (t.g << 8) | t.b,
+                float(theme::kKnobMinDeg), float(theme::kKnobMaxDeg), false);
 }
 
 int positions(std::uint32_t id) {
@@ -154,27 +172,10 @@ void toggle(const Widget& w) {
   int pos = 0;
   for (int p = 0; p < n && p < 3; ++p)
     if (w.leverIndex[p] == idx) pos = p;
-  const double t = n <= 1 ? 0.0 : static_cast<double>(pos) / (n - 1);  // 0 = up
-  std::printf("<circle cx='%.1f' cy='%.1f' r='9' fill='%s'/>\n", w.cx, w.cy, col({60, 60, 60}).c_str());
-  const double ly = w.cy + (t - 0.5) * 30;
-  std::printf("<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='%s' stroke-width='8' stroke-linecap='round'/>\n",
-              w.cx, w.cy, w.cx, ly, col({110, 110, 110}).c_str());
+  art::drawToggle(svg(), float(w.cx), float(w.cy), n <= 1 ? 0.f : float(pos) / float(n - 1), false);
 }
 
-void jack(const Widget& w) {
-  const double r = w.w / 2;
-  std::string pts;
-  for (int i = 0; i < 6; ++i) {
-    const double a = kPi / 3 * i;
-    char b[40];
-    std::snprintf(b, sizeof b, "%.1f,%.1f ", w.cx + r * std::cos(a), w.cy + r * std::sin(a));
-    pts += b;
-  }
-  std::printf("<polygon points='%s' fill='%s' stroke='%s' stroke-width='1.5'/>\n", pts.c_str(),
-              col(theme::kNutLight).c_str(), col(theme::kNutDark).c_str());
-  std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='%s'/>\n", w.cx, w.cy, r * 0.62, col({70, 70, 70}).c_str());
-  std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='%s'/>\n", w.cx, w.cy, r * 0.46, col(theme::kHole).c_str());
-}
+void jack(const Widget& w) { art::drawJack(svg(), float(w.cx), float(w.cy), float(w.w / 2), false); }
 
 }  // namespace
 
@@ -195,7 +196,7 @@ int main(int argc, char** argv) {
     return 0;
   }
   std::printf("<svg xmlns='http://www.w3.org/2000/svg' width='2400' height='1552' viewBox='0 0 2400 1552'>\n");
-  SvgSink sink;
+  SvgSink& sink = svg();
   art::drawPanelArt(sink);
 
   for (const Widget& w : ws) {
@@ -203,10 +204,7 @@ int main(int argc, char** argv) {
     switch (w.kind) {
       case WidgetKind::Knob: knob(w); break;
       case WidgetKind::Button:
-        std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='%s'/>\n", w.cx, w.cy, w.w / 2, col(theme::kInk).c_str());
-        if (norm01(w.id) > 0.5)
-          std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='none' stroke='%s' stroke-width='3'/>\n", w.cx, w.cy,
-                      w.w / 2 + 3, col(theme::kAmber).c_str());
+        art::drawButton(sink, float(w.cx), float(w.cy), float(w.w / 2), norm01(w.id) > 0.5, false);
         break;
       case WidgetKind::Toggle: toggle(w); break;
       case WidgetKind::Jack: jack(w); break;
@@ -214,8 +212,7 @@ int main(int argc, char** argv) {
         art::drawPlate(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), false);
         break;
       case WidgetKind::Joystick:
-        std::printf("<circle cx='%.1f' cy='%.1f' r='55' fill='%s'/><circle cx='%.1f' cy='%.1f' r='24' fill='%s'/>\n",
-                    w.cx, w.cy, col({50, 50, 50}).c_str(), w.cx, w.cy, col({85, 85, 85}).c_str());
+        art::drawJoystick(sink, float(w.cx), float(w.cy), 55.f, 90.f, float(w.cx), float(w.cy), false);
         break;
       case WidgetKind::Cartridge: {
         if (w.id != 0) break;
@@ -238,8 +235,7 @@ int main(int argc, char** argv) {
         if (w.id == 3) {
           jack(w);
         } else if (w.id == 0) {
-          std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='white' stroke='%s' stroke-width='2'/>\n", w.cx, w.cy,
-                      w.w / 2, col(theme::kInk).c_str());
+          art::drawSensor(sink, float(w.cx), float(w.cy), float(w.w / 2));
         } else {
           for (std::uint32_t i = 0; i < 5; ++i)
             std::printf("<rect x='%.1f' y='%.1f' width='9' height='30' fill='%s'/>\n", w.x() + 5 + i * 12.5, w.y() + 8,

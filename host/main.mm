@@ -31,6 +31,7 @@
 #include "IPlugSWELL.h"      // SWELL API: CreateDialog, LoadMenu, SetMenu, menu...
 #include "config.h"
 #include "resource.h"
+#include <lunar24/core/host_window_fit.h>  // panel design size
 
 using namespace iplug;
 
@@ -191,6 +192,17 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
 
       HWND hwnd = CreateDialog(gHINST, MAKEINTRESOURCE(IDD_DIALOG_MAIN), NULL,
                                IPlugAPPHost::MainDlgProc);
+
+      // An instrument, not a document: no title text, a title bar that blends into a dark
+      // chassis colour, and resizing that keeps the panel's proportions (no empty bars).
+      if (NSWindow* win = [(NSView*)hwnd window])
+      {
+        win.titleVisibility = NSWindowTitleHidden;
+        win.titlebarAppearsTransparent = YES;
+        win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        win.backgroundColor = [NSColor colorWithSRGBRed:0.11 green:0.10 blue:0.09 alpha:1.0];
+        win.contentAspectRatio = NSMakeSize(lunar24::core::kDesignWidth, lunar24::core::kDesignHeight);
+      }
 
       if (menu)
       {

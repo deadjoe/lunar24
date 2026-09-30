@@ -49,6 +49,9 @@ struct CheckSink {
   void fillPath(std::uint32_t, bool) { ++paths; open = false; }
   void strokePath(std::uint32_t, float) { ++paths; open = false; }
   void text(float x, float y, float, std::uint32_t, bool, const char*) { pt(x, y); ++texts; }
+  void circle(float cx, float cy, float) { pt(cx, cy); open = true; }
+  void fillGrad(const host::art::Grad&) { if (!open) ++bad; ++paths; open = false; }
+  void strokeGrad(const host::art::Grad&, float) { if (!open) ++bad; ++paths; open = false; }
 };
 }  // namespace
 
@@ -106,6 +109,19 @@ int main() {
   CHECK_EQ(art.bad, 0);
   CHECK(art.paths > 500);   // frames, printed marks, name plates
   CHECK(art.texts > 300);   // panel labels
+  // Every control, drawn at its place: all paths are started before they are painted.
+  CheckSink ctl;
+  for (const Widget& w : ws) {
+    if (w.menu) continue;
+    const float cx = float(w.cx), cy = float(w.cy);
+    if (w.kind == WidgetKind::Knob) host::art::drawKnob(ctl, cx, cy, float(w.w / 2), 0x006080, w.cap != host::Cap::Black, 30.f, 0x333333, -150.f, 150.f, true);
+    if (w.kind == WidgetKind::Button) host::art::drawButton(ctl, cx, cy, float(w.w / 2), true, true);
+    if (w.kind == WidgetKind::Toggle) host::art::drawToggle(ctl, cx, cy, 0.f, true);
+    if (w.kind == WidgetKind::Jack) host::art::drawJack(ctl, cx, cy, float(w.w / 2), true);
+    if (w.kind == WidgetKind::Joystick) host::art::drawJoystick(ctl, cx, cy, 55.f, 90.f, cx + 90.f, cy - 90.f, true);
+  }
+  CHECK_EQ(ctl.bad, 0);
+  CHECK(ctl.paths > 1000);
   for (const auto& sh : host::art::kDecorShapes)
     CHECK(sh.firstSub + sh.subCount <= sizeof(host::art::kDecorSubPaths) / sizeof(host::art::kDecorSubPaths[0]));
   for (const auto& sp : host::art::kDecorSubPaths)

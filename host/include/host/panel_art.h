@@ -18,6 +18,12 @@
 //   void fillPath(std::uint32_t rgb, bool evenOdd);           // fills and clears the path
 //   void strokePath(std::uint32_t rgb, float width);          // strokes and clears the path
 //   void text(float x, float y, float size, std::uint32_t rgb, bool vertical, const char* s);
+//   void circle(float cx, float cy, float r);                  // adds a circle sub-path
+//   void fillGrad(const Grad& g);                              // fills and clears the path
+//   void strokeGrad(const Grad& g, float width);               // strokes and clears the path
+//
+// Light falls from the top left: every raised part gets a soft drop shadow to the lower
+// right, a top-lit gradient and a small highlight. Shading amounts are tuned by eye.
 
 #pragma once
 
@@ -38,6 +44,14 @@ struct Shape { std::uint32_t firstSub, subCount, fill, stroke; float width; std:
 struct Dot { float x, y, r; std::uint32_t rgb; };
 // Indicator LEDs printed on the panel. Drawn unlit (Lunar 24 does not drive them yet).
 struct Led { float x, y, r; std::uint32_t rgb; };
+// A two-colour paint with alpha. Linear: from (x0, y0) to (x1, y1). Radial: centre (x0, y0),
+// colour c0 up to radius x1, blending to c1 at radius y1. Solid: c0 == c1.
+struct Grad {
+  bool radial;
+  float x0, y0, x1, y1;
+  std::uint32_t c0, c1;
+  float a0, a1;
+};
 
 }  // namespace lunar24::host::art
 
@@ -53,6 +67,42 @@ inline constexpr std::uint32_t kKeybedMarkRgb = 0xf2f2f2;
 inline std::uint32_t unlit(std::uint32_t rgb) {
   auto ch = [rgb](int shift) { return std::uint32_t(((rgb >> shift) & 0xff) * 0.45 + 40) & 0xff; };
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+// Mix towards white (k > 0) or black (k < 0).
+inline std::uint32_t shade(std::uint32_t rgb, float k) {
+  auto ch = [rgb, k](int shift) {
+    const float v = float((rgb >> shift) & 0xff);
+    const float o = k >= 0 ? v + (255.f - v) * k : v * (1.f + k);
+    return std::uint32_t(std::lround(std::fmin(255.f, std::fmax(0.f, o))));
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+inline Grad solid(std::uint32_t rgb, float a = 1.f) { return {false, 0, 0, 0, 1, rgb, rgb, a, a}; }
+inline Grad vertical(float y0, float y1, std::uint32_t top, std::uint32_t bottom, float a0 = 1.f, float a1 = 1.f) {
+  return {false, 0, y0, 0, y1, top, bottom, a0, a1};
+}
+inline Grad radialGrad(float cx, float cy, float r0, float r1, std::uint32_t c0, float a0, std::uint32_t c1, float a1) {
+  return {true, cx, cy, r0, r1, c0, c1, a0, a1};
+}
+
+// A soft round shadow cast by a part of radius r standing `height` above the panel.
+template <class Sink>
+void dropShadow(Sink& s, float cx, float cy, float r, float height, float strength = 0.45f) {
+  const float x = cx + height * 0.45f, y = cy + height * 0.8f, spread = r + height * 1.1f;
+  s.circle(x, y, spread);
+  s.fillGrad(radialGrad(x, y, r * 0.75f, spread, 0x000000, strength, 0x000000, 0.f));
+}
+// A domed disc: top-lit body, bevelled rim and a highlight towards the top left.
+template <class Sink>
+void dome(Sink& s, float cx, float cy, float r, std::uint32_t rgb, float relief = 0.35f) {
+  s.circle(cx, cy, r);
+  s.fillGrad(vertical(cy - r, cy + r, shade(rgb, relief), shade(rgb, -relief * 1.2f)));
+  s.circle(cx, cy, r - 0.75f);
+  s.strokeGrad(vertical(cy - r, cy + r, 0xffffff, 0x000000, 0.35f, 0.3f), 1.5f);
+  const float hx = cx - r * 0.28f, hy = cy - r * 0.34f, hr = r * 0.55f;
+  s.circle(hx, hy, hr);
+  s.fillGrad(radialGrad(hx, hy, 0.f, hr, 0xffffff, 0.32f, 0xffffff, 0.f));
 }
 
 template <class Sink>
@@ -137,8 +187,12 @@ void drawKeybedMarks(Sink& s) {
 
 template <class Sink>
 void drawPlate(Sink& s, float x0, float y0, float x1, float y1, bool lit) {
-  const std::uint32_t frame = lit ? 0xffc478 : 0xfafafa;
-  s.fillRect(x0, y0, x1, y1, frame, 3.f);
+  s.moveTo(x0 + 3, y0 + 5); s.lineTo(x1 + 4, y0 + 5); s.lineTo(x1 + 4, y1 + 6); s.lineTo(x0 + 3, y1 + 6);
+  s.closePath();
+  s.fillGrad(solid(0x000000, 0.45f));  // the plate stands off the keybed
+  s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1);
+  s.closePath();
+  s.fillGrad(vertical(y0, y1, lit ? 0xffd9a0 : 0xffffff, lit ? 0xe09a40 : 0xb4b4b0));  // brushed metal frame
   s.fillRect(x0 + 8.5f, y0 + 8.5f, x1 - 8.5f, y1 - 8.5f, 0x1c1a16, 0);
   int i = 0;
   for (float y = y0 + 14.f; y < y1 - 11.f; y += 12.f, ++i) {
@@ -150,7 +204,9 @@ void drawPlate(Sink& s, float x0, float y0, float x1, float y1, bool lit) {
 
 template <class Sink>
 void drawEncoder(Sink& s, float cx, float cy, bool active) {
-  s.fillCircle(cx, cy, 44, 0xbcbcbc);
+  dropShadow(s, cx, cy, 44, 8);
+  s.circle(cx, cy, 44);
+  s.fillGrad(vertical(cy - 44, cy + 44, 0xe4e4e4, 0x8a8a8a));
   s.fillCircle(cx, cy, 36, 0x1a1a1a);
   s.fillCircle(cx, cy, 33, 0x333333);
   for (int i = 0; i < 24; ++i) {  // knurling
@@ -160,13 +216,15 @@ void drawEncoder(Sink& s, float cx, float cy, bool active) {
     s.strokePath(0x1a1a1a, 1.5f);
   }
   s.fillCircle(cx, cy, 23, 0x111111);
-  s.fillCircle(cx, cy, 21.5f, active ? 0xebaa00 : 0xdc3a2c);
+  dome(s, cx, cy, 21.5f, active ? 0xebaa00 : 0xdc3a2c, 0.3f);
 }
 
 template <class Sink>
 void drawOctaveKey(Sink& s, float cx, float cy, bool hover) {
+  dropShadow(s, cx, cy, 24, 5);
   s.fillCircle(cx, cy, 24, 0x141414);
-  s.fillCircle(cx, cy, 22.5f, hover ? 0xffe2b8 : 0xfcfcfa);
+  s.circle(cx, cy, 22.5f);
+  s.fillGrad(vertical(cy - 22.5f, cy + 22.5f, hover ? 0xffecd0 : 0xffffff, hover ? 0xe0b880 : 0xc8c8c4));
 }
 
 template <class Sink>
@@ -174,6 +232,9 @@ void drawDroneKey(Sink& s, float x0, float y0, float x1, float y1, bool open, bo
   s.fillRect(x0, y0, x1, y1, 0x2e2e2e, 3.f);
   s.fillRect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, 0x262626, 3.f);                    // shadowed skirt
   s.fillRect(x0 + 9, y0 + 3, x1 - 9, y1 - 11, hover ? 0x4a4a4a : 0x3c3c3c, 7.f);  // key top
+  s.moveTo(x0 + 9, y0 + 3); s.lineTo(x1 - 9, y0 + 3); s.lineTo(x1 - 9, y1 - 11); s.lineTo(x0 + 9, y1 - 11);
+  s.closePath();
+  s.fillGrad(vertical(y0 + 3, y1 - 11, 0xffffff, 0x000000, 0.12f, 0.25f));  // curved top, lit from above
   const float cx = (x0 + x1) / 2;
   s.fillRect(cx - 7, y0 + 3, cx + 7, y0 + 13, open ? 0xeb3c32 : 0xd8d8d8, 0);   // LED window
 }
@@ -182,6 +243,178 @@ template <class Sink>
 void drawDisplay(Sink& s, float x0, float y0, float x1, float y1) {
   s.fillRect(x0 - 2, y0 - 2, x1 + 2, y1 + 2, 0x121212, 2.f);
   s.fillRect(x0, y0, x1, y1, 0x4252d0, 0);
+}
+
+// ---- knobs, jacks, switches: drawn the same in the app and the preview --------------------
+
+inline void polarPoint(float cx, float cy, float r, float deg, float& x, float& y) {  // 0 deg = 12 o'clock
+  const float t = (deg - 90.f) * 3.14159265f / 180.f;
+  x = cx + r * std::cos(t);
+  y = cy + r * std::sin(t);
+}
+
+// A knob of radius R. Skirted knobs: dark ribbed skirt with scale ticks and a coloured cap
+// standing above it; plain knobs: one black dome with a pointer dot. `deg` = pointer angle.
+template <class Sink>
+void drawKnob(Sink& s, float cx, float cy, float R, std::uint32_t capRgb, bool skirted, float deg,
+              std::uint32_t tickRgb, float minDeg, float maxDeg, bool hover) {
+  float cr = R;
+  if (skirted) {
+    for (int i = 0; i <= 10; ++i) {  // scale ticks, printed on the panel
+      float x0, y0, x1, y1;
+      const float a = minDeg + float(i) * (maxDeg - minDeg) / 10.f;
+      polarPoint(cx, cy, R * 0.98f, a, x0, y0);
+      polarPoint(cx, cy, R * 1.16f, a, x1, y1);
+      s.moveTo(x0, y0);
+      s.lineTo(x1, y1);
+      s.strokePath(tickRgb, 3.f);
+    }
+  }
+  dropShadow(s, cx, cy, R, R * 0.22f);
+  if (skirted) {
+    s.circle(cx, cy, R);
+    s.fillGrad(vertical(cy - R, cy + R, 0x5c5c5c, 0x121212));
+    for (int i = 0; i < 36; ++i) {  // grip ribs round the skirt edge
+      float x0, y0, x1, y1;
+      polarPoint(cx, cy, R * 0.86f, float(i) * 10.f, x0, y0);
+      polarPoint(cx, cy, R * 0.99f, float(i) * 10.f, x1, y1);
+      s.moveTo(x0, y0);
+      s.lineTo(x1, y1);
+      s.strokeGrad(solid(0x000000, 0.35f), 1.2f);
+    }
+    s.circle(cx, cy, R - 0.75f);
+    s.strokeGrad(vertical(cy - R, cy + R, 0xffffff, 0x000000, 0.3f, 0.4f), 1.5f);
+    cr = R * 0.78f;
+    const float sx = cx + cr * 0.06f, sy = cy + cr * 0.12f;  // the cap's shadow on the skirt
+    s.circle(sx, sy, cr * 1.08f);
+    s.fillGrad(radialGrad(sx, sy, cr * 0.85f, cr * 1.08f, 0x000000, 0.55f, 0x000000, 0.f));
+    dome(s, cx, cy, cr, capRgb, 0.3f);
+  } else {
+    dome(s, cx, cy, R, 0x262626, 0.45f);
+  }
+  float x0, y0, x1, y1;
+  polarPoint(cx, cy, cr * (skirted ? 0.35f : 0.55f), deg, x0, y0);
+  polarPoint(cx, cy, cr * 0.9f, deg, x1, y1);
+  if (skirted) {
+    const float w = std::fmax(3.f, R * 0.12f);
+    s.moveTo(x0 + 0.8f, y0 + 1.5f);
+    s.lineTo(x1 + 0.8f, y1 + 1.5f);
+    s.strokeGrad(solid(0x000000, 0.4f), w + 1.f);
+    s.moveTo(x0, y0);
+    s.lineTo(x1, y1);
+    s.strokeGrad(solid(0xf5f5f5), w);
+  } else {
+    const float px = (x1 + x0 * 0.4f) / 1.4f, py = (y1 + y0 * 0.4f) / 1.4f;
+    s.circle(px, py, R * 0.12f);
+    s.fillGrad(solid(0xf5f5f5));
+  }
+  if (hover) {
+    s.circle(cx, cy, R + 2.f);
+    s.strokeGrad(solid(0xebaa00, 0.8f), 2.f);
+  }
+}
+
+// A patch socket: hex nut (radius r) round a threaded bushing and the dark bore.
+template <class Sink>
+void drawJack(Sink& s, float cx, float cy, float r, bool hover) {
+  dropShadow(s, cx, cy, r * 0.9f, r * 0.25f, 0.35f);
+  for (int i = 0; i < 6; ++i) {
+    const float a = 3.14159265f / 3.f * float(i);
+    if (i == 0) s.moveTo(cx + r * std::cos(a), cy + r * std::sin(a));
+    else s.lineTo(cx + r * std::cos(a), cy + r * std::sin(a));
+  }
+  s.closePath();
+  s.fillGrad(vertical(cy - r, cy + r, hover ? 0xffd27a : 0xf0f0f0, hover ? 0xa87a10 : 0x858585));
+  for (int i = 0; i < 6; ++i) {
+    const float a = 3.14159265f / 3.f * float(i);
+    if (i == 0) s.moveTo(cx + r * std::cos(a), cy + r * std::sin(a));
+    else s.lineTo(cx + r * std::cos(a), cy + r * std::sin(a));
+  }
+  s.closePath();
+  s.strokeGrad(solid(0x4a4a4a, 0.9f), 1.2f);
+  s.circle(cx, cy, r * 0.64f);
+  s.fillGrad(vertical(cy - r * 0.64f, cy + r * 0.64f, 0x3e3e3e, 0xa0a0a0));  // lit from above: a recess
+  s.circle(cx, cy, r * 0.5f);
+  s.fillGrad(radialGrad(cx, cy - r * 0.08f, r * 0.1f, r * 0.5f, 0x000000, 1.f, 0x2a2a2a, 1.f));
+}
+
+// Photo sensor: a milky dome in a black ring.
+template <class Sink>
+void drawSensor(Sink& s, float cx, float cy, float r) {
+  dropShadow(s, cx, cy, r, 4.f, 0.3f);
+  s.fillCircle(cx, cy, r + 1.f, 0x0c0a0a);
+  s.circle(cx, cy, r - 1.f);
+  s.fillGrad(radialGrad(cx - r * 0.25f, cy - r * 0.3f, r * 0.1f, r * 1.3f, 0xffffff, 1.f, 0xc9c6bd, 1.f));
+}
+
+// Round latching push button: dark bezel and a dished cap; `on` = lit amber ring.
+template <class Sink>
+void drawButton(Sink& s, float cx, float cy, float r, bool on, bool hover) {
+  if (on) {
+    s.circle(cx, cy, r + 12.f);
+    s.fillGrad(radialGrad(cx, cy, r, r + 12.f, 0xffb000, 0.5f, 0xffb000, 0.f));
+  }
+  dropShadow(s, cx, cy, r, r * 0.25f);
+  s.circle(cx, cy, r);
+  s.fillGrad(vertical(cy - r, cy + r, 0x444444, 0x0a0a0a));
+  const float c = r * 0.72f;
+  s.circle(cx, cy, c);
+  s.fillGrad(vertical(cy - c, cy + c, 0x101010, 0x3a3a3a));  // dished: darker at the top
+  if (on) {
+    s.circle(cx, cy, r + 3.f);
+    s.strokeGrad(solid(0xebaa00), 3.f);
+  }
+  if (hover) {
+    s.circle(cx, cy, c);
+    s.strokeGrad(solid(0xffffff, 0.4f), 1.5f);
+  }
+}
+
+// Bat-lever toggle switch. `t`: 0 = lever up, 0.5 = centre, 1 = down.
+template <class Sink>
+void drawToggle(Sink& s, float cx, float cy, float t, bool hover) {
+  dropShadow(s, cx, cy, 11.f, 3.f, 0.35f);
+  for (int i = 0; i < 6; ++i) {  // mounting nut
+    const float a = 3.14159265f / 3.f * float(i) + 0.5236f;
+    if (i == 0) s.moveTo(cx + 12.f * std::cos(a), cy + 12.f * std::sin(a));
+    else s.lineTo(cx + 12.f * std::cos(a), cy + 12.f * std::sin(a));
+  }
+  s.closePath();
+  s.fillGrad(vertical(cy - 12.f, cy + 12.f, 0xe6e6e6, 0x767676));
+  s.circle(cx, cy, 7.5f);
+  s.fillGrad(vertical(cy - 7.5f, cy + 7.5f, 0x303030, 0x9a9a9a));
+  const float ly = cy + (t - 0.5f) * 30.f;
+  s.moveTo(cx + 3.f, cy + 4.f);  // lever shadow
+  s.lineTo(cx + 3.f, ly + 5.f);
+  s.strokeGrad(solid(0x000000, 0.3f), 8.f);
+  if (std::fabs(ly - cy) > 1.f) {
+    s.moveTo(cx - 4.f, cy);
+    s.lineTo(cx + 4.f, cy);
+    s.lineTo(cx + 2.8f, ly);
+    s.lineTo(cx - 2.8f, ly);
+    s.closePath();
+    s.fillGrad({false, cx - 4.f, cy, cx + 4.f, cy, 0xf6f6f6, 0x6a6a6a, 1.f, 1.f});  // chrome, lit from the left
+  }
+  dome(s, cx, ly, 6.f, hover ? 0xebaa00 : 0xd4d4d4, 0.4f);
+}
+
+// The joystick: recessed gate, shaft and a round knob at (x, y).
+template <class Sink>
+void drawJoystick(Sink& s, float cx, float cy, float gateR, float travel, float x, float y, bool hover) {
+  s.circle(cx, cy, gateR);
+  s.fillGrad(vertical(cy - gateR, cy + gateR, 0x161616, 0x3c3c3c));
+  s.circle(cx, cy, gateR - 1.f);
+  s.strokeGrad(vertical(cy - gateR, cy + gateR, 0x000000, 0xffffff, 0.5f, 0.3f), 2.f);
+  s.circle(cx, cy, travel);
+  s.strokeGrad(solid(0x5a5a5a), 1.5f);
+  s.moveTo(cx + 4.f, cy + 7.f);
+  s.lineTo(x + 6.f, y + 10.f);
+  s.strokeGrad(solid(0x000000, 0.35f), 16.f);
+  s.moveTo(cx, cy);
+  s.lineTo(x, y);
+  s.strokeGrad({false, cx - 7.f, cy, cx + 7.f, cy, 0x4a4a4a, 0x141414, 1.f, 1.f}, 14.f);
+  dropShadow(s, x, y, 24.f, 10.f);
+  dome(s, x, y, 24.f, hover ? 0x707070 : 0x555555, 0.45f);
 }
 
 // ---- keyboard menu: page tabs and the 16-step sequencer editor ---------------------------
@@ -225,7 +458,14 @@ void drawSeqStep(Sink& s, float x0, float x1, float sliderTop, float sliderBotto
 template <class Sink>
 void drawPanelArt(Sink& s) {
   s.fillRect(0, 0, 2400, 1552, kPanelRgb, 0);
+  auto rect = [&s](float x0, float y0, float x1, float y1) {
+    s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1); s.closePath();
+  };
+  rect(0, 0, 2400, 1552);  // a gentle top-to-bottom falloff of the light
+  s.fillGrad(vertical(0, 1552, 0xffffff, 0x000000, 0.10f, 0.06f));
   s.fillRect(400, 1103, 1998, 1490, kKeybedRgb, 0);
+  rect(400, 1103, 1998, 1128);  // the keybed sits lower than the panel: shadow under its top edge
+  s.fillGrad(vertical(1103, 1128, 0x000000, 0x000000, 0.55f, 0.f));
   for (const auto& f : kFrames) {
     for (std::uint32_t i = 0; i < f.count; ++i) {
       const float x = kFramePoints[2 * (f.first + i)], y = kFramePoints[2 * (f.first + i) + 1];

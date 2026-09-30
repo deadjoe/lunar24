@@ -58,6 +58,13 @@ inline IText txt(float size, theme::Rgb c, bool bold = true, float angle = 0.f) 
 inline IRECT rectOf(const Widget& w) {
   return IRECT(float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
 }
+// Controls draw a little beyond their hit box (scale ticks, drop shadows): the drawing area
+// is padded, the mouse target stays the hit box.
+inline IRECT drawRectOf(const Widget& w) {
+  const float pad = std::max(14.f, float(std::max(w.w, w.h)) * 0.3f);
+  return rectOf(w).GetPadded(pad);
+}
+inline std::uint32_t hexOf(theme::Rgb c) { return (std::uint32_t(c.r) << 16) | (std::uint32_t(c.g) << 8) | c.b; }
 // Point at `r` from (cx, cy) in direction `deg` (0 = 12 o'clock, clockwise).
 inline void polar(float cx, float cy, float r, float deg, float& x, float& y) {
   const float t = (deg - 90.f) * kPi / 180.f;
@@ -215,6 +222,35 @@ struct GraphicsSink {
   void text(float x, float y, float size, std::uint32_t c, bool vertical, const char* s) {
     g.DrawText(txt(size, theme::rgb(c), true, vertical ? -90.f : 0.f), s, x, y);
   }
+  void circle(float cx, float cy, float r) {
+    if (!open_) g.PathClear();
+    open_ = true;
+    g.PathCircle(cx, cy, r);
+  }
+  static IPattern pattern(const art::Grad& p) {
+    auto c = [](std::uint32_t rgb, float a) {
+      return IColor(int(std::lround(std::clamp(a, 0.f, 1.f) * 255.f)), int((rgb >> 16) & 0xff), int((rgb >> 8) & 0xff),
+                    int(rgb & 0xff));
+    };
+    if (p.c0 == p.c1 && p.a0 == p.a1 && !p.radial) return IPattern(c(p.c0, p.a0));
+    if (p.radial)
+      return IPattern::CreateRadialGradient(p.x0, p.y0, p.y1,
+                                            {IColorStop(c(p.c0, p.a0), p.y1 > 0 ? p.x1 / p.y1 : 0.f),
+                                             IColorStop(c(p.c1, p.a1), 1.f)});
+    return IPattern::CreateLinearGradient(p.x0, p.y0, p.x1, p.y1,
+                                          {IColorStop(c(p.c0, p.a0), 0.f), IColorStop(c(p.c1, p.a1), 1.f)});
+  }
+  void fillGrad(const art::Grad& p) {
+    g.PathFill(pattern(p), IFillOptions(false, EFillRule::Preserve));
+    open_ = false;
+  }
+  void strokeGrad(const art::Grad& p, float width) {
+    IStrokeOptions o;
+    o.mCapOption = ELineCap::Round;
+    o.mJoinOption = ELineJoin::Round;
+    g.PathStroke(pattern(p), width, o);
+    open_ = false;
+  }
   bool open_ = false;
 };
 
@@ -238,50 +274,22 @@ class BackgroundControl : public IControl {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Knob drawing shared by the real knobs and the inert decor knobs.
 inline void drawKnob(IGraphics& g, const Widget& w, double norm, bool hover) {
-  const float cx = float(w.cx), cy = float(w.cy), R = float(w.w / 2);
+  GraphicsSink sink{g};
   const float ang = float(theme::kKnobMinDeg + std::clamp(norm, 0.0, 1.0) * (theme::kKnobMaxDeg - theme::kKnobMinDeg));
-  const bool skirted = w.cap != Cap::Black;
-  float cr = R;
-  if (skirted) {
-    for (int i = 0; i <= 10; ++i) {  // scale ticks
-      float x0, y0, x1, y1;
-      const float a = float(theme::kKnobMinDeg + i * (theme::kKnobMaxDeg - theme::kKnobMinDeg) / 10.0);
-      polar(cx, cy, R * 0.98f, a, x0, y0);
-      polar(cx, cy, R * 1.16f, a, x1, y1);
-      g.DrawLine(col(w.menu ? theme::kMenuText : theme::kSkirt), x0, y0, x1, y1, nullptr, 3.f);
-    }
-    g.FillCircle(col(theme::kSkirt), cx, cy, R);
-    cr = R * 0.78f;
-  }
-  g.FillCircle(col(theme::cap(w.cap)), cx, cy, cr);
-  if (hover) g.DrawCircle(col(theme::kAmber, 200), cx, cy, R + 2, nullptr, 2.f);
-  float x0, y0, x1, y1;
-  polar(cx, cy, cr * (skirted ? 0.35f : 0.55f), ang, x0, y0);
-  polar(cx, cy, cr * 0.9f, ang, x1, y1);
-  if (skirted) {
-    g.DrawLine(col(theme::kPointer), x0, y0, x1, y1, nullptr, std::max(3.f, R * 0.12f));
-  } else {
-    g.FillCircle(col(theme::kPointer), (x1 + x0 * 0.4f) / 1.4f, (y1 + y0 * 0.4f) / 1.4f, R * 0.12f);
-  }
+  art::drawKnob(sink, float(w.cx), float(w.cy), float(w.w / 2), hexOf(theme::cap(w.cap)), w.cap != Cap::Black, ang,
+                hexOf(w.menu ? theme::kMenuText : theme::kSkirt), float(theme::kKnobMinDeg), float(theme::kKnobMaxDeg),
+                hover);
 }
 
 inline void drawJack(IGraphics& g, float cx, float cy, float r, bool hover) {
-  float xs[6], ys[6];
-  for (int i = 0; i < 6; ++i) {
-    xs[i] = cx + r * std::cos(kPi / 3 * i);
-    ys[i] = cy + r * std::sin(kPi / 3 * i);
-  }
-  g.FillConvexPolygon(col(hover ? theme::kAmber : theme::kNutLight), xs, ys, 6);
-  g.DrawConvexPolygon(col(theme::kNutDark), xs, ys, 6, nullptr, 1.5f);
-  g.FillCircle(col({70, 70, 70}), cx, cy, r * 0.62f);
-  g.FillCircle(col(theme::kHole), cx, cy, r * 0.46f);
+  GraphicsSink sink{g};
+  art::drawJack(sink, cx, cy, r, hover);
 }
 
 class KnobControl : public IControl {
  public:
-  KnobControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  KnobControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetTargetRECT(rectOf(w)); }
 
   void Draw(IGraphics& g) override {
     const core::ParameterDescriptor* d = desc(w_.id);
@@ -332,13 +340,10 @@ class KnobControl : public IControl {
 // Round latching push button (2-position parameter): amber ring when on.
 class ButtonControl : public IControl {
  public:
-  ButtonControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  ButtonControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetTargetRECT(rectOf(w)); }
   void Draw(IGraphics& g) override {
-    const float r = float(w_.w / 2);
-    g.FillCircle(col(theme::kInk), float(w_.cx), float(w_.cy), r);
-    g.FillCircle(col({44, 44, 44}), float(w_.cx), float(w_.cy), r * 0.7f);
-    if (s_.index(w_.id) > 0) g.DrawCircle(col(theme::kAmber), float(w_.cx), float(w_.cy), r + 3, nullptr, 3.f);
-    if (mMouseIsOver) g.DrawCircle(col(theme::kPointer, 160), float(w_.cx), float(w_.cy), r * 0.7f, nullptr, 1.5f);
+    GraphicsSink sink{g};
+    art::drawButton(sink, float(w_.cx), float(w_.cy), float(w_.w / 2), s_.index(w_.id) > 0, mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     s_.setIndex(w_.id, s_.index(w_.id) > 0 ? 0 : 1);
@@ -354,25 +359,22 @@ class ButtonControl : public IControl {
 // lever up, the lower half to move it down. On the menu overlay: a box showing the option.
 class ToggleControl : public IControl {
  public:
-  ToggleControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  ToggleControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetTargetRECT(rectOf(w)); }
   void Draw(IGraphics& g) override {
     const core::ParameterDescriptor* d = desc(w_.id);
     const int n = positionsOf(d), idx = std::clamp(s_.index(w_.id), 0, n - 1);
     if (w_.menu) {
-      g.DrawRoundRect(col(mMouseIsOver ? theme::kAmber : theme::kMenuText), mRECT, 5.f, nullptr, 1.5f);
+      const IRECT box = rectOf(w_);
+      g.DrawRoundRect(col(mMouseIsOver ? theme::kAmber : theme::kMenuText), box, 5.f, nullptr, 1.5f);
       std::string opt = d && d->optionCount > 0 ? upper(std::string(d->options[idx])) : std::to_string(idx + 1);
       if (opt.size() > 10) opt = opt.substr(0, 10);
-      g.DrawText(txt(11, theme::kMenuText), opt.c_str(), mRECT);
+      g.DrawText(txt(11, theme::kMenuText), opt.c_str(), box);
       g.DrawText(txt(12, theme::kMenuText), w_.label.c_str(), float(w_.cx), float(w_.cy + 42));
       return;
     }
     const int pos = leverPos(idx, n);
-    const float t = n <= 1 ? 0.f : float(pos) / float(n - 1);  // 0 = up
-    const float cx = float(w_.cx), cy = float(w_.cy);
-    g.FillCircle(col({60, 60, 60}), cx, cy, 9);
-    const float ly = cy + (t - 0.5f) * 30.f;
-    g.DrawLine(col(mMouseIsOver ? theme::kAmber : theme::Rgb{110, 110, 110}), cx, cy, cx, ly, nullptr, 8.f);
-    g.FillCircle(col({150, 150, 150}), cx, ly, 5.5f);
+    GraphicsSink sink{g};
+    art::drawToggle(sink, float(w_.cx), float(w_.cy), n <= 1 ? 0.f : float(pos) / float(n - 1), mMouseIsOver);
   }
   void OnMouseDown(float, float y, const IMouseMod& mod) override {
     const int n = positionsOf(desc(w_.id)), idx = s_.index(w_.id);
@@ -449,7 +451,8 @@ class CableLayer : public IControl {
 // ---------------------------------------------------------------------------------------------
 class JackControl : public IControl {
  public:
-  JackControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {
+  JackControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) {
+    SetTargetRECT(rectOf(w));
     for (const auto& d : registry::kJacks)
       if (static_cast<std::uint32_t>(d.id) == w.id) desc_ = &d;
   }
@@ -480,7 +483,7 @@ class JackControl : public IControl {
     s_.cables->setDrag(false);
     JackControl* target = nullptr;
     for (JackControl* j : s_.jacks)
-      if (j->GetRECT().Contains(x, y)) target = j;
+      if (j->GetTargetRECT().Contains(x, y)) target = j;
     if (origin_ != nullptr && target != nullptr && target != origin_ && target->isOutput() != origin_->isOutput()) {
       JackControl* out = origin_->isOutput() ? origin_ : target;
       JackControl* in = origin_->isOutput() ? target : origin_;
@@ -554,15 +557,13 @@ class PlateControl : public IControl {
 // The joystick: drag the stick inside its gate; double-click centres it.
 class JoystickControl : public IControl {
  public:
-  JoystickControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  JoystickControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetTargetRECT(rectOf(w)); }
   void Draw(IGraphics& g) override {
     const float cx = float(w_.cx), cy = float(w_.cy);
-    g.FillCircle(col({50, 50, 50}), cx, cy, 55);
-    g.DrawCircle(col({80, 80, 80}), cx, cy, kTravel, nullptr, 1.5f);
     const float x = cx + float(s_.value(w_.id) * 2.0 - 1.0) * kTravel;
     const float y = cy - float(s_.value(w_.id2) * 2.0 - 1.0) * kTravel;
-    g.DrawLine(col({30, 30, 30}), cx, cy, x, y, nullptr, 14.f);
-    g.FillCircle(col(mMouseIsOver ? theme::Rgb{110, 110, 110} : theme::Rgb{85, 85, 85}), x, y, 24);
+    GraphicsSink sink{g};
+    art::drawJoystick(sink, cx, cy, 55.f, kTravel, x, y, mMouseIsOver);
   }
   void OnMouseDown(float x, float y, const IMouseMod&) override { move(x, y); }
   void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override { move(x, y); }
@@ -641,7 +642,7 @@ class CartridgeControl : public IControl {
 // Keyboard encoder (opens / closes the keyboard menu), octave arrows, display.
 class EncoderControl : public IControl {
  public:
-  EncoderControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  EncoderControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetTargetRECT(rectOf(w)); }
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
     art::drawEncoder(sink, float(w_.cx), float(w_.cy), s_.menuOpen || mMouseIsOver);
@@ -662,7 +663,7 @@ class EncoderControl : public IControl {
 
 class OctaveKeyControl : public IControl {
  public:
-  OctaveKeyControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  OctaveKeyControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetTargetRECT(rectOf(w)); }
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
     art::drawOctaveKey(sink, float(w_.cx), float(w_.cy), mMouseIsOver);
@@ -716,13 +717,14 @@ class DroneKeyControl : public IControl {
 // and jacks that have no function in Lunar 24.
 class DecorControl : public IControl {
  public:
-  DecorControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) { SetIgnoreMouse(true); }
+  DecorControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetIgnoreMouse(true); }
   void Draw(IGraphics& g) override {
     switch (w_.id) {
-      case 0:
-        g.FillCircle(IColor(255, 255, 255, 255), float(w_.cx), float(w_.cy), float(w_.w / 2));
-        g.DrawCircle(col(theme::kInk), float(w_.cx), float(w_.cy), float(w_.w / 2), nullptr, 2.f);
+      case 0: {
+        GraphicsSink sink{g};
+        art::drawSensor(sink, float(w_.cx), float(w_.cy), float(w_.w / 2));
         break;
+      }
       case 1:
         for (std::uint32_t i = 0; i < 5; ++i) {
           const bool muted = s_.value(w_.id2 + i) > 0.5;
@@ -853,7 +855,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::Jack: {
         auto* j = new JackControl(shared, w);
         shared.jacks.push_back(j);
-        shared.jackRects[w.id] = j->GetRECT();
+        shared.jackRects[w.id] = j->GetTargetRECT();
         g->AttachControl(j);
         break;
       }
