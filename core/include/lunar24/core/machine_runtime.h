@@ -695,12 +695,22 @@ class SynthRuntime {
       const std::uint8_t* sel =
           (b == 0u) ? state.keyboardClockSelectors : state.keyboardClockSelectorsR;
       const std::array<std::uint8_t, 4> selectors{sel[0], sel[1], sel[2], sel[3]};
+      const ArpSeqMode modeBefore = keyboardArpSeq_[s].mode();
       keyboardArpSeq_[s].configure(
           read_arp_seq_params(bank, keyboardMode_, side,
                               state.parameters[static_cast<std::size_t>(
                                   ParameterId::keyboard_clock_bpm)],
                               steps, selectors),
           sampleRate_);
+      // A MODE change (keyboard / arpeggiator / sequencer) restarts the arp/seq run, which
+      // forgets the note it was sounding; release every note downstream too, or a note held
+      // at the moment of the switch would never get its gate-off and would drone on.
+      if (keyboardArpSeq_[s].mode() != modeBefore) {
+        ControlEvent off{};
+        off.kind = ControlEventKind::reset;
+        off.side = side;
+        keyboardBeh_[s].handleControlEvent(off);
+      }
       keyboardBeh_[s].configure(read_behaviour_params(bank, scaleEditor, keyboardMode_, side),
                                 sampleRate_);
     }

@@ -77,5 +77,35 @@ int main() {
     CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
     CHECK(std::fabs(e.runtime()->vcfCvReadbackL() - 8.0) < 1e-6);
   }
+  // Switching MODE (keyboard -> arpeggiator) while a note is held releases it: the release
+  // that follows goes to the arpeggiator, which never saw the note, so without the switch
+  // releasing it the gate stayed high forever (a droning stuck note).
+  {
+    host::StandaloneAudioEngine e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::InputStateMachine in{nullptr, 0};
+    std::uint64_t seq = 0;
+    auto send = [&](core::PerfInputKind kind) {
+      core::PerformanceInput p{};
+      p.kind = kind;
+      p.value = static_cast<core::SignalSample>(0.8);
+      p.noteId = 7;
+      p.source = 1;
+      p.seq = ++seq;
+      core::ControlEvent ev[3];
+      const std::uint32_t n = in.translate(p, ev, 3);
+      for (std::uint32_t i = 0; i < n; ++i) e.postEvent(ev[i]);
+    };
+    const core::JackId gate = core::find_jack_by_name("keyboard.gate_left_main_out")->id;
+    send(core::PerfInputKind::note_on);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(e.runtime()->controlVoltageAt(gate) > 1.0);   // the held note opens the gate
+    CHECK(e.postParameter(core::ParameterId::keyboard_mode, 1.0));  // -> arpeggiator
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    send(core::PerfInputKind::note_off);
+    for (int i = 0; i < 4; ++i)
+      CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(e.runtime()->controlVoltageAt(gate) < 0.5);   // no stuck note
+  }
   return test::finish("test_live_edits");
 }
