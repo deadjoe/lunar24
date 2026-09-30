@@ -69,6 +69,7 @@ inline constexpr Rect kMenuTabSettings{428, 1122, 568, 1148};
 inline constexpr Rect kMenuTabSequencer{578, 1122, 718, 1148};
 inline constexpr Rect kSeqSideSwitch{1700, 1122, 1842, 1148};
 inline constexpr Rect kMenuClose{1860, 1122, 1972, 1148};  // closes the menu (as does the encoder)
+inline constexpr Rect kMenuReset{1540, 1122, 1682, 1148};  // whole panel back to default (confirm)
 inline constexpr int kSeqSteps = 16;
 // One sequencer step column: step number, note slider, note readout, gate button.
 inline constexpr double kSeqSliderTop = 1178, kSeqSliderBottom = 1392, kSeqGateY = 1450;

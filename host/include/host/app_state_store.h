@@ -511,6 +511,14 @@ class AppStateStore {
     pendingValid_ = true;
   }
 
+  // Replace the payload with a given state (the panel's factory reset: the power-on default),
+  // published at this same stopped-stream boundary like any restore.
+  void replacePending(const DeviceStateV1& state) {
+    pending_ = state;
+    pendingOrigin_ = PendingOrigin::FromSession;
+    pendingValid_ = true;
+  }
+
   // Publish the pending restore through the engine's ONE real candidate path. On success the
   // pending is cleared (canonical is now the single authority) and the file counts as adopted.
   StandaloneAudioEngine::StateApplyStatus publishPending(StandaloneAudioEngine& engine,

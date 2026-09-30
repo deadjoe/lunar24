@@ -252,6 +252,8 @@ int main(int argc, char** argv) {
     art::drawMenuTab(sink, float(b.x0), float(b.y0), float(b.x1), float(b.y1), "SEQUENCER", showSeq, false);
     const Rect c = kMenuClose;
     art::drawMenuTab(sink, float(c.x0), float(c.y0), float(c.x1), float(c.y1), "CLOSE", false, false);
+    const Rect rs = kMenuReset;
+    art::drawMenuTab(sink, float(rs.x0), float(rs.y0), float(rs.x1), float(rs.y1), "RESET PANEL", false, false);
   }
   if (showSeq) {
     const Rect sw = kSeqSideSwitch;

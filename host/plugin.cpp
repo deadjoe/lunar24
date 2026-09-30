@@ -28,6 +28,7 @@
 #include <type_traits>
 #include <lunar24/core/host_window_fit.h>
 #include <host/window_layout.h>
+#include <lunar24/core/state_default.h>
 #include "panel_editor.h"
 
 using namespace iplug::igraphics;
@@ -42,6 +43,7 @@ extern "C" bool lunar_host_force_clamp();
 extern "C" void lunar_host_place_view(void* view, double x, double y);
 extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom);
 extern "C" void lunar_host_audio_watchdog();
+extern "C" void lunar_host_request_audio_reopen();
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
@@ -83,6 +85,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     }
     // The whole panel (host/panel_editor.h). The shared editor state lives as long as the plugin.
     auto shared = std::make_shared<lunar24::host::ui::EditorShared>(engine_);
+    shared->factoryReset = [this]() { requestFactoryReset(); };
     uiState_ = shared;
     lunar24::host::ui::BuildPanel(pGraphics, *shared);
   };
@@ -135,6 +138,10 @@ void LunarHostPlugin::OnReset()
   //      the reason; a failed prepare() leaves the pending intact for the NEXT legal boundary.
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
+  if (factoryResetRequested_) {  // the panel's RESET: publish the power-on default instead
+    factoryResetRequested_ = false;
+    stateStore_.replacePending(lunar24::core::make_default_device_state(lunar24::host::kLunarStartupSeed));
+  }
   engine_.prepare(lunar24::host::kLunarStartupSeed, GetSampleRate(), GetBlockSize(),
                   NInChansConnected(), NOutChansConnected());
   if (engine_.isReady())
@@ -157,6 +164,12 @@ lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
   // size and runs the atomic temp->flush->replace. Never a disk read, never an overwrite of a file
   // that was present but unusable.
   return stateStore_.save(engine_);
+}
+
+void LunarHostPlugin::requestFactoryReset()
+{
+  factoryResetRequested_ = true;
+  lunar_host_request_audio_reopen();  // OnReset runs when the stream reopens
 }
 
 void LunarHostPlugin::OnIdle()

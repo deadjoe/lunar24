@@ -23,6 +23,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <functional>
+#include <chrono>
 #include <map>
 #include <set>
 #include <string>
@@ -100,6 +102,7 @@ struct EditorShared {
   std::vector<IControl*> menuChrome;         // background and page tabs: whenever the menu is open
   int menuPage = 0;                          // 0 = SETTINGS, 1 = SEQUENCER
   int seqSide = 0;                           // sequencer bank being edited: 0 = left, 1 = right
+  std::function<void()> factoryReset;        // the plugin's requestFactoryReset (RESET PANEL)
   std::vector<IControl*> plates;
   bool menuOpen = false;
   int octave = 0;
@@ -770,18 +773,36 @@ class MenuBackground : public IControl {
 // play the left bank).
 class MenuTabControl : public IControl {
  public:
-  enum Kind { kSettings, kSequencer, kSide, kClose };
+  enum Kind { kSettings, kSequencer, kSide, kClose, kReset };
   MenuTabControl(EditorShared& s, const Rect& r, Kind k)
       : IControl(IRECT(float(r.x0), float(r.y0), float(r.x1), float(r.y1))), s_(s), k_(k) {}
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
+    const bool armed = k_ == kReset && armedNow();
     const char* label = k_ == kSettings ? "SETTINGS" : k_ == kSequencer ? "SEQUENCER" : k_ == kClose ? "CLOSE"
+                        : k_ == kReset ? (armed ? "CLICK TO CONFIRM" : "RESET PANEL")
                         : s_.seqSide == 0 ? "EDIT: LEFT" : "EDIT: RIGHT";
-    const bool active = (k_ == kSettings && s_.menuPage == 0) || (k_ == kSequencer && s_.menuPage == 1);
+    const bool active = (k_ == kSettings && s_.menuPage == 0) || (k_ == kSequencer && s_.menuPage == 1) || armed;
     art::drawMenuTab(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, label, active, mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     if (k_ == kClose) {
+      s_.showMenu(false);
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
+    if (k_ == kReset) {  // first click arms, a second within a few seconds resets everything
+      if (!armedNow()) {
+        armedAt_ = std::chrono::steady_clock::now();
+        SetDirty(false);
+        return;
+      }
+      armedAt_ = {};
+      for (int v = 0; v < 6; ++v) s_.engine.postDroneKey(v, true);
+      s_.octave = 0;
+      s_.seqSide = 0;
+      s_.menuPage = 0;
+      if (s_.factoryReset) s_.factoryReset();
       s_.showMenu(false);
       GetUI()->SetAllControlsDirty();
       return;
@@ -793,8 +814,13 @@ class MenuTabControl : public IControl {
   }
 
  private:
+  bool armedNow() const {
+    return armedAt_ != std::chrono::steady_clock::time_point{} &&
+           std::chrono::steady_clock::now() - armedAt_ < std::chrono::seconds(4);
+  }
   EditorShared& s_;
   Kind k_;
+  std::chrono::steady_clock::time_point armedAt_{};
 };
 
 // One step of the 16-step keyboard sequencer: drag the slider for the note (semitones above
@@ -899,6 +925,9 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   auto* close = new MenuTabControl(shared, kMenuClose, MenuTabControl::kClose);
   g->AttachControl(close);
   shared.menuChrome.push_back(close);
+  auto* reset = new MenuTabControl(shared, kMenuReset, MenuTabControl::kReset);
+  g->AttachControl(reset);
+  shared.menuChrome.push_back(reset);
   auto* side = new MenuTabControl(shared, kSeqSideSwitch, MenuTabControl::kSide);
   g->AttachControl(side);
   shared.seqControls.push_back(side);
