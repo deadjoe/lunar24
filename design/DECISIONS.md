@@ -37,6 +37,9 @@ Keep these unless a listening test or a real bug says otherwise.
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet
   path against the dry blend (comb filtering) unless the dry path were delayed too.
+- **Drone ATT/RLS span 1 ms..10 s on a cubic taper** (`DroneBank::mapAttSeconds`, shared by
+  drones 1-6; the manual gives no range). The old 1 s ceiling was too short for drone swells;
+  the cubic keeps the lower half fine for short times (0.5 -> 1.25 s). Tuned by ear.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also

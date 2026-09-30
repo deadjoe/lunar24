@@ -210,7 +210,7 @@ static void test_classic_mutual_fm() {
 static std::size_t samples_to_level(core::DroneBank& bank, int group, double target) {
   std::size_t n = 0;
   double buf[core::DroneBank::kMaxVoices] = {};
-  while (bank.groupEnvLevel(group) < target && n < 200000) {
+  while (bank.groupEnvLevel(group) < target && n < 2000000) {  // up to the 10 s ceiling
     bank.tick(buf);
     ++n;
   }
@@ -220,7 +220,7 @@ static std::size_t samples_to_level(core::DroneBank& bank, int group, double tar
 static std::size_t samples_to_drop(core::DroneBank& bank, int group, double target) {
   std::size_t n = 0;
   double buf[core::DroneBank::kMaxVoices] = {};
-  while (bank.groupEnvLevel(group) > target && n < 200000) {
+  while (bank.groupEnvLevel(group) > target && n < 2000000) {
     bank.tick(buf);
     ++n;
   }

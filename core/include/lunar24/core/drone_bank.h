@@ -100,9 +100,9 @@ class DroneBank {
   // exact hardware state/transfer is unverified; see FINDINGS).
   static constexpr std::size_t kMaxGroups = kClassicVoices;  // 4 classic voices.
   static constexpr double kAttNormMinSeconds = 0.001;        // provisional, monotonic.
-  static constexpr double kAttNormMaxSeconds = 1.0;
+  static constexpr double kAttNormMaxSeconds = 10.0;  // drones swell slowly: tuned by ear
   static constexpr double kRlsNormMinSeconds = 0.001;
-  static constexpr double kRlsNormMaxSeconds = 1.0;
+  static constexpr double kRlsNormMaxSeconds = 10.0;  // tuned by ear
   static constexpr double kDefaultAttNorm = 0.0;             // neutral fast default.
   static constexpr double kDefaultRlsNorm = 0.0;
   // PROVISIONAL per-generator deterministic jitter amplitude (Hz). Kept small so it is
@@ -439,11 +439,16 @@ class DroneBank {
   // instead of carrying a second, drifting copy. There is exactly ONE source of the
   // mapping in the product; ATT and RLS share the same shape but separate ranges so the
   // two stages never share state.
+  // Cubic taper: the lower half of the knob stays fine-grained for short, playable times
+  // (norm 0.5 -> 1.25 s) and the top quarter opens up the long drone swells (0.75 -> 4.2 s,
+  // 1 -> 10 s). Tuned by ear.
   static double mapAttSeconds(double norm) {
-    return kAttNormMinSeconds + clamp01_(norm) * (kAttNormMaxSeconds - kAttNormMinSeconds);
+    const double n = clamp01_(norm);
+    return kAttNormMinSeconds + n * n * n * (kAttNormMaxSeconds - kAttNormMinSeconds);
   }
   static double mapRlsSeconds(double norm) {
-    return kRlsNormMinSeconds + clamp01_(norm) * (kRlsNormMaxSeconds - kRlsNormMinSeconds);
+    const double n = clamp01_(norm);
+    return kRlsNormMinSeconds + n * n * n * (kRlsNormMaxSeconds - kRlsNormMinSeconds);
   }
 
  private:

@@ -1770,8 +1770,9 @@ constexpr std::size_t kD4Settle = 96;
 // read back through mapAttSeconds/mapRlsSeconds: the oracle must stay independent of the product
 // mapping so a mutated mapping reds, while the two constant pins in the first checks stop the
 // closed form from silently drifting away from the header.
-constexpr double kD4AttSpan = 1.0 - 0.001;
-constexpr double kD4RlsSpan = 1.0 - 0.001;
+constexpr double kD4AttSpan = 10.0 - 0.001;
+constexpr double kD4RlsSpan = 10.0 - 0.001;
+constexpr double d4Cube(double n) { return n * n * n; }  // the mapping's cubic taper
 // The default-equivalence window (section 5). Long enough to clear every startup transient.
 constexpr std::size_t kD4LockFrames = 4096;
 
@@ -1790,28 +1791,28 @@ bool d4SameAll(const std::vector<double>& a, const std::vector<double>& b) {
 // classic 0.001..1.0 s constant reused verbatim — no new constant, PROVISIONAL as before.
 IJU_TEST_NOINLINE void d4_att_rls_mapping_acceptance() {
   using core::ParameterApplyStatus;
-  check(core::DroneBank::kAttNormMinSeconds == 0.001 && core::DroneBank::kAttNormMaxSeconds == 1.0,
-        "d4 att span is the classic DroneBank constant 0.001..1.0 s (no new constant invented)");
-  check(core::DroneBank::kRlsNormMinSeconds == 0.001 && core::DroneBank::kRlsNormMaxSeconds == 1.0,
-        "d4 rls span is the classic DroneBank constant 0.001..1.0 s (no new constant invented)");
+  check(core::DroneBank::kAttNormMinSeconds == 0.001 && core::DroneBank::kAttNormMaxSeconds == 10.0,
+        "d4 att span is the classic DroneBank constant 0.001..10 s (no new constant invented)");
+  check(core::DroneBank::kRlsNormMinSeconds == 0.001 && core::DroneBank::kRlsNormMaxSeconds == 10.0,
+        "d4 rls span is the classic DroneBank constant 0.001..10 s (no new constant invented)");
 
   core::SynthRuntime rt = makeRuntime();
   static_cast<void>(rt.rebuild());
   check(rt.applyDspParam(core::ParameterId::drone_3_att, 0.5) == ParameterApplyStatus::applied,
         "d3 att norm=0.5 is admitted by the batch lane (applied_to_dsp)");
-  check(std::fabs(rt.drone3AttSeconds() - (0.001 + kD4AttSpan * 0.5)) < 1e-12,
+  check(std::fabs(rt.drone3AttSeconds() - (0.001 + kD4AttSpan * d4Cube(0.5))) < 1e-12,
         "d3 att norm=0.5 -> 0.5005 s on the REAL stage (closed form 0.001+0.999*0.5)");
   static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.0));
   check(std::fabs(rt.drone3AttSeconds() - 0.001) < 1e-12,
         "d3 att norm=0 -> the classic 0.001 s floor");
   static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 1.0));
-  check(std::fabs(rt.drone3AttSeconds() - 1.0) < 1e-12,
-        "d3 att norm=1 -> the classic 1.0 s ceiling");
+  check(std::fabs(rt.drone3AttSeconds() - 10.0) < 1e-12,
+        "d3 att norm=1 -> the classic 10 s ceiling");
   check(std::fabs(rt.drone3RlsSeconds() - 0.001) < 1e-12,
         "changing d3 ATT leaves RLS at its own default (independent stages, no shared state)");
   static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.25));
   const double rlsHeld = rt.drone3RlsSeconds();
-  check(std::fabs(rlsHeld - (0.001 + kD4RlsSpan * 0.25)) < 1e-12,
+  check(std::fabs(rlsHeld - (0.001 + kD4RlsSpan * d4Cube(0.25))) < 1e-12,
         "d3 rls norm=0.25 -> 0.25075 s on the REAL stage (closed form 0.001+0.999*0.25)");
   static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.75));
   check(rt.drone3RlsSeconds() == rlsHeld,
@@ -1820,10 +1821,10 @@ IJU_TEST_NOINLINE void d4_att_rls_mapping_acceptance() {
   core::SynthRuntime rt6 = makeRuntime();
   static_cast<void>(rt6.rebuild());
   static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_att, 0.75));
-  check(std::fabs(rt6.drone6AttSeconds() - (0.001 + kD4AttSpan * 0.75)) < 1e-12,
+  check(std::fabs(rt6.drone6AttSeconds() - (0.001 + kD4AttSpan * d4Cube(0.75))) < 1e-12,
         "d6 att batch lane reaches the field (closed form 0.001+0.999*0.75)");
   static_cast<void>(rt6.applyDspParam(core::ParameterId::drone_6_rls, 0.75));
-  check(std::fabs(rt6.drone6RlsSeconds() - (0.001 + kD4RlsSpan * 0.75)) < 1e-12,
+  check(std::fabs(rt6.drone6RlsSeconds() - (0.001 + kD4RlsSpan * d4Cube(0.75))) < 1e-12,
         "d6 rls batch lane reaches the field (closed form 0.001+0.999*0.75)");
 
   // The live lane: a panel knob turn is a ControlEvent that processBlock drains (the real
@@ -1849,11 +1850,11 @@ IJU_TEST_NOINLINE void d4_att_rls_mapping_acceptance() {
   };
   check(sendLive(core::ParameterId::drone_3_att, 0.25, 1),
         "d3 att live ControlEvent is admitted");
-  check(std::fabs(rtL.drone3AttSeconds() - (0.001 + kD4AttSpan * 0.25)) < 1e-12,
+  check(std::fabs(rtL.drone3AttSeconds() - (0.001 + kD4AttSpan * d4Cube(0.25))) < 1e-12,
         "d3 att live lane reaches the stage seconds (closed form 0.001+0.999*0.25)");
   check(sendLive(core::ParameterId::drone_6_rls, 0.5, 2),
         "d6 rls live ControlEvent is admitted");
-  check(std::fabs(rtL.drone6RlsSeconds() - (0.001 + kD4RlsSpan * 0.5)) < 1e-12,
+  check(std::fabs(rtL.drone6RlsSeconds() - (0.001 + kD4RlsSpan * d4Cube(0.5))) < 1e-12,
         "d6 rls live lane reaches the stage seconds (closed form 0.001+0.999*0.5)");
 
   // Unit-domain lock: norm outside [0,1] is malformed for its registry unit -> invalid_value,
@@ -1932,8 +1933,8 @@ IJU_TEST_NOINLINE void d4_att_rls_stage_rates_in_render() {
   // ATT slow (norm 0.5 -> 0.5005 s), RLS fast (norm 0.0 -> 0.001 s).
   static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_att, 0.5));
   static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.0));
-  const double attSec = 0.001 + kD4AttSpan * 0.5;
-  const double rlsSec = 0.001 + kD4RlsSpan * 0.0;
+  const double attSec = 0.001 + kD4AttSpan * d4Cube(0.5);
+  const double rlsSec = 0.001 + kD4RlsSpan * d4Cube(0.0);
 
   // Start OPEN, then close the gate: the RELEASE stage must own the fall — and it is 500x faster
   // than the attack, so it reaches exactly 0 inside kWin.
@@ -2388,8 +2389,8 @@ IJU_TEST_NOINLINE void d5_hold_dispatch_and_range_lock() {
 // (an OR term that swallowed the two stage constants) observable.
 IJU_TEST_NOINLINE void d5_hold_transition_behaviour() {
   namespace reg = lunar24::registry;
-  const double attSec = 0.001 + kD4AttSpan * 0.5;
-  const double rlsSec = 0.001 + kD4RlsSpan * 0.25;
+  const double attSec = 0.001 + kD4AttSpan * d4Cube(0.5);
+  const double rlsSec = 0.001 + kD4RlsSpan * d4Cube(0.25);
   const double rise = double(kD5Win) / kSr / attSec;
   const double fall = double(kD5Win) / kSr / rlsSec;
   check(std::fabs(rise - fall) > 1e-3,

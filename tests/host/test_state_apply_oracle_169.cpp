@@ -103,6 +103,8 @@ std::unique_ptr<MachineRuntimeDefinition> mustAccept(const DeviceStateV1& st) {
 // The mandate's norm->DSP transfers (mirrored from machine_runtime.h so the oracle
 // asserts the DEFINED transfer, not whatever the production code happens to produce).
 constexpr double envSecFromNorm(double n) { return 0.001 + 0.999 * n; }
+// Drone ATT/RLS (DroneBank::mapAttSeconds/mapRlsSeconds): cubic taper up to 10 s.
+constexpr double droneEnvSecFromNorm(double n) { return 0.001 + 9.999 * n * n * n; }
 constexpr double classicTuneSemis(double n) { return (n - 0.5) * 24.0; }
 constexpr double classicVoltSemis(double n) { return 60.0 * n; }
 inline double newDroneRateHz(double n) { return n <= 0.0 ? 0.0 : 0.1 * std::pow(200.0, n); }
@@ -128,11 +130,11 @@ constexpr int kDroneGroup5 = 3;
 // recovers the applied_to_DSP set from the disposition table and proves 148(readback) ∪ 35 == it.
 
 enum class RdKind { Scal, SelInt, SelBool, SelBoolInv, SelBoolExact, LinExp,
-                    ClosedEnv, ClosedTune, ClosedVolt, ClosedRate, Mono };
+                    ClosedEnv, ClosedDroneEnv, ClosedTune, ClosedVolt, ClosedRate, Mono };
 struct RdSpec { lunar24::core::ParameterId id; RdKind kind; int a0; int a1; };
 
 constexpr RdSpec kRdSpecs[] = {
-  { ParameterId::drone_1_att, RdKind::ClosedEnv, 0, -1 },
+  { ParameterId::drone_1_att, RdKind::ClosedDroneEnv, 0, -1 },
   { ParameterId::drone_1_gate_hold, RdKind::SelBoolExact, 0, -1 },
   { ParameterId::drone_1_mod_1, RdKind::SelInt, 0, 0 },
   { ParameterId::drone_1_mod_2, RdKind::SelInt, 0, 1 },
@@ -144,14 +146,14 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::drone_1_mute_3, RdKind::SelBool, 0, 2 },
   { ParameterId::drone_1_mute_4, RdKind::SelBool, 0, 3 },
   { ParameterId::drone_1_mute_5, RdKind::SelBool, 0, 4 },
-  { ParameterId::drone_1_rls, RdKind::ClosedEnv, 0, -1 },
+  { ParameterId::drone_1_rls, RdKind::ClosedDroneEnv, 0, -1 },
   { ParameterId::drone_1_tune_1, RdKind::ClosedTune, 0, 0 },
   { ParameterId::drone_1_tune_2, RdKind::ClosedTune, 0, 1 },
   { ParameterId::drone_1_tune_3, RdKind::ClosedTune, 0, 2 },
   { ParameterId::drone_1_tune_4, RdKind::ClosedTune, 0, 3 },
   { ParameterId::drone_1_tune_5, RdKind::ClosedTune, 0, 4 },
   { ParameterId::drone_1_volt, RdKind::ClosedVolt, 0, -1 },
-  { ParameterId::drone_2_att, RdKind::ClosedEnv, 1, -1 },
+  { ParameterId::drone_2_att, RdKind::ClosedDroneEnv, 1, -1 },
   { ParameterId::drone_2_gate_hold, RdKind::SelBoolExact, 1, -1 },
   { ParameterId::drone_2_mod_1, RdKind::SelInt, 1, 0 },
   { ParameterId::drone_2_mod_2, RdKind::SelInt, 1, 1 },
@@ -163,7 +165,7 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::drone_2_mute_3, RdKind::SelBool, 1, 2 },
   { ParameterId::drone_2_mute_4, RdKind::SelBool, 1, 3 },
   { ParameterId::drone_2_mute_5, RdKind::SelBool, 1, 4 },
-  { ParameterId::drone_2_rls, RdKind::ClosedEnv, 1, -1 },
+  { ParameterId::drone_2_rls, RdKind::ClosedDroneEnv, 1, -1 },
   { ParameterId::drone_2_tune_1, RdKind::ClosedTune, 1, 0 },
   { ParameterId::drone_2_tune_2, RdKind::ClosedTune, 1, 1 },
   { ParameterId::drone_2_tune_3, RdKind::ClosedTune, 1, 2 },
@@ -188,15 +190,15 @@ constexpr RdSpec kRdSpecs[] = {
   // so MOVE-only like the hi_low/rate_switch pair.
   { ParameterId::drone_3_divider, RdKind::Mono, -1, -1 },
   // GH#15 D4: ATT/RLS of the Papa Srapa voices are the FIRST drone_3/6 ids whose transfer into
-  // the AR envelope is a closed form (the shared DroneBank::mapAttSeconds/mapRlsSeconds, linear
-  // 0.001..1.0 s == envSecFromNorm), so they get the exact ClosedEnv kind rather than MOVE-only.
-  { ParameterId::drone_3_att, RdKind::ClosedEnv, -1, -1 },
-  { ParameterId::drone_3_rls, RdKind::ClosedEnv, -1, -1 },
+  // the AR envelope is a closed form (the shared DroneBank::mapAttSeconds/mapRlsSeconds, cubic
+  // 0.001..10 s == droneEnvSecFromNorm), so they get an exact closed-form kind, not MOVE-only.
+  { ParameterId::drone_3_att, RdKind::ClosedDroneEnv, -1, -1 },
+  { ParameterId::drone_3_rls, RdKind::ClosedDroneEnv, -1, -1 },
   // GH#15 D5: the HOLD selector of the Papa Srapa voices. Its transfer is the classic
   // gate_hold shape already carried by drone_1/2/4/5 (the OR-ed envelope-gate term), so it
   // gets the same exact boolean kind rather than a MOVE-only kind.
   { ParameterId::drone_3_hold, RdKind::SelBoolExact, -1, -1 },
-  { ParameterId::drone_4_att, RdKind::ClosedEnv, 2, -1 },
+  { ParameterId::drone_4_att, RdKind::ClosedDroneEnv, 2, -1 },
   { ParameterId::drone_4_gate_hold, RdKind::SelBoolExact, 2, -1 },
   { ParameterId::drone_4_mod_1, RdKind::SelInt, 2, 0 },
   { ParameterId::drone_4_mod_2, RdKind::SelInt, 2, 1 },
@@ -208,14 +210,14 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::drone_4_mute_3, RdKind::SelBool, 2, 2 },
   { ParameterId::drone_4_mute_4, RdKind::SelBool, 2, 3 },
   { ParameterId::drone_4_mute_5, RdKind::SelBool, 2, 4 },
-  { ParameterId::drone_4_rls, RdKind::ClosedEnv, 2, -1 },
+  { ParameterId::drone_4_rls, RdKind::ClosedDroneEnv, 2, -1 },
   { ParameterId::drone_4_tune_1, RdKind::ClosedTune, 2, 0 },
   { ParameterId::drone_4_tune_2, RdKind::ClosedTune, 2, 1 },
   { ParameterId::drone_4_tune_3, RdKind::ClosedTune, 2, 2 },
   { ParameterId::drone_4_tune_4, RdKind::ClosedTune, 2, 3 },
   { ParameterId::drone_4_tune_5, RdKind::ClosedTune, 2, 4 },
   { ParameterId::drone_4_volt, RdKind::ClosedVolt, 2, -1 },
-  { ParameterId::drone_5_att, RdKind::ClosedEnv, 3, -1 },
+  { ParameterId::drone_5_att, RdKind::ClosedDroneEnv, 3, -1 },
   { ParameterId::drone_5_gate_hold, RdKind::SelBoolExact, 3, -1 },
   { ParameterId::drone_5_mod_1, RdKind::SelInt, 3, 0 },
   { ParameterId::drone_5_mod_2, RdKind::SelInt, 3, 1 },
@@ -227,7 +229,7 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::drone_5_mute_3, RdKind::SelBool, 3, 2 },
   { ParameterId::drone_5_mute_4, RdKind::SelBool, 3, 3 },
   { ParameterId::drone_5_mute_5, RdKind::SelBool, 3, 4 },
-  { ParameterId::drone_5_rls, RdKind::ClosedEnv, 3, -1 },
+  { ParameterId::drone_5_rls, RdKind::ClosedDroneEnv, 3, -1 },
   { ParameterId::drone_5_tune_1, RdKind::ClosedTune, 3, 0 },
   { ParameterId::drone_5_tune_2, RdKind::ClosedTune, 3, 1 },
   { ParameterId::drone_5_tune_3, RdKind::ClosedTune, 3, 2 },
@@ -246,8 +248,8 @@ constexpr RdSpec kRdSpecs[] = {
   // GH#15 D3 (see drone_3 above): same divided-clock ratio, MOVE-only.
   { ParameterId::drone_6_divider, RdKind::Mono, -1, -1 },
   // GH#15 D4 (see drone_3 above): same shared norm->seconds closed form -> exact ClosedEnv.
-  { ParameterId::drone_6_att, RdKind::ClosedEnv, -1, -1 },
-  { ParameterId::drone_6_rls, RdKind::ClosedEnv, -1, -1 },
+  { ParameterId::drone_6_att, RdKind::ClosedDroneEnv, -1, -1 },
+  { ParameterId::drone_6_rls, RdKind::ClosedDroneEnv, -1, -1 },
   // GH#15 D5 (see drone_3 above): same classic gate_hold boolean transfer.
   { ParameterId::drone_6_hold, RdKind::SelBoolExact, -1, -1 },
   { ParameterId::env_follower_attack, RdKind::ClosedEnv, -1, -1 },
@@ -603,6 +605,7 @@ double expectedFor(RdKind kind, double probe) {
     case RdKind::SelBoolExact:    return probe == 1.0 ? 1.0 : 0.0;
     case RdKind::LinExp:          return probe == 1.0 ? 1.0 : 0.0;
     case RdKind::ClosedEnv:       return envSecFromNorm(probe);
+    case RdKind::ClosedDroneEnv:  return droneEnvSecFromNorm(probe);
     case RdKind::ClosedTune:      return classicTuneSemis(probe);
     case RdKind::ClosedVolt:      return classicVoltSemis(probe);
     case RdKind::ClosedRate:      return newDroneRateHz(probe);
@@ -937,16 +940,16 @@ static void classic_drone_group_gen_family() {
   CHECK(std::fabs(d->runtime().droneVoltSemisDown(kDroneGroup2) - classicVoltSemis(0.25)) < kTiny);
   CHECK(std::fabs(d->runtime().droneVoltSemisDown(kDroneGroup1) - base->runtime().droneVoltSemisDown(kDroneGroup1)) < kTiny);
 
-  // ATT (norm -> seconds 0.001+0.999n) is the group envelope, independent per group.
+  // ATT (norm -> seconds 0.001+9.999n^3) is the group envelope, independent per group.
   st = def; slot(st, ParameterId::drone_2_att) = 0.25;
   d = mustAccept(st);
-  CHECK(std::fabs(d->runtime().droneGroupAttSeconds(kDroneGroup2) - envSecFromNorm(0.25)) < kTiny);
+  CHECK(std::fabs(d->runtime().droneGroupAttSeconds(kDroneGroup2) - droneEnvSecFromNorm(0.25)) < kTiny);
   CHECK(std::fabs(d->runtime().droneGroupAttSeconds(kDroneGroup1) - base->runtime().droneGroupAttSeconds(kDroneGroup1)) < kTiny);
 
   // RLS mirrors ATT (separate range, never shared state).
   st = def; slot(st, ParameterId::drone_5_rls) = 0.8;
   d = mustAccept(st);
-  CHECK(std::fabs(d->runtime().droneGroupRlsSeconds(kDroneGroup5) - envSecFromNorm(0.8)) < kTiny);
+  CHECK(std::fabs(d->runtime().droneGroupRlsSeconds(kDroneGroup5) - droneEnvSecFromNorm(0.8)) < kTiny);
   CHECK(std::fabs(d->runtime().droneGroupRlsSeconds(kDroneGroup1) - base->runtime().droneGroupRlsSeconds(kDroneGroup1)) < kTiny);
 
   // GATE/HOLD: selector 1 -> HOLD only (drone_*_gate_hold never touches the gate, per the
