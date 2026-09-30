@@ -269,11 +269,11 @@ static void expanded_bad_value_matrix() {
     CHECK(vd::check_scalar_value(0.25, d, 0u).family == core::ValidationFamily::parameter_out_of_range);
     CHECK_TRUE(vd::check_scalar_value(0.5, d, 0u).ok);
   }
-  // Capacity SLACK: pid 412 (> last landed 411) with a non-zero value.
+  // Capacity SLACK: pid 416 (> last landed 415) with a non-zero value.
   {
     core::DeviceStateV1 st = core::make_default_device_state(0xA2UL);
-    st.parameters[412] = 1.0;
-    expect_family(st, core::ValidationFamily::invalid_parameter_slot, 412u);
+    st.parameters[416] = 1.0;
+    expect_family(st, core::ValidationFamily::invalid_parameter_slot, 416u);
   }
   // RIGHT bank: a live right-scalar out of range (field = 424 + j, j=0 = keyboard_mode).
   {

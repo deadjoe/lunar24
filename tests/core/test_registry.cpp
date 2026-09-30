@@ -113,7 +113,7 @@ static void frozen_counts() {
                                          // preamp/env_follower (Codex ebd65910) id 9/10, joystick id 8,
                                          // lfo_a/lfo_b, vco_a/vco_b/vcf/keyboard/envelope_a/
                                          // envelope_b.
-  CHECK_EQ(core::kParameterCount, 345u); // Phase B ORCHE Programs 1/2/3 X/Y/Z slice (Claude msg
+  CHECK_EQ(core::kParameterCount, 349u);  // + the classic drones' CV knobs (ids 412-415); // Phase B ORCHE Programs 1/2/3 X/Y/Z slice (Claude msg
                                          // fa41d75a): +9 program params (orche.1/.2/.3 x/y/z
                                          // delay time/feedback amount/trigger threshold + delay
                                          // time/feedback amount/trigger threshold + delay time/

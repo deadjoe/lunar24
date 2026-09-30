@@ -235,13 +235,7 @@ int main(int argc, char** argv) {
         art::drawDisplay(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
         break;
       case WidgetKind::Decor:
-        if (w.id == 2) {
-          Widget k = w;
-          k.kind = WidgetKind::Knob;
-          k.cap = Cap::Black;
-          k.id = 0;
-          knob(k);
-        } else if (w.id == 3) {
+        if (w.id == 3) {
           jack(w);
         } else if (w.id == 0) {
           std::printf("<circle cx='%.1f' cy='%.1f' r='%.1f' fill='white' stroke='%s' stroke-width='2'/>\n", w.cx, w.cy,

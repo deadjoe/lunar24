@@ -357,7 +357,8 @@ static void test_classic_group_isolation() {
 
 // ------------------------------------------------- 12. shared CV MOD -----------
 // The group's shared CV MOD detunes ONLY generators whose MOD button is on; a MOD-off
-// generator is unresponsive (design/07 §7). Modelled as modAmount * (perGenCv + groupCv).
+// generator is unresponsive (design/07 §7). The group CV moves MOD-on generators
+// exponentially: x 2^(groupCv * octaves-per-volt), the CV knob setting the depth.
 static void test_classic_group_mod_cv() {
   const std::uint64_t seed = 0xEC7E0005ULL;
   const double sr = 48000.0;
@@ -369,9 +370,11 @@ static void test_classic_group_mod_cv() {
   const double g0_off = drone_test::measure_freq_hz(render_channel(off, 0, n), sr);
   core::DroneBank on = make_bank(seed, sr, 5, false);
   on.setMod(0, 1.0);
-  on.setGroupModCv(0, 4.0);   // shared CV MOD = 4 -> MOD-on gen turns by +4 Hz.
+  on.setGroupModCv(0, 4.0);   // shared CV MOD = 4 V at the default depth -> +0.2 octave.
   const double g0_on = drone_test::measure_freq_hz(render_channel(on, 0, n), sr);
-  CHECK(g0_on > g0_off + 3.0 && g0_on < g0_off + 5.0);   // MOD-on gen detuned up.
+  const double ratio = std::exp2(4.0 * core::DroneBank::kDefaultModOctPerVolt);
+  // measure_freq_hz counts zero crossings over 1 s, so it resolves whole Hz.
+  CHECK(g0_on > g0_off + 1.0 && std::abs(g0_on - g0_off * ratio) < 2.0);  // MOD-on gen detuned up.
   // MOD-off gen (index 1) — same seed/gen/sample count => jitter identical => unchanged.
   const double g1_off = drone_test::measure_freq_hz(render_channel(off, 1, n), sr);
   const double g1_on = drone_test::measure_freq_hz(render_channel(on, 1, n), sr);

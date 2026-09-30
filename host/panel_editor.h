@@ -712,7 +712,7 @@ class DroneKeyControl : public IControl {
 };
 
 // Non-interactive panel hardware: photo sensor, the drone LED bar (lit per unmuted tone),
-// and knobs / jacks that have no function in Lunar 24.
+// and jacks that have no function in Lunar 24.
 class DecorControl : public IControl {
  public:
   DecorControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) { SetIgnoreMouse(true); }
@@ -729,7 +729,6 @@ class DecorControl : public IControl {
                      IRECT(float(w_.x() + 5 + i * 12.5), float(w_.y() + 8), float(w_.x() + 14 + i * 12.5), float(w_.y() + 38)));
         }
         break;
-      case 2: drawKnob(g, w_, 0.5, false); break;
       default: drawJack(g, float(w_.cx), float(w_.cy), float(w_.w / 2), false); break;
     }
   }

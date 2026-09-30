@@ -6,7 +6,7 @@
 // ⚠️ COUNT NOTE: the "169" in this file's NAME is historical (task #78's original applied_to_dsp
 // size). The live count is read from the disposition table, never from this comment. It moved
 // 169 -> 171/175/177/181/183 across GH#15 D1..D5 and 183 -> 185 at GH#19 S0 / task #117 (the
-// vco_a.pwm + vco_b.pwm pair). Every assertion below pins 185; the stale 169s in this header are
+// vco_a.pwm + vco_b.pwm pair). Every assertion below pins 189 (the classic drones' CV knobs added 4); the stale 169s in this header are
 // left as the historical narrative rather than rewritten piecemeal.
 //
 // This CTest drives the validated DeviceStateV1 -> buildMachineRuntimeCandidate path (the
@@ -637,7 +637,7 @@ static void full169_default_apply() {
   const DeviceStateV1 def = make_default_device_state(kSeed);
   auto d = mustAccept(def);
   CHECK(d->dspApplyOk());
-  CHECK_EQ(d->dspAppliedCount(), 185u);
+  CHECK_EQ(d->dspAppliedCount(), 189u);
   CHECK(d->dspFirstFailId() == static_cast<ParameterId>(kParameterCount));
   CHECK(d->dspFirstFailStatus() == ParameterApplyStatus::applied);
   CHECK(d->valid());
@@ -1075,7 +1075,7 @@ static void typed_reject_carry_first_fail() {
   CHECK(firstStatus == ParameterApplyStatus::invalid_value);
   // applyDspState re-writes the runtime's own running count on every call (partial on a
   // rejection); the definition's construction-time count stays 185. Read the runtime count.
-  CHECK(d->runtime().dspAppliedCount() < 185u);
+  CHECK(d->runtime().dspAppliedCount() < 189u);
   // Fail-closed against partial-success: the source state is NEVER mutated by the apply.
   CHECK(bad.parameters[badIdx] == pvBefore);
 
@@ -1156,7 +1156,7 @@ static void disposition_target_set() {
     CHECK(!isReadback || isApplied);
     CHECK(!isControlSource || isApplied);
   }
-  CHECK(count_disposition(StateDisposition::applied_to_dsp) == 185);
+  CHECK(count_disposition(StateDisposition::applied_to_dsp) == 189);
   CHECK(appliedCount == 185);
   CHECK(rdCount == 150);
   CHECK(ctCount == 35);
