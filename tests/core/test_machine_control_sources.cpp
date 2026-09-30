@@ -202,6 +202,10 @@ static int gh21_settle_frames(double sr) {
 // form, so the edge MUST land at this frame, not "the old exact frame", restoring
 // timeline discrimination). Replays the real ParameterSmoother class + the real per-frame
 // ordering; returns -1 if `n_max` frames elapse without a clean rising crossing.
+// The joystick norm at which its X output (10 V * (x - 0.5), offset centred) reaches the
+// sequencer EXT CLOCK rising level (1 V threshold + 0.2 V hysteresis).
+static constexpr double kExtClockRiseNorm = 0.5 + 1.2 / 10.0;
+
 static int gh21_cross_frame(double start,
                             const std::vector<std::pair<int, double>>& targets, double cross,
                             int n_max) {
@@ -484,8 +488,11 @@ static void test_2_lfo_drone_mod_same_sample(void) {
 //    plan-order robustness, gate-mask isolation, A/B independence and R-normalling.
 // ===========================================================================
 static void test_3_seq_gate_eg_env_vcf(void) {
-  double envA[kCap], envB[kCap], sqGate[kCap], vcfL[kCap], vcfR[kCap];
-  int stepAt[kCap];
+  // The EXT CLOCK rises at +1.2 V, so the smoothed joystick needs full swings and a longer
+  // window than kT3 to cross it.
+  constexpr int kT3 = 10240;
+  std::vector<double> envA(kT3), envB(kT3), sqGate(kT3), vcfL(kT3), vcfR(kT3);
+  std::vector<int> stepAt(kT3);
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
@@ -507,13 +514,13 @@ static void test_3_seq_gate_eg_env_vcf(void) {
     applyParam(rt, reg::ParameterId::sequencer_step_cv_3, 3.0, 0);
     applyParam(rt, reg::ParameterId::sequencer_step_gate_1, 1.0, 0);
     applyParam(rt, reg::ParameterId::joystick_x, 0.3, 0);        // low (-2V)
-    // Rising edges at frames 8, 24, 40 toward the sequencer external clock.
-    applyParam(rt, reg::ParameterId::joystick_x, 0.7, 8);
-    applyParam(rt, reg::ParameterId::joystick_x, 0.3, 16);
-    applyParam(rt, reg::ParameterId::joystick_x, 0.7, 24);
-    applyParam(rt, reg::ParameterId::joystick_x, 0.3, 32);
-    applyParam(rt, reg::ParameterId::joystick_x, 0.7, 40);
-    for (int i = 0; i < kCap; ++i) {
+    // Full swings toward the sequencer external clock (rising edges after 100, 4100, 8100).
+    applyParam(rt, reg::ParameterId::joystick_x, 1.0, 100);
+    applyParam(rt, reg::ParameterId::joystick_x, 0.0, 2100);
+    applyParam(rt, reg::ParameterId::joystick_x, 1.0, 4100);
+    applyParam(rt, reg::ParameterId::joystick_x, 0.0, 6100);
+    applyParam(rt, reg::ParameterId::joystick_x, 1.0, 8100);
+    for (int i = 0; i < kT3; ++i) {
       core::RuntimeOutput o;
       const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
@@ -528,18 +535,19 @@ static void test_3_seq_gate_eg_env_vcf(void) {
 
   // The seq GATE is the advance discriminator. Under GH#21 smoothing the external-clock CV
   // that drives it is a one-pole ramp, so a threshold rising edge fires at the closed-form
-  // frame where the smoothed joystick CV crosses 0.5 (Class B edge invariant + predictive
-  // window), NOT at the old raw value-step frame 8. That first crossing (pred[0]=15) STARTS
-  // the sequencer (step stays 0); step_gate_1 is enabled on step 0, so the gate pulses
-  // +10 V for exactly that one sample (a one-sample pulse, cleared next frame).
+  // frame where the smoothed joystick CV crosses the EXT CLOCK level (Class B edge invariant + predictive
+  // window), NOT at the raw value-step frame 100. That first crossing (pred[0]) STARTS
+  // the sequencer (step stays 0); step_gate_1 is enabled on step 0, so the gate goes to
+  // +10 V on that sample and stays high (a held gate).
   const std::vector<int> pred = gh21_cross_up_frames(
-      0.5, {{0, 0.3}, {8, 0.7}, {16, 0.3}, {24, 0.7}, {32, 0.3}, {40, 0.7}}, 0.5, kCap);
-  check(!pred.empty() && pred[0] < kCap, "t3 crossing prediction is defined within the window");
+      0.5, {{0, 0.3}, {100, 1.0}, {2100, 0.0}, {4100, 1.0}, {6100, 0.0}, {8100, 1.0}},
+      kExtClockRiseNorm, kT3);
+  check(!pred.empty() && pred[0] < kT3, "t3 crossing prediction is defined within the window");
   check(sameD(sqGate[pred[0]], 10.0),
-        "t3 seq gate pulses at the first external-clock cross (predictive window)");
-  check(pred[0] < kCap && pred[0] + 1 < kCap && sameD(sqGate[pred[0] + 1], 0.0),
-        "t3 seq gate is a one-sample pulse (cleared next frame)");
-  check(pred[0] != 8, "t3 seq gate NOT at the old raw frame 8 (anti-old-frame)");
+        "t3 seq gate opens at the first external-clock cross (predictive window)");
+  check(pred[0] < kT3 && pred[0] + 1 < kT3 && sameD(sqGate[pred[0] + 1], 10.0),
+        "t3 seq gate is held past the edge frame (a real gate, not a one-sample pulse)");
+  check(pred[0] != 100, "t3 seq gate NOT at the raw value-step frame (anti-old-frame)");
   check(stepAt[0] == 0, "t3 sequencer begins at step 0");
   check(stepAt[pred[1]] == 1, "t3 seq reaches step 1 at the 2nd predicted cross (pred[1])");
   check(stepAt[pred[2]] == 2, "t3 seq reaches step 2 at the 3rd predicted cross (pred[2])");
@@ -571,27 +579,27 @@ static void test_3_seq_gate_eg_env_vcf(void) {
 
   // The EG A rose after the seq gate pulse (gate -> EG A gate -> env real chain).
   int firstEnv = -1;
-  for (int i = 0; i < kCap; ++i) if (envA[i] > 0.0) { firstEnv = i; break; }
+  for (int i = 0; i < kT3; ++i) if (envA[i] > 0.0) { firstEnv = i; break; }
   check(firstEnv >= 0, "t3 EG A env_out is nonzero after a seq gate (real gate->EG chain)");
   bool envBeforeZero = true;
-  for (int i = 0; i < firstEnv && i < kCap; ++i) envBeforeZero = envBeforeZero && sameD(envA[i], 0.0);
+  for (int i = 0; i < firstEnv && i < kT3; ++i) envBeforeZero = envBeforeZero && sameD(envA[i], 0.0);
   check(envBeforeZero, "t3 EG A was idle before the seq gate (gate-mask: only gated on)");
 
   // Gate-mask: the seq gate did NOT trigger EG B (self-gen is smooth, no frame-8 spike);
   // A/B are independent instances.
   bool bIndependent = false;
-  for (int i = 0; i < kCap; ++i) bIndependent = bIndependent || !sameD(envA[i], envB[i]);
+  for (int i = 0; i < kT3; ++i) bIndependent = bIndependent || !sameD(envA[i], envB[i]);
   check(bIndependent, "t3 EG A and EG B are independent (no A/B cross-wire)");
   bool bSelfGen = false;
-  for (int i = 0; i < kCap; ++i) bSelfGen = bSelfGen || (envB[i] > 0.0);
+  for (int i = 0; i < kT3; ++i) bSelfGen = bSelfGen || (envB[i] > 0.0);
   check(bSelfGen, "t3 EG B self-generates without a gate (SELF-GEN/HOLD independent)");
 
   // Descriptor interpreter: the EG A env rose only at/after the interpreted rising gate
   // (a source already-high at sample 0 would not fabricate a phantom edge).
   bool vcfTracks = true;
   int firstVcf = -1;
-  for (int i = 0; i < kCap; ++i) if (vcfL[i] != 0.0) { firstVcf = i; break; }
-  for (int i = 0; i < kCap; ++i) if (vcfL[i] != 0.0 || envA[i] != 0.0) {
+  for (int i = 0; i < kT3; ++i) if (vcfL[i] != 0.0) { firstVcf = i; break; }
+  for (int i = 0; i < kT3; ++i) if (vcfL[i] != 0.0 || envA[i] != 0.0) {
     // They should be jointly nonzero/nonzero within the env->vcf causality window.
     vcfTracks = vcfTracks && (vcfL[i] >= 0.0);
   }
@@ -600,7 +608,7 @@ static void test_3_seq_gate_eg_env_vcf(void) {
 
   // R-normalling: vcf_cv_r_in unplugged while vcf_cv_l_in is fed -> R reads THIS frame's L.
   bool norm = true;
-  for (int i = 0; i < kCap; ++i) norm = norm && sameD(vcfR[i], vcfL[i]);
+  for (int i = 0; i < kT3; ++i) norm = norm && sameD(vcfR[i], vcfL[i]);
   check(norm, "t3 VCF R normalled to VCF L (unplugged R, fed L)");
 }
 
@@ -692,7 +700,7 @@ static void test_5_seq_ext_clock(void) {
   // (up), tau=0.050 s, fs=48000, so it crosses its 0 V gate threshold when x reaches 0.5.
   // gh21_cross_frame solves the one-pole closed form -> the predicted crossing, used below as
   // the Class-B (c) window centre. This is deterministic (declared window, no magic number).
-  const int xFrame = gh21_cross_frame(0.5, {{0, 0.3}, {5, 0.7}}, 0.5, n);
+  const int xFrame = gh21_cross_frame(0.5, {{0, 0.3}, {5, 0.7}}, kExtClockRiseNorm, n);
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
@@ -725,16 +733,16 @@ static void test_5_seq_ext_clock(void) {
   check(rise >= xFrame - 1 && rise <= xFrame + 1,
         "t5 predicted-crossing window: the advance lands near the smoothed-0 V-crossing frame");
   check(rise >= 0 && gate[rise] == 10.0,
-        "t5 single-sample +10V gate pulse on the (one) rising advance");
+        "t5 +10V gate starts on the (one) rising advance");
   // --- Class B (a): edge invariants ---
   // Rising -> EXACTLY one advance; sustained high (x -> +2V, stays >0V) never repeats it;
-  // the edge is a single-sample pulse (gate high for exactly one frame at the advance).
+  // the gate starts once at the advance and is held.
   int advances = 0;
   for (int i = 1; i < n; ++i)
     if (gate[i] > 0.0 && gate[i - 1] == 0.0) ++advances;
   check(advances == 1, "t5 rising -> exactly one advance (sustained high never repeats)");
-  check(rise >= 0 && rise + 1 < n && gate[rise + 1] == 0.0,
-        "t5 gate pulse is exactly one sample (one-shot, not a held rail)");
+  check(rise >= 0 && rise + 1 < n && gate[rise + 1] == 10.0,
+        "t5 the gate is held past the advance frame (not a one-sample pulse)");
   // --- Class A: step_cv_1 value reach (enlarged window, rule 2) ---
   // step_cv_1 is also Smoothing::seconds, so the CV ramps from default 0 -> 1.0 V and lands on
   // target only after the settle window; at the old frame 5 it is still mid-ramp.
@@ -787,17 +795,18 @@ static void test_6_seq_stages_clock_out(void) {
   //     wrap per stageCount (read from the sequencer's own currentStep()).
   const struct { int stages; double step0, step1, step2; } cases[3] = {
       {3, 1.0, 2.0, 3.0}, {4, 1.0, 2.0, 3.0}, {5, 1.0, 2.0, 3.0}};
-  // Spaced up/down steps so each up-ramp crosses 0 V (x=0.5) before the next step. tau=0.050 s
-  // => the up-crossing is ~900 frames after the step; 1500-frame holds give a clean, isolated
-  // crossing each cycle. The crossing FRAMES are computed, not hard-coded (rule 2c).
+  // Spaced full-swing steps so each up-ramp crosses the EXT CLOCK level (+1.2 V) before the
+  // next step. tau=0.050 s => the up-crossing is ~1800-2300 frames after the step; 3000-frame
+  // holds give a clean, isolated crossing each cycle. The crossing FRAMES are computed, not
+  // hard-coded (rule 2c).
   const std::vector<std::pair<int, double>> sched = {
-      {0, 0.3}, {1500, 0.7}, {3000, 0.3}, {4500, 0.7},
-      {6000, 0.3}, {7500, 0.7}, {9000, 0.3}, {10500, 0.7}};
-  const int kN = 20000;
+      {0, 0.0}, {3000, 1.0}, {6000, 0.0}, {9000, 1.0},
+      {12000, 0.0}, {15000, 1.0}, {18000, 0.0}, {21000, 1.0}};
+  const int kN = 26000;
   for (int c = 0; c < 3; ++c) {
     const int stages = cases[c].stages;
     const double s0 = cases[c].step0, s1 = cases[c].step1, s2 = cases[c].step2;
-    const std::vector<int> pred = gh21_cross_up_frames(0.5, sched, 0.5, kN);
+    const std::vector<int> pred = gh21_cross_up_frames(0.5, sched, kExtClockRiseNorm, kN);
     std::vector<double> sqCv(kN), sqGate(kN), clockOut(kN), vcfL(kN);
     std::vector<int> seqStep(kN, -1);
     {
@@ -861,27 +870,26 @@ static void test_6_seq_stages_clock_out(void) {
       for (const auto& step : sched)
         if (step.second == 0.7 && f == step.first) notRaw = false;
     check(notRaw, "t6 anti-old-frame: no advance at a raw value-step frame (edge moved off the step)");
-    // gate_out: 10 V single-sample pulse at each crossing whose LANDING step is gate-enabled
+    // gate_out: a 10 V gate STARTS at each crossing whose LANDING step is gate-enabled
     // (step_gate_1=1 => step0 only): the start-crossing (pred[0], step0) and a wrap that lands on
-    // step0 (3-stage, pred[3]) pulse; a wrap onto a disabled step (4/5-stage) does not. 0 V elsewhere.
+    // step0 (3-stage, pred[3]); a wrap onto a disabled step (4/5-stage) starts none. The gate then
+    // holds for part of the step; a gate still high when the next one starts drops for one sample
+    // first, so that rise lands one frame late.
     std::vector<int> expectedGate;
     expectedGate.push_back(pred[0]);
     if (stages == 3) expectedGate.push_back(pred[3]);
-    bool gateOK = true;
+    std::vector<int> rises;
     for (int i = 0; i < kN; ++i) {
       const double g = sqGate[i];
-      const bool expect =
-          std::find(expectedGate.begin(), expectedGate.end(), i) != expectedGate.end();
-      if (expect != (g > 0.0)) gateOK = false;
+      if (g != 0.0 && g != 10.0) rises.push_back(-1);  // only the 0 V / 10 V rails
+      if (g > 0.0 && (i == 0 || sqGate[i - 1] == 0.0)) rises.push_back(i);
     }
-    check(gateOK, "t6 gate_out is a 10 V exact-sample pulse at each gate-enabled-step crossing (0 V elsewhere)");
-    bool oneShot = true;
-    for (std::size_t k = 0; k < expectedGate.size(); ++k) {
-      const int f = expectedGate[k];
-      if (f > 0 && sqGate[f - 1] != 0.0) oneShot = false;
-      if (f + 1 < kN && sqGate[f + 1] != 0.0) oneShot = false;
-    }
-    check(oneShot, "t6 gate_out is a single-sample pulse (returns to 0 V the next frame)");
+    bool gateOK = rises.size() == expectedGate.size();
+    for (std::size_t k = 0; gateOK && k < rises.size(); ++k)
+      if (rises[k] < expectedGate[k] || rises[k] > expectedGate[k] + 1) gateOK = false;
+    check(gateOK, "t6 gate_out starts a 10 V gate at each gate-enabled-step crossing (and nowhere else)");
+    check(sqGate[pred[0]] == 10.0 && pred[0] + 1 < kN && sqGate[pred[0] + 1] == 10.0,
+          "t6 gate_out is a held gate, not a one-sample pulse");
     // ---- wrap / stop per stageCount: read the real sequencer step after the last crossing. ----
     check(seqStep[pred.back()] == (stages == 3 ? 0 : 3),
           "t6 4th crossing lands on the wrap step (step0 for 3-stage, step3 for 4/5-stage)");
@@ -933,8 +941,9 @@ static void test_6_seq_stages_clock_out(void) {
   //     re-expression: the joystick is smoothed, so the seq gate fires at the SMOOTHED 0 V
   //     crossing (predicted via the closed form), NOT at the raw value-step frame 8.
   {
-    const int gateFrame = gh21_cross_frame(0.5, {{0, 0.3}, {8, 0.7}}, 0.5, 64);
-    double envA[kCap];
+    constexpr int kT6c = 4096;  // the smoothed joystick needs ~1600 frames to reach +1.2 V
+    const int gateFrame = gh21_cross_frame(0.5, {{0, 0.3}, {8, 1.0}}, kExtClockRiseNorm, kT6c);
+    std::vector<double> envA(kT6c);
     {
       std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
       core::SynthRuntime& rt = def->runtime();
@@ -946,8 +955,8 @@ static void test_6_seq_stages_clock_out(void) {
       applyParam(rt, reg::ParameterId::envelope_a_s, 0.9, 0);
       applyParam(rt, reg::ParameterId::envelope_a_a, 0.0002, 0);  // fast attack: nonzero env
       applyParam(rt, reg::ParameterId::joystick_x, 0.3, 0);
-      applyParam(rt, reg::ParameterId::joystick_x, 0.7, 8);
-      for (int i = 0; i < 64; ++i) {
+      applyParam(rt, reg::ParameterId::joystick_x, 1.0, 8);
+      for (int i = 0; i < kT6c; ++i) {
         core::RuntimeOutput o;
         const core::RuntimeInputs z{0.0, 0.0};
         rt.processBlock(&z, 1, &o);
@@ -955,7 +964,7 @@ static void test_6_seq_stages_clock_out(void) {
       }
     }
     double maxEnv = 0.0;
-    for (int i = 0; i < 64; ++i) maxEnv = std::max(maxEnv, envA[i]);
+    for (int i = 0; i < kT6c; ++i) maxEnv = std::max(maxEnv, envA[i]);
     check(maxEnv > 0.0, "t6c seq gate triggers EG A env (gate->EG), env rises after the gate");
     check(gateFrame > 0 && envA[gateFrame - 1] == 0.0,
           "t6c the EG is NOT gated before the smoothed crossing (env idle until then)");
@@ -1082,25 +1091,26 @@ static void test_7_param_table_partition(void) {
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
+    constexpr int kT7 = 10240;  // full swings; the smoothed joystick needs ~2000 frames per crossing
     rt.connect(reg::JackId::joystick_x_out, reg::JackId::sequencer_ext_clock_in);
     rt.rebuild();
     applyParam(rt, reg::ParameterId::sequencer_clock, 1.0, 0);
     applyParam(rt, reg::ParameterId::sequencer_step_cv_1, 1.0, 0);
     applyParam(rt, reg::ParameterId::joystick_x, 0.3, 0);
-    applyParam(rt, reg::ParameterId::joystick_x, 0.7, 40);
-    applyParam(rt, reg::ParameterId::joystick_x, 0.2, 100);
-    applyParam(rt, reg::ParameterId::joystick_x, 1.0, 160);
-    // Class B (source-edge, three-part lock). The ext_clock gate is a 0-threshold/0-hysteresis
-    // comparator, rising exactly when the SMOOTHED joystick_x crosses 0.5 (x_out 0V). The seq
+    applyParam(rt, reg::ParameterId::joystick_x, 1.0, 40);
+    applyParam(rt, reg::ParameterId::joystick_x, 0.0, 3000);
+    applyParam(rt, reg::ParameterId::joystick_x, 1.0, 6000);
+    // Class B (source-edge, three-part lock). The ext_clock gate rises when the SMOOTHED
+    // joystick_x crosses kExtClockRiseNorm (x_out +1.2 V). The seq
     // (kExternal clock source) STARTS on the first rising edge (started_=true, step held at 0)
     // and ADVANCES step 0->1 on the SECOND. Both edges are predicted by the one-pole closed form
-    // (gh21_cross_up_frames) at frames 79 and 187 — NOT the raw value-step frames 40/100/160,
+    // (gh21_cross_up_frames) — NOT the raw value-step frames 40/3000/6000,
     // which is the anti-old-frame lock (b), and each lands within the predictive window (c).
     // A rising edge advances at most once (a): started never repeats on a sustained high.
     const std::vector<int> pred = gh21_cross_up_frames(
-        0.5, {{0, 0.3}, {40, 0.7}, {100, 0.2}, {160, 1.0}}, 0.5, kCap);
+        0.5, {{0, 0.3}, {40, 1.0}, {3000, 0.0}, {6000, 1.0}}, kExtClockRiseNorm, kT7);
     int startFrame = -1, advFrame = -1;
-    for (int i = 0; i < kCap; ++i) {
+    for (int i = 0; i < kT7; ++i) {
       core::RuntimeOutput o;
       const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
@@ -1112,7 +1122,7 @@ static void test_7_param_table_partition(void) {
           "t7 ext-clock START edge lands within ±1 of the closed-form crossing (predictive window)");
     check(std::abs(advFrame - pred[1]) <= 1,
           "t7 ext-clock ADVANCE edge lands within ±1 of the closed-form crossing (predictive window)");
-    check(startFrame != 40 && advFrame != 100 && advFrame != 160,
+    check(startFrame != 40 && advFrame != 3000 && advFrame != 6000,
           "t7 ext-clock edges NOT at the old raw value-step frames (anti-old-frame)");
     check(rt.sequencer().currentStep() == 1,
           "t7 legitimate external clock advances exactly one step (0->1)");
@@ -2221,15 +2231,15 @@ static void test_13_vca_sink_and_gate_latches(void) {
     applyParam(rt, reg::ParameterId::sequencer_step_cv_1, 1.0, 0);    // step-0 CV observable
     applyParam(rt, reg::ParameterId::sequencer_step_gate_1, 1.0, 0);  // step-0 gate emitted
     applyParam(rt, reg::ParameterId::joystick_x, 0.3, 0);        // low (-2V): primes, stays low
-    applyParam(rt, reg::ParameterId::joystick_x, 0.7, 5);        // +2V rising at frame 5
+    applyParam(rt, reg::ParameterId::joystick_x, 1.0, 5);        // +5V: crosses +1.2 V, stays high
     double prevG = 0.0;
     int rises = 0;
-    for (int i = 0; i < 40; ++i) {
+    for (int i = 0; i < 8000; ++i) {
       core::RuntimeOutput blk;
       const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &blk);
       const double g = rt.controlVoltageAt(reg::JackId::sequencer_gate_out);
-      if (sameD(g, 10.0) && !sameD(prevG, 10.0)) ++rises;  // one-sample 10V pulse per advance
+      if (sameD(g, 10.0) && !sameD(prevG, 10.0)) ++rises;  // one gate start per advance
       prevG = g;
     }
     check(rises == 1, "t13e one rising edge drives exactly ONE advance (sustained high no repeat)");
@@ -2335,19 +2345,22 @@ static void test_14_pulser_transfer_and_clock_out(void) {
     check(rt.rebuild(), "t14 clock_out->gate rebuild");
     check(rt.setSequencerInternalRateHz(4.0), "t14 set 4 Hz pulser for a countable run");
     std::uint64_t rises = 0, gateHigh = 0;
+    bool prevGate = false;
     double maxEnv = 0.0;
     for (std::uint64_t i = 0; i < static_cast<std::uint64_t>(kSr); ++i) {
       core::RuntimeOutput o;
       const core::RuntimeInputs z{0.0, 0.0};
       rt.processBlock(&z, 1, &o);
       if (rt.sequencer().clockOutRising()) ++rises;
-      if (rt.envelopeA().gateLatch()) ++gateHigh;
+      const bool g = rt.envelopeA().gateLatch();
+      if (g && !prevGate) ++gateHigh;  // count gate STARTS (CLOCK OUT is a square now)
+      prevGate = g;
       const double e = rt.controlVoltageAt(reg::JackId::envelope_a_env_out);
       if (e > maxEnv) maxEnv = e;
     }
     check(rises >= 1, "t14 the patched CLOCK OUT produces a real pulser run over 1.0 s");
     check(gateHigh == rises,
-          "t14 EXACTLY ONE EG gate-high per pulser rising (no double-edge)");
+          "t14 EXACTLY ONE EG gate start per pulser rising (no double-edge)");
     check(maxEnv > 0.0, "t14 envelope env_out responds to the patched clock_out gate");
   }
 }
@@ -2450,8 +2463,8 @@ static void test_16_ext_clock_in_freeze(void) {
   check(static_cast<unsigned>(d->maxCables) == 1u,
         "t16 ext_clock_in maxCables=1 frozen (single-cable cardinality)");
   // Gate/clock threshold + hysteresis + coupling:
-  check(sameD(d->gateThresholdVolts, 0.0) && sameD(d->hysteresisVolts, 0.0),
-        "t16 ext_clock_in threshold/hysteresis 0 == placeholder sentinel (frozen)");
+  check(sameD(d->gateThresholdVolts, 1.0) && sameD(d->hysteresisVolts, 0.2),
+        "t16 ext_clock_in rises at 1.2 V (threshold 1 V + 0.2 V hysteresis) so a 0..10 V LFO clocks it");
   check(d->coupling == core::Coupling::unknown, "t16 ext_clock_in coupling UNKNOWN (frozen)");
   // Evidence provenance + descriptor-wide status:
   check(d->evidence.source == "solar42N_manual_v15",

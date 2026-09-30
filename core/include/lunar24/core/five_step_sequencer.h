@@ -26,7 +26,7 @@
 // rail is a CONFIRMED bipolar -10..+10V (kFiveStepClockIdleVolt/kFiveStepClockPeakVolt);
 // the discrete rising bool (clockOutRising()) remains the single edge truth and the
 // volts projection derives from the SAME pulserRising -- never a second phase/latch. The
-// pulse WIDTH is PROVISIONAL one-sample. The EXTERNAL clock input enters as an
+// CLOCK OUT is a 50% square and GATE stays high for half a step. The EXTERNAL clock input enters as an
 // already-interpreted __canonical __rising__ edge (produced by sink_gate_interpret()
 // against the real sequencer.ext_clock_in JackDescriptor: ss.edge == GateEdge::rising).
 // We consume that edge verbatim — we do NOT re-derive an edge from a raw gate level with our own
@@ -39,6 +39,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -48,6 +49,9 @@ namespace core {
 // Confirmed rails (manual L159-160 + registry step_cv / gate_out nominal).
 // step CV: 0..+5 V (unipolar). gate output: 0..+10 V (unipolar). These rails are
 // the only confirmed electrical facts the core depends on.
+// Longest GATE: a step after a long pause does not hold the gate open longer than this.
+// Tuned by ear.
+inline constexpr double kFiveStepGateMaxSeconds = 1.0;
 inline constexpr double kFiveStepCvPeakVolt = 5.0;    // 0..+5V CONFIRMED
 inline constexpr double kFiveStepGatePeakVolt = 10.0; // 0..+10V CONFIRMED
 // CLOCK OUT rail (@Codex final ruling 7C3): the sequencer.clock_out OUTPUT is a
@@ -189,7 +193,9 @@ class FiveStepSequencer {
   // correctly reports as edge=none priming). A sustained high is already just ONE
   // rising edge from the interpreter, so it can never be repeated here; and a source
   // switch to an already-high sink feeds edge=none, so no phantom is made.
-  void tick(bool externalClockRising) {
+  // externalPatched: a cable is in EXT. CLOCK. Like the hardware jack, that alone hands the
+  // clock to the external source, whatever the menu's clock setting says.
+  void tick(bool externalClockRising, bool externalPatched = false) {
     // The PULSER always runs (independent of the selected clock source) so the
     // CLOCK OUT event is produced even when the sequence is external-triggered.
     bool pulserRising = false;
@@ -197,6 +203,7 @@ class FiveStepSequencer {
       pulserPhase_ += internalRateHz_ / sr_;
       if (pulserPhase_ >= 1.0) {
         pulserRising = true;
+        pulserRisen_ = true;
         pulserPhase_ = std::fmod(pulserPhase_, 1.0);
       }
     }
@@ -204,34 +211,61 @@ class FiveStepSequencer {
     // Advance comes from the SELECTED clock source only; the other source's edge
     // never advances, so concurrent edges cannot double-advance the sequence.
     const bool advance =
-        (clockSource_ == ClockSource::kInternal) ? pulserRising : externalClockRising;
+        (clockSource_ == ClockSource::kInternal && !externalPatched) ? pulserRising
+                                                                      : externalClockRising;
 
     if (advance) {
+      const bool firstAdvance = !started_;
       if (started_) {
         step_ = (step_ + 1) % stageCount_; // wrap 3/4/5
       } else {
         started_ = true; // first accepted edge lands step 1 (index 0), never skips
       }
-      // PROVISIONAL one-sample gate pulse: +10V on the advance sample ONLY when
-      // the entered step's gate is enabled, else 0V; cleared next sample.
-      gateSample_ = stepGate_[step_] ? kFiveStepGatePeakVolt : 0.0;
+      // GATE: +10V for half the step (the step length is the time since the previous
+      // advance, or the PULSER period before there is one) when the entered step's gate is
+      // enabled. A one-sample pulse was too short to open an envelope. Half is tuned by ear.
+      // The first step (no previous advance yet) uses the PULSER period; a long pause is
+      // capped at kFiveStepGateMaxSeconds so the gate never hangs open.
+      double period = samplesSinceAdvance_;
+      if (firstAdvance && internalRateHz_ > 0.0) period = sr_ / internalRateHz_;
+      period = std::min(period, kFiveStepGateMaxSeconds * sr_);
+      const bool wasHigh = gateSample_ > 0.0;
+      gateRemain_ = stepGate_[step_] ? std::max(1.0, std::floor(0.5 * period)) : 0.0;
+      gateRising_ = stepGate_[step_];
+      // A gate still high from the previous step drops for one sample so the new step
+      // retriggers the envelope.
+      gateGap_ = wasHigh && stepGate_[step_];
+      samplesSinceAdvance_ = 0.0;
     } else {
+      gateRising_ = false;
+    }
+    samplesSinceAdvance_ += 1.0;
+    if (gateGap_) {
       gateSample_ = 0.0;
+      gateGap_ = false;
+    } else {
+      gateSample_ = gateRemain_ > 0.0 ? kFiveStepGatePeakVolt : 0.0;
+      if (gateRemain_ > 0.0) gateRemain_ -= 1.0;
     }
 
     cvOut_ = stepCv_[step_];      // current step CV (holds through gate-disabled step)
     clockOutRising_ = pulserRising;
-    // CLOCK OUT projection: derived from the SAME pulserRising as clockOutRising_ (single
-    // edge source — no second phase/latch). -10V idle; +10V on the rising sample; the next
-    // sample falls back to -10V (one-sample width, PROVISIONAL; rail confirmed -10..+10V).
-    clockOutVolts_ = pulserRising ? kFiveStepClockPeakVolt : kFiveStepClockIdleVolt;
+    // CLOCK OUT: a square wave from the PULSER phase, +10V for the first half of each period
+    // (it rises on the same sample as clockOutRising_), -10V for the second half. Rail
+    // confirmed -10..+10V; the 50% width is tuned by ear (a one-sample pulse could not open
+    // an envelope).
+    // It idles low until the PULSER first rises.
+    clockOutVolts_ = (pulserRisen_ && internalRateHz_ > 0.0 && pulserPhase_ < 0.5)
+                         ? kFiveStepClockPeakVolt
+                         : kFiveStepClockIdleVolt;
   }
 
   // ----- outputs -----
   double cvOut() const { return cvOut_; }                 // 0..+5V, current step
-  double gateOut() const { return gateSample_; }          // 0..+10V one-sample pulse
+  double gateOut() const { return gateSample_; }          // 0..+10V, high for half a step
+  bool gateRising() const { return gateRising_; }         // the sample a gate-enabled step starts
   bool clockOutRising() const { return clockOutRising_; } // discrete PULSER event
-  double clockOutVolts() const { return clockOutVolts_; } // -10 idle / +10 on rising (one-sample, PROVISIONAL)
+  double clockOutVolts() const { return clockOutVolts_; } // -10 / +10 square, 50% duty
 
  private:
   static bool stepFinite_(double hz, double sr) {
@@ -258,10 +292,15 @@ class FiveStepSequencer {
   double pulserPhase_ = 0.0;  // [0,1); forwarded to clock_out rising events
   int step_ = 0;              // current step index 0..(stageCount_-1)
   bool started_ = false;      // true once the first accepted edge has landed
-  double gateSample_ = 0.0;   // one-sample GATE pulse value (0 off-advance)
+  double gateSample_ = 0.0;   // GATE output value
+  double gateRemain_ = 0.0;   // samples the gate stays high
+  bool gateRising_ = false;   // true on the sample a gate-enabled step is entered
+  bool gateGap_ = false;      // one low sample between back-to-back gates
+  bool pulserRisen_ = false;  // CLOCK OUT stays low until the first PULSER edge
+  double samplesSinceAdvance_ = 0.0;  // measures the step length for the gate width
   double cvOut_ = 0.0;        // current step CV output
   bool clockOutRising_ = false;
-  double clockOutVolts_ = kFiveStepClockIdleVolt;  // -10 idle / +10 on rising (PROVISIONAL width)
+  double clockOutVolts_ = kFiveStepClockIdleVolt;  // -10 / +10 square
 };
 
 }  // namespace core

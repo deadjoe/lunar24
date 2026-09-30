@@ -52,6 +52,10 @@ Keep these unless a listening test or a real bug says otherwise.
   drive of 1 + 40*GAIN^2 with a make-up gain, so GAIN changes the character (clean -> heavy
   fuzz) while the level stays within a few dB. The old law scaled drive with the signal level
   and peaked at ~3% distortion, so the knobs mostly changed the volume. Tuned by ear.
+- **5-step sequencer outputs have real widths** (`five_step_sequencer.h`): GATE holds for half a
+  step (capped at 1 s, with a one-sample drop between back-to-back gates) and CLOCK OUT is a
+  50% square. One-sample pulses could not open an envelope. A cable in EXT. CLOCK takes over
+  from the PULSER (as on the hardware), and the input rises at 1.2 V so a 0..10 V LFO clocks it.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also
