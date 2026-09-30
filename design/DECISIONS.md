@@ -6,6 +6,10 @@ Keep these unless a listening test or a real bug says otherwise.
   `tools/gen_panel_art.py` into `host/include/host/panel_art.generated.h`; control positions
   live in `host/include/host/panel_ui_layout.h`. Branded "Lunar 24" (non-commercial; the
   owner confirmed no conflict).
+- **Name plates** are set in Saira (OFL), expanded width, stored as outlines by
+  `tools/gen_panel_logo.py` — no font file ships, and the preview matches the app. No moon
+  or other emblem: like the hardware, the name alone. Static art is drawn once through
+  `host/include/host/panel_art.h` by both the app and `panel_preview`.
 - **Keyboard menu** (35 settings) is an overlay opened by the red encoder; values are shown
   in the manual's units (`host/include/host/panel_format.h`).
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned

@@ -3,13 +3,15 @@
 //
 // The panel layout: every panel parameter has exactly one control, every jack on the
 // official panel has exactly one socket, controls stay on the panel and do not overlap,
-// and the keyboard-menu controls sit inside the menu overlay without overlapping.
+// and the keyboard-menu controls sit inside the menu overlay without overlapping. The static
+// panel art (panel_art.h) draws with every path inside the panel.
 
 #include <cstdio>
 #include <map>
 #include <string>
 
 #include "mini_test.h"
+#include <host/panel_art.h>
 #include <host/panel_ui_layout.h>
 #include <lunar24/core/state_disposition.h>
 
@@ -33,6 +35,21 @@ bool notOnPanel(std::uint32_t jack) {
     if (static_cast<std::uint32_t>(j) == jack) return true;
   return false;
 }
+// Counts what the panel art draws and flags points off the panel or unbalanced paths.
+struct CheckSink {
+  int paths = 0, texts = 0, bad = 0;
+  bool open = false;
+  void pt(float x, float y) { if (x < -1 || y < -1 || x > 2401 || y > 1553) ++bad; }
+  void fillRect(float x0, float y0, float x1, float y1, std::uint32_t, float) { pt(x0, y0); pt(x1, y1); }
+  void fillCircle(float cx, float cy, float, std::uint32_t) { pt(cx, cy); }
+  void moveTo(float x, float y) { pt(x, y); open = true; }
+  void lineTo(float x, float y) { pt(x, y); if (!open) ++bad; }
+  void closePath() {}
+  void markHole() { if (!open) ++bad; }
+  void fillPath(std::uint32_t, bool) { ++paths; open = false; }
+  void strokePath(std::uint32_t, float) { ++paths; open = false; }
+  void text(float x, float y, float, std::uint32_t, bool, const char*) { pt(x, y); ++texts; }
+};
 }  // namespace
 
 int main() {
@@ -83,5 +100,17 @@ int main() {
   CHECK_EQ(off, 0);
   CHECK_EQ(menuOut, 0);
   CHECK_EQ(clash, 0);
+
+  CheckSink art;
+  host::art::drawPanelArt(art);
+  CHECK_EQ(art.bad, 0);
+  CHECK(art.paths > 500);   // frames, printed marks, name plates
+  CHECK(art.texts > 300);   // panel labels
+  for (const auto& sh : host::art::kDecorShapes)
+    CHECK(sh.firstSub + sh.subCount <= sizeof(host::art::kDecorSubPaths) / sizeof(host::art::kDecorSubPaths[0]));
+  for (const auto& sp : host::art::kDecorSubPaths)
+    CHECK(2 * (sp.first + sp.count) <= sizeof(host::art::kDecorPoints) / sizeof(float));
+  for (const auto& sp : host::art::kLogoSubPaths)
+    CHECK(2 * (sp.first + sp.count) <= sizeof(host::art::kLogoPoints) / sizeof(float));
   return test::finish("test_panel_ui_layout");
 }

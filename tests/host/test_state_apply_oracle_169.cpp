@@ -105,7 +105,7 @@ std::unique_ptr<MachineRuntimeDefinition> mustAccept(const DeviceStateV1& st) {
 constexpr double envSecFromNorm(double n) { return 0.001 + 0.999 * n; }
 constexpr double classicTuneSemis(double n) { return (n - 0.5) * 24.0; }
 constexpr double classicVoltSemis(double n) { return 60.0 * n; }
-constexpr double newDroneRateHz(double n) { return 12.0 * n; }
+inline double newDroneRateHz(double n) { return n <= 0.0 ? 0.0 : 0.1 * std::pow(200.0, n); }
 
 // Classic group index for a voice (drone_1/2/4/5 -> group 0/1/2/3).
 constexpr int kDroneGroup1 = 0;

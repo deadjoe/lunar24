@@ -303,22 +303,23 @@ class SynthRuntime {
   // PAPA SRAPA (NEW) drone voices (drone 3/6), index 0 == drone_3, index 1 == drone_6.
   // GH#15 D4: each has a landed gate_in consumer and a landed env_out publisher.
   static constexpr int kPapaVoiceCount = 2;
+  // VCO SUB switch (-1): a square one octave down, mixed under the main wave.  // tuned by ear
+  static constexpr double kVcoSubMix = 0.5;
+  // Band-limited with polyBLEP at both edges (+2 at phase 0, -2 at phase 0.5).
+  double subSquare_(const Vco& v) const {
+    if (!v.subEnabled()) return 0.0;
+    const double t = v.subPhase(), dt = std::min(0.5, v.subFrequencyHz() / sampleRate_);
+    const double half = t + 0.5 < 1.0 ? t + 0.5 : t - 0.5;
+    return (t < 0.5 ? 1.0 : -1.0) + polyblepResidual(t, dt) - polyblepResidual(half, dt);
+  }
   // NEW drone voice 6 (Papa Srapa NoiseSource) amplitude. PROVISIONAL: the noise
   // level is not in the manual; exposed so the product path can bind a NOISE knob
   // and a test can compare the executed channel to a same-seed NoiseSource.
   static constexpr double kNewDroneNoiseAmp = 0.5;
-  // NEW-voice (Papa Srapa) FM/AM modulation amounts, taken from the FmAmVoice that
-  // expresses the LF-square->audio modulation relationship. PROVISIONAL: the manual
-  // gives no depth, these are seed/circuit constants to be tuned on sound.
-  static constexpr double kNewDroneFmDev = 120.0;   // FM peak deviation (Hz).
-  static constexpr double kNewDroneDepth = 0.5;     // AM index [0,1).
   // NEW-voice S&H hold period (seconds) — the clocked form the product path uses
   // actually takes the speed from the external clock; this is the standalone
   // self-timed fallback. PROVISIONAL.
   static constexpr double kNewDroneShSeconds = 0.05;
-  // LF square modulator default frequency (RATE). PROVISIONAL (RATE range not in
-  // the manual); the RATE control overrides it.
-  static constexpr double kNewDroneLfFreqHz = 6.0;
   // MOD knob -> audio-oscillator modulation depth. depth = modNorm * kModDepthFromNorm
   // (linear, kModDepthFromNorm = 1.0). PROVISIONAL: the norm->depth model is software
   // (no manual/DSP circuit evidence), like the pulser model. GH#15 D1.
@@ -334,22 +335,18 @@ class SynthRuntime {
   // Per-source sub-seed mix so the audio/LF/FmAm/noise stems within one voice are
   // independent draws from the shared voice seed.
   static constexpr std::uint64_t kNewSourceSeedMix = 0x2595DB9F3D276D2BULL;
-  // PITCH-position -> semitone mapping (0 = tone off / pure-noise recipe, 1 = max
-  // pitch). PROVISIONAL (pitch range = C0..E7 per manual, not numerically bound).
-  static constexpr double kNewPitchMinSt = 0.0;
-  static constexpr double kNewPitchMaxSt = 24.0;
-  // RANGE selector (hi/low) -> semitone band offset. hi (0, default) = 0 offset
-  // (bit-identical to pre-D2); low (1) shifts the whole PITCH band this many semitones
-  // DOWN (a 2-octave product-range shift). PROVISIONAL: a software model (the manual
-  // gives no numeric RANGE shift; no circuit/DSP evidence), flagged like the pulser.
-  // Solo-implementation note: the acceptance proves the LOW position against this
-  // single constant, so calibrating it later needs only one edit.
-  static constexpr double kNewDroneRangeLowShiftSt = -24.0;
-  // RATE SWITCH selector (off/on) -> LF-square modulator frequency multiplier. off
-  // (0, default) = x1 (LF keeps running at the RATE-knob-derived frequency — it NEVER
-  // stops, preserving the FM/AM default behavior); on (1) = x2 speed. PROVISIONAL: a
-  // software model (no manual number for the "switch" ratio; no evidence). GH#15 D2.
-  static constexpr double kNewDroneRateSwitchMult = 2.0;
+  // PITCH: 0 = tone off (the manual's "clean noise" recipe), otherwise an exponential
+  // sweep over one RANGE band. The manual gives C0..E7 for the whole oscillator; the
+  // hi/low switch splits that into two overlapping 4-octave bands.  // tuned by ear
+  static constexpr double kNewPitchLowBaseHz = 16.35;   // C0
+  static constexpr double kNewPitchHighBaseHz = 164.8;  // E3 (top of the band: E7)
+  static constexpr double kNewPitchBandOctaves = 4.0;
+  // RATE SWITCH: the panel prints "1 : 10" beside it — x1 / x10 on the LF modulator.
+  static constexpr double kNewDroneRateSwitchMult = 10.0;
+  // FM: the LF square swings the tone up/down by MOD x this many octaves (sirens at
+  // slow RATE, trills and bird cries fast). AM: MOD = 1 chops the tone fully.  // tuned by ear
+  static constexpr double kNewDroneFmOctaves = 3.0;
+  static constexpr double kNewDroneAmDepth = 1.0;
   // Source indices for newVoiceSeed/newSourceSeed derivation.
   static constexpr int kNewSrcAudio = 0;
   static constexpr int kNewSrcLf = 1;
@@ -992,6 +989,15 @@ class SynthRuntime {
   // Level controls (mixer VOL/PAN, preamp GAIN, drone MUTE, drone 3/6 NOISE) glide when a
   // knob moves live. After a whole-state load, land them on their values at once.
   // MIDI pitch bend, in volts on the keyboard V/OCT output (1 V = 1 octave). Audio thread.
+  // One 16-step sequencer step edited live (side 0 = left bank, 1 = right). Audio thread.
+  void setKeyboardSeqStep(int side, int step, std::uint8_t note, bool gate) {
+    if (step < 0 || step >= static_cast<int>(kKeyboardSeqStepCount)) return;
+    KeyboardSeq& q = side == 0 ? kbdState_.keyboardSeqCurrent : kbdState_.keyboardSeqCurrentR;
+    q.steps[static_cast<std::size_t>(step)].note = note;
+    q.steps[static_cast<std::size_t>(step)].gate = gate ? 1 : 0;
+    applyKeyboardState(kbdState_);
+  }
+
   void setKeyboardBendVolts(double v) { kbdBendVolts_ = std::isfinite(v) ? v : 0.0; }
 
   void snapSmoothedLevels() {
@@ -2163,7 +2169,6 @@ class SynthRuntime {
     PapaVoice(std::uint64_t voiceSeed, double sr)
         : audio(newSourceSeed(voiceSeed, kNewSrcAudio), sr),
           lf(newSourceSeed(voiceSeed, kNewSrcLf), sr),
-          fm(newSourceSeed(voiceSeed, kNewSrcFm), sr, kNewDroneFmDev, kNewDroneDepth),
           noise(newSourceSeed(voiceSeed, kNewSrcNoise), kNewDroneNoiseAmp),
           sh(sr, kNewDroneShSeconds),
           // GH#15 D4: the voice's AR VCA envelope. It starts from the SAME named
@@ -2176,39 +2181,35 @@ class SynthRuntime {
           ar(sr, DroneBank::kDefaultGroupGateOpen,
              DroneBank::mapAttSeconds(DroneBank::kDefaultAttNorm),
              DroneBank::mapRlsSeconds(DroneBank::kDefaultRlsNorm)) {
-      // GH#15 D2: the two NEW selectors default to their bit-identical positions
-      // (hi_low=hi -> rangeBaseSt_=0; rate_switch=off -> rateMult_=1), so this
-      // constructor value reproduces the pre-D2 sound exactly.
-      baseRateHz_ = kNewDroneLfFreqHz;
+      baseRateHz_ = newDroneRateHzFromNorm(0.5);  // the panel defaults
       applyRate();
+      applyPitch();
       noiseGlide_ = 1.0 - std::exp(-1.0 / (0.010 * sr));
     }
     void setPitch(double pct) {
-      pitchSemis_ = pct <= 0.0 ? SchmittOsc::kSilenceSt
-                                : kNewPitchMinSt + pct * (kNewPitchMaxSt - kNewPitchMinSt);
+      pitchNorm_ = pct;
       applyPitch();
     }
     void setRate(double hz) { baseRateHz_ = hz; applyRate(); }
-    // GH#15 D2 (RANGE selector). Shifts the audible PITCH band by the RANGE offset:
-    // hi (0, default) -> 0 (bit-identical to pre-D2); low -> kNewDroneRangeLowShiftSt
-    // (2 oct down). PROVISIONAL offset (see constant).
+    // RANGE switch: hi (0, default) / low (1) band of the PITCH knob.
     void setRangeHiLow(int sel) {
-      rangeBaseSt_ = (sel == 1) ? kNewDroneRangeLowShiftSt : 0.0;
+      low_ = sel == 1;
       applyPitch();
     }
-    // GH#15 D2 (RATE SWITCH selector). x1 (off, default) / x2 (on) on the RATE-derived
-    // LF frequency. off NEVER stops the LF — the FM/AM modulation the default sound
-    // relies on keeps running at the RATE-knob-derived frequency. PROVISIONAL (see const).
+    // RATE SWITCH: x1 (off, default) / x10 (on) on the RATE-derived LF frequency.
     void setRateSwitch(int sel) {
       rateMult_ = (sel == 1) ? kNewDroneRateSwitchMult : 1.0;
       applyRate();
     }
     void applyPitch() {
-      // PITCH-at-floor silence is absolute; the RANGE offset only shades an active band
-      // (never turns a silent PITCH into an audible tone).
-      audio.setPitchSemitones(pitchSemis_ == SchmittOsc::kSilenceSt
-                                  ? SchmittOsc::kSilenceSt
-                                  : rangeBaseSt_ + pitchSemis_);
+      if (pitchNorm_ <= 0.0) {  // PITCH at zero: tone off
+        audio.setPitchSemitones(SchmittOsc::kSilenceSt);
+        return;
+      }
+      audio.setPitchSemitones(0.0);  // tone on
+      const double base = low_ ? kNewPitchLowBaseHz : kNewPitchHighBaseHz;
+      audio.setFreqHz(base * std::exp2(kNewPitchBandOctaves * std::min(pitchNorm_, 1.0)) *
+                      (1.0 + audio.toleranceOf()));  // each unit is slightly off, like the hardware
     }
     void applyRate() { lf.setFreqHz(baseRateHz_ * rateMult_); }
     void setFm(bool on) { fmOn_ = on; }
@@ -2284,8 +2285,8 @@ class SynthRuntime {
       // oscillator. depth=modNorm linear (kModDepthFromNorm, PROVISIONAL). Default
       // drone_3/6 mod depth changed 1.0 (raw square) -> 0.5 (registry default).
       audio.setMod(sq * mod_);
-      audio.setFmDevHz(fmOn_ ? fm.fDevHz() : 0.0);
-      audio.setAmDepth(amOn_ ? fm.depth() : 0.0);
+      audio.setFmOctaves(fmOn_ ? kNewDroneFmOctaves : 0.0);
+      audio.setAmDepth(amOn_ ? kNewDroneAmDepth : 0.0);
       double a = 0.0;
       audio.tick(&a);
       double n = 0.0;
@@ -2317,7 +2318,6 @@ class SynthRuntime {
     }
     SchmittOsc audio;   // audio-frequency oscillator (PITCH/RANGE) -> tone.
     SchmittOsc lf;      // LF oscillator used as a square-wave modulator (RATE).
-    FmAmVoice fm;       // expresses the LF->audio modulation relationship (FM/AM).
     NoiseSource noise;  // independent noise mix (NOISE amount).
     SAndHold sh;        // noise->in, LF/mod->clock; CV out, not in the audio channel.
     // GH#15 D4 AR VCA envelope (linear, classic-drone law). Gates the voice's summed
@@ -2336,15 +2336,10 @@ class SynthRuntime {
     // MOD knob depth (GH#15 D1). Default 0.5 = the registered drone_3/6.mod default,
     // so the post-wire default sound is half-depth modulation (was the raw ±1 square).
     double mod_ = 0.5;
-    // RANGE keyboard/panel-band offset in semitones (GH#15 D2). 0 = hi (default,
-    // bit-identical to pre-D2); otherwise the LOW position's kNewDroneRangeLowShiftSt.
-    double rangeBaseSt_ = 0.0;
-    // PITCH knob-derived semitones (pre-RANGE-offset), held so changing the RANGE
-    // selector recomputes the same band with a different offset.
-    double pitchSemis_ = 0.0;
+    bool low_ = false;        // RANGE switch in the low position.
+    double pitchNorm_ = 0.5;  // PITCH knob position (0 = tone off).
     // RATE knob-derived LF frequency (Hz, pre-multiplier), held so changing the RATE
-    // SWITCH recomputes the same rate with a different multiplier. Constructor-initialised
-    // to kNewDroneLfFreqHz so a fresh voice reproduces the pre-D2 default rate.
+    // SWITCH recomputes the same rate with a different multiplier.
     double baseRateHz_ = 0.0;
     // RATE SWITCH multiplier (1 = off/default; otherwise kNewDroneRateSwitchMult). The
     // LF is NEVER gated off by this selector — off is x1, not silence.
@@ -3019,9 +3014,10 @@ class SynthRuntime {
   static double classicDroneVoltSemisDownFromNorm(double n) {
     return 60.0 * n;
   }  // 0.5 -> 30 semis down.
+  // RATE: 0 stops the modulator, otherwise 0.1..20 Hz exponential (0.5 -> 1.4 Hz).  // tuned by ear
   static double newDroneRateHzFromNorm(double n) {
-    return 12.0 * n;
-  }  // 0.5 -> 6 Hz; 0 -> stop.
+    return n <= 0.0 ? 0.0 : 0.1 * std::pow(200.0, std::min(n, 1.0));
+  }
 
   // Fixed-kind -> id lookup (linear over the small binding table).
   ExecutionKind kindOf_(ModuleId id) const {
@@ -3277,7 +3273,7 @@ class SynthRuntime {
         vcA_.setPwCv(pwm);
         double a = 0.0;
         vcA_.tick(&a);
-        dryA_ = a * vcoVcaGain_(0);
+        dryA_ = (a + kVcoSubMix * subSquare_(vcA_)) * vcoVcaGain_(0);
         chIn_[VoiceMixer::kChannelVcoA] = dryA_;
         if (vcoAOutBound_) publishSourceValue_(vcoAOut_, a);
         break;
@@ -3307,7 +3303,7 @@ class SynthRuntime {
         vcB_.setPwCv(pwm);
         double b = 0.0;
         vcB_.tick(&b);
-        dryB_ = b * vcoVcaGain_(1);
+        dryB_ = (b + kVcoSubMix * subSquare_(vcB_)) * vcoVcaGain_(1);
         chIn_[VoiceMixer::kChannelVcoB] = dryB_;
         // Publish the real vco_b.vco_out so any downstream (a normal consumer, or a
         // user-established B->B feedback edge) reads THIS frame's value through the single

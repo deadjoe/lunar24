@@ -8,6 +8,7 @@
 //   lunar24_render --program-l "Shimmer" --program-r "Space reverb" --set effector.z=0.8
 //   lunar24_render --note 0:0:4 --note 4:7:4 --out notes.wav      # time:semitone:length (s)
 //   lunar24_render --cable lfo_a.cv_out=vcf.cv_l_in --set vcf.l_mod=0.6
+//   lunar24_render --set keyboard.mode=2 --step 2:7 --step 3:12:0 --note 0:0:8   # 16-step sequencer
 //   lunar24_render --list params|jacks|programs
 
 #include <host/standalone_audio_engine.h>
@@ -43,6 +44,7 @@ void usage() {
       "  --program-l NAME     left effector program (e.g. \"Shimmer\" or cathedral.1)\n"
       "  --program-r NAME     right effector program\n"
       "  --note T:S:L         play a keyboard note at T seconds, S semitones, L seconds long\n"
+      "  --step I:N[:G]       16-step sequencer step I (1-16): note N semitones, gate G (1 = on)\n"
       "  --list params|jacks|programs");
 }
 
@@ -99,7 +101,7 @@ int main(int argc, char** argv) {
   double seconds = 20.0, sr = 48000.0;
   std::uint64_t seed = host::kLunarStartupSeed;
   std::string out = "lunar24.wav", dryOut;
-  std::vector<std::string> sets, cables, progL, progR;
+  std::vector<std::string> sets, cables, progL, progR, steps;
   std::vector<Note> notes;
 
   for (int i = 1; i < argc; ++i) {
@@ -115,6 +117,7 @@ int main(int argc, char** argv) {
     else if (a == "--sr") { next(v); sr = std::atof(v.c_str()); }
     else if (a == "--seed") { next(v); seed = std::strtoull(v.c_str(), nullptr, 0); }
     else if (a == "--set") { next(v); sets.push_back(v); }
+    else if (a == "--step") { next(v); steps.push_back(v); }
     else if (a == "--cable") { next(v); cables.push_back(v); }
     else if (a == "--program-l") { next(v); progL.push_back(v); }
     else if (a == "--program-r") { next(v); progR.push_back(v); }
@@ -142,6 +145,17 @@ int main(int argc, char** argv) {
   }
 
   core::DeviceStateV1 st = core::make_default_device_state(seed);
+  for (const auto& s : steps) {  // I:N[:G], I = 1..16
+    int i = 0, n = 0, g = 1;
+    if (std::sscanf(s.c_str(), "%d:%d:%d", &i, &n, &g) < 2 || i < 1 || i > 16) {
+      std::fprintf(stderr, "bad --step %s\n", s.c_str());
+      return 1;
+    }
+    auto& step = st.keyboardSeqCurrent.steps[static_cast<std::size_t>(i - 1)];
+    step.note = static_cast<std::uint8_t>(n < 0 ? 0 : n);
+    step.gate = g != 0 ? 1 : 0;
+    st.keyboardSeqCurrentR.steps[static_cast<std::size_t>(i - 1)] = step;
+  }
   for (const auto& s : sets) {
     std::string id, val;
     const core::ParameterDescriptor* d = splitAt(s, '=', id, val) ? core::find_parameter_by_name(id) : nullptr;

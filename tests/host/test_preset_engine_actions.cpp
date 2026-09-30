@@ -141,6 +141,13 @@ struct Cfg {
   std::uint8_t clockR[4] = {};
 };
 
+// The factory keyboard payload: all zero except the sequencer steps' gates, which are on.
+static Cfg factory_cfg() {
+  Cfg c;
+  for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) c.seqGateL[i] = c.seqGateR[i] = 1;
+  return c;
+}
+
 static Cfg cfg_from_state(const core::DeviceStateV1& st) {
   Cfg c;
   c.mode = st.keyboardSettings.pressureBehaviour;
@@ -726,7 +733,7 @@ static void b6_b7_initialise_scope_and_save_scope() {
 
   check(h.presetAction(0u, StandaloneAudioEngine::PresetAction::Initialise),
         "B6 INITIALISE slot 0 is accepted");
-  check(slot_matches(*h.canonicalState(), 0u, Cfg{}),
+  check(slot_matches(*h.canonicalState(), 0u, factory_cfg()),
         "B6 slot 0 is back to its factory payload");
   check(live_matches(*h.canonicalState(), live),
         "B6 INITIALISE did NOT touch the live config (no implicit LOAD)");
@@ -735,7 +742,7 @@ static void b6_b7_initialise_scope_and_save_scope() {
 
   // A later LOAD of the initialised slot is what changes the live config — to the factory payload.
   check(h.presetAction(0u, StandaloneAudioEngine::PresetAction::Load), "B6 LOAD slot 0");
-  check(live_matches(*h.canonicalState(), Cfg{}),
+  check(live_matches(*h.canonicalState(), factory_cfg()),
         "B6 only the subsequent LOAD applies the initialised slot to the live config");
   check(slot_wire(encode_wire(*h.canonicalState()), 1u) == slot1Before,
         "B7 the subsequent LOAD left the other slot's wire bytes untouched");

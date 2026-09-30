@@ -64,6 +64,7 @@
 #include <host/standalone_audio_engine.h>
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/state_migration.h>
+#include <lunar24/core/keyboard_presets.h>
 #include <lunar24/core/state_persistence.h>
 #include <lunar24/core/state_serializer.h>
 #include <lunar24/core/state_validation.h>
@@ -471,6 +472,7 @@ class AppStateStore {
       return loadOutcome_;
     }
 
+    lunar24::core::open_untouched_seq_gates(migrated);
     lastValidation_ = lunar24::core::validate_device_state(migrated);
     if (!lastValidation_.ok) {
       loadOutcome_ = StateLoadOutcome::InvalidState;

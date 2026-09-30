@@ -16,8 +16,8 @@ _Last updated: 2026-09-30 (priorities reset)._
   - Patch cables, normalled connections and feedback loops.
 - **App (host/)**: macOS/Windows standalone with the full panel UI, MIDI input, and the
   machine state restored on launch (saved on exit and every 30 s after an edit). The panel follows the official
-  Solar 42N panel drawing: same module frames, labels and control positions (taken from
-  the PDF by `tools/gen_panel_art.py`), branded Lunar 24. `panel_preview > panel.svg`
+  Solar 42N panel drawing: same module frames, labels, printed icons, LEDs and control
+  positions (taken from the PDF by `tools/gen_panel_art.py`), branded Lunar 24. `panel_preview > panel.svg`
   renders it without building the app. CI attaches a downloadable app to
   every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
@@ -36,7 +36,9 @@ _Last updated: 2026-09-30 (priorities reset)._
   show in the manual's units (BPM, note, steps, 0-255 / 0-127) and apply at once.
 - Arpeggiator / 16-step sequencer: MODE = ARPEGGIATOR or SEQUENCER, hold plates. The
   internal clock runs at BPM (10-300, 16th notes); a cable into the keyboard CLOCK jack
-  takes over until BPM is changed again; RESET restarts the pattern.
+  takes over until BPM is changed again; RESET restarts the pattern. Edit the 16 steps
+  on the menu's SEQUENCER page: drag a slider for the note (0..+24 semitones above the
+  held plate), click the round button to turn the step's gate on/off (off = a rest).
 - MIDI keyboard: plugged-in devices are picked up automatically. Mod wheel / CC74 =
   filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master; pitch bend +/-2
   semitones; sustain pedal; MIDI clock drives the arpeggiator / sequencer (START / STOP).
@@ -49,18 +51,18 @@ _Last updated: 2026-09-30 (priorities reset)._
 Mixer channel order, the 39 effector programs and their X/Y/Z roles, output voltage
 ranges, normalled connections and the keyboard ranges all match the manual. Not given by
 the manual, so still guesses: arp/seq clock multiply/divide ratios and RHYTHM patterns (not
-applied yet), the 16-step sequencer's step editor (steps all 0 for now), and the exact
-note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
+applied yet), and the exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Next steps (in order)
 1. Sound feedback from the owner's listening comes first — every curve is a first guess.
-2. Core playability and UI, checked against the manual: the 16-step sequencer's step
-   editor; panel parts shown but not functional (classic drones' CV amount knob, drone 3/6
+2. Core playability and UI, checked against the manual: panel parts shown but not functional (classic drones' CV amount knob, drone 3/6
    LFO-out / CV-in jacks, photo sensor, headphone socket); re-check the manual for the
    arp/seq clock ratios, RHYTHM patterns and scale note sets listed above.
 3. Real-time safety: plugging/unplugging a cable recompiles the patch graph on the audio
    thread (small allocations, only at that moment). Compile on the UI thread and swap.
 4. Windows: build is tested in CI; real audio/MIDI device testing still to do.
+5. The panel's printed LEDs (gate/hold, envelopes, step sequencer, LFOs ...) are drawn
+   unlit; lighting them from the engine's state is not done yet.
 
 Only when the related feature is touched: keyboard presets A-D swap the whole definition
 without audio-thread sync (safe today, it only runs with the stream stopped) — fix before
