@@ -21,15 +21,16 @@ good-sounding instrument with a usable panel UI.
   reasonable defaults; mark them `// tuned by ear` and move on. Do not build machinery to
   "prove" a guess.
 - **Docs stay short.** `README.md` (what/how to build), `design/STATUS.md` (what works, what's
-  next — plain language, kept under ~80 lines), and the design notes in `design/`. No
+  next — plain language, kept under ~80 lines), `design/HARDWARE.md` and `design/DECISIONS.md`. No
   governance logs, role rosters, or message IDs in the repo.
 - **Commit messages are plain English**: what changed and why, no internal ticket jargon.
 - Before finishing: `cmake --build build && ctest --test-dir build` must pass, and for audio
   changes render a WAV with `lunar24_render` and describe what changed in the sound.
 
 ## Starting a session
-Read `design/STATUS.md` (what works, how to play, what's next) and `design/DECISIONS.md`
-(settled technical choices and why) before changing anything.
+Read `design/STATUS.md` (what works, how to play, what's next), `design/HARDWARE.md` (what
+the manual says the machine is) and `design/DECISIONS.md` (settled technical choices and
+why) before changing anything.
 
 ## Working with the owner
 - Software engineer, new to audio: explain domain terms plainly. They write in Chinese.
