@@ -303,6 +303,15 @@ class SynthRuntime {
   // PAPA SRAPA (NEW) drone voices (drone 3/6), index 0 == drone_3, index 1 == drone_6.
   // GH#15 D4: each has a landed gate_in consumer and a landed env_out publisher.
   static constexpr int kPapaVoiceCount = 2;
+  // VCO SUB switch (-1): a square one octave down, mixed under the main wave.  // tuned by ear
+  static constexpr double kVcoSubMix = 0.5;
+  // Band-limited with polyBLEP at both edges (+2 at phase 0, -2 at phase 0.5).
+  double subSquare_(const Vco& v) const {
+    if (!v.subEnabled()) return 0.0;
+    const double t = v.subPhase(), dt = std::min(0.5, v.subFrequencyHz() / sampleRate_);
+    const double half = t + 0.5 < 1.0 ? t + 0.5 : t - 0.5;
+    return (t < 0.5 ? 1.0 : -1.0) + polyblepResidual(t, dt) - polyblepResidual(half, dt);
+  }
   // NEW drone voice 6 (Papa Srapa NoiseSource) amplitude. PROVISIONAL: the noise
   // level is not in the manual; exposed so the product path can bind a NOISE knob
   // and a test can compare the executed channel to a same-seed NoiseSource.
@@ -3255,7 +3264,7 @@ class SynthRuntime {
         vcA_.setPwCv(pwm);
         double a = 0.0;
         vcA_.tick(&a);
-        dryA_ = a * vcoVcaGain_(0);
+        dryA_ = (a + kVcoSubMix * subSquare_(vcA_)) * vcoVcaGain_(0);
         chIn_[VoiceMixer::kChannelVcoA] = dryA_;
         if (vcoAOutBound_) publishSourceValue_(vcoAOut_, a);
         break;
@@ -3285,7 +3294,7 @@ class SynthRuntime {
         vcB_.setPwCv(pwm);
         double b = 0.0;
         vcB_.tick(&b);
-        dryB_ = b * vcoVcaGain_(1);
+        dryB_ = (b + kVcoSubMix * subSquare_(vcB_)) * vcoVcaGain_(1);
         chIn_[VoiceMixer::kChannelVcoB] = dryB_;
         // Publish the real vco_b.vco_out so any downstream (a normal consumer, or a
         // user-established B->B feedback edge) reads THIS frame's value through the single
