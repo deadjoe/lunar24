@@ -1002,11 +1002,12 @@ static void c1_four_slots_times_three_modes_reach_the_consumer() {
   struct Expect {
     double gateL, gateR, press, vOct;
   };
-  // Single: the merged left side publishes vOct = pitchL and pressure_out = pressL.
+  // Single: the merged left side publishes vOct = pitchL and pressure_out = pressL on the
+  // jack's 0..8 V range (manual p.13), so plate pressure 0.5 reads 4 V.
   // Twin: the right side reads bank 0 (left root C), so pressure_out = pitchR = 0.0.
   // Split: the right side reads bank 1 (right root F), so pressure_out = pitchR = 5/12 V —
   // the three modes are mutually distinct on purpose (no criterion can pass by mode collapse).
-  const Expect expect[3] = {{kGateHigh, 0.0, 0.5, 0.0},            // Single
+  const Expect expect[3] = {{kGateHigh, 0.0, 0.5 * 8.0, 0.0},      // Single
                             {0.0, kGateHigh, 0.0, 0.0},            // Twin
                             {0.0, kGateHigh, 5.0 / 12.0, 0.0}};    // Split
   const char* modeName[3] = {"Single", "Twin", "Split"};

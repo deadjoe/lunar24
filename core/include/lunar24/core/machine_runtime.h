@@ -3566,7 +3566,12 @@ class SynthRuntime {
           // frame in the CV bank would read as a held gate to a downstream interpreter).
           publishSourceValue_(kbdGateRightOut_,
                               (!single && keyboardBeh_[1].gate()) ? 10.0 : 0.0);
-          publishSourceValue_(kbdPressureOut_, single ? pressL : pitchR + kbdBendVolts_);
+          // Single mode: the 0..1 pressure (or ASR/AD/LOOP/random level) spans the jack's
+          // registered range (manual p.13: 0..+8 V), like the drones' ENV OUT.
+          double pressVolts = pressL;
+          if (const JackDescriptor* d = findJackDescriptor_(kbdPressureOut_))
+            pressVolts = d->nominalMin + pressL * (d->nominalMax - d->nominalMin);
+          publishSourceValue_(kbdPressureOut_, single ? pressVolts : pitchR + kbdBendVolts_);
         }
         break;
       }
