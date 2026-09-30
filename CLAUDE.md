@@ -28,8 +28,17 @@ good-sounding instrument with a usable panel UI.
   changes render a WAV with `lunar24_render` and describe what changed in the sound.
 
 ## Starting a session
-Read `design/STATUS.md` (what works, how to play) and `design/HANDOFF.md` (open backlog,
-decisions and their reasons, how the owner likes to work) before changing anything.
+Read `design/STATUS.md` (what works, how to play, what's next) and `design/DECISIONS.md`
+(settled technical choices and why) before changing anything.
+
+## Working with the owner
+- Software engineer, new to audio: explain domain terms plainly. They write in Chinese.
+- They judge by ear: for sound changes render a WAV (`lunar24_render`) and say what changed.
+- Work on a branch, open a PR, merge it yourself when CI is green (standing permission);
+  merge commits, not squash.
+- The official manual and panel PDF are ELTA copyright and stay out of the repo. Ask the
+  owner to upload them (panel PDF + `solar42n_to_agent.zip`: manual.md, cartridges.json,
+  figures) when a manual check is needed; keep them in the session scratchpad.
 
 ## Architecture (short)
 - `core/` — framework-free C++17 synth engine (header-only). No iPlug2/platform includes
