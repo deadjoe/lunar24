@@ -21,15 +21,25 @@ good-sounding instrument with a usable panel UI.
   reasonable defaults; mark them `// tuned by ear` and move on. Do not build machinery to
   "prove" a guess.
 - **Docs stay short.** `README.md` (what/how to build), `design/STATUS.md` (what works, what's
-  next — plain language, kept under ~80 lines), and the design notes in `design/`. No
+  next — plain language, kept under ~80 lines), `design/HARDWARE.md` and `design/DECISIONS.md`. No
   governance logs, role rosters, or message IDs in the repo.
 - **Commit messages are plain English**: what changed and why, no internal ticket jargon.
 - Before finishing: `cmake --build build && ctest --test-dir build` must pass, and for audio
   changes render a WAV with `lunar24_render` and describe what changed in the sound.
 
 ## Starting a session
-Read `design/STATUS.md` (what works, how to play) and `design/HANDOFF.md` (open backlog,
-decisions and their reasons, how the owner likes to work) before changing anything.
+Read `design/STATUS.md` (what works, how to play, what's next), `design/HARDWARE.md` (what
+the manual says the machine is) and `design/DECISIONS.md` (settled technical choices and
+why) before changing anything.
+
+## Working with the owner
+- Software engineer, new to audio: explain domain terms plainly. They write in Chinese.
+- They judge by ear: for sound changes render a WAV (`lunar24_render`) and say what changed.
+- Work on a branch, open a PR, merge it yourself when CI is green (standing permission);
+  merge commits, not squash.
+- The official manual and panel PDF are ELTA copyright and stay out of the repo. Ask the
+  owner to upload them (panel PDF + `solar42n_to_agent.zip`: manual.md, cartridges.json,
+  figures) when a manual check is needed; keep them in the session scratchpad.
 
 ## Architecture (short)
 - `core/` — framework-free C++17 synth engine (header-only). No iPlug2/platform includes

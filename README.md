@@ -7,18 +7,14 @@ product of ELTA Music / Analogue Solutions; it is a clean-room engineering study
 the freely published manual and the project's own fact mapping.
 
 Lunar 24 aims to reproduce the Solar 42N **panel layout and operating behaviour** as
-documented, and remaps its visual aesthetic through a restrained "moon" theme. The product
-boundary is strict: it does **not** add sound sources, modulators, general-purpose routing
-matrices, macros, plugin/DAW hosts, or a multi-preset library beyond the hardware's own four
-keyboard presets. The goal is architectural and behavioural, **not** a claim of calibrated or
-identical sonic fidelity — that would require the hardware as a reference and would
-over-claim beyond the evidence discipline in `design/07-core-contract.md`. Public audio may
-inform perceptual tuning only; it is never presented as strict calibration.
+documented. The product boundary is strict: it does **not** add sound sources, modulators,
+general-purpose routing matrices, macros, plugin/DAW hosts, or a multi-preset library
+beyond the hardware's own four keyboard presets. The goal is architectural and behavioural, **not** a claim of calibrated or
+identical sonic fidelity, which would need the hardware as a reference. Sound is tuned by ear.
 
 > This repository tracks its own source and design documents only. The ELTA Solar 42N
-> reference manual, panel render and effector catalog images are copyrighted third-party
-> material and are intentionally **not** committed — see `design/reference/SOURCES.md` for
-> their source URLs and checksums.
+> reference manual and panel drawing are copyrighted third-party material and are
+> intentionally **not** committed — see `design/reference/SOURCES.md` for their sources.
 
 ## License
 
@@ -33,10 +29,10 @@ dependencies keep their own licenses (inventory: `third_party/licenses/`).
 ## Tech stack
 
 - C++17 w/ warnings-as-errors, CMake.
-- Standalone only; audio device + MIDI via a pinned iPlug2 submodule (**P1**); iPlug2's
+- Standalone only; audio device + MIDI via a pinned iPlug2 submodule; iPlug2's
   IGraphics provides the UI. No AU/VST/CLAP/AAX/WAM, no WebView.
 - The **synth core** is a framework-free pure C++ library — it never includes iPlug2,
-  IGraphics, CoreAudio/WASAPI, window, or filesystem types. See `design/07-core-contract.md`.
+  IGraphics, CoreAudio/WASAPI, window, or filesystem types.
 
 ## Project layout
 
@@ -46,7 +42,7 @@ host/          macOS/Windows standalone app (iPlug2: audio, MIDI, UI)
 spec/machine/  machine registry (modules, parameters, jacks, programs) — source of truth
 generated/     C++ headers generated from spec/ (tools/generate_registry.py)
 tests/         unit and engine tests
-design/        design notes; design/STATUS.md is the plain-language progress page
+design/        STATUS.md (progress), HARDWARE.md (the manual's facts), DECISIONS.md
 ```
 
 ## Build

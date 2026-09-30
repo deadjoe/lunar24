@@ -1,6 +1,6 @@
 # Lunar 24 — status (plain language)
 
-_Last updated: 2026-09-29 (project refocus)._
+_Last updated: 2026-09-30 (priorities reset)._
 
 ## What works
 - **Sound engine (core/)**
@@ -52,17 +52,24 @@ the manual, so still guesses: arp/seq clock multiply/divide ratios and RHYTHM pa
 applied yet), the 16-step sequencer's step editor (steps all 0 for now), and the exact
 note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
-## Known gaps / next steps
-(The objective engineering backlog and the reasons behind recent decisions are in
-`design/HANDOFF.md`.)
-1. Tune the sound by ear (owner listening sessions) — every curve is a first guess.
-2. Plugging/unplugging a cable recompiles the patch graph on the audio thread (a few
-   small allocations, only at that moment). Move it off the audio thread later.
-3. Windows: build is tested in CI; real audio/MIDI device testing still to do.
-4. Panel parts shown but not functional yet: the classic drones' CV amount knob, photo
-   sensor, the NEW drones' LFO-out / CV-in jacks and the headphone socket. The VCOs'
-   separate wave outputs and the envelopes' VCA-CV outputs exist in the engine but are
-   not on the official panel, so they are not patchable from the UI.
+## Next steps (in order)
+1. Sound feedback from the owner's listening comes first — every curve is a first guess.
+2. Core playability and UI, checked against the manual: the 16-step sequencer's step
+   editor; panel parts shown but not functional (classic drones' CV amount knob, drone 3/6
+   LFO-out / CV-in jacks, photo sensor, headphone socket); re-check the manual for the
+   arp/seq clock ratios, RHYTHM patterns and scale note sets listed above.
+3. Real-time safety: plugging/unplugging a cable recompiles the patch graph on the audio
+   thread (small allocations, only at that moment). Compile on the UI thread and swap.
+4. Windows: build is tested in CI; real audio/MIDI device testing still to do.
+
+Only when the related feature is touched: keyboard presets A-D swap the whole definition
+without audio-thread sync (safe today, it only runs with the stream stopped) — fix before
+giving them a UI; knob hover/drag redraws the whole panel — dirty only the readout if the
+UI feels slow. Not planned: letting the old effector tail ring out on a cartridge switch
+(the hardware reloads and cuts it too), splitting `machine_runtime.h`.
+
+The VCOs' separate wave outputs and the envelopes' VCA-CV outputs exist in the engine but
+are not on the official panel, so they are not patchable from the UI.
 
 ## Known limits (by design)
 - No hardware is available, so sound is tuned by ear, not measured against a real unit.
