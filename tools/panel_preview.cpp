@@ -25,7 +25,6 @@ using namespace lunar24::host;
 
 namespace {
 
-constexpr double kPi = 3.14159265358979323846;
 
 std::string col(theme::Rgb c, double a = 1.0) {
   char b[64];
