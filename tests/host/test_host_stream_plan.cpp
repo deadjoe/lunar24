@@ -193,6 +193,21 @@ void fallback() {
   CHECK(r.plan.status == StreamPlanStatus::OutputInvalid);
 }
 
+// Output sample rate: keep the device's rate unless it is below music quality.
+void sample_rate() {
+  using lunar24::host::choose_sample_rate;
+  const unsigned airpods[] = {16000, 24000, 44100, 48000};
+  CHECK_EQ(choose_sample_rate(48000, 48000, airpods, 4), 48000u);   // running normally: keep it
+  CHECK_EQ(choose_sample_rate(44100, 48000, airpods, 4), 44100u);
+  CHECK_EQ(choose_sample_rate(24000, 48000, airpods, 4), 48000u);   // headset in call mode
+  CHECK_EQ(choose_sample_rate(24000, 24000, airpods, 4), 48000u);
+  const unsigned callOnly[] = {16000, 24000};
+  CHECK_EQ(choose_sample_rate(24000, 24000, callOnly, 2), 48000u);  // ask for music rate anyway
+  const unsigned only441[] = {22050, 44100};
+  CHECK_EQ(choose_sample_rate(22050, 0, only441, 2), 44100u);
+  CHECK_EQ(choose_sample_rate(96000, 48000, airpods, 4), 96000u);   // a studio interface's choice
+}
+
 }  // namespace
 
 int main() {
@@ -203,5 +218,6 @@ int main() {
   input_rejects();
   legal_config_set();
   fallback();
+  sample_rate();
   return ::test::finish("host_stream_plan");
 }

@@ -23,6 +23,7 @@
 // window size — the geometry choke point is the only place the size comes from.
 
 #import <Cocoa/Cocoa.h>
+#include <CoreAudio/CoreAudio.h>
 
 #include <algorithm>
 #include <cmath>
@@ -170,6 +171,14 @@ extern "C" void lunar_host_place_view(void* view, double x, double y)
     if ([sibling isKindOfClass:[LunarCaseView class]]) [sibling setNeedsDisplay:YES];
 }
 
+// Follow the system output device: tell the host when it changes (it reopens on the UI thread).
+extern "C" void lunar_host_default_output_changed();
+static OSStatus LunarDefaultOutputChanged(AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void*)
+{
+  lunar_host_default_output_changed();
+  return noErr;
+}
+
 extern "C" bool lunar_host_force_clamp()
 {
   const char* v = std::getenv("LUNAR_HOST_FORCE_CLAMP");
@@ -232,6 +241,12 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
 
       pAppHost->Init();
       pAppHost->TryToChangeAudio();
+      {
+        const AudioObjectPropertyAddress address = {kAudioHardwarePropertyDefaultOutputDevice,
+                                                    kAudioObjectPropertyScopeGlobal,
+                                                    0 /* main element */};
+        AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address, LunarDefaultOutputChanged, nullptr);
+      }
       break;
     }
     case SWELLAPP_LOADED:

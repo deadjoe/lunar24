@@ -39,6 +39,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace lunar24::host {
@@ -175,6 +176,24 @@ inline ResolvedStreamPlan resolve_stream_plan(int deviceInputChans, int deviceOu
     r.plan = negotiate_stream_plan(deviceInputChans, deviceOutputChans, r.inL, r.inR, r.outL, r.outR);
   }
   return r;
+}
+
+// The sample rate to open an output device at. Keep the rate it already runs at (forcing
+// another makes some devices reconfigure: Bluetooth headphones drop out), unless that is below
+// music quality: at 16 / 24 kHz a Bluetooth headset is in call mode, and the oscillators alias
+// badly. Then take the device's preferred rate, else 48 / 44.1 kHz.
+inline constexpr unsigned kMinMusicSampleRate = 44100;
+inline unsigned choose_sample_rate(unsigned current, unsigned preferred, const unsigned* supported,
+                                   std::size_t supportedCount) {
+  if (current >= kMinMusicSampleRate) return current;
+  if (preferred >= kMinMusicSampleRate) return preferred;
+  unsigned best = 0;
+  for (std::size_t i = 0; i < supportedCount; ++i) {
+    const unsigned sr = supported[i];
+    if (sr == 48000) return sr;
+    if (sr >= kMinMusicSampleRate && (best == 0 || sr < best)) best = sr;
+  }
+  return best != 0 ? best : 48000;
 }
 
 }  // namespace lunar24::host

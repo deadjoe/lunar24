@@ -41,6 +41,7 @@ extern "C" double lunar_host_screen_scale();
 extern "C" bool lunar_host_force_clamp();
 extern "C" void lunar_host_place_view(void* view, double x, double y);
 extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom);
+extern "C" void lunar_host_audio_watchdog();
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
@@ -160,6 +161,8 @@ lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
 
 void LunarHostPlugin::OnIdle()
 {
+  lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
+
   constexpr auto kAutosaveInterval = std::chrono::seconds(30);
   const auto now = std::chrono::steady_clock::now();
   if (!engine_.isReady() || engine_.editCount() == savedEditCount_ || now - lastAutosave_ < kAutosaveInterval)
