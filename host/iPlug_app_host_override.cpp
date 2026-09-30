@@ -55,6 +55,7 @@
 // pure negotiation the host + oracle both call.
 #include "plugin.h"
 
+#include <atomic>
 #include <cstring>
 #include <vector>
 #include <host/midi_timing.h>
@@ -80,9 +81,13 @@ void LunarInvalidateAudio(IPlugAPP* plug) {
 // sound goes there) unless the user picked another one in Preferences. The microphone stays
 // closed unless the user switched input on: few patches use it, macOS asks for permission, and
 // opening a Bluetooth headset's microphone drops its sound to call quality.
-bool sFollowDefaultOutput = true;
+std::atomic<bool> sFollowDefaultOutput{true};
 bool sInputOn = false;
 bool sStartupOpen = true;  // the first TryToChangeAudio() is the app starting up
+// Set when the stream died under us (a device went away or reconfigured itself, e.g. Bluetooth
+// headphones) or the system output device changed while we follow it. The UI thread then
+// reopens on the current device (lunar_host_audio_watchdog).
+std::atomic<bool> sReopen{false};
 
 // The callback hands the engine fixed APP_SIGNAL_VECTOR_SIZE blocks through these staging
 // buffers, so a device may use any buffer size (at the cost of one block of latency). Sized for
@@ -520,18 +525,27 @@ bool IPlugAPPHost::TryToChangeAudio()
   if (mNoIO || IsScreenshotMode())
     return true;
 
-  // Lunar 24: startup picks the devices (see sFollowDefaultOutput / sInputOn); a later call comes
-  // from the Preferences dialog and records what the user chose.
-  if (sStartupOpen)
+  // Lunar 24: startup and automatic reopens pick the devices (see sFollowDefaultOutput /
+  // sInputOn); any other call comes from the Preferences dialog and records the user's choice.
+  const bool reopen = sReopen.exchange(false);
+  if (reopen)
   {
-    sStartupOpen = false;
+    if (mExiting)
+      return false;
+    CloseAudio();
+    ProbeAudioIO();  // devices may have come or gone
+  }
+  const bool automatic = sStartupOpen || reopen;
+  if (automatic)
+  {
     if (sFollowDefaultOutput && mDefaultOutputDev)
       mState.mAudioOutDev.Set(GetAudioDeviceName(mDefaultOutputDev.value()).c_str());
-    if (!sInputOn)
+    if (sStartupOpen && !sInputOn)
     {
       mState.mAudioInChanL = 0;
       mState.mAudioInChanR = 0;
     }
+    sStartupOpen = false;
   }
   else
   {
@@ -614,6 +628,17 @@ bool IPlugAPPHost::TryToChangeAudio()
 
   // Lunar 24 (task#73): output-only open keeps the inert inputID (0). InitAudio uses the channel
   // plan to decide the input stream: a 0-in VALID plan means the input is disabled, never a failure.
+  // Open a device at the rate it already runs at: forcing another rate makes some devices
+  // reconfigure (Bluetooth headphones drop and reconnect, which kills the stream). The engine
+  // runs at any rate. A rate chosen in Preferences is kept for that session.
+  if (automatic)
+  {
+    const uint32_t current = mDAC->getDeviceInfo(outputID.value()).currentSampleRate;
+    if (current > 0)
+      mState.mAudioSR = current;
+    UpdateINI();
+  }
+
   if (InitAudio(inputSelected ? inputID.value() : 0, outputID.value(), mState.mAudioSR, mState.mBufferSize))
     return true;
 
@@ -1039,5 +1064,23 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
 void IPlugAPPHost::ErrorCallback(RtAudioErrorType type, const std::string &errorText)
 {
   std::cerr << "\nerrorCallback: " << errorText << "\n\n";
+  // Lunar 24: the device went away or reconfigured and the stream was closed: reopen (UI thread).
+  if (type == RTAUDIO_DEVICE_DISCONNECT)
+    sReopen = true;
+}
+
+// Lunar 24: called from the plugin's OnIdle (UI thread): reopen the audio stream when it died or
+// the followed system output device changed.
+extern "C" void lunar_host_audio_watchdog()
+{
+  if (sReopen.load() && IPlugAPPHost::sInstance)
+    IPlugAPPHost::sInstance->TryToChangeAudio();
+}
+
+// Lunar 24: the system output device changed (macOS listener in main.mm).
+extern "C" void lunar_host_default_output_changed()
+{
+  if (sFollowDefaultOutput.load())
+    sReopen = true;
 }
 
