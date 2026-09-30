@@ -2257,8 +2257,11 @@ class SynthRuntime {
     double shOutVolts() const { return std::clamp(shCv_ * kShVoltsPerUnit, -5.0, 5.0); }
     void setAm(bool on) { amOn_ = on; }
     // NOISE glides to its new level (~10 ms, tuned by ear) so a dragged knob does not click.
+    // The noise source itself runs at a fixed level: it is also the S&H's input (manual p.8:
+    // the white noise is "additionally fed to the Sample and Hold"), which must keep working
+    // with NOISE at zero. NOISE only sets how much of it is heard.
     void setNoise(double amp) { noiseTarget_ = amp; }
-    void snapNoise() { noise.setAmplitude(noiseTarget_); }
+    void snapNoise() { noiseLevel_ = noiseTarget_; }
     // GH#15 D3 (DIVIDER knob). The lane OWNS the S&H clock source; the old setShClock
     // field-injection seam (a pure test hook) is voided. divN = 1 + (kNewDroneDivMax-1)*norm
     // (linear). Default norm 0.5 -> divN = 8.5: the S&H CV readback (sampleHold*Cv) goes from
@@ -2315,10 +2318,9 @@ class SynthRuntime {
     bool amOn() const { return amOn_; }
     double noiseAmp() const { return noiseTarget_; }
     void tick(double* out) {
-      const double amp = noise.amplitude();
-      if (amp != noiseTarget_) {
-        const double next = amp + noiseGlide_ * (noiseTarget_ - amp);
-        noise.setAmplitude(std::fabs(noiseTarget_ - next) < 1e-7 ? noiseTarget_ : next);
+      if (noiseLevel_ != noiseTarget_) {
+        const double next = noiseLevel_ + noiseGlide_ * (noiseTarget_ - noiseLevel_);
+        noiseLevel_ = std::fabs(noiseTarget_ - next) < 1e-7 ? noiseTarget_ : next;
       }
       double lv = 0.0;
       lf.tick(&lv);
@@ -2356,11 +2358,13 @@ class SynthRuntime {
       // provisional default-open gate the gain stays 1.0, so `(a + n) * 1.0` is
       // bit-identical to the pre-D4 `a + n` (the D4 regression lock).
       ar.tick();
-      *out = (a + n) * ar.level();  // noise adds; S&H CV is NOT summed here.
+      // n is the fixed-level source (the S&H input above); NOISE scales what is heard.
+      *out = (a + n * (noiseLevel_ / kNewDroneNoiseAmp)) * ar.level();  // S&H CV is NOT summed.
     }
     SchmittOsc audio;   // audio-frequency oscillator (PITCH/RANGE) -> tone.
     SchmittOsc lf;      // LF oscillator used as a square-wave modulator (RATE).
-    NoiseSource noise;  // independent noise mix (NOISE amount).
+    NoiseSource noise;  // fixed-level white noise: the S&H input, and (scaled by NOISE) heard.
+    double noiseLevel_ = kNewDroneNoiseAmp;  // the heard NOISE amount, gliding to noiseTarget_
     SAndHold sh;        // noise->in, LF/mod->clock; CV out, not in the audio channel.
     // GH#15 D4 AR VCA envelope (linear, classic-drone law). Gates the voice's summed
     // audio; never summed into the audio path itself, never resets an oscillator phase.
