@@ -3,14 +3,18 @@
 //
 // Live edits from the UI thread: a 16-step sequencer step edit lands in the saved state
 // and reaches the audio thread through the live queue; states saved before the step
-// editor existed get their (never-edited) sequence gates opened on load.
+// editor existed get their (never-edited) sequence gates opened on load. Plate pressure
+// played live reaches a patched CV input on the PRESSURE jack's 0..8 V range.
 
+#include <cmath>
 #include <vector>
 
 #include "mini_test.h"
 #include <host/standalone_audio_engine.h>
+#include <lunar24/core/input_state_machine.h>
 #include <lunar24/core/keyboard_presets.h>
 #include <lunar24/core/state_default.h>
+#include <lunar24/core/state_edit.h>
 
 using namespace lunar24;
 
@@ -44,5 +48,34 @@ int main() {
   CHECK_EQ(int(old.keyboardSeqCurrent.steps[0].gate), 1);
   CHECK_EQ(int(old.keyboardSeqCurrentR.steps[0].gate), 0);
   CHECK_EQ(int(old.keyboardSeqCurrentR.steps[2].note), 5);
+  // Plate pressure (mouse position on a plate) -> PRESSURE out -> VCF CV L: 0.1 -> 0.8 V,
+  // full pressure -> 8 V (manual p.13).
+  {
+    core::DeviceStateV1 ps = core::make_default_device_state(1);
+    CHECK(core::state_connect(ps, core::find_jack_by_name("keyboard.pressure_out")->id,
+                              core::find_jack_by_name("vcf.cv_l_in")->id));
+    host::StandaloneAudioEngine e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.applyDeviceState(ps, 48000.0, 256, 0, 2) == host::StandaloneAudioEngine::StateApplyStatus::Accepted);
+    core::InputStateMachine in{nullptr, 0};
+    std::uint64_t seq = 0;
+    auto send = [&](core::PerfInputKind kind, double value) {
+      core::PerformanceInput p{};
+      p.kind = kind;
+      p.value = static_cast<core::SignalSample>(value);
+      p.noteId = 1000;
+      p.source = 1;
+      p.seq = ++seq;
+      core::ControlEvent ev[3];
+      const std::uint32_t n = in.translate(p, ev, 3);
+      for (std::uint32_t i = 0; i < n; ++i) e.postEvent(ev[i]);
+    };
+    send(core::PerfInputKind::note_on, 0.1);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(std::fabs(e.runtime()->vcfCvReadbackL() - 0.8) < 1e-6);
+    send(core::PerfInputKind::aftertouch, 1.0);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(std::fabs(e.runtime()->vcfCvReadbackL() - 8.0) < 1e-6);
+  }
   return test::finish("test_live_edits");
 }
