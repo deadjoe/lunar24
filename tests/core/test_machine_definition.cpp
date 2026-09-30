@@ -1278,8 +1278,8 @@ int main() {
   // not a connection, so this oracle drives the canonical machine and asserts the modulation is
   // really CONSUMED per sample through the one control-sink resolver.
   //
-  // Setup: morph A = morph B = 1.0 (the ring's PURE PULSE node — the only node whose shape reads
-  // effectiveDuty(), and at the ring's end the triangle/BLAMP weight is exactly 0, so no
+  // Setup: morph A = morph B = the pulse icon (the ring's PURE PULSE node — the only node whose
+  // shape reads effectiveDuty(), and the triangle/BLAMP weight is exactly 0 there, so no
   // band-limited term confounds the comparison), base PW 0.3, PWM depth 1.0. The modulation
   // source is the JOYSTICK: a real product panel control that publishes a DC on x_out / y_out
   // and is driven here through the normal parameter path. Each VCO is driven from its OWN
@@ -1307,8 +1307,8 @@ int main() {
                             core::VcoControlMode::kExponential);
       rt.setControlVoltage(reg::JackId::vco_a_v_oct_in, 0.0);
       rt.setControlVoltage(reg::JackId::vco_b_v_oct_in, 0.0);
-      rt.setVcoAMorph(1.0);
-      rt.setVcoBMorph(1.0);
+      rt.setVcoAMorph(core::wave_map::kIconPulse);
+      rt.setVcoBMorph(core::wave_map::kIconPulse);
       rt.setVcoAPw(kBasePw);
       rt.setVcoBPw(kBasePw);
       rt.setVcoAPwm(depthA);
@@ -1413,7 +1413,7 @@ int main() {
     // periodic trace shifted by one cell has identical samples-vs-reference metrics. So the
     // consumer's latency is pinned here with an INDEPENDENT EDGE INDEX taken FROM THE RENDER.
     //
-    // Stimulus: 400 Hz base, morph = 1.0 (the pure PULSE node — BLAMP weight is 0 there, so the
+    // Stimulus: 400 Hz base, morph = the pulse icon (the pure PULSE node — BLAMP weight is 0, so the
     // emitted sample is a hard +/-1 comparator and the duty is directly visible), basePW = 0.5,
     // depth = 1.0 on the side under test. BOTH sides are probed, because their drivers differ:
     //   B -> vco_a_wave_out, which is REGISTERED BUT NEVER PUBLISHED by any module step, so
@@ -1447,8 +1447,8 @@ int main() {
                               core::VcoControlMode::kExponential);
         rt.setControlVoltage(reg::JackId::vco_a_v_oct_in, 0.0);
         rt.setControlVoltage(reg::JackId::vco_b_v_oct_in, 0.0);
-        rt.setVcoAMorph(1.0);
-        rt.setVcoBMorph(1.0);           // pure pulse node on the side under test
+        rt.setVcoAMorph(core::wave_map::kIconPulse);
+        rt.setVcoBMorph(core::wave_map::kIconPulse);  // pure pulse node on the side under test
         rt.setVcoAPw(kBasePw);
         rt.setVcoBPw(kBasePw);
         rt.setVcoAPwm(side == 'A' ? depth : 0.0);
