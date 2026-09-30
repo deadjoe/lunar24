@@ -23,6 +23,7 @@
 #include "plugin.h"
 #include "IPlug_include_in_plug_src.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 #include <lunar24/core/host_window_fit.h>
@@ -84,6 +85,19 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
   };
 #endif
 }
+
+#if IPLUG_EDITOR
+void LunarHostPlugin::OnParentWindowResize(int width, int height)
+{
+  IGraphics* g = GetUI();
+  if (g == nullptr || width <= 0 || height <= 0) return;
+  const double windowScale = g->GetPlatformWindowScale();
+  const double designW = lunar24::core::kDesignWidth, designH = lunar24::core::kDesignHeight;
+  const double scale = std::min(width / windowScale / designW, height / windowScale / designH);
+  if (scale > 0.0)
+    g->Resize(static_cast<int>(designW), static_cast<int>(designH), static_cast<float>(scale), false);
+}
+#endif
 
 #if IPLUG_DSP
 // GH#4 8B2: the ProcessBlock bridge below casts sample** <-> double** . That relabeling is only

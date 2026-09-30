@@ -32,6 +32,7 @@
 #include "IGraphics.h"
 
 #include <host/panel_art.h>
+#include <host/ui_font.generated.h>
 #include <host/panel_format.h>
 #include <host/panel_theme.h>
 #include <host/panel_ui_layout.h>
@@ -829,13 +830,10 @@ class SeqStepControl : public IControl {
 // ---------------------------------------------------------------------------------------------
 // Build the whole panel into `g`. `shared` must outlive the editor.
 inline void BuildPanel(IGraphics* g, EditorShared& shared) {
-#if defined(OS_WIN)
-  const char* face = "Segoe UI";
-#else
-  const char* face = "Helvetica Neue";
-#endif
-  g->LoadFont(kFont, face, ETextStyle::Normal);
-  g->LoadFont(kFontBold, face, ETextStyle::Bold);
+  // The label font is built into the app (a system font looked up by name can be missing,
+  // and IGraphics then draws no text at all).
+  g->LoadFont(kFont, const_cast<unsigned char*>(font::kRegular), static_cast<int>(font::kRegularSize));
+  g->LoadFont(kFontBold, const_cast<unsigned char*>(font::kBold), static_cast<int>(font::kBoldSize));
   g->AttachPanelBackground(col(theme::kPanel));
 
   const std::vector<Widget> widgets = build_panel_layout();

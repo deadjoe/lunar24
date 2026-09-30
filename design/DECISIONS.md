@@ -10,6 +10,10 @@ Keep these unless a listening test or a real bug says otherwise.
   `tools/gen_panel_logo.py` — no font file ships, and the preview matches the app. No moon
   or other emblem: like the hardware, the name alone. Static art is drawn once through
   `host/include/host/panel_art.h` by both the app and `panel_preview`.
+- **Label text uses an embedded Noto Sans** (OFL, `tools/gen_ui_font.py`), loaded from
+  memory. Looking up a system font by name failed on macOS and left the panel with no text.
+- **The window scales the whole panel to fit** (`LunarHostPlugin::OnParentWindowResize`);
+  iPlug2's default resets the zoom to 1 on every resize, which cropped the panel.
 - **Keyboard menu** (35 settings) is an overlay opened by the red encoder; values are shown
   in the manual's units (`host/include/host/panel_format.h`).
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
