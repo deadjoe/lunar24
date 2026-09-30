@@ -40,6 +40,7 @@ extern "C" double lunar_host_avail_logical_h();
 extern "C" double lunar_host_screen_scale();
 extern "C" bool lunar_host_force_clamp();
 extern "C" void lunar_host_place_view(void* view, double x, double y);
+extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom);
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
@@ -95,11 +96,8 @@ void LunarHostPlugin::OnParentWindowResize(int width, int height)
   IGraphics* g = GetUI();
   if (g == nullptr || width <= 0 || height <= 0) return;
   const double windowScale = g->GetPlatformWindowScale();
-#if defined OS_MAC
-  const lunar24::host::CaseMargins margins = lunar24::host::kMacCase;
-#else
-  const lunar24::host::CaseMargins margins{};
-#endif
+  lunar24::host::CaseMargins margins;
+  lunar_host_case_margins(g->GetWindow(), &margins.side, &margins.top, &margins.bottom);
   const auto p = lunar24::host::place_panel(width / windowScale, height / windowScale, lunar24::core::kDesignWidth,
                                             lunar24::core::kDesignHeight, margins);
   g->Resize(static_cast<int>(lunar24::core::kDesignWidth), static_cast<int>(lunar24::core::kDesignHeight),

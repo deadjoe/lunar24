@@ -178,6 +178,8 @@ static void case_placement() {
   CHECK(std::fabs(left - right) < 1e-6);
   CHECK(p.y >= m.top * p.scale - 1e-9);
   CHECK(p.y + p.h <= 1117.0);
+  // Full screen uses the thin rim: the panel gets bigger on the same screen.
+  CHECK(place_panel(1728.0, 1117.0, W, H, lunar24::host::kMacCaseFullScreen).scale > p.scale);
   // Never below the smallest zoom; no case: plain centred fit.
   CHECK(place_panel(100.0, 100.0, W, H, m).scale == lunar24::host::kMinPanelScale);
   p = place_panel(1200.0, 1000.0, W, H);

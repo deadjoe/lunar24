@@ -115,6 +115,15 @@ extern "C" void lunar_host_place_view(void* view, double x, double y)
                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+// No case round the panel on Windows.
+extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom)
+{
+  static_cast<void>(view);
+  *side = 0.0;
+  *top = 0.0;
+  *bottom = 0.0;
+}
+
 extern "C" double lunar_host_avail_logical_w()
 {
   return lunar_work_area_span_w();

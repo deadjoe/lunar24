@@ -108,6 +108,8 @@ struct CaseMargins {
   double side = 0.0, top = 0.0, bottom = 0.0;
 };
 inline constexpr CaseMargins kMacCase{70.0, 70.0, 80.0};
+// Full screen: no window buttons to carry and every pixel counts, so only a thin rim.
+inline constexpr CaseMargins kMacCaseFullScreen{16.0, 16.0, 16.0};
 // IGraphics' smallest zoom (DEFAULT_MIN_DRAW_SCALE): the panel stops shrinking here.
 inline constexpr double kMinPanelScale = 0.5;
 

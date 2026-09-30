@@ -22,6 +22,7 @@ Keep these unless a listening test or a real bug says otherwise.
   case, drag the case to move, proportions locked. A native window underneath (not a
   borderless one), so move / resize / full screen / shadow stay standard. Panel placement
   is `place_panel` (`window_layout.h`), shared by the case drawing and the resize code.
+  In full screen the case shrinks to a thin rim (no screws) so the panel fills the screen.
   Windows keeps a plain window.
 - **The window scales the whole panel to fit** (`LunarHostPlugin::OnParentWindowResize`);
   iPlug2's default resets the zoom to 1 on every resize, which cropped the panel.

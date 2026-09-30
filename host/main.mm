@@ -71,6 +71,21 @@ static NSColor* LunarRgb(unsigned rgb, CGFloat alpha = 1.0)
                               blue:(rgb & 0xff) / 255.0 alpha:alpha];
 }
 
+// The case for this window's current state: thin in full screen.
+static lunar24::host::CaseMargins LunarCaseFor(NSWindow* win)
+{
+  return (win != nil && (win.styleMask & NSWindowStyleMaskFullScreen)) ? lunar24::host::kMacCaseFullScreen
+                                                                       : lunar24::host::kMacCase;
+}
+
+extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom)
+{
+  const lunar24::host::CaseMargins m = LunarCaseFor(view ? [(NSView*)view window] : nil);
+  *side = m.side;
+  *top = m.top;
+  *bottom = m.bottom;
+}
+
 @interface LunarCaseView : NSView
 @end
 
@@ -108,7 +123,7 @@ static void LunarDrawScrew(CGFloat x, CGFloat y, CGFloat r)
 {
   (void)dirty;
   const NSRect b = self.bounds;
-  const auto m = lunar24::host::kMacCase;
+  const auto m = LunarCaseFor(self.window);
   const auto p = lunar24::host::place_panel(b.size.width, b.size.height, lunar24::core::kDesignWidth,
                                             lunar24::core::kDesignHeight, m);
   const CGFloat s = p.scale;
@@ -134,7 +149,8 @@ static void LunarDrawScrew(CGFloat x, CGFloat y, CGFloat r)
   lip.lineWidth = 1.5;
   [LunarRgb(0xffffff, 0.2) setStroke];
   [lip stroke];
-  // Screws on the side bands.
+  // Screws on the side bands (not on the thin full-screen rim).
+  if (m.side < 40.0) return;
   const CGFloat sideC = m.side * s / 2, r = 11.0 * s;  // screws centred on each side band
   for (CGFloat x : {NSMinX(panel) - sideC, NSMaxX(panel) + sideC})
     for (CGFloat y : {NSMinY(panel) + p.h * 0.12, NSMaxY(panel) - p.h * 0.12})
@@ -322,6 +338,13 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
         [win setContentSize:NSMakeSize(std::floor(total.width * scale), std::floor(total.height * scale))];
         [win center];
         SendMessage(hwnd, WM_SIZE, SIZE_RESTORED, 0);
+        // Entering / leaving full screen changes the case: lay the panel out again once the
+        // transition has settled (the resize during the transition may see the old state).
+        for (NSNotificationName name : {NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification})
+          [[NSNotificationCenter defaultCenter] addObserverForName:name object:win queue:nil
+                                                        usingBlock:^(NSNotification*) {
+                                                          if (gHWND) SendMessage(gHWND, WM_SIZE, SIZE_RESTORED, 0);
+                                                        }];
       }
 
       if (menu)
