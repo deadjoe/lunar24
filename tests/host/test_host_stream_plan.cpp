@@ -162,6 +162,37 @@ void legal_config_set() {
   CHECK_FALSE(is_legal_io(4, 4));  // 4 inputs exceeds the max.
 }
 
+// What the app opens when the saved selection does not fit the device.
+void fallback() {
+  using lunar24::host::ResolvedStreamPlan;
+  using lunar24::host::resolve_stream_plan;
+  // Default input pair on a mono MacBook microphone, stereo speakers: opens mono input, WET out.
+  ResolvedStreamPlan r = resolve_stream_plan(1, 2, 1, 2, 1, 2);
+  CHECK(r.plan.status == StreamPlanStatus::Valid);
+  CHECK(r.fellBack);
+  CHECK_EQ(r.plan.openIn, 1);
+  CHECK_EQ(r.plan.openOut, 2);
+  CHECK_EQ(r.inL, 1);
+  CHECK_EQ(r.inR, 0);
+  // No input channels at all: output only.
+  r = resolve_stream_plan(0, 2, 1, 2, 1, 2);
+  CHECK(r.plan.status == StreamPlanStatus::Valid);
+  CHECK_EQ(r.plan.openIn, 0);
+  // Output pair beyond a 2-channel device: back to 1-2.
+  r = resolve_stream_plan(2, 2, 1, 2, 3, 4);
+  CHECK(r.plan.status == StreamPlanStatus::Valid);
+  CHECK_EQ(r.plan.firstOut, 0);
+  CHECK_EQ(r.outL, 1);
+  // A selection that fits is opened as chosen.
+  r = resolve_stream_plan(2, 4, 1, 2, 1, 2);
+  CHECK(r.plan.status == StreamPlanStatus::Valid);
+  CHECK_FALSE(r.fellBack);
+  CHECK_EQ(r.plan.openIn, 2);
+  // A device with fewer than two outputs cannot run the instrument.
+  r = resolve_stream_plan(2, 1, 1, 2, 1, 2);
+  CHECK(r.plan.status == StreamPlanStatus::OutputInvalid);
+}
+
 }  // namespace
 
 int main() {
@@ -171,5 +202,6 @@ int main() {
   output_rejects();
   input_rejects();
   legal_config_set();
+  fallback();
   return ::test::finish("host_stream_plan");
 }

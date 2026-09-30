@@ -111,6 +111,7 @@ struct EditorShared {
   core::InputStateMachine input{nullptr, 0};
   std::uint64_t seq = 0;
   std::uint64_t seenStateVersion = ~0ull;
+  bool seenReady = false;
 
   static constexpr core::NoteId kMouseId = 1000;
   static constexpr core::NoteId kKeyIdBase = 2000;
@@ -171,6 +172,10 @@ struct EditorShared {
   // Computer keyboard: returns true if the key was used.
   bool key(const IKeyPress& k, bool up) {
     static const char kKeys[] = "awsedftgyhujkolp;";
+    if (k.VK == kVK_ESCAPE && menuOpen) {
+      if (!up) showMenu(false);
+      return true;
+    }
     const char c = char(std::tolower(static_cast<unsigned char>(k.utf8[0])));
     if (!up && (c == 'z' || c == 'x')) {
       shiftOctave(c == 'x' ? 1 : -1);
@@ -685,7 +690,8 @@ class DisplayControl : public IControl {
     GraphicsSink sink{g};
     art::drawDisplay(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B);
     char b[32];
-    if (s_.menuOpen) std::snprintf(b, sizeof b, "MENU");
+    if (!s_.engine.isReady()) std::snprintf(b, sizeof b, "NO AUDIO");  // see Preferences > audio device
+    else if (s_.menuOpen) std::snprintf(b, sizeof b, "MENU");
     else std::snprintf(b, sizeof b, "OCT %+d", s_.octave);
     g.DrawText(txt(18, {235, 240, 255}), b, mRECT);
   }
@@ -748,7 +754,7 @@ class MenuBackground : public IControl {
       : IControl(IRECT(float(kMenuX0), float(kMenuY0), float(kMenuX1), float(kMenuY1))), s_(s) {}
   void Draw(IGraphics& g) override {
     g.FillRoundRect(col(theme::kMenuBg), mRECT, 10.f);
-    g.DrawText(txt(18, theme::kMenuText), "KEYBOARD MENU  (click the encoder to close)", mRECT.MW(), mRECT.T + 22);
+    g.DrawText(txt(18, theme::kMenuText), "KEYBOARD MENU", mRECT.MW(), mRECT.T + 22);
     if (s_.menuPage == 1) {
       g.DrawText(txt(12, theme::kMenuText, true, -90.f), "NOTE", 440, float(kSeqSliderTop + kSeqSliderBottom) / 2);
       g.DrawText(txt(12, theme::kMenuText), "GATE", 440, float(kSeqGateY));
@@ -764,17 +770,22 @@ class MenuBackground : public IControl {
 // play the left bank).
 class MenuTabControl : public IControl {
  public:
-  enum Kind { kSettings, kSequencer, kSide };
+  enum Kind { kSettings, kSequencer, kSide, kClose };
   MenuTabControl(EditorShared& s, const Rect& r, Kind k)
       : IControl(IRECT(float(r.x0), float(r.y0), float(r.x1), float(r.y1))), s_(s), k_(k) {}
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
-    const char* label = k_ == kSettings ? "SETTINGS" : k_ == kSequencer ? "SEQUENCER"
+    const char* label = k_ == kSettings ? "SETTINGS" : k_ == kSequencer ? "SEQUENCER" : k_ == kClose ? "CLOSE"
                         : s_.seqSide == 0 ? "EDIT: LEFT" : "EDIT: RIGHT";
     const bool active = (k_ == kSettings && s_.menuPage == 0) || (k_ == kSequencer && s_.menuPage == 1);
     art::drawMenuTab(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, label, active, mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
+    if (k_ == kClose) {
+      s_.showMenu(false);
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
     if (k_ == kSide) s_.seqSide = 1 - s_.seqSide;
     else s_.menuPage = k_ == kSettings ? 0 : 1;
     s_.showMenu(true);
@@ -885,6 +896,9 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
     g->AttachControl(t);
     shared.menuChrome.push_back(t);
   }
+  auto* close = new MenuTabControl(shared, kMenuClose, MenuTabControl::kClose);
+  g->AttachControl(close);
+  shared.menuChrome.push_back(close);
   auto* side = new MenuTabControl(shared, kSeqSideSwitch, MenuTabControl::kSide);
   g->AttachControl(side);
   shared.seqControls.push_back(side);
@@ -905,6 +919,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   shared.cables = new CableLayer(shared, all);
   g->AttachControl(shared.cables);
 
+  g->EnableMouseOver(true);  // hover highlights and knob value readouts
   g->SetKeyHandlerFunc([&shared, g](const IKeyPress& key, bool isUp) {
     const bool used = shared.key(key, isUp);
     if (used) g->SetAllControlsDirty();
@@ -913,6 +928,10 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   // Redraw when MIDI CC moved knobs, or a whole new machine state lands (startup restore).
   g->SetDisplayTickFunc([&shared, g]() {
     if (shared.engine.syncParametersFromAudioThread() > 0) g->SetAllControlsDirty();  // MIDI CC
+    if (shared.engine.isReady() != shared.seenReady) {  // audio started or stopped
+      shared.seenReady = shared.engine.isReady();
+      g->SetAllControlsDirty();
+    }
     if (shared.engine.stateVersion() != shared.seenStateVersion) {
       shared.seenStateVersion = shared.engine.stateVersion();
       g->SetAllControlsDirty();

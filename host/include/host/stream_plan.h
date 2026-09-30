@@ -144,4 +144,37 @@ inline StreamPlan negotiate_stream_plan(int deviceInputChans, int deviceOutputCh
   return plan;
 }
 
+// What the app actually opens. A selection the device cannot serve must not leave the
+// instrument silent and dead (every knob and cable edit goes through the running engine), so
+// it falls back instead: an input pair on a mono device (e.g. a MacBook microphone) opens the
+// first channel alone; a device with no inputs opens output only; an output selection the
+// device cannot serve falls back to outputs 1-2. `effective*` is the selection that was opened,
+// for the settings file and the audio preferences.
+struct ResolvedStreamPlan {
+  StreamPlan plan;
+  int inL = 0, inR = 0, outL = 0, outR = 0;
+  bool fellBack = false;
+};
+
+inline ResolvedStreamPlan resolve_stream_plan(int deviceInputChans, int deviceOutputChans, int selectedInL,
+                                              int selectedInR, int selectedOutL, int selectedOutR) {
+  ResolvedStreamPlan r{negotiate_stream_plan(deviceInputChans, deviceOutputChans, selectedInL, selectedInR,
+                                             selectedOutL, selectedOutR),
+                       selectedInL, selectedInR, selectedOutL, selectedOutR, false};
+  if (r.plan.status == StreamPlanStatus::OutputInvalid && deviceOutputChans >= 2) {
+    r.outL = 1;
+    r.outR = 2;
+    r.fellBack = true;
+    r.plan = negotiate_stream_plan(deviceInputChans, deviceOutputChans, r.inL, r.inR, r.outL, r.outR);
+  }
+  if (r.plan.status == StreamPlanStatus::InputInvalid) {
+    const bool pairFits = deviceInputChans >= 2;
+    r.inL = deviceInputChans >= 1 ? 1 : 0;
+    r.inR = pairFits ? 2 : 0;
+    r.fellBack = true;
+    r.plan = negotiate_stream_plan(deviceInputChans, deviceOutputChans, r.inL, r.inR, r.outL, r.outR);
+  }
+  return r;
+}
+
 }  // namespace lunar24::host

@@ -24,6 +24,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -54,6 +55,16 @@ extern "C" double lunar_host_avail_logical_h()
 extern "C" double lunar_host_screen_scale()
 {
   return [[NSScreen mainScreen] backingScaleFactor];
+}
+
+// Centre the panel view in its window (full screen: the screen is wider than the panel).
+extern "C" void lunar_host_center_view(void* view)
+{
+  NSView* v = (NSView*)view;
+  NSView* parent = v ? v.superview : nil;
+  if (parent == nil) return;
+  const NSSize p = parent.bounds.size, s = v.frame.size;
+  [v setFrameOrigin:NSMakePoint(std::floor((p.width - s.width) / 2), std::floor((p.height - s.height) / 2))];
 }
 
 extern "C" bool lunar_host_force_clamp()
@@ -202,6 +213,8 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
         win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         win.backgroundColor = [NSColor colorWithSRGBRed:0.11 green:0.10 blue:0.09 alpha:1.0];
         win.contentAspectRatio = NSMakeSize(lunar24::core::kDesignWidth, lunar24::core::kDesignHeight);
+        // No smaller than the panel's smallest zoom (IGraphics: 0.5), so nothing gets cut off.
+        win.contentMinSize = NSMakeSize(lunar24::core::kDesignWidth * 0.5, lunar24::core::kDesignHeight * 0.5);
       }
 
       if (menu)

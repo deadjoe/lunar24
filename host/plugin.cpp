@@ -39,6 +39,7 @@ extern "C" double lunar_host_avail_logical_w();
 extern "C" double lunar_host_avail_logical_h();
 extern "C" double lunar_host_screen_scale();
 extern "C" bool lunar_host_force_clamp();
+extern "C" void lunar_host_center_view(void* view);
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
@@ -96,6 +97,7 @@ void LunarHostPlugin::OnParentWindowResize(int width, int height)
   const double scale = std::min(width / windowScale / designW, height / windowScale / designH);
   if (scale > 0.0)
     g->Resize(static_cast<int>(designW), static_cast<int>(designH), static_cast<float>(scale), false);
+  lunar_host_center_view(g->GetWindow());
 }
 #endif
 

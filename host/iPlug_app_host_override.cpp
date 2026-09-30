@@ -707,11 +707,21 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
   const bool inputSelected = (mState.mAudioInChanL > 0 || mState.mAudioInChanR > 0);
   const int deviceInputChans = inputSelected ? mDAC->getDeviceInfo(inID).inputChannels : 0;
   const int deviceOutputChans = mDAC->getDeviceInfo(outID).outputChannels;
-  const StreamPlan plan = negotiate_stream_plan(deviceInputChans, deviceOutputChans,
-                                                static_cast<int>(mState.mAudioInChanL),
-                                                static_cast<int>(mState.mAudioInChanR),
-                                                static_cast<int>(mState.mAudioOutChanL),
-                                                static_cast<int>(mState.mAudioOutChanR));
+  // A selection this device cannot serve (e.g. the default input pair on a mono MacBook
+  // microphone) falls back to one it can, rather than leaving the instrument silent and dead.
+  const ResolvedStreamPlan resolved = resolve_stream_plan(deviceInputChans, deviceOutputChans,
+                                                          static_cast<int>(mState.mAudioInChanL),
+                                                          static_cast<int>(mState.mAudioInChanR),
+                                                          static_cast<int>(mState.mAudioOutChanL),
+                                                          static_cast<int>(mState.mAudioOutChanR));
+  const StreamPlan plan = resolved.plan;
+  if (resolved.fellBack && plan.status == StreamPlanStatus::Valid) {
+    mState.mAudioInChanL = static_cast<uint32_t>(resolved.inL);
+    mState.mAudioInChanR = static_cast<uint32_t>(resolved.inR);
+    mState.mAudioOutChanL = static_cast<uint32_t>(resolved.outL);
+    mState.mAudioOutChanR = static_cast<uint32_t>(resolved.outR);
+    UpdateINI();
+  }
   if (plan.status != StreamPlanStatus::Valid) {
     LunarInvalidateAudio(GetPlug());
     return false;

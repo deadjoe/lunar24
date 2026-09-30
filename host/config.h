@@ -61,8 +61,12 @@
 // seeds before the geometry choke point runs.
 #define PLUG_WIDTH 2400
 #define PLUG_HEIGHT 1551
-// PLUG_MIN/MAX_WIDTH/HEIGHT are left undefined: IPlug_include_in_plug_hdr.h
-// derives them from PLUG_WIDTH/HEIGHT.
+// The panel stops shrinking at half size (IGraphics' smallest zoom, 0.5: labels are ~6 pt
+// there), so the window may not get smaller either, or the panel would be cut off. Windows
+// applies this to the whole window (frame, title and menu bar included), hence the margin;
+// macOS sets the same limit on the content area in main.mm. MAX is left to the library.
+#define PLUG_MIN_WIDTH 1216
+#define PLUG_MIN_HEIGHT 836
 
 #define PLUG_FPS 60
 #define PLUG_SHARED_RESOURCES 0
