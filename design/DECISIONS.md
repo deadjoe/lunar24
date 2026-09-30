@@ -17,8 +17,12 @@ Keep these unless a listening test or a real bug says otherwise.
   gradients, highlights (amounts tuned by eye). Stays sharp at any window size and the SVG
   preview shows exactly what the app draws. A control's drawing area is padded beyond its
   hit box so shadows and scale ticks are not clipped.
-- **Mac window looks like an instrument**: title text hidden, transparent dark title bar,
-  resizing locked to the panel's proportions.
+- **Mac window is a black metal case** with the panel set into it (`LunarCaseView` in
+  `host/main.mm`): transparent title bar that is part of the case, window buttons on the
+  case, drag the case to move, proportions locked. A native window underneath (not a
+  borderless one), so move / resize / full screen / shadow stay standard. Panel placement
+  is `place_panel` (`window_layout.h`), shared by the case drawing and the resize code.
+  Windows keeps a plain window.
 - **The window scales the whole panel to fit** (`LunarHostPlugin::OnParentWindowResize`);
   iPlug2's default resets the zoom to 1 on every resize, which cropped the panel.
 - **Keyboard menu** (35 settings) is an overlay opened by the red encoder; values are shown

@@ -39,7 +39,7 @@ extern "C" double lunar_host_avail_logical_w();
 extern "C" double lunar_host_avail_logical_h();
 extern "C" double lunar_host_screen_scale();
 extern "C" bool lunar_host_force_clamp();
-extern "C" void lunar_host_center_view(void* view);
+extern "C" void lunar_host_place_view(void* view, double x, double y);
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
@@ -90,14 +90,21 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
 #if IPLUG_EDITOR
 void LunarHostPlugin::OnParentWindowResize(int width, int height)
 {
+  // Zoom the panel to the window (iPlug2's default would reset the zoom to 1 and crop it).
+  // On macOS the window also draws a metal case round the panel (host/main.mm).
   IGraphics* g = GetUI();
   if (g == nullptr || width <= 0 || height <= 0) return;
   const double windowScale = g->GetPlatformWindowScale();
-  const double designW = lunar24::core::kDesignWidth, designH = lunar24::core::kDesignHeight;
-  const double scale = std::min(width / windowScale / designW, height / windowScale / designH);
-  if (scale > 0.0)
-    g->Resize(static_cast<int>(designW), static_cast<int>(designH), static_cast<float>(scale), false);
-  lunar_host_center_view(g->GetWindow());
+#if defined OS_MAC
+  const lunar24::host::CaseMargins margins = lunar24::host::kMacCase;
+#else
+  const lunar24::host::CaseMargins margins{};
+#endif
+  const auto p = lunar24::host::place_panel(width / windowScale, height / windowScale, lunar24::core::kDesignWidth,
+                                            lunar24::core::kDesignHeight, margins);
+  g->Resize(static_cast<int>(lunar24::core::kDesignWidth), static_cast<int>(lunar24::core::kDesignHeight),
+            static_cast<float>(p.scale), false);
+  lunar_host_place_view(g->GetWindow(), p.x * windowScale, p.y * windowScale);
 }
 #endif
 

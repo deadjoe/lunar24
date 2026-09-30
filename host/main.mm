@@ -24,6 +24,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -33,6 +34,7 @@
 #include "config.h"
 #include "resource.h"
 #include <lunar24/core/host_window_fit.h>  // panel design size
+#include <host/window_layout.h>          // the case round the panel (place_panel)
 
 using namespace iplug;
 
@@ -57,14 +59,99 @@ extern "C" double lunar_host_screen_scale()
   return [[NSScreen mainScreen] backingScaleFactor];
 }
 
-// Centre the panel view in its window (full screen: the screen is wider than the panel).
-extern "C" void lunar_host_center_view(void* view)
+// ---------------------------------------------------------------------------
+// The black metal case round the panel: a window-filling view behind the panel view. The
+// title bar is part of it (the window buttons sit on the case); dragging the case moves the
+// window, double-clicking it zooms. Geometry from host/window_layout.h (place_panel), the
+// same function the plugin uses to place the panel. Shading tuned by eye.
+// ---------------------------------------------------------------------------
+static NSColor* LunarRgb(unsigned rgb, CGFloat alpha = 1.0)
+{
+  return [NSColor colorWithSRGBRed:((rgb >> 16) & 0xff) / 255.0 green:((rgb >> 8) & 0xff) / 255.0
+                              blue:(rgb & 0xff) / 255.0 alpha:alpha];
+}
+
+@interface LunarCaseView : NSView
+@end
+
+@implementation LunarCaseView
+- (BOOL)isFlipped { return YES; }
+- (BOOL)isOpaque { return YES; }
+- (BOOL)mouseDownCanMoveWindow { return YES; }
+- (void)mouseDown:(NSEvent*)event
+{
+  if (event.clickCount == 2)
+    [self.window performZoom:nil];
+  else
+    [self.window performWindowDragWithEvent:event];
+}
+
+static void LunarDrawScrew(CGFloat x, CGFloat y, CGFloat r)
+{
+  [LunarRgb(0x000000, 0.45) setFill];
+  [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x - r + r * 0.25, y - r + r * 0.4, 2 * r, 2 * r)] fill];
+  NSBezierPath* head = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x - r, y - r, 2 * r, 2 * r)];
+  NSGradient* g = [[[NSGradient alloc] initWithStartingColor:LunarRgb(0xe2e2df) endingColor:LunarRgb(0x6e6e6c)] autorelease];
+  [NSGraphicsContext saveGraphicsState];
+  [head addClip];
+  [g drawFromPoint:NSMakePoint(x, y - r) toPoint:NSMakePoint(x, y + r) options:0];
+  [NSGraphicsContext restoreGraphicsState];
+  NSBezierPath* slot = [NSBezierPath bezierPath];
+  [slot moveToPoint:NSMakePoint(x - r * 0.62, y + r * 0.2)];
+  [slot lineToPoint:NSMakePoint(x + r * 0.62, y - r * 0.2)];
+  slot.lineWidth = std::max<CGFloat>(1.0, r * 0.22);
+  [LunarRgb(0x3c3c3a) setStroke];
+  [slot stroke];
+}
+
+- (void)drawRect:(NSRect)dirty
+{
+  (void)dirty;
+  const NSRect b = self.bounds;
+  const auto m = lunar24::host::kMacCase;
+  const auto p = lunar24::host::place_panel(b.size.width, b.size.height, lunar24::core::kDesignWidth,
+                                            lunar24::core::kDesignHeight, m);
+  const CGFloat s = p.scale;
+  // Anodised black body, lit from above.
+  NSGradient* body = [[[NSGradient alloc] initWithColorsAndLocations:LunarRgb(0x3a3a3d), 0.0, LunarRgb(0x1d1d1f), 0.45,
+                                                                     LunarRgb(0x0b0b0c), 1.0, nil] autorelease];
+  [body drawFromPoint:NSMakePoint(0, NSMinY(b)) toPoint:NSMakePoint(0, NSMaxY(b)) options:0];
+  NSGradient* rim = [[[NSGradient alloc] initWithStartingColor:LunarRgb(0xffffff, 0.16)
+                                                   endingColor:LunarRgb(0xffffff, 0.0)] autorelease];
+  [rim drawFromPoint:NSMakePoint(0, 0) toPoint:NSMakePoint(0, m.top * s * 0.7) options:0];
+  // Faint horizontal brushing.
+  [LunarRgb(0xffffff, 0.025) setFill];
+  for (CGFloat y = 0; y < NSMaxY(b); y += 3)
+    NSRectFillUsingOperation(NSMakeRect(0, y, b.size.width, 1), NSCompositingOperationSourceOver);
+  // The panel sits in a recess: a black gap, light catching its lower lip.
+  const NSRect panel = NSMakeRect(p.x, p.y, p.w, p.h);
+  const CGFloat gap = std::max<CGFloat>(2.0, 6.0 * s);
+  [LunarRgb(0x000000) setFill];
+  [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(panel, -gap, -gap) xRadius:gap yRadius:gap] fill];
+  NSBezierPath* lip = [NSBezierPath bezierPath];
+  [lip moveToPoint:NSMakePoint(NSMinX(panel) - gap, NSMaxY(panel) + gap + 0.75)];
+  [lip lineToPoint:NSMakePoint(NSMaxX(panel) + gap, NSMaxY(panel) + gap + 0.75)];
+  lip.lineWidth = 1.5;
+  [LunarRgb(0xffffff, 0.2) setStroke];
+  [lip stroke];
+  // Screws on the side bands.
+  const CGFloat sideC = m.side * s / 2, r = 11.0 * s;  // screws centred on each side band
+  for (CGFloat x : {NSMinX(panel) - sideC, NSMaxX(panel) + sideC})
+    for (CGFloat y : {NSMinY(panel) + p.h * 0.12, NSMaxY(panel) - p.h * 0.12})
+      LunarDrawScrew(x, y, r);
+}
+@end
+
+// Put the panel view at (x, y) points from the window's top left (called on every resize).
+extern "C" void lunar_host_place_view(void* view, double x, double y)
 {
   NSView* v = (NSView*)view;
   NSView* parent = v ? v.superview : nil;
   if (parent == nil) return;
-  const NSSize p = parent.bounds.size, s = v.frame.size;
-  [v setFrameOrigin:NSMakePoint(std::floor((p.width - s.width) / 2), std::floor((p.height - s.height) / 2))];
+  const double top = parent.isFlipped ? y : parent.bounds.size.height - y - v.frame.size.height;
+  [v setFrameOrigin:NSMakePoint(std::floor(x), std::floor(top))];
+  for (NSView* sibling in parent.subviews)
+    if ([sibling isKindOfClass:[LunarCaseView class]]) [sibling setNeedsDisplay:YES];
 }
 
 extern "C" bool lunar_host_force_clamp()
@@ -204,17 +291,37 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
       HWND hwnd = CreateDialog(gHINST, MAKEINTRESOURCE(IDD_DIALOG_MAIN), NULL,
                                IPlugAPPHost::MainDlgProc);
 
-      // An instrument, not a document: no title text, a title bar that blends into a dark
-      // chassis colour, and resizing that keeps the panel's proportions (no empty bars).
+      // An instrument, not a document: the window is a black metal case with the panel set
+      // into it. The title bar is transparent and part of the case (no title text, the window
+      // buttons sit on the case); resizing keeps the proportions and stops at the panel's
+      // smallest zoom, so nothing is ever cut off.
       if (NSWindow* win = [(NSView*)hwnd window])
       {
+        const auto m = lunar24::host::kMacCase;
+        const NSSize total = NSMakeSize(lunar24::core::kDesignWidth + 2 * m.side,
+                                        lunar24::core::kDesignHeight + m.top + m.bottom);
+        win.styleMask |= NSWindowStyleMaskFullSizeContentView;
         win.titleVisibility = NSWindowTitleHidden;
         win.titlebarAppearsTransparent = YES;
         win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-        win.backgroundColor = [NSColor colorWithSRGBRed:0.11 green:0.10 blue:0.09 alpha:1.0];
-        win.contentAspectRatio = NSMakeSize(lunar24::core::kDesignWidth, lunar24::core::kDesignHeight);
-        // No smaller than the panel's smallest zoom (IGraphics: 0.5), so nothing gets cut off.
-        win.contentMinSize = NSMakeSize(lunar24::core::kDesignWidth * 0.5, lunar24::core::kDesignHeight * 0.5);
+        win.backgroundColor = LunarRgb(0x0b0b0c);
+        win.contentAspectRatio = total;
+        win.contentMinSize = NSMakeSize(total.width * lunar24::host::kMinPanelScale,
+                                        total.height * lunar24::host::kMinPanelScale);
+
+        NSView* content = (NSView*)hwnd;
+        LunarCaseView* caseView = [[[LunarCaseView alloc] initWithFrame:content.bounds] autorelease];
+        caseView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        [content addSubview:caseView positioned:NSWindowBelow relativeTo:nil];
+
+        // Open as large as the screen allows, case included, then lay the panel out.
+        NSScreen* screen = win.screen ? win.screen : [NSScreen mainScreen];
+        const NSRect vis = screen.visibleFrame;
+        const CGFloat scale = std::max<CGFloat>(lunar24::host::kMinPanelScale,
+                                                std::min(vis.size.width / total.width, vis.size.height / total.height));
+        [win setContentSize:NSMakeSize(std::floor(total.width * scale), std::floor(total.height * scale))];
+        [win center];
+        SendMessage(hwnd, WM_SIZE, SIZE_RESTORED, 0);
       }
 
       if (menu)

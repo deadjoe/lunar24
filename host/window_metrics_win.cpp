@@ -104,22 +104,13 @@ static double lunar_work_area_span_h()
   return static_cast<double>(h) / lunar_win_scale();
 }
 
-// Centre the panel view in its window (a maximised window is wider or taller than the panel).
-extern "C" void lunar_host_center_view(void* view)
+// Put the panel view at (x, y) client pixels (a maximised window is wider or taller than the panel).
+extern "C" void lunar_host_place_view(void* view, double x, double y)
 {
   HWND child = static_cast<HWND>(view);
-  HWND parent = (child != nullptr) ? GetParent(child) : nullptr;
-  if (parent == nullptr) {
+  if (child == nullptr) {
     return;
   }
-  RECT pr = {0, 0, 0, 0};
-  RECT cr = {0, 0, 0, 0};
-  GetClientRect(parent, &pr);
-  GetWindowRect(child, &cr);
-  const LONG w = cr.right - cr.left;
-  const LONG h = cr.bottom - cr.top;
-  const LONG x = (pr.right > w) ? (pr.right - w) / 2 : 0;
-  const LONG y = (pr.bottom > h) ? (pr.bottom - h) / 2 : 0;
   SetWindowPos(child, nullptr, static_cast<int>(x), static_cast<int>(y), 0, 0,
                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
