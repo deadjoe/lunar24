@@ -27,6 +27,10 @@ good-sounding instrument with a usable panel UI.
 - Before finishing: `cmake --build build && ctest --test-dir build` must pass, and for audio
   changes render a WAV with `lunar24_render` and describe what changed in the sound.
 
+## Starting a session
+Read `design/STATUS.md` (what works, how to play) and `design/HANDOFF.md` (open backlog,
+decisions and their reasons, how the owner likes to work) before changing anything.
+
 ## Architecture (short)
 - `core/` — framework-free C++17 synth engine (header-only). No iPlug2/platform includes
   (enforced by `tools/check_core_headers.py`). Audio thread: no allocation, no locks, no I/O.

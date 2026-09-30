@@ -53,6 +53,8 @@ applied yet), the 16-step sequencer's step editor (steps all 0 for now), and the
 note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Known gaps / next steps
+(The objective engineering backlog and the reasons behind recent decisions are in
+`design/HANDOFF.md`.)
 1. Tune the sound by ear (owner listening sessions) — every curve is a first guess.
 2. Plugging/unplugging a cable recompiles the patch graph on the audio thread (a few
    small allocations, only at that moment). Move it off the audio thread later.
