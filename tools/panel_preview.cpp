@@ -4,7 +4,7 @@
 // panel_preview — render the panel (art + controls at their default positions) to SVG,
 // so the UI can be reviewed on any machine without building the app:
 //
-//   panel_preview > panel.svg          (add --menu to show the keyboard menu overlay)
+//   panel_preview > panel.svg          (add --menu / --seq to show a keyboard menu page)
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
@@ -180,6 +180,7 @@ void jack(const Widget& w) {
 
 int main(int argc, char** argv) {
   const bool showMenu = argc > 1 && std::strcmp(argv[1], "--menu") == 0;
+  const bool showSeq = argc > 1 && std::strcmp(argv[1], "--seq") == 0;
   const auto ws = build_panel_layout();
   if (argc > 1 && std::strcmp(argv[1], "--widgets") == 0) {
     std::printf("[\n");
@@ -253,10 +254,27 @@ int main(int argc, char** argv) {
         break;
     }
   }
-  if (showMenu) {
-    std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='10' fill='%s' opacity='0.97'/>\n", kMenuX0,
+  if (showMenu || showSeq) {
+    std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='10' fill='%s'/>\n", kMenuX0,
                 kMenuY0, kMenuX1 - kMenuX0, kMenuY1 - kMenuY0, col(theme::kMenuBg).c_str());
     text((kMenuX0 + kMenuX1) / 2, kMenuY0 + 22, 18, theme::kMenuText, "KEYBOARD MENU  (click the encoder to close)");
+    const Rect a = kMenuTabSettings, b = kMenuTabSequencer;
+    art::drawMenuTab(sink, float(a.x0), float(a.y0), float(a.x1), float(a.y1), "SETTINGS", showMenu, false);
+    art::drawMenuTab(sink, float(b.x0), float(b.y0), float(b.x1), float(b.y1), "SEQUENCER", showSeq, false);
+  }
+  if (showSeq) {
+    const Rect sw = kSeqSideSwitch;
+    art::drawMenuTab(sink, float(sw.x0), float(sw.y0), float(sw.x1), float(sw.y1), "EDIT: LEFT", false, false);
+    text(440, (kSeqSliderTop + kSeqSliderBottom) / 2, 12, theme::kMenuText, "NOTE", true);
+    text(440, kSeqGateY, 12, theme::kMenuText, "GATE");
+    for (int i = 0; i < kSeqSteps; ++i) {
+      const Rect r = seq_step_rect(i);
+      const auto& st = defaults().keyboardSeqCurrent.steps[static_cast<std::size_t>(i)];
+      art::drawSeqStep(sink, float(r.x0), float(r.x1), float(kSeqSliderTop), float(kSeqSliderBottom),
+                       float(kSeqGateY), i, st.note, 24, st.gate != 0, false);
+    }
+  }
+  if (showMenu) {
     for (const Widget& w : ws) {
       if (!w.menu) continue;
       if (w.kind == WidgetKind::Knob) {

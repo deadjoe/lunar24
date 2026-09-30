@@ -40,9 +40,35 @@ inline bool preset_slot_is_valid(std::uint32_t slot) {
 // PROVISIONAL: when the manual / real unit supplies factory defaults, populate
 // them here and record the source (FINDINGS). Non-zero defaults must not be
 // invented at P0 — the keyboard preset payload has no evidenced initial value.
+// The factory 16-step sequence: every step's gate on, every note 0, so a held plate
+// plays the plain pulse until the steps are edited.
+inline KeyboardSeq default_keyboard_seq() {
+  KeyboardSeq q{};
+  for (auto& st : q.steps) st.gate = 1;
+  return q;
+}
+
+// States saved before the step editor existed hold an all-zero sequence (every gate
+// off) that nobody chose: give such a never-edited sequence the factory gates.
+inline void open_untouched_seq_gates(KeyboardSeq& q) {
+  for (const auto& st : q.steps)
+    if (st.note != 0 || st.gate != 0 || st.value != 0.0f) return;
+  q = default_keyboard_seq();
+}
+inline void open_untouched_seq_gates(DeviceStateV1& st) {
+  open_untouched_seq_gates(st.keyboardSeqCurrent);
+  open_untouched_seq_gates(st.keyboardSeqCurrentR);
+  for (auto& p : st.keyboardPresets) {
+    open_untouched_seq_gates(p.seqSteps);
+    open_untouched_seq_gates(p.seqStepsR);
+  }
+}
+
 inline KeyboardPreset initial_keyboard_preset(std::uint32_t slot) {
   KeyboardPreset p{};  // value-initialised; no evidenced non-zero factory default
   p.id = slot;         // stable slot identity: A=0, B=1, C=2, D=3 (PROVISIONAL)
+  p.seqSteps = default_keyboard_seq();
+  p.seqStepsR = default_keyboard_seq();
   return p;
 }
 

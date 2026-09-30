@@ -253,11 +253,11 @@ static void seq_advances_steps_and_gates() {
   CHECK_TRUE(r.near(r.pitchAt(2), 0.0 / 12.0));
 }
 
-static void seq_continuous_cv_always_gates() {
+static void seq_gate_off_step_is_a_rest() {
   core::ArpSeqParams p = base_params();
   p.mode = 2;
   p.seqRun = 0;
-  p.seqCvOutput = 0;  // continuous: any step, gate always high while running
+  p.seqCvOutput = 0;  // continuous CV output: the step gate still decides the gate
   p.seqLength = 0.0;
   p.steps[0].note = 0; p.steps[0].gate = 0;  // step 0 has gate flag 0
   core::ArpSeq s;
@@ -265,9 +265,9 @@ static void seq_continuous_cv_always_gates() {
 
   Recorder r;
   note_on(s, r, 0.0 / 12.0, 1);
-  clock_edge(s, r);  // step 0, continuous -> still emits gate_on
-  CHECK_EQ(r.count(core::ControlEventKind::gate_on), 1u);
-  CHECK_EQ(r.count(core::ControlEventKind::pitch), 1u);
+  clock_edge(s, r);  // step 0 has its gate off -> a rest: no new note
+  CHECK_EQ(r.count(core::ControlEventKind::gate_on), 0u);
+  CHECK_EQ(r.count(core::ControlEventKind::pitch), 0u);
 }
 
 // ----------------------------------------------- per-side, no global singleton --
@@ -412,7 +412,7 @@ int main() {
   arp_hold_keeps_chord_through_release();
   arp_variation_repeats_transposed();
   seq_advances_steps_and_gates();
-  seq_continuous_cv_always_gates();
+  seq_gate_off_step_is_a_rest();
   per_side_instantiation_independent();
   side_drop_produces_divergent_stream();
   return ::test::finish("test_arp_sequencer");

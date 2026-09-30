@@ -74,6 +74,7 @@ inline DeviceStateV1 make_default_device_state(std::uint64_t seed) noexcept {
 
   // Bilateral LIVE non-scalars: mirror the left bank into the right so the state is
   // complete under split and never diverges from the left under single/twin.
+  st.keyboardSeqCurrent = default_keyboard_seq();
   st.keyboardSeqCurrentR = st.keyboardSeqCurrent;
   st.keyboardScaleEditorR = st.keyboardScaleEditor;
   for (std::uint32_t i = 0; i < kKeyboardPlateTuneCount; ++i)

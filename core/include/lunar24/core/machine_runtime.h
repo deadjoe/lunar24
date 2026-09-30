@@ -989,6 +989,15 @@ class SynthRuntime {
   // Level controls (mixer VOL/PAN, preamp GAIN, drone MUTE, drone 3/6 NOISE) glide when a
   // knob moves live. After a whole-state load, land them on their values at once.
   // MIDI pitch bend, in volts on the keyboard V/OCT output (1 V = 1 octave). Audio thread.
+  // One 16-step sequencer step edited live (side 0 = left bank, 1 = right). Audio thread.
+  void setKeyboardSeqStep(int side, int step, std::uint8_t note, bool gate) {
+    if (step < 0 || step >= static_cast<int>(kKeyboardSeqStepCount)) return;
+    KeyboardSeq& q = side == 0 ? kbdState_.keyboardSeqCurrent : kbdState_.keyboardSeqCurrentR;
+    q.steps[static_cast<std::size_t>(step)].note = note;
+    q.steps[static_cast<std::size_t>(step)].gate = gate ? 1 : 0;
+    applyKeyboardState(kbdState_);
+  }
+
   void setKeyboardBendVolts(double v) { kbdBendVolts_ = std::isfinite(v) ? v : 0.0; }
 
   void snapSmoothedLevels() {

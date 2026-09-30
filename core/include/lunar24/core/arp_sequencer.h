@@ -491,9 +491,11 @@ class ArpSeq {
     const ArpSeqStep& st = params_.steps[seqIndex_ % params_.steps.size()];
     const double pitch = (seqBaseValid_ ? seqBase_ : 0.0) + static_cast<double>(st.note) / 12.0;
 
-    const bool gated = params_.seqCvOutput == 0 ? true : (st.gate != 0);
-    if (gated) emitNote(sink, pitch, runningGate_, ev);
-    else       emitRelease(sink, runningGate_, ev);
+    // A step whose gate is off is a rest (manual p.11/p.17: the gate switch mutes the gate,
+    // not the step). CV OUTPUT continuous/gated is not modelled separately: a rest holds
+    // the last pitch in both modes.
+    if (st.gate != 0) emitNote(sink, pitch, runningGate_, ev);
+    else              emitRelease(sink, runningGate_, ev);
     const std::uint32_t len = seq_length_steps(params_.seqLength);
     seqIndex_ = advanceIndex(seqIndex_, len, params_.seqDirection % 4u);
   }

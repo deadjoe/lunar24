@@ -31,6 +31,8 @@
 
 #pragma once
 
+#include <algorithm>
+
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -240,6 +242,10 @@ class StandaloneAudioEngine {
   bool postEffectorProgram(int side, lunar24::core::ProgramId program);
   // DRONE VOICES key: open/close drone voice 0..5 (not saved; all open at power-on).
   bool postDroneKey(int voice, bool open);
+  // 16-step sequencer: set step `step` (0..15) of the left (side 0) or right bank.
+  bool postSeqStep(int side, int step, int note, bool gate);
+  // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
+  static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
   // Bumped whenever a whole new machine state is committed (startup restore, preset load),
   // so the UI knows to redraw every control.
@@ -786,6 +792,23 @@ inline bool StandaloneAudioEngine::postDroneKey(int voice, bool open) {
   return liveQueue_.push(c);
 }
 
+inline bool StandaloneAudioEngine::postSeqStep(int side, int step, int note, bool gate) {
+  if (!definition_ || step < 0 || step >= static_cast<int>(lunar24::core::kKeyboardSeqStepCount)) return false;
+  const std::uint8_t n = static_cast<std::uint8_t>(std::clamp(note, 0, kSeqStepMaxNote));
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  auto& q = side == 0 ? st.keyboardSeqCurrent : st.keyboardSeqCurrentR;
+  q.steps[static_cast<std::size_t>(step)].note = n;
+  q.steps[static_cast<std::size_t>(step)].gate = gate ? 1 : 0;
+  ++editCount_;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::SeqStep;
+  c.side = side == 0 ? 0u : 1u;
+  c.index = static_cast<std::uint32_t>(step);
+  c.value = n;
+  c.hadOld = gate;
+  return liveQueue_.push(c);
+}
+
 inline bool StandaloneAudioEngine::parameterFromAudioThread(ParameterId id, double value) {
   if (!definition_) return false;
   lunar24::core::ControlEvent e{};
@@ -854,6 +877,10 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
         break;
       case LiveCommand::Kind::DroneKey:
         rt.setDroneVoiceKey(static_cast<int>(c.side), c.value > 0.5);
+        break;
+      case LiveCommand::Kind::SeqStep:
+        rt.setKeyboardSeqStep(static_cast<int>(c.side), static_cast<int>(c.index),
+                              static_cast<std::uint8_t>(c.value), c.hadOld);
         break;
     }
   }

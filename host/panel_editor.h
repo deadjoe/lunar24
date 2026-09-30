@@ -87,7 +87,11 @@ struct EditorShared {
   std::vector<JackControl*> jacks;
   std::map<std::uint32_t, IRECT> jackRects;  // JackId -> socket rect (for cable drawing)
   CableLayer* cables = nullptr;
-  std::vector<IControl*> menuControls;       // shown while the keyboard menu is open
+  std::vector<IControl*> menuControls;       // SETTINGS page of the keyboard menu
+  std::vector<IControl*> seqControls;        // SEQUENCER page (16-step editor)
+  std::vector<IControl*> menuChrome;         // background and page tabs: whenever the menu is open
+  int menuPage = 0;                          // 0 = SETTINGS, 1 = SEQUENCER
+  int seqSide = 0;                           // sequencer bank being edited: 0 = left, 1 = right
   std::vector<IControl*> plates;
   bool menuOpen = false;
   int octave = 0;
@@ -146,7 +150,14 @@ struct EditorShared {
   void shiftOctave(int d) { octave = std::clamp(octave + d, -3, 3); }
   void showMenu(bool open) {
     menuOpen = open;
-    for (IControl* c : menuControls) c->Hide(!open);
+    for (IControl* c : menuChrome) c->Hide(!open);
+    for (IControl* c : menuControls) c->Hide(!(open && menuPage == 0));
+    for (IControl* c : seqControls) c->Hide(!(open && menuPage == 1));
+  }
+  const core::KeyboardSeqStep* seqStep(int i) const {
+    const core::DeviceStateV1* st = state();
+    if (st == nullptr || i < 0 || i >= kSeqSteps) return nullptr;
+    return &(seqSide == 0 ? st->keyboardSeqCurrent : st->keyboardSeqCurrentR).steps[static_cast<std::size_t>(i)];
   }
 
   // Computer keyboard: returns true if the key was used.
@@ -731,11 +742,89 @@ class DecorControl : public IControl {
 // The keyboard menu background: covers the plates (and swallows their clicks) while open.
 class MenuBackground : public IControl {
  public:
-  MenuBackground() : IControl(IRECT(float(kMenuX0), float(kMenuY0), float(kMenuX1), float(kMenuY1))) {}
+  explicit MenuBackground(EditorShared& s)
+      : IControl(IRECT(float(kMenuX0), float(kMenuY0), float(kMenuX1), float(kMenuY1))), s_(s) {}
   void Draw(IGraphics& g) override {
-    g.FillRoundRect(col(theme::kMenuBg, 248), mRECT, 10.f);
+    g.FillRoundRect(col(theme::kMenuBg), mRECT, 10.f);
     g.DrawText(txt(18, theme::kMenuText), "KEYBOARD MENU  (click the encoder to close)", mRECT.MW(), mRECT.T + 22);
+    if (s_.menuPage == 1) {
+      g.DrawText(txt(12, theme::kMenuText, true, -90.f), "NOTE", 440, float(kSeqSliderTop + kSeqSliderBottom) / 2);
+      g.DrawText(txt(12, theme::kMenuText), "GATE", 440, float(kSeqGateY));
+    }
   }
+
+ private:
+  EditorShared& s_;
+};
+
+// Menu title-row buttons: page tabs (SETTINGS / SEQUENCER) and the sequencer's
+// left/right bank switch (only meaningful in SPLIT behaviour; in SINGLE/TWIN both sides
+// play the left bank).
+class MenuTabControl : public IControl {
+ public:
+  enum Kind { kSettings, kSequencer, kSide };
+  MenuTabControl(EditorShared& s, const Rect& r, Kind k)
+      : IControl(IRECT(float(r.x0), float(r.y0), float(r.x1), float(r.y1))), s_(s), k_(k) {}
+  void Draw(IGraphics& g) override {
+    GraphicsSink sink{g};
+    const char* label = k_ == kSettings ? "SETTINGS" : k_ == kSequencer ? "SEQUENCER"
+                        : s_.seqSide == 0 ? "EDIT: LEFT" : "EDIT: RIGHT";
+    const bool active = (k_ == kSettings && s_.menuPage == 0) || (k_ == kSequencer && s_.menuPage == 1);
+    art::drawMenuTab(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, label, active, mMouseIsOver);
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override {
+    if (k_ == kSide) s_.seqSide = 1 - s_.seqSide;
+    else s_.menuPage = k_ == kSettings ? 0 : 1;
+    s_.showMenu(true);
+    GetUI()->SetAllControlsDirty();
+  }
+
+ private:
+  EditorShared& s_;
+  Kind k_;
+};
+
+// One step of the 16-step keyboard sequencer: drag the slider for the note (semitones above
+// the held plate), click the round button for the step's gate. Double-click resets the note.
+class SeqStepControl : public IControl {
+ public:
+  SeqStepControl(EditorShared& s, int step)
+      : IControl(IRECT(float(seq_step_rect(step).x0), float(seq_step_rect(step).y0), float(seq_step_rect(step).x1),
+                       float(seq_step_rect(step).y1))),
+        s_(s), step_(step) {}
+  void Draw(IGraphics& g) override {
+    const core::KeyboardSeqStep* st = s_.seqStep(step_);
+    if (st == nullptr) return;
+    GraphicsSink sink{g};
+    art::drawSeqStep(sink, mRECT.L, mRECT.R, float(kSeqSliderTop), float(kSeqSliderBottom), float(kSeqGateY), step_,
+                     st->note, StandaloneAudioEngine::kSeqStepMaxNote, st->gate != 0, mMouseIsOver);
+  }
+  void OnMouseDown(float, float y, const IMouseMod&) override {
+    const core::KeyboardSeqStep* st = s_.seqStep(step_);
+    if (st == nullptr) return;
+    if (y > float(kSeqGateY) - 20.f) post(st->note, st->gate == 0);
+    else post(noteAt(y), st->gate != 0);
+  }
+  void OnMouseDrag(float, float y, float, float, const IMouseMod&) override {
+    const core::KeyboardSeqStep* st = s_.seqStep(step_);
+    if (st != nullptr && y <= float(kSeqGateY) - 20.f) post(noteAt(y), st->gate != 0);
+  }
+  void OnMouseDblClick(float, float y, const IMouseMod&) override {
+    const core::KeyboardSeqStep* st = s_.seqStep(step_);
+    if (st != nullptr && y <= float(kSeqGateY) - 20.f) post(0, st->gate != 0);
+  }
+
+ private:
+  static int noteAt(float y) {
+    const double t = (kSeqSliderBottom - double(y)) / (kSeqSliderBottom - kSeqSliderTop);
+    return int(std::lround(std::clamp(t, 0.0, 1.0) * StandaloneAudioEngine::kSeqStepMaxNote));
+  }
+  void post(int note, bool gate) {
+    s_.engine.postSeqStep(s_.seqSide, step_, note, gate);
+    SetDirty(false);
+  }
+  EditorShared& s_;
+  int step_;
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -787,9 +876,24 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
     }
   }
   // The keyboard menu on top of the plates, hidden until the encoder opens it.
-  auto* menuBg = new MenuBackground();
+  shared.menuChrome.clear();
+  shared.seqControls.clear();
+  auto* menuBg = new MenuBackground(shared);
   g->AttachControl(menuBg);
-  shared.menuControls.push_back(menuBg);
+  shared.menuChrome.push_back(menuBg);
+  for (auto k : {MenuTabControl::kSettings, MenuTabControl::kSequencer}) {
+    auto* t = new MenuTabControl(shared, k == MenuTabControl::kSettings ? kMenuTabSettings : kMenuTabSequencer, k);
+    g->AttachControl(t);
+    shared.menuChrome.push_back(t);
+  }
+  auto* side = new MenuTabControl(shared, kSeqSideSwitch, MenuTabControl::kSide);
+  g->AttachControl(side);
+  shared.seqControls.push_back(side);
+  for (int i = 0; i < kSeqSteps; ++i) {
+    auto* c = new SeqStepControl(shared, i);
+    g->AttachControl(c);
+    shared.seqControls.push_back(c);
+  }
   for (const Widget& w : widgets) {
     if (!w.menu) continue;
     IControl* c = w.kind == WidgetKind::Knob ? static_cast<IControl*>(new KnobControl(shared, w))

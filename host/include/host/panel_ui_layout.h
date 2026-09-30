@@ -62,6 +62,17 @@ struct Widget {
 // The keyboard menu overlay area (covers the touch plates while open).
 inline constexpr double kMenuX0 = 410, kMenuY0 = 1112, kMenuX1 = 1990, kMenuY1 = 1482;
 
+// Keyboard menu pages: SETTINGS (the 35 menu parameters) and SEQUENCER (the 16-step
+// editor). Tab buttons and the sequencer side switch sit in the menu's title row.
+struct Rect { double x0, y0, x1, y1; };
+inline constexpr Rect kMenuTabSettings{428, 1122, 568, 1148};
+inline constexpr Rect kMenuTabSequencer{578, 1122, 718, 1148};
+inline constexpr Rect kSeqSideSwitch{1830, 1122, 1972, 1148};
+inline constexpr int kSeqSteps = 16;
+// One sequencer step column: step number, note slider, note readout, gate button.
+inline constexpr double kSeqSliderTop = 1178, kSeqSliderBottom = 1392, kSeqGateY = 1450;
+inline Rect seq_step_rect(int i) { return {470.0 + i * 92.0, 1154, 534.0 + i * 92.0, 1470}; }
+
 // Registry jacks that the official panel does not show (kept in the engine, not patchable
 // from the UI): the VCOs' separate wave outputs and the envelopes' VCA-CV outputs.
 inline constexpr JackId kJacksNotOnPanel[] = {
