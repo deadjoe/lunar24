@@ -3,9 +3,9 @@
 //
 // panel_editor.h — the Lunar 24 panel, drawn with iPlug2 IGraphics.
 //
-// The panel follows the official Solar 42N panel drawing: labels, module frames and title
-// tabs come from panel_art.generated.h, control positions from panel_ui_layout.h, colours
-// from panel_theme.h. Controls do not use iPlug parameters: they read the machine state
+// The panel follows the official Solar 42N panel drawing: the static artwork (labels, frames,
+// printed marks, name plates) and the keyboard-area controls come from panel_art.h, control
+// positions from panel_ui_layout.h, colours from panel_theme.h. Controls do not use iPlug parameters: they read the machine state
 // from the engine and send changes through its live-control queue
 // (StandaloneAudioEngine::postParameter / postConnect / postEvent ...), so the saved state
 // always matches what the user sees and hears.
@@ -31,7 +31,7 @@
 #include "IControl.h"
 #include "IGraphics.h"
 
-#include <host/panel_art.generated.h>
+#include <host/panel_art.h>
 #include <host/panel_format.h>
 #include <host/panel_theme.h>
 #include <host/panel_ui_layout.h>
@@ -175,7 +175,38 @@ struct EditorShared {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Static panel art: panel colour, keybed, module frames, title tabs, labels, name plate.
+// Draws host/panel_art.h artwork with IGraphics.
+struct GraphicsSink {
+  IGraphics& g;
+  static IColor hex(std::uint32_t c) { return IColor(255, int((c >> 16) & 0xff), int((c >> 8) & 0xff), int(c & 0xff)); }
+  void fillRect(float x0, float y0, float x1, float y1, std::uint32_t c, float radius) {
+    if (radius > 0.f) g.FillRoundRect(hex(c), IRECT(x0, y0, x1, y1), radius);
+    else g.FillRect(hex(c), IRECT(x0, y0, x1, y1));
+  }
+  void fillCircle(float cx, float cy, float r, std::uint32_t c) { g.FillCircle(hex(c), cx, cy, r); }
+  void moveTo(float x, float y) {
+    if (!open_) g.PathClear();
+    open_ = true;
+    g.PathMoveTo(x, y);
+  }
+  void lineTo(float x, float y) { g.PathLineTo(x, y); }
+  void closePath() { g.PathClose(); }
+  void markHole() { g.PathSetWinding(true); }
+  void fillPath(std::uint32_t c, bool) {
+    g.PathFill(IPattern(hex(c)), IFillOptions(false, EFillRule::Preserve));  // per-sub-path windings
+    open_ = false;
+  }
+  void strokePath(std::uint32_t c, float width) {
+    g.PathStroke(IPattern(hex(c)), width);
+    open_ = false;
+  }
+  void text(float x, float y, float size, std::uint32_t c, bool vertical, const char* s) {
+    g.DrawText(txt(size, theme::rgb(c), true, vertical ? -90.f : 0.f), s, x, y);
+  }
+  bool open_ = false;
+};
+
+// Static panel art: panel colour, keybed, frames, tabs, printed marks, labels, name plates.
 // Drawn once into a cached layer.
 class BackgroundControl : public IControl {
  public:
@@ -183,40 +214,14 @@ class BackgroundControl : public IControl {
   void Draw(IGraphics& g) override {
     if (!g.CheckLayer(layer_)) {
       g.StartLayer(this, mRECT);
-      drawArt(g);
+      GraphicsSink sink{g};
+      art::drawPanelArt(sink);
       layer_ = g.EndLayer();
     }
     g.DrawLayer(layer_);
   }
 
  private:
-  static void drawArt(IGraphics& g) {
-    g.FillRect(col(theme::kPanel), IRECT(0, 0, 2400, 1552));
-    g.FillRect(col(theme::kKeybed), IRECT(400, 1103, 1998, 1490));
-    for (const auto& f : art::kFrames) {
-      g.PathClear();
-      for (std::uint32_t i = 0; i < f.count; ++i) {
-        const float x = art::kFramePoints[2 * (f.first + i)], y = art::kFramePoints[2 * (f.first + i) + 1];
-        if (i == 0) g.PathMoveTo(x, y);
-        else g.PathLineTo(x, y);
-      }
-      g.PathStroke(IPattern(col(theme::kInk)), 3.f);
-    }
-    for (const auto& b : art::kTabs) g.FillRoundRect(col(theme::kInk), IRECT(b.x0, b.y0, b.x1, b.y1), 4.f);
-    for (const auto& t : art::kTexts)
-      g.DrawText(txt(t.size * 0.92f, theme::rgb(t.rgb), true, t.vertical ? -90.f : 0.f), t.text, t.x, t.y);
-    // Lunar 24 name plate and marks (in place of the original brand marks).
-    g.FillCircle(col(theme::kInk), 118, 180, 62);
-    g.FillCircle(col(theme::kPanel), 146, 164, 60);
-    g.DrawText(txt(112, theme::kInk), "LUNAR", 390, 184);
-    g.DrawText(txt(112, theme::kRed), "24", 668, 184);
-    g.DrawText(txt(44, theme::kInk), "AMBIENT DRONE MACHINE", 2010, 184);
-    g.DrawText(txt(26, theme::kRed), "LUNAR 24", 1918, 1075);
-    g.FillCircle(col(theme::kInk), 1199, 792, 30);
-    g.FillCircle(col(theme::kPanel), 1213, 784, 28);
-    g.FillCircle(col(theme::kPlate), 1200, 1410, 58);
-    g.FillCircle(col(theme::kKeybed), 1222, 1396, 55);
-  }
   ILayerPtr layer_;
 };
 
@@ -502,10 +507,8 @@ class PlateControl : public IControl {
  public:
   PlateControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    const bool lit = s_.lit.count(int(w_.id)) > 0;
-    g.FillRect(col(lit ? theme::kPlateLit : theme::kPlate), mRECT);
-    for (float y = mRECT.T + 10; y < mRECT.B - 8; y += 12)
-      g.DrawLine(col(theme::kPlateRib), mRECT.L + 9, y, mRECT.R - 9, y, nullptr, 5.f);
+    GraphicsSink sink{g};
+    art::drawPlate(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, s_.lit.count(int(w_.id)) > 0);
   }
   void OnMouseDown(float, float y, const IMouseMod&) override {
     semi_ = int(w_.id) + 12 * s_.octave;
@@ -628,8 +631,8 @@ class EncoderControl : public IControl {
  public:
   EncoderControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    g.FillCircle(col({120, 120, 120}), float(w_.cx), float(w_.cy), 35);
-    g.FillCircle(col(s_.menuOpen || mMouseIsOver ? theme::kAmber : theme::kRed), float(w_.cx), float(w_.cy), 20);
+    GraphicsSink sink{g};
+    art::drawEncoder(sink, float(w_.cx), float(w_.cy), s_.menuOpen || mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     s_.showMenu(!s_.menuOpen);
@@ -649,10 +652,8 @@ class OctaveKeyControl : public IControl {
  public:
   OctaveKeyControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    const float cx = float(w_.cx), cy = float(w_.cy);
-    g.FillCircle(col(mMouseIsOver ? theme::kPlateLit : theme::kPlate), cx, cy, 23);
-    if (w_.id == 1) g.FillTriangle(col(theme::kKeybed), cx - 9, cy + 5, cx + 9, cy + 5, cx, cy - 9);
-    else g.FillTriangle(col(theme::kKeybed), cx - 9, cy - 5, cx + 9, cy - 5, cx, cy + 9);
+    GraphicsSink sink{g};
+    art::drawOctaveKey(sink, float(w_.cx), float(w_.cy), mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     s_.shiftOctave(w_.id == 1 ? 1 : -1);
@@ -668,7 +669,8 @@ class DisplayControl : public IControl {
  public:
   DisplayControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s) { SetIgnoreMouse(true); }
   void Draw(IGraphics& g) override {
-    g.FillRect(col(theme::kDisplay), mRECT);
+    GraphicsSink sink{g};
+    art::drawDisplay(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B);
     char b[32];
     if (s_.menuOpen) std::snprintf(b, sizeof b, "MENU");
     else std::snprintf(b, sizeof b, "OCT %+d", s_.octave);
@@ -685,9 +687,8 @@ class DroneKeyControl : public IControl {
  public:
   DroneKeyControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
-    const bool open = s_.engine.droneKey(int(w_.id));
-    g.FillRoundRect(col(mMouseIsOver ? theme::Rgb{70, 70, 70} : theme::Rgb{52, 52, 52}), mRECT, 4.f);
-    g.FillRect(col(open ? theme::kLedOn : theme::kPlate), IRECT(float(w_.cx - 5), mRECT.T + 4, float(w_.cx + 5), mRECT.T + 16));
+    GraphicsSink sink{g};
+    art::drawDroneKey(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, s_.engine.droneKey(int(w_.id)), mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     s_.engine.postDroneKey(int(w_.id), !s_.engine.droneKey(int(w_.id)));

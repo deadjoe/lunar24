@@ -5,6 +5,7 @@
 // so the UI can be reviewed on any machine without building the app:
 //
 //   panel_preview > panel.svg          (add --menu to show the keyboard menu overlay)
+//   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
 #include <cctype>
@@ -13,7 +14,7 @@
 #include <cstring>
 #include <string>
 
-#include <host/panel_art.generated.h>
+#include <host/panel_art.h>
 #include <host/panel_format.h>
 #include <host/panel_theme.h>
 #include <host/panel_ui_layout.h>
@@ -61,6 +62,44 @@ void text(double x, double y, double size, theme::Rgb c, const std::string& s, b
               "font-weight='700' font-family='Lucida Grande, Helvetica Neue, Arial, sans-serif'%s>%s</text>\n",
               x, y, size, col(c).c_str(), rot, esc(s).c_str());
 }
+
+// Draws the static panel art (host/panel_art.h) as SVG.
+struct SvgSink {
+  std::string d;
+  static std::string hex(std::uint32_t c) {
+    char b[16];
+    std::snprintf(b, sizeof b, "#%06x", c & 0xffffffu);
+    return b;
+  }
+  void fillRect(float x0, float y0, float x1, float y1, std::uint32_t c, float radius) {
+    std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='%.1f' fill='%s'/>\n", x0, y0, x1 - x0, y1 - y0,
+                radius, hex(c).c_str());
+  }
+  void fillCircle(float cx, float cy, float r, std::uint32_t c) {
+    std::printf("<circle cx='%.1f' cy='%.1f' r='%.2f' fill='%s'/>\n", cx, cy, r, hex(c).c_str());
+  }
+  void moveTo(float x, float y) { point('M', x, y); }
+  void lineTo(float x, float y) { point('L', x, y); }
+  void closePath() { d += "Z"; }
+  void markHole() {}
+  void fillPath(std::uint32_t c, bool evenOdd) {
+    std::printf("<path d='%s' fill='%s' fill-rule='%s'/>\n", d.c_str(), hex(c).c_str(), evenOdd ? "evenodd" : "nonzero");
+    d.clear();
+  }
+  void strokePath(std::uint32_t c, float width) {
+    std::printf("<path d='%s' fill='none' stroke='%s' stroke-width='%.2f' stroke-linejoin='round'/>\n", d.c_str(),
+                hex(c).c_str(), width);
+    d.clear();
+  }
+  void text(float x, float y, float size, std::uint32_t c, bool vertical, const char* s) {
+    ::text(x, y, size, theme::rgb(c), s, vertical);
+  }
+  void point(char op, float x, float y) {
+    char b[40];
+    std::snprintf(b, sizeof b, "%c%.1f %.1f", op, x, y);
+    d += b;
+  }
+};
 
 void polar(double cx, double cy, double r, double deg, double& x, double& y) {
   const double t = (deg - 90.0) * kPi / 180.0;
@@ -142,30 +181,21 @@ void jack(const Widget& w) {
 int main(int argc, char** argv) {
   const bool showMenu = argc > 1 && std::strcmp(argv[1], "--menu") == 0;
   const auto ws = build_panel_layout();
-  std::printf("<svg xmlns='http://www.w3.org/2000/svg' width='2400' height='1552' viewBox='0 0 2400 1552'>\n");
-  std::printf("<rect width='2400' height='1552' fill='%s'/>\n", col(theme::kPanel).c_str());
-  std::printf("<rect x='400' y='1103' width='1598' height='387' fill='%s'/>\n", col(theme::kKeybed).c_str());
-  for (const auto& f : art::kFrames) {
-    std::printf("<polyline fill='none' stroke='%s' stroke-width='3' points='", col(theme::kInk).c_str());
-    for (std::uint32_t i = 0; i < f.count; ++i)
-      std::printf("%.1f,%.1f ", art::kFramePoints[2 * (f.first + i)], art::kFramePoints[2 * (f.first + i) + 1]);
-    std::printf("'/>\n");
+  if (argc > 1 && std::strcmp(argv[1], "--widgets") == 0) {
+    std::printf("[\n");
+    bool first = true;
+    for (const Widget& w : ws) {
+      if (w.menu) continue;
+      std::printf("%s  {\"kind\": %d, \"cx\": %.1f, \"cy\": %.1f, \"w\": %.1f, \"h\": %.1f}", first ? "" : ",\n",
+                  static_cast<int>(w.kind), w.cx, w.cy, w.w, w.h);
+      first = false;
+    }
+    std::printf("\n]\n");
+    return 0;
   }
-  for (const auto& b : art::kTabs)
-    std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='4' fill='%s'/>\n", b.x0, b.y0, b.x1 - b.x0,
-                b.y1 - b.y0, col(theme::kInk).c_str());
-  for (const auto& t : art::kTexts) text(t.x, t.y, t.size * 0.92, theme::rgb(t.rgb), t.text, t.vertical);
-  // Lunar 24 name plate and marks (in place of the original brand marks).
-  std::printf("<circle cx='118' cy='180' r='62' fill='%s'/><circle cx='146' cy='164' r='60' fill='%s'/>\n",
-              col(theme::kInk).c_str(), col(theme::kPanel).c_str());
-  text(390, 184, 112, theme::kInk, "LUNAR");
-  text(668, 184, 112, theme::kRed, "24");
-  text(2010, 184, 44, theme::kInk, "AMBIENT DRONE MACHINE");
-  text(1918, 1075, 26, theme::kRed, "LUNAR 24");
-  std::printf("<circle cx='1199' cy='792' r='30' fill='%s'/><circle cx='1213' cy='784' r='28' fill='%s'/>\n",
-              col(theme::kInk).c_str(), col(theme::kPanel).c_str());
-  std::printf("<circle cx='1200' cy='1410' r='58' fill='%s'/><circle cx='1222' cy='1396' r='55' fill='%s'/>\n",
-              col(theme::kPlate).c_str(), col(theme::kKeybed).c_str());
+  std::printf("<svg xmlns='http://www.w3.org/2000/svg' width='2400' height='1552' viewBox='0 0 2400 1552'>\n");
+  SvgSink sink;
+  art::drawPanelArt(sink);
 
   for (const Widget& w : ws) {
     if (w.menu) continue;
@@ -180,11 +210,7 @@ int main(int argc, char** argv) {
       case WidgetKind::Toggle: toggle(w); break;
       case WidgetKind::Jack: jack(w); break;
       case WidgetKind::Plate:
-        std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s'/>\n", w.x(), w.y(), w.w, w.h,
-                    col(theme::kPlate).c_str());
-        for (double y = w.y() + 10; y < w.y() + w.h - 8; y += 12)
-          std::printf("<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='%s' stroke-width='5'/>\n", w.x() + 9, y,
-                      w.x() + w.w - 9, y, col(theme::kPlateRib).c_str());
+        art::drawPlate(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), false);
         break;
       case WidgetKind::Joystick:
         std::printf("<circle cx='%.1f' cy='%.1f' r='55' fill='%s'/><circle cx='%.1f' cy='%.1f' r='24' fill='%s'/>\n",
@@ -200,21 +226,12 @@ int main(int argc, char** argv) {
         break;
       }
       case WidgetKind::DroneKey:
-        std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='4' fill='%s'/>\n", w.x(), w.y(), w.w, w.h,
-                    col({52, 52, 52}).c_str());
-        std::printf("<rect x='%.1f' y='%.1f' width='10' height='12' fill='%s'/>\n", w.cx - 5, w.y() + 4,
-                    col(theme::kPlate).c_str());
+        art::drawDroneKey(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), false, false);
         break;
-      case WidgetKind::Encoder:
-        std::printf("<circle cx='%.1f' cy='%.1f' r='35' fill='%s'/><circle cx='%.1f' cy='%.1f' r='20' fill='%s'/>\n",
-                    w.cx, w.cy, col({120, 120, 120}).c_str(), w.cx, w.cy, col(theme::kRed).c_str());
-        break;
-      case WidgetKind::OctaveKey:
-        std::printf("<circle cx='%.1f' cy='%.1f' r='23' fill='%s'/>\n", w.cx, w.cy, col(theme::kPlate).c_str());
-        break;
+      case WidgetKind::Encoder: art::drawEncoder(sink, float(w.cx), float(w.cy), false); break;
+      case WidgetKind::OctaveKey: art::drawOctaveKey(sink, float(w.cx), float(w.cy), false); break;
       case WidgetKind::Display:
-        std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s'/>\n", w.x(), w.y(), w.w, w.h,
-                    col(theme::kDisplay).c_str());
+        art::drawDisplay(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
         break;
       case WidgetKind::Decor:
         if (w.id == 2) {

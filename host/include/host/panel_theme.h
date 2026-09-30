@@ -19,7 +19,7 @@ inline constexpr Rgb rgb(std::uint32_t hex) {
   return {static_cast<std::uint8_t>(hex >> 16), static_cast<std::uint8_t>(hex >> 8), static_cast<std::uint8_t>(hex)};
 }
 
-constexpr Rgb kPanel{233, 224, 210};       // warm moon-dust panel
+constexpr Rgb kPanel{233, 224, 210};       // warm light panel
 constexpr Rgb kInk{12, 10, 10};            // frames, tabs, text
 constexpr Rgb kRed{203, 32, 38};           // "env", output markers
 constexpr Rgb kSkirt{52, 52, 52};          // knob skirts / ticks
@@ -27,14 +27,9 @@ constexpr Rgb kPointer{245, 245, 245};
 constexpr Rgb kNutLight{196, 196, 196};    // jack hex nut
 constexpr Rgb kNutDark{120, 120, 120};
 constexpr Rgb kHole{8, 8, 8};
-constexpr Rgb kKeybed{40, 40, 40};         // touch keyboard area
-constexpr Rgb kPlate{250, 250, 250};
-constexpr Rgb kPlateRib{70, 70, 70};
-constexpr Rgb kPlateLit{255, 196, 120};
 constexpr Rgb kLedOn{235, 60, 50};
 constexpr Rgb kLedOff{160, 160, 160};
 constexpr Rgb kAmber{235, 170, 0};
-constexpr Rgb kDisplay{66, 84, 214};
 constexpr Rgb kMenuBg{30, 30, 34};
 constexpr Rgb kMenuText{230, 228, 220};
 

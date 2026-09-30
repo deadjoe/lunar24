@@ -3,9 +3,9 @@
 Lunar 24's own code is **Apache License 2.0** (see `LICENSE` at repo root).
 
 This directory records every third-party dependency Lunar 24 links or vendors, its
-role, its license, and the source of that license determination. Per the master plan
-(`design/06-master-plan.md` §2) dependencies are required to be zlib/Zlib-like/MIT; if
-a dependency's license deviates we surface it here rather than silently adopting it.
+role, its license, and the source of that license determination. Dependencies must carry
+a permissive license (zlib-like, MIT, BSD, or SIL OFL for fonts); anything else is surfaced
+here rather than silently adopted.
 
 **SPDX header rule (third-party not affected):** every source file Lunar 24 authors
 carries, at the top of the file:
@@ -34,8 +34,9 @@ a `LOCAL-MODIFICATIONS.md` note as required by that dependency's license.
 > any of them; the Lunar24Host CMake builds RTAudio (`RtAudio.cpp`), RTMidi (`RtMidi.cpp`)
 > and the mac SWELL sources **directly out of the pinned iPlug2 tree** as transitive portions
 > of that submodule, so they are compiled from the pin and remain subject to their own
-> upstream licenses recorded here. Boundary is clean w.r.t. the design/06 master plan's
-> zlib/Zlib-like/MIT requirement.
+> upstream licenses recorded here. Boundary is clean w.r.t. the
+> permissive-license requirement.
+| Saira font (Omnibus-Type) | Letterforms of the Lunar 24 name plates on the panel. Not shipped as a font file: `tools/gen_panel_logo.py` converts the few letters used into outlines in `host/include/host/panel_logo.generated.h`. | **SIL Open Font License 1.1** — `Saira-OFL.txt` in this directory. | Google Fonts `ofl/saira` (variable font), instance wdth 125 / wght 640. | OK — OFL allows embedding in software; the font is not renamed or sold. |
 | CMake | Build system (host tool, not linked). | BSD-3-Clause (host tool) | not vendored | OK |
 | C++17 runtime / STL | Language runtime, shipped by the platform toolchain, not a Lunar dependency. | platform / toolchain | not vendored | OK |
 

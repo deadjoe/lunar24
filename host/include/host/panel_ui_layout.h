@@ -332,7 +332,7 @@ inline std::vector<Widget> build_panel_layout() {
   jack(J::keyboard_pressure_out, 1445, 1151, 34);
   jack(J::keyboard_v_oct_out, 1506, 1137, 34);
   add(WidgetKind::OctaveKey, 1093, 1186, 46, 46, 0);
-  add(WidgetKind::Encoder, 1200, 1188, 70, 70, 0);
+  add(WidgetKind::Encoder, 1200, 1188, 90, 90, 0);
   add(WidgetKind::OctaveKey, 1307, 1186, 46, 46, 1);
   add(WidgetKind::Display, 1200, 1274, 116, 38, 0);
   {

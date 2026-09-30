@@ -16,8 +16,8 @@ _Last updated: 2026-09-30 (priorities reset)._
   - Patch cables, normalled connections and feedback loops.
 - **App (host/)**: macOS/Windows standalone with the full panel UI, MIDI input, and the
   machine state restored on launch (saved on exit and every 30 s after an edit). The panel follows the official
-  Solar 42N panel drawing: same module frames, labels and control positions (taken from
-  the PDF by `tools/gen_panel_art.py`), branded Lunar 24. `panel_preview > panel.svg`
+  Solar 42N panel drawing: same module frames, labels, printed icons, LEDs and control
+  positions (taken from the PDF by `tools/gen_panel_art.py`), branded Lunar 24. `panel_preview > panel.svg`
   renders it without building the app. CI attaches a downloadable app to
   every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
@@ -61,6 +61,8 @@ note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scal
 3. Real-time safety: plugging/unplugging a cable recompiles the patch graph on the audio
    thread (small allocations, only at that moment). Compile on the UI thread and swap.
 4. Windows: build is tested in CI; real audio/MIDI device testing still to do.
+5. The panel's printed LEDs (gate/hold, envelopes, step sequencer, LFOs ...) are drawn
+   unlit; lighting them from the engine's state is not done yet.
 
 Only when the related feature is touched: keyboard presets A-D swap the whole definition
 without audio-thread sync (safe today, it only runs with the stream stopped) — fix before
