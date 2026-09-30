@@ -3375,7 +3375,7 @@ int main() {
       core::ControlEvent ev;
       ev.kind = core::ControlEventKind::parameter;
       ev.parameter = core::ParameterId::drone_3_pitch;
-      ev.value = 0.9;
+      ev.value = static_cast<core::SignalSample>(0.9);
       ev.source = 1;
       ev.producerSequence = 1;
       core::TimedControlEvent te;
