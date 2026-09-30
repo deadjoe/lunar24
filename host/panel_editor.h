@@ -62,9 +62,14 @@ inline IRECT rectOf(const Widget& w) {
 }
 // Controls draw a little beyond their hit box (scale ticks, drop shadows): the drawing area
 // is padded, the mouse target stays the hit box.
+// Menu overlay controls also draw their name and value below (at cy+42 and cy+58), so their
+// drawing area reaches down past that text; otherwise the names were clipped in half and the
+// values hidden.
 inline IRECT drawRectOf(const Widget& w) {
   const float pad = std::max(14.f, float(std::max(w.w, w.h)) * 0.3f);
-  return rectOf(w).GetPadded(pad);
+  IRECT r = rectOf(w).GetPadded(pad);
+  if (w.menu) r = r.Union(IRECT(float(w.cx - 64), float(w.cy), float(w.cx + 64), float(w.cy + 70)));
+  return r;
 }
 inline std::uint32_t hexOf(theme::Rgb c) { return (std::uint32_t(c.r) << 16) | (std::uint32_t(c.g) << 8) | c.b; }
 // Point at `r` from (cx, cy) in direction `deg` (0 = 12 o'clock, clockwise).
