@@ -28,6 +28,9 @@ Keep these unless a listening test or a real bug says otherwise.
   iPlug2's default resets the zoom to 1 on every resize, which cropped the panel.
 - **Keyboard menu** (35 settings) is an overlay opened by the red encoder; values are shown
   in the manual's units (`host/include/host/panel_format.h`).
+  Its title row also holds CLOSE and RESET PANEL (two clicks): the reset publishes the power-on
+  default at a stopped-stream boundary (the audio stream is briefly reopened), the same path
+  as a startup restore, so it covers every stored field, not just knobs.
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
   by ear); a CLOCK jack or MIDI clock takes over until BPM is changed again (manual p.19).
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block

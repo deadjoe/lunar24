@@ -1088,6 +1088,12 @@ extern "C" void lunar_host_audio_watchdog()
     IPlugAPPHost::sInstance->TryToChangeAudio();
 }
 
+// Lunar 24: the plugin needs a stopped-stream boundary (the panel's factory reset).
+extern "C" void lunar_host_request_audio_reopen()
+{
+  sReopen = true;
+}
+
 // Lunar 24: the system output device changed (macOS listener in main.mm).
 extern "C" void lunar_host_default_output_changed()
 {

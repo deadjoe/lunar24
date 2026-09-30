@@ -71,7 +71,14 @@ public:
   // or power cut loses at most the last half minute.
   void OnIdle() override;
 
+  // UI thread: put the whole machine back to its power-on default (every knob, switch, cable,
+  // keyboard setting and sequence). Done at the next stopped-stream boundary: the audio stream
+  // is briefly reopened and OnReset publishes the default instead of the current state.
+  void requestFactoryReset();
+
 private:
+  bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
+
   // The framework-free runtime owner, held BY VALUE. It owns the address-stable
   // MachineRuntimeDefinition (heap) + the single DeviceAdapter (task#71). ProcessBlock is a
   // PURE delegate to it.

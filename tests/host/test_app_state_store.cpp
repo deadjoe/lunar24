@@ -1202,6 +1202,28 @@ static void c7_audio_path_is_clean() {
   removeTree(dir);
 }
 
+// The panel's RESET: at the stopped-stream boundary the captured session state is replaced by
+// the power-on default, which is what gets published.
+static void c10_factory_reset() {
+  AppStateStore store;
+  StandaloneAudioEngine engine;
+  check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "C10 the engine prepared");
+  DeviceStateV1 edited = core::make_default_device_state(kSeed);
+  edited.parameters[static_cast<std::uint32_t>(core::ParameterId::envelope_a_self_gen)] = 1.0;
+  check(engine.applyDeviceState(edited, kSr, kBlock, kInCh, kOutCh) ==
+            StandaloneAudioEngine::StateApplyStatus::Accepted,
+        "C10 an edited session is live");
+  store.captureCanonical(engine);
+  store.replacePending(core::make_default_device_state(kSeed));
+  check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "C10 the owner re-prepared");
+  check(store.publishPending(engine, kSr, kBlock, kInCh, kOutCh) ==
+            StandaloneAudioEngine::StateApplyStatus::Accepted,
+        "C10 the default published");
+  check(engine.canonicalState() != nullptr &&
+            wireEqual(*engine.canonicalState(), core::make_default_device_state(kSeed)),
+        "C10 the machine is back at its power-on default");
+}
+
 int main() {
   c0_fixture_is_legal();
   c1_real_round_trip();
@@ -1213,6 +1235,7 @@ int main() {
   c6_multi_instance();
   c7_audio_path_is_clean();
   c9_native_path_boundary();
+  c10_factory_reset();
   if (g_fail != 0) {
     std::fprintf(stderr, "[app state store] %d/%d checks FAILED\n", g_fail, g_checks);
     return 1;
