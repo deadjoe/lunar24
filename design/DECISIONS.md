@@ -44,6 +44,10 @@ Keep these unless a listening test or a real bug says otherwise.
   pointing at an icon gives that shape (sine, triangle, saw, pulse, inverted saw), neighbours
   crossfade, and the last stretch morphs sine -> triangle. Icon positions measured from the
   panel drawing. Replaced an equal-spaced order that did not match the icons (owner's test).
+- **VCO B OUT carries volts and SYNC triggers at 1 V.** The jack publishes the waveform on its
+  ±5 V scale (like the pressure out), and VCO A SYNC rises at 1 V (hysteresis 0.2 V; tuned by
+  ear). The old 5 V threshold was never crossed by a VCO, so the manual's B -> A sync patch was
+  silent.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also
