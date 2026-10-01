@@ -525,7 +525,7 @@
 
 准备（本节通用）：RESET PANEL；只听 VCO A；按住键；VCO A 的 **cv amt** 放中间。
 
-**T9.1 LFO A / LFO B** ✅
+**T9.1 LFO A / LFO B** 🔧 (#79)
 - 步骤：
   1. 接线：LFO A 输出 → VCO A 的 **cv**。
   2. 拖 **rate**。
@@ -534,7 +534,7 @@
   5. 线改接 LFO B 的输出，重复 2–4。
 - 期望：
   - rate 改变摆动快慢；x6、x10 快很多倍，最快时变成颤抖的音色。
-  - wave 最左是方波（音高跳）、最右是三角（平滑滑动）。
+  - wave 最左（Λ 图标）是三角（平滑滑动）、最右（⊓ 图标）是方波（音高跳），和面板图标一致（#79 修正了原来左右相反的问题）。
   - LFO B 和 LFO A 一致。
 - 备注：LFO 只输出正电压，所以是"单向"摆动。
 
@@ -796,7 +796,7 @@
 **T12.16 RESET 输入** 🔧 (#79)
 - 准备：同 T12.15，但和弦改成同时按一下 **A**、**D**、**G**、**J**（C、E、G、B 四个音）。
 - 步骤：
-  1. 接线：LFO B 输出 → 键盘区 ⚡ RESET 输入。LFO B 的 **wave** 拖到最左（方波），拨杆 **x1**，**rate** 从最慢慢慢往上加。
+  1. 接线：LFO B 输出 → 键盘区 ⚡ RESET 输入。LFO B 的 **wave** 拖到最右（⊓ 方波），拨杆 **x1**，**rate** 从最慢慢慢往上加。
   2. 拔掉线。
 - 期望：
   - 第 1 步：每当 LFO 跳一下，琶音就回到第一个音 C 重新开始（rate 慢时听起来是偶尔"打个嗝"重来）；rate 加快后只听到 C、E（或 C、E、G）反复，到不了 B。琶音一直在走，不会停。
@@ -835,7 +835,7 @@
 **T13.3 S&H 的 IN 和 clock 插孔** ⏳
 - 准备：DRONE VOICES 只开 **3**；VCO A 的 VOL 拖到最左，取消 envelope A 的 hold；DRONE 3 的 fm、am 关，**NOISE** 最小。接线：S&H 框最右的 OUT → DRONE 3 的 **cv**（同 T3.4）。
 - 步骤：
-  1. 接线：LFO A 输出 → S&H 的 **IN**。LFO A 的 **wave** 拖到最右（三角），**rate** 放慢。
+  1. 接线：LFO A 输出 → S&H 的 **IN**。LFO A 的 **wave** 拖到最左（Λ 三角），**rate** 放慢。
   2. 接线：LFO B 输出 → S&H 的 **clock**。LFO B 的 **rate** 比 LFO A 快一些，来回拖。
 - 期望：
   - 第 1 步：音高不再是随机乱跳，而是一级一级地上去、再一级一级地下来（在采样 LFO A 的三角波）。
@@ -843,7 +843,7 @@
 - DRONE 6 同样做一遍。
 
 **T13.4 VCO 的 vca cv 输入** ⏳
-- 步骤：取消 envelope A 的 hold。接线：LFO A 输出 → envelope A 一排的 **vca cv**。LFO A 的 **wave** 最左（方波），来回拖 **rate**。不按键。
+- 步骤：取消 envelope A 的 hold。接线：LFO A 输出 → envelope A 一排的 **vca cv**。LFO A 的 **wave** 最右（⊓ 方波），来回拖 **rate**。不按键。
 - 期望：VCO A 自己按 LFO 的节奏一开一关（插线后由这根线代替 envelope A 控制 VCO A 的音量）；拔掉线恢复为按键才响。envelope B 一排的 **vca cv** 控制 VCO B，同样试一下（先把 VCO B 的 VOL 拖回来）。
 
 ---
