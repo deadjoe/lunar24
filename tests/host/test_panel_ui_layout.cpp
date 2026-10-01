@@ -6,6 +6,7 @@
 // and the keyboard-menu controls sit inside the menu overlay without overlapping. The static
 // panel art (panel_art.h) draws with every path inside the panel.
 
+#include <cmath>
 #include <cstdio>
 #include <map>
 #include <string>
@@ -128,5 +129,24 @@ int main() {
     CHECK(2 * (sp.first + sp.count) <= sizeof(host::art::kDecorPoints) / sizeof(float));
   for (const auto& sp : host::art::kLogoSubPaths)
     CHECK(2 * (sp.first + sp.count) <= sizeof(host::art::kLogoPoints) / sizeof(float));
+    // Every lit indicator LED sits exactly on a printed LED, each on a different one, and its order
+  // matches the engine's PanelLed list (20 LEDs; the joystick's two are not driven).
+  {
+    std::map<int, int> used;
+    const int n = int(sizeof(host::kPanelLedPos) / sizeof(host::kPanelLedPos[0]));
+    CHECK_EQ(n, 20);
+    for (int i = 0; i < n; ++i) {
+      int hit = -1;
+      for (int k = 0; k < int(sizeof(host::art::kLeds) / sizeof(host::art::kLeds[0])); ++k) {
+        const auto& l = host::art::kLeds[k];
+        if (std::fabs(l.x - host::kPanelLedPos[i].x) < 1.0 && std::fabs(l.y - host::kPanelLedPos[i].y) < 1.0) hit = k;
+      }
+      CHECK(hit >= 0);
+      CHECK(used.count(hit) == 0);
+      used[hit] = i;
+    }
+    CHECK(host::art::litLed(0xff2308u, 1.f) == 0xff2308u);
+    CHECK(host::art::litLed(0xff2308u, 0.f) == host::art::unlit(0xff2308u));
+  }
   return test::finish("test_panel_ui_layout");
 }

@@ -727,6 +727,36 @@ class DroneKeyControl : public IControl {
   Widget w_;
 };
 
+// A printed indicator LED lit from the engine (see StandaloneAudioEngine::PanelLed). The unlit
+// LED is part of the static art; this draws the lit colour and a soft glow over it, and asks to
+// be redrawn only when its brightness changes visibly.
+class LedControl : public IControl {
+ public:
+  LedControl(EditorShared& s, int led, float cx, float cy, float r, std::uint32_t rgb)
+      : IControl(IRECT(cx - 3 * r, cy - 3 * r, cx + 3 * r, cy + 3 * r)), s_(s), led_(led), cx_(cx), cy_(cy),
+        r_(r), rgb_(rgb) {
+    SetIgnoreMouse(true);
+  }
+  bool IsDirty() override {
+    return std::fabs(s_.engine.panelLed(led_) - shown_) > 0.03f || IControl::IsDirty();
+  }
+  void Draw(IGraphics& g) override {
+    shown_ = s_.engine.panelLed(led_);
+    if (shown_ <= 0.01f) return;
+    const std::uint32_t c = art::litLed(rgb_, shown_);
+    const IColor glow(int(90 * shown_), int((rgb_ >> 16) & 0xff), int((rgb_ >> 8) & 0xff), int(rgb_ & 0xff));
+    g.FillCircle(glow, cx_, cy_, r_ * 2.2f);
+    g.FillCircle(IColor(255, int((c >> 16) & 0xff), int((c >> 8) & 0xff), int(c & 0xff)), cx_, cy_, r_);
+  }
+
+ private:
+  EditorShared& s_;
+  int led_;
+  float cx_, cy_, r_;
+  std::uint32_t rgb_;
+  float shown_ = -1.f;
+};
+
 // MUTE: silences every output (the engine keeps running, so unmuting picks up where the sound
 // is). Amber ring while muted, like the panel's latching buttons. Not on the hardware.
 class MasterMuteControl : public IControl {
@@ -942,6 +972,13 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::Decor: g->AttachControl(new DecorControl(shared, w)); break;
     }
   }
+  // The indicator LEDs the engine drives, each over its printed LED (same position and colour).
+  static_assert(sizeof(kPanelLedPos) / sizeof(kPanelLedPos[0]) == StandaloneAudioEngine::kPanelLedCount,
+                "one panel position per engine LED");
+  for (int i = 0; i < StandaloneAudioEngine::kPanelLedCount; ++i)
+    for (const art::Led& l : art::kLeds)
+      if (std::fabs(l.x - kPanelLedPos[i].x) < 1.0 && std::fabs(l.y - kPanelLedPos[i].y) < 1.0)
+        g->AttachControl(new LedControl(shared, i, l.x, l.y, l.r, l.rgb));
   // The keyboard menu on top of the plates, hidden until the encoder opens it.
   shared.menuChrome.clear();
   shared.seqControls.clear();

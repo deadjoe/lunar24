@@ -32,6 +32,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 
 #include <cmath>
@@ -248,6 +249,24 @@ class StandaloneAudioEngine {
   // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
+  // Panel indicator LEDs: brightness 0..1, written by the audio thread once per block and read
+  // by the UI (relaxed atomics; a slightly stale value is fine for a light).
+  enum PanelLed : int {
+    kLedDrone1 = 0,           // drone 1..6 VCA envelope (amber, under HOLD): kLedDrone1 + voice
+    kLedEnvA = 6, kLedEnvB,   // envelope A / B (amber)
+    kLedLfoA, kLedLfoB,       // LFO A / B output (blue)
+    kLedStep1,                // 5-step sequencer, the active step (red): kLedStep1 + step
+    kLedPreampClip = kLedStep1 + 5,  // preamp near its rail (held ~0.15 s)
+    kLedFollowerLevel,        // envelope follower level
+    kLedFollowerGate,         // envelope follower gate detector
+    kLedSh3, kLedSh6,         // drone 3 / 6 S&H: a short flash on each new sample
+    kPanelLedCount
+  };
+  float panelLed(int led) const {
+    return led >= 0 && led < kPanelLedCount ? leds_[static_cast<std::size_t>(led)].load(std::memory_order_relaxed)
+                                            : 0.0f;
+  }
+
   // MUTE button (UI thread): silence every output with a ~10 ms fade, without stopping the
   // machine, so unmuting returns to whatever is playing. Not saved: the app starts unmuted.
   void setMuted(bool on) { muted_.store(on, std::memory_order_relaxed); }
@@ -355,6 +374,7 @@ class StandaloneAudioEngine {
   // repeated buffer. The audio path may touch no heap — this is a plain memset-like loop.
   void writeSilence_(double* const* outputs, int outCh, int frames) const;
   void applyMute_(double* const* outputs, int outCh, int frames);
+  void updateLeds_(int frames);
 
   // Clear the ENTIRE committed state back to the "no prepare done" sentinel. Called on every
   // prepare() failure so no half-written plan / stale format / old definition is observable:
@@ -393,6 +413,10 @@ class StandaloneAudioEngine {
   lunar24::core::SpscQueue<256> fromAudioQueue_;  // audio -> UI (MIDI CC knob moves)
   bool droneKeys_[6] = {true, true, true, true, true, true};
   std::atomic<bool> muted_{false};
+  std::array<std::atomic<float>, kPanelLedCount> leds_{};
+  double ledShLast_[2] = {0.0, 0.0};   // audio thread: last S&H value seen, per drone 3 / 6
+  double ledShHold_[2] = {0.0, 0.0};   // audio thread: seconds left on each S&H flash
+  double ledClipHold_ = 0.0;           // audio thread: seconds left on the clip LED
   double muteGain_ = 1.0;  // audio thread: the faded output gain the MUTE button drives
   std::uint64_t stateVersion_ = 0;
   std::uint64_t editCount_ = 0;
@@ -640,6 +664,7 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
   drainLive_(definition_->runtime());
   adapter_.renderBlock(definition_->runtime(), inputs, outputs, frames);
   applyMute_(outputs, outCh, frames);
+  updateLeds_(frames);
   ++renderedBlocks_;
   return Status::Rendered;
 }
@@ -658,6 +683,37 @@ inline void StandaloneAudioEngine::applyMute_(double* const* outputs, int outCh,
       if (outputs != nullptr && outputs[c] != nullptr) outputs[c][f] *= g;
   }
   muteGain_ = g;
+}
+
+// ---- updateLeds_ ----------------------------------------------------------
+// One snapshot per block of what the panel LEDs show. Flash/hold times are tuned by eye.
+inline void StandaloneAudioEngine::updateLeds_(int frames) {
+  core::SynthRuntime& rt = definition_->runtime();
+  const double blockSec = frames / (sampleRate_ > 0.0 ? sampleRate_ : 48000.0);
+  auto put = [this](int led, double v) {
+    leds_[static_cast<std::size_t>(led)].store(static_cast<float>(std::clamp(v, 0.0, 1.0)),
+                                               std::memory_order_relaxed);
+  };
+  for (int v = 0; v < 6; ++v) put(kLedDrone1 + v, rt.droneVoiceEnvLevel(v));
+  put(kLedEnvA, rt.envelopeA().level01());
+  put(kLedEnvB, rt.envelopeB().level01());
+  put(kLedLfoA, 0.5 * (rt.lfoA().fundamental() + 1.0));  // the LFOs swing 0..+10 V
+  put(kLedLfoB, 0.5 * (rt.lfoB().fundamental() + 1.0));
+  const auto& seq = rt.sequencer();
+  for (int i = 0; i < 5; ++i) put(kLedStep1 + i, seq.started() && seq.currentStep() == i ? 1.0 : 0.0);
+  if (rt.takePreampPeak() > 0.9 * core::Preamp::kSaturationVoltage) ledClipHold_ = 0.15;
+  put(kLedPreampClip, ledClipHold_ > 0.0 ? 1.0 : 0.0);
+  ledClipHold_ = std::max(0.0, ledClipHold_ - blockSec);
+  put(kLedFollowerLevel, rt.envFollowerLevel01());
+  put(kLedFollowerGate, rt.envFollowerGateOn() ? 1.0 : 0.0);
+  const int shVoice[2] = {2, 5};
+  for (int k = 0; k < 2; ++k) {
+    const double sh = rt.droneShOutVolts(shVoice[k]);
+    if (sh != ledShLast_[k]) ledShHold_[k] = 0.06;
+    ledShLast_[k] = sh;
+    put(kLedSh3 + k, ledShHold_[k] > 0.0 ? 1.0 : 0.0);
+    ledShHold_[k] = std::max(0.0, ledShHold_[k] - blockSec);
+  }
 }
 
 // ---- clearState_ ----------------------------------------------------------

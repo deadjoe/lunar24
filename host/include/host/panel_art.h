@@ -69,6 +69,17 @@ inline std::uint32_t unlit(std::uint32_t rgb) {
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
 
+// An LED at brightness b (0 = unlit .. 1 = full colour).
+inline std::uint32_t litLed(std::uint32_t rgb, float b) {
+  const std::uint32_t off = unlit(rgb);
+  b = b < 0.f ? 0.f : (b > 1.f ? 1.f : b);
+  auto ch = [&](int shift) {
+    const float lo = float((off >> shift) & 0xff), hi = float((rgb >> shift) & 0xff);
+    return std::uint32_t(lo + (hi - lo) * b + 0.5f) & 0xff;
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
 // Mix towards white (k > 0) or black (k < 0).
 inline std::uint32_t shade(std::uint32_t rgb, float k) {
   auto ch = [rgb, k](int shift) {

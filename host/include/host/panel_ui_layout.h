@@ -41,6 +41,20 @@ enum class WidgetKind : std::uint8_t {
   MasterMute,  // app-level MUTE button next to DRONE VOICES: silences every output
 };
 
+// The printed indicator LEDs Lunar 24 lights, in StandaloneAudioEngine::PanelLed order: centre of
+// each LED on the panel (each is one of art::kLeds). The joystick's two LEDs stay unlit: the
+// on-screen stick already shows its position.
+struct LedPos { double x, y; };
+inline constexpr LedPos kPanelLedPos[] = {
+    {62.1, 485.7}, {456.2, 485.7}, {62.1, 793.8}, {1638.2, 485.7}, {2032.3, 485.7}, {2032.5, 793.8},  // drones 1-6
+    {1042.4, 744.3}, {1515.3, 744.3},                       // envelope A, B
+    {137.7, 977.4}, {2220.0, 977.1},                        // LFO A, B
+    {936.5, 910.6}, {1054.7, 910.6}, {1173.0, 910.6}, {1291.1, 910.6}, {1409.4, 910.6},  // steps 1-5
+    {1706.2, 932.8},                                        // preamp clip
+    {1950.0, 932.8}, {2023.9, 932.8},                       // envelope follower level, gate
+    {370.0, 762.8}, {2340.4, 762.8},                        // drone 3, 6 S&H
+};
+
 // Knob cap colours of the panel sections.
 enum class Cap : std::uint8_t { Black, Teal, Green, Orange, Red, Grey, Dark };
 

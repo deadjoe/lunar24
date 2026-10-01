@@ -35,6 +35,10 @@ Keep these unless a listening test or a real bug says otherwise.
   10 ms fade; the machine keeps running, nothing is saved, the app starts unmuted. The hardware
   has no front-panel power switch to model (only a POWER / 12 V DC socket on the top edge), so
   quitting the app is the "power off".
+- **Indicator LEDs**: 20 of the 22 printed LEDs are lit from the engine (drone and envelope
+  levels, LFOs, the 5-step position, preamp clip, follower level / gate, S&H steps). The engine
+  writes one snapshot per audio block (relaxed atomics) and each LED redraws only when it
+  changes. The joystick's two LEDs stay dark: the on-screen stick already shows its position.
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
   by ear); a CLOCK jack or MIDI clock takes over until BPM is changed again (manual p.19).
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
