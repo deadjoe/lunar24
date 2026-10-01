@@ -102,7 +102,7 @@ std::unique_ptr<MachineRuntimeDefinition> mustAccept(const DeviceStateV1& st) {
 
 // The mandate's norm->DSP transfers (mirrored from machine_runtime.h so the oracle
 // asserts the DEFINED transfer, not whatever the production code happens to produce).
-constexpr double envSecFromNorm(double n) { return 0.001 + 0.999 * n; }
+inline double envSecFromNorm(double n) { return 0.001 * std::pow(1000.0, n); }
 // Drone ATT/RLS (DroneBank::mapAttSeconds/mapRlsSeconds): cubic taper up to 10 s.
 constexpr double droneEnvSecFromNorm(double n) { return 0.001 + 9.999 * n * n * n; }
 constexpr double classicTuneSemis(double n) { return (n - 0.5) * 24.0; }

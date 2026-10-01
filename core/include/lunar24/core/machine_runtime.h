@@ -608,6 +608,8 @@ class SynthRuntime {
   // env_follower cycle) and which is the env_follower's env_out (the break source).
   void setPreampExtIn(JackId j) { preampExtIn_ = j; }
   void setEnvFolOut(JackId j) { envFolOut_ = j; }
+  // The env_follower's GATE output jack (0 / +8 V from the gate detector). Unbound = not published.
+  void setEnvFolGateOut(JackId j) { envFolGateOut_ = j; }
 
   // ---- CONTROL-SOURCE BINDINGS (@Codex D1/D2) ----
   // Jacks the six always-run control sources READ (resolved through the single sink
@@ -3086,8 +3088,10 @@ class SynthRuntime {
   // product oracle can verify each apply against ONE definition and a test can isolate-mutate
   // a single helper to turn an entire family's applies RED. The PULSER reuses the already-
   // existing FiveStepSequencer::pulserNormToRateHz (see setControlParamValue).
-  static double envFollowerSecondsFromNorm(double n) {
-    return 0.001 + 0.999 * n;
+  // 1 ms .. 1 s, exponential: the middle of the knob is ~32 ms, fast enough for a clap to
+  // open the gate detector (a linear law put 0.5 s there and claps never reached it).
+  static double envFollowerSecondsFromNorm(double n) {  // tuned by ear
+    return 0.001 * std::pow(1000.0, std::clamp(n, 0.0, 1.0));
   }  // s, n in [0,1].
   static double classicDroneTuneSemisFromNorm(double n) {
     return (n - 0.5) * 24.0;
@@ -3488,6 +3492,7 @@ class SynthRuntime {
       case ExecutionKind::kEnvFollower: {
         envOut_ = envFol_.tick(preampOut_);
         publishSourceValue_(envFolOut_, envOut_);  // cycle leg -> its own delay line.
+        if (envFolGateOut_ != JackId{0}) publishSourceValue_(envFolGateOut_, envFol_.gate());
         break;
       }
       case ExecutionKind::kMixer: {
@@ -4025,6 +4030,7 @@ class SynthRuntime {
   JackId vcfCvR_{0};
   JackId preampExtIn_{0};
   JackId envFolOut_{0};
+  JackId envFolGateOut_{0};
   // CLASSIC drone group CV bindings (batch 4A): env_out jacks the product writes virtual
   // volts to (per group), cv_mod_in jacks the product reads as the group's shared CV MOD.
   // The EXPLICIT envOutBound_/cvModInBound_ flags are the authoritative post-admission

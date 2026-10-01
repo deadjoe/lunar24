@@ -217,7 +217,6 @@ class EngineHarness {
   const std::vector<double>& dryA() const { return dryA_; }
   const std::vector<double>& dryB() const { return dryB_; }
 
- private:
   // Per-frame render loop with a caller-supplied input feed and an optional per-frame sample hook.
   template <class Feed, class Fn>
   bool renderFeedSampled(int frames, Feed&& feed, Fn&& onSample) {
@@ -238,6 +237,7 @@ class EngineHarness {
     return true;
   }
 
+ private:
   StandaloneAudioEngine engine_;
   StandaloneAudioEngine::StateApplyStatus applyStatus_ =
       StandaloneAudioEngine::StateApplyStatus::NotAttempted;

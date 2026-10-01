@@ -69,6 +69,9 @@ Keep these unless a listening test or a real bug says otherwise.
   EXT.AUDIO and channel 2 the preamp, so with either at mid a mic left selected in Preferences
   put room noise (and claps, through the reverb) under the drones. A one-channel input (a
   laptop's built-in mic) feeds both, so it reaches the preamp like the hardware's contact mic.
+- **Envelope follower ATTACK / RELEASE are exponential, 1 ms .. 1 s** (centre ~32 ms; RELEASE
+  defaults to ~180 ms). The old linear law put 0.5 s at the centre, too slow for a clap to
+  reach the gate detector. Tuned by ear.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also

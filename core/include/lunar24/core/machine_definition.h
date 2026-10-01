@@ -380,6 +380,7 @@ class MachineRuntimeDefinition {
                               lunar24::registry::JackId::vcf_cv_r_in);
     runtime_.setPreampExtIn(lunar24::registry::JackId::preamp_ext_source_in);
     runtime_.setEnvFolOut(lunar24::registry::JackId::env_follower_env_out);
+    runtime_.setEnvFolGateOut(lunar24::registry::JackId::env_follower_gate_out);
     // Classic DRONE ENV/CV-MOD cohort (order 0..3 == drone 1/2/4/5).
     runtime_.setDroneEnvOutBindings(lunar24::registry::JackId::drone_1_env_out,
                                     lunar24::registry::JackId::drone_2_env_out,
