@@ -182,6 +182,21 @@ static void pressure_mode_slew_no_overshoot() {
   }
   CHECK_TRUE(everMax <= 1.0 + 1e-9);  // one-pole never overshoots
   CHECK_TRUE(out > 0.5);              // reached most of the way (tau 0.5s, 1s elapsed)
+
+  // P RISE is the time to (nearly) reach the new pressure: full knob ~2.5 s, half knob
+  // well under 0.1 s, so a half-way knob still follows a hand sweep.
+  auto reachedAfter = [](double norm, double seconds) {
+    core::PressureOutlet q;
+    q.setSampleRate(48000);
+    q.setMode(core::PressureOutput::Pressure);
+    q.setTimes(norm, 0.0);
+    double v = 0.0;
+    for (int i = 0; i < int(seconds * 48000); ++i) v = q.tick(1.0);
+    return v;
+  };
+  CHECK_TRUE(reachedAfter(1.0, 0.5) < 0.6);
+  CHECK_TRUE(reachedAfter(1.0, 2.6) > 0.93);
+  CHECK_TRUE(reachedAfter(0.5, 0.1) > 0.95);
 }
 
 static void pressure_asr_ad_loop_random() {

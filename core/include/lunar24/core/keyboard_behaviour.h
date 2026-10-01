@@ -191,6 +191,7 @@ inline constexpr double kVibratoMaxHz          = 15.0;
 inline constexpr double kVibratoMaxDepthCv     = 2.0 / 12.0;  // 2 semitones as volts
 inline constexpr double kVibratoMaxDelaySec    = 2.5;
 inline constexpr double kPressureMaxSeconds    = 2.5;
+inline constexpr double kPressureMinSeconds    = 0.002;
 
 // ------------------------------------------------------------------- pressure --
 
@@ -212,9 +213,15 @@ class PressureOutlet {
   PressureOutlet() { rand_.seed(0x9e3779b9u); }
   void setSampleRate(double fs) { fs_ = fs; }
   void setMode(PressureOutput m) { mode_ = m; }
-  void setTimes(double riseNorm, double fallNorm) {  // PROVISIONAL linear law
-    riseSec_ = riseNorm * kPressureMaxSeconds;
-    fallSec_ = fallNorm * kPressureMaxSeconds;
+  // P RISE / P FALL: the time the output takes to (nearly) reach a new pressure, on an
+  // exponential knob law: 0 = instant, then 2 ms .. 2.5 s, so the first half of the knob
+  // is the useful short slews and the top end the long swells.  // tuned by ear
+  static double knobSeconds(double norm) {
+    return norm <= 0.0 ? 0.0 : kPressureMinSeconds * std::pow(kPressureMaxSeconds / kPressureMinSeconds, std::min(norm, 1.0));
+  }
+  void setTimes(double riseNorm, double fallNorm) {
+    riseSec_ = knobSeconds(riseNorm) / 3.0;  // one-pole time constant: ~95 % after 3 tau
+    fallSec_ = knobSeconds(fallNorm) / 3.0;
   }
   void gate(bool high) {
     if (high && !held_) {
@@ -326,7 +333,9 @@ class PressureOutlet {
     }
     return target;
   }
-  static bool close(double a, double b) { return std::fabs(a - b) < 1e-4; }
+  // An envelope stage ends once within 1 % of full scale of its target (a one-pole never
+  // quite gets there; waiting for 1e-4 made every stage three times longer than the knob).
+  static bool close(double a, double b) { return std::fabs(a - b) < 0.01; }
 
   PressureOutput mode_ = PressureOutput::Pressure;
   Stage stage_ = Stage::Idle;
