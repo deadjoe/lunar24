@@ -851,9 +851,19 @@ class MenuBackground : public IControl {
     g.FillRoundRect(col(theme::kMenuBg), mRECT, 10.f);
     g.DrawText(txt(18, theme::kMenuText), "KEYBOARD MENU", float(kMenuTitleX), mRECT.T + 22);
     if (s_.menuPage == 2) {
-      g.DrawText(txt(13, theme::kMenuText), "ARP", 520, float(kRhythmArpY));
-      g.DrawText(txt(13, theme::kMenuText), "SEQ", 520, float(kRhythmSeqY));
-      g.DrawText(txt(11, theme::kMenuText), "lit = the clock gets through; length: ARP RHYTHM / SEQ RHYTHM on SETTINGS",
+      // Row names with the pattern length (set by ARP RHYTHM / SEQ RHYTHM on SETTINGS).
+      const auto id = [](ParameterId p) { return static_cast<std::uint32_t>(p); };
+      const int arpLen = int(core::arp_length_steps(s_.value(id(ParameterId::keyboard_arp_length))));
+      const int seqLen = int(core::seq_rhythm_length_steps(s_.value(id(ParameterId::keyboard_seq_rhythm_length))));
+      char buf[24];
+      g.DrawText(txt(14, theme::kMenuText), "ARP", 520, float(kRhythmArpY) - 8.f);
+      std::snprintf(buf, sizeof buf, "%d step%s", arpLen, arpLen == 1 ? "" : "s");
+      g.DrawText(txt(11, theme::kMenuText), buf, 520, float(kRhythmArpY) + 14.f);
+      g.DrawText(txt(14, theme::kMenuText), "SEQ", 520, float(kRhythmSeqY) - 8.f);
+      std::snprintf(buf, sizeof buf, "%d step%s", seqLen, seqLen == 1 ? "" : "s");
+      g.DrawText(txt(11, theme::kMenuText), buf, 520, float(kRhythmSeqY) + 14.f);
+      g.DrawText(txt(11, theme::kMenuText),
+                 "amber = plays   dark = silent beat   outline = not used (set the length: ARP RHYTHM / SEQ RHYTHM on SETTINGS)",
                  mRECT.MW(), float(kRhythmSeqY) + 66.f);
     }
     if (s_.menuPage == 1) {
@@ -1044,9 +1054,15 @@ class RhythmStepControl : public IControl {
     const float cx = mRECT.MW(), cy = mRECT.MH();
     sink.text(cx, cy - 32, 13, inUse ? (mMouseIsOver ? art::kMenuAmberRgb : art::kMenuTextRgb) : art::kMenuDimRgb,
               false, buf);
-    const std::uint32_t lit = inUse ? art::kMenuAmberRgb : 0x6a5a30;
-    sink.fillCircle(cx, cy + 6, 16, on ? lit : 0x5a595f);
-    if (!on) sink.fillCircle(cx, cy + 6, 13, 0x1e1e22);
+    if (!inUse) {  // past the pattern length: an empty outline
+      sink.fillCircle(cx, cy + 6, 16, 0x3a393f);
+      sink.fillCircle(cx, cy + 6, 14, 0x1e1e22);
+    } else if (on) {  // this beat plays
+      sink.fillCircle(cx, cy + 6, 16, art::kMenuAmberRgb);
+    } else {  // a silent beat: dark with a grey rim
+      sink.fillCircle(cx, cy + 6, 16, 0x8a898e);
+      sink.fillCircle(cx, cy + 6, 12, 0x1e1e22);
+    }
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     s_.engine.postKeyboardRhythm(s_.editSide(), row_ == 1, static_cast<std::uint8_t>(mask() ^ (1u << step_)));

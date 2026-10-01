@@ -729,7 +729,7 @@
   - 第 2 步：在最上面（轻按）几乎不颤；越往下颤得越深，最下面约是第 1 步的两倍。
   - 补充：**VIB PRESS** 放一半时，轻按也有一半深度的颤音，压力的影响减半。
 
-**T12.11 LEGATO** ⏳
+**T12.11 LEGATO** ✅
 - 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单 **GLIDE** 放中间。
 - 步骤：
   1. **LEGATO** 保持 OFF。用电脑键盘一个一个地弹 **A**、**K**（每次松开再按下一个）。
@@ -740,7 +740,7 @@
   - 第 2 步：分开弹时不滑，直接跳到新音。
   - 第 3 步：按住 A 再按 K 时滑上去；松开 K 时滑回 A。
 
-**T12.12 ARP VAR / ARP INT** ⏳
+**T12.12 ARP VAR / ARP INT** ✅
 - 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单 **MODE** 改成 ARPEGGIATOR。
 - 步骤：同时按住 **A** 和 **D**（C 和 E），一直按着，依次改：
   1. **ARP VAR** OFF。
@@ -753,26 +753,32 @@
   - 第 3 步：再多一轮，高两个八度。
   - 第 4 步：C、E，然后高 7 个半音的 G、B。
 
-**T12.13 SEQ CV（休止步的音高）** ⏳
+**T12.13 SEQ CV（休止步的音高）** 🔧 (#78)
 - 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。envelope A 的 **R** 拉到 3/4 左右（让每个音的尾巴长一点）。键盘菜单 **MODE** 改成 SEQUENCER，**SEQ LEN** 调到 2 steps。SEQUENCER 页：第 1 步音高 0、gate 亮；第 2 步音高拉到 +12、gate 点灭。
 - 步骤：按住 **A** 听几轮；**SEQ CV** 分别选 CONTINUOUS 和 GATED。
 - 期望：
-  - CONTINUOUS：第 2 步不重新发音，但正在消失的尾音跳高一个八度。
-  - GATED：第 2 步尾音保持原来的音高，只是慢慢消失。
+  - CONTINUOUS：听起来是低、高、低、高来回（第 2 步不重新起音，但正在消失的尾音跳高一个八度）。
+  - GATED：一直是同一个音高（第 2 步尾音保持原来的音高，只是慢慢消失）。
 
 **T12.14 RHYTHM（节奏型）** ⏳
-- 说明：节奏型夹在时钟和琶音器 / 音序器之间，最多 8 步，每步决定这一拍的时钟能不能通过。菜单 RHYTHM 页上排是琶音器（ARP），下排是音序器（SEQ）：亮 = 通过，暗 = 静音这一拍；超过长度的步显示得很淡。长度在 SETTINGS 页的 **ARP RHYTHM** / **SEQ RHYTHM**。
-- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。**MODE** 改成 ARPEGGIATOR。
+- 说明：节奏型是一排最多 8 个"拍"，夹在时钟和琶音器 / 音序器之间，每一拍可以设成"响"或"不响"。菜单的 **RHYTHM** 页上排是琶音器（ARP），下排是音序器（SEQ）。每个圆点：
+  - **琥珀色实心** = 这一拍响；
+  - **暗色带灰圈** = 这一拍不响（点一下切换）；
+  - **只有细框** = 超出长度，不起作用。
+  - 长度显示在行名下面（如 "4 steps"），在 SETTINGS 页用 **ARP RHYTHM** / **SEQ RHYTHM** 调。默认长度 1，所以一开始只有第 1 个是实心。
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单：**MODE** 改成 ARPEGGIATOR，**ARP HOLD** 改成 ON。同时按一下 **A**、**D**、**G** 再松开（HOLD 让琶音一直走，不用一直按着）。
 - 步骤：
-  1. 同时按住 **A**、**D**、**G**（C、E、G），听一会儿。
-  2. **ARP RHYTHM** 调到 4 steps。RHYTHM 页把上排第 2、4 步点暗。
-  3. 把第 2、4 步点亮，只点暗第 4 步。
-  4. **MODE** 改成 SEQUENCER，**SEQ RHYTHM** 调到 3 steps，RHYTHM 页把下排第 3 步点暗，按住 **A**。
+  1. 听一会儿。
+  2. SETTINGS 页 **ARP RHYTHM** 调到 4 steps，切到 RHYTHM 页看 ARP 一行。
+  3. 点一下 ARP 第 2 个圆点。
+  4. 再点一下 ARP 第 4 个圆点。
+  5. **MODE** 改成 SEQUENCER（不用按键，音序器自己走）。SETTINGS 页 **SEQ RHYTHM** 调到 3 steps；RHYTHM 页点一下 SEQ 第 3 个圆点。
 - 期望：
   - 第 1 步：C、E、G 均匀轮流。
-  - 第 2 步：响一拍、停一拍，琶音变成一半的速度，但音的顺序不跳（C、E、G 依次）。
-  - 第 3 步：每三个音后停一拍。
-  - 第 4 步：音序每走两步停一拍。
+  - 第 2 步：ARP 行下面显示 4 steps；第 1–4 个是琥珀色实心，5–8 只有细框。声音不变。
+  - 第 3 步：第 2 个变暗。节奏变成"响、停、响、响"循环，音的顺序仍是 C、E、G 依次（停的那拍不跳音）。
+  - 第 4 步：第 4 个也变暗。变成"响、停、响、停"，琶音只剩一半速度。
+  - 第 5 步：SEQ 行第 1、2 个实心、第 3 个暗；音序器"走、走、停"循环。
 - 补充：PLAY = SPLIT 时，RHYTHM 页同样跟着 **EDIT: LEFT / RIGHT** 切换左右两边。
 
 ---
