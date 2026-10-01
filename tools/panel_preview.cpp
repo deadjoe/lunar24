@@ -4,7 +4,8 @@
 // panel_preview — render the panel (art + controls at their default positions) to SVG,
 // so the UI can be reviewed on any machine without building the app:
 //
-//   panel_preview > panel.svg          (add --menu / --seq to show a keyboard menu page)
+//   panel_preview > panel.svg          (add --menu / --seq to show a keyboard menu page,
+//                                       --leds to show the indicator LEDs lit)
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
@@ -181,6 +182,7 @@ void jack(const Widget& w) { art::drawJack(svg(), float(w.cx), float(w.cy), floa
 int main(int argc, char** argv) {
   const bool showMenu = argc > 1 && std::strcmp(argv[1], "--menu") == 0;
   const bool showSeq = argc > 1 && std::strcmp(argv[1], "--seq") == 0;
+  const bool showLeds = argc > 1 && std::strcmp(argv[1], "--leds") == 0;
   const auto ws = build_panel_layout();
   if (argc > 1 && std::strcmp(argv[1], "--widgets") == 0) {
     std::printf("[\n");
@@ -197,6 +199,10 @@ int main(int argc, char** argv) {
   std::printf("<svg xmlns='http://www.w3.org/2000/svg' width='2400' height='1552' viewBox='0 0 2400 1552'>\n");
   SvgSink& sink = svg();
   art::drawPanelArt(sink);
+  if (showLeds) {  // alternate full and half brightness
+    int i = 0;
+    for (const auto& l : art::kLeds) art::drawLed(sink, l.x, l.y, l.r, l.rgb, (i++ % 2) ? 0.5f : 1.f);
+  }
 
   for (const Widget& w : ws) {
     if (w.menu) continue;

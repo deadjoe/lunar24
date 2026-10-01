@@ -1074,6 +1074,28 @@ class SynthRuntime {
     if (kClassicGroup[voice] >= 0) drone_.setGroupGate(kClassicGroup[voice], open);
   }
   bool droneVoiceKey(int voice) const { return voice >= 0 && voice < 6 && droneKeyOpen_[voice]; }
+  // Panel indicator readouts (the host turns these into the printed LEDs).
+  // Drone 1..6 (voice 0..5) VCA envelope level, 0..1: the amber LED under each HOLD.
+  double droneVoiceEnvLevel(int voice) const {
+    static constexpr int kClassicGroup[6] = {0, 1, -1, 2, 3, -1};
+    if (voice < 0 || voice > 5) return 0.0;
+    if (voice == 2) return pv3_.ar.level();
+    if (voice == 5) return pv6_.ar.level();
+    return drone_.groupEnvLevel(kClassicGroup[voice]);
+  }
+  // Drone 3 / 6 (voice 2 / 5) S&H output in volts, -5..+5 (the S&H LED flashes on each step).
+  double droneShOutVolts(int voice) const {
+    return voice == 2 ? pv3_.shOutVolts() : voice == 5 ? pv6_.shOutVolts() : 0.0;
+  }
+  // ENVELOPE FOLLOWER level (0..1 of its 0..10 V output) and gate detector.
+  double envFollowerLevel01() const { return envFol_.envCv() / 10.0; }
+  bool envFollowerGateOn() const { return envFol_.gateActive(); }
+  // The preamp's largest |output| since the last call (volts), then reset: the clip LED.
+  double takePreampPeak() {
+    const double p = preampPeak_;
+    preampPeak_ = 0.0;
+    return p;
+  }
   void setDroneGroupHold(int voiceGroup, bool on) { drone_.setGroupHold(voiceGroup, on); }
   void setDroneGroupAtt(int voiceGroup, double norm) { drone_.setGroupAtt(voiceGroup, norm); }
   void setDroneGroupRls(int voiceGroup, double norm) { drone_.setGroupRls(voiceGroup, norm); }
@@ -3459,6 +3481,7 @@ class SynthRuntime {
         const double in = resolveSinkValue_(preampExtIn_, lastIn_.preamp);
         preampInResolved_ = in;
         preampOut_ = preamp_.tick(in);
+        preampPeak_ = std::max(preampPeak_, std::fabs(preampOut_));
         chIn_[VoiceMixer::kChannelPreamp] = preampOut_;
         break;
       }
@@ -4062,6 +4085,7 @@ class SynthRuntime {
   double mixL_ = 0.0, mixR_ = 0.0;
   double vcfL_ = 0.0, vcfR_ = 0.0;
   double preampOut_ = 0.0;
+  double preampPeak_ = 0.0;  // largest |preamp output| since takePreampPeak()
 
   // GH#6 VCF→distortion staging gains (calibration trim × identity path-gain micro).
   // Default 1.0 (no staging adjustment) so the runtime is bit-identical to the

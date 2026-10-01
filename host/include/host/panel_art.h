@@ -42,7 +42,7 @@ struct SubPath { std::uint32_t first, count; bool closed, hole; };
 enum ShapeFlag : std::uint8_t { kFill = 1, kStroke = 2, kEvenOdd = 4 };
 struct Shape { std::uint32_t firstSub, subCount, fill, stroke; float width; std::uint8_t flags; };
 struct Dot { float x, y, r; std::uint32_t rgb; };
-// Indicator LEDs printed on the panel. Drawn unlit (Lunar 24 does not drive them yet).
+// Indicator LEDs printed on the panel (drawLed; the app lights them from the engine).
 struct Led { float x, y, r; std::uint32_t rgb; };
 // A two-colour paint with alpha. Linear: from (x0, y0) to (x1, y1). Radial: centre (x0, y0),
 // colour c0 up to radius x1, blending to c1 at radius y1. Solid: c0 == c1.
@@ -68,6 +68,18 @@ inline std::uint32_t unlit(std::uint32_t rgb) {
   auto ch = [rgb](int shift) { return std::uint32_t(((rgb >> shift) & 0xff) * 0.45 + 40) & 0xff; };
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
+
+// Blend two colours: t = 0 gives a, t = 1 gives c.
+inline std::uint32_t mix(std::uint32_t a, std::uint32_t c, float t) {
+  t = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
+  auto ch = [&](int shift) {
+    const float lo = float((a >> shift) & 0xff), hi = float((c >> shift) & 0xff);
+    return std::uint32_t(lo + (hi - lo) * t + 0.5f) & 0xff;
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+// An LED at brightness b (0 = unlit .. 1 = full colour).
+inline std::uint32_t litLed(std::uint32_t rgb, float b) { return mix(unlit(rgb), rgb, b); }
 
 // Mix towards white (k > 0) or black (k < 0).
 inline std::uint32_t shade(std::uint32_t rgb, float k) {
@@ -103,6 +115,34 @@ void dome(Sink& s, float cx, float cy, float r, std::uint32_t rgb, float relief 
   const float hx = cx - r * 0.28f, hy = cy - r * 0.34f, hr = r * 0.55f;
   s.circle(hx, hy, hr);
   s.fillGrad(radialGrad(hx, hy, 0.f, hr, 0xffffff, 0.32f, 0xffffff, 0.f));
+}
+
+// An indicator LED at brightness b (0 = off .. 1 = full): a small clear dome sunk in the panel.
+// Lit, the light comes from the die in the middle, so the lens is pale and hot at the centre and
+// saturated towards the edge, and a little of it spills onto the panel around the bezel. The glass
+// keeps its highlight whether lit or not. Amounts tuned by eye.
+template <class Sink>
+void drawLed(Sink& s, float cx, float cy, float r, std::uint32_t rgb, float b) {
+  b = b < 0.f ? 0.f : (b > 1.f ? 1.f : b);
+  if (b > 0.01f) {  // spill: a wide faint ring and a tighter brighter one read as a smooth falloff
+    s.circle(cx, cy, r * 2.8f);
+    s.fillGrad(radialGrad(cx, cy, r, r * 2.8f, rgb, 0.16f * b, rgb, 0.f));
+    s.circle(cx, cy, r * 1.7f);
+    s.fillGrad(radialGrad(cx, cy, r, r * 1.7f, rgb, 0.30f * b, rgb, 0.f));
+  }
+  // The bezel: a recessed hole, shadowed at the top, catching light at the bottom.
+  s.circle(cx, cy, r + 1.5f);
+  s.fillGrad(vertical(cy - r, cy + r, 0x1c1614, 0x857a6e));
+  // The lens.
+  const std::uint32_t off = unlit(rgb);
+  const std::uint32_t core = mix(shade(off, 0.08f), mix(rgb, 0xfff4e6, 0.6f), b);
+  const std::uint32_t edge = mix(shade(off, -0.35f), shade(rgb, -0.12f), b);
+  s.circle(cx, cy, r);
+  s.fillGrad(radialGrad(cx, cy + r * 0.05f, r * 0.18f, r, core, 1.f, edge, 1.f));
+  // The glass highlight, towards the light (top left).
+  const float hx = cx - r * 0.33f, hy = cy - r * 0.38f, hr = r * 0.42f;
+  s.circle(hx, hy, hr);
+  s.fillGrad(radialGrad(hx, hy, 0.f, hr, 0xffffff, 0.55f, 0xffffff, 0.f));
 }
 
 template <class Sink>
@@ -477,7 +517,7 @@ void drawPanelArt(Sink& s) {
   for (const auto& b : kTabs) s.fillRect(b.x0, b.y0, b.x1, b.y1, kInkRgb, 4.f);
   drawShapes(s, kDecorPoints, kDecorSubPaths, kDecorShapes, sizeof(kDecorShapes) / sizeof(kDecorShapes[0]));
   for (const auto& d : kDots) s.fillCircle(d.x, d.y, d.r, d.rgb);
-  for (const auto& l : kLeds) s.fillCircle(l.x, l.y, l.r, unlit(l.rgb));
+  for (const auto& l : kLeds) drawLed(s, l.x, l.y, l.r, l.rgb, 0.f);
   for (const auto& t : kTexts) s.text(t.x, t.y, t.size * 0.92f, t.rgb, t.vertical, t.text);
   drawShapes(s, kLogoPoints, kLogoSubPaths, kLogoShapes, sizeof(kLogoShapes) / sizeof(kLogoShapes[0]));
   drawKeybedMarks(s);

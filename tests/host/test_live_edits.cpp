@@ -132,5 +132,41 @@ int main() {
     for (int i = 0; i < 4; ++i) peak();
     CHECK(peak() > 0.01);                         // the sound is back
   }
+  // Panel LEDs follow the machine: the open drones are lit, envelope A lights while a note is
+  // held, the LFO LED moves, and exactly one 5-step LED is lit once the sequencer runs.
+  {
+    using E = host::StandaloneAudioEngine;
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    auto run = [&](int blocks) {
+      for (int i = 0; i < blocks; ++i)
+        CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    };
+    run(20);
+    for (int v = 0; v < 6; ++v) CHECK(e.panelLed(E::kLedDrone1 + v) > 0.9f);  // default: all open
+    CHECK(e.panelLed(E::kLedEnvA) < 0.01f);
+    core::InputStateMachine in{nullptr, 0};
+    core::PerformanceInput p{};
+    p.kind = core::PerfInputKind::note_on;
+    p.value = 0.8f;
+    p.noteId = 3;
+    p.source = 1;
+    p.seq = 1;
+    core::ControlEvent ev[3];
+    const std::uint32_t n = in.translate(p, ev, 3);
+    for (std::uint32_t i = 0; i < n; ++i) e.postEvent(ev[i]);
+    run(20);
+    CHECK(e.panelLed(E::kLedEnvA) > 0.5f);
+    float lo = 1.f, hi = 0.f;
+    for (int i = 0; i < 200; ++i) {   // about one LFO cycle at the default 1 Hz
+      run(1);
+      lo = std::min(lo, e.panelLed(E::kLedLfoA));
+      hi = std::max(hi, e.panelLed(E::kLedLfoA));
+    }
+    CHECK(hi - lo > 0.5f);
+    int lit = 0;
+    for (int i = 0; i < 5; ++i) lit += e.panelLed(E::kLedStep1 + i) > 0.5f ? 1 : 0;
+    CHECK_EQ(lit, 1);
+  }
   return test::finish("test_live_edits");
 }
