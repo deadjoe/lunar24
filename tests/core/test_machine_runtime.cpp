@@ -2985,9 +2985,13 @@ int main() {
     std::vector<core::RuntimeInputs> srcRi(kBlock);
     for (std::size_t i = 0; i < kBlock; ++i) srcRi[i] = core::RuntimeInputs{src[i], src[i]};
     core::SynthRuntime cycA = makeRuntime();
+    cycA.setPreampGainNorm(0.5);  // GAIN defaults to mute; open it so the preamp carries signal
+    cycA.snapSmoothedLevels();
     cycA.connect(kJ_EnvFolOut, kJ_PreampExtIn);
     cycA.rebuild();
     core::SynthRuntime cycB = makeRuntime();  // unpatched: preamp reads ext directly
+    cycB.setPreampGainNorm(0.5);
+    cycB.snapSmoothedLevels();
     cycB.rebuild();
     std::vector<core::RuntimeOutput> outA(kBlock), outB(kBlock);
     cycA.processBlock(srcRi.data(), kBlock, outA.data(), /*driveGraph=*/true);

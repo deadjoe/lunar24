@@ -240,6 +240,8 @@ void test_supported_asymmetric_cable_difference() {
   // CV is 0 and the drone_2 voice is unmodulated.
   DeviceStateV1 refState = make_default_device_state(0x4C554E4152ULL);
   refState.parameters[static_cast<std::uint32_t>(lunar24::core::ParameterId::drone_2_mod_1)] = 1.0;
+  // GAIN defaults to mute; open it so the fed signal reaches the env follower.
+  refState.parameters[static_cast<std::uint32_t>(lunar24::core::ParameterId::preamp_gain)] = 0.5;
 
   EngineHarness ref;
   CHECK(ref.load(refState));

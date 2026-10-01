@@ -23,11 +23,11 @@
 //   * GATE output (gate_out id 35) — gate output, unipolar, nominal 0..+8.0 V
 //     CONFIRMED (design/07 §2: "GATE 0…8 V"). Active gate = +8 V, inactive = 0 V.
 //   * GATE DETECTOR: the manual shows a "gate detector activity" indicator (L557-558)
-//     but gives NO trigger level or hysteresis. kGateThreshold and kGateHysteresis
-//     are PROVISIONAL. The gate is based on the SMOOTHED envelope level — the
-//     standard "activity" measure — with a threshold and a hysteresis margin back; a
-//     documented modeling choice (an alternative on the raw rectified transient would
-//     trigger faster on attack, which the manual does not evidence either way).
+//     but gives NO trigger level or hysteresis (all values below tuned by ear). The
+//     detector has its OWN fast peak follower (1 ms attack, 50 ms release), independent
+//     of the ATTACK / RELEASE knobs, compared with a threshold and a hysteresis margin.
+//     Gating on the knob-smoothed envelope missed short sounds at slow attack (a clap
+//     never reached it) and held open on steady room noise at fast attack.
 //   * Rectify-then-smooth is the DSL structure (见 P3-② Schmitt/FM which also
 //     split to new headers rather than reusing parameter_smoothing.h). The
 //     seconds->one-pole coefficient mapping is REUSED from the shared convention
@@ -73,6 +73,7 @@ class EnvelopeFollower {
     const double rect = std::fabs(in);
     const double coeff = rect >= env_ ? attackCoeff_ : releaseCoeff_;
     env_ += coeff * (rect - env_);
+    gateEnv_ += (rect >= gateEnv_ ? gateAttackCoeff_ : gateReleaseCoeff_) * (rect - gateEnv_);
     updateGate_();
     return envCv();
   }
@@ -94,9 +95,13 @@ class EnvelopeFollower {
   // CONFIRMED voltage-spec ranges.
   static constexpr double kEnvMaxVolt = 10.0;  // ENV FOLLOWER CV 0…10 V.
   static constexpr double kGateVolt = 8.0;     // GATE 0…8 V.
-  // PROVISIONAL gate-detector tuning: no manual threshold/hysteresis value exists.
-  static constexpr double kGateThreshold = 0.5;
-  static constexpr double kGateHysteresis = 0.05;
+  // Gate detector: opens when the fast peak follower reaches 5 V and closes below 3 V. A clap
+  // with GAIN at mid drives the preamp near its 10 V clip level; room noise or a TV stays well
+  // under that. GAIN sets the sensitivity.  // tuned by ear
+  static constexpr double kGateThreshold = 5.0;
+  static constexpr double kGateHysteresis = 2.0;
+  static constexpr double kGateAttackSec = 0.001;   // tuned by ear
+  static constexpr double kGateReleaseSec = 0.050;  // tuned by ear
   // PROVISIONAL floor on the time constants (seconds) to avoid a zero/NaN coefficient.
   static constexpr double kMinTime = 1e-4;
 
@@ -108,11 +113,13 @@ class EnvelopeFollower {
     releaseCoeff_ = (sr_ > 0.0 && releaseSec_ > 0.0)
                         ? 1.0 - std::exp(-1.0 / (sr_ * releaseSec_))
                         : 0.0;
+    gateAttackCoeff_ = sr_ > 0.0 ? 1.0 - std::exp(-1.0 / (sr_ * kGateAttackSec)) : 0.0;
+    gateReleaseCoeff_ = sr_ > 0.0 ? 1.0 - std::exp(-1.0 / (sr_ * kGateReleaseSec)) : 0.0;
   }
   void updateGate_() {
-    if (!gateActive_ && env_ >= kGateThreshold) {
+    if (!gateActive_ && gateEnv_ >= kGateThreshold) {
       gateActive_ = true;
-    } else if (gateActive_ && env_ < kGateThreshold - kGateHysteresis) {
+    } else if (gateActive_ && gateEnv_ < kGateThreshold - kGateHysteresis) {
       gateActive_ = false;
     }
   }
@@ -123,6 +130,9 @@ class EnvelopeFollower {
   double attackCoeff_ = 0.0;
   double releaseCoeff_ = 0.0;
   double env_ = 0.0;
+  double gateEnv_ = 0.0;  // the gate detector's own fast peak follower
+  double gateAttackCoeff_ = 0.0;
+  double gateReleaseCoeff_ = 0.0;
   bool gateActive_ = false;
 };
 

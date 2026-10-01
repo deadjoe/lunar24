@@ -64,6 +64,17 @@ Keep these unless a listening test or a real bug says otherwise.
   step (capped at 1 s, with a one-sample drop between back-to-back gates) and CLOCK OUT is a
   50% square. One-sample pulses could not open an envelope. A cable in EXT. CLOCK takes over
   from the PULSER (as on the hardware), and the input rises at 1.2 V so a 0..10 V LFO clocks it.
+- **The computer's audio input starts silent**: PREAMP GAIN (the manual's way to mute the
+  preamp) and the mixer's EXT.AUDIO VOL both default to minimum. Input channel 1 feeds
+  EXT.AUDIO and channel 2 the preamp, so with either at mid a mic left selected in Preferences
+  put room noise (and claps, through the reverb) under the drones. A one-channel input (a
+  laptop's built-in mic) feeds both, so it reaches the preamp like the hardware's contact mic.
+- **Envelope follower ATTACK / RELEASE are exponential, 1 ms .. 1 s** (centre ~32 ms; RELEASE
+  defaults to ~180 ms). The old linear law put 0.5 s at the centre, too slow for a clap to
+  reach the gate detector. The gate detector has its own fast peak follower (1 ms / 50 ms,
+  independent of the knobs) and opens at 5 V, closes below 3 V: a clap with GAIN at mid nears
+  the preamp's 10 V clip, room noise stays far below. Gating on the knob-smoothed envelope
+  either missed claps or held open on room noise. Tuned by ear.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also

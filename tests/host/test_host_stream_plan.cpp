@@ -82,7 +82,7 @@ void capability_matrix() {
   check(0, 4, 0, 0, 1, 2, {0, 0, 0, 4, StreamPlanStatus::Valid}, "in0/out4/12->4");
   check(0, 2, 0, 0, 1, 2, {0, 0, 0, 2, StreamPlanStatus::Valid}, "in0/out2/12->2");
 
-  // INPUT 1 (a single valid mono L choice) — owner routes ExtOnly.
+  // INPUT 1 (a single valid mono L choice) — owner routes DuplicateOne (EXT and PREAMP).
   check(1, 4, 1, 0, 1, 2, {0, 0, 1, 4, StreamPlanStatus::Valid}, "in1/out4/L/12->4");
   check(2, 2, 2, 0, 1, 2, {1, 0, 1, 2, StreamPlanStatus::Valid}, "in2/out2/L2/12->2");
   check(4, 8, 3, 0, 5, 6, {2, 4, 1, 4, StreamPlanStatus::Valid}, "in4/out8/L3/56->4");

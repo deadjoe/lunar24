@@ -191,9 +191,12 @@ void test_joystick() {
 
 void test_env_follower() {
   // Env-follower: published env_follower_env_out is 0..+10V and RISES with a fed preamp audio input.
+  // GAIN defaults to mute; open it so the follower hears the preamp input.
+  DeviceStateV1 open = make_default_device_state(kSeed);
+  slot(open, ParameterId::preamp_gain) = 0.5;
   EngineHarness hIn, hNo;
-  CHECK(hIn.load(make_default_device_state(kSeed)));
-  CHECK(hNo.load(make_default_device_state(kSeed)));
+  CHECK(hIn.load(open));
+  CHECK(hNo.load(open));
 
   JackStat inStat, noStat;
   CHECK(hIn.renderSampled(kFrames, 1.0, [&](const lunar24::core::SynthRuntime& rt) {  // steady 1.0V preamp.
@@ -207,14 +210,16 @@ void test_env_follower() {
   CHECK(inStat.peak > noStat.peak + 0.1);  // feeding preamp really raises the follower output.
 
   // Attack-response: SAME input step (1.0 V preamp), two DIFFERENT legal attack values (attackNorm
-  // -> seconds via 0.001 + 0.999*n). The faster attack must reach half its own final plateau in FEWER
+  // -> seconds via 0.001 * 1000^n). The faster attack must reach half its own final plateau in FEWER
   // frames than the slower one. A rise-time (to 50% of each state's own peak) discriminator makes the
   //  comparison invariant to the absolute rectified level, so it proves the attack param genuinely
   // changes the published rise rather than just the module running.
   DeviceStateV1 fastA = make_default_device_state(kSeed);
   slot(fastA, ParameterId::env_follower_attack) = 0.1;   // ~0.10 s attack.
+  slot(fastA, ParameterId::preamp_gain) = 0.5;
   DeviceStateV1 slowA = make_default_device_state(kSeed);
   slot(slowA, ParameterId::env_follower_attack) = 0.9;   // ~0.90 s attack.
+  slot(slowA, ParameterId::preamp_gain) = 0.5;
   EngineHarness hF, hS;
   CHECK(hF.load(fastA));
   CHECK(hS.load(slowA));
@@ -236,6 +241,48 @@ void test_env_follower() {
   const int fFast = riseHalf(fastSeries), fSlow = riseHalf(slowSeries);
   CHECK(fFast >= 0 && fSlow >= 0);            // both series really rose (non-empty rise).
   CHECK(fFast < fSlow);                       // faster attack reaches 50% plateau earlier.
+}
+
+// A single clap (a ~30 ms decaying noise burst) at the default ATTACK / RELEASE and GAIN at mid,
+// and at the slowest ATTACK too (the gate detector does not depend on the knobs),
+// must open the gate detector: the owner patches ENVELOPE FOLLOWER gate -> envelope A gate and
+// claps. With the old linear knob law the default attack was 0.5 s and the gate never opened.
+void test_clap_opens_gate() {
+  DeviceStateV1 st = make_default_device_state(kSeed);
+  slot(st, ParameterId::preamp_gain) = 0.5;
+  std::uint32_t r = 1;
+  auto clapOpensGate = [&](double attackNorm) {
+    DeviceStateV1 s = st;
+    slot(s, ParameterId::env_follower_attack) = attackNorm;
+    EngineHarness h;
+    CHECK(h.load(s));
+    bool gate = false;
+    CHECK(h.renderFeedSampled(static_cast<int>(kSr * 0.3), [&](std::size_t i, double& in0, double& in1) {
+      r = r * 1664525u + 1013904223u;
+      const double t = static_cast<double>(i) / kSr;
+      const double burst = t < 0.03 ? std::exp(-t / 0.008) : 0.0;
+      in0 = 0.0;
+      in1 = 0.2 * burst * ((r >> 8) / 8388608.0 - 1.0);  // device-normalized, a moderate clap
+    }, [&](const lunar24::core::SynthRuntime& rt) {
+      if (rt.controlVoltageAt(JackId::env_follower_gate_out) > 1.0) gate = true;
+    }));
+    return gate;
+  };
+  CHECK(clapOpensGate(0.5));  // default ATTACK
+  CHECK(clapOpensGate(1.0));  // slowest ATTACK
+
+  // Steady low-level noise (a quiet room / TV, ~-40 dBFS) at the same settings keeps the gate shut.
+  EngineHarness q;
+  CHECK(q.load(st));
+  bool noiseGate = false;
+  CHECK(q.renderFeedSampled(static_cast<int>(kSr * 0.5), [&](std::size_t, double& in0, double& in1) {
+    r = r * 1664525u + 1013904223u;
+    in0 = 0.0;
+    in1 = 0.017 * ((r >> 8) / 8388608.0 - 1.0);
+  }, [&](const lunar24::core::SynthRuntime& rt) {
+    if (rt.controlVoltageAt(JackId::env_follower_gate_out) > 1.0) noiseGate = true;
+  }));
+  CHECK(!noiseGate);
 }
 
 void test_sequencer() {
@@ -286,6 +333,7 @@ int main() {
   test_envelope();
   test_joystick();
   test_env_follower();
+  test_clap_opens_gate();
   test_sequencer();
   return test::finish("test_machine_control_outputs");
 }

@@ -751,7 +751,9 @@ inline bool StandaloneAudioEngine::completeDefaultPlan_(DeviceAdapter& adapter, 
   // Maps the REAL channel counts to a frozen route (never a silent copy):
   //
   //   inputCapability 0  -> Zero          (both terminals read 0; no channel consumed)
-  //   inputCapability 1  -> ExtOnly       (EXT = ch0, PREAMP = none; NO implicit copy)
+  //   inputCapability 1  -> DuplicateOne  (EXT = PREAMP = ch0: a mono mic, e.g. a laptop's
+  //                                        built-in one, must reach the PREAMP like the
+  //                                        hardware's contact mic, and EXT.AUDIO too)
   //   inputCapability >=2-> Distinct      (EXT = ch0, PREAMP = ch1)
   //
   //   outputCapability 2-3 -> outputCount 2  (WET L/R only)
@@ -767,8 +769,9 @@ inline bool StandaloneAudioEngine::completeDefaultPlan_(DeviceAdapter& adapter, 
   int extCh = -1;
   int preampCh = -1;
   if (inputCapability == 1) {
-    route = InputRoute::ExtOnly;
+    route = InputRoute::DuplicateOne;
     extCh = 0;
+    preampCh = 0;
   } else if (inputCapability >= 2) {
     route = InputRoute::Distinct;
     extCh = 0;

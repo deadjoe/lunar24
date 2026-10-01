@@ -83,6 +83,11 @@ void LunarInvalidateAudio(IPlugAPP* plug) {
 // opening a Bluetooth headset's microphone drops its sound to call quality.
 std::atomic<bool> sFollowDefaultOutput{true};
 bool sInputOn = false;
+// The input channels the user chose. An open that fails with the input (e.g. the Mac microphone
+// together with Bluetooth headphones) falls back to output only for that open; the choice is kept
+// here and in the settings file, and the next automatic reopen (a device change, RESET PANEL,
+// the next launch) tries the input again.
+uint32_t sWantInL = 0, sWantInR = 0;
 bool sStartupOpen = true;  // the first TryToChangeAudio() is the app starting up
 // Set when the stream died under us (a device went away or reconfigured itself, e.g. Bluetooth
 // headphones) or the system output device changed while we follow it. The UI thread then
@@ -219,6 +224,8 @@ bool IPlugAPPHost::InitState()
       //audio
       mState.mAudioInChanL = GetPrivateProfileInt("audio", "in1", 1, mINIPath.Get()); // 1 is first audio input
       mState.mAudioInChanR = GetPrivateProfileInt("audio", "in2", 2, mINIPath.Get());
+      sWantInL = mState.mAudioInChanL;
+      sWantInR = mState.mAudioInChanR;
       mState.mAudioOutChanL = GetPrivateProfileInt("audio", "out1", 1, mINIPath.Get()); // 1 is first audio output
       mState.mAudioOutChanR = GetPrivateProfileInt("audio", "out2", 2, mINIPath.Get());
       //mState.mAudioInIsMono = GetPrivateProfileInt("audio", "monoinput", 0, mINIPath.Get());
@@ -280,9 +287,9 @@ void IPlugAPPHost::UpdateINI()
   WritePrivateProfileString("audio", "indev", mState.mAudioInDev.Get(), ini);
   WritePrivateProfileString("audio", "outdev", mState.mAudioOutDev.Get(), ini);
 
-  sprintf(buf, "%u", mState.mAudioInChanL);
+  sprintf(buf, "%u", sWantInL);  // the user's choice, not a fallback's
   WritePrivateProfileString("audio", "in1", buf, ini);
-  sprintf(buf, "%u", mState.mAudioInChanR);
+  sprintf(buf, "%u", sWantInR);
   WritePrivateProfileString("audio", "in2", buf, ini);
   sprintf(buf, "%u", mState.mAudioOutChanL);
   WritePrivateProfileString("audio", "out1", buf, ini);
@@ -545,12 +552,19 @@ bool IPlugAPPHost::TryToChangeAudio()
       mState.mAudioInChanL = 0;
       mState.mAudioInChanR = 0;
     }
+    else if (sInputOn && mState.mAudioInChanL == 0 && mState.mAudioInChanR == 0)
+    {
+      mState.mAudioInChanL = sWantInL;  // an earlier open fell back to output only: retry the input
+      mState.mAudioInChanR = sWantInR;
+    }
     sStartupOpen = false;
   }
   else
   {
     sFollowDefaultOutput = mDefaultOutputDev && GetAudioDeviceName(mDefaultOutputDev.value()) == mState.mAudioOutDev.Get();
     sInputOn = mState.mAudioInChanL > 0 || mState.mAudioInChanR > 0;
+    sWantInL = mState.mAudioInChanL;
+    sWantInR = mState.mAudioInChanR;
   }
   UpdateINI();
 
