@@ -126,7 +126,8 @@ void AudioLog(const char* fmt, ...)
 {
   if (!sAudioLogPath[0])
     return;
-  FILE* f = fopen(sAudioLogPath, "a");  // unqualified: win32_utf8.h maps fopen to its UTF-8 form
+  // fopen / strftime unqualified: on Windows win32_utf8.h maps them to their UTF-8 forms.
+  FILE* f = fopen(sAudioLogPath, "a");
   if (!f)
     return;
   std::fseek(f, 0, SEEK_END);
@@ -139,7 +140,7 @@ void AudioLog(const char* fmt, ...)
   }
   char stamp[32];
   const std::time_t now = std::time(nullptr);
-  std::strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+  strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
   std::fprintf(f, "%s  ", stamp);
   va_list args;
   va_start(args, fmt);
