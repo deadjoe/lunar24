@@ -54,27 +54,28 @@ _Last updated: 2026-09-30 (priorities reset)._
 ## Checked against the official manual (v15)
 Mixer channel order, the 39 effector programs and their X/Y/Z roles, output voltage
 ranges, normalled connections and the keyboard ranges all match the manual. Not given by
-the manual, so still guesses: arp/seq clock multiply/divide ratios and RHYTHM patterns (not
-applied yet), and the exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
+the manual, so still guesses: arp/seq clock multiply/divide ratios (not applied yet) and the
+exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Next steps (in order)
 1. Sound feedback from the owner's listening comes first — every curve is a first guess.
 2. Core playability and UI, checked against the manual: panel parts shown but not functional (photo sensor,
-   headphone socket); re-check the manual for the
-   arp/seq clock ratios, RHYTHM patterns and scale note sets listed above.
+   headphone socket); re-check the manual for the arp/seq clock ratios and scale note sets above.
 3. Real-time safety: plugging/unplugging a cable recompiles the patch graph on the audio
    thread (small allocations, only at that moment). Compile on the UI thread and swap.
 4. Windows: build is tested in CI; real audio/MIDI device testing still to do.
 5. The panel's printed LEDs (gate/hold, envelopes, step sequencer, LFOs ...) are drawn
    unlit; lighting them from the engine's state is not done yet.
+6. After the manual tests: a REC button writing WAV (WET L/R; DRY A/B optional) via a
+   lock-free buffer + writer thread. Loopback recording (BlackHole) stays as it is.
+7. Later: small panel size tweaks (owner's list), then an AU/VST3 plugin for Ableton Live.
 
 Only when the related feature is touched: knob hover/drag redraws the whole panel — dirty
 only the readout if the UI feels slow. Not planned: letting the old effector tail ring out on a cartridge switch
 (the hardware reloads and cuts it too), splitting `machine_runtime.h`.
 
-The VCOs' separate wave outputs and the envelopes' VCA-CV outputs exist in the engine but
-are not on the official panel, so they are not patchable from the UI.
+The VCOs' separate wave outputs and the envelopes' VCA-CV outputs are engine-only (not on the panel).
 
 ## Known limits (by design)
 - No hardware is available, so sound is tuned by ear, not measured against a real unit.
-- Only features the hardware has; no extra modulation matrix, no multi-patch library.
+- Only features the hardware has (plus the WAV recorder); no mod matrix, no patch library.
