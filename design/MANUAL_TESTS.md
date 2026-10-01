@@ -823,7 +823,7 @@
 - 步骤：
   1. VOICE MIXER 里 **DRONE 1** 的 VOL 拖到最左（只用它的包络，不听它的声音）。DRONE 1 的 **ATT**、**RLS** 都拖到一半以上。
   2. 接线：DRONE 1 的红字 **env** → VCO A 的 **cv**；VCO A 的 **cv amt** 放约 1/4。
-  3. 打开 DRONE VOICES 的 1，等几秒，再关掉。
+  3. 点亮键盘区右边 **DRONE VOICES** 的按键 **1**（不是 VOICE MIXER 里的音量），等几秒，再点一下关掉。
   4. 对 DRONE 2 / 4 / 5（红字 **env**）和 DRONE 3 / 6（红字 **env out**）各做一遍。
 - 期望：打开时 VCO A 的音高按 ATT 慢慢滑上去，关掉时按 RLS 慢慢滑回来。
 
