@@ -31,6 +31,10 @@ Keep these unless a listening test or a real bug says otherwise.
   Its title row also holds CLOSE and RESET PANEL (two clicks): the reset publishes the power-on
   default at a stopped-stream boundary (the audio stream is briefly reopened), the same path
   as a startup restore, so it covers every stored field, not just knobs.
+- **MUTE button** (right of DRONE VOICES, not on the hardware): an app-level output mute with a
+  10 ms fade; the machine keeps running, nothing is saved, the app starts unmuted. The hardware
+  has no front-panel power switch to model (only a POWER / 12 V DC socket on the top edge), so
+  quitting the app is the "power off".
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
   by ear); a CLOCK jack or MIDI clock takes over until BPM is changed again (manual p.19).
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block

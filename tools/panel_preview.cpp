@@ -225,6 +225,10 @@ int main(int argc, char** argv) {
       case WidgetKind::DroneKey:
         art::drawDroneKey(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), false, false);
         break;
+      case WidgetKind::MasterMute:
+        art::drawButton(sink, float(w.cx), float(w.cy), float(w.w / 2), false, false);
+        text(w.cx, w.cy - 42, 15, theme::kInk, "MUTE");
+        break;
       case WidgetKind::Encoder: art::drawEncoder(sink, float(w.cx), float(w.cy), false); break;
       case WidgetKind::OctaveKey: art::drawOctaveKey(sink, float(w.cx), float(w.cy), false); break;
       case WidgetKind::Display:

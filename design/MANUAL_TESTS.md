@@ -21,6 +21,7 @@
 | 电脑键盘弹琴 | 先点一下面板。A S D F G H J K L ; = 白键，W E T Y U O P = 黑键；Z / X = 降 / 升八度（蓝色小屏显示 OCT） |
 | 键盘菜单 | 点键盘区中间的红色大旋钮打开；右上角 CLOSE 或 Esc 关闭 |
 | 恢复出厂 | 键盘菜单顶部 **RESET PANEL**，点一次变成 CLICK TO CONFIRM，4 秒内再点一次 |
+| 静音 | DRONE VOICES 右边的 **MUTE** 按钮：所有输出立即静音（亮琥珀色光圈），再点恢复 |
 | 音频设备 / 麦克风 | 屏幕顶部菜单栏 Lunar24Host → Preferences…（⌘,） |
 
 ### 测试常用准备
@@ -29,7 +30,7 @@
 - **去掉混响**：DUAL EFFECTOR 区的 **BLEND** 拖到最左。声音变"干"，静音后不会有长尾音。
 - **只听某一路（solo）**：VOICE MIXER 里其它 9 路的 **VOL** 拖到最左。或者在 DRONE VOICES 里只留要听的 drone。
 - **关掉所有 drone**：键盘区右边 DRONE VOICES 的 6 个键全部关掉。
-- 卡音（声音停不下来）时：先试 RESET PANEL。
+- 卡音（声音停不下来）时：先点 **MUTE** 静音，再试 RESET PANEL。
 
 ---
 
@@ -42,7 +43,7 @@
 | 上排 | DRONE 1 · DRONE 2 · DUAL EFFECTOR（上半）+ FILTER L / FILTER R（下半一排）· DRONE 4 · DRONE 5 |
 | 中排 | DRONE 3 · VCO A · VOICE MIXER（下方是 envelope A / envelope B）· VCO B · DRONE 6 |
 | 下排（白字标签） | LFO A · JOYSTICK · 5 STEP SEQ. VOLTAGE · PREAMP · ENVELOPE FOLLOWER · LFO B |
-| 键盘区 | 左下角摇杆 · 12 块触摸板 · 中间红色大旋钮（菜单）和蓝色小屏 · 右边 DRONE VOICES（1 2 3 / 4 5 6） |
+| 键盘区 | 左下角摇杆 · 12 块触摸板 · 中间红色大旋钮（菜单）和蓝色小屏 · 右边 DRONE VOICES（1 2 3 / 4 5 6）和 **MUTE** |
 
 ### 各模块控件（与面板印字对应）
 
@@ -207,6 +208,18 @@
   1. 随便转几个旋钮，接一根线。
   2. 键盘菜单 → RESET PANEL → 4 秒内再点一次。
 - 期望：旋钮回到原位、线消失，声音短暂停顿后恢复成默认 drone。
+
+**T0.5 MUTE** ⏳
+- 准备：RESET PANEL（默认 drone 在响）。
+- 步骤：
+  1. 点 DRONE VOICES 右边的 **MUTE**。
+  2. 等几秒，转几个旋钮。
+  3. 再点一次 **MUTE**。
+- 期望：
+  - 第 1 步：声音很快淡出到完全无声，没有咔哒声；按钮亮琥珀色光圈。
+  - 第 2 步：仍然无声。
+  - 第 3 步：声音恢复成当前面板的声音（机器在静音期间一直在运行）。
+  - 重新打开应用时 MUTE 是关的。
 
 ### 1. VOICE MIXER
 
@@ -633,7 +646,22 @@
 - 5 STEP SEQ. VOLTAGE 的 CLOCK OUT。
 - 键盘菜单第 3 行的校准类设置（软件里意义不大）。
 
-## 调音待办（测试中记下的听感问题，未改）
+## TODO
+
+### 面板指示灯（计划中）
+
+面板上印着 22 颗灯，目前都不会亮（drone 的 LED 灯条和 DRONE VOICES 键上的灯已经能亮）。
+
+- 计划做成会亮的：
+  - 每个 drone 的 HOLD 下面的琥珀灯（6 颗）：显示这一路的音量包络，开、关、淡入淡出一眼可见；
+  - envelope A / B 的琥珀灯（2 颗）：显示包络；
+  - LFO A / B 的蓝灯（2 颗）：跟着 LFO 闪，看得到速度；
+  - 5 STEP SEQ. VOLTAGE 每步上面的红灯（5 颗）：显示走到哪一步；
+  - PREAMP / ENVELOPE FOLLOWER 的 3 颗灯：削波、电平、gate（判断麦克风有没有收到声音、gain 是否太大）；
+  - DRONE 3 / 6 S&H 图案里的红灯（2 颗）：每次采样闪一下。
+- 不做：JOYSTICK 的 2 颗灯。硬件上摇杆很小才需要灯指示位置，软件里摇杆位置本身就看得见。
+
+### 调音待办（测试中记下的听感问题，未改）
 
 - DRONE VOLT 过半后听起来变小。
 - DRONE 3 的 mod 最大跨度太大。
