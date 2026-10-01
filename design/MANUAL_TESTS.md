@@ -828,7 +828,7 @@
   4. 对 DRONE 2 / 4 / 5（红字 **env**）和 DRONE 3 / 6（红字 **env out**）各做一遍。
 - 期望：打开时 VCO A 的音高按 ATT 慢慢滑上去，关掉时按 RLS 慢慢滑回来。
 
-**T13.2 DRONE 3 / 6 的 LFO 输出** ⏳
+**T13.2 DRONE 3 / 6 的 LFO 输出** ✅
 - 步骤：接线：DRONE 3 **rate** 下方的 LFO 输出 → VCO A 的 **1v/oct**。拖 DRONE 3 的 **rate**；再拨 **LFO 1 : 10**。DRONE 6 同样做一遍。
 - 期望：VCO A 在两个音之间来回跳（方波）；rate 改变跳的快慢，1 : 10 时慢很多。DRONE 3 / 6 本身不用开（LFO 一直在走）。
 
