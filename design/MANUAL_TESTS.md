@@ -820,7 +820,7 @@
 ## 还没测的（⏳）
 
 - MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。
-- DRONE 2 / 4 / 5 / 6 逐个过一遍（和 DRONE 1 / 3 同一套代码）。
+- DRONE 6 的面板控件逐个过一遍（和 DRONE 3 同一套代码；DRONE 2 / 4 / 5 已测过）。
 - 所有 drone 的 env 输出插孔（GATE 输入见 T12.17）；DRONE 3 / 6 的 LFO 输出和 S&H 的 IN / clock 插孔。
 - VCO 的 vca cv 插孔、VCO A / VCO B 的 dry 输出。
 - VOICE MIXER 的 EXT.AUDIO 通道、PREAMP 的 ext. source 插孔、耳机音量旋钮。
