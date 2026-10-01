@@ -156,6 +156,19 @@ static void vibrato_structure() {
   }
   CHECK_TRUE(maxP > maxAbs + 0.01);  // pressure scaled the depth up
 
+  // VIB PRESS full: a light touch barely wobbles, full pressure is twice the depth.
+  auto swing = [](double pressure) {
+    core::Vibrato q;
+    q.setSampleRate(48000);
+    q.setNorm(0.5, 0.5, 0.0, 1.0);
+    q.gate(true);
+    double m = 0.0;
+    for (int i = 0; i < 48000; ++i) m = std::max(m, std::fabs(q.tick(pressure)));
+    return m;
+  };
+  CHECK_TRUE(swing(0.1) < 0.25 * maxAbs);
+  CHECK_TRUE(swing(1.0) > 1.9 * maxAbs);
+
   // DELAY: the depth ramps from 0 to full over the delay time.
   core::Vibrato vd;
   vd.setSampleRate(48000);

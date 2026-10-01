@@ -417,7 +417,10 @@ class Vibrato {
     phase_ += kTwoPi * speedHz_ / fs_;
     if (phase_ > kTwoPi) phase_ -= kTwoPi;
     double amt = depthCv_ * ramp;
-    if (pressureCtrl_) amt *= (1.0 + pressureAmount_ * pressure);  // PROVISIONAL
+    // VIB PRESS: how much the key pressure decides the amount. Full knob: a light touch
+    // barely wobbles, full pressure gives twice VIB DEPTH (so pressing in "adds" vibrato,
+    // the usual aftertouch feel). Half knob: half of that range.  // tuned by ear
+    if (pressureCtrl_) amt *= (1.0 - pressureAmount_) + pressureAmount_ * 2.0 * pressure;
     return std::sin(phase_) * amt;
   }
 
