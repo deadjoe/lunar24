@@ -568,7 +568,7 @@
 
 ### 11. PREAMP 和 ENVELOPE FOLLOWER
 
-准备（本节通用）：Preferences 里把输入设备选成 MacBook 自带麦克风（不要用 AirPods 麦克风）；用耳机或调小音量，防止啸叫；RESET PANEL。RESET 后 PREAMP 的红色 **gain** 和 VOICE MIXER 的 **EXT.AUDIO** 音量都在最左（静音），T11.2、T11.3 先把 gain 转到中间。
+准备（本节通用）：Preferences 里把输入设备选成 MacBook 自带麦克风（不要用 AirPods 麦克风），并确认 **Input 1 (L)** 不是空的（空的就选 1，再点 Apply）；戴耳机，防止扬声器的声音被麦克风收回去；RESET PANEL。RESET 后 PREAMP 的红色 **gain** 和 VOICE MIXER 的 **EXT.AUDIO** 音量都在最左（静音），T11.2、T11.3 先把 gain 转到中间。
 
 **T11.1 PREAMP 发声** 🔧 (#72)
 - 步骤：
