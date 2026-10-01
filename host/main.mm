@@ -179,6 +179,14 @@ static OSStatus LunarDefaultOutputChanged(AudioObjectID, UInt32, const AudioObje
   return noErr;
 }
 
+// Devices added or removed (headphones plugged in, AirPods connected): the host refreshes its list.
+extern "C" void lunar_host_devices_changed();
+static OSStatus LunarDevicesChanged(AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void*)
+{
+  lunar_host_devices_changed();
+  return noErr;
+}
+
 extern "C" bool lunar_host_force_clamp()
 {
   const char* v = std::getenv("LUNAR_HOST_FORCE_CLAMP");
@@ -246,6 +254,9 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
                                                     kAudioObjectPropertyScopeGlobal,
                                                     0 /* main element */};
         AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address, LunarDefaultOutputChanged, nullptr);
+        const AudioObjectPropertyAddress devices = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
+                                                    0 /* main element */};
+        AudioObjectAddPropertyListener(kAudioObjectSystemObject, &devices, LunarDevicesChanged, nullptr);
       }
       break;
     }

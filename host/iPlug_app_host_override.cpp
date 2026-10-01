@@ -49,14 +49,20 @@
 
 #include "IPlugLogger.h"
 
-// Lunar 24 (task#73): the two include additions are the ONLY include-level change from upstream.
-// plugin.h declares LunarHostPlugin::setActualChannelPlan() (the plugin is the one place the real
-// host may drive the protected IPlugProcessor::SetChannelConnections); stream_plan.h is the shared
-// pure negotiation the host + oracle both call.
+// Lunar 24 (task#73): plugin.h declares LunarHostPlugin::setActualChannelPlan() (the plugin is the
+// one place the real host may drive the protected IPlugProcessor::SetChannelConnections);
+// stream_plan.h is the shared pure negotiation the host + oracle both call. The standard headers
+// below serve those and the audio log.
 #include "plugin.h"
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
+#include <ctime>
+#include <string>
 #include <vector>
 #include <host/midi_timing.h>
 #include <host/stream_plan.h>
@@ -88,11 +94,18 @@ bool sInputOn = false;
 // here and in the settings file, and the next automatic reopen (a device change, RESET PANEL,
 // the next launch) tries the input again.
 uint32_t sWantInL = 0, sWantInR = 0;
+// Set when an open dropped the input to get any sound at all. The next Preferences Apply / OK
+// then still sees the chosen channels, not the fallback's zeros (OK right after a failed Apply
+// used to save "input off" as the user's choice).
+bool sInputDroppedByFallback = false;
 bool sStartupOpen = true;  // the first TryToChangeAudio() is the app starting up
 // Set when the stream died under us (a device went away or reconfigured itself, e.g. Bluetooth
 // headphones) or the system output device changed while we follow it. The UI thread then
 // reopens on the current device (lunar_host_audio_watchdog).
 std::atomic<bool> sReopen{false};
+// When the last stream was opened (steady_clock ticks). Device-list notifications within 2 s of an
+// open are ignored: opening a headset can itself reconfigure devices, and reacting would loop.
+std::atomic<long long> sLastOpenTicks{0};
 
 // The callback hands the engine fixed APP_SIGNAL_VECTOR_SIZE blocks through these staging
 // buffers, so a device may use any buffer size (at the cost of one block of latency). Sized for
@@ -108,6 +121,43 @@ double sStageOut[4][APP_SIGNAL_VECTOR_SIZE];
 #define STRBUFSZ 100
 
 std::unique_ptr<IPlugAPPHost> IPlugAPPHost::sInstance;
+
+namespace {
+// Lunar 24: a short audio log, audio.log next to settings.ini. It records every device open and
+// its outcome, RtAudio's errors, and every 5 s the loudest input sample the stream delivered, so
+// a device problem on the owner's machine can be read instead of guessed. Kept under ~256 KB.
+char sAudioLogPath[MAX_PATH_LEN] = "";
+std::atomic<float> sInputPeak{0.f};  // audio thread raises it, the UI thread reads and clears it
+std::atomic<int> sOpenInputs{-1};    // input channels of the running stream; -1 = no stream
+
+void AudioLog(const char* fmt, ...)
+{
+  if (!sAudioLogPath[0])
+    return;
+  // fopen / strftime unqualified: on Windows win32_utf8.h maps them to their UTF-8 forms.
+  FILE* f = fopen(sAudioLogPath, "a");
+  if (!f)
+    return;
+  std::fseek(f, 0, SEEK_END);
+  if (std::ftell(f) > 256 * 1024)
+  {
+    std::fclose(f);
+    f = fopen(sAudioLogPath, "w");
+    if (!f)
+      return;
+  }
+  char stamp[32];
+  const std::time_t now = std::time(nullptr);
+  strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+  std::fprintf(f, "%s  ", stamp);
+  va_list args;
+  va_start(args, fmt);
+  std::vfprintf(f, fmt, args);
+  va_end(args);
+  std::fputc('\n', f);
+  std::fclose(f);
+}
+}  // namespace
 UINT gSCROLLMSG;
 
 IPlugAPPHost::IPlugAPPHost()
@@ -196,6 +246,8 @@ bool IPlugAPPHost::InitState()
 #else
   #error NOT IMPLEMENTED
 #endif
+  std::snprintf(sAudioLogPath, sizeof sAudioLogPath, "%saudio.log", mINIPath.Get());
+  AudioLog("---- app start ----");
 
   // GH#12 task#105: hand the ALREADY-RESOLVED per-user settings directory to the plugin. This must
   // happen BEFORE any Append("settings.ini") below mutates mINIPath, and the plugin must never
@@ -316,20 +368,11 @@ void IPlugAPPHost::UpdateINI()
   WritePrivateProfileString("midi", "outchan", buf, ini);
 }
 
+// Lunar 24: trimmed (lunar24::host::audio_device_display_name), so a name saved in settings.ini
+// still matches its device after the file trims it on read.
 std::string IPlugAPPHost::GetAudioDeviceName(uint32_t deviceID) const
 {
-  auto str = mDAC->getDeviceInfo(deviceID).name;
-  std::size_t pos = str.find(':');
-
-  if (pos != std::string::npos)
-  {
-    std::string subStr = str.substr(pos + 1);
-    return subStr;
-  }
-  else
-  {
-    return str;
-  }
+  return std::string(lunar24::host::audio_device_display_name(mDAC->getDeviceInfo(deviceID).name));
 }
 
 std::optional<uint32_t> IPlugAPPHost::GetAudioDeviceID(const char* deviceNameToTest) const
@@ -406,6 +449,9 @@ void IPlugAPPHost::ProbeAudioIO()
   for (auto deviceID : deviceIDs)
   {
     info = mDAC->getDeviceInfo(deviceID);
+    AudioLog("  device %u '%s': in %u, out %u%s%s", deviceID, info.name.c_str(), info.inputChannels,
+             info.outputChannels, info.isDefaultInput ? ", default input" : "",
+             info.isDefaultOutput ? ", default output" : "");
 
     if (info.inputChannels > 0)
     {
@@ -543,6 +589,7 @@ bool IPlugAPPHost::TryToChangeAudio()
     ProbeAudioIO();  // devices may have come or gone
   }
   const bool automatic = sStartupOpen || reopen;
+  const char* why = sStartupOpen ? "startup" : reopen ? "reopen" : "preferences";
   if (automatic)
   {
     if (sFollowDefaultOutput && mDefaultOutputDev)
@@ -561,12 +608,21 @@ bool IPlugAPPHost::TryToChangeAudio()
   }
   else
   {
+    if (sInputDroppedByFallback && mState.mAudioInChanL == 0 && mState.mAudioInChanR == 0)
+    {
+      mState.mAudioInChanL = sWantInL;
+      mState.mAudioInChanR = sWantInR;
+    }
     sFollowDefaultOutput = mDefaultOutputDev && GetAudioDeviceName(mDefaultOutputDev.value()) == mState.mAudioOutDev.Get();
     sInputOn = mState.mAudioInChanL > 0 || mState.mAudioInChanR > 0;
     sWantInL = mState.mAudioInChanL;
     sWantInR = mState.mAudioInChanR;
   }
+  sInputDroppedByFallback = false;
   UpdateINI();
+  AudioLog("open (%s): in '%s' ch %u/%u, out '%s', %u Hz, inputOn %d, followDefault %d", why,
+           mState.mAudioInDev.Get(), mState.mAudioInChanL, mState.mAudioInChanR, mState.mAudioOutDev.Get(),
+           mState.mAudioSR, sInputOn ? 1 : 0, sFollowDefaultOutput.load() ? 1 : 0);
 
   // Lunar 24 (task#73): the owner must allow a TRUE output-only open when the input is disabled.
   // inputSelected decides whether we resolve / fall back to an input device AT ALL; when it is
@@ -575,19 +631,34 @@ bool IPlugAPPHost::TryToChangeAudio()
   // as 0 because inputSelected is also false there), so the inert 0 is never dereferenced.
   const bool inputSelected = (mState.mAudioInChanL > 0 || mState.mAudioInChanR > 0);
 
+  // Lunar 24: look a device up by name AND direction. A Bluetooth headset can appear as two
+  // devices with the same name, one with only inputs and one with only outputs (AirPods Pro do);
+  // a name-only lookup returned the input half for the output and the open failed.
+  auto findDevice = [this](const char* name, bool output) -> std::optional<uint32_t> {
+    for (auto id : mDAC->getDeviceIds())
+    {
+      const RtAudio::DeviceInfo info = mDAC->getDeviceInfo(id);
+      if ((output ? info.outputChannels : info.inputChannels) == 0)
+        continue;
+      if (std::string_view(name) == audio_device_display_name(info.name))
+        return id;
+    }
+    return std::nullopt;
+  };
+
   std::optional<uint32_t> inputID;
   if (inputSelected)
   {
 #if defined OS_WIN
     // ASIO has one device, use the output for the input ID
-    inputID = GetAudioDeviceID(mState.mAudioDriverType == kDeviceASIO ? mState.mAudioOutDev.Get() : mState.mAudioInDev.Get());
+    inputID = findDevice(mState.mAudioDriverType == kDeviceASIO ? mState.mAudioOutDev.Get() : mState.mAudioInDev.Get(), false);
 #elif defined OS_MAC
-    inputID = GetAudioDeviceID(mState.mAudioInDev.Get());
+    inputID = findDevice(mState.mAudioInDev.Get(), false);
 #else
   #error NOT IMPLEMENTED
 #endif
   }
-  auto outputID = GetAudioDeviceID(mState.mAudioOutDev.Get());
+  auto outputID = findDevice(mState.mAudioOutDev.Get(), true);
 
   bool failedToFindDevice = false;
   bool resetToDefault = false;
@@ -660,13 +731,38 @@ bool IPlugAPPHost::TryToChangeAudio()
   // rate, or its microphone is busy). Rather than leave the instrument silent, try in turn:
   // without input, at the output device's own sample rate, then on the system output device.
   // What opens is recorded, so the Preferences dialog shows it.
+  //
+  // When that means running without the chosen input, say so once per device and session: a
+  // silently closed microphone looked like a broken instrument (a Bluetooth headset's microphone,
+  // e.g. AirPods, only runs at call quality and refuses a music sample rate).
+  const std::string failedInput = mState.mAudioInDev.Get();
+  const uint32_t failedRate = mState.mAudioSR;
+  auto reportInputOff = [&]() {
+    if (!inputSelected)
+      return;
+    static std::string sReported;
+    if (sReported == failedInput)
+      return;
+    sReported = failedInput;
+    AudioLog("  input '%s' did not open: running without input", failedInput.c_str());
+    WDL_String msg;
+    msg.SetFormatted(1024,
+                     "The input device \"%s\" could not be opened at %u Hz, so Lunar 24 is running "
+                     "without an input (PREAMP and EXT.AUDIO hear nothing).\n\n"
+                     "A Bluetooth headset's microphone (AirPods, for example) only works at call quality. "
+                     "Choose another input in Preferences, such as the MacBook Pro Microphone.",
+                     failedInput.c_str(), failedRate);
+    MessageBox(gHWND, msg.Get(), "Audio input is off", MB_OK);
+  };
   if (inputSelected)
   {
     mState.mAudioInChanL = 0;
     mState.mAudioInChanR = 0;
+    sInputDroppedByFallback = true;
     if (InitAudio(0, outputID.value(), mState.mAudioSR, mState.mBufferSize))
     {
       UpdateINI();
+      reportInputOff();
       return true;
     }
   }
@@ -687,6 +783,7 @@ bool IPlugAPPHost::TryToChangeAudio()
         mState.mAudioOutDev.Set(GetAudioDeviceName(out).c_str());
         mState.mAudioSR = sr;
         UpdateINI();
+        reportInputOff();
         return true;
       }
     }
@@ -698,6 +795,7 @@ bool IPlugAPPHost::TryToChangeAudio()
   {
     mState.mAudioSR = lowRate;
     UpdateINI();
+    reportInputOff();
     return true;
   }
   return false;
@@ -795,6 +893,7 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
 
 void IPlugAPPHost::CloseAudio()
 {
+  sOpenInputs = -1;
   if (mDAC && mDAC->isStreamOpen())
   {
     if (mDAC->isStreamRunning())
@@ -847,6 +946,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
     UpdateINI();
   }
   if (plan.status != StreamPlanStatus::Valid) {
+    AudioLog("  no valid channel plan (device in %d / out %d channels)", deviceInputChans, deviceOutputChans);
     LunarInvalidateAudio(GetPlug());
     return false;
   }
@@ -898,6 +998,10 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
   mIPlug->OnReset();
 
   auto status = mDAC->openStream(&oParams, iParams.nChannels > 0 ? &iParams : nullptr, RTAUDIO_FLOAT64, sr, &mBufferSize, &AudioCallback, this, &options);
+  AudioLog("  try in '%s' %d ch (from %d), out '%s' %d ch, %u Hz, buffer %u: %s", inDevName.c_str(),
+           static_cast<int>(iParams.nChannels), static_cast<int>(iParams.firstChannel),
+           GetAudioDeviceName(outID).c_str(), static_cast<int>(oParams.nChannels), sr, mBufferSize,
+           status == RtAudioErrorType::RTAUDIO_NO_ERROR ? "opened" : mDAC->getErrorText().c_str());
 
   if (status != RtAudioErrorType::RTAUDIO_NO_ERROR)
   {
@@ -926,6 +1030,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
 
   if (mDAC->startStream() != RTAUDIO_NO_ERROR)
   {
+    AudioLog("  start failed: %s", mDAC->getErrorText().c_str());
     DBGMSG("Error starting stream: %s\n", mDAC->getErrorText().c_str());
     // Lunar 24 (task#73): startStream failed -> the just-opened stream is closed; invalidate to
     // NOT-READY.
@@ -935,6 +1040,9 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
   }
 
   mActiveState = mState;
+  sLastOpenTicks = std::chrono::steady_clock::now().time_since_epoch().count();
+  sInputPeak = 0.f;
+  sOpenInputs = static_cast<int>(iParams.nChannels);
 
   return true;
 }
@@ -1018,11 +1126,16 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
     
     // Lunar 24: stage the device buffer through fixed APP_SIGNAL_VECTOR_SIZE blocks, whatever
     // nFrames is. Each output sample comes from the previous full block (one block of latency).
+    float inPeak = 0.f;
     for (uint32_t i = 0; i < nFrames; i++)
     {
       const uint32_t pos = _this->mBufIndex;
       for (int c = 0; c < nins; c++)
-        sStageIn[c][pos] = pInputBufferD[c * nFrames + i];
+      {
+        const double x = pInputBufferD[c * nFrames + i];
+        sStageIn[c][pos] = x;
+        inPeak = std::max(inPeak, static_cast<float>(x < 0.0 ? -x : x));
+      }
       for (int c = 0; c < nouts; c++)
         pOutputBufferD[c * nFrames + i] = sStageOut[c][pos] * APP_MULT;
 
@@ -1034,6 +1147,9 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
       }
     }
     
+    if (inPeak > sInputPeak.load(std::memory_order_relaxed))
+      sInputPeak.store(inPeak, std::memory_order_relaxed);
+
     if (doFade)
       ApplyFades(pOutputBufferD, nouts, nFrames, _this->mAudioEnding);
     
@@ -1089,6 +1205,7 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
 void IPlugAPPHost::ErrorCallback(RtAudioErrorType type, const std::string &errorText)
 {
   std::cerr << "\nerrorCallback: " << errorText << "\n\n";
+  AudioLog("RtAudio error %d: %s", static_cast<int>(type), errorText.c_str());
   // Lunar 24: the device went away or reconfigured and the stream was closed: reopen (UI thread).
   if (type == RTAUDIO_DEVICE_DISCONNECT)
     sReopen = true;
@@ -1100,12 +1217,33 @@ extern "C" void lunar_host_audio_watchdog()
 {
   if (sReopen.load() && IPlugAPPHost::sInstance)
     IPlugAPPHost::sInstance->TryToChangeAudio();
+
+  // Every 5 s: how loud the input the stream delivered was (0 = the input is silent or not open).
+  static auto lastLog = std::chrono::steady_clock::now();
+  const auto now = std::chrono::steady_clock::now();
+  if (now - lastLog >= std::chrono::seconds(5))
+  {
+    lastLog = now;
+    const int ins = sOpenInputs.load();
+    if (ins >= 0)
+      AudioLog("input peak %.5f (%d input channels open)", sInputPeak.exchange(0.f), ins);
+  }
 }
 
 // Lunar 24: the plugin needs a stopped-stream boundary (the panel's factory reset).
 extern "C" void lunar_host_request_audio_reopen()
 {
   sReopen = true;
+}
+
+// Lunar 24: an audio device was added or removed (macOS listener in main.mm). Reopen, so the device
+// list (and the Preferences dialog) sees it and a device that just came back is used again.
+extern "C" void lunar_host_devices_changed()
+{
+  const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+  const auto twoSeconds = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::seconds(2)).count();
+  if (now - sLastOpenTicks.load() > twoSeconds)
+    sReopen = true;
 }
 
 // Lunar 24: the system output device changed (macOS listener in main.mm).

@@ -210,6 +210,16 @@ void sample_rate() {
 
 }  // namespace
 
+void device_names() {
+  using lunar24::host::audio_device_display_name;
+  // CoreAudio names carry the manufacturer; the saved name must survive the settings file's trim.
+  CHECK(audio_device_display_name("Apple Inc.: MacBook Pro Microphone") == "MacBook Pro Microphone");
+  CHECK(audio_device_display_name("Existential Audio Inc.: BlackHole 2ch") == "BlackHole 2ch");
+  CHECK(audio_device_display_name("Speakers (Realtek Audio)") == "Speakers (Realtek Audio)");
+  CHECK(audio_device_display_name("  padded  ") == "padded");
+  CHECK(audio_device_display_name("") == "");
+}
+
 int main() {
   std::printf("== GH#4 8B3: channel plan oracle (negotiate_stream_plan) ==\n");
   capability_matrix();
@@ -219,5 +229,6 @@ int main() {
   legal_config_set();
   fallback();
   sample_rate();
+  device_names();
   return ::test::finish("host_stream_plan");
 }
