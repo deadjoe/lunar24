@@ -702,7 +702,7 @@
   - 第 5 步：第一次点 INIT 显示 SURE?，第二次显示 CLEARED；再 LOAD 后 MODE 回到 KEYBOARD。
 - 测完点 **RESET PANEL**（会清掉所有预设）。
 
-**T12.9 PRESSURE / P RISE / P FALL（压力输出）** ⏳
+**T12.9 PRESSURE / P RISE / P FALL（压力输出）** 🔧 (#77)
 - 准备：同 T4.2（PRESSURE → FILTER 的 **CV L**，**MOD L** 一半以上，左边 **FREQ** 约 1/4）。用鼠标按触摸板：按得越靠下压力越大，按住上下拖动压力跟着变。
 - 步骤（**PRESSURE** 保持 PRESSURE）：
   1. **P RISE** 拉满，**P FALL** 最小。在触摸板最上面按住，快速拖到最下面**停住 3 秒**，再快速拖回最上面。
