@@ -672,7 +672,11 @@
 - 准备：同 T12.6（RESET PANEL；drone 全关；VOICE MIXER 只留 VCO A、VCO B；GATE R → envelope B 的 gate，PRESSURE → VCO B 的 1v/oct）；VCO B 的 **oct+3** 拨到上面，右边是高音。
 - 步骤：
   1. 打开键盘菜单，**PLAY** 选 SPLIT。标题行（RESET PANEL 右边）出现 **EDIT: LEFT** 按钮。
-  2. 保持 EDIT: LEFT，**MODE** 保持 KEYBOARD。点 **EDIT: LEFT** 变成 **EDIT: RIGHT**，把 **MODE** 改成 ARPEGGIATOR。关掉菜单。
+  2. 这个按钮决定菜单里的设置改的是哪一半键盘：显示 EDIT: LEFT 时改左半边，显示 EDIT: RIGHT 时改右半边。目标是左半边普通弹奏、右半边琶音：
+     - 左半边不用改（**MODE** 默认就是 KEYBOARD）；
+     - 点一下 **EDIT: LEFT**，它变成 **EDIT: RIGHT**；
+     - 把 **MODE** 改成 ARPEGGIATOR（只改了右半边）；
+     - 点 **CLOSE** 关掉菜单。
   3. 按住左半边的 **A**；再同时按住右半边的 **H** 和 **J**。
   4. 重新打开菜单，在 EDIT: LEFT / EDIT: RIGHT 之间切换，看 MODE 显示。
   5. **PLAY** 改成 TWIN。
