@@ -772,13 +772,13 @@
   2. SETTINGS 页 **ARP RHYTHM** 调到 4 steps，切到 RHYTHM 页看 ARP 一行。
   3. 点一下 ARP 第 2 个圆点。
   4. 再点一下 ARP 第 4 个圆点。
-  5. **MODE** 改成 SEQUENCER（不用按键，音序器自己走）。SETTINGS 页 **SEQ RHYTHM** 调到 3 steps；RHYTHM 页点一下 SEQ 第 3 个圆点。
+  5. **MODE** 改成 SEQUENCER（不用按键，音序器自己走）。SETTINGS 页 **SEQ LEN** 调到 3 steps；SEQUENCER 页把第 2 步音高拉到 +7、第 3 步拉到 +12（三步音高不同才听得出每一步）。先听一会儿；再到 SETTINGS 页把 **SEQ RHYTHM** 调到 3 steps，RHYTHM 页点一下 SEQ 第 3 个圆点。
 - 期望：
   - 第 1 步：C、E、G 均匀轮流。
   - 第 2 步：ARP 行下面显示 4 steps；第 1–4 个是琥珀色实心，5–8 只有细框。声音不变。
   - 第 3 步：第 2 个变暗。节奏变成"响、停、响、响"循环，音的顺序仍是 C、E、G 依次（停的那拍不跳音）。
   - 第 4 步：第 4 个也变暗。变成"响、停、响、停"，琶音只剩一半速度。
-  - 第 5 步：SEQ 行第 1、2 个实心、第 3 个暗；音序器"走、走、停"循环。
+  - 第 5 步：改节奏前是低、中、高三个音均匀循环；点暗 SEQ 第 3 个后，每响两个音停一拍，旋律本身照样按低、中、高的顺序往下走（停的那拍不跳音）。
 - 补充：PLAY = SPLIT 时，RHYTHM 页同样跟着 **EDIT: LEFT / RIGHT** 切换左右两边。
 
 ---
