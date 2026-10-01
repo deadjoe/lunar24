@@ -17,7 +17,7 @@
 #ifndef HOST_CONFIG_H
 #define HOST_CONFIG_H
 
-#define PLUG_NAME "Lunar24Host"
+#define PLUG_NAME "Lunar 24"
 #define PLUG_MFR "Lunar24"
 #define PLUG_VERSION_HEX 0x00000001
 #define PLUG_VERSION_STR "0.0.1"
@@ -29,7 +29,9 @@
 #define PLUG_CLASS_NAME LunarHostPlugin
 
 // macOS bundle id pieces (BUNDLE_ID is derived by the iPlug header).
-#define BUNDLE_NAME "Lunar24Host"
+#define BUNDLE_NAME "Lunar24"
+// The app's name before it was renamed: its settings folder is moved over on first start.
+#define LUNAR_OLD_BUNDLE_NAME "Lunar24Host"
 #define BUNDLE_MFR "Lunar24"
 #define BUNDLE_DOMAIN "com"
 

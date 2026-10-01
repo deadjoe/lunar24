@@ -443,7 +443,7 @@ int main(int argc, char* argv[])
     id ctrl = ctrlClass ? [ctrlClass new] : nil;
     if (!ctrl)
     {
-      NSLog(@"Lunar24Host: SWELLAppController class not found; cannot bootstrap.\n");
+      NSLog(@"Lunar24: SWELLAppController class not found; cannot bootstrap.\n");
       return 1;
     }
 

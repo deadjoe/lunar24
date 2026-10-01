@@ -22,7 +22,7 @@
 | 键盘菜单 | 点键盘区中间的红色大旋钮打开；右上角 CLOSE 或 Esc 关闭 |
 | 恢复出厂 | 键盘菜单顶部 **RESET PANEL**，点一次变成 CLICK TO CONFIRM，4 秒内再点一次 |
 | 静音 | DRONE VOICES 右边的 **MUTE** 按钮：所有输出立即静音（亮琥珀色光圈），再点恢复 |
-| 音频设备 / 麦克风 | 屏幕顶部菜单栏 Lunar24Host → Preferences…（⌘,） |
+| 音频设备 / 麦克风 | 屏幕顶部菜单栏 Lunar 24 → Preferences…（⌘,） |
 
 ### 测试常用准备
 
@@ -198,7 +198,7 @@
 **T0.3 音频设备** ✅ (#57, #66)
 - 步骤：
   1. 戴上或摘下 AirPods 各一次。
-  2. 打开菜单栏 Lunar24Host → Preferences…。
+  2. 打开菜单栏 Lunar 24 → Preferences…。
 - 期望：
   - 声音自动跟随当前输出设备，没有杂音。
   - 音频启动不了时，蓝色小屏显示 NO AUDIO。
@@ -821,4 +821,4 @@
   - 应用运行中插拔设备时设备列表不刷新（Preferences 里看不到新连上的 AirPods）。现在设备增减会自动刷新并重新打开。
   - AirPods 的麦克风只有通话音质（24000 Hz），打不开（系统拒绝 48000 Hz）；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」（已验证可用）。选了打不开的输入时，程序只开输出，并弹窗「Audio input is off」说明原因（每个设备每次运行只提示一次）。
   - 复测：应用开着戴上 / 摘下 AirPods，Preferences 列表应立刻出现 / 消失 AirPods；选 MacBook 麦克风 + AirPods 输出，拍手有反应；把输入误选成 AirPods 后再改回 MacBook 麦克风，拍手有反应，重启后仍然有。
-- 音频日志：`~/Library/Application Support/Lunar24Host/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。
+- 音频日志：`~/Library/Application Support/Lunar24/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。

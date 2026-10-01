@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Lunar 24 contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# host/CMakeLists.txt — the Lunar24Host STANDALONE executable (P5-①, task #31; GH#10).
+# host/CMakeLists.txt — the Lunar24 STANDALONE executable (P5-①, task #31; GH#10).
 #
 # ONE cross-platform target, two trusted entries:
 #   macOS   — a SELF-AUTHORED, nib-free bootstrap (host/main.mm provides main() +
@@ -45,7 +45,7 @@ endif()
 
 if(NOT EXISTS "${IPLUG2_DIR}/iPlug2.cmake")
   message(FATAL_ERROR
-    "Lunar24Host: the pinned iPlug2 submodule is not at ${IPLUG2_DIR}. "
+    "Lunar24: the pinned iPlug2 submodule is not at ${IPLUG2_DIR}. "
     "Run `git submodule update --init --recursive` (GH#10 requires the submodule "
     "on macOS and Windows).")
 endif()
@@ -54,7 +54,7 @@ include(${IPLUG2_DIR}/iPlug2.cmake)
 find_package(iPlug2 REQUIRED)
 # IGRAPHICS_LIB is now set (e.g. iPlug2::IGraphics::NanoVG::Metal / NanoVG).
 
-set(HOST_APP_NAME "Lunar24Host")
+set(HOST_APP_NAME "Lunar24")
 set(HOST_OUT_DIR "${CMAKE_BINARY_DIR}/out")
 
 # ---------------------------------------------------------------------------
@@ -72,7 +72,7 @@ set(LUNAR_IPLUG_APP_FORBIDDEN
   "${IPLUG2_DIR}/IPlug/APP/IPlugAPP_host.cpp"
 )
 
-# Configure-time source gate (GH#4 8B3): the Lunar24Host target MUST compile the two repo overrides
+# Configure-time source gate (GH#4 8B3): the Lunar24 target MUST compile the two repo overrides
 # and MUST NOT compile the two upstream TUs. A stock-TU mix-in (upstream IPlugAPP.cpp coming back)
 # or an unlinked override are both silent regressions, so this asserts at configure time from THE
 # source list that is actually fed to target_sources. `_srcs` is that literal list.
@@ -206,7 +206,7 @@ if(APPLE)
   # --- bundle ------------------------------------------------------------
   set_target_properties(${HOST_APP_NAME} PROPERTIES
     MACOSX_BUNDLE TRUE
-    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Lunar24Host-macOS-Info.plist"
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Lunar24-macOS-Info.plist"
     RUNTIME_OUTPUT_DIRECTORY "${HOST_OUT_DIR}"
     OUTPUT_NAME "${HOST_APP_NAME}"
     XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
@@ -222,6 +222,14 @@ if(APPLE)
       COMMENT "Creating PkgInfo for ${HOST_APP_NAME}.app"
     )
   endif()
+
+  # The app icon (generated from resources/lunar24_icon.svg; CFBundleIconFile in the plist).
+  add_custom_command(TARGET ${HOST_APP_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:${HOST_APP_NAME}>/Contents/Resources"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/resources/Lunar24.icns"
+            "$<TARGET_BUNDLE_DIR:${HOST_APP_NAME}>/Contents/Resources/Lunar24.icns"
+    COMMENT "Copying the app icon into ${HOST_APP_NAME}.app"
+  )
 
 elseif(WIN32)
   # -------------------------------------------------------------------------
@@ -289,7 +297,7 @@ elseif(WIN32)
   # single RUNTIME_OUTPUT_DIRECTORY does NOT guarantee the artifact for a multi-config generator
   # (Visual Studio picks the per-config dir unless that is also pinned). The pinned iplug_configure_app
   # sets the per-config DEBUG/RELEASE/RELWITHDEBINFO/MINSIZEREL dirs to the same out/ location, so we
-  # mirror all four here to guarantee build/out/Lunar24Host.exe (the artifact the CI / target gate
+  # mirror all four here to guarantee build/out/Lunar24.exe (the artifact the CI / target gate
   # asserts). Without them a Debug/Release default (e.g. out/Debug/) would silently move the binary
   # away from the asserted path.
   set_target_properties(${HOST_APP_NAME} PROPERTIES
@@ -305,5 +313,5 @@ elseif(WIN32)
   lunar_host_common(${HOST_APP_NAME})
   lunar_host_owned_warnings(${HOST_APP_NAME} "plugin.cpp" "window_metrics_win.cpp")
 else()
-  message(FATAL_ERROR "Lunar24Host only supports APPLE and WIN32 (root CMake gates this).")
+  message(FATAL_ERROR "Lunar24 only supports APPLE and WIN32 (root CMake gates this).")
 endif()

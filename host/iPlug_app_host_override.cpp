@@ -246,6 +246,23 @@ bool IPlugAPPHost::InitState()
 #else
   #error NOT IMPLEMENTED
 #endif
+  // The app used to be called Lunar24Host and kept its settings (panel state, presets, audio
+  // device) in a folder of that name. On the first start under the new name, move that folder
+  // over so nothing is lost.
+  {
+    std::string fresh(mINIPath.Get());
+    fresh.pop_back();  // drop the trailing separator
+    std::string old = fresh.substr(0, fresh.size() - std::strlen(BUNDLE_NAME)) + LUNAR_OLD_BUNDLE_NAME;
+    struct stat stFresh, stOld;
+    if (stat(fresh.c_str(), &stFresh) != 0 && stat(old.c_str(), &stOld) == 0)
+    {
+#if defined OS_WIN
+      MoveFileUTF8(old.c_str(), fresh.c_str());  // the user name in the path may be non-ASCII
+#else
+      rename(old.c_str(), fresh.c_str());
+#endif
+    }
+  }
   std::snprintf(sAudioLogPath, sizeof sAudioLogPath, "%saudio.log", mINIPath.Get());
   AudioLog("---- app start ----");
 

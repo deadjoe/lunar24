@@ -56,7 +56,7 @@ ctest --test-dir build --output-on-failure
 
 CI builds the macOS and Windows apps and attaches them to each run as downloadable artifacts.
 The mac app is signed ad hoc, not notarized: after downloading, clear the quarantine flag
-once with `xattr -cr Lunar24Host.app` (otherwise macOS reports it as damaged).
+once with `xattr -cr Lunar24.app` (otherwise macOS reports it as damaged).
 
 Audio: the app plays through the system's current output device (headphones, AirPods)
 unless another one is chosen in Preferences (app menu > Preferences…, or ⌘,); the audio

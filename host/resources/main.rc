@@ -1,11 +1,11 @@
 // Microsoft Visual C++ generated resource script.
-// Lunar24Host (Windows standalone). Uses host/resource.h (resolved via the /I include
+// Lunar24 (Windows standalone). Uses host/resource.h (resolved via the /I include
 // path set in host/CMakeLists.txt). Version/product strings mirror host/config.h.
 //
 // ADAPTED FROM: https://github.com/iPlug2/iPlug2 (pinned git submodule, commit
 // d54f6905 = d54f69050f517e43b941d88c2a170f0a840b9ee4), Example
 // Examples/IPlugVisualizer/resources/main.rc. This is an ALTERED source: it was rewritten
-// for the Lunar24Host app, so it is NOT the original iPlug2 file. Per the iPlug 2 license
+// for the Lunar24 app, so it is NOT the original iPlug2 file. Per the iPlug 2 license
 // (third_party/iPlug2/LICENSE.txt) restrictions 1-3 the origin is credited here, the
 // alterations are plainly marked, and the license notice is retained.
 //
@@ -26,8 +26,8 @@
 //   See third_party/iPlug2/LICENSE.txt for the full text.
 //
 // Lunar alterations (vs Examples/IPlugVisualizer/resources/main.rc):
-//   * caption changed from the IPlugVisualizer default to "Lunar24Host".
-//   * version/product string fields reshaped to Lunar24Host 0.0.1 (mirrors host/config.h).
+//   * caption changed from the IPlugVisualizer default to "Lunar24".
+//   * version/product string fields reshaped to Lunar24 0.0.1 (mirrors host/config.h).
 //   * the IPlugVisualizer .ico / .ttf resource entries removed (the host ships no icon/font).
 //   * the 'IDD_DIALOG1 AFX_DIALOG_LAYOUT' block removed (no host/resource.h ID backs it).
 //
@@ -49,6 +49,9 @@
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENG)
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 #pragma code_page(1252)
+
+// The app icon (Explorer and the taskbar). Generated from lunar24_icon.svg.
+IDI_ICON1               ICON                    "resources/Lunar24.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -96,7 +99,7 @@ END
 
 IDD_DIALOG_MAIN DIALOG 0, 0, 300, 300
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Lunar24Host"
+CAPTION "Lunar 24"
 MENU IDR_MENU1
 FONT 8, "MS Sans Serif"
 BEGIN
@@ -217,12 +220,12 @@ BEGIN
         BEGIN
             VALUE "FileVersion", "0.0.1"
             VALUE "ProductVersion", "0.0.1"
-            VALUE "FileDescription", "Lunar24Host"
-            VALUE "InternalName", "Lunar24Host"
-            VALUE "ProductName", "Lunar24Host"
+            VALUE "FileDescription", "Lunar 24"
+            VALUE "InternalName", "Lunar24"
+            VALUE "ProductName", "Lunar 24"
             VALUE "CompanyName", "Lunar24"
             VALUE "LegalCopyright", "Copyright 2026 Lunar 24 contributors"
-            VALUE "OriginalFilename", "Lunar24Host.exe"
+            VALUE "OriginalFilename", "Lunar24.exe"
         END
     END
     BLOCK "VarFileInfo"
