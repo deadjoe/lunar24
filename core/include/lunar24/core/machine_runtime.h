@@ -1151,6 +1151,22 @@ class SynthRuntime {
     return true;
   }
 
+  // Classic drones' GATE inputs (order 0..3 == drone 1/2/4/5). A patched cable decides the
+  // voice's gate (0.5 V threshold from the descriptor); unpatched, the DRONE VOICES key does.
+  bool setDroneGateInBindings(JackId g0, JackId g1, JackId g2, JackId g3) {
+    const JackId ids[4] = {g0, g1, g2, g3};
+    for (int g = 0; g < kClassicDroneVoices; ++g) {
+      const JackDescriptor* d = findJackDescriptor_(ids[g]);
+      if (d == nullptr || d->direction != PinDirection::input) return false;
+    }
+    for (int g = 0; g < kClassicDroneVoices; ++g) {
+      classicGateJack_[g] = ids[g];
+      classicGateBound_[g] = true;
+      sink_gate_reset(classicGateLatch_[g]);
+    }
+    return true;
+  }
+
   // ---- PAPA SRAPA voices (drone_3 = index 0, drone_6 = index 1): GH#15 D4 ----
   // Same ATOMIC FAIL-CLOSED admission shape as the classic cohort above (validate the
   // WHOLE cohort against a common + per-kind rule, release the old cohort, commit only
@@ -2517,12 +2533,11 @@ class SynthRuntime {
         fall = true;
       }
     }
+    // RESET (manual p.13) sends the arpeggiator / sequencer back to its first step. It
+    // does not drop the held chord (a full keyboard reset did, and the arpeggio stopped).
     const bool resetHigh = kbdResetHigh_ ? rst > 0.5 : rst > 1.5;
-    if (resetHigh && !kbdResetHigh_) {
-      ControlEvent r{};
-      r.kind = ControlEventKind::reset;
-      applyControlEvent_(r);
-    }
+    if (resetHigh && !kbdResetHigh_)
+      for (auto& arp : keyboardArpSeq_) arp.restartPattern();
     kbdResetHigh_ = resetHigh;
     // A clock pulse from MIDI has no falling edge of its own: end its gate half a period later.
     if (kbdPulseFallAt_ != 0 && kbdSampleCount_ >= kbdPulseFallAt_) {
@@ -3464,6 +3479,21 @@ class SynthRuntime {
             if (resolveControlSink_(cvModInJack_[classicGroup], m, driveGraph))
               drone_.setGroupModCv(classicGroup, m);
           }
+          // GATE IN: a patched cable opens / closes the voice; unpatched, its DRONE VOICES key.
+          if (classicGateBound_[classicGroup]) {
+            static constexpr int kVoiceOfGroup[4] = {0, 1, 3, 4};
+            double volts = 0.0;
+            const JackDescriptor* d = findJackDescriptor_(classicGateJack_[classicGroup]);
+            if (d != nullptr && resolveControlSink_(classicGateJack_[classicGroup], volts, driveGraph)) {
+              drone_.setGroupGate(classicGroup,
+                                  sink_gate_interpret(*d, classicGateLatch_[classicGroup], volts).gateHigh);
+              classicGateDriven_[classicGroup] = true;
+            } else if (classicGateDriven_[classicGroup]) {  // cable just unplugged: back to the key
+              drone_.setGroupGate(classicGroup, droneKeyOpen_[kVoiceOfGroup[classicGroup]]);
+              sink_gate_reset(classicGateLatch_[classicGroup]);
+              classicGateDriven_[classicGroup] = false;
+            }
+          }
           // (2) tick ONLY this group (advances exactly this group's sample counter).
           double out5[DroneBank::kGensPerVoice] = {};
           drone_.tickGroup(classicGroup, out5);
@@ -4075,6 +4105,10 @@ class SynthRuntime {
   // jack). A failed atomic admission clears the jack to JackId{0} AND the bound flag.
   JackId envOutJack_[DroneBank::kClassicVoices] = {JackId{0}, JackId{0}, JackId{0}, JackId{0}};
   JackId cvModInJack_[DroneBank::kClassicVoices] = {JackId{0}, JackId{0}, JackId{0}, JackId{0}};
+  JackId classicGateJack_[DroneBank::kClassicVoices] = {JackId{0}, JackId{0}, JackId{0}, JackId{0}};
+  bool classicGateBound_[DroneBank::kClassicVoices] = {false, false, false, false};
+  GateClockSinkState classicGateLatch_[DroneBank::kClassicVoices] = {};
+  bool classicGateDriven_[DroneBank::kClassicVoices] = {false, false, false, false};  // a cable is in
   bool envOutBound_[DroneBank::kClassicVoices] = {false, false, false, false};
   bool cvModInBound_[DroneBank::kClassicVoices] = {false, false, false, false};
   // PAPA SRAPA voice bindings (GH#15 D4), index 0 == drone_3, 1 == drone_6: the gate_in

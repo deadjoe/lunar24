@@ -6,11 +6,14 @@
 // drives its OUT. Pitch is read as zero crossings per window of the DRY A (VCO A) or WET
 // output.
 
+#include <cmath>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 #include "mini_test.h"
 #include <host/standalone_audio_engine.h>
+#include <lunar24/core/input_state_machine.h>
 #include <lunar24/core/state_default.h>
 #include <lunar24/core/state_edit.h>
 
@@ -127,6 +130,50 @@ int main() {
     cable(st, "drone_3.sh_out", "vco_a.v_oct_in");
     cable(st, "lfo_a.cv_out", "drone_3.clock_in");
     CHECK(jumps(crossings(st, 2, 6.0, 0.2)) >= 2);
+  }
+  // GATE IN: with the keyboard's GATE L patched in, a drone (classic 1 and Papa 3) is silent
+  // until a key is held and fades out after it is released.
+  for (int drone : {1, 3}) {
+    host::StandaloneAudioEngine e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    for (int v = 0; v < 6; ++v) e.postDroneKey(v, v == drone - 1);
+    const std::string gateIn = "drone_" + std::to_string(drone) + ".gate_in";
+    CHECK(e.postConnect(core::find_jack_by_name("keyboard.gate_left_main_out")->id,
+                        core::find_jack_by_name(gateIn)->id));
+    e.postParameter(core::ParameterId::mixer_ch5_vol, 0.0);  // VCO A / B out of the way
+    e.postParameter(core::ParameterId::mixer_ch6_vol, 0.0);
+    e.postParameter(core::ParameterId::effector_blend, 0.0);
+    std::vector<double> l(256), r(256);
+    double* outs[2] = {l.data(), r.data()};
+    auto rms = [&](int blocks) {
+      double sum = 0;
+      for (int b = 0; b < blocks; ++b) {
+        e.processBlock(nullptr, outs, 0, 2, 256);
+        for (double x : l) sum += x * x;
+      }
+      return std::sqrt(sum / (blocks * 256.0));
+    };
+    core::InputStateMachine in{nullptr, 0};
+    std::uint64_t seq = 0;
+    auto send = [&](core::PerfInputKind k) {
+      core::PerformanceInput p{};
+      p.kind = k;
+      p.value = 0.8;
+      p.noteId = 7;
+      p.source = 1;
+      p.seq = ++seq;
+      core::ControlEvent ev[3];
+      const std::uint32_t n = in.translate(p, ev, 3);
+      for (std::uint32_t i = 0; i < n; ++i) e.postEvent(ev[i]);
+    };
+    rms(1900);
+    CHECK(rms(200) < 1e-4);  // gate low: silent
+    send(core::PerfInputKind::note_on);
+    rms(1900);
+    CHECK(rms(200) > 1e-3);  // key held: the drone sounds
+    send(core::PerfInputKind::note_off);
+    rms(1900);
+    CHECK(rms(200) < 1e-4);  // released: silent again
   }
   return test::finish("test_drone_voice_jacks");
 }

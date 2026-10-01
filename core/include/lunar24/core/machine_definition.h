@@ -390,6 +390,10 @@ class MachineRuntimeDefinition {
                                      lunar24::registry::JackId::drone_2_cv_mod_in,
                                      lunar24::registry::JackId::drone_4_cv_mod_in,
                                      lunar24::registry::JackId::drone_5_cv_mod_in);
+    runtime_.setDroneGateInBindings(lunar24::registry::JackId::drone_1_gate_in,
+                                    lunar24::registry::JackId::drone_2_gate_in,
+                                    lunar24::registry::JackId::drone_4_gate_in,
+                                    lunar24::registry::JackId::drone_5_gate_in);
     // PAPA SRAPA voice cohort (GH#15 D4, order 0..1 == drone_3/drone_6). Two landed
     // jacks each: gate_in is the AR envelope's TRIGGER SOURCE (manual L331 — the same
     // socket the hardware routes the panel button and any external CV into), and env_out

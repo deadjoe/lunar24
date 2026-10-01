@@ -781,18 +781,47 @@
   - 第 5 步：改节奏前是低、中、高三个音均匀循环；点暗 SEQ 第 3 个后，每响两个音停一拍，旋律照样按顺序往下走：低、中、（停）、高、低、（停）、中、高、（停）……停顿的位置在三个音之间轮换。
 - 补充：PLAY = SPLIT 时，RHYTHM 页同样跟着 **EDIT: LEFT / RIGHT** 切换左右两边。
 
+**T12.15 CLOCK 输入（外部时钟）** ⏳
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单 **MODE** 改成 ARPEGGIATOR，**ARP HOLD** 改成 ON；同时按一下 **A**、**D**、**G** 再松开。
+- 步骤：
+  1. 接线：5 STEP SEQ. VOLTAGE 的 **clock** 上面那个插孔（CLOCK OUT）→ 键盘区 ◷ CLOCK 输入。来回转 **pulser**。
+  2. 拔掉这根线。
+  3. 键盘菜单里随便动一下 **BPM**。
+- 期望：
+  - 第 1 步：琶音跟着 pulser 的速度走，pulser 转快琶音就快。
+  - 第 2 步：琶音停住（外部时钟没了）。
+  - 第 3 步：琶音恢复，按 BPM 的速度走（改 BPM 就切回内部时钟，说明书 p.19）。
+
+**T12.16 RESET 输入** ⏳
+- 准备：同 T12.15，但和弦改成同时按一下 **A**、**D**、**G**、**J**（C、E、G、B 四个音）。
+- 步骤：
+  1. 接线：LFO B 输出 → 键盘区 ⚡ RESET 输入。LFO B 的 **wave** 拖到最左（方波），拨杆 **x1**，**rate** 从最慢慢慢往上加。
+  2. 拔掉线。
+- 期望：
+  - 第 1 步：每当 LFO 跳一下，琶音就回到第一个音 C 重新开始（rate 慢时听起来是偶尔"打个嗝"重来）；rate 加快后只听到 C、E（或 C、E、G）反复，到不了 B。琶音一直在走，不会停。
+  - 第 2 步：恢复 C、E、G、B 完整循环。
+
+**T12.17 GATE L / V/OCT 输出（带 drone 的 GATE 输入）** ⏳
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 只留 **1**；VOICE MIXER 里 **VCO A**、**VCO B** 的 VOL 拖到最左（只听 drone 1）。
+- 步骤：
+  1. 接线：键盘区 ⊓ GATE L → DRONE 1 下排最左的 GATE 输入。不按键听一会儿；再按住任意键、松开。
+  2. 拔掉线。
+  3. VCO A 的 VOL 拖回来，DRONE VOICES 的 1 关掉。接线：键盘区 ↳ V/OCT → FILTER 一排的 **CV L**；**MOD L** 一半以上，左边 **FREQ** 约 1/4。从低到高弹几个音（Z / X 换八度）。
+- 期望：
+  - 第 1 步：不按键时 drone 1 不响；按住键时响，松开后按 RLS 淡出。
+  - 第 2 步：drone 1 恢复一直响（没接线时由 DRONE VOICES 的键决定）。
+  - 第 3 步：弹得越高声音越亮（滤波器跟着音高打开）；音高本身照常（V/OCT 仍然连着 VCO）。
+- 补充：DRONE 2–6 的 GATE 输入用同样方法各试一下（3 和 6 的 GATE 在最下排最左）。
+
 ---
 
 ## 还没测的（⏳）
 
-- 键盘：
-  - 键盘区的 CLOCK / RESET 输入、GATE L / GATE R / V/OCT 输出。
 - MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。
 - DRONE 2 / 4 / 5 / 6 逐个过一遍（和 DRONE 1 / 3 同一套代码）。
-- 所有 drone 的 GATE 输入和 env 输出插孔；DRONE 3 / 6 的 LFO 输出和 S&H 的 IN / clock 插孔。
+- 所有 drone 的 env 输出插孔（GATE 输入见 T12.17）；DRONE 3 / 6 的 LFO 输出和 S&H 的 IN / clock 插孔。
 - VCO 的 vca cv 插孔、VCO A / VCO B 的 dry 输出。
 - VOICE MIXER 的 EXT.AUDIO 通道、PREAMP 的 ext. source 插孔、耳机音量旋钮。
-- 5 STEP SEQ. VOLTAGE 的 CLOCK OUT。
 - 键盘菜单第 3 行的校准类设置（软件里意义不大）。
 
 ## TODO

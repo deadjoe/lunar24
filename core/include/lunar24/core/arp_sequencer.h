@@ -210,6 +210,14 @@ class ArpSeq {
     rhythmIndex_ = 0;
   }
 
+  // The RESET jack (manual p.13): back to the first step of the arpeggio / sequence and
+  // of the RHYTHM pattern. The held chord and the sounding note are kept.
+  void restartPattern() {
+    arpIndex_ = 0;
+    seqIndex_ = 0;
+    rhythmIndex_ = 0;
+  }
+
   // mode() exposes the decoded mode so a caller can decide whether to drive a voice
   // (the arp/seq being engaged means the direct plate sound is produced here).
   ArpSeqMode mode() const { return arp_seq_mode(params_.mode); }

@@ -5261,6 +5261,8 @@
           "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
           "coupling": "unknown",
           "evidence": {
             "line": 315
@@ -5877,6 +5879,8 @@
           "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
           "coupling": "unknown",
           "evidence": {
             "line": 315
@@ -6493,6 +6497,8 @@
           "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
           "coupling": "unknown",
           "evidence": {
             "line": 315
@@ -7109,6 +7115,8 @@
           "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
           "coupling": "unknown",
           "evidence": {
             "line": 315
@@ -7534,6 +7542,8 @@
           "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
           "coupling": "unknown",
           "evidence": {
             "line": 331
@@ -8034,6 +8044,8 @@
           "polarity": "unknown",
           "nominalMin": 0.0,
           "nominalMax": 10.0,
+          "gateThresholdVolts": 0.5,
+          "hysteresisVolts": 0.1,
           "coupling": "unknown",
           "evidence": {
             "line": 331
