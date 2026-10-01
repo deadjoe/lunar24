@@ -30,6 +30,7 @@
 - **去掉混响**：DUAL EFFECTOR 区的 **BLEND** 拖到最左。声音变"干"，静音后不会有长尾音。
 - **只听某一路（solo）**：VOICE MIXER 里其它 9 路的 **VOL** 拖到最左。或者在 DRONE VOICES 里只留要听的 drone。
 - **关掉所有 drone**：键盘区右边 DRONE VOICES 的 6 个键全部关掉。
+- **说法约定**：本文说"打开 / 关掉 DRONE N"或"DRONE VOICES 的 N"，都是指键盘区右边 DRONE VOICES 的第 N 个按键（drone 的开关，带包络）；VOICE MIXER 里的 **VOL** 只调音量，会明确写"VOL"。
 - 卡音（声音停不下来）时：先点 **MUTE** 静音，再试 RESET PANEL。
 
 ---
