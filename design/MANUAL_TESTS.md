@@ -815,14 +815,43 @@
   - DRONE 2–6 的 GATE 输入用同样方法各试一下（3 和 6 的 GATE 在最下排最左）。
   - 第 3 步对 DRONE 6 同样适用：只开 DRONE VOICES 的 **6**，线改接到 DRONE 6 的 **cv** 输入。
 
+### 13. 其余插孔
+
+准备（本节通用）：RESET PANEL；BLEND 最左；DRONE VOICES 全关；点亮 envelope A 的 **hold**（VCO A 不按键也一直响，当作"监听器"）；VOICE MIXER 里 **VCO B** 拖到最左。
+
+**T13.1 drone 的 env 输出** ⏳
+- 步骤：
+  1. VOICE MIXER 里 **DRONE 1** 的 VOL 拖到最左（只用它的包络，不听它的声音）。DRONE 1 的 **ATT**、**RLS** 都拖到一半以上。
+  2. 接线：DRONE 1 的红字 **env** → VCO A 的 **cv**；VCO A 的 **cv amt** 放约 1/4。
+  3. 打开 DRONE VOICES 的 1，等几秒，再关掉。
+  4. 对 DRONE 2 / 4 / 5（红字 **env**）和 DRONE 3 / 6（红字 **env out**）各做一遍。
+- 期望：打开时 VCO A 的音高按 ATT 慢慢滑上去，关掉时按 RLS 慢慢滑回来。
+
+**T13.2 DRONE 3 / 6 的 LFO 输出** ⏳
+- 步骤：接线：DRONE 3 **rate** 下方的 LFO 输出 → VCO A 的 **1v/oct**。拖 DRONE 3 的 **rate**；再拨 **LFO 1 : 10**。DRONE 6 同样做一遍。
+- 期望：VCO A 在两个音之间来回跳（方波）；rate 改变跳的快慢，1 : 10 时慢很多。DRONE 3 / 6 本身不用开（LFO 一直在走）。
+
+**T13.3 S&H 的 IN 和 clock 插孔** ⏳
+- 准备：DRONE VOICES 只开 **3**；VCO A 的 VOL 拖到最左，取消 envelope A 的 hold；DRONE 3 的 fm、am 关，**NOISE** 最小。接线：S&H 框最右的 OUT → DRONE 3 的 **cv**（同 T3.4）。
+- 步骤：
+  1. 接线：LFO A 输出 → S&H 的 **IN**。LFO A 的 **wave** 拖到最右（三角），**rate** 放慢。
+  2. 接线：LFO B 输出 → S&H 的 **clock**。LFO B 的 **rate** 比 LFO A 快一些，来回拖。
+- 期望：
+  - 第 1 步：音高不再是随机乱跳，而是一级一级地上去、再一级一级地下来（在采样 LFO A 的三角波）。
+  - 第 2 步：每一级的快慢改由 LFO B 决定，LFO B 越快台阶越细。
+- DRONE 6 同样做一遍。
+
+**T13.4 VCO 的 vca cv 输入** ⏳
+- 步骤：取消 envelope A 的 hold。接线：LFO A 输出 → envelope A 一排的 **vca cv**。LFO A 的 **wave** 最左（方波），来回拖 **rate**。不按键。
+- 期望：VCO A 自己按 LFO 的节奏一开一关（插线后由这根线代替 envelope A 控制 VCO A 的音量）；拔掉线恢复为按键才响。envelope B 一排的 **vca cv** 控制 VCO B，同样试一下（先把 VCO B 的 VOL 拖回来）。
+
 ---
 
 ## 还没测的（⏳）
 
 - MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。
 - DRONE 6 的面板控件逐个过一遍（和 DRONE 3 同一套代码；DRONE 2 / 4 / 5 已测过）。
-- 所有 drone 的 env 输出插孔（GATE 输入见 T12.17）；DRONE 3 / 6 的 LFO 输出和 S&H 的 IN / clock 插孔。
-- VCO 的 vca cv 插孔、VCO A / VCO B 的 dry 输出。
+- VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch）。
 - VOICE MIXER 的 EXT.AUDIO 通道、PREAMP 的 ext. source 插孔、耳机音量旋钮。
 - 键盘菜单第 3 行的校准类设置（软件里意义不大）。
 
