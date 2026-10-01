@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
         break;
       }
       case WidgetKind::DroneKey:
-        art::drawDroneKey(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), false, false);
+        art::drawDroneKey(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), true, false);
         break;
       case WidgetKind::MasterMute:
         art::drawButton(sink, float(w.cx), float(w.cy), float(w.w / 2), false, false);
@@ -239,6 +239,8 @@ int main(int argc, char** argv) {
       case WidgetKind::OctaveKey: art::drawOctaveKey(sink, float(w.cx), float(w.cy), false); break;
       case WidgetKind::Display:
         art::drawDisplay(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
+        text(w.cx, w.cy, 18, {235, 240, 255}, "OCT +0");
+        art::drawDisplayGlass(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
         break;
       case WidgetKind::Decor:
         if (w.id == 3) {

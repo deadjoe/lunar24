@@ -267,22 +267,100 @@ void drawOctaveKey(Sink& s, float cx, float cy, bool hover) {
   s.fillGrad(vertical(cy - 22.5f, cy + 22.5f, hover ? 0xffecd0 : 0xffffff, hover ? 0xe0b880 : 0xc8c8c4));
 }
 
+// A rectangle with rounded corners as a path (r = corner radius; arcs as short polylines).
 template <class Sink>
-void drawDroneKey(Sink& s, float x0, float y0, float x1, float y1, bool open, bool hover) {
-  s.fillRect(x0, y0, x1, y1, 0x2e2e2e, 3.f);
-  s.fillRect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, 0x262626, 3.f);                    // shadowed skirt
-  s.fillRect(x0 + 9, y0 + 3, x1 - 9, y1 - 11, hover ? 0x4a4a4a : 0x3c3c3c, 7.f);  // key top
-  s.moveTo(x0 + 9, y0 + 3); s.lineTo(x1 - 9, y0 + 3); s.lineTo(x1 - 9, y1 - 11); s.lineTo(x0 + 9, y1 - 11);
+void roundRectPath(Sink& s, float x0, float y0, float x1, float y1, float r) {
+  constexpr int kSteps = 5;
+  const float cx[4] = {x1 - r, x1 - r, x0 + r, x0 + r}, cy[4] = {y0 + r, y1 - r, y1 - r, y0 + r};
+  for (int c = 0; c < 4; ++c) {
+    for (int i = 0; i <= kSteps; ++i) {
+      const float a = 1.5707963f * (float(c) - 1.f + float(i) / kSteps);  // -90 deg .. 180 deg
+      const float x = cx[c] + r * std::cos(a), y = cy[c] + r * std::sin(a);
+      if (c == 0 && i == 0) s.moveTo(x, y);
+      else s.lineTo(x, y);
+    }
+  }
   s.closePath();
-  s.fillGrad(vertical(y0 + 3, y1 - 11, 0xffffff, 0x000000, 0.12f, 0.25f));  // curved top, lit from above
-  const float cx = (x0 + x1) / 2;
-  s.fillRect(cx - 7, y0 + 3, cx + 7, y0 + 13, open ? 0xeb3c32 : 0xd8d8d8, 0);   // LED window
 }
 
+// A DRONE VOICES key: a square keycap standing in a well in the panel. The cap's sides show
+// below and to the right of its top (light from the top left), the top is slightly dished and
+// catches light at its upper edge, and the LED window near the top is a small red lens that
+// glows while the voice is open. Amounts tuned by eye.
+template <class Sink>
+void drawDroneKey(Sink& s, float x0, float y0, float x1, float y1, bool open, bool hover) {
+  // Shadow cast on the panel, then the well the key sits in.
+  for (int i = 4; i >= 1; --i) {  // stacked faint layers read as a soft-edged shadow
+    const float g = float(i) * 2.f;
+    roundRectPath(s, x0 + 2 - g * 0.3f, y0 + 4 - g * 0.3f, x1 + 2 + g, y1 + 4 + g, 6.f + g);
+    s.fillGrad(solid(0x000000, 0.08f));
+  }
+  roundRectPath(s, x0, y0, x1, y1, 6.f);
+  s.fillGrad(vertical(y0, y1, 0x0c0c0c, 0x2a2a2a));
+  // The cap's sides (the skirt), lit from above: light at the top, dark towards the bottom.
+  const float sx0 = x0 + 3, sy0 = y0 + 2, sx1 = x1 - 3, sy1 = y1 - 3;
+  roundRectPath(s, sx0, sy0, sx1, sy1, 6.f);
+  s.fillGrad(vertical(sy0, sy1, 0x3c3c3c, 0x0c0c0c));
+  // The top face, set in from the skirt more at the bottom and right (the cap tapers).
+  const float tx0 = sx0 + 6, ty0 = sy0 + 3, tx1 = sx1 - 8, ty1 = sy1 - 11;
+  roundRectPath(s, tx0, ty0, tx1, ty1, 7.f);
+  s.fillGrad(vertical(ty0, ty1, hover ? 0x646464 : 0x575757, hover ? 0x3c3c3c : 0x333333));
+  // Dish: a soft darker hollow in the middle of the top.
+  const float mx = (tx0 + tx1) / 2, my = (ty0 + ty1) / 2 + 3;
+  s.circle(mx, my, (tx1 - tx0) * 0.55f);
+  s.fillGrad(radialGrad(mx, my, 0.f, (tx1 - tx0) * 0.55f, 0x000000, 0.18f, 0x000000, 0.f));
+  // Edges of the top: a highlight along the upper edge, a dark line along the lower one.
+  s.moveTo(tx0 + 6, ty0 + 1); s.lineTo(tx1 - 6, ty0 + 1);
+  s.strokeGrad(solid(0xffffff, 0.30f), 1.5f);
+  s.moveTo(tx0 + 6, ty1 - 0.5f); s.lineTo(tx1 - 6, ty1 - 0.5f);
+  s.strokeGrad(solid(0x000000, 0.45f), 1.5f);
+  // LED window.
+  const float cx = (tx0 + tx1) / 2, ly0 = ty0 + 6, ly1 = ty0 + 15;
+  constexpr std::uint32_t kRed = 0xff2a1a;
+  if (open) {  // light spilling onto the key top
+    s.circle(cx, (ly0 + ly1) / 2, 18.f);
+    s.fillGrad(radialGrad(cx, (ly0 + ly1) / 2, 6.f, 18.f, kRed, 0.30f, kRed, 0.f));
+  }
+  roundRectPath(s, cx - 9, ly0 - 1.5f, cx + 9, ly1 + 1.5f, 3.f);
+  s.fillGrad(solid(0x0a0a0a));
+  roundRectPath(s, cx - 7.5f, ly0, cx + 7.5f, ly1, 2.f);
+  const std::uint32_t off = unlit(kRed);
+  s.fillGrad(vertical(ly0, ly1, open ? mix(kRed, 0xfff0e0, 0.55f) : shade(off, 0.05f),
+                      open ? shade(kRed, -0.1f) : shade(off, -0.4f)));
+  s.moveTo(cx - 5, ly0 + 2); s.lineTo(cx + 5, ly0 + 2);  // glass highlight
+  s.strokeGrad(solid(0xffffff, open ? 0.45f : 0.30f), 1.5f);
+}
+
+// The keyboard display: a backlit blue LCD behind glass, set in a raised black bezel. Drawn in
+// two parts so the caller can put the text between them: drawDisplay (bezel and screen) and
+// drawDisplayGlass (the reflection over the text). Amounts tuned by eye.
 template <class Sink>
 void drawDisplay(Sink& s, float x0, float y0, float x1, float y1) {
-  s.fillRect(x0 - 2, y0 - 2, x1 + 2, y1 + 2, 0x121212, 2.f);
-  s.fillRect(x0, y0, x1, y1, 0x4252d0, 0);
+  roundRectPath(s, x0 - 5, y0 - 2, x1 + 9, y1 + 11, 6.f);  // shadow on the keybed
+  s.fillGrad(solid(0x000000, 0.35f));
+  roundRectPath(s, x0 - 7, y0 - 7, x1 + 7, y1 + 7, 5.f);    // the bezel, lit from above
+  s.fillGrad(vertical(y0 - 7, y1 + 7, 0x505050, 0x0c0c0c));
+  roundRectPath(s, x0 - 5.5f, y0 - 5.5f, x1 + 5.5f, y1 + 5.5f, 4.f);
+  s.fillGrad(vertical(y0 - 5.5f, y1 + 5.5f, 0x2c2c2c, 0x161616));
+  // The recess: shadowed at the top, catching light at the bottom.
+  roundRectPath(s, x0 - 1.5f, y0 - 1.5f, x1 + 1.5f, y1 + 1.5f, 2.f);
+  s.fillGrad(vertical(y0 - 1.5f, y1 + 1.5f, 0x000000, 0x3a3a3a));
+  // The screen: brightest in the middle where the backlight is, falling off to the edges.
+  s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1); s.closePath();
+  s.fillGrad(vertical(y0, y1, 0x3341b8, 0x2a379e));
+  const float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rr = (x1 - x0) * 0.55f;
+  s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1); s.closePath();
+  s.fillGrad(radialGrad(cx, cy, 0.f, rr, 0x6a7cff, 0.55f, 0x6a7cff, 0.f));
+  // The top edge of the recess shades the screen just below it.
+  s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y0 + 6); s.lineTo(x0, y0 + 6); s.closePath();
+  s.fillGrad(vertical(y0, y0 + 6, 0x000000, 0x000000, 0.45f, 0.f));
+}
+template <class Sink>
+void drawDisplayGlass(Sink& s, float x0, float y0, float x1, float y1) {
+  // A broad, faint reflection across the upper part of the glass, ending in a soft diagonal.
+  const float h = y1 - y0;
+  s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y0 + h * 0.18f); s.lineTo(x0, y0 + h * 0.62f); s.closePath();
+  s.fillGrad(vertical(y0, y0 + h * 0.62f, 0xffffff, 0xffffff, 0.16f, 0.03f));
 }
 
 // ---- knobs, jacks, switches: drawn the same in the app and the preview --------------------

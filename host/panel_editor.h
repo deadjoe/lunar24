@@ -693,29 +693,39 @@ class OctaveKeyControl : public IControl {
 
 class DisplayControl : public IControl {
  public:
-  DisplayControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s) { SetIgnoreMouse(true); }
+  // The bezel and its shadow reach past the screen, so the control covers them too.
+  DisplayControl(EditorShared& s, const Widget& w) : IControl(rectOf(w).GetPadded(12.f)), s_(s), screen_(rectOf(w)) {
+    SetIgnoreMouse(true);
+  }
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
-    art::drawDisplay(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B);
+    const IRECT& r = screen_;
+    art::drawDisplay(sink, r.L, r.T, r.R, r.B);
     char b[32];
     if (!s_.engine.isReady()) std::snprintf(b, sizeof b, "NO AUDIO");  // see Preferences > audio device
     else if (s_.menuOpen) std::snprintf(b, sizeof b, "MENU");
     else std::snprintf(b, sizeof b, "OCT %+d", s_.octave);
-    g.DrawText(txt(18, {235, 240, 255}), b, mRECT);
+    g.DrawText(txt(18, {235, 240, 255}), b, r);
+    art::drawDisplayGlass(sink, r.L, r.T, r.R, r.B);
   }
 
  private:
   EditorShared& s_;
+  IRECT screen_;
 };
 
 // ---------------------------------------------------------------------------------------------
 // DRONE VOICES key: opens / closes drone 1..6 (the LED is lit while the voice is open).
 class DroneKeyControl : public IControl {
  public:
-  DroneKeyControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  // The key's shadow falls outside the key, so the control covers it; clicks stay on the key.
+  DroneKeyControl(EditorShared& s, const Widget& w) : IControl(rectOf(w).GetPadded(12.f)), s_(s), w_(w) {
+    SetTargetRECT(rectOf(w));
+  }
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
-    art::drawDroneKey(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, s_.engine.droneKey(int(w_.id)), mMouseIsOver);
+    const IRECT r = rectOf(w_);
+    art::drawDroneKey(sink, r.L, r.T, r.R, r.B, s_.engine.droneKey(int(w_.id)), mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     s_.engine.postDroneKey(int(w_.id), !s_.engine.droneKey(int(w_.id)));
