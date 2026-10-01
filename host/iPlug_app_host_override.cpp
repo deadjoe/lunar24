@@ -749,8 +749,8 @@ bool IPlugAPPHost::TryToChangeAudio()
     msg.SetFormatted(1024,
                      "The input device \"%s\" could not be opened at %u Hz, so Lunar 24 is running "
                      "without an input (PREAMP and EXT.AUDIO hear nothing).\n\n"
-                     "A Bluetooth headset's microphone (AirPods, for example) only works at call quality. "
-                     "Choose another input in Preferences, such as the MacBook Pro Microphone.",
+                     "A Bluetooth headset's microphone often only works at call quality. "
+                     "Choose another input in Preferences, such as the computer's built-in microphone.",
                      failedInput.c_str(), failedRate);
     MessageBox(gHWND, msg.Get(), "Audio input is off", MB_OK);
   };
