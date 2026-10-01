@@ -727,6 +727,31 @@ class DroneKeyControl : public IControl {
   Widget w_;
 };
 
+// MUTE: silences every output (the engine keeps running, so unmuting picks up where the sound
+// is). Amber ring while muted, like the panel's latching buttons. Not on the hardware.
+class MasterMuteControl : public IControl {
+ public:
+  MasterMuteControl(EditorShared& s, const Widget& w)
+      : IControl(rectOf(w).GetPadded(14.f).Union(IRECT(float(w.cx - 40), float(w.cy - 56), float(w.cx + 40),
+                                                       float(w.cy)))),
+        s_(s), w_(w) {
+    SetTargetRECT(rectOf(w));
+  }
+  void Draw(IGraphics& g) override {
+    GraphicsSink sink{g};
+    art::drawButton(sink, float(w_.cx), float(w_.cy), float(w_.w / 2), s_.engine.muted(), mMouseIsOver);
+    g.DrawText(txt(15, theme::kInk), "MUTE", float(w_.cx), float(w_.cy - 42));
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override {
+    s_.engine.setMuted(!s_.engine.muted());
+    SetDirty(false);
+  }
+
+ private:
+  EditorShared& s_;
+  Widget w_;
+};
+
 // Non-interactive panel hardware: photo sensor, the drone LED bar (lit per unmuted tone),
 // and jacks that have no function in Lunar 24.
 class DecorControl : public IControl {
@@ -910,6 +935,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::Joystick: g->AttachControl(new JoystickControl(shared, w)); break;
       case WidgetKind::Cartridge: g->AttachControl(new CartridgeControl(shared, w)); break;
       case WidgetKind::DroneKey: g->AttachControl(new DroneKeyControl(shared, w)); break;
+      case WidgetKind::MasterMute: g->AttachControl(new MasterMuteControl(shared, w)); break;
       case WidgetKind::Encoder: g->AttachControl(new EncoderControl(shared, w)); break;
       case WidgetKind::OctaveKey: g->AttachControl(new OctaveKeyControl(shared, w)); break;
       case WidgetKind::Display: g->AttachControl(new DisplayControl(shared, w)); break;

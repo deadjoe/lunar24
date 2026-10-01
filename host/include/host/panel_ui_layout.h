@@ -38,6 +38,7 @@ enum class WidgetKind : std::uint8_t {
   Display,     // keyboard display (shows octave / menu state)
   Decor,       // non-interactive art: 0 = photo sensor, 1 = LED bar (id2 = first mute param),
                // 3 = hardware jack with no function in Lunar 24
+  MasterMute,  // app-level MUTE button next to DRONE VOICES: silences every output
 };
 
 // Knob cap colours of the panel sections.
@@ -354,6 +355,8 @@ inline std::vector<Widget> build_panel_layout() {
     for (std::uint32_t i = 0; i < 6; ++i)  // keys 1,2,3 left column; 4,5,6 right column
       add(WidgetKind::DroneKey, kx[i / 3], ky[i % 3], 82, 80, i);
   }
+  // MUTE (not on the hardware): right of DRONE VOICES, level with keys 2 / 5.
+  add(WidgetKind::MasterMute, 2352, 1296, 48, 48, 0);
 
   // ---- keyboard menu overlay (opened by the encoder) --------------------------------------------------
   {

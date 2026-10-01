@@ -6,6 +6,7 @@
 // editor existed get their (never-edited) sequence gates opened on load. Plate pressure
 // played live reaches a patched CV input on the PRESSURE jack's 0..8 V range.
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -106,6 +107,30 @@ int main() {
     for (int i = 0; i < 4; ++i)
       CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
     CHECK(e.runtime()->controlVoltageAt(gate) < 0.5);   // no stuck note
+  }
+  // MUTE silences every output with a short fade and brings the sound back when released; the
+  // machine keeps running underneath.
+  {
+    host::StandaloneAudioEngine e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    auto peak = [&]() {
+      double p = 0.0;
+      CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+      for (int i = 0; i < 256; ++i) p = std::max({p, std::fabs(l[i]), std::fabs(r[i])});
+      return p;
+    };
+    for (int i = 0; i < 40; ++i) peak();          // the default drones are sounding
+    CHECK(peak() > 0.01);
+    CHECK(!e.muted());
+    e.setMuted(true);
+    CHECK(e.muted());
+    const double during = peak();                 // the first block fades (10 ms > 256 samples)
+    CHECK(during > 0.0);
+    for (int i = 0; i < 4; ++i) peak();
+    CHECK(peak() == 0.0);                         // fully silent once the fade is done
+    e.setMuted(false);
+    for (int i = 0; i < 4; ++i) peak();
+    CHECK(peak() > 0.01);                         // the sound is back
   }
   return test::finish("test_live_edits");
 }

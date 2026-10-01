@@ -32,6 +32,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 
 #include <cmath>
 #include <cstdint>
@@ -247,6 +248,10 @@ class StandaloneAudioEngine {
   // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
+  // MUTE button (UI thread): silence every output with a ~10 ms fade, without stopping the
+  // machine, so unmuting returns to whatever is playing. Not saved: the app starts unmuted.
+  void setMuted(bool on) { muted_.store(on, std::memory_order_relaxed); }
+  bool muted() const { return muted_.load(std::memory_order_relaxed); }
   // Bumped whenever a whole new machine state is committed (startup restore, preset load),
   // so the UI knows to redraw every control.
   std::uint64_t stateVersion() const { return stateVersion_; }
@@ -349,6 +354,7 @@ class StandaloneAudioEngine {
   // caller owns). Used on every dropped path so a dropped block is never a stale / partial /
   // repeated buffer. The audio path may touch no heap — this is a plain memset-like loop.
   void writeSilence_(double* const* outputs, int outCh, int frames) const;
+  void applyMute_(double* const* outputs, int outCh, int frames);
 
   // Clear the ENTIRE committed state back to the "no prepare done" sentinel. Called on every
   // prepare() failure so no half-written plan / stale format / old definition is observable:
@@ -386,6 +392,8 @@ class StandaloneAudioEngine {
   lunar24::core::SpscQueue<1024> liveQueue_;
   lunar24::core::SpscQueue<256> fromAudioQueue_;  // audio -> UI (MIDI CC knob moves)
   bool droneKeys_[6] = {true, true, true, true, true, true};
+  std::atomic<bool> muted_{false};
+  double muteGain_ = 1.0;  // audio thread: the faded output gain the MUTE button drives
   std::uint64_t stateVersion_ = 0;
   std::uint64_t editCount_ = 0;
   void drainLive_(SynthRuntime& rt);
@@ -631,8 +639,25 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
   const ScopedFlushDenormals noDenormals;  // decaying tails never hit slow denormal math
   drainLive_(definition_->runtime());
   adapter_.renderBlock(definition_->runtime(), inputs, outputs, frames);
+  applyMute_(outputs, outCh, frames);
   ++renderedBlocks_;
   return Status::Rendered;
+}
+
+// ---- applyMute_ ------------------------------------------------------------
+// The MUTE button: a linear ~10 ms fade of every output toward 0 (muted) or 1. No work at all
+// while unmuted and settled, so the normal render path is untouched.
+inline void StandaloneAudioEngine::applyMute_(double* const* outputs, int outCh, int frames) {
+  const double target = muted() ? 0.0 : 1.0;
+  if (muteGain_ == 1.0 && target == 1.0) return;
+  const double step = 1.0 / (0.010 * (sampleRate_ > 0.0 ? sampleRate_ : 48000.0));
+  double g = muteGain_;
+  for (int f = 0; f < frames; ++f) {
+    g = target > g ? std::min(target, g + step) : std::max(target, g - step);
+    for (int c = 0; c < outCh; ++c)
+      if (outputs != nullptr && outputs[c] != nullptr) outputs[c][f] *= g;
+  }
+  muteGain_ = g;
 }
 
 // ---- clearState_ ----------------------------------------------------------
