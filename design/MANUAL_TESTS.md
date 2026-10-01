@@ -833,18 +833,33 @@
 - 期望：VCO A 在两个音之间来回跳（方波）；rate 改变跳的快慢，1 : 10 时慢很多。DRONE 3 / 6 本身不用开（LFO 一直在走）。
 
 **T13.3 S&H 的 IN 和 clock 插孔** ⏳
-- 准备：DRONE VOICES 只开 **3**；VCO A 的 VOL 拖到最左，取消 envelope A 的 hold；DRONE 3 的 fm、am 关，**NOISE** 最小。接线：S&H 框最右的 OUT → DRONE 3 的 **cv**（同 T3.4）。
+- 插孔位置：DRONE 3 右下角的 **S&H** 框里有 3 个插孔，从左到右：**IN**（▲）、**clock**（▲ clock）、**OUT**（右上角带红三角）。LFO A 在面板最下排最左：红色 **wave** 旋钮、中间的输出插孔（下面有蓝灯）、拨杆 **x6 / x1 / x10**、红色 **rate**。LFO B 在最下排最右，布局相同。
+- 准备：
+  1. RESET PANEL；BLEND 最左；DRONE VOICES 全关。
+  2. 点亮 envelope A 的 **hold**（envelope A 左上角的黑按钮），VCO A 一直响，用它来听 S&H。
+  3. 接线：S&H 的 **OUT** → VCO A 最下排的 **cv**（左数第 2 个）。VCO A 的 **cv amt**（左上角绿色旋钮）放约 1/4。
 - 步骤：
-  1. 接线：LFO A 输出 → S&H 的 **IN**。LFO A 的 **wave** 拖到最左（Λ 三角），**rate** 放慢。
-  2. 接线：LFO B 输出 → S&H 的 **clock**。LFO B 的 **rate** 比 LFO A 快一些，来回拖。
+  1. 先听：VCO A 的音高在随机跳（S&H 在采样 drone 3 内部的噪声）。
+  2. 接线：LFO A 的输出 → S&H 的 **IN**。LFO A 的 **wave** 拖到最左（Λ 三角），**rate** 拖到最左（最慢）。
+  3. 接线：LFO B 的输出 → S&H 的 **clock**。LFO B 的 **wave** 最右（⊓ 方波），**rate** 拖到约 1/3。再把 LFO B 的 rate 往左、往右各拖一下。
 - 期望：
-  - 第 1 步：音高不再是随机乱跳，而是一级一级地上去、再一级一级地下来（在采样 LFO A 的三角波）。
-  - 第 2 步：每一级的快慢改由 LFO B 决定，LFO B 越快台阶越细。
-- DRONE 6 同样做一遍。
+  - 第 2 步：不再乱跳，音高一级一级地往上走，到顶后停一会儿（S&H 输出最高 5 V，LFO 上半段被削平），再一级一级地往下走，大约每 10 秒一个来回。
+  - 第 3 步：每一级的快慢由 LFO B 决定：LFO B 越快，台阶越密越细；越慢，台阶越大越稀。
+- DRONE 6 的 S&H 同样做一遍（3 根线改插到 DRONE 6 的 S&H 框）。
 
 **T13.4 VCO 的 vca cv 输入** ⏳
-- 步骤：取消 envelope A 的 hold。接线：LFO A 输出 → envelope A 一排的 **vca cv**。LFO A 的 **wave** 最右（⊓ 方波），来回拖 **rate**。不按键。
-- 期望：VCO A 自己按 LFO 的节奏一开一关（插线后由这根线代替 envelope A 控制 VCO A 的音量）；拔掉线恢复为按键才响。envelope B 一排的 **vca cv** 控制 VCO B，同样试一下（先把 VCO B 的 VOL 拖回来）。
+- 插孔位置：envelope A 在 VOICE MIXER 正下方偏左，最下排 4 个插孔从左到右：**gate**、红字 **env**、**vca cv**、红字 **VCO A**。要用的是第 3 个 **vca cv**。envelope B 在 VOICE MIXER 下方偏右，最下排从左到右：红字 **VCO B**、**gate**、红字 **env**、**vca cv**（最右）。
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关；envelope A 的 **hold** 不要点亮。不按键时 VCO A 没声。
+- 步骤：
+  1. 接线：LFO A 的输出 → envelope A 的 **vca cv**。LFO A 的 **wave** 拖到最右（⊓ 方波），拨杆 **x1**，**rate** 拖到约 1/10（每秒 2 次左右）。不按任何键。
+  2. 来回拖 LFO A 的 **rate**。
+  3. 拔掉线，再按一下键。
+  4. 对 VCO B 做一遍：线改插到 envelope B 的 **vca cv**（最右）。
+- 期望：
+  - 第 1 步：不按键 VCO A 也会响，"嘀、嘀、嘀"一开一关（插线后 VCO A 的音量由这根线控制，代替 envelope A）。
+  - 第 2 步：开关的快慢跟着 rate 变。
+  - 第 3 步：恢复为按键才响。
+  - 第 4 步：VCO B 一样（RESET 后 VCO A、B 都在 VOICE MIXER 里开着）。
 
 ---
 
