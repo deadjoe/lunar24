@@ -243,26 +243,33 @@ void test_env_follower() {
   CHECK(fFast < fSlow);                       // faster attack reaches 50% plateau earlier.
 }
 
-// A single clap (a ~30 ms decaying noise burst) at the default ATTACK / RELEASE and GAIN at mid
+// A single clap (a ~30 ms decaying noise burst) at the default ATTACK / RELEASE and GAIN at mid,
+// and at the slowest ATTACK too (the gate detector does not depend on the knobs),
 // must open the gate detector: the owner patches ENVELOPE FOLLOWER gate -> envelope A gate and
 // claps. With the old linear knob law the default attack was 0.5 s and the gate never opened.
 void test_clap_opens_gate() {
   DeviceStateV1 st = make_default_device_state(kSeed);
   slot(st, ParameterId::preamp_gain) = 0.5;
-  EngineHarness h;
-  CHECK(h.load(st));
   std::uint32_t r = 1;
-  bool gate = false;
-  CHECK(h.renderFeedSampled(static_cast<int>(kSr * 0.3), [&](std::size_t i, double& in0, double& in1) {
-    r = r * 1664525u + 1013904223u;
-    const double t = static_cast<double>(i) / kSr;
-    const double burst = t < 0.03 ? std::exp(-t / 0.008) : 0.0;
-    in0 = 0.0;
-    in1 = 0.5 * burst * ((r >> 8) / 8388608.0 - 1.0);  // device-normalized: a clap that lights the clip LED
-  }, [&](const lunar24::core::SynthRuntime& rt) {
-    if (rt.controlVoltageAt(JackId::env_follower_gate_out) > 1.0) gate = true;
-  }));
-  CHECK(gate);
+  auto clapOpensGate = [&](double attackNorm) {
+    DeviceStateV1 s = st;
+    slot(s, ParameterId::env_follower_attack) = attackNorm;
+    EngineHarness h;
+    CHECK(h.load(s));
+    bool gate = false;
+    CHECK(h.renderFeedSampled(static_cast<int>(kSr * 0.3), [&](std::size_t i, double& in0, double& in1) {
+      r = r * 1664525u + 1013904223u;
+      const double t = static_cast<double>(i) / kSr;
+      const double burst = t < 0.03 ? std::exp(-t / 0.008) : 0.0;
+      in0 = 0.0;
+      in1 = 0.2 * burst * ((r >> 8) / 8388608.0 - 1.0);  // device-normalized, a moderate clap
+    }, [&](const lunar24::core::SynthRuntime& rt) {
+      if (rt.controlVoltageAt(JackId::env_follower_gate_out) > 1.0) gate = true;
+    }));
+    return gate;
+  };
+  CHECK(clapOpensGate(0.5));  // default ATTACK
+  CHECK(clapOpensGate(1.0));  // slowest ATTACK
 
   // Steady low-level noise (a quiet room / TV, ~-40 dBFS) at the same settings keeps the gate shut.
   EngineHarness q;

@@ -71,8 +71,10 @@ Keep these unless a listening test or a real bug says otherwise.
   laptop's built-in mic) feeds both, so it reaches the preamp like the hardware's contact mic.
 - **Envelope follower ATTACK / RELEASE are exponential, 1 ms .. 1 s** (centre ~32 ms; RELEASE
   defaults to ~180 ms). The old linear law put 0.5 s at the centre, too slow for a clap to
-  reach the gate detector. The gate opens at 2 V and closes at 1.3 V of envelope, so room
-  noise amplified by GAIN at mid keeps it shut while a clap opens it. Tuned by ear.
+  reach the gate detector. The gate detector has its own fast peak follower (1 ms / 50 ms,
+  independent of the knobs) and opens at 5 V, closes below 3 V: a clap with GAIN at mid nears
+  the preamp's 10 V clip, room noise stays far below. Gating on the knob-smoothed envelope
+  either missed claps or held open on room noise. Tuned by ear.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also
