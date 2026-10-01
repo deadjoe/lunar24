@@ -681,3 +681,10 @@
 - 所有 drone 一起响时混音太满。
 - 光敏传感器可以改成用鼠标操作。
 - VCO A → VCO B 的默认调制偏温和。
+
+### 音频设备待办（先跳过，以后加日志再查）
+
+- 戴 AirPods Pro（输出走 AirPods）时，MacBook 麦克风收不到声音（PREAMP 蓝灯、ENVELOPE FOLLOWER 绿灯都不亮）。手动改回 MacBook 麦克风、摘掉 AirPods、RESET PANEL 都不恢复。不用 AirPods 时正常。
+- 重启应用后，Preferences 的输入设备有时显示成列表里的第一个设备（AirPods Pro、BlackHole 2ch），而不是上次选的 MacBook 麦克风；重新选一次 MacBook 麦克风并保存后正常。已知：iPlug2 自带的设置窗口在认不出当前输入设备时，会默认显示列表第一项。为什么认不出还不清楚。
+- MacBook 麦克风是单声道，Preferences 里 Input 1 (L) / Input 2 (R) 显示为空（iPlug2 设置窗口的显示问题），麦克风其实是开的。
+- 下一步：在打开音频设备时写一个日志（设备名、采样率、声道、成功 / 失败 / 退回只开输出），按上面的步骤复现后看日志再修。
