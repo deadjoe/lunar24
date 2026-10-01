@@ -5,17 +5,21 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>Lunar24Host</string>
+	<string>Lunar24</string>
 	<key>CFBundleGetInfoString</key>
-	<string>Lunar24Host v0.0.1 Copyright 2026 Lunar 24 contributors</string>
+	<string>Lunar 24 v0.0.1 Copyright 2026 Lunar 24 contributors</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.Lunar24.app.Lunar24Host</string>
+	<string>com.Lunar24.app.Lunar24</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Lunar24Host</string>
+	<string>Lunar 24</string>
+	<key>CFBundleDisplayName</key>
+	<string>Lunar 24</string>
+	<key>CFBundleIconFile</key>
+	<string>Lunar24</string>
 	<key>CFBundlePackageType</key>
-	<string>BNDL</string>
+	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.0.1</string>
 	<key>CFBundleSignature</key>

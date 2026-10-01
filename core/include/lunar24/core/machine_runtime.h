@@ -2455,6 +2455,14 @@ class SynthRuntime {
   // sequencer-step and preset commands around it). False for a non-keyboard parameter.
   bool setKeyboardParameter(ParameterId id, double v) { return applyKeyboardParam_(id, v); }
 
+  // One of a side's four clock selectors (1 = arp RHYTHM pattern, 3 = seq RHYTHM pattern),
+  // live. Audio thread, no allocation.
+  void setKeyboardClockSelector(int side, std::uint32_t index, std::uint8_t v) {
+    if (index >= 4) return;
+    (side == 0 ? kbdState_.keyboardClockSelectors : kbdState_.keyboardClockSelectorsR)[index] = v;
+    applyKeyboardState(kbdState_);
+  }
+
   // A keyboard preset A-D (slot 0..3) action, live: 0 = load it into the keyboard settings,
   // 1 = save the settings into it, 2 = clear it back to the factory settings. The UI applies
   // the same helper to its own copy, so both stay equal. Audio thread, no allocation.

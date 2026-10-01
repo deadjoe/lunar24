@@ -105,8 +105,9 @@ struct EditorShared {
   CableLayer* cables = nullptr;
   std::vector<IControl*> menuControls;       // SETTINGS page of the keyboard menu
   std::vector<IControl*> seqControls;        // SEQUENCER page (16-step editor)
+  std::vector<IControl*> rhythmControls;     // RHYTHM page (arp / seq step patterns)
   std::vector<IControl*> menuChrome;         // background and page tabs: whenever the menu is open
-  int menuPage = 0;                          // 0 = SETTINGS, 1 = SEQUENCER
+  int menuPage = 0;                          // 0 = SETTINGS, 1 = SEQUENCER, 2 = RHYTHM
   int seqSide = 0;                           // menu side being edited under SPLIT: 0 = left, 1 = right
   int presetSlot = 0;                        // keyboard preset the LOAD / SAVE / INIT buttons act on: 0..3 = A..D
   std::function<void()> factoryReset;        // the plugin's requestFactoryReset (RESET PANEL)
@@ -190,6 +191,7 @@ struct EditorShared {
     for (IControl* c : menuChrome) c->Hide(!open);
     for (IControl* c : menuControls) c->Hide(!(open && menuPage == 0));
     for (IControl* c : seqControls) c->Hide(!(open && menuPage == 1));
+    for (IControl* c : rhythmControls) c->Hide(!(open && menuPage == 2));
   }
   const core::KeyboardSeqStep* seqStep(int i) const {
     const core::DeviceStateV1* st = state();
@@ -847,7 +849,23 @@ class MenuBackground : public IControl {
       : IControl(IRECT(float(kMenuX0), float(kMenuY0), float(kMenuX1), float(kMenuY1))), s_(s) {}
   void Draw(IGraphics& g) override {
     g.FillRoundRect(col(theme::kMenuBg), mRECT, 10.f);
-    g.DrawText(txt(18, theme::kMenuText), "KEYBOARD MENU", mRECT.MW(), mRECT.T + 22);
+    g.DrawText(txt(18, theme::kMenuText), "KEYBOARD MENU", float(kMenuTitleX), mRECT.T + 22);
+    if (s_.menuPage == 2) {
+      // Row names with the pattern length (set by ARP RHYTHM / SEQ RHYTHM on SETTINGS).
+      const auto id = [](ParameterId p) { return static_cast<std::uint32_t>(p); };
+      const int arpLen = int(core::arp_length_steps(s_.value(id(ParameterId::keyboard_arp_length))));
+      const int seqLen = int(core::seq_rhythm_length_steps(s_.value(id(ParameterId::keyboard_seq_rhythm_length))));
+      char buf[24];
+      g.DrawText(txt(14, theme::kMenuText), "ARP", 520, float(kRhythmArpY) - 8.f);
+      std::snprintf(buf, sizeof buf, "%d step%s", arpLen, arpLen == 1 ? "" : "s");
+      g.DrawText(txt(11, theme::kMenuText), buf, 520, float(kRhythmArpY) + 14.f);
+      g.DrawText(txt(14, theme::kMenuText), "SEQ", 520, float(kRhythmSeqY) - 8.f);
+      std::snprintf(buf, sizeof buf, "%d step%s", seqLen, seqLen == 1 ? "" : "s");
+      g.DrawText(txt(11, theme::kMenuText), buf, 520, float(kRhythmSeqY) + 14.f);
+      g.DrawText(txt(11, theme::kMenuText),
+                 "amber = plays   dark = silent beat   outline = not used (set the length: ARP RHYTHM / SEQ RHYTHM on SETTINGS)",
+                 mRECT.MW(), float(kRhythmSeqY) + 66.f);
+    }
     if (s_.menuPage == 1) {
       g.DrawText(txt(12, theme::kMenuText, true, -90.f), "NOTE", 440, float(kSeqSliderTop + kSeqSliderBottom) / 2);
       g.DrawText(txt(12, theme::kMenuText), "GATE", 440, float(kSeqGateY));
@@ -863,17 +881,19 @@ class MenuBackground : public IControl {
 // left bank); it applies to both pages.
 class MenuTabControl : public IControl {
  public:
-  enum Kind { kSettings, kSequencer, kSide, kClose, kReset };
+  enum Kind { kSettings, kSequencer, kRhythm, kSide, kClose, kReset };
   MenuTabControl(EditorShared& s, const Rect& r, Kind k)
       : IControl(IRECT(float(r.x0), float(r.y0), float(r.x1), float(r.y1))), s_(s), k_(k) {}
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
     if (k_ == kSide && !s_.split()) return;  // nothing to choose outside SPLIT
     const bool armed = k_ == kReset && armedNow();
-    const char* label = k_ == kSettings ? "SETTINGS" : k_ == kSequencer ? "SEQUENCER" : k_ == kClose ? "CLOSE"
+    const char* label = k_ == kSettings ? "SETTINGS" : k_ == kSequencer ? "SEQUENCER" : k_ == kRhythm ? "RHYTHM"
+                        : k_ == kClose ? "CLOSE"
                         : k_ == kReset ? (armed ? "CLICK TO CONFIRM" : "RESET PANEL")
                         : s_.seqSide == 0 ? "EDIT: LEFT" : "EDIT: RIGHT";
-    const bool active = (k_ == kSettings && s_.menuPage == 0) || (k_ == kSequencer && s_.menuPage == 1) || armed;
+    const bool active = (k_ == kSettings && s_.menuPage == 0) || (k_ == kSequencer && s_.menuPage == 1) ||
+                        (k_ == kRhythm && s_.menuPage == 2) || armed;
     art::drawMenuTab(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, label, active, mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
@@ -903,7 +923,7 @@ class MenuTabControl : public IControl {
       if (!s_.split()) return;
       s_.seqSide = 1 - s_.seqSide;
     }
-    else s_.menuPage = k_ == kSettings ? 0 : 1;
+    else s_.menuPage = k_ == kSettings ? 0 : k_ == kSequencer ? 1 : 2;
     s_.showMenu(true);
     GetUI()->SetAllControlsDirty();
   }
@@ -1017,6 +1037,49 @@ class SeqStepControl : public IControl {
   int step_;
 };
 
+// One step of a RHYTHM pattern (row 0 = arpeggiator, 1 = sequencer). Lit = this clock edge
+// reaches the arp / sequencer; dark = muted. Steps past the pattern length are drawn faint.
+class RhythmStepControl : public IControl {
+ public:
+  RhythmStepControl(EditorShared& s, int row, int step)
+      : IControl(IRECT(float(rhythm_step_rect(row, step).x0), float(rhythm_step_rect(row, step).y0),
+                       float(rhythm_step_rect(row, step).x1), float(rhythm_step_rect(row, step).y1))),
+        s_(s), row_(row), step_(step) {}
+  void Draw(IGraphics& g) override {
+    GraphicsSink sink{g};
+    const bool on = ((mask() >> step_) & 1u) == 0;
+    const bool inUse = step_ < length();
+    char buf[4];
+    std::snprintf(buf, sizeof buf, "%d", step_ + 1);
+    const float cx = mRECT.MW(), cy = mRECT.MH();
+    sink.text(cx, cy - 32, 13, inUse ? (mMouseIsOver ? art::kMenuAmberRgb : art::kMenuTextRgb) : art::kMenuDimRgb,
+              false, buf);
+    if (!inUse) {  // past the pattern length: an empty outline
+      sink.fillCircle(cx, cy + 6, 16, 0x3a393f);
+      sink.fillCircle(cx, cy + 6, 14, 0x1e1e22);
+    } else if (on) {  // this beat plays
+      sink.fillCircle(cx, cy + 6, 16, art::kMenuAmberRgb);
+    } else {  // a silent beat: dark with a grey rim
+      sink.fillCircle(cx, cy + 6, 16, 0x8a898e);
+      sink.fillCircle(cx, cy + 6, 12, 0x1e1e22);
+    }
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override {
+    s_.engine.postKeyboardRhythm(s_.editSide(), row_ == 1, static_cast<std::uint8_t>(mask() ^ (1u << step_)));
+    SetDirty(false);
+  }
+
+ private:
+  std::uint8_t mask() const { return s_.engine.keyboardRhythm(s_.editSide(), row_ == 1); }
+  int length() const {
+    const auto id = [](ParameterId p) { return static_cast<std::uint32_t>(p); };
+    return row_ == 0 ? int(core::arp_length_steps(s_.value(id(ParameterId::keyboard_arp_length))))
+                     : int(core::seq_rhythm_length_steps(s_.value(id(ParameterId::keyboard_seq_rhythm_length))));
+  }
+  EditorShared& s_;
+  int row_, step_;
+};
+
 // ---------------------------------------------------------------------------------------------
 // Build the whole panel into `g`. `shared` must outlive the editor.
 inline void BuildPanel(IGraphics* g, EditorShared& shared) {
@@ -1073,11 +1136,14 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   // The keyboard menu on top of the plates, hidden until the encoder opens it.
   shared.menuChrome.clear();
   shared.seqControls.clear();
+  shared.rhythmControls.clear();
   auto* menuBg = new MenuBackground(shared);
   g->AttachControl(menuBg);
   shared.menuChrome.push_back(menuBg);
-  for (auto k : {MenuTabControl::kSettings, MenuTabControl::kSequencer}) {
-    auto* t = new MenuTabControl(shared, k == MenuTabControl::kSettings ? kMenuTabSettings : kMenuTabSequencer, k);
+  for (auto k : {MenuTabControl::kSettings, MenuTabControl::kSequencer, MenuTabControl::kRhythm}) {
+    auto* t = new MenuTabControl(shared, k == MenuTabControl::kSettings    ? kMenuTabSettings
+                                         : k == MenuTabControl::kSequencer ? kMenuTabSequencer
+                                                                           : kMenuTabRhythm, k);
     g->AttachControl(t);
     shared.menuChrome.push_back(t);
   }
@@ -1096,6 +1162,12 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
     g->AttachControl(c);
     shared.menuChrome.push_back(c);
   }
+  for (int row = 0; row < 2; ++row)
+    for (int i = 0; i < kRhythmSteps; ++i) {
+      auto* c = new RhythmStepControl(shared, row, i);
+      g->AttachControl(c);
+      shared.rhythmControls.push_back(c);
+    }
   for (int i = 0; i < kSeqSteps; ++i) {
     auto* c = new SeqStepControl(shared, i);
     g->AttachControl(c);

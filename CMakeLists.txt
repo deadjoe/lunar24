@@ -171,7 +171,7 @@ if(APPLE)
 endif()
 
 # ---------------------------------------------------------------------------
-# P5-① host STANDALONE (host/): the Lunar24Host executable. Two trusted entries share
+# P5-① host STANDALONE (host/): the Lunar24 executable. Two trusted entries share
 # ONE cross-platform target:
 #   * macOS uses a repo-owned, nib-free bootstrap (host/main.mm) + mac SWELL + Metal.
 #   * Windows uses the pinned iPlug2::APP + iplug_configure_app (stock IPlugAPP_main.cpp,
@@ -187,7 +187,7 @@ endif()
 if(APPLE OR WIN32)
   if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/iPlug2/iPlug2.cmake")
     message(FATAL_ERROR
-      "Lunar24Host: the pinned iPlug2 submodule is missing at "
+      "Lunar24: the pinned iPlug2 submodule is missing at "
       "third_party/iPlug2. Run `git submodule update --init --recursive` "
       "(GH#10 requires the submodule for the hosts on macOS and Windows).")
   endif()

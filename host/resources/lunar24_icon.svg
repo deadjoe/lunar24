@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262838"/>
+      <stop offset="1" stop-color="#0c0d13"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ebaa00" stop-opacity="0.38"/>
+      <stop offset="0.55" stop-color="#ebaa00" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#ebaa00" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="moon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/>
+      <stop offset="0.45" stop-color="#f6c85a"/>
+      <stop offset="1" stop-color="#d98a00"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ebaa00" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ebaa00" stop-opacity="1"/>
+      <stop offset="1" stop-color="#ebaa00" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="crescent">
+      <rect width="1024" height="1024" fill="black"/>
+      <circle cx="512" cy="420" r="230" fill="white"/>
+      <circle cx="606" cy="358" r="200" fill="black"/>
+    </mask>
+    <clipPath id="body"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+  </defs>
+  <g clip-path="url(#body)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <circle cx="470" cy="440" r="380" fill="url(#halo)"/>
+    <!-- faint stars -->
+    <g fill="#fff3cf">
+      <circle cx="760" cy="250" r="5" opacity="0.8"/>
+      <circle cx="820" cy="400" r="3.5" opacity="0.55"/>
+      <circle cx="700" cy="560" r="3" opacity="0.45"/>
+      <circle cx="250" cy="230" r="3.5" opacity="0.5"/>
+    </g>
+    <rect width="1024" height="1024" fill="url(#moon)" mask="url(#crescent)"/>
+    <!-- drone waves -->
+    <g fill="none" stroke="url(#wave)" stroke-linecap="round">
+      <path d="M170 735 C 270 695, 370 695, 480 735 S 680 775, 780 738 S 840 718, 860 722" stroke-width="14" opacity="0.95"/>
+      <path d="M170 792 C 280 762, 380 762, 490 792 S 690 822, 790 795 S 845 780, 860 782" stroke-width="10" opacity="0.6"/>
+      <path d="M170 846 C 290 826, 390 826, 500 846 S 700 866, 800 848 S 848 838, 860 840" stroke-width="7" opacity="0.35"/>
+    </g>
+    <!-- top light edge -->
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="4"/>
+  </g>
+</svg>

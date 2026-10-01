@@ -22,7 +22,7 @@
 | 键盘菜单 | 点键盘区中间的红色大旋钮打开；右上角 CLOSE 或 Esc 关闭 |
 | 恢复出厂 | 键盘菜单顶部 **RESET PANEL**，点一次变成 CLICK TO CONFIRM，4 秒内再点一次 |
 | 静音 | DRONE VOICES 右边的 **MUTE** 按钮：所有输出立即静音（亮琥珀色光圈），再点恢复 |
-| 音频设备 / 麦克风 | 屏幕顶部菜单栏 Lunar24Host → Preferences…（⌘,） |
+| 音频设备 / 麦克风 | 屏幕顶部菜单栏 Lunar 24 → Preferences…（⌘,） |
 
 ### 测试常用准备
 
@@ -157,11 +157,12 @@
 | 行 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | PLAY | MODE | SCALE | ROOT | BPM | GLIDE | LEGATO | VIB RATE | VIB DEPTH | VIB DELAY | VIB PRESS | PRESSURE |
-| 2 | P RISE | P FALL | ARP HOLD | ARP DIR | ARP VAR | ARP INT | ARP LEN | SEQ RUN | SEQ LEN | SEQ DIR | SEQ CV | RHYTHM |
+| 2 | P RISE | P FALL | ARP HOLD | ARP DIR | ARP VAR | ARP INT | ARP RHYTHM | SEQ RUN | SEQ LEN | SEQ DIR | SEQ CV | SEQ RHYTHM |
 | 3 | ENCODER | CAL V/OCT | CAL PRESS | DAC REF | TOUCH | RELEASE | P MIN | P MAX | CHARGE | DISCHARGE | DEBOUNCE | 5-STEP CLK |
 
 - 框形开关点一下切到下一项，右键切到上一项。
 - MODE 的选项依次是 KEYBOARD / ARPEGGIATOR（显示为 ARPEGGIATO）/ SEQUENCER。
+- 菜单标题行的页签：**SETTINGS**（上表）、**SEQUENCER**（16 步音序）、**RHYTHM**（琶音和音序的节奏型，见 T12.14）。
 
 ---
 
@@ -197,7 +198,7 @@
 **T0.3 音频设备** ✅ (#57, #66)
 - 步骤：
   1. 戴上或摘下 AirPods 各一次。
-  2. 打开菜单栏 Lunar24Host → Preferences…。
+  2. 打开菜单栏 Lunar 24 → Preferences…。
 - 期望：
   - 声音自动跟随当前输出设备，没有杂音。
   - 音频启动不了时，蓝色小屏显示 NO AUDIO。
@@ -728,12 +729,63 @@
   - 第 2 步：在最上面（轻按）几乎不颤；越往下颤得越深，最下面约是第 1 步的两倍。
   - 补充：**VIB PRESS** 放一半时，轻按也有一半深度的颤音，压力的影响减半。
 
+**T12.11 LEGATO** ✅
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单 **GLIDE** 放中间。
+- 步骤：
+  1. **LEGATO** 保持 OFF。用电脑键盘一个一个地弹 **A**、**K**（每次松开再按下一个）。
+  2. **LEGATO** 改成 ON，重复第 1 步。
+  3. 仍是 ON：按住 **A** 不放，再按 **K**，再松开 K。
+- 期望：
+  - 第 1 步：每个新音都从上一个音滑过去。
+  - 第 2 步：分开弹时不滑，直接跳到新音。
+  - 第 3 步：按住 A 再按 K 时滑上去；松开 K 时滑回 A。
+
+**T12.12 ARP VAR / ARP INT** ✅
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单 **MODE** 改成 ARPEGGIATOR。
+- 步骤：同时按住 **A** 和 **D**（C 和 E），一直按着，依次改：
+  1. **ARP VAR** OFF。
+  2. **ARP VAR** X1，**ARP INT** 拉满（显示 12 semitones）。
+  3. **ARP VAR** X2。
+  4. **ARP VAR** X1，**ARP INT** 调到 7 semitones。
+- 期望：
+  - 第 1 步：C、E 来回。
+  - 第 2 步：C、E，然后高八度的 C、E，再从头。
+  - 第 3 步：再多一轮，高两个八度。
+  - 第 4 步：C、E，然后高 7 个半音的 G、B。
+
+**T12.13 SEQ CV（休止步的音高）** 🔧 (#78)
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。envelope A 的 **R** 拉到 3/4 左右（让每个音的尾巴长一点）。键盘菜单 **MODE** 改成 SEQUENCER，**SEQ LEN** 调到 2 steps。SEQUENCER 页：第 1 步音高 0、gate 亮；第 2 步音高拉到 +12、gate 点灭。
+- 步骤：按住 **A** 听几轮；**SEQ CV** 分别选 CONTINUOUS 和 GATED。
+- 期望：
+  - CONTINUOUS：听起来是低、高、低、高来回（第 2 步不重新起音，但正在消失的尾音跳高一个八度）。
+  - GATED：一直是同一个音高（第 2 步尾音保持原来的音高，只是慢慢消失）。
+
+**T12.14 RHYTHM（节奏型）** 🔧 (#78)
+- 说明：节奏型是一排最多 8 个"拍"，夹在时钟和琶音器 / 音序器之间，每一拍可以设成"响"或"不响"。菜单的 **RHYTHM** 页上排是琶音器（ARP），下排是音序器（SEQ）。每个圆点：
+  - **琥珀色实心** = 这一拍响；
+  - **暗色带灰圈** = 这一拍不响（点一下切换）；
+  - **只有细框** = 超出长度，不起作用。
+  - 长度显示在行名下面（如 "4 steps"），在 SETTINGS 页用 **ARP RHYTHM** / **SEQ RHYTHM** 调。默认长度 1，所以一开始只有第 1 个是实心。
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单：**MODE** 改成 ARPEGGIATOR，**ARP HOLD** 改成 ON。同时按一下 **A**、**D**、**G** 再松开（HOLD 让琶音一直走，不用一直按着）。
+- 步骤：
+  1. 听一会儿。
+  2. SETTINGS 页 **ARP RHYTHM** 调到 4 steps，切到 RHYTHM 页看 ARP 一行。
+  3. 点一下 ARP 第 2 个圆点。
+  4. 再点一下 ARP 第 4 个圆点。
+  5. **MODE** 改成 SEQUENCER（不用按键，音序器自己走）。SETTINGS 页 **SEQ LEN** 调到 3 steps；SEQUENCER 页把第 2 步音高拉到 +7、第 3 步拉到 +12（三步音高不同才听得出每一步）。先听一会儿；再到 SETTINGS 页把 **SEQ RHYTHM** 调到 3 steps，RHYTHM 页点一下 SEQ 第 3 个圆点。
+- 期望：
+  - 第 1 步：C、E、G 均匀轮流。
+  - 第 2 步：ARP 行下面显示 4 steps；第 1–4 个是琥珀色实心，5–8 只有细框。声音不变。
+  - 第 3 步：第 2 个变暗。节奏变成"响、停、响、响"循环，音的顺序仍是 C、E、G 依次（停的那拍不跳音）。
+  - 第 4 步：第 4 个也变暗。变成"响、停、响、停"，琶音只剩一半速度。
+  - 第 5 步：改节奏前是低、中、高三个音均匀循环；点暗 SEQ 第 3 个后，每响两个音停一拍，旋律照样按顺序往下走：低、中、（停）、高、低、（停）、中、高、（停）……停顿的位置在三个音之间轮换。
+- 补充：PLAY = SPLIT 时，RHYTHM 页同样跟着 **EDIT: LEFT / RIGHT** 切换左右两边。
+
 ---
 
 ## 还没测的（⏳）
 
 - 键盘：
-  - **LEGATO**、**ARP VAR / ARP INT / ARP LEN**、**SEQ CV**、**RHYTHM**；
   - 键盘区的 CLOCK / RESET 输入、GATE L / GATE R / V/OCT 输出。
 - MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。
 - DRONE 2 / 4 / 5 / 6 逐个过一遍（和 DRONE 1 / 3 同一套代码）。
@@ -769,4 +821,4 @@
   - 应用运行中插拔设备时设备列表不刷新（Preferences 里看不到新连上的 AirPods）。现在设备增减会自动刷新并重新打开。
   - AirPods 的麦克风只有通话音质（24000 Hz），打不开（系统拒绝 48000 Hz）；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」（已验证可用）。选了打不开的输入时，程序只开输出，并弹窗「Audio input is off」说明原因（每个设备每次运行只提示一次）。
   - 复测：应用开着戴上 / 摘下 AirPods，Preferences 列表应立刻出现 / 消失 AirPods；选 MacBook 麦克风 + AirPods 输出，拍手有反应；把输入误选成 AirPods 后再改回 MacBook 麦克风，拍手有反应，重启后仍然有。
-- 音频日志：`~/Library/Application Support/Lunar24Host/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。
+- 音频日志：`~/Library/Application Support/Lunar24/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。

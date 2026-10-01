@@ -80,18 +80,29 @@ inline constexpr double kMenuX0 = 410, kMenuY0 = 1112, kMenuX1 = 1990, kMenuY1 =
 // Keyboard menu pages: SETTINGS (the 35 menu parameters) and SEQUENCER (the 16-step
 // editor). Tab buttons and the sequencer side switch sit in the menu's title row.
 struct Rect { double x0, y0, x1, y1; };
-inline constexpr Rect kMenuTabSettings{428, 1122, 568, 1148};
-inline constexpr Rect kMenuTabSequencer{578, 1122, 718, 1148};
+inline constexpr Rect kMenuTabSettings{428, 1122, 548, 1148};
+inline constexpr Rect kMenuTabSequencer{554, 1122, 674, 1148};
+inline constexpr Rect kMenuTabRhythm{680, 1122, 790, 1148};
 inline constexpr Rect kSeqSideSwitch{1700, 1122, 1842, 1148};
 inline constexpr Rect kMenuClose{1860, 1122, 1972, 1148};  // closes the menu (as does the encoder)
 inline constexpr Rect kMenuReset{1540, 1122, 1682, 1148};  // whole panel back to default (confirm)
 // Keyboard presets A-D (manual p.19): the slot button cycles A..D, then LOAD / SAVE / INIT.
 // They sit left of the "KEYBOARD MENU" title.
-inline constexpr Rect kPresetSlot{736, 1122, 846, 1148};
-inline constexpr Rect kPresetLoad{854, 1122, 930, 1148};
-inline constexpr Rect kPresetSave{938, 1122, 1014, 1148};
-inline constexpr Rect kPresetInit{1022, 1122, 1098, 1148};
+inline constexpr Rect kPresetSlot{806, 1122, 906, 1148};
+inline constexpr Rect kPresetLoad{912, 1122, 976, 1148};
+inline constexpr Rect kPresetSave{982, 1122, 1046, 1148};
+inline constexpr Rect kPresetInit{1052, 1122, 1116, 1148};
+// The "KEYBOARD MENU" title, centred in the free space between INIT and RESET PANEL.
+inline constexpr double kMenuTitleX = 1328;
 inline constexpr int kSeqSteps = 16;
+// RHYTHM page (manual p.16/p.17): two rows of 8 step buttons, the arpeggiator's pattern
+// on top and the sequencer's below. A lit button lets that clock edge through.
+inline constexpr int kRhythmSteps = 8;
+inline constexpr double kRhythmArpY = 1250, kRhythmSeqY = 1390, kRhythmX0 = 640, kRhythmDx = 120;
+inline Rect rhythm_step_rect(int row, int i) {
+  const double cx = kRhythmX0 + i * kRhythmDx, cy = row == 0 ? kRhythmArpY : kRhythmSeqY;
+  return {cx - 40, cy - 40, cx + 40, cy + 40};
+}
 // One sequencer step column: step number, note slider, note readout, gate button.
 inline constexpr double kSeqSliderTop = 1178, kSeqSliderBottom = 1392, kSeqGateY = 1450;
 inline Rect seq_step_rect(int i) { return {470.0 + i * 92.0, 1154, 534.0 + i * 92.0, 1470}; }
@@ -391,9 +402,9 @@ inline std::vector<Widget> build_panel_layout() {
         {P::keyboard_pressure_rise, "P RISE", false}, {P::keyboard_pressure_fall, "P FALL", false},
         {P::keyboard_arp_hold, "ARP HOLD", true}, {P::keyboard_arp_direction, "ARP DIR", true},
         {P::keyboard_arp_variation, "ARP VAR", true}, {P::keyboard_arp_interval, "ARP INT", false},
-        {P::keyboard_arp_length, "ARP LEN", false}, {P::keyboard_seq_run, "SEQ RUN", true},
+        {P::keyboard_arp_length, "ARP RHYTHM", false}, {P::keyboard_seq_run, "SEQ RUN", true},
         {P::keyboard_seq_length, "SEQ LEN", false}, {P::keyboard_seq_direction, "SEQ DIR", true},
-        {P::keyboard_seq_cv_output, "SEQ CV", true}, {P::keyboard_seq_rhythm_length, "RHYTHM", false},
+        {P::keyboard_seq_cv_output, "SEQ CV", true}, {P::keyboard_seq_rhythm_length, "SEQ RHYTHM", false},
         {P::keyboard_encoder_direction, "ENCODER", true}, {P::keyboard_calibration_v_oct, "CAL V/OCT", false},
         {P::keyboard_calibration_pressure, "CAL PRESS", false}, {P::keyboard_dac_vref, "DAC REF", true},
         {P::keyboard_touch_threshold, "TOUCH", false}, {P::keyboard_release_threshold, "RELEASE", false},

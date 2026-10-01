@@ -123,4 +123,9 @@ inline bool control_event_before(const ControlEvent& a, const ControlEvent& b) {
   return a.producerSequence < b.producerSequence;
 }
 
+
+// The note id of a pitch event that moves the keyboard's V/OCT output without a note
+// (sequencer CV OUTPUT = continuous on a rest step). No producer ever uses this id.
+inline constexpr NoteId kCvOnlyNoteId = static_cast<NoteId>(~NoteId{0});
+
 }  // namespace lunar24::core

@@ -233,6 +233,25 @@ static void arp_variation_repeats_transposed() {
   CHECK_TRUE(r.near(r.pitchAt(4), 0.0));
 }
 
+// Manual p.16: RHYTHM mutes some clock edges. Length 4 with step 2 muted: of 8 edges,
+// 6 play, and the arpeggio does not advance on the muted ones.
+static void arp_rhythm_mutes_steps() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 1;
+  p.arpDirection = 0;
+  p.arpLength = 3.0 / 7.0;  // 4 steps
+  p.arpRhythm = 0x02;       // step 2 (of 1..4) muted
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  note_on(s, r, 0.0 / 12.0, 1);
+  note_on(s, r, 4.0 / 12.0, 2);
+  for (int i = 0; i < 8; ++i) clock_edge(s, r);
+  CHECK_EQ(r.count(core::ControlEventKind::gate_on), 6u);
+  CHECK_TRUE(r.near(r.pitchAt(0), 0.0));        // edge 1
+  CHECK_TRUE(r.near(r.pitchAt(1), 4.0 / 12.0)); // edge 3 (edge 2 muted)
+}
+
 static void arp_hold_keeps_chord_through_release() {
   core::ArpSeqParams p = base_params();
   p.mode = 1;
@@ -294,7 +313,18 @@ static void seq_gate_off_step_is_a_rest() {
   note_on(s, r, 0.0 / 12.0, 1);
   clock_edge(s, r);  // step 0 has its gate off -> a rest: no new note
   CHECK_EQ(r.count(core::ControlEventKind::gate_on), 0u);
-  CHECK_EQ(r.count(core::ControlEventKind::pitch), 0u);
+  // Continuous: the rest step still moves the CV, as a pitch with no note.
+  CHECK_EQ(r.count(core::ControlEventKind::pitch), 1u);
+
+  // Gated: a rest holds the last pitch (no pitch event at all).
+  p.seqCvOutput = 1;
+  core::ArpSeq g;
+  g.configure(p, 48000);
+  Recorder rg;
+  note_on(g, rg, 0.0 / 12.0, 1);
+  clock_edge(g, rg);
+  CHECK_EQ(rg.count(core::ControlEventKind::gate_on), 0u);
+  CHECK_EQ(rg.count(core::ControlEventKind::pitch), 0u);
 }
 
 // ----------------------------------------------- per-side, no global singleton --
@@ -439,6 +469,7 @@ int main() {
   arp_emits_one_note_per_clock();
   arp_hold_keeps_chord_through_release();
   arp_variation_repeats_transposed();
+  arp_rhythm_mutes_steps();
   seq_advances_steps_and_gates();
   seq_gate_off_step_is_a_rest();
   per_side_instantiation_independent();

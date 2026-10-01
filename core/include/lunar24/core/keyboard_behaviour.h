@@ -604,6 +604,12 @@ class KeyboardBehaviour {
   }
 
   void handlePitch_(const ControlEvent& ev, double q) {
+    // A pitch with no note (id kCvOnlyNoteId): the sequencer's CV OUTPUT = continuous
+    // moving the V/OCT output on a rest step. It only moves the output while no note sounds.
+    if (ev.noteId == kCvOnlyNoteId) {
+      if (currentIndex_ < 0) portamento_.setTarget(q);
+      return;
+    }
     HeldNote* note = findNote_(ev.source, ev.channel, ev.noteId);
     if (note) {
       // Re-pitch a known note: update its stored pitch; if it is the SOUNDING
