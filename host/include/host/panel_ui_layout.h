@@ -416,4 +416,10 @@ inline std::vector<Widget> build_panel_layout() {
   return ws;
 }
 
+// Which half of the 12 touch plates a plate (semitone from C, any octave) belongs to. Under
+// TWIN / SPLIT the keyboard is two 6-plate controllers (manual p.15): C..F play the LEFT side,
+// F#..B the RIGHT side (its pitch on the PRESSURE jack, its gate on GATE R). Under SINGLE the
+// engine merges both halves into one performer.
+inline bool plate_is_right_side(int semitone) { return ((semitone % 12) + 12) % 12 >= 6; }
+
 }  // namespace lunar24::host

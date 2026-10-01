@@ -653,12 +653,26 @@
   - 第 5 步：只有按住键时才播放，松开就停。
   - 第 6 步：声音停下，不卡住。
 
+**T12.6 PLAY = TWIN（两个 6 键的键盘）** 🔧
+- 准备：RESET PANEL；DRONE VOICES 6 个键全关；VOICE MIXER 只留 **VCO A** 和 **VCO B**。
+- 电脑键盘上，左半边 6 个键是 **A W S E D F**（C 到 F），右半边是 **T G Y H U J**（F# 到 B）。
+- 步骤：
+  1. 打开键盘菜单，**PLAY** 选 TWIN，关掉菜单。
+  2. 接线：键盘区右边一组的 ↓ **PRESSURE** → VCO B 的 **1v/oct**；右边一组的 ⊓ **GATE R** → envelope B 的 **gate**。
+  3. 只弹左半边的键；再只弹右半边的键。
+  4. 左手按住一个左半边的键，同时右手按右半边的键，然后先松开其中一个。
+  5. PLAY 改回 SINGLE，再弹右半边的键。
+- 期望：
+  - 第 3 步：左半边只响 VCO A，右半边只响 VCO B，右边面板上的金属板也会亮。
+  - 第 4 步：两个音同时响；松开一边，另一边继续响。
+  - 第 5 步：右半边的键改由 VCO A 发声（和左半边一样），VCO B 不再响。
+
 ---
 
 ## 还没测的（⏳）
 
 - 键盘：
-  - **PLAY**（SINGLE / TWIN / SPLIT 左右分区）；
+  - **PLAY = SPLIT**：右半边已能独立发声，但 SETTINGS 页只能改左边的设置（右边的 MODE 等无法单独设置，见 TODO）；
   - **PRESETS**（预设保存和载入）；
   - **PRESSURE**、**P RISE**、**P FALL**、**VIB PRESS**；
   - **LEGATO**、**ARP VAR / ARP INT / ARP LEN**、**SEQ CV**、**RHYTHM**；
@@ -681,6 +695,11 @@
 - 所有 drone 一起响时混音太满。
 - 光敏传感器可以改成用鼠标操作。
 - VCO A → VCO B 的默认调制偏温和。
+
+### 键盘待办
+
+- SPLIT 时 SETTINGS 页需要像 SEQUENCER 页一样有 EDIT: LEFT / RIGHT 切换，才能给右半边单独设 MODE（例如左边琶音、右边普通键盘）。现在 UI 只改左边。
+- MIDI 键盘的音符都算左半边；TWIN / SPLIT 下如何分左右（按通道或按音区）还没定。
 
 ### 音频设备待办（先跳过，以后加日志再查）
 

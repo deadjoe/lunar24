@@ -142,8 +142,13 @@ struct EditorShared {
   }
 
   // Keyboard notes (plates, computer keys): through the same input state machine as MIDI.
-  void note(bool on, int semitoneFromC3, core::NoteId id, double pressure, core::ControlSourceId source) {
+  // `plate` (0..11, the plate pressed) picks the keyboard side under TWIN / SPLIT.
+  static core::KeyboardSide sideOf(int plate) {
+    return plate_is_right_side(plate) ? core::KeyboardSide::Right : core::KeyboardSide::Left;
+  }
+  void note(bool on, int semitoneFromC3, core::NoteId id, double pressure, core::ControlSourceId source, int plate) {
     core::PerformanceInput in{};
+    in.side = sideOf(plate);
     in.kind = on ? core::PerfInputKind::note_on : core::PerfInputKind::note_off;
     in.pitch = static_cast<core::SignalSample>((semitoneFromC3 - 9) / 12.0);  // A3 = 0 V = 220 Hz
     in.value = static_cast<core::SignalSample>(pressure);
@@ -154,8 +159,9 @@ struct EditorShared {
     const std::uint32_t n = input.translate(in, ev, 3);
     for (std::uint32_t i = 0; i < n; ++i) engine.postEvent(ev[i]);
   }
-  void pressure(core::NoteId id, double p, core::ControlSourceId source) {
+  void pressure(core::NoteId id, double p, core::ControlSourceId source, int plate) {
     core::PerformanceInput in{};
+    in.side = sideOf(plate);
     in.kind = core::PerfInputKind::aftertouch;
     in.value = static_cast<core::SignalSample>(p);
     in.noteId = id;
@@ -195,10 +201,10 @@ struct EditorShared {
     const core::NoteId id = static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(semi));
     if (!up && heldKeys.count(semi) == 0) {
       heldKeys[semi] = semi + 12 * octave;
-      note(true, heldKeys[semi], id, 0.8, kKeySource);
+      note(true, heldKeys[semi], id, 0.8, kKeySource, semi);
       lit.insert(semi % 12);
     } else if (up && heldKeys.count(semi) > 0) {
-      note(false, heldKeys[semi], id, 0.0, kKeySource);
+      note(false, heldKeys[semi], id, 0.0, kKeySource, semi);
       heldKeys.erase(semi);
       lit.erase(semi % 12);
     }
@@ -540,14 +546,14 @@ class PlateControl : public IControl {
   }
   void OnMouseDown(float, float y, const IMouseMod&) override {
     semi_ = int(w_.id) + 12 * s_.octave;
-    s_.note(true, semi_, EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource);
+    s_.note(true, semi_, EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource, int(w_.id));
     s_.lit.insert(int(w_.id));
     SetDirty(false);
   }
   void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override {
     if (semi_ == kNone) return;
     if (!mRECT.Contains(x, y)) release();
-    else s_.pressure(EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource);
+    else s_.pressure(EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource, int(w_.id));
   }
   void OnMouseUp(float, float, const IMouseMod&) override { release(); }
 
@@ -555,7 +561,7 @@ class PlateControl : public IControl {
   static constexpr int kNone = -1000;
   void release() {
     if (semi_ == kNone) return;
-    s_.note(false, semi_, EditorShared::kMouseId, 0.0, EditorShared::kMouseSource);
+    s_.note(false, semi_, EditorShared::kMouseId, 0.0, EditorShared::kMouseSource, int(w_.id));
     s_.lit.erase(int(w_.id));
     semi_ = kNone;
     SetDirty(false);

@@ -148,5 +148,11 @@ int main() {
     CHECK(host::art::litLed(0xff2308u, 1.f) == 0xff2308u);
     CHECK(host::art::litLed(0xff2308u, 0.f) == host::art::unlit(0xff2308u));
   }
+  {  // TWIN / SPLIT: C..F are the left side, F#..B the right, in every octave.
+    for (int s = 0; s < 6; ++s) CHECK(!host::plate_is_right_side(s));
+    for (int s = 6; s < 12; ++s) CHECK(host::plate_is_right_side(s));
+    CHECK(!host::plate_is_right_side(12) && host::plate_is_right_side(18));
+    CHECK(host::plate_is_right_side(-1) && !host::plate_is_right_side(-12));
+  }
   return test::finish("test_panel_ui_layout");
 }
