@@ -718,7 +718,7 @@
   - LOOP：按住期间音高上下来回滑，像警笛。
   - RANDOM：每按一次音高都不一样，按住期间不变。
 
-**T12.10 VIB PRESS（压力控制颤音）** ⏳
+**T12.10 VIB PRESS（压力控制颤音）** 🔧 (#77)
 - 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关；不接线。**VIB DEPTH** 约 1/4，**VIB RATE** 放中间。
 - 步骤：
   1. **VIB PRESS** 最小。在触摸板最上面按住，慢慢拖到最下面。
