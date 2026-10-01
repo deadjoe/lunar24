@@ -668,7 +668,7 @@
   - 第 5 步：只开 VCO B 时两半都不响，只开 VCO A 时两半都响（12 个键是一个键盘）；同时按住两个键时只响后按的那个音。
 - 测完把 oct+3 拨回 low。
 
-**T12.7 PLAY = SPLIT（左右各一套设置）** 🔧
+**T12.7 PLAY = SPLIT（左右各一套设置）** 🔧 (#75)
 - 准备：同 T12.6（RESET PANEL；drone 全关；VOICE MIXER 只留 VCO A、VCO B；GATE R → envelope B 的 gate，PRESSURE → VCO B 的 1v/oct）；VCO B 的 **oct+3** 拨到上面，右边是高音。
 - 步骤：
   1. 打开键盘菜单，**PLAY** 选 SPLIT。标题行（RESET PANEL 右边）出现 **EDIT: LEFT** 按钮。
