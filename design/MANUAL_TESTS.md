@@ -572,7 +572,7 @@
 
 **T11.1 PREAMP 发声** 🔧 (#72)
 - 步骤：
-  1. RESET PANEL。在 VOICE MIXER 里把 **PREAMP**（第 7 路）以外的 9 路 VOL 都拖到最左。
+  1. RESET PANEL。在 VOICE MIXER 里把 **PREAMP**（第 7 路）以外的 9 路 VOL 都拖到最左；PREAMP 自己的 VOL 不动（默认在中间）。
   2. 对着麦克风说话或拍手（gain 还在最左）。
   3. 把 PREAMP 区的红色 **gain** 慢慢往右转，边转边拍手。
 - 期望：第 2 步没声；转 gain 后听到经过滤波器和效果器处理的麦克风声音，gain 越大越响；声音很大时 PREAMP 的蓝灯（削波）闪。
