@@ -801,7 +801,7 @@
   - 第 1 步：每当 LFO 跳一下，琶音就回到第一个音 C 重新开始（rate 慢时听起来是偶尔"打个嗝"重来）；rate 加快后只听到 C、E（或 C、E、G）反复，到不了 B。琶音一直在走，不会停。
   - 第 2 步：恢复 C、E、G、B 完整循环。
 
-**T12.17 GATE L / V/OCT 输出（带 drone 的 GATE 输入）** ⏳
+**T12.17 GATE L / V/OCT 输出（带 drone 的 GATE 输入）** 🔧 (#79)
 - 准备：RESET PANEL；BLEND 最左；DRONE VOICES 只留 **1**；VOICE MIXER 里 **VCO A**、**VCO B** 的 VOL 拖到最左（只听 drone 1）。
 - 步骤：
   1. 接线：键盘区 ⊓ GATE L → DRONE 1 下排最左的 GATE 输入。不按键听一会儿；再按住任意键、松开。
@@ -811,7 +811,9 @@
   - 第 1 步：不按键时 drone 1 不响；按住键时响，松开后按 RLS 淡出。
   - 第 2 步：drone 1 恢复一直响（没接线时由 DRONE VOICES 的键决定）。
   - 第 3 步：drone 3 的音高跟着键走，按高的键它就变高（V/OCT 每伏一个八度）。松开键时音高保持在最后一个音。
-- 补充：DRONE 2–6 的 GATE 输入用同样方法各试一下（3 和 6 的 GATE 在最下排最左）。
+- 补充：
+  - DRONE 2–6 的 GATE 输入用同样方法各试一下（3 和 6 的 GATE 在最下排最左）。
+  - 第 3 步对 DRONE 6 同样适用：只开 DRONE VOICES 的 **6**，线改接到 DRONE 6 的 **cv** 输入。
 
 ---
 
