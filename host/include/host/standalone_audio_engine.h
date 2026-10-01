@@ -249,6 +249,9 @@ class StandaloneAudioEngine {
   // The RIGHT side's copy of a per-side keyboard menu setting (PLAY = SPLIT plays the right
   // half from it). False for a parameter that has no right-side copy.
   bool postKeyboardRightParameter(ParameterId id, double value);
+  // Keyboard preset A-D (slot 0..3): load it, save the current keyboard settings into it, or
+  // clear it (back to the factory keyboard settings). Live, no audio interruption.
+  bool postKeyboardPreset(PresetAction action, std::uint32_t slot);
   // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
@@ -908,6 +911,24 @@ inline bool StandaloneAudioEngine::postKeyboardRightParameter(ParameterId id, do
   return liveQueue_.push(c);
 }
 
+inline bool StandaloneAudioEngine::postKeyboardPreset(PresetAction action, std::uint32_t slot) {
+  if (!definition_ || !lunar24::core::preset_slot_is_valid(slot)) return false;
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  int code = 0;
+  switch (action) {
+    case PresetAction::Load: code = 0; (void)lunar24::core::load_preset_to_live(st, slot); break;
+    case PresetAction::Save: code = 1; (void)lunar24::core::save_live_to_preset(st, slot); break;
+    case PresetAction::Initialise: code = 2; (void)lunar24::core::initialise_preset(st, slot); break;
+    default: return false;
+  }
+  ++editCount_;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::KeyboardPreset;
+  c.side = static_cast<std::uint32_t>(code);
+  c.index = slot;
+  return liveQueue_.push(c);
+}
+
 inline bool StandaloneAudioEngine::parameterFromAudioThread(ParameterId id, double value) {
   if (!definition_) return false;
   lunar24::core::ControlEvent e{};
@@ -951,6 +972,7 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
   while (liveQueue_.pop(c)) {
     switch (c.kind) {
       case LiveCommand::Kind::Parameter: {
+        if (rt.setKeyboardParameter(c.parameter, c.value)) break;  // keyboard menu: now, in order
         lunar24::core::ControlEvent e{};
         e.kind = lunar24::core::ControlEventKind::parameter;
         e.parameter = c.parameter;
@@ -983,6 +1005,9 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
         break;
       case LiveCommand::Kind::KeyboardRight:
         rt.setKeyboardRightScalar(c.parameter, c.value);
+        break;
+      case LiveCommand::Kind::KeyboardPreset:
+        rt.keyboardPresetAction(static_cast<int>(c.side), c.index);
         break;
     }
   }

@@ -17,7 +17,8 @@ namespace lunar24::core {
 
 struct LiveCommand {
   enum class Kind : std::uint8_t { Parameter, Event, Connect, Disconnect, EffectorProgram, DroneKey, SeqStep,
-                                  KeyboardRight };  // KeyboardRight: parameter / value of the right bank
+                                  KeyboardRight,    // parameter / value of the right bank
+                                  KeyboardPreset };  // side = action (0 load, 1 save, 2 clear), index = slot
   Kind kind = Kind::Parameter;
   ParameterId parameter = ParameterId{0};
   double value = 0.0;

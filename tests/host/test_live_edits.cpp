@@ -124,6 +124,31 @@ int main() {
     CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Right) == core::ArpSeqMode::Arpeggiator);
     CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Left) == core::ArpSeqMode::Keyboard);
   }
+  // Keyboard presets, live: save the SPLIT + right-arp setup into B, go back to SINGLE keyboard,
+  // load B (the setup returns, sound keeps running), then INIT B and load it (factory settings).
+  {
+    using Action = host::StandaloneAudioEngine::PresetAction;
+    host::StandaloneAudioEngine e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 2.0));
+    CHECK(e.postKeyboardRightParameter(core::ParameterId::keyboard_mode, 1.0));
+    CHECK(e.postKeyboardPreset(Action::Save, 1u));
+    CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 0.0));
+    CHECK(e.postKeyboardRightParameter(core::ParameterId::keyboard_mode, 0.0));
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Right) == core::ArpSeqMode::Keyboard);
+    CHECK(e.postKeyboardPreset(Action::Load, 1u));
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(e.parameterValue(core::ParameterId::keyboard_behaviour) == 2.0);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Right) == core::ArpSeqMode::Arpeggiator);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Left) == core::ArpSeqMode::Keyboard);
+    CHECK(!e.postKeyboardPreset(Action::Load, 4u));  // there is no preset E
+    CHECK(e.postKeyboardPreset(Action::Initialise, 1u));
+    CHECK(e.postKeyboardPreset(Action::Load, 1u));
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(e.parameterValue(core::ParameterId::keyboard_behaviour) == 0.0);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Right) == core::ArpSeqMode::Keyboard);
+  }
   // MUTE silences every output with a short fade and brings the sound back when released; the
   // machine keeps running underneath.
   {

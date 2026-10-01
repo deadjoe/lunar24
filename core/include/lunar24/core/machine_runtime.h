@@ -111,6 +111,7 @@
 #include <lunar24/core/five_step_sequencer.h>
 #include <lunar24/core/arp_sequencer.h>
 #include <lunar24/core/keyboard_behaviour.h>
+#include <lunar24/core/keyboard_presets.h>    // keyboard presets A-D (load / save / clear)
 #include <lunar24/core/keyboard_side_bank.h>  // GH#12 task#101: the per-side scalar bank map
 #include <lunar24/core/unit_identity_profile.h>
 #include <lunar24/core/vco.h>
@@ -2448,6 +2449,23 @@ class SynthRuntime {
     if (idx < 0) return;
     kbdState_.keyboardScalarRight[static_cast<std::size_t>(idx)] = v;
     applyKeyboardState(kbdState_);
+  }
+
+  // A keyboard menu setting from the UI, applied at once (in order with the right-side,
+  // sequencer-step and preset commands around it). False for a non-keyboard parameter.
+  bool setKeyboardParameter(ParameterId id, double v) { return applyKeyboardParam_(id, v); }
+
+  // A keyboard preset A-D (slot 0..3) action, live: 0 = load it into the keyboard settings,
+  // 1 = save the settings into it, 2 = clear it back to the factory settings. The UI applies
+  // the same helper to its own copy, so both stay equal. Audio thread, no allocation.
+  void keyboardPresetAction(int action, std::uint32_t slot) {
+    if (action == 0) {
+      if (load_preset_to_live(kbdState_, slot)) applyKeyboardState(kbdState_);
+    } else if (action == 1) {
+      (void)save_live_to_preset(kbdState_, slot);
+    } else if (action == 2) {
+      (void)initialise_preset(kbdState_, slot);
+    }
   }
 
  private:

@@ -686,12 +686,27 @@
   - 第 5 步：EDIT 按钮消失；左右两边都按左边的设置弹（都是普通键盘，右边不再琶音）。
 - 测完把 oct+3 拨回 low。
 
+**T12.8 PRESETS（键盘预设 A–D）** 🔧
+- 说明：预设保存键盘菜单的全部设置（左右两边、两套 16 步音序），不含速度 CLOCK。按钮在菜单标题行左边：**PRESET A**（点一下换到下一个，A→B→C→D）、**LOAD**（载入）、**SAVE**（保存）、**INIT**（清回出厂设置）。
+- 步骤：
+  1. 打开键盘菜单，点 **PRESET A** 直到显示 **PRESET B**。把 **MODE** 改成 ARPEGGIATOR，点 **SAVE**。
+  2. 把 **MODE** 改回 KEYBOARD，关掉菜单，同时按住 **A** 和 **S**。
+  3. 打开菜单（仍是 PRESET B），点 **LOAD**，关掉菜单，再同时按住 **A** 和 **S**。
+  4. 退出程序再打开，打开菜单，点到 **PRESET B**，点 **LOAD**。
+  5. 点 **INIT**，再点一次；然后点 **LOAD**。
+- 期望：
+  - 第 1 步：SAVE 按钮变亮，短暂显示 SAVED。
+  - 第 2 步：两个音一起持续响（普通键盘）。
+  - 第 3 步：LOAD 短暂显示 LOADED，菜单里 MODE 变回 ARPEGGIATOR；两个音轮流响。载入时声音不中断。
+  - 第 4 步：MODE 仍是 ARPEGGIATOR（预设随程序一起保存）。
+  - 第 5 步：第一次点 INIT 显示 SURE?，第二次显示 CLEARED；再 LOAD 后 MODE 回到 KEYBOARD。
+- 测完点 **RESET PANEL**（会清掉所有预设）。
+
 ---
 
 ## 还没测的（⏳）
 
 - 键盘：
-  - **PRESETS**（预设保存和载入）；
   - **PRESSURE**、**P RISE**、**P FALL**、**VIB PRESS**；
   - **LEGATO**、**ARP VAR / ARP INT / ARP LEN**、**SEQ CV**、**RHYTHM**；
   - 键盘区的 CLOCK / RESET 输入、GATE L / GATE R / V/OCT 输出。

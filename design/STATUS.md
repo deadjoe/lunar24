@@ -68,10 +68,8 @@ applied yet), and the exact note patterns of the Folk / Japanese / Gamelan / Gyp
 5. The panel's printed LEDs (gate/hold, envelopes, step sequencer, LFOs ...) are drawn
    unlit; lighting them from the engine's state is not done yet.
 
-Only when the related feature is touched: keyboard presets A-D swap the whole definition
-without audio-thread sync (safe today, it only runs with the stream stopped) — fix before
-giving them a UI; knob hover/drag redraws the whole panel — dirty only the readout if the
-UI feels slow. Not planned: letting the old effector tail ring out on a cartridge switch
+Only when the related feature is touched: knob hover/drag redraws the whole panel — dirty
+only the readout if the UI feels slow. Not planned: letting the old effector tail ring out on a cartridge switch
 (the hardware reloads and cuts it too), splitting `machine_runtime.h`.
 
 The VCOs' separate wave outputs and the envelopes' VCA-CV outputs exist in the engine but
