@@ -93,11 +93,18 @@ bool sInputOn = false;
 // here and in the settings file, and the next automatic reopen (a device change, RESET PANEL,
 // the next launch) tries the input again.
 uint32_t sWantInL = 0, sWantInR = 0;
+// Set when an open dropped the input to get any sound at all. The next Preferences Apply / OK
+// then still sees the chosen channels, not the fallback's zeros (OK right after a failed Apply
+// used to save "input off" as the user's choice).
+bool sInputDroppedByFallback = false;
 bool sStartupOpen = true;  // the first TryToChangeAudio() is the app starting up
 // Set when the stream died under us (a device went away or reconfigured itself, e.g. Bluetooth
 // headphones) or the system output device changed while we follow it. The UI thread then
 // reopens on the current device (lunar_host_audio_watchdog).
 std::atomic<bool> sReopen{false};
+// When the last stream was opened (steady_clock ticks). Device-list notifications within 2 s of an
+// open are ignored: opening a headset can itself reconfigure devices, and reacting would loop.
+std::atomic<long long> sLastOpenTicks{0};
 
 // The callback hands the engine fixed APP_SIGNAL_VECTOR_SIZE blocks through these staging
 // buffers, so a device may use any buffer size (at the cost of one block of latency). Sized for
@@ -441,6 +448,9 @@ void IPlugAPPHost::ProbeAudioIO()
   for (auto deviceID : deviceIDs)
   {
     info = mDAC->getDeviceInfo(deviceID);
+    AudioLog("  device %u '%s': in %u, out %u%s%s", deviceID, info.name.c_str(), info.inputChannels,
+             info.outputChannels, info.isDefaultInput ? ", default input" : "",
+             info.isDefaultOutput ? ", default output" : "");
 
     if (info.inputChannels > 0)
     {
@@ -597,11 +607,17 @@ bool IPlugAPPHost::TryToChangeAudio()
   }
   else
   {
+    if (sInputDroppedByFallback && mState.mAudioInChanL == 0 && mState.mAudioInChanR == 0)
+    {
+      mState.mAudioInChanL = sWantInL;
+      mState.mAudioInChanR = sWantInR;
+    }
     sFollowDefaultOutput = mDefaultOutputDev && GetAudioDeviceName(mDefaultOutputDev.value()) == mState.mAudioOutDev.Get();
     sInputOn = mState.mAudioInChanL > 0 || mState.mAudioInChanR > 0;
     sWantInL = mState.mAudioInChanL;
     sWantInR = mState.mAudioInChanR;
   }
+  sInputDroppedByFallback = false;
   UpdateINI();
   AudioLog("open (%s): in '%s' ch %u/%u, out '%s', %u Hz, inputOn %d, followDefault %d", why,
            mState.mAudioInDev.Get(), mState.mAudioInChanL, mState.mAudioInChanR, mState.mAudioOutDev.Get(),
@@ -614,19 +630,34 @@ bool IPlugAPPHost::TryToChangeAudio()
   // as 0 because inputSelected is also false there), so the inert 0 is never dereferenced.
   const bool inputSelected = (mState.mAudioInChanL > 0 || mState.mAudioInChanR > 0);
 
+  // Lunar 24: look a device up by name AND direction. A Bluetooth headset can appear as two
+  // devices with the same name, one with only inputs and one with only outputs (AirPods Pro do);
+  // a name-only lookup returned the input half for the output and the open failed.
+  auto findDevice = [this](const char* name, bool output) -> std::optional<uint32_t> {
+    for (auto id : mDAC->getDeviceIds())
+    {
+      const RtAudio::DeviceInfo info = mDAC->getDeviceInfo(id);
+      if ((output ? info.outputChannels : info.inputChannels) == 0)
+        continue;
+      if (std::string_view(name) == audio_device_display_name(info.name))
+        return id;
+    }
+    return std::nullopt;
+  };
+
   std::optional<uint32_t> inputID;
   if (inputSelected)
   {
 #if defined OS_WIN
     // ASIO has one device, use the output for the input ID
-    inputID = GetAudioDeviceID(mState.mAudioDriverType == kDeviceASIO ? mState.mAudioOutDev.Get() : mState.mAudioInDev.Get());
+    inputID = findDevice(mState.mAudioDriverType == kDeviceASIO ? mState.mAudioOutDev.Get() : mState.mAudioInDev.Get(), false);
 #elif defined OS_MAC
-    inputID = GetAudioDeviceID(mState.mAudioInDev.Get());
+    inputID = findDevice(mState.mAudioInDev.Get(), false);
 #else
   #error NOT IMPLEMENTED
 #endif
   }
-  auto outputID = GetAudioDeviceID(mState.mAudioOutDev.Get());
+  auto outputID = findDevice(mState.mAudioOutDev.Get(), true);
 
   bool failedToFindDevice = false;
   bool resetToDefault = false;
@@ -703,6 +734,7 @@ bool IPlugAPPHost::TryToChangeAudio()
   {
     mState.mAudioInChanL = 0;
     mState.mAudioInChanR = 0;
+    sInputDroppedByFallback = true;
     if (InitAudio(0, outputID.value(), mState.mAudioSR, mState.mBufferSize))
     {
       UpdateINI();
@@ -981,6 +1013,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
   }
 
   mActiveState = mState;
+  sLastOpenTicks = std::chrono::steady_clock::now().time_since_epoch().count();
   sInputPeak = 0.f;
   sOpenInputs = static_cast<int>(iParams.nChannels);
 
@@ -1174,6 +1207,16 @@ extern "C" void lunar_host_audio_watchdog()
 extern "C" void lunar_host_request_audio_reopen()
 {
   sReopen = true;
+}
+
+// Lunar 24: an audio device was added or removed (macOS listener in main.mm). Reopen, so the device
+// list (and the Preferences dialog) sees it and a device that just came back is used again.
+extern "C" void lunar_host_devices_changed()
+{
+  const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+  const auto twoSeconds = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::seconds(2)).count();
+  if (now - sLastOpenTicks.load() > twoSeconds)
+    sReopen = true;
 }
 
 // Lunar 24: the system output device changed (macOS listener in main.mm).

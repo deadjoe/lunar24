@@ -687,5 +687,10 @@
 - 戴 AirPods Pro（输出走 AirPods）时，MacBook 麦克风收不到声音（PREAMP 蓝灯、ENVELOPE FOLLOWER 绿灯都不亮）。手动改回 MacBook 麦克风、摘掉 AirPods、RESET PANEL 都不恢复。不用 AirPods 时正常。很可能和下一条同源：启动时输入被换成了 AirPods 的麦克风，AirPods 进入通话模式，带输入打不开，只开了输出。下一条修好后请复测。
 - 🔧 重启应用后输入设备变成 AirPods Pro / BlackHole 2ch：已找到原因并修复。设备名在保存时带了一个前导空格（" MacBook Pro Microphone"），设置文件读回来时会去掉空格，于是对不上任何设备，程序就退回 macOS 的默认输入设备。现在设备名统一去掉首尾空格。复测：选好 MacBook 麦克风，退出再打开，Preferences 里应该还是 MacBook Pro Microphone；戴着 AirPods 打开应用也一样。
 - MacBook 麦克风是单声道，Preferences 里 Input 1 (L) / Input 2 (R) 显示为空（iPlug2 设置窗口的显示问题），麦克风其实是开的。
-- 应用运行中连上 / 断开 AirPods 后（程序会自动重新打开音频设备），MacBook 麦克风不再有声音，要关掉应用重开才恢复。启动时设备是对的。
+- 🔧 AirPods 相关（日志查明，已修）：
+  - AirPods Pro 在系统里是两个同名设备（一个只有麦克风，一个只有耳机），程序按名字找输出时拿到了麦克风那个，打不开。现在按方向查找。
+  - 打不开时程序临时关掉输入以保证有声音；紧接着点 OK 会把"输入关"存成你的选择，以后每次启动麦克风都不开。现在临时关闭不会被存下来。
+  - 应用运行中插拔设备时设备列表不刷新（Preferences 里看不到新连上的 AirPods）。现在设备增减会自动刷新并重新打开。
+  - AirPods 的麦克风只有通话音质（24000 Hz），本应用不用它；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」。
+  - 复测：应用开着戴上 / 摘下 AirPods，Preferences 列表应立刻出现 / 消失 AirPods；选 MacBook 麦克风 + AirPods 输出，拍手有反应；把输入误选成 AirPods 后再改回 MacBook 麦克风，拍手有反应，重启后仍然有。
 - 音频日志：`~/Library/Application Support/Lunar24Host/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。
