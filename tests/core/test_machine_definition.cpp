@@ -661,6 +661,10 @@ int main() {
     core::MachineRuntimeDefinition dN(kSeed, kSr);
     dN.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   // host drive = 0.5
+    for (core::MachineRuntimeDefinition* d : {&d0, &dN}) {  // EXT.AUDIO defaults to 0; open it
+      d->runtime().setMixerChannelVol(3, 0.5);
+      d->runtime().snapSmoothedLevels();
+    }
     auto config = [&](core::SynthRuntime& rt) {
       rt.setVcoBaseHz(kBaseHz);
       rt.setVcoCvAmounts(1.0, 0.0);

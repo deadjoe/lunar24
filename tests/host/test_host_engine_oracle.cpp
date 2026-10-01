@@ -167,6 +167,9 @@ void real_1in_2out() {
   StandaloneAudioEngine eA, eB;
   CHECK(eA.prepare(kSeed, 48000.0, kF, 1, 2));
   CHECK(eB.prepare(kSeed, 48000.0, kF, 1, 2));
+  // EXT.AUDIO defaults to 0 (a selected mic stays silent); open it so the EXT input is heard.
+  CHECK(eA.postParameter(ParameterId::mixer_ch4_vol, 0.5));
+  CHECK(eB.postParameter(ParameterId::mixer_ch4_vol, 0.5));
 
   double outA[2][kF] = {{0}}, outB[2][kF] = {{0}};
   double* outPA[2] = {outA[0], outA[1]};
@@ -211,6 +214,9 @@ void real_4way() {
   StandaloneAudioEngine eA, eB;
   CHECK(eA.prepare(kSeed, 48000.0, kF, 1, 4));
   CHECK(eB.prepare(kSeed, 48000.0, kF, 1, 4));
+  // EXT.AUDIO defaults to 0 (a selected mic stays silent); open it so the EXT input is heard.
+  CHECK(eA.postParameter(ParameterId::mixer_ch4_vol, 0.5));
+  CHECK(eB.postParameter(ParameterId::mixer_ch4_vol, 0.5));
   CHECK(eA.plan().outputCount == 4);
   // Listen to the raw VCOs on DRY A/B (their VCAs are otherwise closed until a key is played).
   const_cast<SynthRuntime*>(eA.runtime())->setVcoVcaEnabled(false);

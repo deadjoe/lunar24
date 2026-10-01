@@ -86,8 +86,9 @@ CaseDiff routedDiff(std::uint64_t seed, const DeviceLayout& layout, int inputCap
   db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
-  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN defaults to mute; open it so PREAMP input is heard
+  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN and EXT.AUDIO default to 0; open them so input is heard
     r->setPreampGainNorm(0.5);
+    r->setMixerChannelVol(3, 0.5);
     r->snapSmoothedLevels();
   }
 
@@ -745,8 +746,9 @@ CaseDiff renderDualTerminal(TerminalCase tc) {
   db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
-  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN defaults to mute; open it so PREAMP input is heard
+  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN and EXT.AUDIO default to 0; open them so input is heard
     r->setPreampGainNorm(0.5);
+    r->setMixerChannelVol(3, 0.5);
     r->snapSmoothedLevels();
   }
 
@@ -845,8 +847,9 @@ void block_delegate_reflects_runtime() {
   db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
-  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN defaults to mute; open it so PREAMP input is heard
+  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN and EXT.AUDIO default to 0; open them so input is heard
     r->setPreampGainNorm(0.5);
+    r->setMixerChannelVol(3, 0.5);
     r->snapSmoothedLevels();
   }
   CHECK(ra.rebuild());

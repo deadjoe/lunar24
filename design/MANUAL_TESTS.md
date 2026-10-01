@@ -568,7 +568,7 @@
 
 ### 11. PREAMP 和 ENVELOPE FOLLOWER
 
-准备（本节通用）：Preferences 里把输入设备选成 MacBook 自带麦克风（不要用 AirPods 麦克风）；用耳机或调小音量，防止啸叫；RESET PANEL。RESET 后 PREAMP 的红色 **gain** 在最左（静音），T11.2、T11.3 先把 gain 转到中间。
+准备（本节通用）：Preferences 里把输入设备选成 MacBook 自带麦克风（不要用 AirPods 麦克风）；用耳机或调小音量，防止啸叫；RESET PANEL。RESET 后 PREAMP 的红色 **gain** 和 VOICE MIXER 的 **EXT.AUDIO** 音量都在最左（静音），T11.2、T11.3 先把 gain 转到中间。
 
 **T11.1 PREAMP 发声** ✅
 - 步骤：
@@ -595,7 +595,9 @@
 - 步骤：
   1. 输入设备仍选麦克风；RESET PANEL。
   2. 在 DRONE VOICES 里把 6 个键全关掉，等混响尾巴消失（十几秒）。
-- 期望：完全安静，没有持续的沙沙声。之前 gain 默认在中间，会把麦克风收到的环境声放大送出来。
+  3. 拍一下手。
+- 期望：完全安静，拍手也听不到回声。电脑输入的两个声道分别进 PREAMP 和 EXT.AUDIO；之前两者默认都开着，会把麦克风收到的环境声送出来。
+- 补充：把 VOICE MIXER 的 **EXT.AUDIO** 音量转到中间再拍手，能听到带混响的拍手声（这一路直接接电脑输入）。
 
 ### 12. 键盘菜单（演奏设置）
 
