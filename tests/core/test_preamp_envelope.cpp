@@ -327,7 +327,18 @@ void test_cross_sr_cross_buffer() {
 
 }  // namespace
 
+// GAIN starts at minimum: the app feeds the computer's audio input to the preamp, so a mic
+// left selected must stay silent until GAIN is turned up.
+void test_default_gain_is_muted() {
+  Preamp p(48000.0);
+  CHECK(p.gainNorm() == 0.0);
+  double peak = 0.0;
+  for (int i = 0; i < 1000; ++i) peak = std::fmax(peak, std::fabs(p.tick(0.8 * std::sin(0.05 * i))));
+  CHECK(peak == 0.0);
+}
+
 int main() {
+  test_default_gain_is_muted();
   test_attack_release_are_seconds();
   test_preamp_aliasing();
   test_ext_unconnected();

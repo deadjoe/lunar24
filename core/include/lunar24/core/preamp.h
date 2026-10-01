@@ -10,8 +10,9 @@
 // PROVENANCE (the frozen registry, generated/lunar24/registry.hpp, is the
 // implementation basis; every claim below mirrors it and marks evidence strength):
 //
-//   * GAIN (preamp.gain, id 157) — unit "norm", range 0..1, default 0.5. ALL six
-//     ParameterFieldEvidence are UNVERIFIED. The manual (L544) writes "Audio
+//   * GAIN (preamp.gain, id 157) — unit "norm", range 0..1, default 0 (muted: the app
+//     feeds the computer's audio input here, so a mic left selected stays silent until
+//     GAIN is turned up). ALL six ParameterFieldEvidence are UNVERIFIED. The manual (L544) writes "Audio
 //     amplifier ... up to 40dB of gain": the 40 dB ceiling is a CONFIRMED manual
 //     range endpoint, but the knob is NORMALIZED here, so the exact taper between
 //     the two fixed ends (mute at minimum — L527 "set GAIN to minimum" — vs +40 dB
@@ -83,8 +84,8 @@ class Preamp {
  private:
   double sr_ = 0.0;
   double glide_ = 1.0;
-  double gainNorm_ = 0.5;  // registry default.
-  double appliedGain_ = 0.5 * kMaxGainLinear;  // the gliding gain the audio uses
+  double gainNorm_ = 0.0;  // registry default: muted, so the computer's mic is silent until asked
+  double appliedGain_ = 0.0;  // the gliding gain the audio uses
 };
 
 }  // namespace lunar24::core

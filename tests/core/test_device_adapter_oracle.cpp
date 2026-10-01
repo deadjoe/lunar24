@@ -86,6 +86,10 @@ CaseDiff routedDiff(std::uint64_t seed, const DeviceLayout& layout, int inputCap
   db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
+  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN defaults to mute; open it so PREAMP input is heard
+    r->setPreampGainNorm(0.5);
+    r->snapSmoothedLevels();
+  }
 
   DeviceAdapter ada, adb;
   CHECK(ada.prepare(layout, inputCap, mapping, outputCount, route, extCh, preampCh));
@@ -741,6 +745,10 @@ CaseDiff renderDualTerminal(TerminalCase tc) {
   db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
+  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN defaults to mute; open it so PREAMP input is heard
+    r->setPreampGainNorm(0.5);
+    r->snapSmoothedLevels();
+  }
 
   const bool patched = (tc == TerminalCase::PreampPatched || tc == TerminalCase::ExtPatched);
   if (patched) {
@@ -837,6 +845,10 @@ void block_delegate_reflects_runtime() {
   db.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
   SynthRuntime& ra = da.runtime();
   SynthRuntime& rb = db.runtime();
+  for (SynthRuntime* r : {&ra, &rb}) {  // GAIN defaults to mute; open it so PREAMP input is heard
+    r->setPreampGainNorm(0.5);
+    r->snapSmoothedLevels();
+  }
   CHECK(ra.rebuild());
   CHECK(rb.rebuild());
 

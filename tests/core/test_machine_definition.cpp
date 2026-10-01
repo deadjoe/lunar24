@@ -462,6 +462,8 @@ int main() {
     auto renderDroneMod = [&](bool wired, double amount, core::RuntimeOutput* seq, std::size_t n) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
       d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+      d.runtime().setPreampGainNorm(0.5);  // GAIN defaults to mute; open it for the env follower
+      d.runtime().snapSmoothedLevels();
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       rt.setDroneMod(1, 0, amount);   // asymmetric: group 1 gen 0 carries the MOD amount.
@@ -599,6 +601,8 @@ int main() {
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
       d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+      d.runtime().setPreampGainNorm(0.5);  // GAIN defaults to mute; open it for the env follower
+      d.runtime().snapSmoothedLevels();
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::vcf_cv_l_in),
@@ -789,6 +793,8 @@ int main() {
     auto renderWetFp = [&](bool cabled) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
       d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+      d.runtime().setPreampGainNorm(0.5);  // GAIN defaults to mute; open it for the env follower
+      d.runtime().snapSmoothedLevels();
       cfg(d.runtime());
       if (cabled)
         check(d.runtime().connect(reg::JackId::env_follower_env_out,
@@ -1034,6 +1040,8 @@ int main() {
       auto probe = [&](double warmDrv) -> WarmUpProbe {
         core::MachineRuntimeDefinition d(kSeed, kSr);
         d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
+        d.runtime().setPreampGainNorm(0.5);  // GAIN defaults to mute; open it for the env follower
+        d.runtime().snapSmoothedLevels();
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
         for (int i = 0; i < 12; ++i) (void)rt.processFrame(core::RuntimeInputs{warmDrv, warmDrv}, true);  // no return cable yet.

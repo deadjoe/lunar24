@@ -64,6 +64,9 @@ Keep these unless a listening test or a real bug says otherwise.
   step (capped at 1 s, with a one-sample drop between back-to-back gates) and CLOCK OUT is a
   50% square. One-sample pulses could not open an envelope. A cable in EXT. CLOCK takes over
   from the PULSER (as on the hardware), and the input rises at 1.2 V so a 0..10 V LFO clocks it.
+- **PREAMP GAIN defaults to minimum** (mute, as the manual says to silence it). The app feeds
+  the computer's audio input to the preamp, so with GAIN at mid a mic left selected in
+  Preferences added a constant +20 dB room hiss under the drones.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also

@@ -191,9 +191,12 @@ void test_joystick() {
 
 void test_env_follower() {
   // Env-follower: published env_follower_env_out is 0..+10V and RISES with a fed preamp audio input.
+  // GAIN defaults to mute; open it so the follower hears the preamp input.
+  DeviceStateV1 open = make_default_device_state(kSeed);
+  slot(open, ParameterId::preamp_gain) = 0.5;
   EngineHarness hIn, hNo;
-  CHECK(hIn.load(make_default_device_state(kSeed)));
-  CHECK(hNo.load(make_default_device_state(kSeed)));
+  CHECK(hIn.load(open));
+  CHECK(hNo.load(open));
 
   JackStat inStat, noStat;
   CHECK(hIn.renderSampled(kFrames, 1.0, [&](const lunar24::core::SynthRuntime& rt) {  // steady 1.0V preamp.
@@ -213,8 +216,10 @@ void test_env_follower() {
   // changes the published rise rather than just the module running.
   DeviceStateV1 fastA = make_default_device_state(kSeed);
   slot(fastA, ParameterId::env_follower_attack) = 0.1;   // ~0.10 s attack.
+  slot(fastA, ParameterId::preamp_gain) = 0.5;
   DeviceStateV1 slowA = make_default_device_state(kSeed);
   slot(slowA, ParameterId::env_follower_attack) = 0.9;   // ~0.90 s attack.
+  slot(slowA, ParameterId::preamp_gain) = 0.5;
   EngineHarness hF, hS;
   CHECK(hF.load(fastA));
   CHECK(hS.load(slowA));

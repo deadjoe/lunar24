@@ -228,7 +228,7 @@
   - envelope A / B 的琥珀灯（envelope 字样右边的金色圆点）：按住一个键时亮，松开后随 **R** 变暗；打开自激时有节奏地闪。
   - LFO A / B 的蓝灯（输出插孔下方）：跟着 LFO 一亮一暗；调 **rate** 时闪的快慢跟着变。
   - 5 STEP SEQ. VOLTAGE 每步上方的红灯：按 T10.1 接好线，灯依次走动，显示当前是第几步。
-  - PREAMP / ENVELOPE FOLLOWER（按 T11 打开麦克风）：
+  - PREAMP / ENVELOPE FOLLOWER（按 T11 打开麦克风，gain 转到中间）：
     - 说话时 ENVELOPE FOLLOWER 的红灯跟着音量亮；有声音时绿灯（gate）亮；
     - **gain** 开得很大、声音很响时，PREAMP 的蓝灯（削波）闪亮。
   - DRONE 3 / 6 S&H 图案里的红灯：按 T3.4 接好 S&H，每跳一个音闪一下。
@@ -568,14 +568,14 @@
 
 ### 11. PREAMP 和 ENVELOPE FOLLOWER
 
-准备（本节通用）：Preferences 里把输入设备选成 MacBook 自带麦克风（不要用 AirPods 麦克风）；用耳机或调小音量，防止啸叫；RESET PANEL。
+准备（本节通用）：Preferences 里把输入设备选成 MacBook 自带麦克风（不要用 AirPods 麦克风）；用耳机或调小音量，防止啸叫；RESET PANEL。RESET 后 PREAMP 的红色 **gain** 在最左（静音），T11.2、T11.3 先把 gain 转到中间。
 
 **T11.1 PREAMP 发声** ✅
 - 步骤：
   1. VOICE MIXER 只留 **PREAMP**。
-  2. 对着麦克风说话或拍手。
-  3. 转 **gain**。
-- 期望：听到经过滤波器和效果器处理的麦克风声音；gain 改变大小，最小时没声。
+  2. 对着麦克风说话或拍手（gain 还在最左）。
+  3. 把 **gain** 慢慢往右转。
+- 期望：第 2 步没声；转 gain 后听到经过滤波器和效果器处理的麦克风声音，gain 越大越响。
 
 **T11.2 env 输出** ✅
 - 步骤：
@@ -591,7 +591,11 @@
   3. 不按键，拍一下手。
 - 期望：拍手时 VCO A 响一下。
 
-- 备注：面板上 PREAMP 的指示灯是印刷图案，不会亮（待定是否实现）。
+**T11.4 麦克风默认不出声** 🔧 (#72)
+- 步骤：
+  1. 输入设备仍选麦克风；RESET PANEL。
+  2. 在 DRONE VOICES 里把 6 个键全关掉，等混响尾巴消失（十几秒）。
+- 期望：完全安静，没有持续的沙沙声。之前 gain 默认在中间，会把麦克风收到的环境声放大送出来。
 
 ### 12. 键盘菜单（演奏设置）
 
