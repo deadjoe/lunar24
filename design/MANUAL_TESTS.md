@@ -832,7 +832,7 @@
 - 步骤：接线：DRONE 3 **rate** 下方的 LFO 输出 → VCO A 的 **1v/oct**。拖 DRONE 3 的 **rate**；再拨 **LFO 1 : 10**。DRONE 6 同样做一遍。
 - 期望：VCO A 在两个音之间来回跳（方波）；rate 改变跳的快慢，1 : 10 时慢很多。DRONE 3 / 6 本身不用开（LFO 一直在走）。
 
-**T13.3 S&H 的 IN 和 clock 插孔** ⏳
+**T13.3 S&H 的 IN 和 clock 插孔** ✅
 - 插孔位置：DRONE 3 右下角的 **S&H** 框里有 3 个插孔，从左到右：**IN**（▲）、**clock**（▲ clock）、**OUT**（右上角带红三角）。LFO A 在面板最下排最左：红色 **wave** 旋钮、中间的输出插孔（下面有蓝灯）、拨杆 **x6 / x1 / x10**、红色 **rate**。LFO B 在最下排最右，布局相同。
 - 准备：
   1. RESET PANEL；BLEND 最左；DRONE VOICES 全关。
@@ -848,7 +848,7 @@
 - 第 3 步之后还是"一高一低"交替：说明 LFO A 相对采样太快（每次采样时 LFO A 正好走了半圈）——确认 LFO A 的 rate 拖到底，把 LFO B 的 rate 往右加。
 - DRONE 6 的 S&H 同样做一遍（3 根线改插到 DRONE 6 的 S&H 框）。
 
-**T13.4 VCO 的 vca cv 输入** ⏳
+**T13.4 VCO 的 vca cv 输入** ✅
 - 插孔位置：envelope A 在 VOICE MIXER 正下方偏左，最下排 4 个插孔从左到右：**gate**、红字 **env**、**vca cv**、红字 **VCO A**。要用的是第 3 个 **vca cv**。envelope B 在 VOICE MIXER 下方偏右，最下排从左到右：红字 **VCO B**、**gate**、红字 **env**、**vca cv**（最右）。
 - 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关；envelope A 的 **hold** 不要点亮。不按键时 VCO A 没声。
 - 步骤：
