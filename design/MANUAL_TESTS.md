@@ -820,7 +820,7 @@
 
 准备（本节通用）：RESET PANEL；BLEND 最左；DRONE VOICES 全关；点亮 envelope A 的 **hold**（VCO A 不按键也一直响，当作"监听器"）；VOICE MIXER 里 **VCO B** 拖到最左。
 
-**T13.1 drone 的 env 输出** ⏳
+**T13.1 drone 的 env 输出** 🔧 (#79)
 - 步骤：
   1. VOICE MIXER 里 **DRONE 1** 的 VOL 拖到最左（只用它的包络，不听它的声音）。DRONE 1 的 **ATT**、**RLS** 都拖到一半以上。
   2. 接线：DRONE 1 的红字 **env** → VCO A 的 **cv**；VCO A 的 **cv amt** 放约 1/4。
