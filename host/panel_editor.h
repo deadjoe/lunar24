@@ -106,7 +106,7 @@ struct EditorShared {
   std::vector<IControl*> seqControls;        // SEQUENCER page (16-step editor)
   std::vector<IControl*> menuChrome;         // background and page tabs: whenever the menu is open
   int menuPage = 0;                          // 0 = SETTINGS, 1 = SEQUENCER
-  int seqSide = 0;                           // sequencer bank being edited: 0 = left, 1 = right
+  int seqSide = 0;                           // menu side being edited under SPLIT: 0 = left, 1 = right
   std::function<void()> factoryReset;        // the plugin's requestFactoryReset (RESET PANEL)
   std::vector<IControl*> plates;
   bool menuOpen = false;
@@ -127,8 +127,20 @@ struct EditorShared {
   static constexpr core::ControlSourceId kKeySource = 2;
 
   const core::DeviceStateV1* state() const { return engine.canonicalState(); }
-  double value(std::uint32_t id) const { return engine.parameterValue(static_cast<ParameterId>(id)); }
-  void set(std::uint32_t id, double v) { engine.postParameter(static_cast<ParameterId>(id), v); }
+  // Under PLAY = SPLIT the keyboard menu edits either side (EDIT: LEFT / RIGHT); a per-side
+  // keyboard setting then reads and writes that side's bank. Everything else has one value.
+  bool split() const { return engine.parameterValue(ParameterId::keyboard_behaviour) > 1.5; }
+  int editSide() const { return split() ? seqSide : 0; }
+  double value(std::uint32_t id) const {
+    const std::int32_t idx = core::keyboard_scalar_index(static_cast<ParameterId>(id));
+    const core::DeviceStateV1* st = state();
+    if (idx >= 0 && editSide() == 1 && st != nullptr) return st->keyboardScalarRight[static_cast<std::size_t>(idx)];
+    return engine.parameterValue(static_cast<ParameterId>(id));
+  }
+  void set(std::uint32_t id, double v) {
+    if (editSide() == 1 && engine.postKeyboardRightParameter(static_cast<ParameterId>(id), v)) return;
+    engine.postParameter(static_cast<ParameterId>(id), v);
+  }
   int index(std::uint32_t id) const {
     const core::ParameterDescriptor* d = desc(id);
     if (d == nullptr) return 0;
@@ -142,8 +154,13 @@ struct EditorShared {
   }
 
   // Keyboard notes (plates, computer keys): through the same input state machine as MIDI.
-  void note(bool on, int semitoneFromC3, core::NoteId id, double pressure, core::ControlSourceId source) {
+  // `plate` (0..11, the plate pressed) picks the keyboard side under TWIN / SPLIT.
+  static core::KeyboardSide sideOf(int plate) {
+    return plate_is_right_side(plate) ? core::KeyboardSide::Right : core::KeyboardSide::Left;
+  }
+  void note(bool on, int semitoneFromC3, core::NoteId id, double pressure, core::ControlSourceId source, int plate) {
     core::PerformanceInput in{};
+    in.side = sideOf(plate);
     in.kind = on ? core::PerfInputKind::note_on : core::PerfInputKind::note_off;
     in.pitch = static_cast<core::SignalSample>((semitoneFromC3 - 9) / 12.0);  // A3 = 0 V = 220 Hz
     in.value = static_cast<core::SignalSample>(pressure);
@@ -154,8 +171,9 @@ struct EditorShared {
     const std::uint32_t n = input.translate(in, ev, 3);
     for (std::uint32_t i = 0; i < n; ++i) engine.postEvent(ev[i]);
   }
-  void pressure(core::NoteId id, double p, core::ControlSourceId source) {
+  void pressure(core::NoteId id, double p, core::ControlSourceId source, int plate) {
     core::PerformanceInput in{};
+    in.side = sideOf(plate);
     in.kind = core::PerfInputKind::aftertouch;
     in.value = static_cast<core::SignalSample>(p);
     in.noteId = id;
@@ -174,7 +192,7 @@ struct EditorShared {
   const core::KeyboardSeqStep* seqStep(int i) const {
     const core::DeviceStateV1* st = state();
     if (st == nullptr || i < 0 || i >= kSeqSteps) return nullptr;
-    return &(seqSide == 0 ? st->keyboardSeqCurrent : st->keyboardSeqCurrentR).steps[static_cast<std::size_t>(i)];
+    return &(editSide() == 0 ? st->keyboardSeqCurrent : st->keyboardSeqCurrentR).steps[static_cast<std::size_t>(i)];
   }
 
   // Computer keyboard: returns true if the key was used.
@@ -195,10 +213,10 @@ struct EditorShared {
     const core::NoteId id = static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(semi));
     if (!up && heldKeys.count(semi) == 0) {
       heldKeys[semi] = semi + 12 * octave;
-      note(true, heldKeys[semi], id, 0.8, kKeySource);
+      note(true, heldKeys[semi], id, 0.8, kKeySource, semi);
       lit.insert(semi % 12);
     } else if (up && heldKeys.count(semi) > 0) {
-      note(false, heldKeys[semi], id, 0.0, kKeySource);
+      note(false, heldKeys[semi], id, 0.0, kKeySource, semi);
       heldKeys.erase(semi);
       lit.erase(semi % 12);
     }
@@ -397,6 +415,8 @@ class ToggleControl : public IControl {
       const int pos = std::clamp(leverPos(idx, n) + (y < float(w_.cy) ? -1 : 1), 0, n - 1);
       s_.setIndex(w_.id, w_.leverIndex[pos]);
     }
+    // PLAY changes which side the menu edits and whether EDIT: LEFT / RIGHT shows: redraw all.
+    if (w_.id == static_cast<std::uint32_t>(ParameterId::keyboard_behaviour)) GetUI()->SetAllControlsDirty();
     SetDirty(false);
   }
 
@@ -540,14 +560,14 @@ class PlateControl : public IControl {
   }
   void OnMouseDown(float, float y, const IMouseMod&) override {
     semi_ = int(w_.id) + 12 * s_.octave;
-    s_.note(true, semi_, EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource);
+    s_.note(true, semi_, EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource, int(w_.id));
     s_.lit.insert(int(w_.id));
     SetDirty(false);
   }
   void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override {
     if (semi_ == kNone) return;
     if (!mRECT.Contains(x, y)) release();
-    else s_.pressure(EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource);
+    else s_.pressure(EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource, int(w_.id));
   }
   void OnMouseUp(float, float, const IMouseMod&) override { release(); }
 
@@ -555,7 +575,7 @@ class PlateControl : public IControl {
   static constexpr int kNone = -1000;
   void release() {
     if (semi_ == kNone) return;
-    s_.note(false, semi_, EditorShared::kMouseId, 0.0, EditorShared::kMouseSource);
+    s_.note(false, semi_, EditorShared::kMouseId, 0.0, EditorShared::kMouseSource, int(w_.id));
     s_.lit.erase(int(w_.id));
     semi_ = kNone;
     SetDirty(false);
@@ -836,9 +856,9 @@ class MenuBackground : public IControl {
   EditorShared& s_;
 };
 
-// Menu title-row buttons: page tabs (SETTINGS / SEQUENCER) and the sequencer's
-// left/right bank switch (only meaningful in SPLIT behaviour; in SINGLE/TWIN both sides
-// play the left bank).
+// Menu title-row buttons: page tabs (SETTINGS / SEQUENCER) and the left/right side switch.
+// The side switch only shows under PLAY = SPLIT (in SINGLE / TWIN both halves share the
+// left bank); it applies to both pages.
 class MenuTabControl : public IControl {
  public:
   enum Kind { kSettings, kSequencer, kSide, kClose, kReset };
@@ -846,6 +866,7 @@ class MenuTabControl : public IControl {
       : IControl(IRECT(float(r.x0), float(r.y0), float(r.x1), float(r.y1))), s_(s), k_(k) {}
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
+    if (k_ == kSide && !s_.split()) return;  // nothing to choose outside SPLIT
     const bool armed = k_ == kReset && armedNow();
     const char* label = k_ == kSettings ? "SETTINGS" : k_ == kSequencer ? "SEQUENCER" : k_ == kClose ? "CLOSE"
                         : k_ == kReset ? (armed ? "CLICK TO CONFIRM" : "RESET PANEL")
@@ -875,7 +896,10 @@ class MenuTabControl : public IControl {
       GetUI()->SetAllControlsDirty();
       return;
     }
-    if (k_ == kSide) s_.seqSide = 1 - s_.seqSide;
+    if (k_ == kSide) {
+      if (!s_.split()) return;
+      s_.seqSide = 1 - s_.seqSide;
+    }
     else s_.menuPage = k_ == kSettings ? 0 : 1;
     s_.showMenu(true);
     GetUI()->SetAllControlsDirty();
@@ -927,7 +951,7 @@ class SeqStepControl : public IControl {
     return int(std::lround(std::clamp(t, 0.0, 1.0) * StandaloneAudioEngine::kSeqStepMaxNote));
   }
   void post(int note, bool gate) {
-    s_.engine.postSeqStep(s_.seqSide, step_, note, gate);
+    s_.engine.postSeqStep(s_.editSide(), step_, note, gate);
     SetDirty(false);
   }
   EditorShared& s_;
@@ -1006,7 +1030,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   shared.menuChrome.push_back(reset);
   auto* side = new MenuTabControl(shared, kSeqSideSwitch, MenuTabControl::kSide);
   g->AttachControl(side);
-  shared.seqControls.push_back(side);
+  shared.menuChrome.push_back(side);
   for (int i = 0; i < kSeqSteps; ++i) {
     auto* c = new SeqStepControl(shared, i);
     g->AttachControl(c);

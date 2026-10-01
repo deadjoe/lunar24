@@ -246,6 +246,9 @@ class StandaloneAudioEngine {
   bool postDroneKey(int voice, bool open);
   // 16-step sequencer: set step `step` (0..15) of the left (side 0) or right bank.
   bool postSeqStep(int side, int step, int note, bool gate);
+  // The RIGHT side's copy of a per-side keyboard menu setting (PLAY = SPLIT plays the right
+  // half from it). False for a parameter that has no right-side copy.
+  bool postKeyboardRightParameter(ParameterId id, double value);
   // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
@@ -893,6 +896,18 @@ inline bool StandaloneAudioEngine::postSeqStep(int side, int step, int note, boo
   return liveQueue_.push(c);
 }
 
+inline bool StandaloneAudioEngine::postKeyboardRightParameter(ParameterId id, double value) {
+  if (!definition_) return false;
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  if (!lunar24::core::state_set_keyboard_right(st, id, value)) return false;
+  ++editCount_;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::KeyboardRight;
+  c.parameter = id;
+  c.value = st.keyboardScalarRight[static_cast<std::size_t>(lunar24::core::keyboard_scalar_index(id))];
+  return liveQueue_.push(c);
+}
+
 inline bool StandaloneAudioEngine::parameterFromAudioThread(ParameterId id, double value) {
   if (!definition_) return false;
   lunar24::core::ControlEvent e{};
@@ -965,6 +980,9 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
       case LiveCommand::Kind::SeqStep:
         rt.setKeyboardSeqStep(static_cast<int>(c.side), static_cast<int>(c.index),
                               static_cast<std::uint8_t>(c.value), c.hadOld);
+        break;
+      case LiveCommand::Kind::KeyboardRight:
+        rt.setKeyboardRightScalar(c.parameter, c.value);
         break;
     }
   }

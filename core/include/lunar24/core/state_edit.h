@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include <lunar24/core/device_state.h>
+#include <lunar24/core/keyboard_side_bank.h>
 #include <lunar24/core/state_disposition.h>
 #include <lunar24/core/state_validation.h>
 #include <lunar24/registry.hpp>
@@ -50,6 +51,19 @@ inline bool state_set_param(DeviceStateV1& st, ParameterId id, double value) noe
   // keyboard.behaviour mirrors the keyboard's global single/twin/split setting.
   if (id == ParameterId::keyboard_behaviour)
     st.keyboardSettings.pressureBehaviour = static_cast<std::uint8_t>(v);
+  return true;
+}
+
+// Set the RIGHT side's copy of a per-side keyboard setting (the bank PLAY = SPLIT reads for the
+// right half; the left half and SINGLE / TWIN read parameters[]). Clamped and stepped like
+// state_set_param. False for a parameter that has no right-side copy.
+inline bool state_set_keyboard_right(DeviceStateV1& st, ParameterId id, double value) noexcept {
+  const ParameterDescriptor* d = find_parameter(id);
+  const std::int32_t idx = keyboard_scalar_index(id);
+  if (d == nullptr || idx < 0 || !std::isfinite(value)) return false;
+  double v = value < d->min ? d->min : (value > d->max ? d->max : value);
+  if (d->step > 0.0) v = d->min + std::round((v - d->min) / d->step) * d->step;
+  st.keyboardScalarRight[static_cast<std::size_t>(idx)] = v;
   return true;
 }
 

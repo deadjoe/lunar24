@@ -653,12 +653,44 @@
   - 第 5 步：只有按住键时才播放，松开就停。
   - 第 6 步：声音停下，不卡住。
 
+**T12.6 PLAY = TWIN（两个 6 键的键盘）** 🔧 (#75)
+- 准备：RESET PANEL；DRONE VOICES 6 个键全关；VOICE MIXER 只留 **VCO A** 和 **VCO B**。
+- 电脑键盘上，左半边 6 个键是 **A W S E D F**（C 到 F），右半边是 **T G Y H U J**（F# 到 B）。
+- 步骤：
+  1. 打开键盘菜单，**PLAY** 选 TWIN，关掉菜单。
+  2. 接线：键盘区右边一组的 ⊓ **GATE R**（第 1 个）→ envelope B 的 **gate**；右边一组的 ↓ **PRESSURE**（第 2 个）→ VCO B 的 **1v/oct**。
+  3. 分辨左右：把 **VCO A** 的 VOL 拖到最左，弹左右两半；再把 VCO A 拖回、**VCO B** 拖到最左，再弹一次。
+  4. 两边同时：两个 VOL 都拖回中间，VCO B 的 **oct+3** 拨杆拨到上面（VCO B 高 3 个八度）。按住 A，再按住 H，然后先松开 A；再反过来先按 H、后按 A、先松开 H。
+  5. PLAY 改回 SINGLE，重复第 3 步。
+- 期望：
+  - 第 3 步：只开 VCO B 时，只有右半边响；只开 VCO A 时，只有左半边响。
+  - 第 4 步：低音（左）和高音（右）同时响；松开一边，另一边继续响。
+  - 第 5 步：只开 VCO B 时两半都不响，只开 VCO A 时两半都响（12 个键是一个键盘）；同时按住两个键时只响后按的那个音。
+- 测完把 oct+3 拨回 low。
+
+**T12.7 PLAY = SPLIT（左右各一套设置）** 🔧 (#75)
+- 准备：同 T12.6（RESET PANEL；drone 全关；VOICE MIXER 只留 VCO A、VCO B；GATE R → envelope B 的 gate，PRESSURE → VCO B 的 1v/oct）；VCO B 的 **oct+3** 拨到上面，右边是高音。
+- 步骤：
+  1. 打开键盘菜单，**PLAY** 选 SPLIT。标题行（RESET PANEL 右边）出现 **EDIT: LEFT** 按钮。
+  2. 这个按钮决定菜单里的设置改的是哪一半键盘：显示 EDIT: LEFT 时改左半边，显示 EDIT: RIGHT 时改右半边。目标是左半边普通弹奏、右半边琶音：
+     - 左半边不用改（**MODE** 默认就是 KEYBOARD）；
+     - 点一下 **EDIT: LEFT**，它变成 **EDIT: RIGHT**；
+     - 把 **MODE** 改成 ARPEGGIATOR（只改了右半边）；
+     - 点 **CLOSE** 关掉菜单。
+  3. 按住左半边的 **A**；再同时按住右半边的 **H** 和 **J**。
+  4. 重新打开菜单，在 EDIT: LEFT / EDIT: RIGHT 之间切换，看 MODE 显示。
+  5. **PLAY** 改成 TWIN。
+- 期望：
+  - 第 3 步：左边是一个持续的低音（普通键盘）；右边两个高音按节奏轮流响（琶音）。
+  - 第 4 步：EDIT: LEFT 时 MODE 显示 KEYBOARD，EDIT: RIGHT 时显示 ARPEGGIATOR。
+  - 第 5 步：EDIT 按钮消失；左右两边都按左边的设置弹（都是普通键盘，右边不再琶音）。
+- 测完把 oct+3 拨回 low。
+
 ---
 
 ## 还没测的（⏳）
 
 - 键盘：
-  - **PLAY**（SINGLE / TWIN / SPLIT 左右分区）；
   - **PRESETS**（预设保存和载入）；
   - **PRESSURE**、**P RISE**、**P FALL**、**VIB PRESS**；
   - **LEGATO**、**ARP VAR / ARP INT / ARP LEN**、**SEQ CV**、**RHYTHM**；
@@ -681,6 +713,10 @@
 - 所有 drone 一起响时混音太满。
 - 光敏传感器可以改成用鼠标操作。
 - VCO A → VCO B 的默认调制偏温和。
+
+### 键盘待办
+
+- MIDI 键盘的音符都算左半边；TWIN / SPLIT 下如何分左右（按通道或按音区）还没定。
 
 ### 音频设备待办（先跳过，以后加日志再查）
 
