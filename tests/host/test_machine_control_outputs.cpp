@@ -258,11 +258,24 @@ void test_clap_opens_gate() {
     const double t = static_cast<double>(i) / kSr;
     const double burst = t < 0.03 ? std::exp(-t / 0.008) : 0.0;
     in0 = 0.0;
-    in1 = 0.2 * burst * ((r >> 8) / 8388608.0 - 1.0);  // device-normalized, a moderate clap
+    in1 = 0.5 * burst * ((r >> 8) / 8388608.0 - 1.0);  // device-normalized: a clap that lights the clip LED
   }, [&](const lunar24::core::SynthRuntime& rt) {
     if (rt.controlVoltageAt(JackId::env_follower_gate_out) > 1.0) gate = true;
   }));
   CHECK(gate);
+
+  // Steady low-level noise (a quiet room / TV, ~-40 dBFS) at the same settings keeps the gate shut.
+  EngineHarness q;
+  CHECK(q.load(st));
+  bool noiseGate = false;
+  CHECK(q.renderFeedSampled(static_cast<int>(kSr * 0.5), [&](std::size_t, double& in0, double& in1) {
+    r = r * 1664525u + 1013904223u;
+    in0 = 0.0;
+    in1 = 0.017 * ((r >> 8) / 8388608.0 - 1.0);
+  }, [&](const lunar24::core::SynthRuntime& rt) {
+    if (rt.controlVoltageAt(JackId::env_follower_gate_out) > 1.0) noiseGate = true;
+  }));
+  CHECK(!noiseGate);
 }
 
 void test_sequencer() {

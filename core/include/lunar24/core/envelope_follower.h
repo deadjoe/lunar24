@@ -94,9 +94,12 @@ class EnvelopeFollower {
   // CONFIRMED voltage-spec ranges.
   static constexpr double kEnvMaxVolt = 10.0;  // ENV FOLLOWER CV 0…10 V.
   static constexpr double kGateVolt = 8.0;     // GATE 0…8 V.
-  // PROVISIONAL gate-detector tuning: no manual threshold/hysteresis value exists.
-  static constexpr double kGateThreshold = 0.5;
-  static constexpr double kGateHysteresis = 0.05;
+  // Gate-detector tuning: no manual threshold/hysteresis value exists. Opens at 2 V and
+  // closes at 1.3 V so the steady level of room noise or a TV, amplified by GAIN at mid, stays
+  // shut while a clap (which drives the preamp near its clip level) opens it. GAIN sets the
+  // sensitivity.  // tuned by ear
+  static constexpr double kGateThreshold = 2.0;
+  static constexpr double kGateHysteresis = 0.7;
   // PROVISIONAL floor on the time constants (seconds) to avoid a zero/NaN coefficient.
   static constexpr double kMinTime = 1e-4;
 

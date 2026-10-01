@@ -590,8 +590,10 @@
 - 步骤：
   1. RESET PANEL。PREAMP 的 **gain** 转到中间；VOICE MIXER 只留 **VCO A**（第 5 路），其它 9 路 VOL 拖到最左。
   2. 接线：ENVELOPE FOLLOWER 的红字 **gate** → envelope A 的 **gate** 插孔。
-  3. 不按键，拍一下手；再连续拍几下。
-- 期望：每拍一下 VCO A 响一下，ENVELOPE FOLLOWER 的绿灯（gate）同时亮。不拍手时安静。
+  3. 先不出声，看 ENVELOPE FOLLOWER 的绿灯（gate）：应该是灭的。如果一直亮（房间太吵），把 **gain** 往左转到刚好熄灭。
+  4. 不按键，拍一下手；再连续拍几下。
+- 期望：每拍一下 VCO A 响一下，绿灯同时亮。不拍手时安静。
+- 提示：gain 就是 gate 的灵敏度。用耳机，否则扬声器里的 VCO A 被麦克风收进去，会让 gate 一直开着。
 
 **T11.4 麦克风默认不出声** 🔧 (#72)
 - 步骤：
