@@ -21,7 +21,7 @@
 // contiguous, in-range set, and the openable run from the anchor satisfies the WET output strategy:
 //
 //   INPUT  — both off -> open 0 (output-only device / input disabled; VALID, never a failure).
-//            one valid in-range L -> open 1 (mono; the owner routes ExtOnly).
+//            one valid in-range L -> open 1 (mono; the owner feeds it to EXT and PREAMP).
 //            two adjacent & in-range -> open 2 (owner routes Distinct; never an implicit copy).
 //            non-contiguous / duplicate / out-of-range / R-only -> Invalid (no implicit copy).
 //
@@ -41,6 +41,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 namespace lunar24::host {
 
@@ -194,6 +195,19 @@ inline unsigned choose_sample_rate(unsigned current, unsigned preferred, const u
     if (sr >= kMinMusicSampleRate && (best == 0 || sr < best)) best = sr;
   }
   return best != 0 ? best : 48000;
+}
+
+// The name an audio device is shown and saved under. RtAudio's CoreAudio names read
+// "Manufacturer: Device"; keep the device part, without the space after the colon. The settings
+// file trims spaces when it reads a value back, so a saved " MacBook Pro Microphone" came back as
+// "MacBook Pro Microphone", matched no device, and the host fell back to the system's default
+// input (AirPods, BlackHole, ...) at the next launch.
+inline std::string_view audio_device_display_name(std::string_view rtAudioName) {
+  const std::size_t colon = rtAudioName.find(':');
+  std::string_view s = colon == std::string_view::npos ? rtAudioName : rtAudioName.substr(colon + 1);
+  while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
+  while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.remove_suffix(1);
+  return s;
 }
 
 }  // namespace lunar24::host

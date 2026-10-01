@@ -316,20 +316,11 @@ void IPlugAPPHost::UpdateINI()
   WritePrivateProfileString("midi", "outchan", buf, ini);
 }
 
+// Lunar 24: trimmed (lunar24::host::audio_device_display_name), so a name saved in settings.ini
+// still matches its device after the file trims it on read.
 std::string IPlugAPPHost::GetAudioDeviceName(uint32_t deviceID) const
 {
-  auto str = mDAC->getDeviceInfo(deviceID).name;
-  std::size_t pos = str.find(':');
-
-  if (pos != std::string::npos)
-  {
-    std::string subStr = str.substr(pos + 1);
-    return subStr;
-  }
-  else
-  {
-    return str;
-  }
+  return std::string(lunar24::host::audio_device_display_name(mDAC->getDeviceInfo(deviceID).name));
 }
 
 std::optional<uint32_t> IPlugAPPHost::GetAudioDeviceID(const char* deviceNameToTest) const

@@ -684,7 +684,7 @@
 
 ### 音频设备待办（先跳过，以后加日志再查）
 
-- 戴 AirPods Pro（输出走 AirPods）时，MacBook 麦克风收不到声音（PREAMP 蓝灯、ENVELOPE FOLLOWER 绿灯都不亮）。手动改回 MacBook 麦克风、摘掉 AirPods、RESET PANEL 都不恢复。不用 AirPods 时正常。
-- 重启应用后，Preferences 的输入设备有时显示成列表里的第一个设备（AirPods Pro、BlackHole 2ch），而不是上次选的 MacBook 麦克风；重新选一次 MacBook 麦克风并保存后正常。已知：iPlug2 自带的设置窗口在认不出当前输入设备时，会默认显示列表第一项。为什么认不出还不清楚。
+- 戴 AirPods Pro（输出走 AirPods）时，MacBook 麦克风收不到声音（PREAMP 蓝灯、ENVELOPE FOLLOWER 绿灯都不亮）。手动改回 MacBook 麦克风、摘掉 AirPods、RESET PANEL 都不恢复。不用 AirPods 时正常。很可能和下一条同源：启动时输入被换成了 AirPods 的麦克风，AirPods 进入通话模式，带输入打不开，只开了输出。下一条修好后请复测。
+- 🔧 重启应用后输入设备变成 AirPods Pro / BlackHole 2ch：已找到原因并修复。设备名在保存时带了一个前导空格（" MacBook Pro Microphone"），设置文件读回来时会去掉空格，于是对不上任何设备，程序就退回 macOS 的默认输入设备。现在设备名统一去掉首尾空格。复测：选好 MacBook 麦克风，退出再打开，Preferences 里应该还是 MacBook Pro Microphone；戴着 AirPods 打开应用也一样。
 - MacBook 麦克风是单声道，Preferences 里 Input 1 (L) / Input 2 (R) 显示为空（iPlug2 设置窗口的显示问题），麦克风其实是开的。
 - 下一步：在打开音频设备时写一个日志（设备名、采样率、声道、成功 / 失败 / 退回只开输出），按上面的步骤复现后看日志再修。
