@@ -691,6 +691,6 @@
   - AirPods Pro 在系统里是两个同名设备（一个只有麦克风，一个只有耳机），程序按名字找输出时拿到了麦克风那个，打不开。现在按方向查找。
   - 打不开时程序临时关掉输入以保证有声音；紧接着点 OK 会把"输入关"存成你的选择，以后每次启动麦克风都不开。现在临时关闭不会被存下来。
   - 应用运行中插拔设备时设备列表不刷新（Preferences 里看不到新连上的 AirPods）。现在设备增减会自动刷新并重新打开。
-  - AirPods 的麦克风只有通话音质（24000 Hz），本应用不用它；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」。
+  - AirPods 的麦克风只有通话音质（24000 Hz），打不开（系统拒绝 48000 Hz）；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」（已验证可用）。选了打不开的输入时，程序只开输出，并弹窗「Audio input is off」说明原因（每个设备每次运行只提示一次）。
   - 复测：应用开着戴上 / 摘下 AirPods，Preferences 列表应立刻出现 / 消失 AirPods；选 MacBook 麦克风 + AirPods 输出，拍手有反应；把输入误选成 AirPods 后再改回 MacBook 麦克风，拍手有反应，重启后仍然有。
 - 音频日志：`~/Library/Application Support/Lunar24Host/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。

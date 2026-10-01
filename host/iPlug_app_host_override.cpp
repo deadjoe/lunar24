@@ -62,6 +62,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <string>
 #include <vector>
 #include <host/midi_timing.h>
 #include <host/stream_plan.h>
@@ -730,6 +731,29 @@ bool IPlugAPPHost::TryToChangeAudio()
   // rate, or its microphone is busy). Rather than leave the instrument silent, try in turn:
   // without input, at the output device's own sample rate, then on the system output device.
   // What opens is recorded, so the Preferences dialog shows it.
+  //
+  // When that means running without the chosen input, say so once per device and session: a
+  // silently closed microphone looked like a broken instrument (a Bluetooth headset's microphone,
+  // e.g. AirPods, only runs at call quality and refuses a music sample rate).
+  const std::string failedInput = mState.mAudioInDev.Get();
+  const uint32_t failedRate = mState.mAudioSR;
+  auto reportInputOff = [&]() {
+    if (!inputSelected)
+      return;
+    static std::string sReported;
+    if (sReported == failedInput)
+      return;
+    sReported = failedInput;
+    AudioLog("  input '%s' did not open: running without input", failedInput.c_str());
+    WDL_String msg;
+    msg.SetFormatted(1024,
+                     "The input device \"%s\" could not be opened at %u Hz, so Lunar 24 is running "
+                     "without an input (PREAMP and EXT.AUDIO hear nothing).\n\n"
+                     "A Bluetooth headset's microphone (AirPods, for example) only works at call quality. "
+                     "Choose another input in Preferences, such as the MacBook Pro Microphone.",
+                     failedInput.c_str(), failedRate);
+    MessageBox(gHWND, msg.Get(), "Audio input is off", MB_OK);
+  };
   if (inputSelected)
   {
     mState.mAudioInChanL = 0;
@@ -738,6 +762,7 @@ bool IPlugAPPHost::TryToChangeAudio()
     if (InitAudio(0, outputID.value(), mState.mAudioSR, mState.mBufferSize))
     {
       UpdateINI();
+      reportInputOff();
       return true;
     }
   }
@@ -758,6 +783,7 @@ bool IPlugAPPHost::TryToChangeAudio()
         mState.mAudioOutDev.Set(GetAudioDeviceName(out).c_str());
         mState.mAudioSR = sr;
         UpdateINI();
+        reportInputOff();
         return true;
       }
     }
@@ -769,6 +795,7 @@ bool IPlugAPPHost::TryToChangeAudio()
   {
     mState.mAudioSR = lowRate;
     UpdateINI();
+    reportInputOff();
     return true;
   }
   return false;
