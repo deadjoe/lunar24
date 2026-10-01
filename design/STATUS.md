@@ -24,7 +24,8 @@ _Last updated: 2026-09-30 (priorities reset)._
   renders it without building the app. CI attaches a downloadable app to
   every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: ~53 unit/engine tests, about 10 seconds.
+- **Tests**: ~56 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
+  `design/MANUAL_TESTS.md`.
 
 ## How to play
 - Knobs: drag up/down (Shift = fine), mouse wheel, double-click resets.
