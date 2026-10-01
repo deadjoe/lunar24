@@ -108,6 +108,22 @@ int main() {
       CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
     CHECK(e.runtime()->controlVoltageAt(gate) < 0.5);   // no stuck note
   }
+  // PLAY = SPLIT: the right half has its own settings. Setting the right side's MODE to
+  // arpeggiator changes only the right side; the left side's MODE stays keyboard.
+  {
+    host::StandaloneAudioEngine e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 2.0));            // SPLIT
+    CHECK(e.postKeyboardRightParameter(core::ParameterId::keyboard_mode, 1.0));    // right: arp
+    CHECK(!e.postKeyboardRightParameter(core::ParameterId::keyboard_behaviour, 0.0));  // not per-side
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    const core::DeviceStateV1* s2 = e.canonicalState();
+    const auto mi = static_cast<std::size_t>(core::keyboard_scalar_index(core::ParameterId::keyboard_mode));
+    CHECK(s2->keyboardScalarRight[mi] == 1.0);
+    CHECK(s2->parameters[static_cast<std::size_t>(core::ParameterId::keyboard_mode)] == 0.0);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Right) == core::ArpSeqMode::Arpeggiator);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Left) == core::ArpSeqMode::Keyboard);
+  }
   // MUTE silences every output with a short fade and brings the sound back when released; the
   // machine keeps running underneath.
   {

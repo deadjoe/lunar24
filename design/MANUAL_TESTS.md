@@ -668,12 +668,25 @@
   - 第 5 步：只开 VCO B 时两半都不响，只开 VCO A 时两半都响（12 个键是一个键盘）；同时按住两个键时只响后按的那个音。
 - 测完把 oct+3 拨回 low。
 
+**T12.7 PLAY = SPLIT（左右各一套设置）** 🔧
+- 准备：同 T12.6（RESET PANEL；drone 全关；VOICE MIXER 只留 VCO A、VCO B；GATE R → envelope B 的 gate，PRESSURE → VCO B 的 1v/oct）；VCO B 的 **oct+3** 拨到上面，右边是高音。
+- 步骤：
+  1. 打开键盘菜单，**PLAY** 选 SPLIT。标题行（RESET PANEL 右边）出现 **EDIT: LEFT** 按钮。
+  2. 保持 EDIT: LEFT，**MODE** 保持 KEYBOARD。点 **EDIT: LEFT** 变成 **EDIT: RIGHT**，把 **MODE** 改成 ARPEGGIATOR。关掉菜单。
+  3. 按住左半边的 **A**；再同时按住右半边的 **H** 和 **J**。
+  4. 重新打开菜单，在 EDIT: LEFT / EDIT: RIGHT 之间切换，看 MODE 显示。
+  5. **PLAY** 改成 TWIN。
+- 期望：
+  - 第 3 步：左边是一个持续的低音（普通键盘）；右边两个高音按节奏轮流响（琶音）。
+  - 第 4 步：EDIT: LEFT 时 MODE 显示 KEYBOARD，EDIT: RIGHT 时显示 ARPEGGIATOR。
+  - 第 5 步：EDIT 按钮消失；左右两边都按左边的设置弹（都是普通键盘，右边不再琶音）。
+- 测完把 oct+3 拨回 low。
+
 ---
 
 ## 还没测的（⏳）
 
 - 键盘：
-  - **PLAY = SPLIT**：右半边已能独立发声，但 SETTINGS 页只能改左边的设置（右边的 MODE 等无法单独设置，见 TODO）；
   - **PRESETS**（预设保存和载入）；
   - **PRESSURE**、**P RISE**、**P FALL**、**VIB PRESS**；
   - **LEGATO**、**ARP VAR / ARP INT / ARP LEN**、**SEQ CV**、**RHYTHM**；
@@ -699,7 +712,6 @@
 
 ### 键盘待办
 
-- SPLIT 时 SETTINGS 页需要像 SEQUENCER 页一样有 EDIT: LEFT / RIGHT 切换，才能给右半边单独设 MODE（例如左边琶音、右边普通键盘）。现在 UI 只改左边。
 - MIDI 键盘的音符都算左半边；TWIN / SPLIT 下如何分左右（按通道或按音区）还没定。
 
 ### 音频设备待办（先跳过，以后加日志再查）

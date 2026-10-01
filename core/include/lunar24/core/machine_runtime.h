@@ -2440,6 +2440,17 @@ class SynthRuntime {
   // A keyboard menu setting changed live: update the keyboard's state copy and
   // reconfigure both sides (held notes restart). Changing the tempo also switches the
   // keyboard back to its internal clock (manual p.19). Returns false for other parameters.
+  // A right-side keyboard setting (the bank PLAY = SPLIT plays the right half from) changed
+  // live: update the state copy and reconfigure both sides. Other parameters are ignored.
+ public:
+  void setKeyboardRightScalar(ParameterId id, double v) {
+    const std::int32_t idx = keyboard_scalar_index(id);
+    if (idx < 0) return;
+    kbdState_.keyboardScalarRight[static_cast<std::size_t>(idx)] = v;
+    applyKeyboardState(kbdState_);
+  }
+
+ private:
   bool applyKeyboardParam_(ParameterId id, double v) {
     const ParameterDescriptor* d = find_parameter(id);
     if (d == nullptr || d->stable_id.substr(0, 9) != "keyboard.") return false;

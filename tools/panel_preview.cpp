@@ -268,8 +268,7 @@ int main(int argc, char** argv) {
     art::drawMenuTab(sink, float(rs.x0), float(rs.y0), float(rs.x1), float(rs.y1), "RESET PANEL", false, false);
   }
   if (showSeq) {
-    const Rect sw = kSeqSideSwitch;
-    art::drawMenuTab(sink, float(sw.x0), float(sw.y0), float(sw.x1), float(sw.y1), "EDIT: LEFT", false, false);
+    // (EDIT: LEFT / RIGHT only shows under PLAY = SPLIT; the preview shows the default SINGLE.)
     text(440, (kSeqSliderTop + kSeqSliderBottom) / 2, 12, theme::kMenuText, "NOTE", true);
     text(440, kSeqGateY, 12, theme::kMenuText, "GATE");
     for (int i = 0; i < kSeqSteps; ++i) {
