@@ -702,15 +702,37 @@
   - 第 5 步：第一次点 INIT 显示 SURE?，第二次显示 CLEARED；再 LOAD 后 MODE 回到 KEYBOARD。
 - 测完点 **RESET PANEL**（会清掉所有预设）。
 
+**T12.9 PRESSURE / P RISE / P FALL（压力输出）** ⏳
+- 准备：同 T4.2（PRESSURE → FILTER 的 **CV L**，**MOD L** 一半以上，左边 **FREQ** 约 1/4）。用鼠标按触摸板：按得越靠下压力越大，按住上下拖动压力跟着变。
+- 步骤（**PRESSURE** 保持 PRESSURE）：
+  1. **P RISE** 拉满，**P FALL** 最小。在触摸板最上面按住，慢慢拖到最下面，再快速拖回最上面。
+  2. **P RISE** 最小，**P FALL** 拉满，重复第 1 步。
+  3. **P RISE**、**P FALL** 都放约 1/3。**PRESSURE** 依次换成 ASR、AD、LOOP、RANDOM，每种都在触摸板偏下的位置按住 3 秒左右再松开；RANDOM 多按几次。
+- 期望：
+  - 第 1 步：往下拖时声音慢慢变亮（约 2 秒才到最亮）；拖回去时马上变闷。
+  - 第 2 步：往下拖时马上变亮；拖回去时慢慢变闷。
+  - ASR：按下后慢慢变亮并停在那里，按住时上下拖动不再改变亮度；松开后慢慢变闷。
+  - AD：按下后变亮，然后不等松手就自己慢慢变闷。
+  - LOOP：按住期间亮—闷—亮—闷反复循环（像慢速"哇哇"）。
+  - RANDOM：每按一次亮度都不一样，按住期间不变。
+
+**T12.10 VIB PRESS（压力控制颤音）** ⏳
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关；不接线。**VIB DEPTH** 约 1/4，**VIB RATE** 放中间。
+- 步骤：
+  1. **VIB PRESS** 最小。在触摸板最上面按住，慢慢拖到最下面。
+  2. **VIB PRESS** 拉满，重复第 1 步。
+- 期望：
+  - 第 1 步：颤音深浅不变。
+  - 第 2 步：在上面（轻按）颤音和第 1 步差不多；越往下颤得越深，最下面约是两倍。
+
 ---
 
 ## 还没测的（⏳）
 
 - 键盘：
-  - **PRESSURE**、**P RISE**、**P FALL**、**VIB PRESS**；
   - **LEGATO**、**ARP VAR / ARP INT / ARP LEN**、**SEQ CV**、**RHYTHM**；
   - 键盘区的 CLOCK / RESET 输入、GATE L / GATE R / V/OCT 输出。
-- MIDI 键盘输入。
+- MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。
 - DRONE 2 / 4 / 5 / 6 逐个过一遍（和 DRONE 1 / 3 同一套代码）。
 - 所有 drone 的 GATE 输入和 env 输出插孔；DRONE 3 / 6 的 LFO 输出和 S&H 的 IN / clock 插孔。
 - VCO 的 vca cv 插孔、VCO A / VCO B 的 dry 输出。
