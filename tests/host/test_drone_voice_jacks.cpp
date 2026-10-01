@@ -158,7 +158,7 @@ int main() {
     auto send = [&](core::PerfInputKind k) {
       core::PerformanceInput p{};
       p.kind = k;
-      p.value = 0.8;
+      p.value = static_cast<core::SignalSample>(0.8);
       p.noteId = 7;
       p.source = 1;
       p.seq = ++seq;
