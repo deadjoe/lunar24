@@ -728,8 +728,8 @@ class DroneKeyControl : public IControl {
 };
 
 // A printed indicator LED lit from the engine (see StandaloneAudioEngine::PanelLed). The unlit
-// LED is part of the static art; this draws the lit colour and a soft glow over it, and asks to
-// be redrawn only when its brightness changes visibly.
+// LED is part of the static art; this draws the lit lens and its spill (art::drawLed) over it,
+// and asks to be redrawn only when its brightness changes visibly.
 class LedControl : public IControl {
  public:
   LedControl(EditorShared& s, int led, float cx, float cy, float r, std::uint32_t rgb)
@@ -743,10 +743,8 @@ class LedControl : public IControl {
   void Draw(IGraphics& g) override {
     shown_ = s_.engine.panelLed(led_);
     if (shown_ <= 0.01f) return;
-    const std::uint32_t c = art::litLed(rgb_, shown_);
-    const IColor glow(int(90 * shown_), int((rgb_ >> 16) & 0xff), int((rgb_ >> 8) & 0xff), int(rgb_ & 0xff));
-    g.FillCircle(glow, cx_, cy_, r_ * 2.2f);
-    g.FillCircle(IColor(255, int((c >> 16) & 0xff), int((c >> 8) & 0xff), int(c & 0xff)), cx_, cy_, r_);
+    GraphicsSink sink{g};
+    art::drawLed(sink, cx_, cy_, r_, rgb_, shown_);
   }
 
  private:
