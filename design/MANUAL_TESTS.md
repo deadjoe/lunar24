@@ -157,11 +157,12 @@
 | 行 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | PLAY | MODE | SCALE | ROOT | BPM | GLIDE | LEGATO | VIB RATE | VIB DEPTH | VIB DELAY | VIB PRESS | PRESSURE |
-| 2 | P RISE | P FALL | ARP HOLD | ARP DIR | ARP VAR | ARP INT | ARP LEN | SEQ RUN | SEQ LEN | SEQ DIR | SEQ CV | RHYTHM |
+| 2 | P RISE | P FALL | ARP HOLD | ARP DIR | ARP VAR | ARP INT | ARP RHYTHM | SEQ RUN | SEQ LEN | SEQ DIR | SEQ CV | SEQ RHYTHM |
 | 3 | ENCODER | CAL V/OCT | CAL PRESS | DAC REF | TOUCH | RELEASE | P MIN | P MAX | CHARGE | DISCHARGE | DEBOUNCE | 5-STEP CLK |
 
 - 框形开关点一下切到下一项，右键切到上一项。
 - MODE 的选项依次是 KEYBOARD / ARPEGGIATOR（显示为 ARPEGGIATO）/ SEQUENCER。
+- 菜单标题行的页签：**SETTINGS**（上表）、**SEQUENCER**（16 步音序）、**RHYTHM**（琶音和音序的节奏型，见 T12.14）。
 
 ---
 
@@ -728,12 +729,57 @@
   - 第 2 步：在最上面（轻按）几乎不颤；越往下颤得越深，最下面约是第 1 步的两倍。
   - 补充：**VIB PRESS** 放一半时，轻按也有一半深度的颤音，压力的影响减半。
 
+**T12.11 LEGATO** ⏳
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单 **GLIDE** 放中间。
+- 步骤：
+  1. **LEGATO** 保持 OFF。用电脑键盘一个一个地弹 **A**、**K**（每次松开再按下一个）。
+  2. **LEGATO** 改成 ON，重复第 1 步。
+  3. 仍是 ON：按住 **A** 不放，再按 **K**，再松开 K。
+- 期望：
+  - 第 1 步：每个新音都从上一个音滑过去。
+  - 第 2 步：分开弹时不滑，直接跳到新音。
+  - 第 3 步：按住 A 再按 K 时滑上去；松开 K 时滑回 A。
+
+**T12.12 ARP VAR / ARP INT** ⏳
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单 **MODE** 改成 ARPEGGIATOR。
+- 步骤：同时按住 **A** 和 **D**（C 和 E），一直按着，依次改：
+  1. **ARP VAR** OFF。
+  2. **ARP VAR** X1，**ARP INT** 拉满（显示 12 semitones）。
+  3. **ARP VAR** X2。
+  4. **ARP VAR** X1，**ARP INT** 调到 7 semitones。
+- 期望：
+  - 第 1 步：C、E 来回。
+  - 第 2 步：C、E，然后高八度的 C、E，再从头。
+  - 第 3 步：再多一轮，高两个八度。
+  - 第 4 步：C、E，然后高 7 个半音的 G、B。
+
+**T12.13 SEQ CV（休止步的音高）** ⏳
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。envelope A 的 **R** 拉到 3/4 左右（让每个音的尾巴长一点）。键盘菜单 **MODE** 改成 SEQUENCER，**SEQ LEN** 调到 2 steps。SEQUENCER 页：第 1 步音高 0、gate 亮；第 2 步音高拉到 +12、gate 点灭。
+- 步骤：按住 **A** 听几轮；**SEQ CV** 分别选 CONTINUOUS 和 GATED。
+- 期望：
+  - CONTINUOUS：第 2 步不重新发音，但正在消失的尾音跳高一个八度。
+  - GATED：第 2 步尾音保持原来的音高，只是慢慢消失。
+
+**T12.14 RHYTHM（节奏型）** ⏳
+- 说明：节奏型夹在时钟和琶音器 / 音序器之间，最多 8 步，每步决定这一拍的时钟能不能通过。菜单 RHYTHM 页上排是琶音器（ARP），下排是音序器（SEQ）：亮 = 通过，暗 = 静音这一拍；超过长度的步显示得很淡。长度在 SETTINGS 页的 **ARP RHYTHM** / **SEQ RHYTHM**。
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。**MODE** 改成 ARPEGGIATOR。
+- 步骤：
+  1. 同时按住 **A**、**D**、**G**（C、E、G），听一会儿。
+  2. **ARP RHYTHM** 调到 4 steps。RHYTHM 页把上排第 2、4 步点暗。
+  3. 把第 2、4 步点亮，只点暗第 4 步。
+  4. **MODE** 改成 SEQUENCER，**SEQ RHYTHM** 调到 3 steps，RHYTHM 页把下排第 3 步点暗，按住 **A**。
+- 期望：
+  - 第 1 步：C、E、G 均匀轮流。
+  - 第 2 步：响一拍、停一拍，琶音变成一半的速度，但音的顺序不跳（C、E、G 依次）。
+  - 第 3 步：每三个音后停一拍。
+  - 第 4 步：音序每走两步停一拍。
+- 补充：PLAY = SPLIT 时，RHYTHM 页同样跟着 **EDIT: LEFT / RIGHT** 切换左右两边。
+
 ---
 
 ## 还没测的（⏳）
 
 - 键盘：
-  - **LEGATO**、**ARP VAR / ARP INT / ARP LEN**、**SEQ CV**、**RHYTHM**；
   - 键盘区的 CLOCK / RESET 输入、GATE L / GATE R / V/OCT 输出。
 - MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。
 - DRONE 2 / 4 / 5 / 6 逐个过一遍（和 DRONE 1 / 3 同一套代码）。

@@ -33,10 +33,10 @@
 //     keyboardClockSelectors[..] but NEVER applied as a numeric ratio. The engine
 //     advances ONE step per incoming clock edge (nominal 1:1) pending evidence. This
 //     is recorded in FINDINGS, not an invented ratio table.
-//   * The rhythm GATE PATTERN (arp_rhythm / seq_rhythm, ids 107 / 114) is likewise
-//     UN-RESOLVED (manual L851 L904: "applies a rhythmic pattern"; the pattern itself
-//     is not enumerated). It is read as a raw selector but NOT applied; the engine
-//     passes every clock edge through nominally.
+//   * RHYTHM (manual p.16/p.17): a 1..8 step gate pattern between the clock and the
+//     arp/sequencer. A muted step swallows that clock edge (no step, no note). The
+//     pattern is stored in the side's arp_rhythm / seq_rhythm selector byte as a mask of
+//     MUTED steps (bit i = step i), so 0 (every saved state so far) lets every edge through.
 //   * The arp note ORDERING — manual L817 says the arpeggiator "goes through the
 //     sequence number of pressed plates". The plate -> sequence-number table is not
 //     evidenced, so the chord is ordered by PITCH as a PROVISIONAL fallback and the
@@ -113,14 +113,13 @@ struct ArpSeqParams {
   std::uint8_t seqDirection = 0;  // seq_direction (112): 0=forward,1=backward,2=ping-pong,3=random
   std::uint8_t seqCvOutput = 0;   // seq_cv_output (113): 0=continuous,1=gated
   double seqRhythmLength = 0.0;   // seq_rhythm_length (115): norm -> 1..8 (PROVISIONAL)
-  // No-value-domain selectors (103 / 107 / 111 / 114). These live in the side's
-  // keyboardClockSelectors[..]; their value domain is UN-RESOLVED (division ratio /
-  // rhythm pattern not enumerated in the manual). Read as raw indices, NEVER applied
-  // as a numeric ratio / pattern (see header FINDINGS note).
+  // The side's keyboardClockSelectors[..]. The clock division ratio (103 / 111) has no
+  // evidenced values and is not applied. The rhythm bytes (107 / 114) are the RHYTHM
+  // patterns: a mask of MUTED steps, bit i = step i.
   std::uint8_t arpClock = 0;   // arp_clock (103)
-  std::uint8_t arpRhythm = 0;  // arp_rhythm (107)
+  std::uint8_t arpRhythm = 0;  // arp_rhythm (107): muted-step mask
   std::uint8_t seqClock = 0;   // seq_clock (111)
-  std::uint8_t seqRhythm = 0;  // seq_rhythm (114)
+  std::uint8_t seqRhythm = 0;  // seq_rhythm (114): muted-step mask
   std::array<ArpSeqStep, 16> steps{};  // this side's 16 sequencer steps
   double bpm = 120.0;                  // GLOBAL clock_bpm (129)
 };
@@ -208,6 +207,7 @@ class ArpSeq {
     runningGate_ = false;
     lastArpNoteId_ = 0;
     arpNoteId_ = 0;   // constructed notes get a fresh identity counter after reset
+    rhythmIndex_ = 0;
   }
 
   // mode() exposes the decoded mode so a caller can decide whether to drive a voice
@@ -406,7 +406,7 @@ class ArpSeq {
         if (chordEmpty()) emitRelease(sink, runningGate_, ev);
         break;
       case ControlEventKind::clock:
-        stepArp(sink, ev);
+        if (rhythmPasses_(params_.arpRhythm, arp_length_steps(params_.arpLength))) stepArp(sink, ev);
         break;
       case ControlEventKind::sync:
         // A plain sync restarts the run + releases the current synthetic note (gate-off),
@@ -490,7 +490,7 @@ class ArpSeq {
         }
         break;
       case ControlEventKind::clock:
-        stepSeq(sink, ev);
+        if (rhythmPasses_(params_.seqRhythm, seq_rhythm_length_steps(params_.seqRhythmLength))) stepSeq(sink, ev);
         break;
       case ControlEventKind::sync:
         // A plain sync restarts the run + releases the current synthetic note (gate-off),
@@ -513,12 +513,24 @@ class ArpSeq {
     const double pitch = (seqBaseValid_ ? seqBase_ : 0.0) + static_cast<double>(st.note) / 12.0;
 
     // A step whose gate is off is a rest (manual p.11/p.17: the gate switch mutes the gate,
-    // not the step). CV OUTPUT continuous/gated is not modelled separately: a rest holds
-    // the last pitch in both modes.
-    if (st.gate != 0) emitNote(sink, pitch, runningGate_, ev);
-    else              emitRelease(sink, runningGate_, ev);
+    // not the step). CV OUTPUT (manual p.17): continuous = the V/OCT output still moves to
+    // a rest step's note; gated = a rest holds the last played pitch.
+    if (st.gate != 0) {
+      emitNote(sink, pitch, runningGate_, ev);
+    } else {
+      emitRelease(sink, runningGate_, ev);
+      if (params_.seqCvOutput == 0) emitPitch_(sink, pitch, kCvOnlyNoteId, ev);
+    }
     const std::uint32_t len = seq_length_steps(params_.seqLength);
     seqIndex_ = advanceIndex(seqIndex_, len, params_.seqDirection % 4u);
+  }
+
+  // RHYTHM: walk the 1..8 step pattern one step per clock edge; false = this step is
+  // muted and the edge does not reach the arp/sequencer.
+  bool rhythmPasses_(std::uint8_t mutedMask, std::uint32_t len) {
+    const std::uint32_t step = rhythmIndex_ % (len == 0 ? 1u : len);
+    rhythmIndex_ = step + 1;
+    return ((mutedMask >> step) & 1u) == 0;
   }
 
   // Forward/backward/ping-pong index advance within a circular run of `len`.
@@ -541,6 +553,7 @@ class ArpSeq {
   std::uint32_t chordOverflow_ = 0;
   std::uint32_t arpIndex_ = 0;
   std::uint32_t seqIndex_ = 0;
+  std::uint32_t rhythmIndex_ = 0;  // RHYTHM pattern position
   double seqBase_ = 0.0;
   bool seqBaseValid_ = false;
   bool runningGate_ = false;

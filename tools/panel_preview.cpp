@@ -259,10 +259,12 @@ int main(int argc, char** argv) {
   if (showMenu || showSeq) {
     std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='10' fill='%s'/>\n", kMenuX0,
                 kMenuY0, kMenuX1 - kMenuX0, kMenuY1 - kMenuY0, col(theme::kMenuBg).c_str());
-    text((kMenuX0 + kMenuX1) / 2, kMenuY0 + 22, 18, theme::kMenuText, "KEYBOARD MENU");
+    text(kMenuTitleX, kMenuY0 + 22, 18, theme::kMenuText, "KEYBOARD MENU");
     const Rect a = kMenuTabSettings, b = kMenuTabSequencer;
     art::drawMenuTab(sink, float(a.x0), float(a.y0), float(a.x1), float(a.y1), "SETTINGS", showMenu, false);
     art::drawMenuTab(sink, float(b.x0), float(b.y0), float(b.x1), float(b.y1), "SEQUENCER", showSeq, false);
+    const Rect rh = kMenuTabRhythm;
+    art::drawMenuTab(sink, float(rh.x0), float(rh.y0), float(rh.x1), float(rh.y1), "RHYTHM", false, false);
     const Rect c = kMenuClose;
     art::drawMenuTab(sink, float(c.x0), float(c.y0), float(c.x1), float(c.y1), "CLOSE", false, false);
     const Rect rs = kMenuReset;

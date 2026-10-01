@@ -252,6 +252,14 @@ class StandaloneAudioEngine {
   // Keyboard preset A-D (slot 0..3): load it, save the current keyboard settings into it, or
   // clear it (back to the factory keyboard settings). Live, no audio interruption.
   bool postKeyboardPreset(PresetAction action, std::uint32_t slot);
+  // RHYTHM pattern of a side (0 left, 1 right): `seq` false = arpeggiator, true = sequencer.
+  // `mutedMask` bit i mutes step i (0 = every step plays).
+  bool postKeyboardRhythm(int side, bool seq, std::uint8_t mutedMask);
+  std::uint8_t keyboardRhythm(int side, bool seq) const {
+    const DeviceStateV1* st = canonicalState();
+    if (st == nullptr) return 0;
+    return (side == 0 ? st->keyboardClockSelectors : st->keyboardClockSelectorsR)[seq ? 3 : 1];
+  }
   // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
@@ -911,6 +919,20 @@ inline bool StandaloneAudioEngine::postKeyboardRightParameter(ParameterId id, do
   return liveQueue_.push(c);
 }
 
+inline bool StandaloneAudioEngine::postKeyboardRhythm(int side, bool seq, std::uint8_t mutedMask) {
+  if (!definition_) return false;
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  const std::uint32_t index = seq ? 3u : 1u;
+  (side == 0 ? st.keyboardClockSelectors : st.keyboardClockSelectorsR)[index] = mutedMask;
+  ++editCount_;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::KeyboardSelector;
+  c.side = side == 0 ? 0u : 1u;
+  c.index = index;
+  c.value = mutedMask;
+  return liveQueue_.push(c);
+}
+
 inline bool StandaloneAudioEngine::postKeyboardPreset(PresetAction action, std::uint32_t slot) {
   if (!definition_ || !lunar24::core::preset_slot_is_valid(slot)) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
@@ -1008,6 +1030,9 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
         break;
       case LiveCommand::Kind::KeyboardPreset:
         rt.keyboardPresetAction(static_cast<int>(c.side), c.index);
+        break;
+      case LiveCommand::Kind::KeyboardSelector:
+        rt.setKeyboardClockSelector(static_cast<int>(c.side), c.index, static_cast<std::uint8_t>(c.value));
         break;
     }
   }

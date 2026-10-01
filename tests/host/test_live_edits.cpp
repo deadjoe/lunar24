@@ -149,6 +149,20 @@ int main() {
     CHECK(e.parameterValue(core::ParameterId::keyboard_behaviour) == 0.0);
     CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Right) == core::ArpSeqMode::Keyboard);
   }
+  // RHYTHM patterns, live and per side: the left arp pattern and the right seq pattern
+  // reach the running arp/sequencers and the saved state.
+  {
+    host::StandaloneAudioEngine e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.postKeyboardRhythm(0, false, 0x05));
+    CHECK(e.postKeyboardRhythm(1, true, 0x80));
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(e.keyboardRhythm(0, false) == 0x05 && e.keyboardRhythm(1, true) == 0x80);
+    CHECK(e.runtime()->keyboardArpSeqParams(core::KeyboardSide::Left).arpRhythm == 0x05);
+    CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 2.0));  // SPLIT: right reads its own bank
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(e.runtime()->keyboardArpSeqParams(core::KeyboardSide::Right).seqRhythm == 0x80);
+  }
   // MUTE silences every output with a short fade and brings the sound back when released; the
   // machine keeps running underneath.
   {
