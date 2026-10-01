@@ -96,7 +96,7 @@ class Lfo {
     baseHz_ = hz;
     return true;
   }
-  // WAVE morph norm: 0 = square, 1 = triangle, between = linear crossfade.
+  // WAVE morph norm: 0 = triangle, 1 = square, between = linear crossfade.
   // Reject non-finite, THEN bounds-clamp a finite value to [0,1]. A wave value
   // never changes the phase, so it can never make the effective step non-finite.
   bool setWave(double w) {
@@ -184,13 +184,14 @@ class Lfo {
   // Deterministic [-1,+1] fundamental at a cycle position p in [0,1), blended by
   // a morph wave in [0,1]. square: +1 on the first half, -1 on the second. triangle:
   // a linear -1..+1..-1 over the cycle (constant slope, symmetric). wave linearly
-  // crossfades the two. PROVISIONAL policy: only the endpoints (0=square, 1=triangle)
-  // and the continuous/monotonic blending relation are pinned; this is never called
-  // a measured hardware taper, and triangle is NOT replaced by a sine.
+  // crossfades the two. The endpoints follow the panel (manual p.10 figure: the
+  // triangle symbol at the knob's left end, the square at its right): 0 = triangle,
+  // 1 = square. The blend in between is linear (PROVISIONAL, not a measured taper),
+  // and triangle is NOT replaced by a sine.
   static double fundamentalAt(double p, double wave) {
     const double square = p < 0.5 ? 1.0 : -1.0;
     const double triangle = 1.0 - 4.0 * std::fabs(p - 0.5);
-    return (1.0 - wave) * square + wave * triangle;
+    return (1.0 - wave) * triangle + wave * square;
   }
 
   // Configuration (persists across reset()).

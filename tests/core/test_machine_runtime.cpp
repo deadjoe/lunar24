@@ -588,13 +588,13 @@ void registry_drone_gate_envout() {
     }
   }
   check(peak < 1e-3, "gate-off + release-done => droneChannel(0) is near-silent");
-  // Per-group descriptor oracle. level==0 after full release, so envOut == min + 0 = nominalMin.
+  // Per-group descriptor oracle. level==0 after full release, so ENV OUT rests at 0 V.
   for (int g = 0; g < 4; ++g) {
     const core::JackDescriptor* d = reqRegistryJack(envJacks[g]);
     if (!d) return;
     const double v = rt.droneEnvOutVolts(g);
-    check(v == d->nominalMin,
-          "group released ENV OUT volts == OWN descriptor nominalMin (min + level*(max-min), level=0)");
+    check(v == 0.0,
+          "group released ENV OUT rests at 0 V (level * nominalMax, level=0)");
     check(v >= d->nominalMin && v <= d->nominalMax,
           "group released ENV OUT volts is within OWN descriptor nominal range");
   }
@@ -1979,15 +1979,14 @@ IJU_TEST_NOINLINE void d4_env_out_publication_acceptance() {
 
   for (std::size_t i = 0; i < kD4Settle; ++i)
     rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
-  check(rt.droneVoiceEnvOutVolts(0) == d3->nominalMin + 1.0 * span3,
+  check(rt.droneVoiceEnvOutVolts(0) == 1.0 * d3->nominalMax,
         "ENV OUT at AR level 1.0 is the descriptor's own nominalMax (transfer read from the descriptor)");
   check(rt.droneVoiceEnvOutVolts(0) == d3->nominalMax,
         "the ENV OUT endpoint is exactly nominalMax — no hard-coded voltage");
-  check(rt.controlVoltageAt(reg::JackId::drone_3_env_out) ==
-            d3->nominalMin + rt.droneVoiceArLevel(0) * span3,
-        "the drone_3.env_out CV source slot holds exactly min + level*(max-min) of the LIVE AR level");
+  check(rt.controlVoltageAt(reg::JackId::drone_3_env_out) == rt.droneVoiceArLevel(0) * d3->nominalMax,
+        "the drone_3.env_out CV source slot holds exactly level * nominalMax of the LIVE AR level");
 
-  // Drive the gate low: the envelope goes to 0 and the published volts must reach nominalMin.
+  // Drive the gate low: the envelope goes to 0 and the published volts must rest at 0 V.
   check(rt.connect(reg::JackId::lfo_a_cv_out, reg::JackId::drone_3_gate_in),
         "ENV OUT probe: the gate cable is admitted");
   static_cast<void>(rt.rebuild());
@@ -1997,11 +1996,10 @@ IJU_TEST_NOINLINE void d4_env_out_publication_acceptance() {
   for (std::size_t i = 0; i < kD4Settle; ++i)
     rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);
   check(rt.droneVoiceArLevel(0) == 0.0, "ENV OUT probe: the gated voice really released to 0");
-  check(rt.droneVoiceEnvOutVolts(0) == d3->nominalMin,
-        "a released voice publishes exactly the descriptor's nominalMin");
+  check(rt.droneVoiceEnvOutVolts(0) == 0.0, "a released voice's ENV OUT rests at 0 V");
   check(rt.droneVoiceEnvOutVolts(0) != d3->nominalMax,
         "the ENV OUT transfer is a real lever (min != max), not a constant");
-  check(rt.droneVoiceEnvOutVolts(1) == d6->nominalMin + 1.0 * span6 &&
+  check(rt.droneVoiceEnvOutVolts(1) == 1.0 * d6->nominalMax &&
             rt.droneVoiceEnvOutVolts(1) == d6->nominalMax,
         "the untouched drone_6 ENV OUT still publishes its OWN descriptor's nominalMax "
         "(per-voice transfer, no cross-talk)");
@@ -2524,16 +2522,14 @@ IJU_TEST_NOINLINE void d5_hold_env_out_isolation_and_cohort() {
   static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_rls, 0.0));
   rt.setControlVoltage(reg::JackId::lfo_a_cv_out, -5.0);
   d5Advance(rt, kD4Settle);
-  check(rt.droneVoiceEnvOutVolts(0) == d3->nominalMin,
-        "d5 env_out: hold=off + gate LOW publishes exactly the descriptor's nominalMin");
+  check(rt.droneVoiceEnvOutVolts(0) == 0.0, "d5 env_out: hold=off + gate LOW rests at 0 V");
   static_cast<void>(rt.applyDspParam(core::ParameterId::drone_3_hold, 1.0));
   d5Advance(rt, kD4Settle);
   check(rt.droneVoiceArLevel(0) == 1.0 && rt.droneVoiceEnvOutVolts(0) == d3->nominalMax,
         "d5 env_out: HOLD=1 publishes exactly the descriptor's nominalMax (range read from the "
         "descriptor, no hard-coded voltage)");
-  check(rt.controlVoltageAt(reg::JackId::drone_3_env_out) ==
-            d3->nominalMin + rt.droneVoiceArLevel(0) * span3,
-        "d5 env_out: the published slot is min + level*(max-min) of the LIVE held level");
+  check(rt.controlVoltageAt(reg::JackId::drone_3_env_out) == rt.droneVoiceArLevel(0) * d3->nominalMax,
+        "d5 env_out: the published slot is level * nominalMax of the LIVE held level");
 
   // Per-voice independence: hold drone_3 only, with BOTH gates driven LOW, and require drone_6 to
   // be BIT-IDENTICAL to a reference where neither voice is held. The two gates hang off TWO

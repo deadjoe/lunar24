@@ -252,6 +252,27 @@ static void arp_rhythm_mutes_steps() {
   CHECK_TRUE(r.near(r.pitchAt(1), 4.0 / 12.0)); // edge 3 (edge 2 muted)
 }
 
+// The RESET jack restarts the arpeggio at its first note and keeps the held chord.
+static void arp_restart_keeps_chord() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 1;
+  p.arpDirection = 0;
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  note_on(s, r, 0.0 / 12.0, 1);
+  note_on(s, r, 4.0 / 12.0, 2);
+  note_on(s, r, 7.0 / 12.0, 3);
+  clock_edge(s, r);  // C
+  clock_edge(s, r);  // E
+  s.restartPattern();
+  clock_edge(s, r);  // C again, not G
+  clock_edge(s, r);  // E
+  CHECK_EQ(r.count(core::ControlEventKind::gate_on), 4u);
+  CHECK_TRUE(r.near(r.pitchAt(2), 0.0));
+  CHECK_TRUE(r.near(r.pitchAt(3), 4.0 / 12.0));
+}
+
 static void arp_hold_keeps_chord_through_release() {
   core::ArpSeqParams p = base_params();
   p.mode = 1;
@@ -470,6 +491,7 @@ int main() {
   arp_hold_keeps_chord_through_release();
   arp_variation_repeats_transposed();
   arp_rhythm_mutes_steps();
+  arp_restart_keeps_chord();
   seq_advances_steps_and_gates();
   seq_gate_off_step_is_a_rest();
   per_side_instantiation_independent();

@@ -30,6 +30,7 @@
 - **去掉混响**：DUAL EFFECTOR 区的 **BLEND** 拖到最左。声音变"干"，静音后不会有长尾音。
 - **只听某一路（solo）**：VOICE MIXER 里其它 9 路的 **VOL** 拖到最左。或者在 DRONE VOICES 里只留要听的 drone。
 - **关掉所有 drone**：键盘区右边 DRONE VOICES 的 6 个键全部关掉。
+- **说法约定**：本文说"打开 / 关掉 DRONE N"或"DRONE VOICES 的 N"，都是指键盘区右边 DRONE VOICES 的第 N 个按键（drone 的开关，带包络）；VOICE MIXER 里的 **VOL** 只调音量，会明确写"VOL"。
 - 卡音（声音停不下来）时：先点 **MUTE** 静音，再试 RESET PANEL。
 
 ---
@@ -524,7 +525,7 @@
 
 准备（本节通用）：RESET PANEL；只听 VCO A；按住键；VCO A 的 **cv amt** 放中间。
 
-**T9.1 LFO A / LFO B** ✅
+**T9.1 LFO A / LFO B** 🔧 (#79)
 - 步骤：
   1. 接线：LFO A 输出 → VCO A 的 **cv**。
   2. 拖 **rate**。
@@ -533,7 +534,7 @@
   5. 线改接 LFO B 的输出，重复 2–4。
 - 期望：
   - rate 改变摆动快慢；x6、x10 快很多倍，最快时变成颤抖的音色。
-  - wave 最左是方波（音高跳）、最右是三角（平滑滑动）。
+  - wave 最左（Λ 图标）是三角（平滑滑动）、最右（⊓ 图标）是方波（音高跳），和面板图标一致（#79 修正了原来左右相反的问题）。
   - LFO B 和 LFO A 一致。
 - 备注：LFO 只输出正电压，所以是"单向"摆动。
 
@@ -781,18 +782,94 @@
   - 第 5 步：改节奏前是低、中、高三个音均匀循环；点暗 SEQ 第 3 个后，每响两个音停一拍，旋律照样按顺序往下走：低、中、（停）、高、低、（停）、中、高、（停）……停顿的位置在三个音之间轮换。
 - 补充：PLAY = SPLIT 时，RHYTHM 页同样跟着 **EDIT: LEFT / RIGHT** 切换左右两边。
 
+**T12.15 CLOCK 输入（外部时钟）** ✅
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。键盘菜单 **MODE** 改成 ARPEGGIATOR，**ARP HOLD** 改成 ON；同时按一下 **A**、**D**、**G** 再松开。
+- 步骤：
+  1. 接线：5 STEP SEQ. VOLTAGE 的 **clock** 上面那个插孔（CLOCK OUT）→ 键盘区 ◷ CLOCK 输入。来回转 **pulser**。
+  2. 拔掉这根线。
+  3. 键盘菜单里随便动一下 **BPM**。
+- 期望：
+  - 第 1 步：琶音跟着 pulser 的速度走，pulser 转快琶音就快。
+  - 第 2 步：琶音停住（外部时钟没了）。
+  - 第 3 步：琶音恢复，按 BPM 的速度走（改 BPM 就切回内部时钟，说明书 p.19）。
+
+**T12.16 RESET 输入** 🔧 (#79)
+- 准备：同 T12.15，但和弦改成同时按一下 **A**、**D**、**G**、**J**（C、E、G、B 四个音）。
+- 步骤：
+  1. 接线：LFO B 输出 → 键盘区 ⚡ RESET 输入。LFO B 的 **wave** 拖到最右（⊓ 方波），拨杆 **x1**，**rate** 从最慢慢慢往上加。
+  2. 拔掉线。
+- 期望：
+  - 第 1 步：每当 LFO 跳一下，琶音就回到第一个音 C 重新开始（rate 慢时听起来是偶尔"打个嗝"重来）；rate 加快后只听到 C、E（或 C、E、G）反复，到不了 B。琶音一直在走，不会停。
+  - 第 2 步：恢复 C、E、G、B 完整循环。
+
+**T12.17 GATE L / V/OCT 输出（带 drone 的 GATE 输入）** 🔧 (#79)
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 只留 **1**；VOICE MIXER 里 **VCO A**、**VCO B** 的 VOL 拖到最左（只听 drone 1）。
+- 步骤：
+  1. 接线：键盘区 ⊓ GATE L → DRONE 1 下排最左的 GATE 输入。不按键听一会儿；再按住任意键、松开。
+  2. 拔掉线。
+  3. DRONE VOICES 的 1 关掉、只开 **3**（VCO A / B 仍在最左）；DRONE 3 的 **mod** 和 **NOISE** 拖到最小。接线：键盘区 ↳ V/OCT → DRONE 3 的 **cv** 输入（mod 下方）。按住一个键不放，换几个高低不同的键（Z / X 换八度）。
+- 期望：
+  - 第 1 步：不按键时 drone 1 不响；按住键时响，松开后按 RLS 淡出。
+  - 第 2 步：drone 1 恢复一直响（没接线时由 DRONE VOICES 的键决定）。
+  - 第 3 步：drone 3 的音高跟着键走，按高的键它就变高（V/OCT 每伏一个八度）。松开键时音高保持在最后一个音。
+- 补充：
+  - DRONE 2–6 的 GATE 输入用同样方法各试一下（3 和 6 的 GATE 在最下排最左）。
+  - 第 3 步对 DRONE 6 同样适用：只开 DRONE VOICES 的 **6**，线改接到 DRONE 6 的 **cv** 输入。
+
+### 13. 其余插孔
+
+准备（本节通用）：RESET PANEL；BLEND 最左；DRONE VOICES 全关；点亮 envelope A 的 **hold**（VCO A 不按键也一直响，当作"监听器"）；VOICE MIXER 里 **VCO B** 拖到最左。
+
+**T13.1 drone 的 env 输出** 🔧 (#79)
+- 步骤：
+  1. VOICE MIXER 里 **DRONE 1** 的 VOL 拖到最左（只用它的包络，不听它的声音）。DRONE 1 的 **ATT**、**RLS** 都拖到一半以上。
+  2. 接线：DRONE 1 的红字 **env** → VCO A 的 **cv**；VCO A 的 **cv amt** 放约 1/4。
+  3. 点亮键盘区右边 **DRONE VOICES** 的按键 **1**（不是 VOICE MIXER 里的音量），等几秒，再点一下关掉。
+  4. 对 DRONE 2 / 4 / 5（红字 **env**）和 DRONE 3 / 6（红字 **env out**）各做一遍。
+- 期望：打开时 VCO A 的音高按 ATT 慢慢滑上去，关掉时按 RLS 慢慢滑回来。
+
+**T13.2 DRONE 3 / 6 的 LFO 输出** ✅
+- 步骤：接线：DRONE 3 **rate** 下方的 LFO 输出 → VCO A 的 **1v/oct**。拖 DRONE 3 的 **rate**；再拨 **LFO 1 : 10**。DRONE 6 同样做一遍。
+- 期望：VCO A 在两个音之间来回跳（方波）；rate 改变跳的快慢，1 : 10 时慢很多。DRONE 3 / 6 本身不用开（LFO 一直在走）。
+
+**T13.3 S&H 的 IN 和 clock 插孔** ✅
+- 插孔位置：DRONE 3 右下角的 **S&H** 框里有 3 个插孔，从左到右：**IN**（▲）、**clock**（▲ clock）、**OUT**（右上角带红三角）。LFO A 在面板最下排最左：红色 **wave** 旋钮、中间的输出插孔（下面有蓝灯）、拨杆 **x6 / x1 / x10**、红色 **rate**。LFO B 在最下排最右，布局相同。
+- 准备：
+  1. RESET PANEL；BLEND 最左；DRONE VOICES 全关。
+  2. 点亮 envelope A 的 **hold**（envelope A 左上角的黑按钮），VCO A 一直响，用它来听 S&H。
+  3. 接线：S&H 的 **OUT** → VCO A 最下排的 **cv**（左数第 2 个）。VCO A 的 **cv amt**（左上角绿色旋钮）放约 1/4。
+- 步骤：
+  1. 先听：VCO A 的音高在随机跳（S&H 在采样 drone 3 内部的噪声）。
+  2. 接线：LFO A 的输出 → S&H 的 **IN**。LFO A 的 **wave** 和 **rate** 都往左拖到**拖不动为止**（Λ 纯三角、最慢 0.1 Hz）。
+  3. 接线：LFO B 的输出 → S&H 的 **clock**。LFO B 的 **wave** 最右（⊓ 方波），**rate** 拖到约 1/3。再把 LFO B 的 rate 往左、往右各拖一下。
+- 期望：
+  - 第 2 步：不再是噪声那样快速乱跳，而是每隔几秒才变一次音高，在几个高低不同的音之间换（没接 clock 时用 DRONE 3 内部时钟，默认约 6–8 秒采样一次，一个 LFO 来回只采到一两个点）。
+  - 第 3 步：音高一小级一小级地往上爬，到顶后停一会儿（S&H 输出最高 5 V，LFO 上半段被削平），再一小级一小级地往下走，约 10 秒一个来回。LFO B 越快，台阶越密越细；越慢，台阶越大越稀。
+- 第 3 步之后还是"一高一低"交替：说明 LFO A 相对采样太快（每次采样时 LFO A 正好走了半圈）——确认 LFO A 的 rate 拖到底，把 LFO B 的 rate 往右加。
+- DRONE 6 的 S&H 同样做一遍（3 根线改插到 DRONE 6 的 S&H 框）。
+
+**T13.4 VCO 的 vca cv 输入** ✅
+- 插孔位置：envelope A 在 VOICE MIXER 正下方偏左，最下排 4 个插孔从左到右：**gate**、红字 **env**、**vca cv**、红字 **VCO A**。要用的是第 3 个 **vca cv**。envelope B 在 VOICE MIXER 下方偏右，最下排从左到右：红字 **VCO B**、**gate**、红字 **env**、**vca cv**（最右）。
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关；envelope A 的 **hold** 不要点亮。不按键时 VCO A 没声。
+- 步骤：
+  1. 接线：LFO A 的输出 → envelope A 的 **vca cv**。LFO A 的 **wave** 拖到最右（⊓ 方波），拨杆 **x1**，**rate** 拖到约 1/10（每秒 2 次左右）。不按任何键。
+  2. 来回拖 LFO A 的 **rate**。
+  3. 拔掉线，再按一下键。
+  4. 对 VCO B 做一遍：线改插到 envelope B 的 **vca cv**（最右）。
+- 期望：
+  - 第 1 步：不按键 VCO A 也会响，"嘀、嘀、嘀"一开一关（插线后 VCO A 的音量由这根线控制，代替 envelope A）。
+  - 第 2 步：开关的快慢跟着 rate 变。
+  - 第 3 步：恢复为按键才响。
+  - 第 4 步：VCO B 一样（RESET 后 VCO A、B 都在 VOICE MIXER 里开着）。
+
 ---
 
 ## 还没测的（⏳）
 
-- 键盘：
-  - 键盘区的 CLOCK / RESET 输入、GATE L / GATE R / V/OCT 输出。
 - MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。
-- DRONE 2 / 4 / 5 / 6 逐个过一遍（和 DRONE 1 / 3 同一套代码）。
-- 所有 drone 的 GATE 输入和 env 输出插孔；DRONE 3 / 6 的 LFO 输出和 S&H 的 IN / clock 插孔。
-- VCO 的 vca cv 插孔、VCO A / VCO B 的 dry 输出。
+- DRONE 6 的面板控件逐个过一遍（和 DRONE 3 同一套代码；DRONE 2 / 4 / 5 已测过）。
+- VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch）。
 - VOICE MIXER 的 EXT.AUDIO 通道、PREAMP 的 ext. source 插孔、耳机音量旋钮。
-- 5 STEP SEQ. VOLTAGE 的 CLOCK OUT。
 - 键盘菜单第 3 行的校准类设置（软件里意义不大）。
 
 ## TODO

@@ -77,7 +77,7 @@ int count_rising_edges(const std::vector<double>& sig) {
 int edges_for(double sr, double baseHz, LfoSpeedMult m) {
   Lfo l(sr);
   l.setBaseHz(baseHz);
-  l.setWave(0.0);  // square gives clean rail transitions
+  l.setWave(1.0);  // square (knob fully right) gives clean rail transitions
   l.setSpeedMult(m);
   auto sig = run_sig(l, static_cast<int>(sr));
   return count_rising_edges(sig);
@@ -87,7 +87,7 @@ void test_square_endpoint_and_duty() {
   const double sr = 48000.0;
   Lfo l(sr);
   l.setBaseHz(4.0);
-  l.setWave(0.0);  // square
+  l.setWave(1.0);  // square (knob fully right)
   l.setSpeedMult(LfoSpeedMult::x1);
   // square fundamental is exactly +1 (phase<0.5) -> 10V, or -1 (phase>=0.5) -> 0V.
   // 1 second at 4 Hz = 4 whole cycles, so duty (high samples) ~ 0.5 and ~4 edges.
@@ -116,7 +116,7 @@ void test_triangle_linear_ramp() {
   const double stepVolt = 1.25;
   Lfo l(sr);
   l.setBaseHz(1.0);
-  l.setWave(1.0);  // triangle
+  l.setWave(0.0);  // triangle (knob fully left)
   l.setSpeedMult(LfoSpeedMult::x1);
   auto sig = run_sig(l, 32);  // two cycles
   double mx = -1e9, mn = 1e9;
