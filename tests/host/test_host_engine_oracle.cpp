@@ -13,8 +13,8 @@
 //
 // What is asserted (the @Codex 8B2 mandate, §3, narrowed to the host-owner slice):
 //   1. DEFAULT PLAN HONESTY      — prepare maps the REAL channel counts to a frozen route:
-//                                  0-in -> Zero, 1-in -> ExtOnly (PREAMP NEVER an implicit
-//                                  copy), >=2-in -> Distinct(0,1); 2-3-out -> WET L/R only,
+//                                  0-in -> Zero, 1-in -> DuplicateOne (a mono mic feeds
+//                                  EXT and PREAMP), >=2-in -> Distinct(0,1); 2-3-out -> WET L/R only,
 //                                  >=4-out -> WET L/R + DRY A/B. This is the mutation-⑤
 //                                  detector (a "1-in silently copied to EXT+PREAMP" makes
 //                                  inputCh[1]==0 -> RED).
@@ -107,14 +107,14 @@ void default_plan() {
     CHECK(p.input == InputRoute::Zero);
     CHECK(p.inputCh[0] == -1 && p.inputCh[1] == -1);
   }
-  {  // 1-in / 2-out -> ExtOnly, PREAMP explicitly none (mutation-⑤ killer).
+  {  // 1-in / 2-out -> DuplicateOne: the one channel feeds EXT and PREAMP.
     StandaloneAudioEngine e;
     CHECK(e.prepare(kSeed, 48000.0, kF, 1, 2));
     CHECK(e.isReady());
     const DevicePlan& p = e.plan();
     CHECK(p.outputCount == 2);
-    CHECK(p.input == InputRoute::ExtOnly);
-    CHECK(p.inputCh[0] == 0 && p.inputCh[1] == -1);
+    CHECK(p.input == InputRoute::DuplicateOne);
+    CHECK(p.inputCh[0] == 0 && p.inputCh[1] == 0);
   }
   {  // 2-in / 2-out -> Distinct(0,1).
     StandaloneAudioEngine e;
@@ -133,14 +133,14 @@ void default_plan() {
     CHECK(p.outputCount == 2);
     CHECK(p.inputCh[0] == 0 && p.inputCh[1] == 1);
   }
-  {  // 1-in / 4-out -> ExtOnly, outputCount 4 (>=4).
+  {  // 1-in / 4-out -> DuplicateOne, outputCount 4 (>=4).
     StandaloneAudioEngine e;
     CHECK(e.prepare(kSeed, 48000.0, kF, 1, 4));
     CHECK(e.isReady());
     const DevicePlan& p = e.plan();
     CHECK(p.outputCount == 4);
-    CHECK(p.input == InputRoute::ExtOnly);
-    CHECK(p.inputCh[0] == 0 && p.inputCh[1] == -1);
+    CHECK(p.input == InputRoute::DuplicateOne);
+    CHECK(p.inputCh[0] == 0 && p.inputCh[1] == 0);
   }
   {  // 0-in / 5-out -> outputCount 4 (>=4), extra physical channel untouched.
     StandaloneAudioEngine e;
@@ -148,6 +148,29 @@ void default_plan() {
     CHECK(e.isReady());
     CHECK(e.plan().outputCount == 4);
   }
+}
+
+// ---- 1b. a mono input reaches the PREAMP ----------------------------------------------
+// A laptop's built-in mic is one channel. With EXT.AUDIO closed and GAIN open, that channel
+// must still be heard through the preamp (it used to feed EXT only).
+void mono_input_reaches_preamp() {
+  constexpr std::uint64_t kSeed = 203u;
+  double in[1][kF] = {{0}}, silent[1][kF] = {{0}};
+  for (int f = 0; f < kF; ++f) in[0][f] = 0.3 * std::sin(0.07 * f);
+  const double* inp[1] = {in[0]};
+  const double* inq[1] = {silent[0]};
+  StandaloneAudioEngine eA, eB;
+  CHECK(eA.prepare(kSeed, 48000.0, kF, 1, 2));
+  CHECK(eB.prepare(kSeed, 48000.0, kF, 1, 2));
+  for (StandaloneAudioEngine* e : {&eA, &eB}) CHECK(e->postParameter(ParameterId::preamp_gain, 0.5));
+  double outA[2][kF] = {{0}}, outB[2][kF] = {{0}};
+  double* outPA[2] = {outA[0], outA[1]};
+  double* outPB[2] = {outB[0], outB[1]};
+  CHECK(render(eA, inp, outPA, 1, 2, kF) == EngineStatus::Rendered);
+  CHECK(render(eB, inq, outPB, 1, 2, kF) == EngineStatus::Rendered);
+  double diff = 0.0;
+  for (int f = 0; f < kF; ++f) diff = std::fmax(diff, std::fabs(outA[0][f] - outB[0][f]));
+  CHECK(diff > 1e-4);
 }
 
 // ---- 2. real 1-in/2-out render ----------------------------------------------------------
@@ -598,6 +621,7 @@ void max_block_guard() {
 int main() {
   std::printf("== GH#4 8B2: standalone host runtime owner (engine_ -> DeviceAdapter) ==\n");
   default_plan();
+  mono_input_reaches_preamp();
   real_1in_2out();
   real_4way();
   sample_rate_determinism();

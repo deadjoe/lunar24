@@ -67,7 +67,8 @@ Keep these unless a listening test or a real bug says otherwise.
 - **The computer's audio input starts silent**: PREAMP GAIN (the manual's way to mute the
   preamp) and the mixer's EXT.AUDIO VOL both default to minimum. Input channel 1 feeds
   EXT.AUDIO and channel 2 the preamp, so with either at mid a mic left selected in Preferences
-  put room noise (and claps, through the reverb) under the drones.
+  put room noise (and claps, through the reverb) under the drones. A one-channel input (a
+  laptop's built-in mic) feeds both, so it reaches the preamp like the hardware's contact mic.
 - **Level controls glide** inside the DSP blocks; loading a whole state snaps them
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also
