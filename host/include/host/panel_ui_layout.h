@@ -85,6 +85,12 @@ inline constexpr Rect kMenuTabSequencer{578, 1122, 718, 1148};
 inline constexpr Rect kSeqSideSwitch{1700, 1122, 1842, 1148};
 inline constexpr Rect kMenuClose{1860, 1122, 1972, 1148};  // closes the menu (as does the encoder)
 inline constexpr Rect kMenuReset{1540, 1122, 1682, 1148};  // whole panel back to default (confirm)
+// Keyboard presets A-D (manual p.19): the slot button cycles A..D, then LOAD / SAVE / INIT.
+// They sit left of the "KEYBOARD MENU" title.
+inline constexpr Rect kPresetSlot{736, 1122, 846, 1148};
+inline constexpr Rect kPresetLoad{854, 1122, 930, 1148};
+inline constexpr Rect kPresetSave{938, 1122, 1014, 1148};
+inline constexpr Rect kPresetInit{1022, 1122, 1098, 1148};
 inline constexpr int kSeqSteps = 16;
 // One sequencer step column: step number, note slider, note readout, gate button.
 inline constexpr double kSeqSliderTop = 1178, kSeqSliderBottom = 1392, kSeqGateY = 1450;

@@ -9,6 +9,7 @@
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
+#include <utility>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -266,6 +267,9 @@ int main(int argc, char** argv) {
     art::drawMenuTab(sink, float(c.x0), float(c.y0), float(c.x1), float(c.y1), "CLOSE", false, false);
     const Rect rs = kMenuReset;
     art::drawMenuTab(sink, float(rs.x0), float(rs.y0), float(rs.x1), float(rs.y1), "RESET PANEL", false, false);
+    for (auto [r, label] : {std::pair{kPresetSlot, "PRESET A"}, std::pair{kPresetLoad, "LOAD"},
+                            std::pair{kPresetSave, "SAVE"}, std::pair{kPresetInit, "INIT"}})
+      art::drawMenuTab(sink, float(r.x0), float(r.y0), float(r.x1), float(r.y1), label, false, false);
   }
   if (showSeq) {
     // (EDIT: LEFT / RIGHT only shows under PLAY = SPLIT; the preview shows the default SINGLE.)

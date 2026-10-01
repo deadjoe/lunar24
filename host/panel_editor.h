@@ -28,6 +28,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "IControl.h"
@@ -107,6 +108,7 @@ struct EditorShared {
   std::vector<IControl*> menuChrome;         // background and page tabs: whenever the menu is open
   int menuPage = 0;                          // 0 = SETTINGS, 1 = SEQUENCER
   int seqSide = 0;                           // menu side being edited under SPLIT: 0 = left, 1 = right
+  int presetSlot = 0;                        // keyboard preset the LOAD / SAVE / INIT buttons act on: 0..3 = A..D
   std::function<void()> factoryReset;        // the plugin's requestFactoryReset (RESET PANEL)
   std::vector<IControl*> plates;
   bool menuOpen = false;
@@ -890,6 +892,7 @@ class MenuTabControl : public IControl {
       for (int v = 0; v < 6; ++v) s_.engine.postDroneKey(v, true);
       s_.octave = 0;
       s_.seqSide = 0;
+      s_.presetSlot = 0;
       s_.menuPage = 0;
       if (s_.factoryReset) s_.factoryReset();
       s_.showMenu(false);
@@ -913,6 +916,62 @@ class MenuTabControl : public IControl {
   EditorShared& s_;
   Kind k_;
   std::chrono::steady_clock::time_point armedAt_{};
+};
+
+// Keyboard presets A-D: the slot button (click = next, right-click = previous) and LOAD /
+// SAVE / INIT for that slot. A preset holds every keyboard menu setting of both sides and
+// both 16-step sequences, but not the tempo. INIT (back to factory settings) needs a second
+// click to confirm. The button briefly shows what happened.
+class PresetControl : public IControl {
+ public:
+  enum Kind { kSlot, kLoad, kSave, kInit };
+  PresetControl(EditorShared& s, const Rect& r, Kind k)
+      : IControl(IRECT(float(r.x0), float(r.y0), float(r.x1), float(r.y1))), s_(s), k_(k) {}
+  void Draw(IGraphics& g) override {
+    GraphicsSink sink{g};
+    const auto now = std::chrono::steady_clock::now();
+    const bool armed = now < armedUntil_, flash = now < doneUntil_;
+    char slot[16];
+    std::snprintf(slot, sizeof slot, "PRESET %c", char('A' + s_.presetSlot));
+    const char* label = k_ == kSlot ? slot
+                        : flash     ? (k_ == kLoad ? "LOADED" : k_ == kSave ? "SAVED" : "CLEARED")
+                        : armed     ? "SURE?"
+                        : k_ == kLoad ? "LOAD" : k_ == kSave ? "SAVE" : "INIT";
+    art::drawMenuTab(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, label, armed || flash, mMouseIsOver);
+  }
+  // Redraw once more when the confirm or "done" label runs out.
+  bool IsDirty() override {
+    const auto now = std::chrono::steady_clock::now();
+    const bool shown = now < armedUntil_ || now < doneUntil_;
+    const bool changed = shown != shownLast_;
+    shownLast_ = shown;
+    return IControl::IsDirty() || changed;
+  }
+  void OnMouseDown(float, float, const IMouseMod& mod) override {
+    using Action = StandaloneAudioEngine::PresetAction;
+    const auto now = std::chrono::steady_clock::now();
+    if (k_ == kSlot) {
+      s_.presetSlot = (s_.presetSlot + ((mod.R || mod.S) ? 3 : 1)) % 4;
+      GetUI()->SetAllControlsDirty();  // the other buttons act on the new slot
+      return;
+    }
+    if (k_ == kInit && now >= armedUntil_) {  // first click arms, a second within 4 s clears
+      armedUntil_ = now + std::chrono::seconds(4);
+      SetDirty(false);
+      return;
+    }
+    armedUntil_ = {};
+    const Action a = k_ == kLoad ? Action::Load : k_ == kSave ? Action::Save : Action::Initialise;
+    if (s_.engine.postKeyboardPreset(a, static_cast<std::uint32_t>(s_.presetSlot)))
+      doneUntil_ = now + std::chrono::milliseconds(1200);
+    GetUI()->SetAllControlsDirty();  // a load changes the menu settings and maybe PLAY
+  }
+
+ private:
+  EditorShared& s_;
+  Kind k_;
+  std::chrono::steady_clock::time_point armedUntil_{}, doneUntil_{};
+  bool shownLast_ = false;
 };
 
 // One step of the 16-step keyboard sequencer: drag the slider for the note (semitones above
@@ -1031,6 +1090,12 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   auto* side = new MenuTabControl(shared, kSeqSideSwitch, MenuTabControl::kSide);
   g->AttachControl(side);
   shared.menuChrome.push_back(side);
+  for (auto [r, k] : {std::pair{kPresetSlot, PresetControl::kSlot}, std::pair{kPresetLoad, PresetControl::kLoad},
+                      std::pair{kPresetSave, PresetControl::kSave}, std::pair{kPresetInit, PresetControl::kInit}}) {
+    auto* c = new PresetControl(shared, r, k);
+    g->AttachControl(c);
+    shared.menuChrome.push_back(c);
+  }
   for (int i = 0; i < kSeqSteps; ++i) {
     auto* c = new SeqStepControl(shared, i);
     g->AttachControl(c);
