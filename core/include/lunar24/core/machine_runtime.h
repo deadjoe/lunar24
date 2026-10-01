@@ -3510,7 +3510,7 @@ class SynthRuntime {
             const JackDescriptor* d = findJackDescriptor_(envOut);
             const double lvl = drone_.groupEnvLevel(static_cast<std::size_t>(classicGroup));
             if (d != nullptr)
-              publishSourceValue_(envOut, d->nominalMin + lvl * (d->nominalMax - d->nominalMin));
+              publishSourceValue_(envOut, droneEnvOutVolts_(*d, lvl));
           }
           break;
         }
@@ -3534,7 +3534,7 @@ class SynthRuntime {
             const JackDescriptor* d = findJackDescriptor_(envOut);
             const double lvl = drone_.groupEnvLevel(static_cast<std::size_t>(g));
             if (d != nullptr)
-              publishSourceValue_(envOut, d->nominalMin + lvl * (d->nominalMax - d->nominalMin));
+              publishSourceValue_(envOut, droneEnvOutVolts_(*d, lvl));
           }
           tickPapaVoice_(pv3_, 0, VoiceMixer::kChannelDrone3, sh3Cv_, driveGraph);
           tickPapaVoice_(pv6_, 1, VoiceMixer::kChannelDrone6, sh6Cv_, driveGraph);
@@ -3734,6 +3734,14 @@ class SynthRuntime {
                              : (side == 0 ? envGenA_ : envGenB_).vcaCvVolts();
     const double g = v / 8.0;
     return g < 0.0 ? 0.0 : (g > 1.0 ? 1.0 : g);
+  }
+
+  // A drone's ENV OUT for envelope level 0..1: 0 V at rest up to the jack's top rail. The
+  // manual gives the rail (-10..+10 V) but an envelope rests at 0 V, as envelope A/B's
+  // env out does; resting at -10 V pulled anything it was patched into far down (a VCO's
+  // pitch to a standstill).
+  static double droneEnvOutVolts_(const JackDescriptor& d, double level) {
+    return level * d.nominalMax;
   }
 
   double cvAt_(JackId jack) const {
@@ -4000,7 +4008,7 @@ class SynthRuntime {
       const JackId envOut = voiceEnvOutJack_[voice];
       const JackDescriptor* d = findJackDescriptor_(envOut);
       if (d != nullptr)
-        publishSourceValue_(envOut, d->nominalMin + pv.arLevel() * (d->nominalMax - d->nominalMin));
+        publishSourceValue_(envOut, droneEnvOutVolts_(*d, pv.arLevel()));
     }
   }
 
