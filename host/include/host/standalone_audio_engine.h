@@ -1098,7 +1098,7 @@ inline void StandaloneAudioEngine::publishMidiMap(const lunar24::core::MidiMap& 
   s.map = map;
   std::memset(s.device, 0, sizeof(s.device));
   if (inputDevice != nullptr)
-    std::strncpy(s.device, inputDevice, sizeof(s.device) - 1);
+    std::snprintf(s.device, sizeof(s.device), "%s", inputDevice);  // bounded; MSVC-safe
   for (std::uint32_t i = 0; i < s.map.count(); ++i) {
     const lunar24::core::MidiBinding& b = s.map.at(i);
     s.seed[i] = (b.targetKind == lunar24::core::MidiTargetKind::parameter)
