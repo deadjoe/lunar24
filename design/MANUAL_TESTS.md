@@ -211,6 +211,15 @@
   2. 键盘菜单 → RESET PANEL → 4 秒内再点一次。
 - 期望：旋钮回到原位、线消失，声音短暂停顿后恢复成默认 drone。
 
+**T0.4a 重置和设备重开后的操作** ⏳
+- 准备：记录想保留的面板设置；这项测试会 RESET PANEL。
+- 步骤：
+  1. 键盘菜单 MODE 改成 ARPEGGIATOR，PRESSURE 改成 LOOP，接一根 PRESSURE → VCO A cv 的线；然后 RESET PANEL（两次确认）。
+  2. 检查 MODE 回到 KEYBOARD、PRESSURE 回到默认值、接线清空。关闭 DRONE VOICES 1–6，BLEND 最左，按电脑 A 键再松开。
+  3. 预期按下能出声、松开后按包络释放，未按键时没有旧音符自行触发；MODE 和接线不自行跳回。
+  4. 将 PRESSURE 改成 AD、P RISE 调到约 3/4；在 Settings 将 Output 从 MacBook Speakers 切到 BlackHole 2CH，Apply，再切回 Speakers，Apply / OK。预期设置和接线保持切换前的状态，A 键按下、松开仍正常。
+- 队列中“恰好尚未处理”的旧操作由自动回归测试确定性覆盖；人工步骤检查真实重置和设备重开流程，不要求反复抢时间操作。不需要接 MIDI 控制器。
+
 **T0.5 MUTE** ⏳
 - 准备：RESET PANEL（默认 drone 在响）。
 - 步骤：
@@ -720,7 +729,7 @@
   - LOOP：按住期间音高上下来回滑，像警笛。
   - RANDOM：每按一次音高都不一样，按住期间不变。
 
-**T12.9a PRESSURE 设置随整机恢复** ⏳
+**T12.9a PRESSURE 设置随整机恢复** ✅ (#80；Mac 实测 AD / LOOP 重启恢复及 BlackHole 2CH 设备选择保存)
 - 目标：切换压力输出模式后，退出重开和切换音频设备都能保留面板设置、接线。
 - 第一次打开修复版时先不要 RESET：如果旧版曾在改 PRESSURE 后无法恢复设置，先检查旧设置、接线是否回来。此修复可读取仅压力模式镜像不一致的旧文件；其他损坏文件不会自动覆盖。
 - 准备：记录当前面板后再 RESET PANEL；**BLEND** 拉到最左。接线：键盘区右侧一组中间的 ↓ **PRESSURE** 输出 → VCO A 最下排左数第 2 个 **cv** 输入；VCO A 的 **cv amt** 放约 1/4。

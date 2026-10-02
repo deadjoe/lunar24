@@ -136,6 +136,9 @@ void LunarHostPlugin::OnReset()
   //   4. publishPending(): only when prepare() produced a ready owner — publish the pending restore
   //      through the engine's ONE real candidate path. A rejection is atomic and the store records
   //      the reason; a failed prepare() leaves the pending intact for the NEXT legal boundary.
+  // Preserve the last MIDI knob edits before capturing the state and discarding
+  // the old runtime queues. The audio callback has stopped at this boundary.
+  engine_.syncParametersFromAudioThread();
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
   if (factoryResetRequested_) {  // the panel's RESET: publish the power-on default instead
