@@ -373,7 +373,40 @@ void test_b_same_sample_vs_previous() {
 
 }  // namespace
 
+// Both envelope-panel VCO jacks are raw oscillator taps, independently of the
+// post-envelope device DRY outputs. The separate B OSC jack keeps its 5x scale.
+static void test_panel_vco_outputs() {
+  using E = lunar24::host::StandaloneAudioEngine;
+  for (double sr : {44100.0, 48000.0}) {
+    for (JackId source : {JackId::vco_a_dry_out, JackId::vco_b_dry_out, JackId::vco_b_vco_out}) {
+      E engine;
+      CHECK(engine.prepare(1, sr, 64, 0, 2));
+      CHECK(engine.postConnect(source, JackId::preamp_ext_source_in));
+      double left[1]{}, right[1]{};
+      double* out[] = {left, right};
+      double peak = 0.0, maxInputError = 0.0, maxScaleError = 0.0;
+      for (int i = 0; i < 1024; ++i) {
+        CHECK(engine.processBlock(nullptr, out, 0, 2, 1) == E::Status::Rendered);
+        const auto* rt = engine.runtime();
+        const double value = rt->controlVoltageAt(source);
+        peak = std::max(peak, std::fabs(value));
+        maxInputError = std::max(maxInputError, std::fabs(rt->preampResolvedInput() - value));
+        maxScaleError = std::max(maxScaleError, std::fabs(
+            rt->controlVoltageAt(JackId::vco_b_vco_out) -
+            5.0 * rt->controlVoltageAt(JackId::vco_b_dry_out)));
+      }
+      CHECK(peak > 0.1); // no keys or envelope HOLD: raw oscillator is still running
+      CHECK(maxInputError < 1e-12); // the actual cable consumer reads this frame
+      CHECK(maxScaleError < 1e-12);
+      CHECK(engine.postDisconnect(JackId::preamp_ext_source_in));
+      CHECK(engine.processBlock(nullptr, out, 0, 2, 1) == E::Status::Rendered);
+      CHECK(engine.runtime()->preampResolvedInput() == 0.0);
+    }
+  }
+}
+
 int main() {
+  test_panel_vco_outputs();
   test_default_dryb_not_locked();
   test_cvamt_a_to_b_propagation();
   test_b_change_not_swap_a();

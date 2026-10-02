@@ -896,6 +896,13 @@
 
 ---
 
+**T13.5 envelope 区 VCO A / VCO B 输出到 PREAMP** ⏳
+- 准备：记录当前面板后 RESET PANEL，DRONE VOICES 全关，BLEND 最左；VOICE MIXER 的 VCO A、VCO B、EXT.AUDIO VOL 最小，只把 PREAMP VOL 放约一半；PREAMP gain 放约一半，MASTER 从小音量开始。不用按键，envelope A/B hold 关闭。
+- 先接 envelope A 最下排最右红字 VCO A → PREAMP 的 ext. source：应持续有声。
+- 只换源头到 envelope B 最下排最左红字 VCO B，目的地不变：应同样持续有声，调 VCO B 的 tune / MORPHING WAVEFORM 应能听到变化。
+- 再只换源头到 VCO B 模块最下排最右红字 osc：应有声，幅度可以更大（两个输出的现有标度不同），不要求等响。
+- 最后回接 envelope B 的 VCO B，再拔掉线：PREAMP 恢复音频输入设备信号；不要把麦克风本底当作残留振荡声。PREAMP 灯是否亮取决于增益和峰值，不把亮灯作为唯一通过条件。
+
 **T14.1 MIDI 延音踏板按通道释放** ⏳
 - 安排：留到外部 MIDI 集成测试；当前已自动覆盖 16 个通道的实际引擎 gate 释放。没有踏板时不要求购买设备或执行本项。
 - 准备：可发送 CC64 的 MIDI 控制器或软件发送器；PLAY = SINGLE、MODE = KEYBOARD，BLEND 最左、DRONE VOICES 全关、envelope A hold 关闭、R 调短。
