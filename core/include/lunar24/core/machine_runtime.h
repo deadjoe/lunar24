@@ -525,6 +525,12 @@ class SynthRuntime {
     vcoAOut_ = aOut; vcoBOut_ = bOut;
     vcoAOutBound_ = true; vcoBOutBound_ = true;
   }
+  // Envelope-panel B tap, symmetric with A's raw waveform output. This is
+  // distinct from both B's voltage-scaled OSC jack and the post-VCA DRY terminal.
+  void setVcoBDryOutBinding(JackId out) {
+    vcoBDryOut_ = out;
+    vcoBDryOutBound_ = true;
+  }
   // GH#19 S5 (task #111): the HARD-SYNC gate jack VCO A READS. The hardware jack is
   // "Sync (VCO A only)" (registry.hpp:611), so there is exactly ONE such binding and the
   // VCO-B slot has no sync consumer at all. Same ATOMIC FAIL-CLOSED admission shape as the
@@ -3444,6 +3450,7 @@ class SynthRuntime {
         vcB_.tick(&b);
         dryB_ = (b + kVcoSubMix * subSquare_(vcB_)) * vcoVcaGain_(1);
         chIn_[VoiceMixer::kChannelVcoB] = dryB_;
+        if (vcoBDryOutBound_) publishSourceValue_(vcoBDryOut_, b);
         // Publish the real vco_b.vco_out so any downstream (a normal consumer, or a
         // user-established B->B feedback edge) reads THIS frame's value through the single
         // write (@Codex correction 4).
@@ -4092,6 +4099,7 @@ class SynthRuntime {
   JackId cvInB_{0};           bool cvInBoundB_ = false;
   JackId vcoAOut_{0};         bool vcoAOutBound_ = false;
   JackId vcoBOut_{0};         bool vcoBOutBound_ = false;
+  JackId vcoBDryOut_{0};      bool vcoBDryOutBound_ = false;
   // GH#19 S0: the PWM modulation inputs (vco_a.pwm_in / vco_b.pwm_in). Same real-jack-id-0 rule as
   // the cv_in pair above: the flags, not a sentinel, are the admission state.
   JackId pwmInA_{0};          bool pwmInBoundA_ = false;

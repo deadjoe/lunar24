@@ -370,6 +370,7 @@ class MachineRuntimeDefinition {
                                lunar24::registry::JackId::vco_b_pwm_in);
     runtime_.setVcoOutBindings(lunar24::registry::JackId::vco_a_dry_out,
                                lunar24::registry::JackId::vco_b_vco_out);
+    runtime_.setVcoBDryOutBinding(lunar24::registry::JackId::vco_b_dry_out);
     // NOTE (item 1, @Codex eaaf08cc): the A/B generic-CV lin/exp mode is deliberately
     // NOT pinned here. Mode is a runtime/test/upper-layer decision — it is NOT canonical
     // hardware truth (the adjudicated ruling). The canonical builder leaves it at the
