@@ -831,9 +831,15 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
       port = 0;
     }
 
-    //TODO: send all notes off?
     if (mMidiIn)
     {
+      // Closing an OPEN input: notes held from it can never send their note-offs
+      // now, so the plugin sends its all-gates-off failsafe and drops the sustain
+      // ledger. (RtMidi has no device-removal callback, so an unplugged cable is
+      // only covered once the user re-selects; true hot-unplug detection is a
+      // known remaining gap.)
+      if (mMidiIn->isPortOpen())
+        static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
       mMidiIn->closePort();
 
       if (port == 0)
