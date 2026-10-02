@@ -70,5 +70,22 @@ int main() {
   sustain.pedal(1, false, 3, release);
   CHECK_EQ(releases, 2u);
   CHECK(!sustain.deferNoteOff(1, 60));
+  // reset() (the audio-stream boundary) clears pedal and deferred-note state: a pedal
+  // that was down when the stream was replaced neither releases phantom notes nor
+  // defers the next stream's note-offs.
+  {
+    host::MidiSustain s2;
+    unsigned n = 0;
+    auto count = [&](core::PerformanceInput) { ++n; };
+    s2.noteOn(2, 60);
+    s2.pedal(2, true, 3, count);
+    CHECK(s2.deferNoteOff(2, 60));
+    s2.reset();
+    s2.pedal(2, false, 3, count);              // pedal was never down after the reset
+    CHECK_EQ(n, 0u);
+    CHECK(!s2.deferNoteOff(2, 60));            // nothing is deferred any more
+    s2.noteOn(2, 61);
+    CHECK(!s2.deferNoteOff(2, 61));            // a fresh note releases normally
+  }
   return test::finish("test_midi_sustain");
 }

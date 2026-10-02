@@ -139,6 +139,10 @@ void LunarHostPlugin::OnReset()
   // Preserve the last MIDI knob edits before capturing the state and discarding
   // the old runtime queues. The audio callback has stopped at this boundary.
   engine_.syncParametersFromAudioThread();
+  // The old runtime's notes die with it; the sustain pedal's held-note ledger
+  // belongs to that stream (a stale pedal-down would defer the new stream's
+  // note-offs forever).
+  sustain_.reset();
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
   if (factoryResetRequested_) {  // the panel's RESET: publish the power-on default instead
