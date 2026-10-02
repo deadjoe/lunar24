@@ -16,6 +16,7 @@
 #include <lunar24/core/keyboard_presets.h>
 #include <lunar24/core/state_default.h>
 #include <lunar24/core/state_edit.h>
+#include <lunar24/core/state_serializer.h>
 
 using namespace lunar24;
 
@@ -40,6 +41,53 @@ int main() {
   double* outs[2] = {l.data(), r.data()};
   CHECK(engine.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
 
+  // A full UI queue rejects edits without changing the state that will be saved.
+  {
+    using E = host::StandaloneAudioEngine;
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    const auto src = core::find_jack_by_name("keyboard.pressure_out")->id;
+    const auto sink = core::find_jack_by_name("vcf.cv_l_in")->id;
+    CHECK(e.postConnect(src, sink));
+    CHECK(e.postParameter(core::ParameterId::keyboard_mode, 1.0));
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    auto saved = [&]() {
+      std::vector<std::uint8_t> bytes(core::kDeviceStorageSchema.totalBytesHint);
+      std::size_t written = 0;
+      CHECK(core::encode_device_state(*e.canonicalState(), bytes.data(), bytes.size(), &written));
+      CHECK_EQ(written, bytes.size());
+      return bytes;
+    };
+    const auto before = saved();
+    // One harmless command per slot, no render until the rejection checks finish.
+    for (int i = 0; i < 1024; ++i) CHECK(e.postDroneKey(0, true));
+    const auto edits = e.editCount();
+    auto unchanged = [&]() {
+      CHECK(saved() == before);
+      CHECK_EQ(e.editCount(), edits);
+      CHECK(e.droneKey(0));
+    };
+    CHECK(!e.postParameter(core::ParameterId::keyboard_pressure_output, 3.0)); unchanged();
+    CHECK(!e.postConnect(src, core::find_jack_by_name("vcf.cv_r_in")->id)); unchanged();
+    CHECK(!e.postDisconnect(sink)); unchanged();
+    CHECK(!e.postEffectorProgram(0, core::ProgramId::program_cathedral_2)); unchanged();
+    CHECK(!e.postDroneKey(0, false)); unchanged();
+    CHECK(!e.postSeqStep(1, 3, 7, false)); unchanged();
+    CHECK(!e.postKeyboardRightParameter(core::ParameterId::keyboard_mode, 2.0)); unchanged();
+    CHECK(!e.postKeyboardRhythm(1, true, 0x05)); unchanged();
+    CHECK(!e.postKeyboardPreset(E::PresetAction::Save, 1)); unchanged();
+    CHECK(!e.postKeyboardPreset(E::PresetAction::Load, 1)); unchanged();
+    CHECK(!e.postKeyboardPreset(E::PresetAction::Initialise, 1)); unchanged();
+    // Draining frees capacity; the same edits are accepted and reach the right bank.
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 2.0));
+    CHECK(e.postKeyboardRightParameter(core::ParameterId::keyboard_mode, 2.0));
+    CHECK(e.postDisconnect(sink));
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Left) == core::ArpSeqMode::Arpeggiator);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Right) == core::ArpSeqMode::Sequencer);
+    CHECK(e.canonicalState()->inputCable[static_cast<std::size_t>(sink)] == 0);
+  }
   // Whole-state replacement must not replay commands from the previous runtime.
   // Queue the edits without rendering: this makes the reset race deterministic.
   {

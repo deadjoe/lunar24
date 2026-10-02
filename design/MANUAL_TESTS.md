@@ -211,7 +211,7 @@
   2. 键盘菜单 → RESET PANEL → 4 秒内再点一次。
 - 期望：旋钮回到原位、线消失，声音短暂停顿后恢复成默认 drone。
 
-**T0.4a 重置和设备重开后的操作** ⏳
+**T0.4a 重置和设备重开后的操作** ✅ (#81；Mac 实测重置、弹奏及 BlackHole 切回 Speakers)
 - 准备：记录想保留的面板设置；这项测试会 RESET PANEL。
 - 步骤：
   1. 键盘菜单 MODE 改成 ARPEGGIATOR，PRESSURE 改成 LOOP，接一根 PRESSURE → VCO A cv 的线；然后 RESET PANEL（两次确认）。
@@ -696,6 +696,11 @@
   - 第 4 步：EDIT: LEFT 时 MODE 显示 KEYBOARD，EDIT: RIGHT 时显示 ARPEGGIATOR。
   - 第 5 步：EDIT 按钮消失；左右两边都按左边的设置弹（都是普通键盘，右边不再琶音）。
 - 测完把 oct+3 拨回 low。
+
+**T12.7a SPLIT 左右设置隔离（队列拒绝修复后）** ⏳
+- 键盘菜单 PLAY 选 SPLIT，EDIT 选 LEFT，MODE 设 KEYBOARD；EDIT 选 RIGHT，MODE 改 ARPEGGIATOR，再改 SEQUENCER。
+- 来回切换 EDIT：预期 LEFT 一直为 KEYBOARD，RIGHT 为 SEQUENCER。将 RIGHT 的 MODE 改回 KEYBOARD；此时修改共享的 PLAY 为 SINGLE，预期仍能正常切换。
+- 队列满的拒绝路径由自动测试覆盖，不需要人工高速拖旋钮。此项只检查实际 UI 的左右路由和共享设置没有回归。
 
 **T12.8 PRESETS（键盘预设 A–D）** 🔧 (#76)
 - 说明：预设保存键盘菜单的全部设置（左右两边、两套 16 步音序），不含速度 CLOCK。按钮在菜单标题行左边：**PRESET A**（点一下换到下一个，A→B→C→D）、**LOAD**（载入）、**SAVE**（保存）、**INIT**（清回出厂设置）。

@@ -38,6 +38,15 @@ class SpscQueue {
   static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
 
  public:
+  // Producer thread only. With a single producer, a free slot stays available
+  // until its next push: the consumer can only free more space. This lets a
+  // caller reject an edit before mutating its saved state.
+  bool canPush() const noexcept {
+    const std::uint32_t h = head_.load(std::memory_order_relaxed);
+    const std::uint32_t t = tail_.load(std::memory_order_acquire);
+    return h - t < Capacity;
+  }
+
   bool push(const LiveCommand& c) noexcept {
     const std::uint32_t h = head_.load(std::memory_order_relaxed);
     const std::uint32_t t = tail_.load(std::memory_order_acquire);

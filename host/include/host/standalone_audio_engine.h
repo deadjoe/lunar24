@@ -824,8 +824,10 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
 
 
 // ---- live control ---------------------------------------------------------
+// UI edits check queue capacity BEFORE mutating saved state. The UI is the sole
+// producer, so the consumer cannot invalidate a successful capacity check.
 inline bool StandaloneAudioEngine::postParameter(ParameterId id, double value) {
-  if (!definition_) return false;
+  if (!definition_ || !liveQueue_.canPush()) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   if (!lunar24::core::state_set_param(st, id, value)) return false;
   ++editCount_;
@@ -845,7 +847,7 @@ inline bool StandaloneAudioEngine::postEvent(const lunar24::core::ControlEvent& 
 
 inline bool StandaloneAudioEngine::postConnect(lunar24::core::JackId source,
                                                lunar24::core::JackId sink) {
-  if (!definition_) return false;
+  if (!definition_ || !liveQueue_.canPush()) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   const auto i = static_cast<std::uint32_t>(sink);
   const bool hadOld = i < lunar24::core::kDevicePatchCapacity && st.inputCable[i] != 0u;
@@ -862,7 +864,7 @@ inline bool StandaloneAudioEngine::postConnect(lunar24::core::JackId source,
 }
 
 inline bool StandaloneAudioEngine::postDisconnect(lunar24::core::JackId sink) {
-  if (!definition_) return false;
+  if (!definition_ || !liveQueue_.canPush()) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   const auto i = static_cast<std::uint32_t>(sink);
   if (i >= lunar24::core::kDevicePatchCapacity || st.inputCable[i] == 0u) return false;
@@ -876,7 +878,7 @@ inline bool StandaloneAudioEngine::postDisconnect(lunar24::core::JackId sink) {
 }
 
 inline bool StandaloneAudioEngine::postEffectorProgram(int side, lunar24::core::ProgramId program) {
-  if (!definition_ || lunar24::core::find_program(program) == nullptr) return false;
+  if (!definition_ || !liveQueue_.canPush() || lunar24::core::find_program(program) == nullptr) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   (side == 0 ? st.leftEffector : st.rightEffector).program = program;
   ++editCount_;
@@ -888,7 +890,7 @@ inline bool StandaloneAudioEngine::postEffectorProgram(int side, lunar24::core::
 }
 
 inline bool StandaloneAudioEngine::postDroneKey(int voice, bool open) {
-  if (voice < 0 || voice > 5) return false;
+  if (voice < 0 || voice > 5 || !liveQueue_.canPush()) return false;
   droneKeys_[voice] = open;
   lunar24::core::LiveCommand c;
   c.kind = lunar24::core::LiveCommand::Kind::DroneKey;
@@ -898,7 +900,7 @@ inline bool StandaloneAudioEngine::postDroneKey(int voice, bool open) {
 }
 
 inline bool StandaloneAudioEngine::postSeqStep(int side, int step, int note, bool gate) {
-  if (!definition_ || step < 0 || step >= static_cast<int>(lunar24::core::kKeyboardSeqStepCount)) return false;
+  if (!definition_ || !liveQueue_.canPush() || step < 0 || step >= static_cast<int>(lunar24::core::kKeyboardSeqStepCount)) return false;
   const std::uint8_t n = static_cast<std::uint8_t>(std::clamp(note, 0, kSeqStepMaxNote));
   DeviceStateV1& st = definition_->mutableDeviceState();
   auto& q = side == 0 ? st.keyboardSeqCurrent : st.keyboardSeqCurrentR;
@@ -915,7 +917,7 @@ inline bool StandaloneAudioEngine::postSeqStep(int side, int step, int note, boo
 }
 
 inline bool StandaloneAudioEngine::postKeyboardRightParameter(ParameterId id, double value) {
-  if (!definition_) return false;
+  if (!definition_ || !liveQueue_.canPush()) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   if (!lunar24::core::state_set_keyboard_right(st, id, value)) return false;
   ++editCount_;
@@ -927,7 +929,7 @@ inline bool StandaloneAudioEngine::postKeyboardRightParameter(ParameterId id, do
 }
 
 inline bool StandaloneAudioEngine::postKeyboardRhythm(int side, bool seq, std::uint8_t mutedMask) {
-  if (!definition_) return false;
+  if (!definition_ || !liveQueue_.canPush()) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   const std::uint32_t index = seq ? 3u : 1u;
   (side == 0 ? st.keyboardClockSelectors : st.keyboardClockSelectorsR)[index] = mutedMask;
@@ -941,7 +943,7 @@ inline bool StandaloneAudioEngine::postKeyboardRhythm(int side, bool seq, std::u
 }
 
 inline bool StandaloneAudioEngine::postKeyboardPreset(PresetAction action, std::uint32_t slot) {
-  if (!definition_ || !lunar24::core::preset_slot_is_valid(slot)) return false;
+  if (!definition_ || !liveQueue_.canPush() || !lunar24::core::preset_slot_is_valid(slot)) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
   int code = 0;
   switch (action) {
