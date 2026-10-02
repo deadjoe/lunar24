@@ -12,6 +12,7 @@
 
 #include "IPlug_include_in_plug_hdr.h"
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 
@@ -77,8 +78,15 @@ public:
   // is briefly reopened and OnReset publishes the default instead of the current state.
   void requestFactoryReset();
 
+  // UI thread (the app's MIDI input was closed or switched in Preferences): notes
+  // held from that input can never send their note-offs now. Sends the all-gates-off
+  // failsafe through the UI->audio queue and asks the audio thread to drop the
+  // sustain-pedal ledger (MidiSustain is audio-thread-owned).
+  void midiInputClosed();
+
 private:
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
+  std::atomic<bool> sustainResetRequested_{false};  // UI thread -> audio thread
 
   // The framework-free runtime owner, held BY VALUE. It owns the address-stable
   // MachineRuntimeDefinition (heap) + the single DeviceAdapter (task#71). ProcessBlock is a

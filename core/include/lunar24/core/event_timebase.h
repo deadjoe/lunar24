@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 #include <lunar24/core/control_event.h>
@@ -80,6 +81,12 @@ inline bool timed_event_before(const TimedControlEvent& a, const TimedControlEve
 //     buffer is full the rest stay pending (never silently dropped).
 class EventTimebase {
  public:
+  EventTimebase() = default;
+  // The diagnostics are relaxed atomics, so the implicit copy is deleted; these copy
+  // the queue state and snapshot each counter. (Tests return SynthRuntime by value.)
+  EventTimebase(const EventTimebase& o) { copyFrom_(o); }
+  EventTimebase& operator=(const EventTimebase& o) { copyFrom_(o); return *this; }
+
   // Insert into the sorted pending queue of the event's lane. Returns false (and
   // records the matching overflow diagnostic) only when that lane genuinely has no
   // room — the audio thread is never blocked.
@@ -237,28 +244,49 @@ class EventTimebase {
   bool lateSeen() const { return lateSeen_; }
 
   // ---- Fixed-size, no-log/no-alloc diagnostics (design/07 §3, §5) ----
+  // Relaxed atomics: the audio thread writes, the UI thread may read a slightly
+  // stale snapshot through the engine's diagnostics surface. Never torn.
   // Number of parameter events coalesced away under continuous pressure.
-  std::uint32_t parameterCoalesced() const { return parameterCoalesced_; }
+  std::uint32_t parameterCoalesced() const { return parameterCoalesced_.load(std::memory_order_relaxed); }
   // Continuous events rejected for lack of a mergeable same-target.
-  std::uint32_t continuousOverflow() const { return continuousOverflow_; }
+  std::uint32_t continuousOverflow() const { return continuousOverflow_.load(std::memory_order_relaxed); }
   // Critical events rejected because the critical lane was genuinely full.
-  std::uint32_t criticalOverflow() const { return criticalOverflow_; }
+  std::uint32_t criticalOverflow() const { return criticalOverflow_.load(std::memory_order_relaxed); }
   // Critical events deterministically cleared by a reconcile (lost trust).
-  std::uint32_t criticalFlushed() const { return criticalFlushed_; }
+  std::uint32_t criticalFlushed() const { return criticalFlushed_.load(std::memory_order_relaxed); }
   // Due events left pending because the caller's output buffer was full.
-  std::uint32_t dispatchCapacity() const { return dispatchCapacity_; }
+  std::uint32_t dispatchCapacity() const { return dispatchCapacity_.load(std::memory_order_relaxed); }
   // Late deliveries (absolute sample in an already-passed block).
-  std::uint32_t lateCount() const { return lateCount_; }
+  std::uint32_t lateCount() const { return lateCount_.load(std::memory_order_relaxed); }
   // Whole transactions (note-on batches) atomically admitted.
-  std::uint32_t batchAdmitted() const { return batchAdmitted_; }
+  std::uint32_t batchAdmitted() const { return batchAdmitted_.load(std::memory_order_relaxed); }
   // Whole transactions rejected in full (either lane lacked all its slots).
-  std::uint32_t batchRejected() const { return batchRejected_; }
+  std::uint32_t batchRejected() const { return batchRejected_.load(std::memory_order_relaxed); }
   // Canonical reset failsafe emissions from a reconcile request.
-  std::uint32_t reconcileCount() const { return reconcileCount_; }
+  std::uint32_t reconcileCount() const { return reconcileCount_.load(std::memory_order_relaxed); }
   // True if a reconcile reset is still queued (awaiting output space).
-  bool reconcilePending() const { return reconcileRequested_; }
+  bool reconcilePending() const { return reconcileRequested_.load(std::memory_order_relaxed); }
 
  private:
+  void copyFrom_(const EventTimebase& o) {
+    for (std::uint32_t i = 0; i < kEventTimebaseCapacity; ++i) cont_[i] = o.cont_[i];
+    for (std::uint32_t i = 0; i < kEventCriticalCapacity; ++i) crit_[i] = o.crit_[i];
+    contPending_ = o.contPending_;
+    critPending_ = o.critPending_;
+    blockStart_ = o.blockStart_;
+    lateSeen_ = o.lateSeen_;
+    parameterCoalesced_ = o.parameterCoalesced_.load(std::memory_order_relaxed);
+    continuousOverflow_ = o.continuousOverflow_.load(std::memory_order_relaxed);
+    criticalOverflow_ = o.criticalOverflow_.load(std::memory_order_relaxed);
+    criticalFlushed_ = o.criticalFlushed_.load(std::memory_order_relaxed);
+    dispatchCapacity_ = o.dispatchCapacity_.load(std::memory_order_relaxed);
+    lateCount_ = o.lateCount_.load(std::memory_order_relaxed);
+    reconcileCount_ = o.reconcileCount_.load(std::memory_order_relaxed);
+    batchAdmitted_ = o.batchAdmitted_.load(std::memory_order_relaxed);
+    batchRejected_ = o.batchRejected_.load(std::memory_order_relaxed);
+    reconcileRequested_ = o.reconcileRequested_.load(std::memory_order_relaxed);
+  }
+
   // Sorted insert into a fixed lane; returns the new pending count.
   static std::uint32_t insert_sorted(TimedControlEvent* q, std::uint32_t pending,
                                      TimedControlEvent e) {
@@ -310,17 +338,18 @@ class EventTimebase {
   std::uint64_t blockStart_ = 0;
   bool lateSeen_ = false;
 
-  // Pressure policy state.
-  std::uint32_t parameterCoalesced_ = 0;
-  std::uint32_t continuousOverflow_ = 0;
-  std::uint32_t criticalOverflow_ = 0;
-  std::uint32_t criticalFlushed_ = 0;
-  std::uint32_t dispatchCapacity_ = 0;
-  std::uint32_t lateCount_ = 0;
-  std::uint32_t reconcileCount_ = 0;
-  std::uint32_t batchAdmitted_ = 0;
-  std::uint32_t batchRejected_ = 0;
-  bool reconcileRequested_ = false;
+  // Pressure policy state. Relaxed atomics (see the diagnostics above): written by
+  // the audio thread, readable across threads for diagnostics.
+  std::atomic<std::uint32_t> parameterCoalesced_{0};
+  std::atomic<std::uint32_t> continuousOverflow_{0};
+  std::atomic<std::uint32_t> criticalOverflow_{0};
+  std::atomic<std::uint32_t> criticalFlushed_{0};
+  std::atomic<std::uint32_t> dispatchCapacity_{0};
+  std::atomic<std::uint32_t> lateCount_{0};
+  std::atomic<std::uint32_t> reconcileCount_{0};
+  std::atomic<std::uint32_t> batchAdmitted_{0};
+  std::atomic<std::uint32_t> batchRejected_{0};
+  std::atomic<bool> reconcileRequested_{false};
 };
 
 }  // namespace lunar24::core

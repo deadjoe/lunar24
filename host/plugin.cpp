@@ -139,6 +139,11 @@ void LunarHostPlugin::OnReset()
   // Preserve the last MIDI knob edits before capturing the state and discarding
   // the old runtime queues. The audio callback has stopped at this boundary.
   engine_.syncParametersFromAudioThread();
+  // The old runtime's notes die with it; the sustain pedal's held-note ledger
+  // belongs to that stream (a stale pedal-down would defer the new stream's
+  // note-offs forever).
+  sustain_.reset();
+  sustainResetRequested_.store(false, std::memory_order_relaxed);
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
   if (factoryResetRequested_) {  // the panel's RESET: publish the power-on default instead
@@ -173,6 +178,16 @@ void LunarHostPlugin::requestFactoryReset()
 {
   factoryResetRequested_ = true;
   lunar_host_request_audio_reopen();  // OnReset runs when the stream reopens
+}
+
+void LunarHostPlugin::midiInputClosed()
+{
+  sustainResetRequested_.store(true, std::memory_order_release);
+  lunar24::core::ControlEvent e{};
+  e.kind = lunar24::core::ControlEventKind::reset;
+  e.value = 1;
+  e.source = 3;  // the MIDI producer whose stream just ended
+  (void)engine_.postEvent(e);  // a full queue reconciles to all-gates-off on its own
 }
 
 void LunarHostPlugin::OnIdle()
@@ -223,6 +238,9 @@ bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
 
 void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
+  // The app's MIDI input was closed from the UI thread: its pedal ledger is dead.
+  if (sustainResetRequested_.exchange(false, std::memory_order_acq_rel))
+    sustain_.reset();
   // GH#4 8B2: a PURE delegate to the framework-free owner. The owner either renders through
   // the production DeviceAdapter::renderBlock (task#71) or returns a dropped status after
   // writing deterministic silence into the outputs. There is NO frame loop / scale / mapping /

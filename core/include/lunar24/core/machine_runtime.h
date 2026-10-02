@@ -970,6 +970,9 @@ class SynthRuntime {
   bool enqueueControlEvent(const TimedControlEvent& e) { return eventTimebase_.enqueue(e); }
   // Absolute sample index of the next block (for live events that should act "now").
   std::uint64_t currentSample() const { return eventTimebase_.blockStart(); }
+  // Read-only diagnostics view of the event scheduler (design/07 §3 pressure counters).
+  // The counters are relaxed atomics: a cross-thread read may be slightly stale, never torn.
+  const EventTimebase& eventTimebase() const { return eventTimebase_; }
 
   // DRONE panel controls (#39 panel-binding half): knob -> bank. `voiceGroup` is
   // 0..3 (classic drone voices 1/2/4/5), `gen` is 0..4. The runtime owns the

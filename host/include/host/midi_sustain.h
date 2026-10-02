@@ -37,6 +37,16 @@ class MidiSustain {
     }
   }
 
+  // Clear pedal and deferred-note state. The notes a pedal was holding belong to the
+  // audio stream that carried them; when that stream is replaced (device reopen /
+  // RESET PANEL) its notes die with it, and a stale pedal-down would otherwise defer
+  // every later note-off forever. Call at the stopped-stream boundary (OnReset) or on
+  // the audio thread.
+  void reset() {
+    for (bool& on : on_) on = false;
+    for (auto& row : held_) for (bool& h : row) h = false;
+  }
+
  private:
   bool on_[16] = {};
   bool held_[16][128] = {};

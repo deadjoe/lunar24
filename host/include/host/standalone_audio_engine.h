@@ -303,6 +303,40 @@ class StandaloneAudioEngine {
   bool parameterFromAudioThread(ParameterId id, double value);
   // UI thread: apply the MIDI-CC knob moves queued by the audio thread. Returns how many.
   int syncParametersFromAudioThread();
+  // Event-scheduler pressure diagnostics (design/07 §3), for tests and future UI/log
+  // display. Safe from any thread: the underlying counters are relaxed atomics, so a
+  // snapshot may be slightly stale under load but never races.
+  struct EventDiagnostics {
+    std::uint32_t parameterCoalesced = 0;
+    std::uint32_t continuousOverflow = 0;
+    std::uint32_t criticalOverflow = 0;
+    std::uint32_t criticalFlushed = 0;
+    std::uint32_t dispatchCapacity = 0;
+    std::uint32_t lateCount = 0;
+    std::uint32_t reconcileCount = 0;
+    std::uint32_t batchAdmitted = 0;
+    std::uint32_t batchRejected = 0;
+    bool reconcilePending = false;
+  };
+  EventDiagnostics eventDiagnostics() const {
+    EventDiagnostics d;
+    if (!definition_) return d;
+    const lunar24::core::EventTimebase& tb = definition_->runtime().eventTimebase();
+    d.parameterCoalesced = tb.parameterCoalesced();
+    d.continuousOverflow = tb.continuousOverflow();
+    d.criticalOverflow = tb.criticalOverflow();
+    d.criticalFlushed = tb.criticalFlushed();
+    d.dispatchCapacity = tb.dispatchCapacity();
+    d.lateCount = tb.lateCount();
+    d.reconcileCount = tb.reconcileCount();
+    d.batchAdmitted = tb.batchAdmitted();
+    d.batchRejected = tb.batchRejected();
+    d.reconcilePending = tb.reconcilePending();
+    return d;
+  }
+  // UI note/gate events dropped by a full live queue (each one also requests the
+  // all-gates-off reconcile). Cumulative across reopens.
+  std::uint32_t liveEventDropCount() const { return liveEventDrops_.load(std::memory_order_relaxed); }
   // Current value of a parameter as the user last set it (UI readback).
   double parameterValue(ParameterId id) const {
     const DeviceStateV1* st = canonicalState();
@@ -427,6 +461,13 @@ class StandaloneAudioEngine {
   lunar24::core::SpscQueue<256> fromAudioQueue_;  // audio -> UI (MIDI CC knob moves)
   bool droneKeys_[6] = {true, true, true, true, true, true};
   std::atomic<bool> muted_{false};
+  // A UI note/gate event dropped by a full liveQueue_ makes the queued note stream
+  // untrustworthy (some note-off is gone for good, and the UI keeps no held-note
+  // ledger to resend from): the audio thread drops the backlog's note events and
+  // reconciles to all-gates-off at the next drain — the EventTimebase
+  // critical-overflow failsafe, one level up.
+  std::atomic<bool> eventReconcileRequested_{false};
+  std::atomic<std::uint32_t> liveEventDrops_{0};
   std::array<std::atomic<float>, kPanelLedCount> leds_{};
   double ledShLast_[2] = {0.0, 0.0};   // audio thread: last S&H value seen, per drone 3 / 6
   double ledShHold_[2] = {0.0, 0.0};   // audio thread: seconds left on each S&H flash
@@ -737,6 +778,7 @@ inline void StandaloneAudioEngine::clearState_() {
   // this the engine is fully NOT-READY with nothing inspectable left half-written.
   liveQueue_.clear();
   fromAudioQueue_.clear();
+  eventReconcileRequested_.store(false, std::memory_order_relaxed);
   definition_.reset();
   adapter_ = DeviceAdapter{};
   sampleRate_ = 0.0;
@@ -811,6 +853,7 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   // must not be replayed against it. Rejected candidates never reach this point.
   liveQueue_.clear();
   fromAudioQueue_.clear();
+  eventReconcileRequested_.store(false, std::memory_order_relaxed);
   definition_ = std::move(cand);
   adapter_ = candAdapter;
   sampleRate_ = sampleRate;
@@ -842,7 +885,13 @@ inline bool StandaloneAudioEngine::postEvent(const lunar24::core::ControlEvent& 
   lunar24::core::LiveCommand c;
   c.kind = lunar24::core::LiveCommand::Kind::Event;
   c.event = e;
-  return liveQueue_.push(c);
+  if (liveQueue_.push(c)) return true;
+  // The queue is full: if this was a note-off whose note-on is queued or already
+  // playing, that gate would hang open forever. Count the drop and reconcile to
+  // all-gates-off at the next drain rather than risking a stuck note.
+  liveEventDrops_.fetch_add(1, std::memory_order_relaxed);
+  eventReconcileRequested_.store(true, std::memory_order_release);
+  return false;
 }
 
 inline bool StandaloneAudioEngine::postConnect(lunar24::core::JackId source,
@@ -1000,7 +1049,13 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
   using lunar24::core::LiveCommand;
   LiveCommand c;
   bool graphChanged = false;
+  // If a postEvent found the queue full, the backlog's note stream is untrustworthy
+  // (a note-off is missing): skip every queued note event and reconcile to
+  // all-gates-off below. Parameter/cable/menu commands stay — they are consistent
+  // with the saved state by the post* capacity checks.
+  const bool reconcile = eventReconcileRequested_.exchange(false, std::memory_order_acq_rel);
   while (liveQueue_.pop(c)) {
+    if (reconcile && c.kind == LiveCommand::Kind::Event) continue;  // untrusted note stream
     switch (c.kind) {
       case LiveCommand::Kind::Parameter: {
         if (rt.setKeyboardParameter(c.parameter, c.value)) break;  // keyboard menu: now, in order
@@ -1048,6 +1103,15 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
   // Known compromise: recompiling the patch graph allocates a few small vectors. It only
   // happens when the user plugs/unplugs a cable, never in steady-state rendering.
   if (graphChanged) (void)rt.rebuild();
+  if (reconcile) {
+    // All-gates-off: the failsafe sorts to phase 0 within this block, and no gate_on
+    // survived the backlog drop above, so nothing can reopen a gate behind it.
+    lunar24::core::ControlEvent e{};
+    e.kind = lunar24::core::ControlEventKind::reset;
+    e.value = 1;
+    e.source = 100;  // the UI producer
+    (void)rt.enqueueControlEvent(lunar24::core::TimedControlEvent{e, rt.currentSample()});
+  }
 }
 
 }  // namespace lunar24::host

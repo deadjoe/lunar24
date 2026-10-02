@@ -910,6 +910,15 @@
 - 同一通道：踩踏板、按下并松开音符，再按住同一个音；松踏板时应仍发声，最后松琴键才释放。
 - 多通道（软件发送器可测）：通道 2 踏板按下不应延长通道 1 音符；通道 2 和 10 同音同时被各自踏板保持时，松通道 2 踏板不能释放通道 10 的音符。
 
+**T14.2 MIDI 输入关闭/切换时音符停止** ⏳
+- 安排：需要 MIDI 键盘（如 MPK mini IV）。
+- 准备：Preferences 里 MIDI Input 选到该键盘；PLAY = SINGLE、MODE = KEYBOARD，BLEND 最左、DRONE VOICES 全关，只听 VCO A。
+- 步骤：
+  1. 在 MIDI 键盘上按住一个音不放（声音持续）。
+  2. 保持按住，打开 Preferences，把 MIDI Input 切成 off。
+- 期望：切掉的瞬间声音停止（松不松手都不应再响）。再把 MIDI Input 切回键盘，弹奏恢复正常。
+- 备注：直接拔 USB 线的热拔场景目前还没有检测机制（RtMidi 不支持设备移除通知），拔线造成的卡音要切一次输入设备才会清；这是已知缺口。
+
 ## 还没测的（⏳）
 
 - MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。MIDI 音符目前在 TWIN / SPLIT 下都算左半边（见键盘待办）。
