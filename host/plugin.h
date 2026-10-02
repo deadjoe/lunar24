@@ -16,6 +16,7 @@
 #include <memory>
 
 #include <host/app_state_store.h>
+#include <host/midi_sustain.h>
 #include <host/standalone_audio_engine.h>
 #include <lunar24/core/input_state_machine.h>
 
@@ -104,10 +105,8 @@ private:
   lunar24::core::InputStateMachine midiInput_{kMidiCc, 5};
   // Pitch bend range (the common default), sustain pedal state and MIDI clock tick count.
   static constexpr double kPitchBendSemitones = 2.0;
-  bool sustainOn_ = false;
-  bool sustainedNotes_[128] = {};
+  lunar24::host::MidiSustain sustain_;
   std::uint32_t midiClockTicks_ = 0;
-  void releaseSustainedNotes_(int offset);
   std::uint64_t savedEditCount_ = 0;
   std::chrono::steady_clock::time_point lastAutosave_ = std::chrono::steady_clock::now();
   std::uint64_t midiSeq_ = 0;
