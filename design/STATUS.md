@@ -1,6 +1,6 @@
 # Lunar 24 — status (plain language)
 
-_Last updated: 2026-09-30 (priorities reset)._
+_Last updated: 2026-10-02._
 
 ## What works
 - **Sound engine (core/)**
@@ -15,16 +15,17 @@ _Last updated: 2026-09-30 (priorities reset)._
   - **Dual effector: all 13 cartridges x 3 programs** (reverbs, shimmer, pitch/reverse
     delays, chorus/flanger/phaser, filters, ring mod, bit-crush, mini synths).
   - 2 LFOs, 2 envelopes, joystick, 5-step sequencer, envelope follower, keyboard
-    (single/twin/split, arp, 16-step, glide, vibrato, quantiser, 4 presets).
+    (single/twin/split, arp, 16-step, rhythm patterns, glide, vibrato, quantiser, 4 presets).
   - Patch cables, normalled connections and feedback loops.
 - **App (host/)**: macOS/Windows standalone with the full panel UI, MIDI input, and the
   machine state restored on launch (saved on exit and every 30 s after an edit). The panel follows the official
   Solar 42N panel drawing: same module frames, labels, printed icons, LEDs and control
-  positions (taken from the PDF by `tools/gen_panel_art.py`), branded Lunar 24. `panel_preview > panel.svg`
+  positions (taken from the PDF by `tools/gen_panel_art.py`), branded Lunar 24; the printed
+  indicator LEDs are lit from the engine's state. `panel_preview > panel.svg`
   renders it without building the app. CI attaches a downloadable app to
   every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: ~56 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
+- **Tests**: ~58 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
   `design/MANUAL_TESTS.md`.
 
 ## How to play
@@ -60,15 +61,14 @@ exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenc
 ## Next steps (in order)
 1. Sound feedback from the owner's listening comes first — every curve is a first guess.
 2. Core playability and UI, checked against the manual: panel parts shown but not functional (photo sensor,
-   headphone socket); re-check the manual for the arp/seq clock ratios and scale note sets above.
+   headphone socket and its PHONE volume knob); re-check the manual for the arp/seq clock ratios and scale
+   note sets above.
 3. Real-time safety: plugging/unplugging a cable recompiles the patch graph on the audio
    thread (small allocations, only at that moment). Compile on the UI thread and swap.
 4. Windows: build is tested in CI; real audio/MIDI device testing still to do.
-5. The panel's printed LEDs (gate/hold, envelopes, step sequencer, LFOs ...) are drawn
-   unlit; lighting them from the engine's state is not done yet.
-6. After the manual tests: a REC button writing WAV (WET L/R; DRY A/B optional) via a
+5. After the manual tests: a REC button writing WAV (WET L/R; DRY A/B optional) via a
    lock-free buffer + writer thread. Loopback recording (BlackHole) stays as it is.
-7. Later: small panel size tweaks (owner's list), then an AU/VST3 plugin for Ableton Live.
+6. Later: small panel size tweaks (owner's list), then an AU/VST3 plugin for Ableton Live.
 
 Only when the related feature is touched: knob hover/drag redraws the whole panel — dirty
 only the readout if the UI feels slow. Not planned: letting the old effector tail ring out on a cartridge switch

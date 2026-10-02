@@ -220,7 +220,7 @@
   4. 将 PRESSURE 改成 AD、P RISE 调到约 3/4；在 Settings 将 Output 从 MacBook Speakers 切到 BlackHole 2CH，Apply，再切回 Speakers，Apply / OK。预期设置和接线保持切换前的状态，A 键按下、松开仍正常。
 - 队列中“恰好尚未处理”的旧操作由自动回归测试确定性覆盖；人工步骤检查真实重置和设备重开流程，不要求反复抢时间操作。不需要接 MIDI 控制器。
 
-**T0.5 MUTE** ⏳
+**T0.5 MUTE** ✅
 - 准备：RESET PANEL（默认 drone 在响）。
 - 步骤：
   1. 点 DRONE VOICES 右边的 **MUTE**。
@@ -232,7 +232,7 @@
   - 第 3 步：声音恢复成当前面板的声音（机器在静音期间一直在运行）。
   - 重新打开应用时 MUTE 是关的。
 
-**T0.6 指示灯** ⏳
+**T0.6 指示灯** ✅
 - 准备：RESET PANEL。
 - 步骤与期望：
   - 每个 drone 的 **HOLD** 下面的琥珀灯：drone 开着时亮；在 DRONE VOICES 里关掉它，灯按 **RLS** 的时间慢慢变暗（RLS 拉大更明显）。
@@ -577,6 +577,12 @@
   - d：那一步变成空拍。
   - e：改由 LFO 推进节奏，不用改菜单。
 
+**T10.2 5-STEP CLK（菜单时钟开关）** ⏳
+- 说明：键盘菜单 SETTINGS 第 3 行最右的 **5-STEP CLK**（int / ext）是 5 步音序器时钟源开关唯一的 UI 入口。插线进 EXT CLOCK 插孔时线缆永远接管（T10.1 e 已测），这个开关只在**没插线**时起作用。
+- 准备：按 T10.1 接好 cv / gate（不接 EXT CLOCK 的线），音序器在走。
+- 步骤：菜单里把 **5-STEP CLK** 切到 **ext**，再切回 **int**。
+- 期望：切到 ext 后音序器停走（没有外部时钟）；切回 int 后按 pulser 速度恢复。
+
 ### 11. PREAMP 和 ENVELOPE FOLLOWER
 
 准备（本节通用）：Preferences 里把输入设备选成 MacBook 自带麦克风（不要用 AirPods 麦克风），（它是单声道，Input 1 (L) / Input 2 (R) 显示为空是正常的，麦克风照样是开的）；戴耳机，防止扬声器的声音被麦克风收回去；RESET PANEL。RESET 后 PREAMP 的红色 **gain** 和 VOICE MIXER 的 **EXT.AUDIO** 音量都在最左（静音），T11.2、T11.3 先把 gain 转到中间。
@@ -899,36 +905,31 @@
 
 ## 还没测的（⏳）
 
-- MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。
-- DRONE 6 的面板控件逐个过一遍（和 DRONE 3 同一套代码；DRONE 2 / 4 / 5 已测过）。
-- VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch）。
-- VOICE MIXER 的 EXT.AUDIO 通道、PREAMP 的 ext. source 插孔、耳机音量旋钮。
-- 键盘菜单第 3 行的校准类设置（软件里意义不大）。
+- MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。MIDI 音符目前在 TWIN / SPLIT 下都算左半边（见键盘待办）。
+- T10.2（5-STEP CLK 菜单开关）。
+- VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch：声道 3 = DRY A、声道 4 = DRY B。注意 DRY 在 VCA 之后，要按住键或点亮 envelope 的 hold 才有声）。
+- PREAMP 的 ext. source 插孔（不需要额外硬件：把 LFO A 输出插进去，麦克风输入应被取代，ENVELOPE FOLLOWER 的灯改跟 LFO 走；拔线恢复）。
+- 键盘菜单第 3 行其余 11 个校准类设置（ENCODER、CAL V/OCT、CAL PRESS、DAC REF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE）：已核实为存储但无声音/行为效果（部分是纯硬件概念），只需确认改动能保存、重启后还在。
+
+已核实无需列入：DRONE 6 的控件与 DRONE 3 结构性同码（同一个 PapaVoice 实现，12 参数 7 插孔全部正确映射，无独立风险）；VOICE MIXER 的 EXT.AUDIO 通道已被 T11.4 的补充步骤覆盖；耳机音量旋钮按设计无功能（只存状态，不接任何音频通路）。
 
 ## TODO
 
-### 调音待办（测试中记下的听感问题，未改）
+### 调音待办（测试中记下的听感问题，未改；括号内为 2026-10-02 核实的当前值）
 
-- DRONE VOLT 过半后听起来变小。
-- DRONE 3 的 mod 最大跨度太大。
-- S&H 默认太慢、跳动幅度太大。
-- 所有 drone 一起响时混音太满。
-- 光敏传感器可以改成用鼠标操作。
-- VCO A → VCO B 的默认调制偏温和。
+- DRONE VOLT 过半后听起来变小。（满行程降 5 个八度、过半启动互调 FM，无响度补偿——音高进入次声频段，结构性变小）
+- DRONE 3 的 mod 最大跨度太大。（当前峰峰正好 6 个八度：kNewDroneFmOctaves = ±3）
+- S&H 默认太慢、跳动幅度太大。（默认约 6 秒采一次；输出 ±5 V，接 cv 后音高最多 ±5 个八度）
+- 所有 drone 一起响时混音太满。（混音器是裸加和、无归一化，靠效果器末尾 tanh 软限幅兜底）
+- 光敏传感器可以改成用鼠标操作。（目前纯装饰，无交互）
+- VCO A → VCO B 的默认调制偏温和。（1:1 直通路由：±1 V 源进 ±5 V 输入，只用约 20% 量程）
 
 ### 键盘待办
 
-- MIDI 键盘的音符都算左半边；TWIN / SPLIT 下如何分左右（按通道或按音区）还没定。
+- MIDI 键盘的音符都算左半边；TWIN / SPLIT 下如何分左右（按通道或按音区）还没定。（2026-10-02 核实：MIDI 输入从不设 side，默认 Left；延音踏板延迟释放的 note_off 同样算左半边，修的时候要一起改。）
 
-### 音频设备待办（先跳过，以后加日志再查）
+### 音频设备备注
 
-- 戴 AirPods Pro（输出走 AirPods）时，MacBook 麦克风收不到声音（PREAMP 蓝灯、ENVELOPE FOLLOWER 绿灯都不亮）。手动改回 MacBook 麦克风、摘掉 AirPods、RESET PANEL 都不恢复。不用 AirPods 时正常。很可能和下一条同源：启动时输入被换成了 AirPods 的麦克风，AirPods 进入通话模式，带输入打不开，只开了输出。下一条修好后请复测。
-- 🔧 重启应用后输入设备变成 AirPods Pro / BlackHole 2ch：已找到原因并修复。设备名在保存时带了一个前导空格（" MacBook Pro Microphone"），设置文件读回来时会去掉空格，于是对不上任何设备，程序就退回 macOS 的默认输入设备。现在设备名统一去掉首尾空格。复测：选好 MacBook 麦克风，退出再打开，Preferences 里应该还是 MacBook Pro Microphone；戴着 AirPods 打开应用也一样。
 - MacBook 麦克风是单声道，Preferences 里 Input 1 (L) / Input 2 (R) 显示为空（iPlug2 设置窗口的显示问题），麦克风其实是开的。
-- 🔧 AirPods 相关（日志查明，已修）：
-  - AirPods Pro 在系统里是两个同名设备（一个只有麦克风，一个只有耳机），程序按名字找输出时拿到了麦克风那个，打不开。现在按方向查找。
-  - 打不开时程序临时关掉输入以保证有声音；紧接着点 OK 会把"输入关"存成你的选择，以后每次启动麦克风都不开。现在临时关闭不会被存下来。
-  - 应用运行中插拔设备时设备列表不刷新（Preferences 里看不到新连上的 AirPods）。现在设备增减会自动刷新并重新打开。
-  - AirPods 的麦克风只有通话音质（24000 Hz），打不开（系统拒绝 48000 Hz）；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」（已验证可用）。选了打不开的输入时，程序只开输出，并弹窗「Audio input is off」说明原因（每个设备每次运行只提示一次）。
-  - 复测：应用开着戴上 / 摘下 AirPods，Preferences 列表应立刻出现 / 消失 AirPods；选 MacBook 麦克风 + AirPods 输出，拍手有反应；把输入误选成 AirPods 后再改回 MacBook 麦克风，拍手有反应，重启后仍然有。
+- AirPods 的麦克风只有通话音质（24000 Hz），48000 Hz 打不开；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」。选了打不开的输入时，程序只开输出，并弹窗「Audio input is off」（每个设备每次运行只提示一次）。
 - 音频日志：`~/Library/Application Support/Lunar24/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。
