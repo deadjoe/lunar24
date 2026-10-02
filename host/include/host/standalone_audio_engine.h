@@ -303,6 +303,37 @@ class StandaloneAudioEngine {
   bool parameterFromAudioThread(ParameterId id, double value);
   // UI thread: apply the MIDI-CC knob moves queued by the audio thread. Returns how many.
   int syncParametersFromAudioThread();
+  // Event-scheduler pressure diagnostics (design/07 §3), for tests and future UI/log
+  // display. Safe from any thread: the underlying counters are relaxed atomics, so a
+  // snapshot may be slightly stale under load but never races.
+  struct EventDiagnostics {
+    std::uint32_t parameterCoalesced = 0;
+    std::uint32_t continuousOverflow = 0;
+    std::uint32_t criticalOverflow = 0;
+    std::uint32_t criticalFlushed = 0;
+    std::uint32_t dispatchCapacity = 0;
+    std::uint32_t lateCount = 0;
+    std::uint32_t reconcileCount = 0;
+    std::uint32_t batchAdmitted = 0;
+    std::uint32_t batchRejected = 0;
+    bool reconcilePending = false;
+  };
+  EventDiagnostics eventDiagnostics() const {
+    EventDiagnostics d;
+    if (!definition_) return d;
+    const lunar24::core::EventTimebase& tb = definition_->runtime().eventTimebase();
+    d.parameterCoalesced = tb.parameterCoalesced();
+    d.continuousOverflow = tb.continuousOverflow();
+    d.criticalOverflow = tb.criticalOverflow();
+    d.criticalFlushed = tb.criticalFlushed();
+    d.dispatchCapacity = tb.dispatchCapacity();
+    d.lateCount = tb.lateCount();
+    d.reconcileCount = tb.reconcileCount();
+    d.batchAdmitted = tb.batchAdmitted();
+    d.batchRejected = tb.batchRejected();
+    d.reconcilePending = tb.reconcilePending();
+    return d;
+  }
   // Current value of a parameter as the user last set it (UI readback).
   double parameterValue(ParameterId id) const {
     const DeviceStateV1* st = canonicalState();

@@ -333,5 +333,27 @@ int main() {
     for (int i = 0; i < 5; ++i) lit += e.panelLed(E::kLedStep1 + i) > 0.5f ? 1 : 0;
     CHECK_EQ(lit, 1);
   }
+  // The event scheduler's pressure diagnostics reach the engine surface: flooding the
+  // 64-deep critical lane counts the overflows and fires the reconcile failsafe.
+  {
+    using E = host::StandaloneAudioEngine;
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.eventDiagnostics().criticalOverflow == 0u);
+    core::ControlEvent g{};
+    g.kind = core::ControlEventKind::gate_on;
+    g.value = 1;
+    g.source = 3;
+    for (int i = 0; i < 70; ++i) {   // 70 > the 64-deep critical lane
+      g.noteId = static_cast<core::NoteId>(i + 1);
+      g.producerSequence = static_cast<std::uint64_t>(i + 1);
+      e.enqueueEventFromAudioThread(g, 0);
+    }
+    CHECK_EQ(e.eventDiagnostics().criticalOverflow, 6u);
+    CHECK(e.eventDiagnostics().reconcilePending);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK_EQ(e.eventDiagnostics().reconcileCount, 1u);
+    CHECK_EQ(e.eventDiagnostics().criticalFlushed, 64u);
+  }
   return test::finish("test_live_edits");
 }
