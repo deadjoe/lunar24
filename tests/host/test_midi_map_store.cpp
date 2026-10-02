@@ -47,7 +47,9 @@ static core::MidiBinding ccBinding(const char* dev, std::uint8_t ch, std::uint8_
 }
 
 static std::vector<std::uint8_t> readFile(const std::string& path) {
-  std::FILE* f = std::fopen(path.c_str(), "rb");
+  // The product's native-path boundary (wide on Windows); plain std::fopen would trip
+  // MSVC's secure-CRT deprecation (C4996) under /WX.
+  std::FILE* f = host::app_state_file_ops::openNative(path, "rb");
   if (!f) return {};
   std::fseek(f, 0, SEEK_END);
   const long size = std::ftell(f);
@@ -86,7 +88,7 @@ int main() {
     store.setDirectory(dir);
     const std::string live = store.livePath();
     const char garbage[17] = "not a midi map!!";
-    std::FILE* f = std::fopen(live.c_str(), "wb");
+    std::FILE* f = host::app_state_file_ops::openNative(live, "wb");
     CHECK(f != nullptr);
     CHECK_EQ(std::fwrite(garbage, 1u, sizeof(garbage), f), sizeof(garbage));
     std::fclose(f);
@@ -111,7 +113,7 @@ int main() {
     host::MidiMapStore store;
     store.setDirectory(dir);
     const std::string live = store.livePath();
-    std::FILE* f = std::fopen(live.c_str(), "wb");
+    std::FILE* f = host::app_state_file_ops::openNative(live, "wb");
     CHECK(f != nullptr);
     std::vector<std::uint8_t> big(core::midi_map_wire_bytes(core::kMidiMapCapacity) + 1, 0x5A);
     CHECK_EQ(std::fwrite(big.data(), 1u, big.size(), f), big.size());
