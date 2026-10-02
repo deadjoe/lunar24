@@ -697,7 +697,7 @@
   - 第 5 步：EDIT 按钮消失；左右两边都按左边的设置弹（都是普通键盘，右边不再琶音）。
 - 测完把 oct+3 拨回 low。
 
-**T12.7a SPLIT 左右设置隔离（队列拒绝修复后）** ⏳
+**T12.7a SPLIT 左右设置隔离（队列拒绝修复后）** ✅ (#82；Mac 实测通过)
 - 键盘菜单 PLAY 选 SPLIT，EDIT 选 LEFT，MODE 设 KEYBOARD；EDIT 选 RIGHT，MODE 改 ARPEGGIATOR，再改 SEQUENCER。
 - 来回切换 EDIT：预期 LEFT 一直为 KEYBOARD，RIGHT 为 SEQUENCER。将 RIGHT 的 MODE 改回 KEYBOARD；此时修改共享的 PLAY 为 SINGLE，预期仍能正常切换。
 - 队列满的拒绝路径由自动测试覆盖，不需要人工高速拖旋钮。此项只检查实际 UI 的左右路由和共享设置没有回归。
@@ -889,6 +889,13 @@
   - 第 4 步：VCO B 一样（RESET 后 VCO A、B 都在 VOICE MIXER 里开着）。
 
 ---
+
+**T14.1 MIDI 延音踏板按通道释放** ⏳
+- 安排：留到外部 MIDI 集成测试；当前已自动覆盖 16 个通道的实际引擎 gate 释放。没有踏板时不要求购买设备或执行本项。
+- 准备：可发送 CC64 的 MIDI 控制器或软件发送器；PLAY = SINGLE、MODE = KEYBOARD，BLEND 最左、DRONE VOICES 全关、envelope A hold 关闭、R 调短。
+- 通道 2（设备界面编号）：按住一个音，踩下踏板，松开琴键。预期持续发声；再松开踏板，预期按 R 释放，没有卡音。通道 1、16 各重复一次。
+- 同一通道：踩踏板、按下并松开音符，再按住同一个音；松踏板时应仍发声，最后松琴键才释放。
+- 多通道（软件发送器可测）：通道 2 踏板按下不应延长通道 1 音符；通道 2 和 10 同音同时被各自踏板保持时，松通道 2 踏板不能释放通道 10 的音符。
 
 ## 还没测的（⏳）
 

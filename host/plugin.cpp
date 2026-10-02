@@ -280,7 +280,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
     case IMidiMsg::kNoteOn:
       if (msg.Velocity() > 0)
       {
-        sustainedNotes_[note & 127] = false;  // pressed again: no longer held only by the pedal
+        sustain_.noteOn(in.channel, note & 127);  // pressed again: no longer held only by the pedal
         in.kind = PerfInputKind::note_on;
         in.pitch = static_cast<SignalSample>((note - 57) / 12.0);  // A3 (MIDI 57) = 0 V = 220 Hz
         in.value = static_cast<SignalSample>(msg.Velocity() / 127.0);
@@ -289,9 +289,8 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       }
       [[fallthrough]];  // note-on with velocity 0 is a note-off
     case IMidiMsg::kNoteOff:
-      if (sustainOn_)
+      if (sustain_.deferNoteOff(in.channel, note & 127))
       {
-        sustainedNotes_[note & 127] = true;  // the pedal keeps it sounding
         return;
       }
       in.kind = PerfInputKind::note_off;
@@ -313,8 +312,12 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       if (msg.ControlChangeIdx() == IMidiMsg::kSustainOnOff)
       {
         const bool on = msg.ControlChange(IMidiMsg::kSustainOnOff) >= 0.5;
-        if (sustainOn_ && !on) releaseSustainedNotes_(offset);
-        sustainOn_ = on;
+        sustain_.pedal(in.channel, on, in.source, [&](PerformanceInput released) {
+          released.seq = ++midiSeq_;
+          ControlEvent event[1];
+          if (midiInput_.translate(released, event, 1) == 1)
+            engine_.enqueueEventFromAudioThread(event[0], offset);
+        });
         return;
       }
       in.kind = PerfInputKind::cc;
@@ -339,21 +342,4 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
   }
 }
 
-// Sustain pedal released: send the note-offs it was holding back.
-void LunarHostPlugin::releaseSustainedNotes_(int offset)
-{
-  using namespace lunar24::core;
-  for (int note = 0; note < 128; ++note)
-  {
-    if (!sustainedNotes_[note]) continue;
-    sustainedNotes_[note] = false;
-    PerformanceInput in{};
-    in.kind = PerfInputKind::note_off;
-    in.source = 3;
-    in.noteId = static_cast<NoteId>(note + 1);
-    in.seq = ++midiSeq_;
-    ControlEvent ev[1];
-    if (midiInput_.translate(in, ev, 1) == 1) engine_.enqueueEventFromAudioThread(ev[0], offset);
-  }
-}
 #endif
