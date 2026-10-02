@@ -124,6 +124,7 @@ foreach(t IN ITEMS
     panel_layout
     state_disposition
     state_validation
+    midi_map
     effector
 )
   lunar_add_test(test_${t} tests/core/test_${t}.cpp)
@@ -151,6 +152,7 @@ lunar_add_host_test(test_live_edits tests/host/test_live_edits.cpp)
 lunar_add_host_test(test_drone_voice_jacks tests/host/test_drone_voice_jacks.cpp)
 lunar_add_host_test(test_midi_timing tests/host/test_midi_timing.cpp)
 lunar_add_host_test(test_midi_sustain tests/host/test_midi_sustain.cpp)
+lunar_add_host_test(test_midi_map_store tests/host/test_midi_map_store.cpp)
 
 # Offline renderer: listen to the engine without the app (see CLAUDE.md).
 add_executable(lunar24_render tools/lunar24_render.cpp)
