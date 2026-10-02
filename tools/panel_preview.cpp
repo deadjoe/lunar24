@@ -236,6 +236,10 @@ int main(int argc, char** argv) {
         art::drawButton(sink, float(w.cx), float(w.cy), float(w.w / 2), false, false);
         text(w.cx, w.cy - 42, 15, theme::kInk, "MUTE");
         break;
+      case WidgetKind::MidiSettings:
+        art::drawButton(sink, float(w.cx), float(w.cy), float(w.w / 2), false, false);
+        text(w.cx, w.cy - 42, 15, theme::kInk, "MIDI");
+        break;
       case WidgetKind::Encoder: art::drawEncoder(sink, float(w.cx), float(w.cy), false); break;
       case WidgetKind::OctaveKey: art::drawOctaveKey(sink, float(w.cx), float(w.cy), false); break;
       case WidgetKind::Display:

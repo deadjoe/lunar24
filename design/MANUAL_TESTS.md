@@ -44,7 +44,7 @@
 | 上排 | DRONE 1 · DRONE 2 · DUAL EFFECTOR（上半）+ FILTER L / FILTER R（下半一排）· DRONE 4 · DRONE 5 |
 | 中排 | DRONE 3 · VCO A · VOICE MIXER（下方是 envelope A / envelope B）· VCO B · DRONE 6 |
 | 下排（白字标签） | LFO A · JOYSTICK · 5 STEP SEQ. VOLTAGE · PREAMP · ENVELOPE FOLLOWER · LFO B |
-| 键盘区 | 左下角摇杆 · 12 块触摸板 · 中间红色大旋钮（菜单）和蓝色小屏 · 右边 DRONE VOICES（1 2 3 / 4 5 6）和 **MUTE** |
+| 键盘区 | 左下角摇杆 · 12 块触摸板 · 中间红色大旋钮（菜单）和蓝色小屏 · 右边 DRONE VOICES（1 2 3 / 4 5 6）和上下排列的 **MUTE**、**MIDI** 按钮 |
 
 ### 各模块控件（与面板印字对应）
 
@@ -919,9 +919,47 @@
 - 期望：切掉的瞬间声音停止（松不松手都不应再响）。再把 MIDI Input 切回键盘，弹奏恢复正常。
 - 备注：直接拔 USB 线的热拔场景目前还没有检测机制（RtMidi 不支持设备移除通知），拔线造成的卡音要切一次输入设备才会清；这是已知缺口。
 
+### 15. MIDI 设置与绑定
+
+**T15.1 MIDI 设置界面** ⏳
+- 步骤：
+  1. 点 DRONE VOICES 右边、MUTE 正下方的 **MIDI** 按钮。
+  2. 看界面：深色面板盖住键盘区，左边 INPUT / CHANNEL / OCTAVE / VELOCITY，右边绑定列表（初次为空）。
+  3. 点 **CLOSE** 关掉；再打开，按 Esc 关掉。
+- 期望：开合正常；INPUT 显示 Preferences 里选的输入设备名（没选显示 none）。
+
+**T15.2 Learn 绑定一个旋钮** ⏳（需要 MIDI 键盘）
+- 准备：Preferences 里 MIDI Input 选到你的键盘；只听 VCO A。
+- 步骤：
+  1. 打开 MIDI 设置，点 **LEARN**（变琥珀色）。
+  2. 点面板上 FILTER 一排左边的 **FREQ** 旋钮。
+  3. 在键盘上转动一个旋钮（如 MPK 的 K1）。
+- 期望：
+  - 列表出现一行（CC 号 · 通道 → vcf 的 FREQ），LEARN 自动解除。
+  - 转动该旋钮，滤波截止跟着动，面板上的旋钮也跟着动。
+  - 绝对旋钮的接管：硬件旋钮位置离软件值很远时，先扫过当前值才开始跟（不跳值）。
+
+**T15.3 相对模式、解绑、动作绑定** ⏳（需要 MIDI 键盘）
+- 步骤：
+  1. 点 T15.2 那行的 MODE，从 ABS 换成 REL 1（MPK 旋钮在硬件上设成 Relative 模式时用）。
+  2. 点行尾的 × 删掉这条绑定。
+  3. LEARN → 点 DRONE VOICES 的键 **1** → 按键盘的一个打击垫。
+- 期望：
+  - REL 1 下拧动按格增减、不跳值。
+  - 删除后该旋钮不再控制滤波。
+  - 打击垫按一下开 drone 1，再按一下关（切换，不是按住才响）。
+
+**T15.4 通道过滤、八度、力度曲线与断电保存** ⏳（需要 MIDI 键盘）
+- 步骤：
+  1. MIDI 设置里 OCTAVE 调到 +12，弹几个音。
+  2. VELOCITY 选 SOFT，用同样的力度弹，对比 LINEAR。
+  3. CHANNEL 设成一个键盘不在用的通道，弹琴；设回 ANY。
+  4. 绑定一两条后退出应用重开。
+- 期望：+12 时音高高一个八度；SOFT 下轻弹更响；通道不匹配时完全无声、设回 ANY 恢复；重开后绑定和设置都还在。
+
 ## 还没测的（⏳）
 
-- MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。MIDI 音符目前在 TWIN / SPLIT 下都算左半边（见键盘待办）。
+- MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。MIDI 音符目前在 TWIN / SPLIT 下都算左半边（见键盘待办）。界面与绑定见第 15 节（T15.1–T15.4）。
 - T10.2（5-STEP CLK 菜单开关）。
 - VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch：声道 3 = DRY A、声道 4 = DRY B。注意 DRY 在 VCA 之后，要按住键或点亮 envelope 的 hold 才有声）。
 - PREAMP 的 ext. source 插孔（不需要额外硬件：把 LFO A 输出插进去，麦克风输入应被取代，ENVELOPE FOLLOWER 的灯改跟 LFO 走；拔线恢复）。

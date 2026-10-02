@@ -39,6 +39,7 @@ enum class WidgetKind : std::uint8_t {
   Decor,       // non-interactive art: 0 = photo sensor, 1 = LED bar (id2 = first mute param),
                // 3 = hardware jack with no function in Lunar 24
   MasterMute,  // app-level MUTE button next to DRONE VOICES: silences every output
+  MidiSettings,  // app-level MIDI button below MUTE: opens the MIDI settings overlay
 };
 
 // The printed indicator LEDs Lunar 24 lights, in StandaloneAudioEngine::PanelLed order: centre of
@@ -386,8 +387,11 @@ inline std::vector<Widget> build_panel_layout() {
     for (std::uint32_t i = 0; i < 6; ++i)  // keys 1,2,3 left column; 4,5,6 right column
       add(WidgetKind::DroneKey, kx[i / 3], ky[i % 3], 82, 80, i);
   }
-  // MUTE (not on the hardware): right of DRONE VOICES, level with keys 2 / 5.
-  add(WidgetKind::MasterMute, 2352, 1296, 48, 48, 0);
+  // MUTE and MIDI (neither is on the hardware): a vertical pair right of DRONE VOICES,
+  // centered on the six-key block (its centre y is 1296.5). The gap keeps each
+  // button's label clear of the other button.
+  add(WidgetKind::MasterMute, 2352, 1244.5, 48, 48, 0);
+  add(WidgetKind::MidiSettings, 2352, 1348.5, 48, 48, 0);
 
   // ---- keyboard menu overlay (opened by the encoder) --------------------------------------------------
   {

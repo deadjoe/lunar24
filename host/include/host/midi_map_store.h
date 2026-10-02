@@ -55,6 +55,14 @@ class MidiMapStore {
   }
 
   const core::MidiMap& map() const { return map_; }
+  // The rig-level settings stored alongside the bindings (channel filter, octave
+  // shift, velocity curve). Invalid edits are refused (false).
+  const core::MidiRigSettings& settings() const { return settings_; }
+  bool setSettings(const core::MidiRigSettings& s) {
+    if (!core::midi_rig_settings_valid(s)) return false;
+    settings_ = s;
+    return true;
+  }
   MidiMapLoadOutcome loadOutcome() const { return loadOutcome_; }
 
   // Read + decode + adopt. Never touches the file on failure.
@@ -94,12 +102,14 @@ class MidiMapStore {
     const bool ioError = std::ferror(f) != 0;
     std::fclose(f);
     core::MidiMap decoded;
+    core::MidiRigSettings decodedSettings;
     if (ioError || got != bytes.size() || extra != EOF ||
-        !core::midi_map_decode(bytes.data(), bytes.size(), &decoded)) {
+        !core::midi_map_decode(bytes.data(), bytes.size(), &decoded, &decodedSettings)) {
       saveAllowed_ = false;
       return loadOutcome_ = MidiMapLoadOutcome::Malformed;
     }
     map_ = decoded;
+    settings_ = decodedSettings;
     saveAllowed_ = true;
     return loadOutcome_ = MidiMapLoadOutcome::Ok;
   }
@@ -110,7 +120,7 @@ class MidiMapStore {
   bool save() {
     if (!loadAttempted_ || !saveAllowed_ || directory_.empty()) return false;
     std::vector<std::uint8_t> bytes(core::midi_map_wire_bytes(map_.count()));
-    const std::size_t wrote = core::midi_map_encode(map_, bytes.data(), bytes.size());
+    const std::size_t wrote = core::midi_map_encode(map_, settings_, bytes.data(), bytes.size());
     if (wrote != bytes.size()) return false;
     const std::string temp = reserveTempPath();
     if (temp.empty()) return false;
@@ -142,6 +152,7 @@ class MidiMapStore {
   }
 
   core::MidiMap map_;
+  core::MidiRigSettings settings_;
   std::string directory_;
   core::FileOps ops_{};
   void* opsCtx_ = nullptr;

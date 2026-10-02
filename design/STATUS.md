@@ -47,6 +47,10 @@ _Last updated: 2026-10-03._
 - MIDI keyboard: plugged-in devices are picked up automatically. Mod wheel / CC74 =
   filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master; pitch bend +/-2
   semitones; sustain pedal; MIDI clock drives the arpeggiator / sequencer (START / STOP).
+  The MIDI button (under MUTE, right of DRONE VOICES) opens the MIDI settings: learn a
+  panel control onto any CC or pad note (parameters, drone keys, cartridge, presets,
+  mute), per-binding absolute/relative pickup, channel filter, octave shift and velocity
+  curve. Bindings live in their own file, not in the machine state.
 - Effector: click the cartridge slot (or the button below it) to load the next cartridge
   (right-click = previous; hover shows both program names); the L / R switches beside
   the button pick program 1-2-3 per side.

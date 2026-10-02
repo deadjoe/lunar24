@@ -90,9 +90,33 @@ public:
   // match then. Republishes the map so the audio thread's snapshot carries it.
   void setMidiInputDeviceName(const char* name);
 
+  // ---- MIDI rig settings (channel filter / octave shift / velocity curve) -----------
+  // The panel's MIDI settings overlay edits these; the store persists them. The audio
+  // thread reads the atomics, the UI thread owns the store.
+  int midiChannelFilter() const { return midiChannelFilter_.load(std::memory_order_relaxed); }
+  int midiOctaveShift() const { return midiOctaveShift_.load(std::memory_order_relaxed); }
+  int midiVelocityCurve() const { return midiVelocityCurve_.load(std::memory_order_relaxed); }
+  void setMidiRigSettings(int channelFilter, int octaveShift, int curve);
+  // The plugin's binding store (the MIDI settings overlay edits it through this).
+  lunar24::host::MidiMapStore& midiStore() { return midiMapStore_; }
+  // Republish the current map (after the overlay edits it).
+  void republishMidiMap() {
+    engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
+  }
+  // The last note/CC message seen, for the learn overlay: packed (kind << 20 |
+  // channel << 8 | number) plus a sequence that bumps per message. Audio thread
+  // writes, UI reads.
+  std::uint32_t midiLastMessage() const { return midiLastMessage_.load(std::memory_order_relaxed); }
+  std::uint64_t midiMessageSeq() const { return midiMessageSeq_.load(std::memory_order_relaxed); }
+
 private:
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
   std::atomic<bool> sustainResetRequested_{false};  // UI thread -> audio thread
+  std::atomic<int> midiChannelFilter_{0};     // 0 = any, else 1..16
+  std::atomic<int> midiOctaveShift_{0};       // semitones, -36..+36
+  std::atomic<int> midiVelocityCurve_{0};     // core::MidiVelocityCurve
+  std::atomic<std::uint32_t> midiLastMessage_{0};
+  std::atomic<std::uint64_t> midiMessageSeq_{0};
 
   // The framework-free runtime owner, held BY VALUE. It owns the address-stable
   // MachineRuntimeDefinition (heap) + the single DeviceAdapter (task#71). ProcessBlock is a

@@ -110,6 +110,23 @@ int main() {
   CHECK_EQ(art.bad, 0);
   CHECK(art.paths > 500);   // frames, printed marks, name plates
   CHECK(art.texts > 300);   // panel labels
+  // The app-level MUTE / MIDI pair sits right of DRONE VOICES as a vertical pair whose
+  // centre is the six-key block's centre (y = 1296.5), wide enough apart for the labels.
+  {
+    const Widget* mute = nullptr;
+    const Widget* midi = nullptr;
+    for (const Widget& w : ws) {
+      if (w.kind == WidgetKind::MasterMute) mute = &w;
+      if (w.kind == WidgetKind::MidiSettings) midi = &w;
+    }
+    CHECK(mute != nullptr);
+    CHECK(midi != nullptr);
+    if (mute != nullptr && midi != nullptr) {
+      CHECK(std::fabs((mute->cy + midi->cy) / 2 - 1296.5) < 1.0);
+      CHECK(std::fabs(mute->cx - midi->cx) < 1.0);
+      CHECK(midi->cy - mute->cy >= 100.0);  // the label under MUTE stays clear of MIDI
+    }
+  }
   // Every control, drawn at its place: all paths are started before they are painted.
   CheckSink ctl;
   for (const Widget& w : ws) {
