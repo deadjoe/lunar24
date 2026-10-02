@@ -2499,6 +2499,8 @@ class SynthRuntime {
     kbdState_.parameters[static_cast<std::size_t>(id)] = v;
     if (id == ParameterId::keyboard_behaviour)
       kbdState_.keyboardSettings.pressureBehaviour = static_cast<std::uint8_t>(v);
+    if (id == ParameterId::keyboard_pressure_output)
+      kbdState_.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(v);
     if (id == ParameterId::keyboard_clock_bpm) kbdExtClock_ = false;
     applyKeyboardState(kbdState_);
     return true;

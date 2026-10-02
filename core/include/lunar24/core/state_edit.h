@@ -51,6 +51,9 @@ inline bool state_set_param(DeviceStateV1& st, ParameterId id, double value) noe
   // keyboard.behaviour mirrors the keyboard's global single/twin/split setting.
   if (id == ParameterId::keyboard_behaviour)
     st.keyboardSettings.pressureBehaviour = static_cast<std::uint8_t>(v);
+  // The stored compatibility mirror follows the LEFT/shared pressure selector.
+  if (id == ParameterId::keyboard_pressure_output)
+    st.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(v);
   return true;
 }
 
