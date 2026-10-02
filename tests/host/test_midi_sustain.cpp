@@ -32,7 +32,7 @@ int main() {
     note.source = 3;
     note.channel = static_cast<std::uint8_t>(channel);
     note.noteId = 61;
-    note.value = 0.8;
+    note.value = 0.8f;
     sustain.noteOn(channel, 60);
     send(note);
     CHECK(gate());
