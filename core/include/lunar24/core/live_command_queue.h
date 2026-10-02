@@ -19,7 +19,8 @@ struct LiveCommand {
   enum class Kind : std::uint8_t { Parameter, Event, Connect, Disconnect, EffectorProgram, DroneKey, SeqStep,
                                   KeyboardRight,    // parameter / value of the right bank
                                   KeyboardPreset,    // side = action (0 load, 1 save, 2 clear), index = slot
-                                  KeyboardSelector };  // side 0/1, index = clock selector 0..3, value
+                                  KeyboardSelector,  // side 0/1, index = clock selector 0..3, value
+                                  Action };          // audio -> UI only: index = core::MidiAction id
   Kind kind = Kind::Parameter;
   ParameterId parameter = ParameterId{0};
   double value = 0.0;

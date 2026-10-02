@@ -841,6 +841,17 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
       if (mMidiIn->isPortOpen())
         static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
       mMidiIn->closePort();
+      // Tell the plugin which device name bindings should match ("" = none/virtual:
+      // only device-agnostic bindings fire then).
+      {
+        const char* sel = mState.mMidiInDev.Get();
+        const bool none = std::strcmp(sel, OFF_TEXT) == 0 || std::strcmp(sel, "no input") == 0
+#ifdef OS_MAC
+                          || std::strcmp(sel, "virtual input") == 0
+#endif
+            ;
+        static_cast<LunarHostPlugin*>(GetPlug())->setMidiInputDeviceName(none ? "" : sel);
+      }
 
       if (port == 0)
       {

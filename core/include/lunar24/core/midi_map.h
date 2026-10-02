@@ -233,4 +233,47 @@ inline bool midi_map_decode(const std::uint8_t* in, std::size_t n, MidiMap* out)
   return true;
 }
 
+// ---- matching ---------------------------------------------------------------
+//
+// The best binding for an incoming message. More specific keys win: exact
+// device+channel first, then device-only, then channel-only, then the full
+// wildcard. Ties keep the earliest row (list order).
+inline const MidiBinding* midi_map_find(const MidiMap& map, const char* device,
+                                        std::uint8_t channel, MidiBindingKind kind,
+                                        std::uint8_t number) {
+  const MidiBinding* best = nullptr;
+  int bestScore = -1;
+  for (std::uint32_t i = 0; i < map.count(); ++i) {
+    const MidiBinding& b = map.at(i);
+    if (b.key.kind != kind || b.key.number != number) continue;
+    if (b.key.channel != 0 && b.key.channel != channel) continue;
+    const bool anyDevice = b.key.device[0] == '\0';
+    if (!anyDevice &&
+        std::strncmp(b.key.device, device, kMidiBindingDeviceCapacity) != 0)
+      continue;
+    const int score = (anyDevice ? 0 : 2) + (b.key.channel == 0 ? 0 : 1);
+    if (score > bestScore) {
+      bestScore = score;
+      best = &b;
+    }
+  }
+  return best;
+}
+
+// ---- relative decoding ----------------------------------------------------------
+// The signed tick delta a relative-mode message carries. Each encoding is a real
+// vendor dialect; absolute messages never reach this function.
+inline int midi_relative_delta(MidiInputMode mode, int rawValue) {
+  switch (mode) {
+    case MidiInputMode::relativeBinOffset: return rawValue - 64;
+    case MidiInputMode::relativeTwosComplement:
+      return rawValue >= 64 ? rawValue - 128 : rawValue;
+    case MidiInputMode::relativeSignMagnitude: {
+      const int amount = rawValue & 0x3F;
+      return (rawValue & 0x40) ? -amount : amount;
+    }
+    default: return 0;
+  }
+}
+
 }  // namespace lunar24::core
