@@ -163,6 +163,16 @@ void LunarHostPlugin::setStateDirectory(const char* dir)
   // must never re-derive it (no environment lookup, no platform branch here) — the APP host owns
   // the one resolution, and this seam only carries it into the store.
   stateStore_.setDirectory(dir != nullptr ? std::string(dir) : std::string());
+  // The MIDI map lives in the same directory; load it once here and publish the snapshot.
+  midiMapStore_.setDirectory(dir != nullptr ? std::string(dir) : std::string());
+  midiMapStore_.load();
+  engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
+}
+
+void LunarHostPlugin::setMidiInputDeviceName(const char* name)
+{
+  midiInputDeviceName_ = name != nullptr ? name : "";
+  engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
 }
 
 lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
@@ -298,6 +308,16 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
     case IMidiMsg::kNoteOn:
       if (msg.Velocity() > 0)
       {
+        // A bound note is a pad command, never a played note (bindings are 1-based channels).
+        const int bound = engine_.midiBindingRow(static_cast<std::uint8_t>(in.channel + 1),
+                                                 lunar24::core::MidiBindingKind::note,
+                                                 static_cast<std::uint8_t>(note & 127));
+        if (bound >= 0)
+        {
+          engine_.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(bound),
+                                                  static_cast<int>(msg.Velocity() * 127.0 + 0.5));
+          return;
+        }
         sustain_.noteOn(in.channel, note & 127);  // pressed again: no longer held only by the pedal
         in.kind = PerfInputKind::note_on;
         in.pitch = static_cast<SignalSample>((note - 57) / 12.0);  // A3 (MIDI 57) = 0 V = 220 Hz
@@ -307,6 +327,11 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       }
       [[fallthrough]];  // note-on with velocity 0 is a note-off
     case IMidiMsg::kNoteOff:
+      // The release of a bound pad note is consumed silently (the command already fired).
+      if (engine_.midiBindingRow(static_cast<std::uint8_t>(in.channel + 1),
+                                 lunar24::core::MidiBindingKind::note,
+                                 static_cast<std::uint8_t>(note & 127)) >= 0)
+        return;
       if (sustain_.deferNoteOff(in.channel, note & 127))
       {
         return;
@@ -337,6 +362,17 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
             engine_.enqueueEventFromAudioThread(event[0], offset);
         });
         return;
+      }
+      // A user binding wins over the factory CC table (the map is the user's rig).
+      {
+        const int bound = engine_.midiBindingRow(static_cast<std::uint8_t>(in.channel + 1),
+                                                 lunar24::core::MidiBindingKind::cc,
+                                                 static_cast<std::uint8_t>(msg.ControlChangeIdx()));
+        if (bound >= 0)
+        {
+          engine_.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(bound), msg.mData2);
+          return;
+        }
       }
       in.kind = PerfInputKind::cc;
       in.controller = static_cast<std::uint16_t>(msg.ControlChangeIdx());

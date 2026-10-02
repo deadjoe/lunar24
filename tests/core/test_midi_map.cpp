@@ -194,5 +194,35 @@ int main() {
     CHECK_EQ(out.count(), 1u);
     CHECK(out.at(0).parameter == ParameterId::vcf_r_freq);
   }
+  // midi_map_find: tiered matching (device+channel > device > channel > wildcard).
+  {
+    MidiMap m;
+    CHECK(m.bind(ccBinding("Kit", 1, 74, ParameterId::vcf_l_freq)));
+    CHECK(m.bind(ccBinding("Kit", 0, 74, ParameterId::vcf_l_res)));
+    CHECK(m.bind(ccBinding("", 2, 74, ParameterId::effector_blend)));
+    CHECK(m.bind(ccBinding("", 0, 74, ParameterId::effector_master)));
+    const auto cc = MidiBindingKind::cc;
+    CHECK(midi_map_find(m, "Kit", 1, cc, 74)->parameter == ParameterId::vcf_l_freq);
+    CHECK(midi_map_find(m, "Kit", 9, cc, 74)->parameter == ParameterId::vcf_l_res);
+    CHECK(midi_map_find(m, "Kit", 2, cc, 74)->parameter == ParameterId::vcf_l_res);  // device tier wins
+    CHECK(midi_map_find(m, "Other", 2, cc, 74)->parameter == ParameterId::effector_blend);
+    CHECK(midi_map_find(m, "Other", 9, cc, 74)->parameter == ParameterId::effector_master);
+    CHECK(midi_map_find(m, "Kit", 1, MidiBindingKind::note, 74) == nullptr);  // kind must match
+    CHECK(midi_map_find(m, "Kit", 1, cc, 71) == nullptr);
+  }
+  // midi_relative_delta: the three vendor dialects.
+  {
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeBinOffset, 64), 0);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeBinOffset, 65), 1);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeBinOffset, 63), -1);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeBinOffset, 127), 63);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeTwosComplement, 1), 1);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeTwosComplement, 127), -1);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeTwosComplement, 64), -64);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeSignMagnitude, 1), 1);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeSignMagnitude, 65), -1);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::relativeSignMagnitude, 0x40), 0);
+    CHECK_EQ(midi_relative_delta(MidiInputMode::absolute, 99), 0);  // never called for absolute
+  }
   return test::finish("test_midi_map");
 }

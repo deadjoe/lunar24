@@ -17,6 +17,7 @@
 #include <memory>
 
 #include <host/app_state_store.h>
+#include <host/midi_map_store.h>
 #include <host/midi_sustain.h>
 #include <host/standalone_audio_engine.h>
 #include <lunar24/core/input_state_machine.h>
@@ -84,6 +85,11 @@ public:
   // sustain-pedal ledger (MidiSustain is audio-thread-owned).
   void midiInputClosed();
 
+  // UI thread (the app's MIDI input selection changed): the name bindings match
+  // against. "" means no real device (off / virtual): only device-agnostic bindings
+  // match then. Republishes the map so the audio thread's snapshot carries it.
+  void setMidiInputDeviceName(const char* name);
+
 private:
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
   std::atomic<bool> sustainResetRequested_{false};  // UI thread -> audio thread
@@ -101,6 +107,12 @@ private:
   // The panel editor's shared state (host/panel_editor.h), type-erased so this header stays
   // free of IGraphics types.
   std::shared_ptr<void> uiState_;
+
+  // The user's MIDI controller map (its own product file) and the active input's name
+  // ("" = none/virtual). Both are UI-thread state; the audio thread sees only the
+  // snapshot the engine publishes.
+  lunar24::host::MidiMapStore midiMapStore_;
+  std::string midiInputDeviceName_;
 
   // MIDI -> keyboard. Mod wheel / CC74 = filter cutoff, CC71 = resonance, CC91 = effector
   // blend, CC7 = master (CC learn only ever targets existing panel controls).
