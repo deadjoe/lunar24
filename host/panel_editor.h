@@ -141,7 +141,12 @@ struct EditorShared {
     return engine.parameterValue(static_cast<ParameterId>(id));
   }
   void set(std::uint32_t id, double v) {
-    if (editSide() == 1 && engine.postKeyboardRightParameter(static_cast<ParameterId>(id), v)) return;
+    // Route by parameter ownership, not by admission success: a rejected
+    // right-side edit must never fall through and change the left bank.
+    if (editSide() == 1 && core::keyboard_scalar_index(static_cast<ParameterId>(id)) >= 0) {
+      engine.postKeyboardRightParameter(static_cast<ParameterId>(id), v);
+      return;
+    }
     engine.postParameter(static_cast<ParameterId>(id), v);
   }
   int index(std::uint32_t id) const {
