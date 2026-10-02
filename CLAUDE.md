@@ -37,8 +37,10 @@ why) before changing anything.
 ## Working with the owner
 - Software engineer, new to audio: explain domain terms plainly. They write in Chinese.
 - They judge by ear: for sound changes render a WAV (`lunar24_render`) and say what changed.
-- Work on a branch, open a PR, merge it yourself when CI is green (standing permission);
-  merge commits, not squash.
+- Work on a branch and keep each PR focused. Run the relevant local tests and wait for CI.
+  When native testing is needed, give the owner the Actions app download and precise steps,
+  observations and expected results. Fix their feedback in the same PR. The owner verifies
+  and merges the PR; do not merge it yourself. Start the next small PR after that merge.
 - The official manual and panel PDF are ELTA copyright and stay out of the repo. Ask the
   owner to upload them (panel PDF + `solar42n_to_agent.zip`: manual.md, cartridges.json,
   figures) when a manual check is needed; keep them in the session scratchpad.

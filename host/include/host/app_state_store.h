@@ -484,6 +484,16 @@ class AppStateStore {
 
     lunar24::core::open_untouched_seq_gates(migrated);
     lastValidation_ = lunar24::core::validate_device_state(migrated);
+    if (lastValidation_.family == lunar24::core::ValidationFamily::keyboard_live_invalid &&
+        lastValidation_.field == 9003u) {
+      // Older live PRESSURE edits updated the left scalar but not its compatibility
+      // mirror. The validator has already checked both selector ranges. Recover the
+      // mirror from the actual panel/DSP value, then validate the ENTIRE candidate
+      // again (presets are checked after this field). No file is changed on load.
+      migrated.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(
+          migrated.parameters[static_cast<std::size_t>(lunar24::core::ParameterId::keyboard_pressure_output)]);
+      lastValidation_ = lunar24::core::validate_device_state(migrated);
+    }
     if (!lastValidation_.ok) {
       loadOutcome_ = StateLoadOutcome::InvalidState;
       fileUnadopted_ = true;

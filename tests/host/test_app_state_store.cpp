@@ -1224,6 +1224,105 @@ static void c10_factory_reset() {
         "C10 the machine is back at its power-on default");
 }
 
+// A panel PRESSURE edit must remain a legal whole-machine state across a device
+// reopen and an actual file save/load, including independent SPLIT settings.
+static void pressure_edits_survive_restore() {
+  using core::ParameterId;
+  for (int play = 0; play < 3; ++play) {
+    for (int mode = 0; mode < 5; ++mode) {
+      const std::string dir = makeTempDir("pressure-edit");
+      AppStateStore store;
+      store.setDirectory(dir);
+      check(store.loadOnce() == StateLoadOutcome::NoFile, "pressure: fresh state directory");
+      StandaloneAudioEngine engine;
+      check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "pressure: prepare");
+      check(engine.applyDeviceState(nonDefaultState(), kSr, kBlock, kInCh, kOutCh) ==
+                StandaloneAudioEngine::StateApplyStatus::Accepted, "pressure: start with cables and presets");
+      check(engine.postParameter(ParameterId::keyboard_behaviour, play), "pressure: edit PLAY");
+      check(engine.postParameter(ParameterId::keyboard_pressure_output, mode), "pressure: edit left mode");
+      const int rightMode = (mode + 1) % 5;
+      check(engine.postKeyboardRightParameter(ParameterId::keyboard_pressure_output, rightMode),
+            "pressure: edit independent right mode");
+      double audio[4][64]{};
+      double* outputs[4] = {audio[0], audio[1], audio[2], audio[3]};
+      const double silence[64]{};
+      const double* inputs[2] = {silence, silence};
+      check(engine.processBlock(inputs, outputs, kInCh, kOutCh, 64) ==
+                StandaloneAudioEngine::Status::Rendered, "pressure: apply live commands");
+      const DeviceStateV1 edited = *engine.canonicalState();
+      check(core::validate_device_state(edited).ok, "pressure: edited state is valid");
+      check(edited.keyboardSettings.pressureOutput == mode, "pressure: mirror follows left mode");
+      check(engine.runtime()->keyboardBehaviourParams(core::KeyboardSide::Left).pressureOutput == mode &&
+                engine.runtime()->keyboardBehaviourParams(core::KeyboardSide::Right).pressureOutput ==
+                    (play == 2 ? rightMode : mode), "pressure: modes reach both DSP sides");
+
+      store.captureCanonical(engine);
+      check(engine.prepare(kSeed, 44100.0, kBlock, kInCh, kOutCh), "pressure: reopen at another rate");
+      check(store.publishPending(engine, 44100.0, kBlock, kInCh, kOutCh) ==
+                StandaloneAudioEngine::StateApplyStatus::Accepted, "pressure: reopen restores state");
+      check(wireEqual(*engine.canonicalState(), edited), "pressure: reopen preserves the whole panel");
+      check(store.save(engine) == StateSaveOutcome::Saved, "pressure: save to disk");
+
+      AppStateStore next;
+      next.setDirectory(dir);
+      check(next.loadOnce() == StateLoadOutcome::Ok, "pressure: next launch accepts the file");
+      check(next.publishPending(engine, 44100.0, kBlock, kInCh, kOutCh) ==
+                StandaloneAudioEngine::StateApplyStatus::Accepted, "pressure: next launch restores state");
+      check(wireEqual(*engine.canonicalState(), edited), "pressure: disk restore preserves the whole panel");
+      check(engine.runtime()->keyboardBehaviourParams(core::KeyboardSide::Left).pressureOutput == mode,
+            "pressure: restored mode reaches DSP");
+      removeTree(dir);
+    }
+  }
+}
+
+// Old builds wrote a stale pressure mirror. Recover only that redundancy;
+// invalid selectors and unrelated corrupt data must still block adoption/save.
+static void legacy_pressure_mirror_restore() {
+  using core::ParameterId;
+  for (int fault = 0; fault < 6; ++fault) {
+    const std::string dir = makeTempDir("pressure-legacy");
+    DeviceStateV1 expected = nonDefaultState();
+    expected.parameters[static_cast<std::size_t>(ParameterId::keyboard_pressure_output)] = 3;
+    expected.keyboardSettings.pressureOutput = 3;
+    DeviceStateV1 old = expected;
+    old.keyboardSettings.pressureOutput = 0;
+    if (fault == 1) old.keyboardPresets[0].mode = 255;  // checked AFTER the mirror
+    if (fault == 2) old.parameters[static_cast<std::size_t>(ParameterId::keyboard_pressure_output)] = 1.5;
+    if (fault == 3) old.keyboardSettings.pressureOutput = 255;
+    if (fault == 4) old.parameters[static_cast<std::size_t>(ParameterId::keyboard_behaviour)] = 2;
+    if (fault == 5) old.parameters[static_cast<std::size_t>(ParameterId::keyboard_pressure_output)] = 9;
+    std::vector<std::uint8_t> before, after;
+    check(encodeState(old, &before), "legacy pressure: encode old file");
+    const std::string path = dir + "/" + host::kAppStateFileName;
+    check(writeBytes(path, before), "legacy pressure: write old file");
+    AppStateStore store;
+    store.setDirectory(dir);
+    StandaloneAudioEngine engine;
+    check(engine.prepare(kSeed, kSr, kBlock, kInCh, kOutCh), "legacy pressure: prepare");
+    const auto result = store.loadOnce();
+    check(readBytes(path, &after) && before == after, "legacy pressure: reading never changes the file");
+    if (fault == 0) {
+      check(result == StateLoadOutcome::Ok, "legacy pressure: recover known stale mirror");
+      check(store.publishPending(engine, kSr, kBlock, kInCh, kOutCh) ==
+                StandaloneAudioEngine::StateApplyStatus::Accepted, "legacy pressure: recovered state publishes");
+      check(wireEqual(*engine.canonicalState(), expected), "legacy pressure: only the mirror is repaired");
+      check(store.save(engine) == StateSaveOutcome::Saved, "legacy pressure: repaired state can save");
+      AppStateStore next;
+      next.setDirectory(dir);
+      check(next.loadOnce() == StateLoadOutcome::Ok && next.pending() != nullptr &&
+                wireEqual(*next.pending(), expected), "legacy pressure: repaired file reloads normally");
+    } else {
+      check(result == StateLoadOutcome::InvalidState && !store.hasPending(),
+            "legacy pressure: unrelated or invalid data still rejected");
+      check(store.save(engine) == StateSaveOutcome::SkippedFileUnhealthy,
+            "legacy pressure: rejected file cannot be overwritten");
+      check(readBytes(path, &after) && before == after, "legacy pressure: rejected file preserved");
+    }
+    removeTree(dir);
+  }
+}
+
 int main() {
   c0_fixture_is_legal();
   c1_real_round_trip();
@@ -1236,6 +1335,8 @@ int main() {
   c7_audio_path_is_clean();
   c9_native_path_boundary();
   c10_factory_reset();
+  pressure_edits_survive_restore();
+  legacy_pressure_mirror_restore();
   if (g_fail != 0) {
     std::fprintf(stderr, "[app state store] %d/%d checks FAILED\n", g_fail, g_checks);
     return 1;
