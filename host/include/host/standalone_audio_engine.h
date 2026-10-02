@@ -735,6 +735,8 @@ inline void StandaloneAudioEngine::clearState_() {
   // Release the old definition (its destructor runs ONCE here — the stopped-stream boundary)
   // and reset every committed-format field to the empty "no prepare done" sentinel. After
   // this the engine is fully NOT-READY with nothing inspectable left half-written.
+  liveQueue_.clear();
+  fromAudioQueue_.clear();
   definition_.reset();
   adapter_ = DeviceAdapter{};
   sampleRate_ = 0.0;
@@ -804,6 +806,11 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   // definition here (its destructor runs ONCE) is the stopped-stream boundary; the new definition,
   // plan, format, and canonical state become visible atomically. No intermediate state is
   // observable from the caller's view.
+  // Both queue endpoints are idle at this stopped-stream/UI-thread boundary.
+  // The candidate already contains the saved edits; old commands and note-ons
+  // must not be replayed against it. Rejected candidates never reach this point.
+  liveQueue_.clear();
+  fromAudioQueue_.clear();
   definition_ = std::move(cand);
   adapter_ = candAdapter;
   sampleRate_ = sampleRate;

@@ -40,6 +40,68 @@ int main() {
   double* outs[2] = {l.data(), r.data()};
   CHECK(engine.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
 
+  // Whole-state replacement must not replay commands from the previous runtime.
+  // Queue the edits without rendering: this makes the reset race deterministic.
+  {
+    using E = host::StandaloneAudioEngine;
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.postParameter(core::ParameterId::keyboard_mode, 1.0));
+    CHECK(e.parameterFromAudioThread(core::ParameterId::effector_master, 0.23));
+    const auto defaults = core::make_default_device_state(1);
+    CHECK(e.applyDeviceState(defaults, 48000.0, 256, 0, 2) == E::StateApplyStatus::Accepted);
+    CHECK_EQ(e.syncParametersFromAudioThread(), 0);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Left) == core::ArpSeqMode::Keyboard);
+    CHECK(e.parameterValue(core::ParameterId::effector_master) ==
+          defaults.parameters[static_cast<std::size_t>(core::ParameterId::effector_master)]);
+    // Commands posted after replacement still work.
+    CHECK(e.postParameter(core::ParameterId::keyboard_mode, 2.0));
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Left) == core::ArpSeqMode::Sequencer);
+  }
+  // Reopening preserves the latest UI and MIDI values in the captured state;
+  // pending notes belong to the old stream and must not start in the new one.
+  {
+    using E = host::StandaloneAudioEngine;
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.postParameter(core::ParameterId::keyboard_mode, 0.0));
+    CHECK(e.parameterFromAudioThread(core::ParameterId::effector_master, 0.23));
+    core::InputStateMachine input{nullptr, 0};
+    core::PerformanceInput note{};
+    note.kind = core::PerfInputKind::note_on;
+    note.value = 0.8f;
+    note.noteId = 7;
+    note.source = 1;
+    note.seq = 1;
+    core::ControlEvent events[3];
+    const auto count = input.translate(note, events, 3);
+    CHECK(count > 0);
+    for (std::uint32_t i = 0; i < count; ++i) CHECK(e.postEvent(events[i]));
+    CHECK_EQ(e.syncParametersFromAudioThread(), 1);
+    const auto captured = *e.canonicalState();
+    CHECK(e.prepare(1, 44100.0, 256, 0, 2));
+    CHECK(e.applyDeviceState(captured, 44100.0, 256, 0, 2) == E::StateApplyStatus::Accepted);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.parameterValue(core::ParameterId::effector_master) == 0.23);
+    const auto gate = core::find_jack_by_name("keyboard.gate_left_main_out")->id;
+    CHECK(e.runtime()->controlVoltageAt(gate) < 0.5);
+  }
+  // Rejected state replacement leaves the active runtime AND pending edits intact.
+  {
+    using E = host::StandaloneAudioEngine;
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.postParameter(core::ParameterId::keyboard_mode, 1.0));
+    CHECK(e.parameterFromAudioThread(core::ParameterId::effector_master, 0.23));
+    CHECK(e.applyDeviceState(core::make_default_device_state(1), 0.0, 256, 0, 2) ==
+          E::StateApplyStatus::RejectedFormat);
+    CHECK_EQ(e.syncParametersFromAudioThread(), 1);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Left) == core::ArpSeqMode::Arpeggiator);
+    CHECK(e.parameterValue(core::ParameterId::effector_master) == 0.23);
+  }
   // An all-zero (never edited) saved sequence gets the factory gates; an edited one is kept.
   core::DeviceStateV1 old = core::make_default_device_state(1);
   old.keyboardSeqCurrent = core::KeyboardSeq{};
