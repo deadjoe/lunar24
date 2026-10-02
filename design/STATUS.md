@@ -1,6 +1,6 @@
 # Lunar 24 — status (plain language)
 
-_Last updated: 2026-10-02._
+_Last updated: 2026-10-03._
 
 ## What works
 - **Sound engine (core/)**
@@ -59,16 +59,20 @@ the manual, so still guesses: arp/seq clock multiply/divide ratios (not applied 
 exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Next steps (in order)
-1. Sound feedback from the owner's listening comes first — every curve is a first guess.
-2. Core playability and UI, checked against the manual: panel parts shown but not functional (photo sensor,
-   headphone socket and its PHONE volume knob); re-check the manual for the arp/seq clock ratios and scale
-   note sets above.
-3. Real-time safety: plugging/unplugging a cable recompiles the patch graph on the audio
-   thread (small allocations, only at that moment). Compile on the UI thread and swap.
-4. Windows: build is tested in CI; real audio/MIDI device testing still to do.
-5. After the manual tests: a REC button writing WAV (WET L/R; DRY A/B optional) via a
-   lock-free buffer + writer thread. Loopback recording (BlackHole) stays as it is.
-6. Later: small panel size tweaks (owner's list), then an AU/VST3 plugin for Ableton Live.
+1. Correctness and stability: check note-release handling under event-queue pressure next.
+   Fix reproduced product failures in small PRs; audit findings are leads, not an automatic backlog.
+2. Complete external MIDI support for the owner's MPK MINI IV: pressure, clock and reliable note
+   handling; decide SINGLE / TWIN / SPLIT routing, then test with the actual controller.
+3. Continue the remaining manual checks alongside MIDI work: 5-STEP CLK, device DRY outputs,
+   PREAMP input override/unplug, and saved calibration settings. Untested does not mean broken;
+   finishing every manual check is not a prerequisite for MIDI work. Windows device tests remain pending.
+4. After that foundation, tune sounds from listening feedback: drone level, modulation depth,
+   S&H rate/range and the combined mix. Revisit uncertain hardware curves only when needed.
+5. Later: inactive decorative controls, REC (WET L/R; optional DRY A/B), panel tweaks and AU/VST3.
+   BlackHole recording remains available. Do not expand these into prerequisites for MIDI.
+
+Known stability work: cable edits compile the patch graph on the audio thread with small allocations.
+Assess a focused fix separately; avoid turning it into a broad architecture rewrite.
 
 Only when the related feature is touched: knob hover/drag redraws the whole panel — dirty
 only the readout if the UI feels slow. Not planned: letting the old effector tail ring out on a cartridge switch

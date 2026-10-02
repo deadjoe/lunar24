@@ -896,7 +896,7 @@
 
 ---
 
-**T13.5 envelope 区 VCO A / VCO B 输出到 PREAMP** ⏳
+**T13.5 envelope 区 VCO A / VCO B 输出到 PREAMP** ✅ (#84；2026-10-03 Mac 实测 B 输出有声，tune / MORPHING 正常；波形设置对齐后 A/B 对照正常)
 - 准备：记录当前面板后 RESET PANEL，DRONE VOICES 全关，BLEND 最左；VOICE MIXER 的 VCO A、VCO B、EXT.AUDIO VOL 最小，只把 PREAMP VOL 放约一半；PREAMP gain 放约一半，MASTER 从小音量开始。不用按键，envelope A/B hold 关闭。
 - 先接 envelope A 最下排最右红字 VCO A → PREAMP 的 ext. source：应持续有声。
 - 只换源头到 envelope B 最下排最左红字 VCO B，目的地不变：应同样持续有声，调 VCO B 的 tune / MORPHING WAVEFORM 应能听到变化。
