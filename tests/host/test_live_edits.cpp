@@ -355,5 +355,55 @@ int main() {
     CHECK_EQ(e.eventDiagnostics().reconcileCount, 1u);
     CHECK_EQ(e.eventDiagnostics().criticalFlushed, 64u);
   }
+  // A note-off lost to a full UI queue reconciles to all-gates-off instead of hanging:
+  // the backlog's note events are dropped and the held gate falls.
+  {
+    using E = host::StandaloneAudioEngine;
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::InputStateMachine in{nullptr, 0};
+    std::uint64_t seq = 0;
+    auto send = [&](core::PerfInputKind kind) {
+      core::PerformanceInput p{};
+      p.kind = kind;
+      p.value = 0.8f;
+      p.noteId = 7;
+      p.source = 1;
+      p.seq = ++seq;
+      core::ControlEvent ev[3];
+      const std::uint32_t n = in.translate(p, ev, 3);
+      for (std::uint32_t i = 0; i < n; ++i) CHECK(e.postEvent(ev[i]));
+    };
+    const core::JackId gate = core::find_jack_by_name("keyboard.gate_left_main_out")->id;
+    send(core::PerfInputKind::note_on);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.runtime()->controlVoltageAt(gate) > 1.0);   // the held note opens the gate
+    // Fill the UI queue to capacity with harmless clock events; the first failing
+    // push already raises the reconcile request.
+    core::ControlEvent clk{};
+    clk.kind = core::ControlEventKind::clock;
+    clk.value = 1;
+    clk.source = 100;
+    while (e.postEvent(clk)) {}
+    CHECK_EQ(e.liveEventDropCount(), 1u);
+    // The note-off finds no room: dropped and counted, never delivered.
+    core::PerformanceInput off{};
+    off.kind = core::PerfInputKind::note_off;
+    off.noteId = 7;
+    off.source = 1;
+    off.seq = ++seq;
+    core::ControlEvent offEv[3];
+    const std::uint32_t offN = in.translate(off, offEv, 3);
+    for (std::uint32_t i = 0; i < offN; ++i) CHECK(!e.postEvent(offEv[i]));
+    CHECK_EQ(e.liveEventDropCount(), 1u + offN);
+    // The next drain drops the untrusted backlog and reconciles: the held gate falls.
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.runtime()->controlVoltageAt(gate) < 0.5);
+    // The queue works again afterwards.
+    send(core::PerfInputKind::note_on);
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    CHECK(e.runtime()->controlVoltageAt(gate) > 1.0);
+  }
   return test::finish("test_live_edits");
 }
