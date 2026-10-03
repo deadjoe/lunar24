@@ -80,6 +80,19 @@ struct Widget {
 // presets, sequencer steps and rhythm pads are laid out in keyboard_menu_view.h.
 inline constexpr double kMenuX0 = 410, kMenuY0 = 1112, kMenuX1 = 1990, kMenuY1 = 1482;
 
+// The keyboard menu and the MIDI settings overlay share this area. While either is open, a
+// cable dropped on it lands on the overlay, never on a keyboard jack hidden underneath.
+inline bool overlay_hides_point(bool overlayOpen, double x, double y) {
+  return overlayOpen && x >= kMenuX0 && x < kMenuX1 && y >= kMenuY0 && y < kMenuY1;
+}
+
+// Mouse wheel on the red encoder: up = octave up, unless the keyboard menu's SERVICE >
+// ENCODER DIRECTION is set to reversed (1).
+inline int encoder_wheel_octave_step(double wheelDelta, double encoderDirection) {
+  const int step = wheelDelta > 0 ? 1 : -1;
+  return encoderDirection > 0.5 ? -step : step;
+}
+
 // Registry jacks that the official panel does not show (kept in the engine, not patchable
 // from the UI): the VCOs' separate wave outputs and the envelopes' VCA-CV outputs.
 inline constexpr JackId kJacksNotOnPanel[] = {

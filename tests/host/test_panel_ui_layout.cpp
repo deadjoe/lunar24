@@ -213,6 +213,23 @@ int main() {
     CHECK(host::kMenuX0 == kb::kBounds.l && host::kMenuY0 == kb::kBounds.t && host::kMenuX1 == kb::kBounds.r &&
           host::kMenuY1 == kb::kBounds.b);
     CHECK_EQ(kb::kItemCount, 36);
+    // Both overlays cover the same area: a cable dropped there while either is open must not
+    // reach a keyboard jack hidden under it; closed, every jack takes cables as before.
+    CHECK(host::kMenuX0 == host::midi_ui::kBounds.l && host::kMenuY0 == host::midi_ui::kBounds.t &&
+          host::kMenuX1 == host::midi_ui::kBounds.r && host::kMenuY1 == host::midi_ui::kBounds.b);
+    int hiddenJacks = 0;
+    for (const Widget& w : ws) {
+      if (w.kind != WidgetKind::Jack) continue;
+      const bool covered = host::overlay_hides_point(true, w.cx, w.cy);
+      if (covered) ++hiddenJacks;
+      CHECK(!host::overlay_hides_point(false, w.cx, w.cy));
+    }
+    CHECK_EQ(hiddenJacks, 6);  // keyboard CLOCK, RESET, GATE L/R, PRESSURE, V/OCT
+    // SERVICE > ENCODER DIRECTION flips the encoder's mouse wheel.
+    CHECK_EQ(host::encoder_wheel_octave_step(1.0, 0.0), 1);
+    CHECK_EQ(host::encoder_wheel_octave_step(-1.0, 0.0), -1);
+    CHECK_EQ(host::encoder_wheel_octave_step(1.0, 1.0), -1);
+    CHECK_EQ(host::encoder_wheel_octave_step(-1.0, 1.0), 1);
     std::map<std::uint32_t, int> onTabs;
     for (const auto& it : kb::kItems) ++onTabs[static_cast<std::uint32_t>(it.id)];
     int menuWidgets = 0;

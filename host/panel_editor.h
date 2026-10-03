@@ -567,8 +567,9 @@ class JackControl : public IControl {
   void OnMouseUp(float x, float y, const IMouseMod&) override {
     s_.cables->setDrag(false);
     JackControl* target = nullptr;
-    for (JackControl* j : s_.jacks)
-      if (j->GetTargetRECT().Contains(x, y)) target = j;
+    if (!overlay_hides_point(s_.menuOpen || s_.midiOpen, x, y))
+      for (JackControl* j : s_.jacks)
+        if (j->GetTargetRECT().Contains(x, y)) target = j;
     if (origin_ != nullptr && target != nullptr && target != origin_ && target->isOutput() != origin_->isOutput()) {
       JackControl* out = origin_->isOutput() ? origin_ : target;
       JackControl* in = origin_->isOutput() ? target : origin_;
@@ -738,7 +739,7 @@ class EncoderControl : public IControl {
     GetUI()->SetAllControlsDirty();
   }
   void OnMouseWheel(float, float, const IMouseMod&, float d) override {
-    s_.shiftOctave(d > 0 ? 1 : -1);
+    s_.shiftOctave(encoder_wheel_octave_step(d, s_.engine.parameterValue(ParameterId::keyboard_encoder_direction)));
     GetUI()->SetAllControlsDirty();
   }
 
@@ -1349,14 +1350,15 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
     for (const art::Led& l : art::kLeds)
       if (std::fabs(l.x - kPanelLedPos[i].x) < 1.0 && std::fabs(l.y - kPanelLedPos[i].y) < 1.0)
         g->AttachControl(new LedControl(shared, i, l.x, l.y, l.r, l.rgb));
-  // The keyboard menu on top of the plates, hidden until the encoder opens it.
+  shared.cables = new CableLayer(shared, all);
+  g->AttachControl(shared.cables);
+
+  // The keyboard menu on top of the plates and the cables (controls draw in attach order),
+  // hidden until the encoder opens it. The cable layer ignores the mouse, so clicks are unchanged.
   auto* menu = new KeyboardMenuControl(shared);
   g->AttachControl(menu);
   shared.menuControls.push_back(menu);
   shared.showMenu(false);
-
-  shared.cables = new CableLayer(shared, all);
-  g->AttachControl(shared.cables);
 
   // MIDI settings overlay: the learn-capture layer sits UNDER the overlay controls (the
   // overlay wins its own rect; the panel's widgets answer clicks anywhere else).

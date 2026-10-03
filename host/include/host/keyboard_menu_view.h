@@ -124,7 +124,8 @@ inline constexpr Item kItems[] = {
     {P::keyboard_seq_direction, kSeq, Kind::Segmented, {454, 1322, 894, 1364}, "DIRECTION"},
     {P::keyboard_seq_length, kSeq, Kind::Stepper, {914, 1322, 1080, 1364}, "LENGTH"},
     {P::keyboard_seq_rhythm_length, kSeq, Kind::Stepper, {1782, 1192, 1946, 1230}, "LENGTH"},
-    // SERVICE: the hardware calibration menu (manual p.20), stored only
+    // SERVICE: the hardware calibration menu (manual p.20); stored only, except ENCODER
+    // DIRECTION, which flips the red encoder's mouse wheel (panel_ui_layout.h)
     {P::keyboard_calibration_v_oct, kService, Kind::Trimmer, trimBlock(510, 1322), "V/OCT OUT"},
     {P::keyboard_calibration_pressure, kService, Kind::Trimmer, trimBlock(624, 1322), "PRESS OUT"},
     {P::keyboard_dac_vref, kService, Kind::VSegmented, {700, 1292, 884, 1372}, "DAC VREF"},
@@ -612,7 +613,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     rect({434, 1184, 440, 1220}, kRed, 2);
     label({456, 1184, 810, 1220}, 15, kInk, "HARDWARE CALIBRATION  (manual p.20)", true);
     label({820, 1184, 1950, 1220}, 14, kMuted,
-          "Lunar 24 saves these values but does not use them yet: changing them has no effect on the sound.");
+          "Saved only, no effect on the sound - except ENCODER DIRECTION, which flips the red encoder's wheel.");
   }
 
   // Footer: hint, presets, RESET PANEL.
@@ -623,7 +624,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
       "Hold plates with MODE = ARPEGGIATOR (PLAY tab).",
       "Hold a plate with MODE = SEQUENCER (PLAY tab).",
       "",
-      "Mirrors the Solar 42N calibration menu (stored only).",
+      "Mirrors the Solar 42N calibration menu (manual p.20).",
   };
   if (st.tab == kSteps) {
     label({434, 1430, 1000, 1452}, 13, kMuted, "Drag a fader: note above the held plate (double-click = 0).");
