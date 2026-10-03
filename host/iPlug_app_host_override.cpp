@@ -833,14 +833,10 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
 
     if (mMidiIn)
     {
-      // Closing an OPEN input: notes held from it can never send their note-offs
-      // now, so the plugin sends its all-gates-off failsafe and drops the sustain
-      // ledger. (RtMidi has no device-removal callback, so an unplugged cable is
-      // only covered once the user re-selects; true hot-unplug detection is a
-      // known remaining gap.)
-      if (mMidiIn->isPortOpen())
-        static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
+      // Stop the old producer before invalidating its queued messages. The new
+      // port opens only after this boundary; audio performs the reset on its next block.
       mMidiIn->closePort();
+      static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
       // Tell the plugin which device name bindings should match ("" = none/virtual:
       // only device-agnostic bindings fire then).
       {
@@ -1231,7 +1227,8 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
     // the next audio block, so MIDI timing does not jitter by up to a whole buffer.
     msg.mOffset = lunar24::host::midiArrivalStamp();
 
-    _this->mIPlug->mMidiMsgsFromCallback.Push(msg);
+    static_cast<LunarHostPlugin*>(_this->GetPlug())->queueMidiInput({
+        msg.mOffset, msg.mStatus, msg.mData1, msg.mData2});
   }
 }
 

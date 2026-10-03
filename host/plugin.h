@@ -9,6 +9,7 @@
 // the one place the host consumes lunar24::host::compute_window_layout.
 
 #pragma once
+#include <host/midi_input_queue.h>
 
 #include "IPlug_include_in_plug_hdr.h"
 
@@ -80,10 +81,12 @@ public:
   void requestFactoryReset();
 
   // UI thread (the app's MIDI input was closed or switched in Preferences): notes
-  // held from that input can never send their note-offs now. Sends the all-gates-off
-  // failsafe through the UI->audio queue and asks the audio thread to drop the
-  // sustain-pedal ledger (MidiSustain is audio-thread-owned).
+  // held from that input can never send their note-offs now. Invalidates the old
+  // input queue; audio releases notes and clears sustain before admitting a new epoch.
   void midiInputClosed();
+  // Driver callback pushes bytes; AppProcess drains before rendering each block.
+  void queueMidiInput(lunar24::host::MidiInputQueue::Message message) { (void)midiQueue_.push(message); }
+  void drainMidiInput(int frames);
 
   // UI thread (the app's MIDI input selection changed): the name bindings match
   // against. "" means no real device (off / virtual): only device-agnostic bindings
@@ -111,7 +114,8 @@ public:
 
 private:
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
-  std::atomic<bool> sustainResetRequested_{false};  // UI thread -> audio thread
+  lunar24::host::MidiInputQueue midiQueue_;
+  lunar24::host::MidiNoteOwnership midiNotes_;
   std::atomic<int> midiChannelFilter_{0};     // 0 = any, else 1..16
   std::atomic<int> midiOctaveShift_{0};       // semitones, -36..+36
   std::atomic<int> midiVelocityCurve_{0};     // core::MidiVelocityCurve

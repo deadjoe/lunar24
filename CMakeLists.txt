@@ -154,6 +154,9 @@ lunar_add_host_test(test_midi_timing tests/host/test_midi_timing.cpp)
 lunar_add_host_test(test_midi_sustain tests/host/test_midi_sustain.cpp)
 lunar_add_host_test(test_midi_map_store tests/host/test_midi_map_store.cpp)
 lunar_add_host_test(test_midi_map_apply tests/host/test_midi_map_apply.cpp)
+find_package(Threads REQUIRED)
+target_link_libraries(test_midi_map_apply PRIVATE Threads::Threads)
+lunar_add_host_test(test_midi_input_queue tests/host/test_midi_input_queue.cpp)
 
 # Offline renderer: listen to the engine without the app (see CLAUDE.md).
 add_executable(lunar24_render tools/lunar24_render.cpp)

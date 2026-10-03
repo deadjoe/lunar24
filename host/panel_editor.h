@@ -176,6 +176,7 @@ struct EditorShared {
     b.key.kind = ((m >> 20) & 1u) ? core::MidiBindingKind::cc : core::MidiBindingKind::note;
     b.key.channel = static_cast<std::uint8_t>((m >> 8) & 0x1Fu);
     b.key.number = static_cast<std::uint8_t>(m & 0xFFu);
+    if (b.key.kind == core::MidiBindingKind::cc && b.key.number == 64) return;
     const std::string dev = midi.inputDeviceName ? midi.inputDeviceName() : "";
     std::snprintf(b.key.device, core::kMidiBindingDeviceCapacity, "%s", dev.c_str());
     b.targetKind = learnTargetIsAction ? core::MidiTargetKind::action : core::MidiTargetKind::parameter;

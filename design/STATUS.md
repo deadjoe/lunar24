@@ -25,7 +25,7 @@ _Last updated: 2026-10-03._
   renders it without building the app. CI attaches a downloadable app to
   every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: ~58 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
+- **Tests**: 61 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
   `design/MANUAL_TESTS.md`.
 
 ## How to play
@@ -63,7 +63,7 @@ the manual, so still guesses: arp/seq clock multiply/divide ratios (not applied 
 exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Next steps (in order)
-1. Correctness and stability: check note-release handling under event-queue pressure next.
+1. Verify the MIDI correctness fixes in PR #89 with the controller (MANUAL_TESTS T15.5–T15.6).
    Fix reproduced product failures in small PRs; audit findings are leads, not an automatic backlog.
 2. Complete external MIDI support for the owner's MPK MINI IV: pressure, clock and reliable note
    handling; decide SINGLE / TWIN / SPLIT routing, then test with the actual controller.

@@ -2479,6 +2479,10 @@ class SynthRuntime {
   // A keyboard menu setting from the UI, applied at once (in order with the right-side,
   // sequencer-step and preset commands around it). False for a non-keyboard parameter.
   bool setKeyboardParameter(ParameterId id, double v) { return applyKeyboardParam_(id, v); }
+  double keyboardParameterValue(ParameterId id) const {
+    return kbdState_.parameters[static_cast<std::size_t>(id)];
+  }
+
 
   // One of a side's four clock selectors (1 = arp RHYTHM pattern, 3 = seq RHYTHM pattern),
   // live. Audio thread, no allocation.

@@ -21,6 +21,7 @@
 // retina is a separate SetScreenScale() multiplier (slice-④), never folded in.
 
 #include "plugin.h"
+#include <host/midi_timing.h>
 #include "IPlug_include_in_plug_src.h"
 
 #include <algorithm>
@@ -156,7 +157,8 @@ void LunarHostPlugin::OnReset()
   // belongs to that stream (a stale pedal-down would defer the new stream's
   // note-offs forever).
   sustain_.reset();
-  sustainResetRequested_.store(false, std::memory_order_relaxed);
+  midiNotes_.reset();
+  midiQueue_.invalidate();
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
   if (factoryResetRequested_) {  // the panel's RESET: publish the power-on default instead
@@ -222,12 +224,7 @@ void LunarHostPlugin::requestFactoryReset()
 
 void LunarHostPlugin::midiInputClosed()
 {
-  sustainResetRequested_.store(true, std::memory_order_release);
-  lunar24::core::ControlEvent e{};
-  e.kind = lunar24::core::ControlEventKind::reset;
-  e.value = 1;
-  e.source = 3;  // the MIDI producer whose stream just ended
-  (void)engine_.postEvent(e);  // a full queue reconciles to all-gates-off on its own
+  midiQueue_.invalidate();
 }
 
 void LunarHostPlugin::OnIdle()
@@ -278,9 +275,6 @@ bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
 
 void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
-  // The app's MIDI input was closed from the UI thread: its pedal ledger is dead.
-  if (sustainResetRequested_.exchange(false, std::memory_order_acq_rel))
-    sustain_.reset();
   // GH#4 8B2: a PURE delegate to the framework-free owner. The owner either renders through
   // the production DeviceAdapter::renderBlock (task#71) or returns a dropped status after
   // writing deterministic silence into the outputs. There is NO frame loop / scale / mapping /
@@ -292,6 +286,27 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
   engine_.processBlock(reinterpret_cast<const double* const*>(inputs),
                        reinterpret_cast<double* const*>(outputs),
                        NInChansConnected(), NOutChansConnected(), nFrames);
+}
+
+void LunarHostPlugin::drainMidiInput(int frames)
+{
+  const int now = lunar24::host::midiArrivalStamp();
+  midiQueue_.drain([&] {
+    sustain_.reset();
+    midiNotes_.reset();
+    lunar24::core::ControlEvent event{};
+    event.kind = lunar24::core::ControlEventKind::reset;
+    event.value = 1;
+    event.source = 3;
+    engine_.enqueueEventFromAudioThread(event, 0);
+  }, [&](lunar24::host::MidiInputQueue::Message input) {
+    IMidiMsg message;
+    message.mStatus = input.status;
+    message.mData1 = input.data1;
+    message.mData2 = input.data2;
+    message.mOffset = lunar24::host::midiBlockOffset(input.stamp, now, GetSampleRate(), frames);
+    ProcessMidiMsg(message);
+  });
 }
 
 void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
@@ -333,12 +348,16 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
   in.channel = static_cast<std::uint8_t>(msg.Channel());
   in.seq = ++midiSeq_;
   const int note = msg.NoteNumber();
-  // The rig's channel filter drops everything on other channels (notes, CC, pads).
+  // Releases must reach notes/pedals admitted before the channel filter changed.
+  const bool noteRelease = msg.StatusMsg() == IMidiMsg::kNoteOff ||
+      (msg.StatusMsg() == IMidiMsg::kNoteOn && msg.Velocity() == 0);
+  const bool pedalRelease = msg.StatusMsg() == IMidiMsg::kControlChange &&
+      msg.ControlChangeIdx() == IMidiMsg::kSustainOnOff && msg.mData2 < 64;
   const int channelFilter = midiChannelFilter_.load(std::memory_order_relaxed);
-  if (channelFilter > 0 && msg.Channel() + 1 != channelFilter) return;
+  if (channelFilter > 0 && msg.Channel() + 1 != channelFilter && !noteRelease && !pedalRelease) return;
   // Remember the last note/CC for the learn overlay (the overlay polls the seq).
-  if (msg.StatusMsg() == IMidiMsg::kNoteOn || msg.StatusMsg() == IMidiMsg::kNoteOff ||
-      msg.StatusMsg() == IMidiMsg::kControlChange) {
+  if ((msg.StatusMsg() == IMidiMsg::kNoteOn && msg.Velocity() > 0) ||
+      (msg.StatusMsg() == IMidiMsg::kControlChange && msg.ControlChangeIdx() != IMidiMsg::kSustainOnOff)) {
     const bool isCc = msg.StatusMsg() == IMidiMsg::kControlChange;
     midiLastMessage_.store((isCc ? 1u << 20 : 0u) |
                                ((static_cast<std::uint32_t>(in.channel + 1) & 0x1Fu) << 8) |
@@ -362,9 +381,10 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
         if (bound >= 0)
         {
           engine_.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(bound),
-                                                  static_cast<int>(msg.Velocity() * 127.0 + 0.5));
+                                                  msg.Velocity());
           return;
         }
+        midiNotes_.played(in.channel, note & 127);
         sustain_.noteOn(in.channel, note & 127);  // pressed again: no longer held only by the pedal
         in.kind = PerfInputKind::note_on;
         // A3 (MIDI 57) = 0 V = 220 Hz; the rig's octave shift transposes the MIDI input.
@@ -376,11 +396,9 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       }
       [[fallthrough]];  // note-on with velocity 0 is a note-off
     case IMidiMsg::kNoteOff:
-      // The release of a bound pad note is consumed silently (the command already fired).
-      if (engine_.midiBindingRow(static_cast<std::uint8_t>(in.channel + 1),
-                                 lunar24::core::MidiBindingKind::note,
-                                 static_cast<std::uint8_t>(note & 127)) >= 0)
-        return;
+      // Learn may have bound this note since it started playing. Release follows
+      // the note-on's ownership, never the current map (or current filter).
+      if (!midiNotes_.release(in.channel, note & 127)) return;
       if (sustain_.deferNoteOff(in.channel, note & 127))
       {
         return;
