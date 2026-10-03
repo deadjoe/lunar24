@@ -183,10 +183,15 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     label({846, y + 2, 1196, y + 27}, 18, kInk, source, true);
     label({846, y + 26, 1196, y + 47}, 14, kMuted, b.key.device[0] ? asciiText(b.key.device) : "Any device");
     label({1220, y + 4, 1688, y + 46}, 18, kInk, targetText(b), true);
-    if (b.targetKind == core::MidiTargetKind::parameter)
-      button(mode(i), modeText(b), st.editable);
-    else
+    const auto drive = core::midi_parameter_drive(b);
+    if (b.targetKind != core::MidiTargetKind::parameter)
       label(mode(i), 15, kMuted, "TRIGGER", true, true);
+    else if (drive == core::MidiParameterDrive::toggleOnPress)
+      label(mode(i), 15, kMuted, "TOGGLE", true, true);  // a press flips the switch
+    else if (drive == core::MidiParameterDrive::stepOnPress)
+      label(mode(i), 15, kMuted, "STEP", true, true);    // a hit moves to the next position
+    else
+      button(mode(i), modeText(b), st.editable);
     button(remove(i), "x", st.editable);
   }
   if (count == 0) {

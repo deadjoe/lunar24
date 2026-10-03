@@ -54,6 +54,13 @@ Keep these unless a listening test or a real bug says otherwise.
   SEMITONES and the 8 scales the manual only names (blues, folk, japanese, gamelan, gypsy,
   arabian, flamenco) pass notes through; the menu marks the latter NOT MODELLED rather than
   inventing intervals. ROOT shows B where the manual prints the German H.
+- **MIDI bindings on panel switches** (`midi_parameter_drive` in `core/midi_map.h`): knobs follow
+  the controller (absolute with pickup, or relative). Switches and levers with 2-4 positions
+  are stepped by a press instead: a pad moves to the next position (wrapping), and a CC
+  button flips an on/off switch when it rises past 64, like the MUTE / DRONE actions. So a
+  CC button in toggle mode (127, then 0 on the next press) needs two presses per flip; set
+  such buttons to momentary. Pickup engages when the controller is within one step of the
+  current value, including on its first message, or has moved across it.
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet

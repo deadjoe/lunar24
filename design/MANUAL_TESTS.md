@@ -1039,6 +1039,22 @@
 - 若有延音踏板：LEARN 选好目标后只踩 / 抬踏板，不应生成 CC64 绑定；再动一个普通旋钮应完成 Learn。
 - 测完退出重开，确认绑定、CHANNEL / TRANSPOSE / VELOCITY 设置仍在；清除本次临时测试绑定。
 
+**T15.7 打击垫 / 按钮控制面板开关；旋钮拾取不再"空转"** ✅（PR-C，2026-10-03 Mac + MPK MINI IV：第 1–4 步通过；第 3 步在用户预设下 SHIFT + 3 号垫切 CC# 后学成 CC 36 / CH 1、MODE = TOGGLE，按一下翻一次；第 5 步未单独测，BLEND 力度映射见 T15.6）
+- 背景：以前打击垫或按钮绑到面板上的拨杆开关，按下只在按住时有效、第一下没反应，重击轻击还会给出不同结果；旋钮拾取时第一条消息总被忽略。
+- 准备：RESET PANEL；DRONE VOICES 6 个键全部点灭；按住电脑键盘 H（A 音）能听到 VCO A。MIDI 输入在 Preferences 里选 MPK MINI IV。
+- Learn 的方法（下面每一步都用）：点 **MIDI** 按钮（MUTE 下面）打开 MIDI CONTROL → 点 **+ LEARN A CONTROL** → 点面板上要控制的开关或旋钮 → 敲一下打击垫 / 转一下旋钮。表格里出现新的一行就是学好了。
+- 步骤与期望：
+  1. 打击垫 → VCO A 的 **-1 / sub** 拨杆。表格这一行 MODE 列显示 **STEP**。关掉 MIDI CONTROL，按住 H 不放，敲这个垫：每敲一下拨杆翻一次（拨到 sub 时叠加一个低八度的底音，拨回 -1 时底音消失），第一下就生效；轻敲重敲效果一样；松开垫子拨杆不动。
+  2. 另一个打击垫 → VCO A 的 **oct+3 / low** 拨杆（三档）。MODE 显示 **STEP**。每敲一下拨杆移到下一档，三下回到原位，音高跟着变。
+  3. 按钮发 CC 的情况（可选）。Learn 后看表格 **CONTROLLER** 列：`NOTE 数字` 是音符，`CC 数字` 是 CC。MPK 的 DAW / Plugin 预设下打击垫只能发音符，要先换到用户预设：
+     - 按住 SHIFT 再按 **PLUGIN/DAW**（屏幕出现 User Presets），转大旋钮选一个用户预设，按下旋钮载入。弹一下琴键，确认 Lunar 24 还能收到（Preferences 里输入仍是 MPK Mini IV MIDI Port）。
+     - 按住 SHIFT 再按 **3 号垫（CC#）**；继续按住 SHIFT，3 号垫一直亮绿灯才说明 CC# 模式开了。
+     - Learn 一个垫子到 **-1 / sub**：CONTROLLER 显示 `CC …`，MODE 显示 **TOGGLE**；每按一下翻一次，松开不翻，第一下就生效。若要按两下才翻一次，是 MPK 全局设置 Toggle = On，改成 Off（SHIFT + LOOP 进 Global Menu）。
+     - 测完删掉绑定，SHIFT + 4 号垫切回音符，再按 PLUGIN/DAW 回到原来的预设。
+  4. MPK 的一个旋钮 → VCF 的 **FREQ L**（MODE = ABS）。先用鼠标把面板上的 FREQ L 拖到大约中间，再把 MPK 旋钮也转到大约中间、慢慢转动：面板旋钮马上跟着动，不用先转过头再转回来。然后用鼠标把 FREQ L 拖到最右，再转 MPK 旋钮：要转到和面板差不多的位置才接管（不会一转就跳）。
+  5. 绑到 BLEND 的打击垫（若有，T15.6）：仍然是轻击 / 重击给出不同的值（BLEND 是旋钮，不是开关）。
+  6. 测完在 MIDI CONTROL 里点每行右边的 **x** 删掉这几个临时绑定。
+
 ## 还没测的（⏳）
 
 - MIDI：REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
@@ -1061,6 +1077,15 @@
 | #7：无限旋钮端点空转 | 原因未确认。用 MIDI Monitor 记录到端点后继续转、再反转的原始 CC 值，区分控制器仍发送端点值与软件拾取/相对解码问题；暂不归因于 MPK 硬件。 |
 | #9：R = 0、BLEND 最小时仍有尾音 | 尚未定位，不直接归因于混响。按下面的隔离准备复测并记录持续时间。 |
 
+- **MPK MINI IV 的预设与端口（2026-10-03，据 MPK mini IV User Guide v1.2，手册由 owner 按需上传，不进仓库）**：
+  - PLUGIN/DAW 键在两种"厂商预设"之间切换：Plugin 模式（配 AKAI 自带软件）和 DAW 模式（配一般 DAW）。owner 实测：白灯时 Lunar 24 能收到，按成红灯后收不到。
+  - 第三种是 **User Presets**（用户预设）：按住 SHIFT 再按 PLUGIN/DAW，旋转屏幕下的大旋钮选择，按下旋钮载入。只有用户预设下才能：把打击垫切成 CC#（SHIFT + 3 号垫；SHIFT + 4 号垫回音符）、改打击垫 / 旋钮发的号码（SHIFT + OCT− 进 Program Edit）、改全局设置（SHIFT + LOOP 进 Global Menu，按 PLUGIN/DAW 退出）。
+  - 琴键、打击垫、旋钮、弯音 / 调制轮、延音踏板的演奏数据都从 **MPK Mini IV MIDI Port** 发出（所有预设都是）；另外几个端口（DAW / Plugin / Software Control / Din）发的是给软件脚本的按钮和屏幕控制，Lunar 24 不需要。Preferences 里 MIDI 输入选 MIDI Port。
+  - 全局设置里和我们有关的：**Toggle**（打击垫"瞬时 / 切换"，测 TOGGLE 绑定时应为 Off）、**KnobM**（8 个旋钮一起设 Abs / Rel，测 REL 用；Program Edit 里也能单个设）、**Aft**（打击垫按压后发 Chan / Poly aftertouch，或 Off）、**MidiCh / PadCh**（琴键和打击垫的通道，打击垫默认通道 10，所以 Learn 出来是 CH 10）。
+  - **测试用预设**（2026-10-03 owner 已建）：一个用户预设，全局设置 Toggle = Off、KnobM = Abs、Aft = Chan、FullVel = Off，MidiCh / PadCh 保持默认（琴键 1、打击垫 10）。以后 MIDI 测试都先切到这个预设；Lunar 24 的 MIDI 设置 CHANNEL 保持 ANY。
+  - 实测：用户预设下打击垫切成 CC# 后，学到的是 `CC 36 / CH 1`（CC 走通道 1，不是打击垫音符用的通道 10）。
+  - 手册没写 Rel 模式用哪种相对编码，测 REL 时在 MODE 里轮流试 REL 1 / 2 / 3，哪种方向和速度正确就用哪种。
+  - 手册只写了 MPK 的琶音器能**接收**外部时钟（Clock = Ext），没写它会往外发 MIDI 时钟；用 MPK 驱动 Lunar 24 的琶音 / 音序器时钟可能不行，需要实测或用 DAW 发时钟。
 - **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效；Apply 即使没有改设置，也会重开音频并重置引擎。因此 T15.5 第 4 步改为“不改设置直接 OK”；不要把 Apply 造成的重置当作 MIDI 输入关闭缺陷。改变设置后 OK 也可能应用音频变化，观察输入切换时先不点 OK / Apply。
 - **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A，其它九路 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；滤波器等下游处理可有短暂衰减，不要求逐采样立即归零。若仍有长尾，保留接线和设置截图、录音再定位。默认同时开启的 VCO B 或直送 PREAMP 的振荡源不能用于此项隔离。
 - **MUTE 尾音（#11）**：MUTE 只淡出输出，不停止演奏或效果处理；解除时能听到静音期间音符的剩余尾音，属于既定行为，见 DECISIONS。

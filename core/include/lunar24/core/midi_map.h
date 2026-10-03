@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include <lunar24/core/state_disposition.h>  // find_parameter
 #include <lunar24/registry_ids.hpp>
 
 namespace lunar24::core {
@@ -318,6 +319,30 @@ inline const MidiBinding* midi_map_find(const MidiMap& map, const char* device,
     }
   }
   return best;
+}
+
+// ---- how a parameter binding drives its target -------------------------------------
+// Knobs follow the controller (absolute with pickup, or relative). Panel switches and
+// levers (2-4 positions) are stepped by a press instead, so pads and buttons work:
+//   * a pad (note binding) moves the switch to its next position on each hit, wrapping;
+//   * a CC button flips an on/off switch when its value rises past 64 (press), never on
+//     release, the same as the MUTE / DRONE actions. A CC on a 3-4 position lever stays
+//     absolute: a knob sweeps across the positions.
+enum class MidiParameterDrive : std::uint8_t { follow, toggleOnPress, stepOnPress };
+
+inline int midi_parameter_positions(ParameterId id) {
+  const ParameterDescriptor* d = find_parameter(id);
+  if (d == nullptr || !(d->step > 0.0)) return 0;
+  return static_cast<int>(std::lround((d->max - d->min) / d->step)) + 1;
+}
+
+inline MidiParameterDrive midi_parameter_drive(const MidiBinding& b) {
+  if (b.targetKind != MidiTargetKind::parameter) return MidiParameterDrive::follow;
+  const int positions = midi_parameter_positions(b.parameter);
+  if (positions < 2 || positions > 4) return MidiParameterDrive::follow;
+  if (b.key.kind == MidiBindingKind::note) return MidiParameterDrive::stepOnPress;
+  if (positions == 2 && b.mode == MidiInputMode::absolute) return MidiParameterDrive::toggleOnPress;
+  return MidiParameterDrive::follow;
 }
 
 // ---- relative decoding ----------------------------------------------------------
