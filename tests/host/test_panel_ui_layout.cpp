@@ -187,6 +187,12 @@ int main() {
     auto bytes = [](const char* text) { return static_cast<float>(std::string(text).size()); };
     CHECK_EQ(fitText("ab\xc3\xa9" "cdef", 6, bytes), std::string("ab..."));
     CHECK_EQ(fitText("short", 20, bytes), std::string("short"));
+    // Non-ASCII device names: one '?' per code point, ASCII untouched.
+    CHECK_EQ(asciiText("MPK mini IV"), std::string("MPK mini IV"));
+    CHECK_EQ(asciiText("Caf\xc3\xa9 \xe9\x94\xae\xe7\x9b\x98 \xf0\x9f\x8e\xb9!"), std::string("Caf? ?? ?!"));
+    CHECK_EQ(asciiText("a\xe9\x94"), std::string("a?"));       // truncated sequence
+    CHECK_EQ(asciiText("\x80\x80" "b"), std::string("??b"));   // one per stray byte
+    CHECK_EQ(asciiText(""), std::string());
   }
   return test::finish("test_panel_ui_layout");
 }

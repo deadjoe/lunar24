@@ -49,6 +49,9 @@ inline constexpr core::MidiAction kActions[] = {
 inline constexpr const char* kActionLabels[] = {"CART PREV", "PRESET A", "PRESET B", "PRESET C", "PRESET D"};
 inline constexpr std::uint32_t kPaper = 0xe9e0d2, kCard = 0xf5eee3, kInk = 0x24211e, kMuted = 0x655e54,
                                kRule = 0xc8bdad, kTeal = 0x005e7a, kRed = 0xcb2026, kWhite = 0xfffaf2;
+// Disabled buttons are outlined ghosts: visible on paper, cards and alternate rows alike.
+// Armed status text is a deeper kRed, readable at small sizes on paper (WCAG AA).
+inline constexpr std::uint32_t kDisabledEdge = 0xb5a998, kDisabledText = 0x8a8174, kArmedText = 0xa81b20;
 
 struct State {
   const core::MidiMap* map = nullptr;
@@ -87,6 +90,23 @@ inline std::string targetText(const core::MidiBinding& b) {
   for (auto& ch : owner) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
   return owner + " / " + std::string(d->name);
 }
+// The embedded font subset is ASCII only: show each non-ASCII code point (one whole
+// UTF-8 sequence, or a stray byte) as '?' rather than a missing-glyph box.
+inline std::string asciiText(const std::string& text) {
+  std::string out;
+  out.reserve(text.size());
+  for (std::size_t i = 0; i < text.size();) {
+    const auto c = static_cast<unsigned char>(text[i++]);
+    if (c < 0x80) {
+      out += static_cast<char>(c);
+      continue;
+    }
+    out += '?';
+    if ((c & 0xc0) == 0x80) continue;  // stray continuation byte
+    while (i < text.size() && (static_cast<unsigned char>(text[i]) & 0xc0) == 0x80) ++i;
+  }
+  return out;
+}
 // UI-only text fitting. Keep the chosen font size; shorten long device/target names
 // on UTF-8 boundaries, so one row can never paint over its neighbour.
 template <class Measure>
@@ -110,17 +130,18 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
                    bool center = false) { s.label(b, size, c, text.c_str(), bold, center); };
   auto button = [&](Box b, const char* text, bool enabled, bool accent = false) {
     const bool hover = enabled && b.contains(mouseX, mouseY);
-    rect(b, enabled ? (accent ? (st.armed ? kRed : kTeal) : kRule) : 0xe0d7ca);
-    if (enabled && !accent) rect({b.l + 1, b.t + 1, b.r - 1, b.b - 1}, hover ? 0xd9cdbc : kWhite, 5);
-    label({b.l + 7, b.t, b.r - 7, b.b}, 16, enabled ? (accent ? kWhite : kInk) : kMuted, text, true, true);
+    rect(b, enabled ? (accent ? (st.armed ? kRed : kTeal) : kRule) : kDisabledEdge);
+    if (!enabled || !accent)
+      rect({b.l + 1, b.t + 1, b.r - 1, b.b - 1}, enabled ? (hover ? 0xd9cdbc : kWhite) : kPaper, 5);
+    label({b.l + 7, b.t, b.r - 7, b.b}, 16, enabled ? (accent ? kWhite : kInk) : kDisabledText, text, true, true);
   };
   rect(kBounds, kInk, 12);
   rect({412, 1114, 1988, 1480}, kPaper, 10);
   rect({414, 1116, 1986, 1176}, kInk, 8);
   label({434, 1124, 798, 1168}, 24, kWhite, "MIDI CONTROL", true);
   label({832, 1128, 904, 1164}, 14, 0xc8bdad, "INPUT", true);
-  label({914, 1128, 1816, 1164}, 19, kWhite, st.device.empty() ? "Choose an input in Preferences" : st.device,
-        true);
+  label({914, 1128, 1816, 1164}, 19, kWhite,
+        st.device.empty() ? "Choose an input in Preferences" : asciiText(st.device), true);
   button(kClose, "CLOSE", true);
   rect({810, 1190, 812, 1402}, kRule, 0);
   const char* labels[] = {"CHANNEL", "TRANSPOSE", "VELOCITY"};
@@ -160,7 +181,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
                     b.key.kind == core::MidiBindingKind::cc ? "CC" : "NOTE", unsigned(b.key.number),
                     unsigned(b.key.channel));
     label({846, y + 2, 1196, y + 27}, 18, kInk, source, true);
-    label({846, y + 26, 1196, y + 47}, 14, kMuted, b.key.device[0] ? b.key.device : "Any device");
+    label({846, y + 26, 1196, y + 47}, 14, kMuted, b.key.device[0] ? asciiText(b.key.device) : "Any device");
     label({1220, y + 4, 1688, y + 46}, 18, kInk, targetText(b), true);
     if (b.targetKind == core::MidiTargetKind::parameter)
       button(mode(i), modeText(b), st.editable);
@@ -183,12 +204,12 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     line2 = "Editing is disabled to protect it.";
   } else if (st.armed && st.awaitTarget) {
     line1 = "1. Choose a panel control above";
-    line2 = "or an extra target on the right.";
+    line2 = "or an EXTRA LEARN TARGET.";
   } else if (st.armed) {
     line1 = "2. Move a knob or press a pad.";
     line2 = "Esc or CANCEL LEARN to cancel.";
   }
-  label({434, 1424, 802, 1448}, 16, st.armed ? kTeal : kMuted, line1, true);
+  label({434, 1424, 802, 1448}, 16, st.armed ? kArmedText : kMuted, line1, true);
   label({434, 1449, 802, 1474}, 15, kMuted, line2);
   label({832, 1416, 1532, 1435}, 12, kMuted, "EXTRA LEARN TARGETS", true);
   for (int i = 0; i < 5; ++i) button(action(i), kActionLabels[i], st.editable && st.armed && st.awaitTarget);

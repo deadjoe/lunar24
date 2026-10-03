@@ -1224,6 +1224,12 @@ class MidiOverlayControl : public IControl {
     hoverX_ = hoverY_ = -1;
     SetDirty(false);
   }
+  // Every close path (CLOSE, Esc, the MIDI button, opening the keyboard menu) hides the
+  // overlay without a mouse-out, so drop the hover here; it must not light up on reopen.
+  void Hide(bool hide) override {
+    if (hide) hoverX_ = hoverY_ = -1;
+    IControl::Hide(hide);  // marks dirty
+  }
   void OnMouseDown(float x, float y, const IMouseMod&) override {
     if (midi_ui::kClose.contains(x, y)) {
       s_.showMidi(false);
