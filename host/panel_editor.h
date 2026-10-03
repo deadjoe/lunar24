@@ -144,6 +144,17 @@ struct EditorShared {
     std::function<void()> bindingsChanged;            // save + republish
   };
   MidiUi midi;
+  // REC (the plugin owns the recorder; the source choice lives here for the session).
+  struct RecordUi {
+    std::function<bool()> recording;
+    std::function<double()> seconds;
+    std::function<void(int)> toggle;  // start with this source (0 WET, 1 DRY, 2 ALL), or stop
+  };
+  RecordUi rec;
+  int recordSource = 0;
+  IControl* recordControl = nullptr;
+  int recordShownSecond = -1;
+  bool isRecording() const { return rec.recording && rec.recording(); }
   std::vector<IControl*> midiControls;
   bool midiOpen = false;
   void showMidi(bool open) {
@@ -937,6 +948,59 @@ class MidiSettingsControl : public IControl {
   Widget w_;
 };
 
+// REC, in the headphone socket's place: starts / stops recording the chosen source to WAV.
+// The label above shows the elapsed time while recording. Not on the hardware.
+class RecordControl : public IControl {
+ public:
+  RecordControl(EditorShared& s, const Widget& w)
+      : IControl(rectOf(w).GetPadded(14.f).Union(IRECT(float(w.cx - 30), float(w.cy - 68), float(w.cx + 30),
+                                                       float(w.cy)))),
+        s_(s), w_(w) {
+    SetTargetRECT(rectOf(w));
+  }
+  void Draw(IGraphics& g) override {
+    GraphicsSink sink{g};
+    const bool on = s_.isRecording();
+    art::drawRecordButton(sink, float(w_.cx), float(w_.cy), float(w_.w / 2), on,
+                          on && s_.rec.seconds ? int(s_.rec.seconds()) : 0, mMouseIsOver);
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override {
+    if (s_.rec.toggle) s_.rec.toggle(s_.recordSource);
+    GetUI()->SetAllControlsDirty();
+  }
+
+ private:
+  EditorShared& s_;
+  Widget w_;
+};
+
+// REC's source, in the PHONE knob's place: click for the next of WET / DRY / ALL (right-click:
+// previous). Fixed while recording.
+class RecordSourceControl : public IControl {
+ public:
+  RecordSourceControl(EditorShared& s, const Widget& w)
+      : IControl(drawRectOf(w).Union(IRECT(float(w.cx - 44), float(w.cy - w.h / 2 - 26), float(w.cx + 44),
+                                           float(w.cy)))),
+        s_(s), w_(w) {
+    SetTargetRECT(rectOf(w).Union(IRECT(float(w.cx - 40), float(w.cy - w.h / 2 - 22), float(w.cx + 40),
+                                        float(w.cy - w.h / 2))));
+  }
+  void Draw(IGraphics& g) override {
+    GraphicsSink sink{g};
+    art::drawRecordSource(sink, float(w_.cx), float(w_.cy), float(w_.w / 2), s_.recordSource,
+                          hexOf(theme::cap(w_.cap)), mMouseIsOver && !s_.isRecording());
+  }
+  void OnMouseDown(float, float, const IMouseMod& mod) override {
+    if (s_.isRecording()) return;
+    s_.recordSource = (s_.recordSource + ((mod.R || mod.S) ? 2 : 1)) % 3;
+    SetDirty(false);
+  }
+
+ private:
+  EditorShared& s_;
+  Widget w_;
+};
+
 // Non-interactive panel hardware: photo sensor, the drone LED bar (lit per unmuted tone),
 // and jacks that have no function in Lunar 24.
 class DecorControl : public IControl {
@@ -1362,6 +1426,11 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::DroneKey: g->AttachControl(new DroneKeyControl(shared, w)); break;
       case WidgetKind::MasterMute: g->AttachControl(new MasterMuteControl(shared, w)); break;
       case WidgetKind::MidiSettings: g->AttachControl(new MidiSettingsControl(shared, w)); break;
+      case WidgetKind::Record:
+        shared.recordControl = new RecordControl(shared, w);
+        g->AttachControl(shared.recordControl);
+        break;
+      case WidgetKind::RecordSource: g->AttachControl(new RecordSourceControl(shared, w)); break;
       case WidgetKind::Encoder: g->AttachControl(new EncoderControl(shared, w)); break;
       case WidgetKind::OctaveKey: g->AttachControl(new OctaveKeyControl(shared, w)); break;
       case WidgetKind::Display: g->AttachControl(new DisplayControl(shared, w)); break;
@@ -1453,6 +1522,12 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       if (!shared.learnArmed) g->SetAllControlsDirty();
     }
     if (shared.pollRelativeDetect()) g->SetAllControlsDirty();
+    // REC: redraw the elapsed time once a second, and once more when recording stops.
+    const int recSecond = shared.isRecording() && shared.rec.seconds ? int(shared.rec.seconds()) : -1;
+    if (recSecond != shared.recordShownSecond && shared.recordControl != nullptr) {
+      shared.recordShownSecond = recSecond;
+      shared.recordControl->SetDirty(false);
+    }
   });
 }
 

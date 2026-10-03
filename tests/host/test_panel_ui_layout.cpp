@@ -73,6 +73,7 @@ int main() {
   int missingP = 0, dupP = 0;
   for (const auto& p : registry::kParameters) {
     if (p.owner.substr(0, 8) == "program.") continue;  // per-program labels, not panel controls
+    if (p.id == core::ParameterId::effector_phone) continue;  // its place holds REC's source selector
     const int n = params[static_cast<std::uint32_t>(p.id)];
     if (n == 0) { ++missingP; std::printf("  no control for %s\n", std::string(p.stable_id).c_str()); }
     if (n > 1) { ++dupP; std::printf("  %d controls for %s\n", n, std::string(p.stable_id).c_str()); }
@@ -379,7 +380,7 @@ int main() {
     CHECK_EQ(kb::optionText(core::ParameterId::keyboard_mode, 1), std::string("ARPEGGIATOR"));  // full names
     CHECK_EQ(kb::optionText(core::ParameterId::keyboard_arp_variation, 1), std::string("x1"));
   }
-  { // MIDI learn targets: the 203 panel controls, never a keyboard menu setting.
+  { // MIDI learn targets: the 202 panel controls, never a keyboard menu setting.
     int targets = 0;
     for (const Widget& w : ws) {
       if (w.menu) continue;
@@ -393,7 +394,7 @@ int main() {
         default: break;
       }
     }
-    CHECK_EQ(targets, 203);
+    CHECK_EQ(targets, 202);  // 203 before the PHONE knob gave its place to REC
   }
   return test::finish("test_panel_ui_layout");
 }

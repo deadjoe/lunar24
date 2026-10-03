@@ -118,7 +118,7 @@
   - 点击换下一盒，右键或 Shift+点击退回上一盒；
   - 下方两个 **1-2-3** 拨杆（左边管左声道，右边管右声道），中间小按钮也是换卡带。
 - 1-2-3 拨杆下方两个小黑旋钮：**MOD L**、**MOD R**（滤波器 CV 的深度）。
-- 右边：**BLEND**、大旋钮 **MASTER VOLUME**、耳机音量。
+- 右边：**BLEND**、大旋钮 **MASTER VOLUME**；最右一列是录音（硬件这里是耳机插孔和耳机音量，软件没有耳机输出，改作录音）：上面 **REC** 按钮，下面 **WET / DRY / ALL** 选择旋钮。
 - 滤波器一排（FILTER L → FILTER R）：
   - **FREQ**、**BP/LP** 小按钮（FREQ 与 RES 之间偏上）、**RES**；
   - **CV L** 插孔、**DIST**、**link** 按钮、**GAIN**、**CV R** 插孔；
@@ -1139,14 +1139,39 @@
   - 第 9 步：SPLIT 还是刚才改的值（存在 MIDI 绑定文件里，不随音色设置）。
 - 收尾：SPLIT 改回 C4，PLAY 改回 SINGLE，oct+3 拨回 low，拔掉两根线。
 
+### 16. 录音（REC）
+
+硬件没有录音，软件把 DUAL EFFECTOR 右上角的耳机区域改作录音：耳机插孔的位置是 **REC** 按钮，耳机音量旋钮的位置是 **WET / DRY / ALL** 选择。文件存到 **音乐 → Lunar 24**（Mac：`~/Music/Lunar 24`），24-bit 立体声 WAV：
+- WET：`Lunar24 日期 时间.wav`，平常听到的声音（MUTE 也会录进去）；
+- DRY：`Lunar24 日期 时间 dry.wav`，左声道 = VCO A 单独的声音（DRY A），右声道 = VCO B（DRY B），不经过混音台、滤波和效果器；
+- ALL：两个文件都录。
+
+**T16.1 录音与 DRY 检查** ⏳ (录音 PR)
+- 准备：RESET PANEL；打开 envelope A 和 envelope B 左上角的 **hold**（两个 VCO 一直响）。
+- 步骤：
+  1. 看 REC 区：耳机图标处显示 **REC**，下面旋钮指在 **WET**（上方三个字 WET / DRY / ALL，选中的是黑字）。
+  2. 点旋钮两下，指到 **ALL**；右键点一下回到 **DRY**，再左键点一下回到 **ALL**。
+  3. 点 **REC**：按钮亮红圈、中间红点，REC 字变成红色计时 0:00、0:01……。录音时点旋钮不会改档。
+  4. 录音中把 VOICE MIXER 的 **VCO A** VOL 拧到最小，等 3 秒；再把 FILTER L 和 FILTER R 的 **FREQ** 都拧到最小，等 3 秒。
+  5. 再点 **REC** 停止：红圈消失、REC 字恢复，Finder 自动打开 音乐 → Lunar 24。
+  6. 双击两个新文件（QuickTime 或任何播放器）听。
+  7. 旋钮改回 **WET** 录 3 秒再停；改到 **DRY** 录 3 秒再停。
+- 期望：
+  - 第 5 步：文件夹里出现同名的两个文件，一个不带 dry，一个带 dry。
+  - 第 6 步，不带 dry 的（WET）：开头是平常的声音；VCO A 拧掉后少了一层；FREQ 拧到最小后变闷或几乎没声。
+  - 第 6 步，带 dry 的（DRY）：左声道是 VCO A，右声道是 VCO B（戴耳机最清楚）；**整段都不变**——VCO A VOL 和 FREQ 的改动都不影响它（DRY 不经过混音台和滤波器）。
+  - 第 7 步：WET 只生成不带 dry 的一个文件，DRY 只生成带 dry 的一个文件。
+  - 录音时声音不卡、不爆音；停止时没有“轰”的一声。
+- 补充：录音中在 Preferences 里改了采样率，录音会自动停止（文件照常可播）；只是重开同一个设备则继续录。出问题时 audio.log 里有 `recording ...` 的记录。
+
 ## 还没测的（⏳）
 
 - MIDI：CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
-- VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch：声道 3 = DRY A、声道 4 = DRY B。注意 DRY 在 VCA 之后，要按住键或点亮 envelope 的 hold 才有声）。
+- 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查；真用到多声道声卡时再测。
 - PREAMP 的 ext. source 插孔（不需要额外硬件：把 LFO A 输出插进去，麦克风输入应被取代，ENVELOPE FOLLOWER 的灯改跟 LFO 走；拔线恢复）。
 - 键盘菜单 SERVICE 页的 10 个校准类设置（V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE）：已核实为存储但无声音/行为效果（都是校准真机硬件的概念，软件里没有对应误差），只需确认改动能保存、重启后还在。ENCODER DIRECTION 现在会反转红色大旋钮的滚轮方向，见 T12.19。
 
-已核实无需列入：DRONE 6 的控件与 DRONE 3 结构性同码（同一个 PapaVoice 实现，12 参数 7 插孔全部正确映射，无独立风险）；VOICE MIXER 的 EXT.AUDIO 通道已被 T11.4 的补充步骤覆盖；耳机音量旋钮按设计无功能（只存状态，不接任何音频通路）。
+已核实无需列入：DRONE 6 的控件与 DRONE 3 结构性同码（同一个 PapaVoice 实现，12 参数 7 插孔全部正确映射，无独立风险）；VOICE MIXER 的 EXT.AUDIO 通道已被 T11.4 的补充步骤覆盖；耳机音量旋钮的位置已改作录音的 WET / DRY / ALL 选择（PHONE 参数只存状态，没有控件）。
 
 ## TODO
 

@@ -16,11 +16,13 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <string>
 
 #include <host/app_state_store.h>
 #include <host/midi_map_store.h>
 #include <host/midi_sustain.h>
 #include <host/midi_timing.h>
+#include <host/wav_recorder.h>
 #include <host/standalone_audio_engine.h>
 #include <lunar24/core/input_state_machine.h>
 
@@ -103,6 +105,11 @@ public:
   int midiVelocityCurve() const { return midiVelocityCurve_.load(std::memory_order_relaxed); }
   int midiSplitNote() const { return midiSplitNote_.load(std::memory_order_relaxed); }
   void setMidiRigSettings(int channelFilter, int octaveShift, int curve, int splitNote);
+  // UI thread: REC. Starts recording `source` (0 WET, 1 DRY, 2 ALL) to Music/Lunar 24, or stops
+  // and opens that folder.
+  void toggleRecording(int source);
+  bool recording() const { return recorder_.recording(); }
+  double recordingSeconds() const { return recorder_.seconds(); }
   // The plugin's binding store (the MIDI settings overlay edits it through this).
   lunar24::host::MidiMapStore& midiStore() { return midiMapStore_; }
   // Republish the current map (after the overlay edits it).
@@ -128,6 +135,10 @@ private:
   std::atomic<int> midiSplitNote_{lunar24::core::kMidiDefaultSplitNote};  // TWIN / SPLIT: right from here
   std::atomic<std::uint32_t> midiLastMessage_{0};
   std::atomic<std::uint64_t> midiMessageSeq_{0};
+
+  // REC: declared before engine_ so it outlives the engine's pointer to it.
+  lunar24::host::WavRecorder recorder_;
+  std::string recordingDir_;  // where the last recording went (opened when it stops)
 
   // The framework-free runtime owner, held BY VALUE. It owns the address-stable
   // MachineRuntimeDefinition (heap) + the single DeviceAdapter (task#71). ProcessBlock is a

@@ -25,8 +25,10 @@
 #include "IPlug_include_in_plug_src.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
+#include <ctime>
 #include <type_traits>
 #include <lunar24/core/host_window_fit.h>
 #include <host/window_layout.h>
@@ -47,10 +49,13 @@ extern "C" void lunar_host_case_margins(void* view, double* side, double* top, d
 extern "C" void lunar_host_audio_watchdog();
 extern "C" void lunar_host_request_audio_reopen();
 extern "C" void lunar_host_log(const char* line);
+extern "C" bool lunar_host_recordings_dir(char* out, std::size_t capacity);
+extern "C" void lunar_host_reveal_dir(const char* utf8Path);
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
 {
+  engine_.setAudioTap(&recorder_);
 #if IPLUG_EDITOR
   mMakeGraphicsFunc = [&]() {
     // zoomScale <= 0 -> fit (delegate to core); zoomScale > 0 -> explicit zoom.
@@ -100,6 +105,9 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     shared->midi.velocityCurve = [this]() { return midiVelocityCurve(); };
     shared->midi.splitNote = [this]() { return midiSplitNote(); };
     shared->midi.setRigSettings = [this](int c, int o, int v, int sp) { setMidiRigSettings(c, o, v, sp); };
+    shared->rec.recording = [this]() { return recording(); };
+    shared->rec.seconds = [this]() { return recordingSeconds(); };
+    shared->rec.toggle = [this](int source) { toggleRecording(source); };
     shared->midi.bindingsChanged = [this]() {
       (void)midiMapStore_.save();
       republishMidiMap();
@@ -157,6 +165,14 @@ void LunarHostPlugin::OnReset()
   // Preserve the last MIDI knob edits before capturing the state and discarding
   // the old runtime queues. The audio callback has stopped at this boundary.
   engine_.syncParametersFromAudioThread();
+  // REC keeps going across a device reopen at the same rate; at another rate the file would
+  // play back at the wrong speed, so the recording stops there.
+  if (recorder_.recording() && std::lround(GetSampleRate()) != recorder_.sampleRate()) {
+    const auto r = recorder_.stop();
+    char line[160];
+    std::snprintf(line, sizeof line, "recording stopped (sample rate changed): %.1f s", r.seconds);
+    lunar_host_log(line);
+  }
   // The old runtime's notes die with it; the sustain pedal's held-note ledger
   // belongs to that stream (a stale pedal-down would defer the new stream's
   // note-offs forever).
@@ -236,6 +252,51 @@ void LunarHostPlugin::requestFactoryReset()
 void LunarHostPlugin::midiInputClosed()
 {
   midiQueue_.invalidate();
+}
+
+void LunarHostPlugin::toggleRecording(int source)
+{
+  char line[1200];
+  if (recorder_.recording()) {
+    const auto r = recorder_.stop();
+    std::snprintf(line, sizeof line, "recording stopped: %.1f s, %llu frames dropped", r.seconds,
+                  static_cast<unsigned long long>(r.droppedFrames));
+    lunar_host_log(line);
+    if (!recordingDir_.empty()) lunar_host_reveal_dir(recordingDir_.c_str());
+    return;
+  }
+  const int rate = static_cast<int>(std::lround(engine_.sampleRate()));
+  char dir[1024];
+  if (rate <= 0 || !lunar_host_recordings_dir(dir, sizeof dir)) {
+    lunar_host_log("recording not started: no audio stream or no Music/Lunar 24 folder");
+    return;
+  }
+  recordingDir_ = dir;
+  // "Lunar24 2026-10-04 12-30-05.wav" (WET) and "... dry.wav" (DRY A left, DRY B right).
+  char stamp[64];
+  const std::time_t now = std::time(nullptr);
+  const std::tm* local = std::localtime(&now);
+  if (local == nullptr || std::strftime(stamp, sizeof stamp, "Lunar24 %Y-%m-%d %H-%M-%S", local) == 0)
+    std::snprintf(stamp, sizeof stamp, "Lunar24 %lld", static_cast<long long>(now));
+  const auto what = static_cast<lunar24::host::RecordSource>(std::clamp(source, 0, 2));
+  const bool wet = what != lunar24::host::RecordSource::dry;
+  const bool dry = what != lunar24::host::RecordSource::wet;
+  const std::string base = lunar24::host::app_state_file_ops::joinUtf8(recordingDir_, stamp);
+  std::FILE* wetFile = wet ? lunar24::host::app_state_file_ops::openNative(base + ".wav", "wb") : nullptr;
+  std::FILE* dryFile = dry ? lunar24::host::app_state_file_ops::openNative(base + " dry.wav", "wb") : nullptr;
+  if ((wet && wetFile == nullptr) || (dry && dryFile == nullptr)) {
+    if (wetFile != nullptr) std::fclose(wetFile);
+    if (dryFile != nullptr) std::fclose(dryFile);
+    wetFile = dryFile = nullptr;
+  }
+  if ((wetFile == nullptr && dryFile == nullptr) || !recorder_.start(wetFile, dryFile, rate)) {  // start closes on failure
+    std::snprintf(line, sizeof line, "recording not started: cannot write %s", base.c_str());
+    lunar_host_log(line);
+    return;
+  }
+  std::snprintf(line, sizeof line, "recording %s at %d Hz: %s", lunar24::host::record_source_name(what), rate,
+                base.c_str());
+  lunar_host_log(line);
 }
 
 void LunarHostPlugin::OnIdle()

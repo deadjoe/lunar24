@@ -1,6 +1,6 @@
 # Lunar 24 — status (plain language)
 
-_Last updated: 2026-10-03._
+_Last updated: 2026-10-04._
 
 ## What works
 - **Sound engine (core/)**
@@ -20,12 +20,11 @@ _Last updated: 2026-10-03._
 - **App (host/)**: macOS/Windows standalone with the full panel UI, MIDI input, and the
   machine state restored on launch (saved on exit and every 30 s after an edit). The panel follows the official
   Solar 42N panel drawing: same module frames, labels, printed icons, LEDs and control
-  positions (taken from the PDF by `tools/gen_panel_art.py`), branded Lunar 24; the printed
-  indicator LEDs are lit from the engine's state. `panel_preview > panel.svg`
-  renders it without building the app. CI attaches a downloadable app to
-  every run (GitHub → Actions → the run → Artifacts).
+  positions (from the PDF via `tools/gen_panel_art.py`), branded Lunar 24, LEDs lit by the
+  engine. `panel_preview > panel.svg` renders it without the app. CI attaches a
+  downloadable app to every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: 61 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
+- **Tests**: 62 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
   `design/MANUAL_TESTS.md`.
 
 ## How to play
@@ -54,6 +53,8 @@ _Last updated: 2026-10-03._
   relative knobs (detected at learn); channel filter, transpose, velocity curve and SPLIT
   note (TWIN / SPLIT: notes below it play the left side). Bindings have their own file.
   MIDI notes light the keyboard plate of the same note name.
+- REC (in the headphone corner, which has no use in software): records WET, DRY (A left,
+  B right) or ALL to 24-bit WAVs in Music/Lunar 24; the folder opens when it stops.
 - Effector: click the cartridge slot (or the button below it) to load the next cartridge
   (right-click = previous; hover shows both program names); the L / R switches beside
   the button pick program 1-2-3 per side.
@@ -67,11 +68,11 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. External MIDI for the MPK MINI IV: clock and START (done, T15.9), relative knobs
-   (done, T15.3), TWIN / SPLIT by note range (this PR, T15.10); then pedal checks.
-2. Remaining manual checks alongside: device DRY outputs, PREAMP override, Windows.
+1. REC recorder (this PR, T16.1; it also checks the DRY outputs). External MIDI for the
+   MPK is done (T15.3, T15.9, T15.10); a sustain pedal is still untested.
+2. Remaining manual checks alongside: PREAMP override, Windows.
 3. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix).
-4. Later: decorative controls, REC, panel tweaks, AU/VST3. Known stability work: cable
+4. Later: decorative controls, panel tweaks, AU/VST3. Known stability work: cable
    edits compile the patch graph on the audio thread with small allocations. Not planned:
    effector tails across a cartridge switch (the hardware cuts them too).
 

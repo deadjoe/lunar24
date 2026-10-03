@@ -41,6 +41,8 @@ enum class WidgetKind : std::uint8_t {
                // 3 = hardware jack with no function in Lunar 24
   MasterMute,  // app-level MUTE button next to DRONE VOICES: silences every output
   MidiSettings,  // app-level MIDI button below MUTE: opens the MIDI settings overlay
+  Record,        // app-level REC button, where the hardware's headphone socket is
+  RecordSource,  // app-level WET / DRY / ALL selector for REC, where the PHONE knob is
 };
 
 // The printed indicator LEDs Lunar 24 lights, in StandaloneAudioEngine::PanelLed order: centre of
@@ -311,8 +313,11 @@ inline std::vector<Widget> build_panel_layout() {
   toggle(P::effector_select_r, 1243, 323);
   knob(P::effector_blend, 1318, 356, Cap::Orange);
   knob(P::effector_master, 1436, 356, Cap::Orange, 96);
-  knob(P::effector_phone, 1554, 356, Cap::Orange);
-  add(WidgetKind::Decor, 1555, 279, 40, 40, 3);  // headphone socket
+  // The headphone corner (no headphone output in software) holds the recorder: REC where
+  // the socket is, its WET / DRY / ALL selector where the PHONE knob is. PHONE keeps its
+  // stored value but has no control.
+  add(WidgetKind::Record, 1555, 279, 40, 40, 0);
+  add(WidgetKind::RecordSource, 1554, 356, 52, 52, 0, Cap::Orange);
   plain(P::vcf_l_mod, 1158, 382, 40);
   plain(P::vcf_r_mod, 1244, 382, 40);
   knob(P::vcf_l_freq, 885, 481, Cap::Orange);

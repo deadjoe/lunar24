@@ -75,6 +75,13 @@ Keep these unless a listening test or a real bug says otherwise.
   to the right. The side is fixed at note-on (`MidiNoteSides`), so a release, a pedal
   release or poly aftertouch reaches the half that holds the note; channel aftertouch
   follows the channel's latest note. Single merges both sides as before.
+- **REC lives in the headphone corner** (owner's choice, 2026-10-04): software has no
+  headphone output, so the socket's place is the REC button and the PHONE knob's place a
+  WET / DRY / ALL selector (PHONE keeps its stored value, without a control). The engine
+  taps every frame's four outputs after MUTE (DRY too on a 2-channel device) into a
+  preallocated ring (`WavRecorder`); a writer thread writes 24-bit stereo WAVs (DRY: A
+  left, B right) to Music/Lunar 24. A full ring drops and counts frames instead of
+  blocking the audio thread; a sample-rate change stops the recording.
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet

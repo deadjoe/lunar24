@@ -203,6 +203,7 @@ int main(int argc, char** argv) {
   const bool midiExample = showMidi && option != "--midi";
   const bool showMenu = option.rfind("--menu", 0) == 0;
   const bool showLeds = argc > 1 && std::strcmp(argv[1], "--leds") == 0;
+  const bool showRecording = option == "--recording";  // REC running for 12 s, recording ALL
   const auto ws = build_panel_layout();
   if (argc > 1 && std::strcmp(argv[1], "--widgets") == 0) {
     std::printf("[\n");
@@ -258,6 +259,15 @@ int main(int argc, char** argv) {
       case WidgetKind::MidiSettings:
         art::drawButton(sink, float(w.cx), float(w.cy), float(w.w / 2), showMidi, false);
         text(w.cx, w.cy - 42, 15, theme::kInk, "MIDI");
+        break;
+      case WidgetKind::Record:
+        art::drawRecordButton(sink, float(w.cx), float(w.cy), float(w.w / 2), showRecording, 12, false);
+        break;
+      case WidgetKind::RecordSource:
+        art::drawRecordSource(sink, float(w.cx), float(w.cy), float(w.w / 2), showRecording ? 2 : 0,
+                              (std::uint32_t(theme::cap(w.cap).r) << 16) | (theme::cap(w.cap).g << 8) |
+                                  theme::cap(w.cap).b,
+                              false);
         break;
       case WidgetKind::Encoder: art::drawEncoder(sink, float(w.cx), float(w.cy), false); break;
       case WidgetKind::OctaveKey: art::drawOctaveKey(sink, float(w.cx), float(w.cy), false); break;
