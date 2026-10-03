@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <vector>
 
 #include "mini_test.h"
@@ -19,6 +20,79 @@
 #include <lunar24/core/state_serializer.h>
 
 using namespace lunar24;
+
+static void scale_and_root_reach_the_quantiser() {
+  // SCALE / ROOT reach the quantiser: picking a scale loads its notes into the scale
+  // editor (saved state and audio thread alike), and a played note comes out on the scale.
+  // 0 V = A3: C major from a C# (+4) plays C (+3, ties go down); D major plays the C#.
+  {
+    // Heap: the engine is ~170 KB, and Windows' 1 MB main-thread stack already holds the others.
+    auto engine = std::make_unique<host::StandaloneAudioEngine>();
+    host::StandaloneAudioEngine& e = *engine;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    std::vector<double> l(256), r(256);
+    double* outs[2] = {l.data(), r.data()};
+    core::InputStateMachine in{nullptr, 0};
+    std::uint64_t seq = 0;
+    const core::JackId vOct = core::find_jack_by_name("keyboard.v_oct_out")->id;
+    auto play = [&](double semitones) {
+      for (core::PerfInputKind kind : {core::PerfInputKind::note_on, core::PerfInputKind::note_off}) {
+        core::PerformanceInput p{};
+        p.kind = kind;
+        p.pitch = static_cast<core::SignalSample>(semitones / 12.0);
+        p.value = static_cast<core::SignalSample>(0.8);
+        p.noteId = 9;
+        p.source = 1;
+        p.seq = ++seq;
+        core::ControlEvent ev[3];
+        const std::uint32_t n = in.translate(p, ev, 3);
+        for (std::uint32_t i = 0; i < n; ++i) e.postEvent(ev[i]);
+        for (int b = 0; b < 4; ++b)
+          CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+        if (kind == core::PerfInputKind::note_on) return e.runtime()->controlVoltageAt(vOct) * 12.0;
+      }
+      return 0.0;
+    };
+    CHECK(std::fabs(play(4.0) - 4.0) < 1e-3);  // factory SEMITONES: no change
+    CHECK(e.postParameter(core::ParameterId::keyboard_quantise_load_scale, 1.0));  // IONIAN
+    CHECK_EQ(e.canonicalState()->keyboardScaleEditor, core::kScaleIonian);
+    CHECK(std::fabs(play(4.0) - 3.0) < 1e-3);
+    CHECK(e.postParameter(core::ParameterId::keyboard_root_note, 2.0 / 11.0));  // ROOT D
+    CHECK(std::fabs(play(4.0) - 4.0) < 1e-3);
+    CHECK(std::fabs(play(3.0) - 2.0) < 1e-3);  // C -> B in D major
+    CHECK(e.postParameter(core::ParameterId::keyboard_quantise_load_scale, 14.0));  // GAMELAN: not modelled
+    CHECK_EQ(e.canonicalState()->keyboardScaleEditor, core::kMicrotonalScaleMask);
+    CHECK(std::fabs(play(3.0) - 3.0) < 1e-3);
+    // SPLIT: the right half's SCALE loads the right editor only.
+    CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 2.0));
+    CHECK(e.postKeyboardRightParameter(core::ParameterId::keyboard_quantise_load_scale, 18.0));
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK_EQ(e.canonicalState()->keyboardScaleEditorR, core::kScaleWholeTone);
+    CHECK_EQ(e.canonicalState()->keyboardScaleEditor, core::kMicrotonalScaleMask);
+    CHECK_EQ(e.runtime()->keyboardBehaviourParams(core::KeyboardSide::Right).scaleEditor, core::kScaleWholeTone);
+    CHECK_EQ(e.runtime()->keyboardBehaviourParams(core::KeyboardSide::Left).scaleEditor, core::kMicrotonalScaleMask);
+  }
+  // States saved before SCALE reached the quantiser: a chosen SCALE next to an empty editor
+  // (live, right side and presets) gets its notes loaded; an empty editor for SEMITONES or a
+  // not-modelled scale stays empty.
+  {
+    auto state = std::make_unique<core::DeviceStateV1>(core::make_default_device_state(1));
+    core::DeviceStateV1& s = *state;
+    s.parameters[static_cast<std::size_t>(core::ParameterId::keyboard_quantise_load_scale)] = 6.0;
+    s.keyboardScalarRight[static_cast<std::size_t>(
+        core::keyboard_scalar_index(core::ParameterId::keyboard_quantise_load_scale))] = 13.0;
+    s.keyboardPresets[1].quantiseLoadScale = 10;
+    s.keyboardPresets[2].quantiseLoadScale = 2;
+    s.keyboardPresets[2].quantiseScaleEditor = 0x0001;  // already loaded: kept
+    core::load_unloaded_scale_editors(s);
+    CHECK_EQ(s.keyboardScaleEditor, core::kScaleAeolian);
+    CHECK_EQ(s.keyboardScaleEditorR, core::kMicrotonalScaleMask);
+    CHECK_EQ(s.keyboardPresets[0].quantiseScaleEditor, core::kMicrotonalScaleMask);
+    CHECK_EQ(s.keyboardPresets[1].quantiseScaleEditor, core::kScalePentatonicMajor);
+    CHECK_EQ(s.keyboardPresets[2].quantiseScaleEditor, 0x0001);
+    CHECK(core::validate_device_state(s).ok);
+  }
+}
 
 int main() {
   host::StandaloneAudioEngine engine;
@@ -405,70 +479,6 @@ int main() {
     CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
     CHECK(e.runtime()->controlVoltageAt(gate) > 1.0);
   }
-  // SCALE / ROOT reach the quantiser: picking a scale loads its notes into the scale
-  // editor (saved state and audio thread alike), and a played note comes out on the scale.
-  // 0 V = A3: C major from a C# (+4) plays C (+3, ties go down); D major plays the C#.
-  {
-    host::StandaloneAudioEngine e;
-    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
-    core::InputStateMachine in{nullptr, 0};
-    std::uint64_t seq = 0;
-    const core::JackId vOct = core::find_jack_by_name("keyboard.v_oct_out")->id;
-    auto play = [&](double semitones) {
-      for (core::PerfInputKind kind : {core::PerfInputKind::note_on, core::PerfInputKind::note_off}) {
-        core::PerformanceInput p{};
-        p.kind = kind;
-        p.pitch = static_cast<core::SignalSample>(semitones / 12.0);
-        p.value = static_cast<core::SignalSample>(0.8);
-        p.noteId = 9;
-        p.source = 1;
-        p.seq = ++seq;
-        core::ControlEvent ev[3];
-        const std::uint32_t n = in.translate(p, ev, 3);
-        for (std::uint32_t i = 0; i < n; ++i) e.postEvent(ev[i]);
-        for (int b = 0; b < 4; ++b)
-          CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
-        if (kind == core::PerfInputKind::note_on) return e.runtime()->controlVoltageAt(vOct) * 12.0;
-      }
-      return 0.0;
-    };
-    CHECK(std::fabs(play(4.0) - 4.0) < 1e-3);  // factory SEMITONES: no change
-    CHECK(e.postParameter(core::ParameterId::keyboard_quantise_load_scale, 1.0));  // IONIAN
-    CHECK_EQ(e.canonicalState()->keyboardScaleEditor, core::kScaleIonian);
-    CHECK(std::fabs(play(4.0) - 3.0) < 1e-3);
-    CHECK(e.postParameter(core::ParameterId::keyboard_root_note, 2.0 / 11.0));  // ROOT D
-    CHECK(std::fabs(play(4.0) - 4.0) < 1e-3);
-    CHECK(std::fabs(play(3.0) - 2.0) < 1e-3);  // C -> B in D major
-    CHECK(e.postParameter(core::ParameterId::keyboard_quantise_load_scale, 14.0));  // GAMELAN: not modelled
-    CHECK_EQ(e.canonicalState()->keyboardScaleEditor, core::kMicrotonalScaleMask);
-    CHECK(std::fabs(play(3.0) - 3.0) < 1e-3);
-    // SPLIT: the right half's SCALE loads the right editor only.
-    CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 2.0));
-    CHECK(e.postKeyboardRightParameter(core::ParameterId::keyboard_quantise_load_scale, 18.0));
-    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
-    CHECK_EQ(e.canonicalState()->keyboardScaleEditorR, core::kScaleWholeTone);
-    CHECK_EQ(e.canonicalState()->keyboardScaleEditor, core::kMicrotonalScaleMask);
-    CHECK_EQ(e.runtime()->keyboardBehaviourParams(core::KeyboardSide::Right).scaleEditor, core::kScaleWholeTone);
-    CHECK_EQ(e.runtime()->keyboardBehaviourParams(core::KeyboardSide::Left).scaleEditor, core::kMicrotonalScaleMask);
-  }
-  // States saved before SCALE reached the quantiser: a chosen SCALE next to an empty editor
-  // (live, right side and presets) gets its notes loaded; an empty editor for SEMITONES or a
-  // not-modelled scale stays empty.
-  {
-    core::DeviceStateV1 s = core::make_default_device_state(1);
-    s.parameters[static_cast<std::size_t>(core::ParameterId::keyboard_quantise_load_scale)] = 6.0;
-    s.keyboardScalarRight[static_cast<std::size_t>(
-        core::keyboard_scalar_index(core::ParameterId::keyboard_quantise_load_scale))] = 13.0;
-    s.keyboardPresets[1].quantiseLoadScale = 10;
-    s.keyboardPresets[2].quantiseLoadScale = 2;
-    s.keyboardPresets[2].quantiseScaleEditor = 0x0001;  // already loaded: kept
-    core::load_unloaded_scale_editors(s);
-    CHECK_EQ(s.keyboardScaleEditor, core::kScaleAeolian);
-    CHECK_EQ(s.keyboardScaleEditorR, core::kMicrotonalScaleMask);
-    CHECK_EQ(s.keyboardPresets[0].quantiseScaleEditor, core::kMicrotonalScaleMask);
-    CHECK_EQ(s.keyboardPresets[1].quantiseScaleEditor, core::kScalePentatonicMajor);
-    CHECK_EQ(s.keyboardPresets[2].quantiseScaleEditor, 0x0001);
-    CHECK(core::validate_device_state(s).ok);
-  }
+  scale_and_root_reach_the_quantiser();
   return test::finish("test_live_edits");
 }
