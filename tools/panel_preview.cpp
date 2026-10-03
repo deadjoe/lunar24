@@ -6,6 +6,7 @@
 //
 //   panel_preview > panel.svg          (add --menu / --seq to show a keyboard menu page,
 //                                       --leds to show the indicator LEDs lit)
+//   panel_preview --midi / --midi-example / --midi-learn / --midi-wait / --midi-error
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
@@ -17,6 +18,7 @@
 #include <string>
 
 #include <host/panel_art.h>
+#include <host/midi_settings_view.h>
 #include <host/panel_format.h>
 #include <host/panel_theme.h>
 #include <host/panel_ui_layout.h>
@@ -94,6 +96,17 @@ struct SvgSink {
   }
   void text(float x, float y, float size, std::uint32_t c, bool vertical, const char* s) {
     ::text(x, y, size, theme::rgb(c), s, vertical);
+  }
+  // Text cells use the same bounds and alignment as the native MIDI view.
+  // SVG retains the font size and clips overflow; the native sink measures and
+  // ellipsizes with the embedded Noto font. data-fit lets export tools do likewise.
+  void label(midi_ui::Box b, float size, std::uint32_t color, const char* value, bool bold, bool center) {
+    std::printf("<svg x='%.1f' y='%.1f' width='%.1f' height='%.1f' overflow='hidden'>"
+                "<text x='%.1f' y='%.1f' font-size='%.1f' fill='%s' text-anchor='%s' "
+                "dominant-baseline='central' font-family='Noto Sans, sans-serif' font-weight='%d' "
+                "data-fit='%.1f'>%s</text></svg>\n",
+                b.l,b.t,b.r-b.l,b.b-b.t,center?(b.r-b.l)/2:0,(b.b-b.t)/2,size,hex(color).c_str(),
+                center?"middle":"start",bold?700:400,b.r-b.l,esc(value).c_str());
   }
   void circle(float cx, float cy, float r) {
     char b[160];
@@ -181,6 +194,9 @@ void jack(const Widget& w) { art::drawJack(svg(), float(w.cx), float(w.cy), floa
 }  // namespace
 
 int main(int argc, char** argv) {
+  const std::string option = argc > 1 ? argv[1] : "";
+  const bool showMidi = option.rfind("--midi", 0) == 0;
+  const bool midiExample = showMidi && option != "--midi";
   const bool showMenu = argc > 1 && std::strcmp(argv[1], "--menu") == 0;
   const bool showSeq = argc > 1 && std::strcmp(argv[1], "--seq") == 0;
   const bool showLeds = argc > 1 && std::strcmp(argv[1], "--leds") == 0;
@@ -237,7 +253,7 @@ int main(int argc, char** argv) {
         text(w.cx, w.cy - 42, 15, theme::kInk, "MUTE");
         break;
       case WidgetKind::MidiSettings:
-        art::drawButton(sink, float(w.cx), float(w.cy), float(w.w / 2), false, false);
+        art::drawButton(sink, float(w.cx), float(w.cy), float(w.w / 2), showMidi, false);
         text(w.cx, w.cy - 42, 15, theme::kInk, "MIDI");
         break;
       case WidgetKind::Encoder: art::drawEncoder(sink, float(w.cx), float(w.cy), false); break;
@@ -306,6 +322,41 @@ int main(int argc, char** argv) {
       text(w.cx, w.cy + 42, 12, theme::kMenuText, w.label);
       if (w.kind == WidgetKind::Knob) text(w.cx, w.cy + 58, 11, theme::kAmber, formatParam(w.id, defaults().parameters[w.id]));
     }
+  }
+  if (showMidi) {
+    core::MidiMap map;
+    midi_ui::State state;
+    state.map = &map;
+    if (midiExample) {
+      state.device = "MPK mini IV";
+      core::MidiBinding b{};
+      std::snprintf(b.key.device,sizeof(b.key.device),"MPK mini IV");
+      b.key.channel=1; b.key.number=21; b.parameter=core::ParameterId::vcf_l_freq; map.bind(b);
+      b.key.number=22; b.parameter=core::ParameterId::effector_blend;
+      b.mode=core::MidiInputMode::relativeBinOffset; map.bind(b);
+      b.mode=core::MidiInputMode::absolute; b.key.kind=core::MidiBindingKind::note;
+      b.key.number=36; b.targetKind=core::MidiTargetKind::action; b.action=core::MidiAction::drone_key_1; map.bind(b);
+      b.key.number=37; b.action=core::MidiAction::master_mute; map.bind(b);
+    }
+    if (option == "--midi-learn") { state.armed=true; state.awaitTarget=true; }
+    if (option == "--midi-wait") state.armed=true;
+    if (option == "--midi-error") state.editable=false;
+    if (option == "--midi-long") {
+      state.device = std::string(63,'W');
+      core::MidiBinding b{};
+      std::snprintf(b.key.device,sizeof(b.key.device),"%s",state.device.c_str());
+      b.key.number=99; b.parameter=core::ParameterId::vcf_l_freq; map.bind(b);
+      state.offset=4;
+    }
+    if (option == "--midi-page") {
+      for (int i=0; i<5; ++i) {
+        core::MidiBinding b{}; b.key.number=static_cast<std::uint8_t>(30+i);
+        b.parameter=core::ParameterId::vco_a_tune; map.bind(b);
+      }
+      state.offset=4;
+    }
+    if (option == "--midi-min") { state.octave=-36; state.curve=2; }
+    midi_ui::draw(sink,state);
   }
   std::printf("</svg>\n");
   return 0;

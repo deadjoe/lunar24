@@ -13,6 +13,7 @@
 
 #include "mini_test.h"
 #include <host/panel_art.h>
+#include <host/midi_settings_view.h>
 #include <host/panel_ui_layout.h>
 #include <lunar24/core/state_disposition.h>
 
@@ -170,6 +171,22 @@ int main() {
     for (int s = 6; s < 12; ++s) CHECK(host::plate_is_right_side(s));
     CHECK(!host::plate_is_right_side(12) && host::plate_is_right_side(18));
     CHECK(host::plate_is_right_side(-1) && !host::plate_is_right_side(-12));
+  }
+  { // MIDI: deleting the last row must return to a populated page.
+    using namespace host::midi_ui;
+    CHECK_EQ(pageOffset(4, 5), 4);
+    CHECK_EQ(pageOffset(4, 4), 0);
+    CHECK_EQ(pageOffset(-4, 0), 0);
+    CHECK_EQ(pageOffset(128, 128), 124);
+    for (int i=0; i<3; ++i) {
+      CHECK(!decrement(i).contains(setting(i).l+20, setting(i).t+20));
+      CHECK(!increment(i).contains(setting(i).l+20, setting(i).t+20));
+      CHECK(decrement(i).r <= increment(i).l);
+    }
+    // A truncated UTF-8 name must end on a character boundary.
+    auto bytes = [](const char* text) { return static_cast<float>(std::string(text).size()); };
+    CHECK_EQ(fitText("ab\xc3\xa9" "cdef", 6, bytes), std::string("ab..."));
+    CHECK_EQ(fitText("short", 20, bytes), std::string("short"));
   }
   return test::finish("test_panel_ui_layout");
 }

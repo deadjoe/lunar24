@@ -37,6 +37,7 @@
 #include <host/panel_art.h>
 #include <host/ui_font.generated.h>
 #include <host/midi_map_store.h>
+#include <host/midi_settings_view.h>
 #include <host/panel_format.h>
 #include <host/panel_theme.h>
 #include <host/panel_ui_layout.h>
@@ -182,7 +183,11 @@ struct EditorShared {
     b.targetKind = learnTargetIsAction ? core::MidiTargetKind::action : core::MidiTargetKind::parameter;
     b.parameter = learnParameter;
     b.action = learnAction;
-    if (midiStore->bind(b) && midi.bindingsChanged) midi.bindingsChanged();
+    if (midiStore->bind(b)) {
+      const int row = midiStore->map().find(b.key);
+      midiListOffset = midi_ui::pageOffset(row, static_cast<int>(midiStore->map().count()));
+      if (midi.bindingsChanged) midi.bindingsChanged();
+    }
     setLearnArmed(false, false);
   }
   // Widgets a click can bind while learning (built once at panel build).
@@ -1177,203 +1182,124 @@ class RhythmStepControl : public IControl {
   int row_, step_;
 };
 
-// ---------------------------------------------------------------------------------------------
-// MIDI settings overlay (opened by the panel's MIDI button; covers the plates area like the
-// keyboard menu does). Left column: rig settings (input / channel / octave / velocity) and
-// LEARN; right: the bindings table. Learn flow: LEARN -> click a panel control (or an action
-// chip) -> move a hardware control -> the binding appears in the table.
-namespace midi_ui {
-inline constexpr double kX0 = kMenuX0, kY0 = kMenuY0, kX1 = kMenuX1, kY1 = kMenuY1;
-inline constexpr double kLeftX = 432, kRightX = 800;
-inline constexpr double kTableY0 = 1186, kRowH = 31;
-inline constexpr int kVisibleRows = 8;
-inline constexpr double kColSource = 812, kColTarget = 1120, kColMode = 1560, kColDel = 1920;
-
-inline const char* actionName(core::MidiAction a) {
-  static const char* kNames[] = {"DRONE 1", "DRONE 2", "DRONE 3", "DRONE 4", "DRONE 5",
-                                 "DRONE 6", "CARTRIDGE NEXT", "CARTRIDGE PREV", "LOAD PRESET A",
-                                 "LOAD PRESET B", "LOAD PRESET C", "LOAD PRESET D", "MUTE"};
-  const std::uint8_t i = static_cast<std::uint8_t>(a);
-  return i < core::kMidiActionCount ? kNames[i] : "?";
-}
-
-inline std::string sourceText(const core::MidiBinding& b) {
-  char buf[96];
-  std::snprintf(buf, sizeof buf, "%s %u · CH %u", b.key.kind == core::MidiBindingKind::cc ? "CC" : "NOTE",
-                unsigned(b.key.number), unsigned(b.key.channel));
-  std::string s = buf;
-  if (b.key.channel == 0) {  // channel 0 = any
-    std::snprintf(buf, sizeof buf, "%s %u · ANY CH", b.key.kind == core::MidiBindingKind::cc ? "CC" : "NOTE",
-                  unsigned(b.key.number));
-    s = buf;
-  }
-  if (b.key.device[0] != '\0') s += std::string(" · ") + b.key.device;
-  return s;
-}
-
-inline std::string targetText(const core::MidiBinding& b) {
-  if (b.targetKind == core::MidiTargetKind::action) return actionName(b.action);
-  const core::ParameterDescriptor* d = core::find_parameter(b.parameter);
-  if (d == nullptr) return "?";
-  return std::string(d->owner) + " · " + std::string(d->name);
-}
-
-inline const char* modeText(const core::MidiBinding& b) {
-  if (b.targetKind == core::MidiTargetKind::action) return "—";
-  switch (b.mode) {
-    case core::MidiInputMode::relativeBinOffset: return "REL 1";
-    case core::MidiInputMode::relativeTwosComplement: return "REL 2";
-    case core::MidiInputMode::relativeSignMagnitude: return "REL 3";
-    default: return "ABS";
-  }
-}
-}  // namespace midi_ui
-
-// The overlay frame: background, title, the input row, the status line and the bindings
-// table (drawn + clicked here). Swallows every click inside its rect.
+// MIDI uses the same measured rectangles for drawing and hit testing. All labels
+// have explicit alignment and bounds; long names are ellipsized at a fixed font size.
 class MidiOverlayControl : public IControl {
  public:
   explicit MidiOverlayControl(EditorShared& s)
-      : IControl(IRECT(float(midi_ui::kX0), float(midi_ui::kY0), float(midi_ui::kX1), float(midi_ui::kY1))),
+      : IControl(IRECT(midi_ui::kBounds.l, midi_ui::kBounds.t, midi_ui::kBounds.r, midi_ui::kBounds.b)),
         s_(s) {}
   void Draw(IGraphics& g) override {
-    g.FillRoundRect(col(theme::kMenuBg), mRECT, 10.f);
-    g.DrawText(txt(18, theme::kMenuText), "MIDI SETTINGS", float(midi_ui::kLeftX), mRECT.T + 26);
-    const std::string dev = s_.midi.inputDeviceName ? s_.midi.inputDeviceName() : "";
-    g.DrawText(txt(13, theme::kMenuText, false), "INPUT", float(midi_ui::kLeftX), mRECT.T + 66);
-    g.DrawText(txt(13, theme::kMenuText, true), dev.empty() ? "none (Preferences)" : dev.c_str(),
-               float(midi_ui::kLeftX + 90), mRECT.T + 66);
-    // Status / instruction line.
-    const char* status = "LEARN: click LEARN, click a panel control, then move a hardware control.";
-    if (s_.midiStore != nullptr &&
-        (s_.midiStore->loadOutcome() == host::MidiMapLoadOutcome::Malformed ||
-         s_.midiStore->loadOutcome() == host::MidiMapLoadOutcome::Unreadable))
-      status = "the bindings file is unreadable; editing is disabled (delete it to start fresh)";
-    if (s_.learnArmed && s_.learnAwaitTarget)
-      status = "click the panel control to bind — or one of the action chips below";
-    else if (s_.learnArmed)
-      status = "now move a control on your device (Esc cancels)";
-    g.DrawText(txt(12, theme::kAmber, false), status, float(midi_ui::kLeftX), mRECT.B - 22);
-    // The bindings table.
-    g.DrawText(txt(12, theme::kMenuText, false), "SOURCE", float(midi_ui::kColSource), float(midi_ui::kTableY0) - 18);
-    g.DrawText(txt(12, theme::kMenuText, false), "TARGET", float(midi_ui::kColTarget), float(midi_ui::kTableY0) - 18);
-    g.DrawText(txt(12, theme::kMenuText, false), "MODE", float(midi_ui::kColMode), float(midi_ui::kTableY0) - 18);
-    if (s_.midiStore == nullptr) return;
-    const core::MidiMap& m = s_.midiStore->map();
-    for (int v = 0; v < midi_ui::kVisibleRows; ++v) {
-      const int row = s_.midiListOffset + v;
-      if (row >= int(m.count())) break;
-      const core::MidiBinding& b = m.at(std::uint32_t(row));
-      const float y = float(midi_ui::kTableY0 + v * midi_ui::kRowH);
-      g.DrawText(txt(12, theme::kMenuText, false), midi_ui::sourceText(b).c_str(), float(midi_ui::kColSource), y);
-      g.DrawText(txt(12, theme::kMenuText, true), midi_ui::targetText(b).c_str(), float(midi_ui::kColTarget), y);
-      g.DrawText(txt(12, theme::kAmber, false), midi_ui::modeText(b), float(midi_ui::kColMode), y);
-      g.DrawText(txt(13, theme::kMenuText, false), "×", float(midi_ui::kColDel), y);
-    }
-    if (m.count() == 0)
-      g.DrawText(txt(13, theme::kMenuText, false), "no bindings yet", float(midi_ui::kColSource),
-                 float(midi_ui::kTableY0));
+    struct Sink : GraphicsSink {
+      explicit Sink(IGraphics& graphics) : GraphicsSink{graphics} {}
+      void label(midi_ui::Box b, float size, std::uint32_t color, const char* value, bool bold, bool center) {
+        IText style = txt(size, theme::rgb(color), bold);
+        style.mAlign = center ? EAlign::Center : EAlign::Near;
+        const auto fitted = midi_ui::fitText(value, b.r - b.l, [&](const char* text) {
+          IRECT measured;
+          g.MeasureText(style, text, measured);
+          return measured.W();
+        });
+        g.DrawText(style, fitted.c_str(), IRECT(b.l, b.t, b.r, b.b));
+      }
+    } sink(g);
+    midi_ui::State state;
+    state.map = s_.midiStore ? &s_.midiStore->map() : nullptr;
+    state.device = s_.midi.inputDeviceName ? s_.midi.inputDeviceName() : "";
+    state.channel = s_.midi.channelFilter ? s_.midi.channelFilter() : 0;
+    state.octave = s_.midi.octaveShift ? s_.midi.octaveShift() : 0;
+    state.curve = s_.midi.velocityCurve ? s_.midi.velocityCurve() : 0;
+    state.offset = s_.midiListOffset;
+    state.armed = s_.learnArmed;
+    state.awaitTarget = s_.learnAwaitTarget;
+    state.editable = editable();
+    midi_ui::draw(sink, state, hoverX_, hoverY_);
+  }
+  void OnMouseOver(float x, float y, const IMouseMod&) override {
+    hoverX_ = x;
+    hoverY_ = y;
+    SetDirty(false);
+  }
+  void OnMouseOut() override {
+    hoverX_ = hoverY_ = -1;
+    SetDirty(false);
   }
   void OnMouseDown(float x, float y, const IMouseMod&) override {
-    if (s_.midiStore == nullptr) return;
-    const core::MidiMap& m = s_.midiStore->map();
-    const int v = static_cast<int>(std::floor((y - float(midi_ui::kTableY0 - 14)) / float(midi_ui::kRowH)));
-    if (v < 0 || v >= midi_ui::kVisibleRows) return;
-    const int row = s_.midiListOffset + v;
-    if (row < 0 || row >= int(m.count())) return;
-    const core::MidiBinding& b = m.at(std::uint32_t(row));
-    if (x >= float(midi_ui::kColDel - 10)) {
-      // Row ×: remove the binding.
-      if (s_.midiStore->unbind(b.key) && s_.midi.bindingsChanged) s_.midi.bindingsChanged();
-      const int maxOffset = int(m.count()) - midi_ui::kVisibleRows;  // after the removal
-      if (s_.midiListOffset > 0 && s_.midiListOffset > maxOffset) --s_.midiListOffset;
-    } else if (x >= float(midi_ui::kColMode - 10) && x < float(midi_ui::kColMode + 90) &&
-               b.targetKind == core::MidiTargetKind::parameter) {
-      // MODE cycles absolute -> REL 1 -> REL 2 -> REL 3.
-      core::MidiBinding edited = b;
-      edited.mode = static_cast<core::MidiInputMode>((static_cast<int>(b.mode) + 1) % 4);
-      if (s_.midiStore->bind(edited) && s_.midi.bindingsChanged) s_.midi.bindingsChanged();
-    }
-    GetUI()->SetAllControlsDirty();
-  }
-
- private:
-  EditorShared& s_;
-};
-
-// A small tab-styled button for the overlay (LEARN, CLOSE, paging, action chips).
-class MidiButtonControl : public IControl {
- public:
-  MidiButtonControl(EditorShared&, float x0, float y0, float x1, float y1, const char* label,
-                    std::function<void()> onClick, std::function<bool()> active)
-      : IControl(IRECT(x0, y0, x1, y1)), label_(label), click_(std::move(onClick)),
-        active_(std::move(active)) {}
-  void Draw(IGraphics& g) override {
-    GraphicsSink sink{g};
-    art::drawMenuTab(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, label_,
-                     active_ ? active_() : false, mMouseIsOver);
-  }
-  void OnMouseDown(float, float, const IMouseMod&) override {
-    if (click_) click_();
-    GetUI()->SetAllControlsDirty();
-  }
-
- private:
-  const char* label_;
-  std::function<void()> click_;
-  std::function<bool()> active_;
-};
-
-// A label + ◀ ▶ stepper for the rig settings (channel / octave / velocity).
-// names != nullptr: value indexes the name list. Else lo == "ANY", negatives plain,
-// positives with a leading + only when plusSign (octave yes, channel no).
-class MidiStepperControl : public IControl {
- public:
-  MidiStepperControl(EditorShared&, float y, const char* label, std::function<int()> get,
-                     std::function<void(int)> set, int lo, int hi, const char* const* names,
-                     bool plusSign)
-      : IControl(IRECT(float(midi_ui::kLeftX), y, float(midi_ui::kLeftX + 330), y + 26)),
-        label_(label), get_(std::move(get)), set_(std::move(set)), lo_(lo), hi_(hi),
-        names_(names), plusSign_(plusSign) {}
-  void Draw(IGraphics& g) override {
-    const int v = get_ ? get_() : 0;
-    char buf[16];
-    const char* text = buf;
-    if (names_ != nullptr) {
-      text = names_[std::clamp(v - lo_, 0, hi_ - lo_)];
-    } else if (v == lo_) {
-      text = "ANY";
-    } else if (v < 0 || !plusSign_) {
-      std::snprintf(buf, sizeof buf, "%d", v);
-    } else {
-      std::snprintf(buf, sizeof buf, "+%d", v);
-    }
-    g.DrawText(txt(13, theme::kMenuText, false), label_, mRECT.L, mRECT.B - 8);
-    g.DrawText(txt(14, theme::kAmber), "<", mRECT.L + 110, mRECT.B - 8);
-    g.DrawText(txt(13, theme::kMenuText, true), text, mRECT.L + 140, mRECT.B - 8);
-    g.DrawText(txt(14, theme::kAmber), ">", mRECT.L + 240, mRECT.B - 8);
-  }
-  void OnMouseDown(float x, float, const IMouseMod&) override {
-    const int v = get_();
-    int next = v;
-    if (x < mRECT.L + 130) {
-      next = v > lo_ ? v - 1 : hi_;  // wrap at the ends
-    } else if (x > mRECT.L + 230) {
-      next = v < hi_ ? v + 1 : lo_;
-    } else {
+    if (midi_ui::kClose.contains(x, y)) {
+      s_.showMidi(false);
+      GetUI()->SetAllControlsDirty();
       return;
     }
-    set_(next);
-    GetUI()->SetAllControlsDirty();
+    const int count = s_.midiStore ? static_cast<int>(s_.midiStore->map().count()) : 0;
+    s_.midiListOffset = midi_ui::pageOffset(s_.midiListOffset, count);
+    if (midi_ui::kPrevious.contains(x, y)) {
+      s_.midiListOffset = midi_ui::pageOffset(s_.midiListOffset - midi_ui::kVisibleRows, count);
+      SetDirty(false);
+      return;
+    }
+    if (midi_ui::kNext.contains(x, y)) {
+      s_.midiListOffset = midi_ui::pageOffset(s_.midiListOffset + midi_ui::kVisibleRows, count);
+      SetDirty(false);
+      return;
+    }
+    if (!editable()) return;
+    if (midi_ui::kLearn.contains(x, y)) {
+      s_.setLearnArmed(!s_.learnArmed, !s_.learnArmed);
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
+    for (int i = 0; i < 3; ++i) {
+      const int delta = midi_ui::decrement(i).contains(x, y)   ? -1
+                        : midi_ui::increment(i).contains(x, y) ? 1
+                                                               : 0;
+      if (!delta || !s_.midi.setRigSettings) continue;
+      int values[] = {s_.midi.channelFilter(), s_.midi.octaveShift(), s_.midi.velocityCurve()};
+      constexpr int low[] = {0, -36, 0}, high[] = {16, 36, 2};
+      values[i] += delta;
+      if (values[i] < low[i]) values[i] = high[i];
+      if (values[i] > high[i]) values[i] = low[i];
+      s_.midi.setRigSettings(values[0], values[1], values[2]);
+      SetDirty(false);
+      return;
+    }
+    if (s_.learnArmed && s_.learnAwaitTarget) {
+      for (int i = 0; i < 5; ++i)
+        if (midi_ui::action(i).contains(x, y)) {
+          s_.learnTargetIsAction = true;
+          s_.learnAction = midi_ui::kActions[i];
+          s_.setLearnArmed(true, false);
+          s_.learnArmSeq = s_.midi.messageSeq ? s_.midi.messageSeq() : 0;
+          GetUI()->SetAllControlsDirty();
+          return;
+        }
+    }
+    for (int i = 0; i < midi_ui::kVisibleRows && s_.midiListOffset + i < count; ++i) {
+      const auto binding = s_.midiStore->map().at(static_cast<std::uint32_t>(s_.midiListOffset + i));
+      bool changed = false;
+      if (midi_ui::remove(i).contains(x, y))
+        changed = s_.midiStore->unbind(binding.key);
+      else if (midi_ui::mode(i).contains(x, y) && binding.targetKind == core::MidiTargetKind::parameter) {
+        auto edited = binding;
+        edited.mode = static_cast<core::MidiInputMode>((static_cast<int>(binding.mode) + 1) % 4);
+        changed = s_.midiStore->bind(edited);
+      }
+      if (changed) {
+        s_.midiListOffset =
+            midi_ui::pageOffset(s_.midiListOffset, static_cast<int>(s_.midiStore->map().count()));
+        if (s_.midi.bindingsChanged) s_.midi.bindingsChanged();
+        GetUI()->SetAllControlsDirty();
+        return;
+      }
+    }
   }
 
  private:
-  const char* label_;
-  std::function<int()> get_;
-  std::function<void(int)> set_;
-  int lo_, hi_;
-  const char* const* names_;
-  bool plusSign_;
+  bool editable() const {
+    return s_.midiStore && s_.midiStore->loadOutcome() != host::MidiMapLoadOutcome::Malformed &&
+           s_.midiStore->loadOutcome() != host::MidiMapLoadOutcome::Unreadable;
+  }
+  EditorShared& s_;
+  float hoverX_ = -1, hoverY_ = -1;
 };
 
 // Full-panel click capture, mouse-enabled only while learn awaits a target (driven by
@@ -1547,74 +1473,6 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   shared.midiControls.clear();
   auto addMidi = [&](IControl* c) { g->AttachControl(c); shared.midiControls.push_back(c); };
   addMidi(new MidiOverlayControl(shared));
-  static const char* kCurveNames[] = {"LINEAR", "SOFT", "HARD"};
-  addMidi(new MidiStepperControl(shared, 1210, "CHANNEL",
-                                 [&] { return shared.midi.channelFilter ? shared.midi.channelFilter() : 0; },
-                                 [&] (int v) { if (shared.midi.setRigSettings)
-                                     shared.midi.setRigSettings(v, shared.midi.octaveShift(), shared.midi.velocityCurve()); },
-                                 0, 16, nullptr, false));
-  addMidi(new MidiStepperControl(shared, 1255, "OCTAVE",
-                                 [&] { return shared.midi.octaveShift ? shared.midi.octaveShift() : 0; },
-                                 [&] (int v) { if (shared.midi.setRigSettings)
-                                     shared.midi.setRigSettings(shared.midi.channelFilter(), v, shared.midi.velocityCurve()); },
-                                 -36, 36, nullptr, true));
-  addMidi(new MidiStepperControl(shared, 1300, "VELOCITY",
-                                 [&] { return shared.midi.velocityCurve ? shared.midi.velocityCurve() : 0; },
-                                 [&] (int v) { if (shared.midi.setRigSettings)
-                                     shared.midi.setRigSettings(shared.midi.channelFilter(), shared.midi.octaveShift(), v); },
-                                 0, 2, kCurveNames, false));
-  // LEARN arms the two-step bind (panel control -> hardware control); clicking it again cancels.
-  addMidi(new MidiButtonControl(shared, 432, 1352, 562, 1388, "LEARN",
-                                [&] {
-                                  if (shared.learnArmed) {
-                                    shared.setLearnArmed(false, false);
-                                    return;
-                                  }
-                                  if (shared.midiStore == nullptr ||
-                                      shared.midiStore->loadOutcome() == host::MidiMapLoadOutcome::Malformed ||
-                                      shared.midiStore->loadOutcome() == host::MidiMapLoadOutcome::Unreadable)
-                                    return;  // the file is unreadable; editing is disabled
-                                  shared.setLearnArmed(true, true);
-                                },
-                                [&] { return shared.learnArmed; }));
-  // Action chips (targets with no panel widget), clickable only while awaiting a target.
-  const struct { const char* label; core::MidiAction action; } kChips[] = {
-      {"CART PREV", core::MidiAction::cartridge_prev},
-      {"PRESET A", core::MidiAction::preset_load_a},
-      {"PRESET B", core::MidiAction::preset_load_b},
-      {"PRESET C", core::MidiAction::preset_load_c},
-      {"PRESET D", core::MidiAction::preset_load_d},
-  };
-  for (int i = 0; i < 5; ++i) {
-    const auto chip = kChips[i];
-    addMidi(new MidiButtonControl(shared, float(432 + i * 72), 1402, float(432 + i * 72 + 66), 1430, chip.label,
-                                  [&shared, chip] {
-                                    if (!(shared.learnArmed && shared.learnAwaitTarget)) return;
-                                    shared.learnTargetIsAction = true;
-                                    shared.learnAction = chip.action;
-                                    shared.setLearnArmed(true, false);
-                                    shared.learnArmSeq = shared.midi.messageSeq ? shared.midi.messageSeq() : 0;
-                                  },
-                                  [&] { return shared.learnArmed && shared.learnAwaitTarget; }));
-  }
-  // Table paging.
-  addMidi(new MidiButtonControl(shared, 1880, 1452, 1910, 1476, "<",
-                                [&] {
-                                  shared.midiListOffset = std::max(0, shared.midiListOffset - midi_ui::kVisibleRows);
-                                },
-                                [&] { return shared.midiListOffset > 0; }));
-  addMidi(new MidiButtonControl(shared, 1932, 1452, 1962, 1476, ">",
-                                [&] {
-                                  const int count = shared.midiStore ? int(shared.midiStore->map().count()) : 0;
-                                  if (shared.midiListOffset + midi_ui::kVisibleRows < count)
-                                    shared.midiListOffset += midi_ui::kVisibleRows;
-                                },
-                                [&] {
-                                  const int count = shared.midiStore ? int(shared.midiStore->map().count()) : 0;
-                                  return shared.midiListOffset + midi_ui::kVisibleRows < count;
-                                }));
-  addMidi(new MidiButtonControl(shared, 1900, 1122, 1978, 1152, "CLOSE",
-                                [&] { shared.showMidi(false); }, {}));
   shared.showMidi(false);
 
   g->EnableMouseOver(true);  // hover highlights and knob value readouts

@@ -924,14 +924,17 @@
 **T15.1 MIDI 设置界面** ⏳
 - 步骤：
   1. 点 DRONE VOICES 右边、MUTE 正下方的 **MIDI** 按钮。
-  2. 看界面：深色面板盖住键盘区，左边 INPUT / CHANNEL / OCTAVE / VELOCITY，右边绑定列表（初次为空）。
+  2. 看界面：暖色面板盖住键盘区；顶部 INPUT，左边 CHANNEL / TRANSPOSE / VELOCITY 和 LEARN，右边每页四条绑定（初次显示引导）。
   3. 点 **CLOSE** 关掉；再打开，按 Esc 关掉。
-- 期望：开合正常；INPUT 显示 Preferences 里选的输入设备名（没选显示 none）。
+- 期望：开合正常；INPUT 显示 Preferences 里选的输入设备名（没选提示 Choose an input in Preferences）。
+- 缩放窗口后检查标题、设置值、行尾按钮、底部提示不截断或重叠；长设备名应带省略号，字号不被缩小。
+- 只点设置两侧的 < / > 会改变数值，点 CHANNEL 等标签不会误改；TRANSPOSE 的最低值应显示 -36 st。
+- 建立五条以上绑定后检查分页；Learn 完成后应自动显示刚绑定的行，删除最后一页唯一一行后回到前一页。
 
 **T15.2 Learn 绑定一个旋钮** ⏳（需要 MIDI 键盘）
 - 准备：Preferences 里 MIDI Input 选到你的键盘；只听 VCO A。
 - 步骤：
-  1. 打开 MIDI 设置，点 **LEARN**（变琥珀色）。
+  1. 打开 MIDI 设置，点 **+ LEARN A CONTROL**（变红色 CANCEL LEARN，底部显示操作提示）。
   2. 点面板上 FILTER 一排左边的 **FREQ** 旋钮。
   3. 在键盘上转动一个旋钮（如 MPK 的 K1）。
 - 期望：
@@ -942,7 +945,7 @@
 **T15.3 相对模式、解绑、动作绑定** ⏳（需要 MIDI 键盘）
 - 步骤：
   1. 点 T15.2 那行的 MODE，从 ABS 换成 REL 1（MPK 旋钮在硬件上设成 Relative 模式时用）。
-  2. 点行尾的 × 删掉这条绑定。
+  2. 点行尾的 x 删掉这条绑定。
   3. LEARN → 点 DRONE VOICES 的键 **1** → 按键盘的一个打击垫。
 - 期望：
   - REL 1 下拧动按格增减、不跳值。
@@ -951,7 +954,7 @@
 
 **T15.4 通道过滤、八度、力度曲线与断电保存** ⏳（需要 MIDI 键盘）
 - 步骤：
-  1. MIDI 设置里 OCTAVE 调到 +12，弹几个音。
+  1. MIDI 设置里 TRANSPOSE 调到 +12 st（st = 半音），弹几个音。
   2. VELOCITY 选 SOFT，用同样的力度弹，对比 LINEAR。
   3. CHANNEL 设成一个键盘不在用的通道，弹琴；设回 ANY。
   4. 绑定一两条后退出应用重开。
@@ -971,7 +974,7 @@
 - LEARN 一个打击垫到 **BLEND**：轻击 / 重击应直接给出不同的面板值，不必先扫过旧值。此项检查力度映射，不以音量大小判定。
 - 若控制器有发送 CC 127 / 0 的按钮或可设为 CC 的打击垫：绑定 **MUTE**，按下只切换一次、松开不切换；再按才切换回来。
 - 若有延音踏板：LEARN 选好目标后只踩 / 抬踏板，不应生成 CC64 绑定；再动一个普通旋钮应完成 Learn。
-- 测完退出重开，确认绑定、CHANNEL / OCTAVE / VELOCITY 设置仍在；清除本次临时测试绑定。
+- 测完退出重开，确认绑定、CHANNEL / TRANSPOSE / VELOCITY 设置仍在；清除本次临时测试绑定。
 
 ## 还没测的（⏳）
 
