@@ -37,6 +37,9 @@ class MidiInputQueue {
     const auto end = head_.load(std::memory_order_acquire);
     while (t != end) {
       const auto entry = slots_[t % kCapacity];
+      // A switch during drain belongs to the NEXT block's reset. Leave its
+      // messages queued rather than consuming a new port's first note here.
+      if (epoch_.load(std::memory_order_acquire) != epoch) break;
       ++t;
       tail_.store(t, std::memory_order_release);
       if (entry.epoch == epoch) receive(entry.message);
