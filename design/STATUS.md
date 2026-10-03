@@ -62,14 +62,14 @@ _Last updated: 2026-10-03._
 Mixer channel order, the 39 effector programs and their X/Y/Z roles, output voltage
 ranges, normalled connections and the keyboard ranges all match the manual. Not given by
 the manual, so still guesses: arp/seq clock multiply/divide ratios (not applied yet) and the
-exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
+exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco
+scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. Small fixes from the PR #80–#90 review, one focused PR each: cables drawn over the
-   keyboard menu + drops on hidden jacks + ENCODER DIRECTION (T12.19); SCALE / ROOT never
-   reaching the quantiser, plus its C-vs-A reference and clamped range (T12.4); momentary
-   CC buttons on on/off switches and pickup's ignored first message; MIDI MUTE indicator
-   refresh and the MIDI input-close reset scope (MANUAL_TESTS MIDI 待办 #10 / #14).
+1. Small fixes from the PR #80–#90 review, one focused PR each: SCALE / ROOT reaching the
+   quantiser (this PR, T12.4); momentary CC buttons on on/off switches and pickup's ignored
+   first message; MIDI MUTE indicator refresh and the MIDI input-close reset scope
+   (MANUAL_TESTS MIDI 待办 #10 / #14).
 2. External MIDI for the MPK MINI IV: REL, CC-button and pedal checks, clock (MIDI START
    currently also sends all-notes-off), SINGLE / TWIN / SPLIT routing.
 3. Remaining manual checks alongside: device DRY outputs, PREAMP override, Windows.

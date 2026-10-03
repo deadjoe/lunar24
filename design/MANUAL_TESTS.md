@@ -654,9 +654,36 @@
   - HOLD 时松键继续播放。
   - 切回 KEYBOARD 时声音停下，不卡住。
 
-**T12.4 SCALE / ROOT** ✅
-- 步骤：切换 **SCALE**，弹几个键；再改 **ROOT**。
-- 期望：音被"吸"到所选音阶上；ROOT 改变音阶的起始音。
+**T12.4 SCALE / ROOT** ✅（PR-B，2026-10-03 Mac 实测 1–9 步全部通过；第 8 步按补上接线的新写法复测通过）
+- 界面位置：点键盘区中间的红色大旋钮打开 KEYBOARD MENU，顶部第一个页签 **PLAY**。PLAY 页有三张卡片：
+  - 左边 **KEYBOARD** 卡：上面一行 **PLAY**（SINGLE / TWIN / SPLIT），下面一行 **MODE**（KEYBOARD / ARPEGGIATOR / SEQUENCER）。
+  - 中间 **QUANTISER** 卡：上面是 **SCALE**，一条 `<  音阶名  >`，右上角小字 `n / 19`；点 `>` 下一个、`<` 上一个。下面是 **ROOT**，一个只有一个八度的小钢琴（C 到 B），点哪个琴键就选哪个，选中的变蓝，右上角显示字母。
+  - 右边 CLOCK 卡（本项不用）。
+  - SCALE 的顺序：1 SEMITONES、2 IONIAN（大调）、3 DORIAN、4 PHRYGIAN、5 LYDIAN、6 MIXOLYDIAN、7 AEOLIAN（小调）、8 LOCRIAN、9 BLUES-MAJOR、10 BLUES-MINOR、11 PENTATONIC-MAJOR、12 PENTATONIC-MINOR、13 FOLK、14 JAPANESE、15 GAMELAN、16 GYPSY、17 ARABIAN、18 FLAMENCO、19 WHOLE-TONE。
+- 准备：
+  1. 菜单右下角 **RESET PANEL** 点两下（4 秒内），菜单会关掉。
+  2. 键盘区右边 **DRONE VOICES** 的 6 个键全部点灭（LED 灭），只留键盘的声音。
+  3. 再点红色大旋钮打开菜单，确认在 PLAY 页，PLAY = **SINGLE**、MODE = **KEYBOARD**（都是蓝色）。
+  4. 菜单开着就能用电脑键盘弹，菜单盖住了金属触摸板也没关系。按键没声音时，先在菜单空白处点一下再弹。
+  5. 电脑键盘一个八度：A = C，W = C#，S = D，E = D#，D = E，F = F，T = F#，G = G，Y = G#，H = A，U = A#，J = B，K = 高八度 C。下面「依次弹」都是指按顺序弹 A W S E D F T G Y H U J K 这 13 个键，一次一个。
+- 步骤与期望：
+  1. SCALE 显示 **SEMITONES**（1 / 19）。依次弹：13 个键每个音都不一样，一个半音一个半音往上走。
+  2. SCALE 点 `>` 一次，显示 **IONIAN**（2 / 19）；ROOT 点最左边的白键 **C**。依次弹：只有 do re mi fa sol la si do 这 8 个音。每个黑键（W、E、T、Y、U）和它左边的白键同音，听起来是"同一个音按两次"。
+  3. ROOT 点白键 **A**（右数第二个白键）。依次弹：变成 A 大调；W（C#）、Y（G#）现在是自己的音了；S（D）和 E（D#）同音。A（C）被吸到它下面的 B，和 J（B）是同一个音名，但低一个八度。
+  4. SCALE 点 `>` 5 次到 **AEOLIAN**（7 / 19），ROOT 保持 A。依次弹：结果和第 2 步**完全一样**（A 小调和 C 大调用的是同一组音），说明 SCALE 和 ROOT 一起决定音。
+  5. SCALE 继续点 `>` 到 **BLUES-MAJOR**（9 / 19）：名字后面显示 **(NOT MODELLED)**；依次弹，和第 1 步一样 13 个音都不同（手册没给这些音阶的音，所以原样通过）。FOLK、JAPANESE、GAMELAN 等也一样。
+  6. SCALE 点 `<` 回到 **IONIAN**（2 / 19），ROOT 点 **C**。MODE 点 **ARPEGGIATOR**，同时按住 A、W、S 三个键：琶音反复出的只有 C 和 D 两个音高（C# 被吸到 C）。松开，MODE 点回 **KEYBOARD**。
+  7. 按 3 次 Z（屏幕 OCT 显示 -3），依次弹：仍是 do re mi……，没有一串键卡在同一个音上；按 6 次 X 到 OCT +3 再弹一遍，同样。按 3 次 Z 回到 0。有 MIDI 键盘的话，弹最低和最高的几个键，也都在音阶上。
+  8. 左右分开：SPLIT 时右半边不再驱动 VCO A，要先接线让它出声（同 T12.7）：
+     - 关掉菜单。VOICE MIXER 只留 **VCO A** 和 **VCO B**（其它 VOL 拖到最左）。
+     - 接线：键盘区右边一组的 ⊓ **GATE R**（第 1 个）→ envelope B 的 **gate**；右边一组的 ↓ **PRESSURE**（第 2 个）→ VCO B 的 **1v/oct**（SPLIT 时 PRESSURE 插孔输出右半边的音高）。
+     - 打开菜单，PLAY 点 **SPLIT**。标题栏右边（CLOSE 左边）出现 **EDITING：LEFT C-F | RIGHT F#-B**。
+     - 点 **LEFT C-F**，SCALE 点 `<` 到 **SEMITONES**。
+     - 点 **RIGHT F#-B**，SCALE 一直点 `>` 到最后一个 **WHOLE-TONE**（19 / 19），ROOT 点 **C**。QUANTISER 卡右上角显示蓝色小标签 RIGHT。
+     - 弹 A W S E D F（左半边 C 到 F）：6 个音都不同（左边不受影响）。
+     - 弹 T G Y H U J（右半边 F# 到 B）：两两同音，T=G、Y=H、U=J，只有 3 个不同的音（全音音阶 F# G# A#）。
+     - 弹完把 PLAY 点回 **SINGLE**，拔掉这两根线。
+  9. SCALE 设成 IONIAN、ROOT 设成 D，⌘Q 退出，再打开程序：打开菜单 PLAY 页仍是 IONIAN / D，依次弹仍是 D 大调：W（C#）和 T（F#）是自己的音；A（C）被吸到它下面的 B，比 J（B）低一个八度。
 
 **T12.5 16 步音序器（SEQ STEPS 页）** 🔧 (#68)
 - 步骤：

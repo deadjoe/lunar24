@@ -2473,6 +2473,8 @@ class SynthRuntime {
     const std::int32_t idx = keyboard_scalar_index(id);
     if (idx < 0) return;
     kbdState_.keyboardScalarRight[static_cast<std::size_t>(idx)] = v;
+    if (id == ParameterId::keyboard_quantise_load_scale)
+      kbdState_.keyboardScaleEditorR = scale_editor_for_selector(v);
     applyKeyboardState(kbdState_);
   }
 
@@ -2514,6 +2516,8 @@ class SynthRuntime {
       kbdState_.keyboardSettings.pressureBehaviour = static_cast<std::uint8_t>(v);
     if (id == ParameterId::keyboard_pressure_output)
       kbdState_.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(v);
+    if (id == ParameterId::keyboard_quantise_load_scale)
+      kbdState_.keyboardScaleEditor = scale_editor_for_selector(v);
     if (id == ParameterId::keyboard_clock_bpm) kbdExtClock_ = false;
     applyKeyboardState(kbdState_);
     return true;

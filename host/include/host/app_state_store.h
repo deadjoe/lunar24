@@ -483,6 +483,7 @@ class AppStateStore {
     }
 
     lunar24::core::open_untouched_seq_gates(migrated);
+    lunar24::core::load_unloaded_scale_editors(migrated);
     lastValidation_ = lunar24::core::validate_device_state(migrated);
     if (lastValidation_.family == lunar24::core::ValidationFamily::keyboard_live_invalid &&
         lastValidation_.field == 9003u) {

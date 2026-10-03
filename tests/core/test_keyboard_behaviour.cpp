@@ -46,25 +46,61 @@ static bool near(double a, double b, double eps = 1e-6) {
 
 // ---------------------------------------------------------------- quantiser ----
 
+// Pitch CV for a note `semitones` above A3: every keyboard source puts 0 V on A3.
+static double st(double semitones) { return semitones / 12.0; }
+
 static void quantise_absolute_anchors() {
-  // Ionian @ C: notes {0,2,4,5,7,9,11}. A 1 V/oct pitch CV = 12 semitones.
-  // Exact, deterministic (discrete per-note decision).
-  CHECK_TRUE(near(core::quantize_pitch(0.0, core::kScaleIonian, 0), 0.0));
-  // 1 semitone below the 2nd scale note snaps DOWN to C.
-  CHECK_TRUE(near(core::quantize_pitch(1.0 / 12.0, core::kScaleIonian, 0), 0.0));
-  // 2 semitones is an in-scale note -> stays.
-  CHECK_TRUE(near(core::quantize_pitch(2.0 / 12.0, core::kScaleIonian, 0), 2.0 / 12.0));
-  // Two octaves up (24 semitones) -> octave-wrapped C.
-  CHECK_TRUE(near(core::quantize_pitch(2.0, core::kScaleIonian, 0), 2.0));
+  // Ionian @ C = C major {C D E F G A B}. 0 V is A, so C is +3 semitones (exact,
+  // deterministic: a discrete per-note decision).
+  CHECK_TRUE(near(core::quantize_pitch(st(0), core::kScaleIonian, 0), st(0)));    // A stays A
+  CHECK_TRUE(near(core::quantize_pitch(st(3), core::kScaleIonian, 0), st(3)));    // C stays C
+  CHECK_TRUE(near(core::quantize_pitch(st(2), core::kScaleIonian, 0), st(2)));    // B stays B
+  // Out-of-scale notes exactly between two scale notes go DOWN: A# -> A, C# -> C, D# -> D.
+  CHECK_TRUE(near(core::quantize_pitch(st(1), core::kScaleIonian, 0), st(0)));
+  CHECK_TRUE(near(core::quantize_pitch(st(4), core::kScaleIonian, 0), st(3)));
+  CHECK_TRUE(near(core::quantize_pitch(st(6), core::kScaleIonian, 0), st(5)));
+  // A whole chromatic octave from A: every output is a C-major note (the old C/A mix-up
+  // played A major here: C -> B, F -> E, G -> F#).
+  const int cMajorFromA[12] = {0, 0, 2, 3, 3, 5, 5, 7, 8, 8, 10, 10};
+  for (int i = 0; i < 12; ++i)
+    CHECK_TRUE(near(core::quantize_pitch(st(i), core::kScaleIonian, 0), st(cMajorFromA[i])));
+  // The whole range, not just +-2 octaves: far notes are quantised, never clamped.
+  CHECK_TRUE(near(core::quantize_pitch(st(-57), core::kScaleIonian, 0), st(-57)));  // MIDI 0 = C-1
+  CHECK_TRUE(near(core::quantize_pitch(st(-42), core::kScaleIonian, 0), st(-43)));  // D#0 -> D0
+  CHECK_TRUE(near(core::quantize_pitch(st(70), core::kScaleIonian, 0), st(70)));    // MIDI 127 = G9
+  CHECK_TRUE(near(core::quantize_pitch(st(50), core::kScaleIonian, 0), st(50)));    // B7
+  CHECK_TRUE(near(core::quantize_pitch(st(49), core::kScaleIonian, 0), st(48)));    // A#7 -> A7
   // Microtonal (all notes off) -> passthrough, no quantise.
-  CHECK_TRUE(near(core::quantize_pitch(1.0 / 12.0, core::kMicrotonalScaleMask, 0), 1.0 / 12.0));
-  CHECK_TRUE(near(core::quantize_pitch(2.0 / 12.0, core::kMicrotonalScaleMask, 0), 2.0 / 12.0));
+  CHECK_TRUE(near(core::quantize_pitch(st(1), core::kMicrotonalScaleMask, 0), st(1)));
+  CHECK_TRUE(near(core::quantize_pitch(st(1.3), core::kMicrotonalScaleMask, 0), st(1.3)));
   // Chromatic (all 12) -> snaps to the nearest semitone grid.
-  CHECK_TRUE(near(core::quantize_pitch(1.9 / 12.0, core::kChromaticScaleMask, 0), 2.0 / 12.0));
-  CHECK_TRUE(near(core::quantize_pitch(0.4 / 12.0, core::kChromaticScaleMask, 0), 0.0));
-  // Root offset: root D (=2) transposes the whole scale up two semitones. The
-  // scale note "2 semitones above D" is F#/4; an input at that pitch stays put.
-  CHECK_TRUE(near(core::quantize_pitch(4.0 / 12.0, core::kScaleIonian, 2), 4.0 / 12.0));
+  CHECK_TRUE(near(core::quantize_pitch(st(1.9), core::kChromaticScaleMask, 0), st(2)));
+  CHECK_TRUE(near(core::quantize_pitch(st(0.4), core::kChromaticScaleMask, 0), st(0)));
+  // Root offset: root D (=2) is D major {D E F# G A B C#}: C (+3) -> B (+2) (tie, down),
+  // C# (+4) stays, F (+8) -> E (+7) (tie, down), F# (+9) stays.
+  CHECK_TRUE(near(core::quantize_pitch(st(3), core::kScaleIonian, 2), st(2)));
+  CHECK_TRUE(near(core::quantize_pitch(st(4), core::kScaleIonian, 2), st(4)));
+  CHECK_TRUE(near(core::quantize_pitch(st(8), core::kScaleIonian, 2), st(7)));
+  CHECK_TRUE(near(core::quantize_pitch(st(9), core::kScaleIonian, 2), st(9)));
+  // Root A (=9), minor pentatonic {A C D E G}: A stays, B (+2) -> C (nearer), A# (+1) -> A.
+  CHECK_TRUE(near(core::quantize_pitch(st(0), core::kScalePentatonicMinor, 9), st(0)));
+  CHECK_TRUE(near(core::quantize_pitch(st(2), core::kScalePentatonicMinor, 9), st(3)));
+  CHECK_TRUE(near(core::quantize_pitch(st(1), core::kScalePentatonicMinor, 9), st(0)));
+  CHECK_TRUE(near(core::quantize_pitch(st(-2), core::kScalePentatonicMinor, 9), st(-2)));  // G
+}
+
+// SCALE writes this note set into the scale editor. SEMITONES and the scales the manual
+// only names write an empty editor (notes pass through).
+static void scale_selector_loads_the_editor() {
+  CHECK_EQ(core::scale_editor_for_selector(0.0), core::kMicrotonalScaleMask);   // semitones
+  CHECK_EQ(core::scale_editor_for_selector(1.0), core::kScaleIonian);
+  CHECK_EQ(core::scale_editor_for_selector(6.0), core::kScaleAeolian);
+  CHECK_EQ(core::scale_editor_for_selector(10.0), core::kScalePentatonicMajor);
+  CHECK_EQ(core::scale_editor_for_selector(18.0), core::kScaleWholeTone);
+  for (int unresolved : {8, 9, 12, 13, 14, 15, 16, 17})
+    CHECK_EQ(core::scale_editor_for_selector(unresolved), core::kMicrotonalScaleMask);
+  CHECK_EQ(core::scale_editor_for_selector(-1.0), core::kMicrotonalScaleMask);
+  CHECK_EQ(core::scale_editor_for_selector(19.0), core::kMicrotonalScaleMask);
 }
 
 static void root_note_and_scale_table() {
@@ -346,6 +382,7 @@ static void side_read_bypass_produces_divergent_stream() {
 }
 
 int main() {
+  scale_selector_loads_the_editor();
   quantise_absolute_anchors();
   root_note_and_scale_table();
   portamento_legato_decision_and_glide();
