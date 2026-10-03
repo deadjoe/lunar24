@@ -21,7 +21,7 @@
 | 电脑键盘弹琴 | 先点一下面板。A S D F G H J K L ; = 白键，W E T Y U O P = 黑键；Z / X = 降 / 升八度（蓝色小屏显示 OCT） |
 | 键盘菜单 | 点键盘区中间的红色大旋钮打开；右上角 CLOSE 或 Esc 关闭 |
 | 恢复出厂 | 键盘菜单右下角 **RESET PANEL**，点一次变成 CLICK TO CONFIRM，4 秒内再点一次 |
-| 静音 | DRONE VOICES 右边的 **MUTE** 按钮：所有输出以约 10 ms 淡出静音，再点恢复；鼠标操作时亮琥珀色光圈（MIDI 触发的显示问题见 MIDI 待办） |
+| 静音 | DRONE VOICES 右边的 **MUTE** 按钮：所有输出以约 10 ms 淡出静音，再点恢复；静音时亮琥珀色光圈（MIDI 绑定触发时也一样） |
 | 音频设备 / 麦克风 | 屏幕顶部菜单栏 Lunar 24 → Preferences…（⌘,） |
 
 ### 测试常用准备
@@ -976,6 +976,25 @@
 - 期望：切掉的瞬间声音停止（松不松手都不应再响）。再把 MIDI Input 切回键盘，弹奏恢复正常。
 - 备注：直接拔 USB 线的热拔场景目前还没有检测机制（RtMidi 不支持设备移除通知），拔线造成的卡音要切一次输入设备才会清；这是已知缺口。
 
+**T14.3 关闭 MIDI 输入只停 MIDI 的音，电脑键盘的琶音继续** ✅（PR-D，2026-10-03 Mac + MPK MINI IV：B 通过；A 第一次点 OK 后"轰"一声琶音停止，修掉 OK 重开音频后复测：选 off 和点 OK 时琶音都继续，没有轰响）
+- 准备：MPK 切到测试用预设；Preferences 里 MIDI Input = MPK Mini IV MIDI Port。RESET PANEL（菜单右下角点两下）；DRONE VOICES 6 个键全部点灭。
+- A. 电脑键盘的琶音不受影响（这是修复的重点）：
+  1. 点红色大旋钮打开键盘菜单。PLAY 页左边 MODE 点 **ARPEGGIATOR**；再点顶部 **ARP** 页签，点亮左上角的 **HOLD**（LED 亮）。点 CLOSE 关掉菜单。
+  2. 电脑键盘同时按下 A、F、H 三个键，再全部松开：琶音一直循环 C、F、A。
+  3. 琶音还在响的时候，⌘, 打开 Preferences，把 MIDI Input 切成 **off**，再点 **OK**。
+  - 期望：选 off 时和点 OK 后，**琶音都继续循环 C、F、A，不停，也没有"轰"的一声**。（修复前选 off 就会全停；第一版修复后点 OK 会重开音频而停掉。）
+  4. 收尾：Preferences 把 MIDI Input 切回 MPK Mini IV MIDI Port；打开菜单，ARP 页关掉 HOLD（琶音停下），PLAY 页 MODE 点回 **KEYBOARD**。
+- B. MIDI 自己的音照样会停（确认修复没把这点弄坏，同 T14.2）：
+  1. 在 MPK 上按住一个键不放，声音一直响。
+  2. 保持按住，⌘, 打开 Preferences，把 MIDI Input 切成 **off**，点 OK。
+  - 期望：**声音立即停**，手还按着也不响。
+  3. 把 MIDI Input 切回 MPK Mini IV MIDI Port，MPK 弹奏恢复正常。
+
+**T14.4 MIDI 切换 MUTE 时按钮跟着亮灭** ✅（PR-D，2026-10-03 Mac + MPK MINI IV 通过）
+- 准备：Learn 一个打击垫到 **MUTE**（MIDI CONTROL → + LEARN A CONTROL → 点 MUTE 按钮 → 敲垫子）。
+- 步骤：敲这个垫子几次。
+- 期望：每敲一下声音静音 / 恢复，同时面板上 MUTE 按钮的琥珀色光圈**立即**跟着亮 / 灭（以前要把鼠标移过去才更新）。测完删掉这个绑定。
+
 ### 15. MIDI 设置与绑定
 
 2026-10-03 汇总：macOS（MBP M1 Max）+ MPK MINI IV。T15.5 / T15.6 中具备条件的项目先在重设计前的界面上通过；随后用 `2a5991a` 的 CI macOS 构建复测新界面（`7e9d803` + `2a5991a`）：布局、字体、分页和点击范围正常，左侧裁字（#4）和删除图标 x（#5）确认已修复；`2a5991a` 的细节（禁用按钮描边、Learn 状态文字红色、Esc 关闭后悬停高亮清除）真机确认。未测项见各条标注。
@@ -1029,7 +1048,7 @@
   1. CHANNEL = ANY，按住一个琴键；改成键盘不使用的通道，再松键。原来的音应释放；新按下的键不发声。恢复 ANY 后弹奏正常。
   2. LEARN → 点 MUTE → 按住一个琴键，等绑定出现在列表后再松开。第一次按下可能仍作为演奏音，但松开后必须停止。随后按此键只切换 MUTE，松开不再切换。测完删除绑定，恢复 MUTE 关闭。
   3. 持续弹奏时，在 Preferences 把 MIDI Input 切成 off。不得残留持续音；切回键盘后正常弹奏。如果有延音踏板，再用踩住踏板的音重复通道切换，抬踏板后应释放。
-  4. MIDI Input 已是 off 时，用键盘 MODE = ARPEGGIATOR、HOLD（ARP 页）保持一个正在运行的琶音，再打开 Preferences，保持 off、不改任何设置，直接点 **OK**，不要点 Apply。仅重复选择 off 不应停音或重启琶音；测完关闭 HOLD、恢复 MODE = KEYBOARD。另测 macOS virtual input → off：MIDI 音符应释放，但鼠标保持的琶音不应被清掉；后者本次失败，见 MIDI 待办 #14。
+  4. MIDI Input 已是 off 时，用键盘 MODE = ARPEGGIATOR、HOLD（ARP 页）保持一个正在运行的琶音，再打开 Preferences，保持 off、不改任何设置，直接点 **OK**，不要点 Apply。仅重复选择 off 不应停音或重启琶音；测完关闭 HOLD、恢复 MODE = KEYBOARD。另测 macOS virtual input → off：MIDI 音符应释放，但鼠标保持的琶音不应被清掉；后者曾失败（MIDI 待办 #14），PR-D 已修，复测见 T14.3。
 
 **T15.6 映射数值与动作** 部分通过（分档开关、pad 力度到 BLEND、保存通过；pad → MUTE 学成 NOTE 40 / CH 10，每按一次切换一次；REL、CC 127/0 动作（MPK pad 发的是音符）、CC64 防误学未测）
 - LEARN 一个硬件旋钮到 VCO A 的 **oct+3** 开关，保持 ABS，来回扫过全程。面板开关和实际音高应一致地按档变化，不得只动图形而声音不变。
@@ -1070,8 +1089,8 @@
 
 | 项目 | 核实结果与下一步 |
 |---|---|
-| #10 · 中：MIDI MUTE 按钮不刷新 | 声音切换正确；MUTE 状态变化未触发按钮重画，待修。新 MIDI 浮层未修复此问题。 |
-| #14 · 中：virtual input → off 误停鼠标琶音 | 关闭活动输入的 reset 会清除两侧键盘的演奏状态（含鼠标/电脑键盘的持音、琶音及压力状态），并非只释放 MIDI 音符；不清面板参数或接线。待缩小重置范围；与已通过的 off → off 区分。 |
+| #10 · 中：MIDI MUTE 按钮不刷新 | PR-D 已修：MUTE 状态一变面板就重画。复测见 T14.4。 |
+| #14 · 中：virtual input → off 误停鼠标琶音 | PR-D 已修：关闭 / 切换 MIDI 输入时只释放 MIDI 自己按住或踏板保持的音，并让弯音轮归零；鼠标 / 电脑键盘的音和琶音不受影响（事件队列满时才退回全部停音的保护）。复测见 T14.3。 |
 | #1 / #2：设备发现和默认选择 | 列表仅启动时枚举，运行中插入设备尚不刷新。启动时输入为未设置或 off，会尝试选第一个真实设备，连保存的 off 也会被覆盖；这是当前限制，不是已验证的 off 保存承诺。 |
 | #3 / #6 / #15：交互反馈缺口 | MIDI 弹奏不点亮屏幕键盘；ABS 等待拾取无提示；CHANNEL 会过滤 Learn 输入且无提示。Learn 前先确认 CHANNEL = ANY 或设备通道。RESET PANEL 保留 MIDI 配置，见 DECISIONS。 |
 | #7：无限旋钮端点空转 | 原因未确认。用 MIDI Monitor 记录到端点后继续转、再反转的原始 CC 值，区分控制器仍发送端点值与软件拾取/相对解码问题；暂不归因于 MPK 硬件。 |
@@ -1086,7 +1105,7 @@
   - 实测：用户预设下打击垫切成 CC# 后，学到的是 `CC 36 / CH 1`（CC 走通道 1，不是打击垫音符用的通道 10）。
   - 手册没写 Rel 模式用哪种相对编码，测 REL 时在 MODE 里轮流试 REL 1 / 2 / 3，哪种方向和速度正确就用哪种。
   - 手册只写了 MPK 的琶音器能**接收**外部时钟（Clock = Ext），没写它会往外发 MIDI 时钟；用 MPK 驱动 Lunar 24 的琶音 / 音序器时钟可能不行，需要实测或用 DAW 发时钟。
-- **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效；Apply 即使没有改设置，也会重开音频并重置引擎。因此 T15.5 第 4 步改为“不改设置直接 OK”；不要把 Apply 造成的重置当作 MIDI 输入关闭缺陷。改变设置后 OK 也可能应用音频变化，观察输入切换时先不点 OK / Apply。
+- **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效。PR-D 起，音频设置（设备、采样率、缓冲、声道）没变时，OK / Apply 不再重开音频：以前只改 MIDI 输入点 OK 也会重开音频、重建引擎，琶音和按住的音被清掉，还会"轰"一声（2026-10-03 T14.3 实测发现）。音频设置变了时，OK / Apply 照旧重开音频，这时琶音停下是正常的。
 - **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A，其它九路 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；滤波器等下游处理可有短暂衰减，不要求逐采样立即归零。若仍有长尾，保留接线和设置截图、录音再定位。默认同时开启的 VCO B 或直送 PREAMP 的振荡源不能用于此项隔离。
 - **MUTE 尾音（#11）**：MUTE 只淡出输出，不停止演奏或效果处理；解除时能听到静音期间音符的剩余尾音，属于既定行为，见 DECISIONS。
 
