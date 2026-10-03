@@ -20,12 +20,13 @@ struct Box {
 };
 inline constexpr Box kBounds{410, 1112, 1990, 1482};
 inline constexpr Box kClose{1846, 1126, 1966, 1166};
-inline constexpr Box kLearn{434, 1358, 788, 1402};
+inline constexpr Box kLearn{434, 1364, 788, 1404};
 inline constexpr Box kPrevious{1722, 1430, 1770, 1470};
 inline constexpr Box kNext{1918, 1430, 1966, 1470};
 inline constexpr int kVisibleRows = 4;
 inline constexpr float kTableY = 1204, kRowH = 50;
-inline constexpr Box setting(int i) { return {434, 1190.f + i * 54, 788, 1238.f + i * 54}; }
+inline constexpr int kSettingCount = 4;  // CHANNEL, TRANSPOSE, VELOCITY, SPLIT
+inline constexpr Box setting(int i) { return {434, 1186.f + i * 44, 788, 1226.f + i * 44}; }
 inline constexpr Box decrement(int i) {
   const auto r = setting(i);
   return {594, r.t + 2, 638, r.b - 2};
@@ -57,8 +58,14 @@ struct State {
   const core::MidiMap* map = nullptr;
   std::string device;
   int channel = 0, octave = 0, curve = 0, offset = 0;
+  int split = core::kMidiDefaultSplitNote;  // MIDI note: TWIN / SPLIT right side starts here
   bool armed = false, awaitTarget = false, editable = true;
 };
+// MIDI note name with octave, middle C (60) = C4.
+inline std::string noteName(int note) {
+  static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+  return std::string(names[((note % 12) + 12) % 12]) + std::to_string(note / 12 - 1);
+}
 inline int pageOffset(int offset, int count) {
   return std::clamp(offset / kVisibleRows, 0, std::max(0, (count - 1) / kVisibleRows)) * kVisibleRows;
 }
@@ -143,17 +150,18 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   label({914, 1128, 1816, 1164}, 19, kWhite,
         st.device.empty() ? "Choose an input in Preferences" : asciiText(st.device), true);
   button(kClose, "CLOSE", true);
-  rect({810, 1190, 812, 1402}, kRule, 0);
-  const char* labels[] = {"CHANNEL", "TRANSPOSE", "VELOCITY"};
+  rect({810, 1186, 812, 1404}, kRule, 0);
+  const char* labels[] = {"CHANNEL", "TRANSPOSE", "VELOCITY", "SPLIT"};
   const char* curves[] = {"LINEAR", "SOFT", "HARD"};
-  char values[3][24];
+  char values[kSettingCount][24];
   if (st.channel == 0)
     std::snprintf(values[0], sizeof(values[0]), "ANY");
   else
     std::snprintf(values[0], sizeof(values[0]), "%d", st.channel);
   std::snprintf(values[1], sizeof(values[1]), "%+d st", st.octave);
   std::snprintf(values[2], sizeof(values[2]), "%s", curves[std::clamp(st.curve, 0, 2)]);
-  for (int i = 0; i < 3; ++i) {
+  std::snprintf(values[3], sizeof(values[3]), "%s", noteName(st.split).c_str());
+  for (int i = 0; i < kSettingCount; ++i) {
     const auto b = setting(i);
     rect(b, kCard);
     label({b.l + 14, b.t, 590, b.b}, 16, kMuted, labels[i], true);

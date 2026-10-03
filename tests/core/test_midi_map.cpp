@@ -130,6 +130,7 @@ int main() {
     custom.channelFilter = 10;
     custom.octaveShift = -12;
     custom.velocityCurve = MidiVelocityCurve::hard;
+    custom.splitNote = 55;  // G3
     bytes.assign(midi_map_wire_bytes(m.count()), 0u);
     CHECK_EQ(midi_map_encode(m, custom, bytes.data(), bytes.size()), bytes.size());
     CHECK(midi_map_decode(bytes.data(), bytes.size(), &back, &rig));
@@ -143,6 +144,14 @@ int main() {
     CHECK_EQ(rig.channelFilter, 10u);
     CHECK_EQ(rig.octaveShift, -12);
     CHECK(rig.velocityCurve == MidiVelocityCurve::hard);
+    CHECK_EQ(rig.splitNote, 55u);
+    // A file written before SPLIT existed has a zero there: the default C4.
+    bytes[kMidiMapWireHeaderBytes + 3] = 0;
+    CHECK(midi_map_decode(bytes.data(), bytes.size(), &back, &rig));
+    CHECK_EQ(rig.splitNote, kMidiDefaultSplitNote);
+    // Outside C1..C7 is rejected.
+    bytes[kMidiMapWireHeaderBytes + 3] = 120;
+    CHECK(!midi_map_decode(bytes.data(), bytes.size(), &back, &rig));
   }
   // Encode: a too-small buffer fails without writing.
   {
@@ -212,6 +221,7 @@ int main() {
     CHECK_EQ(out.count(), 1u);
     CHECK_EQ(rigOut.channelFilter, 0u);
     CHECK_EQ(rigOut.octaveShift, 0);
+    CHECK_EQ(rigOut.splitNote, kMidiDefaultSplitNote);
   }
   // Duplicate keys in one file collapse to the LAST record (same rule as bind()).
   // Hand-built as a version-1 file, so this also covers the v1 record layout.

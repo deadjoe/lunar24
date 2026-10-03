@@ -49,10 +49,10 @@ _Last updated: 2026-10-03._
 - MIDI keyboard: inputs are enumerated at startup (hot-plug refresh is not implemented). Mod wheel / CC74 =
   filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master; pitch bend +/-2
   semitones; sustain pedal; MIDI clock drives the arpeggiator / sequencer (START / STOP).
-  The MIDI button (under MUTE, right of DRONE VOICES) opens the MIDI settings: learn a
-  panel control onto any CC or pad note (parameters, drone keys, cartridge, presets,
-  mute), four binding rows per page, per-binding absolute/relative pickup (relative encoders detected at learn), channel filter,
-  transpose and velocity curve. Bindings live in their own file, not in the machine state.
+  The MIDI button (under MUTE) opens the MIDI settings: learn a panel control onto any CC
+  or pad note (parameters, drone keys, cartridge, presets, mute); absolute (pickup) or
+  relative knobs (detected at learn); channel filter, transpose, velocity curve and SPLIT
+  note (TWIN / SPLIT: notes below it play the left side). Bindings have their own file.
   MIDI notes light the keyboard plate of the same note name.
 - Effector: click the cartridge slot (or the button below it) to load the next cartridge
   (right-click = previous; hover shows both program names); the L / R switches beside
@@ -67,14 +67,11 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. The PR #80–#90 review fixes are done (PRs #91–#95: cable layer, SCALE / ROOT, pad and
-   button bindings, MIDI input close, Preferences OK / Cancel, MIDI plate lights).
-2. External MIDI for the MPK MINI IV: MIDI START now restarts the pattern instead of
-   stopping every note (this PR, T15.9); then REL knobs, pedal checks, SINGLE / TWIN /
-   SPLIT routing.
-3. Remaining manual checks alongside: device DRY outputs, PREAMP override, Windows.
-4. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix).
-5. Later: decorative controls, REC, panel tweaks, AU/VST3. Known stability work: cable
+1. External MIDI for the MPK MINI IV: clock and START (done, T15.9), relative knobs
+   (done, T15.3), TWIN / SPLIT by note range (this PR, T15.10); then pedal checks.
+2. Remaining manual checks alongside: device DRY outputs, PREAMP override, Windows.
+3. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix).
+4. Later: decorative controls, REC, panel tweaks, AU/VST3. Known stability work: cable
    edits compile the patch graph on the audio thread with small allocations. Not planned:
    effector tails across a cartridge switch (the hardware cuts them too).
 

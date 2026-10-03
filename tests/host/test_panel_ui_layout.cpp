@@ -182,11 +182,17 @@ int main() {
     CHECK_EQ(pageOffset(4, 4), 0);
     CHECK_EQ(pageOffset(-4, 0), 0);
     CHECK_EQ(pageOffset(128, 128), 124);
-    for (int i=0; i<3; ++i) {
+    for (int i=0; i<kSettingCount; ++i) {
       CHECK(!decrement(i).contains(setting(i).l+20, setting(i).t+20));
       CHECK(!increment(i).contains(setting(i).l+20, setting(i).t+20));
       CHECK(decrement(i).r <= increment(i).l);
+      if (i + 1 < kSettingCount) CHECK(setting(i).b < setting(i + 1).t);
     }
+    CHECK(setting(kSettingCount - 1).b < kLearn.t);  // the rows clear LEARN
+    CHECK(kLearn.b < 1412);                          // and LEARN clears the footer rule
+    CHECK_EQ(noteName(60), std::string("C4"));
+    CHECK_EQ(noteName(24), std::string("C1"));
+    CHECK_EQ(noteName(61), std::string("C#4"));
     // A truncated UTF-8 name must end on a character boundary.
     auto bytes = [](const char* text) { return static_cast<float>(std::string(text).size()); };
     CHECK_EQ(fitText("ab\xc3\xa9" "cdef", 6, bytes), std::string("ab..."));

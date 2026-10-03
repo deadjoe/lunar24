@@ -139,7 +139,8 @@ struct EditorShared {
     std::function<int()> channelFilter;
     std::function<int()> octaveShift;
     std::function<int()> velocityCurve;
-    std::function<void(int, int, int)> setRigSettings;
+    std::function<int()> splitNote;
+    std::function<void(int, int, int, int)> setRigSettings;
     std::function<void()> bindingsChanged;            // save + republish
   };
   MidiUi midi;
@@ -1188,6 +1189,7 @@ class MidiOverlayControl : public IControl {
     state.channel = s_.midi.channelFilter ? s_.midi.channelFilter() : 0;
     state.octave = s_.midi.octaveShift ? s_.midi.octaveShift() : 0;
     state.curve = s_.midi.velocityCurve ? s_.midi.velocityCurve() : 0;
+    state.split = s_.midi.splitNote ? s_.midi.splitNote() : core::kMidiDefaultSplitNote;
     state.offset = s_.midiListOffset;
     state.armed = s_.learnArmed;
     state.awaitTarget = s_.learnAwaitTarget;
@@ -1233,17 +1235,19 @@ class MidiOverlayControl : public IControl {
       GetUI()->SetAllControlsDirty();
       return;
     }
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < midi_ui::kSettingCount; ++i) {
       const int delta = midi_ui::decrement(i).contains(x, y)   ? -1
                         : midi_ui::increment(i).contains(x, y) ? 1
                                                                : 0;
       if (!delta || !s_.midi.setRigSettings) continue;
-      int values[] = {s_.midi.channelFilter(), s_.midi.octaveShift(), s_.midi.velocityCurve()};
-      constexpr int low[] = {0, -36, 0}, high[] = {16, 36, 2};
+      int values[] = {s_.midi.channelFilter(), s_.midi.octaveShift(), s_.midi.velocityCurve(),
+                      s_.midi.splitNote()};
+      constexpr int low[] = {0, -36, 0, core::kMidiSplitNoteLow},
+                    high[] = {16, 36, 2, core::kMidiSplitNoteHigh};
       values[i] += delta;
       if (values[i] < low[i]) values[i] = high[i];
       if (values[i] > high[i]) values[i] = low[i];
-      s_.midi.setRigSettings(values[0], values[1], values[2]);
+      s_.midi.setRigSettings(values[0], values[1], values[2], values[3]);
       SetDirty(false);
       return;
     }

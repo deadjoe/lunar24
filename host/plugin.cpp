@@ -98,7 +98,8 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     shared->midi.channelFilter = [this]() { return midiChannelFilter(); };
     shared->midi.octaveShift = [this]() { return midiOctaveShift(); };
     shared->midi.velocityCurve = [this]() { return midiVelocityCurve(); };
-    shared->midi.setRigSettings = [this](int c, int o, int v) { setMidiRigSettings(c, o, v); };
+    shared->midi.splitNote = [this]() { return midiSplitNote(); };
+    shared->midi.setRigSettings = [this](int c, int o, int v, int sp) { setMidiRigSettings(c, o, v, sp); };
     shared->midi.bindingsChanged = [this]() {
       (void)midiMapStore_.save();
       republishMidiMap();
@@ -190,6 +191,7 @@ void LunarHostPlugin::setStateDirectory(const char* dir)
   midiChannelFilter_.store(s.channelFilter, std::memory_order_relaxed);
   midiOctaveShift_.store(s.octaveShift, std::memory_order_relaxed);
   midiVelocityCurve_.store(static_cast<int>(s.velocityCurve), std::memory_order_relaxed);
+  midiSplitNote_.store(s.splitNote, std::memory_order_relaxed);
 }
 
 void LunarHostPlugin::setMidiInputDeviceName(const char* name)
@@ -198,8 +200,12 @@ void LunarHostPlugin::setMidiInputDeviceName(const char* name)
   engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
 }
 
-void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int curve)
+void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int curve, int splitNote)
 {
+  using lunar24::core::kMidiSplitNoteLow;
+  using lunar24::core::kMidiSplitNoteHigh;
+  midiSplitNote_.store(std::clamp(splitNote, int(kMidiSplitNoteLow), int(kMidiSplitNoteHigh)),
+                       std::memory_order_relaxed);
   midiChannelFilter_.store(std::clamp(channelFilter, 0, 16), std::memory_order_relaxed);
   midiOctaveShift_.store(std::clamp(octaveShift, -36, 36), std::memory_order_relaxed);
   midiVelocityCurve_.store(std::clamp(curve, 0, 2), std::memory_order_relaxed);
@@ -208,6 +214,7 @@ void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int
   s.octaveShift = static_cast<std::int8_t>(midiOctaveShift_.load(std::memory_order_relaxed));
   s.velocityCurve = static_cast<lunar24::core::MidiVelocityCurve>(
       midiVelocityCurve_.load(std::memory_order_relaxed));
+  s.splitNote = static_cast<std::uint8_t>(midiSplitNote_.load(std::memory_order_relaxed));
   if (midiMapStore_.setSettings(s)) (void)midiMapStore_.save();
 }
 
@@ -332,6 +339,7 @@ void LunarHostPlugin::drainMidiInput(int frames)
     bool released = true;
     lunar24::host::release_midi_notes(midiNotes_, sustain_, 3, [&](lunar24::core::PerformanceInput in) {
       in.seq = ++midiSeq_;
+      in.side = midiSides_.of(in.channel, in.noteId - 1);
       lunar24::core::ControlEvent event[1];
       if (midiInput_.translate(in, event, 1) == 1 && !engine_.enqueueEventFromAudioThread(event[0], 0))
         released = false;
@@ -436,6 +444,8 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
         midiLights_.on(in.channel, note & 127, note + octaveShift);  // light the plate by note name
         sustain_.noteOn(in.channel, note & 127);  // pressed again: no longer held only by the pedal
         in.kind = PerfInputKind::note_on;
+        // TWIN / SPLIT: the played key (before TRANSPOSE) picks the side.
+        in.side = midiSides_.noteOn(in.channel, note & 127, midiSplitNote_.load(std::memory_order_relaxed));
         // A3 (MIDI 57) = 0 V = 220 Hz; the rig's octave shift transposes the MIDI input.
         in.pitch = static_cast<SignalSample>((note - 57 + octaveShift) / 12.0);
         in.value = static_cast<SignalSample>(
@@ -455,14 +465,17 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       }
       in.kind = PerfInputKind::note_off;
       in.noteId = static_cast<NoteId>(note + 1);
+      in.side = midiSides_.of(in.channel, note & 127);
       break;
     case IMidiMsg::kPolyAftertouch:
       in.kind = PerfInputKind::aftertouch;
       in.value = static_cast<SignalSample>(msg.PolyAfterTouch() / 127.0);
       in.noteId = static_cast<NoteId>(note + 1);
+      in.side = midiSides_.of(in.channel, note & 127);
       break;
     case IMidiMsg::kChannelAftertouch:
       in.kind = PerfInputKind::aftertouch;
+      in.side = midiSides_.latest(in.channel);
       in.value = static_cast<SignalSample>(msg.ChannelAfterTouch() / 127.0);
       break;
     case IMidiMsg::kPitchWheel:
@@ -474,6 +487,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
         const bool on = msg.ControlChange(IMidiMsg::kSustainOnOff) >= 0.5;
         sustain_.pedal(in.channel, on, in.source, [&](PerformanceInput released) {
           released.seq = ++midiSeq_;
+          released.side = midiSides_.of(released.channel, released.noteId - 1);
           ControlEvent event[1];
           if (midiInput_.translate(released, event, 1) == 1)
             engine_.enqueueEventFromAudioThread(event[0], offset);
