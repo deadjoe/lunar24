@@ -75,6 +75,11 @@ Keep these unless a listening test or a real bug says otherwise.
   to the right. The side is fixed at note-on (`MidiNoteSides`), so a release, a pedal
   release or poly aftertouch reaches the half that holds the note; channel aftertouch
   follows the channel's latest note. Single merges both sides as before.
+- **DRONE VOICES start closed** (owner, 2026-10-04): the app opens, and RESET PANEL
+  leaves the machine, with all six keys off. Each new runtime starts with its drones
+  sounding and then closes them, so opening the app, RESET PANEL and every audio reopen
+  play a short drone swell that fades over the voices' RLS (2-5 s). The owner likes it
+  as a start-up sound; keep it.
 - **REC lives in the headphone corner** (owner's choice, 2026-10-04): software has no
   headphone output, so the socket's place is the REC button and the PHONE knob's place a
   WET / DRY / ALL selector (PHONE keeps its stored value, without a control). The engine
