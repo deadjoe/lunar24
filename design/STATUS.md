@@ -38,7 +38,9 @@ _Last updated: 2026-10-03._
   the encoder, or `Z` / `X`; the display shows it.
 - Keyboard settings (play mode, scale, arp, sequencer, glide, vibrato, ...): click the
   red encoder to open the KEYBOARD MENU over the plates (tabs PLAY, EXPRESSION, ARP, SEQ,
-  SEQ STEPS, SERVICE); CLOSE or Esc closes it. Values show in the manual's units (BPM, note, steps, 0-255 / 0-127) and apply at once.
+  SEQ STEPS, SERVICE); CLOSE or Esc closes it. Values show in the manual's units and apply
+  at once, except SERVICE (hardware calibration: stored only; ENCODER DIRECTION flips the
+  encoder's mouse wheel, which changes the octave).
 - Arpeggiator / 16-step sequencer: MODE = ARPEGGIATOR or SEQUENCER, hold plates. The
   internal clock runs at BPM (10-300, 16th notes); a cable into the keyboard CLOCK jack
   takes over until BPM is changed again; RESET restarts the pattern. Edit the 16 steps
@@ -63,28 +65,18 @@ the manual, so still guesses: arp/seq clock multiply/divide ratios (not applied 
 exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Next steps (in order)
-1. PR #89: the available T15.5–T15.6 checks passed on macOS + MPK MINI IV with the old UI;
-   REL, CC-button edges and pedal checks remain untested. The redesigned UI passed native retesting (2a5991a).
-   Fix MIDI MUTE indicator refresh and input-close resetting mouse/computer-keyboard performance
-   in focused changes; see MANUAL_TESTS §15 / MIDI 待办 for results and remaining checks.
-2. Complete external MIDI support for the owner's MPK MINI IV: pressure, clock and reliable note
-   handling; decide SINGLE / TWIN / SPLIT routing, then test with the actual controller.
-3. Continue the remaining manual checks alongside MIDI work: device DRY outputs,
-   PREAMP input override/unplug, and saved calibration settings. Untested does not mean broken;
-   finishing every manual check is not a prerequisite for MIDI work. Windows device tests remain pending.
-4. After that foundation, tune sounds from listening feedback: drone level, modulation depth,
-   S&H rate/range and the combined mix. Revisit uncertain hardware curves only when needed.
-5. Later: inactive decorative controls, REC (WET L/R; optional DRY A/B), panel tweaks and AU/VST3.
-   BlackHole recording remains available. Do not expand these into prerequisites for MIDI.
-
-Known stability work: cable edits compile the patch graph on the audio thread with small allocations.
-Assess a focused fix separately; avoid turning it into a broad architecture rewrite.
-
-Only when the related feature is touched: knob hover/drag redraws the whole panel — dirty
-only the readout if the UI feels slow. Not planned: letting the old effector tail ring out on a cartridge switch
-(the hardware reloads and cuts it too), splitting `machine_runtime.h`.
-
-The VCOs' separate wave outputs and the envelopes' VCA-CV outputs are engine-only (not on the panel).
+1. Small fixes from the PR #80–#90 review, one focused PR each: cables drawn over the
+   keyboard menu + drops on hidden jacks + ENCODER DIRECTION (T12.19); SCALE / ROOT never
+   reaching the quantiser, plus its C-vs-A reference and clamped range (T12.4); momentary
+   CC buttons on on/off switches and pickup's ignored first message; MIDI MUTE indicator
+   refresh and the MIDI input-close reset scope (MANUAL_TESTS MIDI 待办 #10 / #14).
+2. External MIDI for the MPK MINI IV: REL, CC-button and pedal checks, clock (MIDI START
+   currently also sends all-notes-off), SINGLE / TWIN / SPLIT routing.
+3. Remaining manual checks alongside: device DRY outputs, PREAMP override, Windows.
+4. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix).
+5. Later: decorative controls, REC, panel tweaks, AU/VST3. Known stability work: cable
+   edits compile the patch graph on the audio thread with small allocations. Not planned:
+   effector tails across a cartridge switch (the hardware cuts them too).
 
 ## Known limits (by design)
 - No hardware is available, so sound is tuned by ear, not measured against a real unit.

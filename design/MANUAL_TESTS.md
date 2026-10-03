@@ -865,6 +865,19 @@
   8. 换到 ARP 页后按 Esc 关闭，再打开仍是 ARP 页；鼠标停在某个按钮上时按 Esc，再打开不残留高亮。菜单打开时点 MIDI 按钮会关掉菜单（反之亦然）；菜单区域内的点击不会传到下面的面板。
   9. 重启程序后菜单里的设置都在；拉伸窗口后菜单比例正常、点击位置准确；MIDI LEARN 学一个面板旋钮仍正常（菜单设置不能学）。
 
+**T12.19 菜单盖住接线与插孔；ENCODER DIRECTION** ⏳ (PR-A)
+- 准备：RESET PANEL。接两根穿过键盘区上方的线：LFO A 的输出 → 键盘区 **CLOCK** 输入；键盘区 **V/OCT** 输出 → DRONE 3 的 **cv** 输入。
+- 步骤与期望：
+  1. 红色大旋钮打开键盘菜单：两根线都被菜单**盖住**（线在菜单下面，菜单完整不被线遮挡）；关掉菜单后线照常显示在面板上。
+  2. 菜单打开时，从菜单外的一个输出（例如 LFO B 输出）拖线，在菜单上方（键盘区 CLOCK / RESET / GATE / V/OCT 插孔所在位置）松手：**不接上任何线**。关掉菜单再拖到同一插孔，正常接上。
+  3. 点 MIDI 按钮打开 MIDI 设置，重复第 2 步：同样不接线。
+  4. 菜单打开时，鼠标悬停在菜单外的旋钮上，数值气泡照常显示。
+  5. 滚轮换八度：「红色大旋钮」就是键盘区中间点一下打开键盘菜单的那个红色旋钮。「滚轮」= 鼠标滚轮；MacBook 触控板上是**两指同时上下滑动**（不要按下）。
+     - 菜单关着，把鼠标指针停在红色大旋钮上（不点击），两指往一个方向滑一下：蓝色小屏的 OCT 变 1 格（例如 0 → 1），手指离开后**停在新的数字上**，不会继续跳或跳回 -3。滑得快、滑得长也只变 1 格；停半秒再滑一次再变 1 格。左右滑不改变 OCT。记下这个方向是升还是降（macOS「自然滚动」设置会让方向因人而异，以第一次看到的为准）。
+     - 点红色大旋钮打开菜单 → SERVICE 页 → ENCODER 的 DIRECTION 选 **REVERSED** → CLOSE。
+     - 指针停回红色大旋钮，用**同一个方向**再滑：这次 OCT 往反方向变。
+     - DIRECTION 选回 NORMAL：方向恢复成第一次的样子。改成 REVERSED 后退出重开程序，SERVICE 页里仍是 REVERSED。
+
 ### 13. 其余插孔
 
 准备（本节通用）：RESET PANEL；BLEND 最左；DRONE VOICES 全关；点亮 envelope A 的 **hold**（VCO A 不按键也一直响，当作"监听器"）；VOICE MIXER 里 **VCO B** 拖到最左。
@@ -1004,7 +1017,7 @@
 - MIDI：REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch：声道 3 = DRY A、声道 4 = DRY B。注意 DRY 在 VCA 之后，要按住键或点亮 envelope 的 hold 才有声）。
 - PREAMP 的 ext. source 插孔（不需要额外硬件：把 LFO A 输出插进去，麦克风输入应被取代，ENVELOPE FOLLOWER 的灯改跟 LFO 走；拔线恢复）。
-- 键盘菜单 SERVICE 页的 11 个校准类设置（V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE、ENCODER DIRECTION）：已核实为存储但无声音/行为效果（部分是纯硬件概念），只需确认改动能保存、重启后还在。
+- 键盘菜单 SERVICE 页的 10 个校准类设置（V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE）：已核实为存储但无声音/行为效果（都是校准真机硬件的概念，软件里没有对应误差），只需确认改动能保存、重启后还在。ENCODER DIRECTION 现在会反转红色大旋钮的滚轮方向，见 T12.19。
 
 已核实无需列入：DRONE 6 的控件与 DRONE 3 结构性同码（同一个 PapaVoice 实现，12 参数 7 插孔全部正确映射，无独立风险）；VOICE MIXER 的 EXT.AUDIO 通道已被 T11.4 的补充步骤覆盖；耳机音量旋钮按设计无功能（只存状态，不接任何音频通路）。
 
@@ -1036,7 +1049,6 @@
 
 ### 键盘待办
 
-- 菜单打开时，接线仍画在菜单上面（线缆层在菜单之上）；后续再改。
 - MIDI 键盘的音符都算左半边；TWIN / SPLIT 下如何分左右（按通道或按音区）还没定。（2026-10-02 核实：MIDI 输入从不设 side，默认 Left；延音踏板延迟释放的 note_off 同样算左半边，修的时候要一起改。）
 
 ### 音频设备备注
