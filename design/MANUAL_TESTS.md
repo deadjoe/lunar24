@@ -976,17 +976,19 @@
 - 期望：切掉的瞬间声音停止（松不松手都不应再响）。再把 MIDI Input 切回键盘，弹奏恢复正常。
 - 备注：直接拔 USB 线的热拔场景目前还没有检测机制（RtMidi 不支持设备移除通知），拔线造成的卡音要切一次输入设备才会清；这是已知缺口。
 
-**T14.3 关闭 MIDI 输入只停 MIDI 的音，鼠标 / 电脑键盘的琶音继续** ⏳ (PR-D，修 MIDI 待办 #14)
-- 准备：MPK 用测试用预设；Preferences 里 MIDI Input = MPK Mini IV MIDI Port。RESET PANEL；DRONE VOICES 全关。键盘菜单 PLAY 页 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开（LED 亮），关掉菜单。
-- 步骤：
-  1. 电脑键盘同时按下 A、F、H（C、F、A）再松开：HOLD 让琶音一直循环这三个音。
-  2. 等琶音循环起来后，再在 MPK 上按住一个高音键不放：它加入琶音（循环里多了一个高音）。
-  3. 保持按住，打开 Preferences（⌘,），把 MIDI Input 切成 **off**，点 OK。
-- 期望：
-  - 第 3 步：**琶音继续循环，不会整个停掉**（以前会全停）。MPK 那个高音也还在循环里：HOLD 会留住所有按过的音，和松开电脑键盘后那三个音还在是一样的道理。
-  - 再把 MIDI Input 切回 MPK Mini IV MIDI Port，MPK 弹奏恢复。
-  - 用 MODE = KEYBOARD、不开 HOLD 重复 T14.2：按住 MPK 的音时切 off，声音照样立即停。
-  - 测完 ARP 页 HOLD 关掉，MODE 改回 KEYBOARD。
+**T14.3 关闭 MIDI 输入只停 MIDI 的音，电脑键盘的琶音继续** ⏳ (PR-D，修 MIDI 待办 #14)
+- 准备：MPK 切到测试用预设；Preferences 里 MIDI Input = MPK Mini IV MIDI Port。RESET PANEL（菜单右下角点两下）；DRONE VOICES 6 个键全部点灭。
+- A. 电脑键盘的琶音不受影响（这是修复的重点）：
+  1. 点红色大旋钮打开键盘菜单。PLAY 页左边 MODE 点 **ARPEGGIATOR**；再点顶部 **ARP** 页签，点亮左上角的 **HOLD**（LED 亮）。点 CLOSE 关掉菜单。
+  2. 电脑键盘同时按下 A、F、H 三个键，再全部松开：琶音一直循环 C、F、A。
+  3. 琶音还在响的时候，⌘, 打开 Preferences，把 MIDI Input 切成 **off**，点 OK。
+  - 期望：**琶音继续循环 C、F、A，不停。**（修复前这里会整个停掉。）
+  4. 收尾：Preferences 把 MIDI Input 切回 MPK Mini IV MIDI Port；打开菜单，ARP 页关掉 HOLD（琶音停下），PLAY 页 MODE 点回 **KEYBOARD**。
+- B. MIDI 自己的音照样会停（确认修复没把这点弄坏，同 T14.2）：
+  1. 在 MPK 上按住一个键不放，声音一直响。
+  2. 保持按住，⌘, 打开 Preferences，把 MIDI Input 切成 **off**，点 OK。
+  - 期望：**声音立即停**，手还按着也不响。
+  3. 把 MIDI Input 切回 MPK Mini IV MIDI Port，MPK 弹奏恢复正常。
 
 **T14.4 MIDI 切换 MUTE 时按钮跟着亮灭** ⏳ (PR-D，修 MIDI 待办 #10)
 - 准备：Learn 一个打击垫到 **MUTE**（MIDI CONTROL → + LEARN A CONTROL → 点 MUTE 按钮 → 敲垫子）。
