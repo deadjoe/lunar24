@@ -15,9 +15,18 @@
 #include <host/wav_recorder.h>
 
 namespace {
+// MSVC rejects plain fopen under /WX (C4996).
+std::FILE* openFile(const char* path, const char* mode) {
+#if defined(_WIN32)
+  std::FILE* f = nullptr;
+  return fopen_s(&f, path, mode) == 0 ? f : nullptr;
+#else
+  return std::fopen(path, mode);
+#endif
+}
 std::vector<unsigned char> readAll(const char* path) {
   std::vector<unsigned char> bytes;
-  std::FILE* f = std::fopen(path, "rb");
+  std::FILE* f = openFile(path, "rb");
   if (f == nullptr) return bytes;
   unsigned char buf[4096];
   std::size_t n = 0;
@@ -53,9 +62,9 @@ int main() {
     for (int i = 0; i < 1000; ++i) frames.insert(frames.end(), {0.5f, -0.5f, 0.25f, 1.5f});
     rec.push(frames.data(), 10);  // not recording yet: ignored
     CHECK(!rec.recording());
-    CHECK(rec.start(std::fopen("rec_wet.wav", "wb"), std::fopen("rec_dry.wav", "wb"), 48000));
+    CHECK(rec.start(openFile("rec_wet.wav", "wb"), openFile("rec_dry.wav", "wb"), 48000));
     CHECK(rec.recording());
-    CHECK(!rec.start(nullptr, std::fopen("rec_extra.wav", "wb"), 48000));  // already recording
+    CHECK(!rec.start(nullptr, openFile("rec_extra.wav", "wb"), 48000));  // already recording
     rec.push(frames.data(), 1000);
     const WavRecorder::Result r = rec.stop();
     CHECK(r.wasRecording);
@@ -87,7 +96,7 @@ int main() {
   {
     WavRecorder rec;
     CHECK(!rec.start(nullptr, nullptr, 48000));
-    CHECK(rec.start(nullptr, std::fopen("rec_dry_only.wav", "wb"), 44100));
+    CHECK(rec.start(nullptr, openFile("rec_dry_only.wav", "wb"), 44100));
     const float frame[4] = {0.f, 0.f, -1.f, 1.f};
     for (int i = 0; i < 10; ++i) rec.push(frame, 1);
     (void)rec.stop();
@@ -101,7 +110,7 @@ int main() {
   // A full ring drops (and counts) the frames that do not fit; the audio side never waits.
   {
     WavRecorder rec(64);
-    CHECK(rec.start(std::fopen("rec_small.wav", "wb"), nullptr, 48000));
+    CHECK(rec.start(openFile("rec_small.wav", "wb"), nullptr, 48000));
     std::vector<float> frames(4 * 100, 0.1f);
     rec.push(frames.data(), 100);
     const WavRecorder::Result r = rec.stop();

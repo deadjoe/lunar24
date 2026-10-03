@@ -275,8 +275,13 @@ void LunarHostPlugin::toggleRecording(int source)
   // "Lunar24 2026-10-04 12-30-05.wav" (WET) and "... dry.wav" (DRY A left, DRY B right).
   char stamp[64];
   const std::time_t now = std::time(nullptr);
-  const std::tm* local = std::localtime(&now);
-  if (local == nullptr || std::strftime(stamp, sizeof stamp, "Lunar24 %Y-%m-%d %H-%M-%S", local) == 0)
+  std::tm local{};
+#if defined(_WIN32)
+  const bool haveTime = localtime_s(&local, &now) == 0;  // MSVC rejects std::localtime under /WX
+#else
+  const bool haveTime = localtime_r(&now, &local) != nullptr;
+#endif
+  if (!haveTime || std::strftime(stamp, sizeof stamp, "Lunar24 %Y-%m-%d %H-%M-%S", &local) == 0)
     std::snprintf(stamp, sizeof stamp, "Lunar24 %lld", static_cast<long long>(now));
   const auto what = static_cast<lunar24::host::RecordSource>(std::clamp(source, 0, 2));
   const bool wet = what != lunar24::host::RecordSource::dry;
