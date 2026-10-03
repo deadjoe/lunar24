@@ -281,7 +281,11 @@ void LunarHostPlugin::toggleRecording(int source)
 #else
   const bool haveTime = localtime_r(&now, &local) != nullptr;
 #endif
-  if (!haveTime || std::strftime(stamp, sizeof stamp, "Lunar24 %Y-%m-%d %H-%M-%S", &local) == 0)
+  // snprintf, not strftime: iPlug2's Windows UTF-8 layer redefines strftime as a macro.
+  if (haveTime)
+    std::snprintf(stamp, sizeof stamp, "Lunar24 %04d-%02d-%02d %02d-%02d-%02d", local.tm_year + 1900,
+                  local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
+  else
     std::snprintf(stamp, sizeof stamp, "Lunar24 %lld", static_cast<long long>(now));
   const auto what = static_cast<lunar24::host::RecordSource>(std::clamp(source, 0, 2));
   const bool wet = what != lunar24::host::RecordSource::dry;
