@@ -1146,7 +1146,7 @@
 - DRY：`Lunar24 日期 时间 dry.wav`，左声道 = VCO A 单独的声音（DRY A），右声道 = VCO B（DRY B），不经过混音台、滤波和效果器；
 - ALL：两个文件都录。
 
-**T16.1 录音与 DRY 检查** ⏳ (录音 PR)
+**T16.1 录音与 DRY 检查** ✅（2026-10-04 Mac 实测：录音正常，WET / DRY 文件都对）
 - 准备：RESET PANEL；打开 envelope A 和 envelope B 左上角的 **hold**（两个 VCO 一直响）。
 - 步骤：
   1. 看 REC 区：耳机图标处显示 **REC**，下面旋钮指在 **WET**（上方三个字 WET / DRY / ALL，选中的是黑字）。
