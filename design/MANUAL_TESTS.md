@@ -1082,6 +1082,7 @@
   - 第三种是 **User Presets**（用户预设）：按住 SHIFT 再按 PLUGIN/DAW，旋转屏幕下的大旋钮选择，按下旋钮载入。只有用户预设下才能：把打击垫切成 CC#（SHIFT + 3 号垫；SHIFT + 4 号垫回音符）、改打击垫 / 旋钮发的号码（SHIFT + OCT− 进 Program Edit）、改全局设置（SHIFT + LOOP 进 Global Menu，按 PLUGIN/DAW 退出）。
   - 琴键、打击垫、旋钮、弯音 / 调制轮、延音踏板的演奏数据都从 **MPK Mini IV MIDI Port** 发出（所有预设都是）；另外几个端口（DAW / Plugin / Software Control / Din）发的是给软件脚本的按钮和屏幕控制，Lunar 24 不需要。Preferences 里 MIDI 输入选 MIDI Port。
   - 全局设置里和我们有关的：**Toggle**（打击垫"瞬时 / 切换"，测 TOGGLE 绑定时应为 Off）、**KnobM**（8 个旋钮一起设 Abs / Rel，测 REL 用；Program Edit 里也能单个设）、**Aft**（打击垫按压后发 Chan / Poly aftertouch，或 Off）、**MidiCh / PadCh**（琴键和打击垫的通道，打击垫默认通道 10，所以 Learn 出来是 CH 10）。
+  - **测试用预设**（2026-10-03 owner 已建）：一个用户预设，全局设置 Toggle = Off、KnobM = Abs、Aft = Chan、FullVel = Off，MidiCh / PadCh 保持默认（琴键 1、打击垫 10）。以后 MIDI 测试都先切到这个预设；Lunar 24 的 MIDI 设置 CHANNEL 保持 ANY。
   - 手册没写 Rel 模式用哪种相对编码，测 REL 时在 MODE 里轮流试 REL 1 / 2 / 3，哪种方向和速度正确就用哪种。
   - 手册只写了 MPK 的琶音器能**接收**外部时钟（Clock = Ext），没写它会往外发 MIDI 时钟；用 MPK 驱动 Lunar 24 的琶音 / 音序器时钟可能不行，需要实测或用 DAW 发时钟。
 - **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效；Apply 即使没有改设置，也会重开音频并重置引擎。因此 T15.5 第 4 步改为“不改设置直接 OK”；不要把 Apply 造成的重置当作 MIDI 输入关闭缺陷。改变设置后 OK 也可能应用音频变化，观察输入切换时先不点 OK / Apply。
