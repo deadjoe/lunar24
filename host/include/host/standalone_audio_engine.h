@@ -302,6 +302,10 @@ class StandaloneAudioEngine {
   // Audio thread only (e.g. MIDI delivered inside the audio callback): schedule a note/clock
   // event `offset` samples into the coming block.
   bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e, int offset = 0);
+  // Diagnostics (any thread, one block old): the keyboard follows an external / MIDI clock,
+  // and how many TEMPO edits the running engine has applied.
+  bool keyboardFollowsExternalClock() const { return keyboardExternalClock_.load(std::memory_order_relaxed); }
+  std::uint32_t keyboardTempoEdits() const { return keyboardTempoEdits_.load(std::memory_order_relaxed); }
   // Audio thread only: MIDI START, the arpeggiator / sequencer restart from their first step.
   void restartKeyboardPatternFromAudioThread() {
     if (definition_) definition_->runtime().restartKeyboardPattern();
@@ -522,6 +526,8 @@ class StandaloneAudioEngine {
   std::array<std::atomic<float>, kPanelLedCount> leds_{};
   double ledShLast_[2] = {0.0, 0.0};   // audio thread: last S&H value seen, per drone 3 / 6
   double ledShHold_[2] = {0.0, 0.0};   // audio thread: seconds left on each S&H flash
+  std::atomic<bool> keyboardExternalClock_{false};      // diagnostics snapshot, per block
+  std::atomic<std::uint32_t> keyboardTempoEdits_{0};
   double ledClipHold_ = 0.0;           // audio thread: seconds left on the clip LED
   double muteGain_ = 1.0;  // audio thread: the faded output gain the MUTE button drives
   std::uint64_t stateVersion_ = 0;
@@ -819,6 +825,8 @@ inline void StandaloneAudioEngine::updateLeds_(int frames) {
   ledClipHold_ = std::max(0.0, ledClipHold_ - blockSec);
   put(kLedFollowerLevel, rt.envFollowerLevel01());
   put(kLedFollowerGate, rt.envFollowerGateOn() ? 1.0 : 0.0);
+  keyboardExternalClock_.store(rt.keyboardFollowsExternalClock(), std::memory_order_relaxed);
+  keyboardTempoEdits_.store(rt.keyboardTempoEdits(), std::memory_order_relaxed);
   const int shVoice[2] = {2, 5};
   for (int k = 0; k < 2; ++k) {
     const double sh = rt.droneShOutVolts(shVoice[k]);

@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstdio>
 #include <type_traits>
 #include <lunar24/core/host_window_fit.h>
 #include <host/window_layout.h>
@@ -45,6 +46,7 @@ extern "C" void lunar_host_place_view(void* view, double x, double y);
 extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom);
 extern "C" void lunar_host_audio_watchdog();
 extern "C" void lunar_host_request_audio_reopen();
+extern "C" void lunar_host_log(const char* line);
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
@@ -232,6 +234,7 @@ void LunarHostPlugin::midiInputClosed()
 void LunarHostPlugin::OnIdle()
 {
   lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
+  logMidiClock_();
 
   constexpr auto kAutosaveInterval = std::chrono::seconds(30);
   const auto now = std::chrono::steady_clock::now();
@@ -240,6 +243,33 @@ void LunarHostPlugin::OnIdle()
   lastAutosave_ = now;
   savedEditCount_ = engine_.editCount();
   (void)saveDeviceState();
+}
+
+// Every 2 s while anything changed: what MIDI transport arrived and which clock the keyboard
+// follows, so a clock problem on the owner's machine can be read from audio.log.
+void LunarHostPlugin::logMidiClock_()
+{
+  const auto now = std::chrono::steady_clock::now();
+  if (now - lastClockLog_ < std::chrono::seconds(2)) return;
+  lastClockLog_ = now;
+  const std::uint32_t counts[4] = {midiClockTicksIn_.load(std::memory_order_relaxed),
+                                   midiStartsIn_.load(std::memory_order_relaxed),
+                                   midiContinuesIn_.load(std::memory_order_relaxed),
+                                   midiStopsIn_.load(std::memory_order_relaxed)};
+  const bool ext = engine_.keyboardFollowsExternalClock();
+  const std::uint32_t edits = engine_.keyboardTempoEdits();
+  if (counts[0] == loggedClock_[0] && counts[1] == loggedClock_[1] && counts[2] == loggedClock_[2] &&
+      counts[3] == loggedClock_[3] && ext == loggedExtClock_ && edits == loggedTempoEdits_)
+    return;
+  char line[200];
+  std::snprintf(line, sizeof line,
+                "midi clock: +%u ticks, +%u start, +%u continue, +%u stop; keyboard clock %s; tempo edits %u",
+                counts[0] - loggedClock_[0], counts[1] - loggedClock_[1], counts[2] - loggedClock_[2],
+                counts[3] - loggedClock_[3], ext ? "external" : "internal", edits);
+  lunar_host_log(line);
+  for (int i = 0; i < 4; ++i) loggedClock_[i] = counts[i];
+  loggedExtClock_ = ext;
+  loggedTempoEdits_ = edits;
 }
 
 bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
@@ -340,6 +370,14 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
   // the pattern from its first step. Transport never stops held notes (midi_timing.h).
   if (msg.mStatus >= 0xF8)
   {
+    switch (msg.mStatus)  // counted for the audio.log diagnostics line
+    {
+      case 0xF8: midiClockTicksIn_.fetch_add(1, std::memory_order_relaxed); break;
+      case 0xFA: midiStartsIn_.fetch_add(1, std::memory_order_relaxed); break;
+      case 0xFB: midiContinuesIn_.fetch_add(1, std::memory_order_relaxed); break;
+      case 0xFC: midiStopsIn_.fetch_add(1, std::memory_order_relaxed); break;
+      default: break;
+    }
     switch (midiClock_.onRealtime(msg.mStatus))
     {
       case lunar24::host::MidiClockFollower::Action::step: sendEvent(ControlEventKind::clock); break;
