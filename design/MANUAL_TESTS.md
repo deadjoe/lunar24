@@ -1030,7 +1030,7 @@
   - 转动该旋钮，滤波截止跟着动，面板上的旋钮也跟着动。
   - 绝对旋钮的接管：硬件旋钮位置离软件值很远时，先扫过当前值才开始跟（不跳值）。
 
-**T15.3 相对模式、解绑、动作绑定** 部分通过（删除、pad → DRONE 1 每敲一次切换一次；2026-10-04 实测 MPK 的 Rel 要用 REL 2，REL 自动识别待测）
+**T15.3 相对模式、解绑、动作绑定** ✅（2026-10-04 MPK KnobM = Rel：Learn 后自动变 REL 2，平滑跟随；改回 Abs 再 Learn 保持 ABS；删除、pad → DRONE 1 切换通过）
 - 准备：MPK 载入测试用户预设，SHIFT + LOOP 进 Global Menu，把 **KnobM** 改成 **Rel**，按 PLUGIN/DAW 退出。
 - 步骤：
   1. 打开 MIDI 设置，**+ LEARN A CONTROL** → 点 FILTER 一排左边的 **FREQ** → 把 MPK 的 **K1** 慢慢顺时针转一点。
@@ -1118,7 +1118,7 @@
 
 ## 还没测的（⏳）
 
-- MIDI：REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
+- MIDI：CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch：声道 3 = DRY A、声道 4 = DRY B。注意 DRY 在 VCA 之后，要按住键或点亮 envelope 的 hold 才有声）。
 - PREAMP 的 ext. source 插孔（不需要额外硬件：把 LFO A 输出插进去，麦克风输入应被取代，ENVELOPE FOLLOWER 的灯改跟 LFO 走；拔线恢复）。
 - 键盘菜单 SERVICE 页的 10 个校准类设置（V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE）：已核实为存储但无声音/行为效果（都是校准真机硬件的概念，软件里没有对应误差），只需确认改动能保存、重启后还在。ENCODER DIRECTION 现在会反转红色大旋钮的滚轮方向，见 T12.19。
