@@ -980,10 +980,10 @@
 - 准备：MPK 用测试用预设；Preferences 里 MIDI Input = MPK Mini IV MIDI Port。RESET PANEL；DRONE VOICES 全关。键盘菜单 PLAY 页 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开（LED 亮），关掉菜单。
 - 步骤：
   1. 电脑键盘同时按下 A、F、H（C、F、A）再松开：HOLD 让琶音一直循环这三个音。
-  2. 在 MPK 上按住一个高音键不放：它加入琶音（循环里多了一个高音）。
+  2. 等琶音循环起来后，再在 MPK 上按住一个高音键不放：它加入琶音（循环里多了一个高音）。
   3. 保持按住，打开 Preferences（⌘,），把 MIDI Input 切成 **off**，点 OK。
 - 期望：
-  - 第 3 步：那个 MPK 的高音从琶音里消失，**琶音继续循环 C、F、A**，不会整个停掉（以前会全停）。
+  - 第 3 步：**琶音继续循环，不会整个停掉**（以前会全停）。MPK 那个高音也还在循环里：HOLD 会留住所有按过的音，和松开电脑键盘后那三个音还在是一样的道理。
   - 再把 MIDI Input 切回 MPK Mini IV MIDI Port，MPK 弹奏恢复。
   - 用 MODE = KEYBOARD、不开 HOLD 重复 T14.2：按住 MPK 的音时切 off，声音照样立即停。
   - 测完 ARP 页 HOLD 关掉，MODE 改回 KEYBOARD。
