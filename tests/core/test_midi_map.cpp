@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 #include <vector>
 
 #include <lunar24/core/midi_map.h>
@@ -267,6 +268,34 @@ int main() {
     CHECK_EQ(midi_relative_delta(MidiInputMode::relativeSignMagnitude, 65), -1);
     CHECK_EQ(midi_relative_delta(MidiInputMode::relativeSignMagnitude, 0x40), 0);
     CHECK_EQ(midi_relative_delta(MidiInputMode::absolute, 99), 0);  // never called for absolute
+  }
+  // MidiRelativeDetector: a repeated in-range value means a relative encoder.
+  {
+    auto run = [](std::initializer_list<int> values) {
+      MidiRelativeDetector d;
+      MidiInputMode m = MidiInputMode::absolute;
+      for (int v : values) {
+        m = d.feed(v);
+        if (m != MidiInputMode::absolute) break;
+      }
+      return m;
+    };
+    // MPK mini IV with KnobM = Rel (owner, 2026-10-04): 1 clockwise, 127 counter-clockwise.
+    CHECK(run({1, 1}) == MidiInputMode::relativeTwosComplement);
+    CHECK(run({127, 127, 127, 2, 1, 1}) == MidiInputMode::relativeTwosComplement);
+    CHECK(run({126, 126}) == MidiInputMode::relativeTwosComplement);
+    CHECK(run({65, 65}) == MidiInputMode::relativeBinOffset);
+    CHECK(run({63, 63}) == MidiInputMode::relativeBinOffset);
+    CHECK(run({1, 65, 65}) == MidiInputMode::relativeSignMagnitude);
+    CHECK(run({65, 1, 1}) == MidiInputMode::relativeSignMagnitude);
+    // Absolute knobs: a sweep, an end stop repeating 0 / 127, a turn back, never decide.
+    CHECK(run({60, 61, 62, 63, 64, 65, 66}) == MidiInputMode::absolute);
+    CHECK(run({124, 125, 126, 127, 127, 127}) == MidiInputMode::absolute);
+    CHECK(run({3, 2, 1, 0, 0, 0}) == MidiInputMode::absolute);
+    CHECK(run({40, 41, 40, 41}) == MidiInputMode::absolute);
+    MidiRelativeDetector d;
+    for (int i = 0; i < MidiRelativeDetector::kMaxSamples; ++i) (void)d.feed(i % 2 ? 30 : 31);
+    CHECK(d.exhausted());
   }
   return test::finish("test_midi_map");
 }

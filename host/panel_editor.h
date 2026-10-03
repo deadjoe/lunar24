@@ -134,7 +134,7 @@ struct EditorShared {
   struct MidiUi {
     std::function<std::string()> inputDeviceName;
     std::function<std::uint64_t()> messageSeq;        // bumps per incoming note/CC
-    std::function<std::uint32_t()> lastMessage;       // packed kind/channel/number
+    std::function<std::uint32_t()> lastMessage;       // packed value/kind/channel/number
     std::function<std::uint16_t()> litPlates;         // plates MIDI notes hold down (bit 0 = C)
     std::function<int()> channelFilter;
     std::function<int()> octaveShift;
@@ -184,8 +184,45 @@ struct EditorShared {
       const int row = midiStore->map().find(b.key);
       midiListOffset = midi_ui::pageOffset(row, static_cast<int>(midiStore->map().count()));
       if (midi.bindingsChanged) midi.bindingsChanged();
+      // A learned knob: watch its next values for a relative encoder (MPK KnobM = Rel).
+      detectActive = b.key.kind == core::MidiBindingKind::cc && row >= 0 &&
+                     core::midi_parameter_drive(midiStore->map().at(static_cast<std::uint32_t>(row))) ==
+                         core::MidiParameterDrive::follow;
+      detectKey = b.key;
+      detector = core::MidiRelativeDetector{};
+      detectSeq = midi.messageSeq();
+      if (detectActive) (void)detector.feed(static_cast<int>((m >> 21) & 0x7Fu));
     }
     setLearnArmed(false, false);
+  }
+  // Display tick after a learn: switch the new binding to the relative mode its values show.
+  // Returns true when the binding changed.
+  bool detectActive = false;
+  core::MidiBindingKey detectKey{};
+  core::MidiRelativeDetector detector;
+  std::uint64_t detectSeq = 0;
+  bool pollRelativeDetect() {
+    if (!detectActive || midiStore == nullptr || !midi.messageSeq) return false;
+    const std::uint64_t seqNow = midi.messageSeq();
+    if (seqNow == detectSeq) return false;
+    detectSeq = seqNow;
+    const std::uint32_t m = midi.lastMessage();
+    if (((m >> 20) & 1u) == 0 || ((m >> 8) & 0x1Fu) != detectKey.channel || (m & 0xFFu) != detectKey.number)
+      return false;
+    const core::MidiInputMode mode = detector.feed(static_cast<int>((m >> 21) & 0x7Fu));
+    if (mode == core::MidiInputMode::absolute) {
+      if (detector.exhausted()) detectActive = false;
+      return false;
+    }
+    detectActive = false;
+    const int row = midiStore->map().find(detectKey);
+    if (row < 0) return false;
+    auto edited = midiStore->map().at(static_cast<std::uint32_t>(row));
+    if (edited.mode != core::MidiInputMode::absolute) return false;  // the user already chose one
+    edited.mode = mode;
+    if (!midiStore->bind(edited)) return false;
+    if (midi.bindingsChanged) midi.bindingsChanged();
+    return true;
   }
   // Widgets a click can bind while learning (built once at panel build).
   struct MidiBindable {
@@ -1411,6 +1448,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       shared.pollLearn();
       if (!shared.learnArmed) g->SetAllControlsDirty();
     }
+    if (shared.pollRelativeDetect()) g->SetAllControlsDirty();
   });
 }
 

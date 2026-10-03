@@ -361,4 +361,39 @@ inline int midi_relative_delta(MidiInputMode mode, int rawValue) {
   }
 }
 
+// ---- relative encoder detection ---------------------------------------------------
+// After Learn binds a CC, its next values tell an absolute knob from a relative encoder:
+// an absolute knob sends on change, so it never repeats a value (0 / 127 aside, which can
+// repeat at an end stop), while an encoder turned slowly repeats its one-tick value. The
+// repeated value and the others seen pick the dialect. Turning the knob clockwise and
+// back is enough; the guess is shown in the MODE column and can be changed there.
+class MidiRelativeDetector {
+ public:
+  static constexpr int kMaxSamples = 64;  // give up (stay absolute) after this many
+
+  // One value of the learned CC. Returns the relative mode once sure, else absolute.
+  MidiInputMode feed(int v) {
+    ++samples_;
+    const bool repeat = v == last_ && v != 0 && v != 127 && v != 64;
+    last_ = v;
+    if (v >= 1 && v <= 15) sawSmall_ = true;
+    if (v >= 65 && v <= 79) sawSignedDown_ = true;
+    if (!repeat) return MidiInputMode::absolute;
+    if (v <= 15) return sawSignedDown_ ? MidiInputMode::relativeSignMagnitude
+                                       : MidiInputMode::relativeTwosComplement;
+    if (v >= 49 && v <= 79)
+      return (v >= 65 && sawSmall_) ? MidiInputMode::relativeSignMagnitude
+                                    : MidiInputMode::relativeBinOffset;
+    if (v >= 113) return MidiInputMode::relativeTwosComplement;
+    return MidiInputMode::absolute;
+  }
+  bool exhausted() const { return samples_ >= kMaxSamples; }
+
+ private:
+  int last_ = -1;
+  int samples_ = 0;
+  bool sawSmall_ = false;
+  bool sawSignedDown_ = false;
+};
+
 }  // namespace lunar24::core
