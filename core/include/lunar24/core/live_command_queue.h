@@ -20,7 +20,8 @@ struct LiveCommand {
                                   KeyboardRight,    // parameter / value of the right bank
                                   KeyboardPreset,    // side = action (0 load, 1 save, 2 clear), index = slot
                                   KeyboardSelector,  // side 0/1, index = clock selector 0..3, value
-                                  Action };          // audio -> UI only: index = core::MidiAction id
+                                  Action,            // audio -> UI only: index = core::MidiAction id
+                                  GraphPlanDone };   // audio -> UI only: graphPlan to free
   Kind kind = Kind::Parameter;
   ParameterId parameter = ParameterId{0};
   double value = 0.0;
@@ -32,6 +33,10 @@ struct LiveCommand {
   JackId sink = JackId{0};
   JackId oldSource = JackId{0};   // Kind::Connect: cable being replaced (if hadOld)
   bool hadOld = false;
+  // Kind::Connect / Disconnect: the patch plan compiled on the UI thread for the edit
+  // (a SynthRuntime::GraphPlan, owned). The audio thread installs it and sends it back
+  // (Kind::GraphPlanDone) holding the old plan, so the UI thread frees both.
+  void* graphPlan = nullptr;
 };
 
 template <std::uint32_t Capacity = 1024>

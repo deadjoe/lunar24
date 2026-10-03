@@ -31,10 +31,11 @@
 //     until they expose a cycle-safe interface) — never silently turned into a
 //     block delay.
 //
-// The compiler allocates (std::vector) and MUST NOT run on the audio thread; the
-// audio thread only holds a non-owning handle/epoch and the plan is reclaimed
-// off-a-non-audio-thread (design/07 §5). The RtGuard detector in the test suite
-// proves a recompile inside an RT window would be caught.
+// The compiler allocates (std::vector) and must not run on the audio thread. The
+// runtime compiles at setup (SynthRuntime::rebuild) and, for live cable edits, on the
+// UI thread (SynthRuntime::planGraph); the audio thread swaps the finished plan in and
+// the replaced plan is freed back on the UI thread (test_live_cable_rt checks that a
+// cable edit costs the audio callback no allocation or free).
 
 #pragma once
 
@@ -140,9 +141,8 @@ struct CompiledRegion {
 // negatives (block-lazy partition-variant; moduleOut off-by-one with a reference
 // compare that fires at n=delaySamples).
 
-// Immutable execution plan. The audio thread holds a non-owning handle/epoch to
-// this; a new plan is built off a non-audio thread and published lock-free, and
-// an old plan is reclaimed off the audio thread (design/07 §5).
+// Execution plan: built off the audio thread, swapped in by the audio thread, and the
+// replaced plan freed off the audio thread.
 struct CompiledGraph {
   std::vector<CompiledRegion> regions;           // in condensation-DAG execution order
   std::uint32_t moduleCount = 0;                 // number of distinct modules compiled

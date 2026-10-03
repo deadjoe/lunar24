@@ -40,6 +40,8 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <new>
+#include <optional>
 #include <vector>
 
 #if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
@@ -177,6 +179,7 @@ class StandaloneAudioEngine {
   };
 
   StandaloneAudioEngine() = default;
+  ~StandaloneAudioEngine() { releaseGraphPlans_(); }
   // Owns a unique_ptr<MachineRuntimeDefinition> plus the single DeviceAdapter (both are
   // non-copyable for different reasons): the definition is non-movable by contract, and the
   // owner is held by value in the plugin and must never be identity-aliased. Deleting the
@@ -475,6 +478,13 @@ class StandaloneAudioEngine {
   // repeated buffer. The audio path may touch no heap — this is a plain memset-like loop.
   void writeSilence_(double* const* outputs, int outCh, int frames) const;
   void applyMute_(double* const* outputs, int outCh, int frames, float* tap);
+  // Cable edits: the UI thread compiles the new patch plan (it allocates); the audio thread
+  // only swaps it in and hands the used plan back to be freed here.
+  using GraphPlan = lunar24::core::SynthRuntime::GraphPlan;
+  GraphPlan* planCableEdit_();                       // UI thread, after editing uiPatch_
+  bool installGraphPlan_(SynthRuntime& rt, void* plan);  // audio thread
+  void returnGraphPlan_(GraphPlan* plan);            // audio thread
+  void releaseGraphPlans_();                         // UI thread, audio stopped: free every plan
   void updateLeds_(int frames);
 
   // Clear the ENTIRE committed state back to the "no prepare done" sentinel. Called on every
@@ -517,6 +527,9 @@ class StandaloneAudioEngine {
   bool droneKeys_[6] = {false, false, false, false, false, false};
   std::atomic<bool> muted_{false};
   std::atomic<AudioTap*> audioTap_{nullptr};  // REC; set by the UI thread
+  std::optional<lunar24::core::PatchGraph> uiPatch_;  // UI thread: copy of the live patch, to plan edits on
+  GraphPlan* planReturns_[16] = {};          // audio thread: used plans waiting for queue room
+  std::uint32_t planReturnCount_ = 0;
   std::vector<float> tap_;                    // one block of tapped frames (sized by prepare)
   // A UI note/gate event dropped by a full liveQueue_ makes the queued note stream
   // untrustworthy (some note-off is gone for good, and the UI keeps no held-note
@@ -871,6 +884,7 @@ inline void StandaloneAudioEngine::clearState_() {
   // Release the old definition (its destructor runs ONCE here — the stopped-stream boundary)
   // and reset every committed-format field to the empty "no prepare done" sentinel. After
   // this the engine is fully NOT-READY with nothing inspectable left half-written.
+  releaseGraphPlans_();
   liveQueue_.clear();
   fromAudioQueue_.clear();
   eventReconcileRequested_.store(false, std::memory_order_relaxed);
@@ -946,10 +960,12 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   // Both queue endpoints are idle at this stopped-stream/UI-thread boundary.
   // The candidate already contains the saved edits; old commands and note-ons
   // must not be replayed against it. Rejected candidates never reach this point.
+  releaseGraphPlans_();
   liveQueue_.clear();
   fromAudioQueue_.clear();
   eventReconcileRequested_.store(false, std::memory_order_relaxed);
   definition_ = std::move(cand);
+  uiPatch_.emplace(definition_->runtime().patchGraph());  // the audio thread is stopped here
   adapter_ = candAdapter;
   sampleRate_ = sampleRate;
   blockSize_ = maxBlockSize;
@@ -1011,7 +1027,12 @@ inline bool StandaloneAudioEngine::postConnect(lunar24::core::JackId source,
   c.sink = sink;
   c.oldSource = oldSource;
   c.hadOld = hadOld;
-  return liveQueue_.push(c);
+  if (hadOld) (void)uiPatch_->disconnect(oldSource, sink);  // the same edit the audio thread makes
+  (void)uiPatch_->connect(source, sink);
+  c.graphPlan = planCableEdit_();
+  if (liveQueue_.push(c)) return true;
+  delete static_cast<GraphPlan*>(c.graphPlan);
+  return false;
 }
 
 inline bool StandaloneAudioEngine::postDisconnect(lunar24::core::JackId sink) {
@@ -1025,7 +1046,11 @@ inline bool StandaloneAudioEngine::postDisconnect(lunar24::core::JackId sink) {
   c.sink = sink;
   lunar24::core::state_disconnect(st, sink);
   ++editCount_;
-  return liveQueue_.push(c);
+  (void)uiPatch_->disconnect(c.source, sink);
+  c.graphPlan = planCableEdit_();
+  if (liveQueue_.push(c)) return true;
+  delete static_cast<GraphPlan*>(c.graphPlan);
+  return false;
 }
 
 inline bool StandaloneAudioEngine::postEffectorProgram(int side, lunar24::core::ProgramId program) {
@@ -1325,6 +1350,10 @@ inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
   int n = 0;
   lunar24::core::LiveCommand c;
   while (fromAudioQueue_.pop(c)) {
+    if (c.kind == lunar24::core::LiveCommand::Kind::GraphPlanDone) {
+      delete static_cast<GraphPlan*>(c.graphPlan);  // the audio thread is done with it
+      continue;
+    }
     switch (c.kind) {
       case lunar24::core::LiveCommand::Kind::Parameter:
         lunar24::core::state_set_param(definition_->mutableDeviceState(), c.parameter, c.value);
@@ -1374,6 +1403,15 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
   // all-gates-off below. Parameter/cable/menu commands stay — they are consistent
   // with the saved state by the post* capacity checks.
   const bool reconcile = eventReconcileRequested_.exchange(false, std::memory_order_acq_rel);
+  // Plans that found the return queue full last time go back first.
+  std::uint32_t keep = 0;
+  for (std::uint32_t i = 0; i < planReturnCount_; ++i) {
+    LiveCommand r;
+    r.kind = LiveCommand::Kind::GraphPlanDone;
+    r.graphPlan = planReturns_[i];
+    if (!fromAudioQueue_.push(r)) planReturns_[keep++] = planReturns_[i];
+  }
+  planReturnCount_ = keep;
   while (liveQueue_.pop(c)) {
     if (reconcile && c.kind == LiveCommand::Kind::Event) continue;  // untrusted note stream
     switch (c.kind) {
@@ -1394,11 +1432,11 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
       case LiveCommand::Kind::Connect:
         if (c.hadOld) (void)rt.disconnect(c.oldSource, c.sink);
         (void)rt.connect(c.source, c.sink);
-        graphChanged = true;
+        if (!installGraphPlan_(rt, c.graphPlan)) graphChanged = true;
         break;
       case LiveCommand::Kind::Disconnect:
         (void)rt.disconnect(c.source, c.sink);
-        graphChanged = true;
+        if (!installGraphPlan_(rt, c.graphPlan)) graphChanged = true;
         break;
       case LiveCommand::Kind::EffectorProgram:
         rt.setEffectorProgram(static_cast<int>(c.side), c.program);
@@ -1421,12 +1459,14 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
       case LiveCommand::Kind::KeyboardSelector:
         rt.setKeyboardClockSelector(static_cast<int>(c.side), c.index, static_cast<std::uint8_t>(c.value));
         break;
+      case LiveCommand::Kind::GraphPlanDone:
       case LiveCommand::Kind::Action:
         break;  // audio -> UI only (MIDI-triggered cartridge/preset actions); never drained here
     }
   }
-  // Known compromise: recompiling the patch graph allocates a few small vectors. It only
-  // happens when the user plugs/unplugs a cable, never in steady-state rendering.
+  // Fallback only: every cable edit carries a plan compiled on the UI thread, so this
+  // allocating rebuild runs only if a plan was missing (out of memory) or built for a
+  // different patch, which the UI-side patch copy should never allow.
   if (graphChanged) (void)rt.rebuild();
   if (reconcile) {
     // All-gates-off: the failsafe sorts to phase 0 within this block, and no gate_on
@@ -1437,6 +1477,42 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
     e.source = 100;  // the UI producer
     (void)rt.enqueueControlEvent(lunar24::core::TimedControlEvent{e, rt.currentSample()});
   }
+}
+
+// ---- cable edits: plan on the UI thread, install on the audio thread ----------
+inline StandaloneAudioEngine::GraphPlan* StandaloneAudioEngine::planCableEdit_() {
+  if (!uiPatch_) return nullptr;
+  auto* plan = new (std::nothrow) GraphPlan;
+  if (plan != nullptr) definition_->runtime().planGraph(*uiPatch_, *plan);
+  return plan;
+}
+
+inline bool StandaloneAudioEngine::installGraphPlan_(SynthRuntime& rt, void* p) {
+  auto* plan = static_cast<GraphPlan*>(p);
+  if (plan == nullptr) return false;
+  const bool matched = rt.installGraphPlan(*plan);
+  returnGraphPlan_(plan);
+  return matched;
+}
+
+inline void StandaloneAudioEngine::returnGraphPlan_(GraphPlan* plan) {
+  lunar24::core::LiveCommand r;
+  r.kind = lunar24::core::LiveCommand::Kind::GraphPlanDone;
+  r.graphPlan = plan;
+  if (fromAudioQueue_.push(r)) return;
+  if (planReturnCount_ < sizeof(planReturns_) / sizeof(planReturns_[0])) planReturns_[planReturnCount_++] = plan;
+  // else: 16 plans waiting and the queue full; leak this one rather than free it here.
+}
+
+inline void StandaloneAudioEngine::releaseGraphPlans_() {
+  lunar24::core::LiveCommand c;
+  while (liveQueue_.pop(c))
+    if (c.kind == lunar24::core::LiveCommand::Kind::Connect || c.kind == lunar24::core::LiveCommand::Kind::Disconnect)
+      delete static_cast<GraphPlan*>(c.graphPlan);
+  while (fromAudioQueue_.pop(c))
+    if (c.kind == lunar24::core::LiveCommand::Kind::GraphPlanDone) delete static_cast<GraphPlan*>(c.graphPlan);
+  for (std::uint32_t i = 0; i < planReturnCount_; ++i) delete planReturns_[i];
+  planReturnCount_ = 0;
 }
 
 }  // namespace lunar24::host

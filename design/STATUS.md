@@ -25,7 +25,7 @@ _Last updated: 2026-10-04._
   engine. `panel_preview > panel.svg` renders it without the app. CI attaches a
   downloadable app to every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: 62 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
+- **Tests**: 63 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
   `design/MANUAL_TESTS.md`.
 
 ## How to play
@@ -74,8 +74,7 @@ scales (the menu marks them NOT MODELLED; they pass notes through).
    surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
 3. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix,
    VCO B's rough top register).
-4. Later: decorative controls, panel tweaks, AU/VST3. Known stability work: cable
-   edits compile the patch graph on the audio thread with small allocations. Not planned:
+4. Later: decorative controls, panel tweaks, AU/VST3. Not planned:
    effector tails across a cartridge switch (the hardware cuts them too).
 
 ## Known limits (by design)
