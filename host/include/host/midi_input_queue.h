@@ -5,6 +5,8 @@
 #include <atomic>
 #include <cstdint>
 
+#include <host/midi_sustain.h>
+
 namespace lunar24::host {
 
 // Driver -> audio SPSC queue. Closing the port advances the epoch AFTER its
@@ -63,7 +65,35 @@ class MidiNoteOwnership {
     return wasPlayed;
   }
   void reset() { for (auto& channel : played_) for (auto& note : channel) note = false; }
+  // Forget every played note, calling release(channel, note) for each.
+  template <class Release>
+  void releaseAll(Release release) {
+    for (unsigned channel = 0; channel < 16; ++channel)
+      for (unsigned note = 0; note < 128; ++note)
+        if (played_[channel][note]) {
+          played_[channel][note] = false;
+          release(channel, note);
+        }
+  }
  private:
   bool played_[16][128] = {};
 };
+
+// The MIDI input was closed, switched or overflowed: release exactly the notes MIDI is
+// still holding (pressed, or kept by a sustain pedal). Notes played with the mouse or the
+// computer keyboard, and an arpeggio they hold, are left alone. `release` receives a
+// note_off PerformanceInput (source = the MIDI producer, noteId = MIDI note + 1).
+template <class Release>
+void release_midi_notes(MidiNoteOwnership& notes, MidiSustain& sustain, core::ControlSourceId source,
+                        Release release) {
+  notes.releaseAll([&](unsigned channel, unsigned note) {
+    core::PerformanceInput in{};
+    in.kind = core::PerfInputKind::note_off;
+    in.source = source;
+    in.channel = static_cast<std::uint8_t>(channel);
+    in.noteId = note + 1;
+    release(in);
+  });
+  sustain.releaseAll(source, release);
+}
 }  // namespace lunar24::host

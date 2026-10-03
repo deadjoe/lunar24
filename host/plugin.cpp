@@ -292,13 +292,24 @@ void LunarHostPlugin::drainMidiInput(int frames)
 {
   const int now = lunar24::host::midiArrivalStamp();
   midiQueue_.drain([&] {
-    sustain_.reset();
-    midiNotes_.reset();
-    lunar24::core::ControlEvent event{};
-    event.kind = lunar24::core::ControlEventKind::reset;
-    event.value = 1;
-    event.source = 3;
-    engine_.enqueueEventFromAudioThread(event, 0);
+    // The old input's stream ended: release only the notes it still holds, so mouse and
+    // computer-keyboard playing (and an arpeggio they hold) keep going. Should the event
+    // queue be full, fall back to the all-gates-off failsafe rather than leave a note stuck.
+    bool released = true;
+    lunar24::host::release_midi_notes(midiNotes_, sustain_, 3, [&](lunar24::core::PerformanceInput in) {
+      in.seq = ++midiSeq_;
+      lunar24::core::ControlEvent event[1];
+      if (midiInput_.translate(in, event, 1) == 1 && !engine_.enqueueEventFromAudioThread(event[0], 0))
+        released = false;
+    });
+    engine_.pitchBendFromAudioThread(0.0);  // a bend held on the old input springs back
+    if (!released) {
+      lunar24::core::ControlEvent event{};
+      event.kind = lunar24::core::ControlEventKind::reset;
+      event.value = 1;
+      event.source = 3;
+      engine_.enqueueEventFromAudioThread(event, 0);
+    }
   }, [&](lunar24::host::MidiInputQueue::Message input) {
     IMidiMsg message;
     message.mStatus = input.status;

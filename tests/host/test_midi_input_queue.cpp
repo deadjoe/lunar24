@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "mini_test.h"
 #include <host/midi_input_queue.h>
+#include <host/standalone_audio_engine.h>
+#include <memory>
 #include <thread>
 
 int main() {
@@ -70,5 +72,65 @@ int main() {
   ownership.played(1, 60);
   ownership.reset();
   CHECK(!ownership.release(1, 60));
+  // Closing the MIDI input releases only what MIDI holds: a pressed note and a note kept
+  // by the sustain pedal stop, a note held with the mouse keeps sounding at its own pitch.
+  {
+    namespace core = lunar24::core;
+    auto engine = std::make_unique<lunar24::host::StandaloneAudioEngine>();
+    CHECK(engine->prepare(1, 48000.0, 64, 0, 2));
+    core::InputStateMachine input{nullptr, 0};
+    std::uint64_t seq = 0;
+    auto send = [&](core::PerformanceInput in) {
+      in.seq = ++seq;
+      core::ControlEvent events[3];
+      const auto n = input.translate(in, events, 3);
+      for (unsigned i = 0; i < n; ++i) CHECK(engine->enqueueEventFromAudioThread(events[i]));
+    };
+    auto play = [&](core::ControlSourceId source, core::NoteId id, double semitones) {
+      core::PerformanceInput in{};
+      in.kind = core::PerfInputKind::note_on;
+      in.source = source;
+      in.noteId = id;
+      in.pitch = static_cast<core::SignalSample>(semitones / 12.0);
+      in.value = 0.8f;
+      send(in);
+    };
+    auto render = [&] {
+      double l[64]{}, r[64]{};
+      double* out[] = {l, r};
+      for (int i = 0; i < 8; ++i) engine->processBlock(nullptr, out, 0, 2, 64);
+    };
+    const core::JackId gate = core::JackId::keyboard_gate_left_main_out;
+    const core::JackId vOct = core::JackId::keyboard_v_oct_out;
+    lunar24::host::MidiNoteOwnership notes;
+    lunar24::host::MidiSustain sustain;
+    play(1, 1000, 0.0);  // the mouse holds A
+    render();
+    // MIDI: note 64 held down; note 67 released under the pedal (the pedal keeps it).
+    notes.played(0, 64);
+    sustain.noteOn(0, 64);
+    play(3, 65, 7.0);
+    sustain.pedal(0, true, 3, send);
+    notes.played(0, 67);
+    sustain.noteOn(0, 67);
+    play(3, 68, 10.0);
+    CHECK(notes.release(0, 67));
+    CHECK(sustain.deferNoteOff(0, 67));
+    render();
+    CHECK(engine->runtime()->controlVoltageAt(gate) > 1.0);
+    CHECK(std::fabs(engine->runtime()->controlVoltageAt(vOct) * 12.0 - 10.0) < 1e-3);
+    int released = 0;
+    lunar24::host::release_midi_notes(notes, sustain, 3, [&](core::PerformanceInput in) {
+      CHECK(in.kind == core::PerfInputKind::note_off && in.source == 3);
+      ++released;
+      send(in);
+    });
+    CHECK_EQ(released, 2);
+    render();
+    CHECK(engine->runtime()->controlVoltageAt(gate) > 1.0);  // the mouse note still sounds
+    CHECK(std::fabs(engine->runtime()->controlVoltageAt(vOct) * 12.0) < 1e-3);  // at A
+    CHECK(!notes.release(0, 64));            // nothing left to release
+    CHECK(!sustain.deferNoteOff(0, 70));     // the pedal is up again
+  }
   return test::finish("test_midi_input_queue");
 }

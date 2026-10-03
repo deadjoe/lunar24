@@ -119,6 +119,7 @@ struct EditorShared {
   std::uint64_t seq = 0;
   std::uint64_t seenStateVersion = ~0ull;
   bool seenReady = false;
+  bool seenMuted = false;
 
   static constexpr core::NoteId kMouseId = 1000;
   static constexpr core::NoteId kKeyIdBase = 2000;
@@ -1389,6 +1390,10 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
     if (shared.engine.syncParametersFromAudioThread() > 0) g->SetAllControlsDirty();  // MIDI CC
     if (shared.engine.isReady() != shared.seenReady) {  // audio started or stopped
       shared.seenReady = shared.engine.isReady();
+      g->SetAllControlsDirty();
+    }
+    if (shared.engine.muted() != shared.seenMuted) {  // MUTE toggled, also by a MIDI binding
+      shared.seenMuted = shared.engine.muted();
       g->SetAllControlsDirty();
     }
     if (shared.engine.stateVersion() != shared.seenStateVersion) {

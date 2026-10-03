@@ -37,6 +37,14 @@ class MidiSustain {
     }
   }
 
+  // Release every note a pedal is holding back (all channels) and lift every pedal, as
+  // if each pedal came up. `release` gets a note_off like pedal() sends.
+  template <class Release>
+  void releaseAll(core::ControlSourceId source, Release release) {
+    for (unsigned channel = 0; channel < 16; ++channel) pedal(channel, true, source, release);
+    for (unsigned channel = 0; channel < 16; ++channel) pedal(channel, false, source, release);
+  }
+
   // Clear pedal and deferred-note state. The notes a pedal was holding belong to the
   // audio stream that carried them; when that stream is replaced (device reopen /
   // RESET PANEL) its notes die with it, and a stale pedal-down would otherwise defer
