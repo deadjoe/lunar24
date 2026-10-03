@@ -288,6 +288,11 @@ class StandaloneAudioEngine {
   // machine, so unmuting returns to whatever is playing. Not saved: the app starts unmuted.
   void setMuted(bool on) { muted_.store(on, std::memory_order_relaxed); }
   bool muted() const { return muted_.load(std::memory_order_relaxed); }
+  // UI and MIDI may toggle concurrently; neither toggle may overwrite the other.
+  void toggleMuted() {
+    bool current = muted_.load(std::memory_order_relaxed);
+    while (!muted_.compare_exchange_weak(current, !current, std::memory_order_relaxed)) {}
+  }
   // Bumped whenever a whole new machine state is committed (startup restore, preset load),
   // so the UI knows to redraw every control.
   std::uint64_t stateVersion() const { return stateVersion_; }
@@ -1175,7 +1180,7 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
       return;
     }
     if (b.action == MidiAction::master_mute) {
-      setMuted(!muted());
+      toggleMuted();
       return;
     }
     // Cartridge / preset actions: the UI thread executes them (it owns the state).

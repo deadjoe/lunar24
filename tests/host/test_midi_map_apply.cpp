@@ -269,10 +269,28 @@ int main() {
     e.applyMidiBindingFromAudioThread(0, 127);
     CHECK(e.muted());
     e.applyMidiBindingFromAudioThread(0, 127);
+    CHECK(e.muted());  // repeated high must not toggle, even before release
     e.applyMidiBindingFromAudioThread(0, 0);
     CHECK(e.muted());
     e.applyMidiBindingFromAudioThread(0, 127);
     CHECK(!e.muted());
+  }
+
+  // Both the panel and MIDI action use this atomic toggle. An even total of
+  // concurrent toggles must preserve the initial state.
+  {
+    E e;
+    std::atomic<bool> start{false};
+    std::thread panel([&] {
+      while (!start.load(std::memory_order_acquire)) {}
+      for (int i = 0; i < 100001; ++i) e.toggleMuted();
+    });
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < 100001; ++i) e.toggleMuted();
+    panel.join();
+    CHECK(!e.muted());
+    e.toggleMuted();
+    CHECK(e.muted());
   }
 
   // A pad's velocity is an absolute value, not a pickup knob needing a sweep.

@@ -963,6 +963,7 @@
   1. CHANNEL = ANY，按住一个琴键；改成键盘不使用的通道，再松键。原来的音应释放；新按下的键不发声。恢复 ANY 后弹奏正常。
   2. LEARN → 点 MUTE → 按住一个琴键，等绑定出现在列表后再松开。第一次按下可能仍作为演奏音，但松开后必须停止。随后按此键只切换 MUTE，松开不再切换。测完删除绑定，恢复 MUTE 关闭。
   3. 持续弹奏时，在 Preferences 把 MIDI Input 切成 off。不得残留持续音；切回键盘后正常弹奏。如果有延音踏板，再用踩住踏板的音重复通道切换，抬踏板后应释放。
+  4. MIDI Input 已是 off 时，用键盘 MODE = ARPEGGIATOR、ARP HOLD 保持一个正在运行的琶音，再在 Preferences 选择 off 并 Apply（不改音频设备或其他音频设置）。仅重复选择 off 不应停音或重启琶音；测完关闭 ARP HOLD、恢复 MODE = KEYBOARD。若用 macOS virtual input，也检查从该输入切成 off 后正在演奏的 MIDI 音符会释放。
 
 **T15.6 映射数值与动作** ⏳（本次修复必测）
 - LEARN 一个硬件旋钮到 VCO A 的 **oct+3** 开关，保持 ABS，来回扫过全程。面板开关和实际音高应一致地按档变化，不得只动图形而声音不变。

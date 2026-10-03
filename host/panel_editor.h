@@ -878,7 +878,7 @@ class MasterMuteControl : public IControl {
     g.DrawText(txt(15, theme::kInk), "MUTE", float(w_.cx), float(w_.cy - 42));
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
-    s_.engine.setMuted(!s_.engine.muted());
+    s_.engine.toggleMuted();
     SetDirty(false);
   }
 
