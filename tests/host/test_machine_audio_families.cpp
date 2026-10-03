@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_machine_audio_families.cpp — task#78 gap#3 (GH#12 9C): VCO init + the six audio families,
+// test_machine_audio_families.cpp — gap#3: VCO init + the six audio families,
 // including the NEW drone_3/6 applied_to_dsp parameters (which the earlier /tmp audio harness
 // omitted). Driven through the AGREED entry — encode -> decode -> StandaloneAudioEngine
 // applyDeviceState -> processBlock — via the shared test_engine_harness.h, asserted on the REAL
@@ -13,7 +13,7 @@
 //     rate) is the discriminator. WET is un-saturated, so PEAK is the discriminator for the
 //     level families (mixer / preamp / vcf) and ZCR is a strong one for the sweep family.
 //   * The NEW drone_3/6 channels are tapped before the mixer, so their published mixer-bus value
-//     (drone3Channel()/drone6Channel()) is the real per-sample value feeding WET; that getter is
+//     (drone3Channel/drone6Channel) is the real per-sample value feeding WET; that getter is
 //     the reliable discriminator for a drone param (peak-abs is volume-scale-flat).
 
 #include "mini_test.h"
@@ -126,7 +126,7 @@ void test_vco_voices() {
   CHECK(a0 >= 10);                       // baseHz 440 live (not 0).
   CHECK(zcrOf(hA.dryA()) != a0);         // tune moved VCO-A frequency.
 
-  // VCO-B (task #83 / GH #18): the default normalized route is now the ACYCLIC VCO-A->VCO-B edge
+  // VCO-B: the default normalized route is now the ACYCLIC VCO-A->VCO-B edge
   // (source = vco_a.dry_out, NOT the pre-fix vco_b.vco_out self-edge), so default DRY B is a LIVE
   // oscillator. The pre-fix default self-edge stall is gone. B still responds to its parameter
   // families, which is what this block keeps proving (the feedback mechanism itself is exercised by
@@ -162,9 +162,9 @@ void test_vco_voices() {
 }
 
 // --- 4. MIXER / 5. VCF / 6. PREAMP ---------------------------------------------------------
-// STIMULUS PIN (GH#19 S0, task #117). These three sub-cases test the MIXER, the VCF and the PREAMP.
-// Their input is VCO A, and until #117 they inherited a triangle from the VCO's constructor default.
-// #117 made the production default the continuous morph sweep, whose `morph = 0.5` default lands on
+// STIMULUS PIN. These three sub-cases test the MIXER, the VCF and the PREAMP.
+// Their input is VCO A, and until they inherited a triangle from the VCO's constructor default.
+//  made the production default the continuous morph sweep, whose `morph = 0.5` default lands on
 // the SINE node — so the same tests would now be running on a different source spectrum, and these
 // thresholds were tuned against the triangle's harmonic content (the PREAMP one moves by 4%).
 // The waveform is NOT what these sub-cases are about, so it is pinned EXPLICITLY instead of being
@@ -172,11 +172,11 @@ void test_vco_voices() {
 // B's default spectrum in the measurement (measured: pinning A alone still moved the WET peaks by
 // ~6%, because B's default changed from triangle to sine too).
 // `morph = 0.75` is the sweep's pure-triangle node, and the samples emitted there are bit-identical
-// to the pre-#117 triangle INCLUDING its BLAMP correction (asserted in tests/core/test_vco.cpp).
+// to the earlier triangle INCLUDING its BLAMP correction (asserted in tests/core/test_vco.cpp).
 // The thresholds are left EXACTLY as they were.
 constexpr double kTriNode = 0.75;  // the sweep's pure-triangle node (wave_map kRingEqual[3]).
 
-// Restore the pre-#117 VCO stimulus: both sides on the pure-triangle node.
+// Restore the earlier VCO stimulus: both sides on the pure-triangle node.
 void pin_triangle_stimulus(DeviceStateV1& st) {
   slot(st, ParameterId::vco_a_morph) = kTriNode;
   slot(st, ParameterId::vco_b_morph) = kTriNode;
@@ -262,7 +262,7 @@ void test_drone_classic() {
 void test_drone_new() {
   // NEW applied_to_dsp params: drone_3_pitch / drone_6_pitch change the real mixer-bus tap
   // (drone3Channel/drone6Channel) and the real WET buffer after the voice is routed to the mix.
-  // (These are the parameters the earlier /tmp audio harness omitted — added per @Codex 1e34b7bb.)
+  // (These are the parameters the earlier /tmp audio harness omitted — added .)
   {
     DeviceStateV1 base3 = dryDefault(kSeed);
     slot(base3, ParameterId::mixer_ch3_vol) = 1.0;          // drone_3 -> channel 2.

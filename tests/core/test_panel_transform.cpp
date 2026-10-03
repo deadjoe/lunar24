@@ -1,26 +1,26 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P5-② transform + hit-testing slice (task #33) — the single reversible transform that
-// geometry, hit testing, touch plate and patch point/cable all share (design/06 §P5
+//  transform + hit-testing slice — the single reversible transform that
+// geometry, hit testing, touch plate and patch point/cable all share (
 // first line). This test pins the five mandate criteria and, critically, drives the
-// negatives at NON-100% because the real bug @Claude flagged is invisible at design scale.
+// negatives at NON-100% because the real bug flagged is invisible at design scale.
 //
-//   C1  ONE transform. geometry (design_to_screen) and hit-testing (screen_to_design)
+//   C1 ONE transform. geometry (design_to_screen) and hit-testing (screen_to_design)
 //       must agree: a design control drawn at screen point S is hit when we ask
 //       hit-testing at S. NEGATIVE: a renegade hit-test that recomputes its own scale
 //       diverges at non-100% (and is GREEN at 100% — the trap). We assert both.
-//   C2  Reversible. screen_to_design(design_to_screen(p)) == p within float tolerance at
+//   C2 Reversible. screen_to_design(design_to_screen(p)) == p within float tolerance at
 //       every zoom + fit, with and without pan, with retina != 1. NEGATIVE: a one-way
 //       lossy step (integer truncation of screen coords) loses precision > 1e-3 px.
-//   C3  7 zoom levels (50/67/75/100/125/150/200%) + fit-to-window, logical coords &
-//       state unchanged (reuse the P1-④ invariant — the design point is the state and it
+//   C3 7 zoom levels (50/67/75/100/125/150/200%) + fit-to-window, logical coords &
+//       state unchanged (reuse the invariant — the design point is the state and it
 //       round-trips to itself at every zoom; logical size = design * drawScale).
-//   C4  retina = SEPARATE multiplier, never folded into drawScale. design_to_logical
+//   C4 retina = SEPARATE multiplier, never folded into drawScale. design_to_logical
 //       depends only on drawScale; logical_to_backing depends only on screenScale.
 //       NEGATIVE: a renegade that folds retina into drawScale (design*drawScale*screenScale
 //       in the logical step) diverges — and is invisible at retina==1.
-//   C5  (measured coords — handled in test_panel_layout.cpp once panel_layout.h lands.)
+//   C5 (measured coords — handled in test_panel_layout.cpp once panel_layout.h lands.)
 //
 // All mappings are exact inverses (multiply then divide by the SAME fields). A value
 // differs from another only when a renegade introduces an independent scale.
@@ -174,7 +174,7 @@ int run(const char* suite) {
                   lunar24::core::make_zoom_transform(1.5, 2.0, 0.0, 0.0), kDesignW, kDesignH);
   }
 
-  // ---- C2 FIT: the fit path uses the existing P1-④ rule (criterion 3: reuse, don't
+  // C2 FIT: the fit path uses the existing rule (criterion 3: reuse, don't
   // reinvent) and is also reversible. ----
   {
     const double availW = 1600.0, availH = 900.0;
@@ -183,7 +183,7 @@ int run(const char* suite) {
     std::printf("C3 fit drawScale=%.5f logical=%.2fx%.2f\n", t.drawScale,
                 kDesignW * t.drawScale, kDesignH * t.drawScale);
     CHECK(near(t.drawScale, fit_draw_scale(kDesignW, kDesignH, availW, availH)));
-    // logical size = design * drawScale (the P1-④ invariant), which fits the window.
+    // logical size = design * drawScale (the invariant), which fits the window.
     // For 1600x900, HEIGHT binds (900/1551=0.580 < 1600/2400=0.667), so logicalH == availH.
     const double hBind = availH / kDesignH;  // 0.58027
     CHECK(near(t.drawScale, hBind));
@@ -210,7 +210,7 @@ int run(const char* suite) {
       // State (design point) unchanged — the zoom is only a view transform.
       CHECK(near(rx, px));
       CHECK(near(ry, py));
-      // Logical size = design * drawScale (P1-④ invariant reused).
+      // Logical size = design * drawScale (invariant reused).
       CHECK(near(kDesignW * t.drawScale, kDesignW * kZoomScales[i]));
     }
   }
@@ -286,6 +286,6 @@ int run(const char* suite) {
 }  // namespace
 
 int main() {
-  std::printf("== P5-② single reversible panel transform + hit-testing ==\n");
+  std::printf("== single reversible panel transform + hit-testing ==\n");
   return run("panel_transform");
 }

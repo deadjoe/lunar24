@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH#11 final acceptance (task#68, per @Codex ruling a14fd6a4 + 7C3 pulser/clock-out).
+//  final acceptance (ruling + 7C3 pulser/clock-out).
 //
 // Proves the six control sources (Envelope A/B, LFO A/B, Joystick, Sequencer) are
 // REAL audio/PatchGraph consumers in the canonical MachineRuntimeDefinition: they are
@@ -12,11 +12,11 @@
 //
 // Scope guard (DO NOT widen): this TU touches ONLY the generated registry +
 // canonical machine_definition + real runtime / PatchGraph / EventTimebase. It does NOT
-// alter design/spec/generated semantics, host/#4/#10, DeviceState/#12, or the VCF
-// restore/#6 boundary. GH#11 is FIXED-CANDIDATE at this head (the six control sources
-// are all implemented and consumed); awaiting @Codex's independent close + P3 ruling.
+// alter design/spec/generated semantics, host/#4/, DeviceState/, or the VCF
+// restore/#6 boundary. is FIXED-CANDIDATE at this head (the six control sources
+// are all implemented and consumed); awaiting independent close + P3 ruling.
 //
-// The six source value- and instance-accessors (envelopeA()/lfoA()/... / the private
+// The six source value- and instance-accessors (envelopeA/lfoA/... / the private
 // setControlParamValue / setSequencerInternalRateHz) are PRIVATE by design: the injector
 // and the readback inspector are the host/verifier facade, not a test seam. So this test
 // deliberately drives them through the real event path instead of touching them directly.
@@ -101,7 +101,7 @@ static std::unique_ptr<core::MachineRuntimeDefinition> make_def(std::uint64_t se
 // Event helpers (public path: enqueueControlEvent -> EventTimebase -> processBlock).
 // A deterministic producerSequence keeps same-block ordering stable and identical
 // across runs, so the SAME logical event set is delivered identically under any
-// block partition (design/07 §5 buffer-invariance, criterion ④).
+// block partition (buffer-invariance).
 // ---------------------------------------------------------------------------
 static void applyParam(core::SynthRuntime& rt, reg::ParameterId pid, double v,
                        uint64_t sample) {
@@ -144,7 +144,7 @@ static void frame_capture(core::SynthRuntime& rt, int n, reg::JackId jack, doubl
 }
 
 // ---------------------------------------------------------------------------
-// GH#21 continue-control-smoothing helpers (design/07 §3.2 + the GH#21 contract).
+//  continue-control-smoothing helpers (+ the contract).
 //
 // The runtime smoothes the 20 continuous control-source params with a ONE-POLE
 // ParameterSmoother whose per-frame ordering is: 'setTarget' (if a param event lands
@@ -170,7 +170,7 @@ static bool gh21_is_seconds(reg::ParameterId pid) {
 // written down: registry `Smoothing::seconds` AND `disposition == applied_to_dsp` — the exact
 // predicate SynthRuntime::isContinuousSmoothingParam_ uses to build controlSmoothOrdinals_
 // (machine_runtime.h). Hand-written family sizes in these messages have already drifted once
-// (20 -> 36 was written when the panel-knob set landed; GH#19 S0 / task #117 then added the
+// (20 -> 36 was written when the panel-knob set landed; / then added the
 // vco_a/b.pwm pair, 36 -> 38), so the number is now derived and asserted, and the T4 message
 // prints this value. A family that outgrows kMaxControlSmoothParams would silently DROP members
 // (the ctor's defensive cap), which is exactly what this count makes visible.
@@ -184,7 +184,7 @@ static std::size_t gh21_smoothing_family_size() {
   return n;
 }
 
-// The GH#21 acceptance settle frame count, derived from the DECLARED tau and settle
+// The acceptance settle frame count, derived from the DECLARED tau and settle
 // tolerance (rule 2: N = ceil(fs * tau * ln(1/relTol)); nothing magic). This is the minimum
 // number of pole steps for the one-pole residual (1-a)^N to reach relTol * span, at which
 // point the runtime SNAPS the param to the EXACT target (advanceControlSmoothing_). A small
@@ -256,7 +256,7 @@ static std::vector<int> gh21_cross_up_frames(
   return out;
 }
 
-// Advance the runtime by `n` single-sample blocks. processBlock() writes out[i]/reads inputs[i]
+// Advance the runtime by `n` single-sample blocks. processBlock writes out[i]/reads inputs[i]
 // for i in [0,n), so a SINGLE RuntimeOutput/RuntimeInputs must only be passed when n==1. When a
 // test needs to roll the clock forward by a tau-derived settle window (rule 2) without observing
 // each frame, this loops processBlock(1) so no OOB-past-a-single-element write occurs.
@@ -341,7 +341,7 @@ static void test_1_slots_presence_phase(void) {
   check(samePre, "t1 LFO identical pre-repatch across two fresh defs (deterministic)");
   check(samePost, "t1 LFO phase preserved across a real repatch (not reset/frozen)");
 
-  // (c) Partition invariance (criterion ④): same config events, three fresh defs, three
+  // (c) Partition invariance: same config events, three fresh defs, three
   //     block schedules -> bit-identical output. Config changes the LFO + joystick so the
   //     render is genuinely source-driven.
   const uint32_t b256[1] = {256};
@@ -378,7 +378,7 @@ static void test_1_slots_presence_phase(void) {
   for (int i = 0; i < kCap; ++i)
     partSame = partSame && sameD(o256[i].wetL, o64[i].wetL) &&
                sameD(o256[i].wetL, o1[i].wetL);
-  check(partSame, "t1 256-vs-64-vs-1 block partition is bit-identical (criterion ④)");
+  check(partSame, "t1 256-vs-64-vs-1 block partition is bit-identical ");
 }
 
 // ===========================================================================
@@ -533,7 +533,7 @@ static void test_3_seq_gate_eg_env_vcf(void) {
     }
   }
 
-  // The seq GATE is the advance discriminator. Under GH#21 smoothing the external-clock CV
+  // The seq GATE is the advance discriminator. Under smoothing the external-clock CV
   // that drives it is a one-pole ramp, so a threshold rising edge fires at the closed-form
   // frame where the smoothed joystick CV crosses the EXT CLOCK level (Class B edge invariant + predictive
   // window), NOT at the raw value-step frame 100. That first crossing (pred[0]) STARTS
@@ -553,7 +553,7 @@ static void test_3_seq_gate_eg_env_vcf(void) {
   check(stepAt[pred[2]] == 2, "t3 seq reaches step 2 at the 3rd predicted cross (pred[2])");
 
   // The sequencer is a live source even idle: it publishes step0's CV (the current step
-  // value) BEFORE any advance. Under GH#21 smoothing that value is a one-pole ramp toward
+  // value) BEFORE any advance. Under smoothing that value is a one-pole ramp toward
   // the configured step0 target over the tau-derived settle window, so the idle CV reaches
   // its configured 1.0 V after `settle` frames (Class A value-reach). Re-expressed from the
   // old exact sqCv[0]==1.0, which assumed the CV snapped instantly. Kept in a NON-advancing
@@ -622,7 +622,7 @@ static void test_4_joystick_vcf(void) {
   // the tau-derived settle window (rule 2). The published jack is read AFTER the axis has
   // settled so the value assertion is exact; the "exact sample, not block-front" property is
   // re-expressed as the offset transition being an event-triggered SMOOTH ramp (never a jump
-  // at the block front), per the GH#21 Class-B re-expression.
+  // at the block front), per the Class-B re-expression.
   const int settle = gh21_settle_frames(kSr);
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
@@ -685,7 +685,7 @@ static void test_4_joystick_vcf(void) {
 //    makes no phantom advance.
 // ===========================================================================
 static void test_5_seq_ext_clock(void) {
-  // GH#21 re-expression: sequencer_ext_clock_in is a zero-threshold/hysteresis gate, so a
+  //  re-expression: sequencer_ext_clock_in is a zero-threshold/hysteresis gate, so a
   // SMOOTHED joystick CV (Smoothing::seconds) now drives the advance as a one-pole ramp, not
   // a step at frame 5. Class-B three-part lock (edge invariants, anti-old-frame, predicted-
   // crossing window) replaces the old exact-frame-5 assertion. The step_cv value reach needs
@@ -786,13 +786,13 @@ static void test_5_seq_ext_clock(void) {
 // ===========================================================================
 static void test_6_seq_stages_clock_out(void) {
   // (a) Stages: an external clock drives advances, each on ONE rising crossing of the
-  //     SMOOTHED joystick CV (Smoothing::seconds). GH#21 re-expression (rule 2c): the source
+  //     SMOOTHED joystick CV (Smoothing::seconds). re-expression (rule 2c): the source
   //     is a one-pole ramp, so the old "8-frame steps -> advances at exact frames 8/24/40/56"
   //     is not reachable (8-frame toggling never lets the axis reach the 0 V threshold). We
   //     space the steps so the source CLEANLY crosses, predict each crossing with the closed
   //     form (gh21_cross_up_frames), and assert the three-part Class-B lock: one advance per
   //     rising crossing at the predicted-window frame, never at the raw value-step frame, and
-  //     wrap per stageCount (read from the sequencer's own currentStep()).
+  //     wrap per stageCount (read from the sequencer's own currentStep).
   const struct { int stages; double step0, step1, step2; } cases[3] = {
       {3, 1.0, 2.0, 3.0}, {4, 1.0, 2.0, 3.0}, {5, 1.0, 2.0, 3.0}};
   // Spaced full-swing steps so each up-ramp crosses the EXT CLOCK level (+1.2 V) before the
@@ -840,11 +840,11 @@ static void test_6_seq_stages_clock_out(void) {
         seqStep[i] = static_cast<int>(rt.sequencer().currentStep());
       }
     }
-    // ---- Class B: advances are the honest discrete observable (currentStep() is public and
+    // ---- Class B: advances are the honest discrete observable (currentStep is public and
     // NOT smoothed); the gate pulse is a separate signal (fires only on a gate-enabled landing
     // step). The older "8-frame steps -> advances at exact frames 8/24/40/56" is unreachable
     // under smoothing; we detect step transitions and hold them to the three-part Class-B lock.
-    // ---- Class B: detect ADVANCES via the sequencer's discrete step (currentStep(), public and
+    // ---- Class B: detect ADVANCES via the sequencer's discrete step (currentStep, public and
     // NOT smoothed). The gate pulse is a SEPARATE signal: it fires only on a gate-enabled landing
     // step, so gate-pulse count != advance count. The three-part lock is expressed on the ADVANCE.
     std::vector<int> adv;  // frames where the sequencer step changed
@@ -905,7 +905,7 @@ static void test_6_seq_stages_clock_out(void) {
     // non-vacuous (this survives smoothing unchanged).
     check(vcfL[pred[0]] != 0.0 || sameD(s0, 0.0),
           "t6 seq CV is a non-zero joint in the VCF L sink (real consumer)");
-    // clock_out is now a PUBLISHED virtual-volts rail (@Codex 7C3). The internal PULSER runs
+    // clock_out is now a PUBLISHED virtual-volts rail. The internal PULSER runs
     // at the core default 1.0 Hz, so over this window it never rises (phase accumulates 1/48000
     // per sample, <1.0) and the CLOCK OUT holds the CONFIRMED idle rail. Unchanged by smoothing.
     bool clockIdle = true;
@@ -914,7 +914,7 @@ static void test_6_seq_stages_clock_out(void) {
   }
 
   // (b) Internal PULSER Hz setter (standalone DSP level). At 1500 Hz/48 kHz the pulser
-  //     crosses 1.0 at frame 31 (phase += 0.03125/frame), so started() flips true there
+  //     crosses 1.0 at frame 31 (phase += 0.03125/frame), so started flips true there
   //     and the playhead advances 31/63/95/127 (stage 3 wrap).
   {
     core::FiveStepSequencer seq;
@@ -937,7 +937,7 @@ static void test_6_seq_stages_clock_out(void) {
   }
 
   // (c) Seq gate -> EG (an actual envelope consumer) so that "gate→EG" in the spec title
-  //     is proven for the sequencer, and that the gate pulse triggers the EG. GH#21
+  //     is proven for the sequencer, and that the gate pulse triggers the EG.
   //     re-expression: the joystick is smoothed, so the seq gate fires at the SMOOTHED 0 V
   //     crossing (predicted via the closed form), NOT at the raw value-step frame 8.
   {
@@ -1004,7 +1004,7 @@ static void test_7_param_table_partition(void) {
           "t7 lfo_a_rate and lfo_b_rate applied to distinct instances");
   }
 
-  // (b) Out-of-range finite value is REJECTED at the product boundary (@Codex BLOCKED #1):
+  // (b) Out-of-range finite value is REJECTED at the product boundary (BLOCKED #1):
   //     joystick_x is norm [0,1]; 5.0 / -1.0 are NOT in domain -> invalid_value (keep old),
   //     never the DSP clamp (setNorm_ would clamp01(5.0)=1.0). The readback AND the rail both
   //     stay at the PRIOR value — admission is evidence-domain, not setter-clamp.
@@ -1040,7 +1040,7 @@ static void test_7_param_table_partition(void) {
     check(nearD(rt.joystick().x(), 0.5), "t7 invalid -1.0 keeps default x=0.5");
   }
 
-  // (c) sequencer.pulser is DOMAIN-VALIDATED (@Codex 7C3): the norm [0,1] is admitted through
+  // (c) sequencer.pulser is DOMAIN-VALIDATED: the norm [0,1] is admitted through
   //     the provisional software model (centrally `pulserNormToRateHz`), so an OUT-OF-DOMAIN
   //     value must be rejected as invalid_value without touching the schedule. We render a
   //     baseline (no seq param) and a PULSER run with 10000.0 (out of [0,1]) and require them
@@ -1128,7 +1128,7 @@ static void test_7_param_table_partition(void) {
           "t7 legitimate external clock advances exactly one step (0->1)");
   }
 
-  // (d) 64/128/mixed partition consistency for a SOURCE event set (design/07 §5): the SAME
+  // (d) 64/128/mixed partition consistency for a SOURCE event set: the SAME
   //     logical events (a sample-8 offset change + LFO rate + joystick) rendered under four
   //     schedules produce bit-identical output. If any block partition applied an event at a
   //     different frame, offset would land at a different sample and wetL would diverge.
@@ -1158,12 +1158,12 @@ static void test_7_param_table_partition(void) {
 }
 
 // ===========================================================================
-// 8. task#65 canonical invariants: the exact feedback-pair discriminator (B′), and the
+// 8. canonical invariants: the exact feedback-pair discriminator (B′), and the
 //    render path allocates ZERO (A′). Old-test non-regression is the separate whole-suite
 //    CTest run (this TU only contributes a no-crash sanity render).
 // ===========================================================================
 static void test_8_task65_invariants_zero_alloc(void) {
-  // (a) FeedbackResolve (task#65 correction 6 / B′): a (src,sink) pair where the sink
+  // (a) FeedbackResolve (correction 6 / B′): a (src,sink) pair where the sink
   //     is EXACTLY the feedback line's sink reads the D-delay; same-source/different-sink
   //     reads the LIVE value. This is the pure discriminator, asserted directly.
   {
@@ -1179,7 +1179,7 @@ static void test_8_task65_invariants_zero_alloc(void) {
   }
 
   // (b) Render-path zero allocation: measure g_allocCount across a real render loop. The
-  //     whole event set + cabling must run with no operator-new on the audio path (criterion ⑤).
+  //     whole event set + cabling must run with no operator-new on the audio path.
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
     core::SynthRuntime& rt = def->runtime();
@@ -1199,7 +1199,7 @@ static void test_8_task65_invariants_zero_alloc(void) {
       sink += o.wetL;  // consume so the optimizer cannot elide the render
     }
     const std::size_t after = g_allocCount;
-    check(after == before, "t8 render path allocates ZERO (A′ criterion ⑤)");
+    check(after == before, "t8 render path allocates ZERO (A′ )");
     check(std::isfinite(sink), "t8 sustained render stays finite (no NaN blow-up)");
   }
 }
@@ -1288,7 +1288,7 @@ static void test_negative_controls(void) {
           "neg4 A/B and X/Y source instances are distinct (no cross-wire)");
   }
 
-  // (5) Parameter block-front apply, or a missed family. joystick_offset_x is a GH#21
+  // (5) Parameter block-front apply, or a missed family. joystick_offset_x is a
   //     seconds-smoothed source, so its effect is a ONE-POLE RAMP that begins only at the
   //     event frame 8 (Class B: event-triggered smooth ramp, never a jump at block-front).
   //     Re-expressed from the old exact x_out[0]==2.0 / x_out[8]==0.0 (which assumed the
@@ -1327,7 +1327,7 @@ static void test_negative_controls(void) {
 
   // (6) PULSER-as-Hz or a silent default: the REAL internal-rate mechanism is ADMITTED on
   //     the standalone DSP (setting Hz → advance within a few frames), and the runtime PULSER
-  //     *param* is a DOMAIN-VALIDATED transfer (@Codex 7C3). An OUT-OF-DOMAIN value (10000.0)
+  //     *param* is a DOMAIN-VALIDATED transfer. An OUT-OF-DOMAIN value (10000.0)
   //     must be rejected as invalid_value and leave the schedule bit-identical — this
   //     distinguishes "pulser genuinely validates" from "internal rate silently defaults".
   {
@@ -1376,10 +1376,10 @@ static void test_negative_controls(void) {
 //    a UNIT-DOMAIN value must land `applied` (the setter was really reached), and a
 //    UNIT-DOMAIN VIOLATION must land `invalid_value` (rejected at the product boundary
 //    BEFORE any sound-core clamp/coerce is mistaken for admission). sequencer_pulser is
-//    the 35th: recognised but `transfer_unavailable` (BLOCKED, GH#11).
+//    the 35th: recognised but `transfer_unavailable` (BLOCKED).
 // ===========================================================================
 // Read the REAL instance getter value (as a double) for a control-source parameter.
-// This is the @Codex #2 requirement: the apply-status oracle must be backed by the actual
+// This is the requirement: the apply-status oracle must be backed by the actual
 // DSP instance state read through the public CONST surface — never a shadow/param bank.
 // Enum/int/bool getters are converted to a comparable double (their underlying value);
 // step CV/Gate family index is derived from the parameter id (cv_N -> N-1).
@@ -1499,7 +1499,7 @@ static void row_apply(const ParamRow& row) {
   core::RuntimeOutput o;
   const core::RuntimeInputs z{0.0, 0.0};
 
-  // A continuous (Smoothing::seconds) control-source param is a ONE-POLE ramp (GH#21); a
+  // A continuous (Smoothing::seconds) control-source param is a ONE-POLE ramp; a
   // discrete control-source param (hold/self_gen/wave/speed_mult/clock/stages/step_gate)
   // lands INSTANT. The acceptance distinguishes them (rule 4: the 15 discrete single-sample
   // assertions stay UNCHANGED; the 19 continuous ones are re-expressed as reach-after-settle,
@@ -1507,7 +1507,7 @@ static void row_apply(const ParamRow& row) {
   const bool smooth = gh21_is_seconds(row.pid);
 
   // Phase 1: the unit-domain `valid` value MUST land `applied` AND the REAL getter must reach
-  // `expected`. This is the @Codex #2 oracle — read the actual DSP instance through the public
+  // `expected`. This is the oracle — read the actual DSP instance through the public
   // CONST surface, never a shadow/param bank. The admit (status==applied) is instantaneous at
   // the apply frame, INDEPENDENT of smoothing; only the getter REACH is delayed by the ramp.
   applyParam(rt, row.pid, row.valid, 0);
@@ -1539,7 +1539,7 @@ static void test_9_param_matrix_apply_status(void) {
     row_apply(kMatrix[i]);
   }
 
-  // The 35th: sequencer_pulser is a DOMAIN-VALIDATED provisional transfer (@Codex 7C3). A
+  // The 35th: sequencer_pulser is a DOMAIN-VALIDATED provisional transfer. A
   // VALID norm [0,1] is admitted and mapped through the centrally-named software model into
   // the direct-Hz setter (monotonic 0.05/1.0/20.0 at norm 0.0/0.5/1.0); an OUT-OF-DOMAIN or
   // non-finite value is rejected as invalid_value with the RATE UNCHANGED (never a subtle
@@ -1606,7 +1606,7 @@ static void test_9_param_matrix_apply_status(void) {
           "t9 pulser +Inf -> invalid_value AND keeps the prior rate");
   }
 
-  // "Invalid keeps old" (@Codex #1): a boundary rejection must NOT mutate the source.
+  // "Invalid keeps old": a boundary rejection must NOT mutate the source.
   // (a) joystick_x stays at its prior value after an out-of-domain write.
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
@@ -1755,7 +1755,7 @@ static void test_10_vca_ab_and_output_audit(void) {
     check(rt.connect(reg::JackId::joystick_x_out, reg::JackId::vcf_cv_l_in), "t10 wire joy x -> vcf l");
     check(rt.connect(reg::JackId::joystick_y_out, reg::JackId::vcf_cv_r_in), "t10 wire joy y -> vcf r");
     check(rt.rebuild(), "t10 joy -> VCF rebuild (sink resolution)");
-    // Joystick x/y are GH#21 seconds-smoothed sources: they ramp over the tau-derived settle
+    // Joystick x/y are seconds-smoothed sources: they ramp over the tau-derived settle
     // window toward +2.0V (x=0.7) / -2.0V (y=0.3), reaching the exact snapped target on settle.
     // Re-expressed from the old 8-frame exact readback (which assumed an instant snap) to a
     // Class-A value-reach after the settle window; then one more block for the VCF readback
@@ -1833,7 +1833,7 @@ static void test_10_vca_ab_and_output_audit(void) {
 // ===========================================================================
 // 11. (BLOCKED #4) Runtime PULSER + internal-rate surface is PUBLIC/callable/readable and
 //     proves a REAL crossing — not a default false-green. clock_out's discrete rising is
-//     read via clockOutRising(), and the SAME edge truth drives the published virtual-volts
+//     read via clockOutRising, and the SAME edge truth drives the published virtual-volts
 //     rail (+10V / -10V). A bank sentinel at the default 1.0 Hz shows the same window does
 //     NOT advance (so the crossing below is genuinely rate-driven).
 // ===========================================================================
@@ -1853,9 +1853,9 @@ static void test_11_runtime_pulser_crossing(void) {
   // (b) A real crossing at runtime: high internal rate advances the sequence every frame
   //     (published cv_out cycles through the step CVs) AND publishes the clock_out virtual
   //     volts rail. At 48 kHz internal with a 48 kHz host the free-running PULSER rises on
-  //     EVERY sample, so clockOutRising() is true each frame and clock_out must equal +10V
-  //     exactly then (-10V exactly when it is not rising). @Codex #3: configure ONLY through
-  //     the public parameter-event path (the mutating accessors were removed), and @Codex #4:
+  //     EVERY sample, so clockOutRising is true each frame and clock_out must equal +10V
+  //     exactly then (10V exactly when it is not rising).: configure ONLY through
+  //     the public parameter-event path (the mutating accessors were removed), and:
   //     the volts projection derives from the SAME discrete edge (no second phase/latch).
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
@@ -1886,7 +1886,7 @@ static void test_11_runtime_pulser_crossing(void) {
                        nearD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), -10.0);
       }
     }
-    // The step CVs are GH#21 seconds-smoothed: at a 48 kHz internal rate the pulser advances
+    // The step CVs are seconds-smoothed: at a 48 kHz internal rate the pulser advances
     // every sample, so the published CV is a continuous ramp between step targets and never
     // holds still at an exact 1.0/2.0/3.0 within this short window. Re-expressed from the old
     // exact saw1/2/3 (which assumed the step CVs snapped instantly) to prove the real advance
@@ -1907,7 +1907,7 @@ static void test_11_runtime_pulser_crossing(void) {
     core::SynthRuntime& rt = def->runtime();
     applyParam(rt, reg::ParameterId::sequencer_stages, 0.0, 0);       // -> 3 stages
     applyParam(rt, reg::ParameterId::sequencer_step_cv_1, 1.0, 0);
-    // @Codex #3 note: these are ASYNC events flushed on the next processBlock, so the step CV
+    //  note: these are ASYNC events flushed on the next processBlock, so the step CV
     // is only settled after frame 0. But the crossing is what we test, not the snapshot: the
     // published seq CV is the CURRENT step's CV and must stay put across frames while the
     // 1.0 Hz pulser phase (<1.0 over this window) never crosses. Compare against the value
@@ -1923,7 +1923,7 @@ static void test_11_runtime_pulser_crossing(void) {
       neverAdvanced = neverAdvanced && (rt.sequencer().currentStep() == 0);
       if (rt.sequencer().clockOutRising()) rose = true;
     }
-    // step0's CV is GH#21 seconds-smoothed, so it is a LIVE ramp toward its configured 1.0 V
+    // step0's CV is seconds-smoothed, so it is a LIVE ramp toward its configured 1.0 V
     // (the seq stays on step 0 the whole window), NOT a frozen snapshot. Re-expressed from the
     // old `held` (which assumed an instant snap): the discriminators that prove the crossing in
     // (b) was genuinely rate-driven are (a) the sequence NEVER advances (step stays 0) and
@@ -1943,7 +1943,7 @@ static void test_11_runtime_pulser_crossing(void) {
 //     compile_graph admission independently returns invalid_always_execute on a bad list.
 // ===========================================================================
 static void test_12_always_admission_fail_closed(void) {
-  // GH#12 keyboard product owner made keyboard a real always-execute source, so the DEFAULT
+  //  keyboard product owner made keyboard a real always-execute source, so the DEFAULT
   // always-execute list is now 7 (envelope A/B, LFO A/B, joystick, sequencer, keyboard).
   // `six` must equal that default exactly, in the ctor's order: re-submitting it must be a
   // no-op (graph_unchanged), which is the t12 no-op witness.
@@ -1967,7 +1967,7 @@ static void test_12_always_admission_fail_closed(void) {
     check(!rt.setAlwaysExecute(big, core::kMaxAlwaysExecuteSources + 1),
           "t12 over-capacity always set refused (no silent truncate)");
     check(!rt.setAlwaysExecute(dup, 2), "t12 duplicate always id refused");
-    // @Codex #5: an id that is NOT a real module (ModuleId{999}) must be REFUSED at the
+    // an id that is NOT a real module (ModuleId{999}) must be REFUSED at the
     // admission boundary — a stale/ghost id used to return true and get swallowed by
     // compile_graph. It must NOT dirty, so the plan stays exactly as it was.
     const core::ModuleId ghostId[1] = {core::ModuleId{999}};
@@ -2024,7 +2024,7 @@ static void test_12_always_admission_fail_closed(void) {
     check(r3.status == core::CompileStatus::invalid_always_execute,
           "t12 compile_graph always id not a real module -> invalid_always_execute");
 
-    // @Codex #5: a refused always-admission must map to its OWN runtime status (a distinct
+    // a refused always-admission must map to its OWN runtime status (a distinct
     // enumerator), never masquerade as a generic invalid-contract.
     check(static_cast<int>(core::SynthRuntime::RebuildStatus::compile_invalid_always_execute) !=
               static_cast<int>(core::SynthRuntime::RebuildStatus::compile_invalid_contract),
@@ -2147,7 +2147,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
   }
 
   // (c) EG-A gate latch driven by a REAL descriptor (joystick x -> envelope_a_gate_in). Under
-  //     GH#21 smoothing the source is a one-pole ramp, so the gate RISES at the closed-form
+  //      smoothing the source is a one-pole ramp, so the gate RISES at the closed-form
   //     frame the smoothed CV crosses the gate threshold (0.5V => norm 0.55); EG-A attacks at
   //     that crossing and holds at sustain; EG-B (unwired) stays idle throughout. The old
   //     exact-time form (env>0 by frame 29, gate high from frame 0) assumed an instant snap;
@@ -2190,7 +2190,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
     check(aFall < aRiseLast, "t13c EG-A ENV releases under a low descriptor gate");
   }
 
-  // (d) EG-B gate latch via a real descriptor (PREVIOUSLY NEVER WIRED): under GH#21 smoothing
+  // (d) EG-B gate latch via a real descriptor (PREVIOUSLY NEVER WIRED): under smoothing
   //     the joystick source is a one-pole ramp, so the gate rises at its closed-form crossing
   //     and EG-B (previously unwired) attacks then, while EG-A (unwired) stays idle. Same
   //     re-expression as (c): run the tau-derived window, assert the attack at/after the
@@ -2247,7 +2247,7 @@ static void test_13_vca_sink_and_gate_latches(void) {
 }
 
 // ===========================================================================
-// 14. (@Codex 7C3 final closure) PULSER provisional transfer + CLOCK OUT bipolar virtual
+// 14. PULSER provisional transfer + CLOCK OUT bipolar virtual
 //     volts. (a) A VALID pulser norm maps through the public parameter-event path into the
 //     real direct-Hz setter AND the rising-edge count is WALL-CLOCK deterministic: rendering
 //     one real second at ANY sample rate yields the SAME integer rising-edge count, strictly
@@ -2366,7 +2366,7 @@ static void test_14_pulser_transfer_and_clock_out(void) {
 }
 
 // ===========================================================================
-// 15. Source-bank sentinel (@Codex item 1): the canonical runtime pre-writes the
+// 15. Source-bank sentinel (item 1): the canonical runtime pre-writes the
 //     sequencer_clock_out bank with a NON-zero/NON-rail value (1234.5) and demands that the
 //     FIRST real sample OVERWRITE it to the CONFIRMED -10/+10 rail. A no-publish mutation
 //     (the kSequencer exec ever failing to write the source bank) would read the sentinel
@@ -2395,7 +2395,7 @@ static void test_15_source_bank_sentinel(void) {
     check(sameD(rt.controlVoltageAt(reg::JackId::sequencer_clock_out), -10.0),
           "t15 first real sample overwrites the sentinel to the CONFIRMED -10 idle rail");
   }
-  // (c) the +10 rail: a fast internal PULSER; every frame where clockOutRising() is live must
+  // (c) the +10 rail: a fast internal PULSER; every frame where clockOutRising is live must
   //     publish exactly +10 (the sentinel is overwritten, not leaked).
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
@@ -2419,7 +2419,7 @@ static void test_15_source_bank_sentinel(void) {
 }
 
 // ===========================================================================
-// 16. PERMANENTLY FREEZE every field of the ext_clock_in descriptor (@Codex item 2).
+// 16. PERMANENTLY FREEZE every field of the ext_clock_in descriptor (item 2).
 //     THIS IS A FROZEN UNVERIFIED PLACEHOLDER, NOT A HARDWARE FACT. ALL generated-real
 //     descriptor fields are asserted (id/stable_id/name/module/direction, signalType,
 //     polarity, nominal+tolerated range, mod-depth, transfer, saturation, maxCables,
@@ -2487,12 +2487,12 @@ static void test_16_ext_clock_in_freeze(void) {
 }
 
 // ===========================================================================
-// 17. GH#21 continuous-control smoothing (the (A) semantic @Kimi ruled):
+// 17. continuous-control smoothing (the (A) semantic ruled):
 //   - a smoother writes the sound-core setter ONLY while converging, then snaps to the
 //     exact target and goes inert, so a sanctioned direct DSP-domain setter is never
 //     clobbered back to the smoother's own settled target (finding-2 negative control);
 //   - whole-state build SNAPS a seconds param (exact stopped-stream init), never ramps;
-//   - the LIVE ControlEvent lane RAMPS: the target is NOT reached in one sample (the GH#11
+//   the LIVE ControlEvent lane RAMPS: the target is NOT reached in one sample (the
 //     single-sample oracle is now false for the 20 seconds params) and IS reached after the
 //     tau-derived settle count.
 //   Mutations: (B) perpetual writer / ramp-on-whole-state both go red on these.
@@ -2550,7 +2550,7 @@ static void test_17_gh21_smoothing_negative_controls(void) {
 
   // (C) LIVE ControlEvent lane RAMPS: a seconds param applied through the event path does
   //     NOT reach the instance getter in one sample, and DOES reach it (within relTol) after
-  //     the tau-derived settle count. This pins the "single-sample reach" of the GH#11
+  //     the tau-derived settle count. This pins the "single-sample reach" of the
   //     oracle as now-false for the 20 seconds params.
   {
     std::unique_ptr<core::MachineRuntimeDefinition> def = make_def(kSeed, kSr);
@@ -2558,7 +2558,7 @@ static void test_17_gh21_smoothing_negative_controls(void) {
     applyParam(rt, reg::ParameterId::joystick_x, 0.7, 0);
     rt.processBlock(&z, 1, &o);
     check(!nearD(rt.joystick().x(), 0.7),
-          "t17 live ramp does NOT reach the target in one sample (GH#21 smoothing)");
+          "t17 live ramp does NOT reach the target in one sample ( smoothing)");
     bool converged = false;
     for (int i = 0; i < settleN && !converged; ++i) {
       rt.processBlock(&z, 1, &o);
@@ -2615,20 +2615,20 @@ static void test_17_gh21_smoothing_negative_controls(void) {
 }
 
 // ===========================================================================
-// 18. GH#21 Surface-2 acceptance (task #94 g). The 16 vco/vcf panel-knob seconds
+// 18. Surface-2 acceptance (g). The 16 vco/vcf panel-knob seconds
 //     params are now members of the shared continuous-smoothing family (20 -> 36;
-//     GH#19 S0 / task #117 added the vco_a/b.pwm pair, 36 -> 38 — see
-//     gh21_smoothing_family_size(), which counts it from the registry + disposition).
+//      added the vco_a/b.pwm pair, 36 -> 38 — see
+//     gh21_smoothing_family_size, which counts it from the registry + disposition).
 //     Whole-state apply (applyDspParam) SNAPS; live apply (setControlParamValue)
 //     RAMPS over the tau-derived settle window. Pins:
-//       T1  trajectory: whole-state snap-exact + live reach-exact inside the tau window;
-//       T2  monotonic + anti-old-frame (first frame strictly between v0 and v1);
-//       T3  partition consistency: 64/128/mixed render the same ramp bit-identically;
-//       T4  zero-alloc across all 36 smoothers advancing;
-//       T5  bypass fail-closed negative control (RED under dspParamValid_ removal);
-//       T6  out-of-scope byte-identical lock (discrete selectors stay unaffected).
+//       T1 trajectory: whole-state snap-exact + live reach-exact inside the tau window;
+//       T2 monotonic + anti-old-frame (first frame strictly between v0 and v1);
+//       T3 partition consistency: 64/128/mixed render the same ramp bit-identically;
+//       T4 zero-alloc across all 36 smoothers advancing;
+//       T5 bypass fail-closed negative control (RED under dspParamValid_ removal);
+//       T6 out-of-scope byte-identical lock (discrete selectors stay unaffected).
 //     Same Surface-1 discipline: this proves the 16 take the SHARED ramp lane, not a
-//     second smoothing implementation (the @Kimi hard constraint).
+//     second smoothing implementation (the hard constraint).
 // ===========================================================================
 static void test_18_gh21_surface2_acceptance(void) {
   const core::RuntimeInputs z{0.0, 0.0};
@@ -2721,7 +2721,7 @@ static void test_18_gh21_surface2_acceptance(void) {
     check(std::isfinite(sink), m);
   }
 
-  // ---- T3 partition consistency (design/07 §5): the SAME vcf.l_freq ramp event under
+  // T3 partition consistency: the SAME vcf.l_freq ramp event under
   //      256/128/64/mixed partitions renders bit-identical per-sample wetL, and the final
   //      knob state is partition-independent (the ramp began identically, no silent no-op). ----
   {

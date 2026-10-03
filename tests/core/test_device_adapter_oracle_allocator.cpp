@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Allocator-count probe for the GH#4 product oracle (task#71). The replaceable operator
+// Allocator-count probe for the product oracle. The replaceable operator
 // new/delete pair is isolated into its own TU, built ONLY into the
 // test_device_adapter_oracle target, so GCC's -Wmismatched-new-delete does not misjudge
 // the malloc/free implementation as a new/delete mismatch at the ::operator new /

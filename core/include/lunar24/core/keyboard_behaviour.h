@@ -1,31 +1,31 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-③ per-note keyboard behaviours (design/00 §2d/§2e, design/06 §P4, design/07
-// §3 §6; @Claude Go msg 37db4aa5): pressure output modes/rise-fall, portamento,
+//  per-note keyboard behaviours (§2e,
+// §3 §6; db4aa5): pressure output modes/rise-fall, portamento,
 // vibrato, note quantiser scale+root.
 //
 // Design/07 §3 separates EXTERNAL events (timestamped ControlEvent) from INTERNAL
-// continuous signals (per-sample CV/gate/clock). The P4-① InputStateMachine is the
+// continuous signals (per-sample CV/gate/clock). The InputStateMachine is the
 // single place a normalized PerformanceInput becomes a canonical ControlEvent.
 // These behaviours are the layer DOWNSTREAM of that: they take those ControlEvents
 // and turn them into the per-sample control signals a keyboard voice consumes
-// (design/07 §3 semantics 1 = discrete event, 2 = seconds-smoothing). This layer
+// (semantics 1 = discrete event, 2 = seconds-smoothing). This layer
 // only ever produces control signals — never audio.
 //
-// Side-context rule (design/07 §6, design/00 §2d): a parameter is identified by
+// Side-context rule: a parameter is identified by
 // ParameterId (the one physical knob) and its VALUE by which side's bank is read.
 // Every scalar behaviour parameter is read through read_side_scalar (the side-
 // resolution choke point in keyboard_mode.h), never from the global parameters[]
 // directly. The one non-scalar behaviour parameter — the quantiser's scale-editor
 // 12-bit note mask — has no ParameterId, so it is read through the same
-// side_bank() resolution from the per-side `_r` mirror, not read_side_scalar.
+// side_bank resolution from the per-side `_r` mirror, not read_side_scalar.
 //
-// Honest boundaries (design/00 §3, §5) — do NOT treat these as evidence:
+// Honest boundaries (§5) — do NOT treat these as evidence:
 //   * norm -> seconds/amount laws for portamento/vibrato/pressure are PROVISIONAL
 //     linear maps. The manual gives raw 0-255 / 0-127 and the registry freezes
 //     them as norm 0..1; no numeric curve is evidenced, so a documented linear
-//     ceiling is used pending measurement (design/00 §5 "先量后签").
+//     ceiling is used pending measurement ("先量后签").
 //   * ASR/AD/LOOP sustain+peak level = the pressure at press is PROVISIONAL (the
 //     manual enumerates the modes but not the segment levels).
 //   * The 19 named preset scales (manual L970-984): the 7 modes / pentatonic x2 /
@@ -127,7 +127,7 @@ inline constexpr int kZeroVoltSemitoneAboveC = 9;
 // scale-editor 12-bit note mask. All-off -> microtonal passthrough. Works over the
 // whole pitch range (no octave limit). Exactly between two scale notes it picks the
 // lower one (the manual does not say). Discrete, stateless, deterministic (per-note
-// decision, design/07 §3 semantics 1).
+// decision, semantics 1).
 inline double quantize_pitch(double pitch_cv, std::uint16_t scale_mask,
                              std::uint8_t root_semitone) noexcept {
   if ((scale_mask & kChromaticScaleMask) == kMicrotonalScaleMask) return pitch_cv;
@@ -157,7 +157,7 @@ inline double quantize_pitch(double pitch_cv, std::uint16_t scale_mask,
 
 // The scalar params a per-note behaviour reads, resolved for ONE side. Scalars are
 // read through read_side_scalar (the side-context choke point); the non-scalar
-// scale editor is read through the same side_bank() resolution from the per-side
+// scale editor is read through the same side_bank resolution from the per-side
 // `_r` mirror. Structuring the read this way is what makes "never read global
 // parameters[] for a side" structural rather than a convention.
 struct KeyboardBehaviourParams {
@@ -226,7 +226,7 @@ enum class PressureOutput : std::uint8_t {
   Random   = 4,  // random voltage on plate press
 };
 
-// Continuous pressure output (design/07 §3 semantics 2: seconds-smoothing envelope).
+// Continuous pressure output (semantics 2: seconds-smoothing envelope).
 // RISE = attack / slew-on-rising-edge, FALL = decay/release / slew-on-falling-edge.
 // Asr/Ad/Loop sustain+peak level = the pressure at press (PROVISIONAL; the manual
 // enumerates the modes but not the segment levels).
@@ -237,7 +237,7 @@ class PressureOutlet {
   void setMode(PressureOutput m) { mode_ = m; }
   // P RISE / P FALL: the time the output takes to (nearly) reach a new pressure, on an
   // exponential knob law: 0 = instant, then 2 ms .. 2.5 s, so the first half of the knob
-  // is the useful short slews and the top end the long swells.  // tuned by ear
+  // is the useful short slews and the top end the long swells. // tuned by ear
   static double knobSeconds(double norm) {
     return norm <= 0.0 ? 0.0 : kPressureMinSeconds * std::pow(kPressureMaxSeconds / kPressureMinSeconds, std::min(norm, 1.0));
   }
@@ -311,15 +311,15 @@ class PressureOutlet {
     return current_;
   }
   double current() const { return current_; }
-  // The EXECUTED configuration (what tick() actually runs with) — the readback a consumer pins.
+  // The EXECUTED configuration (what tick actually runs with) — the readback a consumer pins.
   PressureOutput mode() const { return mode_; }
   double riseSeconds() const { return riseSec_; }
   double fallSeconds() const { return fallSec_; }
   void setRandomSeed(std::uint32_t s) { rand_.seed(s); }
-  // GH#8 reset: HARD-clear every piece of envelope state (stage/current/held/captured),
+  //  reset: HARD-clear every piece of envelope state (stage/current/held/captured),
   // distinct from gate(false) which only starts an ASR release and would leave a
   // non-zero current_ decaying with the (possibly non-zero) fall time. A reset makes the
-  // output REALLY zero on the next tick, so a same-sample re-note opens afresh (design/07
+  // output REALLY zero on the next tick, so a same-sample re-note opens afresh (
   // §3 phase 0 reset precedes the re-note). No heap, no allocation.
   void reset() {
     stage_ = Stage::Idle;
@@ -371,7 +371,7 @@ class PressureOutlet {
 
 // Continuous pitch glide (manual L910-923): "slew limiting effect on the CV output".
 // LEGATO off = always on; on = gliding only when >=2 plates touched (no effect with
-// arp). Reuses ParameterSmoother (design/07 §3: don't reinvent the seconds-smoother).
+// arp). Reuses ParameterSmoother (don't reinvent the seconds-smoother).
 class PortamentoGlide {
  public:
   PortamentoGlide() { smoother_.reset(0.0); }
@@ -386,8 +386,8 @@ class PortamentoGlide {
     else smoother_.reset(pitch_cv);  // single note, legato: jump (no glide)
   }
   void setTarget(double pitch_cv) { smoother_.setTarget(pitch_cv); }
-  // GH#8 reset: clear the glide back to 0 so a later note in the SAME sample can
-  // re-open afresh (design/07 §3 phase 0 reset precedes a same-sample re-note-on).
+  //  reset: clear the glide back to 0 so a later note in the SAME sample can
+  // re-open afresh (phase 0 reset precedes a same-sample re-note-on).
   void reset() { smoother_.reset(0.0); }
   double tick() { return smoother_.next(); }
   double current() const { return smoother_.current(); }
@@ -424,8 +424,8 @@ class Vibrato {
       running_ = false;  // vibrato follows the note; gate-off stops it
     }
   }
-  // GH#8 reset: hard-clear the LFO run/phase so a same-sample re-note opens afresh
-  // (design/07 §3 phase 0 reset). No heap, no allocation.
+  //  reset: hard-clear the LFO run/phase so a same-sample re-note opens afresh
+  // (phase 0 reset). No heap, no allocation.
   void reset() {
     running_ = false;
     phase_ = 0.0;
@@ -441,12 +441,12 @@ class Vibrato {
     double amt = depthCv_ * ramp;
     // VIB PRESS: how much the key pressure decides the amount. Full knob: a light touch
     // barely wobbles, full pressure gives twice VIB DEPTH (so pressing in "adds" vibrato,
-    // the usual aftertouch feel). Half knob: half of that range.  // tuned by ear
+    // the usual aftertouch feel). Half knob: half of that range. // tuned by ear
     if (pressureCtrl_) amt *= (1.0 - pressureAmount_) + pressureAmount_ * 2.0 * pressure;
     return std::sin(phase_) * amt;
   }
 
-  // The EXECUTED vibrato configuration (Hz / volts / seconds / flag) — what tick()
+  // The EXECUTED vibrato configuration (Hz / volts / seconds / flag) — what tick
   // actually runs with, as opposed to the raw norm request that produced it.
   double speedHz() const { return speedHz_; }
   double depthCv() const { return depthCv_; }
@@ -465,10 +465,10 @@ class Vibrato {
 
 // Composes the four behaviours for ONE keyboard side into a single control-signal
 // engine. It is fed the canonical ControlEvents produced by InputStateMachine (the
-// P4-① choke point) and produces the per-sample pitch / pressure / gate control
+//  choke point) and produces the per-sample pitch / pressure / gate control
 // signals a voice would consume. It never constructs a ControlEvent from raw input
-// itself — that is translate()'s job — so the "single interpretation choke point"
-// (design/07 §1) holds structurally.
+// itself — that is translate's job — so the "single interpretation choke point"
+//  holds structurally.
 class KeyboardBehaviour {
  public:
   // Decode the side params into the running configuration (reads via the choke
@@ -511,8 +511,8 @@ class KeyboardBehaviour {
 
   // Advance one sample. pitch_cv is the glided (then vibrato-modulated) pitch CV;
   // pressure_cv is the pressure-output envelope; gate is the live gate state.
-  // GH#8: the glide MUST advance via portamento_.tick() every sample — using
-  // current() (the old path) left the glide frozen at its starting value.
+  // the glide MUST advance via portamento_.tick every sample — using
+  // current (the old path) left the glide frozen at its starting value.
   void tick(double* pitch_cv, double* pressure_cv) {
     const double glide = portamento_.tick();
     const double vib = vibrato_.tick(livePressure_);
@@ -522,13 +522,13 @@ class KeyboardBehaviour {
   bool gate() const { return engagedCount_() > 0; }
   double rootSemitone() const { return static_cast<double>(rootSemitone_); }
   std::uint16_t scaleMask() const { return scaleMask_; }
-  // GH#12 task#101: the configured parameter set, READ BACK verbatim. This is the set the
-  // LAST configure() actually installed (the same values the per-note path decodes from),
+  // the configured parameter set, READ BACK verbatim. This is the set the
+  // LAST configure actually installed (the same values the per-note path decodes from),
   // never a separately-written mirror — so an acceptance can pin what this side runs.
   const KeyboardBehaviourParams& params() const { return params_; }
 
-  // GH#12 task#101 review (group 2): what this side's behaviours ACTUALLY EXECUTE with.
-  // `params_` is only the decoded request; tick() runs off the per-behaviour state the
+  //  review (group 2): what this side's behaviours ACTUALLY EXECUTE with.
+  // `params_` is only the decoded request; tick runs off the per-behaviour state the
   // setNorm/setTimes/setMode calls installed. These accessors read that state directly,
   // so a mutation that keeps `params_ = p` but skips the install cannot pass a readback.
   struct Executed {
@@ -567,7 +567,7 @@ class KeyboardBehaviour {
   // Random-mode seed: forwarded so a test makes the Random output deterministic.
   void setRandomSeed(std::uint32_t s) { pressure_.setRandomSeed(s); }
 
-  // GH#8 over-capacity note/identity rejections (deterministic + observable).
+  //  over-capacity note/identity rejections (deterministic + observable).
   std::uint32_t overCapacity() const { return overCapacity_; }
 
  private:
@@ -575,7 +575,7 @@ class KeyboardBehaviour {
   // latched it (the voice is sounding it or has it held-under); a not-engaged
   // record is a pre-latch pitch/pressure that arrived in phase 1 before its
   // phase-4 gate_on. Identity = (source, channel, noteId) — the three fields a
-  // press carries through the whole pipeline (GH#8).
+  // press carries through the whole pipeline.
   struct HeldNote {
     ControlSourceId source = 0;
     std::uint8_t channel = 0;
@@ -681,7 +681,7 @@ class KeyboardBehaviour {
     if (currentIndex_ >= 0 && &notes_[currentIndex_] == note) {
       // The SOUNDING note was released: deterministically return to the still-held
       // note with the largest activation order (the last note seen). Any other
-      // release leaves pitch/gate/modulation untouched (GH#8 partial-release rule).
+      // release leaves pitch/gate/modulation untouched (partial-release rule).
       const int fb = highestOrderEngaged_();
       if (fb >= 0) {
         currentIndex_ = fb;
@@ -705,17 +705,17 @@ class KeyboardBehaviour {
     orderCounter_ = 0;
     multiTouch_ = false;
     livePressure_ = 0.0;
-    // GH#8: the reset is a HARD clear, not a gate-off. gate(false) would leave the
+    // the reset is a HARD clear, not a gate-off. gate(false) would leave the
     // pressure envelope decaying (non-zero with a non-zero fall) and the vibrato phase
     // half-turned — a reset must make the output really zero on the first tick after,
-    // so a same-sample re-note reopens afresh (design/07 §3 phase 0).
+    // so a same-sample re-note reopens afresh (phase 0).
     pressure_.reset();
     vibrato_.reset();
     portamento_.reset();
   }
 
   double fs_ = 0.0;
-  KeyboardBehaviourParams params_{};  // GH#12 task#101: verbatim readback of the last configure().
+  KeyboardBehaviourParams params_{};  // verbatim readback of the last configure.
   std::uint16_t scaleMask_ = kMicrotonalScaleMask;
   std::uint8_t rootSemitone_ = 0;
   HeldNote notes_[kMaxHeld];

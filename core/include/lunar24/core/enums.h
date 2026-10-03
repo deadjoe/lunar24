@@ -34,7 +34,7 @@ enum class EvidenceStatus : std::uint8_t {
 // Recommended signal use of a jack (advisory; cross-type patching is allowed).
 // `unknown` is appended (never reorders existing values): it is the honest record
 // for a jack whose recommended signal use is not evidenced by the manual/panel.
-// unknown-enum biconditional (Codex 587f5e72): value == `unknown` ⇔ field evidence ==
+// unknown-enum biconditional (value == `unknown` ⇔ field evidence ==
 // `unverified`. A concrete value (audio/cv/gate/clock) can carry only confirmed/provisional
 // provenance — never `unverified`, which would present a guess as a fact. Signal class is
 // NEVER inferred from a stable-id suffix.
@@ -85,7 +85,7 @@ enum class ParamRole : std::uint8_t {
   z = 3,     // effector program Z
 };
 
-// Per-volt modulation depth / transfer curve at a jack (design/07 §3). "Every
+// Per-volt modulation depth / transfer curve at a jack. "Every
 // JackDescriptor must define polarity, nominal/tolerated range, DC coupling,
 // per-volt modulation depth or transfer curve, ...".
 enum class SignalTransfer : std::uint8_t {
@@ -95,7 +95,7 @@ enum class SignalTransfer : std::uint8_t {
   unknown = 3,      // not yet evidenced
 };
 
-// Input saturation / rail behaviour at a jack (design/07 §3, §5). Hardware rail
+// Input saturation / rail behaviour at a jack (§5). Hardware rail
 // behaviour is modelled only where evidence exists; it is NOT a global [-1,1]
 // clamp. We never invent a soft clipper for "safety".
 enum class SaturationType : std::uint8_t {

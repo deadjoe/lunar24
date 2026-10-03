@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// task #109 (GH#19 S1): the SHARED windowed analytic BLAMP kernel.
+//  the SHARED windowed analytic BLAMP kernel.
 //
 // Several product oscillators have a SLOPE (first-derivative) discontinuity rather
 // than a value jump, so the correct band-limiting tool for all of them is the same
@@ -10,7 +10,7 @@
 // changes no caller's arithmetic -- it removes a second copy, it does not change a
 // result. Both users are frozen to the SAME L=8 window:
 //
-//   * Vco::triangleBlampCorr   (VCO triangle: slope reversal at the peak/valley)
+//   * Vco::triangleBlampCorr (VCO triangle: slope reversal at the peak/valley)
 //   * SchmittOsc::railBlampCorr (Schmitt ramp: slope reversal at the rail clamp)
 //
 // Windowed analytic BLAMP residual (Esqueda, Valimaki & Bilbao, "Rounding Corners
@@ -116,8 +116,8 @@ inline double blampKernel(double u) {
 // valley corners merge and the phase-local corner model is no longer verifiable.
 // `stepCycles` is the caller's per-sample phase increment in cycles. Both callers
 // reach the SAME physical predicate because each passes its own increment:
-//   VCO triangle : step = dt      -> 8*dt >= 0.5
-//   Schmitt ramp : step = 0.5*r   -> 8*(r/2) = 4r >= 0.5  <=> M = 1/r <= 8
+//   VCO triangle: step = dt -> 8*dt >= 0.5
+//   Schmitt ramp: step = 0.5*r -> 8*(r/2) = 4r >= 0.5 <=> M = 1/r <= 8
 // On this branch the caller must return the bounded naive waveform (NO correction)
 // and list the range honestly (not as improved coverage).
 inline bool blampSupportReachesHalfPeriod(double stepCycles) {

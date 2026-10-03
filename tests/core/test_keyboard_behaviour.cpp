@@ -1,28 +1,28 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-③ per-note keyboard behaviour tests (design/00 §2d/§2e, design/06 §P4,
-// design/07 §3 §6; @Claude Go msg 37db4aa5).
+//  per-note keyboard behaviour tests (§2e,
+// db4aa5).
 //
 // Four behaviours: pressure output modes/rise-fall, portamento, vibrato, note
 // quantiser scale+root. The contract this layer exists to uphold:
 //   * scalar parameter reads go through read_side_scalar (the side-resolution
 //     choke point in keyboard_mode.h) — never the global parameters[] for a side;
-//   * the non-scalar scale editor is read through the same side_bank() resolution
+//   * the non-scalar scale editor is read through the same side_bank resolution
 //     from the per-side `_r` mirror;
 //   * it emits control signals only (no audio);
-//   * the whole interpretation flows through the P4-① InputStateMachine.
+//   * the whole interpretation flows through the InputStateMachine.
 //
-// Per @Claude the information is in the negation (mandate #4): the negative is a
+// Per the information is in the negation (mandate #4): the negative is a
 // REAL bypass path, not a stub. Here the choke point being protected is the SIDE
-// READ (the P4-① translate() bypass is already proven in test_input_equivalence),
+// READ (the translate bypass is already proven in test_input_equivalence),
 // so the negative is a reader that ignores the resolved side bank and reads the
 // global/shared parameters[] for a split-RIGHT note — the genuine mistake of
 // forgetting the right bank. It must produce a divergent control stream.
 //
 // Continuous behaviours (portamento/vibrato/pressure envelope) are asserted by
 // STRUCTURE + the cross-sample-rate invariant, not by arbitrary exact curves: the
-// norm->time/amount laws are PROVISIONAL (design/00 §5 "先量后签"), the exact
+// norm->time/amount laws are PROVISIONAL ("先量后签"), the exact
 // envelope segment levels are PROVISIONAL (manual enumerates modes, not levels) —
 // so the tests hold shape, monotonicity, gate behaviour and the mandate-#4
 // divergence, not an invented constant. The quantiser is DISCRETE and
@@ -312,7 +312,7 @@ static void pressure_asr_ad_loop_random() {
 // ---------------------------------------------------------- side-read bypass ----
 
 // Mandate #4 negative for THIS slice. The choke point being protected here is the
-// side-context scalar read (read_side_scalar) — the P4-① translate() bypass is
+// side-context scalar read (read_side_scalar) — the translate bypass is
 // proven in test_input_equivalence, and the scale-editor non-scalar side path is a
 // separate concern. The bug the choke point exists to prevent: reading the global /
 // shared bank for a split-RIGHT note (forgetting the right bank). A rogue reader

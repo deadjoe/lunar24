@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Field-level evidence discipline (design/07 §3, §10). Documented/derived values
+// Field-level evidence discipline (§10). Documented/derived values
 // are split from identity facts: a descriptor may be `confirmed` to EXIST on the
 // panel while specific numeric fields (voltage range, threshold/hysteresis,
 // saturation, transfer) are individually `unverified`/`provisional` until first-
@@ -28,7 +28,7 @@ namespace lunar24::core {
 //
 // The three signal-class facts (recommended signal use, polarity, AC/DC coupling)
 // each carry their own provenance too. They are NOT inferred from a stable-id
-// suffix. unknown-enum biconditional (Codex 587f5e72): value == `unknown` ⇔ provenance
+// suffix. unknown-enum biconditional (value == `unknown` ⇔ provenance
 // == `unverified` — a concrete value never carries `unverified` (that would be a guess
 // presented as a fact), and an `unknown` is never confirmed/provisional.
 struct FieldEvidence {
@@ -50,7 +50,7 @@ struct FieldEvidence {
   }
 };
 
-// Per-field evidence status for a ParameterDescriptor (Codex 03848819). The numeric
+// Per-field evidence status for a ParameterDescriptor. The numeric
 // range, the unit label, the default, the step and the smoothing/persistence policies
 // are each independently evidenced, rather than inheriting the descriptor-wide status.
 // This keeps a software-normalized 0..1 encoding of a multi-position selector from ever
@@ -71,9 +71,9 @@ struct ParameterFieldEvidence {
   }
 };
 
-// Per-field evidence status for a ProgramDescriptor (Codex 2026-08-23). A
+// Per-field evidence status for a ProgramDescriptor (2026-08-23). A
 // program's effect `family` and its `selfOscillating` three-state are independent
-// audited facts, governed by the same unknown-enum biconditional (587f5e72):
+// audited facts, governed by the same unknown-enum biconditional:
 // `family`/`selfOscillating` == `unknown` ⇔ provenance == `unverified`, and a concrete
 // value (a real family, no/yes) carries only confirmed/provisional provenance. Both
 // keys are mandatory and each must hold a legal status.

@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// task #110 (GH#19 S2): the polyBLEP kernel's own identities, and the TWO-LAYER
+//  the polyBLEP kernel's own identities, and the TWO-LAYER
 // discharge of its declared precondition `0 <= dt <= 0.5`.
 //
-// WHY TWO LAYERS, and why neither alone is enough (@Kimi e6e645d2 ruling 2):
+// WHY TWO LAYERS, and why neither alone is enough:
 //
 //   * The DECLARED DOMAIN answers "what can the design reach". It has an authoritative
 //     chain -- registry descriptor -> dspParamValid_ entry gate -> the runtime's norm-to-
@@ -21,11 +21,11 @@
 // numbers are printed: a report quoting only one of them is quoting half a discharge.
 //
 // THE DECLARED CHAIN, with the file:line of each link this file depends on:
-//   generated/lunar24/registry.hpp:389-393  drone_1_tune_1..5  "norm", min 0, max 1, confirmed
-//   generated/lunar24/registry.hpp:404      drone_1_volt      "norm", min 0, max 1, confirmed
-//   core/include/lunar24/core/machine_runtime.h:2735-2744  dspParamValid_ = min <= v <= max
-//   core/include/lunar24/core/machine_runtime.h:2788       tune  -> (n-0.5)*24 = -12..+12 semis
-//   core/include/lunar24/core/machine_runtime.h:2791       volt  -> 60*n       = 0..60 semis down
+//   generated/lunar24/registry.hpp:389-393 drone_1_tune_1..5 "norm", min 0, max 1, confirmed
+//   generated/lunar24/registry.hpp:404 drone_1_volt "norm", min 0, max 1, confirmed
+//   core/include/lunar24/core/machine_runtime.h:2735-2744 dspParamValid_ = min <= v <= max
+//   core/include/lunar24/core/machine_runtime.h:2788 tune -> (n-0.5)*24 = -12..+12 semis
+//   core/include/lunar24/core/machine_runtime.h:2791 volt -> 60*n = 0..60 semis down
 // so TUNE in [-12,+12] and VOLT in [0,60] are the unreachable-from-outside bounds, and the
 // declared maximum of the frequency is attained at (tune = +12, volt = 0).
 //
@@ -111,9 +111,9 @@ void testKernelIdentities() {
 // a term the registry does not bound.
 // =====================================================================================
 double declaredMaxFreqHz(double extraHz = 0.0) {
-  const double kHighBandSupHz = 1800.0;  // drone_bank.h:175  420 + u*1380, u < 1
-  const double kTuneScaleMax = 2.0;      // (n-0.5)*24 at n = 1  -> +12 semis
-  const double kVoltScaleMin = 1.0;      // 60*n        at n = 0  -> 0 semis down
+  const double kHighBandSupHz = 1800.0;  // drone_bank.h:175 420 + u*1380, u < 1
+  const double kTuneScaleMax = 2.0;      // (n-0.5)*24 at n = 1 -> +12 semis
+  const double kVoltScaleMin = 1.0;      // 60*n at n = 0 -> 0 semis down
   const double kToleranceSup = 1.02;     // nextUnit(0, 0.02) is exclusive of 0.02
   // driftNow is NOT scaled by tune/volt (drone_bank.h:283 adds it after `base`), so its
   // supremum is 0.02 * freqBase -- not 0.02 * base.
@@ -144,7 +144,7 @@ void testDeclaredBound() {
 // PART 3 -- the MEASURED bound, read off the executed phase accumulator.
 //
 // dt is recovered from the phase rather than recomputed from the frequency model: a
-// re-derivation would only restate the constants, while reading phaseOf() after a tick
+// re-derivation would only restate the constants, while reading phaseOf after a tick
 // measures the value the oscillator actually advanced by, including any term the model in
 // the kernel header does not name.
 //

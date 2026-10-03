@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // ModuleExecutionContract: the scheduling facts a module declares after its
-// real algorithm has been prepared (design/07 §2, §4). These are audited
+// real algorithm has been prepared (§4). These are audited
 // scheduling facts, NOT user-visible PDC parameters.
 //
-// Per design/07 §2/§4 the contract must name each specific input→output path's
+// Per /§4 the contract must name each specific input→output path's
 // minimum causal delay and whether that path can be zero-delay direct-through.
 // Module-wide latency numbers alone never grant cycle-breaking eligibility.
 
@@ -26,7 +26,7 @@ namespace lunar24::core {
 inline constexpr std::uint32_t kMaxModulePathDelays = 16;
 
 // The shared compiler↔contract sentinel for a module's FIXED internal end-point port
-// (@Codex 16b770b0). A fixed internal route is module→module identity with NO real
+// (b770b0). A fixed internal route is module→module identity with NO real
 // registry JackId (graph_compiler.h fixed-edge note), so the compiler tags that edge's
 // source/sink JackId with this sentinel. It is the value a contract path uses when the
 // input is an internal fixed endpoint rather than a patchable jack (e.g.
@@ -36,7 +36,7 @@ inline constexpr std::uint32_t kMaxModulePathDelays = 16;
 inline constexpr JackId kFixedEndpointJackSentinel =
     static_cast<JackId>(std::numeric_limits<std::uint32_t>::max());
 
-// Per-claim provenance for one path's scheduling facts (design/07 §10). Each of
+// Per-claim provenance for one path's scheduling facts. Each of
 // min-delay, direct-through eligibility, and exact-zero-gain is its own audited
 // fact and carries its own status — they are NOT three faces of one jack voltage
 // field. Unverified until the real algorithm is prepared.
@@ -58,7 +58,7 @@ struct ModulePathDelay {
 
   // Whether SOME reachable parameter position makes this path a zero-delay
   // direct/mix through. If true, the compiler treats that path as latency 0
-  // unless direct-through is provably exact-zero-gain (per design/07 §4).
+  // unless direct-through is provably exact-zero-gain.
   bool canDirectThrough = false;
 
   // Whether the direct-through path can prove its gain is exactly zero when
@@ -66,18 +66,18 @@ struct ModulePathDelay {
   // canDirectThrough is true.
   bool directThroughExactZeroGain = false;
 
-  // Each scheduling fact's own provenance (design/07 §10).
+  // Each scheduling fact's own provenance.
   PathEvidence evidence;
 };
 
 struct ModuleExecutionContract {
   double sampleRate = 0.0;             // prepared-for host sample rate (real value after prepare)
-  // maxBlockSize/maxResources sentinel semantics (@Codex e35b3eca resolve (c)): the value
+  // maxBlockSize/maxResources sentinel semantics (resolve (c)): the value
   // 0 here is an UNPREPARED/UNSPECIFIED sentinel — the field has not yet been filled by a
   // prepare(sampleRate, maxBlockSize) boundary — NOT an "actual zero limit" and NOT
-  // "unbounded". A real value comes from a future prepare() that also fixes the resource
-  // counting unit (a GH#4/#10 host prepare/resource dependency, NOT a GH#11 gap).
-  // module_contract_is_valid()
+  // "unbounded". A real value comes from a future prepare that also fixes the resource
+  // counting unit (a host prepare/resource dependency, NOT a gap).
+  // module_contract_is_valid
   // deliberately does not consume these two fields, so this sentinel never extends the
   // scheduler's semantics.
   std::uint32_t maxBlockSize = 0;      // prepared-for maximum block size (frames); 0 == unprepared/unspecified
@@ -105,7 +105,7 @@ struct ModuleExecutionContract {
   ModulePathDelay pathDelays[kMaxModulePathDelays] = {};
 };
 
-// Invariants the scheduler relies on (design/07 §2, §4). A prepared contract that
+// Invariants the scheduler relies on (§4). A prepared contract that
 // violates any of them is rejected at prepare time, before it reaches the audio
 // thread. This is the single gate for the per-path causal facts.
 inline bool module_contract_is_valid(const ModuleExecutionContract& c) {

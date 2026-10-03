@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Lfo — the LFO A / LFO B low-frequency oscillator sound core (GH #11, P3
+// Lfo — the LFO A / LFO B low-frequency oscillator sound core (P3
 // item 6 "patchable control source"). A free-standing, framework-agnostic,
 // fixed-memory, per-sample oscillator. It is NOT a wrapper over any audio-rate
 // modulation helper; A/B are two real independent Lfo instances carrying their
 // OWN phase + config (the caller instantiates one per LFO A and one per LFO B).
 //
-// Evidence boundary (manual L425-442 + design/06:106): CONFIRMED are two
+// Evidence boundary (manual L425-442 + :106): CONFIRMED are two
 // independent LFOs, a WAVE knob tunable square<->triangle (a centre-positioned
 // knob that mixes the two), a RATE knob, an x1/x6/x10 SPEED switch, and a
-// CV OUT that is unipolar POSITIVE 0..+10V (manual L158 + design/06:106,
+// CV OUT that is unipolar POSITIVE 0..+10V (manual L158 + :106,
 // polarity + unipolar + range confirmed). The exact wave-blend curve, the
 // RATE->Hz transfer, and the power-on phase are all UNMEASURED. Everything
 // marked PROVISIONAL below is a centralized modeling choice — the tests pin
@@ -36,7 +36,7 @@ namespace lunar24::core {
 // to relabel these (never re-derive a curve elsewhere).
 // ---------------------------------------------------------------------------
 
-// LFO CV OUT rail peak. CONFIRMED (manual L158 + design/06:106: CV OUT is
+// LFO CV OUT rail peak. CONFIRMED (manual L158 + :106: CV OUT is
 // unipolar positive swing, 0..+10V). A waveform fundamental is bias-shifted and
 // scaled onto this rail: outVolts = (fund + 1.0) * 0.5 * kLfoOutputPeakVolt.
 inline constexpr double kLfoOutputPeakVolt = 10.0;
@@ -66,7 +66,7 @@ class Lfo {
   Lfo() = default;
   explicit Lfo(double sampleRate) { setSampleRate(sampleRate); }
 
-  // --- configuration (NOT cleared by reset()) -----------------------------
+  // --- configuration (NOT cleared by reset) -----------------------------
   // Every numeric setter is FAIL-CLOSED across the WHOLE candidate config: a
   // value that is non-finite, out-of-domain, or would make the effective phase
   // step (baseHz * speedMult / sampleRate) non-finite is rejected — the setter
@@ -119,11 +119,11 @@ class Lfo {
   double wave() const { return wave_; }
   LfoSpeedMult speedMult() const { return speedMult_; }
 
-  // --- reset(): clears dynamic phase, keeps config ------------------------
+  // --- reset: clears dynamic phase, keeps config ------------------------
   // There is NO reset jack on the panel — this is a DSP lifecycle reset only.
   // The post-reset phase (== 0.0) and the first-sample convention are PROVISIONAL
   // / deterministic; they are NOT a claim about the real power-on phase (which is
-  // unmeasured). reset() touches ONLY this instance's dynamic phase — it never
+  // unmeasured). reset touches ONLY this instance's dynamic phase — it never
   // affects another Lfo, and it leaves all configuration untouched.
   void reset() { phase_ = 0.0; }
 
@@ -139,7 +139,7 @@ class Lfo {
   //
   // An unconfigured / degenerate Lfo (no valid positive sample rate, or a
   // non-finite effective phase step — the admission guards reject any config that
-  // could reach that) must never emit NaN. When the timebase is not valid, tick()
+  // could reach that) must never emit NaN. When the timebase is not valid, tick
   // does NOT advance the phase (an undefined timebase must not move the cycle
   // position) and returns a deterministic finite no-modulation value of 0V (the
   // bottom of the unipolar rail). This is a centralized, documented fallback — it
@@ -194,20 +194,20 @@ class Lfo {
     return (1.0 - wave) * triangle + wave * square;
   }
 
-  // Configuration (persists across reset()).
+  // Configuration (persists across reset).
   // These are LOCAL SAFE / PROVISIONAL DSP DEFAULTS, NOT the generated registry's
   // canonical defaults (the registry is a separate source of truth). They exist
   // only so an unconfigured Lfo is deterministic and never NaN. Runtime integration
   // must configure sampleRate / baseHz / wave / speedMult from canonical state;
   // tests set the values they depend on explicitly rather than relying on these
   // coinciding with the registry. The default sr_ == 0.0 means "unconfigured":
-  // tick() then returns the finite 0V no-modulation fallback (never NaN).
+  // tick then returns the finite 0V no-modulation fallback (never NaN).
   double sr_ = 0.0;
   double baseHz_ = 1.0;  // Hz, local safe/provisional DSP default
   double wave_ = 0.5;    // normalized morph 0..1, local safe/provisional DSP default
   LfoSpeedMult speedMult_ = LfoSpeedMult::x1;  // local safe/provisional DSP default
 
-  // Dynamic state (cleared by reset()).
+  // Dynamic state (cleared by reset).
   double phase_ = 0.0;  // normalized cycle position [0,1)
 };
 

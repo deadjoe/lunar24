@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Canonical descriptor structs for the machine registry (design/07 §2, §3).
+// Canonical descriptor structs for the machine registry (§3).
 //
 // One definition feeds DSP, UI, MIDI adapter, serialization and tests. These are
 // framework-free: no iPlug2, IGraphics, platform, window, or filesystem types.
 // The concrete id enums are completed by <lunar24/registry_ids.hpp>.
 //
-// Evidence discipline (design/07 §10): a descriptor may be `confirmed` to exist
+// Evidence discipline: a descriptor may be `confirmed` to exist
 // on the panel while individual numeric fields carry their own FieldEvidence so
 // invented ranges are never presented as facts.
 
@@ -57,7 +57,7 @@ struct ParameterDescriptor {
   EvidenceStatus status;
   // Range/default provenance is split from identity: numeric min/max/initial and the
   // unit/step/smoothing/persistence policies are each independently evidenced, never
-  // inherited from the descriptor-wide status (design/07 §10, Codex 03848819). The numeric
+  // inherited from the descriptor-wide status. The numeric
   // values themselves are software-normalized when the manual states only a symbolic set.
   ParameterFieldEvidence fieldEvidence;
   // Discrete selector positions. optionCount==0 for a continuous parameter; otherwise
@@ -86,15 +86,15 @@ struct JackDescriptor {
   double toleratedMin;
   double toleratedMax;
 
-  // Per-volt modulation depth / transfer curve (design/07 §3).
+  // Per-volt modulation depth / transfer curve.
   double modulationDepthPerVolt;  // 1.0 == 1 V drives 1 unit of depth
   SignalTransfer transfer;
 
-  // Input rail / saturation behaviour (design/07 §3, §5). Modelled only where
+  // Input rail / saturation behaviour (§5). Modelled only where
   // evidence exists; never a global [-1,1] clamp.
   SaturationType saturation;
 
-  // Cable cardinality (design/07 §4): default 1 (a jack takes/receives at most
+  // Cable cardinality: default 1 (a jack takes/receives at most
   // one cable). Stackable/multiple only if hardware evidence exists.
   std::uint8_t maxCables;
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH #11 (P3 item 6) "5-step sequencer" sound-core strong-oracle suite for
+//  (P3 item 6) "5-step sequencer" sound-core strong-oracle suite for
 // core/include/lunar24/core/five_step_sequencer.h. This new FiveStepSequencer is a
 // standalone per-sample 5-stage sequential voltage source state machine — NOT a
 // wrapper over arp_sequencer.h. At the product head it is WIRED into the canonical
@@ -10,7 +10,7 @@
 // the real registry JackIds) and carries a confirmed bipolar CLOCK-out volts rail.
 // It follows the Lfo/EnvelopeGenerator idiom: real
 // sample-rate, fail-closed config, per-sample tick, no block cache, and deliberately
-// no public reset() (there is no hardware/panel reset jack and no transient
+// no public reset (there is no hardware/panel reset jack and no transient
 // playhead persistence).
 //
 // Confirmed rails the core depends on: step CV 0..+5 V (unipolar) and GATE 0..+10 V
@@ -22,16 +22,16 @@
 // hardcodes no clock volts /
 // threshold / polarity, which are unverified in the registry.
 //
-// @Codex mandate (msg 6ce7adf9) must-tests:
-//   ① STAGES 3/4/5 wrap; first accepted edge lands step 1 (never skips it)
-//   ② five DISTINCT CVs appear in order; active-step CV updates immediately
-//   ③ gate-enable ONLY affects GATE — CV holds on a gate-disabled step
-//   ④ GATE is a 0..+10V ONE-sample pulse (advance sample only, cleared next sample)
-//   ⑤ internal vs external source; the OTHER source's edge never double-advances
-//   ⑥ PULSER CLOCK-OUT fires independently of which source is selected
-//   ⑦ real-descriptor external-edge lands at the exact absolute sample
-//   ⑧ four different sample rates give the correct wall-clock step period (no fixed 48k)
-//   ⑨ same sample stream => bit-identical traces under different block partitions
+//  mandate must-tests:
+//    STAGES 3/4/5 wrap; first accepted edge lands step 1 (never skips it)
+//    five DISTINCT CVs appear in order; active-step CV updates immediately
+//    gate-enable ONLY affects GATE — CV holds on a gate-disabled step
+//    GATE is a 0..+10V ONE-sample pulse (advance sample only, cleared next sample)
+//    internal vs external source; the OTHER source's edge never double-advances
+//    PULSER CLOCK-OUT fires independently of which source is selected
+//    real-descriptor external-edge lands at the exact absolute sample
+//    four different sample rates give the correct wall-clock step period (no fixed 48k)
+//    same sample stream => bit-identical traces under different block partitions
 //   ⑩ invalid config / index / NaN / Inf is fail-closed (no half-state)
 //   ⑪ construction-time provisional lifecycle; no transient-state persistence
 //   ⑫ registry descriptor honesty (clock fields unverified are NOT implementation constants)
@@ -39,10 +39,10 @@
 //   ⑭ setSampleRate is WHOLE-candidate fail-closed (max->tiny never silently accepted)
 //
 // Negative controls (each narrow old-error RED->revert GREEN) are run separately in
-// a detached worktree: ① CV fixed to 0 / dereferenced from the wrong step, ② gate
-// held for the whole step instead of a one-sample pulse, ③ GATE rail wrong (e.g. +5V),
-// ④ block-boundary sample-rate cache / fixed-48k, ⑤ a stub external source that never
-// advances, ⑥ NaN/Inf accepted by a config setter. Detectors read real per-sample
+// a detached worktree: CV fixed to 0 / dereferenced from the wrong step, gate
+// held for the whole step instead of a one-sample pulse, GATE rail wrong (e.g. +5V),
+//  block-boundary sample-rate cache / fixed-48k, a stub external source that never
+// advances, NaN/Inf accepted by a config setter. Detectors read real per-sample
 // output — never source grep / a read-only inspector / a self-copied trace.
 
 #include "mini_test.h"
@@ -99,7 +99,7 @@ FiveStepSequencer makeSeq(double sr, double hz, int stages) {
   return s;
 }
 
-// --- ① + ② : STAGES wrap + five distinct CVs present in order --------------------
+// +: STAGES wrap + five distinct CVs present in order --------------------
 //
 // Note on timing: the internal PULSER phase in this core (like the accepted Lfo)
 // accumulates `hz/sr` per sample with float rounding, so the FIRST wrap does not
@@ -150,7 +150,7 @@ void test_stages_wrap_and_step1_first() {
   }
 }
 
-// --- ③ : gate-enable only affects GATE; CV holds on a gate-disabled step ---------
+// : gate-enable only affects GATE; CV holds on a gate-disabled step ---------
 //
 // Driven with CONTROLLED EXTERNAL edges so the entered step is known exactly
 // (no dependence on internal PULSER wrap timing). Steps 1 and 3 have their GATE
@@ -187,7 +187,7 @@ void test_gate_mask_only_affects_gate() {
   CHECK_EQ(edgesDone, 6);
 }
 
-// --- ④ : GATE is 0..+10V and stays high for half a step --------------------------
+// : GATE is 0..+10V and stays high for half a step --------------------------
 // A one-sample pulse could not open an envelope, so the gate holds for half the step
 // (5 of the 10 samples here), then drops so the next step retriggers cleanly. CLOCK OUT
 // is a -10/+10 V square with the same period.
@@ -219,7 +219,7 @@ void test_gate_holds_half_a_step() {
   CHECK(clkHigh >= 18 && clkHigh <= 22);     // 50% duty over four periods
 }
 
-// --- ④b : a cable in EXT. CLOCK takes over from the PULSER ------------------------
+// b: a cable in EXT. CLOCK takes over from the PULSER ------------------------
 void test_patched_ext_clock_takes_over() {
   FiveStepSequencer s = makeSeq(100.0, 10.0, 5);  // internal source selected
   int advances = 0;
@@ -234,7 +234,7 @@ void test_patched_ext_clock_takes_over() {
   CHECK_EQ(advances, 3);
 }
 
-// --- ⑤ : clock source isolation; the right source advances, the other never does -
+// : clock source isolation; the right source advances, the other never does -
 //
 // Robust oracle (no absolute internal-clock index): the sequence advances ONLY on
 // edges from the SELECTED source, and the OTHER source's edges (however many fire,
@@ -289,12 +289,12 @@ void test_clock_source_no_double_advance() {
   }
 }
 
-// --- ⑥ : PULSER CLOCK-OUT is independent of the selected source ----------------
+// : PULSER CLOCK-OUT is independent of the selected source ----------------
 //
 // The CLOCK-OUT event is a discrete PULSER rising edge that fires regardless of which
 // source advances the sequence. We prove independence by COUNT/count-of-other: with
 // CLOCK=external and external edges controlling the sequence, the sequence advances
-// EXACTLY on those edges while clockOutRising() still produces the PULSER wraps.
+// EXACTLY on those edges while clockOutRising still produces the PULSER wraps.
 
 void test_pulser_clock_out_independent() {
   FiveStepSequencer s = makeSeq(100.0, 10.0, 5);
@@ -315,7 +315,7 @@ void test_pulser_clock_out_independent() {
   CHECK_TRUE(clockCount >= 3);
 }
 
-// --- ⑦ : real-descriptor external edge lands at the exact absolute sample -------
+// : real-descriptor external edge lands at the exact absolute sample -------
 
 void test_external_real_descriptor_sample_accuracy() {
   const int extIx = find_jack(core::JackId::sequencer_ext_clock_in);
@@ -344,7 +344,7 @@ void test_external_real_descriptor_sample_accuracy() {
     for (int i = 0; i < 3; ++i) CHECK_EQ(advance[i], want[i]);
 }
 
-// --- ⑧ : four sample rates give the correct wall-clock step period --------------
+// : four sample rates give the correct wall-clock step period --------------
 
 void test_four_sample_rates_wallclock() {
   const double hz = 1000.0;  // period = sr/hz samples
@@ -367,7 +367,7 @@ void test_four_sample_rates_wallclock() {
   }
 }
 
-// --- ⑨ : same sample stream => bit-identical traces under block partition -------
+// : same sample stream => bit-identical traces under block partition -------
 
 struct Trace {
   std::vector<double> cv;
@@ -425,7 +425,7 @@ void test_block_partition_bit_identical() {
   CHECK_TRUE(same);
 }
 
-// --- ⑩ : invalid config / index / NaN / Inf fail-closed -------------------------
+// --- ⑩: invalid config / index / NaN / Inf fail-closed -------------------------
 
 void test_invalid_config_fail_closed() {
   FiveStepSequencer a;
@@ -477,7 +477,7 @@ void test_invalid_config_fail_closed() {
   CHECK(a.clockSource() == FiveStepSequencer::ClockSource::kInternal);
 }
 
-// --- ⑪ : construction-time provisional lifecycle; no transient persistence -------
+// --- ⑪: construction-time provisional lifecycle; no transient persistence -------
 
 void test_constructor_provisional_no_persistence() {
   // A freshly constructed sequencer has a deterministic, documented provisional
@@ -524,7 +524,7 @@ void test_constructor_provisional_no_persistence() {
   }
 }
 
-// --- ⑫ : registry descriptor honesty (unverified clock fields are NOT constants) -
+// --- ⑫: registry descriptor honesty (unverified clock fields are NOT constants) -
 
 void test_registry_descriptor_honesty() {
   const int iExt = find_jack(core::JackId::sequencer_ext_clock_in);
@@ -552,7 +552,7 @@ void test_registry_descriptor_honesty() {
   CHECK_EQ(gate.nominalMin, 0.0);
   CHECK_EQ(gate.nominalMax, 10.0);
 
-  // CLOCK-OUT output (confirmed bipolar -10..+10V rail, GH#11收口): the core may carry a
+  // CLOCK-OUT output (confirmed bipolar -10..+10V rail, 收口): the core may carry a
   // confirmed clock-out VOLTS rail, so the registry's nominal -10..+10 + fieldEvidence
   // polarity CONFIRMED is asserted, NOT an unverified placeholder. The one-sample pulse
   // width stays provisional; the far right fieldEvidence (threshold) is still unverified.
@@ -577,9 +577,9 @@ void test_registry_descriptor_honesty() {
   CHECK_TRUE(!s.clockOutRising());
 }
 
-// --- ⑬ : external clock consumes the CANONICAL edge — no phantom advance ----------
+// --- ⑬: external clock consumes the CANONICAL edge — no phantom advance ----------
 //
-// @Codex re-review defect #1: the core must consume sink_gate_interpret()'s already-
+//  re-review defect #1: the core must consume sink_gate_interpret's already-
 // decided rising edge, NOT re-derive an edge from a raw gate level with its own latch.
 // The interpreter treats a FIRST-high sample as PRIMING (edge=none) and a sustained
 // high as already exactly ONE rising edge. So driving the real descriptor and feeding
@@ -637,9 +637,9 @@ void test_external_phantom_edge_and_first_sample() {
   }
 }
 
-// --- ⑭ : setSampleRate is WHOLE-candidate fail-closed -----------------------------
+// --- ⑭: setSampleRate is WHOLE-candidate fail-closed -----------------------------
 //
-// @Codex re-review defect #2: a valid-but-huge internal rate (hrz=DBL_MAX) at sr=1 is
+//  re-review defect #2: a valid-but-huge internal rate (hrz=DBL_MAX) at sr=1 is
 // fine, but a denormal-tiny candidate sr makes internalRateHz_/candidateSr overflow to
 // Inf. The setter must reject the WHOLE candidate (keeping the old sr and the full
 // downstream trace), never silently accept it into a stalled clock.

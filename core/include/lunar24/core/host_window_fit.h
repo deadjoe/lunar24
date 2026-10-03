@@ -1,18 +1,18 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Host window fit + control reachability — task #15 PRECURSOR (design/00 §2i +
-// @Claude msg dac2a86f). This is the DECISION LAYER for how the host must size its
+// Host window fit + control reachability — PRECURSOR (+
+// ). This is the DECISION LAYER for how the host must size its
 // window; it is NOT the host. frame-free pure geometry: no windowing, no platform
 // API, no iPlug2/IGraphics type.
 //
-// ⚠️ This slice does NOT close task #15. @Claude's ruling (msg 52a001a3): #15's
+// ⚠️ This slice does NOT close.: 's
 // 债务 is "面板底部 141 逻辑 px 不可达", and "真正不可达与否，要等 P5 的宿主真开出窗口才
 // 成立"。 A correct module only says "IF the host sizes to fit, the bottom is reachable".
-// #15 stays OPEN until P5's real host window proves the bottom row reachable. The P5
+//  stays OPEN until P5's real host window proves the bottom row reachable. The P5
 // mandate (recorded here + in memory) is: the host MUST consume this module to set
 // window height; NEGATIVE = host computes its own size bypassing it -> red. The
-// already-testable != already-true gap is exactly P2-③'s real_path lesson.
+// already-testable != already-true gap is exactly the real_path lesson.
 //
 // The defect (measured 2026-08-25 by the zoom-transform probe; its FINDINGS are
 // recorded in memory, not here, to keep this tree spike-free): the macOS host rendered
@@ -22,13 +22,13 @@
 // whole panel scaled to fit. This header captures that decision so a future host consumes
 // it instead of clamping.
 //
-// Transform provenance (from pinned iPlug2, proven by slice ④): design ->[drawScale
+// Transform provenance (from pinned iPlug2, proven by slice): design ->[drawScale
 // (zoom/fit)]-> logical window ->[mScreenScale (retina)]-> backing. backing =
 // design * drawScale * mScreenScale. FIT is a LOGICAL-space decision (drawScale maps
 // design->logical); RETINA maps logical->backing and is a SEPARATE multiplier, never
-// folded into drawScale, never dropped (slice ④'s whole point). So this header takes
+// folded into drawScale, never dropped (slice the whole point). So this header takes
 // only LOGICAL areas and does NOT see retina — folding retina in here would re-introduce
-// the bug slice ④ proved out. The off-screen FBO being exactly 4800x3102 = 2x logical
+// the bug slice proved out. The off-screen FBO being exactly 4800x3102 = 2x logical
 // across BOTH axes is the proof the transform itself is correct; the defect is purely
 // the host's height choice, which this module fixes at the decision level.
 //
@@ -44,8 +44,8 @@
 
 namespace lunar24::core {
 
-// The single Design Coordinate Space the whole panel is laid out in (design/06 L20,
-// design/07 L162: "2400×1551 是唯一 Design Coordinate Space"). This is the product's
+// The single Design Coordinate Space the whole panel is laid out in (L20,
+//  L162: "2400×1551 是唯一 Design Coordinate Space"). This is the product's
 // design space, NOT a default physical window size; every function below takes it (or
 // an arbitrary design space) as a parameter so the host passes what it needs and no
 // dimension is hardwired into a branch. These are conveniences for callers, not a

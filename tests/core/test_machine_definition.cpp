@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Canonical MachineRuntimeDefinition acceptance (task#65 7C2 GH#11). The product machine
+// Canonical MachineRuntimeDefinition acceptance (7C2). The product machine
 // must OWN its scheduling contracts, module table, fixed internal route set and
-// ExecutionKind disposition, and expose a single stable-address runtime() — the fix for
+// ExecutionKind disposition, and expose a single stable-address runtime — the fix for
 // the "tests hand-bind product fixtures" anti-pattern.
 //
 // The fixed-route set is a 28-entry DATA TABLE deriving 11 unique inter-module compiler
@@ -66,7 +66,7 @@ core::RuntimeOutput churnSnapshot(double baseHz) {
   core::SynthRuntime& rt = d.runtime();
   rt.setVcoBaseHz(baseHz);
   rt.setVcoCvAmounts(1.0, 0.0);
-  // item 1 (@Codex eaaf08cc): the canonical builder NO LONGER pins the A/B generic-CV
+  // item 1: the canonical builder NO LONGER pins the A/B generic-CV
   // lin/exp mode. Any oracle that drives the generic CV / the (now-acyclic) A->B normalized
   // route must be EXPLICIT here — never silently on the runtime's provisional default.
   rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
@@ -103,13 +103,13 @@ int main() {
   check(def.valid(), "definition builds the strict machine (status ok/graph_unchanged)");
   check(def.moduleCount() == core::kModuleCount, "owns exactly the 21-module inventory");
 
-  // ---- fixed-route data table (@Codex correction 1) ---------------------------
+  // fixed-route data table ---------------------------
   check(def.fixedRouteCount() == 28, "the fixed-route data table enumerates all 28 routes");
   check(def.fixedEdgeCount() == 11, "the 28-route table derives exactly 11 unique FixedEdges");
-  // GH#12: four keyboard routes (keyboard_v_oct_out -> VCO A/B, keyboard_gate_left_main_out
+  // four keyboard routes (keyboard_v_oct_out -> VCO A/B, keyboard_gate_left_main_out
   // -> EG A/B) are now active alongside the acyclic VCO-A->VCO-B edge.
   check(def.activeRouteCount() == 5,
-        "wires the acyclic VCO-A->VCO-B edge plus the four GH#12 keyboard routes (5 active)");
+        "wires the acyclic VCO-A->VCO-B edge plus the four keyboard routes (5 active)");
 
   // Category accounting across the 28 authored routes (independent per-category counts).
   std::uint32_t nInter = 0, nIntra = 0, nHost = 0, nDry = 0, nDeferred = 0;
@@ -146,12 +146,12 @@ int main() {
   check(def.kindOf(core::ModuleId::drone_1) == core::ExecutionKind::kDroneBank &&
             def.kindOf(core::ModuleId::drone_6) == core::ExecutionKind::kDroneBank,
         "the six drones are six independent kDroneBank slots (no kind-dedup)");
-  // GH#12: the keyboard module is now a real execution kind — it hosts the ArpSeq +
+  // the keyboard module is now a real execution kind — it hosts the ArpSeq +
   // KeyboardBehaviour owner that turns note ControlEvents into pitch/gate. The six control
-  // sources were already executed (GH#11). kKeyboard is in-inventory WITH a disposition.
+  // sources were already executed. kKeyboard is in-inventory WITH a disposition.
   check(def.kindOf(core::ModuleId::keyboard) == core::ExecutionKind::kKeyboard,
-        "keyboard is executed (kKeyboard GH#12 owner)");
-  // The six control sources are NOW executed (GH#11 FIXED-CANDIDATE): each has a real
+        "keyboard is executed (kKeyboard owner)");
+  // The six control sources are NOW executed (FIXED-CANDIDATE): each has a real
   // control kind, not kUnsupported. keyboard/effector/voices remain declared-deferred.
   check(def.kindOf(core::ModuleId::lfo_a) == core::ExecutionKind::kLfo &&
             def.kindOf(core::ModuleId::lfo_b) == core::ExecutionKind::kLfo &&
@@ -161,7 +161,7 @@ int main() {
             def.kindOf(core::ModuleId::sequencer) == core::ExecutionKind::kSequencer,
         "six control sources are executed (kLfo/kEnvelope/kJoystick/kSequencer)");
   // Every one of the 21 modules has a disposition (no unlisted module).
-  // item 5 (@Codex eaaf08cc): the old loop iterated the DENSE index 0..kModuleCount-1 and
+  // item 5: the old loop iterated the DENSE index 0..kModuleCount-1 and
   // checked "count matches" — that PASSES a duplicate or an omission, so it proves only a
   // lower bound, not a bijection. Rewrite to walk the GENERATED descriptors (kModules[i].id)
   // and prove the 21 ids ↔ disposition table is a true bijection: (i) every generated id
@@ -226,7 +226,7 @@ int main() {
     if (core::kFixedRoutes[i].stableId[0] == '\0') fixedStableIdComplete = false;
   check(fixedStableIdComplete, "item5: all 28 fixed-route stableIds are non-empty (no omitted id)");
 
-  // ---- item 8 (@Codex eaaf08cc, RESOLVED by task #83 / GH #18): the active normalized route.
+  // item 8 (RESOLVED by /): the active normalized route.
   //      The pre-fix route sourced vco_b.vco_out (a VCO-B SELF-edge: B sinks its own output into
   //      its generic CV). Per the adjudicated fix the source is CORRECTED to the existing published
   //      VCO-A oscillator signal vco_a.dry_out, making the edge ACYCLIC; stable_id
@@ -252,7 +252,7 @@ int main() {
           "item8: active route DESCRIPTION attributes the source to 'VCO A' (agrees with the fixed IDS)");
   }
 
-  // ---- audit tightening (@Codex correction 5): unknown is NULL, not a masquerade ----
+  // audit tightening: unknown is NULL, not a masquerade ----
   check(!def.kindOf(core::ModuleId{9999}).has_value(),
         "kindOf(unknown id) is nullopt, NOT a kUnsupported masquerade");
   check(!def.kindOf(core::ModuleId{9999}) &&
@@ -261,7 +261,7 @@ int main() {
   check(def.contractOf(core::ModuleId{9999}) == nullptr,
         "contractOf(unknown id) returns nullptr, NOT a valid-looking default sentinel");
 
-  // ---- real, owned contracts (@Codex correction 3) -------------------------------
+  // real, owned contracts -------------------------------
   const core::ModuleExecutionContract* vcoB = def.contractOf(core::ModuleId::vco_b);
   check(vcoB != nullptr, "contractOf(vco_b) returns an owned contract");
   check(vcoB->allowedInCyclicSCC, "vco_b contract is cycle-safe (VCO-B self-loop)");
@@ -311,13 +311,13 @@ int main() {
         "the default A->B route compiles to ZERO feedback edges (acyclic, no artificial z^-1 delay)");
   check(def.runtime().execSlotCount() >= 1, "the executor has >=1 compiled module slot");
 
-  // ---- valid() is real after a no-op rebuild (@Codex correction 5) ---------------
+  // valid is real after a no-op rebuild ---------------
   (void)def.runtime().rebuild();  // nothing dirty -> graph_unchanged
   check(def.runtime().lastRebuildStatus() == core::SynthRuntime::RebuildStatus::graph_unchanged,
         "no-op rebuild reports graph_unchanged");
   check(def.valid(), "valid() stays true on a graph_unchanged no-op rebuild");
 
-  // ---- exact-feedback-pair primitive (@Codex correction 6, msg 02259208) ----------
+  // exact-feedback-pair primitive ----------
   // The ONE delayed-vs-live decision is the primitive itself — it receives the query
   // (source,sink) pair and a candidate line's pair, matches EXACT (source,sink) identity,
   // and returns {matched,value}. Same source + DIFFERENT sink must be matched=false & the
@@ -342,15 +342,15 @@ int main() {
   check(exact.value != diff.value,
         "delayed and live reads are DISTINCT (D>1-shaped state discriminates)");
 
-  // ---- oracle: canonical rendered VCO-B feedback integration (@Codex 5f8845fe, b4e0e731 §4) ----
-  // The default A->B route is ACYCLIC (task #83 / GH #18), so the compiler's feedback MECHANISM
+  // oracle: canonical rendered VCO-B feedback integration, §4) ----
+  // The default A->B route is ACYCLIC, so the compiler's feedback MECHANISM
   // is exercised here through an EXPLICIT user B->B patch cable (vco_b.vco_out -> cv_in) — the
-  // same legal feedback pathology the old self-edge produced (@Codex: keep the loop verifiable,
+  // same legal feedback pathology the old self-edge produced (keep the loop verifiable,
   // never assert "always no loop"). This proves the RENDERED machine routes + stages it: the
   // compiler produces a feedback line exactly matching the B->B pair, that line's D-sample slot
   // delivers the PREVIOUS frame's published vco_out to THIS frame's cv_in (the z^-1 break), the
   // machine stays finite, and a same-seed fresh run is bit-identical (determinism).
-  // @Codex f33b1f44: the exact-pair-vs-source-only discriminator CANNOT be separated by a
+  // the exact-pair-vs-source-only discriminator CANNOT be separated by a
   // rendered trace (1-deep ring is overwritten), so it lives in the feedbackSinkValue
   // primitive (asserted above); this oracle pins routing + staging, not that discriminator.
   {
@@ -418,12 +418,12 @@ int main() {
     check(synced != free, "a VCO B -> SYNC cable changes VCO A (the sync input triggers)");
   }
 
-  // ---- oracle: same-sample real path (b4e0e731 §4.2) ------------------------------
+  // ---- oracle: same-sample real path §4.2) ------------------------------
   // A real source->sink PRODUCT edge (env_follower.env_out -> drone_2.cv_mod_in via a user
-  // patch cable), driven by the graph — NEVER setControlVoltage (the §5 negative ③/⑤). The
+  // patch cable), driven by the graph — NEVER setControlVoltage (the §5 negative /). The
   // producer (env_follower, fed by preamp) runs EARLIER in the plan order, publishes env_out
   // at sample N, and the drone_2 group resolves its shared CV MOD the SAME sample. A
-  // frame-front global resolve (resolve once before the frame loop, §5 negative ②) would
+  // frame-front global resolve (resolve once before the frame loop, §5 negative) would
   // read the PREVIOUS frame's env_out — one sample late — so the per-frame equality below
   // is the detector. driveGraph must be true (the compiled graph, not a hand-set voltage,
   // feeds the sink).
@@ -445,9 +445,9 @@ int main() {
     check(sameSample, "drone_2 cv_mod resolves env_follower.env_out the SAME sample (no 1-frame lag)");
   }
 
-  // ---- oracle: canonical CV-MOD product behavior (Gap 2, @Codex 864b2d24) ----
+  // oracle: canonical CV-MOD product behavior (Gap 2, b2d24) ----
   // The block above reads droneGroupModCv(1) — the shared group CV the bank multiplies
-  // (the live PRODUCT value that actually detunes the generators, not a shadow). @Codex
+  // (the live PRODUCT value that actually detunes the generators, not a shadow).
   // wants RENDERED proof that the CV audibly reaches the WET output, plus a MOD-off
   // baseline, on the canonical machine with an ASYMMETRIC classic-group-1 (drone_2)
   // generator config:
@@ -455,7 +455,7 @@ int main() {
   //       drone_2.cv_mod_in cable MUST change the rendered WET vs the no-cable run. A
   //       skipped resolve leaves the cable inert -> with-cable == no-cable -> RED.
   //   (2) MOD-off (all gens amount=0): the SAME cable must leave WET bit-identical
-  //       (design/07 §7 MOD-off ignores CV + env). A "MOD-off responds" bug -> RED.
+  //       (MOD-off ignores CV + env). A "MOD-off responds" bug -> RED.
   //   Frame-front regression reds the timing probe above (same-sample equality); (1)+(2)
   //   ground the CV->audio flow. Together they are the product oracle.
   {
@@ -497,7 +497,7 @@ int main() {
           "G2 MOD-off generator ignores the cable (rendered WET bit-identical with vs without)");
   }
 
-  // ---- oracle: CV-MOD SAME-SAMPLE rendered differential (G2b, @Codex c30e1b47 Fix 1) ----
+  // oracle: CV-MOD SAME-SAMPLE rendered differential (G2b, Fix 1) ----
   // The frame-front regression above still reds only the droneGroupModCv same-sample
   // INSPECTOR. Add a differential on the actual WET output of three identical machines (same
   // seed, symmetric generator state):
@@ -568,9 +568,9 @@ int main() {
     check(effectorSlotted, "the effector has an execution slot");
   }
 
-  // ---- oracle: keyboard is now routable + slotted (GH#12) -------------------------
+  // oracle: keyboard is now routable + slotted -------------------------
   // keyboard is kKeyboard, so wiring its REAL generated v_oct_out INTO a real VCF sink must
-  // now SUCCEED at rebuild() (the old kUnsupported refusal no longer applies), and keyboard
+  // now SUCCEED at rebuild (the old kUnsupported refusal no longer applies), and keyboard
   // must be present as a real execution slot — not phantom and not silently dropped.
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
@@ -584,10 +584,10 @@ int main() {
     bool keyboardSlotted = false;
     for (std::uint32_t i = 0; i < d.runtime().execSlotCount(); ++i)
       if (d.runtime().execSlotAt(i).id == core::ModuleId::keyboard) keyboardSlotted = true;
-    check(keyboardSlotted, "keyboard is present as an execution slot (GH#12 owner runs)");
+    check(keyboardSlotted, "keyboard is present as an execution slot ( owner runs)");
   }
 
-  // ---- oracle: VCF CV L->R normalling (route.vcf_cv_l_to_cv_r, Gap 1 @Codex 864b2d24) ----
+  // oracle: VCF CV L->R normalling (route.vcf_cv_l_to_cv_r, Gap 1 b2d24) ----
   // The description reads "CV L is normally connected to CV R if there is no CV signal in
   // the CV R; plugging into CV R overrides this." Graph resolve leaves an unplugged R at 0;
   // resolveVcfCv_ closes the gap. We observe ONLY the real filter state (vcfCvReadbackL/R
@@ -634,7 +634,7 @@ int main() {
   }
 
   // ---- oracle: host-terminal (EXT.AUDIO) injection + preamp env-feedback independence ----
-  // @Codex msg 07bfb061: the §4.5 CONFIG2 divergence was NOT a design/semantic difference —
+  // bfb061: the §4.5 CONFIG2 divergence was NOT a design/semantic difference —
   // it was a real bug. When the canonical machine removed the legacy synthetic `kExtIn`
   // slot it did NOT migrate the host-terminal injection into the mixer resolve stage, so a
   // host EXT.AUDIO drive was silently dropped and CONFIG2 wrongly collapsed to the no-drive
@@ -696,7 +696,7 @@ int main() {
   // ---- §4.6 lifetime: explicit construct/rebuild/process across stack churn -------------
   // NOT an ASan-only inference. MachineRuntimeDefinition is non-copyable/non-movable and
   // owns its SynthRuntime at a STABLE ADDRESS. Two explicit proofs:
-  //  (i)  a runtime() reference obtained from a definition stays VALID after many other
+  //  (i) a runtime reference obtained from a definition stays VALID after many other
   //       definitions are constructed & destroyed in nested (churned) frames — the early
   //       runtime is not aliased, invalidated, or stomped by construction churn;
   //  (ii) construct/rebuild/process is bit-deterministic across repeated construction churn —
@@ -735,13 +735,13 @@ int main() {
           "the churn helper is non-vacuous (a different VCO baseHz changes the output)");
   }
 
-  // ================= A′ migration (msg 96361090): canonical product oracles ==============
+  // ================= A′ migration: canonical product oracles ==============
   // test_machine_definition.cpp is the sole canonical product acceptance. The blocks below
   // carry the product conclusions that the engine-level fixture (test_machine_runtime.cpp)
   // previously owned, re-expressed on the canonical MachineRuntimeDefinition — the ONE
   // product machine, NEVER the synthetic makeRuntime fixture.
   //
-  // A′ bullet ①: full chain / four outputs / plan order + repatch effect.
+  // A′ bullet: full chain / four outputs / plan order + repatch effect.
   {
     constexpr double baseHz = 220.0;
     core::MachineRuntimeDefinition dA(kSeed, kSr);
@@ -759,7 +759,7 @@ int main() {
     cfg(dA.runtime());
     cfg(dB.runtime());
     check(dA.runtime().rebuild() && dB.runtime().rebuild(),
-          "A′① canonical full chain rebuilds ok (A + fresh B)");
+          "A′ canonical full chain rebuilds ok (A + fresh B)");
     bool finite = true, identical = true, nonSilent = false;
     for (int i = 0; i < 32; ++i) {
       const core::RuntimeOutput oA = dA.runtime().processFrame(core::RuntimeInputs{0.5, 0.5}, /*driveGraph=*/true);
@@ -770,9 +770,9 @@ int main() {
           oA.dryA != oB.dryA || oA.dryB != oB.dryB) identical = false;
       if (oA.wetL != 0.0 || oA.dryA != 0.0 || oA.dryB != 0.0) nonSilent = true;
     }
-    check(finite, "A′① full chain: all four outputs are finite");
-    check(identical, "A′① full chain: bit-identical across a same-seed fresh run (reproducibility)");
-    check(nonSilent, "A′① full chain: a nonzero host drive produces a non-silent signal");
+    check(finite, "A′ full chain: all four outputs are finite");
+    check(identical, "A′ full chain: bit-identical across a same-seed fresh run (reproducibility)");
+    check(nonSilent, "A′ full chain: a nonzero host drive produces a non-silent signal");
 
     // Plan order: the compiled plan orders source-before-consumer for the fixed chain.
     auto slotIdx = [&](core::ModuleId id) {
@@ -786,11 +786,11 @@ int main() {
     const int iPre = slotIdx(core::ModuleId::preamp);
     const int iEnv = slotIdx(core::ModuleId::env_follower);
     check(iD1 >= 0 && iMix >= 0 && iVcf >= 0 && iPre >= 0 && iEnv >= 0,
-          "A′① all fixed-chain modules are slotted in the plan");
-    check(iD1 < iMix, "A′① plan order: drone before mixer (drone->mixer edge)");
-    check(iMix < iVcf, "A′① plan order: mixer before vcf (mixer->vcf edge)");
-    check(iPre < iMix, "A′① plan order: preamp before mixer (preamp->mixer edge)");
-    check(iPre < iEnv, "A′① plan order: preamp before env_follower (preamp->env edge)");
+          "A′ all fixed-chain modules are slotted in the plan");
+    check(iD1 < iMix, "A′ plan order: drone before mixer (drone->mixer edge)");
+    check(iMix < iVcf, "A′ plan order: mixer before vcf (mixer->vcf edge)");
+    check(iPre < iMix, "A′ plan order: preamp before mixer (preamp->mixer edge)");
+    check(iPre < iEnv, "A′ plan order: preamp before env_follower (preamp->env edge)");
 
     // Repatch effect, bit-differential (fresh same-config machine per cable state, so the
     // VCO phase is identical between comparisons — no frame-phase tautology).
@@ -803,8 +803,8 @@ int main() {
       if (cabled)
         check(d.runtime().connect(reg::JackId::env_follower_env_out,
                                   reg::JackId::preamp_ext_source_in),
-              "A′① connect env_follower.env_out -> preamp.ext_source_in (return cable)");
-      check(d.runtime().rebuild(), "A′① repatch rebuilds ok");
+              "A′ connect env_follower.env_out -> preamp.ext_source_in (return cable)");
+      check(d.runtime().rebuild(), "A′ repatch rebuilds ok");
       double fp = 0.0;
       for (int i = 0; i < 8; ++i)
         fp += d.runtime().processFrame(core::RuntimeInputs{0.6, 0.6}, /*driveGraph=*/true).wetL;
@@ -813,11 +813,11 @@ int main() {
     const double fpNo = renderWetFp(false);
     const double fpYes = renderWetFp(true);
     const double fpNo2 = renderWetFp(false);
-    check(fpNo2 == fpNo, "A′① repatch: the no-cable render is deterministic (same fp twice)");
-    check(fpNo != fpYes, "A′① repatch: connecting the env->preamp return cable changes WET");
+    check(fpNo2 == fpNo, "A′ repatch: the no-cable render is deterministic (same fp twice)");
+    check(fpNo != fpYes, "A′ repatch: connecting the env->preamp return cable changes WET");
   }
 
-  // A′ bullet ②: block partition / reproducibility + render-path zero allocation.
+  // A′ bullet: block partition / reproducibility + render-path zero allocation.
   {
     constexpr std::size_t kN = 32;
     double extArr[kN];
@@ -832,7 +832,7 @@ int main() {
       d.runtime().setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       d.runtime().setControlVoltage(reg::JackId::vco_b_v_oct_in, 0.0);
       d.runtime().setControlVoltage(reg::JackId::vco_a_v_oct_in, 0.0);
-      check(d.runtime().rebuild(), "A′② canonical machine rebuilds ok");
+      check(d.runtime().rebuild(), "A′ canonical machine rebuilds ok");
     };
     core::RuntimeOutput frameOut[kN];
     {
@@ -841,7 +841,7 @@ int main() {
       newSimilar(d);
       const std::size_t before = g_allocCount;
       for (std::size_t i = 0; i < kN; ++i) frameOut[i] = d.runtime().processFrame(core::RuntimeInputs{extArr[i], extArr[i]}, true);
-      check(g_allocCount == before, "A′② per-frame render loop allocates nothing (zero-alloc)");
+      check(g_allocCount == before, "A′ per-frame render loop allocates nothing (zero-alloc)");
     }
     core::RuntimeOutput blockOut[kN];
     {
@@ -850,21 +850,21 @@ int main() {
       newSimilar(d);
       const std::size_t before = g_allocCount;
       d.runtime().processBlock(extArrRi, kN, blockOut, true);
-      check(g_allocCount == before, "A′② processBlock renders with zero allocation");
+      check(g_allocCount == before, "A′ processBlock renders with zero allocation");
     }
     bool same = true;
     for (std::size_t i = 0; i < kN; ++i)
       if (frameOut[i].wetL != blockOut[i].wetL || frameOut[i].wetR != blockOut[i].wetR ||
           frameOut[i].dryA != blockOut[i].dryA || frameOut[i].dryB != blockOut[i].dryB)
         same = false;
-    check(same, "A′② frame-loop and processBlock renders are bit-identical (partition invariance)");
+    check(same, "A′ frame-loop and processBlock renders are bit-identical (partition invariance)");
     {
       core::MachineRuntimeDefinition d(kSeed, kSr);
       d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
       newSimilar(d);
       check(d.runtime().rebuild() &&
                 d.runtime().lastRebuildStatus() == core::SynthRuntime::RebuildStatus::graph_unchanged,
-            "A′② render does not mutate/recompile the plan (plan stable, no hidden directive)");
+            "A′ render does not mutate/recompile the plan (plan stable, no hidden directive)");
     }
 
     // Probe non-vacuity: ::operator new(8) is a plain call the optimizer MUST perform (its
@@ -875,17 +875,17 @@ int main() {
       void* mem = ::operator new(8);
       const bool detected = g_allocCount > 0;
       ::operator delete(mem);
-      check(detected, "A′② allocator probe is non-vacuous (detects a deliberate allocation)");
+      check(detected, "A′ allocator probe is non-vacuous (detects a deliberate allocation)");
       g_allocCount = 0;  // leave a clean baseline for any later render-window measurement.
     }
   }
 
-  // A′ bullet ③+⑤: the fixed+pluggable preamp/env cycle partition invariance + a
+  // A′ bullet +: the fixed+pluggable preamp/env cycle partition invariance + a
   // representative classic drone group gate / ENV-OUT-CMOD / reproducibility snapshot
   // on the canonical machine.
   {
     constexpr std::size_t kP = 256;
-    // item 7 (@Codex eaaf08cc): use NON-cycle-aligned chunk sizes. 64/128/256 are all
+    // item 7: use NON-cycle-aligned chunk sizes. 64/128/256 are all
     // multiples of the drive's 4-sample period (drv = 0.5 + 0.25*(i%4)), so a block-boundary
     // bug that shifts the phase by a multiple of 4 is completely masked. 37 and 91 break that
     // alignment; each still partitions kP=256 exactly (37*6+34/ 91+91+74/ 128+128).
@@ -901,7 +901,7 @@ int main() {
       return true;
     };
 
-    // ③ preamp/env EXACT cycle partition-invariance: the env_follower->preamp return cable
+    //  preamp/env EXACT cycle partition-invariance: the env_follower->preamp return cable
     // added over a nonzero drive must render identically under 37/91/128 (the fixed+pluggable
     // cycle is a partition-invariant DSP path, not a block-size-sensitive one). Item 7 also
     // fixes the drive-offset bug: each chunk must read drv[b..], NOT drv[0..] from frame b.
@@ -911,7 +911,7 @@ int main() {
       core::SynthRuntime& rt = d.runtime();
       rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
       check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
-            "A′③ connect env->preamp return cable (partition cycle)");
+            "A′ connect env->preamp return cable (partition cycle)");
       for (std::size_t b = 0; b < kP; b += block) {
         const std::size_t n = (kP - b) < block ? (kP - b) : block;
         rt.processBlock(drvRi + b, n, seq + b, /*driveGraph=*/true);  // offset the drive, was drv.
@@ -920,13 +920,13 @@ int main() {
     core::RuntimeOutput cyc[3][kP] = {};
     for (int i = 0; i < 3; ++i) renderCycle(kBlocks35[i], cyc[i]);
     check(same35(cyc[0], cyc[1]) && same35(cyc[1], cyc[2]),
-          "A′③ env->preamp feedback cycle output is invariant across 37/91/128 (partition, non-aligned chunks)");
+          "A′ env->preamp feedback cycle output is invariant across 37/91/128 (partition, non-aligned chunks)");
     bool cycNonZero = false;
     for (std::size_t i = 0; i < kP; ++i)
       if (cyc[0][i].wetL != 0.0 || cyc[0][i].wetR != 0.0) { cycNonZero = true; break; }
-    check(cycNonZero, "A′③ env->preamp cycle render is non-silent (partition compare is non-vacuous)");
+    check(cycNonZero, "A′ env->preamp cycle render is non-silent (partition compare is non-vacuous)");
 
-    // ⑤ representative classic drone group gate on the canonical machine: gating a classic
+    //  representative classic drone group gate on the canonical machine: gating a classic
     // voice group ON vs OFF changes the 4-channel output, and the ON config is reproducible
     // (same seed twice -> bit-identical). Deliberately a whole-group gate (setDroneGroupGate)
     // so we exercise the joined classic gate path, not a per-voice shortcut.
@@ -942,14 +942,14 @@ int main() {
     renderGate(true, gOn[0]);
     renderGate(true, gOn[1]);
     renderGate(false, gOff);
-    check(same35(gOn[0], gOn[1]), "A′⑤ classic drone gate ON is reproducible (same seed twice, bit-identical)");
+    check(same35(gOn[0], gOn[1]), "A′ classic drone gate ON is reproducible (same seed twice, bit-identical)");
     bool gateLive = false;
     for (std::size_t i = 0; i < kP; ++i)
       if (gOn[0][i].wetL != gOff[i].wetL || gOn[0][i].wetR != gOff[i].wetR ||
           gOn[0][i].dryA != gOff[i].dryA || gOn[0][i].dryB != gOff[i].dryB) { gateLive = true; break; }
-    check(gateLive, "A′⑤ classic drone group gate ON changes the output (the joined gate is live, not a shadow)");
+    check(gateLive, "A′ classic drone group gate ON changes the output (the joined gate is live, not a shadow)");
 
-    // item 7 (@Codex eaaf08cc): the old A′③ only asserted "non-silent + partition". Pin WHICH
+    // item 7: the old A′ only asserted "non-silent + partition". Pin WHICH
     // edge the compiler broke and the break delay: the env_follower->preamp cycle must be
     // broken EXACTLY on env_follower.env_out -> preamp.ext_source_in, inserted by z_inverse
     // (a single one-sample delay, delaySamples == 1), and the line must be active. A wrong
@@ -975,7 +975,7 @@ int main() {
       check(zInverse, "item7: the break edge is z^-1 (delaySamples == 1, an exact one-sample delay)");
     }
 
-    // item 6 (@Codex eaaf08cc): the classic ENV OUT writes the LIVE source bank. Gate a
+    // item 6: the classic ENV OUT writes the LIVE source bank. Gate a
     // classic group and read back the product-published env volts from the source bank
     // (droneEnvOutVolts(0) == cvAt_(envOutJack_)). A SKIPPED publish (the old bug) would
     // leave the bank at 0 -> these go RED. We also require the env volts to CHANGE across
@@ -997,7 +997,7 @@ int main() {
       check(envConsistent, "item6: droneEnvOutVolts(0) == controlVoltageAt(drone_1_env_out) (same source-bank write, not a shadow)");
     }
 
-    // ⑤b (@Codex 864b2d24): the kindOf(vco_a)==kVcoA disposition assert above is a TABLE
+    // b (b2d24): the kindOf(vco_a)==kVcoA disposition assert above is a TABLE
     // check (prone to inspector/primitive-only). Add a RENDERED canonical-output criterion
     // on dryA: VCO-A must actually VOICE (dryA nonzero at some frame) AND respond to its own
     // pitch drive independently of VCO-B. Two identical free-running oscillators at the same
@@ -1014,8 +1014,8 @@ int main() {
       rt.setVcoBaseHz(110.0);
       bool aVoice = false, bVoice = false, independent = false, finite = true;
       check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::vco_b_v_oct_in),
-            "⑤b wire env_follower.env_out -> vco_b.v_oct_in (real pitch cable)");
-      check(rt.rebuild(), "⑤b pitch-cable plan rebuilds ok");
+            "b wire env_follower.env_out -> vco_b.v_oct_in (real pitch cable)");
+      check(rt.rebuild(), "b pitch-cable plan rebuilds ok");
       for (std::size_t i = 0; i < kP; ++i) {
         const core::RuntimeOutput o = rt.processFrame(core::RuntimeInputs{drv[i], drv[i]}, true);
         if (o.dryA != 0.0) aVoice = true;
@@ -1023,13 +1023,13 @@ int main() {
         if (o.dryA != o.dryB) independent = true;
         if (!std::isfinite(o.dryA) || !std::isfinite(o.dryB)) finite = false;
       }
-      check(finite, "⑤b VCO-A/B outputs stay finite under a real pitch cable");
-      check(aVoice, "⑤b VCO-A voices a real dryA output (wrong ModuleId owner leaves vco_a silent => RED)");
-      check(bVoice, "⑤b VCO-B voices a real dryB output (the B voice is independently live)");
-      check(independent, "⑤b dryA and dryB diverge under a distinct pitch (separate A/B voices, no echo/shared slot)");
+      check(finite, "b VCO-A/B outputs stay finite under a real pitch cable");
+      check(aVoice, "b VCO-A voices a real dryA output (wrong ModuleId owner leaves vco_a silent => RED)");
+      check(bVoice, "b VCO-B voices a real dryB output (the B voice is independently live)");
+      check(independent, "b dryA and dryB diverge under a distinct pitch (separate A/B voices, no echo/shared slot)");
     }
 
-    // ③b (@Codex 864b2d24): upgrade neg-③ from the pure feedbackSinkValue helper to a
+    // b (b2d24): upgrade neg- from the pure feedbackSinkValue helper to a
     // RUNTIME-excited discriminator. Warm up WITHOUT the env->preamp return cable using a
     // small and a large drive so the LIVE env bank holds DIFFERENT nonzero values (the
     // warm-up env is real product output, not a fabricated hand-set). Then connect the
@@ -1051,27 +1051,27 @@ int main() {
         for (int i = 0; i < 12; ++i) (void)rt.processFrame(core::RuntimeInputs{warmDrv, warmDrv}, true);  // no return cable yet.
         const double warmEnv = rt.controlVoltageAt(reg::JackId::env_follower_env_out);
         check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
-              "③b connect env_follower.env_out -> preamp.ext_source_in after warm-up");
-        check(rt.rebuild(), "③b return-cable plan rebuilds ok");
+              "b connect env_follower.env_out -> preamp.ext_source_in after warm-up");
+        check(rt.rebuild(), "b return-cable plan rebuilds ok");
         (void)rt.processFrame(core::RuntimeInputs{warmDrv, warmDrv}, true);  // first post-rebuild frame.
         return WarmUpProbe{warmEnv, rt.preampResolvedInput()};
       };
       const WarmUpProbe plo = probe(0.15), phi = probe(0.85);
-      check(plo.warmEnv != 0.0, "③b warm-up yields a NONZERO live env (small drive) — discriminator is live");
-      check(phi.warmEnv != 0.0, "③b warm-up yields a NONZERO live env (large drive)");
+      check(plo.warmEnv != 0.0, "b warm-up yields a NONZERO live env (small drive) — discriminator is live");
+      check(phi.warmEnv != 0.0, "b warm-up yields a NONZERO live env (large drive)");
       check(plo.warmEnv != phi.warmEnv,
-            "③b warm-up env scales with drive (small != large) so delayed-vs-live is DISTINCT");
+            "b warm-up env scales with drive (small != large) so delayed-vs-live is DISTINCT");
       check(plo.firstPost == 0.0,
-            "③b first-post-rebuild preamp reads the DELAYED zeroed D-sample (small warm-up)");
+            "b first-post-rebuild preamp reads the DELAYED zeroed D-sample (small warm-up)");
       check(phi.firstPost == 0.0,
-            "③b first-post-rebuild preamp reads the zeroed D-sample (large warm-up) — a live read scales with env => RED");
+            "b first-post-rebuild preamp reads the zeroed D-sample (large warm-up) — a live read scales with env => RED");
     }
 
-    // ③c (@Codex c30e1b47, Fix 2): ③b's firstPost==0.0 is STILL a getter-only discriminator
-    // (preampResolvedInput() + a pure primitive). Add a TRUE equivalent on rendered WET.
+    // c (Fix 2): b's firstPost==0.0 is STILL a getter-only discriminator
+    // (preampResolvedInput + a pure primitive). Add a TRUE equivalent on rendered WET.
     // Two same-seed machines warmed up with the SAME drive/frame count (no return cable).
-    // @Codex ce765d6d rework — the earlier "both call rebuild()" symmetric reset was NOT actually
-    // symmetric: the no-cable side's rebuild() early-returned as graph_unchanged (cached no-op,
+    //  rework — the earlier "both call rebuild" symmetric reset was NOT actually
+    // symmetric: the no-cable side's rebuild early-returned as graph_unchanged (cached no-op,
     // machine_runtime.h:1451) and did NOT reset, so the VCO-B self-edge kept its warmup value while
     // the cable side's real reset zeroed it => dryB A≠B at non-zero CV depth (localized to
     // feedback-init, not wrong-slot/scheduling). Fix: BOTH sides force a REAL rebuild. A keeps the
@@ -1079,7 +1079,7 @@ int main() {
     // disconnect (dirty, ends NO return cable) so it too real-rebuilds and zeroes its VCO-B feedback.
     // BOTH sides are now confirmed to actually reset VCO-B self-edge feedback, so the return-cable
     // per-edge-delay discriminator is a clean single-variable claim WITHOUT the cv_amt=0 isolation
-    // (that isolation is cancelled per @Codex ce765d6d).
+    // (that isolation is cancelled.
     // Both then process the SAME first frame with ext=0. Correct per-edge delay: A's preamp
     // reads the freshly-reset D-sample (=0), B's preamp reads the ext terminal (=0) => both
     // feed the preamp 0 => ALL FOUR outputs are bit-identical. A live-read bug hands A's
@@ -1091,29 +1091,29 @@ int main() {
         d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
         core::SynthRuntime& rt = d.runtime();
         rt.setVcoControlModes(core::VcoControlMode::kExponential, core::VcoControlMode::kExponential);
-        // task #83 / GH #18: the default A->B route is ACYCLIC, so the feedback line this block
+        //  : the default A->B route is ACYCLIC, so the feedback line this block
         // reset-checks must come from an EXPLICIT user B->B cable (the same feedback pathology).
         // Placed before warm-up so the buffer accumulates a warmup value the real rebuild must clear.
         check(rt.connect(reg::JackId::vco_b_vco_out, reg::JackId::vco_b_cv_in),
-              "③c connect the user B->B cable (the persistent feedback line to reset-check)");
-        check(rt.rebuild(), "③c B->B cable plan rebuilds ok");
-        // @Codex ce765d6d: NO cv_amt=0 isolation — compare at the default non-zero CV depth.
+              "c connect the user B->B cable (the persistent feedback line to reset-check)");
+        check(rt.rebuild(), "c B->B cable plan rebuilds ok");
+        // NO cv_amt=0 isolation — compare at the default non-zero CV depth.
         for (int i = 0; i < 12; ++i) (void)rt.processFrame(core::RuntimeInputs{0.5 + 0.25 * double(i % 4), 0.5 + 0.25 * double(i % 4)}, true);
         if (wireReturn) {
           // A: connect the return cable (sets graphDirty_ => a REAL reset zeroes VCO-B feedback).
           check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
-                "③c A connect env_follower.env_out -> preamp.ext_source_in after warm-up");
+                "c A connect env_follower.env_out -> preamp.ext_source_in after warm-up");
         } else {
           // B: force a REAL rebuild too, but END with no return cable. connect then disconnect the
-          // same edge so graphDirty_ is set; rebuild() then actually resets (a graph_unchanged
+          // same edge so graphDirty_ is set; rebuild then actually resets (a graph_unchanged
           // no-op would NOT reset and would keep B's warmup self-edge value => dryB A≠B).
           check(rt.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
-                "③c B connect env_follower.env_out -> preamp.ext_source_in (to set dirty)");
+                "c B connect env_follower.env_out -> preamp.ext_source_in (to set dirty)");
           check(rt.disconnect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in),
-                "③c B disconnect the return edge (dirty set, end no return cable)");
+                "c B disconnect the return edge (dirty set, end no return cable)");
         }
-        check(rt.rebuild(), "③c plan rebuilds ok");
-        // @Codex ce765d6d: confirm BOTH sides actually rebuilt (real reset, not graph_unchanged) so
+        check(rt.rebuild(), "c plan rebuilds ok");
+        // confirm BOTH sides actually rebuilt (real reset, not graph_unchanged) so
         // the B->B feedback buffer is zeroed identically at non-zero CV depth. Find the B->B line by
         // exact (src,sink) — the default A->B route is acyclic, so the B->B user cable is the
         // persistent feedback line in BOTH wireReturn paths — and a real reset leaves it zeroed.
@@ -1125,11 +1125,11 @@ int main() {
             break;
           }
         }
-        check(fbB >= 0, "③c the B->B user cable compiles a feedback line");
+        check(fbB >= 0, "c the B->B user cable compiles a feedback line");
         if (fbB >= 0) {
           const auto& l = rt.feedbackAt(static_cast<std::uint32_t>(fbB));
           check(l.buf[l.writePos] == 0.0,
-                "③c rebuild actually reset the B->B feedback buffer (a graph_unchanged no-op would keep the warmup value)");
+                "c rebuild actually reset the B->B feedback buffer (a graph_unchanged no-op would keep the warmup value)");
         }
         for (std::size_t i = 0; i < n; ++i) seq[i] = rt.processFrame(core::RuntimeInputs{0.0, 0.0}, true);  // ext=0 first frame.
       };
@@ -1143,13 +1143,13 @@ int main() {
       wetDifferential(true, aWet, 1);    // A: return + rebuild (the FIRST post frame reads the zeroed D-sample).
       wetDifferential(false, bWet, 1);   // B: no cable (the FIRST post frame reads the ext terminal, =0).
       check(sameAll4(aWet, bWet, 1),
-            "③c correct per-edge delay: A and B both feed the preamp 0 on the SAME first frame => all four "
+            "c correct per-edge delay: A and B both feed the preamp 0 on the SAME first frame => all four "
             "rendered outputs bit-identical (a live read feeds A a stale env => real preamp->mixer->VCF "
             "WET diverges from B on the rendered output => RED)");
     }
   }
 
-  // A′ bullet ⑥: GH#6 VCF identity config, fail-closed, L/R isolation through canonical vcf_path.
+  // A′ bullet: VCF identity config, fail-closed, L/R isolation through canonical vcf_path.
   {
     core::MachineRuntimeDefinition d(kSeed, kSr);
     d.runtime().setVcoVcaEnabled(false);  // listen to the raw VCOs
@@ -1163,21 +1163,21 @@ int main() {
     state.calibration = calib;
     check(rt.configureVcfIdentity(state.identityModelVersion, state.identitySeed.seed,
                                   state.calibration),
-          "A′⑥ canonical VCF identity accepts a v1 DeviceStateV1 triple");
-    check(rt.vcfIdentityConfigured(), "A′⑥ canonical VCF identity: configured true");
+          "A′ canonical VCF identity accepts a v1 DeviceStateV1 triple");
+    check(rt.vcfIdentityConfigured(), "A′ canonical VCF identity: configured true");
     const auto prof = core::deriveVcfIdentityProfile(kSeed, 1u);
-    check(rt.vcfInputDrive(0) == prof.left.vcfDrive, "A′⑥ canonical VCF L drive == derived L vcfDrive");
-    check(rt.vcfInputDrive(1) == prof.right.vcfDrive, "A′⑥ canonical VCF R drive == derived R vcfDrive");
+    check(rt.vcfInputDrive(0) == prof.left.vcfDrive, "A′ canonical VCF L drive == derived L vcfDrive");
+    check(rt.vcfInputDrive(1) == prof.right.vcfDrive, "A′ canonical VCF R drive == derived R vcfDrive");
     check(rt.vcfPathStagingGain(1) == prof.right.pathGain,
-          "A′⑥ R staging gain is the RIGHT domain (steal-L-to-R would red)");
+          "A′ R staging gain is the RIGHT domain (steal-L-to-R would red)");
 
     // Fail-closed: unknown version + invalid trims rejected; a valid prior config is preserved.
-    check(!rt.configureVcfIdentity(2u, kSeed, calib), "A′⑥ unknown identity version (v2) is rejected");
-    check(rt.vcfIdentityConfigured(), "A′⑥ a rejected config preserves the prior valid identity");
+    check(!rt.configureVcfIdentity(2u, kSeed, calib), "A′ unknown identity version (v2) is rejected");
+    check(rt.vcfIdentityConfigured(), "A′ a rejected config preserves the prior valid identity");
     core::CalibrationState bad{};
     bad.vcfLeftTrim = 0.0f;
     bad.vcfRightTrim = 1.0f;
-    check(!rt.configureVcfIdentity(1u, kSeed, bad), "A′⑥ a zero left trim is rejected");
+    check(!rt.configureVcfIdentity(1u, kSeed, bad), "A′ a zero left trim is rejected");
 
     // L/R isolation through the rendered WET path. Same seed/version/calib across the two
     // instances; ONLY the LEFT trim differs -> L wet moves, R stays bit-identical.
@@ -1187,7 +1187,7 @@ int main() {
       core::CalibrationState c{};
       c.vcfLeftTrim = static_cast<float>(leftTrim);
       c.vcfRightTrim = static_cast<float>(rightTrim);
-      check(dd.runtime().configureVcfIdentity(1u, kSeed, c), "A′⑥ identity config for L/R oracle");
+      check(dd.runtime().configureVcfIdentity(1u, kSeed, c), "A′ identity config for L/R oracle");
       double l = 0.0, r = 0.0;
       for (int i = 0; i < 256; ++i) {
         const core::RuntimeOutput o = dd.runtime().processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
@@ -1198,8 +1198,8 @@ int main() {
     };
     const auto a = renderIdenWet(1.0, 1.0);
     const auto b = renderIdenWet(0.4, 1.0);
-    check(std::fabs(a.first - b.first) > 1e-4, "A′⑥ changing the LEFT trim moves the L wet path");
-    check(a.second == b.second, "A′⑥ changing the LEFT trim leaves R wet path bit-identical (isolation)");
+    check(std::fabs(a.first - b.first) > 1e-4, "A′ changing the LEFT trim moves the L wet path");
+    check(a.second == b.second, "A′ changing the LEFT trim leaves R wet path bit-identical (isolation)");
 
     // Partition invariance through the canonical vcf_path: an identity-configured machine
     // must render identically via the per-frame loop and processBlock (vcf window is a
@@ -1213,7 +1213,7 @@ int main() {
       core::CalibrationState c{};
       c.vcfLeftTrim = 1.0f;
       c.vcfRightTrim = 1.0f;
-      check(dd.runtime().configureVcfIdentity(1u, kSeed, c), "A′⑥ VCF identity config (partition oracle)");
+      check(dd.runtime().configureVcfIdentity(1u, kSeed, c), "A′ VCF identity config (partition oracle)");
     };
     core::RuntimeOutput idenFrame[kN6];
     {
@@ -1234,10 +1234,10 @@ int main() {
       if (idenFrame[i].wetL != idenBlock[i].wetL || idenFrame[i].wetR != idenBlock[i].wetR ||
           idenFrame[i].dryA != idenBlock[i].dryA || idenFrame[i].dryB != idenBlock[i].dryB)
         idenSame = false;
-    check(idenSame, "A′⑥ VCF identity render is block-partition invariant (frame-loop == processBlock)");
+    check(idenSame, "A′ VCF identity render is block-partition invariant (frame-loop == processBlock)");
   }
 
-  // A′ bullet ④: EventTimebase -> drone_3 dispatch sample timing through the canonical machine.
+  // A′ bullet: EventTimebase -> drone_3 dispatch sample timing through the canonical machine.
   {
     constexpr std::size_t kTot = 256;
     constexpr std::size_t kEventSample = 100;
@@ -1248,7 +1248,7 @@ int main() {
       ev.kind = core::ControlEventKind::parameter;
       ev.parameter = core::ParameterId::drone_3_pitch;
       // 0.5 is the DEFAULT applied_to_dsp value of drone_3.pitch (registry initial=0.5), and
-      // task#78 now pre-applies the full default state in the definition ctor — so a 0.5
+      //  now pre-applies the full default state in the definition ctor — so a 0.5
       // event is a no-op and the script would look vacuous. Use a value off default so the
       // event still exercises the dispatch (sample-timing under test), while the applied
       // baseline stays reflected.
@@ -1263,7 +1263,7 @@ int main() {
     // Render the CANONICAL machine's 4-channel output over kTot frames in `block` chunks,
     // optionally enqueueing the pitch event. Both paths go through the identical ctor
     // rebuild, so the ONLY difference is the event. We read the full RuntimeOutput
-    // (the canonical observable) — NOT drone3Channel(), which is a block-latched
+    // (the canonical observable) — NOT drone3Channel, which is a block-latched
     // modulation value and therefore not a per-frame sample-timing signal.
     auto renderOut = [&](std::size_t block, core::RuntimeOutput* seq, bool withEvent) {
       core::MachineRuntimeDefinition d(kSeed, kSr);
@@ -1284,13 +1284,13 @@ int main() {
     core::RuntimeOutput base[3][kTot] = {};
     for (int bi = 0; bi < 3; ++bi) renderOut(static_cast<std::size_t>(kBlocks[bi]), base[bi], false);
     check(sameOut(base[0], base[1]) && sameOut(base[1], base[2]),
-          "A′④ no-event baseline output is buffer-invariant (64/128/256)");
+          "A′ no-event baseline output is buffer-invariant (64/128/256)");
     core::RuntimeOutput ev[3][kTot] = {};
     for (int bi = 0; bi < 3; ++bi) renderOut(static_cast<std::size_t>(kBlocks[bi]), ev[bi], true);
     check(sameOut(ev[0], ev[1]) && sameOut(ev[1], ev[2]),
-          "A′④ scripted output is buffer-invariant (event acts at the SAME sample)");
+          "A′ scripted output is buffer-invariant (event acts at the SAME sample)");
     check(!sameOut(ev[0], base[0]),
-          "A′④ event script differs from the empty script (drone_3 dispatch exercised, not vacuous)");
+          "A′ event script differs from the empty script (drone_3 dispatch exercised, not vacuous)");
 
     // Sample timing, differential: the event has NO effect before its scheduled sample and
     // an effect at/after it. Compare the event script against the no-event script frame by
@@ -1305,19 +1305,19 @@ int main() {
       if (i < kEventSample) { if (differsAt) beforeNoEffect = false; }
       else if (differsAt) atAfterEffect = true;
     }
-    check(beforeNoEffect, "A′④ the pitch event does not change output before its scheduled sample");
-    check(atAfterEffect, "A′④ the pitch event changes output at/after the scheduled sample");
+    check(beforeNoEffect, "A′ the pitch event does not change output before its scheduled sample");
+    check(atAfterEffect, "A′ the pitch event changes output at/after the scheduled sample");
   }
 
-  // ============ GH#19 S0 (task #117): the PWM CV jacks are PRODUCT-REACHABLE =============
-  // Ruling 4 (msg a323acad): JackId 20 / 22 (vco_a.pwm_in / vco_b.pwm_in) connect to the
+  // ============: the PWM CV jacks are PRODUCT-REACHABLE =============
+  // Ruling 4: JackId 20 / 22 (vco_a.pwm_in / vco_b.pwm_in) connect to the
   // EXISTING binding and execution, A and B INDEPENDENTLY, with no new jack and no new route.
   // The canonical builder now calls setVcoPwmBindings(...) — but a binding is a DECLARATION,
   // not a connection, so this oracle drives the canonical machine and asserts the modulation is
   // really CONSUMED per sample through the one control-sink resolver.
   //
   // Setup: morph A = morph B = the pulse icon (the ring's PURE PULSE node — the only node whose
-  // shape reads effectiveDuty(), and the triangle/BLAMP weight is exactly 0 there, so no
+  // shape reads effectiveDuty, and the triangle/BLAMP weight is exactly 0 there, so no
   // band-limited term confounds the comparison), base PW 0.3, PWM depth 1.0. The modulation
   // source is the JOYSTICK: a real product panel control that publishes a DC on x_out / y_out
   // and is driven here through the normal parameter path. Each VCO is driven from its OWN
@@ -1399,51 +1399,51 @@ int main() {
 
     // (i) UNPATCHED: the binding alone reads 0 and leaves both duties at the canonical base.
     check(unpatched.cvA == 0.0 && unpatched.cvB == 0.0,
-          "GH#19 S0: an unpatched PWM sink reads exactly 0 on BOTH sides (binding is not a cable)");
+          "an unpatched PWM sink reads exactly 0 on BOTH sides (binding is not a cable)");
     check(unpatched.dutyA == kBasePw && unpatched.dutyB == kBasePw,
-          "GH#19 S0: unpatched, both effective duties stay at the canonical base PW");
+          "unpatched, both effective duties stay at the canonical base PW");
     check(unpatched.srcX != 0.0 && unpatched.srcY != 0.0,
-          "GH#19 S0: the joystick controls REALLY publish a non-zero DC (the next checks are non-vacuous)");
+          "the joystick controls REALLY publish a non-zero DC (the next checks are non-vacuous)");
 
     // (ii) A wired at 0 V: the cable itself perturbs nothing (same trace as no cable at all).
     check(zero.cvA == 0.0 && zero.dutyA == kBasePw,
-          "GH#19 S0: vco_a.pwm_in patched from a source sitting at 0 V leaves duty at base PW");
+          "vco_a.pwm_in patched from a source sitting at 0 V leaves duty at base PW");
     check(sameA(zero, unpatched) && sameB(zero, unpatched),
-          "GH#19 S0: adding the PWM cable at 0 V changes NEITHER VCO's output (the cable is inert)");
+          "adding the PWM cable at 0 V changes NEITHER VCO's output (the cable is inert)");
 
     // (iii) A wired at +5 V: the modulation is LIVE, reaches A only, and follows ruling 3.
     check(full.cvA == full.srcX && full.cvA != 0.0,
-          "GH#19 S0: vco_a.pwm_in consumes the source's published value (graph-delivered CV)");
+          "vco_a.pwm_in consumes the source's published value (graph-delivered CV)");
     check(std::fabs(full.dutyA - transfer(kBasePw, 1.0, full.cvA)) < 1e-12,
-          "GH#19 S0: A's effective duty follows clamp(basePW + depth*CV/10) on the DELIVERED CV");
+          "A's effective duty follows clamp(basePW + depth*CV/10) on the DELIVERED CV");
     check(!sameA(full, zero),
-          "GH#19 S0: modulating A's PWM jack changes VCO A's emitted samples (RED if no consumer)");
+          "modulating A's PWM jack changes VCO A's emitted samples (RED if no consumer)");
     check(full.cvB == 0.0 && full.dutyB == kBasePw && sameB(full, zero),
-          "GH#19 S0: A's PWM cable does NOT reach VCO B (A/B independent)");
+          "A's PWM cable does NOT reach VCO B (A/B independent)");
 
     // (iv) DEPTH 0 nulls the modulation inside the SAME graph: bit-identical to the 0 V render.
     check(depthZero.cvA != 0.0 && depthZero.dutyA == kBasePw,
-          "GH#19 S0: PWM depth 0 keeps duty at base PW even with a live CV at the jack");
+          "PWM depth 0 keeps duty at base PW even with a live CV at the jack");
     check(sameA(depthZero, zero),
-          "GH#19 S0: depth 0 is bit-identical to no modulation (same graph, strict equality)");
+          "depth 0 is bit-identical to no modulation (same graph, strict equality)");
 
     // (v) The mirror case: B's own jack drives B and only B (the two jacks are not conflated).
     check(bMod.cvB == bMod.srcY && bMod.cvB != 0.0 && bRef.cvB == 0.0,
-          "GH#19 S0: vco_b.pwm_in reads B's OWN source, not A's");
+          "vco_b.pwm_in reads B's OWN source, not A's");
     check(std::fabs(bMod.dutyB - transfer(kBasePw, 1.0, bMod.cvB)) < 1e-12,
-          "GH#19 S0: B's effective duty follows the same transfer on ITS delivered CV");
+          "B's effective duty follows the same transfer on ITS delivered CV");
     check(!sameB(bMod, bRef),
-          "GH#19 S0: modulating B's PWM jack changes VCO B's emitted samples");
+          "modulating B's PWM jack changes VCO B's emitted samples");
     check(bMod.cvA == 0.0 && bMod.dutyA == kBasePw && sameA(bMod, bRef),
-          "GH#19 S0: B's PWM cable does NOT reach VCO A (the mirror independence holds)");
+          "B's PWM cable does NOT reach VCO A (the mirror independence holds)");
 
     // (vi) Both wired at once, from two different sources: each side takes its own value.
     check(both.cvA != 0.0 && both.cvB != 0.0,
-          "GH#19 S0: both PWM jacks modulate in the same render (no shared/one-shot sink)");
+          "both PWM jacks modulate in the same render (no shared/one-shot sink)");
     check(both.dutyA == full.dutyA && both.dutyB == bMod.dutyB,
-          "GH#19 S0: with both patched each duty matches its OWN single-patch value (no cross-talk)");
+          "with both patched each duty matches its OWN single-patch value (no cross-talk)");
     check(!sameA(both, unpatched) && !sameB(both, unpatched),
-          "GH#19 S0: both VCO outputs move when both jacks are modulated");
+          "both VCO outputs move when both jacks are modulated");
 
     // (vii) SAME-FRAME CONSUMPTION — an ABSOLUTE-TIMING check, deliberately not a residual one.
     //
@@ -1541,7 +1541,7 @@ int main() {
                     name, int(measurable), period, (lowHi > lowLo) ? lowHi - lowLo : 0, K);
         // Cannot measure => say so loudly rather than pass an unrun check.
         check(measurable,
-              "GH#19 S0: the same-frame probe's reference is measurable (period, LOW run, window)");
+              "the same-frame probe's reference is measurable (period, LOW run, window)");
         if (!measurable) return;
 
         renderTimingArm(side, 1.0, K, stepped);     // depth 1, CV stepped just before frame K
@@ -1558,23 +1558,23 @@ int main() {
         // Non-vacuity: WITHOUT the CV step that same window stays LOW for a long stretch, so the
         // edge below is caused by the CV and not by the pulse naturally returning high.
         check(hFlat > K + period / 4,
-              "GH#19 S0: without the CV step the pulse stays LOW well past K (the edge is causal)");
+              "without the CV step the pulse stays LOW well past K (the edge is causal)");
         // The load-bearing check: the step is consumed in the frame it was published in.
         if (side == 'A')
           check(hStep == K,
-                "same_frame_edge_A: GH#19 S0: A's PWM CV step is consumed in the SAME frame it is "
+                "same_frame_edge_A: : A's PWM CV step is consumed in the SAME frame it is "
                 "published (a one-sample-late consumer lands on K+1)");
         else
           check(hStep == K,
-                "same_frame_edge_B: GH#19 S0: B's PWM CV step is consumed in the SAME frame it is "
+                "same_frame_edge_B: : B's PWM CV step is consumed in the SAME frame it is "
                 "published (a one-sample-late consumer lands on K+1)");
-        // The depth is a GH#21-smoothed knob, so it converges to 1.0 asymptotically; the duty is
+        // The depth is a -smoothed knob, so it converges to 1.0 asymptotically; the duty is
         // compared with a margin rather than at exact equality (an exact-equality form here would
         // fail on the smoother's last ulp, not on anything this check is about).
         check(stepped.cv == 5.0 && stepped.duty > kBasePw + 0.45,
-              "GH#19 S0: the stepped arm really did reach a near-full duty on a live +5 V CV");
+              "the stepped arm really did reach a near-full duty on a live +5 V CV");
         check(std::fabs(flat.duty - kBasePw) < 1e-9,
-              "GH#19 S0: the un-stepped depth-1 arm stays at base PW (the step is the only change)");
+              "the un-stepped depth-1 arm stays at base PW (the step is the only change)");
         std::printf("P3-3 gh19-s0 same-frame %s: hStep=%zu hFlat=%zu cv=%+.6f duty=%.9f\n", name,
                     hStep, hFlat, stepped.cv, stepped.duty);
       };

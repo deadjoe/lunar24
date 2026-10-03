@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// DeviceStateV1 factory default (design/07 §9, task #75 revision 2, ruling ① /
+// DeviceStateV1 factory default (revision 2, ruling /
 // correction 1).
 //
 // make_default_device_state(seed) builds a power-on default that is a VALID
@@ -49,11 +49,11 @@ inline DeviceStateV1 make_default_device_state(std::uint64_t seed) noexcept {
     if (d != nullptr) st.parameters[i] = d->initial;
   }
 
-  // Converge the #57 keyboard mirrors EXPLICITLY (they are otherwise value-init 0
+  // Converge the keyboard mirrors EXPLICITLY (they are otherwise value-init 0
   // and the registry mirror params are selector-initial 0, but we pin the invariant
   // here rather than rely on coincidence):
-  //   parameters[keyboard_behaviour]      == KeyboardSettings.pressureBehaviour (canonical)
-  //   parameters[keyboard_pressure_output]== KeyboardSettings.pressureOutput    (canonical LEFT)
+  //   parameters[keyboard_behaviour] == KeyboardSettings.pressureBehaviour (canonical)
+  //   parameters[keyboard_pressure_output]== KeyboardSettings.pressureOutput (canonical LEFT)
   st.parameters[static_cast<std::uint32_t>(ParameterId::keyboard_behaviour)] =
       static_cast<double>(st.keyboardSettings.pressureBehaviour);
   st.parameters[static_cast<std::uint32_t>(ParameterId::keyboard_pressure_output)] =

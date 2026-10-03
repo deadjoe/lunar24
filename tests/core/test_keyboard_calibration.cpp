@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-⑤ tests for the two-layer keyboard calibration split (design/00 §P4-⑤, msg
-// 87862933). @Claude Decis ③: the same slice but the two layers are tested
+//  tests for the two-layer keyboard calibration split (msg
+// 87862933). Decis: the same slice but the two layers are tested
 // SEPARATELY, and the front/back difference is written into the comments.
 //
 //   FRONT layer — keyboard_input_normalization.h: raw (source-varying) touch
-//   reading -> the SINGLE internal pressure, at the translate() choke. This is the
+//   reading -> the SINGLE internal pressure, at the translate choke. This is the
 //   ONLY place the P4 exit criterion allows a source difference, because the
 //   difference is eaten here (before the choke). A "normalized pressure from two
 //   sources at the same physical touch is bit-identical downstream" property lives
@@ -233,5 +233,5 @@ int main() {
   calibration_knob_trims_within_the_nominal_band();
   pressure_output_clamps_the_internal_value();
   output_config_from_bank_reads_the_right_ids();
-  return ::test::finish("keyboard calibration (P4-⑤, two layers)");
+  return ::test::finish("keyboard calibration (two layers)");
 }

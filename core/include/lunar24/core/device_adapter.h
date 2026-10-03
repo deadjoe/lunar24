@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// device_adapter.h — the single, framework-free product DeviceAdapter (GH#4).
+// device_adapter.h — the single, framework-free product DeviceAdapter.
 //
 // The core (SynthRuntime) emits the four logic outputs (RuntimeOutput) in VIRTUAL
 // volts; the real audio device consumes DEVICE-NORMALIZED samples. This adapter is
@@ -22,7 +22,7 @@
 // to drift. Tests drive `renderBlock` directly (never replicating the frame loop), so
 // every accept criterion below is exercised on the exact path the host will run.
 //
-// EVENT DRAIN (F-1, task#101): the per-frame drive goes through
+// EVENT DRAIN (F-1): the per-frame drive goes through
 // `SynthRuntime::processBlock(&in, 1, &out, true)`, NOT `processFrame`. The one-frame
 // block drains the runtime's single EventTimebase and applies each due ControlEvent at
 // its exact frame, so an event the host's keyboard/MIDI producer enqueued acts at its
@@ -30,37 +30,37 @@
 // silently ignored every queued event). The drain is deliberately NOT inside
 // processFrame: that would advance the time base twice per frame through processBlock.
 //
-// Frozen contracts (design/07 §5, the GH#4 mandate):
-//   OUTPUT capability:  <2  => prepare() REJECTS (fail-closed; keeps the previous plan
+// Frozen contracts (the mandate):
+//   OUTPUT capability: <2 => prepare REJECTS (fail-closed; keeps the previous plan
 //                               or leaves the adapter with no plan).
 //                       2-3 => exactly two channels opened/written (WET L/R).
 //                       >=4 => user-selected DISTINCT 4-channel WET+DRY; extra physical
 //                              channels are left untouched.
 //   No mono downmix, no three-way half output, and no silent DRY drop that still
 //   reports a 4-way success.
-//   INPUT routes:        0 => both terminals read 0.
+//   INPUT routes: 0 => both terminals read 0.
 //                        1 => the plan explicitly picks EXT only, PREAMP only, or an
 //                             EXPLICIT duplicate-one (same physical channel wired to both);
 //                             a default / omitted route is NEVER an implicit copy.
 //                        >=2 => each terminal bound to an explicit valid physical channel;
 //                              using the SAME channel for both is allowed only via an
 //                              explicit duplication policy (DualSame).
-//   LEVEL:               the four outputs share ONE provisional scale
+//   LEVEL: the four outputs share ONE provisional scale
 //                             deviceNormalized = clamp(virtualVolts * 0.5, -1, +1),
-//                       preserving WET (max 2V) : DRY (max 1V) = 2:1. There is NO
+//                       preserving WET (max 2V): DRY (max 1V) = 2:1. There is NO
 //                       per-output peak normalization. The input inverse is the SAME
 //                       choke point:
-//                             virtualVolts = finite(n) ? clamp(n,-1,+1)/0.5 : 0.
+//                             virtualVolts = finite(n) ? clamp(n,-1,+1)/0.5: 0.
 //                       The 0.5 is the ONE frozen policy — `kDeviceScaleProvisional` —
 //                       a named constant, NOT a configurable gain. Both directions are
 //                       marked software-provisional: they are not a claim of hardware
 //                       input-rail measurement.
 //
-// RT boundary (GH#4): the plan is formed COMPLETELY in the non-audio prepare(); a
+// RT boundary: the plan is formed COMPLETELY in the non-audio prepare; a
 // failure keeps the previous valid plan (or leaves the adapter with no plan). The
 // audio render reads only the stable plan; it does not allocate, lock, log, or swap
 // an owner. The host owner swap / ProcessBlock wiring is deliberately NOT part of this
-// slice (the GH#4 mandate defers it).
+// slice (the mandate defers it).
 
 #pragma once
 
@@ -92,7 +92,7 @@ inline double clamp_val(double v, double lo, double hi) {
 
 }  // namespace detail
 
-// The ONE frozen provisional scale, software-provisional (design/07 §5; NOT a claim of
+// The ONE frozen provisional scale, software-provisional (NOT a claim of
 // hardware input-rail measurement). Shared by BOTH output directions. This is the single
 // driftable truth source for the 0.5 policy — a named constant, never a runtime parameter.
 inline constexpr double kDeviceScaleProvisional = 0.5;
@@ -110,7 +110,7 @@ inline double volts_from_device_normalized(double n) {
   return detail::clamp_val(n, -1.0, 1.0) / kDeviceScaleProvisional;
 }
 
-// The complete, immutable device plan. Formed fully in non-audio prepare(); the audio
+// The complete, immutable device plan. Formed fully in non-audio prepare; the audio
 // render only reads it. Value type, fixed arrays, no heap.
 struct DevicePlan {
   DeviceLayout layout;             // output topology (interleaved / non-interleaved).
@@ -134,13 +134,13 @@ class DeviceAdapter {
   DeviceAdapter() = default;
 
   // NON-audio prepare. Validate the complete candidate; on ANY failure return false and
-  // keep the previous valid plan (or leave hasPlan() false). No heap / lock / log.
+  // keep the previous valid plan (or leave hasPlan false). No heap / lock / log.
   //
-  // `layout`          — output device topology (its totalChannels is the output capability).
+  // `layout` — output device topology (its totalChannels is the output capability).
   // `inputCapability` — physical input channel count available (must be >= 0).
-  // `output`          — logical -> physical output mapping (outputCount entries meaningful).
-  // `outputCount`     — 2 (WET only, capability 2-3) or 4 (WET+DRY, capability >=4).
-  // `input`           — the frozen input route.
+  // `output` — logical -> physical output mapping (outputCount entries meaningful).
+  // `outputCount` — 2 (WET only, capability 2-3) or 4 (WET+DRY, capability >=4).
+  // `input` — the frozen input route.
   // `extCh`/`preampCh`— physical input channel for the EXT / PREAMP terminals (-1 = none);
   //                     ignored where the route does not consume them.
   bool prepare(const DeviceLayout& layout, int inputCapability, const OutputMapping& output,
@@ -185,7 +185,7 @@ class DeviceAdapter {
   std::uint64_t nonFinite_ = 0;
 };
 
-// ---- DevicePlan::valid() -------------------------------------------------------------
+// ---- DevicePlan::valid -------------------------------------------------------------
 inline bool DevicePlan::valid() const {
   // Fail-closed on an impossible standalone capability BEFORE any route logic.
   if (inputCapability < 0) return false;

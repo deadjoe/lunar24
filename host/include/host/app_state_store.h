@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// app_state_store.h — the narrow APP state-persistence coordination layer (task #105, GH#12).
+// app_state_store.h — the narrow APP state-persistence coordination layer.
 //
 // The ONE agreed chain, with core owning every semantic step:
 //     exact-length gate -> decode_device_state -> migrate_device_state -> validate_device_state
@@ -9,8 +9,8 @@
 //
 // This layer owns ONLY the APP-session policy that core deliberately does not:
 //   * ONE read attempt per APP session, guarded by an EXPLICIT latch — never inferred from
-//     `canonicalState() == nullptr` (that is also true after a failed prepare());
-//   * the pending transfer payload, captured BEFORE prepare() releases the owner, so a device
+//     `canonicalState == nullptr` (that is also true after a failed prepare);
+//   * the pending transfer payload, captured BEFORE prepare releases the owner, so a device
 //     reopen can never fall back to the power-on default or re-read the disk;
 //   * the lifecycle-save gate: ONLY a missing file or a file the REAL candidate ADOPTED may be
 //     written. A file that was present but not adopted (bad format, IO failure, or a graph the
@@ -103,10 +103,10 @@ enum class StateLoadOutcome : std::uint8_t {
   LengthMismatch,      // not exactly kAppStateWireBytes
   UnsupportedVersion,  // migrate_device_state: schema older/unrecognized (no frozen old wire schema)
   RequiresNewerCodec,  // migrate_device_state: schema newer than this build understands
-  InvalidState,        // validate_device_state rejected it (family + field in lastValidation())
+  InvalidState,        // validate_device_state rejected it (family + field in lastValidation)
   // NOTE: a state that VALIDATES but whose real engine candidate is refused is NOT a load outcome:
-  // loadOnce() returns Ok (the file was adopted as a candidate) and publishPending() returns the
-  // engine's exact StateApplyStatus (e.g. RejectedGraph). saveAllowed() is false either way.
+  // loadOnce returns Ok (the file was adopted as a candidate) and publishPending returns the
+  // engine's exact StateApplyStatus (e.g. RejectedGraph). saveAllowed is false either way.
 };
 
 // A fixed, inspectable outcome of a lifecycle (exit) save.
@@ -172,7 +172,7 @@ inline std::FILE* openNative(const std::string& utf8Path, const char* mode) {
   if (::_wfopen_s(&fp, native.c_str(), wideMode.c_str()) != 0) return nullptr;
   return fp;
 #else
-  // POSIX paths ARE byte strings, so nativePath() is the identity here and this is the same fopen on
+  // POSIX paths ARE byte strings, so nativePath is the identity here and this is the same fopen on
   // the same bytes. The indirection is deliberate: ONE boundary on BOTH platforms, so a conversion
   // defect cannot hide behind a second, unconverted call site.
   const NativePath native = nativePath(utf8Path);
@@ -181,7 +181,7 @@ inline std::FILE* openNative(const std::string& utf8Path, const char* mode) {
 }
 
 // Join a directory and a file name in UTF-8 WITHOUT a std::filesystem narrow round trip: on Windows
-// path(std::string) / path::string() go through the ANSI code page, which would corrupt a non-ASCII
+// path(std::string) / path::string go through the ANSI code page, which would corrupt a non-ASCII
 // directory before the wide conversion ever ran. A trailing separator is dropped so the result is
 // always `dir + "/" + name`.
 inline std::string joinUtf8(const std::string& dir, const std::string& name) {
@@ -281,7 +281,7 @@ inline bool realAtomicReplace(void* ctx, const char* from, const char* to) {
   if (fromNative.empty() || toNative.empty()) return false;
   return ::MoveFileExW(fromNative.c_str(), toNative.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
 #else
-  // POSIX paths ARE byte strings: rename(2) takes the UTF-8 bytes unchanged (nativePath() is the
+  // POSIX paths ARE byte strings: rename(2) takes the UTF-8 bytes unchanged (nativePath is the
   // identity). No std::filesystem anywhere in this file, so no narrow/ACP round trip can creep in on
   // either platform.
   const NativePath fromNative = nativePath(from);
@@ -339,7 +339,7 @@ class AppStateStore {
     return app_state_file_ops::joinUtf8(directory_, kAppStateFileName);
   }
   // A fresh, non-colliding temp CANDIDATE path in the SAME directory on every call. This only
-  // generates a name; it does not claim it. reserveTempPath() is what makes the name ours.
+  // generates a name; it does not claim it. reserveTempPath is what makes the name ours.
   std::string tempPath() const {
     if (directory_.empty()) return std::string();
     static std::atomic<std::uint64_t> counter{0u};
@@ -392,7 +392,7 @@ class AppStateStore {
 
   // ---- the ONE startup read attempt ------------------------------------------------------------
   // Latched: the second and every later call in the same APP session returns the SAME outcome and
-  // performs NO disk access (readAttempts() stays 1). The disk is never re-read on a device reopen.
+  // performs NO disk access (readAttempts stays 1). The disk is never re-read on a device reopen.
   StateLoadOutcome loadOnce() {
     if (restoreAttempted_) return loadOutcome_;
     restoreAttempted_ = true;
@@ -503,7 +503,7 @@ class AppStateStore {
     }
 
     // Validated: adopt it as the pending restore. The caller publishes it through the REAL
-    // candidate at the stopped-stream boundary; the engine's verdict lands in publishPending().
+    // candidate at the stopped-stream boundary; the engine's verdict lands in publishPending.
     pending_ = migrated;
     pendingOrigin_ = PendingOrigin::FromFile;
     pendingValid_ = true;
@@ -512,7 +512,7 @@ class AppStateStore {
   }
 
   // ---- the stopped-stream transfer payload -----------------------------------------------------
-  // Capture the engine's committed canonical BEFORE prepare() releases the owner. A not-ready
+  // Capture the engine's committed canonical BEFORE prepare releases the owner. A not-ready
   // engine has no owner to transfer, so an existing pending restore is left untouched.
   void captureCanonical(const StandaloneAudioEngine& engine) {
     const DeviceStateV1* canonical = engine.canonicalState();

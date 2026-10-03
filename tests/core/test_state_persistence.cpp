@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P2-⑤ Half 2 tests for state persistence (design/07 §6, master plan line 93).
+//  Half 2 tests for state persistence (master plan line 93).
 // The control thread takes a consistent snapshot, debounces it (coalescing rapid
 // changes, never dropping the final state), writes a TEMP file, flushes it, then
 // atomically renames it over the live file. The audio thread never participates
 // in disk saving.
 //
-// Four must-tests, each with a red-negative control (@Claude: "用不会暴露错误的
+// Four must-tests, each with a red-negative control ("用不会暴露错误的
 // 输入去测，等于没测"):
 //   1. atomic-replace never exposes a half file (a failed temp/rename leaves the
 //      live file untouched & loadable); negative = in-place direct write.
@@ -45,7 +45,7 @@ namespace reg = lunar24::registry;
 
 // Distinctive, exact-round-trip value pattern for a whole state. Reserved bytes
 // (the keyboard-preset pad and the sequencer block) are filled with a NON-ZERO,
-// NON-0xFF pattern so a serializer that silently clears them is caught (@Claude
+// NON-0xFF pattern so a serializer that silently clears them is caught (
 // Q2: reserved bytes are preserved, never destroyed).
 static void fill_state(core::DeviceStateV1& s) {
   s.schemaVersion = 17u;
@@ -76,7 +76,7 @@ static void fill_state(core::DeviceStateV1& s) {
   s.keyboardSettings.pressureOutput = 9u;
 
   // Live keyboard non-scalar + no-domain selectors (LEFT bank). Left {..L} and the
-  // P4-③ RIGHT `_r` mirror use DISTINCT values so a serializer that collapses the
+  //  RIGHT `_r` mirror use DISTINCT values so a serializer that collapses the
   // two banks (or drops the `_r` tail) breaks the fidelity check rather than
   // passing on a value that happens to coincide.
   for (std::uint32_t i = 0; i < core::kKeyboardSeqStepCount; ++i) {
@@ -101,7 +101,7 @@ static void fill_state(core::DeviceStateV1& s) {
     s.keyboardClockSelectors[i] = static_cast<std::uint8_t>(10u + i);
     s.keyboardClockSelectorsR[i] = static_cast<std::uint8_t>(90u + i);
   }
-  // P4-③ live per-side SCALAR right bank (Decis B): distinctive values well clear of
+  //  live per-side SCALAR right bank (Decis B): distinctive values well clear of
   // the left `parameters[]` pattern (which is i*0.5, topping out ~211.5), so a
   // serializer that maps the right bank onto the left bank breaks the fidelity check.
   for (std::uint32_t i = 0; i < core::kKeyboardScalarRightCount; ++i)
@@ -186,7 +186,7 @@ static bool states_identical(const core::DeviceStateV1& a, const core::DeviceSta
   return true;
 }
 
-// Topology compare (reuses P2-② effectiveEdges): rebuild a PatchGraph from a
+// Topology compare (reuses effectiveEdges): rebuild a PatchGraph from a
 // DeviceState's stored cable facts (inputCable/cableSource indexed by raw JackId,
 // which is gated < 65) and capture the canonical effective-edge set.
 static void rebuild_and_connect(const core::DeviceStateV1& s, core::PatchGraph* g) {
@@ -522,7 +522,7 @@ static void rtfs_discard(void* ctx, const char*) {
   static_cast<RtFs*>(ctx)->out.clear();
 }
 
-// P4-③ live `_r` + scalar right-bank contract (design/00 §2d L1 + §2e Decis B). The
+//  live `_r` + scalar right-bank contract (L1 + §2e Decis B). The
 // right bank — the five `_r` live fields plus the 22-scalar keyboardScalarRight bank
 // — is (1) an APPENDED block that never reorders, and (2) INDEPENDENT of the left
 // bank.

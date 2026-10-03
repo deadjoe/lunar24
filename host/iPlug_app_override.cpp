@@ -6,7 +6,7 @@
 // identifier — never the Apache-only form, which would misstate the upstream code's zlib terms.
 //
 // host/iPlug_app_override.cpp — a Lunar 24 FORK of the pinned third_party/iPlug2/IPlug/APP/
-// IPlugAPP.cpp at submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4 (GH#4 8B3, task#73).
+// IPlugAPP.cpp at submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4.
 // The body is the upstream iPlug 2 library (its banner below is retained unchanged); the Lunar
 // modifications are Apache-2.0. See the "Lunar 24 modification" comment below the banner for the
 // exact diff. tools/check_host_override_drift.py asserts override == upstream + this allowlisted
@@ -22,13 +22,13 @@
 */
 
 // ---------------------------------------------------------------------------
-// Lunar 24 modification (GH#4 8B3, task#73).
+// Lunar 24 modification.
 // This is a repo-owned FORK of the pinned third_party/iPlug2/IPlug/APP/IPlugAPP.cpp at the
 // submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4. The ONLY change is inside
-// IPlugAPP::AppProcess: it no longer re-connects all MaxNChannels() every block (a 2-out device
+// IPlugAPP::AppProcess: it no longer re-connects all MaxNChannels every block (a 2-out device
 // would then re-assert the declared 4-channel max and the callback's smaller output buffers would
 // be read out of bounds). It attaches/processes by the ACTUAL connected count the host installed
-// via LunarHostPlugin::setActualChannelPlan() before OnReset. Everything else is byte-identical to
+// via LunarHostPlugin::setActualChannelPlan before OnReset. Everything else is byte-identical to
 // the upstream pin. tools/check_host_override_drift.py asserts override == upstream + this
 // allowlisted hunk, so these two files are never two divergent host truths.
 // ---------------------------------------------------------------------------
@@ -112,7 +112,7 @@ bool IPlugAPP::SendMidiMsg(const IMidiMsg& msg)
 //
 //    // if the midi channel out filter is set, reassign the status byte appropriately
 //    if (mAppHost->mMidiOutChannel > -1)
-//      status = mAppHost->mMidiOutChannel-1 | ((uint8_t) msg.StatusMsg() << 4) ;
+//      status = mAppHost->mMidiOutChannel-1 | ((uint8_t) msg.StatusMsg << 4);
 
     std::vector<uint8_t> message;
     message.push_back(msg.mStatus);
@@ -153,7 +153,7 @@ void IPlugAPP::SendSysexMsgFromUI(const ISysEx& msg)
 
 void IPlugAPP::AppProcess(double** inputs, double** outputs, int nFrames)
 {
-  // Lunar 24 (task#73): do NOT re-connect all MaxNChannels() every block. The host installs the
+  // Lunar 24: do NOT re-connect all MaxNChannels every block. The host installs the
   // ACTUAL connected count (setActualChannelPlan) before OnReset, and AppProcess must attach/
   // process by that same count. Re-connecting the declared max here would re-assert 4 outputs on
   // a 2-out device and read the callback's (real-count-sized) output pointers out of bounds. This

@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P5-② — measured panel REGION layout (task #33, criterion 5).
+//  measured panel REGION layout (criterion 5).
 //
-// design/06 §P5 mandate, last clause: coords come from the panel reference figure
-// (design/03 §3: the reference PNG/PDF is measurement authority, never a background),
+//  mandate, last clause: coords come from the panel reference figure
+// (the reference PNG/PDF is measurement authority, never a background),
 // and the measured coords must be consistent with the registry's panelSite region
 // labels. This header is that dataset: one measured DesignRect per DISTINCT panelSite
 // label, seen on the physical panel.
@@ -18,7 +18,7 @@
 //
 // MEASUREMENT RECEIPTS (how the numbers are grounded, not guessed):
 //   - Reference figure: design/reference/solar42N_panel_2400px.png, exactly 2400x1551
-//     (1:1 with the design coordinate space; design/03 §3).
+//     (1:1 with the design coordinate space).
 //   - Detected the dark module cards with ImageMagick `-connected-components` on the
 //     thresholded figure; each cluster's bounding box below is that measured output
 //     (e.g. top-left drones cluster x22..724 / top-right drones x1599..2301 / center
@@ -51,23 +51,23 @@ inline constexpr DesignRect kDesignArea{0, 0, kDesignWidth, kDesignHeight};
 
 // One measured rect per DISTINCT panelSite label (22 — the registry keeps DRONE 1 and
 // DRONE 2, DRONE 4 and DRONE 5, VCO A / VCO B and ENV A / ENV B as separate sites, so
-// they are separate regions here too; and @Claude's 2026-08-26 ruling splits the filter
+// they are separate regions here too; and -08-26 ruling splits the filter
 // section into FILTER L and FILTER R, two side-by-side knob groups, because FILTER L and
 // FILTER R are two independent cards separated by the `link` knob). Ordered the way a
 // human reads the panel: left column, center strip, right column, bottom row, bottom band.
 //
-// ⚠️ 2026-08-26 re-measurement (task #36): the previous rects were a large-scale
+// ⚠️ 2026-08-26 re-measurement: the previous rects were a large-scale
 // mismatch with the figure, and their EXTERNAL anchor was a hand-written set copied
 // from the same numbers — two same-source quantities validating each other, the exact
-// disease @Claude flagged (00-status §2k). These rects are now pinned to a
+// disease flagged (00-status §2k). These rects are now pinned to a
 // MACHINE-GENERATED anchor set: the panel reference figure is measured by
 // tools/measure_panel_regions.py into generated/lunar24/panel_anchors.generated.h +
 // panel_regions.json, and test_panel_layout consumes THAT set. The anchor origin is
-// the reference image; neither @Pi nor @Claude hand-transcribes it. A kept-in-sync
+// the reference image; neither @Pi nor hand-transcribes it. A kept-in-sync
 // regen gate (--check) proves the committed artifact reproduces the image, and a
 // hand-edited region here no longer converges — so a wrong value reds itself.
 //
-// @Claude's uniform-edge contract (msg dc7f808a): each generated anchor carries ONE rule
+//  uniform-edge contract: each generated anchor carries ONE rule
 // label, chosen by the image, never by a human — "frame" binds a complete dark card
 // outline on all four sides (each border dark-frac >= 0.90), "content" binds the content
 // bounding box because at least one edge is a beige gutter / content division / open
@@ -76,11 +76,11 @@ inline constexpr DesignRect kDesignArea{0, 0, kDesignWidth, kDesignHeight};
 // actually framed (the frame self-validate gate).
 //
 // Corrections over the FIGURE TRUTH (material to the region semantics, kept inline and
-// reported to @Claude):
+// reported to):
 //   * The center-top band is ONE physical cartridge (x@~807-1592, y@~181-532) holding
 //     BOTH the "DUAL EFFECTOR" section (top, y181-410) and the "FILTER L/R" section
 //     (bottom, y410-511), split at the figure's content divider row (y410 — a content
-//     boundary, not a frame). @Claude's §2k "DUAL VCF {808,537,1591,710}" is not the
+//     boundary, not a frame). §2k "DUAL VCF {808,537,1591,710}" is not the
 //     filter — that band is the 10ch VOICE MIXER; the real filter section is y410-511
 //     inside the effector card. FILTER L and FILTER R are the two halves of that section
 //     separated by the `link` knob; the figure has NO card frame between them, so each

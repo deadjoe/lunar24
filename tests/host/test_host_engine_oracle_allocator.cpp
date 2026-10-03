@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Allocator-count probe for the GH#4 8B2 host-owner oracle (task#72). The replaceable
+// Allocator-count probe for the host-owner oracle. The replaceable
 // operator new/delete pair is isolated into its own TU, built ONLY into the
 // test_host_engine_oracle target, so GCC's -Wmismatched-new-delete does not misjudge the
 // malloc/free implementation as a new/delete mismatch at the ::operator new / ::operator
@@ -11,14 +11,14 @@
 // Semantics are unchanged from the engine-level probe (test_machine_definition_allocator.cpp
 // and test_device_adapter_oracle_allocator.cpp). Every operator new/new[] in THIS test binary
 // (including the linked lunar_core interface and the MachineRuntimeDefinition / SynthRuntime it
-// constructs) is counted in g_allocCount; the owner prepare() -> processBlock() render path
+// constructs) is counted in g_allocCount; the owner prepare -> processBlock render path
 // leaves the render window at zero, and a deliberate crossing allocation inside the window must
 // be detected.
 //
-// ALIGNED: the @Codex false-green was that we only replaced the UNALIGNED operators, so an
+// ALIGNED: the false-green was that we only replaced the UNALIGNED operators, so an
 // over-aligned (C++17 `alignas(64)` -> `operator new(size_t, align_val_t)`) allocation and its
 // matching aligned delete bypassed the counters entirely: a pre-allocated over-aligned object
-// reset() inside the callback stayed a silent green. We therefore replace the aligned new/new[]
+// reset inside the callback stayed a silent green. We therefore replace the aligned new/new[]
 // and delete/delete[] pair too (unsized AND sized-aligned forms), and on the aligned path we
 // OVER-ALLOCATE deliberately so the pointer stays freeable by the matching aligned delete: the
 // aligned new calls plain malloc (base + align + sizeof(void*)), rounds the returned pointer up

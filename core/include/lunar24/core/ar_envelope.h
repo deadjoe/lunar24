@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// ArEnvelope — the minimal LINEAR attack/release VCA envelope (GH#15 D4).
+// ArEnvelope — the minimal LINEAR attack/release VCA envelope.
 //
 // WHY THIS EXISTS AND WHY IT IS NOT EnvelopeGenerator: the classic drone voices
 // (drone_1/2/4/5) already ship a landed group VCA envelope whose law is LINEAR in
@@ -13,7 +13,7 @@
 // whose ADSR is a ONE-POLE EXPONENTIAL. Mixing the two would put two different
 // envelope laws and two different sets of time constants under one panel section.
 //
-// HOLD (GH#15 D5) is an OR term on the TARGET, not a second envelope — exactly as the
+// HOLD is an OR term on the TARGET, not a second envelope — exactly as the
 // classic group envelope does it (`DroneBank::GroupEnv::hold` ORed inside `tickGroup`).
 // The D4 contract scoped the drone_3/6 `hold` parameters (registry 288/300) OUT and
 // reserved this boundary; D5 lands it here:
@@ -22,8 +22,8 @@
 //
 // `hold_` defaults to FALSE, which makes the expression expand identically to the D4
 // `gate_ ? 1.0 : 0.0`, so an untouched HOLD is bit-identical to pre-D5. HOLD never
-// writes `gate_`: `gate()` keeps reporting the TRUE resolved gate, so a held voice
-// legitimately reads `gate() == false` AND `level() == 1.0`. It also never resets
+// writes `gate_`: `gate` keeps reporting the TRUE resolved gate, so a held voice
+// legitimately reads `gate == false` AND `level == 1.0`. It also never resets
 // `level_` and never touches the two stage times — engaging HOLD mid-release resumes
 // the rise from wherever the level currently is, which is what keeps the VCA gain
 // continuous (the same property `setGate` has).
@@ -73,10 +73,10 @@ class ArEnvelope {
   // the level currently is, so the VCA gain is always continuous).
   void setGate(bool high) { gate_ = high; }
 
-  // HOLD (GH#15 D5) — the OR term on the target. Default FALSE, which is the registry's
+  // HOLD — the OR term on the target. Default FALSE, which is the registry's
   // initial selector position ("off") and makes `(gate_ || hold_)` expand identically to
-  // the D4 `gate_` alone. It deliberately does NOT write `gate_`: `gate()` keeps meaning
-  // "the gate the caller resolved", so a held voice reads gate()==false with level()==1.0.
+  // the D4 `gate_` alone. It deliberately does NOT write `gate_`: `gate` keeps meaning
+  // "the gate the caller resolved", so a held voice reads gate==false with level==1.0.
   void setHold(bool on) { hold_ = on; }
 
   // Advance one sample. This is the classic GroupEnv law verbatim — `(e.gate || e.hold)`
@@ -109,7 +109,7 @@ class ArEnvelope {
 
   double sampleRate_;
   bool gate_;
-  // HOLD OR term (GH#15 D5). Starts FALSE = the registry's initial selector position
+  // HOLD OR term. Starts FALSE = the registry's initial selector position
   // ("off" for drone_3.hold(288) / drone_6.hold(300)) and the classic `GroupEnv::hold`
   // default, so an untouched envelope is bit-identical to pre-D5.
   bool hold_ = false;

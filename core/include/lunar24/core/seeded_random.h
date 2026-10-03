@@ -5,11 +5,11 @@
 // NO global/static state: each instance owns its state and feeds it one seed,
 // so two instances constructed from the same seed produce the same sequence and
 // an entire render is bit-reproducible. This is a deliberate backstop for the
-// P3-① "no hidden randomness" must-test — it removes Rand()/time-seed/
+//  "no hidden randomness" must-test — it removes Rand/time-seed/
 // uninitialized-memory/container-iteration-order as failure paths that would
 // otherwise poison every later "bit-identical" comparison.
 //
-// The P3-① requirement is met by using this ONLY to derive the per-voice
+// The requirement is met by using this ONLY to derive the per-voice
 // constants at construction time (a fixed seed => fixed constants => one
 // deterministic signal), never as the per-sample random source for the audio
 // path. The drift/noise is a deterministic, analytic function of the seeded

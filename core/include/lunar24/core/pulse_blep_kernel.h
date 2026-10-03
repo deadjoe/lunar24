@@ -1,19 +1,19 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH#19 S3: the polyBLEP kernel for the PULSE, i.e. the TWO-jump case.
+// the polyBLEP kernel for the PULSE, i.e. the TWO-jump case.
 //
-// FORMULA (final; task #119 production authorization)
+// FORMULA (final; production authorization)
 //
-//     w                       = min(dt, kPolyblepMaxDt)          dt > 0, else no correction
+//     w = min(dt, kPolyblepMaxDt) dt > 0, else no correction
 //     correction(t, duty, dt) = R(t, w) - R(frac(t - duty), w)
-//     output(t, duty, dt)     = naive(t, duty) + correction
+//     output(t, duty, dt) = naive(t, duty) + correction
 //
-// It is polyblep_kernel.h's residual (polyblepResidual, task #110 / S2) applied twice, once per
+// It is polyblep_kernel.h's residual (polyblepResidual, / S2) applied twice, once per
 // value discontinuity, each with its OWN SIGN and its OWN POSITION:
 //
-//     phase 0     : -1 -> +1, an UPWARD  jump of +2   ->  ADD      R(t, dt)
-//     phase duty  : +1 -> -1, a DOWNWARD jump of -2   ->  SUBTRACT R(frac(t - duty), dt)
+//     phase 0: -1 -> +1, an UPWARD jump of +2 -> ADD R(t, dt)
+//     phase duty: +1 -> -1, a DOWNWARD jump of -2 -> SUBTRACT R(frac(t - duty), dt)
 //
 // Both follow from R(0+) = -1 and R(1-) = +1 driving the two limits to a common value -- the same
 // rule polyblepSaw applies to the saw's single downward jump. The residual is CALLED, not
@@ -45,7 +45,7 @@
 // pulse's own edges, so the construction would add a jump it is not entitled to. Approaching 0.5
 // from below reads the same way: 0.5 is the LAST dt at which the residual is continuous.
 //
-// The adopted strategy (reviewed ruling, task #118) caps the WIDTH OF THE CORRECTION KERNEL and
+// The adopted strategy (reviewed ruling) caps the WIDTH OF THE CORRECTION KERNEL and
 // changes nothing else: `w = min(dt, kPolyblepMaxDt)` in the formula above, while the phase
 // accumulator keeps advancing by the TRUE step. Frequency, the V/OCT and CV law, the duty, the PWM
 // transfer and the sync contract are all untouched.
@@ -95,7 +95,7 @@ namespace lunar24::core {
 // polyblepSupportReachesHalfPeriod is public -- and the value it returns is a fact about the
 // stimulus, not a statement about whether the correction ran.
 //
-// duty is the EFFECTIVE duty actually used to render the pulse (Vco::effectiveDuty(), i.e.
+// duty is the EFFECTIVE duty actually used to render the pulse (Vco::effectiveDuty, i.e.
 // including PWM), not the raw `pw` parameter: the windows move with the duty the waveform uses.
 //
 // NOTE on the width argument under the capping above. The live window half-width is now

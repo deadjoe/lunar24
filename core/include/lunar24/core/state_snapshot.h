@@ -1,30 +1,30 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// StateSnapshotPool (design/07 §5, master plan line 93): the graph/state update
+// StateSnapshotPool (master plan line 93): the graph/state update
 // publication path. A control thread builds an immutable snapshot and publishes
 // it atomically; the audio thread reads a non-owning current-slot handle. A
 // superseded (retired) snapshot is reclaimed by a worker on a NON-audio thread,
 // never inside the audio callback.
 //
-// This is the P2-⑤ Half 1 deliverable (audit-repair ① — GH#3 A02). The defect
-// being repaired: the reader could NOT pin a slot. It read `current()` then
+// This is the Half 1 deliverable (audit-repair). The defect
+// being repaired: the reader could NOT pin a slot. It read `current` then
 // `snapshot(cur)` with no guarantee against a concurrent publish(B)→retire(A)→
-// recycleOne() resetting A underneath it — the audio thread read a destroyed
+// recycleOne resetting A underneath it — the audio thread read a destroyed
 // object. See tests/core/test_state_publish.cpp for the deterministic repro.
 //
 // PIN CONTRACT (the repair): the audio reader brackets its read with
-// pinCurrent()/unpin(). A pinned slot is retired out of the reclaim path:
-// recycleOne() DEFERS — returns false — rather than reset a slot any reader
-// still holds. Only after every reader unpins does a later recycleOne() reclaim
-// it. pinCurrent() and recycleOne() race on one atomic (the slot state seesaw
+// pinCurrent/unpin. A pinned slot is retired out of the reclaim path:
+// recycleOne DEFERS — returns false — rather than reset a slot any reader
+// still holds. Only after every reader unpins does a later recycleOne reclaim
+// it. pinCurrent and recycleOne race on one atomic (the slot state seesaw
 // between "current + N readers" and "retiring"): only ONE wins, the loser
 // retries/deferts. There is no ABA because any recycle passes through kWriting
 // (< 0), so a reader's CAS(expect >= 0) must fail.
 //
 // DELIBERATE STALE-GENERATION ACCEPTANCE (a decision, not a bug): if a reader
 // loads current_=A, and A is then retired → recycled → REUSED as the new current
-// before the reader's pin CAS executes, pinCurrent() succeeds (A is `current`
+// before the reader's pin CAS executes, pinCurrent succeeds (A is `current`
 // again, state >= 0) and the reader reads the NEWER generation's content, not
 // the snapshot it first saw. For audio that is benign — fresher state, never
 // torn data — but it is an intentional semantic, not an accident: do not "fix"
@@ -32,8 +32,8 @@
 // guarantee.
 //
 // RT contract:
-//   * publish()/retire()/current()/pinCurrent()/unpin() are lock-free (atomics
-//     only) and never allocate. recycleOne() is the worker's job, never the
+//   * publish/retire/current/pinCurrent/unpin are lock-free (atomics
+//     only) and never allocate. recycleOne is the worker's job, never the
 //     audio thread.
 //   * No heap, no mutex, no file, no log on any path reachable in a callback.
 //
@@ -49,8 +49,8 @@ namespace lunar24::core {
 
 // A fixed-capacity pool of preallocated snapshot slots. The current slot is
 // published atomically; the previously-current slot is handed back to the caller
-// to retire(), which parks it on a bounded SPSC reclaim ring drained by
-// recycleOne() off the audio thread. The reader pins the current slot (so a
+// to retire, which parks it on a bounded SPSC reclaim ring drained by
+// recycleOne off the audio thread. The reader pins the current slot (so a
 // recycle cannot reclaim it out from under a read) before it uses it.
 template <typename Snapshot, std::uint32_t kSlots>
 class StateSnapshotPool {
@@ -76,7 +76,7 @@ class StateSnapshotPool {
   // --- control thread ---
   // Reserve an idle slot to write a fresh snapshot into. Returns nullptr if no
   // slot is free (every slot is in flight). The returned snapshot is MUTABLE
-  // until publish(). Construction of the snapshot payload happens on the control
+  // until publish. Construction of the snapshot payload happens on the control
   // thread; nothing in this path allocates or locks.
   Snapshot* acquire() {
     for (std::uint32_t i = 0; i < kSlots; ++i) {
@@ -91,7 +91,7 @@ class StateSnapshotPool {
 
   // Atomically publish `slot` as the current snapshot, transitioning it
   // writing→current-with-0-readers. The previously-current slot (if any) is
-  // superseded and returned so the caller can retire() it for off-RT
+  // superseded and returned so the caller can retire it for off-RT
   // reclamation. Returns kNoSlot if there was no prior current.
   std::uint32_t publish(std::uint32_t slot) {
     std::uint32_t prior = current_.exchange(slot, std::memory_order_acq_rel);
@@ -101,11 +101,11 @@ class StateSnapshotPool {
 
   // --- reader (audio) thread ---
   // The current published slot index, or kNoSlot if none. INFORMATIONAL — a safe
-  // concurrent read MUST go through pinCurrent()/snapshot()/unpin(), never a bare
-  // `snapshot(current())`, which is exactly the GH#3 A02 the repair removes.
+  // concurrent read MUST go through pinCurrent/snapshot/unpin, never a bare
+  // `snapshot(current)`, which is exactly the the repair removes.
   std::uint32_t current() const { return current_.load(std::memory_order_acquire); }
   // Pin the current snapshot for reading: returns the pinned slot index (>= 0) or
-  // kNoSlot if there is none. While a slot is pinned, recycleOne() will not
+  // kNoSlot if there is none. While a slot is pinned, recycleOne will not
   // reclaim it. Retries on a fresh current_ if the target slot stopped being
   // current (a retire began); this never pins a slot being reclaimed.
   std::uint32_t pinCurrent() {
@@ -124,16 +124,16 @@ class StateSnapshotPool {
       // recycle retired it, or another reader re-counted). Re-evaluate.
     }
   }
-  // Read the snapshot in `slot`. Valid only while `slot` is pinned (pinCurrent())
+  // Read the snapshot in `slot`. Valid only while `slot` is pinned (pinCurrent)
   // on the concurrent path; a single-threaded caller may read the current slot.
   const Snapshot& snapshot(std::uint32_t slot) const { return snapshots_[slot]; }
-  // The slot index of a snapshot pointer returned by acquire(). Needed to publish
+  // The slot index of a snapshot pointer returned by acquire. Needed to publish
   // (or retire) a slot by the pointer a caller actually holds; a pointer that was
-  // not returned by acquire() is undefined.
+  // not returned by acquire is undefined.
   std::uint32_t slotOf(const Snapshot* s) const {
     return static_cast<std::uint32_t>(s - snapshots_);
   }
-  // Release a pin taken by pinCurrent(); call exactly once per successful pin.
+  // Release a pin taken by pinCurrent; call exactly once per successful pin.
   void unpin(std::uint32_t slot) {
     slotState_[slot].fetch_sub(1, std::memory_order_release);
   }
@@ -195,10 +195,10 @@ class StateSnapshotPool {
   // slotState_ per-slot state. Negative values are state codes; a NON-NEGATIVE
   // value means the slot is CURRENT and carries the count of readers pinned on
   // it (>= 0). Exactly one meaning holds at a time:
-  //   kIdle      (-3): free, not yet acquired
-  //   kWriting   (-2): a control thread is writing a fresh snapshot
-  //   kRetiring  (-1): a recycle was decided; NEW readers must not pin
-  //   N          (>=0): current slot with N active readers pinned
+  //   kIdle (-3): free, not yet acquired
+  //   kWriting (-2): a control thread is writing a fresh snapshot
+  //   kRetiring (-1): a recycle was decided; NEW readers must not pin
+  //   N (>=0): current slot with N active readers pinned
   static constexpr int kIdle = -3;
   static constexpr int kWriting = -2;
   static constexpr int kRetiring = -1;

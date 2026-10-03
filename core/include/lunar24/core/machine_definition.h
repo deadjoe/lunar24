@@ -3,14 +3,14 @@
 //
 // MachineRuntimeDefinition: the production-owned canonical machine builder.
 //
-// This is the answer to the "tests hand-bind product fixtures" anti-pattern (@Codex
-// 7C2 B′ msg cc5043dd point 1): the product machine owns its OWN scheduling
+// This is the answer to the "tests hand-bind product fixtures" anti-pattern (
+// 7C2 B′ point 1): the product machine owns its OWN scheduling
 // contracts, its module table, its fixed internal route set, its ExecutionKind
 // disposition, and the resulting SynthRuntime — and the tests consume the machine
-// through `definition.runtime()` instead of re-wiring the registry by hand.
+// through `definition.runtime` instead of re-wiring the registry by hand.
 //
 // The fixed route set is a DATA TABLE derived from the registry manifest's
-// `requiredFixedRoutes` (28 routes, @Codex correction 1), NOT a hardcoded edge list:
+// `requiredFixedRoutes` (28 routes), NOT a hardcoded edge list:
 // the definition owns its `fixedEdges_[]` member and fills it from that table, so
 // every compiler-edge is traceable to an authored manifest route and the
 // 28-route / 11-unique-edge / category accounting is itself auditable.
@@ -39,7 +39,7 @@
 namespace lunar24::core {
 
 // ---------------------------------------------------------------------------
-// Fixed-route data table (@Codex correction 1).
+// Fixed-route data table.
 //
 // This mirrors the manifest's `requiredFixedRoutes` (28 routes). Each route is a
 // module->module OR module->terminal OR terminal->module edge that is FIXED (never
@@ -96,7 +96,8 @@ inline constexpr FixedRoute kFixedRoutes[] = {
   // 2 intra-VCF stages (vcf -> distortion; distortion is not a separate compiled module).
   {"fixed.vcf_l_to_dist_l",    FixedRouteCategory::kIntraVcfStage, ModuleId::vcf,        kFixedRouteNoModule,  ""},
   {"fixed.vcf_r_to_dist_r",    FixedRouteCategory::kIntraVcfStage, ModuleId::vcf,        kFixedRouteNoModule,  ""},
-  // 4 declared-deferred: dist -> eff, eff -> wet (deferred effector/DRY terminal).
+  // 4 not compiled as graph edges: dist -> eff, eff -> wet. The effector is wired: it runs
+  // after the compiled chain in SynthRuntime::processFrame, outside the patch graph.
   {"fixed.dist_l_to_eff_l",    FixedRouteCategory::kDeferred,     kFixedRouteNoModule,  ModuleId::effector,   ""},
   {"fixed.dist_r_to_eff_r",    FixedRouteCategory::kDeferred,     kFixedRouteNoModule,  ModuleId::effector,   ""},
   {"fixed.eff_l_to_wet_l",     FixedRouteCategory::kDeferred,     ModuleId::effector,   kFixedRouteNoModule,  ""},
@@ -142,12 +143,12 @@ static_assert(kCanonicalFixedEdgeCount == 11,
               "the 28-route table must fold to exactly 11 unique inter-module compiler edges");
 
 // ---------------------------------------------------------------------------
-// Execution-kind disposition for the 21-module registry inventory (@Codex point 2).
+// Execution-kind disposition for the 21-module registry inventory (point 2).
 //
 // Every module has a UNIQUE disposition — there is no "unlisted" module. Two groups:
 //   * ACTIVE — bound to a real dispatch kind (the unified per-module executor steps it).
 //       The six drones are six INDEPENDENT kDroneBank slots (no ExecutionKind dedup,
-//       @Codex 7C2 msg 4e600057).
+//       .
 //   * DEFERRED / control-only — bound to kUnsupported. A strict plan that PULLS one of
 //       these into a compiled region (via a patched cable or a fixed edge) fail-closes
 //       `unsupported_module`; left isolated (no edge), it is simply not a region member.
@@ -170,8 +171,8 @@ inline constexpr MachineDispositionEntry kMachineDisposition[] = {
   {ModuleId::drone_4,       ExecutionKind::kDroneBank},
   {ModuleId::drone_5,       ExecutionKind::kDroneBank},
   {ModuleId::drone_6,       ExecutionKind::kDroneBank},
-  // The six control sources are NOW executed (GH#11 FIXED-CANDIDATE, D1/D2/D4),
-  // each as an always-execute source in the compiled plan. GH#12 keyboard product
+  // The six control sources are NOW executed (FIXED-CANDIDATE, D1/D2/D4),
+  // each as an always-execute source in the compiled plan. keyboard product
   // owner: `keyboard` is ALSO now a real executed control source (kKeyboard) — it
   // consumes canonical note ControlEvents and publishes note CV + gate. `effector`/
   // `voices` stay declared-deferred (kUnsupported) — no runtime instance yet.
@@ -190,19 +191,19 @@ inline constexpr std::uint32_t kMachineDispositionCount =
 static_assert(kMachineDispositionCount == lunar24::registry::kModuleCount,
               "every registry module carries exactly one disposition");
 
-// VCO base-frequency software provisional reference (@Codex task#78 VCO ruling, f0336e8d): the
+// VCO base-frequency software provisional reference (VCO ruling,: the
 // canonical MachineRuntimeDefinition seeds BOTH VCOs' base frequency from a SINGLE centrally-named
-// 440Hz provisional value via setVcoBaseHz(), placed BEFORE parameter apply, shared by the default-
+// 440Hz provisional value via setVcoBaseHz, placed BEFORE parameter apply, shared by the default-
 // prepare and state-restore paths (both flow through this same state ctor). This value is NOT a
 // hardware measurement, NOT a new DeviceState parameter, and does NOT change the 169 disposition
 // classification; a later official/measured reference supersedes it.
 inline constexpr double kVcoBaseHzProvisional = 440.0;
 
 // ---------------------------------------------------------------------------
-// Normalized-route disposition table (@Codex correction 2).
+// Normalized-route disposition table.
 //
 // All 6 normalized registry routes get a UNIQUE disposition, keyed by the stable
-// RouteId (never by array position in kNormalizedRoutes[]). GH#12 keyboard product owner:
+// RouteId (never by array position in kNormalizedRoutes[]). keyboard product owner:
 // the four keyboard/EG routes are now ACTIVE (keyboard_v_oct_out -> VCO A/B v_oct_in and
 // keyboard_gate_left_main_out -> EG A/B gate_in), so the PatchGraph consumes the keyboard
 // note CV + gate. The VCO-A->VCO-B normalised edge (route.vco_b_vco_out_to_cv_in, source =
@@ -248,7 +249,7 @@ inline constexpr NormalizedRoute lookupRoute(RouteId id) {
 inline constexpr NormalizedRoute kActiveRoutes[] = {
     // Keep the acyclic VCO-A->VCO-B edge FIRST so the static_assert below pins index 0.
     lookupRoute(RouteId::route_vco_b_vco_out_to_cv_in),
-    // GH#12 keyboard product owner: the four keyboard normalized routes are active, so the
+    //  keyboard product owner: the four keyboard normalized routes are active, so the
     // PatchGraph consumes the keyboard note CV (keyboard_v_oct_out -> VCO A/B v_oct_in) and
     // the engaged gate (keyboard_gate_left_main_out -> EG A/B gate_in). Order within the
     // array is immaterial to compile_graph (it topo-sorts); the A->B edge stays at index 0.
@@ -266,12 +267,12 @@ static_assert(kActiveRoutes[0].sourceJack == lunar24::registry::JackId::vco_a_dr
               "the active route must be the acyclic VCO-A->VCO-B normalised edge (route.vco_b_vco_out_to_cv_in)");
 
 // ---------------------------------------------------------------------------
-// AUDIT DISPOSITION (item 8, @Codex eaaf08cc; RESOLVED by task #83 / GH #18): normalized-route
+// AUDIT DISPOSITION (item 8,; RESOLVED by /): normalized-route
 // source conflict. The pre-fix registry had route.vco_b_vco_out_to_cv_in sourced from
 // vco_b.vco_out (a VCO-B SELF-edge: B sinks its own VCO output into its generic CV input). That
 // self-edge was the documented root cause of the default DRY B DC-stall (N-1): with the linear
 // generic-CV transfer p *= (1 + cv*cvAmt) and default cvAmt, a self-fed output reaches the
-// zero-pitch transition and latches. Per @Codex's adjudicated direction A (4fe298c8) the ONLY
+// zero-pitch transition and latches. Per adjudicated direction A the ONLY
 // authorized change is correcting the SOURCE of RouteId 4 to the EXISTING published VCO-A
 // oscillator signal (vco_a.dry_out) — an ACYCLIC A->B edge, so vco_b.cv_in reads A's LIVE value the
 // same frame. The stable ID (route.vco_b_vco_out_to_cv_in) and RouteId (4) are PRESERVED as
@@ -279,9 +280,9 @@ static_assert(kActiveRoutes[0].sourceJack == lunar24::registry::JackId::vco_a_dr
 // add a jack, never reassign B's OSC public output owner (vco_b.vco_out). The generator +
 // manifest + generated registry headers are updated to the same single fact; the product
 // integration (a playable B voice) is the P4 scope, not this fix.
-//   * SOURCE (fixed): vco_a.dry_out -> vco_b.cv_in   [acyclic; B reads A live same-frame]
+//   * SOURCE (fixed): vco_a.dry_out -> vco_b.cv_in [acyclic; B reads A live same-frame]
 //   * LEGACY: stable_id "route.vco_b_vco_out_to_cv_in", RouteId 4, B OSC owner vco_b.vco_out unchanged.
-//   * STATUS: source corrected by task #83 / GH #18; description/registry/manifest in agreement.
+//   * STATUS: source corrected by /; description/registry/manifest in agreement.
 // ---------------------------------------------------------------------------
 
 // Forward declaration of the state-aware candidate-builder result
@@ -300,7 +301,7 @@ class MachineRuntimeDefinition {
   MachineRuntimeDefinition& operator=(MachineRuntimeDefinition&&) = delete;
 
  private:
-  // GH#12 9B state-aware constructor (task#76). This is the SINGLE semantic builder, and it is
+  //  state-aware constructor. This is the SINGLE semantic builder, and it is
   // PRIVATE: a DeviceStateV1 is constructible into a machine ONLY through
   // buildMachineRuntimeCandidate (the validated factory, friend below). There is NO public path
   // from an arbitrary state to a MachineRuntimeDefinition, so a caller cannot bypass state
@@ -309,9 +310,9 @@ class MachineRuntimeDefinition {
   // not a bypass either.
   //
   // It owns a COPY of the exact DeviceStateV1 candidate, seeds the voice layer from
-  // state.identitySeed.seed, binds the canonical tables, and applies the GH#6 VCF->distortion
+  // state.identitySeed.seed, binds the canonical tables, and applies the VCF->distortion
   // identity/calibration profile from that SAME owned state (never an orphan snapshot). The full
-  // candidate is preserved byte-for-byte and readable back through deviceState().
+  // candidate is preserved byte-for-byte and readable back through deviceState.
   //
   // Member-init order is deliberate and REQUIRED by the pointer-capture invariant: state_ is
   // declared AFTER contracts_/modules_/fixedEdges_ but BEFORE runtime_, so (a) the tables the
@@ -323,8 +324,8 @@ class MachineRuntimeDefinition {
                  kActiveRoutes, kActiveRouteCount,
                  modules_, kMachineDispositionCount, state.identitySeed.seed, sampleRate,
                  fixedEdges_, kCanonicalFixedEdgeCount) {
-    // Populate the owned tables BEFORE any rebuild() reads them. The runtime_'s ctor
-    // only captured the pointers; compile/rebuild happens in rebuild() below, so the
+    // Populate the owned tables BEFORE any rebuild reads them. The runtime_'s ctor
+    // only captured the pointers; compile/rebuild happens in rebuild below, so the
     // contracts_ / modules_ / fixedEdges_ members must be filled here, from the
     // constexpr disposition + fixed-route tables (single source, no separate member copy).
     buildDisposition_(sampleRate);
@@ -336,25 +337,25 @@ class MachineRuntimeDefinition {
       runtime_.bindExecutionKind(kMachineDisposition[i].id, kMachineDisposition[i].kind);
     }
 
-    // Canonical Jack bindings (@Codex correction 4): the product machine binds the real
+    // Canonical Jack bindings: the product machine binds the real
     // registered jacks that carry V/OCT, VCF CV, preamp/env-follower, and the classic
     // drone ENV/CV-MOD cohort — so the source bank driving these controls is the same
     // identity the rest of the product (and the tests) read.
     runtime_.setVoctBindings(lunar24::registry::JackId::vco_a_v_oct_in,
                              lunar24::registry::JackId::vco_b_v_oct_in);
-    // Generic CV + VCO output bindings (@Codex correction 4): each VCO's generic cv_in is
+    // Generic CV + VCO output bindings: each VCO's generic cv_in is
     // a second, INDEPENDENT CV/transfer path from its V/OCT. The active A->B normalised route
-    // (vco_a.dry_out -> vco_b.cv_in, task #83 / GH #18) makes vco_b.cv_in an ACYCLIC edge from
+    // (vco_a.dry_out -> vco_b.cv_in, /) makes vco_b.cv_in an ACYCLIC edge from
     // vco_a.dry_out: the VCO-B slot resolves it through setCvInput(held mode) reading A's LIVE
     // published value the same frame, and publishes the real vco_b.vco_out. The lin/exp mode
     // is a runtime decision (explicit below; tests choose it), never a hardcoded law.
     runtime_.setVcoCvBindings(lunar24::registry::JackId::vco_a_cv_in,
                               lunar24::registry::JackId::vco_b_cv_in);
-    // GH#19 S5: VCO A's HARD-SYNC gate input. The registry declares exactly one sync jack and it
+    // VCO A's HARD-SYNC gate input. The registry declares exactly one sync jack and it
     // is VCO A's alone ("Sync (VCO A only)"); VCO B is deliberately left with no sync binding.
     // Unpatched this resolves no source, so every existing render stays bit-identical.
     static_cast<void>(runtime_.setVcoSyncBindings(lunar24::registry::JackId::vco_a_sync_in));
-    // GH#19 S0 (task #117): the two PWM CV jack bindings (JackId 20 / 22, vco_a.pwm_in and
+    //  the two PWM CV jack bindings (JackId 20 / 22, vco_a.pwm_in and
     // vco_b.pwm_in). Binding them here is what makes each VCO's PWM depth reachable from the
     // GRAPH in the product machine: the kVcoA / kVcoB step resolves its own bound sink through
     // the one control-sink resolver and reads it PER SAMPLE, so a patched source modulates that
@@ -371,7 +372,7 @@ class MachineRuntimeDefinition {
     runtime_.setVcoOutBindings(lunar24::registry::JackId::vco_a_dry_out,
                                lunar24::registry::JackId::vco_b_vco_out);
     runtime_.setVcoBDryOutBinding(lunar24::registry::JackId::vco_b_dry_out);
-    // NOTE (item 1, @Codex eaaf08cc): the A/B generic-CV lin/exp mode is deliberately
+    // NOTE (item 1): the A/B generic-CV lin/exp mode is deliberately
     // NOT pinned here. Mode is a runtime/test/upper-layer decision — it is NOT canonical
     // hardware truth (the adjudicated ruling). The canonical builder leaves it at the
     // runtime's provisional safe default (kExponential) and the canonical oracles that
@@ -395,7 +396,7 @@ class MachineRuntimeDefinition {
                                     lunar24::registry::JackId::drone_2_gate_in,
                                     lunar24::registry::JackId::drone_4_gate_in,
                                     lunar24::registry::JackId::drone_5_gate_in);
-    // PAPA SRAPA voice cohort (GH#15 D4, order 0..1 == drone_3/drone_6). Two landed
+    // PAPA SRAPA voice cohort (order 0..1 == drone_3/drone_6). Two landed
     // jacks each: gate_in is the AR envelope's TRIGGER SOURCE (manual L331 — the same
     // socket the hardware routes the panel button and any external CV into), and env_out
     // publishes the envelope level. Binding them makes the landed jacks CONSUMED rather
@@ -415,14 +416,14 @@ class MachineRuntimeDefinition {
       runtime_.setDroneVoicePanelJacks(lfoOut, shOut, cvIn, shIn, shClock);
     }
 
-    // GH#11 FIXED-CANDIDATE (D1/D2): the six control sources are NOW real DSP
+    //  FIXED-CANDIDATE (D1/D2): the six control sources are NOW real DSP
     // instances, so the owning definition binds their REGISTRY jacks (the same identity
     // the rest of the product reads) and always-executes them. Env A/B resolve their
     // real gate_in and publish env_out + vca_cv_out; LFO A/B publish cv_out; joystick
     // publishes x_out/y_out; sequencer consumes ext_clock_in (sink latched) and
     // publishes cv_out + gate_out + clock_out (the CLOCK OUT -10/+10 one-sample virtual-volts
-    // pulse (@Codex 7C3), rail confirmed bipolar, width provisional, derived from the SAME
-    // pulserRising as the discrete clockOutRising() — never a second phase/latch).
+    // pulse, rail confirmed bipolar, width provisional, derived from the SAME
+    // pulserRising as the discrete clockOutRising — never a second phase/latch).
     runtime_.setEnvelopeBindings(lunar24::registry::JackId::envelope_a_gate_in,
                                  lunar24::registry::JackId::envelope_a_env_out,
                                  lunar24::registry::JackId::envelope_a_vca_cv_out,
@@ -437,10 +438,10 @@ class MachineRuntimeDefinition {
                                   lunar24::registry::JackId::sequencer_cv_out,
                                   lunar24::registry::JackId::sequencer_gate_out,
                                   lunar24::registry::JackId::sequencer_clock_out);
-    // GH#12 keyboard product owner: the keyboard publishes the registered note-CV and gate
+    //  keyboard product owner: the keyboard publishes the registered note-CV and gate
     // output jacks. VCO A/B and EG A/B consume them through the four now-active keyboard
     // routes (route_keyboard_v_oct_to_vco / _b, route_keyboard_gate_to_eg / _b).
-    // task#101: all FOUR registered keyboard outputs are bound (v_oct / gate_left_main /
+    // all FOUR registered keyboard outputs are bound (v_oct / gate_left_main /
     // gate_right / pressure_out). The normalized routes keep their existing endpoints — this
     // adds no route and does not touch VCO-B's default source.
     runtime_.setKeyboardBindings(lunar24::registry::JackId::keyboard_v_oct_out,
@@ -463,11 +464,11 @@ class MachineRuntimeDefinition {
     // Canonical strictness on, then build the plan.
     runtime_.setStrictBindings(true);
 
-    // task #80 (GH#12 9D C3): restore the validated device-state USER CABLES into the real
+    //  (C3): restore the validated device-state USER CABLES into the real
     // PatchGraph BEFORE the final graph rebuild / publish. The active normalized route (the single
     // acyclic VCO-A->VCO-B edge) is carried by the patch_ construction; each restored user cable, by rule,
     // overrides only its own route sink (a derived fact, never stored). We reuse
-    // SynthRuntime::connect() but NEVER treat a lone connect()==true as complete: connect() can
+    // SynthRuntime::connect but NEVER treat a lone connect==true as complete: connect can
     // atomically displace a PRIOR requested cable at a saturated source/sink port. So after placing
     // every requested cable we VERIFY the final user-cable bank exactly equals the requested set and
     // fail the WHOLE candidate (cableRestoreOk_ = false) on any mismatch — never a silent drop or
@@ -481,7 +482,7 @@ class MachineRuntimeDefinition {
       for (std::uint32_t i = 0; i < kDevicePatchCapacity; ++i) {
         if (state_.inputCable[i] == 0u) continue;
         // i is the serialized JackId of the sink, NOT a dense index (the id-space is sparse, with
-        // holes). PatchGraph::connect() resolves landedness via the descriptor; a hole fails closed.
+        // holes). PatchGraph::connect resolves landedness via the descriptor; a hole fails closed.
         const JackId source = state_.cableSource[i];
         const JackId sink = static_cast<JackId>(i);
         if (!runtime_.connect(source, sink)) { restoreFailed = true; break; }
@@ -489,7 +490,7 @@ class MachineRuntimeDefinition {
       }
       if (!restoreFailed) {
         // The final user-cable set must equal the requested set exactly:
-        //   * cableCount() == requested  -> no sunk cable and no stray/duplicate cable;
+        //   * cableCount == requested -> no sunk cable and no stray/duplicate cable;
         //   * each requested sink holds exactly ONE user cable reachable from its requested source
         //     -> no wrong-source (mis-)wire, no displaced requested cable on that sink.
         if (runtime_.cableCount() != requested) restoreFailed = true;
@@ -505,21 +506,21 @@ class MachineRuntimeDefinition {
       cableRestoreOk_ = !restoreFailed;
     }
 
-    // GH#6: the one real identity/calibration apply choke, driven from the SAME owned state
+    // the one real identity/calibration apply choke, driven from the SAME owned state
     // (never a detached snapshot). It consumes identityModelVersion + identitySeed.seed +
     // calibration; it is fail-closed (a rejected version/trim makes NO change) inside
-    // SynthRuntime, so a valid candidate always configures and identityApplied() reports it.
+    // SynthRuntime, so a valid candidate always configures and identityApplied reports it.
     identityApplied_ = runtime_.configureVcfIdentity(state.identityModelVersion,
                                                      state.identitySeed.seed,
                                                      state.calibration);
     (void)runtime_.rebuild();
-    // task #78 (@Codex f0336e8d, re-applied per ruling 44369539): seed BOTH VCO base frequencies
+    //  (re-applied per ruling 44369539): seed BOTH VCO base frequencies
     // from the single centrally-named 440Hz provisional BEFORE parameter apply. This mirrors the
     // default-prepare and state-restore paths (both flow through this same state ctor). It does NOT
     // introduce a DeviceState parameter, does NOT change the 169 disposition classification, and a
     // later official/measured reference number supersedes it.
     runtime_.setVcoBaseHz(kVcoBaseHzProvisional);
-    // task #78: after the GH#6 identity/calibration and the final rebuild (order preserved),
+    // after the identity/calibration and the final rebuild (order preserved),
     // apply the WHOLE applied_to_DSP parameter set (exactly 169) from the SAME owned state into
     // the freshly-rebuilt DSP. Fail-closed: exactly 169 must apply, else dspApplyOk_ is false and
     // the first failing id/status is retained for the candidate factory to reject whole (it never
@@ -538,14 +539,14 @@ class MachineRuntimeDefinition {
     // VCO A/B VCAs follow Envelope A/B (the keyboard gate is normalled to both EGs).
     runtime_.setVcoVcaEnabled(true);
     runtime_.applyEffectorState(state_);
-    // GH#12 task#101: restore the keyboard's per-side PERFORMANCE STATE (mode + both sides'
+    // restore the keyboard's per-side PERFORMANCE STATE (mode + both sides'
     // behaviour/arp-seq configuration) from the SAME owned state, after the DSP apply so the
     // parsed config lands on the instance that will actually be ticked. This is configuration
     // only — it publishes no note and changes no default output; an unplayed keyboard stays
     // silent. It deliberately does NOT gate the candidate: there is no real failure condition
     // in this apply, so inventing a keyboardApplyOk_ flag (or a new MachineCandidateStatus
     // enumerator with no reachable false) would be a vacuous pass. The non-vacuous evidence is
-    // the per-side readback (keyboardMode()/keyboardArpSeqParams()/keyboardBehaviourParams()).
+    // the per-side readback (keyboardMode/keyboardArpSeqParams/keyboardBehaviourParams).
     runtime_.applyKeyboardState(state_);
     runtime_.snapSmoothedLevels();
   }
@@ -558,7 +559,7 @@ class MachineRuntimeDefinition {
  public:
   // Convenience: build from a startup seed via the power-on DEFAULT state. This is the SAME
   // state-aware builder as the ctor above — there is no separate seed-only truth path; a seed
-  // always denotes the power-on default DeviceState (task#75 make_default_device_state), which
+  // always denotes the power-on default DeviceState (make_default_device_state), which
   // is what makes "safe boot prepare(seed)" produce a canonical state == that exact default.
   explicit MachineRuntimeDefinition(std::uint64_t seed, double sampleRate = 48000.0)
       : MachineRuntimeDefinition(make_default_device_state(seed), sampleRate) {}
@@ -570,7 +571,7 @@ class MachineRuntimeDefinition {
   // Real validity: a successfully compiled graph, whether freshly built (ok) or a
   // cached no-change rebuild (graph_unchanged). Any rejection/error status is invalid.
   bool valid() const {
-    // task #80: a faithful user-cable restore (cableRestoreOk_) is part of a valid candidate. A
+    // a faithful user-cable restore (cableRestoreOk_) is part of a valid candidate. A
     // restore mismatch / capacity loss / wrong-wire is a typed whole-candidate rejection
     // (rejected_graph via the factory), never a silent drop or partial success.
     return cableRestoreOk_ &&
@@ -584,28 +585,28 @@ class MachineRuntimeDefinition {
   const DeviceStateV1& deviceState() const { return state_; }
   // Live edits (UI/MIDI thread) keep the saved state in step with what the user hears.
   DeviceStateV1& mutableDeviceState() { return state_; }
-  // Whether the GH#6 identity/calibration profile was actually configured on the VCF->distortion
+  // Whether the identity/calibration profile was actually configured on the VCF->distortion
   // path from this state. A valid candidate always configures it; a false means the ctor's
   // fail-closed path left it off (a degraded candidate the factory rejects). Named precisely:
   // this reports the IDENTITY/calibration apply only, NOT a whole-DeviceState "applied" claim.
   bool identityApplied() const { return identityApplied_; }
 
-  // task #78: whether the whole 169-parameter applied_to_DSP set held on this definition's owned
+  // whether the whole 169-parameter applied_to_DSP set held on this definition's owned
   // state actually landed on the DSP. true on a complete apply; false if ANY applied_to_DSP id was
   // rejected (the candidate factory then yields rejected_dsp_apply, carrying the first failure).
-  // dspAppliedCount() is exactly count_disposition(applied_to_dsp) on success (169) and partial on
-  // rejection. dspFirstFailId()/dspFirstFailStatus() give the first failure (sentinel on success).
+  // dspAppliedCount is exactly count_disposition(applied_to_dsp) on success (169) and partial on
+  // rejection. dspFirstFailId/dspFirstFailStatus give the first failure (sentinel on success).
   // Named precisely: this reports the FULL DeviceState DSP apply, NOT just the identity/calibration.
   bool dspApplyOk() const { return dspApplyOk_; }
   std::uint32_t dspAppliedCount() const { return dspAppliedCount_; }
   ParameterId dspFirstFailId() const { return dspFirstFailId_; }
   ParameterApplyStatus dspFirstFailStatus() const { return dspFirstFailStatus_; }
 
-  // task #80: whether the validated device-state user cables were faithfully restored into the
+  // whether the validated device-state user cables were faithfully restored into the
   // real PatchGraph (the final user-cable bank exactly equals the requested set). false on a
-  // restore mismatch / connect failure, surfaced by valid() as a whole-candidate reject
+  // restore mismatch / connect failure, surfaced by valid as a whole-candidate reject
   // (rejected_graph); the host single-commit guard then keeps the old owner. Layered like
-  // dspApplyOk(): it reports the PATCH restore apply, not a whole-DeviceState claim.
+  // dspApplyOk: it reports the PATCH restore apply, not a whole-DeviceState claim.
   bool cableRestoreOk() const { return cableRestoreOk_; }
 
   std::uint32_t moduleCount() const { return kMachineDispositionCount; }
@@ -618,7 +619,7 @@ class MachineRuntimeDefinition {
   // 21-module registry inventory — which is a genuine "no such module", deliberately
   // DISTINCT from kUnsupported (a real deferred module that IS in the inventory). This
   // closes the masquerade where a typo'd/unknown id used to read as "explicitly
-  // unsupported" (@Codex correction 5).
+  // unsupported".
   std::optional<ExecutionKind> kindOf(ModuleId id) const {
     for (std::uint32_t i = 0; i < kMachineDispositionCount; ++i) {
       if (kMachineDisposition[i].id == id) return kMachineDisposition[i].kind;
@@ -644,14 +645,14 @@ class MachineRuntimeDefinition {
     return nullptr;
   }
 
-  // Real scheduling contracts (@Codex correction 3). Default: cycle-UNSAFE and carrying
+  // Real scheduling contracts. Default: cycle-UNSAFE and carrying
   // NO declared per-path delay (a fixed-fed module in a user-formed SCC falls back to a
   // conservative z^-1, per graph_compiler's decide_feedback_delay_cycle). Only the actual
   // SCC members — VCO-B (its own self-loop), env-follower and preamp (which ACCEPT a
   // user-patched return SCC, with NO auto-wire) — get explicit cycle-safe contracts.
   // maxBlockSize / maxResources stay 0 == UNPREPARED/UNSPECIFIED sentinel (no prepare
-  // boundary exists yet; @Codex e35b3eca). These limits are PENDING a future host
-  // prepare/resource integration (GH#4/#10 dependencies) — they are NOT a GH#11 gap:
+  // boundary exists yet). These limits are PENDING a future host
+  // prepare/resource integration (dependencies) — they are NOT a gap:
   // the six control sources themselves are implemented and consumed at this head.
   void buildDisposition_(double sampleRate) {
     for (std::uint32_t i = 0; i < kMachineDispositionCount; ++i) {
@@ -688,7 +689,7 @@ class MachineRuntimeDefinition {
 
     // env-follower: fixed-input sentinel -> env_out direct/min0, cycle-safe — it ACCEPTS a
     // user-patched return SCC (env_out -> preamp.ext_source_in) but the definition does NOT
-    // auto-connect it (@Codex ruling a). env_follower.audio_in is a FIXED endpoint (defers
+    // auto-connect it. env_follower.audio_in is a FIXED endpoint (defers
     // to the FixedEndpoint stage, not a patchable JackId), so the shared
     // kFixedEndpointJackSentinel names it; the compiler's own fixed-edge tag is the SAME
     // value, so a user return cable forming cycle re-entry into env-follower can really
@@ -705,7 +706,7 @@ class MachineRuntimeDefinition {
       c->hasDirectThroughPath = true;
     }
 
-    // GH#11 envelope A/B: a user-patched REAL cable into gate_in and the A-published
+    //  envelope A/B: a user-patched REAL cable into gate_in and the A-published
     // env_out/vca_cv_out (env_out -> preamp.ext_source_in, vca_cv_out -> drone cv, etc.)
     // can form an SCC, so each EG is cycle-safe at min0 direct. Both paths are REAL
     // same-sample transfers (A/R/D/S + HOLD/SELF-GEN are sample-rate side effects, never
@@ -732,10 +733,10 @@ class MachineRuntimeDefinition {
         c->hasDirectThroughPath = true;
       }
     }
-    // GH#11 sequencer: ext_clock_in -> cv_out and ext_clock_in -> gate_out are REAL
+    //  sequencer: ext_clock_in -> cv_out and ext_clock_in -> gate_out are REAL
     // same-sample direct/min0 (the sink_latch edge -> one-step advance -> publish all in
     // one sample), so a user-patched cycle through either output is legitimate and
-    // cycle-safe. clock_out is published each sample too (@Codex 7C3) — but into the SOURCE
+    // cycle-safe. clock_out is published each sample too — but into the SOURCE
     // bank (the -10/+10 one-sample virtual-volts pulse), NOT as a path-delay: it is driven by
     // the free-running internal PULSER, independent of ext_clock_in, so at the intra-module
     // causality level it is not a function of the input and carries no direct-through edge to
@@ -760,13 +761,13 @@ class MachineRuntimeDefinition {
 
     // preamp: cycle-admission only (ACCEPTS the user return SCC) with NO invented internal
     // path and NO auto-wire. It has no patchable fixed-in->fixed-out path of its own to
-    // declare, so pathCount stays 0 (@Codex ruling a + 16b770b0).
+    // declare, so pathCount stays 0 (a +.
     if (ModuleExecutionContract* c = findContract_(ModuleId::preamp)) {
       c->allowedInCyclicSCC = true;
     }
   }
 
-  // Fill the owned fixedEdges_[] from the 28-route data table (@Codex correction 1). Only
+  // Fill the owned fixedEdges_[] from the 28-route data table. Only
   // inter-module routes whose endpoints are BOTH ACTIVE compiled modules become compiler
   // edges; mixer->vcf_l and mixer->vcf_r fold to one, so the count is exactly
   // kCanonicalFixedEdgeCount (11).
@@ -804,18 +805,18 @@ class MachineRuntimeDefinition {
   // this owned copy is the single canonical-state truth for the definition's whole life.
   DeviceStateV1 state_;
 
-  // Whether the GH#6 identity/calibration profile was configured on the VCF->distortion path.
+  // Whether the identity/calibration profile was configured on the VCF->distortion path.
   bool identityApplied_ = false;
-  // task #80: faithful user-cable restore verdict (the candidate-builder gate for the patch).
+  // faithful user-cable restore verdict (the candidate-builder gate for the patch).
   bool cableRestoreOk_ = true;
-  // task #78 full-apply verdict (the candidate-builder gate + first-failure id/status).
+  //  full-apply verdict (the candidate-builder gate + first-failure id/status).
   bool dspApplyOk_ = false;
   std::uint32_t dspAppliedCount_ = 0;
   ParameterId dspFirstFailId_ = static_cast<ParameterId>(kParameterCount);
   ParameterApplyStatus dspFirstFailStatus_ = ParameterApplyStatus::applied;
 
   // The owning executor. Declared AFTER the arrays it points into so the init-list is
-  // well-formed; its ctor only stores the addresses (compile happens in rebuild()).
+  // well-formed; its ctor only stores the addresses (compile happens in rebuild).
   SynthRuntime runtime_;
 };
 

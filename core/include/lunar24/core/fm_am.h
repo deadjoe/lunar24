@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// FmAmVoice — P3-②: a sample-accurate FM+AM voice. One carrier sine with a
+// FmAmVoice —: a sample-accurate FM+AM voice. One carrier sine with a
 // modulation LFO applied two ways:
 //
-//     mod(t)   = sin(phaseMod)                        // modulation LFO, -1..+1
-//     instHz(t)= fCarrier + fDevHz * mod(t)           // FREQUENCY modulation
-//     amp(t)   = baseAmp  * (1 + depth  * mod(t))     // AMPLITUDE modulation
-//     out(t)   = amp(t) * sin(phaseCarrier)
+//     mod(t) = sin(phaseMod) // modulation LFO, -1..+1
+//     instHz(t)= fCarrier + fDevHz * mod(t) // FREQUENCY modulation
+//     amp(t) = baseAmp * (1 + depth * mod(t)) // AMPLITUDE modulation
+//     out(t) = amp(t) * sin(phaseCarrier)
 //
 // where fDevHz is the peak FM deviation in Hz (the carrier swings by +/-fDevHz as
 // mod sweeps -1..+1), and depth is the AM index in [0,1) (at depth=1, mod=-1 zeroes
@@ -20,7 +20,7 @@
 // When fDevHz is large enough that the instantaneous frequency fCarrier+fDevHz
 // exceeds Nyquist, the per-sample phase advance itself aliases: the waveform folds
 // back into the band at the mirror of the overshoot. That is the FM aliasing
-// @Claude asked to MEASURE (measure-only this slice; the fix is a P3-exit
+//  asked to MEASURE (measure-only this slice; the fix is a P3-exit
 // decision). See test_drone_mod.cpp + FINDINGS.md.
 //
 // Value from seed: fCarrier, fModHz (the LFO rate), and baseAmp derive once from

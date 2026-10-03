@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// standalone_audio_engine.h — the framework-free host audio-engine owner (GH#4 8B2).
+// standalone_audio_engine.h — the framework-free host audio-engine owner.
 //
 // This is the ONE bridge between the iPlug2 host (LunarHostPlugin) and the product
-// synth. The host holds it BY VALUE and calls EXACTLY two things: prepare() (on the
-// non-audio / stopped-stream thread) and processBlock() (the audio callback). It must
+// synth. The host holds it BY VALUE and calls EXACTLY two things: prepare (on the
+// non-audio / stopped-stream thread) and processBlock (the audio callback). It must
 // therefore:
 //
 //   * be framework-free — it only includes lunar24::core headers (never an iPlug2 /
@@ -15,15 +15,15 @@
 //     NON-COPYABLE / NON-MOVABLE and must be held at a stable address for its whole life).
 //     So the owner keeps the definition behind a unique_ptr; the ~160 KiB owned tables
 //     live on the heap, NEVER on the audio-callback stack.
-//   * prepare() ONLY on the stopped-stream boundary — the whole candidate definition +
+//   * prepare ONLY on the stopped-stream boundary — the whole candidate definition +
 //     device plan is built on LOCAL (heap-owning) state and committed in ONE shot; any
 //     failure leaves the engine NOT-READY (never a half-written plan, never a stale
 //     different-sample-rate runtime left behind).
-//   * processBlock() be a pure delegate — it forwards the whole block to the frozen
-//     task#71 DeviceAdapter::renderBlock and does NO frame loop / scale / mapping /
+//   * processBlock be a pure delegate — it forwards the whole block to the frozen
+//      DeviceAdapter::renderBlock and does NO frame loop / scale / mapping /
 //     pass-through / second output bank of its own.
 //
-// The GH#4 frozen policy (design/07 §5, task#71) is consumed, not re-derived here: the
+// The frozen policy is consumed, not re-derived here: the
 // device scale (0.5), the output strategy (<2 reject, 2-3 WET, >=4 WET+DRY), and the
 // input-route rules (<2 route = explicit, never an implicit copy) live in device_adapter.h.
 // This owner only CHOOSES the default plan the host needs given the REAL connected
@@ -61,7 +61,7 @@
 namespace lunar24::host {
 
 // Where the REC recorder taps the outputs (host/wav_recorder.h implements it). Called on the
-// audio thread: armed() is checked once per block, push() gets the block's frames as 4
+// audio thread: armed is checked once per block, push gets the block's frames as 4
 // floats each (WET L, WET R, DRY A, DRY B), after MUTE.
 class AudioTap {
  public:
@@ -92,9 +92,9 @@ using lunar24::core::ParameterApplyStatus;
 using lunar24::core::kParameterCount;
 
 // The centralized, deterministic provisional safe-startup seed. This is what the host
-// uses to boot the machine BEFORE the #12 identity / state layer can apply a saved
+// uses to boot the machine BEFORE the identity / state layer can apply a saved
 // program. It is deliberately NOT a third truth source — it is a named, stable,
-// reproducible default, not an authoritative machine-program identity (that is #12's
+// reproducible default, not an authoritative machine-program identity (that is 's
 // job, out of scope for this slice). "LUNAR" as hex, so it is greppable and stable.
 inline constexpr std::uint64_t kLunarStartupSeed = 0x4C554E4152ULL;
 
@@ -126,36 +126,36 @@ class ScopedFlushDenormals {
 // The one repo-owned standalone host runtime owner. Held BY VALUE by LunarHostPlugin.
 class StandaloneAudioEngine {
  public:
-  // A fixed, inspectable outcome of a processBlock() call. The host (and the oracle)
+  // A fixed, inspectable outcome of a processBlock call. The host (and the oracle)
   // read this AFTER the call; it is never logged / allocated on the audio path.
   enum class Status : std::uint8_t {
-    Idle = 0,               // no successful prepare() yet.
+    Idle = 0,               // no successful prepare yet.
     Rendered,               // the block went through the production delegate.
-    DroppedNotReady,        // prepare() not done or failed -> deterministic silence.
+    DroppedNotReady,        // prepare not done or failed -> deterministic silence.
     DroppedFormatMismatch,  // the requested channel config differs from the prepared one.
     DroppedIllegal,         // frames <= 0 OR frames > prepared maxBlock (cannot render / block overrun).
     DroppedInvalidDefinition,  // the active definition's graph did not compile -> never render it.
   };
 
-  // A fixed, inspectable outcome of applyDeviceState(). This is deliberately the INVERSE failure
-  // contract of prepare(): prepare() leaves the engine NOT-READY on any failure (task#72, the
+  // A fixed, inspectable outcome of applyDeviceState. This is deliberately the INVERSE failure
+  // contract of prepare: prepare leaves the engine NOT-READY on any failure (the
   // host is re-configuring for a NEW stream), while an applyDeviceState rejection is ATOMIC — the
   // prior complete active definition/plan/format/canonical state is left UNCHANGED. Both share
   // the same state-aware candidate builder (buildMachineRuntimeCandidate); only the commitment
-  // differs. This is the GH#12 9B state-apply contract (@Codex msg f7860189, card rev 2 point 2).
+  // differs. This is the state-apply contract.
   enum class StateApplyStatus : std::uint8_t {
-    NotAttempted = 0,     // no applyDeviceState() / successful prepare()-only yet.
+    NotAttempted = 0,     // no applyDeviceState / successful prepare-only yet.
     Accepted,             // the state validated, the machine compiled, identity configured, committed.
     RejectedFormat,       // illegal sample rate / block size / channel capability.
-    RejectedInvalidState, // validate_device_state failed (family+field via lastStateValidation()).
+    RejectedInvalidState, // validate_device_state failed (family+field via lastStateValidation).
     RejectedGraph,        // state validated but the candidate graph did not compile.
-    RejectedIdentity,     // state+graph ok but the GH#6 identity/calibration did not configure.
+    RejectedIdentity,     // state+graph ok but the identity/calibration did not configure.
     RejectedDspApply,     // state+graph+identity ok but the whole 169-parameter applied_to_DSP
                           // apply was not complete (first failure via the DspApply accessor).
     RejectedAdapter,      // state+graph+identity ok but the channel plan could not be built.
   };
 
-  // ---- GH#12 engine-layer preset actions (task #103) ------------------------------------------
+  // engine-layer preset actions ------------------------------------------
   // LOAD / SAVE / INITIALISE of the four native keyboard presets, expressed at the ENGINE layer.
   // This is an INTERNAL engine enum: it never enters the wire format and is never a ControlEvent
   // (it is neither a ParameterId nor a ControlEventKind), so no new id/enum leaks into the device
@@ -166,16 +166,16 @@ class StandaloneAudioEngine {
     Initialise = 2,  // reset ONLY the slot to its factory default (never implicitly loads it)
   };
 
-  // The fixed, inspectable outcome of applyPresetAction(). A not-ready engine / illegal slot /
+  // The fixed, inspectable outcome of applyPresetAction. A not-ready engine / illegal slot /
   // unknown action is reported explicitly — never a false success. A candidate-level rejection is
-  // reported as RejectedState with the exact StateApplyStatus in stateApplyStatus() and the
-  // family+field in lastStateValidation().
+  // reported as RejectedState with the exact StateApplyStatus in stateApplyStatus and the
+  // family+field in lastStateValidation.
   enum class PresetActionStatus : std::uint8_t {
     Accepted = 0,           // the state-layer transfer applied and the candidate committed
     RejectedNotReady,       // no committed definition -> nothing to read or re-publish
     RejectedInvalidSlot,    // slot >= kDeviceKeyboardPresetCount (there is no 5th preset)
     RejectedInvalidAction,  // not one of Load / Save / Initialise
-    RejectedState,          // the re-commit candidate was rejected; see stateApplyStatus()
+    RejectedState,          // the re-commit candidate was rejected; see stateApplyStatus
   };
 
   StandaloneAudioEngine() = default;
@@ -197,16 +197,16 @@ class StandaloneAudioEngine {
   // releases the OLD definition (a stale different-sample-rate runtime is never kept — the
   // host is re-configuring for a NEW stream, and a half-write is never observable).
   //
-  //   seed            — the deterministic startup seed (kLunarStartupSeed for a safe boot).
-  //   sampleRate      — the REAL device rate; must be finite and > 0.
-  //   maxBlockSize    — the device max block size (host GetBlockSize()); must be > 0.
+  //   seed — the deterministic startup seed (kLunarStartupSeed for a safe boot).
+  //   sampleRate — the REAL device rate; must be finite and > 0.
+  //   maxBlockSize — the device max block size (host GetBlockSize); must be > 0.
   //   inputCapability — physical input channels the device opened (>= 0).
   //   outputCapability— physical output channels the device opened (>= 2; <2 cannot satisfy
   //                     the frozen WET output strategy and is REJECTED).
   bool prepare(std::uint64_t seed, double sampleRate, int maxBlockSize, int inputCapability,
                int outputCapability);
 
-  // GH#12 9B: publish a validated DeviceStateV1 candidate at the stopped-stream boundary. Builds
+  // publish a validated DeviceStateV1 candidate at the stopped-stream boundary. Builds
   // the definition + default plan as LOCAL candidates (same builder as prepare), then commits
   // definition + adapter + format + canonical state together ONCE. A REJECTION is atomic — the
   // prior complete active definition/plan/format/canonical state is unchanged and the engine stays
@@ -214,8 +214,8 @@ class StandaloneAudioEngine {
   StateApplyStatus applyDeviceState(const DeviceStateV1& state, double sampleRate, int maxBlockSize,
                                     int inputCapability, int outputCapability);
 
-  // GH#12 task #103: the engine-layer preset LOAD / SAVE / INITIALISE. Call ONLY at the existing
-  // stopped-stream / non-audio-thread boundary (the same place prepare()/applyDeviceState() are
+  // the engine-layer preset LOAD / SAVE / INITIALISE. Call ONLY at the existing
+  // stopped-stream / non-audio-thread boundary (the same place prepare/applyDeviceState are
   // called) — it re-commits a complete candidate and is NOT a running-stream operation.
   //
   //   * Format: the engine's CURRENT committed format is reused; the caller does not restate it.
@@ -277,7 +277,7 @@ class StandaloneAudioEngine {
     if (st == nullptr) return 0;
     return (side == 0 ? st->keyboardClockSelectors : st->keyboardClockSelectorsR)[seq ? 3 : 1];
   }
-  // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
+  // Highest note of a sequencer step, in semitones above the held plate. // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
   // Stopped-stream boundary (before prepare): close every DRONE VOICES key (RESET PANEL).
@@ -337,7 +337,7 @@ class StandaloneAudioEngine {
   bool parameterFromAudioThread(ParameterId id, double value);
   // UI thread: apply the MIDI-CC knob moves queued by the audio thread. Returns how many.
   int syncParametersFromAudioThread();
-  // Event-scheduler pressure diagnostics (design/07 §3), for tests and future UI/log
+  // Event-scheduler pressure diagnostics, for tests and future UI/log
   // display. Safe from any thread: the underlying counters are relaxed atomics, so a
   // snapshot may be slightly stale under load but never races.
   struct EventDiagnostics {
@@ -411,32 +411,32 @@ class StandaloneAudioEngine {
   std::uint64_t droppedBlocks() const { return droppedBlocks_; }
 
   // The canonical DeviceStateV1 of the active definition, read straight from the owned definition
-  // (never a second snapshot living elsewhere — task#76 card rev 2 point 3). nullptr iff not ready.
+  // (never a second snapshot living elsewhere). nullptr iff not ready.
   const DeviceStateV1* canonicalState() const {
     return definition_ ? &definition_->deviceState() : nullptr;
   }
-  // Whether the GH#6 identity/calibration profile was applied to the active definition. Named
+  // Whether the identity/calibration profile was applied to the active definition. Named
   // precisely: this is the identity/calibration apply, NOT a whole-DeviceState "applied" claim.
   bool identityApplied() const { return definition_ && definition_->identityApplied(); }
-  // The last applyDeviceState() outcome (or NotAttempted). A RejectedInvalidState's family+field
-  // detail is exposed by lastStateValidation().
+  // The last applyDeviceState outcome (or NotAttempted). A RejectedInvalidState's family+field
+  // detail is exposed by lastStateValidation.
   StateApplyStatus stateApplyStatus() const { return stateApplyStatus_; }
   // The active machine's SynthRuntime, read straight from the owned definition (non-shadow truth,
-  // self-consistent with canonicalState()). nullptr iff not ready. For the GH#6 wired-path check:
+  // self-consistent with canonicalState). nullptr iff not ready. For the wired-path check:
   // the caller reads the actual derived profile consumers via the SynthRuntime getters.
   //
-  // ⚠️ LIFETIME (REV-3): the returned pointer is valid only until the NEXT commit_() — i.e. until
-  // the next successful prepare()/applyDeviceState() — because each apply swaps `definition_` for a
+  // ⚠️ LIFETIME: the returned pointer is valid only until the NEXT commit_ — i.e. until
+  // the next successful prepare/applyDeviceState — because each apply swaps `definition_` for a
   // freshly-built candidate and RELEASES the prior definition. A pointer held across a churn apply
   // would then dangle. For a test that must read getters across multiple applies, use the by-value
-  // observeRuntime() snapshot instead (copying scalars out at the moment of the call); this accessor
+  // observeRuntime snapshot instead (copying scalars out at the moment of the call); this accessor
   // is for read-at-this-instant use with NO intervening apply.
   const SynthRuntime* runtime() const { return definition_ ? &definition_->runtime() : nullptr; }
 
-  // A by-value snapshot of the LIVE GH#6 identity/calibration consumers plus the seeded-voice
+  // A by-value snapshot of the LIVE identity/calibration consumers plus the seeded-voice
   // outputs of the active definition, read via the SynthRuntime getters ONCE at call time. This is
   // the safe way for a caller (the oracle) to inspect runtime getters across multiple applies: it
-  // never holds a pointer across an apply, so a long-lived `runtime()` pointer that dangles after
+  // never holds a pointer across an apply, so a long-lived `runtime` pointer that dangles after
   // the next applyDeviceState/commit cannot be captured. Scalars only — nothing here aliases the
   // owned definition.
   struct RuntimeObservation {
@@ -466,7 +466,7 @@ class StandaloneAudioEngine {
     return obs;
   }
   const StateValidationResult& lastStateValidation() const { return lastStateValidation_; }
-  // task #78: the first applied_to_DSP parameter whose write was rejected, and the reason, on
+  // the first applied_to_DSP parameter whose write was rejected, and the reason, on
   // a RejectedDspApply outcome (sentinel kParameterCount / applied otherwise). Lets a caller
   // surface the exact failing id/status instead of only a coarse "rejected" bit.
   ParameterId dspApplyFirstFailParamId() const { return dspApplyFirstFailParamId_; }
@@ -488,14 +488,14 @@ class StandaloneAudioEngine {
   void updateLeds_(int frames);
 
   // Clear the ENTIRE committed state back to the "no prepare done" sentinel. Called on every
-  // prepare() failure so no half-written plan / stale format / old definition is observable:
+  // prepare failure so no half-written plan / stale format / old definition is observable:
   // the engine returns to NOT-READY with every inspectable field at its empty value, and the
   // old definition (if any) is released here — the ONLY place its destructor runs (the
   // stopped-stream boundary).
   void clearState_();
 
   // Complete the frozen default plan (the owner's one honest default-plan helper) on a LOCAL
-  // adapter. Shared by prepare() and applyDeviceState(); never mutates committed state itself.
+  // adapter. Shared by prepare and applyDeviceState; never mutates committed state itself.
   // Returns false if the channel configuration cannot be planned (never invents a route).
   static bool completeDefaultPlan_(DeviceAdapter& adapter, int inputCapability, int outputCapability);
 
@@ -505,10 +505,10 @@ class StandaloneAudioEngine {
                double sampleRate, int maxBlockSize, int inputCapability, int outputCapability);
 
   // The address-stable runtime owner. Lives on the heap (never the callback stack), and is
-  // released ONLY at the prepare()/OnReset stopped-stream boundary, never inside processBlock.
+  // released ONLY at the prepare/OnReset stopped-stream boundary, never inside processBlock.
   std::unique_ptr<MachineRuntimeDefinition> definition_;
-  // The single production DeviceAdapter (task#71). The preferred default plan is installed by
-  // prepare(); processBlock only ever forwards to it.
+  // The single production DeviceAdapter. The preferred default plan is installed by
+  // prepare; processBlock only ever forwards to it.
   DeviceAdapter adapter_;
 
   // The committed format (set only by a successful prepare; the processBlock format gate reads
@@ -579,11 +579,11 @@ class StandaloneAudioEngine {
   std::uint64_t renderedBlocks_ = 0;
   std::uint64_t droppedBlocks_ = 0;
 
-  // The inspectable state-apply outcome (GH#12 9B) and the last validation detail. Only set by
-  // applyDeviceState() (and Accepted by a successful prepare(), which publishes the default state).
+  // The inspectable state-apply outcome and the last validation detail. Only set by
+  // applyDeviceState (and Accepted by a successful prepare, which publishes the default state).
   StateApplyStatus stateApplyStatus_ = StateApplyStatus::NotAttempted;
   StateValidationResult lastStateValidation_;
-  // task #78 first applied_to_DSP failure detail (sentinel kParameterCount / applied iff ok).
+  //  first applied_to_DSP failure detail (sentinel kParameterCount / applied iff ok).
   ParameterId dspApplyFirstFailParamId_ = static_cast<ParameterId>(kParameterCount);
   ParameterApplyStatus dspApplyFirstFailStatus_ = ParameterApplyStatus::applied;
 };
@@ -592,9 +592,9 @@ class StandaloneAudioEngine {
 inline bool StandaloneAudioEngine::prepare(std::uint64_t seed, double sampleRate,
                                            int maxBlockSize, int inputCapability,
                                            int outputCapability) {
-  // Reset the host DSP first-fail diagnostic at the START of every prepare()-only, exactly as
-  // applyDeviceState() does below (337-338), so a prior RejectedDspApply never leaks a stale
-  // failure into a later successful/other prepare() on the same owner.
+  // Reset the host DSP first-fail diagnostic at the START of every prepare-only, exactly as
+  // applyDeviceState does below (337-338), so a prior RejectedDspApply never leaks a stale
+  // failure into a later successful/other prepare on the same owner.
   dspApplyFirstFailParamId_ = static_cast<ParameterId>(kParameterCount);
   dspApplyFirstFailStatus_ = ParameterApplyStatus::applied;
   // (1) Impossible / illegal format -> fail-closed. On ANY of these the OLD definition is
@@ -611,9 +611,9 @@ inline bool StandaloneAudioEngine::prepare(std::uint64_t seed, double sampleRate
   }
 
   // (2) Safe boot = the power-on DEFAULT DeviceState, built through the SAME state-aware candidate
-  // builder that applyDeviceState() uses (card rev 2 point 2: "successful safe boot must delegate
+  // builder that applyDeviceState uses ("successful safe boot must delegate
   // to the same builder"). This is what makes a seed denote the exact make_default_device_state(seed)
-  // canonical state, and what applies the GH#6 identity/calibration profile to the default too.
+  // canonical state, and what applies the identity/calibration profile to the default too.
   // The ~160 KiB owned tables live on the heap (definition behind a unique_ptr); the audio callback
   // never builds or touches them.
   MachineCandidateResult res = buildMachineRuntimeCandidate(make_default_device_state(seed),
@@ -646,13 +646,13 @@ inline bool StandaloneAudioEngine::prepare(std::uint64_t seed, double sampleRate
 inline StandaloneAudioEngine::StateApplyStatus StandaloneAudioEngine::applyDeviceState(
     const DeviceStateV1& state, double sampleRate, int maxBlockSize, int inputCapability,
     int outputCapability) {
-  // INVERSE failure contract of prepare() (card rev 2 point 2): a rejection here is ATOMIC — the
+  // INVERSE failure contract of prepare: a rejection here is ATOMIC — the
   // prior complete active definition / plan / format / canonical state is left unchanged and the
   // engine STAYS ready. It never goes NOT-READY on a bad state: this is a "state" problem, not a
   // stream re-configuration problem, so the current stream keeps running with the prior canonical
   // state. A rejected candidate is never observable as an intermediate or partial install.
 
-  // @Codex BLOCK #5: reset the DSP first-fail diagnostics to the "no failure" sentinel at the entry
+  //  BLOCK #5: reset the DSP first-fail diagnostics to the "no failure" sentinel at the entry
   // of every apply. Only a RejectedDspApply outcome overwrites them below; every other terminal
   // outcome (Accepted or any other Rejected*) leaves them at the sentinel, so a prior DSP failure
   // never leaks into a later apply's diagnostics. Without this, the stale failure survived into a
@@ -660,7 +660,7 @@ inline StandaloneAudioEngine::StateApplyStatus StandaloneAudioEngine::applyDevic
   dspApplyFirstFailParamId_ = static_cast<ParameterId>(kParameterCount);
   dspApplyFirstFailStatus_ = ParameterApplyStatus::applied;
 
-  // Strict-format gate mirrors prepare()'s first two checks — an illegal rate / block / channel set
+  // Strict-format gate mirrors prepare's first two checks — an illegal rate / block / channel set
   // cannot possibly honour the requested state, so it is a FORMAT rejection, not a state rejection.
   if (!std::isfinite(sampleRate) || !(sampleRate > 0.0)) {
     stateApplyStatus_ = StateApplyStatus::RejectedFormat;
@@ -780,7 +780,7 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
     return Status::DroppedNotReady;
   }
   // A callback must never exceed the prepared max block. The device batches strictly within the
-  // OnReset configuration (GetBlockSize()), so frames beyond blockSize_ is a kernel/wiring defect
+  // OnReset configuration (GetBlockSize), so frames beyond blockSize_ is a kernel/wiring defect
   // -> the block is dropped to deterministic silence with an exact counter. This runs AFTER the
   // not-ready gate (blockSize_ is only meaningful once prepared) and BEFORE the channel-mismatch
   // gate (a block overrun is the earlier, more fundamental violation).
@@ -799,7 +799,7 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
     return Status::DroppedFormatMismatch;
   }
 
-  // Defense-in-depth (card rev 2 point 1): a definition whose graph did NOT compile must never be
+  // Defense-in-depth: a definition whose graph did NOT compile must never be
   // rendered. buildMachineRuntimeCandidate already rejects such a candidate before commit, so in
   // practice definition_ is always valid here; this guard forbids an invalid definition reaching
   // processBlock through any other construction, closing the "mint a valid-looking machine from an
@@ -810,7 +810,7 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
     return Status::DroppedInvalidDefinition;
   }
 
-  // THE single production delegate (task#71). The owner forwards the whole block to the
+  // THE single production delegate. The owner forwards the whole block to the
   // frozen adapter and does nothing else — no frame loop, no scaling, no mapping, no
   // pass-through. A second output bank / a host-side scale would be a wiring defect.
   const ScopedFlushDenormals noDenormals;  // decaying tails never hit slow denormal math
@@ -914,17 +914,17 @@ inline void StandaloneAudioEngine::writeSilence_(double* const* outputs, int out
 // ---- completeDefaultPlan_ -------------------------------------------------
 inline bool StandaloneAudioEngine::completeDefaultPlan_(DeviceAdapter& adapter, int inputCapability,
                                                         int outputCapability) {
-  // The owner's ONE honest default-plan helper (the frozen GH#4 policy, consumed not re-derived).
+  // The owner's ONE honest default-plan helper (the frozen policy, consumed not re-derived).
   // Maps the REAL channel counts to a frozen route (never a silent copy):
   //
-  //   inputCapability 0  -> Zero          (both terminals read 0; no channel consumed)
-  //   inputCapability 1  -> DuplicateOne  (EXT = PREAMP = ch0: a mono mic, e.g. a laptop's
+  //   inputCapability 0 -> Zero (both terminals read 0; no channel consumed)
+  //   inputCapability 1 -> DuplicateOne (EXT = PREAMP = ch0: a mono mic, e.g. a laptop's
   //                                        built-in one, must reach the PREAMP like the
   //                                        hardware's contact mic, and EXT.AUDIO too)
-  //   inputCapability >=2-> Distinct      (EXT = ch0, PREAMP = ch1)
+  //   inputCapability >=2-> Distinct (EXT = ch0, PREAMP = ch1)
   //
-  //   outputCapability 2-3 -> outputCount 2  (WET L/R only)
-  //   outputCapability >=4-> outputCount 4  (WET L/R + DRY A/B; extra physical untouched)
+  //   outputCapability 2-3 -> outputCount 2 (WET L/R only)
+  //   outputCapability >=4-> outputCount 4 (WET L/R + DRY A/B; extra physical untouched)
   //
   // Every route it can produce is already validated by device_adapter.h; it never invents a route
   // the adapter would reject. Returns false if the channel config cannot be planned.

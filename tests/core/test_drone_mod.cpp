@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P3-② tests for the "new drone" voice block: Schmitt oscillator, noise source,
+//  tests for the "new drone" voice block: Schmitt oscillator, noise source,
 // sample-and-hold, and an FM/AM voice. The shared judges come from
-// drone_test_common.h — the SAME code P3-① uses — so a detector change here is
-// picked up by both slices at once (@Claude: "判据只有一份").
+// drone_test_common.h — the SAME code uses — so a detector change here is
+// picked up by both slices at once ("判据只有一份").
 //
-// @Claude's P3-② mandate, folded in below:
+// mandate, folded in below:
 //   * Two RATE-UNIT traps. The Schmitt oscillator's frequency comes from a charge
 //     rate scaled by dt=1/sampleRate (never a fixed per-sample step), and the
 //     sample-and-hold period is in SECONDS (never a sample count). The cross-sr
@@ -17,12 +17,12 @@
 //   * ALIASING is MEASURE-ONLY this slice (fix deferred to P3 exit by evidence):
 //     the folded harmonic (Schmitt) and the folded peak-instantaneous-frequency
 //     (FM, high fDev) are measured by Goertzel and recorded in FINDINGS.md.
-//   * NEW (@Claude): measure AUDIBLE-BAND NOISE POWER (20 Hz..20 kHz) across
+//   * NEW: measure AUDIBLE-BAND NOISE POWER (20 Hz..20 kHz) across
 //     44.1/48/88.2/96k. White noise is flat up to Nyquist, so a fixed amplitude
 //     spreads over a wider band at higher sr -> LESS power in the audible slice.
 //     Measured and recorded; the fix is a P3-exit decision, not a silent patch.
 //
-// Each must-test carries a red-negative so it cannot vacously pass — @Claude:
+// Each must-test carries a red-negative so it cannot vacously pass —:
 // "测不出区别的测试，就没在测那个东西."
 
 #include "mini_test.h"
@@ -380,7 +380,7 @@ static bool test_noise_reproducible_buffer() {
   CHECK_FALSE(same_render(render_noise(n1, n), render_noise(n3, n)));
 
   // Buffer-independence: run the SAME source seeded identically in two passes but
-  // the second one partitioned. tick() consumes exactly one value per sample, so a
+  // the second one partitioned. tick consumes exactly one value per sample, so a
   // partition can never skip/repeat a draw.
   core::NoiseSource b1(seed, 0.5), b2(seed, 0.5);
   const auto single = render_noise(b1, n);
@@ -466,9 +466,9 @@ static bool test_sandhold_buffer_independence() {
   return true;
 }
 
-// S&H CLOCK-EDGE form (GH#15 D3): tick(input, clock, *out) is the product path —
+// S&H CLOCK-EDGE form: tick(input, clock, *out) is the product path —
 // a level >= kClockOn on a RISING edge captures the input; between edges the last
-// captured level is held. @Kimi addition (task #98): the drone lane reaches this
+// captured level is held. addition: the drone lane reaches this
 // only through the divided LF square, so two properties have no lane-level proof.
 // Pin them at the module level: (1) an UNCLOCKED (constant-0) clock never self-runs
 // (the "未接 clock 时不自走" acceptance), and (2) an arbitrary waveform clock captures
@@ -555,7 +555,7 @@ static bool test_fm_am_buffer_determinism() {
 }
 
 // ---------------------------------------------------------------------------
-// MEASURE-ONLY tests (@Claude: measure, record in FINDINGS, don't fix this slice).
+// MEASURE-ONLY tests (measure, record in FINDINGS, don't fix this slice).
 // ---------------------------------------------------------------------------
 
 // Schmitt aliasing: the folded first harmonic above Nyquist, relative to the
@@ -651,7 +651,7 @@ static bool test_noise_audible_band_power() {
 }
 
 // ---------------------------------------------------------------------------
-// ABSOLUTE-REFERENCE ANCHORS (@Claude 3241ca5e: the two drone_mod paths that had
+// ABSOLUTE-REFERENCE ANCHORS (ca5e: the two drone_mod paths that had
 // no anchor — FmAmVoice + NoiseSource). Each pins the implementation to OUR OWN
 // DECLARED implementation contract, NOT a hardware fact (the polarity--rule:
 // never invent an unevidenced hardware number as an anchor). If hardware evidence
@@ -702,8 +702,8 @@ static std::vector<double> render_fm_am_srhardcoded(std::uint64_t seed, double /
   return out;
 }
 
-// FmAmVoice anchor, half A — carrier == carrierHz() at every rate (the exact closed
-// form @Claude named). depth=0, fDev=0 => a pure sine at fc; measure_freq_hz pins
+// FmAmVoice anchor, half A — carrier == carrierHz at every rate (the exact closed
+// form named). depth=0, fDev=0 => a pure sine at fc; measure_freq_hz pins
 // it absolutely. A hardcoded-48k phase advance breaks at 44.1/88.2/96 kHz.
 static bool test_fm_am_carrier_cross_sr() {
   const std::uint64_t seed = 0xC0FFEEu;
@@ -748,7 +748,7 @@ static bool test_fm_am_deviation_realized() {
 // NoiseSource anchor: each per-sample value is uniform in [-amp,+amp), so the
 // sample variance must equal amp^2/3 (sr-independent; a wrong-but-consistent
 // amplitude scaling is partition-invariant). This validates our declared
-// implementation contract — not a hardware spec — per @Claude 3241ca5e.
+// implementation contract — not a hardware spec —.
 static bool test_noise_variance_contract() {
   const std::uint64_t seed = 0x21Cu;
   const double amp = 0.5;

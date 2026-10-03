@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// SinkInterpret (design/07 §4 跨类型 + §5): the sink-side interpretation of a
+// SinkInterpret (跨类型 + §5): the sink-side interpretation of a
 // continuous input stream into gate/clock semantics. A real output may drive any
 // real input; type/range are advisory, never a hard connection filter (PatchGraph
 // rejects a cable only by direction). But when the SINK jack is a gate/clock, the
 // incoming stream must be *interpreted* there: a continuous CV crossing the jack's
 // threshold produces gate behaviour. It is never isolated off by a signal-type
-// match. This is the P2-④ deliverable.
+// match. This is the deliverable.
 //
 // The gate level is a pure threshold comparison against the sink's
 // gateThresholdVolts with a hysteresis band: the gate rises once the input clears
@@ -46,7 +46,7 @@ struct SinkSample {
 };
 
 // Per-sink gate/clock interpretation state. One per sink edge; caller-owned.
-// Value-initialise ({}) for a fresh state; see sink_gate_reset().
+// Value-initialise ({}) for a fresh state; see sink_gate_reset.
 struct GateClockSinkState {
   bool high = false;     // raw hysteresis latch (pre-inversion)
   bool prevOut = false;  // previous OUTPUT (post-inversion), for edge detection

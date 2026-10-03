@@ -1,24 +1,24 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Vco — P3-③: a single triangle-core analog VCO (AS3340 family) that models BOTH
+// Vco —: a single triangle-core analog VCO (AS3340 family) that models BOTH
 // VCO A and VCO B. This is the DSP core. The A/B *module shape* (which jacks
 // exist) is a registry fact already landed: vco_a has a SYNC input, vco_b has a
 // VCO output, and VCO A's output is normalised into VCO B's CV input (CV AMT knob)
-// — the latter is P2-②'s NormalizedRoute, re-presented here as a fact, NOT re-coded
+// the latter is the NormalizedRoute, re-presented here as a fact, NOT re-coded
 // in this header. The core therefore carries the shared oscillator DSP; the
 // sync-only-on-A asymmetry is guarded by test (see syncPulse below).
 //
 // PROVENANCE — the registry (generated/lunar24/registry.hpp) is the frozen
 // implementation basis; every claim below mirrors it and marks evidence strength
-// precisely (@Claude GO 604ed080). "Confirmed" == all relevant field evidence
+// precisely (GO. "Confirmed" == all relevant field evidence
 // confirmed; "provisional" == position/value is evidenced in name but the exact
 // number is not written in the manual; "unverified" == the field evidence is
 // unverified and it may conflict with the manual's literal wording.
 //
 //   * V/OCT (v_oct_in) — SignalType::cv, polarity unipolar, range 0..8 V,
 //     SignalTransfer::exponential, direction/type/transfer CONFIRMED.
-//     pitch = fBase * 2^vOct ; every 1 V exactly doubles across the whole 0..8 V.
+//     pitch = fBase * 2^vOct; every 1 V exactly doubles across the whole 0..8 V.
 //   * Octave selector (oct_sel) — 3 positions "low"/"0"/"+3", default index 1="0"
 //     (all six field evidence PROVISIONAL). The position NAMES are evidenced; the
 //     exact octave COUNT per position is not (manual writes only "+3 / low"; what
@@ -26,11 +26,8 @@
 //     octaves — PROVISIONAL, and the value for "low" is a standing guess, not fact.
 //   * Sub selector (sub_sel) — 2 positions "0"/"-1", default index 1="-1"
 //     (PROVISIONAL). Sub is one octave down.
-//   * Tune (tune) — unit "oct", range -1..+1, default 0, but ALL six field evidence
-//     are UNVERIFIED and this conflicts with the manual literal "tune knob controls
-//     the pitch continuously over ONE octave" (registry reads -1..+1 = two octaves).
-//     This conflict is recorded in FINDINGS as a MUST-RESOLVE item and is NOT
-//     silently resolved here. Implemented per registry (oct, -1..+1).
+//   * Tune (tune) — unit "oct", range -0.5..+0.5, default 0: one octave in all, as the
+//     manual says ("tune knob controls the pitch continuously over ONE octave").
 //   * CV input lin/exp (lin_exp) — selector "lin"/"exp". The SELECTOR's documented default index is
 //     1="exp"; the registry initial for the DeviceState default is 0="lin" (a separate layer). The
 //     module CONSTRUCTOR default is kExponential; a state apply decides the effective mode.
@@ -52,9 +49,9 @@
 // the drone-bank requirement (voices must be independent); an independent
 // free-running sub is the negative control for the phase-lock test.
 //
-// HARD SYNC — syncPulse() resets the unwrapped phase to 0 (the slave restarts).
+// HARD SYNC — syncPulse resets the unwrapped phase to 0 (the slave restarts).
 // This is the sync input that exists on VCO A only. VCO B has NO sync input, so a
-// correct B path never calls syncPulse(); the test asserts B's phase is continuous
+// correct B path never calls syncPulse; the test asserts B's phase is continuous
 // and that a B given a sync pulse shows a discontinuity the continuity detector
 // fires on. Hard sync is a prime aliasing source (measured in FINDINGS).
 //
@@ -80,11 +77,11 @@ namespace lunar24::core {
 // ⚠️ PRODUCTION vs MODULE-DEV. `kMorphRing` is the PRODUCTION rendering law and the CONSTRUCTOR
 // DEFAULT (see wave_ below): the continuous single-knob mapping of wave_map, driven by the
 // EXISTING `morph` parameter. The other six values are the MODULE-DEVELOPMENT raw-waveform
-// interface — each is one fixed shape, reachable only by an explicit setWaveform() call, and no
+// interface — each is one fixed shape, reachable only by an explicit setWaveform call, and no
 // product path makes one. They exist because the module's own unit tests drive the raw shapes
 // directly (tests/core/test_vco.cpp), and they are kept for exactly that.
 //
-// There is deliberately NO runtime switch back to the pre-#117 fixed-triangle behaviour and no
+// There is deliberately NO runtime switch back to the earlier fixed-triangle behaviour and no
 // opt-in flag: the mapping IS the default, so it takes effect on every Vco the runtime builds
 // with no extra call. See vco_wave_map.h for what is claimed, what is software-provisional, and
 // what is a known reported property (the S0 mid-stretch silence, the missing AA on the
@@ -103,7 +100,7 @@ enum class VcoWaveform : std::uint8_t {
 // kExponential (the registry selector's documented default index); the DeviceState DEFAULT
 // (registry initial field) for the lin_exp parameter is 0 = kLinear, which overrides this on the
 // canonical power-on state. The two defaults are DISTINCT layers and are kept separate — a state
-// apply, not this constructor, decides the effective mode. (@Codex 44369539 task#78: clarify, no
+// apply, not this constructor, decides the effective mode. (clarify, no
 // registry or sound-behavior change.)
 enum class VcoControlMode : std::uint8_t { kLinear, kExponential };
 
@@ -126,8 +123,7 @@ class Vco {
 
   // Octave selector: 0="low", 1="0", 2="+3". Octave COUNTS are PROVISIONAL.
   void setOctaveSelect(int index);
-  // Tune knob: unit "oct", range -1..+1 (UNVERIFIED + conflicts with manual's
-  // "one octave"; see FINDINGS — must-resolve, NOT silently resolved here).
+  // Tune knob: octaves, -0.5..+0.5 from the registry (one octave in all, as in the manual).
   void setTune(double oct) { tune_ = oct; }
   // Sub selector: 0="0" (off), 1="-1" (one octave down). PROVISIONAL.
   void setSubSelect(int index) { subSelect_ = index; }
@@ -137,7 +133,7 @@ class Vco {
   // control, jack, route or persisted byte: no product path calls this, and a Vco the runtime
   // builds renders kMorphRing without it. Its only callers are the module's own unit tests, which
   // need to isolate one raw shape at a time. Setting it does not disable the mapping's BLAMP
-  // scaling — each shape keeps exactly the band-limiting it had before #117.
+  // scaling — each shape keeps exactly the band-limiting it had before.
   void setWaveform(VcoWaveform w) { wave_ = w; }
   // Morph 0..1, the PRODUCTION waveform control (the panel's MORPHING WAVEFORM knob, one per
   // side; clamped). On the default kMorphRing rendering law it is the position along the whole
@@ -147,14 +143,14 @@ class Vco {
   // SHAPE = pulse-width duty for kPulse — the BASE pulse width. Clamped into a small (0,1) window
   // so an extreme setting can never collapse the pulse to a flat DC line / silence break (the
   // two-rail swing is always present; the must-test verifies it). This is the CANONICAL value the
-  // panel knob (and its GH#21 smoothing) drives; PWM modulation must NOT write it back (see
-  // setPwDepth/setPwCv below and effectiveDuty()).
+  // panel knob (and its smoothing) drives; PWM modulation must NOT write it back (see
+  // setPwDepth/setPwCv below and effectiveDuty).
   void setShape(double duty) {
     duty_ = duty < kPwDutyMin ? kPwDutyMin : (duty > kPwDutyMax ? kPwDutyMax : duty);
   }
 
   // ---------------------------------------------------------------------- PWM --
-  // GH#19 S0 (task #117): the PWM jack's product consumer. On the hardware, PWM modulates the
+  //  the PWM jack's product consumer. On the hardware, PWM modulates the
   // pulse width; here it modulates the duty the pulse node (and only the pulse node) reads.
   //
   //   effectiveDuty = clamp(basePW + depth * cvVolts / 10, 0.001, 0.999)
@@ -166,13 +162,13 @@ class Vco {
   //
   // The two inputs are deliberately separate quantities with separate timing:
   //   * setPwDepth(depth) is the SMOOTHED PWM knob (0..1, default 0). It goes through the SAME
-  //     GH#21 seconds-smoothing family as the other panel knobs — the runtime smooths it, not this
+  //      seconds-smoothing family as the other panel knobs — the runtime smooths it, not this
   //     class.
   //   * setPwCv(volts) is THIS SAMPLE's PWM CV read from the patch graph. It is EXTERNAL audio-rate
   //     modulation and is deliberately NOT smoothed (a smoother here would low-pass the patch and
   //     break the same-frame consumption the graph contract guarantees).
   // Neither writes duty_. depth = 0 therefore leaves the emitted samples BIT-IDENTICAL to the
-  // pre-#117 behaviour, exactly (0 * cv == 0, and duty_ is already inside the clamp window).
+  // earlier behaviour, exactly (0 * cv == 0, and duty_ is already inside the clamp window).
   // No NaN passthrough: a non-finite depth or CV is treated as 0, and a non-finite sum falls back
   // to the canonical base width rather than propagating.
   void setPwDepth(double depth) { pwDepth_ = std::isfinite(depth) ? depth : 0.0; }
@@ -193,18 +189,18 @@ class Vco {
   // HARD SYNC (VCO A only): reset the unwrapped pitch phase to 0. VCO B has no
   // sync input and must never call this; test guards the asymmetry.
   //
-  // syncPulse() is the RAW primitive: it zeroes the accumulator mid-sample, so the next
-  // tick() advances once and reports phase `step` — the discontinuity and the cycle start
+  // syncPulse is the RAW primitive: it zeroes the accumulator mid-sample, so the next
+  // tick advances once and reports phase `step` — the discontinuity and the cycle start
   // then sit one sample apart. It is kept unchanged because the VCO's own tests drive it
   // directly and assert that raw behaviour.
   void syncPulse() { cumPitch_ = 0.0; }
 
-  // The PRODUCT hard-sync entry (GH#19 S5). requestSync() records the reset and lets tick()
+  // The PRODUCT hard-sync entry. requestSync records the reset and lets tick
   // apply it AFTER its advance, which makes the reset sample itself read phase 0: the value
   // discontinuity and the cycle start then coincide on one sample instead of straddling two,
-  // and the new cycle's phase is exactly f0*(i - r)/sr for the reset sample r. tick() also
-  // sizes that discontinuity and band-limits it (see tick()). The runtime calls THIS, never
-  // syncPulse(), on the jack consumer path.
+  // and the new cycle's phase is exactly f0*(i - r)/sr for the reset sample r. tick also
+  // sizes that discontinuity and band-limits it (see tick). The runtime calls THIS, never
+  // syncPulse, on the jack consumer path.
   void requestSync() { syncPending_ = true; }
 
   // ---------------------------------------------------------------- render --
@@ -220,16 +216,16 @@ class Vco {
   bool subEnabled() const { return subSelect_ == 1; }    // index 1 = "-1".
   double waveformSampleAt(double p) const;  // shape at a phase, for morph checks.
 
-  // Panel-control READBACK (task #78): the applied knob positions, so a product
+  // Panel-control READBACK: the applied knob positions, so a product
   // oracle can verify a state restore truly reached THIS DSP instance (return the raw
   // stored knob — post-clamp where the setter clamps). Never a shadow parameter bank;
   // these read the same members the render path consumes.
   double tune() const { return tune_; }        // oct, raw store (no clamp).
   // Which rendering law this Vco is on. INSPECT ONLY, in the same readback group as the knobs
-  // below: it is the observable form of the GH#19 S0 contract that a runtime-built Vco renders
+  // below: it is the observable form of the contract that a runtime-built Vco renders
   // kMorphRing (the continuous single-knob mapping) and has no product path back to a raw
   // module-development shape. No product path calls setWaveform; setting it does not change the
-  // mapping's BLAMP scaling (each shape keeps the band-limiting it had before #117).
+  // mapping's BLAMP scaling (each shape keeps the band-limiting it had before).
   VcoWaveform waveform() const { return wave_; }
   double morph() const { return morph_; }      // 0..1, post-clamp.
   double shape() const { return duty_; }       // pulse-width duty, post-clamp.
@@ -258,12 +254,12 @@ class Vco {
   double cvAmt_ = 1.0;
   int octSelect_ = 1;                  // default "0".
   double tune_ = 0.0;
-  // frequencyHz() memo (see there); NaN-free sentinels force the first computation.
+  // frequencyHz memo (see there); NaN-free sentinels force the first computation.
   mutable double memoPitchOct_ = -1e300, memoBaseHz_ = -1e300, memoPitchHz_ = 0.0;
   mutable double memoVOct_ = -1e300, memoVOctScale_ = 1.0;
   int subSelect_ = 1;                  // default "-1".
   VcoControlMode cvMode_ = VcoControlMode::kExponential;  // default index 1.
-  // ⭐ PRODUCTION DEFAULT (GH#19 S0, task #117). The mapping is the rendering law, not an opt-in:
+  // ⭐ PRODUCTION DEFAULT. The mapping is the rendering law, not an opt-in:
   // constructing a Vco is enough. `morph_ = 0.5` then lands exactly on the sweep's sine node, so
   // the default SOUND changes from triangle to sine. That is the intended, reported consequence of
   // adopting the mapping — the parameter ID, its 0..1 range, its 0.5 default value and the saved
@@ -272,12 +268,12 @@ class Vco {
   VcoWaveform wave_ = VcoWaveform::kMorphRing;
   double morph_ = 0.5;
   double duty_ = 0.5;                  // CANONICAL base pulse width (SHAPE); PWM never writes it.
-  double pwDepth_ = 0.0;               // smoothed PWM knob depth, 0..1, default 0 (GH#19 S0).
-  double pwCv_ = 0.0;                  // this sample's PWM CV in volts, NOT smoothed (GH#19 S0).
+  double pwDepth_ = 0.0;               // smoothed PWM knob depth, 0..1, default 0.
+  double pwCv_ = 0.0;                  // this sample's PWM CV in volts, NOT smoothed.
   double fmCv_ = 0.0;
   double fmDevHz_ = 0.0;
   double cumPitch_ = 0.0;              // unwrapped pitch phase (cycles).
-  bool syncPending_ = false;           // hard-sync reset requested, applied in tick() (GH#19 S5).
+  bool syncPending_ = false;           // hard-sync reset requested, applied in tick.
 
   // Analytic-source BLAMP triangle slope correction (Esqueda, Välimäki & Bilbao,
   // "Rounding Corners with BLAMP", DAFx-16; residual R(u) from paper Eq.(6) minus
@@ -295,7 +291,7 @@ class Vco {
 
   // The sample this path EMITS at an unwrapped phase `cp`: the waveform shape at frac(cp)
   // plus whatever band-limiting correction is already in force for the active waveform.
-  // tick() uses it both for the sample it writes and to size a hard-sync reset's jump, so
+  // tick uses it both for the sample it writes and to size a hard-sync reset's jump, so
   // the two can never drift apart.
   double emittedAt_(double cp, double step) const {
     double v = waveformSampleAt(frac(cp));
@@ -316,7 +312,7 @@ class Vco {
     return v;
   }
 
-  // GH#19 S3 (#118): the pulse's value-jump correction at an unwrapped phase, in the SAME
+  //  the pulse's value-jump correction at an unwrapped phase, in the SAME
   // normalize-by-phase terms as the triangle correction above: the kernel wants a normalized
   // phase in [0,1) and the normalized per-sample increment, and `frac(cp)` is exactly the phase
   // the naive shape was read at, so the correction is read at that same phase and not at a
@@ -332,7 +328,7 @@ class Vco {
     return polyblepPulseCorrection(frac(cp), effectiveDuty(), step);
   }
 
-  // GH#19 S6 (task #120): the SAW / INVSAW value-jump residual at an unwrapped phase, in the same
+  //  the SAW / INVSAW value-jump residual at an unwrapped phase, in the same
   // normalize-by-phase terms as the two corrections above and for the same reason: the naive shape
   // was read at frac(cp), so the residual is read at that same phase and not at a neighbouring one.
   //
@@ -384,7 +380,7 @@ class Vco {
   // How much of the pulse value-jump correction is in force for the active waveform.
   //  * kMorphRing: the pulse's weight in the mix (wave_map::pulseWeight): 1.0 at the pulse icon,
   //    0.0 where no pulse is mixed in, scaled in between.
-  //  * every other waveform: 0.0. The module-dev raw shapes are unchanged from before #118, so the
+  //  * every other waveform: 0.0. The module-dev raw shapes are unchanged from before, so the
   //    existing kTriangle / kMorph* / drone paths emit bit-identical samples.
   double pulseBlepWeight_() const {
     switch (wave_) {
@@ -396,11 +392,11 @@ class Vco {
   }
 
   // How much of the EXISTING triangle slope correction is in force for the active waveform.
-  //  * kTriangle (module-dev raw triangle): 1.0 — bit-identical to the pre-#117 behaviour.
+  //  * kTriangle (module-dev raw triangle): 1.0 — bit-identical to the earlier behaviour.
   //  * kMorphRing: the triangle's weight in the mix (wave_map::triangleWeight): 1.0 at the
   //    triangle icon and at the end of travel, 0.0 where no triangle is mixed in. It is not a
   //    gain on the output.
-  //  * every other waveform: 0.0 — unchanged from before #117 (the naive morph shapes stay naive).
+  //  * every other waveform: 0.0 — unchanged from before (the naive morph shapes stay naive).
   double triangleBlampWeight_() const {
     switch (wave_) {
       case VcoWaveform::kTriangle:
@@ -449,8 +445,8 @@ inline void Vco::tick(double* out, double* subOut) {
   const double instHz = pitch + fmDevHz_ * fmCv_;  // linear FM.
   const double step = instHz / sr_;
   cumPitch_ += step;
-  // GH#19 S5: a requested hard-sync reset lands HERE, after the advance, so this sample
-  // reads phase 0 (see requestSync()). `jmp` is the value discontinuity the reset creates,
+  // a requested hard-sync reset lands HERE, after the advance, so this sample
+  // reads phase 0 (see requestSync). `jmp` is the value discontinuity the reset creates,
   // measured on the EMITTED signal (shape + the band-limiting correction already in force),
   // not on the raw shape: the correction removes the step the emitted signal actually has.
   bool synced = false;
@@ -480,15 +476,15 @@ inline void Vco::tick(double* out, double* subOut) {
   // on the record (see report/2026-09-12-task111-gh19-s5-hard-sync.md), and `-=0.5*J` is the only
   // one that lowers the residual. Adding the BLAMP slope-jump term at the same instant was
   // MEASURED TO DEGRADE this residual on all 12 cells (+2.26..+4.89 dB), not to lower it --
-  // consistent with re-correcting the peak corner that emittedAt_() already band-limits, since
+  // consistent with re-correcting the peak corner that emittedAt_ already band-limits, since
   // the reset lands on phase 0. It is therefore deliberately NOT covered here and the
   // second-order term is left UNCOVERED (same report).
   if (synced) *out -= 0.5 * jmp;
   // The triangle slope-jump (peak/valley corner) band-limiting correction is applied inside
-  // emittedAt_() above — for the product-reachable A/B-shared triangle only. Morphing
+  // emittedAt_ above — for the product-reachable A/B-shared triangle only. Morphing
   // sine<->triangle stays the naive blend (out of scope). It must NOT be added again here:
   // doing so double-counts it on every triangle sample while leaving every other waveform
-  // correct, which is exactly what the GH#19 S5 "unwired => byte-identical" regression lock
+  // correct, which is exactly what the "unwired => byte-identical" regression lock
   // caught (see report/2026-09-12-task111-gh19-s5-hard-sync.md).
   if (subOut) {
     if (subEnabled()) {
@@ -511,7 +507,7 @@ inline double Vco::waveformSampleAt(double p) const {
     case VcoWaveform::kSine:
       return std::sin(kTwoPi * p);
     case VcoWaveform::kPulse:
-      // bipolar pulse, duty in (0,1). The duty is effectiveDuty(), i.e. the base width plus the
+      // bipolar pulse, duty in (0,1). The duty is effectiveDuty, i.e. the base width plus the
       // PWM modulation; with the PWM depth at its 0 default this is bit-identical to duty_.
       return (p < effectiveDuty()) ? 1.0 : -1.0;
     case VcoWaveform::kMorphSawInvSaw: {
@@ -529,7 +525,7 @@ inline double Vco::waveformSampleAt(double p) const {
       // and the EXISTING duty (the pulse node reads the SHAPE knob). The phase convention is the
       // one already in force here: p = frac(cumPitch_), one cycle per unit.
       // Each panel icon position gives its own shape; between icons the two neighbours crossfade.
-      // The pulse node reads effectiveDuty() (the base width plus this sample's PWM modulation);
+      // The pulse node reads effectiveDuty (the base width plus this sample's PWM modulation);
       // depth 0 leaves it bit-identical to the base width.
       return wave_map::sampleAt(wave_map::kRingPanel, morph_, p, effectiveDuty());
   }
@@ -538,7 +534,7 @@ inline double Vco::waveformSampleAt(double p) const {
 
 // ----------------------------------------------------------------------------
 // VCO triangle slope corrector. The KERNEL now lives in the shared
-// blamp_kernel.h (task #109): the Schmitt ramp has a slope discontinuity of the
+// blamp_kernel.h: the Schmitt ramp has a slope discontinuity of the
 // same kind, so there is one windowed analytic BLAMP and two callers, each with
 // its own shape and its own scale. The kernel's derivation, window, LUT and
 // truncation caveats are documented there and are deliberately NOT duplicated here.

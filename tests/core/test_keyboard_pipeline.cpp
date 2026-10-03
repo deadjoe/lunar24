@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH#8 keyboard identity + fixed-phase end-to-end replay
-// (design/00 §2d/§2e, design/06 §P4, design/07 §1 §3; @Codex 9b573d0a).
+//  keyboard identity + fixed-phase end-to-end replay
+// (§2e,;.
 //
 // This layer exists to uphold, through the REAL pipeline
 //     PerformanceInput -> InputStateMachine -> EventTimebase (canonical sort)
 //                         -> ArpSeq -> KeyboardBehaviour -> tick
 //   * a note/touch press keeps ONE stable identity (source, channel, noteId) through the
 //     whole pipeline; note_on's pitch/pressure/gate_on all carry it;
-//   * note_on is ALL-OR-NONE: translate() writes the whole 3-event transaction or
+//   * note_on is ALL-OR-NONE: translate writes the whole 3-event transaction or
 //     nothing, and EventTimebase enqueueBatch admits the whole batch or leaves both
 //     lanes unchanged (never a partial note rescued by parameter-coalesce/reconcile);
 //   * KeyboardBehaviour keys note state BY IDENTITY and honours the frozen phase order
@@ -19,8 +19,8 @@
 //   * overlap: releasing the non-current note leaves pitch/gate/modulation alone; the
 //     current note release deterministically returns to a still-held note; only the
 //     LAST release closes pressure/vibrato;
-//   * tick() advances the portamento EVERY sample (0 -> 2 V glide is monotone, never
-//     frozen at current());
+//   * tick advances the portamento EVERY sample (0 -> 2 V glide is monotone, never
+//     frozen at current);
 //   * reset clears all held identity / gate / pressure / vibrato / portamento and a
 //     same-sample later note re-opens afresh;
 //   * the arp chord + seq base are kept BY IDENTITY and precisely deleted, so releasing
@@ -51,10 +51,10 @@ double to_double(core::SignalSample v) { return static_cast<double>(v); }
 
 // ------------------------------------------------------------------ test harness --
 
-// The real replay, wired end to end. schedule() routes a PerformanceInput through
-// translate() then the EventTimebase's whole-transaction admission at the input's
-// absolute sample; sendRaw() injects a raw critical event (a host reset edge) straight
-// into the timebase, as the product forwards it. render() runs one processBlock and
+// The real replay, wired end to end. schedule routes a PerformanceInput through
+// translate then the EventTimebase's whole-transaction admission at the input's
+// absolute sample; sendRaw injects a raw critical event (a host reset edge) straight
+// into the timebase, as the product forwards it. render runs one processBlock and
 // hands each due event through ArpSeq (which may transform) into KeyboardBehaviour,
 // recording the ordered stream KeyboardBehaviour observes (for the buffer-invariant).
 struct ReplayHarness {
@@ -304,8 +304,8 @@ static void reset_clears_and_renotes() {
   h.render(64);
   CHECK_TRUE(!h.kb.gate());
   // FIRST tick after reset, BEFORE any long settle: the hard clear must already be
-  // observable here. (glideSettle()/pitchRange() advance the envelope; sampling after
-  // them sees the 0.3s fall decayed to ~0 regardless — the vacuous gap @Codex flagged.)
+  // observable here. (glideSettle/pitchRange advance the envelope; sampling after
+  // them sees the 0.3s fall decayed to ~0 regardless — the vacuous gap flagged.)
   {
     double p = 0.0, c = 0.0;
     h.kb.tick(&p, &c);
@@ -323,7 +323,7 @@ static void reset_clears_and_renotes() {
   CHECK_TRUE(near(h.glideSettle(96000), 0.25, 5e-4));
 }
 
-// Phase-0 reset precedes a same-sample re-note (design/07 §3): the reset edge and a new
+// Phase-0 reset precedes a same-sample re-note: the reset edge and a new
 // note-on land on the SAME absolute sample through the real timebase. The reset must be
 // emitted FIRST (phase 0), and the new note must open FRESH — its first tick's pitch and
 // pressure are the NEW note's (from a cleared 0), not the old note's settled value.
@@ -365,7 +365,7 @@ static void same_sample_reset_renote_fresh_reopen() {
 // ------------------------------------------ portamento glide + buffer invariance --
 
 static void portamento_monotone_and_block_invariant() {
-  // Portamento must ADVANCE every sample (the old tick() that just returned current()
+  // Portamento must ADVANCE every sample (the old tick that just returned current
   // left the glide frozen at its start); monotone, moving, and bounded by the target.
   {
     ReplayHarness g(kb_params(), arp_params(0));
@@ -418,7 +418,7 @@ static void portamento_monotone_and_block_invariant() {
 // ---------------------------------------- translate all-or-none + batch atomics --
 
 static void translate_and_batch_all_or_none() {
-  // translate() is all-or-none: a note_on needs 3 slots, writes nothing unless all 3.
+  // translate is all-or-none: a note_on needs 3 slots, writes nothing unless all 3.
   core::InputStateMachine ism(nullptr, 0);
   std::array<core::ControlEvent, 8> outs{};
   core::PerformanceInput no = noteOn(1.0, 1, 0);
@@ -477,7 +477,7 @@ static void translate_and_batch_all_or_none() {
   // it was rejected at admission (queue never mutated), so continuousOverflow /
   // criticalOverflow / reconcile / pending are all UNCHANGED — only batchRejected+1.
   // (The old code bumped the failing lane's overflow without a reconcile, breaking the
-  // #2 "overflow implies reconcile" invariant — GH#8 must not re-introduce that.)
+  // #2 "overflow implies reconcile" invariant — must not re-introduce that.)
   {
     core::EventTimebase tb;
     for (std::uint32_t i = 0; i < 64; ++i) {  // 64 distinct params fill continuous exactly
@@ -618,7 +618,7 @@ static void arp_note_switch_is_canonical_pitch_then_gateoff_then_gateon() {
   CHECK_TRUE(h.kb.gate());
 
   // Second clock (previousGate=true): the note switch MUST be emitted as
-  // pitch -> gate_off(previous) -> gate_on(new) — the canonical dependency (design/07
+  // pitch -> gate_off(previous) -> gate_on(new) — the canonical dependency (
   // §3), NOT the old gate_off(previous)->pitch->gate_on. ArpSeq sits AFTER the timebase,
   // so this order is emitted directly and is never re-sorted by the comparator.
   h.schedule(clockAt(128));
@@ -659,7 +659,7 @@ static void arp_sync_releases_run_not_reset() {
 // A NON-ZERO vibrato: the pitch output must keep oscillating while any note is held,
 // through a non-last release, and stop only on the LAST release. (A gate(false)-on-every-
 // release mutation would stop the vibrato after the first release while another note is
-// still held — that is the GH#8 partial-release bug this detector exists to catch.)
+// still held — that is the partial-release bug this detector exists to catch.)
 static void vibrato_overlap_last_release_stops() {
   ReplayHarness h(kb_params(0.04, 0, 0.0, 0.0, 0.5, 0.5), arp_params(0));
   h.schedule(noteOn(1.0, 1, 0));  // A

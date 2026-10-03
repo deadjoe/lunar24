@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// TSan-only memory-model PROBE for the StateSnapshotPool (task #37, GH#3 A02).
+// TSan-only memory-model PROBE for the StateSnapshotPool.
 //
 // COMPILED AND RUN ONLY under -fsanitize=thread (gated in CMakeLists.txt; the
 // normal build never builds it) — deliberately, because it has no CTest value
@@ -10,12 +10,12 @@
 // not assert a numeric outcome.
 //
 // TWO tests are registered from THIS ONE file:
-//   * test_state_publish_tsan           (no macro)  — the GUARDED pool.
+//   * test_state_publish_tsan (no macro) — the GUARDED pool.
 //       Acceptance: exit 0, no race. A correct pool never resets a slot a reader
 //       is pinned on (recycleOne CASes 0→kRetiring and defers), so the read stays
 //       clean. If the guard is removed or the memory_order weakened, this goes
 //       red (exit non-zero) — the regression guard.
-//   * test_state_publish_tsan_selftest  (-DLUNAR24_PROBE_SELFTEST) — the SAME probe
+//   * test_state_publish_tsan_selftest (-DLUNAR24_PROBE_SELFTEST) — the SAME probe
 //       with recycleOne's pin guard short-circuited in state_snapshot.h.
 //       Acceptance: MUST exit 66 (a TSan data-race report). This PROVES the
 //       committed probe itself is capable of failing — a detector that has never
@@ -24,7 +24,7 @@
 //       dead probe. (A probe compiled WITHOUT the macro uses the guarded pool and
 //       is the clean half.)
 //
-// HOW IT DETECTS THE RACE — free-running but BOUNDED, @Claude's required shape.
+// HOW IT DETECTS THE RACE — free-running but BOUNDED,.
 // Both threads spin `kRounds` times in a tight loop; the ONLY cross-thread channel
 // is the pool's own atomics, so there is no happens-before edge between the reader
 // and the recycler except through those atomics, and TSan reports competing access.
@@ -70,7 +70,7 @@ struct ProbeSnapshot {
 // is used — a suspend would force the collision every time but DRAMATICALLY shorten
 // the pool's healthy lifetime (a guard-less pool degrades under that rate) and —
 // worse — make the probe's "red" depend on the author choosing the right sleep, the
-// exact shape @Claude rejected. Free-running + bounded is both terminable and, per
+// exact shape rejected. Free-running + bounded is both terminable and, per
 // the measurement, reliably red when the guard is gone.
 constexpr int kRounds = 50000;
 using Pool = core::StateSnapshotPool<ProbeSnapshot, 4>;

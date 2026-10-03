@@ -1,41 +1,41 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_host_engine_oracle.cpp — the strong product oracle for GH#4 8B2 (task#72).
+// test_host_engine_oracle.cpp — the strong product oracle for.
 //
 // This ONE CTest drives the framework-free StandaloneAudioEngine (the host runtime owner)
 // — the SAME type LunarHostPlugin holds BY VALUE and the SAME delegate ProcessBlock calls.
 // It does NOT re-implement the ProcessBlock algorithm; it drives the production owner
-// through its public `prepare()` / `processBlock()` surface, and the owner forwards the
-// block to the task#71 DeviceAdapter::renderBlock. Every render acceptance criterion below
+// through its public `prepare` / `processBlock` surface, and the owner forwards the
+// block to the DeviceAdapter::renderBlock. Every render acceptance criterion below
 // is exercised on that exact path, so a host that bypasses the owner (or the owner that
 // bypasses the adapter) has nowhere to hide.
 //
-// What is asserted (the @Codex 8B2 mandate, §3, narrowed to the host-owner slice):
-//   1. DEFAULT PLAN HONESTY      — prepare maps the REAL channel counts to a frozen route:
+// What is asserted (the mandate, §3, narrowed to the host-owner slice):
+//   1. DEFAULT PLAN HONESTY — prepare maps the REAL channel counts to a frozen route:
 //                                  0-in -> Zero, 1-in -> DuplicateOne (a mono mic feeds
 //                                  EXT and PREAMP), >=2-in -> Distinct(0,1); 2-3-out -> WET L/R only,
-//                                  >=4-out -> WET L/R + DRY A/B. This is the mutation-⑤
+//                                  >=4-out -> WET L/R + DRY A/B. This is the mutation-
 //                                  detector (a "1-in silently copied to EXT+PREAMP" makes
 //                                  inputCh[1]==0 -> RED).
-//   2. REAL 1-in/2-out RENDER    — prepare -> multi-block render; the 2 outputs are NOT
+//   2. REAL 1-in/2-out RENDER — prepare -> multi-block render; the 2 outputs are NOT
 //                                  silence, and the trace follows the applied input (it is a
 //                                  function of the runtime, not a fixed sink).
-//   3. REAL 4-WAY WET+DRY        — prepare 1-in/4-out; ALL FOUR logicals carry signal, DRY
+//   3. REAL 4-WAY WET+DRY — prepare 1-in/4-out; ALL FOUR logicals carry signal, DRY
 //                                  A/B are VCO taps (bit-identical across a different EXT),
 //                                  and WET L/R respond to the EXT input. This is the DSP
 //                                  truth that a host-side frame loop / scale / channel
 //                                  reorder / second output bank FAILS.
-//   4. SAMPLE-RATE DETERMINISM   — 44.1/48/88.2/96 kHz sampleRate() is the REAL value (not
+//   4. SAMPLE-RATE DETERMINISM — 44.1/48/88.2/96 kHz sampleRate is the REAL value (not
 //                                  a fixed 48000) and same-seed renders are bit-identical.
-//   5. BLOCK PARTITIONS          — one 64-frame block == four 16-frame blocks (the owner
+//   5. BLOCK PARTITIONS — one 64-frame block == four 16-frame blocks (the owner
 //                                  delegate is frame-indexed, not chunk-relative).
-//   6. PREPARE ATOMIC FAIL       — NaN/Inf/<=0 rate, illegal block size, <2 outputs, <0
-//                                  inputs -> prepare() false, isReady() false, EVERY
+//   6. PREPARE ATOMIC FAIL — NaN/Inf/<=0 rate, illegal block size, <2 outputs, <0
+//                                  inputs -> prepare false, isReady false, EVERY
 //                                  inspectable field cleared (no half-write), and the next
 //                                  render is DroppedNotReady with zeroed outputs.
-//   7. ALLOCATOR (separate TU)   — the full prepared render path allocates 0 bytes.
-//   8. CHURN                     — repeated prepare() (release+re-install of the definition)
+//   7. ALLOCATOR (separate TU) — the full prepared render path allocates 0 bytes.
+//   8. CHURN — repeated prepare (release+re-install of the definition)
 //                                  leaves the owner able to render (no dangling pointer),
 //                                  and the owner address is stable.
 
@@ -282,7 +282,7 @@ void sample_rate_determinism() {
   constexpr std::uint64_t kSeed = 404u;
   const double rates[4] = {44100.0, 48000.0, 88200.0, 96000.0};
 
-  // (a) sampleRate() is the REAL value (a fixed-48000 engine -> RED).
+  // (a) sampleRate is the REAL value (a fixed-48000 engine -> RED).
   for (int i = 0; i < 4; ++i) {
     StandaloneAudioEngine e;
     CHECK(e.prepare(kSeed, rates[i], kF, 1, 4));
@@ -431,7 +431,7 @@ void churn() {
 // The allocator probe uses it to hold the EventTimebase under load INSIDE the measured window: a
 // real host keyboard/MIDI producer enqueues while audio renders, so the drain paths that drives
 // (same-frame ordering, future retention, late delivery, both capacity boundaries) must be
-// alloc-0 / free-0 too (F-1, task#101).
+// alloc-0 / free-0 too (F-1).
 bool enqueue_ev(SynthRuntime* rt, ControlEventKind kind, double value, NoteId id,
                 std::uint64_t sample, ParameterId pid = ParameterId{0}) {
   ControlEvent e{};
@@ -456,10 +456,10 @@ void allocator_probe() {
   double* outp[4] = {out[0], out[1], out[2], out[3]};
 
   // The WHOLE owner-delegate window is measured, INCLUDING the first render. There is no lazy
-  // init on the prepare->render path (the definition is fully built in prepare(); renderBlock is
+  // init on the prepare->render path (the definition is fully built in prepare; renderBlock is
   // a pure delegate), so the entire owner delegate must be alloc-0 AND free-0 from the very first
   // processBlock. Measuring the whole window (not skipping a warm-up render) is what makes a
-  // single "pre-allocate once, free it in a callback" defect (the @Codex false-green scenario)
+  // single "pre-allocate once, free it in a callback" defect (the false-green scenario)
   // get caught: an alloc-only probe that skips the first block would still report zero. This is
   // the whole delegate "0 alloc / 0 free" contract — and it counts BOTH unaligned and aligned
   // (C++17 over-aligned) allocations, because the allocator TU replaces the aligned new/delete
@@ -468,9 +468,9 @@ void allocator_probe() {
   const std::size_t freeBefore = g_freeCount;
   for (int i = 0; i < 21; ++i) render(e, inp, outp, 1, 4, kF);  // includes the "first" block.
   CHECK(g_allocCount == before);  // the owner delegate (-> DeviceAdapter::renderBlock) allocates 0.
-  CHECK(g_freeCount == freeBefore);  // ... and frees 0 (a callback reset/free is the defect @Codex flagged).
+  CHECK(g_freeCount == freeBefore);  // ... and frees 0 (a callback reset/free is the defect flagged).
 
-  // ---- F-1 (task#101): the SAME window with events PENDING and DELIVERED ---------------------
+  // F-1: the SAME window with events PENDING and DELIVERED ---------------------
   // The product render entry now drains the ONE EventTimebase per frame (DeviceAdapter::renderBlock
   // -> SynthRuntime::processBlock(&in, 1, &out, true)), so the drain itself must stay alloc-0 /
   // free-0 as well. The enqueues below are deliberately INSIDE the measured window: a real host
@@ -532,9 +532,9 @@ void allocator_probe() {
   ::operator delete(p);
   CHECK(g_freeCount > fSnap);
   // ... then over-aligned (the C++17 `alignas(64)` path that used to bypass the counters and gave
-  // the @Codex false-green). Use the DIRECT aligned allocation-function calls, not an idiomatic
-  // `new OveralignedProbe()`: allocation-elision (GCC/Clang/MSVC turn a tightly-scoped `new T()` with
-  // a matching `delete` into a stack object at -O1/-O3) would elide a `new OveralignedProbe()` to the
+  // the false-green). Use the DIRECT aligned allocation-function calls, not an idiomatic
+  // `new OveralignedProbe`: allocation-elision (GCC/Clang/MSVC turn a tightly-scoped `new T` with
+  // a matching `delete` into a stack object at -O1/-O3) would elide a `new OveralignedProbe` to the
   // stack, never call the replaced aligned operator new, and leave the counter unmoved — exactly the
   // Debug-green / Release-RED asymmetry that must not ship. An explicit `::operator new(size_t,
   // align_val_t)` / `::operator delete(void*, align_val_t)` call cannot be elided, so the aligned
@@ -592,7 +592,7 @@ void max_block_guard() {
   CHECK(e.isReady());
   CHECK(e.blockSize() == 16);
 
-  // A block LARGER than the prepared max is a kernel/wiring defect. That is the @Codex finding
+  // A block LARGER than the prepared max is a kernel/wiring defect. That is the finding
   // about maxBlockSize being only recorded, never enforced: it must be DroppedIllegal + silence
   // with an exact counter, not a silent Rendered.
   double in[1][kF] = {{0}}, out[2][kF];
@@ -619,7 +619,7 @@ void max_block_guard() {
 }  // namespace
 
 int main() {
-  std::printf("== GH#4 8B2: standalone host runtime owner (engine_ -> DeviceAdapter) ==\n");
+  std::printf("== : standalone host runtime owner (engine_ -> DeviceAdapter) ==\n");
   default_plan();
   mono_input_reaches_preamp();
   real_1in_2out();

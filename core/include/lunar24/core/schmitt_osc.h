@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// SchmittOsc — P3-②: a Schmitt-trigger relaxation oscillator. This is a FIRST-
+// SchmittOsc —: a Schmitt-trigger relaxation oscillator. This is a FIRST-
 // CLASS oscillator, NOT the CV→gate comparator latch in sink_interpret.h. The
 // distinction matters (and is why the two must coexist, each written on its own):
 //
@@ -13,9 +13,9 @@
 //     flips, so the window vT and the charge rate jointly set the PERIOD. It is a
 //     genuine oscillator with a well-defined frequency.
 //
-// FREQUENCY MODEL — the "rate-unit trap" @Claude named. The ramp advances by
+// FREQUENCY MODEL — the "rate-unit trap" named. The ramp advances by
 //
-//     ramp += sign * chargeRate / sampleRate        (per sample)
+//     ramp += sign * chargeRate / sampleRate (per sample)
 //
 // i.e. chargeRate is a per-SECOND rate scaled by dt = 1/sampleRate. It is NOT a
 // fixed per-sample increment. A per-sample constant step would make the frequency
@@ -31,7 +31,7 @@
 //
 // DISCRETE QUANTIZATION (honest, inherent, documented): the ramp can only flip
 // direction on an integer sample, so the real period is
-//       period = 2 * ceil(1 / step) samples,  step = chargeRate / sampleRate,
+//       period = 2 * ceil(1 / step) samples, step = chargeRate / sampleRate,
 // i.e. the frequency is `sr / (2 * ceil(sr/(2*vT*freqBase*(1+tolerance))))` and
 // is NEVER slower than the continuous value by more than one sub-sample per half
 // swing (bounded by step, typically a few %). This is a genuine relaxation-
@@ -79,7 +79,7 @@ class SchmittOsc {
     direction_ = 1.0;  // charge from 0 toward +vT first; sign flips on threshold.
   }
 
-  // NEW-voice PITCH control (design/01 §3, provisional mapping). Scales the per-
+  // NEW-voice PITCH control (provisional mapping). Scales the per-
   // second charge rate by 2^(st/12); because freq = chargeRate/(4*vT), the measured
   // frequency scales by 2^(st/12) at every sample rate. The rate-unit property
   // (dt = 1/sr scaling, NOT a fixed per-sample step) is preserved — a pure fixed
@@ -95,7 +95,7 @@ class SchmittOsc {
     pitchScale_ = std::pow(2.0, semitones / 12.0);
   }
 
-  // NEW-voice FM/AM modulation (design/01 §3, #45). One external modulation source
+  // NEW-voice FM/AM modulation. One external modulation source
   // (set via setMod, typically the LF square) drives BOTH kinds of modulation, the
   // two "factory" FM/AM switches choosing which are engaged (see the 4-combo
   // acceptance):
@@ -103,8 +103,8 @@ class SchmittOsc {
   //     +/-fmDevHz as mod sweeps -1..+1 (freq = chargeRate/(4vT) => an absolute
   //     fDevHz adds 4*vT*fDevHz*mod to the per-second charge rate).
   //   * AM — amDepth in [0,1) is the amplitude index: amp = (1 + amDepth*mod).
-  // With fmDevHz = amDepth = 0 and the gate on, tick() is bit-identical to the
-  // pre-#45 oscillator, so every existing SchmittOsc test stays green.
+  // With fmDevHz = amDepth = 0 and the gate on, tick is bit-identical to the
+  // earlier oscillator, so every existing SchmittOsc test stays green.
   void setMod(double m) { mod_ = m; }
   void setFmDevHz(double hz) { fmDevHz_ = (hz < 0.0 ? 0.0 : hz); }
   // Exponential FM: the frequency is multiplied by 2^(fmOctaves * mod).
@@ -165,7 +165,7 @@ class SchmittOsc {
 
  private:
   // ---------------------------------------------------------------------------
-  // Rail-clamp slope correction (task #109 / GH#19 S1).
+  // Rail-clamp slope correction.
   //
   // The ramp's SLOPE jumps by 2r at every rail clamp (from +r to -r at +vT, and
   // back at -vT, where r = rate/sampleRate is the per-sample ramp increment), so the

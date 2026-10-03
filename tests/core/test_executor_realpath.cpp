@@ -1,26 +1,26 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P3-⑥ Debt 2 — the `real_path` branch actually routed through the executor.
-// P2-③ proved the COMPILER *decides* `real_path` vs `z_inverse` at the plan level
+//  Debt 2 — the `real_path` branch actually routed through the executor.
+//  proved the COMPILER *decides* `real_path` vs `z_inverse` at the plan level
 // (test_graph_compiler.cpp); this file proves an EXECUTOR that consumes the plan
 // honors the decision, and lands the consume-rule for real_path feedback.
 //
-// @Claude's rulings folded in (msg de1a60e8):
+// s folded in:
 //   * The judge has TWO halves, and invariance is NECESSARY not SUFFICIENT:
 //       - partition invariance across the mixed non-uniform partition
 //         (64,100,37,128,7,256,91) — a consistency check; and
 //       - an ABSOLUTE reference: the realized loop delay must equal `delaySamples`
 //         exactly, NOT merely "the same under every partition". A wrong-but-consistent
 //         implementation passes invariance and is only caught by the absolute anchor.
-//   * negative-1 (block-lazy / one-buffer break, design/07 §4 line 107) is
+//   * negative-1 (block-lazy / one-buffer break, line 107) is
 //     partition-VARIANT -> the partition judge catches it.
 //   * negative-2 (read `moduleOut[source]` for a real_path edge, the exact bug the
-//     P2-③ MiniExec scaffold commits) is partition-INVARIANT but off-by-one -> only
+//      MiniExec scaffold commits) is partition-INVARIANT but off-by-one -> only
 //     the absolute reference catches it. This FIRES on a bug that really happened.
 //   * The consume-rule is a core CONTRACT (graph_compiler.h), not just a test, so new
 //     code is held to it. The existing MiniExec real_path read does NOT enter that
-//     contract — it is P2-③ test scaffolding, proven off-by-one (recorded in FINDINGS).
+//     contract — it is test scaffolding, proven off-by-one (recorded in FINDINGS).
 
 #include "mini_test.h"
 
@@ -45,7 +45,7 @@ static constexpr core::ModuleId kA{1}, kB{2};
 static constexpr core::JackId A_out{101}, A_in{102};
 static constexpr core::JackId B_out{201}, B_in{202};
 
-// The mixed non-uniform partition (legacy P2-①). The design/07 §4 line-107 invariant
+// The mixed non-uniform partition (legacy). The line-107 invariant
 // says 64/128/256 buffer splits must not change feedback timing.
 static const std::vector<std::uint32_t> kMixed = {64, 100, 37, 128, 7, 256, 91};
 
@@ -67,7 +67,7 @@ static core::GraphModule mod(core::ModuleId id, const core::ModuleExecutionContr
   return core::GraphModule{id, c};
 }
 
-// Build the plan. Returns it, asserting the compiler chose real_path (the P2-③
+// Build the plan. Returns it, asserting the compiler chose real_path (the
 // detector, re-checked here so this test cannot pass if the decision regresses).
 static core::CompiledGraph make_realpath_plan() {
   const core::JackDescriptor jacks[] = {
@@ -85,7 +85,7 @@ static core::CompiledGraph make_realpath_plan() {
   const core::CompiledRegion& reg = res.graph.regions[0];
   CHECK_TRUE(reg.kind == core::RegionKind::cyclic);
   CHECK_EQ(reg.feedback.size(), 1u);
-  // The 3-sample internal path must NOT be waived to z^-1 (P2-③ addition ⑥).
+  // The 3-sample internal path must NOT be waived to z^-1 (addition).
   CHECK_TRUE(reg.feedback[0].delay == core::FeedbackDelay::real_path);
   CHECK_EQ(reg.feedback[0].delaySamples, 3.0);
   CHECK_FALSE(reg.feedback[0].delay == core::FeedbackDelay::z_inverse);
@@ -98,14 +98,14 @@ static core::CompiledGraph make_realpath_plan() {
 // CORRECT executor (DelayState): realizes exactly `delaySamples` of loop delay by
 // reading the feedback from a per-edge delay ring of depth = delaySamples. The ring
 // holds the loop-forward value (A's output); the consumer (A) reads the value from
-// delaySamples samples ago. This is the consume-rule @Claude had fixed into the
+// delaySamples samples ago. This is the consume-rule had fixed into the
 // core contract. Recurrence: A(n) = A(n-3) + ext(n).
 //
 // The constant drive ext=1.0 makes the loop shape unambiguous: A(n)=floor(n/3)+1
 // for a 3-sample loop, floor(n/4)+1 for the off-by-one, n+1 for a 1-sample loop,
 // floor(n/block)+1 for a one-buffer break.
 
-//                          n 0 1 2 3 4 5 6 7   (ext=1, A(n)=A(n-D)+1)
+//                          n 0 1 2 3 4 5 6 7 (ext=1, A(n)=A(n-D)+1)
 static std::vector<double> expected_loop(std::size_t frames, int D) {
   std::vector<double> e(frames);
   for (std::size_t i = 0; i < frames; ++i) e[i] = static_cast<int>(i / static_cast<std::size_t>(D)) + 1;
@@ -142,8 +142,8 @@ static std::vector<double> run_delay_state(int delaySamples, const std::vector<d
 }
 
 // A module B that is a REAL 3-sample FIFO, read through the executor's per-edge
-// "last module output" shortcut (the off-by-one the P2-③ MiniExec commits). This is
-// the EXACT case @Claude re-checked: B runs AFTER A in the pass, so when A runs it
+// "last module output" shortcut (the off-by-one the MiniExec commits). This is
+// the EXACT case re-checked: B runs AFTER A in the pass, so when A runs it
 // reads moduleOut[B] = B's output from the PREVIOUS pass = A_out(n-4) => loop 4.
 static std::vector<double> run_module_out(int delaySamples, const std::vector<double>& ext,
                                           const std::vector<std::uint32_t>& blocks) {
@@ -192,7 +192,7 @@ static std::vector<double> run_waive_z_inverse(const std::vector<double>& ext,
 }
 
 // A module B read as a one-BUFFER (block-lazy) delay: the feedback is updated once at
-// a block boundary and held for the block. This is design/07 §4 line-107's forbidden
+// a block boundary and held for the block. This is line-107's forbidden
 // "one-audio-buffer delay" — the partition judge MUST catch it as partition-variant.
 static std::vector<double> run_block_lazy(const std::vector<double>& ext,
                                           const std::vector<std::uint32_t>& blocks) {
@@ -244,10 +244,10 @@ static void block_lazy_breaks_partition_invariance() {
 }
 
 // ----------------------------------------------------------------------------
-// negative-2: the exact P2-③ MiniExec bug — read moduleOut[source] for a real_path
+// negative-2: the exact MiniExec bug — read moduleOut[source] for a real_path
 // edge. Partition-INVARIANT (the judge would NOT catch it) but off-by-one (loop
 // delay 4, not 3). ONLY the absolute reference catches it. This is the methodological
-// point @Claude flagged: invariance is a necessary, not sufficient, check.
+// point flagged: invariance is a necessary, not sufficient, check.
 // ----------------------------------------------------------------------------
 static void module_out_read_is_off_by_one_and_judge_blind() {
   auto plan = make_realpath_plan();
@@ -285,7 +285,7 @@ static void waive_z_inverse_partition_invariant_but_wrong() {
 }
 
 int main() {
-  std::printf("== P3-⑥ Debt 2: real_path routed through the executor (invariant + absolute reference) ==\n");
+  std::printf("== Debt 2: real_path routed through the executor (invariant + absolute reference) ==\n");
   correct_executor_invariant_and_reference();
   block_lazy_breaks_partition_invariance();
   module_out_read_is_off_by_one_and_judge_blind();

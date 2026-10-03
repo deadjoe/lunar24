@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// AudioRateModulation: the audio-rate modulation-signal semantic (design/07 §3).
+// AudioRateModulation: the audio-rate modulation-signal semantic.
 // This is distinct from a discrete event (event_timebase.h) and from a smoothed
 // continuous parameter (parameter_smoothing.h). An audio-rate signal carries
 // per-sample information about the waveform itself — it MUST be evaluated once
@@ -21,10 +21,10 @@ namespace lunar24::core {
 // length.
 class AudioRateModulation {
  public:
-  // No implicit 48k default (design/07 §5: core is configured by the live host
+  // No implicit 48k default (core is configured by the live host
   // sample rate). A modulation whose rate has NOT been set yet (sample_rate_ stays
-  // 0.0) is inert: recompute() leaves phaseStep_ at 0, so the phase never advances
-  // and next() emits a constant. Making the rate a required constructor argument —
+  // 0.0) is inert: recompute leaves phaseStep_ at 0, so the phase never advances
+  // and next emits a constant. Making the rate a required constructor argument —
   // and the members default to 0.0, not 48000 — turns an omitted rate into either a
   // compile error (two-arg form needs it) or an inert DC (default form), never a
   // silently doubled frequency.

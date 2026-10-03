@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// PolivoksFilter — P3-⑤: the DUAL LP/BP VCF, a double 12 dB (2-pole) POLIVOKS
+// PolivoksFilter —: the DUAL LP/BP VCF, a double 12 dB (2-pole) POLIVOKS
 // filter (manual L1118-1153, registry module id2 "Dual 12dB Polivoks VCF").
-// Signal chain: → MIX/PAN → VCF → DISTORTION → WET OUT L/R (design/01 §1).
+// Signal chain: → MIX/PAN → VCF → DISTORTION → WET OUT L/R.
 //
 // PROVENANCE (the frozen registry, generated/lunar24/registry.hpp, is the
 // implementation basis; every claim below mirrors it and marks evidence strength):
@@ -16,7 +16,7 @@
 //     bilinear-transformed analog SVF of Andrew Simper's SvfLinearTrapOptimised2 — whose
 //     lowpass has unity DC gain INDEPENDENT of the resonance damping `damp`, so raising
 //     resonance adds a peak near the cutoff but does not drop the low band. That is the
-//     property must-test #1 verifies. (GH#20 task #88: the Chamberlin recursion was
+//     property must-test #1 verifies. (the Chamberlin recursion was
 //     replaced, since its sr/8 stability cap produced the knob dead-zone.)
 //   * FREQ (vcf.l_freq id13 / vcf.r_freq id18) — "manual filter cutoff frequency"
 //     (L1138). unit "norm" 0..1, default 0.3, CONFIRMED. The manual gives NO cutoff
@@ -31,22 +31,20 @@
 //     cutoff by 2^(mod*cv/oct) is a PROVISIONAL model (no CV range / V-oct figure).
 //   * BP-LP (vcf.l_bp_lp id19 / vcf.r_bp_lp id36) — "BP-LP – filter mode" (L1149).
 //     unit "selector", range 0..1, step 1.0, positions["bp","lp"], CONFIRMED.
-//     TWO-STATE (a selector, NOT a continuous morph — @Claude 187d8313 (b)). The
-//     generated registry literal is `default: 0.0`, which selects positions[0]="bp"
-//     (filter defaults to BP). NOTE the adjudicator's GO cited "default 1": the
-//     frozen-registry literal is authoritative and is followed here; the
-//     discrepancy is deliberately kept visible (not silently resolved).
+//     TWO-STATE (a selector, not a continuous morph). The registry default is 1 =
+//     positions[1]="lp", which the machine applies when it is built, so the panel
+//     starts in LP. This class on its own starts at 0 (BP) until a mode is set.
 //   * LINK (vcf.link id20) — "when switched on links CV on filter 1 to control both
 //     filters 1 and 2" (L1147). unit "selector" positions["off","on"], default off,
 //     CONFIRMED. An ACTIVE internal switch (distinct from the passive route below).
 //   * CV L / CV R (vcf.cv_l_in id10 / vcf.cv_r_in id11) — "you can control/automate
 //     filter cutoff via CV using CV in. CV L is normally connected to CV R... if
 //     there is no CV-signal in the CV R" (L1142-1143). The NORMALLING (CV L -> CV R
-//     when CV R is unplugged) is the P2-② NormalizedRoute
+//     when CV R is unplugged) is the NormalizedRoute
 //     route.vcf_cv_l_to_cv_r (registry, confirmed). It is a GRAPH fact, re-presented
 //     here and NOT re-coded (the graph resolves which voltage reaches cv_r_in; this
 //     header only consumes the resolved voltages). The INTERACTION
-//     "LINK on + CV R plugged" has NO manual ruling; per @Claude (a) the provisional
+//     "LINK on + CV R plugged" has NO manual ruling; (a) the provisional
 //     default is "LINK overrides plugging", marked UN-EVIDENCED and added to the
 //     P3-exit 待取证 list.
 //
@@ -71,7 +69,7 @@ class PolivoksFilter {
       channel_[i].freq = 0.3;  // registry default.
       channel_[i].res = 0.0;   // registry default.
       channel_[i].mod = 0.0;   // registry default.
-      channel_[i].mode = 0.0;  // registry default 0.0 -> positions[0]="bp".
+      channel_[i].mode = 0.0;  // BP until set; the machine applies the registry default (LP).
     }
   }
 
@@ -91,8 +89,8 @@ class PolivoksFilter {
   void setLink(bool on) { link_ = on; }
   bool link() const { return link_; }
 
-  // GH#6: per-channel VCF input-stage saturation drive (the input-level driven
-  // nonlinearity of design/07 §7). 0 = exact passthrough; >0 folds a large input
+  // per-channel VCF input-stage saturation drive (the input-level driven
+  // nonlinearity of). 0 = exact passthrough; >0 folds a large input
   // toward a LOWER normalised gain while the small-signal slope stays 1, so the
   // channel is linear near zero and level-dependent at high input. L and R drives
   // are fully independent (a profile supplies the per-side value).
@@ -101,7 +99,7 @@ class PolivoksFilter {
   }
   double inputDrive(int ch) const { return idx_(ch) ? channel_[ch].inputDrive : 0.0; }
 
-  // Panel-control READBACK (task #78): the applied per-channel knob positions, so a
+  // Panel-control READBACK: the applied per-channel knob positions, so a
   // product oracle can verify a state restore truly reached THIS filter (post-clamp
   // where the setter clamps). modeIsBp: true = bandpass, false = lowpass (position).
   double freq(int ch) const { return idx_(ch) ? channel_[ch].freq : 0.0; }
@@ -109,7 +107,7 @@ class PolivoksFilter {
   double mod(int ch) const { return idx_(ch) ? channel_[ch].mod : 0.0; }
   bool modeIsBp(int ch) const { return idx_(ch) ? (channel_[ch].mode == kModeBp) : false; }
 
-  // Real-filter state readback (task #88): the two integrator states, so a product
+  // Real-filter state readback: the two integrator states, so a product
   // oracle can verify reset truly reached THIS filter. Independent per channel.
   double ic1eq(int ch) const { return idx_(ch) ? channel_[ch].ic1eq : 0.0; }
   double ic2eq(int ch) const { return idx_(ch) ? channel_[ch].ic2eq : 0.0; }
@@ -135,7 +133,7 @@ class PolivoksFilter {
   // ------------------------------------------------------------------ reset --
   // Reset the two integrator states (per channel, independent) to zero. The states
   // are consumed same-frame and there is no added feedback delay; reset clears any
-  // retained transient. GH#20 task #88 reset / real-state read seam.
+  // retained transient. reset / real-state read seam.
   void reset() {
     for (int i = 0; i < 2; ++i) {
       channel_[i].ic1eq = 0.0;
@@ -152,14 +150,14 @@ class PolivoksFilter {
   static constexpr double kCvVoltsPerOctave = 1.0; // CV -> octave depth (provisional).
   static constexpr double kDampMax = 2.0;          // res=0 (flat response).
   static constexpr double kDampMin = 0.1;          // res=1 (max resonance, kept >0).
-  // PROVISIONAL software safety cap (GH#20 task #88): the effective cutoff is capped
+  // PROVISIONAL software safety cap: the effective cutoff is capped
   // at min(20000 Hz, 0.49·sr) so the prewarped `g = tan(pi·fc/sr)` stays away from its
   // pi/2 singularity (fc/sr < 0.49 < 0.5). This is a software safety POLICY, NOT a
   // stability theorem; 0.49 is not a TPT/ZDF boundary (0.45351 is not one either).
   static constexpr double kCutoffCapRatioSoft = 0.49;
   // PROVISIONAL input-stage drive floor: with a drive > 0 the fold saturates toward
   // +-1/drive; a small (< ~0.15) drive is numerically near-linear across the whole
-  // nominal range, so the GH#6 profile chooses drives in [0.6, 1.0] to make the
+  // nominal range, so the profile chooses drives in [0.6, 1.0] to make the
   // level dependence measurable. 0 = passthrough (no nonlinearity). No manual value.
 
  private:
@@ -168,7 +166,7 @@ class PolivoksFilter {
     double mode = 0.0;   // 0.0=bp, 1.0=lp (positions[0/1]).
     double ic1eq = 0.0, ic2eq = 0.0;  // two-integrator trapezoidal (TPT/ZDF) states.
     double sr = 0.0;
-    double inputDrive = 0.0;  // GH#6 per-channel input-stage drive (L/R independent).
+    double inputDrive = 0.0;  //  per-channel input-stage drive (L/R independent).
     // Coefficient memo (pure caches of pow/tan results; see effCutoffHz_ / tick_).
     mutable double memoFreq = -1.0, memoSr = 0.0, memoBaseFc = 0.0;
     mutable double memoShift = 0.0, memoShiftScale = 1.0;
@@ -218,7 +216,7 @@ class PolivoksFilter {
     return fc;
   }
 
-  // GH#6 input-stage nonlinearity: odd, monotone, bounded (|y| <= 1/drive), and with
+  //  input-stage nonlinearity: odd, monotone, bounded (|y| <= 1/drive), and with
   // a unit small-signal slope. A large input folds toward a LOWER normalised gain,
   // so low/high amplitude sweep differ (the input-level dependence) while small
   // signals stay ~linear. drive==0 is an exact passthrough (no fold).
@@ -227,8 +225,8 @@ class PolivoksFilter {
     return std::tanh(c.inputDrive * x) / c.inputDrive;
   }
 
-  // Two-integrator trapezoidal (TPT/ZDF) state-variable filter (GH#20 task #88).
-  // Recursion per @Codex numeric contract, matching Andrew Simper's
+  // Two-integrator trapezoidal (TPT/ZDF) state-variable filter.
+  // Recursion numeric contract, matching Andrew Simper's
   // SvfLinearTrapOptimised2 ("The Art of VA Filter Design", cytomic SVF):
   //   g = tan(pi·fc/sr), k = damp (the SAME 2−1.9·res map), a1 = 1/(1+g(g+k)),
   //   a2 = g·a1, a3 = g·a2; v3 = x − ic2eq; v1 = a1·ic1eq + a2·v3;
@@ -237,7 +235,7 @@ class PolivoksFilter {
   // so raising resonance does not drop the low end (the Polivoks-defining property).
   double tick_(Channel& c, double x) {
     if (c.sr != sr_) { c.sr = sr_; }
-    x = inputStage_(c, x);  // GH#6: level-dependent, per-channel input nonlinearity.
+    x = inputStage_(c, x);  // level-dependent, per-channel input nonlinearity.
     const double fc = effCutoffHz_(c, cvEffFor_(c));
     if (fc != c.memoFc) {
       c.memoFc = fc;

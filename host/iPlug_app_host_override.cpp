@@ -6,7 +6,7 @@
 // identifier — never the Apache-only form, which would misstate the upstream code's zlib terms.
 //
 // host/iPlug_app_host_override.cpp — a Lunar 24 FORK of the pinned third_party/iPlug2/IPlug/APP/
-// IPlugAPP_host.cpp at submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4 (GH#4 8B3, task#73).
+// IPlugAPP_host.cpp at submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4.
 // The body is the upstream iPlug 2 library (its banner below is retained unchanged); the Lunar
 // modifications are Apache-2.0 and live in InitAudio/AudioCallback/TryToChangeAudio, named below.
 /*
@@ -20,18 +20,18 @@
 */
 
 // ---------------------------------------------------------------------------
-// Lunar 24 modification (GH#4 8B3, task#73).
+// Lunar 24 modification.
 // This is a repo-owned FORK of the pinned third_party/iPlug2/IPlug/APP/IPlugAPP_host.cpp at the
 // submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4. The ONLY changes from upstream are:
-//   * InitAudio() now negotiates the ACTUAL stream plan from the real device channel capability
+//   * InitAudio now negotiates the ACTUAL stream plan from the real device channel capability
 //     (lunar24::host::negotiate_stream_plan) and installs that actual connected count via
-//     LunarHostPlugin::setActualChannelPlan() BEFORE OnReset, opens only that many channels, and
+//     LunarHostPlugin::setActualChannelPlan BEFORE OnReset, opens only that many channels, and
 //     fails-closed (installs 0-in/0-out + OnReset -> owner NOT-READY) on any negotiation/open/
 //     start failure. The input/output pointer lists are cleared+rebuilt to the actual count each
 //     open so a 2<->4 hot-swap can never accumulate stale pointers.
-//   * AudioCallback() reads nins/nouts from the pointer-list sizes (the ACTUAL count), not from
-//     MaxNChannels().
-//   * TryToChangeAudio() allows a TRUE output-only open (input off -> inert input id, never a
+//   * AudioCallback reads nins/nouts from the pointer-list sizes (the ACTUAL count), not from
+//     MaxNChannels.
+//   * TryToChangeAudio allows a TRUE output-only open (input off -> inert input id, never a
 //     forced input, no hard `if (inputID && outputID)` gate) and on a device lookup/disappear
 //     failure quiesces (CloseAudio) then invalidates to 0-in/0-out + OnReset (owner NOT-READY)
 //     instead of only returning false.
@@ -49,7 +49,7 @@
 
 #include "IPlugLogger.h"
 
-// Lunar 24 (task#73): plugin.h declares LunarHostPlugin::setActualChannelPlan() (the plugin is the
+// Lunar 24: plugin.h declares LunarHostPlugin::setActualChannelPlan (the plugin is the
 // one place the real host may drive the protected IPlugProcessor::SetChannelConnections);
 // stream_plan.h is the shared pure negotiation the host + oracle both call. The standard headers
 // below serve those and the audio log.
@@ -71,11 +71,11 @@ using namespace iplug;
 using namespace lunar24::host;
 
 namespace {
-// Lunar 24 (task#73): failure-invalidation. On ANY negotiation / device-disappear / open / start
+// Lunar 24: failure-invalidation. On ANY negotiation / device-disappear / open / start
 // failure the host must make the runtime owner NOT-READY (never "no stream but engine ready").
-// We install a 0-in/0-out actual plan and call the existing OnReset(); the engine's <2 output
+// We install a 0-in/0-out actual plan and call the existing OnReset; the engine's <2 output
 // fail-path then clears to not-ready. Kept in its own anonymous-namespace helper so InitAudio's
-// success path still has the mandate's exact single OnReset() ordering (CloseAudio -> ... ->
+// success path still has the mandate's exact single OnReset ordering (CloseAudio -> ... ->
 // setActualChannelPlan -> set rate/block -> OnReset -> open -> rebuild ptrs -> start -> publish).
 void LunarInvalidateAudio(IPlugAPP* plug) {
   static_cast<LunarHostPlugin*>(plug)->setActualChannelPlan(0, 0);
@@ -90,7 +90,7 @@ void LunarInvalidateAudio(IPlugAPP* plug) {
 std::atomic<bool> sFollowDefaultOutput{true};
 bool sInputOn = false;
 #ifdef OS_MAC
-// RtMidi isPortOpen() does not report virtual ports. UI thread only.
+// RtMidi isPortOpen does not report virtual ports. UI thread only.
 bool sVirtualMidiInputOpen = false;
 #endif
 // The input channels the user chose. An open that fails with the input (e.g. the Mac microphone
@@ -102,7 +102,7 @@ uint32_t sWantInL = 0, sWantInR = 0;
 // then still sees the chosen channels, not the fallback's zeros (OK right after a failed Apply
 // used to save "input off" as the user's choice).
 bool sInputDroppedByFallback = false;
-bool sStartupOpen = true;  // the first TryToChangeAudio() is the app starting up
+bool sStartupOpen = true;  // the first TryToChangeAudio is the app starting up
 // Set when the stream died under us (a device went away or reconfigured itself, e.g. Bluetooth
 // headphones) or the system output device changed while we follow it. The UI thread then
 // reopens on the current device (lunar_host_audio_watchdog).
@@ -175,7 +175,7 @@ IPlugAPPHost::~IPlugAPPHost()
   
   CloseAudio();
   
-  // GH#12 task#105: the lifecycle exit save. CloseAudio() has returned, so the audio callback is
+  // the lifecycle exit save. CloseAudio has returned, so the audio callback is
   // quiesced; the plugin (mIPlug, declared first and therefore destroyed last) is still alive. The
   // call is a pure delegate to the narrow state store -- no file logic in this destructor body and
   // nothing in the audio callback. It writes only when a successful legal config exists, so a file
@@ -270,7 +270,7 @@ bool IPlugAPPHost::InitState()
   std::snprintf(sAudioLogPath, sizeof sAudioLogPath, "%saudio.log", mINIPath.Get());
   AudioLog("---- app start ----");
 
-  // GH#12 task#105: hand the ALREADY-RESOLVED per-user settings directory to the plugin. This must
+  // hand the ALREADY-RESOLVED per-user settings directory to the plugin. This must
   // happen BEFORE any Append("settings.ini") below mutates mINIPath, and the plugin must never
   // re-derive it (this is the one resolution point the APP host owns). The store only records the
   // directory: a not-yet-created directory is fine (the read reports NoFile, never a silent
@@ -301,7 +301,7 @@ bool IPlugAPPHost::InitState()
       sWantInR = mState.mAudioInChanR;
       mState.mAudioOutChanL = GetPrivateProfileInt("audio", "out1", 1, mINIPath.Get()); // 1 is first audio output
       mState.mAudioOutChanR = GetPrivateProfileInt("audio", "out2", 2, mINIPath.Get());
-      //mState.mAudioInIsMono = GetPrivateProfileInt("audio", "monoinput", 0, mINIPath.Get());
+      // mState.mAudioInIsMono = GetPrivateProfileInt("audio", "monoinput", 0, mINIPath.Get);
 
       mState.mBufferSize = GetPrivateProfileInt("audio", "buffer", 512, mINIPath.Get());
       mState.mAudioSR = GetPrivateProfileInt("audio", "sr", 44100, mINIPath.Get());
@@ -670,7 +670,7 @@ bool IPlugAPPHost::TryToChangeAudio()
            mState.mAudioInDev.Get(), mState.mAudioInChanL, mState.mAudioInChanR, mState.mAudioOutDev.Get(),
            mState.mAudioSR, sInputOn ? 1 : 0, sFollowDefaultOutput.load() ? 1 : 0);
 
-  // Lunar 24 (task#73): the owner must allow a TRUE output-only open when the input is disabled.
+  // Lunar 24: the owner must allow a TRUE output-only open when the input is disabled.
   // inputSelected decides whether we resolve / fall back to an input device AT ALL; when it is
   // false the input ID stays the inert 0 and we never touch the input DeviceInfo/name. InitAudio
   // opens no input stream when openIn == 0 (it passes &iParams as null and reads deviceInputChans
@@ -709,7 +709,7 @@ bool IPlugAPPHost::TryToChangeAudio()
   bool failedToFindDevice = false;
   bool resetToDefault = false;
 
-  // Lunar 24 (task#73): fall back to a default ONLY for a SELECTED direction. When the input is off
+  // Lunar 24: fall back to a default ONLY for a SELECTED direction. When the input is off
   // we never fall back to a default input (that would force an input onto an output-only open).
   if (inputSelected && !inputID)
   {
@@ -747,7 +747,7 @@ bool IPlugAPPHost::TryToChangeAudio()
 
   if (failedToFindDevice)
   {
-    // Lunar 24 (task#73): a device this configuration NEEDS (the input when input is selected, or
+    // Lunar 24: a device this configuration NEEDS (the input when input is selected, or
     // ANY output) cannot be resolved / has disappeared. No stream can service the engine, so first
     // QUISCE (CloseAudio spins for the callback) then invalidate (install the 0-in/0-out plan +
     // OnReset) so the owner is NOT-READY — never a silently-running "no stream but engine ready".
@@ -757,7 +757,7 @@ bool IPlugAPPHost::TryToChangeAudio()
     return false;
   }
 
-  // Lunar 24 (task#73): output-only open keeps the inert inputID (0). InitAudio uses the channel
+  // Lunar 24: output-only open keeps the inert inputID (0). InitAudio uses the channel
   // plan to decide the input stream: a 0-in VALID plan means the input is disabled, never a failure.
   // Open a device at the rate it already runs at (forcing another rate makes some devices
   // reconfigure: Bluetooth headphones drop and reconnect, which kills the stream), but never
@@ -979,15 +979,15 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
 {
   CloseAudio();
 
-  // Lunar 24 (task#73): clear the per-open pointer lists so a 2<->4 hot-swap can NEVER accumulate
+  // Lunar 24: clear the per-open pointer lists so a 2<->4 hot-swap can NEVER accumulate
   // stale pointers. They are rebuilt (right after openStream succeeds) to the ACTUAL count for THIS
-  // open, never to MaxNChannels(). No callback runs between here and startStream, so the empty
+  // open, never to MaxNChannels. No callback runs between here and startStream, so the empty
   // lists are only observable after the successful rebuild -- a 2->4 then 4->2 reopen would
   // otherwise grow the lists (stale-accumulation defect).
   mInputBufPtrs.Empty();
   mOutputBufPtrs.Empty();
 
-  // Lunar 24 (task#73): negotiate the ACTUAL stream plan from the device's REAL channel capability
+  // Lunar 24: negotiate the ACTUAL stream plan from the device's REAL channel capability
   // and the user's SELECTED channels (config.h now declares "2-4", the policy cap; a 2-out device
   // must open 2, never a forced 4). A non-Valid plan (non-contiguous / duplicate / out-of-range
   // input, or <2 openable outputs) fails-closed: no stream, engine NOT-READY. An output-only
@@ -1027,7 +1027,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
 
   mBufferSize = iovs; // mBufferSize may get changed by stream
 
-  // Lunar 24 (task#73): only resolve the input device name when input is actually selected. On an
+  // Lunar 24: only resolve the input device name when input is actually selected. On an
   // output-only open (input off) the inert inID (0) is NOT a real device, so dereferencing it via
   // GetAudioDeviceName(inID) would be wrong; the input name stays a placeholder that is never used
   // by the RtAudio open (openIn==0 -> &iParams is passed as null).
@@ -1048,7 +1048,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
 
   mIPlug->SetBlockSize(APP_SIGNAL_VECTOR_SIZE);
   mIPlug->SetSampleRate(mSampleRate);
-  // Lunar 24 (task#73): install the ACTUAL connected count BEFORE OnReset, so the engine (which
+  // Lunar 24: install the ACTUAL connected count BEFORE OnReset, so the engine (which
   // reads NInChansConnected/NOutChansConnected in OnReset) prepares for the REAL plan, and
   // AppProcess attaches/processes by that same count. Zero means "no channel connected" -> the
   // engine's <2 output fail-path makes it NOT-READY (used by the failure-invalidation helper).
@@ -1070,7 +1070,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
 
   if (status != RtAudioErrorType::RTAUDIO_NO_ERROR)
   {
-    // Lunar 24 (task#73): openStream failed -> no stream can service the engine; invalidate to
+    // Lunar 24: openStream failed -> no stream can service the engine; invalidate to
     // NOT-READY (never "no stream but engine ready").
     mDAC->closeStream();
     LunarInvalidateAudio(GetPlug());
@@ -1097,7 +1097,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
   {
     AudioLog("  start failed: %s", mDAC->getErrorText().c_str());
     DBGMSG("Error starting stream: %s\n", mDAC->getErrorText().c_str());
-    // Lunar 24 (task#73): startStream failed -> the just-opened stream is closed; invalidate to
+    // Lunar 24: startStream failed -> the just-opened stream is closed; invalidate to
     // NOT-READY.
     mDAC->closeStream();
     LunarInvalidateAudio(GetPlug());
@@ -1172,8 +1172,8 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
 {
   IPlugAPPHost* _this = (IPlugAPPHost*) pUserData;
 
-  // Lunar 24 (task#73): use the ACTUAL open counts (the pointer-list sizes rebuilt to the plan's
-  // open count in InitAudio), NOT MaxNChannels() (the declared "2-4" cap). On a 2-out device
+  // Lunar 24: use the ACTUAL open counts (the pointer-list sizes rebuilt to the plan's
+  // open count in InitAudio), NOT MaxNChannels (the declared "2-4" cap). On a 2-out device
   // MaxNChannels=4 but only 2 buffers exist; iterating 4 would read OOB. This is the same count
   // the plugin installed via setActualChannelPlan (NChannelsConnected), so AppProcess attaches the
   // same number the callback populated -- no separate driftable max/count.

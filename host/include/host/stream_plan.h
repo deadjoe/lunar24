@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// stream_plan.h — the one framework-free CHANNEL-SELECTION truth source (GH#4 8B3, task#73).
+// stream_plan.h — the one framework-free CHANNEL-SELECTION truth source.
 //
-// The iPlug2 standalone host previously hard-wired the stream to MaxNChannels() (declared "1-2"),
-// so the stream ALWAYS opened 1-in/2-out regardless of the device, and IPlugAPP::AppProcess()
+// The iPlug2 standalone host previously hard-wired the stream to MaxNChannels (declared "1-2"),
+// so the stream ALWAYS opened 1-in/2-out regardless of the device, and IPlugAPP::AppProcess
 // re-connected all max channels every block. To fix that without editing the pinned submodule we
 // override TWO upstream TUs (IPlugAPP.cpp for AppProcess, IPlugAPP_host.cpp for InitAudio/
 // AudioCallback) and give them ONE shared, deterministic answer for "how many input/output
@@ -15,12 +15,12 @@
 // (tests/host/test_host_stream_plan.cpp). That is the point: the host and the oracle cannot
 // disagree because they call the same function.
 //
-// The plan encodes the GH#4 frozen policy (design/07 §5) at the *selection* level. The user selects
+// The plan encodes the frozen policy at the *selection* level. The user selects
 // the L and R of a MONO/STEREO INPUT anchor (inL/inR, 1-indexed, 0 = that side off) and the L and R
 // of a STEREO OUTPUT anchor (outL/outR). The plan is VALID iff the selected channels are a real,
 // contiguous, in-range set, and the openable run from the anchor satisfies the WET output strategy:
 //
-//   INPUT  — both off -> open 0 (output-only device / input disabled; VALID, never a failure).
+//   INPUT — both off -> open 0 (output-only device / input disabled; VALID, never a failure).
 //            one valid in-range L -> open 1 (mono; the owner feeds it to EXT and PREAMP).
 //            two adjacent & in-range -> open 2 (owner routes Distinct; never an implicit copy).
 //            non-contiguous / duplicate / out-of-range / R-only -> Invalid (no implicit copy).
@@ -28,8 +28,8 @@
 //   OUTPUT — the WET strategy needs a stereo L/R pair that starts at outL and lies ON the device:
 //            outR must be the adjacent channel (outR == outL+1) and both in range. A legal pair is
 //            guaranteed at least 2 openable channels from outL (channels outL, outL+1), so:
-//              openable run from outL >= 4  -> open 4  (WET L/R + DRY A/B)
-//              openable run from outL 2..3  -> open 2  (honest WET-only; end-of-device "legal pair")
+//              openable run from outL >= 4 -> open 4 (WET L/R + DRY A/B)
+//              openable run from outL 2..3 -> open 2 (honest WET-only; end-of-device "legal pair")
 //              not a legal pair (off / duplicate / non-contiguous / out-of-range) -> Invalid.
 //            So an 8-out device opened from an end legal pair yields 2, never a forced 4, and a
 //            non-legal selection (L=1,R=3) is rejected rather than silently "succeeding" as 4.

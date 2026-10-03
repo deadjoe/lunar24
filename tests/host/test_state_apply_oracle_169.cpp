@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_state_apply_oracle_169.cpp — the FULL-169 product oracle for task #78 (commit ②).
+// test_state_apply_oracle_169.cpp — the FULL-169 product oracle for (commit).
 //
-// ⚠️ COUNT NOTE: the "169" in this file's NAME is historical (task #78's original applied_to_dsp
+// ⚠️ COUNT NOTE: the "169" in this file's NAME is historical ('s original applied_to_dsp
 // size). The live count is read from the disposition table, never from this comment. It moved
-// 169 -> 171/175/177/181/183 across GH#15 D1..D5 and 183 -> 185 at GH#19 S0 / task #117 (the
+// 169 -> 171/175/177/181/183 across..D5 and 183 -> 185 at / (the
 // vco_a.pwm + vco_b.pwm pair). Every assertion below pins 189 (the classic drones' CV knobs added 4); the stale 169s in this header are
 // left as the historical narrative rather than rewritten piecemeal.
 //
@@ -14,12 +14,12 @@
 // set (exactly 169 stable ParameterIds) truly reached the live DSP, read back from the REAL
 // DSP members the render path consumes — never a shadow parameter bank. It is the counterpart
 // of test_state_apply_oracle.cpp (the 9B identity/calibration oracle): that one pins the
-// 35 control-source params + GH#6 identity; this one pins the 7 families commit ② ADDS
+// 35 control-source params + identity; this one pins the 7 families commit ADDS
 // (VCO, VCF, Preamp, EnvFollower, Mixer, ClassicDrone, NewDrone) and the exact-169 gate.
 //
-// What is asserted (@Codex task#78 mandate, "稀疏-169 candidate applicator 与完整产品 oracle"):
-//   1. EXACT-169 APPLY        — a valid default state yields an ACCEPTED candidate whose
-//                               dspApplyOk() is true and dspAppliedCount()==169 (the sentinel
+// What is asserted (mandate, "稀疏-169 candidate applicator 与完整产品 oracle"):
+//   1. EXACT-169 APPLY — a valid default state yields an ACCEPTED candidate whose
+//                               dspApplyOk is true and dspAppliedCount==169 (the sentinel
 //                               firstFailId is kParameterCount, i.e. no failure).
 //   2. PER-FAMILY REACHED DSP — one distinctive in-range value per family changes ONLY that
 //                               family's real readback to the expected transferred/post-clamp
@@ -27,15 +27,15 @@
 //                               and leaves every neighbor family bit-unchanged (anti-cross-talk).
 //   3. A/B, L/R, GROUP/GEN, VOL/PAN — the four named non-symmetric axes: mutating one side
 //                               leaves the sibling exactly at baseline.
-//   4. DEFAULT == RESTORE     — the machine built from the canonical power-on default produces
+//   4. DEFAULT == RESTORE — the machine built from the canonical power-on default produces
 //                               readbacks identical to the same default after encode/decode
 //                               round-trip (make_default_device_state is the one truth) and to a
 //                               second independent build of the same seed (determinism).
-//   5. TYPED REJECT CARRY     — a single out-of-domain value makes applyDspState fail closed,
+//   5. TYPED REJECT CARRY — a single out-of-domain value makes applyDspState fail closed,
 //                               report the FIRST failing id + invalid_value, and never touch a
-//                               partial-success path; dspAppliedCount() is the partial count.
+//                               partial-success path; dspAppliedCount is the partial count.
 //
-// The 5 control-source families (EG, LFO, Joystick, Sequencer) and the GH#6 identity profile
+// The 5 control-source families (EG, LFO, Joystick, Sequencer) and the identity profile
 // are already pinned by test_state_apply_oracle.cpp; this file nets the FULL-169 count plus the
 // 7 new families, so the union covers all 11 applied_to_DSP families.
 
@@ -44,7 +44,7 @@
 #include <lunar24/core/machine_candidate.h>   // buildMachineRuntimeCandidate, MachineCandidateStatus
 #include <lunar24/core/state_disposition.h>   // find_parameter, ParameterId, kParameterCount
 #include <lunar24/core/device_state.h>        // DeviceStateV1, make_default_device_state
-#include <lunar24/core/machine_definition.h>  // MachineRuntimeDefinition (definition->runtime())
+#include <lunar24/core/machine_definition.h>  // MachineRuntimeDefinition (definition->runtime)
 #include <lunar24/core/state_default.h>       // make_default_device_state
 #include <lunar24/core/state_serializer.h>    // encode/decode_device_state (round-trip)
 #include <lunar24/core/vco.h>                 // VcoControlMode
@@ -116,9 +116,9 @@ constexpr int kDroneGroup4 = 2;
 constexpr int kDroneGroup5 = 3;
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #2: FULL-169 per-item readback. A single-point skip of ANY family
+// REV of BLOCK finding #2: FULL-169 per-item readback. A single-point skip of ANY family
 // setter (e.g. setVcoBMorph) must turn this oracle RED. Two independent assertions per id:
-//   (a) MOVE  — re-reading the id's REAL readback after a single mismatch-free apply shows the
+//   (a) MOVE — re-reading the id's REAL readback after a single mismatch-free apply shows the
 //               value moved off its default. A skipped setter never ran, so the readback stays at
 //               baseline and (a) fails. A CROSS-WIRE (a setter writing the WRONG sibling knob)
 //               also fails (a), because the intended id's own readback never moved.
@@ -126,7 +126,7 @@ constexpr int kDroneGroup5 = 3;
 //               families (exact), so a wrong-transfer bug (e.g. tuning written through the volt
 //               formula) fails. Monotonic pitch is covered by (a) + direction (no closed form).
 // The 35 control-source ids have NO SynthRuntime readback getter (internal EG/LFO/Joystick/
-// Sequencer members); they are pinned by test_state_apply_oracle.cpp. disposition_target_set()
+// Sequencer members); they are pinned by test_state_apply_oracle.cpp. disposition_target_set
 // recovers the applied_to_DSP set from the disposition table and proves 148(readback) ∪ 35 == it.
 
 enum class RdKind { Scal, SelInt, SelBool, SelBoolInv, SelBoolExact, LinExp,
@@ -178,23 +178,23 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::drone_3_pitch, RdKind::Mono, -1, -1 },
   { ParameterId::drone_3_rate, RdKind::ClosedRate, -1, -1 },
   { ParameterId::drone_3_mod, RdKind::Scal, -1, -1 },
-  // GH#15 D2: hi_low shifts the audio pitch band (pitchHz), rate_switch multiplies the
+  // hi_low shifts the audio pitch band (pitchHz), rate_switch multiplies the
   // LF rate (rateHz). Both are read through the SAME real getter as the pitch/rate knob
   // (they compose onto it), so the defined transfer is not a closed form of the probe
   // alone — MOVE-only (RdKind::Mono), exactly like drone_3_pitch.
   { ParameterId::drone_3_hi_low, RdKind::Mono, -1, -1 },
   { ParameterId::drone_3_rate_switch, RdKind::Mono, -1, -1 },
-  // GH#15 D3: DIVIDER maps norm -> the S&H clock division ratio divN_ (dedicated getter,
+  // DIVIDER maps norm -> the S&H clock division ratio divN_ (dedicated getter,
   // so it is a real D3 lever; the exact 1+(kNewDroneDivMax-1)*norm transfer is validated
   // in the machine_runtime D3 acceptance via the CV-out readback, not a closed form here),
   // so MOVE-only like the hi_low/rate_switch pair.
   { ParameterId::drone_3_divider, RdKind::Mono, -1, -1 },
-  // GH#15 D4: ATT/RLS of the Papa Srapa voices are the FIRST drone_3/6 ids whose transfer into
+  // ATT/RLS of the Papa Srapa voices are the FIRST drone_3/6 ids whose transfer into
   // the AR envelope is a closed form (the shared DroneBank::mapAttSeconds/mapRlsSeconds, cubic
   // 0.001..10 s == droneEnvSecFromNorm), so they get an exact closed-form kind, not MOVE-only.
   { ParameterId::drone_3_att, RdKind::ClosedDroneEnv, -1, -1 },
   { ParameterId::drone_3_rls, RdKind::ClosedDroneEnv, -1, -1 },
-  // GH#15 D5: the HOLD selector of the Papa Srapa voices. Its transfer is the classic
+  // the HOLD selector of the Papa Srapa voices. Its transfer is the classic
   // gate_hold shape already carried by drone_1/2/4/5 (the OR-ed envelope-gate term), so it
   // gets the same exact boolean kind rather than a MOVE-only kind.
   { ParameterId::drone_3_hold, RdKind::SelBoolExact, -1, -1 },
@@ -242,15 +242,15 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::drone_6_pitch, RdKind::Mono, -1, -1 },
   { ParameterId::drone_6_rate, RdKind::ClosedRate, -1, -1 },
   { ParameterId::drone_6_mod, RdKind::Scal, -1, -1 },
-  // GH#15 D2 (see drone_3 above): same compose-onto-pitchHz/rateHz, MOVE-only.
+  //  (see drone_3 above): same compose-onto-pitchHz/rateHz, MOVE-only.
   { ParameterId::drone_6_hi_low, RdKind::Mono, -1, -1 },
   { ParameterId::drone_6_rate_switch, RdKind::Mono, -1, -1 },
-  // GH#15 D3 (see drone_3 above): same divided-clock ratio, MOVE-only.
+  //  (see drone_3 above): same divided-clock ratio, MOVE-only.
   { ParameterId::drone_6_divider, RdKind::Mono, -1, -1 },
-  // GH#15 D4 (see drone_3 above): same shared norm->seconds closed form -> exact ClosedEnv.
+  //  (see drone_3 above): same shared norm->seconds closed form -> exact ClosedEnv.
   { ParameterId::drone_6_att, RdKind::ClosedDroneEnv, -1, -1 },
   { ParameterId::drone_6_rls, RdKind::ClosedDroneEnv, -1, -1 },
-  // GH#15 D5 (see drone_3 above): same classic gate_hold boolean transfer.
+  //  (see drone_3 above): same classic gate_hold boolean transfer.
   { ParameterId::drone_6_hold, RdKind::SelBoolExact, -1, -1 },
   { ParameterId::env_follower_attack, RdKind::ClosedEnv, -1, -1 },
   { ParameterId::env_follower_release, RdKind::ClosedEnv, -1, -1 },
@@ -291,8 +291,8 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::vco_a_morph, RdKind::Scal, -1, -1 },
   { ParameterId::vco_a_oct_sel, RdKind::SelInt, -1, -1 },
   { ParameterId::vco_a_pw, RdKind::Scal, -1, -1 },
-  // GH#19 S0 / task #117: the pwm pair is applied_to_dsp and has a real runtime readback
-  // (Vco::pwDepth, the member the per-sample effectiveDuty() consumes), so it belongs in the
+  //  : the pwm pair is applied_to_dsp and has a real runtime readback
+  // (Vco::pwDepth, the member the per-sample effectiveDuty consumes), so it belongs in the
   // readback class — the partition proof below is what makes the flip legitimate.
   { ParameterId::vco_a_pwm, RdKind::Scal, -1, -1 },
   { ParameterId::vco_a_sub_sel, RdKind::SelInt, -1, -1 },
@@ -302,10 +302,10 @@ constexpr RdSpec kRdSpecs[] = {
   { ParameterId::vco_b_morph, RdKind::Scal, -1, -1 },
   { ParameterId::vco_b_oct_sel, RdKind::SelInt, -1, -1 },
   { ParameterId::vco_b_pw, RdKind::Scal, -1, -1 },
-  { ParameterId::vco_b_pwm, RdKind::Scal, -1, -1 },  // GH#19 S0 / task #117, see the A row.
+  { ParameterId::vco_b_pwm, RdKind::Scal, -1, -1 },  //  see the A row.
   { ParameterId::vco_b_sub_sel, RdKind::SelInt, -1, -1 },
   { ParameterId::vco_b_tune, RdKind::Scal, -1, -1 },
-};   // the readback class — its size is pinned by disposition_target_set(), never by this comment.
+};   // the readback class — its size is pinned by disposition_target_set, never by this comment.
 
 double readBackValue(const SynthRuntime& r, ParameterId id) {
   switch (id) {
@@ -356,11 +356,11 @@ double readBackValue(const SynthRuntime& r, ParameterId id) {
     case ParameterId::drone_3_hi_low: return static_cast<double>(r.drone3PitchHz());
     case ParameterId::drone_3_rate_switch: return static_cast<double>(r.drone3RateHz());
     case ParameterId::drone_3_divider: return r.drone3Divider();
-    // GH#15 D4: the AR envelope's REAL stage seconds (post shared norm->seconds mapping). Closed
+    // the AR envelope's REAL stage seconds (post shared norm->seconds mapping). Closed
     // form (envSecFromNorm), so a wrong mapping or a skipped setter both fail.
     case ParameterId::drone_3_att: return r.drone3AttSeconds();
     case ParameterId::drone_3_rls: return r.drone3RlsSeconds();
-    // GH#15 D5: the HOLD term the AR envelope target ORs with the gate. Exact boolean readback,
+    // the HOLD term the AR envelope target ORs with the gate. Exact boolean readback,
     // identical in shape to the classic drone_1/2/4/5 gate_hold rows above.
     case ParameterId::drone_3_hold: return (r.drone3Hold() ? 1.0 : 0.0);
     case ParameterId::drone_6_att: return r.drone6AttSeconds();
@@ -452,7 +452,7 @@ double readBackValue(const SynthRuntime& r, ParameterId id) {
     case ParameterId::vco_a_morph: return static_cast<double>(r.vcoAMorph());
     case ParameterId::vco_a_oct_sel: return static_cast<double>(r.vcoAOctSelect());
     case ParameterId::vco_a_pw: return static_cast<double>(r.vcoAPw());
-    case ParameterId::vco_a_pwm: return static_cast<double>(r.vcoAPwm());   // GH#19 S0: real consumer readback.
+    case ParameterId::vco_a_pwm: return static_cast<double>(r.vcoAPwm());   // real consumer readback.
     case ParameterId::vco_a_sub_sel: return static_cast<double>(r.vcoASubSelect());
     case ParameterId::vco_a_tune: return static_cast<double>(r.vcoATune());
     case ParameterId::vco_b_cv_amt: return static_cast<double>(r.vcoBCvAmt());
@@ -460,18 +460,18 @@ double readBackValue(const SynthRuntime& r, ParameterId id) {
     case ParameterId::vco_b_morph: return static_cast<double>(r.vcoBMorph());
     case ParameterId::vco_b_oct_sel: return static_cast<double>(r.vcoBOctSelect());
     case ParameterId::vco_b_pw: return static_cast<double>(r.vcoBPw());
-    case ParameterId::vco_b_pwm: return static_cast<double>(r.vcoBPwm());   // GH#19 S0: real consumer readback.
+    case ParameterId::vco_b_pwm: return static_cast<double>(r.vcoBPwm());   // real consumer readback.
     case ParameterId::vco_b_sub_sel: return static_cast<double>(r.vcoBSubSelect());
     case ParameterId::vco_b_tune: return static_cast<double>(r.vcoBTune());
     default: return std::numeric_limits<double>::quiet_NaN();
   }
 }
 
-// @Codex BLOCK #1 (rev): the 35 control-source ids are routed through setControlParamValue, not the
-// direct-scalar switch, so readBackValue() above cannot see them. Read each back through the REAL
+//  BLOCK #1 (rev): the 35 control-source ids are routed through setControlParamValue, not the
+// direct-scalar switch, so readBackValue above cannot see them. Read each back through the REAL
 // owner accessor the render path consumes — EnvelopeGenerator / Lfo / JoystickCv / FiveStepSequencer —
 // so deleting the setControlParamValue call (or the whole control-source branch) moves the readback
-// off to baseline and goes RED, exactly the repro @Codex ran. NaN only for an id not on this list.
+// off to baseline and goes RED, exactly the repro ran. NaN only for an id not on this list.
 double readBackControlSource(const SynthRuntime& r, ParameterId id) {
   switch (id) {
     case ParameterId::envelope_a_a: return r.envelopeA().attackSeconds();
@@ -631,10 +631,10 @@ std::unique_ptr<MachineRuntimeDefinition> acceptWithLabel(const DeviceStateV1& s
 // -----------------------------------------------------------------------------------------
 // 1 & 4: default state -> accepted candidate, exactly 185 applied, sentinel firstFail, and
 // default(seed) readbacks are deterministic across independent builds (default==restore on the
-// canonical power-on default). GH#15 D1 adds drone_3/6_mod (169->171), D2 adds
+// canonical power-on default). adds drone_3/6_mod (169->171), D2 adds
 // drone_3/6_hi_low + drone_3/6_rate_switch (171->175), D3 adds drone_3/6_divider (175->177),
 // D4 adds drone_3/6_att + drone_3/6_rls (177->181) to applied_to_dsp, D5 adds drone_3/6_hold
-// (181->183), and GH#19 S0 / task #117 adds vco_a.pwm + vco_b.pwm (183->185) — the last two
+// (181->183), and / adds vco_a.pwm + vco_b.pwm (183->185) — the last two
 // transfer_unavailable ids, which now have a real consumer (Vco::setPwDepth -> effectiveDuty).
 static void full169_default_apply() {
   const DeviceStateV1 def = make_default_device_state(kSeed);
@@ -720,14 +720,14 @@ static void vco_a_b_family() {
 }
 
 // -----------------------------------------------------------------------------------------
-// GH#19 S0 / task #117: the pwm pair's RESTORE round-trip through the REAL OWNER. The per-item
+//  : the pwm pair's RESTORE round-trip through the REAL OWNER. The per-item
 // loop above reads the depth back through the candidate factory alone, and without a NAME; the
 // disposition flip's actual claim is narrower and stronger than "the byte survived in the state" —
 // a restore must re-reach the PWM depth SETTER on the ACTIVE runtime, i.e. the chain
 // applyDeviceState -> buildMachineRuntimeCandidate -> applyDspState -> applyDspParam ->
 // applySmoothedControl_ -> setVcoAPwm -> Vco::setPwDepth. So this scenario drives the value
 // through StandaloneAudioEngine::applyDeviceState (the owner the product uses on a stopped stream)
-// and reads the depth off e.runtime() after EVERY apply: a repeated restore of the same
+// and reads the depth off e.runtime after EVERY apply: a repeated restore of the same
 // non-default state, then a restore back to the default, so the setter must TRACK the state rather
 // than latch at the first non-default value. Both ids, both directions.
 static void vco_pwm_restore_roundtrip() {
@@ -1102,8 +1102,8 @@ static void typed_reject_carry_first_fail() {
   // Finding #5: firstFail* is the "otherwise sentinel" — it is RESET on success and OVERWRITTEN on a
   // DIFFERENT rejection, never a residue of an earlier failure. Reuse the SAME output variables across
   // three calls on the same runtime to prove the reset-on-every-call contract:
-  //   (a) reject (vco_a_pw)   -> firstId=vco_a_pw, firstStatus=invalid_value   [carry the first fail]
-  //   (b) success (default)   -> firstId=kParameterCount, firstStatus=applied  [SENTINEL RESET]
+  //   (a) reject (vco_a_pw) -> firstId=vco_a_pw, firstStatus=invalid_value [carry the first fail]
+  //   (b) success (default) -> firstId=kParameterCount, firstStatus=applied [SENTINEL RESET]
   //   (c) reject (vcf_l_freq) -> firstId=vcf_l_freq, firstStatus=invalid_value [OVERWRITE on new reject]
   DeviceStateV1 good = def;                    // every applied_to_DSP id at a valid default -> 169.
   ParameterId seqId = static_cast<ParameterId>(kParameterCount);
@@ -1128,16 +1128,16 @@ bool hasReadback(ParameterId id) {
 }
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #1/#2: the exact-count gate must have a PRODUCT witness, not a bare
+// REV of BLOCK finding #1/#2: the exact-count gate must have a PRODUCT witness, not a bare
 // `== N` constant inside the applicator. Recover the applied_to_DSP set from the disposition
-// table (the sole authority @Codex designated), then prove:
+// table (the sole authority designated), then prove:
 //   * count_disposition(applied_to_DSP) is 185 (static contract, restated as a runtime CHECK),
 //   * the per-item readback class (150) and the control-source class (35) partition that set
 //     EXACTLY: every applied id is in EXACTLY ONE class, no id is covered by both, no applied id
 //     is uncovered, and neither class claims a non-applied id.
 // Any migration that adds/removes an applied id, or any id that gains/loses a readback slot, now
 // breaks a real assertion here rather than silently slipping past a constant.
-// GH#19 S0 / task #117 moved the pwm pair (148->150 readback): the flip to applied_to_dsp is only
+//  moved the pwm pair (148->150 readback): the flip to applied_to_dsp is only
 // legitimate BECAUSE they now have a runtime readback getter, so this partition is exactly the
 // proof that the new applied rows are not a disposition-table-only change.
 static void disposition_target_set() {
@@ -1167,10 +1167,10 @@ static void disposition_target_set() {
 }
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #2: FULL-185 per-item readback. For each of the 150 readback ids,
+// REV of BLOCK finding #2: FULL-185 per-item readback. For each of the 150 readback ids,
 // apply a SINGLE mismatch-free value (probe derived from the registry descriptor: in-domain and
 // off the default) and assert BOTH:
-//   (a) MOVE  — the id's REAL readback (the member the render path consumes) moved off the value
+//   (a) MOVE — the id's REAL readback (the member the render path consumes) moved off the value
 //               built from the default state. A setter that was SKIPPED never ran, so its id's
 //               readback stays at baseline and (a) fails. This is exactly what catches a single-
 //               point setVcoBMorph skip (or any single family-setter removal).
@@ -1179,7 +1179,7 @@ static void disposition_target_set() {
 //               the readback must still have MOVED, with no closed-form check. A wrong-transfer
 //               bug (e.g. tuning written through the volt formula) fails (b).
 // The union of these 150 readback ids + the 35 control-source ids (pinned by the 9B oracle) is
-// proven equal to exactly 185 by disposition_target_set(); control-source ids have no readback
+// proven equal to exactly 185 by disposition_target_set; control-source ids have no readback
 // getter (internal EG/LFO/Joystick/Sequencer state) and are intentionally excluded here.
 static void full169_per_item() {
   const DeviceStateV1 def = make_default_device_state(kSeed);
@@ -1222,11 +1222,11 @@ static void full169_per_item() {
     }
   }
 
-  // @Codex BLOCK #1: the 35 control-source ids MUST ALSO be read back through their real owner
+  //  BLOCK #1: the 35 control-source ids MUST ALSO be read back through their real owner
   // accessors (EnvelopeGenerator / Lfo / JoystickCv / FiveStepSequencer). A value that "applies"
   // (count stays 169) but never actually lands on the control source — e.g. the setControlParamValue
   // call deleted, or the whole control-source branch neutered — leaves these at baseline, so MOVE
-  // fails. Same MOVE + VTYPE pair as the direct-scalar class, keyed by controlSourceId().
+  // fails. Same MOVE + VTYPE pair as the direct-scalar class, keyed by controlSourceId.
   double csBase = 0.0;
   for (std::uint32_t i = 0; i < kParameterCount; ++i) {
     const auto id = static_cast<ParameterId>(i);
@@ -1275,7 +1275,7 @@ static void full169_per_item() {
 }
 
 // -----------------------------------------------------------------------------------------
-// REV of @Codex BLOCK finding #3: the oracle must prove the applied whole-state is on the LIVE
+// REV of BLOCK finding #3: the oracle must prove the applied whole-state is on the LIVE
 // render path (StandaloneAudioEngine::applyDeviceState -> commit -> DeviceAdapter::renderBlock via
 // processBlock), NOT just a default-codec round-trip. The failure this closes is a value that
 // survives the codec but never actually left the descriptor. So we drive the REAL engine:

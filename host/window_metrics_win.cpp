@@ -13,11 +13,11 @@
 // else — redefining any of those symbols would be a duplicate-definition link error.
 //
 // Units follow the standard Windows logical-pixel model, mirrored from macOS:
-//   * avail*     = LOGICAL window units (macOS: points; here: physical pixels / DPI).
+//   * avail* = LOGICAL window units (macOS: points; here: physical pixels / DPI).
 //   * screenScale= logical -> physical (macOS: backingScaleFactor; here: DPI / 96).
-//   * backing    = logical * screenScale  (compute_window_layout multiplies this itself).
+//   * backing = logical * screenScale (compute_window_layout multiplies this itself).
 // This file reads REAL values from the Win32 work area + system DPI, never a hardcoded
-// desktop size (the P5-① mandate forbids a fixed 2400x1551 here).
+// desktop size (the mandate forbids a fixed 2400x1551 here).
 //
 // DPI model: the pinned IPlugAPP_main.cpp (compiled from iPlug2::APP) publishes a
 // PER_MONITOR_AWARE_V2 DPI context via SetProcessDpiAwarenessContext before it calls
@@ -28,7 +28,7 @@
 // shim still derives from the primary physical work area + the system DPI; exact per-monitor
 // DPI / multi-monitor virtualization (and whether the NanoVG/GL2 window consumes these as
 // logical-then-scaled or as physical) is a runtime detail to confirm on a real Windows host.
-// The GH#10 scope here is that the target COMPILES and LINKS (actual-target CI) and that it
+// The scope here is that the target COMPILES and LINKS (actual-target CI) and that it
 // feeds real work area + DPI numbers, not constants.
 //
 // Framework-free on purpose: this TU only needs <windows.h> + the C stdlib probes; it

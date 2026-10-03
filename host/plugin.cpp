@@ -3,7 +3,7 @@
 //
 // host/plugin.cpp — the Lunar 24 host standalone plugin implementation.
 //
-// P5-① mandate (the geometry choke point): the host MUST size its window by
+//  mandate (the geometry choke point): the host MUST size its window by
 // consuming lunar24::host::compute_window_layout, NOT by hardcoding a size or
 // reverting to design scale. A host that bypasses this is exactly the clamp
 // defect under test (it lets the window-manager crop the panel bottom). So:
@@ -12,13 +12,13 @@
 //     negative (clamp, design scale) path; otherwise -> the fit path.
 //   * drawScale + logicalW/H are the geometry module's answer, never computed here.
 //   * the open window = SetEditorSize(logicalW, logicalH), which drives the
-//     ClientResize() in the stock IPlugAPP_dialog MainDlgProc (WM_INITDIALOG).
+//     ClientResize in the stock IPlugAPP_dialog MainDlgProc (WM_INITDIALOG).
 //
 // iPlug2's MakeGraphics(*this, designW, designH, fps, drawScale) is called with
 // the DESIGN dims + drawScale so that the IGraphics internal view (
-// WindowWidth() = mWidth * mDrawScale) equals the logical window the dialog
+// WindowWidth = mWidth * mDrawScale) equals the logical window the dialog
 // opens — the design space is drawn at drawScale into the logical window, and
-// retina is a separate SetScreenScale() multiplier (slice-④), never folded in.
+// retina is a separate SetScreenScale multiplier (slice), never folded in.
 
 #include "plugin.h"
 #include <host/midi_timing.h>
@@ -69,7 +69,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     const double availH = lunar_host_avail_logical_h();
     const double screenScale = lunar_host_screen_scale();
 
-    // The design-space bottom row is the reachability predicate input; P5-① does
+    // The design-space bottom row is the reachability predicate input; does
     // not make a control-reachability claim, but the choke point still computes it
     // from the window it actually opens, which is exactly the bug-detector shape.
     const lunar24::core::DesignRect fullDesign{0.0, 0.0, designW, designH};
@@ -81,7 +81,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     // inside OpenWindow (before ClientResize), so GetEditorWidth/Height return it.
     SetEditorSize(static_cast<int>(layout.logicalW), static_cast<int>(layout.logicalH));
 
-    // Design-space IGraphics. WindowWidth() = designW * drawScale == logicalW,
+    // Design-space IGraphics. WindowWidth = designW * drawScale == logicalW,
     // so the internal view fills the dialog the host just sized.
     return MakeGraphics(*this, static_cast<int>(designW), static_cast<int>(designH),
                         PLUG_FPS, static_cast<float>(layout.drawScale));
@@ -137,7 +137,7 @@ void LunarHostPlugin::OnParentWindowResize(int width, int height)
 #endif
 
 #if IPLUG_DSP
-// GH#4 8B2: the ProcessBlock bridge below casts sample** <-> double** . That relabeling is only
+// the ProcessBlock bridge below casts sample** <-> double**. That relabeling is only
 // valid under iPlug2's DEFAULT `sample = double`. A SAMPLE_TYPE_FLOAT build would reinterpret the
 // buffers with the wrong element type -> UB. This is a compile-time hard gate, not a runtime or
 // generated-check: the host must never silently compile such a bridge. (The wiring gate greps for
@@ -147,21 +147,21 @@ static_assert(std::is_same_v<sample, double>,
 
 void LunarHostPlugin::OnReset()
 {
-  // GH#4 8B2: the stopped-stream boundary. Rebuild the runtime owner for the REAL device
+  // the stopped-stream boundary. Rebuild the runtime owner for the REAL device
   // format the host is about to open. The physical connector counts are read from the host
-  // (NOT hardcoded): with GH#4 8B3 the plan is negotiated from the device capability and
-  // installed via setActualChannelPlan() BEFORE this runs, so NInChansConnected()/
-  // NOutChansConnected() are the actual open counts. A failure (e.g. <2 outputs, or the 0/0
+  // (NOT hardcoded): with the plan is negotiated from the device capability and
+  // installed via setActualChannelPlan BEFORE this runs, so NInChansConnected/
+  // NOutChansConnected are the actual open counts. A failure (e.g. <2 outputs, or the 0/0
   // failure sentinel) leaves the engine not-ready and ProcessBlock fail-silent.
   //
-  // GH#12 task#105 — this SAME boundary carries the state policy, in this exact order:
-  //   1. captureCanonical(): keep the committed config BEFORE prepare() releases the owner, so a
+  //  this SAME boundary carries the state policy, in this exact order:
+  //   1. captureCanonical: keep the committed config BEFORE prepare releases the owner, so a
   //      device reopen can never fall back to the power-on default or re-read the disk;
-  //   2. loadOnce(): ONE startup read attempt per APP session (the store latches it explicitly);
-  //   3. prepare(): the unchanged GH#4 8B2 owner (re)build for the real device format;
-  //   4. publishPending(): only when prepare() produced a ready owner — publish the pending restore
+  //   2. loadOnce: ONE startup read attempt per APP session (the store latches it explicitly);
+  //   3. prepare: the unchanged owner (re)build for the real device format;
+  //   4. publishPending: only when prepare produced a ready owner — publish the pending restore
   //      through the engine's ONE real candidate path. A rejection is atomic and the store records
-  //      the reason; a failed prepare() leaves the pending intact for the NEXT legal boundary.
+  //      the reason; a failed prepare leaves the pending intact for the NEXT legal boundary.
   // Preserve the last MIDI knob edits before capturing the state and discarding
   // the old runtime queues. The audio callback has stopped at this boundary.
   engine_.syncParametersFromAudioThread();
@@ -196,7 +196,7 @@ void LunarHostPlugin::OnReset()
 
 void LunarHostPlugin::setStateDirectory(const char* dir)
 {
-  // GH#12 task#105: accept the host's ALREADY-RESOLVED per-user settings directory. This class
+  // accept the host's ALREADY-RESOLVED per-user settings directory. This class
   // must never re-derive it (no environment lookup, no platform branch here) — the APP host owns
   // the one resolution, and this seam only carries it into the store.
   stateStore_.setDirectory(dir != nullptr ? std::string(dir) : std::string());
@@ -237,7 +237,7 @@ void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int
 
 lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
 {
-  // GH#12 task#105: the lifecycle (exit) save. Pure delegate to the narrow store: it picks the
+  // the lifecycle (exit) save. Pure delegate to the narrow store: it picks the
   // source (committed canonical, else the retained last legal config), encodes to the exact wire
   // size and runs the atomic temp->flush->replace. Never a disk read, never an overwrite of a file
   // that was present but unusable.
@@ -354,7 +354,7 @@ void LunarHostPlugin::logMidiClock_()
 
 bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
 {
-  // GH#4 8B3 (task#73): disconnect ALL declared max channels first, then connect only
+  //  disconnect ALL declared max channels first, then connect only
   // [0,inCh)/[0,outCh). Called at the stopped-stream boundary (InitAudio) BEFORE OnReset, so the
   // engine prepares for the REAL plan and AppProcess attaches by the same count.
   //
@@ -387,8 +387,8 @@ bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
 
 void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
-  // GH#4 8B2: a PURE delegate to the framework-free owner. The owner either renders through
-  // the production DeviceAdapter::renderBlock (task#71) or returns a dropped status after
+  // a PURE delegate to the framework-free owner. The owner either renders through
+  // the production DeviceAdapter::renderBlock or returns a dropped status after
   // writing deterministic silence into the outputs. There is NO frame loop / scale / mapping /
   // pass-through / second output bank in the host — that would be a wiring defect.
   //

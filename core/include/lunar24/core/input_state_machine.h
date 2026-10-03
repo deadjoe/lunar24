@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Unified performance-input state machine (design/06 §P4, design/07 §1, §3).
+// Unified performance-input state machine (§3).
 //
 // The SINGLE interpretation choke point. Pointer (panel touch), computer
 // keyboard and MIDI are three thin adapters that only translate a native
@@ -11,17 +11,17 @@
 // from any source yields bit-identical internal CV/gate/clock. That is the P4
 // exit condition, and it is structural, not a coincidence a test has to chase.
 //
-// The mapping rules encoded here ARE the design contract (design/07 §3):
-//   * note_on    -> gate_on + pitch event; velocity folds into the original's
-//                   single pressure dimension (design/06 §L4/§P4: the keyboard
+// The mapping rules encoded here ARE the design contract:
+//   * note_on -> gate_on + pitch event; velocity folds into the original's
+//                   single pressure dimension (§P4: the keyboard
 //                   has pressure, not a separate velocity target). A sounding
 //                   keyboard voice needs the note latched: gate goes high with
 //                   the pitch, not downstream.
-//   * note_off   -> gate_off event
+//   * note_off -> gate_off event
 //   * aftertouch -> pressure event (pressure/aftertouch only ever touch pressure)
-//   * cc         -> parameter event, ONLY if the controller is in the data-driven
+//   * cc -> parameter event, ONLY if the controller is in the data-driven
 //                   ccLearn map; otherwise ignored, never fabricates a target
-//   * clock      -> clock event (external clock / MIDI clock)
+//   * clock -> clock event (external clock / MIDI clock)
 // Enforcing "no phantom capability" is the whole point: MIDI is an entry, never
 // a new feature. CC learn is data (a controller -> existing ParameterId map),
 // never a hardcoded branch.
@@ -50,7 +50,7 @@ enum class PerfInputKind : std::uint8_t {
 // One normalized performance input. The adapter stamps the absolute host sample
 // at which the native message arrived; the whole (kind, value, timing) sequence
 // is exactly what the P4 exit condition compares across sources. channel/source/
-// seq give a stable, deterministic same-sample ordering (design/07 §3).
+// seq give a stable, deterministic same-sample ordering.
 struct PerformanceInput {
   PerfInputKind kind;
   std::uint64_t sample = 0;                // absolute host sample of this message
@@ -59,25 +59,25 @@ struct PerformanceInput {
   std::uint16_t controller = 0;            // cc number for kind==cc
   std::uint8_t channel = 0;                // source sub-id (MIDI channel etc.)
   ControlSourceId source = 0;              // stable producer id (pointer/key/midi)
-  NoteId noteId = 0;                       // note/touch press identity (GH#8)
+  NoteId noteId = 0;                       // note/touch press identity
   std::uint64_t seq = 0;                   // deterministic same-source tiebreak
-  // GH#12 task#101: which physical performance side produced this input. An explicit
-  // internal metadata field carried through translate() onto every ControlEvent it
+  // which physical performance side produced this input. An explicit
+  // internal metadata field carried through translate onto every ControlEvent it
   // emits; a source adapter states the side it read, it is never inferred from the
-  // channel/pitch/noteId. Defaults to Left so every pre-#101 caller is unchanged.
+  // channel/pitch/noteId. Defaults to Left so every earlier caller is unchanged.
   KeyboardSide side = KeyboardSide::Left;
 };
 
 // Data-driven CC-learn binding: a controller number -> the ParameterId of an
 // EXISTING control. Config read from the machine definition / user learn map,
-// never a branch. A controller with no binding is ignored by translate().
+// never a branch. A controller with no binding is ignored by translate.
 struct CcBinding {
   std::uint16_t controller;
   ParameterId target;
 };
 
-// The input state machine. Network-free, fixed-size, no allocation (design/07
-// §5). translate() turns one normalized input into the canonical ControlEvents
+// The input state machine. Network-free, fixed-size, no allocation (
+// §5). translate turns one normalized input into the canonical ControlEvents
 // it implies; at most 3 (note_on emits gate_on + pitch + pressure). Returns 0
 // for a cc with no valid binding — it is dropped, not fabricated.
 class InputStateMachine {
@@ -102,7 +102,7 @@ class InputStateMachine {
 inline std::uint32_t InputStateMachine::translate(const PerformanceInput& in,
                                                   ControlEvent* out,
                                                   std::uint32_t capacity) const {
-  // GH#8: note_on is a WHOLE TRANACTION. It emits exactly three events (pitch for
+  // note_on is a WHOLE TRANACTION. It emits exactly three events (pitch for
   // the target, pressure for the velocity fold, gate_on to latch the voice). It is
   // all-or-none: if the caller's out buffer cannot hold all three, return 0 and
   // write NOTHING — never a partial note (a latch without its target, or a pitch
@@ -122,13 +122,13 @@ inline std::uint32_t InputStateMachine::translate(const PerformanceInput& in,
     out[n].channel = in.channel;
     out[n].noteId = in.noteId;   // the SAME press identity every event of this note carries
     out[n].producerSequence = in.seq;
-    out[n].side = in.side;       // GH#12 task#101: the SAME side every event of this input carries
+    out[n].side = in.side;       // the SAME side every event of this input carries
     ++n;
   };
 
   switch (in.kind) {
     case PerfInputKind::note_on:
-      // Canonical dependency order (design/07 §3): the pitch/pressure target is
+      // Canonical dependency order: the pitch/pressure target is
       // stated first (phase 1), then the gate latches high (phase 4) using the
       // pitch already arrived. pitch is a 1 V/oct-equivalent CV; velocity folds
       // into the original's single pressure dimension.

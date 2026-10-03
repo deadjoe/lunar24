@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_machine_control_outputs.cpp — task#78 gap#2 (GH#12 9C): the five control-source families
+// test_machine_control_outputs.cpp — gap#2: the five control-source families
 // (envelope EG, LFO, joystick, env-follower, sequencer) driven through the AGREED entry and
 // asserted on their PUBLISHED CV/gate output.
 //
-// @Codex 1e34b7bb: gap#2 must NOT bypass the entry by calling buildMachineRuntimeCandidate +
+// : gap#2 must NOT bypass the entry by calling buildMachineRuntimeCandidate +
 // processFrame directly. This test drives the real path — encode -> decode ->
 // StandaloneAudioEngine.applyDeviceState -> processBlock — via the shared test_engine_harness.h,
-// then reads the PUBLISHED source bank through owner.runtime()->controlVoltageAt(JackId) (read-only,
+// then reads the PUBLISHED source bank through owner.runtime->controlVoltageAt(JackId) (read-only,
 // no member readback, no "未路由音频" token). Each family's codec stimulus must change the real
 // jack value in a KNOWN direction and stay in its documented rail.
 
@@ -185,7 +185,7 @@ void test_joystick() {
   CHECK(xHi > 0.0);                        // norm-1 pushes X positive.
   CHECK(xLo < 0.0);                        // norm-0 pulls X negative.
   CHECK(std::fabs(xHi) > 1.0 && std::fabs(xLo) > 1.0);  // a real swing, not a near-zero residue.
-  // Publish fidelity: jack == the joystick's own computed xOut() for that same sample.
+  // Publish fidelity: jack == the joystick's own computed xOut for that same sample.
   CHECK_CLOSE(xHi, hHi.runtime()->joystick().xOut(), 1e-9);
 }
 

@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH #11 (P3 item 6) "5-step sequencer" sound-core: a framework-agnostic,
+//  (P3 item 6) "5-step sequencer" sound-core: a framework-agnostic,
 // fixed-memory, per-sample 5-stage sequential voltage source state machine.
 // This sound-core is WIRED into the canonical runtime as one of the six P3
 // always-execute control sources (machine_runtime.h kSequencer dispatch publishes
 // this core's cv/gate/clock-out to the registry source bank; machine_definition.h
 // binds the real registry JackIds). It is NOT a wrapper over arp_sequencer.h. It
 // follows the established per-sample DSP idiom of Lfo/EnvelopeGenerator: mandatory
-// real sample-rate, fail-closed configuration, no block cache, reset()-free (there
+// real sample-rate, fail-closed configuration, no block cache, reset-free (there
 // is no hardware / panel reset and no transient playhead persistence).
 //
 // Manual semantics (design/reference/solar42N_manual_text.txt L485-510): a
@@ -20,14 +20,14 @@
 // at CLOCK OUT.
 //
 // PROVISIONAL modelling: the internal PULSER normalized->Hz mapping (panel pot 0..1
-// --> Hz) is a centrally-named SOFTWARE policy (pulserNormToRateHz() above): the core
+// --> Hz) is a centrally-named SOFTWARE policy (pulserNormToRateHz above): the core
 // still accepts the internal rate IN HERTZ directly (the DSP-level setter), and the
-// runtime consumer maps the panel norm through pulserNormToRateHz(). The CLOCK OUT
+// runtime consumer maps the panel norm through pulserNormToRateHz. The CLOCK OUT
 // rail is a CONFIRMED bipolar -10..+10V (kFiveStepClockIdleVolt/kFiveStepClockPeakVolt);
-// the discrete rising bool (clockOutRising()) remains the single edge truth and the
+// the discrete rising bool (clockOutRising) remains the single edge truth and the
 // volts projection derives from the SAME pulserRising -- never a second phase/latch. The
 // CLOCK OUT is a 50% square and GATE stays high for half a step. The EXTERNAL clock input enters as an
-// already-interpreted __canonical __rising__ edge (produced by sink_gate_interpret()
+// already-interpreted __canonical __rising__ edge (produced by sink_gate_interpret
 // against the real sequencer.ext_clock_in JackDescriptor: ss.edge == GateEdge::rising).
 // We consume that edge verbatim — we do NOT re-derive an edge from a raw gate level with our own
 // latch (a second edge truth-source that would fabricate a phantom advance on the
@@ -54,7 +54,7 @@ namespace core {
 inline constexpr double kFiveStepGateMaxSeconds = 1.0;
 inline constexpr double kFiveStepCvPeakVolt = 5.0;    // 0..+5V CONFIRMED
 inline constexpr double kFiveStepGatePeakVolt = 10.0; // 0..+10V CONFIRMED
-// CLOCK OUT rail (@Codex final ruling 7C3): the sequencer.clock_out OUTPUT is a
+// CLOCK OUT rail (final ruling 7C3): the sequencer.clock_out OUTPUT is a
 // CONFIRMED bipolar -10..+10V rail (manual out-spec table L159 `PULSERL: -10V…+10V`,
 // L499 prose "this periodic signal is available at the CLOCK OUT jack", and ELTA's
 // official SPECIFICATION "Pulser out -10V…+10V" at eltamusic.com/solar-42f). The PULSE
@@ -90,7 +90,7 @@ class FiveStepSequencer {
   // ----- configuration (fail-closed: an invalid call returns false and leaves
   // the held configuration unchanged; no partial / half-mutated state) -----
 
-  // Real, positive sample rate in Hz. Required before tick()/setInternalRateHz().
+  // Real, positive sample rate in Hz. Required before tick/setInternalRateHz.
   // WHOLE-CANDIDATE fail-closed: validates the EXISTING internal rate against the
   // candidate timebase too (same rule Lfo enforces), not just the candidate alone.
   // A naive sr that makes internalRateHz_/sr_ non-finite (e.g. hz=DBL_MAX then a
@@ -172,7 +172,7 @@ class FiveStepSequencer {
     return stepGate_[i];
   }
 
-  // PROVISIONAL PULSER norm->Hz software model (@Codex final ruling 7C3): the panel PULSER
+  // PROVISIONAL PULSER norm->Hz software model (final ruling 7C3): the panel PULSER
   // norm [0,1] maps logarithmically to the internal clock rate. This is the single
   // centrally-named place the mapping lives (constant + function together), so the runtime
   // dispatch and any oracle read the SAME policy. Valid norm -> [0.05,20] Hz (centre 0.5 ->
@@ -186,7 +186,7 @@ class FiveStepSequencer {
 
   // ----- per-sample audio-domain step -----
   // externalClockRising is the ALREADY-INTERPRETED EXT. CLOCK canonical rising edge
-  // (from sink_gate_interpret() against the real sequencer.ext_clock_in descriptor:
+  // (from sink_gate_interpret against the real sequencer.ext_clock_in descriptor:
   // ss.edge == GateEdge::rising). We consume it VERBATIM — we do NOT re-derive an
   // edge from a raw gate level via an internal latch (that second edge truth-source
   // would fabricate a phantom advance on the first-high sample, which the interpreter
@@ -278,15 +278,15 @@ class FiveStepSequencer {
   // Configuration. Defaults are a local safe / provisional DSP default, NOT the
   // generated registry canonical default (the core does not copy the registry's
   // placeholder range/default — the PULSER norm->Hz mapping is the runtime's job).
-  double sr_ = 0.0;                             // 0.0 = unconfigured; tick() won't run
+  double sr_ = 0.0;                             // 0.0 = unconfigured; tick won't run
   double internalRateHz_ = 1.0;                 // Hz; 0 = defensive stop
   ClockSource clockSource_ = ClockSource::kInternal;
   int stageCount_ = kFiveStepMaxStages;
   double stepCv_[kFiveStepStepCount] = {0.0, 0.0, 0.0, 0.0, 0.0};  // 0..+5V
   bool stepGate_[kFiveStepStepCount] = {false, false, false, false, false};
 
-  // Dynamic per-sample state. Only these change during tick(). None is persisted
-  // and there is intentionally NO public reset() (no hardware/panel reset jack).
+  // Dynamic per-sample state. Only these change during tick. None is persisted
+  // and there is intentionally NO public reset (no hardware/panel reset jack).
   // Construction-time values are the single centrally-labelled deterministic
   // PROVISIONAL lifecycle policy; they are not a claimed known power-on state.
   double pulserPhase_ = 0.0;  // [0,1); forwarded to clock_out rising events

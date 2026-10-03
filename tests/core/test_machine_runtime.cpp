@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// ENGINE-LEVEL CONTROLLED FIXTURE (task#65 7C2 GH#11, @Codex A′ msg 96361090).
+// ENGINE-LEVEL CONTROLLED FIXTURE (7C2, A′).
 //
 // This is NOT the canonical Lunar24 machine/product oracle. It is a controlled-fixture
 // regression suite for the low-level SynthRuntime / GraphCompiler / executor mechanics:
-// GH#13 feedback capacity (18 self-loops), error/refusal statuses, controlled-topology
+//  feedback capacity (18 self-loops), error/refusal statuses, controlled-topology
 // patching, boundary and allocator guards — scenarios that need synthetic descriptor
 // tables or topologies the canonical 21-module product machine does not (and must not)
 // pretend to support.
@@ -15,29 +15,29 @@
 // product conclusions: the full chain / four outputs / plan order + repatch effect,
 // block-partition + reproducibility, render-path zero allocation, the fixed+pluggable
 // preamp/env cycle exact break + partition invariance, EventTimebase -> drone_3/6 sample
-// timing, classic gate/ENV OUT/CV MOD, and GH#6 VCF identity through the canonical
+// timing, classic gate/ENV OUT/CV MOD, and VCF identity through the canonical
 // vcf_path. Nothing in THIS file is counted toward product exit.
 //
-// Hard rule (@Claude, msg 43da88a5): each criterion here is asserted against the
+// Hard rule: each criterion here is asserted against the
 // PRODUCT runtime surface (SynthRuntime) — the executor the host's realtime callback
 // drives — NEVER a test-internal second executor. The runtime under test is
 // core/include/lunar24/core/machine_runtime.h.
 //
 // Five criteria (each with its will-red negative):
-//   ① product path genuinely consumes compile_graph() — the runtime calls
-//      compile_graph in rebuild(), honours a patched CV in its render, and the
+//    product path genuinely consumes compile_graph — the runtime calls
+//      compile_graph in rebuild, honours a patched CV in its render, and the
 //      negative control (driveGraph=false, "bypass the graph") makes a patched CV
 //      have NO effect — so a test that asserts "a patch changes output" REDS if
 //      the runtime stops consuming the compiled graph.
-//   ② repatching changes the output — connect/disconnect a patch edge, rebuild,
+//    repatching changes the output — connect/disconnect a patch edge, rebuild,
 //      and the output changes / returns.
-//   ③ the four outputs are correct and non-interfering — DRY A is driven only by
+//    the four outputs are correct and non-interfering — DRY A is driven only by
 //      VCO A, DRY B only by VCO B (patching VCO A does not change DRY B), and the
 //      WET outputs are the chain path, not a raw DRY tap.
-//   ④ sr/buffer invariance + reproducibility — a fixed seed + fixed inputs gives
+//    sr/buffer invariance + reproducibility — a fixed seed + fixed inputs gives
 //      bit-identical output across runs and independent of block partition, at
 //      every configured sample rate.
-//   ⑤ RT-safe — no allocation, no lock on the render path. Verified two ways:
+//    RT-safe — no allocation, no lock on the render path. Verified two ways:
 //      an ALLOCATOR-COUNT probe (operator new/new[] in this TU are counted; the
 //      render loop must leave the count at zero, and the probe is itself proven
 //      non-vacuous by a deliberate allocation inside the window), and the plan-stable
@@ -65,7 +65,7 @@
 #include <lunar24/registry.hpp>
 #include <lunar24/registry_ids.hpp>
 
-// Allocator-count probe (#38 criterion ⑤, rule 5): the replaceable operator new/delete
+// Allocator-count probe (rule 5): the replaceable operator new/delete
 // pair and its counter now live in tests/core/test_machine_runtime_allocator.cpp (this
 // target only). Isolated to that TU so GCC's -Wmismatched-new-delete does not misjudge
 // the malloc/free implementation as a new/delete mismatch at the ::operator new / ::operator
@@ -187,7 +187,7 @@ const core::GraphModule kModules[] = {
     {kM_Dist, nullptr}};
 constexpr std::uint32_t kModuleCount = 10;
 
-// Fixed internal routes (design/07 §4 Decision B), merged into the same plan as the
+// Fixed internal routes (Decision B), merged into the same plan as the
 // pluggable control cables. Only module->module dependency routes go to the
 // compiler — device-output routes (vco_a_to_dry_a, dist_to_wet) are terminal taps
 // consumed by the runtime's role outputs, not execution-plan edges. Note preamp ->
@@ -243,7 +243,7 @@ bool sameOutput(const core::RuntimeOutput& a, const core::RuntimeOutput& b) {
   return a.wetL == b.wetL && a.wetR == b.wetR && a.dryA == b.dryA && a.dryB == b.dryB;
 }
 
-// Compare two frame-for-frame blocks of runtime output (the #46 buffer-invariance
+// Compare two frame-for-frame blocks of runtime output (the buffer-invariance
 // check over a full block run). Bit-exact: the per-frame DSP is deterministic and
 // runs the same op sequence whether frames are grouped 64/128/256, so equal means
 // the event acted at the SAME sample.
@@ -268,12 +268,12 @@ bool finite(const core::RuntimeOutput& o) {
 }
 
 // ----------------------------------------------------------------------------
-// GH#13: feedback capacity. The generated machine registry exposes EXACTLY 18
+// feedback capacity. The generated machine registry exposes EXACTLY 18
 // legal, mutually non-occupying module-local self-loops (an output jack and a
 // DIFFERENT input jack of the same module; each jack used once — verified count:
 // vco_a 2 + vco_b 3 + keyboard 2 + envelope_a 1 + envelope_b 1 + sequencer 1 +
 // drone_1/2/4/5 1 each + drone_3 2 + drone_6 2 = 18). kMaxFeedback=16, so a
-// compiled plan carrying all 18 must be deterministically REJECTED in rebuild() —
+// compiled plan carrying all 18 must be deterministically REJECTED in rebuild —
 // never published as "true + 16/18" by silent truncation — while a ≤16 plan must
 // be accepted with feedbackCount == compiled plan count.
 // ----------------------------------------------------------------------------
@@ -320,7 +320,7 @@ void registry_self_loop_feedback_capacity() {
     mods[i].contract = &cyc[i];
   }
 
-  // 18 > 16: all connect legally, but rebuild() must reject the over-capacity plan.
+  // 18 > 16: all connect legally, but rebuild must reject the over-capacity plan.
   {
     core::SynthRuntime rt(reg::kJacks, core::kJackCount, nullptr, 0, mods,
                           core::kModuleCount, kSeed, kSr, nullptr, 0);
@@ -360,21 +360,21 @@ void registry_self_loop_feedback_capacity() {
 }
 
 // ----------------------------------------------------------------------------
-// Batch 4A (GH#5): the CLASSIC drone gate/ATT/RLS/HOLD envelope + CV MOD + ENV OUT are
+// Batch 4A: the CLASSIC drone gate/ATT/RLS/HOLD envelope + CV MOD + ENV OUT are
 // consumed by the REAL runtime, and specifically the ENV OUT write is descriptor-driven
-// against the GENERATED registry's four real env_out jacks (@Codex 方案2b, msg e0f3ed09).
+// against the GENERATED registry's four real env_out jacks (方案2b).
 // The runtime under test is the same Registry-backing executor; a bare `reg::kModules`
-// contract wrapper mirrors the GH#13 setup so the compiled plan is exactly the classic
+// contract wrapper mirrors the setup so the compiled plan is exactly the classic
 // drone -> mixer fixed leg. The order 0..3 == drone 1/2/4/5; the single kDrone role owns
 // the collapsed bank that produces all four classic channels.
 // ----------------------------------------------------------------------------
 
 // The single fixed classic-drone leg (drone_1 -> mixer). SynthRuntime stores `fixedEdges`
 // by pointer and keeps it for the runtime's whole lifetime, so this must have static storage
-// duration — it is returned by value out of makeRegistryDroneBase(), and a stack-local copy
-// would dangle on the next rebuild(). (The product host passes persistent registry-backed
+// duration — it is returned by value out of makeRegistryDroneBase, and a stack-local copy
+// would dangle on the next rebuild. (The product host passes persistent registry-backed
 // arrays; this is the test-side equivalent.)
-// @Codex 7C2 no-dedup: FOUR classic drone ModuleIds -> FOUR distinct kDroneBank slots (one
+//  no-dedup: FOUR classic drone ModuleIds -> FOUR distinct kDroneBank slots (one
 // per compiled ModuleId), each stepping exactly ITS OWN group. One edge per drone -> mixer so
 // the mixer grouping (all four feed the same sink) mirrors the product contract. The single
 // drone_1->mixer edge + whole-bank tick is GONE — there is no "one tick whole bank" anymore.
@@ -386,9 +386,9 @@ const core::FixedEdge kClassicDroneEdge[] = {
 };
 
 // Registry-backed runtime with ALL FOUR classic drone ModuleIds bound to the kDrone role and
-// four fixed edges (drone_1/2/4/5 -> mixer) so they all land in the compiled plan. @Codex 7C2
+// four fixed edges (drone_1/2/4/5 -> mixer) so they all land in the compiled plan.
 // no-dedup: each classic drone is ONE kDroneBank slot stepping exactly ITS OWN group. The mixer
-// holds no role, so the slots are just the four drone groups — enough to observe droneChannel()
+// holds no role, so the slots are just the four drone groups — enough to observe droneChannel
 // (the pre-VCA channel data each group emits) and the batch-4A ENV OUT writes. This BASE does
 // NOT bind env_out / cv_mod_in, so its groups are unbound (the fail-closed tests use it).
 // Look up a registered JackDescriptor by id (linear over the small registry). The binding
@@ -401,7 +401,7 @@ const core::JackDescriptor* registryJack(lunar24::registry::JackId id) {
   return nullptr;
 }
 
-// A descriptor an oracle REQUIRES must be present. Faithful to @Codex 7a42d10a point 4: a
+// A descriptor an oracle REQUIRES must be present. Faithful to point 4: a
 // missing generated descriptor is a TEST defect, NOT a silent skip — count a fault (the
 // binary returns non-zero) and let the caller bail before dereferencing. Every call site
 // still null-checks before use; this only makes the skip audible instead of quiet.
@@ -428,7 +428,7 @@ core::JackId unusedRegistryId() {
 }
 
 // Classic-drone runtime over an ARBITRARY jacks table. The real registry uses
-// makeRegistryDroneBase(); the NaN/inverted-range negative passes a jacks table where the
+// makeRegistryDroneBase; the NaN/inverted-range negative passes a jacks table where the
 // drone_1_env_out nominal range is pathological, so the descriptor-driven admission must
 // refuse it (validRange_). The module table is shared + static (see the storage comment).
 core::SynthRuntime makeRegistryDroneJacks(const core::JackDescriptor* jacks, std::uint32_t jack_n) {
@@ -436,7 +436,7 @@ core::SynthRuntime makeRegistryDroneJacks(const core::JackDescriptor* jacks, std
   // SynthRuntime stores BOTH modules_ and each mods[i].contract as caller-owned pointers
   // (machine_runtime.h:848/850) and keeps them for its whole lifetime. This helper returns
   // the runtime by value, so these arrays MUST have static storage duration — a stack-local
-  // array would dangle on the next rebuild(). The reassignment below is idempotent (the same
+  // array would dangle on the next rebuild. The reassignment below is idempotent (the same
   // registry-derived values every call), so re-running it on static storage is harmless.
   //
   // NB: static storage is zero-initialized at load and GraphModule::contract is const (the
@@ -485,16 +485,16 @@ core::SynthRuntime makeRegistryDroneRuntime() {
   return rt;
 }
 
-// ---- GH#15 D4 registry fixture: the TWO Papa Srapa voices (drone_3 / drone_6) in the plan ----
+// registry fixture: the TWO Papa Srapa voices (drone_3 / drone_6) in the plan ----
 // The D4 slice binds drone_3/6.gate_in + drone_3/6.env_out, so those two ModuleIds must actually
 // REACH the compiled plan before any D4 criterion can be observed. Two things are needed and both
 // are load-bearing (verified empirically — with either one missing the voice is silently dropped):
 //   1. a fixed edge per voice (drone_3/drone_6 -> mixer), so the module is an ACTIVE edge endpoint;
-//   2. bindFixedRole(..., kDrone), because kindOf_() reports kUnsupported for an unbound module
-//      and countExecSlots_() drops non-kUnsupported-dropped modules from the plan.
+//   2. bindFixedRole(..., kDrone), because kindOf_ reports kUnsupported for an unbound module
+//      and countExecSlots_ drops non-kUnsupported-dropped modules from the plan.
 // Six edges + six role bindings therefore yield exactly SIX drone slots (ids 15..20). This is a
-// SEPARATE fixture from makeRegistryDroneJacks() on purpose: the classic tests assert
-// execSlotCount() == 4 (no-dedup) and must keep seeing exactly their own four slots.
+// SEPARATE fixture from makeRegistryDroneJacks on purpose: the classic tests assert
+// execSlotCount == 4 (no-dedup) and must keep seeing exactly their own four slots.
 // Static storage for the same reason as kClassicDroneEdge / makeRegistryDroneJacks: SynthRuntime
 // keeps both the edge array and mods_ pointers for its whole lifetime, and both helpers return by
 // value.
@@ -510,7 +510,7 @@ const core::FixedEdge kPapaDroneEdge[] = {
 // Registry-backed runtime with all SIX drone voices bound to kDrone and six fixed edges, so
 // drone_3/drone_6 land in the compiled plan as their own PapaVoice slots. The D4 cohorts are NOT
 // bound here — this is the unbound base the default-equivalence lock and the fail-closed negatives
-// start from (mirroring makeRegistryDroneBase()).
+// start from (mirroring makeRegistryDroneBase).
 core::SynthRuntime makeRegistryPapaBase() {
   namespace reg = lunar24::registry;
   // See the storage-duration note in makeRegistryDroneJacks (static + per-field set: an aggregate
@@ -552,7 +552,7 @@ core::SynthRuntime makeRegistryPapaRuntime() {
 // Then gate ONLY group 0 back ON and verify it recovers with an attack while group 1 stays
 // silent, with ENV OUT tracking the envelope up to the row's own nominalMax.
 //
-// @Codex 52d3c620 point-3 oracle: remove every ±9.9/±10 hard-code. The oracle reads
+// d3c620 point-3 oracle: remove every ±9.9/±10 hard-code. The oracle reads
 // nominalMin/Max from the four REAL generated JackDescriptor (registryJack). drone_1/2 range
 // + polarity are CONFIRMED (Polarity::bipolar, range candidate confirmed) but their TRANSFER
 // is provisional; drone_4/5 range + polarity + transfer are all UNVERIFIED (Polarity::unknown,
@@ -628,7 +628,7 @@ void registry_drone_gate_envout() {
 
 // The shared CV MOD is consumed through the CONTROL layer: patching a CV source into a
 // classic cv_mod_in jack detunes the MOD-on group (the product path resolved the joined
-// control), while a MOD-off group is inert to the same CV (design/07 §7).
+// control), while a MOD-off group is inert to the same CV.
 void registry_drone_cv_mod() {
   namespace reg = lunar24::registry;
   // The lambda must not capture any function-local variable (MSVC C3493: a constexpr local
@@ -683,7 +683,7 @@ void registry_drone_reproducible() {
   check(a.env == b.env, "same-seed classic drone ENV OUT volts is bit-identical across fresh runtimes");
 }
 
-// Fail-closed admission (@Codex 52d3c620 points 1+2). Two halves:
+// Fail-closed admission (d3c620 points 1+2). Two halves:
 //   (a) NEVER-bound: every group is unbound + reads 0 (the JackId{0} sentinel would otherwise
 //       collide with the real vco_a.cv_in jack id 0 — the explicit bound-state flag fixes that).
 //   (b) ATOMIC cohort rejection: after a VALID cohort is admitted, ANY bad member (missing id,
@@ -745,7 +745,7 @@ void registry_drone_envout_fail_closed() {
     std::snprintf(pre, sizeof pre, "'%s': a valid cohort is admitted first (so refusal must clear it too)", n.name);
     check(okPre, pre);
     if (n.kind == Kind::EnvOut) {
-      // @Codex 7a42d10a #1 (source-bank criterion): ONE frame AFTER the valid cohort is
+      //  #1 (source-bank criterion): ONE frame AFTER the valid cohort is
       // admitted, the kDrone step writes each group's ENV OUT volts into cvOut_[envOutJack].
       // Capture that per group NOW (before the bad cohort is offered), then reject. A released
       // cohort must zero the ORIGINAL valid source slots — the old releaseEnvOut_ only cleared
@@ -824,7 +824,7 @@ void registry_drone_envout_fail_closed() {
     }
   }
 
-  // CV MOD "no stale read" (@Codex 7a42d10a #2): a rejected cohort must UN-APPLY the shared
+  // CV MOD "no stale read" #2): a rejected cohort must UN-APPLY the shared
   // mod CV it had been consuming. The OLD test rejected BEFORE any frame, so the 4V never
   // entered the group (modCvG_ stayed 0 either way) — it was FAKE-GREEN. Here we first CONSUME
   // the joined CV (one processFrame drives modCvG_[0] via applyControlCv_), THEN reject, and
@@ -863,10 +863,10 @@ void registry_drone_envout_fail_closed() {
   check(p0.second == 0.0, "CV MOD stale-read: 0V consume + reject still leaves modCv at 0");
 }
 
-// @Codex 7C2 req. 1 (NO execution-kind dedup): the four classic drone ModuleIds must yield
+//  (NO execution-kind dedup): the four classic drone ModuleIds must yield
 // FOUR distinct kDroneBank ExecutionSlots — NEVER one merged "whole bank" slot. Each slot
 // carries its own ModuleId; step(slot.id, kind) runs exactly that drone's group. This is what
-// makes env_follower -> drone_2.cv_mod (drone_2 running before its source) a real #64-compliant
+// makes env_follower -> drone_2.cv_mod (drone_2 running before its source) a real -compliant
 // per-module order instead of one collapsed bank step.
 IJU_TEST_NOINLINE void registry_drone_no_dedup_slots() {
   core::SynthRuntime rt = makeRegistryDroneRuntime();
@@ -891,8 +891,8 @@ IJU_TEST_NOINLINE void registry_drone_no_dedup_slots() {
         "drone_1/2/4/5 are all present as DISTINCT slots (none collapsed into one bank)");
 }
 
-// @Codex 7C2 req. 4 (EXPLICIT strict binding policy, never inferred): an owning definition
-// enables strictness via setStrictBindings(); only then does rebuild() fail-closed TWO distinct
+//  (EXPLICIT strict binding policy, never inferred): an owning definition
+// enables strictness via setStrictBindings; only then does rebuild fail-closed TWO distinct
 // ways — a compiled-region module with NO binding (missing_execution_binding) vs one EXPLICITLY
 // bound to kUnsupported (unsupported_module). Default OFF keeps the permissive synthetic path.
 IJU_TEST_NOINLINE void registry_strict_binding_policy() {
@@ -931,7 +931,7 @@ IJU_TEST_NOINLINE void registry_strict_binding_policy() {
   }
 }
 
-// @Codex 263cb3ca point 1 (ACTIVE-only strict preflight): strictness must judge a module ACTIVE
+// cb3ca point 1 (ACTIVE-only strict preflight): strictness must judge a module ACTIVE
 // by whether it is an endpoint of THIS candidate's effective PatchEdge or FixedEdge — NOT by
 // merely existing in the inventory / landing in a compiled region. The owning definition binds
 // the six not-yet-integrated control sources to kUnsupported; an ISOLATED one must NOT fail the
@@ -968,9 +968,9 @@ IJU_TEST_NOINLINE void registry_strict_active_only() {
   }
 }
 
-// @Codex 263cb3ca point 2 (bindExecutionKind must dirty the plan on BOTH add + update): a
+// cb3ca point 2 (bindExecutionKind must dirty the plan on BOTH add + update): a
 // successful strict rebuild followed by a kind change must re-preflight — otherwise the next
-// rebuild() short-circuits to graph_unchanged and the OLD preflight/slots survive, violating
+// rebuild short-circuits to graph_unchanged and the OLD preflight/slots survive, violating
 // the explicit strict policy. This demonstrates the supported->unsupported flip on the UPDATE
 // branch (the add branch is also dirtied: mixer is bound here via a never-bound id).
 IJU_TEST_NOINLINE void registry_strict_binding_kind_dirty() {
@@ -988,7 +988,7 @@ IJU_TEST_NOINLINE void registry_strict_binding_kind_dirty() {
     check(rt.execSlotCount() == 5, "one slot per active module (4 drones + mixer)");
 
     // Flip drone_1 kDroneBank -> kUnsupported on the UPDATE branch. This must dirty the plan so
-    // the second rebuild() does a REAL preflight and REFUSES with unsupported_module — NOT
+    // the second rebuild does a REAL preflight and REFUSES with unsupported_module — NOT
     // graph_unchanged (which would leave the 5 old slots in place).
     rt.bindExecutionKind(core::ModuleId::drone_1, core::ExecutionKind::kUnsupported);
     check(!rt.rebuild(), "kind flip after a valid rebuild re-preflights and REFUSES");
@@ -997,7 +997,7 @@ IJU_TEST_NOINLINE void registry_strict_binding_kind_dirty() {
   }
 }
 
-// @Codex 7a42d10a #3 (sentinel removal): the old code used JackId{0} as an "unbound" sentinel,
+//  #3 (sentinel removal): the old code used JackId{0} as an "unbound" sentinel,
 // which collides with the REAL vco_a.cv_in jack id 0 and would wrongly treat a group
 // LEGITIMATELY bound to jack id 0 as unbound. The fix decides only by the explicit bound-state
 // flags. Pin group 0 to a legal jack id 0 via a synthetic cohort (copies of the real drone
@@ -1041,7 +1041,7 @@ void registry_drone_envout_id0_sentinel() {
 
   // CV MOD half: group 0's cv_mod_in jack is id 0. A patched 4V must be consumed by the group
   // (cvModInGroupOf_ resolves id 0); the old sentinel guard dropped id 0 silently -> the group
-  // stayed at modCv 0. @Codex 7a42d10a #3.
+  // stayed at modCv 0. #3.
   //
   // NOTE on the fixed VOCT/VCF sinks: SynthRuntime's voctA_/voctB_/vcfCvL_/vcfCvR_ default to
   // JackId{0} (= vco_a's cv_in jack). applyControlCv_ checks `snk == voctA_` (etc.) BEFORE the
@@ -1114,7 +1114,7 @@ void registry_drone_envout_partition() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#6 — VCF identity / calibration config entry on the product runtime.
+//  VCF identity / calibration config entry on the product runtime.
 // Design/07 §7: the whole VCF→distortion→gain level-dependent path is calibrated by a
 // versioned (seed, version, calibration) profile; L/R calibration/nonlinear state are
 // independent. The oracle below asserts the EXECUTED state (via the no-alloc
@@ -1410,13 +1410,13 @@ void gh6_bit_identical() {
         "different seed -> fixed WET difference (seed participates in the profile)");
 }
 
-constexpr double kD3DivSpan = 16.0 - 1.0;   // kNewDroneDivMax-1 (PROVISIONAL max, task #98).
+constexpr double kD3DivSpan = 16.0 - 1.0;   // kNewDroneDivMax-1 (PROVISIONAL max).
 
-// ---- GH#15 D3 acceptance (task #98): drone_3/6 divider in the real S&H clock lane ----
+// acceptance: drone_3/6 divider in the real S&H clock lane ----
 // Each of these constructs a SynthRuntime BY VALUE on the stack (~174 KiB), so like the
-// registry_* tests they are held out of main()'s frame (IJU_TEST_NOINLINE). MSVC
+// registry_* tests they are held out of main's frame (IJU_TEST_NOINLINE). MSVC
 // allocates a per-local stack slot and does not reuse across scopes, so stacking the D3
-// runtimes atop main()'s pre-existing per-section slots pushed the frame past the 1 MiB
+// runtimes atop main's pre-existing per-section slots pushed the frame past the 1 MiB
 // runner stack (the Windows crash). Under a noinline function each block runs (and
 // releases) its own large frame, so the live set is bounded to that block's runtimes.
 // This is a CI-safety latch, not product semantics.
@@ -1553,10 +1553,10 @@ IJU_TEST_NOINLINE void d3_div_acceptance_range_lock() {
       check(rt.drone3Divider() == held, "d3 divider -0.5 leaves the state unchanged");
 }
 
-// ---- GH#15 D3 DIRECTIONAL acceptance (@Codex a99f6489 gap fill) ----
+// DIRECTIONAL acceptance (gap fill) ----
 // The acceptance above proves the divider is a real CV lever (it changes the S&H readback, never
 // the audio channel) and that the setter/readback map is exact, but never measures the DIVISION
-// itself. @Codex found the gap: mutating `lfEdgeAcc_ += 1.0` -> `+= 2.0` in an isolated shadow
+// itself. found the gap: mutating `lfEdgeAcc_ += 1.0` -> `+= 2.0` in an isolated shadow
 // header still passes 347/347, because the old assertions only ask "is the CV nonzero / does it
 // change" — a 2x-faster capture schedule satisfies that too. This block measures the REAL capture
 // schedule and reconciles it against an INDEPENDENT LF-edge reference (the live rate Hz, not the
@@ -1752,13 +1752,13 @@ IJU_TEST_NOINLINE void d3_div_actual_timing_acceptance() {
   //     entry (no encode/decode / applyDeviceState), and a block-split compared only on the final
   //     getter cannot see a mid-capture mis-sample. The real restore (legal DeviceState ->
   //     applyDeviceState -> renderSampled), restore-twice determinism, per-sample block-split and
-  //     audio block-partition are asserted in the @Codex dd57c783 gap-fill:
+  //     audio block-partition are asserted in the gap-fill:
   //     tests/host/test_d3_divider_restore.cpp.
 }
 
-// ---- GH#15 D4 acceptance (task #106): drone_3/6 ATT/RLS + the AR VCA envelope ----
+// acceptance: drone_3/6 ATT/RLS + the AR VCA envelope ----
 // Each function builds one or more SynthRuntime BY VALUE on the stack, so — exactly like the D3
-// block above — they are held out of main()'s frame (IJU_TEST_NOINLINE) to keep the MSVC/ASan
+// block above — they are held out of main's frame (IJU_TEST_NOINLINE) to keep the MSVC/ASan
 // runner stack bounded. A CI-safety latch, not product semantics.
 
 // Both stages bottom out at the classic 0.001 s floor (48 samples at kSr), so a settle window of
@@ -2005,7 +2005,7 @@ IJU_TEST_NOINLINE void d4_env_out_publication_acceptance() {
         "(per-voice transfer, no cross-talk)");
 }
 
-// (5) THE REGRESSION LOCK (highest weight — @Kimi clause 1): without a cable on gate_in the AR
+// (5) THE REGRESSION LOCK (highest weight — clause 1): without a cable on gate_in the AR
 // envelope must be a transparent x1.0 gain, so the whole D4 path is bit-identical to pre-D4. Three
 // configurations are compared BITWISE (no tolerance):
 //   A = no D4 cohort bound at all (the pre-D4 state);
@@ -2184,13 +2184,13 @@ IJU_TEST_NOINLINE void d4_cohort_fail_closed() {
   }
 }
 
-// ---- GH#15 D5 acceptance (task #107): drone_3/6 HOLD = an OR term on the AR envelope target ----
+// acceptance: drone_3/6 HOLD = an OR term on the AR envelope target ----
 // D5 gives the two Papa Srapa voices the HOLD selector the classic groups already own, with the
 // SAME law and the SAME default: `DroneBank::tickGroup` computes `target = (e.gate || e.hold) ? 1.0
 // : 0.0` from a `bool hold` FIELD of the group envelope, and this slice reproduces that shape
 // inside ArEnvelope rather than adding a second envelope or a second gain stage. HOLD is NOT a
-// gate write: `arGate()` keeps reporting the TRUE resolved gate, so a held voice reads
-// gate()==false AND level()==1.0 simultaneously.
+// gate write: `arGate` keeps reporting the TRUE resolved gate, so a held voice reads
+// gate==false AND level==1.0 simultaneously.
 //
 // Acceptance: (1) hold=on keeps the voice OPEN against a LOW true gate, per voice, with the
 // three-way discriminator (hold==true AND gate==false AND level==1.0); (2) BOTH dispatch lanes
@@ -2202,7 +2202,7 @@ IJU_TEST_NOINLINE void d4_cohort_fail_closed() {
 // pre-D5 OPEN voice, and the cable-LOW configuration must differ so the lock is not vacuous.
 //
 // Each function builds SynthRuntime BY VALUE on the stack, so — exactly like the D3/D4 blocks —
-// they are held out of main()'s frame (IJU_TEST_NOINLINE) to keep the MSVC/ASan runner stack
+// they are held out of main's frame (IJU_TEST_NOINLINE) to keep the MSVC/ASan runner stack
 // bounded. A CI-safety latch, not product semantics.
 //
 // 10 ms at kSr: long enough to move a 0.5005 s stage by a measurable amount, short enough that a
@@ -2534,7 +2534,7 @@ IJU_TEST_NOINLINE void d5_hold_env_out_isolation_and_cohort() {
   // Per-voice independence: hold drone_3 only, with BOTH gates driven LOW, and require drone_6 to
   // be BIT-IDENTICAL to a reference where neither voice is held. The two gates hang off TWO
   // DIFFERENT source jacks on purpose: PatchGraph's cable bank saturates a source port, so a
-  // second cable from the SAME source atomically DISPLACES the first (the documented `connect()`
+  // second cable from the SAME source atomically DISPLACES the first (the documented `connect`
   // semantics quoted at machine_runtime.h:1820-1824) and the displaced gate would silently fall
   // back to the default-open one — which is what the precondition check below pins.
   auto releaseBoth = [](core::SynthRuntime& r) {
@@ -2586,8 +2586,8 @@ IJU_TEST_NOINLINE void d5_hold_env_out_isolation_and_cohort() {
 }
 
 // (5) THE REGRESSION LOCK (highest weight). Four configurations, compared BITWISE (no tolerance):
-//   A  = no Papa cohort bound at all + HOLD never applied (the pre-D4/pre-D5 path);
-//   B  = both cohorts bound + an EXPLICIT `hold = 0` on both voices through the real batch lane;
+//   A = no Papa cohort bound at all + HOLD never applied (the pre-D4/pre-D5 path);
+//   B = both cohorts bound + an EXPLICIT `hold = 0` on both voices through the real batch lane;
 //   D0 = both cohorts bound + drone_3.gate_in driven LOW, hold = 0;
 //   D1 = the SAME cable driven LOW, hold = 1.
 // A == B proves the registry default (0) and the member default (false) cannot diverge; A == D1
@@ -2689,7 +2689,7 @@ IJU_TEST_NOINLINE void d5_default_equivalence_lock_hold() {
 int main() {
   std::printf("ENGINE-LEVEL controlled fixture (SynthRuntime/GraphCompiler/executor mechanics).\n");
 
-  // ---- ① product path consumes compile_graph() --------------------------------
+  // product path consumes compile_graph --------------------------------
   std::printf("(1) product path consumes compile_graph()\n");
   {
     core::SynthRuntime rt = makeRuntime();
@@ -2718,7 +2718,7 @@ int main() {
 
     // NEGATIVE (will-red): bypass the graph (driveGraph=false) and the same CV must
     // NOT reach VCO B — two fresh runtimes at CV=5 vs CV=0 give identical DRY B,
-    // proving the ① discriminator is not vacuous. If the runtime ignores the graph
+    // proving the discriminator is not vacuous. If the runtime ignores the graph
     // in the PRODUCT path too, the positive above would also stay green and the
     // whole test is telling you it is not consuming the graph anywhere.
     core::SynthRuntime bHi = makeRuntime();
@@ -2737,7 +2737,7 @@ int main() {
           "bypass (driveGraph=false): CV has NO effect on DRY B (negative)");
   }
 
-  // ---- ② repatching changes the output ---------------------------------------
+  // repatching changes the output ---------------------------------------
   std::printf("(2) repatching changes the output\n");
   {
     // Bare: no edge -> VCO B stays at base freq.
@@ -2767,7 +2767,7 @@ int main() {
           "disconnecting CV->VCO B restores DRY B (repatch toggles)");
   }
 
-  // ---- ③ four outputs correct, non-interfering ------------------------------
+  // four outputs correct, non-interfering ------------------------------
   std::printf("(3) four outputs correct and non-interfering\n");
   {
     // Baseline: no edge, both VCOs at the same base frequency, same start phase.
@@ -2791,7 +2791,7 @@ int main() {
     check(finite(aO), "all four outputs finite");
   }
 
-  // ---- ④ sr/buffer invariance + reproducibility -----------------------------
+  // sr/buffer invariance + reproducibility -----------------------------
   std::printf("(4) sr/buffer invariance + reproducibility\n");
   {
     const double kSrs[] = {44100.0, 48000.0, 88200.0, 96000.0};
@@ -2844,7 +2844,7 @@ int main() {
     check(invariant, "1x256 render == 4x64 renders, bit-identical (partition-invariant)");
   }
 
-  // ---- ⑤ RT-safe: no alloc/lock on the render path --------------------------
+  // RT-safe: no alloc/lock on the render path --------------------------
   std::printf("(5) RT-safe: no allocation / lock on the render path\n");
   {
     core::SynthRuntime rt = makeRuntime();
@@ -2855,7 +2855,7 @@ int main() {
     const std::uint32_t e0 = rt.edgeCount();
     const bool valid0 = rt.graphValid();
 
-    // ALLOCATOR-COUNT (@Claude rule 5). The graph/plan was built by rebuild() OFF
+    // ALLOCATOR-COUNT (rule 5). The graph/plan was built by rebuild OFF
     // the audio thread; the render loop is the ON-thread measurement window, so the
     // count is zeroed immediately before it. First prove the probe is non-vacuous:
     // a deliberate allocation inside the window IS seen (a counter that never fires
@@ -2893,7 +2893,7 @@ int main() {
     check(finite(last), "render output stays finite under sustained frames");
   }
 
-  // ---- ⑥ ruling 2: fixed chain + pluggable edges share ONE plan --------------
+  // ruling 2: fixed chain + pluggable edges share ONE plan --------------
   std::printf("(6) ruling 2: fixed chain + pluggable edges share one plan\n");
   {
     // (a) SHARED PLAN. The fixed-chain modules (preamp/env_follower/mixer/vcf/dist)
@@ -3024,7 +3024,7 @@ int main() {
   }
 
   // (b2) EXECUTOR RECONCILE + DELAY-LENGTH GUARD (07 §4 "z⁻¹ 退化成整块延迟" 的防护, 也是
-  //       P2-③ real_path "执行器不认编译器账" 的同一病灶)。判据读**运行时真实反馈延迟**
+  //        real_path "执行器不认编译器账" 的同一病灶)。判据读**运行时真实反馈延迟**
   //       `feedback_[i].delaySamples`(执行器真正用的那个), 不是编译器的
   //       `region.feedback[].delaySamples`。突变把执行器延迟换成整块(本应是编译器判定的
   //       1)⇒ 这里必须红。
@@ -3108,13 +3108,13 @@ int main() {
           "WET L/R finite from the distortion (out-of-P6 effector not wired)");
   }
 
-  // ---- ⑦ #39: product-path drone is nonlinear AND from the bank ----------------
-  // @Claude (msg b3bfb888): test_drone_classic proved the DroneBank CLASS in
+  // : product-path drone is nonlinear AND from the bank ----------------
+  //  test_drone_classic proved the DroneBank CLASS in
   // isolation, but NO criterion proved the machine's SOUND contains it — "零件对 ≠
   // 机器用了它". A mutation that bypasses the bank at the PRODUCT path (drone[q]=0.5)
   // must red here. The product path computes the drone channel in step_(kDrone) ->
   // aggregateDrone_ and feeds it to the mixer; we read that EXECUTED value via
-  // droneChannel() — the same data the mixer consumes, not a test-side re-derivation.
+  // droneChannel — the same data the mixer consumes, not a test-side re-derivation.
   // A same-seed standalone DroneBank is the oracle for what the bank produces.
   {
     constexpr std::size_t kN = 1024;
@@ -3166,8 +3166,8 @@ int main() {
           "product drone channel VARIES (a constant drone[q]=0.5 bypass is flat; non-vacuous)");
 
     // NONLINEARITY: the product drone channel differs from the pure-sawtooth LINEAR
-    // superposition forecast. Since task #110 the two sides are no longer separated by the
-    // nonlinearity ALONE: `lin` is built from the bank's NAIVE DroneBank::sawtooth() sample
+    // superposition forecast. Since the two sides are no longer separated by the
+    // nonlinearity ALONE: `lin` is built from the bank's NAIVE DroneBank::sawtooth sample
     // while the product path band-limits that saw (core/polyblep_kernel.h), so `gap` carries
     // the polyBLEP correction as well. The assertion stays valid as a lower bound -- both
     // sides still call the same bank code, so the maxDiff<1e-9 check above is unaffected and
@@ -3181,8 +3181,8 @@ int main() {
           "product drone channel != pure-sawtooth LINEAR superposition (nonlinearity is in the signal)");
   }
 
-  // ---- ⑧ #39: drone panel controls reach the bank (knob -> bank) ----------------
-  // @Claude (msg b3bfb888): "再 wire 面板绑定（旋钮→bank），并配会红判据：动一个
+  // : drone panel controls reach the bank (knob -> bank) ----------------
+  //  "再 wire 面板绑定（旋钮→bank），并配会红判据：动一个
   // 旋钮参数，产品路径输出必须随之改变；不改 → 红。" A dark knob that the runtime
   // receives but discards (setter no-ops, never forwards to drone_.setX) is a dead
   // binding — the product output must NOT change, and this criterion reds. Each
@@ -3255,8 +3255,8 @@ int main() {
     }
   }
 
-  // ---- ⑪ #45: FM/AM are SWITCHES, four combos -> four distinct drone-3 outputs ----
-  // @Claude (msg 3e21f284, manual L344-366): the NEW voice has TWO Schmitt oscillators,
+  // ⑪: FM/AM are SWITCHES, four combos -> four distinct drone-3 outputs ----
+  //  (manual L344-366): the NEW voice has TWO Schmitt oscillators,
   // NOT one. An LF Schmitt is a square-wave MODULATOR (RATE); an audio-frequency Schmitt
   // does the tone (PITCH/RANGE). FM/AM are not a third source — they are two SWITCHES
   // routing the LF square onto the audio oscillator, giving four combos (drone / FM /
@@ -3306,8 +3306,8 @@ int main() {
           "adding FM on AM changes the output (AM-only vs FM+AM differ)");
   }
 
-  // ---- ⑫ #45: PITCH=0 + NOISE full -> drone 3 channel is pure noise (tone gated) ----
-  // The manual "PITCH to zero => clean noise" recipe (@Claude criterion ②): the PITCH-
+  // ⑫: PITCH=0 + NOISE full -> drone 3 channel is pure noise (tone gated) ----
+  // The manual "PITCH to zero => clean noise" recipe: the PITCH-
   // at-floor silence gate (schmitt_osc.h kSilenceSt) kills the audio oscillator, so the
   // drone channel is EXACTLY the noise stem. The oracle is the same-seed standalone
   // NoiseSource the runtime derives via newVoiceSeed/newSourceSeed, lockstep for exact
@@ -3348,12 +3348,12 @@ int main() {
           "raising PITCH back on re-adds the tone (the recipe really removed it; non-vacuous)");
   }
 
-  // ---- ⑬ #45: S&H is a CV OUT (not in the audio channel); the lane OWNS its clock ----
-  // @Claude criterion ③: the Sample & Hold runs noise->IN with the LF/mod source as its
+  // ⑬: S&H is a CV OUT (not in the audio channel); the lane OWNS its clock ----
+  //  the Sample & Hold runs noise->IN with the LF/mod source as its
   // clock and yields a -5..+5 V CV OUT of the voice (manual), so it is NOT summed into
-  // the mixer channel. GH#15 D3 re-routes this: the driven S&H clock is now the LF square,
+  // the mixer channel. re-routes this: the driven S&H clock is now the LF square,
   // edge-count divided by the DIVIDER ratio divN_ (a real lane knob, not an injectable
-  // clock). @Kimi ruling ④ voided the setDrone3ShClock field-injection seam, so the old
+  // clock). voided the setDrone3ShClock field-injection seam, so the old
   // arbitrary-clock-waveform / no-clock ("unclocked doesn't self-run") cases are NO LONGER
   // expressible through the product lane — that is reported back (escape hatch) rather than
   // silently dropped. What the lane CAN prove: the S&H is genuinely clocked by the divided
@@ -3362,13 +3362,13 @@ int main() {
   // sampleHold3Cv moves).
   d3_sah_lane_clock_contract();
 
-  // ---- #46: ControlEvent dispatch consumes EventTimebase (buffer-invariant) ----
+  // : ControlEvent dispatch consumes EventTimebase (buffer-invariant) ----
   std::printf("(46) ControlEvent dispatch is buffer-invariant + non-vacuous\n");
   {
     constexpr std::size_t kTotFrames = 256;
     constexpr std::size_t kEventSample = 100;   // absolute sample the pitch lands on.
     constexpr std::size_t kBlocks[3] = {64, 128, 256};
-    static const core::RuntimeInputs kSilence[kTotFrames] = {core::RuntimeInputs{0.0, 0.0}};  // extSource = 0, as runFrames() uses.
+    static const core::RuntimeInputs kSilence[kTotFrames] = {core::RuntimeInputs{0.0, 0.0}};  // extSource = 0, as runFrames uses.
 
     // A single drone_3.pitch = 0.9 event at absolute sample kEventSample: the tone jumps
     // from the default pitch (0.5) THERE.
@@ -3390,8 +3390,8 @@ int main() {
       for (std::size_t b = 0; b < kTotFrames; b += block) rt.processBlock(kSilence, block, seq + b);
     };
 
-    // Every render must go through rebuild() so the fixed chain actually executes
-    // (makeRuntime() binds roles and the chain order is derived on rebuild; without
+    // Every render must go through rebuild so the fixed chain actually executes
+    // (makeRuntime binds roles and the chain order is derived on rebuild; without
     // it the outputs stay at 0, which would make any comparison vacuous).
     auto makeRunning = [&]() { core::SynthRuntime rt = makeRuntime(); rt.rebuild(); return rt; };
 
@@ -3412,7 +3412,7 @@ int main() {
     }
 
     // Scripted: one pitch event; the block partition (64/128/256) must not move the
-    // frame it fires at (buffer-invariance, criterion ④), AND it must change the output
+    // frame it fires at (buffer-invariance), AND it must change the output
     // vs the empty script (not vacuous — "component present != machine uses it").
     core::RuntimeOutput ev[3][kTotFrames] = {};
     for (int bi = 0; bi < 3; ++bi) {
@@ -3426,18 +3426,18 @@ int main() {
           "event script differs from the empty script (dispatch is exercised, not vacuous)");
   }
 
-  // ---- GH#15 D1: MOD knob (drone_3/6.mod) reaches the audio DSP ------------------
+  // : MOD knob (drone_3/6.mod) reaches the audio DSP ------------------
   // The mod knobs were in the 16 no-consumer set; D1 wires them into BOTH dispatch
   // lanes (applyDspParam batch + applyControlEvent_ live) -> the PapaVoice mod_ field,
-  // which tick() scales onto the LF square feeding the audio oscillator (the OLD code
+  // which tick scales onto the LF square feeding the audio oscillator (the OLD code
   // fed a raw ±1 square, i.e. depth 1.0; the NEW default is the registry 0.5).
-  // Acceptance is non-vacuous per @Kimi's default-change contract (35e5328b):
+  // Acceptance is non-vacuous default-change contract:
   //   (c) a FRESH runtime reports the registry default 0.5 on both drones;
   //   (a) the batch lane routes a non-default value into the real field (getter);
   //   (a') norm->depth follows the declared linear kModDepthFromNorm;
   //   (b) the live ControlEvent lane routes into the same field;
   //   (d) mod is a REAL audio lever — with FM on, depth 1.0 vs 0.5 change
-  //       drone3Channel() (the OLD behavior vs the NEW default).
+  //       drone3Channel (the OLD behavior vs the NEW default).
   // NEGATIVE (source mutations the fixture above discriminates): dropping `* mod_` in
   // PapaVoice::tick collapses (d) 1.0 vs 0.5 onto one stream -> red; zeroing the
   // kModDepthFromNorm scale makes (a)/(a')/b) applied values 0 instead of 0.8/1.0 -> red.
@@ -3507,7 +3507,7 @@ int main() {
             "d3 MOD live lane reaches the audio field (0.8)");
     }
     // (d) mod is a REAL audio lever. FM is ON (fmDevHz=120 non-inert), so scaling the
-    // mod depth 1.0 vs 0.5 changes the FM swing on drone3Channel(). Fresh same-seed
+    // mod depth 1.0 vs 0.5 changes the FM swing on drone3Channel. Fresh same-seed
     // runtimes cancel the noise stem, so a peak diff > 0 is the audio difference only.
     {
       const auto modDepth = [&](double depth) {
@@ -3523,7 +3523,7 @@ int main() {
     }
   }
 
-  // ---- GH#15 D2: RANGE / RATE-SWITCH selectors (drone_3/6.hi_low + rate_switch) ----
+  // : RANGE / RATE-SWITCH selectors (drone_3/6.hi_low + rate_switch) ----
   // The hi_low (RANGE) and rate_switch (RATE SWITCH) selectors were the last four D2
   // no-consumer params. D2 wires them into BOTH dispatch lanes (applyDspParam batch +
   // applyControlEvent_ live) onto the audio/LF oscillator as a COMPOSE onto the already-
@@ -3537,7 +3537,7 @@ int main() {
   // Both default to position 0 (hi / off), which yields 0 offset / ×1 — the selectors are
   // BIT-IDENTICAL to the pre-D2 oscillator at default, so (unlike D1's mod, whose default
   // depth moved 1.0→0.5) there is NO default-behaviour change and no before/after evidence.
-  // Acceptance (per @Kimi D2 clause): each position proves it changes the executed module:
+  // Acceptance (D2 clause): each position proves it changes the executed module:
   //   (a) batch lane position 0 vs 1 on the REAL getter — hi_low pitchHz ratio 0.25,
   //       rate_switch rateHz ratio 2.0;
   //   (b) live lane ControlEvent reaches the same getter;
@@ -3563,7 +3563,7 @@ int main() {
       return d;
     };
     constexpr double kRangeRatio = 16.35 / 164.8;  // low band starts at C0, hi band at E3.
-    constexpr double kRateRatio = 10.0;            // the panel's "1 : 10" rate switch.
+    constexpr double kRateRatio = 10.0;            // the panel's "1: 10" rate switch.
 
     // (a) batch lane, two positions on the REAL getter. Position 0 is the identity default,
     // positioning 1 must differ (and by the exact declared ratio). Both drones.
@@ -3614,7 +3614,7 @@ int main() {
             "d3 hi_low live lane reaches the pitch field (low band)");
     }
     // (c) hi_low is a REAL audio lever. FM OFF (default): the audio tone itself shifts band,
-    // so position 0 vs 1 differ on drone3Channel() immediately.
+    // so position 0 vs 1 differ on drone3Channel immediately.
     {
       const auto leverHi = [&](int sel) {
         core::SynthRuntime rt = makeRuntime(); rt.rebuild();
@@ -3661,17 +3661,17 @@ int main() {
     }
   }
 
-  // ---- GH#15 D3: DIVIDER knob (drone_3/6.divider) owns the S&H clock division ----
-  // The divider was the last D3 no-consumer param beside the S&H clock. @Kimi ruling ④
+  // : DIVIDER knob (drone_3/6.divider) owns the S&H clock division ----
+  // The divider was the last D3 no-consumer param beside the S&H clock.
   // gave the divided-LF lane OWNERSHIP of the S&H clock source (shClock_ is derived in
-  // tick() from the LF square, edge-count divided by divN_); the old setShClock injection
+  // tick from the LF square, edge-count divided by divN_); the old setShClock injection
   // seam is voided, so no invented dual-source priority rule is introduced. D3 wires
   // drone_3/6_divider into BOTH dispatch lanes (applyDspParam batch + applyControlEvent_
   // live) -> PapaVoice::setDivider, which sets divN_ = 1 + (kNewDroneDivMax-1)*norm
   // (linear; the max is PROVISIONAL — a software model, no manual/DSP evidence).
-  // Acceptance (per @Kimi D3 clause): each divider value proves it changes the executed
+  // Acceptance (D3 clause): each divider value proves it changes the executed
   // module — the S&H clock — via its CV-out readback, and does NOT touch the audio:
-  //   (a) batch lane two norms on the REAL getter (drone3Divider(), closed form 1+15*n);
+  //   (a) batch lane two norms on the REAL getter (drone3Divider, closed form 1+15*n);
   //   (b) live lane ControlEvent reaches the same getter;
   //   (c) render lever — changing the divider leaves drone3Channel byte-identical (the
   //       S&H CV is never summed into *out) but moves sampleHold3Cv (a real lever);
@@ -3683,7 +3683,7 @@ int main() {
   d3_div_acceptance_live();
   d3_div_acceptance_render_lever();
   d3_div_acceptance_range_lock();
-  // (e) @Codex a99f6489 gap-fill: DIVISION ITSELF. The (a)-(b) acceptance proves the divider is a CV
+  // (e) gap-fill: DIVISION ITSELF. The (a)-(b) acceptance proves the divider is a CV
   // lever but not the ratio; here I measure the ratio: the live codec->owner->processBlock lane, a
   // LEGAL rate (norm 0.5 -> the panel default 6 Hz — the earlier setDrone3Rate(60) was OUT of the
   // panel 0..12 Hz map), a long window, the real S&H output vs an INDEPENDENT LF-edge reference
@@ -3691,7 +3691,7 @@ int main() {
   // intervals alternate 8/9), on drone3 AND drone6, with asymmetric no-cross-talk and split+restore.
   d3_div_actual_timing_acceptance();
 
-  // ---- GH#15 D4: drone_3/6 ATT + RLS into the AR VCA envelope of the Papa Srapa voices ----
+  // : drone_3/6 ATT + RLS into the AR VCA envelope of the Papa Srapa voices ----
   // D4 gives each NEW voice (drone_3/drone_6) the envelope the classic groups already own:
   // the very same LINEAR VCA law (target = gate ? 1 : 0, level += dt/attSeconds toward it,
   // clamped), the very same norm->seconds mapping (DroneBank::mapAttSeconds/mapRlsSeconds,
@@ -3705,7 +3705,7 @@ int main() {
   // reads 0 when unbound/released; (5) THE REGRESSION LOCK — bitwise identical to pre-D4 with no
   // gate cable, in both the bound and bound+driven-HIGH configurations; (6) atomic fail-closed
   // admission + release semantics for BOTH D4 cohorts.
-  std::printf("(47) GH#15 D4 drone_3/6 ATT+RLS -> AR VCA envelope — product path\n");
+  std::printf("(47) drone_3/6 ATT+RLS -> AR VCA envelope — product path\n");
   // clang-format off
   d4_att_rls_mapping_acceptance();
   d4_gate_follows_cable();
@@ -3715,8 +3715,8 @@ int main() {
   d4_cohort_fail_closed();
   // clang-format on
 
-  // (48) GH#15 D5 (task #107). The slice's acceptance: (1) HOLD is an OR term on the AR TARGET —
-  // hold=on against a LOW true gate keeps the voice at exactly 1.0 while `gate()` KEEPS REPORTING
+  // (48). The slice's acceptance: (1) HOLD is an OR term on the AR TARGET —
+  // hold=on against a LOW true gate keeps the voice at exactly 1.0 while `gate` KEEPS REPORTING
   // FALSE (the three-way discriminator); (2) both dispatch lanes reach the real OR term and the
   // selector's unit-domain is locked (everything outside {0,1} rejected keep-old); (3) every row
   // of the transition table, against a closed form measured on the RENDER; (4) HOLD is target-only
@@ -3724,7 +3724,7 @@ int main() {
   // follows the held level through the row's OWN descriptor; (6) THE REGRESSION LOCK, bitwise: an
   // explicit hold=0 reproduces pre-D5 exactly, and hold=1 against a LOW gate reproduces the pre-D5
   // OPEN voice exactly, with both non-vacuity legs asserted.
-  std::printf("(48) GH#15 D5 drone_3/6 HOLD -> AR envelope target OR term — product path\n");
+  std::printf("(48) drone_3/6 HOLD -> AR envelope target OR term — product path\n");
   // clang-format off
   d5_hold_or_term_acceptance();
   d5_hold_dispatch_and_range_lock();
@@ -3733,49 +3733,49 @@ int main() {
   d5_default_equivalence_lock_hold();
   // clang-format on
 
-  std::printf("(11) GH#13 feedback capacity — registry 18 self-loops\n");
+  std::printf("(11) feedback capacity — registry 18 self-loops\n");
   registry_self_loop_feedback_capacity();
 
-  std::printf("(12) GH#5 classic drone group gate/env — product path (batch 4A)\n");
+  std::printf("(12) classic drone group gate/env — product path (batch 4A)\n");
   registry_drone_gate_envout();
 
-  std::printf("(13) GH#5 classic drone shared CV MOD — joined control consumed\n");
+  std::printf("(13) classic drone shared CV MOD — joined control consumed\n");
   registry_drone_cv_mod();
 
-  std::printf("(14) GH#5 classic drone same-seed reproducibility\n");
+  std::printf("(14) classic drone same-seed reproducibility\n");
   registry_drone_reproducible();
 
-  std::printf("(14b) GH#11 no execution-kind dedup — four classic drone slots\n");
+  std::printf("(14b) no execution-kind dedup — four classic drone slots\n");
   registry_drone_no_dedup_slots();
 
-  std::printf("(14c) GH#11 explicit strict binding policy — distinct fail-closed statuses\n");
+  std::printf("(14c) explicit strict binding policy — distinct fail-closed statuses\n");
   registry_strict_binding_policy();
 
-  std::printf("(14d) GH#11 strict preflight judges ACTIVE edge-endpoints, not inventory presence\n");
+  std::printf("(14d) strict preflight judges ACTIVE edge-endpoints, not inventory presence\n");
   registry_strict_active_only();
 
-  std::printf("(14e) GH#11 bindExecutionKind dirties the plan on add + update\n");
+  std::printf("(14e) bindExecutionKind dirties the plan on add + update\n");
   registry_strict_binding_kind_dirty();
 
-  std::printf("(15) GH#5 classic drone ENV OUT fail-closed\n");
+  std::printf("(15) classic drone ENV OUT fail-closed\n");
   registry_drone_envout_fail_closed();
 
-  std::printf("(16) GH#5 classic drone ENV OUT block-partition invariance\n");
+  std::printf("(16) classic drone ENV OUT block-partition invariance\n");
   registry_drone_envout_partition();
 
-  std::printf("(17) GH#5 classic drone JackId{0} sentinel removed (legal id 0 cohort)\n");
+  std::printf("(17) classic drone JackId{0} sentinel removed (legal id 0 cohort)\n");
   registry_drone_envout_id0_sentinel();
 
-  std::printf("(18) GH#6 VCF identity / calibration config entry on the product runtime\n");
+  std::printf("(18) VCF identity / calibration config entry on the product runtime\n");
   gh6_config_entry();
 
-  std::printf("(19) GH#6 fail-closed version / trim admission (keep old complete profile)\n");
+  std::printf("(19) fail-closed version / trim admission (keep old complete profile)\n");
   gh6_fail_closed();
 
-  std::printf("(20) GH#6 L/R calibration + profile domain isolation\n");
+  std::printf("(20) L/R calibration + profile domain isolation\n");
   gh6_lr_isolation();
 
-  std::printf("(21) GH#6 reproducibility + seed participation (bit-identical, partition-invariant)\n");
+  std::printf("(21) reproducibility + seed participation (bit-identical, partition-invariant)\n");
   gh6_bit_identical();
 
   std::printf("\n%d checks, %d failed\n", g_checks, g_fail);

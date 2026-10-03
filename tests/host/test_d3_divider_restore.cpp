@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_d3_divider_restore.cpp — task #98 (GH #15 D3 divider) REAL-RESTORE directional acceptance.
+// test_d3_divider_restore.cpp — (divider) REAL-RESTORE directional acceptance.
 //
-// This is the @Codex dd57c783 gap-fill: the live-lane d3 divider acceptance
+// This is the gap-fill: the live-lane d3 divider acceptance
 // (d3_div_actual_timing_acceptance in tests/core/test_machine_runtime.cpp) drives rate + divider
 // through a controlled SynthRuntime fixture (makeRuntime + enqueueControlEvent + processBlock).
 // That entry is real for the live *ControlEvent* lane, but it does NOT exercise the
@@ -21,8 +21,8 @@
 //      per-sample observation is then used to compare (a) restoring the SAME state twice and (b) ONE
 //      renderSampled(all) vs TWO renderSampled calls over the same window. (b) is a RENDER-CALL
 //      BOUNDARY invariance check — the divider state must not reset between render calls. It is NOT a
-//      block-size check: renderSampled is processBlock(1) on both sides (@Codex e40bdb0b).
-//   3. BLOCK-SIZE INVARIANCE (@Codex e40bdb0b) — a SECOND same-state owner is driven through the
+//      block-size check: renderSampled is processBlock(1) on both sides.
+//   3. BLOCK-SIZE INVARIANCE — a SECOND same-state owner is driven through the
 //      harness's real-block renderBlock path with uniform 64 / 256 / 4096 and irregular partitions;
 //      after EVERY block the published S&H CV of BOTH lanes must equal this file's per-sample
 //      reference trajectory at that block's last absolute frame, with boundaries landing exactly one
@@ -245,7 +245,7 @@ void asymmetric() {
 //         and applyDeviceState are single-valued);
 //     (b) rendering the SAME window as ONE renderSampled(all) vs TWO renderSampled calls must give
 //         the SAME per-sample capture sequence — the divider state must carry across a render-call
-//         boundary (no reset between calls). NOTE (@Codex e40bdb0b): both sides are processBlock(1),
+//         boundary (no reset between calls). NOTE: both sides are processBlock(1),
 //         so this is a RENDER-CALL boundary check, NOT a block-size check — the block-size invariance
 //         is (F), which drives genuinely different audio block sizes through renderBlock.
 void restore_and_block_split() {
@@ -303,10 +303,10 @@ void audio_partition() {
   check(h1.wetR() == h2.wetR(), "d3 restore audio block-partition: bit-identical WET_R");
 }
 
-// (F) BLOCK-SIZE INVARIANCE on the real owner (@Codex e40bdb0b). The divider/S&H state is
+// (F) BLOCK-SIZE INVARIANCE on the real owner. The divider/S&H state is
 //     frame-indexed, so the held CV PUBLISHED at a block boundary must equal this file's per-sample
 //     reference trajectory at that block's LAST absolute frame, for ANY audio partition. The reference
-//     is the block=1 trajectory from measure(); the block owner is a SECOND same-state owner driven
+//     is the block=1 trajectory from measure; the block owner is a SECOND same-state owner driven
 //     through the harness's real-block renderBlock path (engine -> adapter -> processFrame(frames)),
 //     reading BOTH lanes' sampleHold CV after EVERY actual block. Partitions: uniform 64 / 256 / 4096
 //     frames plus two IRREGULAR partitions whose boundaries land EXACTLY one frame before and one
@@ -399,7 +399,7 @@ void block_size_invariance() {
   slot(st, ParameterId::drone_3_rate) = 0.5;     // legal 6 Hz on both lanes.
   slot(st, ParameterId::drone_6_rate) = 0.5;
   slot(st, ParameterId::drone_3_divider) = 0.5;  // N=8.5 -> ~6 captures in the window.
-  slot(st, ParameterId::drone_6_divider) = 1.0;  // N=16  -> ~3 captures in the window.
+  slot(st, ParameterId::drone_6_divider) = 1.0;  // N=16 -> ~3 captures in the window.
   const Seq r3 = measure(st, false, kWinBlock);  // per-sample reference trajectory (block=1).
   const Seq r6 = measure(st, true, kWinBlock);
   check(r3.caps >= 3, "d3 restore block-size: drone3 reference spans multiple captures (not one tail)");

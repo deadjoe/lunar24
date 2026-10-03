@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Allocator-count probe for the GH#12 9B state-apply oracle (task#76). The replaceable
+// Allocator-count probe for the state-apply oracle. The replaceable
 // operator new/delete pair is isolated into its own TU, built ONLY into the host oracle targets
-// that measure the render window (test_state_apply_oracle, and task#117's
+// that measure the render window (test_state_apply_oracle, and 's
 // test_gh19_s0_morph_pwm_acceptance), so GCC's -Wmismatched-new-delete does not misjudge the
 // malloc/free implementation as a new/delete mismatch at the ::operator new / ::operator
 // delete call sites in the test TU. An operator-new definition in the same TU as those call
@@ -12,10 +12,10 @@
 // Semantics are unchanged from the engine-level probe (test_host_engine_oracle_allocator.cpp).
 // Every operator new/new[] in THIS test binary (including the linked lunar_core interface and
 // the MachineRuntimeDefinition / SynthRuntime it constructs) is counted in g_allocCount; the
-// applyDeviceState -> processBlock() render path leaves the render window at zero, and a
+// applyDeviceState -> processBlock render path leaves the render window at zero, and a
 // deliberate crossing allocation inside the window must be detected.
 //
-// ALIGNED: the @Codex false-green was that we only replaced the UNALIGNED operators, so an
+// ALIGNED: the false-green was that we only replaced the UNALIGNED operators, so an
 // over-aligned (C++17 `alignas(64)` -> `operator new(size_t, align_val_t)`) allocation and its
 // matching aligned delete bypassed the counters entirely. We therefore replace the aligned
 // new/new[] and delete/delete[] pair too (unsized AND sized-aligned forms), and on the aligned

@@ -4,7 +4,7 @@
 // EventTimebase: the absolute-sample scheduler that turns external ControlEvents,
 // once they have entered core, into deterministic block-relative dispatch. This is
 // the sample-accurate timebase the contract distinguishes from continuous
-// smoothing and audio-rate modulation (design/07 §3, §5).
+// smoothing and audio-rate modulation (§5).
 //
 // The event is keyed by an ABSOLUTE sample on the host audio timeline. The block
 // partition is only a delivery detail: it changes the block-relative offset an
@@ -12,7 +12,7 @@
 // same patch must yield the same sample timing under any 64/128/256 (or mixed,
 // non-divisible) block sequence — that is the buffer-invariant property §5 names.
 //
-// design/07 §3 separates a CONTROL-LANE (note/gate/clock/sync/reset) from a
+//  separates a CONTROL-LANE (note/gate/clock/sync/reset) from a
 // CONTINUOUS lane (parameter/pitch/pressure). The two lanes must never share an
 // arbitrary drop policy: critical edges are never coalesced — on genuine overflow
 // they raise a single reconcile failsafe (a canonical reset) rather than vanishing
@@ -33,7 +33,7 @@ namespace lunar24::core {
 // ABSOLUTE sample it is meant to fire at. This is the canonical admission point —
 // core interprets the kind+value at consume time, never pre-interpreted at a host
 // boundary. ControlEvent::sampleOffset is meaningless here; it is the value
-// processBlock() resolves at dispatch time.
+// processBlock resolves at dispatch time.
 struct TimedControlEvent {
   ControlEvent event;        // kind/value/parameter/source/producerSequence (uninterpreted)
   std::uint64_t sample = 0;  // absolute sample on the host audio timeline
@@ -41,7 +41,7 @@ struct TimedControlEvent {
   ControlLane lane() const { return event.lane(); }
 };
 
-// Bounded, no-heap pending queues (design/07 §5: no allocation on the audio
+// Bounded, no-heap pending queues (no allocation on the audio
 // thread). The continuous lane is sized for the declared max MIDI/CC burst of a
 // single block. The critical lane has its OWN declared capacity, preserved at the
 // original single-queue value of 64 (independent of continuous pressure) so
@@ -67,7 +67,7 @@ inline bool timed_event_before(const TimedControlEvent& a, const TimedControlEve
 // no allocation on the audio thread. Enqueued events are held on an absolute
 // timeline and released exactly when their block arrives.
 //
-// Pressure policy (design/07 §3):
+// Pressure policy:
 //   - continuous lane, within capacity: every event is kept whole, in order;
 //   - continuous lane, at capacity: only `parameter` events coalesce by stable
 //     ParameterId into the newest unconsumed same-target event (re-sorted); pitch/
@@ -117,12 +117,12 @@ class EventTimebase {
     return true;
   }
 
-  // Admit a WHOLE TRANSACTION (GH#8: a note-on's 2 continuous + 1 critical set)
+  // Admit a WHOLE TRANSACTION (a note-on's 2 continuous + 1 critical set)
   // atomically: either EVERY event lands in its lane, or NONE do and neither lane
   // nor pending is changed, with a fixed diagnostic recorded. This is the blocking
   // all-or-none admission for a note — the per-lane pressure policies (parameter
   // coalesce, critical reconcile) are deliberately NOT used to "rescue" a partial
-  // transaction, because a hidden partial note is the bug GH#8 exists to kill.
+  // transaction, because a hidden partial note is the bug exists to kill.
   //
   // `count` events are summed into their lane's required slots; if EITHER lane
   // cannot take the whole batch it is rejected in full. Returns true only when all
@@ -139,7 +139,7 @@ class EventTimebase {
     if (contPending_ + contNeed > kEventTimebaseCapacity) {
       // Whole-batch pre-admission reject: the queue was never mutated, so the #2
       // per-event overflow/reconcile diagnostics MUST NOT change (a partial note
-      // rescued into those counters is exactly the GH#8 bug). Only batchRejected++.
+      // rescued into those counters is exactly the bug). Only batchRejected++.
       ++batchRejected_;
       return false;
     }
@@ -243,7 +243,7 @@ class EventTimebase {
   // already passed — a scheduling-integrity violation the good paths never do.
   bool lateSeen() const { return lateSeen_; }
 
-  // ---- Fixed-size, no-log/no-alloc diagnostics (design/07 §3, §5) ----
+  // Fixed-size, no-log/no-alloc diagnostics (§5) ----
   // Relaxed atomics: the audio thread writes, the UI thread may read a slightly
   // stale snapshot through the engine's diagnostics surface. Never torn.
   // Number of parameter events coalesced away under continuous pressure.

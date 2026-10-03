@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Distortion — P3-⑤: the post-filter distortion on the FILTER panel (manual
+// Distortion —: the post-filter distortion on the FILTER panel (manual
 // L1151-1153, registry vcf.dist id16 / vcf.gain id17, both under module id2 vcf).
-// Signal chain: → VCF → DISTORTION → WET OUT L/R (design/01 §1). The register groups
+// Signal chain: → VCF → DISTORTION → WET OUT L/R. The register groups
 // dist/gain under the vcf module because they sit on the same FILTER panel; the
 // non-linear PROCESSING is its own header so L and R carry independent state.
 //
@@ -45,7 +45,7 @@ class Distortion {
  public:
   explicit Distortion(double sampleRate) {
     // Default per-channel drive/rail = the shared PROVISIONAL constants, so a bare
-    // Distortion is unchanged; the GH#6 profile overrides them per side.
+    // Distortion is unchanged; the profile overrides them per side.
     channelL_.driveFold = kDriveFold;
     channelR_.driveFold = kDriveFold;
     channelL_.rail = kSaturationVoltage;
@@ -76,7 +76,7 @@ class Distortion {
   // Process one RIGHT-channel sample with the right's own state.
   double tickR(double x) { return tick_(channelR_, x); }
 
-  // GH#6: per-channel distortion drive/rail micro-difference, supplied by the same
+  // per-channel distortion drive/rail micro-difference, supplied by the same
   // identity profile as the VCF drive. L and R are independent; the drive_ scales
   // the folding strength and rail_ is the saturation ceiling for that channel. If
   // never set, each channel keeps the shared PROVISIONAL defaults below.
@@ -89,7 +89,7 @@ class Distortion {
   double channelRail(int ch) const { return channel_(ch).rail; }
 
   // PROVISIONAL distortion rail (no manual curve/rail). Chosen to sit at the WET
-  // OUT nominal max (design/07 WET max 2 V); the exact rail is un-evidenced.
+  // OUT nominal max (WET max 2 V); the exact rail is un-evidenced.
   static constexpr double kSaturationVoltage = 2.0;
   // Extra drive at full GAIN (small-signal unity at gain=0). Tuned by ear.
   static constexpr double kDriveFold = 40.0;
@@ -100,8 +100,8 @@ class Distortion {
 
  private:
   struct Channel {
-    double driveFold = 0.0;   // GH#6 per-channel folding strength (set in ctor).
-    double rail = 0.0;        // GH#6 per-channel saturation ceiling (set in ctor).
+    double driveFold = 0.0;   //  per-channel folding strength (set in ctor).
+    double rail = 0.0;        //  per-channel saturation ceiling (set in ctor).
     double prevU = 0.0;       // previous shaper input (antiderivative anti-aliasing)
     double prevF = 0.0;       // log(cosh(prevU))
     double drive = 1.0;       // 1 + driveFold * gain^2 (cached)
@@ -131,7 +131,7 @@ class Distortion {
 
   // dist=0 -> output is exactly the dry term `x` (gain has NO effect).
   // gain=0 -> the distorted term reduces to ~x (unity small-signal), so dist no
-  // longer changes the level. Independent axes. GH#6: the drive and rail are
+  // longer changes the level. Independent axes.: the drive and rail are
   // per-channel (driveFold/rail) for the small L/R path difference.
   double tick_(Channel& c, double x) {
     const double wet = c.makeup * c.rail * tanhAdaa_(c, c.drive * x / c.rail);

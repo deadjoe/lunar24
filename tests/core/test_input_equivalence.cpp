@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-① tests for the unified performance-input state machine + three-path
-// equivalence (design/06 §P4, design/07 §1, §3). @Claude's mandate + our scope:
+//  tests for the unified performance-input state machine + three-path
+// equivalence (§3). mandate + our scope:
 //
 //   P4 exit condition: the same control sequence, entered from the panel touch
 //   plates, the computer keyboard, or MIDI, yields the SAME internal CV/gate/
@@ -13,25 +13,25 @@
 // The three-path equivalence is STRUCTURALLY guaranteed, so the positive test is
 // a sanity/regression check and the information is in the negation: a path that
 // BYPASSES the shared state machine and interprets its own message produces a
-// different internal stream. @Claude was explicit that the negative must be a
+// different internal stream. was explicit that the negative must be a
 // REAL bypass (a code path that constructs ControlEvents directly, never calling
-// translate()), not a stub with a changed return value. Every negative here is
+// translate), not a stub with a changed return value. Every negative here is
 // that: a rogue performer that re-interprets the native message itself. Each is
 // a genuine, representative error the shared choke point exists to prevent.
 //
-// @Claude's guards, one test each:
+//  guards, one test each:
 //   * test-1 three-path equivalence (+ absolute anchor) + bypass negative
 //   * test-2 velocity/aftertouch fold to pressure ONLY
 //   * test-3 MIDI clock maps to a clock edge ONLY
 //   * test-4 CC-learn is a data-driven controller -> ParameterId map
 //   * test-5 reuse the existing EventTimebase (buffer-invariant), don't reinvent
 //
-// Honest framing (design/00-status §4/§5): this is CORE only. The app-side
+// Honest framing (status §4/§5): this is CORE only. The app-side
 // readers (iPlug2 / IGraphics) that turn a native touch/key/MIDI message into an
 // already-normalized 1V/oct PerformanceInput are out of scope and out of this
 // test; the adapters here are framework-free stubs that differ only in the
 // provenance stamp they attach. The per-sample render below is observation-only
-// for this judge — the real keyboard VOICE render is P4-②, not built here.
+// for this judge — the real keyboard VOICE render is, not built here.
 
 #include "mini_test.h"
 
@@ -66,7 +66,7 @@ static const std::uint32_t kBindingCount =
 
 // What a NATIVE source delivers, already pitch-normalized to 1V/oct. The app-side
 // reader (iPlug2 / IGraphics) does that normalization; core's contract starts at
-// PerformanceInput (design/07 §1). adapter() below is the framework-free stub.
+// PerformanceInput. adapter below is the framework-free stub.
 struct NativeMsg {
   core::PerfInputKind kind;
   std::uint64_t sample;
@@ -147,7 +147,7 @@ static Frames render_absolute(const std::vector<core::TimedControlEvent>& evts,
   return f;
 }
 
-// The state-machine path: translate() the normalized inputs into canonical
+// The state-machine path: translate the normalized inputs into canonical
 // events, then render. This is the CONFORMING pipeline.
 static Frames compliant_frames(const std::vector<core::PerformanceInput>& in,
                                const core::InputStateMachine& sm, std::uint64_t total) {
@@ -177,7 +177,7 @@ static bool frames_equal(const Frames& a, const Frames& b) {
 // Route an absolute-event stream through the EXISTING EventTimebase scheduler
 // under the given block partition, then render. The timebase is the load-bearing
 // absolute-timing path P4 inherits; this is just the observability window on top
-// of it (the real keyboard VOICE render is P4-②, out of scope here).
+// of it (the real keyboard VOICE render is, out of scope here).
 static Frames render_through_timebase(const std::vector<core::TimedControlEvent>& evts,
                                       std::uint64_t total,
                                       const std::vector<std::uint32_t>& blocks) {
@@ -321,7 +321,7 @@ enum class Rogue : std::uint8_t {
 };
 
 // A rogue performer that BYPASSES InputStateMachine: it builds ControlEvents
-// directly from the native messages and never calls translate(). The three modes
+// directly from the native messages and never calls translate. The three modes
 // are distinct, real mis-interpretations a second interpretation point would
 // introduce. Each must produce a frame the conforming path does not.
 static std::vector<core::TimedControlEvent> rogue_stream(const std::vector<NativeMsg>& seq,
@@ -595,7 +595,7 @@ static void timebase_reused_buffer_invariant() {
   }
 
   const std::vector<std::uint32_t> uniform = {64};
-  const std::vector<std::uint32_t> mixed = {64, 100, 37, 128, 7, 256, 91};  // legacy P2-①
+  const std::vector<std::uint32_t> mixed = {64, 100, 37, 128, 7, 256, 91};  // legacy
 
   const auto ref = render_absolute(stream, total);
   const auto via_uniform = render_through_timebase(stream, total, uniform);

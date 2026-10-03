@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P2-① tests for the three time semantics design/07 §3 distinguishes, and the
+//  tests for the three time semantics distinguishes, and the
 // sample-rate / buffer invariance §5 requires:
 //   - DISCRETE EVENTS (event_timebase.h): absolute-sample scheduler. The same
 //     event script must fire at the same absolute sample under any block
@@ -50,7 +50,7 @@ static core::TimedControlEvent mk_timed(core::ControlEventKind k, std::uint64_t 
   return t;
 }
 
-// A continuous parameter event carrying a stable ParameterId (design/07 §3: the one
+// A continuous parameter event carrying a stable ParameterId (the one
 // thing that may coalesce under pressure — only parameter targets, only the latest).
 static core::TimedControlEvent mk_param(std::uint32_t pid, core::SignalSample value,
                                         std::uint32_t source, std::uint64_t seq,
@@ -178,7 +178,7 @@ static void buffer_on_invariant() {
   CHECK_EQ(dmix.size(), script.size());
 
   // The same event set under the same patch MUST give the same absolute trigger
-  // sample across all four block schemes (design/07 §5).
+  // sample across all four block schemes.
   CHECK(same_delivery(d64, d128));
   CHECK(same_delivery(d128, d256));
   CHECK(same_delivery(d256, dmix));
@@ -547,7 +547,7 @@ static void audio_rate_is_wall_clock_invariant() {
 static void unconfigured_rate_is_inert_not_wrong() {
   // A default-constructed modulation (rate unset = 0.0, matching
   // ParameterSmoother's unset 0.0) must be INERT, not a lurching 48k: phaseStep_
-  // stays 0 so the phase never advances and next() is a constant, not a wrong-rate
+  // stays 0 so the phase never advances and next is a constant, not a wrong-rate
   // wave. There is no implicit sample rate anywhere in core (requirement 3).
   core::AudioRateModulation unset;
   const double a = unset.next();
@@ -563,7 +563,7 @@ static void unconfigured_rate_is_inert_not_wrong() {
 }
 
 // ---------------------------------------------------------------------------
-// design/07 §3 pressure policy (GH#2): the critical lane must be independent of
+//  pressure policy: the critical lane must be independent of
 // continuous pressure; only parameter events coalesce (by stable ParameterId, under
 // pressure, never across kinds); critical overflow yields a deterministic reset +
 // flush; and an undersized dispatch buffer delays rather than drops an edge.
@@ -658,7 +658,7 @@ static void parameter_only_coalescing_under_pressure() {
 // C (negative control): a genuine critical overflow raises a deterministic failsafe —
 // the next safe boundary emits a canonical reset FIRST, then clears the lost-trust
 // critical batch (no authoritative performance state exists yet, so this is the
-// design/07 fallback; downstream gate identity is still #8/#4).
+//  fallback; downstream gate identity is still #8/#4).
 static void critical_overflow_reconciles_with_failsafe() {
   core::EventTimebase tb;
   core::TimedControlEvent out[core::kEventTimebaseCapacity];

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-③ live per-side SCALAR bank (design/00 §2d Decis B, @Claude msg c0d9e9be).
+//  live per-side SCALAR bank (Decis B).
 //
 // The live keyboard scalars that carry a ParameterId are per-side: the LEFT /
 // shared side reads `parameters[ParameterId]` (bank 0, untouched), the RIGHT side
@@ -12,7 +12,7 @@
 //   * the preset <-> live transfer of those two banks (load/save_live_side_bank),
 //   * the per-id twin accessor into a KeyboardPreset's left/right scalar fields.
 //
-// The invariant this must uphold (@Claude msg c0d9e9be): a parameter is per-side
+// The invariant this must uphold: a parameter is per-side
 // in the preset IFF it is per-side in live. The preset carries the same 30
 // per-side keyboard params; the 22 scalars here are exactly that set minus the
 // four no-domain clock/rhythm selectors (stored as keyboardClockSelectors[+_R],
@@ -40,16 +40,16 @@ namespace lunar24::core {
 // (the global single/twin/split selector) is deliberately NOT here — it is the one
 // non-per-side param.
 inline constexpr ParameterId kKeyboardScalarParameterIds[kKeyboardScalarRightCount] = {
-    ParameterId::keyboard_mode,                // 0  mode
-    ParameterId::keyboard_arp_hold,            // 1  arp_hold
-    ParameterId::keyboard_arp_direction,       // 2  arp_direction
-    ParameterId::keyboard_arp_variation,       // 3  arp_variation
-    ParameterId::keyboard_arp_interval,        // 4  arp_interval
-    ParameterId::keyboard_arp_length,          // 5  arp_length
-    ParameterId::keyboard_seq_run,             // 6  seq_run
-    ParameterId::keyboard_seq_length,          // 7  seq_length
-    ParameterId::keyboard_seq_direction,       // 8  seq_direction
-    ParameterId::keyboard_seq_cv_output,       // 9  seq_cv_output
+    ParameterId::keyboard_mode,                // 0 mode
+    ParameterId::keyboard_arp_hold,            // 1 arp_hold
+    ParameterId::keyboard_arp_direction,       // 2 arp_direction
+    ParameterId::keyboard_arp_variation,       // 3 arp_variation
+    ParameterId::keyboard_arp_interval,        // 4 arp_interval
+    ParameterId::keyboard_arp_length,          // 5 arp_length
+    ParameterId::keyboard_seq_run,             // 6 seq_run
+    ParameterId::keyboard_seq_length,          // 7 seq_length
+    ParameterId::keyboard_seq_direction,       // 8 seq_direction
+    ParameterId::keyboard_seq_cv_output,       // 9 seq_cv_output
     ParameterId::keyboard_seq_rhythm_length,   // 10 seq_rhythm_length
     ParameterId::keyboard_portamento_speed,    // 11 portamento_speed
     ParameterId::keyboard_portamento_legato,   // 12 portamento_legato
@@ -140,8 +140,8 @@ inline void write_preset_scalar_pair(KeyboardPreset& p, ParameterId id,
 }
 
 // Transfer a preset slot's per-side scalar banks into the LIVE machine state:
-//   bank 0 (left/shared): live.parameters[ParameterId]      = preset.left
-//   bank 1 (right):        live.keyboardScalarRight[index]   = preset.right
+//   bank 0 (left/shared): live.parameters[ParameterId] = preset.left
+//   bank 1 (right): live.keyboardScalarRight[index] = preset.right
 // Only the per-side scalar ParameterIds are copied. A per-side preset param that
 // is NOT in kKeyboardScalarParameterIds is silently skipped — which is exactly
 // what the invariant's negative control exploits (a param made global in live is

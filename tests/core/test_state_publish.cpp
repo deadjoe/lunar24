@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P2-⑤ Half 1 tests for the snapshot publication path (design/07 §5, master plan
+//  Half 1 tests for the snapshot publication path (master plan
 // line 93). The StateSnapshotPool is a fixed preallocated pool whose publish/
 // retire/current primitives are lock-free and heap-free; a superseded snapshot is
 // reclaimed by a worker OFF the audio thread. The RtGuard detector (tests/, never
-// core/) proves the two RT invariants @Claude mandated:
+// core/) proves the two RT invariants mandated:
 //   * publish-in-RT is caught (a degraded heap-allocating publication is red);
 //   * the last reference to a retired snapshot is reclaimed OFF the RT thread
 //     (a reclaim inside the callback is red).
@@ -46,7 +46,7 @@ using Pool = core::StateSnapshotPool<TestSnapshot, 4>;
 
 // --------------------------------------------------------- positive: RT-clean --
 
-// The reader path (current()/snapshot()) and the publish primitive are lock-free
+// The reader path (current/snapshot) and the publish primitive are lock-free
 // and heap-free: driving them INSIDE the RT window must not bump any RT-forbidden
 // counter. This is what makes the pool safe to use on the audio thread.
 static void pool_primitives_are_rt_clean() {
@@ -79,7 +79,7 @@ static void pool_primitives_are_rt_clean() {
 
 // A degraded publication path that constructs a fresh snapshot via heap on the
 // audio thread (the snapshot/payload construction that must live on the control
-// thread). The pool itself never allocates; this returns the symptom @Claude
+// thread). The pool itself never allocates; this returns the symptom
 // named — a heap-on-publication regression inside the RT window.
 static void publication_in_rt_is_caught() {
   rt::reset();
@@ -157,16 +157,16 @@ static void last_release_in_callback_is_caught() {
   CHECK(rt::g_release_in_rt.load() > 0L);  // red symptom
 }
 
-// --------------------------------------------------------- GH#3 A02 (repair ①) --
+// (repair) --
 //
-// The defect @Claude's audit flagged: the reader could NOT pin a slot. It read
-// `current()` then `snapshot(cur)` with no guarantee against a concurrent
-// publish(B) → retire(A) → recycleOne() resetting A underneath it — the audio
-// thread read a destroyed object. The repair gives the reader pinCurrent()/
-// unpin(), and makes recycleOne() DEFER (return false) rather than reset a slot
+// The defect audit flagged: the reader could NOT pin a slot. It read
+// `current` then `snapshot(cur)` with no guarantee against a concurrent
+// publish(B) → retire(A) → recycleOne resetting A underneath it — the audio
+// thread read a destroyed object. The repair gives the reader pinCurrent/
+// unpin, and makes recycleOne DEFER (return false) rather than reset a slot
 // any reader still holds.
 //
-// These two tests prove it END-TO-END and deterministically (@Claude: never "跑
+// These two tests prove it END-TO-END and deterministically (never "跑
 // 一万遍撞运气" — force the interleaving with synchronized points so EVERY run
 // hits the window):
 //   * The positive drives the FIXED pool and asserts a recycle over a pinned
@@ -183,8 +183,8 @@ static void last_release_in_callback_is_caught() {
 // record (read in the reader thread vs the write in recycleOne resetting the
 // snapshot the reader is parked on).
 
-// A faithful replica of the PRE-repair pool (GH#3 A02). The reader cannot pin a
-// slot and recycleOne() resets a retired slot with no guard for a parked reader.
+// A faithful replica of the PRE-repair pool. The reader cannot pin a
+// slot and recycleOne resets a retired slot with no guard for a parked reader.
 // Byte-for-byte the publish/retire/recycleOne/current/snapshot shape of the
 // header BEFORE the repair. Values are plain (non-atomic) so an unguarded reset
 // is a real read/write overlap, exactly the defect.
@@ -273,8 +273,8 @@ static void reader_pinned_slot_survives_publish_retire_recycle() {
 }
 
 // Negative control: the PRE-repair pool really has the bug. Same interleaving,
-// but the legacy reader path (current()+snapshot(), no pin) parks on the old slot
-// and recycleOne() resets it underneath — recycleOne returns true and the reader
+// but the legacy reader path (current+snapshot, no pin) parks on the old slot
+// and recycleOne resets it underneath — recycleOne returns true and the reader
 // reads the reset 0, not the held 41. This is the "will-red" proof that the
 // harness above is sensitive: swap the legacy path in and it both fails
 // functionally and was the exact shape TSan flagged on the pre-repair header.

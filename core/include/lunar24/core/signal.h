@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Signal / electrical domain contract (design/07-core-contract.md §3).
+// Signal / electrical domain contract (core-contract.md §3).
 //
 // At jack and module boundaries the uniform physical meaning of a sample is a
 // VIRTUAL VOLT: the numerical value 1.0 represents 1 V. Modules may use any
