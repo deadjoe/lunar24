@@ -1116,7 +1116,7 @@
   5. 收尾：关 HOLD，MODE 改回 KEYBOARD；Preferences 的 MIDI Input 选回 MPK Mini IV MIDI Port。
 - 出问题时看 `~/Library/Application Support/Lunar24/audio.log`：每次播放 / 停止 / 继续后有一行 `midi clock: +N ticks ...; keyboard clock external`（N 是上一行以来收到的时钟数，每拍 24 个）。`+0 ticks` 或 `internal` 就是没跟上外部时钟（2026-10-04 的第一版就是 `+0 ticks`：MIDI 输入把时钟过滤掉了，已修）。
 
-**T15.10 MIDI 键盘在 TWIN / SPLIT 下分左右** ⏳ (MIDI 分区 PR)
+**T15.10 MIDI 键盘在 TWIN / SPLIT 下分左右** ✅（2026-10-04 Mac + MPK MINI IV：除第 6 步踏板外全部通过；没有踏板，第 6 步未测）
 - 准备：同 T12.6（RESET PANEL；DRONE VOICES 全关；VOICE MIXER 只留 VCO A、VCO B；接线 ⊓ **GATE R** → envelope B 的 **gate**，↓ **PRESSURE** → VCO B 的 **1v/oct**）；VCO B 的 **oct+3** 拨到上面。MPK 用测试用户预设，OCT 键回到默认（屏幕不显示八度偏移）。
 - 步骤：
   1. 打开 MIDI 设置，看左边第四行 **SPLIT**，应显示 **C4**（MPK 中间那个 C）。
@@ -1181,6 +1181,7 @@
 - S&H 默认太慢、跳动幅度太大。（默认约 6 秒采一次；输出 ±5 V，接 cv 后音高最多 ±5 个八度）
 - 所有 drone 一起响时混音太满。（混音器是裸加和、无归一化，靠效果器末尾 tanh 软限幅兜底）
 - 光敏传感器可以改成用鼠标操作。（目前纯装饰，无交互）
+- VCO B 拨到 oct+3 后在 MPK 中间 C 以上（约 E4）听起来有点颤、发粗（2026-10-04 T15.10 中发现；同一个键换 SPLIT 前后一样，与 MIDI 分区无关）。待调音色时听一下是否为高音区混叠。
 - VCO A → VCO B 的默认调制偏温和。（1:1 直通路由：±1 V 源进 ±5 V 输入，只用约 20% 量程）
 
 ### 键盘待办
