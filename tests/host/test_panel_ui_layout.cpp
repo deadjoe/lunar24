@@ -225,11 +225,23 @@ int main() {
       CHECK(!host::overlay_hides_point(false, w.cx, w.cy));
     }
     CHECK_EQ(hiddenJacks, 6);  // keyboard CLOCK, RESET, GATE L/R, PRESSURE, V/OCT
-    // SERVICE > ENCODER DIRECTION flips the encoder's mouse wheel.
-    CHECK_EQ(host::encoder_wheel_octave_step(1.0, 0.0), 1);
-    CHECK_EQ(host::encoder_wheel_octave_step(-1.0, 0.0), -1);
-    CHECK_EQ(host::encoder_wheel_octave_step(1.0, 1.0), -1);
-    CHECK_EQ(host::encoder_wheel_octave_step(-1.0, 1.0), 1);
+    // Encoder wheel: one mouse notch = one octave; a whole trackpad swipe (many small deltas,
+    // zero deltas, momentum after lifting) = one octave; SERVICE > ENCODER DIRECTION flips it.
+    {
+      host::EncoderWheel w;
+      CHECK_EQ(w.step(1.0, 1.0, 0.0), 1);    // a notch up
+      CHECK_EQ(w.step(-1.0, 1.0, 0.0), -1);  // a later notch down
+      CHECK_EQ(w.step(1.0, 1.0, 1.0), -1);   // reversed
+      CHECK_EQ(w.step(-1.0, 1.0, 1.0), 1);
+      CHECK_EQ(w.step(0.0, 1.0, 0.0), 0);    // zero delta (sideways swipe, gesture end)
+      int total = 0;
+      for (int i = 0; i < 60; ++i) total += w.step(i < 40 ? 0.3 : 0.05, 0.016, 0.0);  // swipe + momentum
+      total += w.step(0.0, 0.016, 0.0);
+      CHECK_EQ(total, 1);
+      CHECK_EQ(w.step(0.3, 0.016, 0.0), 0);  // still the same gesture
+      CHECK_EQ(w.step(-0.6, 0.5, 0.0), -1);  // a new swipe after a pause
+      CHECK_EQ(w.step(0.2, 0.5, 0.0), 0);    // a tiny brush stays below the threshold
+    }
     std::map<std::uint32_t, int> onTabs;
     for (const auto& it : kb::kItems) ++onTabs[static_cast<std::uint32_t>(it.id)];
     int menuWidgets = 0;

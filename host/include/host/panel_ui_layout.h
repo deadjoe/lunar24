@@ -86,12 +86,34 @@ inline bool overlay_hides_point(bool overlayOpen, double x, double y) {
   return overlayOpen && x >= kMenuX0 && x < kMenuX1 && y >= kMenuY0 && y < kMenuY1;
 }
 
-// Mouse wheel on the red encoder: up = octave up, unless the keyboard menu's SERVICE >
-// ENCODER DIRECTION is set to reversed (1).
-inline int encoder_wheel_octave_step(double wheelDelta, double encoderDirection) {
-  const int step = wheelDelta > 0 ? 1 : -1;
-  return encoderDirection > 0.5 ? -step : step;
-}
+// Mouse wheel / trackpad on the red encoder -> octave steps. A MacBook trackpad sends a
+// stream of small deltas, zero-delta events (sideways swipes, gesture start/end) and more
+// "momentum" events after the fingers lift, so counting every event as a step ran the
+// octave to the end of its range. One gesture (events less than kGap apart) moves at most
+// one octave; zero deltas are ignored. Up = octave up, unless the keyboard menu's
+// SERVICE > ENCODER DIRECTION is set to reversed (1).
+class EncoderWheel {
+ public:
+  static constexpr double kGap = 0.25;       // seconds of quiet that end a gesture (tuned by hand)
+  static constexpr double kThreshold = 0.5;  // summed delta that makes a step (one mouse notch = 1)
+  // secondsSincePrevious: time since the previous wheel event. Returns -1, 0 or +1.
+  int step(double delta, double secondsSincePrevious, double encoderDirection) {
+    if (secondsSincePrevious > kGap) {  // a new gesture
+      sum_ = 0.0;
+      stepped_ = false;
+    }
+    if (delta == 0.0 || stepped_) return 0;
+    sum_ += delta;
+    if (sum_ > -kThreshold && sum_ < kThreshold) return 0;
+    stepped_ = true;
+    const int up = sum_ > 0 ? 1 : -1;
+    return encoderDirection > 0.5 ? -up : up;
+  }
+
+ private:
+  double sum_ = 0.0;
+  bool stepped_ = false;
+};
 
 // Registry jacks that the official panel does not show (kept in the engine, not patchable
 // from the UI): the VCOs' separate wave outputs and the envelopes' VCA-CV outputs.

@@ -739,13 +739,20 @@ class EncoderControl : public IControl {
     GetUI()->SetAllControlsDirty();
   }
   void OnMouseWheel(float, float, const IMouseMod&, float d) override {
-    s_.shiftOctave(encoder_wheel_octave_step(d, s_.engine.parameterValue(ParameterId::keyboard_encoder_direction)));
+    const auto now = std::chrono::steady_clock::now();
+    const double gap = std::chrono::duration<double>(now - lastWheel_).count();
+    lastWheel_ = now;
+    const int step = wheel_.step(d, gap, s_.engine.parameterValue(ParameterId::keyboard_encoder_direction));
+    if (step == 0) return;
+    s_.shiftOctave(step);
     GetUI()->SetAllControlsDirty();
   }
 
  private:
   EditorShared& s_;
   Widget w_;
+  EncoderWheel wheel_;
+  std::chrono::steady_clock::time_point lastWheel_{};
 };
 
 class OctaveKeyControl : public IControl {
