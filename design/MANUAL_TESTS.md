@@ -21,13 +21,13 @@
 | 电脑键盘弹琴 | 先点一下面板。A S D F G H J K L ; = 白键，W E T Y U O P = 黑键；Z / X = 降 / 升八度（蓝色小屏显示 OCT） |
 | 键盘菜单 | 点键盘区中间的红色大旋钮打开；右上角 CLOSE 或 Esc 关闭 |
 | 恢复出厂 | 键盘菜单顶部 **RESET PANEL**，点一次变成 CLICK TO CONFIRM，4 秒内再点一次 |
-| 静音 | DRONE VOICES 右边的 **MUTE** 按钮：所有输出立即静音（亮琥珀色光圈），再点恢复 |
+| 静音 | DRONE VOICES 右边的 **MUTE** 按钮：所有输出以约 10 ms 淡出静音，再点恢复；鼠标操作时亮琥珀色光圈（MIDI 触发的显示问题见 MIDI 待办） |
 | 音频设备 / 麦克风 | 屏幕顶部菜单栏 Lunar 24 → Preferences…（⌘,） |
 
 ### 测试常用准备
 
-- **出厂状态**：RESET PANEL（点两次）。几乎每项测试都从这里开始。
-- **去掉混响**：DUAL EFFECTOR 区的 **BLEND** 拖到最左。声音变"干"，静音后不会有长尾音。
+- **出厂状态**：RESET PANEL（点两次）。几乎每项测试都从这里开始；不会清除 MIDI 绑定或 CHANNEL / TRANSPOSE / VELOCITY。
+- **去掉混响**：DUAL EFFECTOR 区的 **BLEND** 拖到最左。待参数平滑结束后只听干声；这不排除包络释放、滤波器振铃或其它仍在发声的通道。
 - **只听某一路（solo）**：VOICE MIXER 里其它 9 路的 **VOL** 拖到最左。或者在 DRONE VOICES 里只留要听的 drone。
 - **关掉所有 drone**：键盘区右边 DRONE VOICES 的 6 个键全部关掉。
 - **说法约定**：本文说"打开 / 关掉 DRONE N"或"DRONE VOICES 的 N"，都是指键盘区右边 DRONE VOICES 的第 N 个按键（drone 的开关，带包络）；VOICE MIXER 里的 **VOL** 只调音量，会明确写"VOL"。
@@ -910,7 +910,7 @@
 - 同一通道：踩踏板、按下并松开音符，再按住同一个音；松踏板时应仍发声，最后松琴键才释放。
 - 多通道（软件发送器可测）：通道 2 踏板按下不应延长通道 1 音符；通道 2 和 10 同音同时被各自踏板保持时，松通道 2 踏板不能释放通道 10 的音符。
 
-**T14.2 MIDI 输入关闭/切换时音符停止** ⏳
+**T14.2 MIDI 输入关闭/切换时音符停止** ⏳（完整独立流程未测；T15.5 的切 off 松音已通过）
 - 安排：需要 MIDI 键盘（如 MPK mini IV）。
 - 准备：Preferences 里 MIDI Input 选到该键盘；PLAY = SINGLE、MODE = KEYBOARD，BLEND 最左、DRONE VOICES 全关，只听 VCO A。
 - 步骤：
@@ -921,17 +921,19 @@
 
 ### 15. MIDI 设置与绑定
 
-**T15.1 MIDI 设置界面** ⏳
+2026-10-03 汇总：macOS + MPK MINI IV，测试使用重设计前的 MIDI 界面，未提供构建 SHA。T15.5 / T15.6 中具备条件的项目通过；不代表未测项或新界面已通过。以下步骤使用新界面的名称；`7e9d803` 的布局、字体、分页和点击范围仍待真机复测。
+
+**T15.1 MIDI 设置界面** 部分通过（旧界面默认值、CLOSE / Esc 通过；新界面待复测）
 - 步骤：
   1. 点 DRONE VOICES 右边、MUTE 正下方的 **MIDI** 按钮。
   2. 看界面：暖色面板盖住键盘区；顶部 INPUT，左边 CHANNEL / TRANSPOSE / VELOCITY 和 LEARN，右边每页四条绑定（初次显示引导）。
   3. 点 **CLOSE** 关掉；再打开，按 Esc 关掉。
 - 期望：开合正常；INPUT 显示 Preferences 里选的输入设备名（没选提示 Choose an input in Preferences）。
-- 缩放窗口后检查标题、设置值、行尾按钮、底部提示不截断或重叠；长设备名应带省略号，字号不被缩小。
+- 旧界面的左侧裁字、删除图标方框（反馈 #4 / #5）已在重设计中处理，尚未真机确认。缩放窗口后检查标题、设置值、行尾按钮、底部提示不截断或重叠；长设备名应带省略号，字号不被缩小。
 - 只点设置两侧的 < / > 会改变数值，点 CHANNEL 等标签不会误改；TRANSPOSE 的最低值应显示 -36 st。
 - 建立五条以上绑定后检查分页；Learn 完成后应自动显示刚绑定的行，删除最后一页唯一一行后回到前一页。
 
-**T15.2 Learn 绑定一个旋钮** ⏳（需要 MIDI 键盘）
+**T15.2 Learn 绑定一个旋钮** ✅（旧界面 CC24 → FREQ，绝对拾取无跳变；删除绑定通过）
 - 准备：Preferences 里 MIDI Input 选到你的键盘；只听 VCO A。
 - 步骤：
   1. 打开 MIDI 设置，点 **+ LEARN A CONTROL**（变红色 CANCEL LEARN，底部显示操作提示）。
@@ -942,7 +944,7 @@
   - 转动该旋钮，滤波截止跟着动，面板上的旋钮也跟着动。
   - 绝对旋钮的接管：硬件旋钮位置离软件值很远时，先扫过当前值才开始跟（不跳值）。
 
-**T15.3 相对模式、解绑、动作绑定** ⏳（需要 MIDI 键盘）
+**T15.3 相对模式、解绑、动作绑定** 部分通过（删除、pad → DRONE 1 每敲一次切换一次；REL 未测）
 - 步骤：
   1. 点 T15.2 那行的 MODE，从 ABS 换成 REL 1（MPK 旋钮在硬件上设成 Relative 模式时用）。
   2. 点行尾的 x 删掉这条绑定。
@@ -952,23 +954,25 @@
   - 删除后该旋钮不再控制滤波。
   - 打击垫按一下开 drone 1，再按一下关（切换，不是按住才响）。
 
-**T15.4 通道过滤、八度、力度曲线与断电保存** ⏳（需要 MIDI 键盘）
+**T15.4 通道过滤、八度、力度曲线与断电保存** 部分通过（八度、通道过滤、退出重开保存通过；力度曲线听感待按下述接线确认）
 - 步骤：
   1. MIDI 设置里 TRANSPOSE 调到 +12 st（st = 半音），弹几个音。
-  2. VELOCITY 选 SOFT，用同样的力度弹，对比 LINEAR。
+  2. 按下面的压力接线准备，对比 SOFT / LINEAR / HARD，使用相同的中等 Note On 力度。
   3. CHANNEL 设成一个键盘不在用的通道，弹琴；设回 ANY。
   4. 绑定一两条后退出应用重开。
 - 期望：+12 时音高高一个八度；SOFT 将同样轻击映射为更高的压力值（是否更响取决于压力的接线和用途）；通道不匹配时完全无声、设回 ANY 恢复；重开后绑定和设置都还在。
 
-**T15.5 修改设置 / Learn 时松键不挂音** ⏳（本次修复必测）
+- 力度曲线的听法（反馈 #8）：Note On 力度进入键盘压力通路，并不直接控制混音音量。PLAY = SINGLE、MODE = KEYBOARD、PRESSURE = PRESSURE、P RISE / P FALL = 0；只听 VCO A，BLEND 最左。将键盘右侧插孔组中间的 **PRESSURE** 输出接 VCO A 的 **cv**，cv amt 约 1/4。对同一个音、同一个中等力度值，SOFT 应比 LINEAR 压力高、音高更高，HARD 更低；力度极值不适合比较。用 MIDI Monitor 核对输入力度，或软件固定发 velocity 64；手弹的差异不能单独判定曲线失效。此项不等于 pad Aftertouch 测试。
+
+**T15.5 修改设置 / Learn 时松键不挂音** 部分通过（通道、Learn 松键、切 off、off 不变直接 OK 通过；踏板未测，virtual input 误停鼠标琶音见 #14）
 - 准备：PLAY = SINGLE、MODE = KEYBOARD；envelope A 的 HOLD 关闭、R 调小，DRONE VOICES 全关；先确认普通按键和松键能正常起音、停止。
 - 步骤与期望：
   1. CHANNEL = ANY，按住一个琴键；改成键盘不使用的通道，再松键。原来的音应释放；新按下的键不发声。恢复 ANY 后弹奏正常。
   2. LEARN → 点 MUTE → 按住一个琴键，等绑定出现在列表后再松开。第一次按下可能仍作为演奏音，但松开后必须停止。随后按此键只切换 MUTE，松开不再切换。测完删除绑定，恢复 MUTE 关闭。
   3. 持续弹奏时，在 Preferences 把 MIDI Input 切成 off。不得残留持续音；切回键盘后正常弹奏。如果有延音踏板，再用踩住踏板的音重复通道切换，抬踏板后应释放。
-  4. MIDI Input 已是 off 时，用键盘 MODE = ARPEGGIATOR、ARP HOLD 保持一个正在运行的琶音，再在 Preferences 选择 off 并 Apply（不改音频设备或其他音频设置）。仅重复选择 off 不应停音或重启琶音；测完关闭 ARP HOLD、恢复 MODE = KEYBOARD。若用 macOS virtual input，也检查从该输入切成 off 后正在演奏的 MIDI 音符会释放。
+  4. MIDI Input 已是 off 时，用键盘 MODE = ARPEGGIATOR、ARP HOLD 保持一个正在运行的琶音，再打开 Preferences，保持 off、不改任何设置，直接点 **OK**，不要点 Apply。仅重复选择 off 不应停音或重启琶音；测完关闭 ARP HOLD、恢复 MODE = KEYBOARD。另测 macOS virtual input → off：MIDI 音符应释放，但鼠标保持的琶音不应被清掉；后者本次失败，见 MIDI 待办 #14。
 
-**T15.6 映射数值与动作** ⏳（本次修复必测）
+**T15.6 映射数值与动作** 部分通过（分档开关、pad 力度到 BLEND、保存通过；REL、CC 127/0 动作、CC64 防误学未测）
 - LEARN 一个硬件旋钮到 VCO A 的 **oct+3** 开关，保持 ABS，来回扫过全程。面板开关和实际音高应一致地按档变化，不得只动图形而声音不变。
 - 若使用相对编码器：绑定到 **BLEND**，设成与硬件编码匹配的 REL 模式；先用鼠标把 BLEND 调到较高位置，再转编码器一格。应从当前位置小幅变化，不能跳回绑定时的旧位置。
 - LEARN 一个打击垫到 **BLEND**：轻击 / 重击应直接给出不同的面板值，不必先扫过旧值。此项检查力度映射，不以音量大小判定。
@@ -978,7 +982,7 @@
 
 ## 还没测的（⏳）
 
-- MIDI 键盘输入（MPK mini IV：琴键只有力度；打击垫有压力，Aftertouch 设成 Chan 或 Poly 后可以测 PRESSURE / VIB PRESS）。MIDI 音符目前在 TWIN / SPLIT 下都算左半边（见键盘待办）。界面与绑定见第 15 节（T15.1–T15.4）。
+- MIDI：新界面 T15.1；REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板、T14.2 完整输入切换流程，以及运行中物理拔线（与 T14.2 的选 off 不同）。力度曲线按 T15.4 接线复核；pad Aftertouch → PRESSURE / VIB PRESS 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - T10.2（5-STEP CLK 菜单开关）。
 - VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch：声道 3 = DRY A、声道 4 = DRY B。注意 DRY 在 VCA 之后，要按住键或点亮 envelope 的 hold 才有声）。
 - PREAMP 的 ext. source 插孔（不需要额外硬件：把 LFO A 输出插进去，麦克风输入应被取代，ENVELOPE FOLLOWER 的灯改跟 LFO 走；拔线恢复）。
@@ -987,6 +991,21 @@
 已核实无需列入：DRONE 6 的控件与 DRONE 3 结构性同码（同一个 PapaVoice 实现，12 参数 7 插孔全部正确映射，无独立风险）；VOICE MIXER 的 EXT.AUDIO 通道已被 T11.4 的补充步骤覆盖；耳机音量旋钮按设计无功能（只存状态，不接任何音频通路）。
 
 ## TODO
+
+### MIDI 待办与当前行为（2026-10-03 真机反馈；编号沿用反馈）
+
+| 项目 | 核实结果与下一步 |
+|---|---|
+| #10 · 中：MIDI MUTE 按钮不刷新 | 声音切换正确；MUTE 状态变化未触发按钮重画，待修。新 MIDI 浮层未修复此问题。 |
+| #14 · 中：virtual input → off 误停鼠标琶音 | 关闭活动输入的 reset 会清除两侧键盘的演奏状态（含鼠标/电脑键盘的持音、琶音及压力状态），并非只释放 MIDI 音符；不清面板参数或接线。待缩小重置范围；与已通过的 off → off 区分。 |
+| #1 / #2：设备发现和默认选择 | 列表仅启动时枚举，运行中插入设备尚不刷新。启动时输入为未设置或 off，会尝试选第一个真实设备，连保存的 off 也会被覆盖；这是当前限制，不是已验证的 off 保存承诺。 |
+| #3 / #6 / #15：交互反馈缺口 | MIDI 弹奏不点亮屏幕键盘；ABS 等待拾取无提示；CHANNEL 会过滤 Learn 输入且无提示。Learn 前先确认 CHANNEL = ANY 或设备通道。RESET PANEL 保留 MIDI 配置，见 DECISIONS。 |
+| #7：无限旋钮端点空转 | 原因未确认。用 MIDI Monitor 记录到端点后继续转、再反转的原始 CC 值，区分控制器仍发送端点值与软件拾取/相对解码问题；暂不归因于 MPK 硬件。 |
+| #9：R = 0、BLEND 最小时仍有尾音 | 尚未定位，不直接归因于混响。按下面的隔离准备复测并记录持续时间。 |
+
+- **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效；Apply 即使没有改设置，也会重开音频并重置引擎。因此 T15.5 第 4 步改为“不改设置直接 OK”；不要把 Apply 造成的重置当作 MIDI 输入关闭缺陷。改变设置后 OK 也可能应用音频变化，观察输入切换时先不点 OK / Apply。
+- **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、ARP HOLD = OFF；只开 VOICE MIXER 的 VCO A，其它九路 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；滤波器等下游处理可有短暂衰减，不要求逐采样立即归零。若仍有长尾，保留接线和设置截图、录音再定位。默认同时开启的 VCO B 或直送 PREAMP 的振荡源不能用于此项隔离。
+- **MUTE 尾音（#11）**：MUTE 只淡出输出，不停止演奏或效果处理；解除时能听到静音期间音符的剩余尾音，属于既定行为，见 DECISIONS。
 
 ### 调音待办（测试中记下的听感问题，未改；括号内为 2026-10-02 核实的当前值）
 

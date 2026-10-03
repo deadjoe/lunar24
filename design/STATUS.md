@@ -44,7 +44,7 @@ _Last updated: 2026-10-03._
   takes over until BPM is changed again; RESET restarts the pattern. Edit the 16 steps
   on the menu's SEQUENCER page: drag a slider for the note (0..+24 semitones above the
   held plate), click the round button to turn the step's gate on/off (off = a rest).
-- MIDI keyboard: plugged-in devices are picked up automatically. Mod wheel / CC74 =
+- MIDI keyboard: inputs are enumerated at startup (hot-plug refresh is not implemented). Mod wheel / CC74 =
   filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master; pitch bend +/-2
   semitones; sustain pedal; MIDI clock drives the arpeggiator / sequencer (START / STOP).
   The MIDI button (under MUTE, right of DRONE VOICES) opens the MIDI settings: learn a
@@ -63,8 +63,10 @@ the manual, so still guesses: arp/seq clock multiply/divide ratios (not applied 
 exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Next steps (in order)
-1. Verify the MIDI correctness fixes in PR #89 with the controller (MANUAL_TESTS T15.5–T15.6).
-   Fix reproduced product failures in small PRs; audit findings are leads, not an automatic backlog.
+1. PR #89: the available T15.5–T15.6 checks passed on macOS + MPK MINI IV with the old UI;
+   REL, CC-button edges and pedal checks remain untested. The redesigned UI needs native retesting.
+   Fix MIDI MUTE indicator refresh and input-close resetting mouse/computer-keyboard performance
+   in focused changes; see MANUAL_TESTS §15 / MIDI 待办 for results and remaining checks.
 2. Complete external MIDI support for the owner's MPK MINI IV: pressure, clock and reliable note
    handling; decide SINGLE / TWIN / SPLIT routing, then test with the actual controller.
 3. Continue the remaining manual checks alongside MIDI work: 5-STEP CLK, device DRY outputs,

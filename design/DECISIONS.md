@@ -30,9 +30,12 @@ Keep these unless a listening test or a real bug says otherwise.
   in the manual's units (`host/include/host/panel_format.h`).
   Its title row also holds CLOSE and RESET PANEL (two clicks): the reset publishes the power-on
   default at a stopped-stream boundary (the audio stream is briefly reopened), the same path
-  as a startup restore, so it covers every stored field, not just knobs.
+  as a startup restore, so it covers the stored machine state, not just knobs. MIDI bindings and CHANNEL /
+  TRANSPOSE / VELOCITY belong to the separate controller configuration and are not reset.
 - **MUTE button** (right of DRONE VOICES, not on the hardware): an app-level output mute with a
-  10 ms fade; the machine keeps running, nothing is saved, the app starts unmuted. The hardware
+  10 ms fade; the machine keeps running, nothing is saved, the app starts unmuted. This is
+  not a panic / note reset: notes and effects continue while muted, so unmuting can reveal
+  a held note or its remaining tail. The hardware
   has no front-panel power switch to model (only a POWER / 12 V DC socket on the top edge), so
   quitting the app is the "power off".
 - **Indicator LEDs**: 20 of the 22 printed LEDs are lit from the engine (drone and envelope
