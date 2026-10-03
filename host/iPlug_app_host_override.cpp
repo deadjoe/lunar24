@@ -1141,7 +1141,9 @@ bool IPlugAPPHost::InitMidi()
   }
 
   mMidiIn->setCallback(&MIDICallback, this);
-  mMidiIn->ignoreTypes(false, true, false );
+  // Lunar 24: let MIDI clock (0xF8) through; RtMidi drops timing messages by default and the
+  // keyboard arpeggiator / sequencer follows a DAW's clock (midi_timing.h).
+  mMidiIn->ignoreTypes(false, false, false );
 
   return true;
 }

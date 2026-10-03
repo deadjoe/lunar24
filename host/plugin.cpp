@@ -386,6 +386,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
     }
     return;
   }
+  if (msg.mStatus >= 0xF0) return;  // other system messages (MIDI time code, song position)
 
   PerformanceInput in{};
   in.source = 3;  // MIDI producer

@@ -1107,6 +1107,7 @@
   3. Ableton 按停止：琶音停在原地不再前进（最后一个音在半个节拍后收掉）；按两下停止再播放，又从第一个音开始。
   4. 改一下 Lunar 的 TEMPO：回到 Lunar 自己的时钟。
   5. 收尾：关 HOLD，MODE 改回 KEYBOARD；Preferences 的 MIDI Input 选回 MPK Mini IV MIDI Port。
+- 出问题时看 `~/Library/Application Support/Lunar24/audio.log`：Ableton 播放时每 2 秒一行 `midi clock: +N ticks ...; keyboard clock external`，80 BPM 时 N 约为 64（每拍 24 个）。`+0 ticks` 或 `internal` 就是没跟上外部时钟（2026-10-04 的第一版就是 `+0 ticks`：MIDI 输入把时钟过滤掉了，已修）。
 
 ## 还没测的（⏳）
 
