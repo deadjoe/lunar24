@@ -3,8 +3,9 @@
 //
 // The panel layout: every panel parameter has exactly one control, every jack on the
 // official panel has exactly one socket, controls stay on the panel and do not overlap,
-// and the keyboard-menu controls sit inside the menu overlay without overlapping. The static
-// panel art (panel_art.h) draws with every path inside the panel.
+// and the keyboard menu's tabs keep each setting once, inside its card, without overlaps,
+// with clicks landing on the control drawn there. The static panel art (panel_art.h) draws
+// with every path inside the panel.
 
 #include <cmath>
 #include <cstdio>
@@ -13,8 +14,11 @@
 
 #include "mini_test.h"
 #include <host/panel_art.h>
+#include <host/keyboard_menu_view.h>
 #include <host/midi_settings_view.h>
 #include <host/panel_ui_layout.h>
+#include <lunar24/core/keyboard_behaviour.h>
+#include <lunar24/core/keyboard_side_bank.h>
 #include <lunar24/core/state_disposition.h>
 
 using namespace lunar24;
@@ -94,7 +98,7 @@ int main() {
     if (a.menu && !inMenu(a)) { ++menuOut; std::printf("  outside menu: %s\n", a.label.c_str()); }
     for (std::size_t k = i + 1; k < ws.size(); ++k) {
       const Widget& b = ws[k];
-      if (a.menu != b.menu) continue;  // the menu overlay covers the plates on purpose
+      if (a.menu || b.menu) continue;  // the menu covers the plates; its tabs are checked below
       if (overlaps(a, b)) {
         ++clash;
         std::printf("  overlap: kind %d id %u @(%.0f,%.0f) / kind %d id %u @(%.0f,%.0f)\n", int(a.kind), a.id, a.cx, a.cy,
@@ -193,6 +197,168 @@ int main() {
     CHECK_EQ(asciiText("a\xe9\x94"), std::string("a?"));       // truncated sequence
     CHECK_EQ(asciiText("\x80\x80" "b"), std::string("??b"));   // one per stray byte
     CHECK_EQ(asciiText(""), std::string());
+  }
+  { // Keyboard menu: each of the 36 settings on exactly one tab, inside a card of that tab,
+    // nothing overlapping on a tab (names included), clicks land on what is drawn there.
+    namespace kb = host::kb_ui;
+    using kb::Box;
+    const auto inside = [](Box a, Box o) { return a.l >= o.l && a.t >= o.t && a.r <= o.r && a.b <= o.b; };
+    const auto overlap = [](Box a, Box b) { return a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b; };
+    const auto centre = [](Box b, float& x, float& y) { x = (b.l + b.r) / 2; y = (b.t + b.b) / 2; };
+    const auto extent = [](const kb::Item& it) {  // the box plus the name drawn above it
+      Box b = it.box;
+      if (it.kind != kb::Kind::Knob && it.kind != kb::Kind::Trimmer && it.label[0] && !kb::inHeader(it)) b.t -= 24;
+      return b;
+    };
+    CHECK(host::kMenuX0 == kb::kBounds.l && host::kMenuY0 == kb::kBounds.t && host::kMenuX1 == kb::kBounds.r &&
+          host::kMenuY1 == kb::kBounds.b);
+    CHECK_EQ(kb::kItemCount, 36);
+    std::map<std::uint32_t, int> onTabs;
+    for (const auto& it : kb::kItems) ++onTabs[static_cast<std::uint32_t>(it.id)];
+    int menuWidgets = 0;
+    for (const Widget& w : ws)
+      if (w.menu) {
+        ++menuWidgets;
+        CHECK_EQ(onTabs[w.id], 1);
+      }
+    CHECK_EQ(menuWidgets, kb::kItemCount);
+    const Box body{412, 1176, 1988, 1422};
+    int bad = 0;
+    for (int i = 0; i < kb::kItemCount; ++i) {
+      const kb::Item& a = kb::kItems[i];
+      bool inCard = false;
+      for (const auto& c : kb::kCards) inCard = inCard || (c.tab == a.tab && inside(extent(a), c.box));
+      if (!inside(extent(a), body) || !inCard) { ++bad; std::printf("  menu item outside its card: %s\n", a.label); }
+      for (int k = i + 1; k < kb::kItemCount; ++k)
+        if (kb::kItems[k].tab == a.tab && overlap(extent(a), extent(kb::kItems[k]))) {
+          ++bad;
+          std::printf("  menu items overlap: %s / %s\n", a.label, kb::kItems[k].label);
+        }
+      for (int p = 0; p < kb::kRhythmSteps; ++p)
+        if ((a.tab == kb::kArp || a.tab == kb::kSeq) && overlap(kb::rhythmPad(p), extent(a))) ++bad;
+      // Per-side settings sit in LEFT / RIGHT cards, global ones in GLOBAL cards (SPLIT tags).
+      for (const auto& c : kb::kCards)
+        if (c.tab == a.tab && c.tag != kb::Tag::None && inside(extent(a), c.box) &&
+            (core::keyboard_scalar_index(a.id) >= 0) != (c.tag == kb::Tag::Side)) {
+          ++bad;
+          std::printf("  wrong side tag: %s in %s\n", a.label, c.title);
+        }
+      // A click at the centre of each part hits that part.
+      float x, y;
+      const auto hits = [&](Box b, int sub) {
+        centre(b, x, y);
+        const kb::Hit h = kb::hitTest(a.tab, true, x, y);
+        return h.kind == kb::HitKind::Item && h.index == i && h.sub == sub;
+      };
+      switch (a.kind) {
+        case kb::Kind::Segmented:
+        case kb::Kind::VSegmented:
+          for (int o = 0; o < kb::optionCount(a.id); ++o)
+            if (!hits(kb::segment(a.box, kb::optionCount(a.id), o, a.kind == kb::Kind::VSegmented), o)) ++bad;
+          break;
+        case kb::Kind::Stepper:
+          if (!hits(kb::stepDown(a.box), -1) || !hits(kb::stepUp(a.box), 1)) ++bad;
+          break;
+        case kb::Kind::RootKeys:
+          for (int k = 0; k < 12; ++k) {
+            Box key = kb::rootKey(a.box, k);
+            if (key.b - key.t > 60) key.t = a.box.t + 56;  // white keys: below the black ones
+            if (!hits(key, k)) ++bad;
+          }
+          break;
+        default:
+          if (a.id == core::ParameterId::keyboard_clock_bpm) {
+            if (!hits(kb::stepDown(kb::tempoNudge(a)), -1) || !hits(kb::stepUp(kb::tempoNudge(a)), 1)) ++bad;
+            const kb::Dial d = kb::dial(a);
+            if (!hits({d.cx - 1, d.cy - 1, d.cx + 1, d.cy + 1}, 0)) ++bad;
+          } else if (!hits(a.box, 0)) {
+            ++bad;
+          }
+      }
+    }
+    CHECK_EQ(bad, 0);
+    // Title bar, footer, pads and steps: inside the overlay, apart, and hit where drawn.
+    float x, y;
+    for (int i = 0; i < kb::kTabCount; ++i) {
+      CHECK(inside(kb::tab(i), kb::kTitleBar));
+      CHECK(!overlap(kb::tab(i), kb::kSide) && !overlap(kb::tab(i), kb::kClose));
+      if (i > 0) CHECK(!overlap(kb::tab(i), kb::tab(i - 1)));
+      centre(kb::tab(i), x, y);
+      CHECK(kb::hitTest(kb::kPlay, false, x, y).kind == kb::HitKind::Tab && kb::hitTest(kb::kPlay, false, x, y).index == i);
+    }
+    CHECK(inside(kb::kSide, kb::kTitleBar) && !overlap(kb::kSide, kb::kClose));
+    for (int i = 0; i < 2; ++i) {
+      centre(kb::sideHalf(i), x, y);
+      CHECK(kb::hitTest(kb::kPlay, true, x, y).kind == kb::HitKind::Side && kb::hitTest(kb::kPlay, true, x, y).index == i);
+      CHECK(kb::hitTest(kb::kPlay, false, x, y).kind == kb::HitKind::None);  // no side switch outside SPLIT
+    }
+    const Box footer[] = {kb::kPresetSlots, kb::kPresetLoad, kb::kPresetSave, kb::kPresetInit, kb::kReset};
+    const kb::HitKind footerKind[] = {kb::HitKind::Slot, kb::HitKind::Load, kb::HitKind::Save, kb::HitKind::Init,
+                                      kb::HitKind::Reset};
+    for (int i = 0; i < 5; ++i) {
+      CHECK(inside(footer[i], kb::kBounds) && footer[i].t > kb::kFooterRule);
+      for (int k = i + 1; k < 5; ++k) CHECK(!overlap(footer[i], footer[k]));
+      centre(i == 0 ? kb::segment(footer[0], 4, 0, false) : footer[i], x, y);
+      for (int t = 0; t < kb::kTabCount; ++t) CHECK(kb::hitTest(t, true, x, y).kind == footerKind[i]);
+    }
+    for (int i = 0; i < 4; ++i) {
+      centre(kb::segment(kb::kPresetSlots, 4, i, false), x, y);
+      CHECK(kb::hitTest(kb::kPlay, false, x, y).index == i);
+    }
+    centre(kb::kClose, x, y);
+    CHECK(kb::hitTest(kb::kSteps, false, x, y).kind == kb::HitKind::Close);
+    for (int i = 0; i < kb::kRhythmSteps; ++i) {
+      const Box p = kb::rhythmPad(i);
+      CHECK(inside(p, kb::kCards[7].box) && inside(p, kb::kCards[9].box));
+      centre(p, x, y);
+      CHECK(kb::hitTest(kb::kArp, false, x, y).kind == kb::HitKind::Pad && kb::hitTest(kb::kArp, false, x, y).index == i);
+      CHECK(kb::hitTest(kb::kSeq, false, x, y).kind == kb::HitKind::Pad);
+      CHECK(kb::hitTest(kb::kPlay, false, x, y).kind != kb::HitKind::Pad);
+    }
+    for (int i = 0; i < kb::kSeqSteps; ++i) {
+      CHECK(inside(kb::stepColumn(i), kb::kCards[10].box) && inside(kb::stepGate(i), kb::stepColumn(i)));
+      if (i > 0) CHECK(!overlap(kb::stepColumn(i), kb::stepColumn(i - 1)));
+      centre(kb::stepGate(i), x, y);
+      CHECK(kb::hitTest(kb::kSteps, false, x, y).kind == kb::HitKind::Gate && kb::hitTest(kb::kSteps, false, x, y).index == i);
+      x = (kb::stepColumn(i).l + kb::stepColumn(i).r) / 2;
+      CHECK(kb::hitTest(kb::kSteps, false, x, kb::kFaderTop).kind == kb::HitKind::Fader);
+      CHECK(kb::hitTest(kb::kSteps, false, x, kb::kFaderTop).index == i);
+    }
+    CHECK_EQ(kb::noteAt(kb::kFaderBottom), 0);
+    CHECK_EQ(kb::noteAt(kb::kFaderTop), 24);
+    CHECK_EQ(kb::noteAt(kb::kFaderTop - 50), 24);
+    // Values written by steppers, root keys and TEMPO decode back exactly in the core.
+    for (const auto& c : kb::kCounts)
+      for (int k = c.lo; k <= c.hi; ++k) CHECK_EQ(kb::countValue(c.id, kb::countNorm(c, k)), k);
+    CHECK_EQ(int(core::arp_interval_semitones(kb::countNorm(*kb::countOf(core::ParameterId::keyboard_arp_interval), 7))), 7);
+    for (int k = 0; k < 12; ++k) {
+      CHECK_EQ(int(core::root_note_semitone(kb::rootNorm(k))), k);
+      CHECK_EQ(kb::rootValue(kb::rootNorm(k)), k);
+    }
+    for (int bpm = 10; bpm <= 300; ++bpm) {
+      CHECK_EQ(kb::bpmValue(kb::bpmNorm(bpm)), bpm);
+      CHECK_EQ(host::formatParam(static_cast<std::uint32_t>(core::ParameterId::keyboard_clock_bpm), kb::bpmNorm(bpm)),
+               std::to_string(bpm) + " BPM");
+    }
+    CHECK_EQ(kb::bpmValue(kb::bpmNorm(301)), 300);
+    CHECK_EQ(kb::optionText(core::ParameterId::keyboard_mode, 1), std::string("ARPEGGIATOR"));  // full names
+    CHECK_EQ(kb::optionText(core::ParameterId::keyboard_arp_variation, 1), std::string("x1"));
+  }
+  { // MIDI learn targets: the 203 panel controls, never a keyboard menu setting.
+    int targets = 0;
+    for (const Widget& w : ws) {
+      if (w.menu) continue;
+      switch (w.kind) {
+        case WidgetKind::Knob:
+        case WidgetKind::Button:
+        case WidgetKind::Toggle:
+        case WidgetKind::DroneKey:
+        case WidgetKind::MasterMute:
+        case WidgetKind::Cartridge: ++targets; break;
+        default: break;
+      }
+    }
+    CHECK_EQ(targets, 203);
   }
   return test::finish("test_panel_ui_layout");
 }

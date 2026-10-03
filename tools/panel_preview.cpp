@@ -4,8 +4,9 @@
 // panel_preview — render the panel (art + controls at their default positions) to SVG,
 // so the UI can be reviewed on any machine without building the app:
 //
-//   panel_preview > panel.svg          (add --menu / --seq to show a keyboard menu page,
-//                                       --leds to show the indicator LEDs lit)
+//   panel_preview > panel.svg          (--leds shows the indicator LEDs lit)
+//   panel_preview --menu[=play|expression|arp|seq|steps|service]   keyboard menu, factory values
+//   panel_preview --menu-example=<tab> / --menu-split / --menu-armed
 //   panel_preview --midi / --midi-example / --midi-learn / --midi-wait / --midi-error
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
@@ -15,9 +16,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
 
 #include <host/panel_art.h>
+#include <host/keyboard_menu_view.h>
 #include <host/midi_settings_view.h>
 #include <host/panel_format.h>
 #include <host/panel_theme.h>
@@ -97,16 +100,17 @@ struct SvgSink {
   void text(float x, float y, float size, std::uint32_t c, bool vertical, const char* s) {
     ::text(x, y, size, theme::rgb(c), s, vertical);
   }
-  // Text cells use the same bounds and alignment as the native MIDI view.
-  // SVG retains the font size and clips overflow; the native sink measures and
+  // Text cells use the same bounds and alignment (0 left, 1 centre, 2 right) as the native
+  // overlays. SVG retains the font size and clips overflow; the native sink measures and
   // ellipsizes with the embedded Noto font. data-fit lets export tools do likewise.
-  void label(midi_ui::Box b, float size, std::uint32_t color, const char* value, bool bold, bool center) {
+  void label(midi_ui::Box b, float size, std::uint32_t color, const char* value, bool bold, int align) {
+    const float w = b.r - b.l;
     std::printf("<svg x='%.1f' y='%.1f' width='%.1f' height='%.1f' overflow='hidden'>"
                 "<text x='%.1f' y='%.1f' font-size='%.1f' fill='%s' text-anchor='%s' "
                 "dominant-baseline='central' font-family='Noto Sans, sans-serif' font-weight='%d' "
                 "data-fit='%.1f'>%s</text></svg>\n",
-                b.l,b.t,b.r-b.l,b.b-b.t,center?(b.r-b.l)/2:0,(b.b-b.t)/2,size,hex(color).c_str(),
-                center?"middle":"start",bold?700:400,b.r-b.l,esc(value).c_str());
+                b.l,b.t,w,b.b-b.t,align==1?w/2:align==2?w:0.f,(b.b-b.t)/2,size,hex(color).c_str(),
+                align==1?"middle":align==2?"end":"start",bold?700:400,w,esc(value).c_str());
   }
   void circle(float cx, float cy, float r) {
     char b[160];
@@ -163,7 +167,7 @@ SvgSink& svg() {
 
 void knob(const Widget& w) {
   const double ang = theme::kKnobMinDeg + norm01(w.id) * (theme::kKnobMaxDeg - theme::kKnobMinDeg);
-  const theme::Rgb c = theme::cap(w.cap), t = w.menu ? theme::kMenuText : theme::kSkirt;
+  const theme::Rgb c = theme::cap(w.cap), t = theme::kSkirt;
   art::drawKnob(svg(), float(w.cx), float(w.cy), float(w.w / 2), (std::uint32_t(c.r) << 16) | (c.g << 8) | c.b,
                 w.cap != Cap::Black, float(ang), (std::uint32_t(t.r) << 16) | (t.g << 8) | t.b,
                 float(theme::kKnobMinDeg), float(theme::kKnobMaxDeg), false);
@@ -197,8 +201,7 @@ int main(int argc, char** argv) {
   const std::string option = argc > 1 ? argv[1] : "";
   const bool showMidi = option.rfind("--midi", 0) == 0;
   const bool midiExample = showMidi && option != "--midi";
-  const bool showMenu = argc > 1 && std::strcmp(argv[1], "--menu") == 0;
-  const bool showSeq = argc > 1 && std::strcmp(argv[1], "--seq") == 0;
+  const bool showMenu = option.rfind("--menu", 0) == 0;
   const bool showLeds = argc > 1 && std::strcmp(argv[1], "--leds") == 0;
   const auto ws = build_panel_layout();
   if (argc > 1 && std::strcmp(argv[1], "--widgets") == 0) {
@@ -276,52 +279,45 @@ int main(int argc, char** argv) {
         break;
     }
   }
-  if (showMenu || showSeq) {
-    std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='10' fill='%s'/>\n", kMenuX0,
-                kMenuY0, kMenuX1 - kMenuX0, kMenuY1 - kMenuY0, col(theme::kMenuBg).c_str());
-    text(kMenuTitleX, kMenuY0 + 22, 18, theme::kMenuText, "KEYBOARD MENU");
-    const Rect a = kMenuTabSettings, b = kMenuTabSequencer;
-    art::drawMenuTab(sink, float(a.x0), float(a.y0), float(a.x1), float(a.y1), "SETTINGS", showMenu, false);
-    art::drawMenuTab(sink, float(b.x0), float(b.y0), float(b.x1), float(b.y1), "SEQUENCER", showSeq, false);
-    const Rect rh = kMenuTabRhythm;
-    art::drawMenuTab(sink, float(rh.x0), float(rh.y0), float(rh.x1), float(rh.y1), "RHYTHM", false, false);
-    const Rect c = kMenuClose;
-    art::drawMenuTab(sink, float(c.x0), float(c.y0), float(c.x1), float(c.y1), "CLOSE", false, false);
-    const Rect rs = kMenuReset;
-    art::drawMenuTab(sink, float(rs.x0), float(rs.y0), float(rs.x1), float(rs.y1), "RESET PANEL", false, false);
-    for (auto [r, label] : {std::pair{kPresetSlot, "PRESET A"}, std::pair{kPresetLoad, "LOAD"},
-                            std::pair{kPresetSave, "SAVE"}, std::pair{kPresetInit, "INIT"}})
-      art::drawMenuTab(sink, float(r.x0), float(r.y0), float(r.x1), float(r.y1), label, false, false);
-  }
-  if (showSeq) {
-    // (EDIT: LEFT / RIGHT only shows under PLAY = SPLIT; the preview shows the default SINGLE.)
-    text(440, (kSeqSliderTop + kSeqSliderBottom) / 2, 12, theme::kMenuText, "NOTE", true);
-    text(440, kSeqGateY, 12, theme::kMenuText, "GATE");
-    for (int i = 0; i < kSeqSteps; ++i) {
-      const Rect r = seq_step_rect(i);
-      const auto& st = defaults().keyboardSeqCurrent.steps[static_cast<std::size_t>(i)];
-      art::drawSeqStep(sink, float(r.x0), float(r.x1), float(kSeqSliderTop), float(kSeqSliderBottom),
-                       float(kSeqGateY), i, st.note, 24, st.gate != 0, false);
-    }
-  }
   if (showMenu) {
-    for (const Widget& w : ws) {
-      if (!w.menu) continue;
-      if (w.kind == WidgetKind::Knob) {
-        knob(w);
-      } else {
-        std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='5' fill='none' stroke='%s'/>\n", w.x(), w.y(),
-                    w.w, w.h, col(theme::kMenuText).c_str());
-        const core::ParameterDescriptor* d = core::find_parameter(static_cast<core::ParameterId>(w.id));
-        const int idx = indexOf(w.id);
-        std::string opt =
-            d && d->optionCount > 0 && idx >= 0 && idx < static_cast<int>(d->optionCount) ? d->options[idx] : "";
-        for (auto& ch : opt) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-        text(w.cx, w.cy, 11, theme::kMenuText, opt.substr(0, 10));
-      }
-      text(w.cx, w.cy + 42, 12, theme::kMenuText, w.label);
-      if (w.kind == WidgetKind::Knob) text(w.cx, w.cy + 58, 11, theme::kAmber, formatParam(w.id, defaults().parameters[w.id]));
+    using P = core::ParameterId;
+    std::map<P, double> v;  // values that differ from the factory ones
+    kb_ui::State st;
+    st.value = [&v](P id) {
+      const auto it = v.find(id);
+      return it != v.end() ? it->second : defaults().parameters[static_cast<std::size_t>(id)];
+    };
+    const std::size_t eq = option.find('=');
+    const std::string tab = eq == std::string::npos ? "play" : option.substr(eq + 1);
+    const char* tabs[kb_ui::kTabCount] = {"play", "expression", "arp", "seq", "steps", "service"};
+    for (int i = 0; i < kb_ui::kTabCount; ++i)
+      if (tab == tabs[i]) st.tab = i;
+    for (int i = 0; i < kb_ui::kSeqSteps; ++i) {
+      const auto& q = defaults().keyboardSeqCurrent.steps[static_cast<std::size_t>(i)];
+      st.steps[i] = {int(q.note), q.gate != 0};
     }
+    if (option.rfind("--menu-example", 0) == 0) {  // a played-in patch (valid values)
+      v = {{P::keyboard_quantise_load_scale, 2}, {P::keyboard_root_note, 2.0 / 11.0},
+           {P::keyboard_portamento_speed, 60 / 255.0}, {P::keyboard_vibrato_speed, 40 / 127.0},
+           {P::keyboard_vibrato_depth, 22 / 127.0}, {P::keyboard_vibrato_delay, 64 / 127.0},
+           {P::keyboard_vibrato_pressure, 0.5}, {P::keyboard_pressure_output, 1},
+           {P::keyboard_pressure_rise, 40 / 255.0}, {P::keyboard_pressure_fall, 120 / 255.0},
+           {P::keyboard_arp_hold, 1}, {P::keyboard_arp_direction, 2}, {P::keyboard_arp_variation, 1},
+           {P::keyboard_arp_interval, 6.0 / 11.0}, {P::keyboard_arp_length, 1.0},
+           {P::keyboard_seq_length, 10.0 / 14.0}, {P::keyboard_seq_rhythm_length, 5.0 / 7.0}};
+      st.arpMask = 0x12;
+      st.seqMask = 0x04;
+      const int notes[kb_ui::kSeqSteps] = {0, 7, 12, 7, 3, 10, 15, 10, 0, 5, 12, 19, 24, 12, 7, 0};
+      for (int i = 0; i < kb_ui::kSeqSteps; ++i) st.steps[i] = {notes[i], i != 3 && i != 9};
+    }
+    if (option == "--menu-split") {  // PLAY = SPLIT, editing the right half, preset C
+      v[P::keyboard_behaviour] = 2;
+      st.split = true;
+      st.side = 1;
+      st.presetSlot = 2;
+    }
+    if (option == "--menu-armed") st.resetArmed = st.initArmed = true;
+    kb_ui::draw(sink, st);
   }
   if (showMidi) {
     core::MidiMap map;

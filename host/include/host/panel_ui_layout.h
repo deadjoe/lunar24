@@ -8,8 +8,8 @@
 // panel_art.generated.h. Framework-free: the IGraphics editor draws from this list, the
 // SVG preview tool renders it, and tests check it.
 //
-// The keyboard's 35 menu parameters live behind the display/encoder on the hardware; here
-// they are knobs/switches on a KEYBOARD MENU overlay that the encoder opens (`menu` = true).
+// The keyboard's 36 menu settings live behind the display/encoder on the hardware; here they
+// are on a KEYBOARD MENU overlay that the encoder opens (`menu` = true; keyboard_menu_view.h).
 
 #pragma once
 
@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include <host/keyboard_menu_view.h>
 #include <lunar24/registry.hpp>
 
 namespace lunar24::host {
@@ -75,38 +76,9 @@ struct Widget {
   double y() const { return cy - h / 2; }
 };
 
-// The keyboard menu overlay area (covers the touch plates while open).
+// The keyboard menu overlay area (covers the touch plates while open); its tabs, settings,
+// presets, sequencer steps and rhythm pads are laid out in keyboard_menu_view.h.
 inline constexpr double kMenuX0 = 410, kMenuY0 = 1112, kMenuX1 = 1990, kMenuY1 = 1482;
-
-// Keyboard menu pages: SETTINGS (the 35 menu parameters) and SEQUENCER (the 16-step
-// editor). Tab buttons and the sequencer side switch sit in the menu's title row.
-struct Rect { double x0, y0, x1, y1; };
-inline constexpr Rect kMenuTabSettings{428, 1122, 548, 1148};
-inline constexpr Rect kMenuTabSequencer{554, 1122, 674, 1148};
-inline constexpr Rect kMenuTabRhythm{680, 1122, 790, 1148};
-inline constexpr Rect kSeqSideSwitch{1700, 1122, 1842, 1148};
-inline constexpr Rect kMenuClose{1860, 1122, 1972, 1148};  // closes the menu (as does the encoder)
-inline constexpr Rect kMenuReset{1540, 1122, 1682, 1148};  // whole panel back to default (confirm)
-// Keyboard presets A-D (manual p.19): the slot button cycles A..D, then LOAD / SAVE / INIT.
-// They sit left of the "KEYBOARD MENU" title.
-inline constexpr Rect kPresetSlot{806, 1122, 906, 1148};
-inline constexpr Rect kPresetLoad{912, 1122, 976, 1148};
-inline constexpr Rect kPresetSave{982, 1122, 1046, 1148};
-inline constexpr Rect kPresetInit{1052, 1122, 1116, 1148};
-// The "KEYBOARD MENU" title, centred in the free space between INIT and RESET PANEL.
-inline constexpr double kMenuTitleX = 1328;
-inline constexpr int kSeqSteps = 16;
-// RHYTHM page (manual p.16/p.17): two rows of 8 step buttons, the arpeggiator's pattern
-// on top and the sequencer's below. A lit button lets that clock edge through.
-inline constexpr int kRhythmSteps = 8;
-inline constexpr double kRhythmArpY = 1250, kRhythmSeqY = 1390, kRhythmX0 = 640, kRhythmDx = 120;
-inline Rect rhythm_step_rect(int row, int i) {
-  const double cx = kRhythmX0 + i * kRhythmDx, cy = row == 0 ? kRhythmArpY : kRhythmSeqY;
-  return {cx - 40, cy - 40, cx + 40, cy + 40};
-}
-// One sequencer step column: step number, note slider, note readout, gate button.
-inline constexpr double kSeqSliderTop = 1178, kSeqSliderBottom = 1392, kSeqGateY = 1450;
-inline Rect seq_step_rect(int i) { return {470.0 + i * 92.0, 1154, 534.0 + i * 92.0, 1470}; }
 
 // Registry jacks that the official panel does not show (kept in the engine, not patchable
 // from the UI): the VCOs' separate wave outputs and the envelopes' VCA-CV outputs.
@@ -394,45 +366,20 @@ inline std::vector<Widget> build_panel_layout() {
   add(WidgetKind::MidiSettings, 2352, 1348.5, 48, 48, 0);
 
   // ---- keyboard menu overlay (opened by the encoder) --------------------------------------------------
-  {
-    struct M { P id; const char* label; bool sw; };
-    const M items[] = {
-        {P::keyboard_behaviour, "PLAY", true}, {P::keyboard_mode, "MODE", true},
-        {P::keyboard_quantise_load_scale, "SCALE", true}, {P::keyboard_root_note, "ROOT", false},
-        {P::keyboard_clock_bpm, "BPM", false}, {P::keyboard_portamento_speed, "GLIDE", false},
-        {P::keyboard_portamento_legato, "LEGATO", true}, {P::keyboard_vibrato_speed, "VIB RATE", false},
-        {P::keyboard_vibrato_depth, "VIB DEPTH", false}, {P::keyboard_vibrato_delay, "VIB DELAY", false},
-        {P::keyboard_vibrato_pressure, "VIB PRESS", false}, {P::keyboard_pressure_output, "PRESSURE", true},
-        {P::keyboard_pressure_rise, "P RISE", false}, {P::keyboard_pressure_fall, "P FALL", false},
-        {P::keyboard_arp_hold, "ARP HOLD", true}, {P::keyboard_arp_direction, "ARP DIR", true},
-        {P::keyboard_arp_variation, "ARP VAR", true}, {P::keyboard_arp_interval, "ARP INT", false},
-        {P::keyboard_arp_length, "ARP RHYTHM", false}, {P::keyboard_seq_run, "SEQ RUN", true},
-        {P::keyboard_seq_length, "SEQ LEN", false}, {P::keyboard_seq_direction, "SEQ DIR", true},
-        {P::keyboard_seq_cv_output, "SEQ CV", true}, {P::keyboard_seq_rhythm_length, "SEQ RHYTHM", false},
-        {P::keyboard_encoder_direction, "ENCODER", true}, {P::keyboard_calibration_v_oct, "CAL V/OCT", false},
-        {P::keyboard_calibration_pressure, "CAL PRESS", false}, {P::keyboard_dac_vref, "DAC REF", true},
-        {P::keyboard_touch_threshold, "TOUCH", false}, {P::keyboard_release_threshold, "RELEASE", false},
-        {P::keyboard_pressure_min, "P MIN", false}, {P::keyboard_pressure_max, "P MAX", false},
-        {P::keyboard_mpr121_charge, "CHARGE", false}, {P::keyboard_mpr121_discharge, "DISCHARGE", false},
-        {P::keyboard_debounce, "DEBOUNCE", false}, {P::sequencer_clock, "5-STEP CLK", true},
-    };
-    const int cols = 12;
-    const double cw = (kMenuX1 - kMenuX0 - 20) / cols, rh = (kMenuY1 - kMenuY0 - 50) / 3.0;
-    int i = 0;
-    for (const M& m : items) {
-      Widget wd;
-      wd.kind = m.sw ? WidgetKind::Toggle : WidgetKind::Knob;
-      wd.cx = kMenuX0 + 10 + cw * (i % cols + 0.5);
-      wd.cy = kMenuY0 + 44 + rh * (i / cols + 0.42);
-      wd.w = m.sw ? 70 : 50;
-      wd.h = m.sw ? 30 : 50;
-      wd.id = static_cast<std::uint32_t>(m.id);
-      wd.cap = Cap::Red;
-      wd.menu = true;
-      wd.label = m.label;
-      ws.push_back(wd);
-      ++i;
-    }
+  // The overlay draws and hit-tests these from kb_ui::kItems; they are listed here so every
+  // keyboard setting still has exactly one control (and stays out of MIDI learn).
+  for (const kb_ui::Item& it : kb_ui::kItems) {
+    Widget wd;
+    wd.kind = it.kind == kb_ui::Kind::Knob || it.kind == kb_ui::Kind::Trimmer ? WidgetKind::Knob : WidgetKind::Toggle;
+    wd.cx = (it.box.l + it.box.r) / 2.0;
+    wd.cy = (it.box.t + it.box.b) / 2.0;
+    wd.w = it.box.r - it.box.l;
+    wd.h = it.box.b - it.box.t;
+    wd.id = static_cast<std::uint32_t>(it.id);
+    wd.cap = Cap::Red;
+    wd.menu = true;
+    wd.label = it.label;
+    ws.push_back(wd);
   }
   return ws;
 }

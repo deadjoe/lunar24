@@ -26,9 +26,11 @@ Keep these unless a listening test or a real bug says otherwise.
   Windows keeps a plain window.
 - **The window scales the whole panel to fit** (`LunarHostPlugin::OnParentWindowResize`);
   iPlug2's default resets the zoom to 1 on every resize, which cropped the panel.
-- **Keyboard menu** (35 settings) is an overlay opened by the red encoder; values are shown
-  in the manual's units (`host/include/host/panel_format.h`).
-  Its title row also holds CLOSE and RESET PANEL (two clicks): the reset publishes the power-on
+- **Keyboard menu** (36 settings in 6 function tabs, `host/include/host/keyboard_menu_view.h`)
+  is an overlay opened by the red encoder; values are shown in the manual's units
+  (`host/include/host/panel_format.h`). Count settings use steppers that stop at both ends
+  (no wrap); presets A-D are picked directly. While open it covers the encoder, so CLOSE or
+  Esc closes it. Its footer holds RESET PANEL (two clicks): the reset publishes the power-on
   default at a stopped-stream boundary (the audio stream is briefly reopened), the same path
   as a startup restore, so it covers the stored machine state, not just knobs. MIDI bindings and CHANNEL /
   TRANSPOSE / VELOCITY belong to the separate controller configuration and are not reset.

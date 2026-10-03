@@ -37,13 +37,13 @@ _Last updated: 2026-10-03._
   like a piano: `A W S E D F T G Y H U J K O L P ;`. Octave: the arrow buttons next to
   the encoder, or `Z` / `X`; the display shows it.
 - Keyboard settings (play mode, scale, arp, sequencer, glide, vibrato, ...): click the
-  red encoder to open the KEYBOARD MENU over the plates, click it again to close. Values
-  show in the manual's units (BPM, note, steps, 0-255 / 0-127) and apply at once.
+  red encoder to open the KEYBOARD MENU over the plates (tabs PLAY, EXPRESSION, ARP, SEQ,
+  SEQ STEPS, SERVICE); CLOSE or Esc closes it. Values show in the manual's units (BPM, note, steps, 0-255 / 0-127) and apply at once.
 - Arpeggiator / 16-step sequencer: MODE = ARPEGGIATOR or SEQUENCER, hold plates. The
   internal clock runs at BPM (10-300, 16th notes); a cable into the keyboard CLOCK jack
   takes over until BPM is changed again; RESET restarts the pattern. Edit the 16 steps
-  on the menu's SEQUENCER page: drag a slider for the note (0..+24 semitones above the
-  held plate), click the round button to turn the step's gate on/off (off = a rest).
+  on the menu's SEQ STEPS tab: drag a fader for the note (0..+24 semitones above the
+  held plate), click the GATE button to turn the step's gate on/off (off = a rest).
 - MIDI keyboard: inputs are enumerated at startup (hot-plug refresh is not implemented). Mod wheel / CC74 =
   filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master; pitch bend +/-2
   semitones; sustain pedal; MIDI clock drives the arpeggiator / sequencer (START / STOP).
