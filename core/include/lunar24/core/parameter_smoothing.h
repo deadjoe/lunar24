@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// ParameterSmoothing: the real-time continuous-parameter semantic (design/07 §3).
+// ParameterSmoothing: the real-time continuous-parameter semantic.
 // This is distinct from a sample-accurate discrete event (event_timebase.h) and
 // from an audio-rate modulation signal (audio_rate_modulation.h) — a smoothed
 // parameter moves toward a target over a time constant, it is not evaluated per
@@ -24,7 +24,7 @@ namespace lunar24::core {
 //
 // A smoother is "settled" once |current - target| <= kSmootherSettleRelTol * span
 // (span = |target - resetLevel|), i.e. the one-pole residual has decayed to this
-// fraction of the initial step. The GH#21 acceptance derives its settle frame count
+// fraction of the initial step. The acceptance derives its settle frame count
 // from this exact tolerance: after N = ceil(fs * tau * ln(1/kSmootherSettleRelTol))
 // frames the residual equals kSmootherSettleRelTol * span (the exponential decay of
 // (1-a)^N with a = 1-exp(-1/(fs*tau))). A 1% residual is below control-resolution
@@ -39,11 +39,11 @@ inline constexpr double kSmootherSettleAbsTol = 1e-9;
 // One-pole smoother toward a target, with a seconds-based time constant.
 //
 //   y[n] = y[n-1] + a * (target - y[n-1])
-//   a    = 1 - exp(-1 / (fs * tau_seconds))
+//   a = 1 - exp(-1 / (fs * tau_seconds))
 //
 // The exact choice of `a` makes the decay independent of sample rate in
 // WALL-CLOCK time: fraction `f` of the step is reached at
-//   t = -tau * ln(1 - f)   seconds,   for any fs.
+//   t = -tau * ln(1 - f) seconds, for any fs.
 // That is the cross-sample-rate property the tests hold it to.
 class ParameterSmoother {
  public:
@@ -67,7 +67,7 @@ class ParameterSmoother {
   }
 
   // Set a new target. The step this target represents is measured from where the
-  // smoother actually IS right now, not from the last reset() — so re-basing
+  // smoother actually IS right now, not from the last reset — so re-basing
   // resetLevel_ onto current_ makes the settle tolerance relative to the real
   // transition being taken (a return toward an earlier level must settle in the
   // same tau-derived window, not drift into the absTol-only branch). A no-op
@@ -87,7 +87,7 @@ class ParameterSmoother {
   double current() const { return current_; }
   double target() const { return target_; }
   double sampleRate() const { return sample_rate_; }
-  // GH#12 task#101 review: the time constant the smoother is ACTUALLY running with (the value
+  //  review: the time constant the smoother is ACTUALLY running with (the value
   // the per-sample coefficient was derived from), so a consumer's readback can pin the executed
   // configuration instead of only the requested one.
   double timeConstantSeconds() const { return tau_seconds_; }
@@ -103,7 +103,7 @@ class ParameterSmoother {
   // Has the smoother converged within the declared settle tolerance? Once settled,
   // the consumer MAY stop writing the DSP setter: the residual |current - target|
   // is below the tolerance, so applying the exact target instead of another pole
-  // step is already sub-tolerance, and — decisively for GH#21 — stopping the write
+  // step is already sub-tolerance, and — decisively for — stopping the write
   // is what keeps a sanctioned direct DSP-domain setter (e.g. setSequencerInternalRateHz)
   // from being clobbered back to the smoother's own settled target every frame.
   bool settled() const {

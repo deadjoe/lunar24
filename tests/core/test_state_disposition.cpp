@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Disposition table oracle (task #75 revision 3 — Codex BLOCK bd53b76a).
+// Disposition table oracle (revision 3 — BLOCK.
 //
 // The revision-3 oracle is NOT self-proving. Each landed id is classified by an
 // INDEPENDENT rule derived only from the registry descriptor (owner / role) plus a
@@ -9,7 +9,7 @@
 // and the table's disposition_of(id) must agree with that rule for EVERY id, and the
 // five per-class counts must be exactly 185/35/125/0/0.
 //
-// UPDATE (GH#19 S0, task #117): the pinned unavailable set is now EMPTY. The last two
+// UPDATE: the pinned unavailable set is now EMPTY. The last two
 // members, vco_a.pwm(8) and vco_b.pwm(30), were flipped to applied_to_dsp in
 // state_disposition.h once their consumer (Vco::setPwDepth/setPwCv -> effectiveDuty),
 // their per-sample graph read, their restore/live lane and their knob smoothing were
@@ -35,10 +35,10 @@
 namespace core = lunar24::core;
 
 // The REMAINING transfer-unavailable parameters (no real runtime consumer), by stable
-// ParameterId. GH#15 D1 moved drone_3/6_mod, D2 moved drone_3/6_hi_low +
+// ParameterId. moved drone_3/6_mod, D2 moved drone_3/6_hi_low +
 // drone_3/6_rate_switch, D3 moved drone_3/6_divider, D4 moved the drone3/6 ATT/RLS pair,
 // and D5 moved the drone3/6 HOLD pair (an OR term on the envelope TARGET, not a second
-// envelope) — 16 -> 14 -> 10 -> 8 -> 4 -> 2. GH#19 S0 / task #117 moved the last two,
+// envelope) — 16 -> 14 -> 10 -> 8 -> 4 -> 2. / moved the last two,
 // vco_a.pwm(8) and vco_b.pwm(30), so the set is EMPTY (2 -> 0).
 //
 // An empty pin is still a pin: kUnavailableCount is asserted to be 0 and the classifier
@@ -169,7 +169,7 @@ static void hole_and_slack_resolve_invalid() {
   CHECK(core::disposition_of(static_cast<core::ParameterId>(416)) == core::StateDisposition::invalid_unlanded);
   CHECK(core::is_landed_parameter(static_cast<core::ParameterId>(4)) == false);
   CHECK(core::is_landed_parameter(static_cast<core::ParameterId>(416)) == false);
-  // The pinned unavailable set is empty (GH#19 S0 / task #117), so the historical
+  // The pinned unavailable set is empty, so the historical
   // "not a hole/slack id" walk has nothing to iterate. It is kept as a positive
   // assertion on the two ids that used to be in it: they are LANDED registry ids and
   // they are now DSP-landed — the flip did not delete them from the id space, and a
@@ -185,24 +185,24 @@ static void spot_check_known_dispositions() {
   CHECK(core::disposition_of(core::ParameterId::vco_a_tune) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::keyboard_behaviour) == core::StateDisposition::applied_to_keyboard);
   CHECK(core::disposition_of(core::ParameterId::program_orche_3_z) == core::StateDisposition::preserved_deferred_p6_p8);
-  // GH#19 S0 / task #117: the pwm pair became applied_to_dsp once its consumer, its
+  //  : the pwm pair became applied_to_dsp once its consumer, its
   // per-sample graph read, its restore/live lane and its knob smoothing were connected
   // (the last two transfer_unavailable ids). Both are asserted together — the ruling
   // requires the pair to move as one.
   CHECK(core::disposition_of(core::ParameterId::vco_a_pwm) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::vco_b_pwm) == core::StateDisposition::applied_to_dsp);
-  // GH#15 D1: drone_3/6_mod moved from transfer_unavailable to applied_to_dsp.
+  // drone_3/6_mod moved from transfer_unavailable to applied_to_dsp.
   CHECK(core::disposition_of(core::ParameterId::drone_3_mod) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_6_mod) == core::StateDisposition::applied_to_dsp);
-  // GH#15 D2: drone_3/6_hi_low + drone_3/6_rate_switch moved from
+  // drone_3/6_hi_low + drone_3/6_rate_switch moved from
   // transfer_unavailable to applied_to_dsp (16 -> 14 -> 10).
   CHECK(core::disposition_of(core::ParameterId::drone_3_hi_low) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_3_rate_switch) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_6_hi_low) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_6_rate_switch) == core::StateDisposition::applied_to_dsp);
-  // GH#15 D4: drone_3/6_att + drone_3/6_rls moved from transfer_unavailable to
-  // applied_to_dsp; GH#15 D5: the drone_3/6 HOLD pair followed (16 -> 14 -> 10 -> 8 ->
-  // 4 -> 2), and GH#19 S0 / task #117 then moved the last two (2 -> 0). The class is
+  // drone_3/6_att + drone_3/6_rls moved from transfer_unavailable to
+  // applied_to_dsp;: the drone_3/6 HOLD pair followed (16 -> 14 -> 10 -> 8 ->
+  // 4 -> 2), and / then moved the last two (2 -> 0). The class is
   // now empty and no id below is expected to be transfer_unavailable.
   CHECK(core::disposition_of(core::ParameterId::drone_3_att) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::drone_3_rls) == core::StateDisposition::applied_to_dsp);
@@ -229,5 +229,5 @@ int main() {
   hole_and_slack_resolve_invalid();
   spot_check_known_dispositions();
   landed_slot_arithmetic();
-  return ::test::finish("state disposition (task #75 r4)");
+  return ::test::finish("state disposition ( r4)");
 }

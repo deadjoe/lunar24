@@ -1,35 +1,35 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P2-③ tests for the SCC cycle-breaking / graph compiler
-// (core/include/lunar24/core/graph_compiler.h; design/07 §4).
+//  tests for the SCC cycle-breaking / graph compiler
+// (core/include/lunar24/core/graph_compiler.h).
 //
-// These cover @Claude's 5 must-tests plus his 3 additions and the boundary set.
+// These cover must-tests plus his 3 additions and the boundary set.
 //
-// @Claude must-tests:
-//   ① z^-1 is one SAMPLE, not one block  — a cyclic region run through a
-//      test-only mini interpreter at the P2-① mixed block partition
+//  must-tests:
+//    z^-1 is one SAMPLE, not one block — a cyclic region run through a
+//      test-only mini interpreter at the mixed block partition
 //      (64,100,37,128,7,256,91) must yield per-sample-identical output.
-//   ② feedback-edge set deterministic across plug / enum / container order —
+//    feedback-edge set deterministic across plug / enum / container order —
 //      the SAME topology compiled from several edge + module permutations gives a
 //      bit-identical plan; the comparator can detect an order perturbation, so
 //      this is a live detector, not a green light.
-//   ③ module-level intrinsic latency grants NO break eligibility — a module that
+//    module-level intrinsic latency grants NO break eligibility — a module that
 //      reports a large intrinsicLatencySamples but whose specific on-cycle path
 //      is zero-delay is still given a z^-1 feedback edge.
-//   ④ a not-cycle-safe module (window / FFT / reverse) is REJECTED, never
+//    a not-cycle-safe module (window / FFT / reverse) is REJECTED, never
 //      silently admitted into a cyclic SCC.
-//   ⑤ acyclic / cyclic partition is correct — a pure acyclic chain is not
+//    acyclic / cyclic partition is correct — a pure acyclic chain is not
 //      misjudged as cyclic and a real loop is not missed.
 //
-// @Claude additions:
-//   ⑥ both z^-1 directions are guarded —
+//  additions:
+//    both z^-1 directions are guarded —
 //        (negative of "should add but didn't") and
 //        (positive of "path has real >=1 sample delay -> MUST NOT add z^-1").
-//   ⑦ the feedback-edge set is NOT full-mark: it is SUFFICIENT (removing it makes
+//    the feedback-edge set is NOT full-mark: it is SUFFICIENT (removing it makes
 //      the SCC a DAG) AND NON-REDUNDANT (re-adding any single selected edge
 //      recreates a cycle). Verified independently of the algorithm that chose it.
-//   ⑧ a recompile NEVER runs on the audio thread — trigger one inside an RtGuard
+//    a recompile NEVER runs on the audio thread — trigger one inside an RtGuard
 //      window and the heap detector must go red; the same compile off-thread is
 //      clean.
 //
@@ -111,7 +111,7 @@ static core::GraphModule mod(core::ModuleId id, const core::ModuleExecutionContr
 }
 
 // ----------------------------------------------------------------------------
-// Sufficiency / non-redundancy verifiers (@Claude addition ⑦). These RE-CHECK the
+// Sufficiency / non-redundancy verifiers (addition). These RE-CHECK the
 // chosen feedback set independently of the DFS that chose it, using the two cheap
 // O(|edges|) invariants he named (NOT an NP-hard optimum).
 // ----------------------------------------------------------------------------
@@ -197,7 +197,7 @@ static bool feedback_set_non_redundant(const core::CompiledRegion& r,
 // regions in order, runs an acyclic region's single module once per block and a
 // cyclic region per-sample in region.modules order, and honours the compiler's
 // z_inverse vs real_path decision with an internal one-sample delay line. Used to
-// prove must-test ① (z^-1 is one sample, not one block).
+// prove must-test (z^-1 is one sample, not one block).
 // ----------------------------------------------------------------------------
 struct MiniExec {
   std::vector<std::uint32_t> moduleOf;   // numeric jack id -> numeric module id
@@ -290,7 +290,7 @@ static bool result_identical(const std::vector<float>& a, const std::vector<floa
 }
 
 // ----------------------------------------------------------------------------
-// Canonical serialization + comparator (must-test ②).
+// Canonical serialization + comparator (must-test).
 // ----------------------------------------------------------------------------
 static std::string serialize(const core::CompiledGraph& g) {
   std::string s;
@@ -317,7 +317,7 @@ static bool plans_bit_identical(const core::CompiledGraph& a, const core::Compil
 
 // A concrete order perturbation: reverse each region's edge / feedback / module
 // lists. Used only to prove the comparator IS order-sensitive, so an order-
-// dependent compiler would be caught (must-test ② negative).
+// dependent compiler would be caught (must-test negative).
 static core::CompiledGraph buggy_reorder_edges(const core::CompiledGraph& in) {
   core::CompiledGraph out;
   out.moduleCount = in.moduleCount;
@@ -331,7 +331,7 @@ static core::CompiledGraph buggy_reorder_edges(const core::CompiledGraph& in) {
 }
 
 // ----------------------------------------------------------------------------
-// must-test ①: z^-1 is one sample, not one block.
+// must-test: z^-1 is one sample, not one block.
 // ----------------------------------------------------------------------------
 static void z_inverse_is_one_sample_not_one_block() {
   const core::JackDescriptor jacks[] = {
@@ -372,7 +372,7 @@ static void z_inverse_is_one_sample_not_one_block() {
   CHECK_TRUE(feedback_set_is_sufficient(reg, jacks, kJackCount, kMaxTestId));
   CHECK_TRUE(feedback_set_non_redundant(reg, jacks, kJackCount, kMaxTestId));
 
-  // Drive the plan through the mini interpreter at the P2-① mixed partition.
+  // Drive the plan through the mini interpreter at the mixed partition.
   const std::size_t kFrames = 256;
   const std::size_t kBlocks[] = {64u, 100u, 37u, 128u, 7u, 256u, 91u};
   std::vector<float> ext(kFrames);
@@ -408,7 +408,7 @@ static void z_inverse_is_one_sample_not_one_block() {
 }
 
 // ----------------------------------------------------------------------------
-// must-test ⑤: acyclic / cyclic partition.
+// must-test: acyclic / cyclic partition.
 // ----------------------------------------------------------------------------
 static void acyclic_not_misjudged_and_cyclic_not_missed() {
   // Pure acyclic chain A -> B: two acyclic regions, no cyclic region.
@@ -455,7 +455,7 @@ static void acyclic_not_misjudged_and_cyclic_not_missed() {
 }
 
 // ----------------------------------------------------------------------------
-// must-test ②: feedback set deterministic across order.
+// must-test: feedback set deterministic across order.
 // ----------------------------------------------------------------------------
 static void feedback_set_deterministic_across_order() {
   // A loop (A <-> B) plus an acyclic tail (A -> C). Topology is fixed; we vary the
@@ -499,7 +499,7 @@ static void feedback_set_deterministic_across_order() {
 }
 
 // ----------------------------------------------------------------------------
-// must-test ③ + addition ⑥ (both z^-1 directions).
+// must-test + addition (both z^-1 directions).
 // ----------------------------------------------------------------------------
 static void module_latency_grants_no_break_eligibility() {
   // B reports a LARGE intrinsic latency (999) but its specific on-cycle path
@@ -528,7 +528,7 @@ static void module_latency_grants_no_break_eligibility() {
   CHECK_FALSE(buggy_waives);  // the real compiler does NOT waive; a buggy one would be red
 }
 
-// addition ⑥(b): a real >=1-sample on-cycle path must NOT be given an extra z^-1.
+// addition (b): a real >=1-sample on-cycle path must NOT be given an extra z^-1.
 static void real_path_delay_not_waived_to_z_inverse() {
   const core::JackDescriptor jacks[] = {
       mk_jack(A_out, kA, core::PinDirection::output),
@@ -552,7 +552,7 @@ static void real_path_delay_not_waived_to_z_inverse() {
 }
 
 // ----------------------------------------------------------------------------
-// must-test ④: not-cycle-safe module is rejected.
+// must-test: not-cycle-safe module is rejected.
 // ----------------------------------------------------------------------------
 static void cycle_unsafe_module_rejected() {
   const core::JackDescriptor jacks[] = {
@@ -579,7 +579,7 @@ static void cycle_unsafe_module_rejected() {
 }
 
 // ----------------------------------------------------------------------------
-// addition ⑦: sufficient + non-redundant, verified across several topologies.
+// addition: sufficient + non-redundant, verified across several topologies.
 // ----------------------------------------------------------------------------
 static void feedback_set_sufficient_and_non_redundant() {
   const core::JackDescriptor jacks[] = {
@@ -710,7 +710,7 @@ static void runtime_topology_change_redecomposes() {
 }
 
 // ----------------------------------------------------------------------------
-// addition ⑧: recompile must NOT run on the audio thread.
+// addition: recompile must NOT run on the audio thread.
 // ----------------------------------------------------------------------------
 static void recompile_not_on_audio_thread() {
   const core::JackDescriptor jacks[] = {
@@ -745,7 +745,7 @@ static void recompile_not_on_audio_thread() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#7: a cycle whose break edge is reachable through BOTH a delayed and a
+// a cycle whose break edge is reachable through BOTH a delayed and a
 // parallel direct input is ALGEBRAIC, so the break edge must be z^-1. The old
 // compiler only consulted the single DFS entrance edge (the delayed input) and
 // wrongly credited a real 3-sample path. Note: module B carries the "sum" and
@@ -757,7 +757,7 @@ static void parallel_direct_path_gets_z_inverse() {
   const core::JackDescriptor jacks[] = {
       mk_jack(core::JackId{103}, mA, core::PinDirection::output),  // A_out1 -> B delayed
       mk_jack(core::JackId{104}, mA, core::PinDirection::output),  // A_out2 -> B direct
-      mk_jack(core::JackId{105}, mA, core::PinDirection::input),   // A_in  <- B_out
+      mk_jack(core::JackId{105}, mA, core::PinDirection::input),   // A_in <- B_out
       mk_jack(core::JackId{203}, mB, core::PinDirection::input),   // B delayed
       mk_jack(core::JackId{204}, mB, core::PinDirection::input),   // B direct
       mk_jack(core::JackId{205}, mB, core::PinDirection::output),  // B_out
@@ -775,7 +775,7 @@ static void parallel_direct_path_gets_z_inverse() {
   const core::PatchEdge edges[] = {
       {core::JackId{103}, core::JackId{203}},  // A_out1 -> B delayed
       {core::JackId{104}, core::JackId{204}},  // A_out2 -> B direct
-      {core::JackId{205}, core::JackId{105}},  // B_out  -> A_in (closes the loop)
+      {core::JackId{205}, core::JackId{105}},  // B_out -> A_in (closes the loop)
   };
 
   core::CompileResult res =
@@ -791,13 +791,13 @@ static void parallel_direct_path_gets_z_inverse() {
   CHECK_TRUE(fe.sourceJack == core::JackId{205});
   CHECK_TRUE(fe.sinkJack == core::JackId{105});
   // MUST be z^-1: the reachable parallel direct input makes the minimum cycle
-  // delay zero, so design/07 §4 forbids crediting the delayed-only real path.
+  // delay zero, so forbids crediting the delayed-only real path.
   CHECK_TRUE(fe.delay == core::FeedbackDelay::z_inverse);
   CHECK_EQ(fe.delaySamples, 1.0);
 }
 
 // ----------------------------------------------------------------------------
-// GH#7: compile_graph() must enforce module_contract_is_valid() as a real
+// compile_graph must enforce module_contract_is_valid as a real
 // admission gate. A present-but-malformed contract (a canDirectThrough path
 // carrying a >0 min delay — which the validator must reject) is rejected with a
 // fixed invalid_module_contract status and an empty graph, never silently
@@ -826,7 +826,7 @@ static void malformed_contract_rejected_at_compile_entry() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#14: independent executable-order verifier. region.modules must be a valid
+// independent executable-order verifier. region.modules must be a valid
 // topological order of the region's NON-selected-feedback module dependency edges
 // — i.e. for every pluggable region edge that is NOT a selected feedback (break)
 // edge, the source module must appear at a strictly earlier position than the sink
@@ -866,10 +866,10 @@ static bool executable_order_is_topological(const core::CompiledRegion& r,
 }
 
 // ----------------------------------------------------------------------------
-// GH#14 tie-break independent reference (NOT the compiler's algorithm): exhaustively
+//  tie-break independent reference (NOT the compiler's algorithm): exhaustively
 // enumerate every valid topological order of the region's non-feedback pluggable
 // dependency edges and return the LEXICOGRAPHICALLY-smallest one by ModuleId (the
-// design/07 + GH#14 rule: among the currently-ready nodes, pick the smallest
+//  rule: among the currently-ready nodes, pick the smallest
 // ModuleId). count receives the number of distinct valid orders, so a caller can
 // assert a genuine tie (>=2). Because this is a brute-force reference it cannot
 // self-prove a compiler that happens to share the same greedy rule.
@@ -960,14 +960,14 @@ static std::vector<core::ModuleId> min_topological_order(
 }
 
 // ----------------------------------------------------------------------------
-// GH#14: cyclic SCC execution order. The compiler must report region.modules in
+// cyclic SCC execution order. The compiler must report region.modules in
 // the executable DAG order AFTER the selected feedback edge(s) are removed — NOT
 // the numeric-ascending ModuleId order the old implementation returned.
 //
 // Counterexample: three distinct module ids, cycle 0 -> 2 -> 1 -> 0. The selected
 // (break) edge is 1 -> 0; removing it leaves the feed-forward DAG 0 -> 2 -> 1, so
 // region.modules MUST be {0, 2, 1}. The old numeric sort returned {0, 1, 2} — the
-// bug GH#14 records (this makes the test RED on the old implementation).
+// bug records (this makes the test RED on the old implementation).
 // ----------------------------------------------------------------------------
 static void cyclic_execution_order_counterexample() {
   constexpr core::ModuleId m0{0}, m1{1}, m2{2};
@@ -1018,7 +1018,7 @@ static void cyclic_execution_order_counterexample() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#14: tie-break among multiple legal topo orders. The diamond 0->1,0->2,1->3,
+// tie-break among multiple legal topo orders. The diamond 0->1,0->2,1->3,
 // 2->3,3->0 has TWO valid feed-forward orders once 3->0 is broken ([0,1,2,3] and
 // [0,2,1,3]); the compiler must deterministically pick the one that resolves each
 // ready set by smallest ModuleId -> [0,1,2,3]. Verified against an independent
@@ -1081,7 +1081,7 @@ static void cyclic_execution_order_tiebreak() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#14 criterion ⑥c extension: the executable order (not just the feedback set)
+//  c extension: the executable order (not just the feedback set)
 // is independent of patch-edge insertion order. Every permutation of the
 // counterexample cycle yields modules {0,2,1} and feedback {1->0}.
 // ----------------------------------------------------------------------------
@@ -1126,7 +1126,7 @@ static void cyclic_execution_order_insertion_independent() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#14: a self-loop is a selected feedback edge and must be excluded from the
+// a self-loop is a selected feedback edge and must be excluded from the
 // forward dependency set, even when its module also participates in a cross-cycle.
 // Module 0 self-loops (101->110) and forms a 2-module SCC with module 1
 // (0->1, 1->0). Both the self-loop and the 1->0 cross back-edge are feedback; the
@@ -1183,7 +1183,7 @@ static void cyclic_execution_order_self_loop_cross() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#14: a fixed (cat-1) internal edge is NOT selectable as feedback and is NEVER
+// a fixed (cat-1) internal edge is NOT selectable as feedback and is NEVER
 // dropped from the forward dependency set. Adding the fixed edge 2->1 to the
 // diamond constrains the topo order (from [0,1,2,3] to [0,2,1,3]) while the
 // feedback stays on the pluggable 3->0 edge (no JackId{0} sentinel enters
@@ -1224,7 +1224,7 @@ static void cyclic_execution_order_mixed_fixed_pluggable() {
 
   // The fixed 2->1 dependency forces 2 to be scheduled before 1 -> [0,2,1,3],
   // NOT the no-fixed tie-break [0,1,2,3]. A compiler that ignored the fixed edge
-  // in its topo sort would return [0,1,2,3] here (see negative ②).
+  // in its topo sort would return [0,1,2,3] here (see negative).
   const core::ModuleId expected[] = {m0, m2, m1, m3};
   bool orderOk = true;
   for (std::int32_t i = 0; i < 4; ++i)
@@ -1244,7 +1244,7 @@ static void cyclic_execution_order_mixed_fixed_pluggable() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#14 defensive fail-closed: if removing the selected feedback edges still
+//  defensive fail-closed: if removing the selected feedback edges still
 // leaves a cycle (e.g. a fixed edge completes the loop and is not selectable as
 // feedback), the compiler MUST NOT emit a partial/incorrect order. It returns
 // invalid_execution_order with an empty graph instead of an infinite loop or a
@@ -1279,13 +1279,13 @@ static void cyclic_execution_order_fail_closed() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#14 parallel-path preservation: a module pair {1,2} may carry BOTH a
+//  parallel-path preservation: a module pair {1,2} may carry BOTH a
 // selected feedback cable (1->2, a back edge) and an independent forward cable
 // (2->1). When the compiler removes the selected feedback edge it must drop ONLY
 // that cable -- the forward 2->1 stays a real dependency and forces 2 before 1.
 // This is the "parallel path" detector: a buggy fix that dropped every
 // same-module-pair edge (the undirected interpretation of "same module pair")
-// would remove 2->1 too and return {0,1,2} (negative ③).
+// would remove 2->1 too and return {0,1,2} (negative).
 // ----------------------------------------------------------------------------
 static void cyclic_execution_order_parallel_path() {
   constexpr core::ModuleId m0{0}, m1{1}, m2{2};
@@ -1317,7 +1317,7 @@ static void cyclic_execution_order_parallel_path() {
   CHECK_EQ(reg.modules.size(), 3u);
 
   // The forward 2->1 is preserved: 2 schedules before 1 -> {0,2,1}. A buggy fix
-  // that removed every same-module-pair edge would return {0,1,2} (negative ③).
+  // that removed every same-module-pair edge would return {0,1,2} (negative).
   const core::ModuleId expected[] = {m0, m2, m1};
   bool orderOk = true;
   for (std::int32_t i = 0; i < 3; ++i)

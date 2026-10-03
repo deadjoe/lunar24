@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// EnvelopeGenerator — the Envelope A / Envelope B ADSR generator (GH #11, P3
+// EnvelopeGenerator — the Envelope A / Envelope B ADSR generator (P3
 // item 6 "patchable control source"). This is a NEW, independent framework-
 // agnostic sound-core unit; it deliberately does NOT inherit or wrap
 // EnvelopeFollower (envelope_follower.h), which is a preamp-related L2 detector/
@@ -9,7 +9,7 @@
 // rail. The EG shares only the pure-math seconds->coefficient convention, and is
 // otherwise an independent per-sample ADSR/HOLD/SELF-GEN state machine.
 //
-// Evidence boundary (see design/06 P3 item 6): manual L385-408 confirms the
+// Evidence boundary (see P3 item 6): manual L385-408 confirms the
 // A/D/S/R phase semantics, HOLD == "VCA always open", and SELF-GEN makes the
 // envelope run like an LFO; OUTS L156 confirms the ENV output is 0..8V. The
 // ATT/DEC/RLS exact curve and real seconds, the HOLD/SELF-GEN transfer, and the
@@ -18,7 +18,7 @@
 // determinism, they do not fake a measured hardware curve.
 //
 // Input contract: the generator consumes the ALREADY-INTERPRETED gate LEVEL
-// (a bool produced by sink_gate_interpret() against the real sink JackDescriptor,
+// (a bool produced by sink_gate_interpret against the real sink JackDescriptor,
 // see sink_interpret.h). It never reads raw gate volts and does not hardcode a
 // threshold/hysteresis — any future CV->gate path flows through the canonical
 // sink semantics. Framework-free, fixed state, no heap, no locks.
@@ -69,7 +69,7 @@ class EnvelopeGenerator {
   EnvelopeGenerator() = default;
   explicit EnvelopeGenerator(double sampleRate) { setSampleRate(sampleRate); }
 
-  // --- configuration (NOT cleared by reset()) -----------------------------
+  // --- configuration (NOT cleared by reset) -----------------------------
   // Every numeric setter is FAIL-CLOSED: an invalid value (non-finite NaN/±Inf,
   // or an out-of-domain rate/time) is rejected — it returns false and leaves the
   // prior configuration intact, so inspector / phase / later output are untouched.
@@ -140,7 +140,7 @@ class EnvelopeGenerator {
   bool hold() const { return hold_; }
   bool selfGen() const { return selfGen_; }
 
-  // --- reset(): clears dynamic state / level / gate latch, keeps config -----
+  // --- reset: clears dynamic state / level / gate latch, keeps config -----
   void reset() {
     level_ = 0.0;
     phase_ = Phase::idle;
@@ -264,7 +264,7 @@ class EnvelopeGenerator {
     releaseCoeff_ = coeffSeconds(sr_, release_);
   }
 
-  // Configuration (persists across reset()).
+  // Configuration (persists across reset).
   // These are LOCAL SAFE / PROVISIONAL DSP DEFAULTS, NOT the generated registry's
   // canonical defaults (the registry is a separate source of truth). They exist
   // only so an unconfigured EG is deterministic and never NaN. Runtime integration
@@ -283,7 +283,7 @@ class EnvelopeGenerator {
   double decayCoeff_ = 1.0;
   double releaseCoeff_ = 1.0;
 
-  // Dynamic state (cleared by reset()).
+  // Dynamic state (cleared by reset).
   double level_ = 0.0;              // normalized envelope level 0..1
   Phase phase_ = Phase::idle;
   bool gateLatch_ = false;          // previous interpreted gate level (edge detector)

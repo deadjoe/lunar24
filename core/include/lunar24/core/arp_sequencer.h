@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-④ per-side arpeggiator + 16-step keyboard sequencer (design/00 §2g, design/06
-// §P4, data flow design/07 §1 §3; @Claude mandate msg 8b19b72a).
+//  per-side arpeggiator + 16-step keyboard sequencer (
+// §P4, data flow; mandate).
 //
-// This engine sits BETWEEN the P4-① InputStateMachine (translate()) and the P4-③
-// KeyboardBehaviour. translate() is the single place a normalized PerformanceInput
+// This engine sits BETWEEN the InputStateMachine (translate) and the
+// KeyboardBehaviour. translate is the single place a normalized PerformanceInput
 // becomes a canonical ControlEvent; KeyboardBehaviour is the single place a
 // ControlEvent becomes per-sample pitch / pressure / gate. ArpSeq is an EVENT
 // TRANSFORMER in that seam: it consumes the canonical ControlEvents (note-on/off
@@ -26,7 +26,7 @@
 // clock tempo (keyboard.clock_bpm, id 129) is read once and shared — it is device
 // tempo, not a per-side value.
 //
-// Honest boundaries (design/00 §3, §5) — do NOT treat these as evidence:
+// Honest boundaries (§5) — do NOT treat these as evidence:
 //   * The clock multiplication/division RATIO (arp_clock / seq_clock, ids 103 / 111)
 //     has no evidenced values (manual L827 L875 only say "multiplication/division
 //     ratio"). It is UN-RESOLVED: the selector is read as a raw index into the side's
@@ -41,7 +41,7 @@
 //     sequence number of pressed plates". The plate -> sequence-number table is not
 //     evidenced, so the chord is ordered by PITCH as a PROVISIONAL fallback and the
 //     plate-sequence ordering is left UN-RESOLVED (FINDINGS).
-//   * note_off / gate_off carries the SAME press identity as its note_on (GH#8), so
+//   * note_off / gate_off carries the SAME press identity as its note_on, so
 //     the arp chord is a fixed table of held-plate identities: note_on adds by identity,
 //     gate_off deletes the EXACT matching identity (never a LIFO pop, so releasing a
 //     middle/most-recent chord member in any order leaves the others intact).
@@ -99,10 +99,10 @@ struct ArpSeqStep {
 
 // The per-side arp/seq parameter set, resolved for ONE side by the caller through
 // the side-context choke point (read_side_scalar + the side_bank resolution for the
-// steps / clock selectors), the same way read_behaviour_params builds P4-③ params.
+// steps / clock selectors), the same way read_behaviour_params builds params.
 // Transport bpm is the GLOBAL clock_bpm, read once and shared across sides.
 struct ArpSeqParams {
-  std::uint8_t mode = 0;          // -> arp_seq_mode()
+  std::uint8_t mode = 0;          // -> arp_seq_mode
   std::uint8_t arpHold = 0;       // arp_hold (102)
   std::uint8_t arpDirection = 0;  // arp_direction (104): 0=forward,1=backward,2=ping-pong,3=random
   std::uint8_t arpVariation = 0;  // arp_variation (105): 0=off,1=x1,2=x2,3=x3
@@ -125,12 +125,12 @@ struct ArpSeqParams {
 };
 
 // Read ONE side's arp/seq params through the side-context choke point. Like
-// read_behaviour_params (P4-③), the per-side SCALAR parameters are read through
+// read_behaviour_params, the per-side SCALAR parameters are read through
 // read_side_scalar — never from the global parameters[] — so a split-RIGHT side gets
 // its own bank. `bpm` is the GLOBAL clock_bpm (one value per device). `steps` and
 // `clockSelectors` are the non-scalar side paths (the seq steps bank and the 4-clock
 // row from keyboardClockSelectors[..]); they are resolved by the caller from the
-// side_bank() mirror, exactly as the scale editor is read in read_behaviour_params.
+// side_bank mirror, exactly as the scale editor is read in read_behaviour_params.
 template <typename BankReader>
 ArpSeqParams read_arp_seq_params(BankReader&& bank, KeyboardMode mode, KeyboardSide side,
                                  double bpm, std::array<ArpSeqStep, 16> steps,
@@ -160,7 +160,7 @@ ArpSeqParams read_arp_seq_params(BankReader&& bank, KeyboardMode mode, KeyboardS
 // ------------------------------------------------- PROVISIONAL norm -> step maps --
 
 // Documented linear ceilings for the ranges the manual bounds but does not curve.
-// PROVISIONAL (design/00 §5 "先量后签") — do not cite as the real law.
+// PROVISIONAL ("先量后签") — do not cite as the real law.
 inline std::uint8_t arp_interval_semitones(double norm) noexcept {  // 1..12
   if (norm <= 0.0) return 1;
   if (norm >= 1.0) return 12;
@@ -183,7 +183,7 @@ inline std::uint8_t seq_rhythm_length_steps(double norm) noexcept {  // 1..8
 }
 
 // The arp/seq event-transformer engine, ONE per keyboard side. It consumes the
-// canonical ControlEvents from translate() and emits a transformed stream (gate_off /
+// canonical ControlEvents from translate and emits a transformed stream (gate_off /
 // gate_on / pitch) for the downstream KeyboardBehaviour. In keyboard mode it passes
 // every event through untouched; in arp/seq mode it intercepts note/chord + clock and
 // generates the sequence.
@@ -218,12 +218,12 @@ class ArpSeq {
     rhythmIndex_ = 0;
   }
 
-  // mode() exposes the decoded mode so a caller can decide whether to drive a voice
+  // mode exposes the decoded mode so a caller can decide whether to drive a voice
   // (the arp/seq being engaged means the direct plate sound is produced here).
   ArpSeqMode mode() const { return arp_seq_mode(params_.mode); }
   double bpm() const { return params_.bpm; }
-  // GH#12 task#101: the configured parameter set, READ BACK verbatim. This is the set
-  // the LAST configure() actually installed (the same struct handleControlEvent reads),
+  // the configured parameter set, READ BACK verbatim. This is the set
+  // the LAST configure actually installed (the same struct handleControlEvent reads),
   // never a separately-written mirror — so an acceptance can pin what this side runs.
   const ArpSeqParams& params() const { return params_; }
 
@@ -236,7 +236,7 @@ class ArpSeq {
     emitRelease(sink, runningGate_, src);
   }
 
-  // Feed one canonical event from translate(). `sink` receives each ControlEvent the
+  // Feed one canonical event from translate. `sink` receives each ControlEvent the
   // downstream KeyboardBehaviour should observe. In keyboard mode the event is
   // forwarded unchanged; in arp/seq mode the note/chord + clock stream is transformed.
   template <typename Sink>
@@ -258,7 +258,7 @@ class ArpSeq {
   static constexpr std::uint32_t kMaxChord = 12;  // the touch plates
 
   // One held plate of the chord, kept BY IDENTITY (source, channel, noteId) so a
-  // release can delete EXACTLY the matching note — GH#8 kills the old LIFO stack where
+  // release can delete EXACTLY the matching note — kills the old LIFO stack where
   // releasing a middle note popped the last one instead (and a shared identity let two
   // overlapping notes from the same producer collide).
   struct ChordNote {
@@ -269,7 +269,7 @@ class ArpSeq {
   };
   std::uint32_t chordSize() const { return chordSize_; }
   bool chordEmpty() const { return chordSize_ == 0; }
-  // GH#8 over-capacity determinism: a pushed plate that finds the chord full is
+  //  over-capacity determinism: a pushed plate that finds the chord full is
   // REJECTED (counted, observable), never an out-of-bounds or silent overwrite.
   std::uint32_t chordOverflow() const { return chordOverflow_; }
 
@@ -301,10 +301,10 @@ class ArpSeq {
   }
 
   // Forward a constructed event, preserving the source's transport fields AND the
-  // GH#8 press identity. `noteId` carries the identity the downstream KeyboardBehaviour
+  //  press identity. `noteId` carries the identity the downstream KeyboardBehaviour
   // keys its note state by.
   //
-  // GH#12 task#101: the SIDE is propagated too. An arp/seq instance belongs to ONE side
+  // the SIDE is propagated too. An arp/seq instance belongs to ONE side
   // and transforms that side's events, so every event it constructs must stay on that
   // side — otherwise a right-side arp note would be consumed by the left-side
   // KeyboardBehaviour (the exact cross-side leak this slice exists to prevent).
@@ -341,9 +341,9 @@ class ArpSeq {
 
   // One new constructed note for KeyboardBehaviour. ArpSeq sits AFTER the timebase,
   // so the comparator does NOT re-sort what this emits — the dependency order must be
-  // RIGHT here. Canonical dependency (design/07 §3): the NEW pitch target arrives first
+  // RIGHT here. Canonical dependency: the NEW pitch target arrives first
   // (phase 1), then the release of the previously-sounding constructed note (phase 2,
-  // GH#8 identity), then the gate-on that latches the new note (phase 4). Never the old
+  //  identity), then the gate-on that latches the new note (phase 4). Never the old
   // "gate-on then wait for the next pitch" protocol, and never gate_off-before-pitch.
   // Each constructed note gets a fresh synthetic id.
   template <typename Sink>
@@ -377,10 +377,10 @@ class ArpSeq {
   }
 
   // A sync restarts the arp/seq run: reset the run state AND release the currently
-  // sounding synthetic note (a gate-off, GH#8 identity), WITHOUT sending a canonical
-  // reset. design/07 §3 keeps sync and reset distinct — a plain sync must NOT clear the
+  // sounding synthetic note (a gate-off, identity), WITHOUT sending a canonical
+  // reset. keeps sync and reset distinct — a plain sync must NOT clear the
   // downstream KeyboardBehaviour's pressure/vibrato/portamento (that is a reset's job).
-  // Capture running/id BEFORE reset() clears them.
+  // Capture running/id BEFORE reset clears them.
   template <typename Sink>
   void releaseRun_(Sink& sink, const ControlEvent& ev) {
     const bool prev = runningGate_;
@@ -407,7 +407,7 @@ class ArpSeq {
         chordPush(ev);
         break;
       case ControlEventKind::gate_off:
-        // Precise delete by the release identity (GH#8: no LIFO). HOLD persists the
+        // Precise delete by the release identity (no LIFO). HOLD persists the
         // chord through a release.
         if (params_.arpHold != 0) break;
         chordDelete(ev);
@@ -418,7 +418,7 @@ class ArpSeq {
         break;
       case ControlEventKind::sync:
         // A plain sync restarts the run + releases the current synthetic note (gate-off),
-        // NEVER a canonical reset (design/07 §3 keeps sync and reset distinct).
+        // NEVER a canonical reset (keeps sync and reset distinct).
         releaseRun_(sink, ev);
         break;
       case ControlEventKind::reset:
@@ -502,7 +502,7 @@ class ArpSeq {
         break;
       case ControlEventKind::sync:
         // A plain sync restarts the run + releases the current synthetic note (gate-off),
-        // NEVER a canonical reset (design/07 §3 keeps sync and reset distinct).
+        // NEVER a canonical reset (keeps sync and reset distinct).
         releaseRun_(sink, ev);
         break;
       case ControlEventKind::reset:

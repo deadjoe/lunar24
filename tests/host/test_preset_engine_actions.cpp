@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// task #103 (GH #12): the ENGINE-LAYER preset LOAD / SAVE / INITIALISE acceptance oracle.
+//  the ENGINE-LAYER preset LOAD / SAVE / INITIALISE acceptance oracle.
 //
 // WHAT THIS PINS. The four native keyboard presets (A-D) and the three operations that manage
 // them now have a product seam on the owner that actually renders:
@@ -14,7 +14,7 @@
 // state-layer transfer: the engine copies the canonical DeviceStateV1, applies the ONE existing
 // transfer helper, and re-publishes through the ONE existing candidate/commit path.
 //
-// SECTION A is the D-1 defect (@Codex msg 7d734b47, task #102 §1.3): load_preset_to_live wrote
+// SECTION A is the D-1 defect: load_preset_to_live wrote
 // the canonical keyboardSettings.pressureBehaviour but never its compatibility MIRROR
 // parameters[keyboard_behaviour], which validate_device_state requires to be equal
 // (check_keyboard_live, family keyboard_live_invalid, field 9002). Because check_keyboard_live
@@ -59,7 +59,7 @@ namespace testengine = lunar24::testengine;
 using StandaloneAudioEngine = lunar24::host::StandaloneAudioEngine;
 using testengine::EngineHarness;
 
-// ---- the tiny named checker (same shape as the GH#12 probe family) ---------------------------
+// the tiny named checker (same shape as the probe family) ---------------------------
 
 static int g_checks = 0;
 static int g_fail = 0;
@@ -221,7 +221,7 @@ static Cfg make_cfg(std::uint32_t slot, std::uint32_t variant) {
 
 // A render-safe Split config: derived from the power-on default so every selector a rendered
 // criterion does not care about stays at its default, then the two banks are made asymmetric in
-// the one NON-scalar side path the GH#12 probe already established: the left bank is chromatic
+// the one NON-scalar side path the probe already established: the left bank is chromatic
 // (quantises) and the right bank is a microtonal passthrough. A 0.04 V note then reads 0.0 V on
 // the left pitch (v_oct) and 0.04 V on pressure_out (the right pitch) — a discriminator that
 // cannot pass if a side read the other bank, or a slot was cross-wired.
@@ -245,7 +245,7 @@ static Cfg audible_split_cfg(std::uint32_t variant) {
   return c;
 }
 
-// C1 (Rev-3): a render-safe payload for the slot x mode matrix. Derived from the power-on
+// C1: a render-safe payload for the slot x mode matrix. Derived from the power-on
 // default so every selector a rendered criterion does not care about stays default, then the two
 // banks are made asymmetric in a CONSUMED SCALAR plus the scale editor it acts on: the left bank
 // is chromatic (0x0FFF, a 0.04 V plate quantises to 0.0 V whatever the root), the right bank is
@@ -271,7 +271,7 @@ static Cfg mode_matrix_cfg(std::uint8_t mode) {
   return c;
 }
 
-// C2 (Rev-3): the same Single-mode payload with the LEFT scale mask parameterised — the recalled
+// C2: the same Single-mode payload with the LEFT scale mask parameterised — the recalled
 // mask itself is the discriminator (a 0.30 V note quantises differently per mask).
 static Cfg scale_probe_cfg(std::uint16_t scale_l) {
   Cfg c = mode_matrix_cfg(0u);
@@ -279,7 +279,7 @@ static Cfg scale_probe_cfg(std::uint16_t scale_l) {
   return c;
 }
 
-// C3 (Rev-3): a Single-mode payload whose LEFT side is a 2-step sequencer running FREE
+// C3: a Single-mode payload whose LEFT side is a 2-step sequencer running FREE
 // (seq_run 0 = no plate needed) on an EXPLICIT external clock edge, with continuous CV output
 // (seq_cv_output 0 = every step gated). steps[0] = 0 semitones, steps[1] = 7 semitones, so each
 // clock edge alternates the published V/OCT between 0 and 7/12 V.
@@ -339,7 +339,7 @@ static void write_cfg(core::DeviceStateV1& st, const Cfg& c) {
 
 // Store `c` as slot `slot` of a fresh default state whose LIVE config stays the default. The
 // recall is therefore always a real change, and the only way the payload can reach the consumer
-// is through the engine preset action (Rev-3: slot -> live -> consumer connectivity).
+// is through the engine preset action (slot -> live -> consumer connectivity).
 static core::DeviceStateV1 state_with_slot(const Cfg& c, std::uint32_t slot) {
   core::DeviceStateV1 st = core::make_default_device_state(kSeed);
   core::DeviceStateV1 scratch = st;
@@ -515,7 +515,7 @@ static std::vector<long long> plan_identity(const core::DevicePlan& p) {
 
 // ============================================================ A. D-1: recall must be VALID
 
-// A1/A2 use ONLY the pre-existing public surface: copy canonicalState(), call the state-layer
+// A1/A2 use ONLY the pre-existing public surface: copy canonicalState, call the state-layer
 // transfer, re-publish through the owner's single-commit apply. On the unfixed baseline A1 is RED
 // with RejectedInvalidState / field 9002 — exactly the silent no-op the D-1 report pinned.
 static void a1_recall_with_differing_slot_behaviour_is_accepted() {
@@ -925,7 +925,7 @@ static void b10_partition_invariance_after_action() {
       check(false, "B10 partition produced the expected frame count");
       return;
     }
-    // DRY is bit-identical across partitions (the GH#12 N1 criterion); WET is compared to a
+    // DRY is bit-identical across partitions (the criterion); WET is compared to a
     // 1e-12 tolerance so the criterion still fails on a real partition-dependent render.
     bool drySame = h.out(2) == ref.out(2) && h.out(3) == ref.out(3);
     bool wetSame = h.out(0).size() == ref.out(0).size() && h.out(1).size() == ref.out(1).size();
@@ -981,7 +981,7 @@ static void b11_recalled_consumed_scalar_reaches_the_audio() {
 
 // ============================================================ C. the slot -> live -> consumer matrix
 //
-// Rev-3 (@Codex b9d8ff9f): the four slots and the three behaviour modes must be exercised through
+//  the four slots and the three behaviour modes must be exercised through
 // the ENGINE API with a real OUTPUT criterion, and at least one recalled scale and one recalled
 // sequence must reach the published control — the slot -> live -> consumer chain, not just the
 // state layer. Each criterion below renders through the real host block path and reads the four
@@ -989,12 +989,12 @@ static void b11_recalled_consumed_scalar_reaches_the_audio() {
 
 // C1: every one of the FOUR slots, recalled in each of the THREE modes, reaches the consumer with
 // the mode-correct output. A right-only plate is the discriminator (pitch 0.04 V, pressure 0.5):
-//   Single : the right plate is the SAME performer as left -> gate LEFT high, pressure_out = the
+//   Single: the right plate is the SAME performer as left -> gate LEFT high, pressure_out = the
 //            pressure stage (the plate's pressure), pitch read from BANK 0 (chromatic 0x0FFF ->
 //            0.04 V quantises to 0.0 V).
-//   Twin   : the sides are independent -> gate RIGHT high, pressure_out = right PITCH read from
+//   Twin: the sides are independent -> gate RIGHT high, pressure_out = right PITCH read from
 //            BANK 0 (twin shares one bank -> chromatic, so 0.04 V quantises to 0.0 V).
-//   Split  : same gating as Twin, but the right pitch reads BANK 1 (microtonal 0x0000 -> 0.04 V
+//   Split: same gating as Twin, but the right pitch reads BANK 1 (microtonal 0x0000 -> 0.04 V
 //            survives).
 // The three expected triples are mutually distinct (Single differs on gateL, Twin vs Split on
 // pressure), and each is compared against a control harness that was never handed the action.
@@ -1154,8 +1154,8 @@ static void c3_recalled_seq_steps_are_driven_by_the_clock() {
 
 // D1: a downstream candidate failure AFTER a legal preset action must be REPORTED, never a false
 // success, and must be ATOMIC — where "atomic" means the OWNER THAT WAS ALREADY RUNNING is left
-// exactly as it was, not merely that the canonical state/plan/format are unchanged (@Codex
-// b9d8ff9f Rev-1). On the real tree the recalled candidate is legal, so the action is accepted —
+// exactly as it was, not merely that the canonical state/plan/format are unchanged (
+// ). On the real tree the recalled candidate is legal, so the action is accepted —
 // and an accepted action must really have committed the slot payload (a "success" that committed
 // nothing is a defect).
 //
@@ -1165,10 +1165,10 @@ static void c3_recalled_seq_steps_are_driven_by_the_clock() {
 // control harness with the IDENTICAL history is never handed the action: the rejected action must
 // keep the same runtime OBJECT, and the full continuation (both-side control trace + all four audio
 // channels) must equal that control. Paired isolated controls:
-//   * `false_success_on_rejection`  -> reports success without a commit (accepted branch, RED).
-//   * `failure_still_commits`       -> canonical state changes (the atomicity label, RED).
+//   * `false_success_on_rejection` -> reports success without a commit (accepted branch, RED).
+//   * `failure_still_commits` -> canonical state changes (the atomicity label, RED).
 //   * `runtime_mutated_on_rejection` -> the ONE rejection path mutates the live runtime
-//     (definition_->runtime().setVcoBaseHz) and the audio-preservation label goes RED, while the
+//     (definition_->runtime.setVcoBaseHz) and the audio-preservation label goes RED, while the
 //     identity / trace / liveness labels stay PASS — the control is specific, not a shotgun.
 static void d1_downstream_candidate_failure_is_reported_and_atomic() {
   std::printf("D  -- a downstream candidate failure is reported AND leaves the running owner alone\n");

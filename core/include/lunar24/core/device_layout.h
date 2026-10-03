@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Device output topology + slot addressing — P3-⑥ Debt 1. The P1-③ device model
+// Device output topology + slot addressing — Debt 1. The device model
 // wrote signals into a PLANAR `float phys[kMaxPhys][kFrames]` (channel-major
 // blocks). That abstraction hides the exact bug this file exists to catch: real
 // output devices describe their channel arrangement with an AudioBufferList, and
@@ -17,12 +17,12 @@
 // N buffers × 1 channel ⇒ NonInterleaved. This header is FRAMEWORK-FREE (no
 // CoreAudio types) so the core can consume a DeviceLayout it is handed, and the
 // test-side/platform artifact does the actual AudioBufferList → DeviceLayout
-// conversion (design/07 §5: Core never touches AudioBufferList/device float).
+// conversion (Core never touches AudioBufferList/device float).
 //
-// The logical→physical mapping is DATA, not a constant: `OutputMapping::canonical()`
-// is the P1-③ default {WET_L=0, WET_R=1, DRY_A=2, DRY_B=3}, but a caller passes
+// The logical→physical mapping is DATA, not a constant: `OutputMapping::canonical`
+// is the default {WET_L=0, WET_R=1, DRY_A=2, DRY_B=3}, but a caller passes
 // whatever the device/patch resolved (e.g. upper face {4,5,6,7}) — never a
-// hardcoded branch (design/03 L57 "所选").
+// hardcoded branch (L57 "所选").
 //
 // Header-only, no heap, no locks, realtime-safe.
 
@@ -41,8 +41,8 @@ struct DeviceLayout {
   bool valid() const { return totalChannels > 0; }
 };
 
-// Logical outputs the core always emits (design/01 §1, design/07 §5): the dual
-// VCO's WET out L/R plus the two dry taps. Order matches P1-③'s `Logical`.
+// Logical outputs the core always emits: the dual
+// VCO's WET out L/R plus the two dry taps. Order matches the `Logical`.
 enum Logical : int { WET_L = 0, WET_R = 1, DRY_A = 2, DRY_B = 3, NONE = -1 };
 
 // logical output -> physical channel. A VALUE, not an authority constant.

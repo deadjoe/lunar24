@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-④ per-side arp/seq engine tests (design/00 §2g; @Claude mandate msg 8b19b72a).
+//  per-side arp/seq engine tests (mandate).
 //
 // The contract this layer exists to uphold:
-//   * it SITS between the P4-① InputStateMachine (translate) and the P4-③
+//   * it SITS between the InputStateMachine (translate) and the
 //     KeyboardBehaviour, transforming canonical ControlEvents, never audio;
 //   * there is NO global arp/seq singleton — each side owns an ArpSeq instance, so a
 //     split twin side can arpeggiate while the other plays a plain keyboard;
@@ -14,13 +14,13 @@
 //     pattern are UN-RESOLVED and read as raw selectors, NEVER applied numerically.
 //
 // The value maps (arp interval 1..12, seq length 2..16, etc.) are PROVISIONAL linear
-// ceilings (design/00 §5), and the arp note ordering is pitch-ordered PROVISIONAL
+// ceilings, and the arp note ordering is pitch-ordered PROVISIONAL
 // (the manual's "sequence number of pressed plates" is UN-RESOLVED). Following the
-// P4-③ test discipline, these tests pin the STRUCTURE — the mode mux, the chord/step
+//  test discipline, these tests pin the STRUCTURE — the mode mux, the chord/step
 // advancement on the clock, the per-side independence, and the mandate-#4 divergence
 // — not invented exact curves.
 //
-// Per @Claude (mandate #4) the negative is the real bypass path. Two are pinned here:
+// Per (mandate #4) the negative is the real bypass path. Two are pinned here:
 //   * the SIDE READ (read_side_scalar / side_bank resolution) — the genuine mistake it
 //     prevents is reading the global/shared bank for a split-RIGHT side (forgetting the
 //     right bank); a rogue reader that ignores the resolved side reads bank 0 and must
@@ -72,9 +72,9 @@ struct Recorder {
   bool near(double a, double b) const { return std::fabs(a - b) < 1e-6; }
 };
 
-// Feed the events translate() would emit for a note_on chord member: the pitch (the
+// Feed the events translate would emit for a note_on chord member: the pitch (the
 // note value the arp builds its chord from) and the gate_on, BOTH carrying the same
-// GH#8 press identity (source/channel/noteId). `id` distinguishes overlapping notes
+//  press identity (source/channel/noteId). `id` distinguishes overlapping notes
 // from the same producer — two plates pressed together MUST carry different ids or the
 // identity chord would treat the second as a re-pitch of the first.
 void note_on(core::ArpSeq& s, Recorder& r, double pitch, core::NoteId id) {
@@ -359,7 +359,7 @@ static void per_side_instantiation_independent() {
   //     arpeggiates, the other plays a keyboard" routing concern.
   //   Leg B (STATE isolation, the global-singleton negative): the two instances must
   //     not share any mutable state. This is what makes a `static` hold buffer visible
-  //     (@Claude's mutation: `double chord_[..]` -> `static inline` so ALL ArpSeq share
+  //     (mutation: `double chord_[..]` -> `static inline` so ALL ArpSeq share
   //     ONE chord buffer). Both sides must WRITE that buffer and they must hold
   //     DIFFERENT pitches. If both held the same pitch a shared buffer would write the
   //     same value at index 0 and the corruption would be masked — the classic "test

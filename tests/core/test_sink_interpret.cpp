@@ -1,21 +1,21 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P2-④ tests for the sink-side gate/clock interpretation layer
-// (design/07 §4 跨类型 + §5) — the counterpart to test_patch_graph's
+//  tests for the sink-side gate/clock interpretation layer
+// (跨类型 + §5) — the counterpart to test_patch_graph's
 // connection-facts tests. Cross-type connection lives there (connect is
 // direction-only, signal type is advisory); here we prove the INTERPRETATION:
 // a continuous stream fed into a gate/clock sink is shaped into gate semantics
 // by threshold / hysteresis / polarity / edge, at the sink, never isolated by a
 // signal-type match.
 //
-// @Claude's guards, each with a negative control proving the detector is live:
+//  guards, each with a negative control proving the detector is live:
 //   * hysteresis works — a signal dithering in the threshold band does NOT
 //     retrigger. The negative (a shaper that ignores hysteresis) retriggers on
 //     the very same input.
 //   * edge is sample-accurate and partition-invariant — the rising edge lands on
 //     the same absolute sample under 64/128/256 AND the mixed non-uniform
-//     partition (legacy P2-① partition). The negative (a block-lazy shaper that
+//     partition (legacy partition). The negative (a block-lazy shaper that
 //     re-evaluates only at a block boundary) lets the edge drift.
 //   * Polarity is deliberately NOT exercised here: the field describes the signal
 //     rail, not a gate direction, and there is no evidence of an inverting gate —
@@ -76,7 +76,7 @@ static int real_first_rising_abs(const core::JackDescriptor& jk,
 }
 
 // --------------------------------------------------------------------
-// @Claude guard: hysteresis "proves it works".
+//  guard: hysteresis "proves it works".
 // --------------------------------------------------------------------
 
 // A signal that dithers INSIDE the threshold band after one clean rise: with
@@ -107,7 +107,7 @@ static void hysteresis_holds_through_band_jitter() {
 }
 
 // A shaper that IGNORES hysteresis (single threshold) — the exact "退化成单阈值"
-// degradation @Claude names. Same kJitter input must retrigger on every crossing.
+// degradation names. Same kJitter input must retrigger on every crossing.
 static core::SinkSample single_threshold_interpret(const core::JackDescriptor& jk,
                                                    core::GateClockSinkState& st,
                                                    double v) {
@@ -140,7 +140,7 @@ static void single_threshold_retriggers() {
 }
 
 // --------------------------------------------------------------------
-// @Claude guard: edge sample-accurate + partition-invariant.
+//  guard: edge sample-accurate + partition-invariant.
 // --------------------------------------------------------------------
 
 // A mono-rising CV ramp, val = 0.1 * sample. Reaches the upper edge (thr 5.0 +
@@ -159,7 +159,7 @@ static void edge_absolute_sample_partition_invariant() {
   std::vector<std::uint32_t> b64 = {64};
   std::vector<std::uint32_t> b128 = {128};
   std::vector<std::uint32_t> b256 = {256};
-  std::vector<std::uint32_t> mixed = {64, 100, 37, 128, 7, 256, 91};  // legacy P2-① partition
+  std::vector<std::uint32_t> mixed = {64, 100, 37, 128, 7, 256, 91};  // legacy partition
 
   // The rising edge must land at the SAME absolute sample under every partition.
   CHECK_EQ(real_first_rising_abs(jk, in, b64), 55);
@@ -167,7 +167,7 @@ static void edge_absolute_sample_partition_invariant() {
   CHECK_EQ(real_first_rising_abs(jk, in, b256), 55);
   CHECK_EQ(real_first_rising_abs(jk, in, mixed), 55);
 
-  // Per-sample-identical reference (P2-① judge): the mixed partition's full
+  // Per-sample-identical reference (judge): the mixed partition's full
   // sequence equals a plain sequential partition's sequence.
   auto reference = run_all(jk, in);
   core::GateClockSinkState st;

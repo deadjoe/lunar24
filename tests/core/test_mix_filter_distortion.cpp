@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P3-⑤ must-test suite for the WET/DRY chain: the ten-channel panoramic mixer
+//  must-test suite for the WET/DRY chain: the ten-channel panoramic mixer
 // (voice_mixer.h), the dual 12 dB Polivoks VCF (polivoks_vcf.h), the post-filter
-// DISTORTION (distortion.h), and their composition (wet_dry.h). @Claude's mandate
-// (msg edf0c9e0) requires the seven must-tests, each carrying a REAL red negative —
+// DISTORTION (distortion.h), and their composition (wet_dry.h). mandate
+//  requires the seven must-tests, each carrying a REAL red negative —
 // a true degradation, not a flag flip. Judges are the shared detectors in
 // drone_test_common.h (判据只有一份).
 //
-//  ①  resonance must not lose lows (DEFINITIONAL, manual L1120-1122). res 0->max,
+//    resonance must not lose lows (DEFINITIONAL, manual L1120-1122). res 0->max,
 //     the low band must hold a minimum. Threshold is 0.5, set from the measured
 //     curve (clean SVF low-band ratio ~1.02) — never chosen before the curve.
 //     Negatives BOTH fire red, and each is a real degradation a implementer could
@@ -16,17 +16,17 @@
 //       (tilt) a resonance that tilts toward bandpass in LP mode -> ratio ~0.10;
 //       (peak-normalised) a 2-pole LP whose whole output is divided by Q -> the
 //       standard common way to keep the resonant peak from clipping, but it drops
-//       the bass by 1/Q @ high Q (@Claude's (a); sampled at Q=5, NOT near Q=2 where
+//       the bass by 1/Q @ high Q ((a); sampled at Q=5, NOT near Q=2 where
 //       |H(100 Hz)| ≈ 0.5044 just grazes an absolute threshold).
-//  ②  DIST != GAIN. dist=0 -> output is always dry, INDEPENDENT of gain. Negative:
+//    DIST != GAIN. dist=0 -> output is always dry, INDEPENDENT of gain. Negative:
 //     coupling the two (gain changing the mix) -> red.
-//  ③  L/R nonlinear state independent. Negative: a shared drive -> red.
-//  ④  CV L normalled to CV R = P2-② NormalizedRoute (route.vcf_cv_l_to_cv_r, id2),
+//    L/R nonlinear state independent. Negative: a shared drive -> red.
+//    CV L normalled to CV R = NormalizedRoute (route.vcf_cv_l_to_cv_r, id2),
 //     re-presented not re-created. Negative: a swapped/self-loop route -> red.
-//  ⑤  BP-LP is a TWO-STATE mode (positions ["bp","lp"]). Negative: mode no-op -> red.
-//  ⑥  FOUR logic outputs (WET L/R + DRY A/B) match the design/01 mapping.
+//    BP-LP is a TWO-STATE mode (positions ["bp","lp"]). Negative: mode no-op -> red.
+//    FOUR logic outputs (WET L/R + DRY A/B) match the mapping.
 //     Negative: DRY miswired to WET (or VCO A/B swapped) -> red.
-//  ⑦  cross-sr + cross-buffer; distortion aliasing measured and recorded in
+//    cross-sr + cross-buffer; distortion aliasing measured and recorded in
 //     FINDINGS (NOT fixed here, labeled provenance per the mandate).
 //
 // Test-only (tests/core), license-gated, NOT subject to the framework-free scan.
@@ -90,12 +90,12 @@ double abs_gain(double sr, double probe_hz, const std::function<PolivoksFilter()
   }
   // Normalize to an amplitude gain (magnitude / (N/2)); a unit-amplitude sine
   // through a unity-gain filter gives magnitude = N/2 -> gain 1. This makes the
-  // absolute band-compare thresholds in ⑤ meaningful (Goertzel alone scales with N).
+  // absolute band-compare thresholds in meaningful (Goertzel alone scales with N).
   return drone_test::goertzel_mag(buf, probe_hz, sr) / (static_cast<double>(meas) / 2.0);
 }
 
 // The same settle+Goertzel detector, but applied to an arbitrary single-sample
-// mono processor (not a PolivoksFilter). Used by ①'s negative controls so the
+// mono processor (not a PolivoksFilter). Used by the negative controls so the
 // "no-lose-lows" judge is exercised END-TO-END on a genuinely different filter
 // topology rather than an analytic shortcut — a real buggy implementation must
 // trip the same Goertzel + ratio check the healthy branch passes.
@@ -115,8 +115,8 @@ double mono_abs_gain(double sr, double probe_hz, const std::function<double(doub
 // Q) — a real, common way to keep a resonant peak from clipping. Same 12 dB order,
 // same type as the healthy filter under test, but it divides the bass by Q, so at
 // high Q the lows genuinely drop (fc=1 k, |H(100 Hz)| @ Q=5 = 0.2020). This is
-// @Claude's negative-control (a): it is an error a real implementer would write,
-// not a construct built to trip the flag. @Claude's numbers (Q=0.707 -> 1.4144,
+//  negative-control (a): it is an error a real implementer would write,
+// not a construct built to trip the flag. numbers (Q=0.707 -> 1.4144,
 // Q=2 -> 0.5044, Q=5 -> 0.2020, Q=10 -> 0.1010) are the standard 2-pole LP
 // magnitude divided by Q, reproduced by the biquad below.
 class PeakNormalisedTwoPole {
@@ -146,14 +146,14 @@ class PeakNormalisedTwoPole {
 };
 
 // ----------------------------------------------------------------------------
-// ① resonance does not lose lows (definitional)
+//  resonance does not lose lows (definitional)
 // ----------------------------------------------------------------------------
 void test_resonance_does_not_lose_lows() {
   const double sr = 48000.0, probe = 100.0;  // deep bass, well below the 1 k cutoff.
   const double r0 = abs_gain(sr, probe, [=] { return make_filter(sr, 0.0, false); });
   const double r1 = abs_gain(sr, probe, [=] { return make_filter(sr, 1.0, false); });
   const double clean_ratio = r1 / r0;
-  std::printf("① resonance low-band: LP res0 %.4f, res1 %.4f, ratio %.4f\n",
+  std::printf(" resonance low-band: LP res0 %.4f, res1 %.4f, ratio %.4f\n",
               r0, r1, clean_ratio);
   CHECK(r0 > 0.5);                 // LP passes the bass at all.
   CHECK(clean_ratio > 0.5);        // res rise never drops the low band.
@@ -167,12 +167,12 @@ void test_resonance_does_not_lose_lows() {
     return (1.0 - res) * lp + res * bp;   // res pushes output toward band.
   };
   const double buggy_ratio = buggy_lp(1.0) / buggy_lp(0.0);
-  std::printf("① negative (tilt): ratio %.4f\n", buggy_ratio);
+  std::printf(" negative (tilt): ratio %.4f\n", buggy_ratio);
   CHECK(buggy_ratio < 0.5);  // the "no-lose-lows" judge fires on this.
 
-  // Negative (a) @Claude: a REAL peak-normalised 2-pole — same 12 dB order/type as
+  // Negative (a): a REAL peak-normalised 2-pole — same 12 dB order/type as
   // the healthy filter, a common implementation, and it genuinely loses lows at high
-  // resonance (the whole output is divided by Q). @Claude's requirement: negatives
+  // resonance (the whole output is divided by Q). requirement: negatives
   // must represent an error a real implementer could make, not a construct built to
   // trip the flag. Sample at HIGH Q — near Q=2 the bass |H(100 Hz)| ≈ 0.5044 just
   // grazes an absolute threshold, so the ratio must be taken at Q=5 where it is 0.2020.
@@ -183,13 +183,13 @@ void test_resonance_does_not_lose_lows() {
   const double pn_base = peak_norm(0.7071067811865476);  // res=0 -> Butterworth Q.
   const double pn_max = peak_norm(5.0);                  // res=max -> high resonance.
   const double pn_ratio = pn_max / pn_base;
-  std::printf("① negative (peak-normalised): Q0.707 %.4f, Q5 %.4f, ratio %.4f\n",
+  std::printf(" negative (peak-normalised): Q0.707 %.4f, Q5 %.4f, ratio %.4f\n",
               pn_base, pn_max, pn_ratio);
   CHECK(pn_ratio < 0.5);  // the "no-lose-lows" judge fires on a real peak-normalised LP too.
 }
 
 // ----------------------------------------------------------------------------
-// ② DIST and GAIN are independent (dist=0 always dry)
+//  DIST and GAIN are independent (dist=0 always dry)
 // ----------------------------------------------------------------------------
 void test_dist_independent_of_gain() {
   const double sr = 48000.0;
@@ -206,7 +206,7 @@ void test_dist_independent_of_gain() {
     bool exact = true;
     for (std::size_t i = 0; i < n; ++i)
       if (d.tickL(x[i]) != x[i]) { exact = false; break; }
-    std::printf("② dist=0 gain=%g: dry-exact %s\n", gain, exact ? "yes" : "NO");
+    std::printf(" dist=0 gain=%g: dry-exact %s\n", gain, exact ? "yes" : "NO");
     CHECK(exact);  // dist=0 -> output == input for EVERY gain.
   }
 
@@ -222,12 +222,12 @@ void test_dist_independent_of_gain() {
     const double coupled = dry + 1.0 * (std::tanh(1.5 * dry) - dry);  // gain couples the ratio.
     buggy_peak = std::max(buggy_peak, std::fabs(coupled));
   }
-  std::printf("② negative (coupled): realpeak %.4f, buggypeak %.4f\n", real_peak, buggy_peak);
+  std::printf(" negative (coupled): realpeak %.4f, buggypeak %.4f\n", real_peak, buggy_peak);
   CHECK(buggy_peak != real_peak);  // a coupled DIST/GAIN stage changes the level.
 }
 
 // ----------------------------------------------------------------------------
-// ③ L/R nonlinear state is independent
+//  L/R nonlinear state is independent
 // ----------------------------------------------------------------------------
 void test_lr_state_independent() {
   const double sr = 48000.0, hot = 3.0, clear = 0.05;
@@ -258,7 +258,7 @@ void test_lr_state_independent() {
   const auto a = hot_then_inspect(0);
   const auto b = hot_then_inspect(n / 4 + 1);  // L was hot, then both are measured.
   const bool r_ok = drone_test::same_render(a.second, b.second);
-  std::printf("③ R independent of L pre-heat: %s (bit-identical)\n",
+  std::printf(" R independent of L pre-heat: %s (bit-identical)\n",
               r_ok ? "yes" : "NO");
   // The RIGHT channel MUST render bit-identically regardless of how hard/ how long
   // the LEFT channel was driven. A shared per-channel state would make R differ.
@@ -277,19 +277,19 @@ void test_lr_state_independent() {
   }
   const double clear_var = drone_test::noise_sample_var(a.second);
   const double shared_var = drone_test::noise_sample_var(shared_r);
-  std::printf("③ negative (shared state): independent R var %.3g, shared R var %.3g\n",
+  std::printf(" negative (shared state): independent R var %.3g, shared R var %.3g\n",
               clear_var, shared_var);
   CHECK(shared_var > clear_var);  // the independent-state judge would fire.
 }
 
 // ----------------------------------------------------------------------------
-// ④ CV L normalled to CV R is the P2-② NormalizedRoute
+//  CV L normalled to CV R is the NormalizedRoute
 // ----------------------------------------------------------------------------
 void test_cv_l_normalled_to_cv_r_route() {
   const lunar24::registry::NormalizedRoute* route = nullptr;
   for (const auto& r : lunar24::registry::kNormalizedRoutes)
     if (r.stable_id == "route.vcf_cv_l_to_cv_r") { route = &r; break; }
-  std::printf("④ route %s (stable route.vcf_cv_l_to_cv_r)\n",
+  std::printf(" route %s (stable route.vcf_cv_l_to_cv_r)\n",
               route ? "found" : "MISSING");
   CHECK(route != nullptr);                                  // the route exists.
   CHECK(route->sourceJack == lunar24::core::JackId::vcf_cv_l_in);  // source is CV L.
@@ -300,7 +300,7 @@ void test_cv_l_normalled_to_cv_r_route() {
 }
 
 // ----------------------------------------------------------------------------
-// ⑤ BP-LP is a two-state mode
+//  BP-LP is a two-state mode
 // ----------------------------------------------------------------------------
 void test_lp_bp_two_state() {
   const double sr = 48000.0;
@@ -309,7 +309,7 @@ void test_lp_bp_two_state() {
   const double lp_high = abs_gain(sr, probe_hi, [=] { return make_filter(sr, 0.0, false); });
   const double bp_low = abs_gain(sr, probe_lo, [=] { return make_filter(sr, 0.0, true); });
   const double bp_cut = abs_gain(sr, 1000.0, [=] { return make_filter(sr, 0.0, true); });
-  std::printf("⑤ LP 100Hz %.4f, 5k %.4f; BP 100Hz %.4f, 1k %.4f\n",
+  std::printf(" LP 100Hz %.4f, 5k %.4f; BP 100Hz %.4f, 1k %.4f\n",
               lp_low, lp_high, bp_low, bp_cut);
   CHECK(lp_low > 0.7);          // LP passes the bass.
   CHECK(lp_high < 0.3);         // LP rejects the treble.
@@ -317,12 +317,12 @@ void test_lp_bp_two_state() {
   CHECK(bp_cut > bp_low);       // BP passes its centre above its rejection.
 
   // Negative: a mode no-op (bp_low == lp_low) is clearly separated by this switch.
-  std::printf("⑤ negative (noop): BP-100 %.4f vs LP-100 %.4f\n", bp_low, lp_low);
+  std::printf(" negative (noop): BP-100 %.4f vs LP-100 %.4f\n", bp_low, lp_low);
   CHECK(bp_low < 0.5 * lp_low);  // the PASS-to-BAND judge would fire on a no-op.
 }
 
 // ----------------------------------------------------------------------------
-// ⑥ four logic outputs (WET L/R + DRY A/B) match design/01
+//  four logic outputs (WET L/R + DRY A/B) match
 // ----------------------------------------------------------------------------
 void test_four_logic_outputs() {
   const double sr = 48000.0;
@@ -354,7 +354,7 @@ void test_four_logic_outputs() {
   const bool track_b = drone_test::same_render(dryB_last, vcoB_in);
   const bool distinct = dryA_last.back() != dryB_last.back();
   const bool wet_is_chain = wetL_last.back() != dryA_last.back();
-  std::printf("⑥ DRY A tracks VCO A %s, DRY B tracks VCO B %s, distinct %s, WET!=DRY %s\n",
+  std::printf(" DRY A tracks VCO A %s, DRY B tracks VCO B %s, distinct %s, WET!=DRY %s\n",
               track_a ? "yes" : "NO", track_b ? "yes" : "NO",
               distinct ? "yes" : "NO", wet_is_chain ? "yes" : "NO");
   CHECK(track_a);        // DRY A == VCO A (pre-chain tap).
@@ -367,7 +367,7 @@ void test_four_logic_outputs() {
 }
 
 // ----------------------------------------------------------------------------
-// ⑦ cross-sr + cross-buffer; distortion aliasing (measured -> FINDINGS)
+//  cross-sr + cross-buffer; distortion aliasing (measured -> FINDINGS)
 // ----------------------------------------------------------------------------
 void test_cross_sr_cross_buffer() {
   const double sr = 48000.0;
@@ -411,7 +411,7 @@ void test_cross_sr_cross_buffer() {
   // no aggregate-rate or block-length state).
   const auto one = render({static_cast<unsigned>(total)});
   const auto part = render(chunk({17}));
-  std::printf("⑦ cross-buffer one-vs-17: %s\n",
+  std::printf(" cross-buffer one-vs-17: %s\n",
               drone_test::same_render(one, part) ? "bit-identical" : "DIFFERS");
   CHECK(drone_test::same_render(one, part));
 
@@ -428,7 +428,7 @@ void test_cross_sr_cross_buffer() {
     }
     const double g0 = abs_gain(r, 100.0, [=] { return make_filter(r, 0.0, false); });
     const double g1 = abs_gain(r, 100.0, [=] { return make_filter(r, 1.0, false); });
-    std::printf("⑦ sr=%g dist0-exact %s, low-band ratio %.3f\n",
+    std::printf(" sr=%g dist0-exact %s, low-band ratio %.3f\n",
                 r, exact ? "yes" : "NO", g1 / g0);
     CHECK(exact);                  // dist=0 is dry at every fs.
     CHECK(g1 / g0 > 0.85);         // no-lose-lows holds across fs.
@@ -448,7 +448,7 @@ void test_cross_sr_cross_buffer() {
   const double fund = drone_test::goertzel_mag(tail, f0, sr);
   const double folded = drone_test::goertzel_mag(tail, alias, sr);
   const double db = 20.0 * std::log10((folded / fund) + 1e-12);
-  std::printf("⑦ distortion aliasing: f0 %g Hz, 3rd->%g Hz, %.2f dB vs fundamental\n",
+  std::printf(" distortion aliasing: f0 %g Hz, 3rd->%g Hz, %.2f dB vs fundamental\n",
               f0, alias, db);
   CHECK(fund > 0.001);
   CHECK(folded > 0.0);
@@ -456,11 +456,11 @@ void test_cross_sr_cross_buffer() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#6  VCF input-stage level nonlinearity (design/07 §7)
+//   VCF input-stage level nonlinearity
 // ----------------------------------------------------------------------------
 // Normalised FUNDAMENTAL gain of the VCF L channel at a given input amplitude. The
 // filter's own (input-independent) frequency response cancels in the low/high RATIO,
-// leaving the GH#6 input-stage level dependence. settle + Goertzel over the tail,
+// leaving the input-stage level dependence. settle + Goertzel over the tail,
 // divided by amplitude (a unit-input unity-gain filter gives 1).
 double vcf_amp_sweep_gain(double sr, double cutoff_norm, double probe_hz, double amp,
                           double drive) {
@@ -492,7 +492,7 @@ void test_gh6_vcf_input_stage_level_nonlinearity() {
   const double drive = 0.8;
   const double low = vcf_amp_sweep_gain(sr, cn, probe, 0.15, drive);
   const double high = vcf_amp_sweep_gain(sr, cn, probe, 3.0, drive);
-  std::printf("GH#6 VCF input stage: low-amp %.4f, high-amp %.4f, ratio %.4f\n",
+  std::printf(" VCF input stage: low-amp %.4f, high-amp %.4f, ratio %.4f\n",
               low, high, high / low);
   CHECK(high < low * 0.8);   // level dependence: big input folds below the small one.
   CHECK(low > 0.3);          // small signal still has a real fundamental.
@@ -503,12 +503,12 @@ void test_gh6_vcf_input_stage_level_nonlinearity() {
   // the high<low*0.8 check AND this check would flag a stray fold at drive=0.
   const double low0 = vcf_amp_sweep_gain(sr, cn, probe, 0.15, 0.0);
   const double high0 = vcf_amp_sweep_gain(sr, cn, probe, 3.0, 0.0);
-  std::printf("GH#6 VCF input stage (drive=0, linear): ratio %.4f\n", high0 / low0);
+  std::printf(" VCF input stage (drive=0, linear): ratio %.4f\n", high0 / low0);
   CHECK(std::fabs(low0 - high0) < 1e-9);
 }
 
 // ----------------------------------------------------------------------------
-// GH#6  identity profile derivation (unit_identity_profile.h)
+//   identity profile derivation (unit_identity_profile.h)
 // ----------------------------------------------------------------------------
 void test_gh6_identity_profile() {
   // Only v1 is supported; unknown versions are rejected (fail-closed, never derived).
@@ -518,7 +518,7 @@ void test_gh6_identity_profile() {
 
   const auto p0 = lunar24::core::deriveVcfIdentityProfile(42u, 1u);
   const auto p1 = lunar24::core::deriveVcfIdentityProfile(42u, 1u);
-  std::printf("GH#6 profile seed=42 v1: L(vcf%.4f d%.4f g%.4f) R(vcf%.4f d%.4f g%.4f)\n",
+  std::printf(" profile seed=42 v1: L(vcf%.4f d%.4f g%.4f) R(vcf%.4f d%.4f g%.4f)\n",
               p0.left.vcfDrive, p0.left.distDrive, p0.left.pathGain,
               p0.right.vcfDrive, p0.right.distDrive, p0.right.pathGain);
 
@@ -551,11 +551,11 @@ void test_gh6_identity_profile() {
                        p2.right.vcfDrive != p0.right.vcfDrive ||
                        p2.left.pathGain != p0.left.pathGain ||
                        p2.right.pathGain != p0.right.pathGain;
-  std::printf("GH#6 profile seed=99 vs 42: differs %s\n", differs ? "yes" : "NO");
+  std::printf(" profile seed=99 vs 42: differs %s\n", differs ? "yes" : "NO");
   CHECK(differs);
 
   // GOLDEN (seed=42, version=1): pin the exact derived side-profile bit values so
-  // "version genuinely participates" regresses. If mixIdentityInput() ever stops
+  // "version genuinely participates" regresses. If mixIdentityInput ever stops
   // mixing `version` (or the L/R domain salt), the derived (seed,1u) profile changes
   // and these hexfloat pins fail RED — a seed-change test alone would NOT catch it.
   // Hexfloat literals are exact IEEE-754, cross-platform and cross-compiler stable.
@@ -569,7 +569,7 @@ void test_gh6_identity_profile() {
 }
 
 // ----------------------------------------------------------------------------
-// GH#6  Distortion L/R drive/rail micro-diff (independent per side)
+//   Distortion L/R drive/rail micro-diff (independent per side)
 // ----------------------------------------------------------------------------
 void test_gh6_distortion_lr_microdiff() {
   const double sr = 48000.0;
@@ -602,7 +602,7 @@ void test_gh6_distortion_lr_microdiff() {
       drone_test::goertzel_mag(ol, f, sr) / (static_cast<double>(n) / 2.0) / amp;
   const double gr =
       drone_test::goertzel_mag(or_, f, sr) / (static_cast<double>(n) / 2.0) / amp;
-  std::printf("GH#6 Distortion L/R microdiff: L-fit %.4f, R-fit %.4f\n", gl, gr);
+  std::printf(" Distortion L/R microdiff: L-fit %.4f, R-fit %.4f\n", gl, gr);
   CHECK(gl != gr);
   CHECK(std::fabs(gl - gr) > 0.01);
 

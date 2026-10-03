@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P3-⑥ Debt 1 — real output layout, per-channel four-logical verification.
+//  Debt 1 — real output layout, per-channel four-logical verification.
 //
-// WHY THIS EXISTS. P1-③'s device model writes signals into a PLANAR channel-major
+// WHY THIS EXISTS. the device model writes signals into a PLANAR channel-major
 // `float phys[kMaxPhys][kFrames]` and reads them back the same way. That model is
 // SELF-CONSISTENT: it writes channel-major and reads channel-major, so it can never
 // see row-major-vs-interleaved mistakes. A real output device describes its channel
@@ -12,14 +12,14 @@
 // every frame. This test proves that error is caught here where it can't be in the
 // planar model:
 //
-//   GOOD   interleaved (1×N) and non-interleaved (N×1) layout addressing -> 0 faults.
-//   SILENT the interleaved-as-planar writer read back PLANARLY (P1-③'s model)
+//   GOOD interleaved (1×N) and non-interleaved (N×1) layout addressing -> 0 faults.
+//   SILENT the interleaved-as-planar writer read back PLANARLY ('s model)
 //          -> 0 faults. That is the gap: a real interleaved device would be fed
 //          scrambled data and the planar checker would still report "all good".
-//   RED    the SAME interleaved-as-planar writer read back via the device's REAL
+//   RED the SAME interleaved-as-planar writer read back via the device's REAL
 //          interleaved layout -> >0 faults. This is Debt 1's negative.
-//   4x     a mapping error (two logicals on one physical) still red under the
-//          layout-aware checker (P1-③'s guarantee preserved).
+//   4x a mapping error (two logicals on one physical) still red under the
+//          layout-aware checker ('s guarantee preserved).
 //
 // The read-back judge here is an EXACT-MATCH purity test (every frame of a channel
 // that claims logical L must equal logical_signal(L, f)), not a dominant-frequency
@@ -28,8 +28,8 @@
 // giving a false pass. Exact-match is deterministic and cannot be fooled — the exact
 // thing Debt 1 needs when it asks "did logical L land cleanly on channel p".
 //
-// @Claude's adjudications folded in: the logical→physical mapping is DATA
-// (`OutputMapping::canonical()` is the default, a different wiring is a value), and
+//  adjudications folded in: the logical→physical mapping is DATA
+// (`OutputMapping::canonical` is the default, a different wiring is a value), and
 // the read-back validates the adapter-FILLED buffer (an in-memory check, not a
 // hardware echo); it does NOT prove the driver later sent those slots to the intended
 // jack (declared boundary, recorded in FINDINGS).
@@ -95,7 +95,7 @@ int run(const char* suite) {
   const OutputMapping swapL{ {1, 0, 2, 3} };                        // WET L/R swapped
   const OutputMapping collide{ {0, 1, 2, 2} };                      // DRY B collides DRY A
 
-  // WRONG writer: P1-③'s planar as-if-channel-major, regardless of device layout.
+  // WRONG writer: the planar as-if-channel-major, regardless of device layout.
   // This is the bug — on an interleaved device it scrambles every frame.
   // (The GOOD cases below render via render_device_output, which is layout-aware.)
   auto planar_writer = [](float* out) {
@@ -117,11 +117,11 @@ int run(const char* suite) {
     CHECK(n_good == 0);
   }
 
-  // SILENT (the gap): interleaved-as-planar writer read back PLANARLY = P1-③'s model
+  // SILENT (the gap): interleaved-as-planar writer read back PLANARLY = the model
   // is self-consistent and reports 0 faults. This is exactly why Debt 1 exists.
   {
     const int silent = verify_faults(planar, canon, planar_writer);
-    std::printf("  SILENT  interleaved-as-planar writer, planar reader (P1-③ model)=%d (0 = the gap)\n", silent);
+    std::printf("  SILENT interleaved-as-planar writer, planar reader ( model)=%d (0 = the gap)\n", silent);
     // This is a demonstration of the GAP — it is intentionally 0 (false pass).
     // We assert it equals 0 so the contrast is explicit and self-documenting.
     CHECK(silent == 0);
@@ -135,7 +135,7 @@ int run(const char* suite) {
     CHECK(red > 0);
   }
 
-  // Mapping errors still red under the layout-aware checker (P1-③ guarantee kept):
+  // Mapping errors still red under the layout-aware checker (guarantee kept):
   // upper-face canonical clean, upper swap + cross-half + collision all caught.
   {
     const int up_good = verify_faults(dev8, upper, [&](float* out) {
@@ -170,6 +170,6 @@ int run(const char* suite) {
 }  // namespace
 
 int main() {
-  std::printf("== P3-⑥ Debt 1: real output layout, per-channel four-logical ==\n");
+  std::printf("== Debt 1: real output layout, per-channel four-logical ==\n");
   return run("device_layout");
 }

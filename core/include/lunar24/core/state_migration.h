@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// DeviceStateV1 migration hook (design/07 §9, task #75 revision 3 — Codex BLOCK
-// bd53b76a).
+// DeviceStateV1 migration hook (revision 3 — BLOCK
+// .
 //
 // This is the CURRENT-V5 identity migration hook ONLY. It takes a decoded
 // DeviceStateV1 candidate (NOT raw bytes/size — that would duplicate the wire
@@ -14,7 +14,7 @@
 // than v5 is "unsupported / needs newer codec".
 //
 // Layering: `decode -> migrate(if supported) -> validate_device_state -> apply`.
-// migrate() does not validate (that is validate_device_state's job) and does not
+// migrate does not validate (that is validate_device_state's job) and does not
 // mutate the out slot on a rejected path.
 
 #pragma once

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_app_state_store.cpp — task #105 (GH#12): the APP one-shot startup restore, the device-reopen
+// test_app_state_store.cpp —: the APP one-shot startup restore, the device-reopen
 // config retention and the exit atomic save, driven through the REAL file adapter in a REAL
 // temporary directory and the REAL engine candidate path.
 //
@@ -52,7 +52,7 @@ using host::StandaloneAudioEngine;
 using host::StateLoadOutcome;
 using host::StateSaveOutcome;
 
-// ---- the tiny named checker (same shape as the GH#12 probe / preset-action family) -------------
+// the tiny named checker (same shape as the probe / preset-action family) -------------
 
 static int g_checks = 0;
 static int g_fail = 0;
@@ -535,7 +535,7 @@ static void c2_one_read_and_transfer() {
   check(engine.canonicalState() != nullptr && wireEqual(*engine.canonicalState(), session),
         "C2.5 the device reopen kept the last committed session config");
 
-  // C2.3/C2.4: an ILLEGAL format makes prepare() fail and release the owner; the pending must
+  // C2.3/C2.4: an ILLEGAL format makes prepare fail and release the owner; the pending must
   // survive and the NEXT legal boundary must restore it.
   store.captureCanonical(engine);
   check(store.hasPending(), "C2.3 the boundary captured the config before the illegal format");
@@ -824,7 +824,7 @@ static void c5_save_failures() {
   }
 
   // C5.4 — a failed replace must NOT remove the destination first, pinned against the REAL
-  // backend: an existing (empty) directory at the live path makes rename() fail, and the
+  // backend: an existing (empty) directory at the live path makes rename fail, and the
   // destination object must still be there afterwards. A delete-before-replace mutation removes
   // it (and would then even let the rename succeed), so this label goes RED.
   {
@@ -841,7 +841,7 @@ static void c5_save_failures() {
           "C5.4 the real backend reported the replace failure");
     // The SAME destination object must survive, not merely "something exists at that path": a
     // delete-before-replace mutation removes this directory and lets the rename succeed, which
-    // would leave a FILE here and satisfy a bare exists() check.
+    // would leave a FILE here and satisfy a bare exists check.
     check(std::filesystem::is_directory(std::filesystem::path(store.livePath())),
           "C5.4 a failed replace did not remove the destination first");
     removeTree(dir);

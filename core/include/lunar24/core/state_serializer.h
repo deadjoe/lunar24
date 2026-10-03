@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// StateSerializer (design/07 §6): DeviceStateV1 <-> the declared, frozen storage
+// StateSerializer: DeviceStateV1 <-> the declared, frozen storage
 // schema (kDeviceStorageSchema). This is the mapping device_state.h calls "a
 // later slice": a serializer maps the framework-free working copy to/from the
 // named, versioned, fixed-width wire record by field name.
 //
-// Scope (P2-⑤ @Claude Q1): this is the MINIMAL round-trip-required mapping, not a
+// Scope: this is the MINIMAL round-trip-required mapping, not a
 // generic schema framework. It walks kDeviceStorageFields for ordinal + width
 // (so it can never silently diverge from the declared order), and writes each
 // field by name. It is deliberately not an auto-walking "schema engine".
@@ -15,7 +15,7 @@
 // kDeviceStorageSchema.totalBytesHint bytes. Reserved bytes (the sequencer's
 // opaque block, and the keyboard-preset 2-byte pad) are carried verbatim — never
 // cleared, because a different version writing there must not be destroyed
-// (P2-⑤ @Claude Q2: unknown bytes are preserved, not zeroed).
+// (unknown bytes are preserved, not zeroed).
 
 #pragma once
 
@@ -118,7 +118,7 @@ inline double get_f64(const std::uint8_t* p) {
   return v;
 }
 
-// --- KeyboardPreset record mapping (P4-②) ------------------------------------
+// KeyboardPreset record mapping ------------------------------------
 //
 // A KeyboardPreset's wire record is described by kKeyboardPresetFields (name ->
 // offset + width); these map each named field to/from the structured working
@@ -461,7 +461,7 @@ inline std::uint32_t legacy_patch67_wire_bytes() {
   }
   return total;
 }
-// `in` holds legacy_patch67_wire_bytes() bytes, `out` totalBytesHint bytes.
+// `in` holds legacy_patch67_wire_bytes bytes, `out` totalBytesHint bytes.
 inline void upgrade_legacy_patch67(const std::uint8_t* in, std::uint8_t* out) {
   std::uint32_t src = 0u, dst = 0u;
   for (std::uint32_t i = 0; i < kDeviceStorageSchema.fieldCount; ++i) {

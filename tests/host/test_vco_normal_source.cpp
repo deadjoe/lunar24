@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_vco_normal_source.cpp — task #83 (GH #18): fix the DEFAULT VCO-B stall caused by an
-// incorrectly self-sourced normalized route. Per @Codex (4fe298c8) the ONLY authorized change is
+// test_vco_normal_source.cpp —: fix the DEFAULT VCO-B stall caused by an
+// incorrectly self-sourced normalized route. Per the ONLY authorized change is
 // correcting the source of RouteId 4 (route.vco_b_vco_out_to_cv_in) to the EXISTING published VCO-A
 // oscillator signal (vco_a.dry_out). We never change default cvAmt / lin_exp / baseHz, never impose a
 // frequency floor, never add a jack, never reassign B's OSC public output owner.
 //
 // This file is the RED-first product oracle and the fix's permanent regression net. It asserts the
-// CONTRACT of GH #18 (actual product behaviour, not the obsolete self-edge IDS truth):
+// CONTRACT of (actual product behaviour, not the obsolete self-edge IDS truth):
 //   (1) DEFAULT machine (no user cable) at 44.1/48/88.2/96k, >=2 s: BOTH DRY channels' final second
 //       is non-constant and contains NO 50 ms flat window. (The pre-fix default DRY B is a DC lock:
 //       zcr ~0-4, and the audit's 1e-12 flat-window detector trips at sample 1530.)
@@ -22,7 +22,7 @@
 //       one-sample z^-1 delay) and no feedback line has (source,sink)==(vco_a.dry_out, vco_b.cv_in);
 //       B's generic CV reads A's LIVE published value the same frame.
 //
-// Explicit-self-loop retention (@Codex): the pre-fix test that used the DEFAULT self-edge to verify
+// Explicit-self-loop retention: the pre-fix test that used the DEFAULT self-edge to verify
 // the feedback D-sample staging is RETAINED but re-pointed at a REAL user B->B patch cable (see
 // test_machine_definition.cpp "VCO-B self-edge renders finite..." converted to a user cable), so the
 // feedback mechanism is still exercised while the default route is acyclic. Nothing here asserts
@@ -33,7 +33,7 @@
 
 #include <lunar24/core/device_state.h>        // DeviceStateV1
 #include <lunar24/core/state_default.h>        // make_default_device_state
-#include <lunar24/core/vco_wave_map.h>         // the production VCO rendering law (GH#19 S0 #117)
+#include <lunar24/core/vco_wave_map.h>         // the production VCO rendering law
 #include <lunar24/registry_ids.hpp>            // JackId / RouteId full enums
 
 #include "test_engine_harness.h"
@@ -256,30 +256,30 @@ void test_acyclic_no_artificial_delay() {
   std::fprintf(stderr, "  (default feedback edges=%u, vco_a->b feedback=%d)\n", fc, vcoSelf ? 1 : 0);
 }
 
-// (6) SAME-sample vs PREVIOUS-sample A discriminator (the hidden-z^-1 net). @Codex e14e62a8: an
-//     ACYCLIC A->B route means feedbackCount()==0 proves no feedback LINE, but does NOT prove the
+// (6) SAME-sample vs PREVIOUS-sample A discriminator (the hidden-z^-1 net).: an
+//     ACYCLIC A->B route means feedbackCount==0 proves no feedback LINE, but does NOT prove the
 //     executor reads A's LIVE value THIS frame — a build that saves previousA (per runtime) and feeds
 //     that to B passes the structural check yet IS a one-sample hidden delay. So we reconcile B's
 //     rendered output against an EXPLICIT per-sample reference built from the runtime's OWN A readback
 //     (controlVoltageAt(vco_a_dry_out) sampled after each frame — the exact value A published this
 //     frame, which is what a same-frame consumer must read):
-//         refSame(n) = VCO triangle given CV = A(n)     -- B MUST produce this (same-frame route)
-//         refPrev(n) = VCO triangle given CV = A(n-1)   -- what B produces under the delayed mutation
+//         refSame(n) = VCO triangle given CV = A(n) -- B MUST produce this (same-frame route)
+//         refPrev(n) = VCO triangle given CV = A(n-1) -- what B produces under the delayed mutation
 //     Under an ASYMMETRIC, NON-DEGENERATE (fast) A the two diverge sharply, so:
-//         CHECK(madSame < kSameTol)   -> GREEN on the correct build, RED on the delayed mutation.
-//         CHECK(madPrev > madSame)    -> the delayed reference is the WRONG one (extra bite).
+//         CHECK(madSame < kSameTol) -> GREEN on the correct build, RED on the delayed mutation.
+//         CHECK(madPrev > madSame) -> the delayed reference is the WRONG one (extra bite).
 //     Non-degeneracy guards (so the test can never silently go vacuous on a symmetric/static A):
-//         CHECK(maxAStep > kDegenTol)         -> A actually changes between consecutive samples
-//         CHECK(maxDiffSamePrev > kDegenTol)  -> refSame and refPrev really differ (observable delay)
+//         CHECK(maxAStep > kDegenTol) -> A actually changes between consecutive samples
+//         CHECK(maxDiffSamePrev > kDegenTol) -> refSame and refPrev really differ (observable delay)
 //     The reference mirrors the Vco DSP (vco.h: linear `p*=(1+cv*cvAmt)`, then the waveform),
 //     baseHz==kVcoBaseHzProvisional(440), vOct==0 (no route feeds vco_b_v_oct_in), no linear-FM (a
 //     plain VCO), and the device-normalise `*0.5` (kDeviceScaleProvisional, device_adapter.h:90-94)
 //     that maps volts to the captured DRY_B channel. It is a READBACK-driven reference — it does NOT
 //     re-run A, so it is insensitive to A's own (unmodeled) phase.
 //
-//     ⚠️ WAVEFORM (GH#19 S0, task #117). This reference used to hardcode the triangle
+//     ⚠️ WAVEFORM. This reference used to hardcode the triangle
 //     `4|frac(.5-p)|-1`, which was right only because the VCO's constructor default WAS a fixed
-//     triangle. #117 made the production default the continuous morph sweep, so B renders
+//     triangle. made the production default the continuous morph sweep, so B renders
 //     `wave_map::sampleAt(kRingPanel, morph, p, duty)` and the hardcoded triangle no longer
 //     describes the signal under test (measured: madSame 0.418 instead of ~1e-16 — the reference,
 //     not the product, was stale). The reference is therefore updated to the ACTUAL production law,
@@ -290,7 +290,7 @@ void test_acyclic_no_artificial_delay() {
 
 // One sample of the reference B: advance `cum` (cycles) by B's instant pitch under CV=cv and return the
 // device-normalised production waveform. Mirrors machine_runtime kVcoB -> Vco::tick/frequencyHz + the
-// kMorphRing rendering law. `morph`/`duty` are B's OWN applied readbacks (vcoBMorph()/vcoBPw()), so the
+// kMorphRing rendering law. `morph`/`duty` are B's OWN applied readbacks (vcoBMorph/vcoBPw), so the
 // reference cannot drift from the product law without the readback drifting with it.
 double refB(double& cum, double cv, double sr, double baseHz, int octSel, double tune, double cvAmt,
             double morph, double duty) {

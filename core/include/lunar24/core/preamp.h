@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Preamp — P3-④: the contact-microphone preamplifier (manual L518-549). This is
+// Preamp —: the contact-microphone preamplifier (manual L518-549). This is
 // the input front-end for the built-in PIEZZO contact mic and the 3.5 mm EXT
 // SOURCE jack; it feeds the voice mixer AND the envelope follower (signal chain:
 // PIEZZO → PREAMP → ENVELOPE FOLLOWER, voice-mixer PREAMP channel being the audio
-// tap; design/01 §1, §3).
+// tap;, §3).
 //
 // PROVENANCE (the frozen registry, generated/lunar24/registry.hpp, is the
 // implementation basis; every claim below mirrors it and marks evidence strength):
@@ -27,7 +27,7 @@
 //   * Inputs: mic_in (built-in PIEZZO — internal FixedEndpoint) and ext_source_in
 //     (3.5 mm, "bypassing the built-in contact microphone", the one patchable audio
 //     jack; nominal ±1 V). The DSP sees the already-selected source as a single
-//     voltage; "no source" is 0 V, which the amp passes at zero output — design/04
+//     voltage; "no source" is 0 V, which the amp passes at zero output —
 //     §3 I/O mapping: "PIEZO/PREAMP ... 无输入时静音" (mute on no input). So an
 //     unconnected EXT SOURCE yields a clean zero, not noise/DC/NaN.
 //

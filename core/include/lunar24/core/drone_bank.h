@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// DroneBank — the CLASSIC drone bank of P3-① / #39 (structure fidelity).
+// DroneBank — the CLASSIC drone bank of / (structure fidelity).
 //
 // The Solar 42N manual DRONE VOICES 1, 2, 4, 5 "CLASSIC SOLAR 50":
 //   * each voice = 5 simple SAWTOOTH oscillators, "NO VOLT OCTAVE" (free-running).
@@ -12,7 +12,7 @@
 //     down and, past half its stroke, starts the generators modulating each other
 //     (mutual FM).
 //
-// STRUCTURE vs CONSTANTS (design/07 §3): the structure above is real and present
+// STRUCTURE vs CONSTANTS: the structure above is real and present
 // (roles, sawtooth, a genuine nonlinear transfer, per-generator controls, shared
 // VOLT transpose, mutual FM). The exact circuit constants — negistor curve
 // coefficients, the tune/VOLT law, the FM depth — are NOT in the manual and are
@@ -20,27 +20,27 @@
 // FINDINGS ledger. We never pretend to a measured model ("参数只能随证据校准").
 //
 // Bank = kMaxVoices (20) free-running oscillators, read as 4 classic voices × 5
-// generators (drone 1/2/4/5); drone 3/6 are NEW (Papa Srapa, P3-②) and are not in
+// generators (drone 1/2/4/5); drone 3/6 are NEW (Papa Srapa) and are not in
 // this bank (the runtime mutes those channels). voiceCount < 20 is still allowed
-// for the P3-① tolerance/drift/sr must-tests, which probe the frequency model
+// for the tolerance/drift/sr must-tests, which probe the frequency model
 // rather than the full voice group.
 //
 // FREQUENCY MODEL (kept separable so tolerance vs drift stays testable):
 //   effFreq(t) = base * tuneScale * voltScale * (1 + tolerance) + drift(t) + mod(t)
 //                then x (1 + mutualFM(t)) x (1 + cycleJitter)
-//   * base      — default just-intonation stack per voice (1 : 1.5 : 2 : 3 : 4 on the
+//   * base — default just-intonation stack per voice (1: 1.5: 2: 3: 4 on the
 //                 voice root), keeping the manual's low / medium / high roles.
 //   * tolerance — STATIC seeded component error (about +-1.2 %): the slow beating.
-//   * drift(t)  — slow Ornstein-Uhlenbeck random walk (a few cents over ~20 s).
-//   * mod(t)    — per-generator MOD: CV/photo detune when the MOD button is on.
-//   * mutualFM  — past half the VOLT stroke, each generator frequency-modulates the
+//   * drift(t) — slow Ornstein-Uhlenbeck random walk (a few cents over ~20 s).
+//   * mod(t) — per-generator MOD: CV/photo detune when the MOD button is on.
+//   * mutualFM — past half the VOLT stroke, each generator frequency-modulates the
 //                 next one in its group (relative depth, so it never stalls).
 //   * cycleJitter — the negistor's noisy firing threshold: each period differs a bit.
 //
 // WAVEFORM: a capacitor-charge ramp (exponentially bent sawtooth) with a band-limited
 // discharge step, through a soft cubic saturation. All constants are tuned by ear.
 //
-// Realtime-safe: tick() never allocates or blocks; all control writes (setMute/
+// Realtime-safe: tick never allocates or blocks; all control writes (setMute/
 // setTune/setMod/setVolt) are plain field stores. SPDX.
 
 #pragma once
@@ -64,7 +64,7 @@ class DroneBank {
   enum class Role : std::uint8_t { kLow = 0, kMedium = 1, kHigh = 2 };
 
   // A single generator's state. Static terms are set once (seeded, never changed
-  // by tick); the accumulator is the only state tick() advances.
+  // by tick); the accumulator is the only state tick advances.
   struct Voice {
     double freqBaseHz;   // nominal frequency from the ROLE BAND, seeded, static.
     double tolerance;    // STATIC fractional tolerance of freqBase, seeded.
@@ -84,7 +84,7 @@ class DroneBank {
     // Per-sample constants, recomputed only when their inputs change (never in tick).
     double tuneScale;    // 2^(tune/12)
     double voltScale;    // 2^(-volt/12)
-    double shapeDen;     // 1 - exp(-shapeCurve)   (chargeShape denominator)
+    double shapeDen;     // 1 - exp(-shapeCurve) (chargeShape denominator)
     double shapeMean;    // chargeShapeMeanOffset(shapeCurve)
     double muteGain;     // 0..1, glides toward muted ? 0 : 1 so a MUTE press does not click
   };
@@ -92,7 +92,7 @@ class DroneBank {
   // ---- CLASSIC group gate/ATT/RLS/HOLD envelope + dynamic variation (batch 4A) ----
   // Each classic voice is a 5-generator GROUP with an INDEPENDENT gate/ATT/RLS/HOLD
   // envelope that VCA-gates the group's final audio. The oscillators keep free-running:
-  // the envelope NEVER resets phase (design/07 §7 — envelope out, oscillators run on).
+  // the envelope NEVER resets phase (envelope out, oscillators run on).
   // GATE/HOLD in the registry is a panel control; ATT/RLS are a NORMALIZED 0..1. This
   // is the single, named, PROVISIONAL monotonic map from that norm to a time range, so
   // the time constants are not scattered as magic numbers. HOLD is PROVISIONAL policy:
@@ -111,10 +111,10 @@ class DroneBank {
   // counter-based deterministic hash (see jitterUnit_).
   static constexpr double kOscNoiseAmpHz = 0.02;  // provisional: small jitter (Hz).
 
-  // Centralized dynamic-variation MODEL VERSION (batch 4A convergence, @Codex 52d3c620).
+  // Centralized dynamic-variation MODEL VERSION (batch 4A convergence, d3c620).
   // This is not decorative: every tolerance/drift constant AND the per-sample jitter are
   // derived from it via deriveSeed_ (below), so bumping the version is a real, spec-visible
-  // regeneration of the whole dynamic model — not a no-op. Persistence stays #12.
+  // regeneration of the whole dynamic model — not a no-op. Persistence stays.
   static constexpr std::uint64_t kDynamicModelVersion = 1;
   // Independent stream/domain tags: the oscillator-constants stream and the per-sample
   // jitter stream must not alias, so a single (seed, unit) can't collide across domains.
@@ -129,7 +129,7 @@ class DroneBank {
   // Named PROVISIONAL default for the group gate: a host that never touches the gate
   // hears the voice (the pre-batch structure tests probe the raw bank). The default is
   // NOT hardware evidence — the behaviour tests set the gate explicitly before asserting
-  // the envelope/open transition (@Codex 52d3c620 point 6). Keep it explicit + named.
+  // the envelope/open transition (d3c620 point 6). Keep it explicit + named.
   static constexpr bool kDefaultGroupGateOpen = true;
 
   // Per-classic-group envelope state. `level` is the 0..1 VCA gain applied to the
@@ -178,7 +178,7 @@ class DroneBank {
       // bands and value ranges unchanged (provisional bands/orders are structural).
       SeededRandom vrng(deriveSeed_(seed, static_cast<std::uint64_t>(i), kStreamOsc));
       // Default tuning: each classic voice is a just-intonation stack on its own root
-      // (1 : 1.5 : 2 : 3 : 4 = root, fifth, octave, twelfth, two octaves), so the low /
+      // (1: 1.5: 2: 3: 4 = root, fifth, octave, twelfth, two octaves), so the low /
       // medium / high roles of the manual hold and the machine starts on a consonant
       // A-minor-pentatonic drone. The TUNE knobs move each generator from here.
       // Tuned by ear; the manual gives no frequencies.
@@ -250,14 +250,14 @@ class DroneBank {
   // Shared CV MOD / photo-detector input for the whole group, in RAW virtual volts from the
   // runtime's CV source bank (the value resolved at the group's cv_mod_in patch jack), NOT a
   // normalized 0..1 upstream scale. Applied only to generators whose MOD button is on (the
-  // existing modAmount gate); MOD-off generators ignore CV and environment (design/07 §7).
+  // existing modAmount gate); MOD-off generators ignore CV and environment.
   static constexpr double kDefaultModOctPerVolt = 0.05;  // the CV knob's default (0.5) depth
   void setGroupModCv(int group, double cv) { if (inGroup_(group)) modCvG_[group] = cv; }
   // Depth of the shared CV MOD input (the panel's CV knob): MOD-on generators move by
   // groupModCv x this many octaves — exponential, so low and high generators swing by the
   // same musical amount.
   void setGroupModOctavesPerVolt(int group, double k) { if (inGroup_(group)) modOctPerVoltG_[group] = k; }
-  // Shared/correlated environment term a desktop host can provide (design/07 §7). It
+  // Shared/correlated environment term a desktop host can provide. It
   // detunes MOD-on generators together; MOD-off generators are unchanged.
   void setEnvironment(double hz) { environmentHz_ = hz; }
 
@@ -288,7 +288,7 @@ class DroneBank {
     // Advance THIS group's gate/ATT/RLS/HOLD VCA gain toward its target (open =
     // gate||hold — the PROVISIONAL HOLD keeps the target open while held). The
     // oscillators keep free-running; the envelope only scales the group's final audio
-    // below, never resetting phase (design/07 §7). Linear + monotonic.
+    // below, never resetting phase. Linear + monotonic.
     const double dt = 1.0 / sampleRate_;
     const double driftNoiseScale = driftNoiseScale_;
     GroupEnv& e = groupEnv_[g];
@@ -325,7 +325,7 @@ class DroneBank {
       if (v.modAmount > 0.0 && modCvG_[g] != 0.0)
         effFreq *= std::exp2(v.modAmount * modCvG_[g] * modOctPerVoltG_[g]);
       // Environment: shared/correlated term detunes MOD-on generators together; MOD-off
-      // generators are unchanged (design/07 §7 — the MOD-off generator ignores CV/env).
+      // generators are unchanged (the MOD-off generator ignores CV/env).
       if (v.modAmount > 0.0) effFreq += environmentHz_;
       // Oscillator-specific small deterministic jitter (per-gen, seed-stable, hash-based).
       // Save the value actually applied THIS SAMPLE first, so the inspector reads exactly
@@ -342,14 +342,14 @@ class DroneBank {
       }
       if (effFreq < 0.0) effFreq = 0.0;
 
-      // task#110 (GH#19 S2): the classic sawtooth is a VALUE jump, so it is band-limited with
+      //  the classic sawtooth is a VALUE jump, so it is band-limited with
       // the polyBLEP family (core/polyblep_kernel.h), not BLAMP -- a sloped kernel leaves a
       // value jump in place. `phaseInc` is the SAME increment the accumulator takes two lines
       // below, so the correction windows sit exactly on the rollover this sample is about to
       // cross. `dt` is deliberately NOT reused: drone_bank.h:258 already names the ENVELOPE
       // time step `dt`, and the two are different quantities by five orders of magnitude.
       // polyblepSaw is a pure function of (t, phaseInc) -- it does NOT touch v.phase, so the
-      // phase trajectory (and the pinned-phi comparison) is unchanged (@Kimi 69b64ff6 pin 2).
+      // phase trajectory (and the pinned-phi comparison) is unchanged (b64ff6 pin 2).
       // Outside +/-phaseInc the residual is exactly 0, so this is bit-identical to the naive
       // ramp everywhere else; measured on the emitted signal the correction moves at most 2
       // consecutive samples per generator (scratch/s2_integration_preview.txt).
@@ -432,7 +432,7 @@ class DroneBank {
     return (1.0 - (1.0 - e) / k) / (1.0 - e) - 0.5;
   }
 
-  // ---- centralized, PROVISIONAL, monotonic norm→seconds mappings (design/07: no
+  // centralized, PROVISIONAL, monotonic norm→seconds mappings (no
   // hardware value claimed; a larger normalized knob always yields a longer stage) ----
   // PUBLIC so the Papa Srapa voice AR envelope (drone_3/drone_6) consumes the SAME
   // mapping and the SAME kAtt/kRlsNormMin/MaxSeconds constants as the classic groups
@@ -490,7 +490,7 @@ class DroneBank {
   // (does not bias a generator's average pitch). It is NOT exactly zero-mean per cycle:
   // each unit's value is a hash of (seed, version, unit, domain, sample), so over one
   // cycle the mean is ~0 but not identical to zero, and it is a deterministic hash, not
-  // a sine or a sampled random. This keeps the P3-① "no hidden randomness" discipline.
+  // a sine or a sampled random. This keeps the "no hidden randomness" discipline.
   static std::uint64_t mix64_(std::uint64_t x) {
     x += 0x9E3779B97F4A7C15ULL;
     x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;

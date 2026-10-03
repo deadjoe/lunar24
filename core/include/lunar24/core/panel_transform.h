@@ -1,18 +1,18 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P5-② — the single reversible panel transform + hit-testing, task #33.
+//  the single reversible panel transform + hit-testing,.
 //
-// This is the ONE transform the whole panel hangs on. design/06 §P5 first line is the
+// This is the ONE transform the whole panel hangs on. first line is the
 // mandate verbatim: "geometry、hit testing、touch plate、patch point/cable 共用一个可逆
-// transform"。 The reason it must be singular is the failure mode @Claude called out
+// transform"。 The reason it must be singular is the failure mode called out
 // (mandate, criterion 1): if geometry and hit-testing each keep their own scale, the
 // panel LOOKS right but clicks are off — and that is INVISIBLE at 100% zoom (design
 // scale), only surfacing at any other scale. So this slice builds the transform as an
 // object that BOTH paths take, and the test drives the invariant at non-100% so the
 // divergence would actually be caught.
 //
-// Transform provenance (locked by slice ④ / #31, kept in host_window_fit.h, never
+// Transform provenance (locked by slice /, kept in host_window_fit.h, never
 // re-derived here):
 //   design ->[drawScale (fit or zoom) + origin pan]-> logical ->[screenScale (retina)]-> backing
 //   backing = design * drawScale * screenScale
@@ -21,9 +21,9 @@
 // drawScale and NEVER dropped. This header keeps the two as distinct fields and exposes
 // design_to_logical / logical_to_backing as separate steps so the separation is directly
 // testable — folding retina into drawScale shows up as logical_to_backing depending on
-// drawScale, which is the bug slice ④ proved out and which criterion 4 forbids.
+// drawScale, which is the bug slice proved out and which criterion 4 forbids.
 //
-// Coordinates are MEASURED (design/03 §3: the reference PNG/PDF is measurement-only, not
+// Coordinates are MEASURED (the reference PNG/PDF is measurement-only, not
 // a background). Design space is the canonical 2400×1551 (host_window_fit.h); measured
 // control/module positions live in panel_layout.h as DESIGN rects — the invariant state.
 // Geometry draws by mapping a design rect to screen; hit-testing maps a screen point back
@@ -46,7 +46,7 @@
 
 namespace lunar24::core {
 
-// The discrete zoom draw-scales the UI offers (design/03 §6.3, mandate criterion 3):
+// The discrete zoom draw-scales the UI offers (mandate criterion 3):
 // 50/67/75/100/125/150/200%. A percentage / 100. These are DATA (the product's zoom
 // presets), not a branch in the logic.
 inline constexpr double kZoomScales[] = {
@@ -71,7 +71,7 @@ struct PanelTransform {
 };
 
 // design -> logical: uses ONLY drawScale + origin (never screenScale). This is the step
-// slice ④ pins retina OUT of; a renegade that multiplies screenScale in here is the bug.
+// slice pins retina OUT of; a renegade that multiplies screenScale in here is the bug.
 inline void design_to_logical(const PanelTransform& t, double dx, double dy,
                               double& lx, double& ly) {
   lx = dx * t.drawScale + t.originX;
@@ -159,8 +159,8 @@ inline int hit_test_rects(const PanelTransform& t, double bx, double by,
   return -1;
 }
 
-// Fit-to-window transform: drawScale = fit_draw_scale (delegated to the existing P1-④ /
-// #15 module — we do NOT reinvent the fit rule). screenScale (retina) stays separate;
+// Fit-to-window transform: drawScale = fit_draw_scale (delegated to the existing /
+//  module — we do NOT reinvent the fit rule). screenScale (retina) stays separate;
 // origin defaults to 0 (no pan on a fit). This is the construction the host uses when
 // it wants the whole panel visible.
 inline PanelTransform make_fit_transform(double designW, double designH,

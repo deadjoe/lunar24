@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P3-⑥ Debt 1 (platform half) — the four logic outputs against the REAL machine's
+//  Debt 1 (platform half) — the four logic outputs against the REAL machine's
 // output layout. The companion test_device_layout.cpp proves the CORE contract on a
 // synthetic DeviceLayout; this file reads the ACTUAL default output device's
 // AudioBufferList (the framework authority, device_probe.cpp's idiom) and verifies the
 // four logicals (WET L/R + DRY A/B) land per-channel under that real layout.
 //
-// @Claude's adjudications folded in:
-//  - ORACLE is a default, not a constant: OutputMapping::canonical() {0,1,2,3} is the
-//    P1-③ default; the adapter could pass a different wiring (device_layout.h documents
+//  adjudications folded in:
+//  - ORACLE is a default, not a constant: OutputMapping::canonical {0,1,2,3} is the
+//     default; the adapter could pass a different wiring (device_layout.h documents
 //    it as data). We exercise the default wiring here.
 //  - The read-back validates the ADAPTER-FILLED buffer memory under the real layout
 //    (it is an in-memory stride/interleave check). It does NOT prove the driver then
@@ -20,7 +20,7 @@
 //    non-macOS build, it SKIPA loudly (prints the reason); see the skip handling below.
 //
 // The negative (Debt 1's RED case): for an interleaved device, reading the SAME buffer
-// through the PLANAR (channel-major, P1-③) addressing yields exactly the scrambled data
+// through the PLANAR (channel-major) addressing yields exactly the scrambled data
 // the layout-aware view catches — so the "treat interleaved as planar" bug must fire RED.
 // For a NON-interleaved device planar reads coincide with the real layout, so the bug is
 // not distinguishable there and the negative is honestly skipped (not faked red).
@@ -137,7 +137,7 @@ int run(const char* suite) {
   CHECK(good == 0);
 
   // NEGATIVE (Debt 1's RED): read the SAME buffer as if the device were planar/channel-
-  // major (P1-③). For an interleaved device this scrambles every frame and must fire RED.
+  // major. For an interleaved device this scrambles every frame and must fire RED.
   // For a non-interleaved device planar reads == the real layout, so the bug is not
   // distinguishable: skip it honestly (never fake a red).
   int red = 0;
@@ -166,6 +166,6 @@ int run(const char* suite) {
 }  // namespace
 
 int main() {
-  std::printf("== P3-⑥ Debt 1 (platform half): real CoreAudio output layout, four logicals per-channel ==\n");
+  std::printf("== Debt 1 (platform half): real CoreAudio output layout, four logicals per-channel ==\n");
   return run("coreaudio_output");
 }

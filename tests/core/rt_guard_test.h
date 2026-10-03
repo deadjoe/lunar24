@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Real-time-guard detector, replicated from the proven P1-② spike
+// Real-time-guard detector, replicated from the proven spike
 // (spike/audio_thread_invariants). It lives in tests/ (NOT core/) for the same
 // reason the spike lives in spike/: the global operator-new override is a
 // test-only probe, so core/ + generated/ stay framework- and probe-free and
 // `check_spike_clean.py` never scans tests/. This is a single-TU include: include
 // it from exactly one test translation unit.
 //
-// Purpose (P2-③ @Claude addition #8): prove that a graph RECOMPILE never runs on
+// Purpose (addition #8): prove that a graph RECOMPILE never runs on
 // the audio thread. The audio thread is modelled by an RtGuard; the global
 // operator-new override flags any allocation that happens while it is set. A
 // recompile builds vectors/CompiledGraph on the control thread and is therefore

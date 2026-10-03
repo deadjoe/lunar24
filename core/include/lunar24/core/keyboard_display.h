@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-⑤ bottom-display content model (design/00 §P4-⑤, @Claude msg 87862933).
+//  bottom-display content model.
 //
-// @Claude Decis ①: this is a PURE DATA STRUCT, and the core does NOT expose a
+//  Decis: this is a PURE DATA STRUCT, and the core does NOT expose a
 // query interface. The menu engine (keyboard_menu.h) owns a KeyboardDisplay and
 // fills it as the user navigates / edits; a rendering layer reads it. There is no
 // getter, no poll surface, no callback — the contract is the struct's fields

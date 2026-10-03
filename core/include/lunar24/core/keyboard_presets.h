@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Keyboard preset operations (design/06 §L4/§P4, design/07 §6): the four native
+// Keyboard preset operations (§P4): the four native
 // presets A-D and the load / save / initialise actions that manage them.
 //
-// Scope discipline (P4-② state half + task #57 / GH #12 partial): this is the STATE
+// Scope discipline (state half + / partial): this is the STATE
 // layer. The four slots carry the frozen keyboard_params_minus_clock payload (31
 // params — schema in device_state.h) and these functions move a slot's WHOLE
 // keyboard-owned payload between the slot and the LIVE keyboard state. The per-side
@@ -13,9 +13,9 @@
 // the transfer is complete: the former fragment load_preset / save_preset (which
 // moved only the shell + non-scalars and silently dropped the scalar banks) is
 // replaced by the full load_preset_to_live / save_live_to_preset. The per-field ->
-// live-runtime-setter INTERPRETATION remains the P4-③ behaviour layer (GH #12).
+// live-runtime-setter INTERPRETATION remains the behaviour layer.
 //
-// Persistence reuses the P2-⑤ pathway: a slot is part of DeviceStateV1, which is
+// Persistence reuses the pathway: a slot is part of DeviceStateV1, which is
 // serialized/deserialized by encode_device_state / decode_device_state (the
 // temp->flush->rename snapshot writer). No separate preset store is invented.
 
@@ -90,7 +90,7 @@ inline KeyboardPreset initial_keyboard_preset(std::uint32_t slot) {
 }
 
 // Reset one slot to the factory default WITHOUT touching the other three slots,
-// the live keyboard state, or any other DeviceStateV1 member. This is the P4-②
+// the live keyboard state, or any other DeviceStateV1 member. This is the
 // "initialise returns to initial value, not a whole-device zero" guarantee: the
 // destructive scope is exactly the one slot. Returns false for an out-of-range
 // slot (the "no 5th preset" rejection).
@@ -101,7 +101,7 @@ inline bool initialise_preset(DeviceStateV1& state, std::uint32_t slot) {
 }
 
 // Load one preset slot's COMPLETE keyboard-owned state into the LIVE keyboard
-// state. This is the single product recall entry (task #57 / GH #12 partial): unlike
+// state. This is the single product recall entry (partial): unlike
 // the former fragment load_preset (which moved only the shell + non-scalars and
 // silently dropped the scalar banks), it moves the slot's whole payload across the
 // full state layer — the global single/twin/split selector, both per-side scalar
@@ -128,7 +128,7 @@ inline bool load_preset_to_live(DeviceStateV1& live, std::uint32_t slot) noexcep
   // (host/plugin.cpp builds MakeConfig(0, 0) and the keyboard menu is inert), so the
   // refusal was reachable only from the state layer itself. Converge the mirror here,
   // exactly as make_default_device_state does for the default (state_default.h).
-  // D-1 (task #102 §1.3, @Codex msg 7d734b47; wording per @Codex b9d8ff9f).
+  // D-1.
   live.keyboardSettings.pressureBehaviour = p.pressureBehaviour;
   live.parameters[static_cast<IdValue>(ParameterId::keyboard_behaviour)] =
       static_cast<double>(p.pressureBehaviour);
@@ -137,13 +137,13 @@ inline bool load_preset_to_live(DeviceStateV1& live, std::uint32_t slot) noexcep
   load_live_side_bank(p, live);
 
   // Pressure-output compatibility mirror: keyboardSettings.pressureOutput is NOT a
-  // third source of truth (design/00 §181 rules pressure_output per-side; the
+  // third source of truth (rules pressure_output per-side; the
   // canonical live value is the left scalar bank). After a load the mirror simply
   // converges to the canonical left value — it is inert even if it was stale before.
   live.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(
       live.parameters[static_cast<IdValue>(ParameterId::keyboard_pressure_output)]);
 
-  // LEFT live non-scalars (design/07 §6: kept as structured DeviceState fields).
+  // LEFT live non-scalars (kept as structured DeviceState fields).
   live.keyboardSeqCurrent = p.seqSteps;
   live.keyboardScaleEditor = p.quantiseScaleEditor;
   for (std::uint32_t i = 0; i < kKeyboardPlateTuneCount; ++i)
@@ -156,7 +156,7 @@ inline bool load_preset_to_live(DeviceStateV1& live, std::uint32_t slot) noexcep
   live.keyboardClockSelectors[2] = p.seqClock;   // seq_clock
   live.keyboardClockSelectors[3] = p.seqRhythm;  // seq_rhythm
 
-  // RIGHT half-bank mirror (P4-③ per-side): the same four non-scalars and four
+  // RIGHT half-bank mirror (per-side): the same four non-scalars and four
   // no-domain selectors, taken from the `_R` preset fields.
   live.keyboardSeqCurrentR = p.seqStepsR;
   live.keyboardScaleEditorR = p.quantiseScaleEditorR;

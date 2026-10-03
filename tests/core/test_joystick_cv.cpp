@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH #11 (P3 item 6) Joystick X/Y + OFFSET X/Y bipolar CV sound-core strong-oracle
+//  (P3 item 6) Joystick X/Y + OFFSET X/Y bipolar CV sound-core strong-oracle
 // suite for core/include/lunar24/core/joystick_cv.h. This new JoystickCv is a
 // stateless per-sample CV mapping core — NOT a wrapper over any audio-rate helper
 // and NOT an A/B pair. The panel has ONE joystick module with two independent
@@ -12,24 +12,24 @@
 // grounded on the REAL reg::kJacks joystick.x_out / joystick.y_out descriptor,
 // not a test-side shadow.
 //
-// @Codex mandate (msg 5868a918) must-tests:
-//   ① centre = 0V                                   (all four controls at 0.5)
-//   ② offset window endpoints:  left [-10,0] / centre [-5,+5] / right [0,+10]
-//   ③ X/offset-X and Y/offset-Y each monotonic       (independent monotone trend)
-//   ④ each axis/offset affects ONLY its own output   (no cross-wiring, no X->Y copy)
-//   ⑤ position-locking is constant                    (no spring-return / decay / reset)
-//   ⑥ next-sample update reflects immediately         (no block cache)
-//   ⑦ outputs always finite and bounded to [-10,+10]
-//   ⑧ finite value clamps to [0,1]; non-finite is fail-closed
-//   ⑨ invalid setter preserves FULL four-control state AND subsequent dual trace
+//  mandate must-tests:
+//    centre = 0V (all four controls at 0.5)
+//    offset window endpoints: left [-10,0] / centre [-5,+5] / right [0,+10]
+//    X/offset-X and Y/offset-Y each monotonic (independent monotone trend)
+//    each axis/offset affects ONLY its own output (no cross-wiring, no X->Y copy)
+//    position-locking is constant (no spring-return / decay / reset)
+//    next-sample update reflects immediately (no block cache)
+//    outputs always finite and bounded to [-10,+10]
+//    finite value clamps to [0,1]; non-finite is fail-closed
+//    invalid setter preserves FULL four-control state AND subsequent dual trace
 //   ⑩ same per-sample control sequence => bit-identical dual trace under different
 //      buffer partitions
 //   ⑪ real registry joystick.x_out / joystick.y_out (output / cv / bipolar / -10..+10)
 //
 // Negative controls (each narrow old-error RED->revert GREEN) are run separately
-// in a detached /tmp worktree: ① offset ignored, ② X/Y cross-wired or Y copies X,
-// ③ output wrongly unipolar / ±5V rail, ④ output only updated at a block boundary
-// (cached), ⑤ an invalid setter pollutes state/trace, ⑥ only X implemented, Y
+// in a detached /tmp worktree: offset ignored, X/Y cross-wired or Y copies X,
+//  output wrongly unipolar / ±5V rail, output only updated at a block boundary
+// (cached), an invalid setter pollutes state/trace, only X implemented, Y
 // still a shadow/constant. Detectors read real dual-sample output — never source
 // grep / a read-only inspector / a self-copied trace.
 

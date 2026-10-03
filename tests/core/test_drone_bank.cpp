@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P3-① tests for the classic drone bank (core/include/.../drone_bank.h). The bank
+//  tests for the classic drone bank (core/include/.../drone_bank.h). The bank
 // is kMaxVoices independent free-running oscillators; each voice's only source of
 // value is a single seed, so a fixed seed => one deterministic signal.
 //
@@ -10,7 +10,7 @@
 //   tolerance = STATIC (seeded once), drift(t) = time-varying analytic sum of two
 //   sub-acoustic sines (slow bounded-rate, NOT per-sample white noise).
 //
-// Six must-tests, each carrying a red-negative (@Claude: "测不出区别的测试，就没在测
+// Six must-tests, each carrying a red-negative ("测不出区别的测试，就没在测
 // 那个东西"):
 //   1. true independence / free-running (pairwise phase diff varies over time);
 //      negative = a locked/shared-accumulator bank (phase diff constant).
@@ -23,7 +23,7 @@
 //      negative = a model with hidden global/random state.
 //   5. buffer-size independence (per-sample output identical across partitionings);
 //      negative = a block-boundary reset that injects a discontinuity.
-//   6. NEW (@Claude: "断言 drift 的逐样本变化率有界"): drift is slow bounded-rate,
+//   6. NEW ("断言 drift 的逐样本变化率有界"): drift is slow bounded-rate,
 //      not per-sample white noise; negative = white-noise drift (per-sample jump).
 //
 // MSan on Apple Silicon is not available with the shipped toolchain; reproducibility
@@ -49,8 +49,8 @@ constexpr double kDriftRateBound = 0.01;  // Hz/sample: far above the real ~0.00
                                           // far below per-sample white noise.
 
 // Shared judges (measure_freq_hz / wrap_pi / same_render / goertzel_mag /
-// noise_sample_var) live in drone_test_common.h so P3-① and P3-② use the SAME
-// code (@Claude: "判据只有一份"). Pull them in unqualified so the call sites
+// noise_sample_var) live in drone_test_common.h so and use the SAME
+// code ("判据只有一份"). Pull them in unqualified so the call sites
 // below stay unchanged — a change to a detector picks up in both slices at once.
 using drone_test::measure_freq_hz;
 using drone_test::wrap_pi;
@@ -61,7 +61,7 @@ static core::DroneBank make_bank(std::uint64_t seed, double sr,
   return core::DroneBank(seed, sr, voices, drift);
 }
 
-// Render `n` samples of voice 0 (a bank of any voice count) into a vector. tick()
+// Render `n` samples of voice 0 (a bank of any voice count) into a vector. tick
 // writes one value per voice, so we always hand it a properly-sized buffer.
 static std::vector<double> render_single(core::DroneBank& bank, std::size_t n) {
   std::vector<double> vbuf(bank.voiceCount());
@@ -257,7 +257,7 @@ static void test_buffer_size_independence() {
 
 // ------------------------------------------------------ 6. drift rate bounded ----
 
-// NEW must-test (@Claude): drift is SLOW bounded-rate, not per-sample white noise.
+// NEW must-test: drift is SLOW bounded-rate, not per-sample white noise.
 // Assert max |drift(t+1)-drift(t)| < a clear threshold; negative = per-sample
 // white-noise drift.
 static void test_drift_rate_bounded() {

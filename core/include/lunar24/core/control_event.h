@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // ControlEvent: a timestamped external discrete event or parameter command,
-// carrying a sample offset within the current block (design/07 §3).
+// carrying a sample offset within the current block.
 
 #pragma once
 
@@ -16,10 +16,10 @@ namespace lunar24::core {
 
 // Opaque stable identity of the control/event producer (note on/off source,
 // knob, joystick, MIDI channel, UI widget). Used for deterministic same-sample
-// ordering (design/07 §3) — it is NOT a pointer or an address.
+// ordering — it is NOT a pointer or an address.
 using ControlSourceId = std::uint32_t;
 
-// Opaque identity of ONE note/touch press (design/07 §1, GH#8). A press on the
+// Opaque identity of ONE note/touch press. A press on the
 // same source+channel is assigned a fresh monotonically-increasing id by the
 // input adapter; together with (source, channel) it statically distinguishes two
 // overlapping notes from the same producer. It is a release/held-state identity,
@@ -29,7 +29,7 @@ using NoteId = std::uint32_t;
 
 // Dispatch lane. Continuous events (knob/joystick/CC) may coalesce under queue
 // pressure; critical edges (note/gate/clock/sync/reset) must never be dropped
-// silently. The lane is DERIVED from kind (design/07 §3), so it can never
+// silently. The lane is DERIVED from kind, so it can never
 // contradict the kind.
 enum class ControlLane : std::uint8_t {
   continuous = 0,
@@ -47,7 +47,7 @@ enum class ControlEventKind : std::uint8_t {
   reset = 7,       // failsafe: all-gates-off / clock resync
 };
 
-// The dispatch lane an event kind belongs to (design/07 §3: note/gate/clock/
+// The dispatch lane an event kind belongs to (note/gate/clock/
 // sync/reset edges are critical; parameter/pitch/pressure are continuous).
 constexpr ControlLane control_event_lane(ControlEventKind k) {
   switch (k) {
@@ -65,7 +65,7 @@ constexpr ControlLane control_event_lane(ControlEventKind k) {
   return ControlLane::critical;
 }
 
-// Same-sample deterministic phase order (design/07 §3): Reset/failsafe →
+// Same-sample deterministic phase order: Reset/failsafe →
 // Parameter/Pitch/Pressure target → Note/Gate Off → Sync/Clock edge → Note/Gate
 // On. Within a phase, ordering by stable source id and producer sequence.
 constexpr std::uint32_t kControlEventPhaseCount = 5;
@@ -91,26 +91,26 @@ struct ControlEvent {
   std::uint32_t sampleOffset = 0;          // within the current block
   ControlSourceId source = 0;              // stable producer id
   std::uint8_t channel = 0;                // source sub-id (MIDI channel etc.)
-  NoteId noteId = 0;                       // note/touch press identity (GH#8)
+  NoteId noteId = 0;                       // note/touch press identity
   std::uint64_t producerSequence = 0;      // stable tiebreak for same-source ordering
-  // GH#12 task#101: the PERFORMANCE SIDE this event belongs to. An explicit internal
+  // the PERFORMANCE SIDE this event belongs to. An explicit internal
   // metadata field — NOT a persisted format, NOT a ParameterId, NOT a physical jack.
   // source/channel/noteId stay the event's identity; the side is NEVER inferred from a
   // MIDI channel, a pitch range or a noteId range (that would be a guess, not identity).
-  // Old callers that never set it keep the Left default, which is the pre-#101 behaviour.
+  // Old callers that never set it keep the Left default, which is the earlier behaviour.
   // Appended last so every existing positional aggregate initialisation stays valid.
   KeyboardSide side = KeyboardSide::Left;
 
   ControlLane lane() const { return control_event_lane(kind); }
 };
 
-// Strict same-sample, same-block ordering (design/07 §3). The resolved order is:
+// Strict same-sample, same-block ordering. The resolved order is:
 // sampleOffset → phase → stable source id → producer sequence. This is the ONE
 // deterministic comparator the scheduler uses to stabilise control events that
 // share a block; two events with equal (offset, phase, source, sequence) are
 // indistinguishable and any order is valid.
 //
-// GH#12 task#101: `side` is deliberately NOT a comparator key. The two sides are
+// `side` is deliberately NOT a comparator key. The two sides are
 // independent performance instances, so their relative order carries no semantics,
 // and adding a key here would silently re-order existing same-sample sequences with
 // no evidence that the new order is the correct one. Left unchanged by contract.

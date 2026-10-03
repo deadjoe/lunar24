@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// VoiceMixer — P3-⑤: the ten-channel panoramic VOICE MIXER (manual L1099-1113,
+// VoiceMixer —: the ten-channel panoramic VOICE MIXER (manual L1099-1113,
 // registry module id12 "Voice mixer"). It aggregates every audio source into a
 // stereo pair: 10 mono channels, each with a PAN pot and a VOL pot, fed as
 // DRONE1/2/3, EXT.AUDIO, VCO A, VCO B, PREAMP, DRONE4/5/6.
-// Signal chain: → MIX/PAN → DUAL LP/BP VCF → DISTORTION → WET OUT L/R (design/01 §1).
+// Signal chain: → MIX/PAN → DUAL LP/BP VCF → DISTORTION → WET OUT L/R.
 //
 // PROVENANCE (the frozen registry, generated/lunar24/registry.hpp, is the
 // implementation basis; every claim below mirrors it and marks evidence strength):

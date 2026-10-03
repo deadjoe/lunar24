@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P5-① (task #31) — the HOST window-layout choke point (window_layout.h). This is the
+//   the HOST window-layout choke point (window_layout.h). This is the
 // host-side counterpart to the core fit module (host_window_fit.h): it is the ONE place
 // the host turns a design rect into the window it opens, and it MUST consume the core
 // fit module. The mandate's four requirements, pinned here:
@@ -9,10 +9,10 @@
 //   (1) host consumes the module (bypass -> red). A fit host's geometry here EXACTLY
 //       equals core::compute_host_window_fit — proof it delegates, not reimplements.
 //       The bypass (design scale + WM clamp) is the RED case: the bottom row crops.
-//   (2) #15 repayment, decision level: a fit window lands logicalH exactly at the
+//   (2) repayment, decision level: a fit window lands logicalH exactly at the
 //       available height and the bottom design row is REACHABLE. This is the "the bottom
 //       141px is reachable" decision, parameterized on the available area (no 141 here).
-//   (3) 7 zoom scales + fit -> logical coordinates unchanged. Reuses slice-④: the
+//   (3) 7 zoom scales + fit -> logical coordinates unchanged. Reuses slice-: the
 //       mapping designPos->logicalPos is ALWAYS designPos * drawScale and the backing is
 //       design * drawScale * screenScale, with screenScale NEVER folded into drawScale.
 //   (4) iPlug2 pin unmodified checked MECHANICALLY — that is the separate
@@ -39,13 +39,13 @@ constexpr double kDesignH = kDesignHeight;  // 1551.0
 constexpr double kVisibleW = 2400.0;        // this screen's visible logical width (data)
 constexpr double kVisibleH = 1410.0;        // this screen's visible logical height (data)
 
-// The design control row the #15 criterion cares about: the panel bottom (same as the
+// The design control row the criterion cares about: the panel bottom (same as the
 // core precursor test). Its BOTTOM edge (y1) is what crops under a clamp.
 constexpr DesignRect kBottomRow{0.0, 1451.0, kDesignW, 1519.0};
 
 // The 7 zoom steps the panel offers, plus "fit" (expressed as zoomScale<=0). These are
 // DATA for the invariance test — the invariance is about the MAPPING RULE (logicalPos =
-// designPos * drawScale), not about which specific values. slice-④'s whole point.
+// designPos * drawScale), not about which specific values. slice-'s whole point.
 constexpr std::array<double, 7> kZoomScales{{0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0}};
 
 // The screen scale (retina) is a SEPARATE multiplier, never coupled to drawScale. These
@@ -56,7 +56,7 @@ constexpr double kRetina = 2.0;
 bool near(double a, double b) { return std::fabs(a - b) < 1e-9; }
 
 int run(const char* suite) {
-  // (1) HOST CONSUMES THE MODULE / (2) #15 DECISION — a fit host on the defective screen
+  // (1) HOST CONSUMES THE MODULE / (2) DECISION — a fit host on the defective screen
   // (visible height 1410 < design 1551) delegates to the core fit, lands logicalH exactly
   // at the visible height, and the bottom design row is ON-WINDOW. This is the fix at the
   // decision layer: fit, not clamp.
@@ -75,7 +75,7 @@ int run(const char* suite) {
     CHECK(near(w.logicalH, coreFit.logicalH));
     CHECK(coreFit.fullHeightVisible == true);  // the core itself sees the whole design fits
 
-    // #15 criterion: the window is the WHOLE panel scaled to fit — bottom row reachable,
+    //  criterion: the window is the WHOLE panel scaled to fit — bottom row reachable,
     // and the panel's full base (design 1551) lands at logicalH (1410), so nothing crops.
     CHECK(near(w.drawScale, kVisibleH / kDesignH));  // 1410/1551 = 0.9090..
     CHECK(near(w.logicalH, kVisibleH));
@@ -100,7 +100,7 @@ int run(const char* suite) {
     CHECK(near(kDesignH - kVisibleH, 141.0));
   }
 
-  // (3) ZOOM INVARIANCE (slice-④). For each of the 7 zoom scales AND fit, the mapping
+  // (3) ZOOM INVARIANCE (slice). For each of the 7 zoom scales AND fit, the mapping
   // rule is unchanged: a design point maps to logicalPos = designPos * drawScale, and the
   // window logical size is design * drawScale. The screenScale is never folded in — the
   // LOGICAL coordinates are independent of it (only backing changes).
@@ -128,7 +128,7 @@ int run(const char* suite) {
   }
 
   // RETINA NEVER FOLDS INTO drawScale. Same zoom, two screen scales: logical/drawScale
-  // identical, only backing differs. This is slice-④'s bug — folding the 2x in changes the
+  // identical, only backing differs. This is slice-'s bug — folding the 2x in changes the
   // logical coordinates and mis-places hit-test/cable points.
   {
     const WindowLayout a =
@@ -188,7 +188,7 @@ static void case_placement() {
 }
 
 int main() {
-  std::printf("== P5-1 host window layout: consume core fit + #15 reachability ==\n");
+  std::printf("== P5-1 host window layout: consume core fit + reachability ==\n");
   case_placement();
   return run("host_window_layout");
 }

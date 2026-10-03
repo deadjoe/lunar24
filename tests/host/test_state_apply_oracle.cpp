@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_state_apply_oracle.cpp — the strong product oracle for GH#12 9B (task#76, REV-2).
+// test_state_apply_oracle.cpp — the strong product oracle for.
 //
 // This ONE CTest drives the framework-free StandaloneAudioEngine's state-apply surface
 // (applyDeviceState) through its public contract, on the same production path the host
@@ -10,20 +10,20 @@
 // any of that; it drives the public applyDeviceState/processBlock surface, so a builder or
 // owner that bypasses the machine/identity apply (or the adapter) has nowhere to hide.
 //
-// What is asserted (@Codex task#76 card rev 2 + REV-2 BLOCK c74890ff):
-//   1. SAFE BOOT == DEFAULT STATE  — prepare(seed) publishes a canonical state wire-equal
+// What is asserted (+ BLOCK:
+//   1. SAFE BOOT == DEFAULT STATE — prepare(seed) publishes a canonical state wire-equal
 //                                  to make_default_device_state(seed) (no separate truth).
-//   2. ROUNDTRIP APPLY + RENDER    — default -> encode -> decode -> migrate -> validate ->
+//   2. ROUNDTRIP APPLY + RENDER — default -> encode -> decode -> migrate -> validate ->
 //                                  applyDeviceState -> multi-block render; non-silent WET.
-//   3. DISTINCT CALIBRATION        — same seed, different calibration trims -> distinct WET
-//                                  trace (the GH#6 trim is actually applied, not ignored).
-//   4. DISTINCT SEED               — different identity seed -> distinct WET trace.
-//   5. INVALID LEAVES PRIOR        — an invalid candidate is ATOMIC: engine stays ready,
+//   3. DISTINCT CALIBRATION — same seed, different calibration trims -> distinct WET
+//                                  trace (the trim is actually applied, not ignored).
+//   4. DISTINCT SEED — different identity seed -> distinct WET trace.
+//   5. INVALID LEAVES PRIOR — an invalid candidate is ATOMIC: engine stays ready,
 //                                  canonical state byte-unchanged, plan/format unchanged,
-//                                  re-render bit-identical. Pins plan + format (REV-2).
+//                                  re-render bit-identical. Pins plan + format.
 //   6. REJECTED FORMAT LEAVES PRIOR— an illegal format (NaN rate) same atomic-no-op, and pins
-//                                  plan + sampleRate/blockSize/io capability too (REV-2).
-//   7. FULL-STATE PRESERVED        — REV-3: ONE legal state writing simultaneously an effector
+//                                  plan + sampleRate/blockSize/io capability too.
+//   7. FULL-STATE PRESERVED —: ONE legal state writing simultaneously an effector
 //                                  param (preserved_deferred), a program-owner param, a
 //                                  transfer-unavailable param, left/right keyboard + preset payload,
 //                                  a coherent cable+route with a SUPPORTED source (env_follower),
@@ -31,34 +31,34 @@
 //                                  canonical state is byte-for-byte the wire of that same state. A
 //                                  single-field-lost (e.g. effector_x dropped back to default) goes
 //                                  RED here.
-//   8. KEYBOARD-SOURCE CABLE       — GH#12 keyboard product owner: the SAME validated composite but with
+//   8. KEYBOARD-SOURCE CABLE — keyboard product owner: the SAME validated composite but with
 //                                  the keyboard V/OCT cable source (machine_definition.h) is LEGAL and
 //                                  ACCEPTED — keyboard is now a supported kKeyboard module, so the
 //                                  restored edge compiles into the strict graph and the owner returns a
-//                                  TYPED Accepted with the wire preserved byte-for-byte. (task#80 pinned
-//                                  the RejectedGraph negative for this source; GH#12 overturns it and that
+//                                  TYPED Accepted with the wire preserved byte-for-byte. (pinned
+//                                  the RejectedGraph negative for this source; overturns it and that
 //                                  negative now lives in test_machine_cable_restore f.)
-//   9. ALLOCATOR (separate TU)     — the processBlock render path allocates 0 bytes.
-//  10. INVALID STATE REJECTED      — a parameter_out_of_range candidate is rejected by BOTH
+//   9. ALLOCATOR (separate TU) — the processBlock render path allocates 0 bytes.
+//  10. INVALID STATE REJECTED — a parameter_out_of_range candidate is rejected by BOTH
 //                                  buildMachineRuntimeCandidate and applyDeviceState (the
-//                                  validator-bypass counter-example @Codex flagged in rev 2).
-//  11. RUNTIME SEED (DRY)          — the runtime voice seed is a REAL input: two seeds give
+//                                  validator-bypass counter-example flagged in rev 2).
+//  11. RUNTIME SEED (DRY) — the runtime voice seed is a REAL input: two seeds give
 //                                  DISTINCT DRY A/B traces. DRY A/B are tapped BEFORE the
 //                                  VCF->distortion chain, so they isolate the runtime-seed
 //                                  path from the (also seed-derived) configureVcfIdentity path
-//                                  (@Codex issue 2: the WET diff could come from identity
+//                                  (issue 2: the WET diff could come from identity
 //                                  alone, leaving a hardcoded runtime seed undetected).
-//  12. IDENTITY PROFILE CONSUMERS  — every GH#6 consumer (VCF input drive, distortion drive,
+//  12. IDENTITY PROFILE CONSUMERS — every consumer (VCF input drive, distortion drive,
 //                                  distortion rail, L/R path staging x calibration trim) reads
 //                                  the LIVE runtime value, and each equals the derived
 //                                  profile. A stored-but-not-applied profile goes RED
-//                                  (@Codex issue 3).
-//  13. CHURN A->B->A (RENDERS)     — REV-3: same engine round-trips valid states; canonical truth
+//                                  (issue 3).
+//  13. CHURN A->B->A (RENDERS) —: same engine round-trips valid states; canonical truth
 //                                  byte-identical on return AND a block renders after EACH apply,
 //                                  byte-identical to a FRESH engine applying the same state (each
 //                                  apply re-constructs the definition at t=0, so no stale/dangling
 //                                  contracts-bindings pointer survives a churn apply).
-//  14. BLOCK PARTITION CONSISTENT  — REV-3: the same machine renders PER-SAMPLE EXACT == output
+//  14. BLOCK PARTITION CONSISTENT —: the same machine renders PER-SAMPLE EXACT == output
 //                                  across all 4 channels regardless of the block partition (no
 //                                  block-coupled reset / no <tiny tolerance mask).
 
@@ -141,7 +141,7 @@ bool wireEqual(const DeviceStateV1& a, const DeviceStateV1& b) {
   return wa == kWire && wb == kWire && std::memcmp(ba.data(), bb.data(), kWire) == 0;
 }
 
-// Pin a plan's deterministic fields (REV-2 atomicity). DevicePlan is a plain value struct;
+// Pin a plan's deterministic fields (atomicity). DevicePlan is a plain value struct;
 // we compare every field that defines "the same prepared route" (layout, capability, mapping,
 // input route). No operator== exists, so this is the honest field-wise equivalent.
 bool planEqual(const DevicePlan& a, const DevicePlan& b) {
@@ -162,16 +162,16 @@ void fillDcIn(double in[1][kF], double v) {
   for (int f = 0; f < kF; ++f) in[0][f] = v;
 }
 
-// Build the ONE "every conserved family at once" composite (REV-3) with a caller-chosen cable
+// Build the ONE "every conserved family at once" composite with a caller-chosen cable
 // SOURCE. The sink is ALWAYS vco_a_v_oct_in (the route_keyboard_v_oct_to_vco sink), so the cable's
 // presence makes routeOverridden[that route]==1 — the mutually-consistent (cable, route) pair —
 // regardless of the source. `cableSource` is the ONLY varying field between the two cases:
-//   * env_follower_env_out  (a SUPPORTED module) -> the whole state compiles and the owner accepts it.
-//   * keyboard_v_oct_out    (NOW a supported kKeyboard module, GH#12) -> the state compiles and the
-//                          owner accepts it too (the keyboard-source positive witness). task#80 typed
-//                          this source as RejectedGraph (it was kUnsupported then); GH#12 overturns
+//   * env_follower_env_out (a SUPPORTED module) -> the whole state compiles and the owner accepts it.
+//   * keyboard_v_oct_out (NOW a supported kKeyboard module) -> the state compiles and the
+//                          owner accepts it too (the keyboard-source positive witness). typed
+//                          this source as RejectedGraph (it was kUnsupported then); overturns
 //                          that, and the typed-RejectedGraph negative now lives in test_machine_cable_restore.
-//                          See keyboard_source_cable_accepted() below.
+//                          See keyboard_source_cable_accepted below.
 DeviceStateV1 conserved_composite(JackId cableSource) {
   constexpr std::uint64_t kSeed = 0xB0101u;
   DeviceStateV1 st = make_default_device_state(kSeed);
@@ -181,7 +181,7 @@ DeviceStateV1 conserved_composite(JackId cableSource) {
   st.parameters[static_cast<std::uint32_t>(ParameterId::effector_x)] = 0.25;
   st.parameters[static_cast<std::uint32_t>(ParameterId::program_cathedral_1_x)] = 0.25;
   // (b) a NON-DEFAULT value in the pwm class, still preserved byte-exact through encode/decode.
-  //     GH#19 S0 / task #117 reclassified vco_a_pwm from transfer_unavailable to applied_to_dsp
+  //      reclassified vco_a_pwm from transfer_unavailable to applied_to_dsp
   //     (it now reaches a real consumer: Vco::setPwDepth -> effectiveDuty), so this composite is no
   //     longer "a landed param with NO runtime consumer" — it is an ORDINARY applied_to_dsp value,
   //     and the byte-preservation asserted on it below is correspondingly an ordinary one. The
@@ -219,7 +219,7 @@ void safe_boot_default_equality() {
   CHECK(e.prepare(kSeed, 48000.0, kF, 1, 4));       // safe boot.
   CHECK(e.isReady());
   CHECK(e.stateApplyStatus() == StateApplyStatus::Accepted);
-  CHECK(e.identityApplied());                       // the GH#6 profile applied to the default too.
+  CHECK(e.identityApplied());                       // the profile applied to the default too.
   const DeviceStateV1* cs = e.canonicalState();
   CHECK(cs != nullptr);
   CHECK(wireEqual(*cs, dflt));                       // prepare(seed) == make_default_device_state(seed).
@@ -268,7 +268,7 @@ void distinct_calibration_trace() {
   DeviceStateV1 a = make_default_device_state(kSeed);
   DeviceStateV1 b = make_default_device_state(kSeed);
   // Same seed/version (same identity profile) but a clearly-different calibration trim: the
-  // GH#6 trim is a real VCF->distortion staging multiplier, so it must change the WET trace.
+  //  trim is a real VCF->distortion staging multiplier, so it must change the WET trace.
   a.calibration.vcfLeftTrim = 0.25f;
   a.calibration.vcfRightTrim = 0.25f;
   b.calibration.vcfLeftTrim = 2.00f;
@@ -287,7 +287,7 @@ void distinct_calibration_trace() {
   CHECK(eb.processBlock(inp, pB, 1, 4, kF) == EngineStatus::Rendered);
 
   // A trim that is ignored / never applied would give two IDENTICAL traces — this is the
-  // detector that the GH#6 calibration is actually consumed, not stored-only.
+  // detector that the calibration is actually consumed, not stored-only.
   bool differs = false;
   for (int f = 0; f < kF; ++f) {
     if (std::fabs(outA[WET_L][f] - outB[WET_L][f]) > kTiny ||
@@ -332,8 +332,8 @@ void distinct_seed_trace() {
 }
 
 // ---- 5. invalid candidate leaves prior unchanged (atomic) ------------------------------
-// REV-2: ALSO pins that the rejection does not touch the plan or the format the engine was
-// prepared with (only the canonical-state pin existed in rev 1; @Codex asked for the full
+// ALSO pins that the rejection does not touch the plan or the format the engine was
+// prepared with (only the canonical-state pin existed in rev 1; asked for the full
 // old definition/state + plan + sampleRate/blockSize/io-capability pin).
 void invalid_leaves_prior_unchanged() {
   constexpr std::uint64_t kSeed = 444u;
@@ -393,7 +393,7 @@ void invalid_leaves_prior_unchanged() {
 }
 
 // ---- 6. rejected format leaves prior unchanged (atomic) --------------------------------
-// REV-2: pins plan + format too (as above).
+// pins plan + format too (as above).
 void rejected_format_leaves_prior() {
   constexpr std::uint64_t kSeed = 999u;
   const DeviceStateV1 valid = make_default_device_state(kSeed);
@@ -435,8 +435,8 @@ void rejected_format_leaves_prior() {
       CHECK(outAfter[c][f] == ref[c][f]);
 }
 
-// ---- 7. full-state preservation byte-for-byte (REV-3 / task#80 cable fix) ---------------
-// @Codex REV-3 item 1: the rev-2 preservation test set only a calibration trim + one keyboard seq
+// 7. full-state preservation byte-for-byte (cable fix) ---------------
+//   item 1: the preservation test set only a calibration trim + one keyboard seq
 // note, so a "drop a preserved field back to its registry initial" mutation (e.g. effector_x forced
 // back to 0.5) left the oracle green. This test writes ONE legal state that touches a representative
 // of EVERY conserved family at once — a preserved_deferred effector param, a preserved_deferred
@@ -444,9 +444,9 @@ void rejected_format_leaves_prior() {
 // coherent legal cable+route with a SUPPORTED source (env_follower), left/right ProgramId, and a
 // reserved byte — then asserts the applied canonical state is byte-for-byte the WIRE of that same
 // state. Any single field lost / re-zeroed (the exact "drop preserved family" mutation) goes RED.
-// @Codex 103f94b3 (task#80): the original fixture used keyboard_v_oct_out as the cable source; since
-// task#80 restores user-cables into the graph, that pulled the then-kUnsupported keyboard module in and
-// the owner REJECTED it, so the preservation fixture uses the supported env_follower source. GH#12 made
+// f94b3: the original fixture used keyboard_v_oct_out as the cable source; since
+//  restores user-cables into the graph, that pulled the then-kUnsupported keyboard module in and
+// the owner REJECTED it, so the preservation fixture uses the supported env_follower source. made
 // keyboard a supported kKeyboard module, so the keyboard-cable case is now the independent POSITIVE
 // case (8, keyboard_source_cable_accepted) — the two supported sources cross-check each other, and the
 // typed-RejectedGraph negative now lives in test_machine_cable_restore (f).
@@ -463,23 +463,23 @@ void full_state_preserved() {
   const StateApplyStatus applied = e.applyDeviceState(st, 48000.0, kF, 1, 4);
   CHECK(applied == StateApplyStatus::Accepted);
   if (applied != StateApplyStatus::Accepted)
-    return;   // null-safety: never deref a null canonicalState()/runtime() past a non-Accepted apply.
+    return;   // null-safety: never deref a null canonicalState/runtime past a non-Accepted apply.
   CHECK(e.identityApplied());
   CHECK(wireEqual(*e.canonicalState(), st));   // every field preserved byte-for-byte.
 }
 
-// ---- 8. keyboard-source cable is a typed Accepted (GH#12 keyboard product owner) --------
-// GH#12 makes keyboard a supported (kKeyboard) control source. The SAME validated composite, but with
+// 8. keyboard-source cable is a typed Accepted (keyboard product owner) --------
+//  makes keyboard a supported (kKeyboard) control source. The SAME validated composite, but with
 // the keyboard V/OCT -> VCO A V/OCT source: the state still VALIDATES (check_routes accepts a cable on
 // the route's own sink), and because keyboard is now a SUPPORTED module the restored edge compiles into
 // the strict graph, so the real owner returns a TYPED StateApplyStatus::Accepted with the wire preserved
 // byte-for-byte.
 //
-// This is the positive witness @Kimi (ccb43c67) ruled to replace the task#80 negative, which GH#12
+// This is the positive witness ruled to replace the negative, which
 // overturns: the keyboard-cable state is still LEGAL (validate.ok) and is now ACCEPTED, not rejected.
 // It mirrors section 7 (full_state_preserved, env_follower source): two independent SUPPORTED sources
 // are both Accepted, so acceptance is not a keyboard-only special case. The typed-RejectedGraph negative
-// task#80 pinned here is NOT lost — it now lives in test_machine_cable_restore (f), on the sink-side
+//  pinned here is NOT lost — it now lives in test_machine_cable_restore (f), on the sink-side
 // effector/voices path that stays kUnsupported.
 void keyboard_source_cable_accepted() {
   // The composite with the keyboard cable source: keyboard is a real supported module, so the restored
@@ -494,14 +494,14 @@ void keyboard_source_cable_accepted() {
   const StateApplyStatus applied = e.applyDeviceState(st, 48000.0, kF, 1, 4);
   CHECK(applied == StateApplyStatus::Accepted);
   if (applied != StateApplyStatus::Accepted)
-    return;   // null-safety: never deref a null canonicalState()/runtime() past a non-Accepted apply.
+    return;   // null-safety: never deref a null canonicalState/runtime past a non-Accepted apply.
   CHECK(e.identityApplied());
   CHECK(wireEqual(*e.canonicalState(), st));   // every field preserved byte-for-byte.
 }
 
 // ---- 9. invalid state (parameter_out_of_range) is rejected everywhere ----------------
-// REV-2 issue 1: the rev-1 candidate let a state ctor mint a "valid" definition from an
-// INVALID DeviceState (validate_device_state==0 but valid()==1), bypassing validation. The
+//  issue 1: the candidate let a state ctor mint a "valid" definition from an
+// INVALID DeviceState (validate_device_state==0 but valid==1), bypassing validation. The
 // state ctor is now private and the builder folds validation/identity/graph into one decision,
 // so an out-of-range parameter must be rejected by BOTH the builder and applyDeviceState.
 void invalid_state_rejected() {
@@ -532,12 +532,12 @@ void invalid_state_rejected() {
 }
 
 // ---- 10. runtime voice seed is a REAL input (seeded drone channels, pre-chain) ---------
-// REV-2 issue 2: the rev-1 WET-seed test was a false-green because the WET-trace diff comes
+//  issue 2: the WET-seed test was a false-green because the WET-trace diff comes
 // from configureVcfIdentity (which is ALSO seed-derived), masking a hardcoded runtime seed.
 //
 // The isolation channel is the runtime's OWN seeded voice value, read LIVE from the DSP:
-// droneChannel(0..3) (classic drone_1/2/4/5, seeded from `seed_`) and drone3Channel()/
-// drone6Channel() (the Papa Srapa voices, seeded from newVoiceSeed(seed_,0/1)). These are the
+// droneChannel(0..3) (classic drone_1/2/4/5, seeded from `seed_`) and drone3Channel/
+// drone6Channel (the Papa Srapa voices, seeded from newVoiceSeed(seed_,0/1)). These are the
 // SEEDED voice outputs BEFORE the VCF->distortion chain, so they depend on the runtime voice
 // seed but NOT on configureVcfIdentity (post-chain) — the exact isolation that makes the
 // "runtime seed = constant 0" mutation go RED.
@@ -563,7 +563,7 @@ void runtime_seed_drives_drone() {
 
   // The getters read the last-executed frame, so we snapshot after each of several blocks to
   // collect multiple seed-sensitive sample points (a single frame could coincidentally coincide).
-  // REV-3: use the by-value observeRuntime() snapshot (NOT a long-lived runtime() pointer) so no
+  // use the by-value observeRuntime snapshot (NOT a long-lived runtime pointer) so no
   // pointer is held across an apply — these engines are never re-applied here, but the snapshot is
   // the always-safe form and keeps the test free of the dangling-pointer hazard item.
   bool anyLive = false;
@@ -590,8 +590,8 @@ void runtime_seed_drives_drone() {
   CHECK(anyDiffers);
 }
 
-// ---- 11. every GH#6 consumer reads the LIVE derived profile --------------------------
-// REV-2 issue 3: deleting vcf_.setInputDrive(...) (or any one GH#6 consumer) left the rev-1
+// 11. every consumer reads the LIVE derived profile --------------------------
+//  issue 3: deleting vcf_.setInputDrive(...) (or any one consumer) left the
 // oracle green, because it only observed the WET trace. This case reads the LIVE runtime value
 // for EVERY consumer and asserts each equals the derived profile's value. A stored-but-not-
 // applied profile, a wiring error, or an L/R swap all go RED here.
@@ -605,7 +605,7 @@ void identity_profile_consumers() {
   StandaloneAudioEngine e;
   CHECK(e.applyDeviceState(st, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
   CHECK(e.identityApplied());
-  // REV-3: read via the by-value observeRuntime() snapshot, so no runtime() pointer is held at all
+  // read via the by-value observeRuntime snapshot, so no runtime pointer is held at all
   // (a pointer would dangle on the next apply). The snapshot copies every consumer scalar once.
   const StandaloneAudioEngine::RuntimeObservation obs = e.observeRuntime();
   CHECK(obs.identityConfigured);
@@ -627,8 +627,8 @@ void identity_profile_consumers() {
 }
 
 // ---- 12. churn A->B->A on the same engine (renders after every apply) -----------------
-// REV-2: a valid state round-trips through competing applies on ONE engine; the canonical truth
-// is byte-identical on return. REV-3 (@Codex item 2): the rev-2 churn NEVER rendered after a
+// a valid state round-trips through competing applies on ONE engine; the canonical truth
+// is byte-identical on return. (item 2): the churn NEVER rendered after a
 // commit, so a re-apply that left the runtime's contracts/bindings pointing into the PRIOR
 // (now-released) definition would be invisible. Every apply here ALSO renders one block and
 // compares it bit-for-bit to a FRESH engine's first block of the SAME state: because each
@@ -696,7 +696,7 @@ void churn_applies_state_around() {
 }
 
 // ---- 13. block partition-independence ------------------------------------------------
-// REV-2: the same machine must render per-sample identical output regardless of how the input
+// the same machine must render per-sample identical output regardless of how the input
 // is chunked into processBlock calls. A block-coupled reset / per-block accumulation would make
 // the two partitions diverge — the machine must be sample-deterministic.
 void block_partition_consistent() {
@@ -730,7 +730,7 @@ void block_partition_consistent() {
     CHECK(eb.processBlock(inp, pB, 1, 4, kHalf) == EngineStatus::Rendered);
   }
 
-  // Per-sample EXACT-identical on EVERY output channel (REV-3: no <tiny tolerance that could mask a
+  // Per-sample EXACT-identical on EVERY output channel (no <tiny tolerance that could mask a
   // block-coupled reset). The machine must be block-partition independent at full float precision.
   for (int c = 0; c < 4; ++c)
     for (int f = 0; f < kTotal; ++f)
@@ -777,7 +777,7 @@ void allocator_probe() {
 }  // namespace
 
 int main() {
-  std::printf("== GH#12 9B: state-aware runtime candidate apply oracle (task#76, REV-3) ==\n");
+  std::printf("== : state-aware runtime candidate apply oracle ==\n");
   safe_boot_default_equality();
   default_roundtrip_apply();
   distinct_calibration_trace();

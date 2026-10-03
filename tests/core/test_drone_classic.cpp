@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// #39 (GH#5, A04) classic drone STRUCTURE tests. The P3-① bank (test_drone_bank.cpp)
+//  (A04) classic drone STRUCTURE tests. The bank (test_drone_bank.cpp)
 // proved the free-run/tolerance/drift/sr frequency MODEL. This file proves the
-// manual's CLASSIC SOLAR 50 structure is real (design/00-status A04 gap):
+// manual's CLASSIC SOLAR 50 structure is real (status A04 gap):
 //
-//   1. the waveform is a real SAWTOOTH, not a sine (@Claude: "锯齿波形").
+//   1. the waveform is a real SAWTOOTH, not a sine ("锯齿波形").
 //   2. the oscillator nonlinearity is NON-IDENTITY (negistor transfer, "真实非线性
 //      恒等不算") — the P3 exit criterion #1 blocker.
 //   3. generator roles are ordered low / medium / high (1st,2nd=low; 3rd=med; 4th,5th=high).
@@ -16,14 +16,14 @@
 //   7. past half the VOLT stroke the generators start mutual FM (period de-uniforms);
 //      below half the period stays steady.
 //
-// STRUCTURE vs CONSTANTS (design/07 §3): these assert the STRUCTURE is present and
+// STRUCTURE vs CONSTANTS: these assert the STRUCTURE is present and
 // correct. None assert a measured circuit constant — the negistor curve coefficients,
 // the tune/VOLT law and the FM depth are PROVISIONAL and recorded in FINDINGS. A
 // mutation that removes any piece of structure (sine wave, identity nonlinearity,
 // flat roles, ignored MUTE/TUNE/VOLT/FM) must red this test.
 //
 // Detectors (max_adjacent_step / zero_crossing_interval_spread) live in
-// drone_test_common.h so P3-① and P3-② share the same code (@Claude: "判据只有一份").
+// drone_test_common.h so and share the same code ("判据只有一份").
 
 #include "mini_test.h"
 
@@ -63,7 +63,7 @@ static std::vector<double> render_channel(core::DroneBank& bank, std::size_t ch,
 
 // A discontinuous wave (sawtooth) has one sample-to-sample step approaching 2x its peak
 // level (the wrap); a continuous wave (sine) has a step bounded by 2*pi*peak*f/fs << peak.
-// The task #110 polyBLEP correction spreads that wrap over the correction window, so the
+// The polyBLEP correction spreads that wrap over the correction window, so the
 // ratio is measured at 2.000 naive and 1.800..1.828 corrected (scratch/s2_integration_preview.txt)
 // -- still far above the 1.0x the assertion below requires, which is why this test is not
 // expected to move. The threshold is deliberately kept at 1.0x rather than tightened to
@@ -198,7 +198,7 @@ static void test_classic_mutual_fm() {
 }
 
 // ------------------------------------------------- 8. group GATE envelope --------
-// batch 4A (GH#5): the 4 classic voices each have a gate/ATT/RLS/HOLD envelope that
+// batch 4A: the 4 classic voices each have a gate/ATT/RLS/HOLD envelope that
 // gates the GROUP's summed audio (not the individual generators). Gate rises/open =>
 // monotonic ATTACK toward the open target; falls => monotonic RELEASE toward 0; a
 // larger ATT/RLS norm malls = a SLOWER stage. The oscillators free-run (phase is never
@@ -357,7 +357,7 @@ static void test_classic_group_isolation() {
 
 // ------------------------------------------------- 12. shared CV MOD -----------
 // The group's shared CV MOD detunes ONLY generators whose MOD button is on; a MOD-off
-// generator is unresponsive (design/07 §7). The group CV moves MOD-on generators
+// generator is unresponsive. The group CV moves MOD-on generators
 // exponentially: x 2^(groupCv * octaves-per-volt), the CV knob setting the depth.
 static void test_classic_group_mod_cv() {
   const std::uint64_t seed = 0xEC7E0005ULL;
@@ -389,7 +389,7 @@ static void test_classic_noise_per_gen() {
   core::DroneBank a1 = make_bank(seedA, sr, 5, false);
   core::DroneBank a2 = make_bank(seedA, sr, 5, false);
   core::DroneBank b = make_bank(seedB, sr, 5, false);
-  // noiseJitterHz() returns the LAST-APPLIED jitter (the value that entered the frequency
+  // noiseJitterHz returns the LAST-APPLIED jitter (the value that entered the frequency
   // accumulation during the most recent tick; 0 before any tick). So tick each bank exactly
   // one sample first, then read the value that actually went into effFreq that sample.
   // This is the point-4 semantic fix: the inspector must NOT recompute the NEXT sample's
@@ -422,7 +422,7 @@ static void test_classic_noise_per_gen() {
   CHECK(differsAcrossSeed);
 }
 
-// Point-4 output-pinned jitter detector (@Codex 52d3c620): the inspector must be tied to
+// Point-4 output-pinned jitter detector (d3c620): the inspector must be tied to
 // what the audio ACTUALLY applied, not merely self-consistent with its own recompute. For
 // a single generator with drift off, mod off, tune/volt normal (no mutual-FM, no env), the
 // per-sample phase advance is exactly twoPi*effFreq/sr and effFreq = effectiveFreqHz + jitter.

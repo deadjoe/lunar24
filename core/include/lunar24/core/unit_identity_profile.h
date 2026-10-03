@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Unit identity profile — GH#6: the central, versioned micro-difference source of
+// Unit identity profile —: the central, versioned micro-difference source of
 // truth for "this same-built machine's" VCF / distortion path. Design/07 §7:
 //
 //   "首次运行生成并持久保存 UnitIdentitySeed，确定 20 个 classic drone
@@ -19,15 +19,15 @@
 //
 // WHAT IT DERIVES (per physical L/R domain — the domains are never shared):
 //
-//   * vcfDrive   — VCF input-stage saturation strength (the input-level driven
-//                  nonlinearity of design/07 §7). Small-signal effect is a unit
+//   * vcfDrive — VCF input-stage saturation strength (the input-level driven
+//                  nonlinearity of). Small-signal effect is a unit
 //                  slope; high input folds toward a lower normalised gain, so the
 //                  LEFT and RIGHT channels saturate independently/by a micro.
-//   * distDrive  — post-filter Distortion folding-drive micro-difference (L/R).
-//   * pathGain   — near-unity path-gain micro-difference, applied ONCE at the
+//   * distDrive — post-filter Distortion folding-drive micro-difference (L/R).
+//   * pathGain — near-unity path-gain micro-difference, applied ONCE at the
 //                  VCF→distortion staging point (before the post-filter fold).
 //
-// PROVISIONAL DISPOSITION (design/07 §7, and @Codex's GH#6 boundary): every range,
+// PROVISIONAL DISPOSITION (and boundary): every range,
 // rail, drive and trim value below is UN-EVIDENCED (no manual / measured figure
 // exists). These are deliberately provisional modeling constants that pin trends
 // only — a small L/R micro-difference, a level-dependent input fold, a near-unity
@@ -65,7 +65,7 @@ inline constexpr std::uint32_t kIdentityModelVersionSupported = 1u;
 
 // L/R physical domain discriminator. The two domains are INDEPENDENT: each draws
 // from its own domain-salted stream and the derived profile is NOT shared (the
-// calibration/nonlinear-state-independence requirement of design/07 §7).
+// calibration/nonlinear-state-independence requirement of).
 enum class IdentitySide : std::uint8_t {
   kLeft = 0,
   kRight = 1,

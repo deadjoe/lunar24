@@ -1,20 +1,20 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// SynthRuntime — #38 (GH#4 A03): the framework-free MACHINE RUNTIME that the
+// SynthRuntime —: the framework-free MACHINE RUNTIME that the
 // product (the host's realtime audio callback) actually drives. It is the ONE
-// execution surface in the product path that consumes a compile_graph() plan —
-// the hard rule from the acceptance (msg 43da88a5): the criteria MUST be run
+// execution surface in the product path that consumes a compile_graph plan —
+// the hard rule from the acceptance: the criteria MUST be run
 // against this runtime, never a test-internal second executor.
 //
-// ARCHITECTURE — @Claude ruling 2 (option B): the switch layer is GONE. There is
+// ARCHITECTURE — (option B): the switch layer is GONE. There is
 // no separate "voice-chain order" and no SignalPath hard-code. The pluggable
-// (JackId) control patches and the FIXED internal routes (design/07 §4 Decision B:
+// (JackId) control patches and the FIXED internal routes (Decision B:
 // `module.port` identity, no JackId) are merged into ONE compile plan by
-// compile_graph() in rebuild(). The runtime derives its render order and its
+// compile_graph in rebuild. The runtime derives its render order and its
 // cycle-breaking from THAT single plan:
 //
-//   * Ordering. rebuild() flattens the plan's regions (which the compiler
+//   * Ordering. rebuild flattens the plan's regions (which the compiler
 //     topological-sorts across the merged pluggable+fixed graph) into the ordered
 //     fixed-chain role sequence the render dispatches. The mixer/vcf/dist run when
 //     and where the plan says — not in a hard-coded fixed order.
@@ -29,31 +29,31 @@
 // the VCF: the host binds ModuleId -> FixedChainRole (registry semantic) and the
 // plan's module membership decides which roles are actually present. UNBOUND
 // modules are skipped (they are control-only modules the plan may still carry).
-// This is a binding table, not numeric ids — see setVoctBindings()'s comment.
+// This is a binding table, not numeric ids — see setVoctBindings's comment.
 //
-// CV RESOLUTION (unchanged from ruling 1). rebuild() compiles the effective edges.
+// CV RESOLUTION (unchanged from ruling 1). rebuild compiles the effective edges.
 // Each Frame with driveGraph=true resolves every bound CONTROL voice-input jack
 // (VCO v_oct, VCF cv) from the value at the source jack of its incoming edge.
-// driveGraph=false is the NEGATIVE control for criterion ①.
+// driveGraph=false is the NEGATIVE control for.
 //
 // The voice-input jack -> parameter mapping IS a registry semantic, held as an
-// explicit binding table. The drone CLASSIC/NEW split is design/01 §3-CONFIRMED.
+// explicit binding table. The drone CLASSIC/NEW split is
 //
-// RT CONTRACT (criterion ⑤): processFrame()/processBlock() allocate nothing, take
+// RT CONTRACT: processFrame/processBlock allocate nothing, take
 // no lock, touch no file/log. All state is preallocated. The patch plan is compiled
-// off the audio thread (rebuild() at setup, planGraph() for live cable edits) and the
-// audio thread only swaps a finished plan in (installGraphPlan()) and reads the derived
+// off the audio thread (rebuild at setup, planGraph for live cable edits) and the
+// audio thread only swaps a finished plan in (installGraphPlan) and reads the derived
 // execution slots / feedback lines.
 //
-// DETERMINISM (criterion ④): no randomness in the audio path. The per-frame DSP
+// DETERMINISM: no randomness in the audio path. The per-frame DSP
 // makes any block partition reproduce the same sequence.
 //
 // SAMPLE RATE — a constructor parameter, because the voice sources pin it at
 // creation (Vco/Preamp/DroneBank/EnvFollower/Distortion carry a fixed sr).
 //
 // FINDINGS — FIXED-ROUTE INJECTION/OMISSION LEDGER (requiredFixedRoutes, 28 total).
-// The design (design/00-status.md §"所有省略逐条登记") requires every route be
-// classified by whether #38 loads it or defers it, and by which later slice picks it
+// The design (status.md §"所有省略逐条登记") requires every route be
+// classified by whether loads it or defers it, and by which later slice picks it
 // up. The runtime consumes ONLY module->module dependency routes for the plan; the
 // two DRY taps are terminal outputs the runtime resolves from the VCO roles, and WET
 // is the distortion output directly (the effector is out-of-P6, see below).
@@ -61,18 +61,18 @@
 //   INJECTED (17, carried by this slice):
 //     drone{1..6}_to_mixer, ext_audio_to_mixer, vco_a_to_mixer, vco_b_to_mixer,
 //     preamp_to_mixer, mixer_to_vcf_l, mixer_to_vcf_r, vcf_l_to_dist_l,
-//     vcf_r_to_dist_r, preamp_to_env_follower            (15 module->module plan edges)
-//     vco_a_to_dry_a, vco_b_to_dry_b                     (2 DRY A/B terminal taps)
+//     vcf_r_to_dist_r, preamp_to_env_follower (15 module->module plan edges)
+//     vco_a_to_dry_a, vco_b_to_dry_b (2 DRY A/B terminal taps)
 //
 //   OMITTED (11, deferred; NOT wired here):
 //     dist_l_to_eff_l, dist_r_to_eff_r, eff_l_to_wet_l, eff_r_to_wet_r
 //       (4 effector routes — P6 out of scope. DECLARED OMISSION, asserted absent by
-//        criterion ⑥(d). WET is therefore the distortion output, never a post-effector
+//        (d). WET is therefore the distortion output, never a post-effector
 //        tap — a future P6 patch must replace this and the WET criterion together.)
-//     piezzo_to_preamp                                  (1 later slice — piezzo not here)
-//     voice{1..6}_gate_to_drone{1..6}                    (6 keyboard/voice slice)
+//     piezzo_to_preamp (1 later slice — piezzo not here)
+//     voice{1..6}_gate_to_drone{1..6} (6 keyboard/voice slice)
 //
-//   #38 wires NO effector. The 4 effector routes are the only ones whose absence is a
+//    wires NO effector. The 4 effector routes are the only ones whose absence is a
 //   contract, not a staging gap: the acceptance asserts WET L/R come straight from the
 //   distortion while the eff chain is absent, so re-adding them is a P6 task, not a
 //   bug in the fixed chain.
@@ -90,9 +90,9 @@
 #include <lunar24/core/enums.h>
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/distortion.h>
-#include <lunar24/core/state_disposition.h>  // task #78: the applied_to_dsp disposition table
+#include <lunar24/core/state_disposition.h>  // the applied_to_dsp disposition table
 #include <lunar24/core/drone_bank.h>
-#include <lunar24/core/ar_envelope.h>  // GH#15 D4: the Papa Srapa voice AR VCA envelope.
+#include <lunar24/core/ar_envelope.h>  // the Papa Srapa voice AR VCA envelope.
 #include <lunar24/core/drone_noise.h>
 #include <lunar24/core/effector.h>
 #include <lunar24/core/envelope_follower.h>
@@ -113,7 +113,7 @@
 #include <lunar24/core/arp_sequencer.h>
 #include <lunar24/core/keyboard_behaviour.h>
 #include <lunar24/core/keyboard_presets.h>    // keyboard presets A-D (load / save / clear)
-#include <lunar24/core/keyboard_side_bank.h>  // GH#12 task#101: the per-side scalar bank map
+#include <lunar24/core/keyboard_side_bank.h>  // the per-side scalar bank map
 #include <lunar24/core/unit_identity_profile.h>
 #include <lunar24/core/vco.h>
 #include <lunar24/core/voice_mixer.h>
@@ -130,7 +130,7 @@ struct RuntimeOutput {
 };
 
 // The two real external-input terminals of one rendered frame. They are DISTINCT
-// terminals (the GH#4 conflation fix): `extAudio` is the EXT.AUDIO host input and
+// terminals (the conflation fix): `extAudio` is the EXT.AUDIO host input and
 // drives ONLY mixer ch4; `preamp` is the PREAMP host input and is ONLY the preamp's
 // `ext_source_in` fallback when that jack is unpatched. There is no shared variable
 // and no implicit copy between them — a caller must set both explicitly (setting the
@@ -143,10 +143,10 @@ struct RuntimeInputs {
 
 // The role a fixed-chain module plays in the render. A module bound to kNone (or
 // left unbound) does not participate in the chain — it is a control-only module the
-// plan may still carry for the patch graph. Host binds via bindFixedRole().
+// plan may still carry for the patch graph. Host binds via bindFixedRole.
 //
 // This enum is retained as the LEGACY dispatch surface for the synthetic test
-// fixture and as the readable form returned by chainExecRoleAt(). The canonical
+// fixture and as the readable form returned by chainExecRoleAt. The canonical
 // product path drives the executor through ExecutionKind (below), which is the
 // post-B′ representation: distortion is an intra-vcf sub-stage (kVcfPath) and EXT
 // AUDIO is a host terminal, never a chain slot. bindFixedRole maps legacy roles
@@ -165,9 +165,9 @@ enum class FixedChainRole : std::uint8_t {
 };
 
 // The canonical execution kind a ModuleId plays in the unified per-module executor
-// (@Codex B′ ruling msg 190173bb). This is the ONE dispatch set the product path
+// (B′ ruling). This is the ONE dispatch set the product path
 // uses. Notes:
-//   * @Codex 7C2 (msg 4e600057) forbid ExecutionKind dedup: CompiledRegion.modules
+//   * forbid ExecutionKind dedup: CompiledRegion.modules
 //     identity is the ModuleId, and the six drones are six independently-wireable
 //     modules. One ExecutionSlot per compiled ModuleId; the SAME kind may repeat;
 //     step(slot.id, kind) selects the instance/group by id (see step_ kDroneBank).
@@ -186,16 +186,16 @@ enum class ExecutionKind : std::uint8_t {
   kEnvFollower,
   kMixer,
   kVcfPath,      // PolivoksFilter L/R -> calibration staging -> Distortion -> WET (ONE slot).
-  // Control sources (@Codex D1): the six always-execute panel
+  // Control sources: the six always-execute panel
   // control sources. A/B dispatch is by slot.id inside step_ (never a FixedChainRole),
-  // and they are NEVER a second source loop outside processFrame(). Each is admitted as
+  // and they are NEVER a second source loop outside processFrame. Each is admitted as
   // an explicit always-execute source in the compile plan even with no cable (per-sample
   // LFO / EG-SELF-GEN / PULSER phase continuity).
   kEnvelope,   // envelope_a/b: A/R/D/S + HOLD/SELF-GEN, gate_in resolve -> env/vca cv publish.
   kLfo,        // lfo_a/b: no-input source, tick once/sample, publish cv_out (0..+10V).
   kJoystick,   // joystick: stateless X/Y+offset, read + publish x/y (±10V).
   kSequencer,  // five-step seq: ext_clock_in -> rising to core, publish cv/gate/clock_out.
-  // GH#12 keyboard product owner: the keyboard module is now a REAL executed control
+  //  keyboard product owner: the keyboard module is now a REAL executed control
   // source (no longer kUnsupported). It receives canonical note ControlEvents
   // (pitch/pressure/gate_on/gate_off/reset) via applyControlEvent_ -> the in-owner
   // ArpSeq (default Keyboard mode = transparent pass-through) -> KeyboardBehaviour, and
@@ -222,13 +222,13 @@ struct ExecutionSlot {
 };
 
 // ---------------------------------------------------------------------------
-// Exact-feedback-pair value selection (task#65 correction 6).
+// Exact-feedback-pair value selection (correction 6).
 // ---------------------------------------------------------------------------
 // A consuming sink reads its incoming value from exactly ONE of two places, and the
 // discriminator is EXACT (source,sink) edge identity — never source alone:
 //   * a sink whose (src,sink) IS a selected feedback edge reads that edge's OWN
 //     D-sample delay line (the graph_compiler.h consume-rule — off by one vs a
-//     live-last-written read; design/07 §4);
+//     live-last-written read);
 //   * any other fed sink reads the live source bank (the value a control producer
 //     published THIS frame).
 // The historical defect the primitive pins is SOURCE-ONLY matching (any feedback line
@@ -254,7 +254,7 @@ inline FeedbackResolve feedbackSinkValue(JackId querySrc, JackId querySink,
 }
 
 // Outcome of one control-value transfer into the six control-source parameters
-// (@Codex BLOCKED #1). Discriminates the cases that `setControlParamValue`'s old
+// (BLOCKED #1). Discriminates the cases that `setControlParamValue`'s old
 // bool collapsed — an applied value, a recognised-but-blocked (currently no param uses
 // `transfer_unavailable` after the 7C3 pulser ruling), and a malformed value / unknown id.
 // The runtime records the most recent transfer's id+status so the product surface (and a
@@ -270,7 +270,7 @@ enum class ParameterApplyStatus : std::uint8_t {
                          // pinpoints the first skipped id.
 };
 
-// GH#21 continuous control smoothing time constant (design/07 §3.2: knob/joystick/MIDI CC
+//  continuous control smoothing time constant (knob/joystick/MIDI CC
 // targets move in SECONDS toward the new value, not in one sample). A SINGLE named global
 // constant, not a buried magic number (contract hard-req #2). PROVISIONAL software policy:
 // this is a knob-automation one-pole value, NOT a measured hardware response — there is no
@@ -294,7 +294,7 @@ class SynthRuntime {
   static constexpr int kNumOutputs = 4;
 
   // Fixed upper bounds for the framework-free state. A graph that exceeds these is
-  // rejected at rebuild() (never silently truncated). Generous for the machine
+  // rejected at rebuild (never silently truncated). Generous for the machine
   // patch space.
   static constexpr std::uint32_t kMaxEdges = 128;
   static constexpr std::uint32_t kMaxFixedModules = 32;
@@ -303,12 +303,12 @@ class SynthRuntime {
   // Classic drone voices in the bank (drone 1/2/4/5), each a 5-generator group.
   static constexpr int kClassicDroneVoices = DroneBank::kClassicVoices;
   // PAPA SRAPA (NEW) drone voices (drone 3/6), index 0 == drone_3, index 1 == drone_6.
-  // GH#15 D4: each has a landed gate_in consumer and a landed env_out publisher.
+  // each has a landed gate_in consumer and a landed env_out publisher.
   static constexpr int kPapaVoiceCount = 2;
   // Classic drone CV MOD: at CV knob = 1, 10 V (an LFO's full swing) moves MOD-on
-  // generators by one octave.  // tuned by ear
+  // generators by one octave. // tuned by ear
   static constexpr double kClassicCvOctPerVolt = DroneBank::kDefaultModOctPerVolt * 2.0;
-  // VCO SUB switch (-1): a square one octave down, mixed under the main wave.  // tuned by ear
+  // VCO SUB switch (-1): a square one octave down, mixed under the main wave. // tuned by ear
   static constexpr double kVcoSubMix = 0.5;
   // Band-limited with polyBLEP at both edges (+2 at phase 0, -2 at phase 0.5).
   double subSquare_(const Vco& v) const {
@@ -327,9 +327,9 @@ class SynthRuntime {
   static constexpr double kNewDroneShSeconds = 0.05;
   // MOD knob -> audio-oscillator modulation depth. depth = modNorm * kModDepthFromNorm
   // (linear, kModDepthFromNorm = 1.0). PROVISIONAL: the norm->depth model is software
-  // (no manual/DSP circuit evidence), like the pulser model. GH#15 D1.
+  // (no manual/DSP circuit evidence), like the pulser model..
   static constexpr double kModDepthFromNorm = 1.0;
-  // GH#15 D3: DIVIDER knob (drone_3/6.divider, norm [0,1]) -> S&H clock division ratio.
+  // DIVIDER knob (drone_3/6.divider, norm [0,1]) -> S&H clock division ratio.
   // divN = 1 + (kNewDroneDivMax-1)*norm (linear). The divided LF square drives the S&H
   // clock socket (the voice comment at the SAndHold member: "LF/mod->clock"), so the S&H
   // captures the noise once every divN LF cycles. PROVISIONAL: the max ratio is a
@@ -342,14 +342,14 @@ class SynthRuntime {
   static constexpr std::uint64_t kNewSourceSeedMix = 0x2595DB9F3D276D2BULL;
   // PITCH: 0 = tone off (the manual's "clean noise" recipe), otherwise an exponential
   // sweep over one RANGE band. The manual gives C0..E7 for the whole oscillator; the
-  // hi/low switch splits that into two overlapping 4-octave bands.  // tuned by ear
+  // hi/low switch splits that into two overlapping 4-octave bands. // tuned by ear
   static constexpr double kNewPitchLowBaseHz = 16.35;   // C0
   static constexpr double kNewPitchHighBaseHz = 164.8;  // E3 (top of the band: E7)
   static constexpr double kNewPitchBandOctaves = 4.0;
-  // RATE SWITCH: the panel prints "1 : 10" beside it — x1 / x10 on the LF modulator.
+  // RATE SWITCH: the panel prints "1: 10" beside it — x1 / x10 on the LF modulator.
   static constexpr double kNewDroneRateSwitchMult = 10.0;
   // FM: the LF square swings the tone up/down by MOD x this many octaves (sirens at
-  // slow RATE, trills and bird cries fast). AM: MOD = 1 chops the tone fully.  // tuned by ear
+  // slow RATE, trills and bird cries fast). AM: MOD = 1 chops the tone fully. // tuned by ear
   static constexpr double kNewDroneFmOctaves = 3.0;
   static constexpr double kNewDroneAmDepth = 1.0;
   // Source indices for newVoiceSeed/newSourceSeed derivation.
@@ -370,7 +370,7 @@ class SynthRuntime {
     return voiceSeed ^ (kNewSourceSeedMix * static_cast<std::uint64_t>(source + 1));
   }
 
-  // ---- control-source READ surface (public; @Codex BLOCKED #1/#4) ----
+  // control-source READ surface (public; BLOCKED #1/#4) ----
   // The 34-dispatch readback, the most-recent apply status, and the sequencer direct-Hz
   // surface are PUBLIC so a product path / test oracle can read the REAL applied DSP state
   // from the six instances (const/no-alloc, never a shadow param bank) and can drive the
@@ -378,10 +378,10 @@ class SynthRuntime {
   ParameterApplyStatus lastApplyStatus() const { return lastApplyStatus_; }
   ParameterId lastApplyParamId() const { return lastApplyParamId_; }
 
-  // @Codex #3 (BLOCKED): the six control-source instances are surfaced as an INVARIANT,
+  //  (BLOCKED): the six control-source instances are surfaced as an INVARIANT,
   // READ-ONLY view. Configuration goes through the public parameter-event path
   // (setControlParamValue / enqueueControlEvent) or the single sanctioned DSP-domain
-  // setter setSequencerInternalRateHz(); the mutating non-const accessors were the seam
+  // setter setSequencerInternalRateHz; the mutating non-const accessors were the seam
   // a test could (and did) use to bypass the runtime dispatch. Const-only readback keeps
   // the "the DEFINITION owns the sources, the runtime dispatches into them" contract.
   const EnvelopeGenerator& envelopeA() const { return envGenA_; }
@@ -390,7 +390,7 @@ class SynthRuntime {
   const Lfo& lfoB() const { return lfoB_; }
   const JoystickCv& joystick() const { return joystick_; }
   const FiveStepSequencer& sequencer() const { return sequencer_; }
-  // sequencer.pulser is a DOMAIN-VALIDATED provisional transfer (@Codex 7C3); the direct
+  // sequencer.pulser is a DOMAIN-VALIDATED provisional transfer; the direct
   // DSP-domain rate setter below remains an independent fail-closed surface (not a
   // ParameterId transfer). Report the real applied internal rate Hz.
   bool setSequencerInternalRateHz(double hz) { return sequencer_.setInternalRateHz(hz); }
@@ -412,7 +412,7 @@ class SynthRuntime {
   // production; synthetic tables in tests) at the device's sample rate. `modules`
   // supplies each compiled module's prepared scheduling contract (as compile_graph
   // expects). `fixedEdges` carries the fixed internal routes merged into the plan.
-  // The voice layer is seeded from `seed` (determinism, criterion ④).
+  // The voice layer is seeded from `seed` (determinism).
   SynthRuntime(const JackDescriptor* jacks, std::uint32_t jackCount,
                const NormalizedRoute* routes, std::uint32_t routeCount,
                const GraphModule* modules, std::uint32_t moduleCount,
@@ -443,14 +443,14 @@ class SynthRuntime {
     // FiveStepSequencer has only a default ctor (no sampleRate overload), so set the
     // rate in the body like vcf_. JoystickCv is stateless (no sampleRate at all).
     sequencer_.setSampleRate(sampleRate);
-    // GH#12 keyboard product owner: configure the in-owner ArpSeq (default Keyboard
+    //  keyboard product owner: configure the in-owner ArpSeq (default Keyboard
     // mode = transparent pass-through) and the KeyboardBehaviour (default params =
     // microtonal passthrough, portamento legato=false/vibrato off) with the machine's
     // sample rate. They are only ticked when a kKeyboard slot is in the compiled plan
     // (canonical definition active routes + always-execute), so an unbound fixture that
     // never ticks them remains untouched. Default params are safe for both.
     //
-    // GH#12 task#101: TWO independent performance instances, one per side. `applyKeyboardState`
+    // TWO independent performance instances, one per side. `applyKeyboardState`
     // re-configures them from the owned DeviceState; this ctor leaves the structural defaults
     // (== the power-on default state's keyboard banks) in place so a fixture that never calls
     // applyKeyboardState behaves exactly as before. The sample rate is retained because the
@@ -463,7 +463,7 @@ class SynthRuntime {
       keyboardBeh_[s].configure(KeyboardBehaviourParams{}, sampleRate);
     }
 
-    // GH#21 continuous control smoothing: build the ACTIVE smoothing set from the registry
+    //  continuous control smoothing: build the ACTIVE smoothing set from the registry
     // (params whose `smoothing == Smoothing::seconds` AND `disposition == applied_to_dsp`),
     // and prime each smoother to the DSP core's CURRENT value so the first target transition
     // interpolates from where the machine actually is (zero single-sample step). The sound-core
@@ -497,17 +497,17 @@ class SynthRuntime {
   // Generic CV input bindings (vco_a.cv_in / vco_b.cv_in, -5..+5) — a SECOND independent
   // CV/transfer path on each VCO, SEPARATE from V/OCT (vco_a.v_oct_in / vco_b.v_oct_in).
   // vco_b.cv_in is fed by the A->B route (vco_a.dry_out -> vco_b.cv_in in the default
-  // registry, task #83), so the canonical definition binds it here; the step_ kVcoB slot
+  // registry), so the canonical definition binds it here; the step_ kVcoB slot
   // resolves it through setCvInput(v, held mode) — never through the confirmed V/OCT setVoct
-  // path (@Codex 7C2: two independent bindings/transfers). JackId{0} is a REAL jack
+  // path (two independent bindings/transfers). JackId{0} is a REAL jack
   // (vco_a.cv_in), so the *_Bound_ flag is the authoritative admission state, not a
   // JackId{0} sentinel (drone ENV/CV-MOD pattern).
   void setVcoCvBindings(JackId aCv, JackId bCv) {
     cvInA_ = aCv; cvInB_ = bCv;
     cvInBoundA_ = true; cvInBoundB_ = true;
   }
-  // PWM jack bindings (vco_a.pwm_in / vco_b.pwm_in, JackId 20 / 22, ±5 V nominal). GH#19 S0
-  // (task #117). The SAME binding shape as setVcoCvBindings above: an INDEPENDENT per-side
+  // PWM jack bindings (vco_a.pwm_in / vco_b.pwm_in, JackId 20 / 22, ±5 V nominal).
+  // . The SAME binding shape as setVcoCvBindings above: an INDEPENDENT per-side
   // modulation path, resolved through the ONE control-sink resolver (resolveControlSink_) in the
   // kVcoA / kVcoB step and read PER SAMPLE. A and B are independent: binding one never binds the
   // other, and each side's modulation reaches exactly its own Vco. JackId{0} is a REAL jack
@@ -532,7 +532,7 @@ class SynthRuntime {
     vcoBDryOut_ = out;
     vcoBDryOutBound_ = true;
   }
-  // GH#19 S5 (task #111): the HARD-SYNC gate jack VCO A READS. The hardware jack is
+  //  the HARD-SYNC gate jack VCO A READS. The hardware jack is
   // "Sync (VCO A only)" (registry.hpp:611), so there is exactly ONE such binding and the
   // VCO-B slot has no sync consumer at all. Same ATOMIC FAIL-CLOSED admission shape as the
   // drone cohorts: validate, release the old binding, commit only if it passed. Unbound = no
@@ -569,15 +569,15 @@ class SynthRuntime {
   // both). tune is oct [-1,+1]; morph 0..1; pw duty in (0,1); oct_sel index 0..2;
   // sub_sel index 0..1; cv_amt 0..1 (updates the mirror the executor's kVco step reads
   // through setVcoCvAmounts); lin_exp is the generic-CV mode the kVcoA/kVcoB step
-  // consumes directly (task #78: one param -> one side).
+  // consumes directly (one param -> one side).
   void setVcoATune(double oct) { vcA_.setTune(oct); }
   void setVcoBTune(double oct) { vcB_.setTune(oct); }
   void setVcoAMorph(double m) { vcA_.setMorph(m); }
   void setVcoBMorph(double m) { vcB_.setMorph(m); }
   void setVcoAPw(double duty) { vcA_.setShape(duty); }
   void setVcoBPw(double duty) { vcB_.setShape(duty); }
-  // PWM DEPTH knob per side (registry vco_a_pwm / vco_b_pwm, "PWM", 0..1, default 0). GH#19 S0
-  // (task #117): these two ids are now adopted_to_dsp, so they ride the SAME GH#21 seconds
+  // PWM DEPTH knob per side (registry vco_a_pwm / vco_b_pwm, "PWM", 0..1, default 0).
+  // these two ids are now adopted_to_dsp, so they ride the SAME seconds
   // smoothing family as the other VCO panel knobs (the runtime smooths them; the DSP class does
   // not). They set the DEPTH only — the canonical base width duty_ is never written by PWM.
   void setVcoAPwm(double depth) { vcA_.setPwDepth(depth); }
@@ -597,9 +597,9 @@ class SynthRuntime {
   double vcoBMorph() const { return vcB_.morph(); }
   double vcoAPw() const { return vcA_.shape(); }        // CANONICAL base width, never PWM-modified.
   double vcoBPw() const { return vcB_.shape(); }
-  double vcoAPwm() const { return vcA_.pwDepth(); }     // smoothed PWM depth (GH#19 S0).
+  double vcoAPwm() const { return vcA_.pwDepth(); }     // smoothed PWM depth.
   double vcoBPwm() const { return vcB_.pwDepth(); }
-  double vcoAPwmCv() const { return vcA_.pwCv(); }      // this sample's PWM CV (GH#19 S0).
+  double vcoAPwmCv() const { return vcA_.pwCv(); }      // this sample's PWM CV.
   double vcoBPwmCv() const { return vcB_.pwCv(); }
   double vcoAEffectiveDuty() const { return vcA_.effectiveDuty(); }
   double vcoBEffectiveDuty() const { return vcB_.effectiveDuty(); }
@@ -619,7 +619,7 @@ class SynthRuntime {
   // The env_follower's GATE output jack (0 / +8 V from the gate detector). Unbound = not published.
   void setEnvFolGateOut(JackId j) { envFolGateOut_ = j; }
 
-  // ---- CONTROL-SOURCE BINDINGS (@Codex D1/D2) ----
+  // CONTROL-SOURCE BINDINGS (D2) ----
   // Jacks the six always-run control sources READ (resolved through the single sink
   // resolver) and WRITE (published through the single source bank). Unbound = no resolve /
   // no publish (legacy synthetic fixture). A/B dispatch in step_ is by slot.id.
@@ -633,15 +633,15 @@ class SynthRuntime {
   void setSequencerBindings(JackId extClockIn, JackId cvOut, JackId gateOut, JackId clockOut) {
     seqExtClockIn_ = extClockIn; seqCvOut_ = cvOut; seqGateOut_ = gateOut; seqClockOut_ = clockOut;
   }
-  // GH#12 keyboard product owner: the note-CV and gate output jacks the keyboard module
+  //  keyboard product owner: the note-CV and gate output jacks the keyboard module
   // publishes as a source. The canonical definition binds the real generated jacks
   // keyboard.v_oct_out (V/OCT 0..8V) and keyboard.gate_left_main_out (GATE, 0/+10V rail).
   //
-  // GH#12 task#101: FOUR outputs, the four keyboard jacks that already exist in the registry.
-  //   keyboard.v_oct_out           <- LEFT pitch (all modes)
-  //   keyboard.gate_left_main_out  <- LEFT gate (all modes)
-  //   keyboard.gate_right_out      <- RIGHT gate; explicit LOW under Single (unused side)
-  //   keyboard.pressure_out        <- Single: the real pressure behaviour output;
+  // FOUR outputs, the four keyboard jacks that already exist in the registry.
+  //   keyboard.v_oct_out <- LEFT pitch (all modes)
+  //   keyboard.gate_left_main_out <- LEFT gate (all modes)
+  //   keyboard.gate_right_out <- RIGHT gate; explicit LOW under Single (unused side)
+  //   keyboard.pressure_out <- Single: the real pressure behaviour output;
   //                                   Twin/Split: the RIGHT pitch (manual BEHAVIOUR: twin
   //                                   pressure acts as the right V/oct, split the same
   //                                   layout with independent parameters). The right pitch
@@ -654,7 +654,7 @@ class SynthRuntime {
     kbdBound_ = true;
   }
 
-  // ---- GH#12 task#101: per-side keyboard state apply ----
+  // : per-side keyboard state apply ----
   //
   // The ONE place the owned DeviceState's keyboard half reaches the two per-side performance
   // instances. Called by the state ctor AFTER the DSP apply, so the keyboard sees a fully
@@ -664,7 +664,7 @@ class SynthRuntime {
   //   * every per-side SCALAR is read through read_side_scalar / side_bank: Single and Twin
   //     read bank 0 (parameters[]), Split reads bank 0 for LEFT and keyboardScalarRight[] for
   //     RIGHT. The bank resolution is the existing choke point — no new per-side id.
-  //   * the non-scalar side paths reuse the same side_bank() resolution: the 12-bit scale
+  //   * the non-scalar side paths reuse the same side_bank resolution: the 12-bit scale
   //     editor, the 16 seqSteps record, and the four no-domain clock/rhythm selectors.
   //   * keyboard.clock_bpm (129) sets the internal keyboard clock (tickKeyboardClock_).
   //
@@ -727,7 +727,7 @@ class SynthRuntime {
   }
 
   // Readback of the applied per-side keyboard configuration. These expose the structs the
-  // side instances actually run (ArpSeq::params() / KeyboardBehaviour::params()), so an
+  // side instances actually run (ArpSeq::params / KeyboardBehaviour::params), so an
   // acceptance pins the installed configuration, never a separately-written mirror.
   KeyboardMode keyboardMode() const { return keyboardMode_; }
   const ArpSeqParams& keyboardArpSeqParams(KeyboardSide side) const {
@@ -736,7 +736,7 @@ class SynthRuntime {
   const KeyboardBehaviourParams& keyboardBehaviourParams(KeyboardSide side) const {
     return keyboardBeh_[keyboardSideIndex_(side)].params();
   }
-  // The EXECUTED per-side behaviour configuration (the state tick() actually runs off,
+  // The EXECUTED per-side behaviour configuration (the state tick actually runs off,
   // not the decoded request `keyboardBehaviourParams` returns).
   KeyboardBehaviour::Executed keyboardBehaviourExecuted(KeyboardSide side) const {
     return keyboardBeh_[keyboardSideIndex_(side)].executed();
@@ -745,7 +745,7 @@ class SynthRuntime {
     return keyboardArpSeq_[keyboardSideIndex_(side)].mode();
   }
   // The keyboard.clock_bpm knob value as parsed into the arp/seq params (norm 0..1);
-  // keyboardBpm() turns it into the internal clock tempo.
+  // keyboardBpm turns it into the internal clock tempo.
   double keyboardParsedBpm(KeyboardSide side) const {
     return keyboardArpSeq_[keyboardSideIndex_(side)].bpm();
   }
@@ -754,10 +754,10 @@ class SynthRuntime {
   // (same compiler plan — never a plan-external补跑 nor a runtime slot pre-append): the
   // ids are force-included in the compiler's active-module set, so an unwired source still
   // becomes an isolated executable region. The owning definition passes the six ids.
-  // Always-execute admission (@Codex BLOCKED #5): atomic/fail-closed. Returns false and
+  // Always-execute admission (BLOCKED #5): atomic/fail-closed. Returns false and
   // makes NO change when the request is malformed (null ids with count>0, over-capacity, or
   // a duplicate id) — never a silent truncate and never a deref-crash on ids==null. On a
-  // genuinely NEW list it commits AND marks the plan dirty so a subsequent rebuild()
+  // genuinely NEW list it commits AND marks the plan dirty so a subsequent rebuild
   // actually re-compiles (a change must not short-circuit to graph_unchanged). An identical
   // list is a no-op (returns true, no dirty — the plan already reflects it).
   bool setAlwaysExecute(const ModuleId* ids, std::uint32_t count) {
@@ -766,7 +766,7 @@ class SynthRuntime {
     for (std::uint32_t i = 0; i < count; ++i) {
       for (std::uint32_t j = i + 1; j < count; ++j)
         if (ids[i] == ids[j]) return false;              // duplicate: ambiguous ownership.
-      // @Codex #5: an id that is NOT a real module in the owning definition must be refused
+      // an id that is NOT a real module in the owning definition must be refused
       // at the admission boundary (before commit/dirty), never accepted and later swallowed
       // by compile_graph. A ModuleId{999} list used to return true here.
       bool found = false;
@@ -834,13 +834,13 @@ class SynthRuntime {
     distortion_.setDist(dist);
     distortion_.setGain(gain);
   }
-  // INDEPENDENT single-parameter distortion controls (task #78): one DeviceState param
+  // INDEPENDENT single-parameter distortion controls: one DeviceState param
   // must touch exactly ONE knob — vcf_dist -> DIST amount, vcf_gain -> output gain — never
   // the combined setDistortion(dist,gain) which would clobber the sibling.
   void setDistortionAmount(double dist) { distortion_.setDist(dist); }
   void setDistortionGain(double gain)   { distortion_.setGain(gain); }
 
-  // Panel-control READBACK (task #78): the applied VCF per-channel knobs and the
+  // Panel-control READBACK: the applied VCF per-channel knobs and the
   // two-way selection / LINK, plus the distortion amount+gain, read from the same DSP
   // members the render path consumes (never a shadow mirror). modeIsBp: true=bandpass,
   // false=lowpass (the position selection). L/R independent.
@@ -853,7 +853,7 @@ class SynthRuntime {
   double distortionGain() const { return distortion_.gain(); }
 
   // ---------------------------------------------------------------------------
-  // GH#6: atomic VCF identity / calibration config entry.
+  // atomic VCF identity / calibration config entry.
   // ---------------------------------------------------------------------------
   // Consumes the existing DeviceStateV1 identity+calibration triple directly:
   // identityModelVersion + identitySeed.seed + calibration. In ONE call it
@@ -862,7 +862,7 @@ class SynthRuntime {
   // drive/rail micro-diff from the SAME profile, and the near-unity path-gain
   // staging micro-diff. The calibration trim is applied ONCE, at the clear
   // VCF→distortion staging point, so it genuinely changes the level the post-filter
-  // distortion folds (design/07 §7: the whole level-dependent path is calibrated;
+  // distortion folds (the whole level-dependent path is calibrated;
   // L/R calibration/nonlinear state are independent).
   //
   // FAIL-CLOSED (fixed policy: "keep old complete profile"): if the version is
@@ -920,7 +920,7 @@ class SynthRuntime {
       if (roleBindings_[i].id == id) {
         // Update branch: a kind change is a real plan mutation that must re-preflight. A
         // successful rebuild followed by a kind flip would otherwise short-circuit to
-        // graph_unchanged and keep the OLD preflight/slots (@Codex 263cb3ca point 2) — the
+        // graph_unchanged and keep the OLD preflight/slots (cb3ca point 2) — the
         // explicit strict policy is violated. Only dirty on an actual change.
         if (roleBindings_[i].kind != kind) {
           roleBindings_[i].kind = kind;
@@ -937,11 +937,11 @@ class SynthRuntime {
     }
   }
 
-  // STRICT BINDING POLICY (@Codex 7C2 msg 4e600057). Canonical strictness must not be
+  // STRICT BINDING POLICY. Canonical strictness must not be
   // inferred by "is there any executable binding" guesswork — the OWNING definition
   // explicitly enables it. Off by default (the legacy synthetic fixtures drive a
   // permissive mode: an unbound module is silently outside the executor's scope). When
-  // ON, rebuild() fail-closes TWO distinct ways: a compiled-region module explicitly
+  // ON, rebuild fail-closes TWO distinct ways: a compiled-region module explicitly
   // bound to kUnsupported -> unsupported_module, and a compiled-region module with NO
   // binding at all -> missing_execution_binding. Never a silent skip, never a guessed
   // gate. The canonical owning definition (MachineRuntimeDefinition, next slice) turns it
@@ -961,21 +961,21 @@ class SynthRuntime {
     if (j < kMaxEdges) cvOut_[j] = volts;
   }
 
-  // #46 admission point for timed control events. A ControlEvent enters core here
+  //  admission point for timed control events. A ControlEvent enters core here
   // keyed by its ABSOLUTE sample; EventTimebase resolves the block-relative
   // sampleOffset at render time. This is the ONE time-based event path the runtime
   // carries — it CONSUMES the canonical EventTimebase rather than re-sorting events
-  // at the host boundary (no second executor / off-patch ordering, the P2-③
+  // at the host boundary (no second executor / off-patch ordering, the
   // "real_path" repair). Returns false only if the fixed event queue is full (the
-  // audio thread is never blocked — design/07 §5).
+  // audio thread is never blocked).
   bool enqueueControlEvent(const TimedControlEvent& e) { return eventTimebase_.enqueue(e); }
   // Absolute sample index of the next block (for live events that should act "now").
   std::uint64_t currentSample() const { return eventTimebase_.blockStart(); }
-  // Read-only diagnostics view of the event scheduler (design/07 §3 pressure counters).
+  // Read-only diagnostics view of the event scheduler (pressure counters).
   // The counters are relaxed atomics: a cross-thread read may be slightly stale, never torn.
   const EventTimebase& eventTimebase() const { return eventTimebase_; }
 
-  // DRONE panel controls (#39 panel-binding half): knob -> bank. `voiceGroup` is
+  // DRONE panel controls (panel-binding half): knob -> bank. `voiceGroup` is
   // 0..3 (classic drone voices 1/2/4/5), `gen` is 0..4. The runtime owns the
   // classic-grouping mapping (bank voice index = voiceGroup*5 + gen); a shared VOLT
   // applies to all 5 generators of the group. These forward directly to the bank —
@@ -1004,7 +1004,7 @@ class SynthRuntime {
       drone_.setVolt(static_cast<std::size_t>(voiceGroup), semitonesDown);
   }
 
-  // NEW drone voice controls (design/01 §3, #45 panel-binding half) — knob ->
+  // NEW drone voice controls (panel-binding half) — knob ->
   // source, one set per Papa Srapa voice (drone 3, drone 6). PITCH is a 0..1
   // position (0 = tone off => the "clean noise" recipe; 1 = max pitch). RATE drives
   // the LF square modulator; FM/AM are the two factory switches; NOISE is the mix
@@ -1039,11 +1039,11 @@ class SynthRuntime {
     pv6_.snapNoise();
   }
   void setDrone3Divider(double norm) { pv3_.setDivider(norm); }
-  // GH#15 D1 (mod knob): norm [0,1] -> audio-oscillator modulation depth = modNorm
+  //  (mod knob): norm [0,1] -> audio-oscillator modulation depth = modNorm
   // (linear, marked PROVISIONAL below as kModDepthFromNorm). Registry-AGREEING unit:
   // both the registry unit and the setter take norm 0..1, so no invented scale.
   void setDrone3Mod(double depth) { pv3_.setMod(depth); }
-  // GH#15 D4: ATT/RLS take the registry's NORMALIZED 0..1 control; the single monotonic
+  // ATT/RLS take the registry's NORMALIZED 0..1 control; the single monotonic
   // norm->seconds map lives in DroneBank (mapAttSeconds/mapRlsSeconds), shared with the
   // classic groups. The default voice gate (kDefaultGroupGateOpen) is set inside the voice.
   void setDrone3Att(double norm) { pv3_.setAttNorm(norm); }
@@ -1055,15 +1055,15 @@ class SynthRuntime {
   void setDrone6Noise(double amp) { pv6_.setNoise(amp); }
   void setDrone6Divider(double norm) { pv6_.setDivider(norm); }
   void setDrone6Mod(double depth) { pv6_.setMod(depth); }
-  // GH#15 D4: drone_6 mirrors drone_3 (same norm unit, same shared mapping).
+  // drone_6 mirrors drone_3 (same norm unit, same shared mapping).
   void setDrone6Att(double norm) { pv6_.setAttNorm(norm); }
   void setDrone6Rls(double norm) { pv6_.setRlsNorm(norm); }
-  // GH#15 D5: HOLD (selector, off/on) for the two Papa Srapa voices. Mirrors the classic
+  // HOLD (selector, off/on) for the two Papa Srapa voices. Mirrors the classic
   // groups' setDroneGroupHold(voiceGroup, bool) shape above — the selector index reaches
   // the voice as a bool, never as an int that could silently coerce a fractional value.
   void setDrone3Hold(bool on) { pv3_.setHold(on); }
   void setDrone6Hold(bool on) { pv6_.setHold(on); }
-  // GH#15 D2 (RANGE / RATE SWITCH selectors, both Papa Srapa voices). Selector index
+  //  (RANGE / RATE SWITCH selectors, both Papa Srapa voices). Selector index
   // 0/1 (the batch lane validates it via dspParamValid_ before the switch; the live
   // lane forwards the ControlEvent value). Both default positions are bit-identical to
   // pre-D2, so a default state reproduces the shipped sound exactly.
@@ -1072,7 +1072,7 @@ class SynthRuntime {
   void setDrone6HiLow(int sel) { pv6_.setRangeHiLow(sel); }
   void setDrone6RateSwitch(int sel) { pv6_.setRateSwitch(sel); }
 
-  // ---- CLASSIC group GATE/HOLD/ATT/RLS + CV MOD + environment (batch 4A, GH#5) ----
+  // CLASSIC group GATE/HOLD/ATT/RLS + CV MOD + environment (batch 4A) ----
   // Panel/control entries for the 4 CLASSIC drone voices (voiceGroup 0..3 == drone
   // 1/2/4/5). Each forwards to the DroneBank, whose gate/ATT/RLS/HOLD envelope the
   // product path reads every frame in step_(kDrone). ATT/RLS take the registry's
@@ -1115,19 +1115,19 @@ class SynthRuntime {
   // Per-group shared CV MOD input: RAW virtual volts from the runtime CV source bank (the
   // value the control layer resolved for the group's cv_mod_in jack), NOT a normalized
   // 0..1 upstream scale. The bank applies it only to generators whose MOD button is on
-  // (MOD-off generators are unresponsive to CV AND environment — design/07 §7).
+  // (MOD-off generators are unresponsive to CV AND environment).
   void setDroneGroupModCv(int voiceGroup, double cv) { drone_.setGroupModCv(voiceGroup, cv); }
-  // Shared/correlated environment term a desktop host can provide (design/07 §7). It
+  // Shared/correlated environment term a desktop host can provide. It
   // detunes the MOD-on generators of every classic group together; MOD-off unchanged.
   void setDroneEnvironment(double hz) { drone_.setEnvironment(hz); }
 
   // Registry CV binding for the 4 CLASSIC drone groups (order 0..3 == drone 1/2/4/5):
   // env_out jacks the product WRITES virtual volts to, cv_mod_in jacks the product READS
-  // as the group's shared CV MOD (via the control layer). @Codex 方案2b: descriptor-driven
+  // as the group's shared CV MOD (via the control layer). 方案2b: descriptor-driven
   // provisional volts; the test binds the four REAL generated-registry jacks (descriptors
   // stay source-of-evidence, unchanged).
   //
-  // ATOMIC FAIL-CLOSED ADMISSION (batch 4A convergence, @Codex 52d3c620): each setter first
+  // ATOMIC FAIL-CLOSED ADMISSION (batch 4A convergence, d3c620): each setter first
   // validates ALL FOUR jacks against the COMMON rule (descriptor exists, id indexes cvOut_
   // (< kMaxEdges), owning module is exactly this group's classic voice drone_1/2/4/5) plus
   // the per-kind rule (ENV OUT: direction=output, signal=cv, finite & non-inverted range;
@@ -1177,15 +1177,15 @@ class SynthRuntime {
     return true;
   }
 
-  // ---- PAPA SRAPA voices (drone_3 = index 0, drone_6 = index 1): GH#15 D4 ----
+  // PAPA SRAPA voices (drone_3 = index 0, drone_6 = index 1): ----
   // Same ATOMIC FAIL-CLOSED admission shape as the classic cohort above (validate the
   // WHOLE cohort against a common + per-kind rule, release the old cohort, commit only
   // if all passed). The Papa voices need TWO cohorts because D4 gives them two landed
   // jacks each:
-  //   * gate_in  — an INPUT gate jack the product READS. Unpatched it resolves nothing,
+  //   * gate_in — an INPUT gate jack the product READS. Unpatched it resolves nothing,
   //                so the voice keeps the named provisional default (kDefaultGroupGateOpen),
   //                which is what makes the unpatched voice bit-identical to pre-D4.
-  //   * env_out  — an OUTPUT cv jack the product WRITES the voice's AR envelope level to,
+  //   * env_out — an OUTPUT cv jack the product WRITES the voice's AR envelope level to,
   //                via the same descriptor-driven transfer the classic groups use.
   bool setDroneVoiceGateBindings(JackId v3, JackId v6) {
     const JackId ids[kPapaVoiceCount] = {v3, v6};
@@ -1241,7 +1241,7 @@ class SynthRuntime {
     if (voice < 0 || voice >= kPapaVoiceCount) return false;
     return (voice == 0 ? pv3_ : pv6_).arGate();
   }
-  // GH#15 D5: the HOLD state the render path ORed into the AR target. This is a SEPARATE
+  // the HOLD state the render path ORed into the AR target. This is a SEPARATE
   // readback from droneVoiceArGate on purpose: hold=on with the gate low must read
   // gate==false AND hold==true AND level==1.0 at the same time, which no implementation
   // that conflates the two flags can satisfy.
@@ -1276,7 +1276,7 @@ class SynthRuntime {
   }
   // The group's shared CV MOD value the DroneBank is actually applying (== DroneBank::
   // groupModCv, the executed modCvG_, never a shadow mirror). A CV MOD cohort that was
-  // released after consuming a patched CV must leave 0 here — the @Codex 7a42d10a #2
+  // released after consuming a patched CV must leave 0 here — the #2
   // release-reset is directly observable. Unbound/out-of-range -> 0.
   double droneGroupModCv(int voiceGroup) const {
     return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices
@@ -1302,7 +1302,7 @@ class SynthRuntime {
     return voiceGroup >= 0 && voiceGroup < kClassicDroneVoices && envOutBound_[voiceGroup];
   }
   // ---------------------------------------------------------------------------
-  // task #78 panel-control READBACK for the whole applied_to_dsp set. These read the
+  //  panel-control READBACK for the whole applied_to_dsp set. These read the
   // real DSP members the render path consumes (never a shadow mirror), so a product
   // oracle can verify a state restore truly reached this instance. Classic drones are
   // addressed by (voiceGroup 0..3, gen 0..4) -> DroneBank flat index via flatGen_;
@@ -1348,14 +1348,14 @@ class SynthRuntime {
   bool drone3Fm() const { return pv3_.fmOn(); }
   bool drone3Am() const { return pv3_.amOn(); }
   double drone3NoiseAmp() const { return pv3_.noiseAmp(); }
-  // GH#15 D1: MOD = applied audio-oscillator modulation depth (modNorm, linear). Reads the
-  // REAL PapaVoice field the render path consumes (modApplied()), not a shadow bank.
+  // MOD = applied audio-oscillator modulation depth (modNorm, linear). Reads the
+  // REAL PapaVoice field the render path consumes (modApplied), not a shadow bank.
   double drone3ModApplied() const { return pv3_.modApplied(); }
-  // GH#15 D3: DIVIDER = the S&H clock division ratio the render path actually drives
+  // DIVIDER = the S&H clock division ratio the render path actually drives
   // (divN_ = 1 + (kNewDroneDivMax-1)*norm). Reads the real PapaVoice field, like the
   // pitch/rate getters, so the panel knob -> divided-clock link is observable.
   double drone3Divider() const { return pv3_.divider(); }
-  // GH#15 D4: ATT/RLS AFTER the single shared norm->seconds mapping — the REAL seconds the AR
+  // ATT/RLS AFTER the single shared norm->seconds mapping — the REAL seconds the AR
   // envelope's stage consumes (ArEnvelope::attSeconds/rlsSeconds, which the render path uses to
   // advance `level`), not the raw norm and not a shadow bank. mapAttSeconds is linear
   // 0.001..1.0 s, so a wrong mapping (or a skipped setter) moves these readbacks.
@@ -1363,8 +1363,8 @@ class SynthRuntime {
   double drone3RlsSeconds() const { return pv3_.arRlsSeconds(); }
   double drone6AttSeconds() const { return pv6_.arAttSeconds(); }
   double drone6RlsSeconds() const { return pv6_.arRlsSeconds(); }
-  // GH#15 D5: HOLD (off/on) AFTER the two dispatch lanes — the state the AR envelope
-  // actually ORed into its target last tick, named per voice like drone3Fm()/drone3Am().
+  // HOLD (off/on) AFTER the two dispatch lanes — the state the AR envelope
+  // actually ORed into its target last tick, named per voice like drone3Fm/drone3Am.
   bool drone3Hold() const { return pv3_.arHold(); }
   bool drone6Hold() const { return pv6_.arHold(); }
   double drone6RateHz() const { return pv6_.rateHz(); }
@@ -1391,7 +1391,7 @@ class SynthRuntime {
   double envFollowerReleaseSeconds() const { return envFol_.releaseSeconds(); }
   // General read of a control generator's resolved CV output (the whole CV source bank).
   double controlVoltageAt(JackId jack) const { return cvAt_(jack); }
-  // ---- task #78: the whole applied_to_DSP apply (commit ②) ----
+  // : the whole applied_to_DSP apply (commit) ----
   // The ONE public apply choke for a whole DeviceState. applyDspParam routes each id:
   //   (1) the 35 control-source params -> either a seconds-smoothed SNAP (Smoothing::seconds)
   //       or setControlParamValue (byte-identical reuse for the non-seconds control-source ids);
@@ -1408,12 +1408,12 @@ class SynthRuntime {
   ParameterApplyStatus applyDspParam(ParameterId id, double v) {
     lastApplyParamId_ = id;
     if (controlSourceParamRecognized_(id)) {
-      // GH#21 layering (boundary): a whole-state candidate build / reset SNAPS a
+      //  layering (boundary): a whole-state candidate build / reset SNAPS a
       // seconds-smoothed control source to the applied value instead of ramping it.
       // Live knob-automation ControlEvents (setControlParamValue) are the ONLY ramp
-      // path (design/07 §3.2); a preset/state restore is the exact stopped-stream
+      // path; a preset/state restore is the exact stopped-stream
       // initialization and must land at the value immediately, never relax from the
-      // old value toward the new one. reset() also sets the smoother current=target
+      // old value toward the new one. reset also sets the smoother current=target
       // so it is settled/inert afterwards — no residual drift onto a later direct
       // setter or a later ramp's starting point.
       const ParameterDescriptor* desc = find_parameter(id);
@@ -1828,7 +1828,7 @@ class SynthRuntime {
       case ParameterId::drone_3_divider:
         setDrone3Divider(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      // GH#15 D4: the Papa Srapa voice's ATT/RLS knobs. Registry unit is `norm` 0..1,
+      // the Papa Srapa voice's ATT/RLS knobs. Registry unit is `norm` 0..1,
       // which is exactly what the shared DroneBank mapAtt/mapRlsSeconds consumes — no
       // invented scale (the classic drone_1/2/4/5 rows above are the precedent).
       case ParameterId::drone_3_att:
@@ -1837,7 +1837,7 @@ class SynthRuntime {
       case ParameterId::drone_3_rls:
         setDrone3Rls(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      // GH#15 D5: the Papa Srapa voice's HOLD selector (registry unit `selector` 0/1,
+      // the Papa Srapa voice's HOLD selector (registry unit `selector` 0/1,
       // off/on). The transfer is `v == 1.0`, the CLASSIC drone_1/2/4/5 gate_hold shape
       // above — never `static_cast<int>(v)`. dspParamValid_ has already admitted the
       // value against step=1/min=0/max=1, so v is exactly 0.0 or 1.0 here and the
@@ -1873,14 +1873,14 @@ class SynthRuntime {
       case ParameterId::drone_6_divider:
         setDrone6Divider(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      // GH#15 D4: drone_6 mirrors drone_3 (same norm unit, same shared mapping).
+      // drone_6 mirrors drone_3 (same norm unit, same shared mapping).
       case ParameterId::drone_6_att:
         setDrone6Att(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
       case ParameterId::drone_6_rls:
         setDrone6Rls(v);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
-      // GH#15 D5: drone_6 mirrors drone_3 (same selector unit, same `v == 1.0` shape).
+      // drone_6 mirrors drone_3 (same selector unit, same `v == 1.0` shape).
       case ParameterId::drone_6_hold:
         setDrone6Hold(v == 1.0);
         lastApplyStatus_ = ParameterApplyStatus::applied; return lastApplyStatus_;
@@ -1967,13 +1967,13 @@ class SynthRuntime {
     return static_cast<ParameterId>(kParameterCount);
   }
 
-  // task #78: whether the whole applied_to_DSP apply succeeded and how many were applied.
-  // dspApplyOk() is the candidate-builder gate; dspAppliedCount() is a diagnostic equal to
+  // whether the whole applied_to_DSP apply succeeded and how many were applied.
+  // dspApplyOk is the candidate-builder gate; dspAppliedCount is a diagnostic equal to
   // count_disposition(applied_to_dsp) on success and partial on a rejection.
   bool dspApplyOk() const { return dspApplyOk_; }
   std::uint32_t dspAppliedCount() const { return dspAppliedCount_; }
 
-  // ---- GH#6 read-only inspectors (executed value, never a shadow mirror) ----
+  // read-only inspectors (executed value, never a shadow mirror) ----
   // Read back the profile the runtime is ACTUALLY executing, straight from the live
   // DSP (PolivoksFilter::inputDrive, Distortion::channelDrive/Rail, and the staging
   // gain step_(kDistortion) multiplies). An inspector that reports a value the DSP
@@ -1982,7 +1982,7 @@ class SynthRuntime {
   bool vcfIdentityConfigured() const { return identityConfigured_; }
   double vcfInputDrive(int ch) const { return vcf_.inputDrive(ch); }
   // Real-filter CV readback (route.vcf_cv_l_to_cv_r normalling oracle). These return the
-  // ACTUAL control volts the PolivoksFilter ran this frame (vcf_.cvL()/cvR() — the DSP
+  // ACTUAL control volts the PolivoksFilter ran this frame (vcf_.cvL/cvR — the DSP
   // state, never a shadow mirror), so a test can pin exactly what the filter executed for
   // the L source and the normalled/overridden R.
   double vcfCvReadbackL() const { return vcf_.cvL(); }
@@ -1990,7 +1990,7 @@ class SynthRuntime {
   // The resolved input the preamp actually ran this frame — the exact value passed to
   // preamp_.tick(in) at the ext_source_in break sink (delayed env when a return cable
   // feeds it, host EXT terminal fallback when unfed). This is the real DSP feed, never a
-  // shadow mirror. Two distinct reset semantics, by rebuild type (@Codex ce765d6d fix comment):
+  // shadow mirror. Two distinct reset semantics, by rebuild type (fix comment):
   //   * A REAL rebuild (the graph changed, graphDirty_ true): the cycle break edge's own
   //     D-sample line is reset (buf[k]=0, writePos=0), so the FIRST post-RESET frame reads
   //     0.0 — a "reads live" bug would hand the preamp the nonzero env instead.
@@ -2007,10 +2007,10 @@ class SynthRuntime {
   double distortionRail(int ch) const { return distortion_.channelRail(ch); }
   // The near-unity staging gain the distortion sees its input scaled by: the
   // calibration trim × the profile path-gain micro-diff, applied at the VCF→dist.
-  // point. L/R independent (calibration-state independence, design/07 §7).
+  // point. L/R independent (calibration-state independence).
   double vcfPathStagingGain(int ch) const { return ch == 0 ? vcfPathStageL_ : vcfPathStageR_; }
 
-  // Patch-graph mutation (criterion ②). Each mutation marks the plan stale; the
+  // Patch-graph mutation. Each mutation marks the plan stale; the
   // NEXT Process* rebuilds it.
   // The live patch (cables + normalled routes), for a UI-side copy to plan cable edits on.
   // Read it only while the audio thread is stopped.
@@ -2024,11 +2024,11 @@ class SynthRuntime {
     return false;
   }
 
-  // Read-only patch queries (task#80, GH#12 9D C3): forward to the private PatchGraph so the
+  // Read-only patch queries (C3): forward to the private PatchGraph so the
   // state-aware definition can (a) VERIFY the restored user-cable bank exactly equals the
-  // requested cable set — never trusting a lone connect()==true, which can atomically displace a
+  // requested cable set — never trusting a lone connect==true, which can atomically displace a
   // prior requested cable at a saturated source/sink port — and (b) let tests observe the derived
-  // override/restore rule. cableCount()/cableCountInto()/cableConnected() count USER cables only
+  // override/restore rule. cableCount/cableCountInto/cableConnected count USER cables only
   // (patch_graph.h): a normalized route never consumes user-cable cardinality, and a route is
   // ACTIVE at a sink iff that sink has no user cable (countInto(sink)==0). All are const-read and
   // draw directly from the live patch_ (no recompile, no side effect).
@@ -2041,8 +2041,8 @@ class SynthRuntime {
     return patch_.normalizedActive(source, sink);
   }
 
-  // Why rebuild() succeeded or refused. The bool return alone cannot distinguish
-  // "feedback plan exceeded capacity" (GH#13) from "graph rejected" — this keeps a
+  // Why rebuild succeeded or refused. The bool return alone cannot distinguish
+  // "feedback plan exceeded capacity" from "graph rejected" — this keeps a
   // fixed, no-log/no-alloc, inspectable reason.
   enum class RebuildStatus : std::uint8_t {
     ok,                          // plan published, runtime lines built
@@ -2071,7 +2071,7 @@ class SynthRuntime {
   // into the same plan. Returns false if the graph is rejected (cycle_unsafe_module /
   // invalid_module_contract) or exceeds a fixed capacity; an over-capacity feedback plan
   // is rejected before anything is published, never truncated to kMaxFeedback.
-  // lastRebuildStatus() gives the exact reason.
+  // lastRebuildStatus gives the exact reason.
   bool rebuild() {
     if (!graphDirty_ && graphValid_) { rebuildStatus_ = RebuildStatus::graph_unchanged; return true; }
     edgeCount_ = patch_.effectiveEdges(edges_, kMaxEdges);
@@ -2095,8 +2095,8 @@ class SynthRuntime {
   // Audio thread: install a plan that planGraph built for the CURRENT patch, without
   // allocating or freeing: the plan's graph is swapped in and `plan` takes the old one,
   // for its owner to free elsewhere. Whether the plan was accepted shows in
-  // lastRebuildStatus(), as for rebuild(). Returns false, changing nothing, only when the
-  // plan was built for a different patch; the caller then needs a rebuild() or a new plan.
+  // lastRebuildStatus, as for rebuild. Returns false, changing nothing, only when the
+  // plan was built for a different patch; the caller then needs a rebuild or a new plan.
   bool installGraphPlan(GraphPlan& plan) {
     PatchEdge now[kMaxEdges];
     const std::uint32_t n = patch_.effectiveEdges(now, kMaxEdges);
@@ -2126,7 +2126,7 @@ class SynthRuntime {
                                   : RebuildStatus::compile_invalid_contract);
       return false;
     }
-    // GH#13 capacity preflight: the FULL compiled feedback plan must fit before we
+    //  capacity preflight: the FULL compiled feedback plan must fit before we
     // publish anything. Rejecting here leaves graph_/feedback_ untouched, so no
     // partial "16/18" outcome can ever be reported as valid.
     if (countFeedback_(r.graph) > kMaxFeedback) {
@@ -2137,8 +2137,8 @@ class SynthRuntime {
     // STRICT binding + slot-capacity preflight, ALL before graph_=r.graph (never a
     // fail-after-branch). With strict policy ON the owning definition has exactly one
     // disposition per module, so a plan that routes ANY mis-dispositioned module into a
-    // compiled region must REFUSE. Two distinct fail-closed statuses, per @Codex 7C2:
-    //   * unsupported_module        — explicitly bound to kUnsupported (declared-deferred).
+    // compiled region must REFUSE. Two distinct fail-closed statuses, 7C2:
+    //   * unsupported_module — explicitly bound to kUnsupported (declared-deferred).
     //   * missing_execution_binding — NO binding at all. Distinct from the above: there
     //                                 is no "the binding was inferred" patch in a strict plan.
     // The slot count is then capped here (the plan must fit the RT-safe arrays), so
@@ -2169,7 +2169,7 @@ class SynthRuntime {
       // never leave a half-built runtime line set behind a valid flag, and never leave a
       // NEW graph_ alongside PARTIAL exec slots / legacy chain order / feedback lines. A
       // failed chain rebuild must read as fully invalid (graph cleared, no slots, no
-      // legacy order, no feedback), so a subsequent rebuild() starts from a clean slate.
+      // legacy order, no feedback), so a subsequent rebuild starts from a clean slate.
       graph_.regions.clear();  // keeps its storage: no free on the audio thread
       graph_.moduleCount = 0;
       graphValid_ = false;
@@ -2184,12 +2184,12 @@ class SynthRuntime {
     // gate/clock interpreter latches (a cable being plugged in must not see a stale
     // "high" from a prior plan, so the first rising edge is never a phantom advance). A
     // no-change rebuild (graph_unchanged early-out) does NOT run this, so phase continuity
-    // over a cached rebuild is preserved. (@Codex D3: sink_gate_interpret provisional
+    // over a cached rebuild is preserved. (sink_gate_interpret provisional
     // canonical sink semantics; real-machine-precision is not claimed.)
     sink_gate_reset(envA_gate_);
     sink_gate_reset(envB_gate_);
     sink_gate_reset(seqClockLatch_);
-    sink_gate_reset(syncLatchA_);   // GH#19 S5: VCO A hard-sync latch (same no-stale rule).
+    sink_gate_reset(syncLatchA_);   // VCO A hard-sync latch (same no-stale rule).
     return true;
   }
 
@@ -2198,12 +2198,12 @@ class SynthRuntime {
   // fallback ONLY when that jack is unpatched). Two DISTINCT terminals — no shared
   // variable, no implicit copy (a caller must set both explicitly). `driveGraph`
   // selects the CONTROL layer: true = run the compiled graph (product path), false =
-  // IGNORE it (the NEGATIVE control for criterion ①). Rendering is independent of
+  // IGNORE it (the NEGATIVE control for). Rendering is independent of
   // block partition.
   RuntimeOutput processFrame(RuntimeInputs inputs, bool driveGraph = true) {
     lastIn_ = inputs;
     for (int i = 0; i < kNumChannels; ++i) chIn_[i] = 0.0;
-    // GH#21: advance the continuous-control smoothers BEFORE the graph resolves so the
+    // advance the continuous-control smoothers BEFORE the graph resolves so the
     // control sources (joystick X/Y, env, lfo, sequencer) publish THIS frame's smoothed value.
     // A target set at the current block's sampleOffset (via setControlParamValue -> setTarget)
     // transitions from the smoother's current state here — one coefficient fraction, no jump.
@@ -2212,7 +2212,7 @@ class SynthRuntime {
     // the compiled plan (region topo) order, with NO ExecutionKind dedup (the contract is
     // one ModuleId one slot; deduping by kind would drop a module). driveGraph=false
     // bypasses the CONTROL layer: slots still run, but no CV sink is resolved from the
-    // graph (criterion-① negative).
+    // graph (criterion- negative).
     effCv_[0] = effCv_[1] = effCv_[2] = 0.0;
     for (std::uint32_t i = 0; i < execSlotCount_; ++i) step_(execSlots_[i], driveGraph);
     if (effectorEnabled_) {
@@ -2226,9 +2226,9 @@ class SynthRuntime {
   // out points to n writable RuntimeOutput frames (one struct per frame).
   //
   // Block render: advance `n` frames. The per-frame DSP makes this equal a
-  // per-block run of the same sequence (partition-invariance, criterion ④).
+  // per-block run of the same sequence (partition-invariance).
   //
-  // #46: the block FIRST drains due control events from EventTimebase (each resolved
+  // the block FIRST drains due control events from EventTimebase (each resolved
   // to a block-relative sampleOffset), then applies each at the exact frame it was
   // scheduled for, so the same event set acts at the SAME absolute sample under any
   // 64/128/256 (or mixed) block partition. Events are handed out sorted by absolute
@@ -2265,7 +2265,7 @@ class SynthRuntime {
   const ExecutionSlot& execSlotAt(std::uint32_t i) const { return execSlots_[i]; }
 
   // Diagnostic: the drone channel the PRODUCT path computed for the last processed
-  // frame and fed to the mixer (@Claude rule: "钉在真正被执行的那份数据上" — this is
+  // frame and fed to the mixer (rule: "钉在真正被执行的那份数据上" — this is
   // the executed value, not a test-side re-derivation). `classicIndex` is 0..3,
   // mapping to VoiceMixer::kChannelDrone1/2/4/5 (the CLASSIC drone voices 1/2/4/5);
   // out-of-range returns 0. Read-only: the audio path already produces this value
@@ -2276,12 +2276,12 @@ class SynthRuntime {
     if (classicIndex < 0 || classicIndex >= 4) return 0.0;
     return chIn_[classic[classicIndex]];
   }
-  // NEW drone voices (design/01 §3): 3/6 are Papa Srapa, NOT in the DroneBank. Read
+  // NEW drone voices: 3/6 are Papa Srapa, NOT in the DroneBank. Read
   // the EXECUTED channel value the mixer consumes — a same-seed standalone SchmittOsc
   // / NoiseSource is the oracle for what the product path produces.
   double drone3Channel() const { return chIn_[VoiceMixer::kChannelDrone3]; }
   double drone6Channel() const { return chIn_[VoiceMixer::kChannelDrone6]; }
-  // S&H CV outputs (design/01 §3, #45). The Sample & Hold is NOT in the audio
+  // S&H CV outputs. The Sample & Hold is NOT in the audio
   // channel — it is a CV source out of the voice (manual: "you will get -5 to +5
   // volts"). It feeds nothing in the fixed chain yet (no patch jack), so it is a
   // diagnostic read of the held level the product path computed last frame. An
@@ -2291,7 +2291,7 @@ class SynthRuntime {
   double sampleHold6Cv() const { return sh6Cv_; }
 
  private:
-  // NEW (Papa Srapa) composite voice — the @Claude-corrected topology (msg 3e21f284,
+  // NEW (Papa Srapa) composite voice — the topology (
   // from manual L344-366): a voice has TWO Schmitt oscillators, not one. An LF Schmitt
   // is used as a SQUARE-WAVE modulator (RATE/RATE-SWITCH/CV OUT); an audio-frequency
   // Schmitt does the tone (PITCH/RANGE, C0-E7). FM and AM are SWITCHES (not a third
@@ -2307,7 +2307,7 @@ class SynthRuntime {
           lf(newSourceSeed(voiceSeed, kNewSrcLf), sr),
           noise(newSourceSeed(voiceSeed, kNewSrcNoise), kNewDroneNoiseAmp),
           sh(sr, kNewDroneShSeconds),
-          // GH#15 D4: the voice's AR VCA envelope. It starts from the SAME named
+          // the voice's AR VCA envelope. It starts from the SAME named
           // provisional gate default the classic groups use (DroneBank::
           // kDefaultGroupGateOpen) and the SAME norm->seconds mapping (DroneBank::
           // mapAtt/mapRlsSeconds) — there is deliberately no second copy of either,
@@ -2365,20 +2365,20 @@ class SynthRuntime {
     // with NOISE at zero. NOISE only sets how much of it is heard.
     void setNoise(double amp) { noiseTarget_ = amp; }
     void snapNoise() { noiseLevel_ = noiseTarget_; }
-    // GH#15 D3 (DIVIDER knob). The lane OWNS the S&H clock source; the old setShClock
+    //  (DIVIDER knob). The lane OWNS the S&H clock source; the old setShClock
     // field-injection seam (a pure test hook) is voided. divN = 1 + (kNewDroneDivMax-1)*norm
     // (linear). Default norm 0.5 -> divN = 8.5: the S&H CV readback (sampleHold*Cv) goes from
     // a constant 0.0 to a stepped noise sequence, but the audio channel is byte-identical
     // (the S&H CV is never summed into *out). PROVISIONAL max (see constant).
     void setDivider(double norm) { divN_ = 1.0 + (kNewDroneDivMax - 1.0) * norm; }
-    // MOD knob (GH#15 D1). Depth = modNorm (linear, kModDepthFromNorm): scales the
+    // MOD knob. Depth = modNorm (linear, kModDepthFromNorm): scales the
     // LF-square modulation the audio oscillator consumes. BEFORE the knob was wired
-    // tick() fed audio a raw ±1 square (depth 1.0); after wiring it scales by the
+    // tick fed audio a raw ±1 square (depth 1.0); after wiring it scales by the
     // knob's value, so the DEFAULT drone_3/6 mod depth is 1.0 -> 0.5 (registry default
     // drone_3/6.mod = 0.5). PROVISIONAL: the norm->depth mapping is a software model
     // (no manual/DSP circuit evidence), so it is marked provisional like the pulser.
     void setMod(double depth) { mod_ = depth; }
-    // GH#15 D4 (ATT / RLS knobs). Both arrive from the registry as a normalized 0..1
+    //  (ATT / RLS knobs). Both arrive from the registry as a normalized 0..1
     // control and are mapped by DroneBank::mapAttSeconds / mapRlsSeconds — the ONE
     // product mapping, made public static so this section reuses the classic group
     // mapping and its 0.001..1.0 s PROVISIONAL range instead of carrying a second,
@@ -2390,10 +2390,10 @@ class SynthRuntime {
     // named provisional default DroneBank::kDefaultGroupGateOpen, the same constant the
     // classic groups use, so "unpatched = open" has exactly one source in the product.
     void setVoiceGate(bool high) { ar.setGate(high); }
-    // GH#15 D5 (HOLD knob). The registry unit is `selector` 0/1 (off/on), so the value
+    //  (HOLD knob). The registry unit is `selector` 0/1 (off/on), so the value
     // arrives as a bool. HOLD is an OR term on the AR envelope's TARGET — it is NOT a
     // second envelope and it does NOT write the gate, so a held voice still reports
-    // arGate()==false when its gate_in is patched low.
+    // arGate==false when its gate_in is patched low.
     void setHold(bool on) { ar.setHold(on); }
     // The VCA gain the render path multiplied the voice's audio by on the last sample,
     // plus the gate level it consumed, the HOLD state it ORed in, and the two mapped
@@ -2409,13 +2409,13 @@ class SynthRuntime {
     double modApplied() const { return mod_; }
     // The S&H level the product path computed last frame (CV out of the voice).
     double lastShCv() const { return shCv_; }
-    // Panel-control READBACK (task #78): the NEW-drone knob positions the render path
+    // Panel-control READBACK: the NEW-drone knob positions the render path
     // drives from. rateHz/pitchHz read the sub-oscillators' effective frequency (a
     // real DSP value, not a shadow), fmOn/amOn read the switch state, noiseAmp reads
     // the noise source amplitude.
     double rateHz() const { return lf.effectiveFreqHz(); }
     double pitchHz() const { return audio.effectiveFreqHz(); }
-    // GH#15 D3: DIVIDER = the S&H clock division ratio divN_ the render path consumes.
+    // DIVIDER = the S&H clock division ratio divN_ the render path consumes.
     double divider() const { return divN_; }
     bool fmOn() const { return fmOn_; }
     bool amOn() const { return amOn_; }
@@ -2438,7 +2438,7 @@ class SynthRuntime {
       audio.tick(&a);
       double n = 0.0;
       noise.tick(&n);
-      // GH#15 D3: the S&H clock socket is fed by the LF square, edge-count divided by the
+      // the S&H clock socket is fed by the LF square, edge-count divided by the
       // DIVIDER ratio divN_. The lane owns this clock (the setShClock injection seam is
       // voided). A rising edge of the LF square advances a fractional edge counter; every
       // divN_ LF edges a one-sample clock pulse is fed to the S&H, so it captures the noise
@@ -2454,7 +2454,7 @@ class SynthRuntime {
       }
       lfPrevLevel_ = sq;
       sh.tick(extShIn_ ? shInVolts_ / kShVoltsPerUnit : n, extShClock_ ? shClockVolts_ : shClock_, &shCv_);
-      // GH#15 D4: advance the voice's AR VCA envelope FIRST and multiply the voice's
+      // advance the voice's AR VCA envelope FIRST and multiply the voice's
       // summed audio by its gain — the SAME order and the SAME law as DroneBank::
       // tickGroup (advance the group envelope, then scale the group's final audio).
       // The oscillators keep free-running: the envelope never resets phase. With the
@@ -2469,7 +2469,7 @@ class SynthRuntime {
     NoiseSource noise;  // fixed-level white noise: the S&H input, and (scaled by NOISE) heard.
     double noiseLevel_ = kNewDroneNoiseAmp;  // the heard NOISE amount, gliding to noiseTarget_
     SAndHold sh;        // noise->in, LF/mod->clock; CV out, not in the audio channel.
-    // GH#15 D4 AR VCA envelope (linear, classic-drone law). Gates the voice's summed
+    //  AR VCA envelope (linear, classic-drone law). Gates the voice's summed
     // audio; never summed into the audio path itself, never resets an oscillator phase.
     ArEnvelope ar;
     bool fmOn_ = false;
@@ -2477,15 +2477,15 @@ class SynthRuntime {
     static constexpr double kShVoltsPerUnit = 10.0;  // voice noise (about +/-0.5) -> +/-5 V
     bool extShIn_ = false, extShClock_ = false;
     double shInVolts_ = 0.0, shClockVolts_ = 0.0;
-    double shClock_ = 0.0;  // S&H clock level (derived from the divided LF square, GH#15 D3).
-    double divN_ = 8.5;     // S&H division ratio (1 + (kNewDroneDivMax-1)*norm), GH#15 D3.
+    double shClock_ = 0.0;  // S&H clock level (derived from the divided LF square).
+    double divN_ = 8.5;     // S&H division ratio (1 + (kNewDroneDivMax-1)*norm),.
                             // = 注册默认 norm 0.5 映射.
     double lfPrevLevel_ = 0.0;  // previous LF-square level, for rising-edge detection.
     double lfEdgeAcc_ = 0.0;    // fractional LF-edge counter, scaled by divN_ into captures.
     double shCv_ = 0.0;
     double noiseTarget_ = kNewDroneNoiseAmp;
     double noiseGlide_ = 1.0;
-    // MOD knob depth (GH#15 D1). Default 0.5 = the registered drone_3/6.mod default,
+    // MOD knob depth. Default 0.5 = the registered drone_3/6.mod default,
     // so the post-wire default sound is half-depth modulation (was the raw ±1 square).
     double mod_ = 0.5;
     bool low_ = false;        // RANGE switch in the low position.
@@ -2498,7 +2498,7 @@ class SynthRuntime {
     double rateMult_ = 1.0;
   };
 
-  // #46 ControlEvent dispatch. Consumes a parameter ControlEvent that EventTimebase
+  //  ControlEvent dispatch. Consumes a parameter ControlEvent that EventTimebase
   // resolved to a block-relative sampleOffset and applies it to the matching product
   // control at that sample. Only controls whose registry unit AGREES with the setter
   // unit are wired here (no invented conversion): drone_3/6 pitch (norm 0..1 -> pct
@@ -2582,7 +2582,7 @@ class SynthRuntime {
 
   // Keyboard tempo: 10..300 BPM (manual p.19), linear over the knob.
   static double keyboardBpm(double norm) { return 10.0 + 290.0 * std::clamp(norm, 0.0, 1.0); }
-  // Arp / sequencer steps per beat of the internal clock: 16th notes.  // tuned by ear
+  // Arp / sequencer steps per beat of the internal clock: 16th notes. // tuned by ear
   static constexpr double kKeyboardStepsPerBeat = 4.0;
 
   // Drive the arpeggiator / 16-step sequencer clock, one sample. The internal clock runs at
@@ -2655,21 +2655,21 @@ class SynthRuntime {
   }
 
   void applyControlEvent_(const ControlEvent& e) {
-    // GH#12 keyboard product owner (@Codex direction, @Kimi option A): the keyboard is
+    //  keyboard product owner: the keyboard is
     // a REAL executed control source that consumes the canonical note ControlEvents
     // (pitch/pressure/gate_on/gate_off/reset) — InputStateMachine::translate emits exactly
     // this set for a note press. Forward them to the in-owner ArpSeq (default Keyboard
     // mode = transparent pass-through) which passes each event unchanged to the
     // KeyboardBehaviour. The behaviour carries ALL per-note semantics (note identity by
     // (source, channel, noteId), legato/retrigger etc.) — this lane adds no new gate
-    // semantics (per @Kimi e8b073c2). `parameter` events must NOT be forwarded (they are
+    // semantics (. `parameter` events must NOT be forwarded (they are
     // control-source param transfer below, handled by setControlParamValue).
     switch (e.kind) {
       case ControlEventKind::pitch:
       case ControlEventKind::pressure:
       case ControlEventKind::gate_on:
       case ControlEventKind::gate_off: {
-        // GH#12 task#101 SIDE ROUTING. `e.side` is explicit metadata carried from the input
+        //  SIDE ROUTING. `e.side` is explicit metadata carried from the input
         // adapter; it is NEVER inferred from the channel/pitch/noteId. Under Single the two
         // sides are ONE performance identity, so a right-side event is merged onto LEFT
         // BEFORE any identity handling (a note pressed on the right plate under Single is the
@@ -2687,7 +2687,7 @@ class SynthRuntime {
         return;  // a note event is fully consumed by the keyboard owner, never a parameter.
       }
       case ControlEventKind::reset: {
-        // GH#12 task#101: a reset is the FAILSAFE (all-gates-off / clock resync), not a
+        // a reset is the FAILSAFE (all-gates-off / clock resync), not a
         // side-scoped performance gesture. It clears EVERY side regardless of the event's
         // side metadata — a reset that only cleared the default Left side would leave a
         // right-side note stuck (the exact "default Left leaks" defect the contract names).
@@ -2741,24 +2741,24 @@ class SynthRuntime {
       case ParameterId::drone_6_am:    setDrone6Am(v != 0.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_3_mod:   setDrone3Mod(v * kModDepthFromNorm); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_mod:   setDrone6Mod(v * kModDepthFromNorm); lastApplyStatus_ = ParameterApplyStatus::applied; break;
-      // GH#15 D2 (selectors, live lane). The ControlEvent carries the selector index 0/1;
+      //  (selectors, live lane). The ControlEvent carries the selector index 0/1;
       // forward it to the voice (the batch lane validated it via dspParamValid_).
       case ParameterId::drone_3_hi_low:       setDrone3HiLow(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_3_rate_switch:  setDrone3RateSwitch(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_hi_low:       setDrone6HiLow(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_rate_switch:  setDrone6RateSwitch(static_cast<int>(v)); lastApplyStatus_ = ParameterApplyStatus::applied; break;
-      // GH#15 D3 (DIVIDER, both voices). The batch lane validated the norm range [0,1] via
+      //  (DIVIDER, both voices). The batch lane validated the norm range [0,1] via
       // dspParamValid_ before the switch, so the knob value reaches the voice unchanged.
       case ParameterId::drone_3_divider:   setDrone3Divider(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_divider:   setDrone6Divider(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
-      // GH#15 D4 (ATT/RLS, both voices). Registry unit is `norm` 0..1, exactly what the
+      //  (ATT/RLS, both voices). Registry unit is `norm` 0..1, exactly what the
       // shared DroneBank norm->seconds map consumes — the knob value reaches the voice
       // unchanged. The batch lane validated the range via dspParamValid_ before the switch.
       case ParameterId::drone_3_att:   setDrone3Att(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_3_rls:   setDrone3Rls(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_att:   setDrone6Att(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_rls:   setDrone6Rls(v); lastApplyStatus_ = ParameterApplyStatus::applied; break;
-      // GH#15 D5 (HOLD, both voices, live lane). The ControlEvent carries the selector
+      //  (HOLD, both voices, live lane). The ControlEvent carries the selector
       // index 0/1; the transfer is `v == 1.0`, the CLASSIC drone_1/2/4/5 gate_hold shape,
       // so a value outside {0,1} — which this lane's entry does not validate for the drone
       // panel (a pre-existing D1..D4 shape, booked in the landing comment) — reads as `off`,
@@ -2766,7 +2766,7 @@ class SynthRuntime {
       // worst case is a hold that does not engage, never a silently engaged one.
       case ParameterId::drone_3_hold:  setDrone3Hold(v == 1.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
       case ParameterId::drone_6_hold:  setDrone6Hold(v == 1.0); lastApplyStatus_ = ParameterApplyStatus::applied; break;
-      // GH#11 FIXED-CANDIDATE (@Codex D3): the 34 evidence-mappable control-source params dispatch
+      //  FIXED-CANDIDATE: the 34 evidence-mappable control-source params dispatch
       // unit-agreeing (never an invented scale) to the six real DSP instances. A malformed
       // value stays fail-closed (keep old) and is reported real-time through the
       // const/no-alloc readback surface (lastApplyStatus_) — no separate param bank.
@@ -2780,7 +2780,7 @@ class SynthRuntime {
     }
   }
 
-  // ---- 35 control-source + 16 Surface-2 panel-knob parameter dispatch (@Codex 7C3) ----
+  // 35 control-source + 16 Surface-2 panel-knob parameter dispatch ----
   // Live parameter lane (ControlEvent). Wires the 35 evidence-mappable control-source params
   // AND the 16 Surface-2 vco/vcf panel-knob seconds params (via isContinuousSmoothingParam_)
   // to the sound-core unit-agreeing setters, returning a ParameterApplyStatus that
@@ -2789,7 +2789,7 @@ class SynthRuntime {
   // value to [0,1] and a `v != 0.0` transfer would turn 0.5 into gate-high — so a value outside
   // the registry unit-domain is reported `invalid_value`, never a silent coercion. Step params
   // are 1-indexed (sequencer_step_cv_N -> idx N-1).
-  // @Codex final ruling 7C3: `sequencer.pulser` is a DOMAIN-VALIDATED provisional transfer.
+  //  final ruling 7C3: `sequencer.pulser` is a DOMAIN-VALIDATED provisional transfer.
   // The norm [0,1] is admitted and mapped through the centrally-named PULSER software model
   // (FiveStepSequencer::pulserNormToRateHz) into the core's direct-Hz DSP setter; the
   // provisional nature is a SOFTWARE policy (0.05..20 Hz, centre 1 Hz), never a claimed
@@ -2817,9 +2817,9 @@ class SynthRuntime {
       lastApplyStatus_ = ParameterApplyStatus::invalid_value;
       return lastApplyStatus_;
     }
-    // GH#21 continuous control smoothing (design/07 §3.2): a SECONDS-smoothed control target
+    //  continuous control smoothing: a SECONDS-smoothed control target
     // is not dispatched to the DSP directly — it becomes the smoother's target and is applied
-    // one-smoothed-value-per-frame in advanceControlSmoothing_(). This is the ControlEvent
+    // one-smoothed-value-per-frame in advanceControlSmoothing_. This is the ControlEvent
     // parameter lane (Surface-1 control-source + Surface-2 panel-knob). Boundary (contract
     // hard-req #3): exposed AUDIO-RATE CV (a jack patch-signal modulation) is NOT smoothed here.
     // Gate/note/clock edges and the 15 discrete control params keep the direct single-sample
@@ -2892,7 +2892,7 @@ class SynthRuntime {
       case ParameterId::sequencer_step_gate_3: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(2, v != 0.0)); return lastApplyStatus_;
       case ParameterId::sequencer_step_gate_4: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(3, v != 0.0)); return lastApplyStatus_;
       case ParameterId::sequencer_step_gate_5: lastApplyStatus_ = transferStatus_(sequencer_.setStepGate(4, v != 0.0)); return lastApplyStatus_;
-      // sequencer.pulser (@Codex 7C3): DOMAIN-VALIDATED provisional transfer. Admit the
+      // sequencer.pulser: DOMAIN-VALIDATED provisional transfer. Admit the
       // norm [0,1] (validated above), map through the centrally-named PULSER software model,
       // and drive the core's direct-Hz DSP setter. The status is `applied` (the provisional
       // nature is a SOFTWARE policy, not transfer_unavailable). A malformed value already
@@ -2935,10 +2935,10 @@ class SynthRuntime {
 
   // The one predicate marking an id as a member of the ACTIVE continuous-smoothing set:
   // `smoothing == Smoothing::seconds` AND `disposition == applied_to_dsp`. This is the
-  // GH#21 Surface-1+Surface-2 union — the 20 control-source seconds params (envelope a/b
+  //  Surface-1+Surface-2 union — the 20 control-source seconds params (envelope a/b
   // attack/decay/release/sustain, lfo a/b rate, joystick x/y/offset_x/offset_y, sequencer
   // step_cv_1..5, pulser) plus the vco/vcf panel-knob seconds params (vco a/b tune/morph/
-  // pw/cv_amt, vcf l/r freq/res/mod, vcf dist/gain) = 36, plus — since GH#19 S0 (task #117) —
+  // pw/cv_amt, vcf l/r freq/res/mod, vcf dist/gain) = 36, plus — since —
   // the vco a/b PWM depth pair (vco_a_pwm / vco_b_pwm) = 38. It is deliberately NOT folded into
   // controlSourceParamRecognized_ (that predicate is 乐音 control-source semantics; the panel
   // knobs are not). Applied_to_dsp naturally excludes the other three classes — read their sizes
@@ -2953,7 +2953,7 @@ class SynthRuntime {
            disposition_of(id) == StateDisposition::applied_to_dsp;
   }
 
-  // Product-boundary unit-domain admission (@Codex BLOCKED #1). Rejects a value malformed for
+  // Product-boundary unit-domain admission (BLOCKED #1). Rejects a value malformed for
   // its registry unit BEFORE it reaches a sound-core setter, so the setter's legal clamp /
   // coercion is never mistaken for a valid transfer. Domains are the registry evidence, not
   // the DSP tolerance. Finite everywhere; norm [0,1]; boolean exact {0,1}; selector exact
@@ -3007,7 +3007,7 @@ class SynthRuntime {
       case ParameterId::sequencer_step_gate_3: case ParameterId::sequencer_step_gate_4:
       case ParameterId::sequencer_step_gate_5:
         return v == 0.0 || v == 1.0;
-      // sequencer.pulser norm [0,1] (@Codex 7C3): admitted as a domain-valid provisional
+      // sequencer.pulser norm [0,1]: admitted as a domain-valid provisional
       // value; the eventual Hz is the centrally-named software model, never a transfer_unavailable.
       case ParameterId::sequencer_pulser:
         return v >= 0.0 && v <= 1.0;
@@ -3016,7 +3016,7 @@ class SynthRuntime {
     }
   }
 
-  // GH#21 per-frame smoother advance. Iterate the ACTIVE continuous-smoothing set (control-source
+  //  per-frame smoother advance. Iterate the ACTIVE continuous-smoothing set (control-source
   // + panel-knob, 36), pull each smoother's next per-sample output, and feed it to the sound-core
   // setter. Runs once per frame in processFrame before the graph resolves, so the control source
   // publishes this frame's smoothed value. No allocation; the set was built at construction.
@@ -3026,7 +3026,7 @@ class SynthRuntime {
       const std::uint32_t ord = static_cast<std::uint32_t>(id);
       ParameterSmoother& sm = controlSmoothers_[ord];
       // Once settled, DO NOT write the DSP setter. Leaving a settled smoother in
-      // place is the GH#21 fix for the direct-setter clobber: a sanctioned direct
+      // place is the fix for the direct-setter clobber: a sanctioned direct
       // DSP-domain setter (e.g. setSequencerInternalRateHz) that bypasses the
       // parameter lane must NOT be overwritten back to the smoother's own target on
       // the next frame. The smoother is inert between live target changes; the DSP
@@ -3080,7 +3080,7 @@ class SynthRuntime {
       case ParameterId::vco_b_morph: setVcoBMorph(v); break;
       case ParameterId::vco_b_pw:    setVcoBPw(v);    break;
       case ParameterId::vco_b_cv_amt: setVcoBCvAmt(v); break;
-      // GH#19 S0 (task #117): the PWM depth pair joined this family when their disposition moved
+      //  the PWM depth pair joined this family when their disposition moved
       // to applied_to_dsp. They ride the SAME seconds smoother as the other panel knobs, so the
       // DEPTH is smoothed here and only the external CV (Vco::setPwCv) is not.
       case ParameterId::vco_a_pwm:   setVcoAPwm(v);   break;
@@ -3136,7 +3136,7 @@ class SynthRuntime {
       case ParameterId::vco_b_morph:  return vcoBMorph();
       case ParameterId::vco_b_pw:     return vcoBPw();
       case ParameterId::vco_b_cv_amt: return vcoBCvAmt();
-      // GH#19 S0: the PWM depth pair primes from the DSP's live depth (the CV is per-sample
+      // the PWM depth pair primes from the DSP's live depth (the CV is per-sample
       // external modulation and is never part of a knob smoother).
       case ParameterId::vco_a_pwm:    return vcoAPwm();
       case ParameterId::vco_b_pwm:    return vcoBPwm();
@@ -3158,7 +3158,7 @@ class SynthRuntime {
     return std::log(hz / kFiveStepPulserMinRateHz) / std::log(kFiveStepPulserLogBase);
   }
 
-  // task #78: shared registry-unit-domain admission for the applied_to_dsp ids that the
+  // shared registry-unit-domain admission for the applied_to_dsp ids that the
   // explicit dispatch below covers.
   // Mirrors controlParamValid_ for the control-source set: reject a value malformed for its
   // registry descriptor BEFORE it reaches a setter that might clamp/coerce (a malformed norm
@@ -3210,7 +3210,7 @@ class SynthRuntime {
            static_cast<std::size_t>(gen);
   }
 
-  // ---- task #78 centralized norm->physical transfers (ALL software-provisional; the
+  // centralized norm->physical transfers (ALL software-provisional; the
   // hardware calibration of every one is untested and flagged as such in the mandate).
   // These are the ONLY places a normalized registry value becomes a real DSP unit, so a
   // product oracle can verify each apply against ONE definition and a test can isolate-mutate
@@ -3227,7 +3227,7 @@ class SynthRuntime {
   static double classicDroneVoltSemisDownFromNorm(double n) {
     return 60.0 * n;
   }  // 0.5 -> 30 semis down.
-  // RATE: 0 stops the modulator, otherwise 0.1..20 Hz exponential (0.5 -> 1.4 Hz).  // tuned by ear
+  // RATE: 0 stops the modulator, otherwise 0.1..20 Hz exponential (0.5 -> 1.4 Hz). // tuned by ear
   static double newDroneRateHzFromNorm(double n) {
     return n <= 0.0 ? 0.0 : 0.1 * std::pow(200.0, std::min(n, 1.0));
   }
@@ -3251,7 +3251,7 @@ class SynthRuntime {
 
   // ---- single resolve/publish pair (the ONE value-movement entry in the executor) ----
   // Resolve the value a consuming module should read for a SINK jack, by EXACT edge
-  // identity (source,sink) — never by source alone (@Codex 7C2 msg 4e600057: a same-source
+  // identity (source,sink) — never by source alone: a same-source
   // NORMAL downstream must not misread a feedback delay line). A sink fed by a SELECTED
   // feedback edge is read from that edge's own D-sample delay line at the current write
   // position (graph_compiler.h consume-rule — off-by-one vs live-last-written is the defect
@@ -3262,7 +3262,7 @@ class SynthRuntime {
     bool found = false;
     const JackId src = sourceOfSink_(sink, found);
     if (!found) return fallback;
-    // The ONE delayed-vs-live decision (@Codex correction 6): a single scan whose only
+    // The ONE delayed-vs-live decision: a single scan whose only
     // exact-pair test is the (src,sink) match INSIDE feedbackSinkValue — never source-only.
     // An exact line returns matched=true with its own D-sample read; the scan returns that
     // value; nothing matches -> the live source value.
@@ -3279,7 +3279,7 @@ class SynthRuntime {
   // Publish the value a source module JUST computed for its output `src`. ALWAYS writes
   // the live CV source bank (so a normal downstream reads the CURRENT value), AND advances
   // EVERY feedback line whose sourceJack is `src` (an exact-pair consumer reads the D-sample
-  // delay). @Codex 7C2: publish must not stop at the first source match.
+  // delay).: publish must not stop at the first source match.
   void publishSourceValue_(JackId src, double v) {
     const std::uint32_t j = static_cast<std::uint32_t>(src);
     if (j < kMaxEdges) cvOut_[j] = v;
@@ -3296,8 +3296,8 @@ class SynthRuntime {
     return n > kMaxFeedbackDelay ? kMaxFeedbackDelay : n;
   }
 
-  // GH#13: total feedback edges across the whole compiled plan (all cyclic
-  // regions). Used as a capacity preflight in rebuild() so an over-capacity plan is
+  // total feedback edges across the whole compiled plan (all cyclic
+  // regions). Used as a capacity preflight in rebuild so an over-capacity plan is
   // rejected BEFORE publishing — never silently truncated to kMaxFeedback.
   static std::uint32_t countFeedback_(const CompiledGraph& g) {
     std::uint32_t n = 0;
@@ -3315,10 +3315,10 @@ class SynthRuntime {
     return false;
   }
 
-  // Strict fail-closed preflight (rebuild_, @Codex 7C2): a compiled-region module with NO
+  // Strict fail-closed preflight (rebuild_): a compiled-region module with NO
   // binding at all. Only consulted when strictBindings_ is ON — legacy fixtures drive the
   // permissive mode where an unbound module is outside the executor's scope.
-  // @Codex 67dc06c6: scan the compiler's OWN module set. compile_graph() already collects
+  // dc06c6: scan the compiler's OWN module set. compile_graph already collects
   // region.modules only from candidate PatchEdge/FixedEdge endpoints, so it is already the
   // active set — do NOT re-derive "active" here from edges_/fixedEdges_ (that duplicate truth
   // source drifts from the compiler and false-fails or false-passes; previously moduleActive_).
@@ -3329,16 +3329,16 @@ class SynthRuntime {
     return false;
   }
 
-  // Strict fail-closed preflight (rebuild_, @Codex 7C2): a compiled-region module
+  // Strict fail-closed preflight (rebuild_): a compiled-region module
   // EXPLICITLY bound to ExecutionKind::kUnsupported. The canonical fixed-chain table binds
   // `effector`/`voices` to kUnsupported (declared-deferred, no runtime instance yet);
-  // `keyboard` is now kKeyboard (GH#12 owner) and the six control sources are real DSP
-  // (GH#11 D1/D2/D4, machine_definition.h), so they are never kUnsupported here. Patching
+  // `keyboard` is now kKeyboard (owner) and the six control sources are real DSP
+  // (D2/D4, machine_definition.h), so they are never kUnsupported here. Patching
   // any kUnsupported module into the graph is
   // a real semantics violation: REFUSE with unsupported_module, never silently skip to zero
   // slots. Distinct from
   // hasMissingBinding_ (an unbound module is not a "kUnsupported" module). Only consulted
-  // when strictBindings_ is ON. @Codex 67dc06c6: same direct scan — an isolated kUnsupported
+  // when strictBindings_ is ON. dc06c6: same direct scan — an isolated kUnsupported
   // module is not in region.modules (compile_graph excludes it), so it stays LEGAL, while
   // the same module once patched into a real edge enters regions and REFUSES. No moduleActive_.
   bool hasUnsupportedModule_(const CompiledGraph& g) const {
@@ -3361,7 +3361,7 @@ class SynthRuntime {
 
   // Derive the RT-safe per-module execution slots + delay lines from the compiled
   // plan (allocation-free: fixed arrays). Called when a plan is published.
-  // The slots are ONE per compiled ModuleId in the plan order (@Codex 7C2: no ExecutionKind
+  // The slots are ONE per compiled ModuleId in the plan order (no ExecutionKind
   // dedup — the six drones are six independently-wireable modules, so each gets its own
   // slot and step_ dispatches by id). chainExecOrder_ (the legacy FixedChainRole inspector
   // array) is derived from the slots so the read-only surface still reports the roles in
@@ -3388,7 +3388,7 @@ class SynthRuntime {
     for (const CompiledRegion& region : graph_.regions) {
       if (region.kind != RegionKind::cyclic) continue;
       for (const CompiledFeedbackEdge& fe : region.feedback) {
-        // GH#13: NEVER truncate. If the compiled plan does not fit, return false so
+        // NEVER truncate. If the compiled plan does not fit, return false so
         // the caller can mark the rebuild failed instead of publishing a 16/18 lie.
         if (feedbackCount_ >= kMaxFeedback) return false;
         FeedbackLine& l = feedback_[feedbackCount_];
@@ -3410,7 +3410,7 @@ class SynthRuntime {
   // drone group's cv_mod_in; the value comes from the effective edge that feeds it
   // (sourceOfSink_) via resolveSinkValue_ (the single exact-edge source-of-truth read).
   // Returns false (and leaves `out` untouched) when the graph is bypassed (driveGraph=false
-  // — the criterion-① negative, a patched CV then has no effect) or `sink` is not fed.
+  // the criterion- negative, a patched CV then has no effect) or `sink` is not fed.
   bool resolveControlSink_(JackId sink, double& out, bool driveGraph) const {
     if (!driveGraph) return false;
     bool found = false;
@@ -3423,13 +3423,13 @@ class SynthRuntime {
   // One per-module step, dispatched in the plan's order. Kept as a switch over the
   // (small, fixed) ExecutionKind set so the render path is allocation-free and bounds
   // the latencies the compiler assumes. Every CV/feedback value movement goes through
-  // resolveSinkValue_ / publishSourceValue_ — the ONE source-of-truth pair (@Codex 7C2
+  // resolveSinkValue_ / publishSourceValue_ — the ONE source-of-truth pair (
   // req. 3: resolve by exact (src,sink) edge, publish updates live source + ALL its
   // feedback lines, never a same-source stop-at-first-match). The B′ kVcfPath slot runs
   // VCF -> calibration staging -> Distortion -> WET inside a single step (distortion is
   // an intra-vcf sub-stage, never a separate slot in the canonical path); kExtIn remains
   // only as a legacy-compat kind the synthetic fixture maps onto.
-  // driveGraph=false bypasses the CONTROL layer (criterion-① negative).
+  // driveGraph=false bypasses the CONTROL layer (criterion- negative).
   void step_(const ExecutionSlot& slot, bool driveGraph) {
     switch (slot.kind) {
       case ExecutionKind::kVcoA: {
@@ -3442,11 +3442,11 @@ class SynthRuntime {
           double g = 0.0;
           if (resolveControlSink_(cvInA_, g, driveGraph)) vcA_.setCvInput(g, cvModeA_);
         }
-        // GH#19 S5 (task #111): HARD SYNC. vco_a.sync_in is a gate-typed INPUT resolved through
+        //  HARD SYNC. vco_a.sync_in is a gate-typed INPUT resolved through
         // the ONE sink resolver and interpreted by the SAME `sink_gate_interpret` the sequencer's
         // EXT.CLOCK consumer uses; the threshold/hysteresis come from THIS jack's own descriptor
-        // (never a hardcoded constant). A real RISING edge REQUESTES a reset, which Vco::tick()
-        // then applies after its own advance, and tick() band-limits the resulting discontinuity
+        // (never a hardcoded constant). A real RISING edge REQUESTES a reset, which Vco::tick
+        // then applies after its own advance, and tick band-limits the resulting discontinuity
         // on that same sample (Vco::requestSync).
         //
         // TWO DISCRETE TIMING CONVENTIONS — this slice picks the first, and the choice is pinned
@@ -3454,14 +3454,14 @@ class SynthRuntime {
         //   (1) REQUEST, apply after the advance (what this code does). The edge sample itself
         //       reads phase 0, so the value discontinuity and the new cycle start coincide on one
         //       sample.
-        //   (2) reset IMMEDIATELY, then advance (the raw `syncPulse()` primitive). The jump is
+        //   (2) reset IMMEDIATELY, then advance (the raw `syncPulse` primitive). The jump is
         //       emitted on the edge sample and the new cycle's first advanced sample follows one
         //       sample later.
         // Both are self-consistent readings of a discrete-time hard sync; they differ in which
         // sample carries the jump relative to the cycle start. (2) is a legitimate convention, not
         // an error, and the raw primitive is retained for the VCO's own unit tests. This slice
         // adopts (1); the criterion that fixes it is the independent master-edge vs reset-frame
-        // reconciliation in the S5 mutation runner (task #111 item 2), which fails if the reset
+        // reconciliation in the S5 mutation runner (item 2), which fails if the reset
         // lands on the wrong frame.
         // Same-sample order: a source that ran earlier in this frame is consumed here. VCO B has
         // NO sync point (the hardware jack is VCO A only), so this block exists only in the kVcoA slot.
@@ -3473,12 +3473,12 @@ class SynthRuntime {
             vcA_.requestSync();
           }
         }
-        // GH#19 S0 (task #117): PWM MODULATION. Read the jack's value THIS SAMPLE through the ONE
+        //  PWM MODULATION. Read the jack's value THIS SAMPLE through the ONE
         // control-sink resolver — the same mechanism (and the same same-frame consume rule) the
         // v_oct / cv_in / sync consumers above use, so nothing here bypasses the graph scheduler
         // and a user cable override / unplug behaves exactly like it does on those jacks.
         // The value is used RAW and per sample: it is EXTERNAL audio-rate modulation and is
-        // deliberately NOT smoothed (see Vco::setPwCv). The DEPTH came from the GH#21 knob
+        // deliberately NOT smoothed (see Vco::setPwCv). The DEPTH came from the knob
         // smoother, applied once per frame via setVcoAPwm. Unbound or graph-bypassed reads 0,
         // which at any depth leaves the emitted samples untouched (Vco::effectiveDuty).
         double pwm = 0.0;
@@ -3496,19 +3496,19 @@ class SynthRuntime {
         double v = 0.0;
         if (resolveControlSink_(voctB_, v, driveGraph)) vcB_.setVoct(v);
         // Generic CV (cv_in, -5..+5): resolved from the EXACT source feeding vco_b.cv_in.
-        // task #83 default = the acyclic A->B route vco_a.dry_out -> vco_b.cv_in, read LIVE
+        //  default = the acyclic A->B route vco_a.dry_out -> vco_b.cv_in, read LIVE
         // same-frame (B consumes A's published value this frame). Only an edge the compiled
         // graph marks as a FEEDBACK line (e.g. a user B->B cable) is consumed by the exact-pair
         // reader from that edge's own D-sample line (off by one vs live-last-written — the
         // graph_compiler consume-rule). The mode comes from the runtime-held setVcoControlModes.
-        // This is the fitted setCvInput path, NEVER the confirmed V/OCT setVoct path (@Codex
+        // This is the fitted setCvInput path, NEVER the confirmed V/OCT setVoct path (
         // 7C2: the generic CV is an independent binding/transfer, not a masquerade of the
         // V/OCT law).
         if (cvInBoundB_) {
           double g = 0.0;
           if (resolveControlSink_(cvInB_, g, driveGraph)) vcB_.setCvInput(g, cvModeB_);
         }
-        // GH#19 S0 (task #117): PWM MODULATION — same rule as the kVcoA slot above, on B's OWN
+        //  PWM MODULATION — same rule as the kVcoA slot above, on B's OWN
         // jack, with B's OWN depth. A and B are independent: neither side's cable or knob reaches
         // the other VCO (the asymmetry is asserted by the product tests).
         double pwm = 0.0;
@@ -3521,7 +3521,7 @@ class SynthRuntime {
         if (vcoBDryOutBound_) publishSourceValue_(vcoBDryOut_, b);
         // Publish the real vco_b.vco_out so any downstream (a normal consumer, or a
         // user-established B->B feedback edge) reads THIS frame's value through the single
-        // write (@Codex correction 4).
+        // write.
         // The jack carries volts: the unit waveform spans the jack's nominal range (±5 V), so a
         // VCO B cable into SYNC or a CV input behaves like the hardware output.
         if (vcoBOutBound_) {
@@ -3533,7 +3533,7 @@ class SynthRuntime {
         break;
       }
       case ExecutionKind::kDroneBank: {
-        // @Codex 7C2 (msg 4e600057): NEVER "one tick whole bank". ONE slot per compiled
+        //  NEVER "one tick whole bank". ONE slot per compiled
         // ModuleId; step(slot.id, kind) selects the instance/group by id. Each classic
         // drone module (drone_1/2/4/5) runs exactly ITS OWN group per slot and resolves
         // its cv_mod BEFORE ticking (same-sample), then publishes ITS env_out. drone 3/6
@@ -3578,7 +3578,7 @@ class SynthRuntime {
           // gate/ATT/RLS/HOLD envelope is inside tickGroup; the ENV OUT transfer is
           // descriptor-driven: nominalMin + level*(nominalMax-nominalMin), range read
           // ONLY from the bound JackDescriptor (方案2b). A consumer running LATER in the
-          // plan reads the SAME-frame value (oracle ②).
+          // plan reads the SAME-frame value (oracle).
           double s = 0.0;
           for (std::size_t i = 0; i < DroneBank::kGensPerVoice; ++i) s += out5[i];
           chIn_[classicChannel(classicGroup)] = s;
@@ -3625,7 +3625,7 @@ class SynthRuntime {
         // The ext_source_in break sink goes through the SINGLE sink resolver: a cycle
         // reads the delayed env_follower value, a normal edge reads the live source, and
         // an UNFED sink falls back to the EXT.AUDIO terminal. No feedbackSinkIndex_
-        // special-case (@Codex 7C2 req. 3 — preamp uses the same exact-edge resolver).
+        // special-case (preamp uses the same exact-edge resolver).
         const double in = resolveSinkValue_(preampExtIn_, lastIn_.preamp);
         preampInResolved_ = in;
         preampOut_ = preamp_.tick(in);
@@ -3640,8 +3640,8 @@ class SynthRuntime {
         break;
       }
       case ExecutionKind::kMixer: {
-        // Canonical host-terminal injection (28-route `ext_audio_to_mixer`, per @Codex
-        // 190173bb / 07bfb061): EXT.AUDIO terminal -> mixer channel EXT.AUDIO (ch4). The
+        // Canonical host-terminal injection (28-route `ext_audio_to_mixer`,
+        //  /: EXT.AUDIO terminal -> mixer channel EXT.AUDIO (ch4). The
         // legacy synthetic `kExtIn` slot was correctly REMOVED in the canonical machine,
         // but its injection must be preserved in the mixer's resolve stage — otherwise a
         // host ext drive is silently dropped and WET wrongly collapses to the no-drive
@@ -3668,7 +3668,7 @@ class SynthRuntime {
         break;
       }
       case ExecutionKind::kDistortion: {  // legacy synthetic standalone Distortion.
-        // GH#6: the calibration trim × identity path-gain micro-diff is applied ONCE
+        // the calibration trim × identity path-gain micro-diff is applied ONCE
         // here — the clear VCF→distortion staging point — BEFORE the post-filter fold.
         wetL_ = distortion_.tickL(vcfL_ * vcfPathStageL_);
         wetR_ = distortion_.tickR(vcfR_ * vcfPathStageR_);
@@ -3714,7 +3714,7 @@ class SynthRuntime {
         // interpreter (provisional canonical sink semantics); advance ONLY on a real rising
         // edge (first sample primes, never a phantom advance). The internal PULSER still
         // runs every sample (phase continuity) and publishes CLOCK OUT as a -10/+10 V
-        // square; the discrete rising bool (clockOutRising()) remains the single edge truth.
+        // square; the discrete rising bool (clockOutRising) remains the single edge truth.
         bool clockRising = false;
         bool extPatched = false;
         double volts = 0.0;
@@ -3730,16 +3730,16 @@ class SynthRuntime {
         publishSourceValue_(seqClockOut_, sequencer_.clockOutVolts());  // -10/+10 V square.
         break;
       }
-      case ExecutionKind::kKeyboard: {  // GH#12 keyboard product owner.
-        // Advance the note voice ONE sample (portamento glide continuity — GH#8: the glide
+      case ExecutionKind::kKeyboard: {  //  keyboard product owner.
+        // Advance the note voice ONE sample (portamento glide continuity —: the glide
         // must advance every sample, so a note pitch glides to its target and the note CV is
-        // the glided/vibrato pitch, not a frozen current()). The gate is the live engaged
+        // the glided/vibrato pitch, not a frozen current). The gate is the live engaged
         // level: publish the 0/10V GATE rail (keyboard.gate_left_main_out is unipolar 0..10)
         // so the downstream EG A/B gate_in interpreter (threshold 0.5V + hysteresis) reads it
         // HIGH when notes are held and LOW otherwise. Pitch CV goes to keyboard.v_oct_out
         // (V/OCT 0..8V); VCO A/B v_oct_in consume it via the two active keyboard routes.
         //
-        // GH#12 task#101: BOTH sides advance every sample (each instance owns its own glide /
+        // BOTH sides advance every sample (each instance owns its own glide /
         // vibrato / pressure envelope, so an unused side must not be advanced lazily or the
         // two sides would diverge by block partition). The four published jacks are the four
         // registered keyboard outputs; which signal lands on pressure_out depends on the mode
@@ -3779,13 +3779,13 @@ class SynthRuntime {
   // Resolve the VCF L/R control CV (needed by both the merged kVcfPath slot and the
   // legacy standalone kVcf slot).
   //
-  // NORMALLING (route.vcf_cv_l_to_cv_r, item 2 @Codex eaaf08cc): the registry route says
+  // NORMALLING (route.vcf_cv_l_to_cv_r, item 2): the registry route says
   // "CV L is normally connected to CV R... if there is no CV-signal in the CV R. Plugging
   // into CV R overrides this." The GRAPH resolving each jack independently leaves R at 0
   // when it has no cable — that is the unmigrated gap. Here the product executes the
   // normalling: L fed AND R unplugged => R uses THIS FRAME's already-resolved L; an
   // explicit R cable (fed) takes precedence. The value written into the DFT-SPSS
-  // PolivoksFilter is observed through the REAL DSP state accessors cvL()/cvR() (never a
+  // PolivoksFilter is observed through the REAL DSP state accessors cvL/cvR (never a
   // shadow mirror), so an oracle can pin exactly what the filter ran.
   void resolveVcfCv_(bool driveGraph) {
     double l = 0.0, r = 0.0;
@@ -3826,7 +3826,7 @@ class SynthRuntime {
     return j < kMaxEdges ? cvOut_[j] : 0.0;
   }
 
-  // GH#12 task#101: the instance index a SIDE names. The index is the side itself; the
+  // the instance index a SIDE names. The index is the side itself; the
   // collapse-to-Left rule under Single lives at the EVENT entry (keyboardEventSideIndex_),
   // not here, so a readback of the Right instance always addresses the Right instance.
   static constexpr std::uint32_t keyboardSideIndex_(KeyboardSide side) {
@@ -3853,7 +3853,7 @@ class SynthRuntime {
     return d != nullptr && std::isfinite(d->nominalMin) && std::isfinite(d->nominalMax) &&
            d->nominalMax >= d->nominalMin;
   }
-  // GH#19 S5: admission rule for VCO A's hard-sync binding — the descriptor must exist, the
+  // admission rule for VCO A's hard-sync binding — the descriptor must exist, the
   // id must be able to index the CV source bank, the OWNING module must be exactly vco_a (a
   // "sync" jack on any other module is a wrong-owner binding), and it must be an INPUT gate on
   // a usable finite range (the interpreter derives threshold/hysteresis from THIS descriptor).
@@ -3921,7 +3921,7 @@ class SynthRuntime {
   void releaseEnvOut_() {
     for (int g = 0; g < kClassicDroneVoices; ++g) {
       // Deterministically clear the old env_out CV source slot so a released cohort
-      // leaves NO stale voltage consumable through the patch graph (@Codex 7a42d10a #1).
+      // leaves NO stale voltage consumable through the patch graph #1).
       if (envOutBound_[g]) {
         const std::uint32_t j = static_cast<std::uint32_t>(envOutJack_[g]);
         if (j < kMaxEdges) cvOut_[j] = 0.0;
@@ -3933,7 +3933,7 @@ class SynthRuntime {
   void releaseCvModIn_() {
     for (int g = 0; g < kClassicDroneVoices; ++g) {
       // Reset each group's SHARED MOD to 0 so a released cohort keeps no applied
-      // modulation (@Codex 7a42d10a #2): DroneBank::modCvG_ would otherwise retain the
+      // modulation #2): DroneBank::modCvG_ would otherwise retain the
       // last driven value and keep modulating even after the binding is released.
       drone_.setGroupModCv(g, 0.0);
       cvModInJack_[g] = JackId{0};
@@ -3995,9 +3995,9 @@ class SynthRuntime {
     }
   }
 
-  // Drone grouping — design/01 §3 (CONFIRMED, not provisional): six drone voices,
+  // Drone grouping — (CONFIRMED, not provisional): six drone voices,
   // 1/2/4/5 = "CLASSIC" (5 oscillators each, i.e. the DroneBank's 20 voices),
-  // 3/6 = "NEW" (Papa Srapa, P3-②, NOT part of the DroneBank). The 20 flat bank
+  // 3/6 = "NEW" (Papa Srapa, NOT part of the DroneBank). The 20 flat bank
   // oscillators split 5-per-CLASSIC-voice, ascending by channel. NEW 3/6 are the
   // PapaVoice composites set by step_ (pv3_/pv6_), separately from the bank.
   static void aggregateDrone_(const double* drone, double* chIn) {
@@ -4012,7 +4012,7 @@ class SynthRuntime {
     }
   }
 
-  // @Codex 7C2 per-id dispatch: map a compiled DroneBank ModuleId to its 0-based CLASSIC
+  //  per-id dispatch: map a compiled DroneBank ModuleId to its 0-based CLASSIC
   // group index (drone_1/2/4/5 -> g0/g1/g2/g3), or -1 for the NEW Papa voices (drone 3/6)
   // and for any non-registry synthetic id (e.g. legacy kM_Drone {5}, which is envelope_b
   // in the canonical enum — never a drone_N). A canonical strict plan drives exactly six
@@ -4054,7 +4054,7 @@ class SynthRuntime {
     bool gateHigh = DroneBank::kDefaultGroupGateOpen && droneKeyOpen_[voice == 0 ? 2 : 5];
     if (voiceGateBound_[voice]) {
       double volts = 0.0;
-      // driveGraph=false (the criterion-① negative) bypasses the control layer, so a
+      // driveGraph=false (the criterion- negative) bypasses the control layer, so a
       // patched gate cable then has no effect and the voice stays at the default.
       if (resolveControlSink_(voiceGateJack_[voice], volts, driveGraph)) {
         const JackDescriptor* d = findJackDescriptor_(voiceGateJack_[voice]);
@@ -4112,7 +4112,7 @@ class SynthRuntime {
     }
     return ExecutionKind::kUnsupported;
   }
-  // ExecutionKind -> FixedChainRole (for the chainExecRoleAt() inspector). The merged
+  // ExecutionKind -> FixedChainRole (for the chainExecRoleAt inspector). The merged
   // kVcfPath reads as the VCF role (a synthetic-only inspector never sees it; the
   // canonical ordering oracle uses the slots directly). kUnsupported reads kNone.
   static FixedChainRole fixedChainRoleOf_(ExecutionKind kind) {
@@ -4168,11 +4168,11 @@ class SynthRuntime {
   JackId vcoAOut_{0};         bool vcoAOutBound_ = false;
   JackId vcoBOut_{0};         bool vcoBOutBound_ = false;
   JackId vcoBDryOut_{0};      bool vcoBDryOutBound_ = false;
-  // GH#19 S0: the PWM modulation inputs (vco_a.pwm_in / vco_b.pwm_in). Same real-jack-id-0 rule as
+  // the PWM modulation inputs (vco_a.pwm_in / vco_b.pwm_in). Same real-jack-id-0 rule as
   // the cv_in pair above: the flags, not a sentinel, are the admission state.
   JackId pwmInA_{0};          bool pwmInBoundA_ = false;
   JackId pwmInB_{0};          bool pwmInBoundB_ = false;
-  // GH#19 S5: VCO A's hard-sync gate input (one jack; VCO B has none) + its own latch.
+  // VCO A's hard-sync gate input (one jack; VCO B has none) + its own latch.
   JackId syncInA_{0};         bool syncInBoundA_ = false;
   GateClockSinkState syncLatchA_;
   VcoControlMode cvModeA_ = VcoControlMode::kExponential;
@@ -4197,7 +4197,7 @@ class SynthRuntime {
   bool classicGateDriven_[DroneBank::kClassicVoices] = {false, false, false, false};  // a cable is in
   bool envOutBound_[DroneBank::kClassicVoices] = {false, false, false, false};
   bool cvModInBound_[DroneBank::kClassicVoices] = {false, false, false, false};
-  // PAPA SRAPA voice bindings (GH#15 D4), index 0 == drone_3, 1 == drone_6: the gate_in
+  // PAPA SRAPA voice bindings, index 0 == drone_3, 1 == drone_6: the gate_in
   // jacks the product READS (through the same single sink resolver the classic cv_mod_in
   // uses) and the env_out jacks it WRITES. Same explicit-flag admission contract as the
   // classic cohort above — a released/failed cohort clears the jack AND the bound flag.
@@ -4224,9 +4224,9 @@ class SynthRuntime {
   FeedbackLine feedback_[kMaxFeedback];
   std::uint32_t feedbackCount_ = 0;
 
-  // #46 timed control-event state (preallocated, RT-safe). EventTimebase owns the
+  //  timed control-event state (preallocated, RT-safe). EventTimebase owns the
   // absolute-sample pending queue; blockEvents_ is the per-block delivery scratch the
-  // render loop drains each block. Both are fixed-capacity (design/07 §5: no heap, no
+  // render loop drains each block. Both are fixed-capacity (no heap, no
   // lock). Sizing to kEventDispatchCapacity avoids the product creating its own
   // output-capacity pressure: the buffer always covers a full continuous + critical
   // burst plus the single reconcile failsafe.
@@ -4241,25 +4241,25 @@ class SynthRuntime {
   DualEffector effector_;
   bool effectorEnabled_ = false;
   bool vcoVcaEnabled_ = false;
-  bool droneKeyOpen_[6] = {true, true, true, true, true, true};  // DRONE VOICES keys  // VCO A/B VCAs driven by Envelope A/B (canonical machine)
+  bool droneKeyOpen_[6] = {true, true, true, true, true, true};  // DRONE VOICES keys // VCO A/B VCAs driven by Envelope A/B (canonical machine)
   double effCv_[3] = {0.0, 0.0, 0.0};
   double dryA_ = 0.0, dryB_ = 0.0;
   double preampInResolved_ = 0.0;
   double mixL_ = 0.0, mixR_ = 0.0;
   double vcfL_ = 0.0, vcfR_ = 0.0;
   double preampOut_ = 0.0;
-  double preampPeak_ = 0.0;  // largest |preamp output| since takePreampPeak()
+  double preampPeak_ = 0.0;  // largest |preamp output| since takePreampPeak
 
-  // GH#6 VCF→distortion staging gains (calibration trim × identity path-gain micro).
+  //  VCF→distortion staging gains (calibration trim × identity path-gain micro).
   // Default 1.0 (no staging adjustment) so the runtime is bit-identical to the
-  // pre-GH#6 hardware path until configureVcfIdentity is called. Independent per L/R.
+  // earlier hardware path until configureVcfIdentity is called. Independent per L/R.
   double vcfPathStageL_ = 1.0, vcfPathStageR_ = 1.0;
   bool identityConfigured_ = false;
-  // @Codex 7C2 req. 4: an owning definition must EXPLICITLY enable strict binding policy.
+  // an owning definition must EXPLICITLY enable strict binding policy.
   // Default OFF = legacy permissive (synthetic fixtures that bind no kind are exempt and
-  // auto-allowed). Only when ON does rebuild() fail-closed with a DISTINCT status:
+  // auto-allowed). Only when ON does rebuild fail-closed with a DISTINCT status:
   // missing_execution_binding (a compiled-region module has NO kind binding) vs
-  // unsupported_module (explicitly bound to kUnsupported). setStrictBindings() toggles it.
+  // unsupported_module (explicitly bound to kUnsupported). setStrictBindings toggles it.
   bool strictBindings_ = false;
   double envOut_ = 0.0;
   RuntimeInputs lastIn_;
@@ -4268,7 +4268,7 @@ class SynthRuntime {
 
   // Voice sources + fixed chain DSP. The runtime no longer uses SignalPath: the
   // mixer/vcf/dist roll into the plan-driven order instead of a hard-coded chain.
-  // task #78 full-apply result (the candidate-builder gate + the applied count).
+  //  full-apply result (the candidate-builder gate + the applied count).
   bool dspApplyOk_ = false;
   std::uint32_t dspAppliedCount_ = 0;
 
@@ -4295,7 +4295,7 @@ class SynthRuntime {
   JoystickCv joystick_;
   FiveStepSequencer sequencer_;
 
-  // GH#21 continuous control smoothing. One ParameterSmoother per ParameterId-space slot
+  //  continuous control smoothing. One ParameterSmoother per ParameterId-space slot
   // (O(1) index by static_cast<uint32_t>(id)) — a fixed preallocated array, NEVER a map
   // (zero-callback-allocation, contract hard-req #1). Only params whose registry
   // `smoothing == Smoothing::seconds` AND `disposition == applied_to_dsp` advance each
@@ -4314,8 +4314,8 @@ class SynthRuntime {
   JackId joyXOut_ = JackId{0}, joyYOut_ = JackId{0};
   JackId seqExtClockIn_ = JackId{0}, seqCvOut_ = JackId{0}, seqGateOut_ = JackId{0},
          seqClockOut_ = JackId{0};
-  // GH#12 keyboard product owner: the note-CV / gate output jacks the keyboard publishes.
-  // task#101: four real registered jacks + an explicit bound flag (unbound = no publish, so a
+  //  keyboard product owner: the note-CV / gate output jacks the keyboard publishes.
+  // four real registered jacks + an explicit bound flag (unbound = no publish, so a
   // synthetic fixture never writes jack 0 — the JackId{0} sentinel is a REAL jack).
   JackId kbdVOctOut_ = JackId{0}, kbdGateLeftOut_ = JackId{0},
          kbdGateRightOut_ = JackId{0}, kbdPressureOut_ = JackId{0};
@@ -4323,7 +4323,7 @@ class SynthRuntime {
   // The in-owner note chain (approved option A): an ArpSeq in default Keyboard mode
   // (a transparent pass-through) feeding a KeyboardBehaviour. Both are configured with the
   // machine sample rate in the ctor; only the keyboard behaviour carries per-note state.
-  // task#101: ONE PAIR PER SIDE (index 0 = Left, 1 = Right) — the two sides are independent
+  // ONE PAIR PER SIDE (index 0 = Left, 1 = Right) — the two sides are independent
   // performance instances; they share no held notes, chord, glide or envelope.
   ArpSeq keyboardArpSeq_[2];
   KeyboardBehaviour keyboardBeh_[2];
@@ -4347,7 +4347,7 @@ class SynthRuntime {
   ModuleId alwaysExecIds_[kMaxAlwaysExecuteSources] = {};
   std::uint32_t alwaysExecCount_ = 0;
 
-  // Most recent control-source transfer outcome (@Codex BLOCKED #1). Set by every
+  // Most recent control-source transfer outcome (BLOCKED #1). Set by every
   // applyControlEvent_ parameter event (and precisely by setControlParamValue). The product
   // surface / test oracle reads it back; there is no separate param bank to drift.
   ParameterApplyStatus lastApplyStatus_ = ParameterApplyStatus::unsupported_parameter;
@@ -4359,7 +4359,7 @@ class SynthRuntime {
   GateClockSinkState envA_gate_;
   GateClockSinkState envB_gate_;
   GateClockSinkState seqClockLatch_;
-  // GH#15 D4: one gate-clock latch PER Papa voice (index 0 == drone_3, 1 == drone_6).
+  // one gate-clock latch PER Papa voice (index 0 == drone_3, 1 == drone_6).
   // Separate latches, so a gate cable landing on drone_3 cannot shift drone_6's
   // hysteresis state — the two voices are independent gates, not one shared sink.
   GateClockSinkState voiceGateLatch_[kPapaVoiceCount];

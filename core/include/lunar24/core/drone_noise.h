@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// NoiseSource — P3-②: a seeded, per-sample white-noise generator for the drone
+// NoiseSource —: a seeded, per-sample white-noise generator for the drone
 // voice. It is an AMPLITUDE source (a signal), not a frequency source, so the
 // cross-sample-rate *frequency* must-test does not apply to it — instead it is
 // covered by the fixed-seed reproducibility and buffer-independence must-tests
@@ -13,7 +13,7 @@
 // sample (per-sample white noise); DroneBank deliberately consumes the seed only at
 // construction. Both are deterministic: a seed => an exactly reproducible buffer.
 //
-// NOTE on the multi-rate "audible-band noise power" measurement (a P3-② must-test
+// NOTE on the multi-rate "audible-band noise power" measurement (a must-test
 // that is MEASURE-ONLY, fix deferred): per-sample white noise has a flat one-sided
 // spectrum up to Nyquist, so at a higher sample rate the SAME total power spreads
 // over a wider band and a fixed 20 Hz..20 kHz audible slice captures LESS of it.
@@ -46,7 +46,7 @@ class NoiseSource {
     *out = (rng_.nextUnit() * 2.0 - 1.0) * amplitude_;
   }
 
-  // NEW-voice NOISE control (design/01 §3, provisional). The noise IS an amplitude
+  // NEW-voice NOISE control (provisional). The noise IS an amplitude
   // source, so this knob sets its level. The per-sample uniform distribution and
   // the /sr-independent (amplitude*nominal) scale are unchanged; only the scale
   // factor is adjustable. amp < 0 is taken as |amp| (an amplitude, not a sign).

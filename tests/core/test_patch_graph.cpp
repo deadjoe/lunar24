@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P2-② tests for the PatchGraph connection-facts layer (design/07 §4, design/04
+//  tests for the PatchGraph connection-facts layer (
 // §2):
 //   A. Stable Jack IDs — every registry jack carries an explicit numeric id that
 //      is order-independent; the graph reads cardinality from the descriptor.
@@ -15,7 +15,7 @@
 //      jack atomically replaces the old cable (source or sink side, whichever is
 //      at capacity); order-independence and multi-round no-drift both hold.
 //
-// The maxCables=2 synthetic test is the @Claude red-flag guard: if the graph
+// The maxCables=2 synthetic test is the red-flag guard: if the graph
 // hardcoded "a jack holds one cable", honoring a descriptor that says 2 would be
 // impossible and this test would go red. It passing proves cardinality is data.
 
@@ -48,7 +48,7 @@ static core::JackDescriptor mk_jack(core::JackId id, core::PinDirection dir,
 
 // ----------------------------------------------------------- data-driven -----
 
-// @Claude: "把 ≤1 保持成数据……图必须读 maxCables 这个字段". Every real jack
+// "把 ≤1 保持成数据……图必须读 maxCables 这个字段". Every real jack
 // currently carries maxCables==1 (the no-mult evidence default); the graph must
 // read it, never assume it. This confirms the source data is what the graph
 // consumes and that no real jack silently exceeds the single-cable default.
@@ -139,7 +139,7 @@ static void user_cable_cardinality_default_one() {
   CHECK_EQ(g.countInto(core::JackId::vco_a_cv_in), 1u);
 }
 
-// @Claude red-flag test: a jack whose descriptor says maxCables==2 MUST be
+// a jack whose descriptor says maxCables==2 MUST be
 // honored. If the graph hardcoded "one cable per jack", this goes red. It proves
 // the graph reads the field rather than asserting an assumption.
 static void max_cables_is_data_not_assumption() {
@@ -252,11 +252,11 @@ static void multi_round_no_drift() {
 }
 
 // --------------------------------------------------------------------
-// P2-④ guard: signal type is ADVISORY, never a connection filter. A real output
+//  guard: signal type is ADVISORY, never a connection filter. A real output
 // drives any real input; type/range mismatch is a hint to the dsp layer, not a
 // reason to reject the cable. PatchGraph::connect already rejects only by
 // direction — here we PROVE cross-type succeeds, and that a TypeGuard that would
-// reject it is the degeneracy @Claude names.
+// reject it is the degeneracy names.
 // --------------------------------------------------------------------
 
 static void cross_type_connect_succeeds() {

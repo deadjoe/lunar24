@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-⑤ input-normalization layer (design/00 §P4-⑤, @Claude msg 87862933).
+//  input-normalization layer.
 //
-// This is the FRONT layer of the two-layer P4-⑤ calibration split (design/00
-// §P4-⑤ Decis ③). Its single job is to converge a SOURCE-VARYING raw touch
+// This is the FRONT layer of the two-layer calibration split (
+// § Decis). Its single job is to converge a SOURCE-VARYING raw touch
 // reading into ONE internal pressure value. Two sources (e.g. the panel's MPR121
 // capacitive reading and a pointer/mouse substitute) disagree in raw units; they
 // MUST disagree only BEFORE this layer, because the P4 exit criterion compares
@@ -13,8 +13,8 @@
 // a difference — the difference is eaten here, so a normalized pressure from two
 // sources at the same physical touch is bit-identical to the passage below it.
 //
-// This is deliberately NOT the output-calibration layer (design/00 §P4-⑤ Decis
-// ③): input normalization produces the single internal pressure; output
+// This is deliberately NOT the output-calibration layer (Decis
+// ): input normalization produces the single internal pressure; output
 // calibration (keyboard_output_calibration.h) scales that SAME value to the
 // physical jack voltage. One is before the choke, one after. They do not overlap
 // and must never be conflated — mixing them would let someone wrongly believe the
@@ -27,7 +27,7 @@
 // scalar deviceState params (touch_threshold 133, release_threshold 134,
 // pressure_min 135, pressure_max 136).
 //
-// FINDINGS (never guess-filled, @Claude msgs 87862933 + 90e14dfd):
+// FINDINGS (never guess-filled, +:
 //   * the raw->pressure MAPPING CURVE is PROVISIONAL. This layer uses a plain
 //     linear interpolation between pressure_min and pressure_max as a labelled
 //     placeholder ONLY; it is not an evidenced curve and no test asserts it as

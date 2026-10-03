@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // AudioBlockView: a framework-free, preallocated block of the four logical
-// outputs the core always produces (design/07 §5):
+// outputs the core always produces:
 
 #pragma once
 

@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-⑤ menu tests (design/00 §P4-⑤, @Claude msg 87862933; Decis ④ + the bonus
-// negative). @Claude's mandates, referenced here:
+//  menu tests (Decis + the bonus
+// negative). mandates, referenced here:
 //
-//   Decis ④ — "菜单项按手册全做,不要只做 preset+校准". Every keyboard menu
+//   Decis — "菜单项按手册全做,不要只做 preset+校准". Every keyboard menu
 //   parameter gets a reachable path; those keyboard settings have NO dedicated
 //   panel knob, so the menu is their only control surface. Only preset+calibration
 //   would strand a whole batch of parameters with no reachable route and the P5
@@ -43,7 +43,7 @@ static const core::KeyboardMenuItem& nav_pick(const core::KeyboardMenuNav& n);
 static std::uint32_t menu_item_index(core::ParameterId id);
 
 // -------------------------------------------------------------------------------
-// Reachability (Decis ④) — every keyboard menu parameter is present
+// Reachability (Decis) — every keyboard menu parameter is present
 // -------------------------------------------------------------------------------
 
 // Every per-side scalar (the 22 in kKeyboardScalarParameterIds) must have a
@@ -296,7 +296,7 @@ static void menu_path_and_midi_path_converge_split_right() {
 static void wrong_bank_menu_write_diverges_and_is_detected() {
   // Negative (the mutation under test): a "menu path writes the wrong place" —
   // it writes a split-right per-side param to the GLOBAL bank (parameters[id])
-  // instead of the current side bank. This is the exact bug @Claude's bonus
+  // instead of the current side bank. This is the exact bug bonus
   // negative describes. It MUST diverge from the MIDI path, so a real regression
   // in write_item_value never silently converges.
   core::DeviceStateV1 state;
@@ -351,5 +351,5 @@ int main() {
   calibration_gate_sets_flag_and_page();
   menu_path_and_midi_path_converge_split_right();
   wrong_bank_menu_write_diverges_and_is_detected();
-  return ::test::finish("keyboard menu (P4-⑤, reachability + side routing)");
+  return ::test::finish("keyboard menu (reachability + side routing)");
 }

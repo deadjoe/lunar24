@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// StatePersistence (design/07 §6, master plan line 93): write-disk debounce +
+// StatePersistence (master plan line 93): write-disk debounce +
 // atomic state save. The control thread takes a consistent snapshot, debounces it
 // (coalescing rapid changes, never dropping the final state), writes a TEMP file,
 // flushes it, then ATOMICALLY renames it over the live file. The audio thread
 // never participates in disk saving.
 //
-// This is the P2-⑤ Half 2 (persistence) deliverable. The FILE SYSTEM calls are
+// This is the Half 2 (persistence) deliverable. The FILE SYSTEM calls are
 // delegated to an injectable FileOps backend so the order/fail-safety logic is a
 // framework-free, testable core property and a later platform layer supplies the
 // real fopen/fflush/rename. Because core/ cannot depend on a filesystem layer
@@ -62,7 +62,7 @@ class StateSaveDebounce {
   // Let the caller record a real disk write it performed (so a test can tally the
   // actual writeFile invocations, not the debounce decisions).
   void noteWritten() { ++writeCount_; }
-  // Number of COMPLETED disk writes (the caller increments via noteWritten()).
+  // Number of COMPLETED disk writes (the caller increments via noteWritten).
   std::uint64_t writeCount() const { return writeCount_; }
   bool dirty() const { return dirty_; }
 

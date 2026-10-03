@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// DeviceStateV1 parameter disposition (design/07 §9, task #75 revision 2).
+// DeviceStateV1 parameter disposition (revision 2).
 //
 // The SINGLE truth source for the disposition of every landed ParameterId: which
 // of the five classes a parameter falls into. The table is sparse (keyed by the
@@ -10,23 +10,23 @@
 // invalid_unlanded. There is no copied module field and no second
 // has_real_unit_transfer truth source: the registry ParameterDescriptor
 // (registry.hpp) remains the one source for a parameter's range/unit/initial,
-// read through find_parameter() below.
+// read through find_parameter below.
 //
-// Classification (Codex revision-2, msg 40bef2eb — supersedes 135/35/125/50/0):
-// exactly five classes with counts. GH#15 D1 (mod) moved 2, D2 (hi_low + rate_switch)
+// Classification (revision-2, — supersedes 135/35/125/50/0):
+// exactly five classes with counts. (mod) moved 2, D2 (hi_low + rate_switch)
 // moved 4, D3 (divider) moved 2, D4 (the Papa Srapa AR envelope's ATT/RLS) moved 4,
 // and D5 (the drone3/6 HOLD OR term on that envelope's target) moved 2 from
-// transfer_unavailable -> applied_to_dsp. GH#19 S0 (Raft task #117) moved the last 2 —
+// transfer_unavailable -> applied_to_dsp. (Raft) moved the last 2 —
 // vco_a.pwm(8) and vco_b.pwm(30) — on the same path, so the class is now EMPTY:
 //   189 applied_to_DSP / 35 applied_to_keyboard / 125 preserved_deferred_P6_P8 /
 //   0 transfer_unavailable / 0 invalid_unlanded == 349 landed (incl. the classic drones'
 //   CV knobs, ids 412-415).
-// The chain so far is 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) -> (D5) -> (#117)
+// The chain so far is 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) -> (D5) ->
 // 183/35/125/2/0 -> 185/35/125/0/0.
 // The 185 must each reach a real DSP apply; the software norm->DSP mappings are marked
-// PROVISIONAL there, not as unavailable. In particular the GH#19 S0 PWM transfer
+// PROVISIONAL there, not as unavailable. In particular the PWM transfer
 // (effectiveDuty = clamp(basePW + depth*cvVolts/10, 0.001, 0.999)) is a declared SOFTWARE
-// model, not a hardware fact — see vco.h / vco_wave_map.h and the task #117 report.
+// model, not a hardware fact — see vco.h / vco_wave_map.h and the report.
 
 #pragma once
 
@@ -40,6 +40,8 @@ namespace lunar24::core {
 enum class StateDisposition : std::uint8_t {
   applied_to_dsp = 0,
   applied_to_keyboard = 1,
+  // Not routed by applyDspParam: the program_* name labels (never sound) and the effector
+  // controls (applied separately by the runtime, see the table below).
   preserved_deferred_p6_p8 = 2,
   transfer_unavailable = 3,
   invalid_unlanded = 4,
@@ -184,6 +186,9 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
     { ParameterId::mixer_ch9_vol, StateDisposition::applied_to_dsp },
     { ParameterId::mixer_ch10_pan, StateDisposition::applied_to_dsp },
     { ParameterId::mixer_ch10_vol, StateDisposition::applied_to_dsp },
+    // The effector knobs and switches are NOT unused: applyDspParam does not route them, but
+    // the runtime applies them (applyEffectorState / applyEffectorParam), so they change the
+    // sound. Only PHONE has no effect (no headphone output; its panel place is REC).
     { ParameterId::effector_x, StateDisposition::preserved_deferred_p6_p8 },
     { ParameterId::effector_y, StateDisposition::preserved_deferred_p6_p8 },
     { ParameterId::effector_z, StateDisposition::preserved_deferred_p6_p8 },
@@ -410,7 +415,7 @@ inline constexpr DispositionEntry kDeviceStateDisposition[kDeviceStateDispositio
 };
 
 // Compile-time class counts lock the classification. The chain so far is
-// 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) -> (D5) -> (#117 pwm pair) 185/35/125/0/0 -> (classic drone CV knobs) 189/35/125/0/0.
+// 169/35/125/16/0 -> (D1) -> (D2) -> (D3) -> (D4) -> (D5) -> (pwm pair) 185/35/125/0/0 -> (classic drone CV knobs) 189/35/125/0/0.
 inline constexpr std::uint32_t count_disposition(StateDisposition d) noexcept {
   std::uint32_t n = 0;
   for (std::uint32_t i = 0; i < kDeviceStateDispositionCount; ++i)

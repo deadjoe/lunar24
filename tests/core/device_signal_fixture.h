@@ -3,11 +3,11 @@
 //
 // device_signal_fixture.h — TEST-ONLY synthetic signal generators.
 //
-// The GH#4 mandate (@Codex 6c74e22d) requires the production DeviceAdapter to be the
+// The mandate requires the production DeviceAdapter to be the
 // bridge between runtime virtual volts and device-normalized samples, and it forbids
 // the adapters ever being driven by a synthetic test generator living in the production
 // core. These three helpers are exactly that: they SYNTHESIZE a distinguishable
-// per-logical test signal (P1-③ premise) and CLASSIFY a received block back to a
+// per-logical test signal (premise) and CLASSIFY a received block back to a
 // logical, so a layout read-back test / the platform-half test can observe which
 // physical channel carried which logical. They are NOT an adapter, do NOT touch
 // RuntimeOutput / RuntimeInputs / virtual volts, and must never be used by
@@ -29,7 +29,7 @@
 namespace lunar24::core {
 
 // Progress: a DISTINGUISHABLE signal for each logical, so a read-back can classify
-// which logical a physical channel actually carried (P1-③ premise). TEST-ONLY.
+// which logical a physical channel actually carried (premise). TEST-ONLY.
 inline float logical_signal(int logical, int frame, double sr) {
   const double kPi = 3.14159265358979323846;
   const double t = static_cast<double>(frame) / sr;

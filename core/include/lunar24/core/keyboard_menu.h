@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-⑤ encoder menu (design/00 §P4-⑤, @Claude msg 87862933).
+//  encoder menu.
 //
-// @Claude Decis ④: the menu is the ONLY control surface for the keyboard
+//  Decis: the menu is the ONLY control surface for the keyboard
 // parameters that have NO dedicated panel knob (P5 "no new controls" — the frozen
 // registry gives the keyboard one knob per per-side parameter; the panel has no
 // separate knob for, say, arp hold or the calibration thresholds). So this menu
@@ -20,14 +20,14 @@
 //     through the SAME side bank that the live/MIDI path uses (side_bank(mode,
 //     side)), NEVER to the global parameters[] for a split right side. Mixing
 //     the two would make the menu path and the MIDI path disagree. That is the
-//     negative test (msg 87862933): a menu that writes a split right-side param
+//     negative test: a menu that writes a split right-side param
 //     to the global bank diverges from the MIDI path and goes red.
 //
-// This owns the DISPLAY SNAPSHOT too (design/00 §P4-⑤ Decis ①): the menu fills a
+// This owns the DISPLAY SNAPSHOT too (Decis): the menu fills a
 // pure-data keyboard_display.h struct. No query interface, no getter onto the
 // menu's internals — the struct IS the render contract.
 //
-// FINDINGS (never guess-filled, @Claude msgs 87862933 + 90e14dfd):
+// FINDINGS (never guess-filled, +:
 //   * the ENCODER STEP AMOUNT is PROVISIONAL. Every `step` here is a labelled
 //     placeholder (the manual gives ranges, not detents); no test asserts a step
 //     as design truth.
@@ -360,7 +360,7 @@ inline double clamp_item_value(const KeyboardMenuItem& item, double value) noexc
 }
 
 // ---------------------------------------------------------------------------
-// Menu navigation — produces the pure-data display snapshot (design/00 Decis ①).
+// Menu navigation — produces the pure-data display snapshot (Decis).
 // ---------------------------------------------------------------------------
 //
 // The navigation semantics are a RENDERING decision (PROVISIONAL, FINDINGS): the

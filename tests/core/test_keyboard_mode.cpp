@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-③ tests for the keyboard-mode side-context foundation (design/00 §2d, msg
-// 695564a7; design/06 §P4; design/07 §3, §6).
+//  tests for the keyboard-mode side-context foundation (msg
+// ; ;, §6).
 //
 // The contract the foundation exists to enforce:
 //   * ParameterId identifies WHICH parameter (the one physical knob).
@@ -10,7 +10,7 @@
 //   * The id space never grows a `_r` id for the right side — split is two banks
 //     under one id, NOT a new parameter (P5: no new controls).
 //
-// Per @Claude the information is in the negation, so every negative here is a
+// Per the information is in the negation, so every negative here is a
 // REAL, representative wrong implementation the abstraction exists to prevent:
 //   * split per-side independence — a reader that ignores side would read bank 0
 //     for the right side too (wrong).
@@ -21,7 +21,7 @@
 //     the right side would feed a different id to the bank (wrong).
 //
 // Tests exercise the TYPED KeyboardMode/Side enums (grounded semantics). The raw
-// pressureBehaviour -> mode decode is PROVISIONAL (design/00 §3.2), so it is
+// pressureBehaviour -> mode decode is PROVISIONAL, so it is
 // asserted only for totality + the documented-unknown default, never as proof.
 
 #include "mini_test.h"
@@ -165,7 +165,7 @@ static void a_second_parameter_keeps_its_own_id() {
 
 static void behaviour_decode_is_total() {
   // PROVISIONAL decode: assert totality + the documented unknown->Single default.
-  // NOT asserting the 0/1/2 mapping as proven design truth (design/00 §3.2 — that
+  // NOT asserting the 0/1/2 mapping as proven design truth (that
   // decode is flagged UNEVIDENCED). The point of the default is that a rogue
   // selector degrades to the conservative single-bank case, never a phantom split.
   for (std::uint32_t v = 0; v <= 255; ++v) {
@@ -185,5 +185,5 @@ int main() {
   reading_preserves_the_parameter_id();
   a_second_parameter_keeps_its_own_id();
   behaviour_decode_is_total();
-  return ::test::finish("keyboard mode (P4-③)");
+  return ::test::finish("keyboard mode ");
 }

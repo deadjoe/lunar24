@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GraphCompiler (design/07 §4 "Feedback 的确定性规则"): turns a PatchGraph
-// connection-facts snapshot into an immutable execution plan. This is the P2-③
+// GraphCompiler ("Feedback 的确定性规则"): turns a PatchGraph
+// connection-facts snapshot into an immutable execution plan. This is the
 // SCC cycle-breaking deliverable.
 //
 // The compiler DEPENDS on the connection-facts layer (patch_graph.h produces the
@@ -13,11 +13,11 @@
 // What it produces:
 //   * SCC decomposition of the inter-module signal graph, computed only when the
 //     topology changes (PatchGraph.epoch is the trigger). Acyclic regions run as
-//     a block; a cyclic region runs per-sample (design/07 §4 line 103-111).
+//     a block; a cyclic region runs per-sample (line 103-111).
 //   * A DETERMINISTIC feedback-edge set per cyclic region — the back edges of a
 //     DFS that orders nodes by ModuleId and adjacency by (sourceJack, sinkJack),
 //     so the same topology always yields the same set, independent of plug order
-//     (design/07 §4: "恢复同一 DeviceState 必须得到同一结果"). The selected set
+//     ("恢复同一 DeviceState 必须得到同一结果"). The selected set
 //     is both SUFFICIENT (removing it makes the region a DAG) and NON-REDUNDANT
 //     (re-adding any single selected edge recreates a cycle).
 //   * A delay decision per feedback edge, consulting ONLY the path-level contract
@@ -61,7 +61,7 @@ struct GraphModule {
   const ModuleExecutionContract* contract;
 };
 
-// A fixed internal route (design/07 §4 Decision B): internal fixed endpoints are
+// A fixed internal route (Decision B): internal fixed endpoints are
 // `module.port` identity with NO JackId and no separate numeric runtime space;
 // they are coherence-only. The compiler consumes fixed edges ONLY for module
 // membership and module->module dependency edges — so a fixed edge contributes
@@ -105,14 +105,14 @@ struct CompiledRegion {
   RegionKind kind;
   // Deterministic EXECUTABLE order: the topological order of the region's
   // (fixed + pluggable) module dependency edges AFTER the selected feedback edges
-  // are removed (GH#14). NOT a numeric ModuleId sort — the old numeric sort was
+  // are removed. NOT a numeric ModuleId sort — the old numeric sort was
   // not the execution order the per-sample loop must follow.
   std::vector<ModuleId> modules;
   std::vector<CompiledEdge> edges;               // cyclic region only
   std::vector<CompiledFeedbackEdge> feedback;    // cyclic region only
 };
 
-// --- Executor consume-rule for real_path feedback (design/07 §4, P3-⑥ Debt 2) ---
+// Executor consume-rule for real_path feedback (Debt 2) ---
 //
 // `FeedbackDelay::real_path` on an edge with `delaySamples==D` means the specific
 // on-cycle path already carries D samples of genuine causal delay; the compiler
@@ -126,12 +126,12 @@ struct CompiledRegion {
 // output" buffer. Reading the source's last output is off-by-one for any D>1: the
 // source ran after the consumer in the per-sample pass, so the consumer reads the
 // previous pass's value (loop delay D+1, not D). Reading the last output is exactly
-// how the P2-③ MiniExec test scaffold consumes real_path, and it is wrong; it is
+// how the MiniExec test scaffold consumes real_path, and it is wrong; it is
 // test scaffolding, not part of this contract.
 //
 // The judge has two halves, and partition invariance is NECESSARY but not SUFFICIENT:
 //   * Partition invariance — the mixed non-uniform partition (64,100,37,128,7,256,91)
-//     must reproduce the sequential per-sample sequence (design/07 §4 line 107). This
+//     must reproduce the sequential per-sample sequence. This
 //     fires only on a one-buffer / block-lazy break.
 //   * An ABSOLUTE reference — the realized loop delay must equal `delaySamples`
 //     exactly, not merely be "the same under every partition". A wrong-but-consistent
@@ -153,10 +153,10 @@ enum class CompileStatus : std::uint8_t {
   cycle_unsafe_module,     // a cyclic SCC contains a module not allowed in one
   invalid_module_contract, // a present module contract fails module_contract_is_valid
   invalid_execution_order, // after removing the selected feedback edges the region
-                           // is still not a DAG (defensive fail-closed; see GH#14)
+                           // is still not a DAG (defensive fail-closed)
   invalid_always_execute,  // an always-execute admission is malformed (not a real module,
                            // duplicated, null-with-count, or over-capacity): fail-closed,
-                           // never a silent drop (@Codex BLOCKED #5)
+                           // never a silent drop (BLOCKED #5)
 };
 
 struct CompileResult {
@@ -207,9 +207,9 @@ inline void decide_feedback_delay(const ModuleExecutionContract* c, JackId inPor
   }
 }
 
-// Cycle-aware path-delay decision for one feedback break edge (GH#7). The break
+// Cycle-aware path-delay decision for one feedback break edge. The break
 // edge closes a cycle that may re-enter the SOURCE module (v) through ANY of v's
-// in-SCC input ports, each with its own declared delay. design/07 §4: a real delay
+// in-SCC input ports, each with its own declared delay.: a real delay
 // may replace z^-1 only when the specific cycle's minimum reachable delay is
 // positive; ANY reachable direct branch makes that minimum zero. So we take the
 // minimum over every reachable in-SCC input->outPort path: if any is direct-through
@@ -248,14 +248,14 @@ inline void decide_feedback_delay_cycle(const ModuleExecutionContract* c, JackId
 // Compile a patch snapshot into an execution plan. `jacks` maps a JackId to its
 // owning module; `edges` is the canonical effective-edge set from PatchGraph;
 // `modules` supplies each module's prepared scheduling contract; `fixedEdges` is
-// the fixed internal route set (design/07 §4 Decision B), merged into the SAME
-// plan as the pluggable JackId edges (single source of truth, @Claude ruling 2).
+// the fixed internal route set (Decision B), merged into the SAME
+// plan as the pluggable JackId edges (single source of truth).
 //
 // Cross-category deterministic total order (the break-edge selection; the fixed
 // chain is never a break object — it has no JackId, so no contract decision):
 //   category first (pluggable=0 < fixed=1); then within category — pluggable by
 //   (sourceJack, sinkJack) numeric ascending; fixed by "fixed.<name>" lexicographic.
-// Shared capacity for the always-execute control-source admission (@Codex BLOCKED #5).
+// Shared capacity for the always-execute control-source admission (BLOCKED #5).
 // ONE named constant, used by BOTH this compiler admission (compile_graph) and
 // SynthRuntime::setAlwaysExecute / the alwaysExecIds_ array — a hand-copied twin
 // (a local `kMaxAlways` mirroring `kMaxFixedModules`) is exactly the drift that let a
@@ -263,7 +263,7 @@ inline void decide_feedback_delay_cycle(const ModuleExecutionContract* c, JackId
 inline constexpr std::uint32_t kMaxAlwaysExecuteSources = 32;
 
 // The same topology built from a different insertion order yields the identical
-// feedback set (criterion ⑥c: insertion-order independence).
+// feedback set (c: insertion-order independence).
 //
 // Returns cycle_unsafe_module (with an empty graph) if any cyclic region includes
 // a module that is not allowed in a cyclic SCC. This is a control-thread call;
@@ -288,13 +288,13 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
     mods.push_back(fixedEdges[i].sourceModule);
     mods.push_back(fixedEdges[i].sinkModule);
   }
-  // GH#11: always-execute sources must RUN even when they carry no cable (per-sample
+  // always-execute sources must RUN even when they carry no cable (per-sample
   // LFO / EG SELF-GEN / PULSER phase continuity), so they are admitted into the SAME
   // plan — never a plan-external pre-append. Force-including their ids means an unwired
   // source still becomes an isolated acyclic singleton region (the SCC loop below
   // iterates all M modules, so every id here is reached). A null alwaysExecute or
   // count==0 is a no-op, keeping legacy calls byte-identical. Admission is ATOMIC and
-  // FAIL-CLOSED (@Codex BLOCKED #5): a malformed set — null ids with count>0, over
+  // FAIL-CLOSED (BLOCKED #5): a malformed set — null ids with count>0, over
   // kMaxAlwaysExecuteSources capacity, a duplicate id, or an id that is NOT a real module in
   // `modules` — makes the WHOLE compile `invalid_always_execute` with an empty graph
   // (never a silent drop and never a fabricated contract-less singleton).
@@ -334,12 +334,12 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
     for (std::uint32_t k = 0; k < moduleCount; ++k)
       if (modules[k].id == mods[i]) { cts[i] = modules[k].contract; break; }
 
-  // ---- 0b. Module-contract admission gate (GH#7) -------------------------
-  // compile_graph() must enforce module_contract_is_valid() as a REAL admission
+  // 0b. Module-contract admission gate -------------------------
+  // compile_graph must enforce module_contract_is_valid as a REAL admission
   // gate, not trust the caller. A present-but-malformed contract is rejected here
   // with invalid_module_contract and an empty graph. A MISSING (null) contract is
   // not this gate's concern — it is only rejected when it sits in a cyclic SCC, by
-  // the cycle_unsafe_module check below (design/07: a not-cycle-safe module must
+  // the cycle_unsafe_module check below (a not-cycle-safe module must
   // never be silently admitted).
   for (std::uint32_t i = 0; i < M; ++i)
     if (cts[i] != nullptr && !module_contract_is_valid(*cts[i])) {
@@ -383,7 +383,7 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
   }
   // Deterministic adjacency per source node, across BOTH categories: category
   // first (pluggable=0 < fixed=1), then the within-category key. This makes the
-  // break-edge set independent of insertion order (criterion ⑥c).
+  // break-edge set independent of insertion order (c).
   auto edgeLess = [](const AutoEdge& a, const AutoEdge& b) {
     if (a.cat != b.cat) return a.cat < b.cat;
     if (a.cat == 0) {
@@ -500,14 +500,14 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
       // sccs[c] is the SCC member set. It is sorted numerically ONLY to keep the
       // existing feedback-edge selection (the fdfs forest below) byte-identical —
       // it is NOT the execution order, which is computed at the end of this branch
-      // (GH#14, "selected feedback removal 后的 executable order").
+      // ("selected feedback removal 后的 executable order").
       std::vector<std::uint32_t> members = sccs[c];
       std::sort(members.begin(), members.end());
 
       std::vector<char> inScc(M, 0);
       for (std::uint32_t v : members) inScc[v] = 1;
       std::vector<std::vector<std::uint32_t>> sadj(M);
-      // GH#7: for each module in the SCC, the input jacks fed by an in-SCC cross
+      // for each module in the SCC, the input jacks fed by an in-SCC cross
       // edge. A delay credit for a break edge leaving module v is only safe if
       // EVERY such reachable input->outPort path is provably real (>=1 sample, no
       // direct-through); a parallel direct input makes the cycle algebraic.
@@ -552,7 +552,7 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
             fe.sinkJack = crossed[ei].tj;
             // The break edge closes a cycle that may re-enter module v through ANY
             // of its in-SCC input ports. Decide the delay over the whole reachable
-            // cycle-path set, not just the single DFS tree edge (GH#7).
+            // cycle-path set, not just the single DFS tree edge.
             detail::decide_feedback_delay_cycle(cts[v], crossed[ei].sj, sccInPorts[v], fe);
             region.feedback.push_back(fe);
           }
@@ -578,7 +578,7 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
                   return detail::jid(a.sinkJack) < detail::jid(b.sinkJack);
                 });
 
-      // ---- GH#14: deterministic executable order --------------------------
+      // : deterministic executable order --------------------------
       // region.modules is the feed-forward DAG order AFTER the selected feedback
       // edges are removed. Compute it by a deterministic topological sort over
       // (fixed edges + pluggable edges in this SCC) MINUS the selected feedback
@@ -612,7 +612,7 @@ inline CompileResult compile_graph(const JackDescriptor* jacks, std::uint32_t ja
       while (remaining > 0) {
         // Ready member with the SMALLEST ModuleId (mods[] is already sorted by
         // ModuleId, so the smallest mods-index == the smallest ModuleId): the
-        // deterministic tie-break mandated by GH#14 / design/07.
+        // deterministic tie-break mandated by /.
         std::uint32_t pick = M;
         for (std::uint32_t v : members)
           if (!execUsed[v] && execIndeg[v] == 0 && (pick == M || v < pick)) pick = v;

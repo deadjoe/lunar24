@@ -1,24 +1,24 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P3-④ must-test suite for the PREAMP (core/include/lunar24/core/preamp.h) and the
-// ENVELOPE FOLLOWER (core/include/lunar24/core/envelope_follower.h). @Claude's
-// mandate (msg 351ef73b) requires five must-tests, each carrying a REAL red
+//  must-test suite for the PREAMP (core/include/lunar24/core/preamp.h) and the
+// ENVELOPE FOLLOWER (core/include/lunar24/core/envelope_follower.h).
+// mandate requires five must-tests, each carrying a REAL red
 // negative — a true degradation, not a flag flip. Judges are the shared detectors
 // in drone_test_common.h (判据只有一份).
 //
-//   ①  attack/release are SECONDS, not a sample count. Judge: the same A/R reaches
+//     attack/release are SECONDS, not a sample count. Judge: the same A/R reaches
 //       the same envelope value at the same wall-clock time at 44.1k/48k/88.2k/96k.
 //       Negative: a fixed-per-sample coefficient (independent of sr) → red.
-//   ②  preamp soft-saturation nonlinearity folds harmonics below Nyquist. Measured
+//     preamp soft-saturation nonlinearity folds harmonics below Nyquist. Measured
 //       (Goertzel fundamental vs folded 3rd, dB) and recorded in FINDINGS — NOT
 //       fixed here. The probe is a synthetic test point (f0=10 kHz, gain norm 1).
-//   ③  EXT SOURCE unconnected (input 0) → no noise, no DC, no NaN. Negative: the
+//     EXT SOURCE unconnected (input 0) → no noise, no DC, no NaN. Negative: the
 //       caller reads an uninitialized (junk) buffer instead of 0 → red; plus tiny
 //       DC-offset and NaN provokes to show all three clauses bite.
-//   ④  envelope follower on silence → converges to 0 AND holds, no residual drift.
+//     envelope follower on silence → converges to 0 AND holds, no residual drift.
 //       Negative: a buggy floor that parks the envelope above zero (leaky return) → red.
-//   ⑤  cross-sr + cross-buffer reuse (drone_test_common.h). Judge: the env follower
+//     cross-sr + cross-buffer reuse (drone_test_common.h). Judge: the env follower
 //       renders bit-identically in one pass vs 64-sample frames (same_render), and
 //       the envelope value at the same wall-clock time agrees across the four rates.
 //
@@ -95,7 +95,7 @@ double first_folded_harmonic(double f0, double sr, int* order) {
 }
 
 // ----------------------------------------------------------------------------
-// ① attack/release are seconds, cross-sr wall-clock reach time
+//  attack/release are seconds, cross-sr wall-clock reach time
 // ----------------------------------------------------------------------------
 void test_attack_release_are_seconds() {
   const double attackSec = 0.01, releaseSec = 0.02;
@@ -127,7 +127,7 @@ void test_attack_release_are_seconds() {
 
   const double real_spread = max_of(real_times) - min_of(real_times);
   const double buggy_spread = max_of(buggy_times) - min_of(buggy_times);
-  std::printf("① seconds reach: real spread %.6f s (%g..%g), buggy spread %.6f s\n",
+  std::printf(" seconds reach: real spread %.6f s (%g..%g), buggy spread %.6f s\n",
               real_spread, min_of(real_times), max_of(real_times), buggy_spread);
 
   CHECK(real_times[0] > 0.0 && real_times[0] < 0.05);
@@ -136,7 +136,7 @@ void test_attack_release_are_seconds() {
 }
 
 // ----------------------------------------------------------------------------
-// ② preamp soft-saturation aliasing (measure -> FINDINGS, do not fix)
+//  preamp soft-saturation aliasing (measure -> FINDINGS, do not fix)
 // ----------------------------------------------------------------------------
 void test_preamp_aliasing() {
   const double sr = 48000.0, f0 = 10000.0, amp = 1.0;
@@ -157,7 +157,7 @@ void test_preamp_aliasing() {
   const double folded = drone_test::goertzel_mag(x, alias, sr);
   const double db = 20.0 * std::log10((folded / fund) + 1e-12);
 
-  std::printf("② preamp aliasing: %dth harmonic fold %g Hz -> %g Hz, "
+  std::printf(" preamp aliasing: %dth harmonic fold %g Hz -> %g Hz, "
               "%.2f dB vs fundamental\n", order, order * f0, alias, db);
   CHECK(fund > 0.001);
   CHECK(folded > 0.0);
@@ -165,7 +165,7 @@ void test_preamp_aliasing() {
 }
 
 // ----------------------------------------------------------------------------
-// ③ EXT source unconnected -> no noise / DC / NaN
+//  EXT source unconnected -> no noise / DC / NaN
 // ----------------------------------------------------------------------------
 void test_ext_unconnected() {
   const double sr = 48000.0;
@@ -182,7 +182,7 @@ void test_ext_unconnected() {
   }
   const double mean = std::fabs(mean_of(out));
   const double var = drone_test::noise_sample_var(out);
-  std::printf("③ unconnected: mean %g, var %.3g, finite %s\n",
+  std::printf(" unconnected: mean %g, var %.3g, finite %s\n",
               mean, var, finite ? "yes" : "NO");
   CHECK(finite);                 // no NaN.
   CHECK(mean < 1e-9);            // no DC.
@@ -199,7 +199,7 @@ void test_ext_unconnected() {
     bad[i] = pb.tick(junk[i]);
   }
   const double junk_var = drone_test::noise_sample_var(bad);
-  std::printf("③ negative (uninit junk): var %.3g\n", junk_var);
+  std::printf(" negative (uninit junk): var %.3g\n", junk_var);
   CHECK(junk_var > 1e-6);  // the real (0 V) case had var ~ 0; junk has noise.
 
   // Clause provokes: a DC-offset stage and a NaN-carrying read, each must trip
@@ -217,7 +217,7 @@ void test_ext_unconnected() {
 }
 
 // ----------------------------------------------------------------------------
-// ④ envelope follower on silence converges to 0 and holds
+//  envelope follower on silence converges to 0 and holds
 // ----------------------------------------------------------------------------
 void test_silence_converges_zero() {
   const double sr = 44100.0;
@@ -246,7 +246,7 @@ void test_silence_converges_zero() {
     if (env[i] >= 1e-6) holds = false;
   }
   const bool gate_off = (ef.gate() == 0.0);
-  std::printf("④ silence: peak %g, tail %.3g, monotone %s, holds %s, gate_off %s\n",
+  std::printf(" silence: peak %g, tail %.3g, monotone %s, holds %s, gate_off %s\n",
               peak, tail, monotone ? "yes" : "NO", holds ? "yes" : "NO",
               gate_off ? "yes" : "NO");
   CHECK(peak > 5.0);          // the onset really engaged the follower.
@@ -269,12 +269,12 @@ void test_silence_converges_zero() {
     floor_env[i] = base;
   }
   const double floor_tail = floor_env.back();
-  std::printf("④ negative (floor): tail %.3g\n", floor_tail);
+  std::printf(" negative (floor): tail %.3g\n", floor_tail);
   CHECK(floor_tail >= 0.01);  // the "converge to 0" judge would fire.
 }
 
 // ----------------------------------------------------------------------------
-// ⑤ cross-sr + cross-buffer reuse
+//  cross-sr + cross-buffer reuse
 // ----------------------------------------------------------------------------
 void test_cross_sr_cross_buffer() {
   // A slow, always-positive amplitude wave (volts in [1.8, 9.0]); the env follower
@@ -321,7 +321,7 @@ void test_cross_sr_cross_buffer() {
       CHECK(std::fabs(val - ref) < 0.02);
     }
   }
-  std::printf("⑤ cross-buffer bit-identical + cross-sr envelope agrees; "
+  std::printf(" cross-buffer bit-identical + cross-sr envelope agrees; "
               "ref@0.1s %.4f V\n", per_rate[0][static_cast<std::size_t>(0.1 * kRates[0])]);
 }
 

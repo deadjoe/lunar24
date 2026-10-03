@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH #11 (P3 item 6) LFO A/B sound-core strong-oracle suite for
+//  (P3 item 6) LFO A/B sound-core strong-oracle suite for
 // core/include/lunar24/core/lfo.h. This new Lfo is a SEPARATE free-running
 // per-sample oscillator — NOT a wrapper over any audio-rate modulation helper —
 // and A/B are two real independent instances. The tests pin behaviour / trend /
@@ -9,25 +9,25 @@
 // PROVISIONAL modelling constants). The 0..+10V unipolar CV rail is grounded on
 // the REAL reg::kJacks lfo_a/b_cv_out descriptor, not a test-side shadow.
 //
-// @Codex mandate (msg 2ed673a6) must-tests:
-//   ① square endpoint / duty trend + triangle linear ramp
-//   ② mid morph is neither endpoint and is a per-sample crossfade
-//   ③ 0..+10V bounded / finite
-//   ④ RATE trend (higher baseHz -> more cycles)
-//   ⑤ ×1/×6/×10 multiplier ratio
-//   ⑥ four sample-rates wall-clock (44.1/48/88.2/96k, NO fixed 48k)
-//   ⑦ block partition per-sample bit-identical
-//   ⑧ A/B config + phase isolation (one side reset / change RATE leaves the
+//  mandate must-tests:
+//    square endpoint / duty trend + triangle linear ramp
+//    mid morph is neither endpoint and is a per-sample crossfade
+//    0..+10V bounded / finite
+//    RATE trend (higher baseHz -> more cycles)
+//    ×1/×6/×10 multiplier ratio
+//    four sample-rates wall-clock (44.1/48/88.2/96k, NO fixed 48k)
+//    block partition per-sample bit-identical
+//    A/B config + phase isolation (one side reset / change RATE leaves the
 //      other's per-sample trace bit-identical)
-//   ⑨ reset preserves config
+//    reset preserves config
 //   ⑩ invalid config fail-closed (a rejected value must NOT pollute the later
 //      phase/output trace, and must keep the FULL prior config)
 //   ⑪ real registry lfo_a/b_cv_out descriptor (direction/CV-type/unipolar/0..10V)
 //
 // Negative controls (each narrow old-error RED->revert GREEN) are run separately
-// in a detached /tmp worktree: ① bypass WAVE (constant square), ② multiplier
-// ignored, ③ phase step fixed 48k, ④ output still bipolar (not mapped to 0..10V),
-// ⑤ A/B shared phase, ⑥ invalid-config guard. Detectors read real per-sample
+// in a detached /tmp worktree: bypass WAVE (constant square), multiplier
+// ignored, phase step fixed 48k, output still bipolar (not mapped to 0..10V),
+//  A/B shared phase, invalid-config guard. Detectors read real per-sample
 // behaviour — never source grep / a read-only inspector / a self-copied trace.
 
 #include "mini_test.h"
@@ -235,7 +235,7 @@ void test_ab_isolation() {
   // other.
   for (int i = 0; i < 500; ++i) { a.tick(); b.tick(); }
 
-  // FREEZE b's expected next-M trace BEFORE A is touched (Codex re-review 683f5f30):
+  // FREEZE b's expected next-M trace BEFORE A is touched (re-review:
   // copy b's value state into a local `expected` and clock it. A correct Lfo treats
   // `expected` as an independent instance, so this does NOT perturb b — it only
   // records what b's next M samples would be if nothing pollutes it. Freezing the
@@ -247,7 +247,7 @@ void test_ab_isolation() {
   const auto traceExpected = run_sig(expected, M);
 
   // Operate on A ONLY: reset + change RATE + advance. A correct Lfo confines this
-  // activity to a. Under a shared-reset/epoch bug A's reset() bumps a shared epoch
+  // activity to a. Under a shared-reset/epoch bug A's reset bumps a shared epoch
   // and b's next tick clears its own phase — but the frozen `expected` trace (taken
   // before the bump) still holds the unpolluted phase, so b's real trace diverges.
   a.reset(); a.setBaseHz(80.0); a.setSpeedMult(LfoSpeedMult::x10);
@@ -308,7 +308,7 @@ void test_invalid_config_fail_closed() {
 
 void test_unconfigured_and_invalid_ctor_finite() {
   // An unconfigured Lfo (default ctor) has no sample rate, so naively 0/0 would
-  // produce NaN. The tick() timebase guard must instead emit a deterministic finite
+  // produce NaN. The tick timebase guard must instead emit a deterministic finite
   // no-modulation value WITHOUT advancing the cycle position, and never invent a
   // hidden 48 kHz default.
   Lfo d;
@@ -331,7 +331,7 @@ void test_unconfigured_and_invalid_ctor_finite() {
     CHECK(std::isfinite(lp->tick()));
     CHECK(lp->tick() == 0.0);
   }
-  // reset() on an unconfigured Lfo stays finite/unchanged.
+  // reset on an unconfigured Lfo stays finite/unchanged.
   d.reset();
   CHECK(std::isfinite(d.tick()));
 }
@@ -339,7 +339,7 @@ void test_unconfigured_and_invalid_ctor_finite() {
 void test_finite_input_overflow_fail_closed() {
   // A finite input can still overflow to a non-finite phase step after the
   // {speedMult * baseHz / sampleRate} chain. Admission must reject the WHOLE
-  // candidate config BEFORE any such step reaches tick(), keeping the prior config.
+  // candidate config BEFORE any such step reaches tick, keeping the prior config.
   // huge finite Hz alone, at x1 over a 1.0 sr, is finite (DBL_MAX) -> accepted.
   Lfo big(1.0);
   big.setBaseHz(5.0); big.setWave(0.0); big.setSpeedMult(LfoSpeedMult::x1);

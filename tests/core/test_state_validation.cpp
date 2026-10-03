@@ -1,22 +1,22 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Default-state + validator + migration oracle (task #75 revision 3 — Codex BLOCK bd53b76a).
+// Default-state + validator + migration oracle (revision 3 — BLOCK.
 //
 // Revision 3 adds/replaces the revision-2 oracle:
-//   * validate_device_state() no longer takes a caller-supplied schema version — it
+//   * validate_device_state no longer takes a caller-supplied schema version — it
 //     requires kDeviceStorageSchemaVersion directly. default_is_valid_and_identity_faithful
 //     forms a VALID state by construction (identitySeed == caller seed exactly).
 //   * ROUNDTRIP: migrate(default, out) produces a candidate that validates ok.
 //   * ALL-FAILURE ZERO-MUTATION: for every family poison, the validator and the failing
 //     migration leave the caller bitwise unchanged (observed via a byte snapshot).
 //   * SIX DETACHED OLD-ERROR RED->GREEN categories that revision 2 accepted (false-green):
-//       (A) older schema with a caller-supplied "expected v5"      -> wrong_schema_version
-//       (B) calibration trim == 0 (finite but not >0)              -> calibration_invalid
-//       (C) fractional selector (in-range but not integer)         -> parameter_out_of_range
-//       (D) keyboard mirror drift (params vs KeyboardSettings)     -> keyboard_live_invalid
-//       (E) route override whose sink has no user cable (lookup)   -> route_incoherent
-//       (F) no-cable slot carrying a non-zero source jon           -> cable_incoherent
+//       (A) older schema with a caller-supplied "expected v5" -> wrong_schema_version
+//       (B) calibration trim == 0 (finite but not >0) -> calibration_invalid
+//       (C) fractional selector (in-range but not integer) -> parameter_out_of_range
+//       (D) keyboard mirror drift (params vs KeyboardSettings) -> keyboard_live_invalid
+//       (E) route override whose sink has no user cable (lookup) -> route_incoherent
+//       (F) no-cable slot carrying a non-zero source jon -> cable_incoherent
 //   Each is asserted RED below (the correct, not false-green, result).
 
 #include "mini_test.h"
@@ -40,7 +40,7 @@ namespace vd = core::validate_detail;
 // A landed INPUT jack, a landed OUTPUT jack, and a HOLE jack id (not landed).
 // second_input_jack is the next landed input (for the source-aggregate cardinality
 // test); cable_route_sink is a landed input jack that is a route's sink (for the
-// legal cable+route positive); first_bad_program_id is a stable find_program()==nullptr.
+// legal cable+route positive); first_bad_program_id is a stable find_program==nullptr.
 static core::JackId first_input_jack = core::JackId{0};
 static core::JackId second_input_jack = core::JackId{0};
 static core::JackId first_output_jack = core::JackId{0};
@@ -97,7 +97,7 @@ static void discover_ids_for_poison() {
     }
   }
   CHECK(vd::find_jack(static_cast<std::uint32_t>(cable_route_sink)) != nullptr);
-  // A stable ProgramId with no descriptor. We SEARCH for it (find_program()==nullptr)
+  // A stable ProgramId with no descriptor. We SEARCH for it (find_program==nullptr)
   // rather than assume the program index space is dense (revision-3 assumed
   // kProgramCount == the first bad id, which only holds under density).
   bool found_bad_program = false;
@@ -123,7 +123,7 @@ static void expect_family(const core::DeviceStateV1& st,
 }
 
 // Default is valid, identitySeed equals the caller seed, and the default converges the
-// #57 keyboard mirrors (so it is valid by construction).
+//  keyboard mirrors (so it is valid by construction).
 static void default_is_valid_and_identity_faithful() {
   const core::DeviceStateV1 st = core::make_default_device_state(0xBEEFU);
   const core::StateValidationResult r = core::validate_device_state(st);
@@ -209,7 +209,7 @@ static void default_full_oracle() {
 // revision-3 "default -> migrate -> validate" — encode/decode are actually invoked.
 // It also proves the decoder is layer-agnostic: it never runs semantic validation (a
 // wire-encodable but semantically-invalid state decodes OK, and ONLY validate_device_state
-// rejects it — catching a blocker that smuggles semantic validation into decode()).
+// rejects it — catching a blocker that smuggles semantic validation into decode).
 static void wire_roundtrip_is_stable_and_decoder_is_agnostic() {
   const core::DeviceStateV1 st = core::make_default_device_state(0xBEEF0001UL);
   std::uint8_t buf1[kWireBytes];
@@ -422,7 +422,7 @@ static void each_family_is_reachable() {
     expect_family(st, core::ValidationFamily::route_incoherent, unlanded_route_id);
   }
   // illegal_program_id — a program selection with no descriptor. We poison with a
-  // DISCOVERED find_program()==nullptr value (never assume a dense index space).
+  // DISCOVERED find_program==nullptr value (never assume a dense index space).
   {
     core::DeviceStateV1 st = core::make_default_device_state(0x15UL);
     st.leftEffector.program = first_bad_program_id;
@@ -516,7 +516,7 @@ static void detached_old_error_categories() {
                   pid_index(core::ParameterId::keyboard_behaviour));
   }
   // (D) keyboard mirror drift: params[keyboard_pressure_output] != KeyboardSettings.pressureOutput
-  // (the #57 canonical LEFT). revision-2 had no coherence check -> green. now red.
+  // (the canonical LEFT). revision-2 had no coherence check -> green. now red.
   {
     core::DeviceStateV1 st = core::make_default_device_state(0x53UL);
     st.keyboardSettings.pressureOutput = 1;  // canonical LEFT drift (left still 0)
@@ -551,7 +551,7 @@ static void detached_old_error_categories() {
 // in-range stored value is still a legal (landed) parameter. So its disposition must be
 // preserved_deferred_p6_p8 (not applied_to_dsp) while validate returns ok.
 //
-// GH#19 S0 / task #117: this sub-case previously used vco_a.pwm as its subject, because the
+//  : this sub-case previously used vco_a.pwm as its subject, because the
 // pwm pair was the last transfer_unavailable id. That class is now EMPTY — pwm acquired a
 // consumer — so the subject moved to the program-owner range, which is the deferral that
 // still exists. The pwm pair is asserted SEPARATELY as the flip it now is; a return to
@@ -562,7 +562,7 @@ static void deferred_not_masqueraded_as_applied() {
   st.parameters[pid_index(core::ParameterId::program_orche_3_z)] = 0.5;  // valid in-range, deferred
   CHECK_TRUE(core::validate_device_state(st).ok);
   CHECK(core::disposition_of(core::ParameterId::program_orche_3_z) == core::StateDisposition::preserved_deferred_p6_p8);
-  // The GH#19 S0 flip: pwm is a live DSP control now, and it is not the deferred class.
+  // The flip: pwm is a live DSP control now, and it is not the deferred class.
   CHECK(core::disposition_of(core::ParameterId::vco_a_pwm) == core::StateDisposition::applied_to_dsp);
   CHECK(core::disposition_of(core::ParameterId::vco_b_pwm) == core::StateDisposition::applied_to_dsp);
   CHECK(core::count_disposition(core::StateDisposition::transfer_unavailable) == 0u);
@@ -621,5 +621,5 @@ int main() {
   deferred_not_masqueraded_as_applied();
   migration_hook_fails_closed_zero_mutation();
   expanded_bad_value_matrix();
-  return ::test::finish("state validation (task #75 r4)");
+  return ::test::finish("state validation ( r4)");
 }

@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Allocator-count probe for the canonical product acceptance (task#65 7C2 GH#11,
-// @Codex A′ msg 96361090 — "render-path zero allocation"). The replaceable operator
+// Allocator-count probe for the canonical product acceptance (7C2,
+//  A′ — "render-path zero allocation"). The replaceable operator
 // new/delete pair is isolated into its own TU, built ONLY into the
 // test_machine_definition target, so GCC's -Wmismatched-new-delete does not misjudge
 // the malloc/free implementation as a new/delete mismatch at the ::operator new /

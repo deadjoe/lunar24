@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// DeviceStateV1 validator (design/07 §9, task #75 revision 3 — Codex BLOCK bd53b76a).
+// DeviceStateV1 validator (revision 3 — BLOCK.
 //
-// Deterministic first-failure: validate_device_state() walks the candidate in a
+// Deterministic first-failure: validate_device_state walks the candidate in a
 // fixed order and returns the FIRST validation family that is violated, together
 // with a field/id identifying the offending member. It is fixed-heap (no
 // allocation, no recursion, one small stack buffer in check_cables), takes the
 // candidate by constant reference, and never mutates the caller — a rejected
 // candidate is bitwise unchanged.
 //
-// Layering (Codex): `decode -> migrate(if supported) -> validate_device_state ->
+// Layering: `decode -> migrate(if supported) -> validate_device_state ->
 // build/apply`. This header validates an ALREADY-decoded DeviceStateV1, never
 // raw bytes/size. It does NOT accept a caller-supplied expected schema version:
 // the schema must equal kDeviceStorageSchemaVersion directly (a caller-parameterized
@@ -26,7 +26,7 @@
 //     scalars — no three drifting copies, and a fractional selector (e.g. 1.5) is red.
 //   * keyboard coherence: KeyboardSettings.pressureOutput == canonical LEFT
 //     parameters[keyboard_pressure_output], and parameters[keyboard_behaviour] ==
-//     KeyboardSettings.pressureBehaviour (the #57 canonical).
+//     KeyboardSettings.pressureBehaviour (the canonical).
 //   * cable/route true coherence: inputCable is a presence bit (0/1); no-cable ->
 //     cableSource==JackId{0}; with-cable -> landed source(output)/sink(input) plus
 //     aggregate source cardinality; routeOverridden is looked up by stable RouteId
@@ -218,7 +218,7 @@ inline StateValidationResult check_keyboard_live(const DeviceStateV1& st) noexce
     return fail(ValidationFamily::keyboard_live_invalid, 9000u);
   if (po != nullptr && st.keyboardSettings.pressureOutput >= po->optionCount)
     return fail(ValidationFamily::keyboard_live_invalid, 9001u);
-  // Keyboard coherence (revision-3): KeyboardSettings.pressureOutput is the #57
+  // Keyboard coherence (revision-3): KeyboardSettings.pressureOutput is the
   // canonical LEFT selector and MUST equal parameters[keyboard_pressure_output];
   // parameters[keyboard_behaviour] is only a compatibility mirror of the canonical
   // KeyboardSettings.pressureBehaviour and MUST equal it.

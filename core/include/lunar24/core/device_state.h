@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// DeviceStateV1: the single whole-device current state (design/07 §6).
+// DeviceStateV1: the single whole-device current state.
 //
 // It is the ONLY "last-exit state" for the whole machine and stays strictly
 // separate from the keyboard's own four presets (which it nevertheless stores,
@@ -23,7 +23,7 @@
 namespace lunar24::core {
 
 // ---------------------------------------------------------------------------
-// Portable storage schema (design/07 §6) — SEPARATE from the raw C++ layout.
+// Portable storage schema — SEPARATE from the raw C++ layout.
 //
 // The on-disk format is a VERSIONED set of NAMED, TYPED, ENCODED fields. It is
 // never a `memcpy` of the C++ struct across macOS/Windows: the in-memory
@@ -104,12 +104,12 @@ struct DeviceStorageSchema {
 
 // Fixed widths for the storage record, independent of C++ layout. PROVISIONAL
 // until the full P0 inventory proves them, and never a memcpy target.
-// P4-② (Decision A, msg 6a366ebb): kKeyboardPresetRecordBytes grew 8 -> 247 when
+//  (Decision A): kKeyboardPresetRecordBytes grew 8 -> 247 when
 // the preset carried the full keyboard_params_minus_clock payload (31 params) —
 // the 8-byte shell (id/behaviour/output + 2-byte pad) is PRESERVED verbatim and
 // 29 fields are appended, never reordered.
 //
-// P4-③ (per-side, msg 60df2e43 + e7ad49ec): split runs two independent half-banks,
+//  (per-side): split runs two independent half-banks,
 // and the frozen manifest gives the SAME keyboard_params_minus_clock params to both
 // sides (behaviour is the only global). So each preset now carries TWO banks: the
 // left half stays exactly where the v2 layout put it (offsets 5, 8..246) — never
@@ -120,7 +120,7 @@ inline constexpr std::uint32_t kKeyboardPresetRecordBytes = 487u;  // 247 (v2, l
 inline constexpr std::uint32_t kKeyboardSettingsRecordBytes = 2u;  // pressure behaviour(1) + pressure output(1)
 inline constexpr std::uint32_t kSequencerPhysicalBytes = 16u;    // reserved until the sequencer lands
 inline constexpr std::uint32_t kKeyboardSeqRecordBytes = kKeyboardSeqBytes;  // 16 steps x 6 bytes
-// P4-③ (per-side scalar bank, @Claude msg c0d9e9be — Decis B): the LIVE right-bank
+//  (per-side scalar bank, — Decis B): the LIVE right-bank
 // scalar count. The 22 keyboard scalars that carry a ParameterId and are per-side
 // (the frozen 30 keyboard_params_minus_clock minus behaviour, minus the four
 // no-domain clock/rhythm selectors, minus the four non-scalars — their right side
@@ -181,7 +181,7 @@ inline constexpr StorageRecordField kKeyboardPresetFields[] = {
     {"root_note",             StorageFieldType::f32, StorageEncoding::binary, 163u, 4u,  2u},
     {"plate_tune",            StorageFieldType::u8,  StorageEncoding::binary, 167u, 48u, 2u},
     {"pushbutton_value",      StorageFieldType::u8,  StorageEncoding::binary, 215u, 32u, 2u},
-    // P4-③ per-side RIGHT half-bank (contiguous 240B region, offsets 247..486,
+    //  per-side RIGHT half-bank (contiguous 240B region, offsets 247..486,
     // versionFrom=3). The frozen manifest gives both sides the same 30 params
     // (keyboard_params_minus_clock minus the global 'behaviour'), so the right
     // bank is the same field set with an "_r" suffix and a base offset of 247.
@@ -222,7 +222,7 @@ inline constexpr StorageRecordField kKeyboardSettingsFields[] = {
 };
 
 // The map-able record layouts referenced by the keyboard records below.
-// P4-③: the preset layout grew 33 -> 63 sub-fields (the 30 right-bank "_r" fields).
+// the preset layout grew 33 -> 63 sub-fields (the 30 right-bank "_r" fields).
 inline constexpr StorageRecordLayout kKeyboardPresetLayout{kKeyboardPresetFields, 63u};
 inline constexpr StorageRecordLayout kKeyboardSettingsLayout{kKeyboardSettingsFields, 2u};
 
@@ -241,9 +241,9 @@ inline constexpr StorageField kDeviceStorageFields[] = {
     {"effector_left_program",    StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u, {}},
     {"effector_right_program",   StorageFieldKind::scalar,  StorageFieldType::u32, StorageEncoding::binary, 1u, 0u, 1u, {}},
     {"sequencer_physical",       StorageFieldKind::reserved, StorageFieldType::u8, StorageEncoding::binary, kSequencerPhysicalBytes, 0u, 1u, {}},
-    // P4-② live keyboard non-scalar + no-domain-selector state (appended, never
+    //  live keyboard non-scalar + no-domain-selector state (appended, never
     // reordered). The current run-time values of the Deferred-to-P4 non-scalars
-    // (design/07 §6) and the four no-domain clock/rhythm selectors (which have no
+    //  and the four no-domain clock/rhythm selectors (which have no
     // ParameterId — the frozen id-space gapped them) live here, separate from the
     // four saved preset slots.
     {"keyboard_seq_current",     StorageFieldKind::record,  StorageFieldType::u8,  StorageEncoding::binary, kKeyboardSeqStepCount, kKeyboardSeqStepBytes, 2u, kKeyboardSeqStepLayout},
@@ -251,7 +251,7 @@ inline constexpr StorageField kDeviceStorageFields[] = {
     {"keyboard_plate_tune",      StorageFieldKind::array,   StorageFieldType::f32, StorageEncoding::binary, kKeyboardPlateTuneCount, 0u, 2u, {}},
     {"keyboard_pushbutton",      StorageFieldKind::array,   StorageFieldType::f32, StorageEncoding::binary, kKeyboardPushbuttonCount, 0u, 2u, {}},
     {"keyboard_clock_selectors", StorageFieldKind::array,   StorageFieldType::u8,  StorageEncoding::binary, 4u,  0u, 2u, {}},
-    // P4-③ right-bank mirrors of the five live fields above (L1, versionFrom=4).
+    //  right-bank mirrors of the five live fields above (L1, versionFrom=4).
     // Appended, never reordered. Same shape/size as the left field; consumed only
     // under split, when the right-side performance surface reads its own bank.
     {"keyboard_seq_current_r",    StorageFieldKind::record, StorageFieldType::u8,  StorageEncoding::binary, kKeyboardSeqStepCount, kKeyboardSeqStepBytes, 4u, kKeyboardSeqStepLayout},
@@ -259,7 +259,7 @@ inline constexpr StorageField kDeviceStorageFields[] = {
     {"keyboard_plate_tune_r",     StorageFieldKind::array,  StorageFieldType::f32, StorageEncoding::binary, kKeyboardPlateTuneCount, 0u, 4u, {}},
     {"keyboard_pushbutton_r",     StorageFieldKind::array,  StorageFieldType::f32, StorageEncoding::binary, kKeyboardPushbuttonCount, 0u, 4u, {}},
     {"keyboard_clock_selectors_r",StorageFieldKind::array,  StorageFieldType::u8,  StorageEncoding::binary, 4u,  0u, 4u, {}},
-    // P4-③ live per-side SCALAR bank (Decis B, versionFrom=5). Appended, never
+    //  live per-side SCALAR bank (Decis B, versionFrom=5). Appended, never
     // reordered. The 22 keyboard scalars that carry a ParameterId, flattened into
     // one f64 array indexed by keyKeyboardScalarIndexOf(id). bank[0] (left/shared)
     // stays in `parameters[ParameterId]` — this is ONLY the right bank. Choosing
@@ -274,26 +274,26 @@ inline constexpr std::uint32_t kDeviceStorageFieldCount =
 // The declared storage record. `totalBytesHint` is the canonical fixed-width
 // byte size (recomputed in a test so it can never silently diverge from the
 // field table). It rose 3506 -> 3511 when kDevicePatchCapacity went 64 -> 65
-// (DRONE 6, Codex msg cc68ab2b — Option A narrow release): the `input_cable` u8
+// (DRONE 6, — Option A narrow release): the `input_cable` u8
 // array grows +1 and the `cable_source` u32 array grows +4. It rose 3511 -> 3831
-// in the parameter-capacity freeze (Codex msg deab14b7) when kDeviceParamCapacity
+// in the parameter-capacity freeze when kDeviceParamCapacity
 // went 384 -> 424: the `parameters` f64 array grows +40 (40 x 8 = 320 bytes).
-// It rose 3831 -> 3841 for the vco_b registry correction (task #24, append-only
-// per @Claude "只追加，绝不重排" — manual L411 mirror rule — and the later fm_in
-// revert, task #32) when kDevicePatchCapacity reached 67: `input_cable` u8 grows
+// It rose 3831 -> 3841 for the vco_b registry correction (append-only
+//  "只追加，绝不重排" — manual L411 mirror rule — and the later fm_in
+// revert) when kDevicePatchCapacity reached 67: `input_cable` u8 grows
 // +2 and `cable_source` u32 grows +8 (2 x 4 = 8) = +10 bytes. The +10 is keyed to
 // the id-space (67 = max id 66 + 1, where 66 is vco_b.vca_ctl), not to the count
 // of vco_b appends: vco_b.fm_in (id 65) was removed as over-recorded, but the
 // capacity stays 67 because the id-space is unchanged. It rose 3841 -> 4979
-// for P4-② (Decision A, msg 6a366ebb): the keyboard preset grew 8 -> 247 bytes
+// for (Decision A): the keyboard preset grew 8 -> 247 bytes
 // (4 presets: 4 x 239 = 956) and the five live keyboard non-scalar fields were
-// appended (96 + 2 + 48 + 32 + 4 = 182). It rose 4979 -> 5939 for P4-③ (per-side,
-// msg 60df2e43 + e7ad49ec): each preset grew 247 -> 487 bytes (4 x 240 = 960),
+// appended (96 + 2 + 48 + 32 + 4 = 182). It rose 4979 -> 5939 for (per-side,
+// ): each preset grew 247 -> 487 bytes (4 x 240 = 960),
 // the right half-bank being appended as a contiguous 240-byte region. It rose
-// 5939 -> 6121 for P4-③ live-state L1 (design/00 §2d, msg 695564a7): the five
+// 5939 -> 6121 for live-state L1: the five
 // live non-scalar / no-domain-selector fields gained a right-bank `_r` mirror
 // (the same 96 + 2 + 48 + 32 + 4 = 182 bytes again, appended, versionFrom=4).
-// It rose 6121 -> 6297 for P4-③ per-side scalar bank (Decis B, msg c0d9e9be): the
+// It rose 6121 -> 6297 for per-side scalar bank (Decis B): the
 // 22 keyboard scalars' right bank is appended as one f64 array (22 x 8 = 176 bytes).
 // It rose 6297 -> 6317 when kDevicePatchCapacity went 67 -> 71 (drone 3/6 S&H OUT and
 // CV IN): `input_cable` +4, `cable_source` +16. Files in the 6297 layout still load.
@@ -305,7 +305,7 @@ inline constexpr DeviceStorageSchema kDeviceStorageSchema{
     6317u,
 };
 
-// Fixed per-unit constitution, not re-randomized per launch (design/07 §7).
+// Fixed per-unit constitution, not re-randomized per launch.
 struct UnitIdentitySeed {
   std::uint64_t seed = 0;
 };
@@ -326,7 +326,7 @@ struct KeyboardSettings {
 };
 
 // One step of the keyboard's own 16-step sequencer run (P4 keyboard performance
-// system; design/06 §4). The physical 5-step sequencer is a SEPARATE P3 control
+// system). The physical 5-step sequencer is a SEPARATE P3 control
 // source (ModuleId 11, STAGES 3/4/5) and does NOT extend into this 16-step run.
 // Physical 5-step's full persistent state lives in parameters[] (pulser rate,
 // clock selector, stage count, 5×step CV, 5×gate-enable — 13 persistent
@@ -354,14 +354,14 @@ struct KeyboardSeq {
 // schema-declared kKeyboardPresetRecordBytes (487), never sizeof here; the C++
 // struct is a framework-free working copy the serializer maps field-by-field.
 //
-// P4-② (Decision A): the 8-byte shell (id@0 / pressure_behaviour@4 /
+//  (Decision A): the 8-byte shell (id@0 / pressure_behaviour@4 /
 // pressure_output@5 / reserved@6) is PRESERVED and 29 fields are appended, never
 // reordered. `reserved` stays a 2-byte region at offset 6; a re-encode must
-// preserve it verbatim rather than zero it (P2-⑤ @Claude Q2). The `seqSteps`,
+// preserve it verbatim rather than zero it. The `seqSteps`,
 // `plateTune`, `pushbuttonValue` members mirror the composite wire regions
 // (offsets 35/167/215) as structured working copies.
 //
-// P4-③ (per-side): the LEFT half-bank stays exactly where v2 put it (the members
+//  (per-side): the LEFT half-bank stays exactly where v2 put it (the members
 // from `pressureOutput` down to `pushbuttonValue` — offsets 5/8..246, never
 // reordered), and the RIGHT half-bank is the same 30 fields with an "R" suffix
 // (offsets 247..486). C++ member naming uses CamelCase + a trailing "R"
@@ -405,7 +405,7 @@ struct KeyboardPreset {
   float plateTune[kKeyboardPlateTuneCount] = {};      // wire: 48-byte region at 167
   float pushbuttonValue[kKeyboardPushbuttonCount] = {};  // wire: 32-byte region at 215
 
-  // RIGHT half-bank (P4-③, contiguous region at offsets 247..486) — same 30 fields.
+  // RIGHT half-bank (contiguous region at offsets 247..486) — same 30 fields.
   std::uint8_t pressureOutputR = 0u;
   std::uint8_t modeR = 0u;
   std::uint8_t arpHoldR = 0u;
@@ -447,7 +447,7 @@ struct EffectorSelection {
 };
 
 // Sequencer PHYSICAL settings only — NOT transient gate/playhead/envelope/delay
-// state (design/07 §6 excludes those). The sequencer subsystem is a later slice,
+// state (excludes those). The sequencer subsystem is a later slice,
 // so P0 only reserves a fixed, NAMED byte block (declared as `sequencer_physical`
 // in the storage schema, kind==reserved) to keep the wire format versioned and
 // stable. No range/value is invented here.
@@ -469,7 +469,7 @@ struct DeviceStateV1 {
   std::uint8_t inputCable[kDevicePatchCapacity] = {};
   JackId cableSource[kDevicePatchCapacity] = {};
 
-  // Normalized-route override per RouteId. Indexed by a stable RouteId (design/07
+  // Normalized-route override per RouteId. Indexed by a stable RouteId (
   // §7), never by array position — kDeviceRouteCapacity is gated against the
   // generated kRouteIdSpace so a route id can never exceed this bank.
   std::uint8_t routeOverridden[kDeviceRouteCapacity] = {};
@@ -478,7 +478,7 @@ struct DeviceStateV1 {
   KeyboardSettings keyboardSettings;
   KeyboardPreset keyboardPresets[kDeviceKeyboardPresetCount] = {};
 
-  // Keyboard's own LIVE non-scalar + no-domain-selector state (design/07 §6:
+  // Keyboard's own LIVE non-scalar + no-domain-selector state (
   // non-scalars belong in DeviceState structured fields, never flattened into a
   // scalar ParameterDescriptor). These are the run-time values, separate from the
   // four saved preset slots above. The four no-domain clock/rhythm selectors have
@@ -490,8 +490,8 @@ struct DeviceStateV1 {
   float keyboardPushbutton[kKeyboardPushbuttonCount] = {};
   std::uint8_t keyboardClockSelectors[4] = {};  // {arp_clock, arp_rhythm, seq_clock, seq_rhythm}
 
-  // P4-③ RIGHT half-bank mirror of the five live non-scalar / no-domain-selector
-  // fields above (design/00 §2d L1: the v2 field is the left/base, the right bank
+  //  RIGHT half-bank mirror of the five live non-scalar / no-domain-selector
+  // fields above (L1: the v2 field is the left/base, the right bank
   // appends `_r` — the whole 182-byte copy is NOT a separate struct, which would be
   // a second source of truth). Under single/twin these are never read (both sides
   // use the left bank); under split the right-side performance surface reads these.
@@ -504,7 +504,7 @@ struct DeviceStateV1 {
   float keyboardPushbuttonR[kKeyboardPushbuttonCount] = {};
   std::uint8_t keyboardClockSelectorsR[4] = {};  // {arp_clock, arp_rhythm, seq_clock, seq_rhythm}
 
-  // P4-③ LIVE per-side SCALAR bank (Decis B, @Claude msg c0d9e9be). The 22 keyboard
+  //  LIVE per-side SCALAR bank (Decis B). The 22 keyboard
   // scalars that carry a ParameterId have their RIGHT-side value here; the LEFT /
   // shared side value lives in `parameters[ParameterId]` (bank 0) untouched, so
   // there is never a second copy that could drift. Indexed by ParameterId via

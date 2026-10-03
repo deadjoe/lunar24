@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-⑤ output-calibration layer (design/00 §P4-⑤, @Claude msg 87862933).
+//  output-calibration layer.
 //
-// This is the BACK layer of the P4-⑤ two-layer calibration split (design/00
-// §P4-⑤ Decis ③). It takes an ALREADY-CONVERGED internal value (the single
+// This is the BACK layer of the two-layer calibration split (
+// § Decis). It takes an ALREADY-CONVERGED internal value (the single
 // internal pressure, or the pitch CV) and scales it to the PHYSICAL jack voltage
 // the connector exposes. It does NOT touch source variance at all — that was
-// removed by keyboard_input_normalization.h at the translate() choke before this
+// removed by keyboard_input_normalization.h at the translate choke before this
 // ever runs. Mixing the two layers would let someone wrongly believe output
 // calibration explains a source-to-source difference; the front layer alone owns
 // that, and this layer only ever sees one value.
@@ -18,7 +18,7 @@
 // EX). The registry models these as scalar deviceState params
 // (calibration_v_oct 130, calibration_pressure 131, dac_vref 132).
 //
-// FINDINGS (never guess-filled, @Claude msgs 87862933 + 90e14dfd):
+// FINDINGS (never guess-filled, +:
 //   * the manual describes calibration at FOUR per-point voltages (0V, 2V, 5V,
 //     8V), but the FROZEN registry models each output as ONE scalar
 //     (calibration_v_oct, calibration_pressure). A per-point trim is NOT
@@ -31,7 +31,7 @@
 //     dac_vref selector is carried as context only (no evidenced voltage-domain
 //     effect is observable from one scalar), so it does NOT change the voltage
 //     here — like MPR121/debounce it is a real, settable, storable setting with
-//     no modelled runtime effect (see design/00 §P4-⑤ FINDINGS).
+//     no modelled runtime effect (see FINDINGS).
 //   * only the SHAPE (one affine scale per output, over the nominal jack range)
 //     and the layer separation are asserted; no test asserts the trim curve as
 //     design truth.

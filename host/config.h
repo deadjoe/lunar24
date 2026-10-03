@@ -4,9 +4,9 @@
 // host/config.h — iPlug2 standalone build configuration for the Lunar 24 host
 // standalone editor. This is the APP_API config (the desktop app that opens a
 // real macOS window), NOT a DAW plugin. The window itself is sized by the
-// geometry choke point in host/include/host/window_layout.h (P5-①), so the
+// geometry choke point in host/include/host/window_layout.h, so the
 // PLUG_WIDTH/PLUG_HEIGHT here are only the initial editor size that the host
-// then overrides via SetEditorSize() inside the mMakeGraphicsFunc lambda.
+// then overrides via SetEditorSize inside the mMakeGraphicsFunc lambda.
 //
 // ⚠️ Do NOT #define BUNDLE_ID or APP_GROUP_ID: IPlug_include_in_plug_hdr.h
 // derives them as
@@ -35,12 +35,12 @@
 #define BUNDLE_MFR "Lunar24"
 #define BUNDLE_DOMAIN "com"
 
-// GH#4 8B3 (task#73): PLUG_CHANNEL_IO is an EXACT set of legal I/O configs, not a "max capability"
+//  PLUG_CHANNEL_IO is an EXACT set of legal I/O configs, not a "max capability"
 // string. The APP branch declares the six legal combos the standalone host may open; iPlug2's
 // ParseChannelIOStr takes max over them, so MaxNChannels(input) = 2 and MaxNChannels(output) = 4
 // (the channel DATA can hold up to 4 outputs). The ACTUAL number this stream opens is negotiated
 // from the device capability (host/include/host/stream_plan.h) and installed via
-// LunarHostPlugin::setActualChannelPlan() BEFORE OnReset — a 2-out device opens 2, never a forced
+// LunarHostPlugin::setActualChannelPlan BEFORE OnReset — a 2-out device opens 2, never a forced
 // 4. Every VALID negotiated plan must be admitted by iPlug2's AUTHORITATIVE parsed-config check
 // IPlugProcessor::LegalIO(in,out) (see host/plugin.cpp setActualChannelPlan); stream_plan.h
 // ::is_legal_io is only the framework-free STREAM-POLICY invariant that agrees with it.

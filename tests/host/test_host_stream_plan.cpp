@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_host_stream_plan.cpp — the framework-free oracle for GH#4 8B3 (task#73) channel selection.
+// test_host_stream_plan.cpp — the framework-free oracle for channel selection.
 //
-// This drives the ONE shared function negotiate_stream_plan() from host/include/host/stream_plan.h
+// This drives the ONE shared function negotiate_stream_plan from host/include/host/stream_plan.h
 // — the SAME function the repo IPlugAPP_host override calls in InitAudio. Because the host and the
 // oracle call the same pure function, they cannot disagree: a host that opens a different count or
 // first-channel than this oracle asserts is a wiring defect, and an oracle that drifts from the
 // function the host compiles is impossible (there is only one stream_plan.h in the build).
 //
-// The @Codex 8B3 product criteria for the oracle:
+// The product criteria for the oracle:
 //   * 0/1/2 input × 2/3/4/8 output capability matrix,
 //   * output selection CONSUMES R (non-contiguous / duplicate / R-out-of-range REJECTS — L=1,R=3
 //     must be an OUTPUT-INVALID, never a silently-"succeeded" 4),
@@ -117,7 +117,7 @@ void output_rejects() {
   check(0, 4, 0, 0, 2, 0, {0, 0, 0, 0, StreamPlanStatus::OutputInvalid}, "out-monooR-off");
   // Duplicate (L==R) -> OUTPUT-INVALID.
   check(0, 4, 0, 0, 2, 2, {0, 0, 0, 0, StreamPlanStatus::OutputInvalid}, "out-dup");
-  // Non-contiguous (R != L+1) -> OUTPUT-INVALID (this is the @Codex L=1,R=3 case).
+  // Non-contiguous (R != L+1) -> OUTPUT-INVALID (this is the L=1,R=3 case).
   check(0, 4, 0, 0, 1, 3, {0, 0, 0, 0, StreamPlanStatus::OutputInvalid}, "out-nonadj13");
   check(0, 4, 0, 0, 2, 4, {0, 0, 0, 0, StreamPlanStatus::OutputInvalid}, "out-nonadj24");
   // R out-of-range (R > deviceOutputChans) -> OUTPUT-INVALID.
@@ -221,7 +221,7 @@ void device_names() {
 }
 
 int main() {
-  std::printf("== GH#4 8B3: channel plan oracle (negotiate_stream_plan) ==\n");
+  std::printf("== : channel plan oracle (negotiate_stream_plan) ==\n");
   capability_matrix();
   output_end_degrade();
   output_rejects();

@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // host/main.mm — the self-authored, nib-free bootstrap (Path C). This is OUR OWN
-// entry point; iPlug2 (third_party/iPlug2, pinned d54f6905) is used ONLY as an
+// entry point; iPlug2 (third_party/iPlug2, pinned is used ONLY as an
 // unmodified library. The stock stock IPlugAPP_main.cpp is NOT compiled (it would
-// bring a second main()+SWELLAppMain and, worse, edit iPlug2); instead this file
+// bring a second main+SWELLAppMain and, worse, edit iPlug2); instead this file
 // provides both:
 //
-//   * main()          — a manual replication of the nib lifecycle that
-//                       NSApplicationMain() would drive from MainMenu.xib. The
+//   * main — a manual replication of the nib lifecycle that
+//                       NSApplicationMain would drive from MainMenu.xib. The
 //                       machine only has Command Line Tools (no ibtool/Xcode), so
 //                       the stock nib path cannot build. We bypass it: instantiate
 //                       SWELLAppController directly (+new), set it as delegate,
 //                       dispatch awakeFromNib (-> SWELLAPP_ONLOAD) and let
 //                       [NSApplication run] fire applicationDidFinishLaunching
 //                       (-> SWELLAPP_LOADED -> the editor window).
-//   * SWELLAppMain()  — the C dispatcher SWELLAppController calls for
+//   * SWELLAppMain — the C dispatcher SWELLAppController calls for
 //                       ONLOAD/LOADED/ONCOMMAND/DESTROY/PROCESSMESSAGE.
 //
 // The window it opens is sized by lunar24::host::compute_window_layout (via the
@@ -205,7 +205,7 @@ HWND gHWND;
 // ---------------------------------------------------------------------------
 // SaveWindowScreenshot — referenced unconditionally by IPlugAPP_dialog.cpp
 // (extern, called from the screenshot timer + the ID_SCREENSHOT menu case), so the
-// linker needs the symbol. P5-① mandate is window size, not capture, so this is an
+// linker needs the symbol. mandate is window size, not capture, so this is an
 // honest stub: it compiles (no deprecated CGWindowListCreateImage) and never runs
 // in our probe (we never enable screenshot mode). A real capture is a later slice.
 // ---------------------------------------------------------------------------
@@ -415,7 +415,7 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
 }
 
 // ---------------------------------------------------------------------------
-// main() — the nib-free bootstrap. Replaces the stock NSApplicationMain() (which
+// main — the nib-free bootstrap. Replaces the stock NSApplicationMain (which
 // needs MainMenu.xib + ibtool, unavailable on a CLT-only machine) with the manual
 // lifecycle that the nib path would otherwise drive. This is the proof the
 // iPlug2 bootstrap gap is a TOOLCHAIN artifact, not a framework failure.

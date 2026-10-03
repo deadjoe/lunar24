@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Shared measurement + judgment helpers for the P3 drone tests. Both
-// P3-① test_drone_bank.cpp and P3-② test_drone_mod.cpp include this so there is
-// exactly ONE copy of every judge — @Claude: "判据只有一份". Any change to a
+//  test_drone_bank.cpp and test_drone_mod.cpp include this so there is
+// exactly ONE copy of every judge —: "判据只有一份". Any change to a
 // detector here is picked up by both slices at once, which is the point: if a
 // measure stops being able to tell a real signal from a broken one, neither test
 // can hide it.
@@ -12,13 +12,13 @@
 // to the framework-free forbidden-include scan — it may use <vector>/<cstring>.
 //
 // Helpers:
-//   kPi / kTwoPi      — shared constants.
-//   measure_freq_hz   — positive-going zero-crossing frequency of a buffer (Hz).
-//   wrap_pi           — wrap a phase difference to (-pi, pi].
-//   same_render       — bit-identical per-sample render comparison.
-//   goertzel_mag      — single-frequency DFT magnitude (Goertzel); for the
+//   kPi / kTwoPi — shared constants.
+//   measure_freq_hz — positive-going zero-crossing frequency of a buffer (Hz).
+//   wrap_pi — wrap a phase difference to (-pi, pi].
+//   same_render — bit-identical per-sample render comparison.
+//   goertzel_mag — single-frequency DFT magnitude (Goertzel); for the
 //                       aliasing measurement (folded harmonic vs fundamental).
-//   noise_sample_var  — sample variance of a buffer; for the audible-band noise
+//   noise_sample_var — sample variance of a buffer; for the audible-band noise
 //                       power measurement (multi-rate).
 
 #pragma once

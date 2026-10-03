@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// task #15 PRECURSOR — host height clamp -> fit-to-window decision module.
+//  PRECURSOR — host height clamp -> fit-to-window decision module.
 //
 // The defect (measured by the zoom-transform probe on 2026-08-25; FINDINGS kept in
 // memory, not this tree, to stay spike-free): the macOS host rendered
 // at DESIGN scale and let the window-manager CLAMP the height. On that machine the
 // visible logical height was 1410 (design 1551), so the bottom 141 logical px
 // (282 backing px) were cropped — a genuine CLAMP, not a fit-to-window, against the
-// design intent (design/00 §2i + @Claude msg dac2a86f). The off-screen FBO measured
+// design intent. The off-screen FBO measured
 // exactly 4800x3102 = 2x2400x1551 both axes, proving the transform is correct and ONLY
 // the host's height choice is wrong.
 //
@@ -18,17 +18,17 @@
 // area, so no machine-specific 141 leaks into the module — a different screen yields a
 // different fit without touching the code.
 //
-//   GOOD  fit (drawScale = min ratios) -> whole design, incl. the bottom row at
+//   GOOD fit (drawScale = min ratios) -> whole design, incl. the bottom row at
 //         design y~1451..1551, is fully on-window.
-//   RED   clamp (drawScale = design, WM crops to visible height) -> the bottom row is
+//   RED clamp (drawScale = design, WM crops to visible height) -> the bottom row is
 //         NOT on-window. This is the negative mandate #4: 负控必须真会红.
-//   DATA  the module follows whatever logical area is passed (tall/short screens both
+//   DATA the module follows whatever logical area is passed (tall/short screens both
 //         produce a correct fit, no hardcoded 141).
 //   ASPECT uniform scale -> logical window keeps designW/designH (never stretched).
 //
-// ⚠️ This slice does NOT close task #15 (see host_window_fit.h). #15 stays OPEN until
+// ⚠️ This slice does NOT close (see host_window_fit.h). stays OPEN until
 // P5's real host window proves the bottom row reachable; an already-green decision
-// module is not the "already-true" host (P2-③ real_path lesson).
+// module is not the "already-true" host (real_path lesson).
 
 #include "mini_test.h"
 
@@ -159,6 +159,6 @@ int run(const char* suite) {
 }  // namespace
 
 int main() {
-  std::printf("== task #15 precursor: host window fit + control reachability ==\n");
+  std::printf("== precursor: host window fit + control reachability ==\n");
   return run("host_window_fit");
 }

@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_machine_cable_restore.cpp — task #80 (GH#12 9D C3): the DeviceState user-cable atomic
+// test_machine_cable_restore.cpp — (C3): the DeviceState user-cable atomic
 // restore into the REAL PatchGraph, driven through the agreed entry and asserted blindly against
 // the restore contract.
 //
-// @Codex 7ce76a8b requirements, verified here through encode -> decode ->
+//  requirements, verified here through encode -> decode ->
 // StandaloneAudioEngine.applyDeviceState -> processBlock (the shared test_engine_harness.h), never
 // buildMachineRuntimeCandidate/processFrame directly:
 //   (a) the no-cable default restores to the ORIGINAL default (no stray cable, the single active
@@ -19,14 +19,14 @@
 //   (f) an unsupported/deferred graph fails as a WHOLE candidate and the prior accepted owner is
 //       preserved by the engine's single-commit guard (typed reject keeping state/format/plan/trace).
 //
-// Guardrails honored throughout (per @Codex):
+// Guardrails honored throughout:
 //   * routeOverridden is NOT a second routing switch. check_routes already reconciled it against the
 //     ACTUAL cable facts, and the restore simply reflects patch_ state; this test never re-derives a
 //     route from the override bit.
 //   * Sparse JackId/RouteId are never indexed by a dense index: the serialized id space has holes,
 //     so every sink/source is looked up through the descriptor (find_jack / find_route), and the
 //     restore loop iterates the FULL [0, kDevicePatchCapacity) and casts the slot to a JackId.
-//   * cableRestoreOk_ is folded into MachineRuntimeDefinition::valid(), so ANY restore mismatch
+//   * cableRestoreOk_ is folded into MachineRuntimeDefinition::valid, so ANY restore mismatch
 //     (missed cable, wrong-source mis-wire, capacity-drop, stray cable) becomes a typed whole-candidate
 //     rejected_graph with ZERO factory/engine change, and the fail-keeps-old-owner behavior is the
 //     engine's existing single-commit guard, not a new path.
@@ -67,7 +67,7 @@ constexpr int kLongFrames = 96000;
 
 // Set a user cable source -> sink in a state. The sink slot is the serialized JackId (NOT a dense
 // index — the id space has holes); the route-override bookkeeping, where a route's sink is used,
-// is applied separately via overrideRoute() so check_routes coherence holds.
+// is applied separately via overrideRoute so check_routes coherence holds.
 void setCable(DeviceStateV1& st, JackId source, JackId sink) {
   const std::uint32_t s = static_cast<std::uint32_t>(sink);
   st.inputCable[s] = 1;
@@ -83,8 +83,8 @@ void overrideRoute(DeviceStateV1& st, RouteId id) {
 
 // Verify the LIVE user-cable bank equals the requested set exactly: cableCount matches, and every
 // requested sink holds exactly ONE user cable reachable from its requested source (no stray, no
-// displaced, no wrong-source wire). This is the defense against a lone connect()==true being
-// treated as complete (connect() can atomically displace a prior cable at a saturated port).
+// displaced, no wrong-source wire). This is the defense against a lone connect==true being
+// treated as complete (connect can atomically displace a prior cable at a saturated port).
 bool verifyWires(const SynthRuntime* r, const DeviceStateV1& st) {
   if (r == nullptr) return false;
   std::uint32_t requested = 0;
@@ -151,7 +151,7 @@ DeviceStateV1 multiCableState() {
 
 void test_no_cable_default() {
   // The no-cable default has NO user cable introduced by the restore, and the single active
-  // normalized route (acyclic VCO-A->VCO-B, task #83 / GH #18) is intact (not overridden, not lost).
+  // normalized route (acyclic VCO-A->VCO-B, /) is intact (not overridden, not lost).
   EngineHarness h;
   CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
   CHECK(h.runtime() != nullptr);
@@ -171,7 +171,7 @@ void test_no_cable_default() {
 // (b) on the SAME owner, a user cable into a live route's sink OVERRIDES the active normalized
 // route (the user source actually replaces the default A->B normalized edge), and removing it
 // restores the route with no residual wire. The route's sink is vco_b.cv_in; the default normalized
-// route (task #83 / GH #18: vco_a.dry_out -> vco_b.cv_in) is the single active normalized route.
+// route (: vco_a.dry_out -> vco_b.cv_in) is the single active normalized route.
 // Feeding a constant signal makes the env-follower source non-zero, so the override is
 // signal-observable, not just a normalizedActive bit: the user source drives a different waveform
 // than the A->B route, so the rendered output differs; after removal the output is BIT-identical to
@@ -225,9 +225,9 @@ void test_override_same_owner_replaces_self_edge() {
 // control/audio delta is then attributable to the cable, not the (shared) MOD parameter.
 //
 // Why drone CV-MOD rather than vco_a.v_oct_in: vco_a's v_oct input port is an internal modulation
-// input, NOT a published control source, so controlVoltageAt() reports 0 on it even when driven.
+// input, NOT a published control source, so controlVoltageAt reports 0 on it even when driven.
 // droneGroupModCv(voiceGroup) is the runtime's canonical readback for a drone MOD cable — it reads
-// the shared group CV the bank multiplies — and droneChannel() is the per-voice rendered audio, so a
+// the shared group CV the bank multiplies — and droneChannel is the per-voice rendered audio, so a
 // MOD cable moves BOTH observables. This mirrors the existing MOD-on oracle but through the full
 // encode -> decode -> applyDeviceState -> processBlock path, never the direct runtime setter/connect.
 
@@ -299,7 +299,7 @@ void test_restore_deterministic() {
 
   // Establish active A (default) first in each engine, mirroring a host that always holds a prior
   // accepted state; a restore-regression reject then keeps a valid runtime (default) instead of a
-  // never-accepted engine (runtime()==nullptr), so the checks go RED cleanly.
+  // never-accepted engine (runtime==nullptr), so the checks go RED cleanly.
   EngineHarness h1;
   CHECK(h1.load(make_default_device_state(0x4C554E4152ULL)));
   CHECK(h1.load(s));
@@ -357,9 +357,9 @@ void test_multi_cable_no_loss() {
 // _________________________________________________________________________________________________
 // (f) an unsupported/deferred graph fails as a WHOLE candidate with a TYPED reject, and the prior
 // accepted owner A is preserved by the single-commit guard (state/format/plan/trace -> the exact
-// same audio, and the exact same definition object). The helper load() collapses a codec failure and
+// same audio, and the exact same definition object). The helper load collapses a codec failure and
 // a factory rejection into a bare false, so we ALSO surface the typed StateApplyStatus and the
-// recorded validation result: RejectedGraph (not RejectedInvalidState) carries validation().ok==true,
+// recorded validation result: RejectedGraph (not RejectedInvalidState) carries validation.ok==true,
 // proving the state VALIDATED and only the GRAPH failed — never an ambiguous "just false".
 
 void test_unsupported_graph_typed_reject_preserves_a() {

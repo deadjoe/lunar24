@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-③ keyboard-mode foundation (design/06 §L4, §P4; design/07 §3, §6).
+//  keyboard-mode foundation (§P4;, §6).
 //
 // The panel is one physical knob per parameter. KeyboardSettings.pressureBehaviour
 // is the GLOBAL single/twin/split selector; the two sides each act on a set of
-// parameter values. Per design/00 §2d (msg 695564a7, P5 exit constraint:
+// parameter values. Per (P5 exit constraint:
 // "control ledger 100% has visible controls AND no new controls"):
 //
 //   ParameterId identifies WHICH parameter (the one knob).
@@ -15,7 +15,7 @@
 // *banks* under one id, never a new `_r` ParameterId. That is the whole point of
 // this layer: it makes "which bank" explicit and independent of "which id".
 //
-// Per @Claude's direction, every per-note behaviour (portamento / vibrato /
+// Per, every per-note behaviour (portamento / vibrato /
 // pressure / quantiser) must read a parameter WITH side context, never from the
 // global parameters[] directly. This header is the single place that resolves a
 // (mode, side, id) triple to a (bank index, id) read; the concrete DeviceState
@@ -31,7 +31,7 @@
 namespace lunar24::core {
 
 // The keyboard mode, i.e. how the two performance sides map onto value banks
-// (grounded: design/00 §2c, manual L675-681 — twin shares, split divides).
+// (grounded:, manual L675-681 — twin shares, split divides).
 enum class KeyboardMode : std::uint8_t {
   Single = 0,  // one bank; both sides act on the single bank
   Twin = 1,    // two sides SHARE one bank ("…the two sides… share… same parame-")
@@ -62,7 +62,7 @@ constexpr bool sides_share_bank(KeyboardMode mode) noexcept {
 }
 
 // THE side-context scalar choke point. Every per-note behaviour reads a parameter
-// THROUGH this, never from global parameters[] directly (design/00 §2d, design/07
+// THROUGH this, never from global parameters[] directly (
 // §6). `bank` is the caller-injected value-bank reader — a callable
 //   (std::uint8_t bankIndex, IdValue id) -> Value
 // supplied so the concrete DeviceState writer (live-state per-side storage) can
@@ -76,7 +76,7 @@ auto read_side_scalar(BankReader&& bank, KeyboardMode mode, KeyboardSide side,
 }
 
 // PROVISIONAL decode of the raw pressureBehaviour selector into a KeyboardMode.
-// The manual's raw-u8 mapping is NOT evidence-grounded yet (design/00 §3.2
+// The manual's raw-u8 mapping is NOT evidence-grounded yet (
 // registry may hold three oct_sel positions; the behaviour enum decode is marked
 // PROVISIONAL in device_state.h as well). Do not assert this mapping as design
 // truth — unknown values collapse to Single so a rogue selector degrades to the

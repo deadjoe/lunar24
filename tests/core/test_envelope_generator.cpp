@@ -1,31 +1,31 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// GH #11 (P3 item 6) Envelope A/B sound-core strong-oracle suite for
+//  (P3 item 6) Envelope A/B sound-core strong-oracle suite for
 // core/include/lunar24/core/envelope_generator.h. This new EG is a SEPARATE
 // ADSR/HOLD/SELF-GEN generator, NOT the EnvelopeFollower (which is a preamp L2
 // detector with its own rectifying one-pole); the tests pin behaviour / trend /
 // determinism, and never fake a measured hardware curve (see the header's
 // PROVISIONAL modelling constants).
 //
-// @Codex mandate (msg 37096471) must-tests:
-//   ①  full ADSR phases + monotonicity (attack rise, decay to sustain, release to 0)
-//   ②  three-time speed trends (larger A/D/R -> slower)
-//   ③  attack/release mid-way reversal continuity (no jump in either direction)
-//   ④  real descriptor gate interpretation (CV -> sink_gate_interpret -> EG)
-//   ⑤  HOLD only opens VCA, never freezes/pulls up ENV; HOLD off resumes, no reset
-//   ⑥  SELF-GEN no-gate period (LFO-like, uses A rise + R fall only)
-//   ⑦  A/B state/config isolation (two real instances, two real JackIds)
-//   ⑧  reset (clears dynamic/level/latch, keeps config)
-//   ⑨  four sample-rates wall-clock trend (44.1/48/88.2/96k, NO fixed 48k)
-//   ⑩  block partition per-sample bit-identical (one pass vs 64/128)
-//   ⑪  ENV 0..8V finite/bounded; VCA-CV bounded
-//   ⑫  zero-seconds deterministic, finite, no divide-by-zero
+//  mandate must-tests:
+//     full ADSR phases + monotonicity (attack rise, decay to sustain, release to 0)
+//     three-time speed trends (larger A/D/R -> slower)
+//     attack/release mid-way reversal continuity (no jump in either direction)
+//     real descriptor gate interpretation (CV -> sink_gate_interpret -> EG)
+//     HOLD only opens VCA, never freezes/pulls up ENV; HOLD off resumes, no reset
+//     SELF-GEN no-gate period (LFO-like, uses A rise + R fall only)
+//     A/B state/config isolation (two real instances, two real JackIds)
+//     reset (clears dynamic/level/latch, keeps config)
+//     four sample-rates wall-clock trend (44.1/48/88.2/96k, NO fixed 48k)
+//   ⑩ block partition per-sample bit-identical (one pass vs 64/128)
+//   ⑪ ENV 0..8V finite/bounded; VCA-CV bounded
+//   ⑫ zero-seconds deterministic, finite, no divide-by-zero
 //
 // Negative controls (each narrow old-error RED->revert GREEN) are run separately
-// in a detached /tmp worktree: ① attack/decay -> instant gate, ② release ignored /
-// starts from 1, ③ HOLD forces ENV high or VCA not open, ④ SELF-GEN off/constant,
-// ⑤ A/B shared state or fixed 48k phase step.
+// in a detached /tmp worktree: attack/decay -> instant gate, release ignored /
+// starts from 1, HOLD forces ENV high or VCA not open, SELF-GEN off/constant,
+//  A/B shared state or fixed 48k phase step.
 
 #include "mini_test.h"
 
@@ -74,7 +74,7 @@ bool nonincreasing(const std::vector<double>& v, std::size_t lo, std::size_t hi)
 }
 
 // ---------------------------------------------------------------------------
-// ①  full ADSR phases + monotonicity
+//   full ADSR phases + monotonicity
 // ---------------------------------------------------------------------------
 void test_adsr_phases_and_monotonic() {
   const double sr = 48000.0;
@@ -115,7 +115,7 @@ void test_adsr_phases_and_monotonic() {
 }
 
 // ---------------------------------------------------------------------------
-// ②  three-time speed trends
+//   three-time speed trends
 // ---------------------------------------------------------------------------
 void test_time_speed_trends() {
   const double sr = 48000.0;
@@ -163,7 +163,7 @@ void test_time_speed_trends() {
 }
 
 // ---------------------------------------------------------------------------
-// ③  attack/release mid-way reversal continuity (no jump either way)
+//   attack/release mid-way reversal continuity (no jump either way)
 // ---------------------------------------------------------------------------
 void test_midway_reversal_continuity() {
   const double sr = 48000.0;
@@ -200,7 +200,7 @@ void test_midway_reversal_continuity() {
 }
 
 // ---------------------------------------------------------------------------
-// ④  real descriptor gate interpretation (CV -> sink_gate_interpret -> EG)
+//   real descriptor gate interpretation (CV -> sink_gate_interpret -> EG)
 // ---------------------------------------------------------------------------
 void test_real_descriptor_gate() {
   const core::JackDescriptor& ga = real_jack(core::JackId::envelope_a_gate_in);
@@ -241,7 +241,7 @@ void test_real_descriptor_gate() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑤  HOLD only opens VCA, not freeze/pull-up ENV; HOLD off resumes, no reset
+//   HOLD only opens VCA, not freeze/pull-up ENV; HOLD off resumes, no reset
 // ---------------------------------------------------------------------------
 void test_hold_only_opens_vca() {
   EnvelopeGenerator eg(48000.0);
@@ -287,7 +287,7 @@ void test_hold_only_opens_vca() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑥  SELF-GEN no-gate period (LFO-like: A rise + R fall only)
+//   SELF-GEN no-gate period (LFO-like: A rise + R fall only)
 // ---------------------------------------------------------------------------
 void test_selfgen_no_gate_periodicity() {
   const double sr = 48000.0;
@@ -314,7 +314,7 @@ void test_selfgen_no_gate_periodicity() {
   };
   const int small = oscillations(0.003, 0.003);
   const int large = oscillations(0.05, 0.05);
-  std::printf("⑥ self-gen oscillations in 0.3s: small-tau %d, large-tau %d\n", small, large);
+  std::printf(" self-gen oscillations in 0.3s: small-tau %d, large-tau %d\n", small, large);
   CHECK(small >= 2);            // it actually self-oscillates and repeats, no gate
   CHECK(small > large);         // larger ATT/RLS -> slower self-osc
 
@@ -338,7 +338,7 @@ void test_selfgen_no_gate_periodicity() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑦  A/B state/config isolation (two real instances, two real JackIds)
+//   A/B state/config isolation (two real instances, two real JackIds)
 // ---------------------------------------------------------------------------
 void test_ab_isolation() {
   EnvelopeGenerator a(48000.0), b(48000.0);
@@ -372,7 +372,7 @@ void test_ab_isolation() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑧  reset: clears dynamic/level/latch, keeps config
+//   reset: clears dynamic/level/latch, keeps config
 // ---------------------------------------------------------------------------
 void test_reset_clears_dynamic_keeps_config() {
   EnvelopeGenerator eg(48000.0);
@@ -402,7 +402,7 @@ void test_reset_clears_dynamic_keeps_config() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑨  four sample-rates wall-clock trend (no fixed 48k)
+//   four sample-rates wall-clock trend (no fixed 48k)
 // ---------------------------------------------------------------------------
 void test_sample_rate_trend() {
   const std::vector<double> rates = {44100.0, 48000.0, 88200.0, 96000.0};
@@ -425,13 +425,13 @@ void test_sample_rate_trend() {
   }
   const double mn = *std::min_element(reach.begin(), reach.end());
   const double mx = *std::max_element(reach.begin(), reach.end());
-  std::printf("⑨ cross-sr 0.7-reach: min %.6f s, spread %.6f s\n", mn, mx - mn);
+  std::printf(" cross-sr 0.7-reach: min %.6f s, spread %.6f s\n", mn, mx - mn);
   CHECK(mn > 0.0);
   CHECK(mx - mn < 0.01);   // consistent wall-clock across 44.1..96k, no fixed 48k
 }
 
 // ---------------------------------------------------------------------------
-// ⑩  block partition per-sample bit-identical
+// ⑩ block partition per-sample bit-identical
 // ---------------------------------------------------------------------------
 void test_block_partition_bit_identical() {
   const double sr = 48000.0;
@@ -484,7 +484,7 @@ void test_block_partition_bit_identical() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑪  ENV bounded/finite; VCA-CV bounded
+// ⑪ ENV bounded/finite; VCA-CV bounded
 // ---------------------------------------------------------------------------
 void test_outputs_finite_and_bounded() {
   EnvelopeGenerator eg(44100.0);
@@ -506,7 +506,7 @@ void test_outputs_finite_and_bounded() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑫  zero-seconds deterministic / finite (instant stages, no div-by-zero)
+// ⑫ zero-seconds deterministic / finite (instant stages, no div-by-zero)
 // ---------------------------------------------------------------------------
 void test_zero_seconds_deterministic() {
   EnvelopeGenerator eg(48000.0);
@@ -528,11 +528,11 @@ void test_zero_seconds_deterministic() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑬  decay-only speed trend (independent of attack/release). A DEDICATED decay
+// ⑬ decay-only speed trend (independent of attack/release). A DEDICATED decay
 //   oracle: larger decay seconds -> a later fall below a fixed threshold. The
 //   old nonincreasing + settled-to-sustain checks accept a one-step 1.0->0.5
 //   jump, so this time-bounds the ACTUAL decay fall and won't be satisfied by a
-//   degenerate/instant decay (which @Codex pointed out slipped through unseen).
+//   degenerate/instant decay (which pointed out slipped through unseen).
 //   sustain is pinned to 0.0 so the decay target is far from 1.0 and the release
 //   stage (which would start from the emptied level) cannot mask a bad decay.
 // ---------------------------------------------------------------------------
@@ -564,7 +564,7 @@ void test_decay_speed_trends() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑭  SELF-GEN disable continuity: turning SELF-GEN off mid-oscillation must NOT
+// ⑭ SELF-GEN disable continuity: turning SELF-GEN off mid-oscillation must NOT
 //   clear the current level, and must deterministically hand back to ADSR/release
 //   per the CURRENT real gate state (no gate -> release from the current level).
 // ---------------------------------------------------------------------------
@@ -589,7 +589,7 @@ void test_selfgen_disable_continuity() {
   CHECK(eg.level01() < l0);                               // authoritative: decays on release
 }
 
-// ⑭b  SELF-GEN disable with gate HELD HIGH: on disable the level is preserved (not
+// ⑭b SELF-GEN disable with gate HELD HIGH: on disable the level is preserved (not
 //   cleared) and, because the real gate is high, the generator must enter ATTACK
 //   and keep RISING from the current level (NOT release). A stale "always release"
 //   that ignores the gate must go red here. This closes the held-gate branch the
@@ -618,7 +618,7 @@ void test_selfgen_held_gate_disable_enters_attack() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑮  non-finite config FAIL-CLOSED: setSustain(NaN) must be rejected (returns
+// ⑮ non-finite config FAIL-CLOSED: setSustain(NaN) must be rejected (returns
 //   false), preserve the prior sustain (no silent substitution / invented value),
 //   and never let a NaN reach the output rail.
 // ---------------------------------------------------------------------------
@@ -635,7 +635,7 @@ void test_sustain_nan_rejected() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑯  non-finite / out-of-domain rate & time FAIL-CLOSED: invalid sample rate and
+// ⑯ non-finite / out-of-domain rate & time FAIL-CLOSED: invalid sample rate and
 //   invalid A/D/R seconds are rejected and leave inspector + config intact.
 // ---------------------------------------------------------------------------
 void test_invalid_rate_time_rejected() {

@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P4-② preset STATE: the frozen keyboard_params_minus_clock payload lives in the
-// four native presets, and load/save/initialise manage them. Test #4 of the P4-②
-// mandate (sound behaviour flows through the P4-① InputStateMachine only) is the
-// P4-③ behaviour half and is deliberately deferred — it is not exercised here.
+//  preset STATE: the frozen keyboard_params_minus_clock payload lives in the
+// four native presets, and load/save/initialise manage them. Test #4 of the
+// mandate (sound behaviour flows through the InputStateMachine only) is the
+//  behaviour half and is deliberately deferred — it is not exercised here.
 
 #include "mini_test.h"
 
@@ -51,7 +51,7 @@ static void only_four_presets() {
   CHECK_FALSE(core::preset_slot_is_valid(0xFFFFu));
 }
 
-// @Claude P4-2 pin: `preset.id == slot` must hold for the factory profile and after
+// 2 pin: `preset.id == slot` must hold for the factory profile and after
 // initialise_preset. The id field today carries no independent information — it always
 // equals the slot index — so it is pinned as an invariant, not silently left as a
 // "seems meaningful" field. Negative: if initial_keyboard_preset ever returns a
@@ -81,7 +81,7 @@ static void preset_payload_is_params_except_tempo() {
     const std::string_view n = core::kKeyboardPresetLayout.fields[j].name;
     if (n == "id" || n == "reserved") continue;  // shell bytes, not a parameter
     // Every preset parameter must be one of the frozen payload's 31, OR the
-    // right-half "_r" variant of one of them (P4-③ per-side). "pressure_behaviour"
+    // right-half "_r" variant of one of them (per-side). "pressure_behaviour"
     // is the GLOBAL single/twin/split selector, so it is the one frozen field with
     // no per-side "_r" form.
     std::string_view base = n;
@@ -159,7 +159,7 @@ static void fill_preset(core::KeyboardPreset& p) {
   for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
     p.pushbuttonValue[i] = 0.2f * static_cast<float>(i);
 
-  // RIGHT half-bank (P4-③ per-side): distinct values so the round-trip proves the
+  // RIGHT half-bank (per-side): distinct values so the round-trip proves the
   // two halves survive independently. A serializer that ignored "_r", or mapped a
   // right field onto the left offset, would fail the equality below.
   p.pressureOutputR = 21u;
@@ -225,7 +225,7 @@ static bool presets_equal(const core::KeyboardPreset& a, const core::KeyboardPre
     if (a.plateTune[i] != b.plateTune[i]) return false;
   for (std::uint32_t i = 0; i < core::kKeyboardPushbuttonCount; ++i)
     if (a.pushbuttonValue[i] != b.pushbuttonValue[i]) return false;
-  // RIGHT half-bank (P4-③ per-side).
+  // RIGHT half-bank (per-side).
   if (a.pressureOutputR != b.pressureOutputR || a.modeR != b.modeR ||
       a.arpHoldR != b.arpHoldR || a.arpClockR != b.arpClockR ||
       a.arpDirectionR != b.arpDirectionR || a.arpVariationR != b.arpVariationR ||
@@ -368,8 +368,8 @@ static void assert_preset_matches_live_full(const core::KeyboardPreset& p,
 }
 
 static void full_payload_round_trip() {
-  // Test #5 (reuses the P2-⑤ pathway): a preset is part of DeviceStateV1, which is
-  // exactly what encode_device_state / decode_device_state (the P2-⑤ serializer)
+  // Test #5 (reuses the pathway): a preset is part of DeviceStateV1, which is
+  // exactly what encode_device_state / decode_device_state (the serializer)
   // walk. Save a fully-populated preset, encode, decode, and require it survive
   // bit-for-bit — including the reserved bytes (never zeroed) and the composite
   // seq_steps / plate_tune / pushbutton regions.
@@ -398,12 +398,12 @@ static void full_payload_round_trip() {
   CHECK_EQ(dst.keyboardSeqCurrent.steps[5].value, 0.6f);
   CHECK_EQ(dst.keyboardScaleEditor, 0x5555u);
   CHECK_EQ(dst.keyboardClockSelectors[0], 3u);
-  // The reserve bytes are preserved verbatim, not zeroed (P2-⑤ @Claude Q2).
+  // The reserve bytes are preserved verbatim, not zeroed.
   CHECK_EQ(dst.keyboardPresets[1].reserved[0], 0xEAu);
   CHECK_EQ(dst.keyboardPresets[1].reserved[1], 0xF5u);
 }
 
-// P4-③ absolute anchor: the round-trip is necessary-but-not-sufficient (a
+//  absolute anchor: the round-trip is necessary-but-not-sufficient (a
 // serializer that writes AND reads a field at the same WRONG offset passes it).
 // Pin the right half-bank to concrete wire offsets so a "consistent but wrong"
 // mapping goes red. The v2 region (0..246) stays byte-identical.
@@ -429,7 +429,7 @@ static void right_bank_wire_offset_anchor() {
   CHECK_EQ(core::get_f32(buf + 215u + 7u * 4u), p.pushbuttonValue[7]);
 }
 
-// Test #3: the new COMPLETE transfer (task #57 / GH #12 partial) replaces the old
+// Test #3: the new COMPLETE transfer (partial) replaces the old
 // fragment load_preset / save_preset. It moves the slot's whole keyboard-owned
 // payload, so a snapshot into a slot round-trips every per-side scalar bank, the
 // global behaviour selector, the left/right non-scalars, and the left/right
@@ -658,7 +658,7 @@ static void invalid_slot_returns_false_zero_mutation() {
   CHECK(presets_equal(st.keyboardPresets[1], core::KeyboardPreset{}));
 }
 
-// pressure_output single-truth (design/00 §181, task #57): the canonical live values
+// pressure_output single-truth: the canonical live values
 // are the left scalar bank and the right scalar bank; keyboardSettings.pressureOutput
 // is a COMPAT MIRROR that converges to the canonical LEFT on load and must NOT be
 // read on save (a stale mirror must never pollute the preset).
@@ -695,7 +695,7 @@ static void pressure_output_canonicality() {
   CHECK_EQ(live.keyboardPresets[1].reserved[0], 0xABu);    // reserved preserved
 }
 
-// P4-③ §2e invariant (design/00, @Claude msg c0d9e9be): a keyboard scalar is
+//  §2e invariant: a keyboard scalar is
 // per-side in the preset IFF it is per-side in live. Bank[0] (left/shared) stays in
 // `parameters[ParameterId]`; bank[1] (right) lives in `keyboardScalarRight[index]`.
 // Preset -> live -> preset must be lossless on every per-side scalar, and the two
@@ -705,7 +705,7 @@ static void pressure_output_canonicality() {
 //   * Absolute anchor — live bank[0] and bank[1] hold the correct, separate left /
 //     right values (this separates "two banks under one id" from "one global value
 //     on both sides"). Anchored on keyboard_mode and on pressure_output, the one
-//     @Claude specifically ruled per-side in §2e.
+//      specifically ruled per-side in §2e.
 //   * Round-trip — preset -> live -> preset on the whole preset is lossless.
 //   * Index map — exact both ways: every per-side scalar maps to its own slot, and
 //     the global selector keyboard_behaviour maps to -1 (no right bank).
@@ -747,7 +747,7 @@ static void live_scalar_bank_preset_live_round_trip() {
 }
 
 static void live_state_holds_non_scalars() {
-  // design/07 §6: the non-scalars live as structured DeviceState fields, never
+  // the non-scalars live as structured DeviceState fields, never
   // flattened into a scalar ParameterDescriptor. Assert the four kinds are all
   // present and correctly sized.
   core::DeviceStateV1 st;
@@ -780,5 +780,5 @@ int main() {
   full_preset_live_preset_round_trip_lossless();
   invalid_slot_returns_false_zero_mutation();
   pressure_output_canonicality();
-  return ::test::finish("keyboard presets (P4-②, full transfer)");
+  return ::test::finish("keyboard presets (full transfer)");
 }

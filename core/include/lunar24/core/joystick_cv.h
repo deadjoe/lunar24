@@ -1,18 +1,18 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// JoystickCv — the Joystick X/Y + OFFSET X/Y bipolar CV sound core (GH #11, P3
+// JoystickCv — the Joystick X/Y + OFFSET X/Y bipolar CV sound core (P3
 // item 6 "patchable control source"). A free-standing, framework-agnostic,
 // fixed-memory (no heap, no lock), per-sample CV mapping core. It is NOT a
 // wrapper over any audio-rate modulation helper and NOT an A/B pair: the panel
 // has ONE joystick module with TWO independent axes/outputs X and Y, driven by
 // four normalized controls (x, y, offset_x, offset_y).
 //
-// Evidence boundary (manual L446-477 + design/01:90 + design/06:107): CONFIRMED
+// Evidence boundary (manual L446-477 + :90 + :107): CONFIRMED
 // are a position-locking joystick with X/Y axes, two voltage offset regulators,
 // two patchable outputs (X OUT / Y OUT), and an output rail that is bipolar
 // -10..+10V (registry joystick.x_out / joystick.y_out: direction=output,
-// SignalType=cv, Polarity=bipolar, nominal -10..+10). design/01 also records
+// SignalType=cv, Polarity=bipolar, nominal -10..+10). also records
 // the left/centre/right offset windows as [-10,0] / [-5,+5] / [0,+10]. The
 // mechanical taper, the physical centre, and the offset continuous transfer are
 // all UNMEASURED; the registry's normalized range/default/step/smoothing field
@@ -28,7 +28,7 @@
 // is NO spring-return, NO block-boundary reset, NO implicit decay.
 //
 // There is NO hardware reset jack and NO sample-rate dependency: this is a
-// stateless audio-rate CV mapping core, so there is deliberately no tick()/reset()
+// stateless audio-rate CV mapping core, so there is deliberately no tick/reset
 // to invent. The two outputs are pure per-sample reads of the current four
 // control samples — a value set at sample N is reflected by sample N's read
 // immediately (no block-cache).
@@ -45,7 +45,7 @@ namespace lunar24::core {
 // relabel these (never re-derive a curve elsewhere).
 // ---------------------------------------------------------------------------
 
-// Output rail peak (per side). CONFIRMED (manual + design/06:107 + registry
+// Output rail peak (per side). CONFIRMED (manual + :107 + registry
 // joystick.x_out / joystick.y_out: bipolar, nominal -10..+10V). Both outputs are
 // bounded to [-kJoystickRailPeakVolt, +kJoystickRailPeakVolt].
 inline constexpr double kJoystickRailPeakVolt = 10.0;

@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_device_adapter_oracle.cpp — the strong product oracle for GH#4 (task#71).
+// test_device_adapter_oracle.cpp — the strong product oracle for.
 //
 // This ONE CTest walks the real chain `MachineRuntimeDefinition -> SynthRuntime ->
-// DeviceAdapter` and asserts the frozen contracts of the @Codex GH#4 partial mandate
-// (msg 6c74e22d). It does NOT re-implement the ProcessBlock algorithm; it drives the
+// DeviceAdapter` and asserts the frozen contracts of the partial mandate
+// . It does NOT re-implement the ProcessBlock algorithm; it drives the
 // production runtime through the SAME public entry the host uses:
 //
 //     DeviceAdapter::renderBlock(SynthRuntime&, const double* const* planarIn,
@@ -476,7 +476,7 @@ void scale() {
   // Asserting DRY@1V == 0.5 is exactly the check a per-output-normalizer fails.
 }
 
-// End-to-end scale, through the host `renderBlock` path — the earlier scale() only exercised
+// End-to-end scale, through the host `renderBlock` path — the earlier scale only exercised
 // the free `dev_norm` helper, not that the block delegate actually CONSUMES /0.5 on input and
 // PRODUCES the unified x0.5 on output. Two same-seed machines process the same logged sequence:
 // one drives `processFrame(RuntimeInputs{known volts})` to make an independent reference, the
@@ -562,7 +562,7 @@ void non_finite() {
   CHECK(ad.nonFiniteSamples() == 2);
 }
 
-// Non-finite fail-safe, at the rendered trace level. The earlier non_finite() only asserted the
+// Non-finite fail-safe, at the rendered trace level. The earlier non_finite only asserted the
 // anomaly COUNTER; it never verified the block actually consumed zero in place of the bad sample.
 // Two same-seed machines render the SAME block where ch0[3]=NaN and ch1[5]=+Inf (machine A) or
 // ch0[3]=ch1[5]=0 (machine B). The output traces must be BIT-IDENTICAL sample-for-sample across
@@ -730,7 +730,7 @@ void zero_alloc() {
 // warmup, same compiled graph) are fed IDENTICAL input through every frame except one
 // measurement frame, where a single terminal is varied. Because they start bit-identical,
 // any difference at that frame is attributable SOLELY to the varied terminal — no
-// oscillator-phase drift, no sequential same-instance contamination. `preampResolvedInput()`
+// oscillator-phase drift, no sequential same-instance contamination. `preampResolvedInput`
 // is corroborating only and is therefore NOT used here (it cannot see a mid-block frame).
 enum class TerminalCase : std::uint8_t { PreampOnly, PreampPatched, ExtPatched };
 
@@ -755,8 +755,8 @@ CaseDiff renderDualTerminal(TerminalCase tc) {
   const bool patched = (tc == TerminalCase::PreampPatched || tc == TerminalCase::ExtPatched);
   if (patched) {
     namespace reg = lunar24::registry;
-    // The return SCC removes the preamp terminal's live fallback; a broken connect() or a
-    // silently-refused rebuild() would make the two instances diverge from the REAL graph,
+    // The return SCC removes the preamp terminal's live fallback; a broken connect or a
+    // silently-refused rebuild would make the two instances diverge from the REAL graph,
     // so both returns are checked.
     CHECK(ra.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in));
     CHECK(rb.connect(reg::JackId::env_follower_env_out, reg::JackId::preamp_ext_source_in));
@@ -884,7 +884,7 @@ void block_delegate_reflects_runtime() {
 
 int main() {
   using namespace lunar24::core;
-  std::printf("== GH#4: production DeviceAdapter + distinct EXT/PREAMP runtime chain ==\n");
+  std::printf("== : production DeviceAdapter + distinct EXT/PREAMP runtime chain ==\n");
   output_capability();
   output_placement();
   output_2_3_render();

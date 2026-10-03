@@ -1,28 +1,28 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// P3-③ tests for the triangle-core AS3340 VCO. Six must-tests, each carrying a
-// real red-negative so it cannot vacuously pass — @Claude ("测不出区别的测试，就没
-// 在测那个东西") and, for the sub/phase-lock and sync tests specifically, the P3-①
+//  tests for the triangle-core AS3340 VCO. Six must-tests, each carrying a
+// real red-negative so it cannot vacuously pass — ("测不出区别的测试，就没
+// 在测那个东西") and, for the sub/phase-lock and sync tests specifically, the
 // independence judge must NOT be reused here (sub is phase-LOCKED to the parent,
 // the OPPOSITE of DroneBank's independent voices).
 //
-// @Claude's P3-③ mandate, folded in below:
-//   ① V/OCT is a FULL 8-octave range (0..8 V, confirmed exponential): every 1 V
+// mandate, folded in below:
+//    V/OCT is a FULL 8-octave range (0..8 V, confirmed exponential): every 1 V
 //      must exactly double the rendered frequency (linear V/OCT -> red), AND the
 //      lin/exp CV-input switch must actually change the response (a switch that is
 //      ignored -> red).
-//   ② The sub is -1 octave AND phase-LOCKED: same phase origin, preserved through
-//      a discontinuity (a free-running independent sub -> red). NEVER ①'s judge.
-//   ③ Hard sync is a REAL, detectable discontinuity and is A-SYMMETRIC: VCO A has
+//    The sub is -1 octave AND phase-LOCKED: same phase origin, preserved through
+//      a discontinuity (a free-running independent sub -> red). NEVER the judge.
+//    Hard sync is a REAL, detectable discontinuity and is A-SYMMETRIC: VCO A has
 //      it (a sync causes a reset the detector sees), VCO B does not (a B wired to
 //      sync is a discontinuity the detector flags -> red). A DEAD sync (no-op) is
 //      also caught.
-//   ④ Morph is CONTINUOUS across the whole 0..1 range (a binary step/switch ->
+//    Morph is CONTINUOUS across the whole 0..1 range (a binary step/switch ->
 //      red).
-//   ⑤ Cross-sr (same Hz at 44.1/48/88.2/96k) + cross-buffer (bit-identical across
-//      partitionings) — judges shared with P3-①/② in drone_test_common.h.
-//   ⑥ PWM extreme duty never collapses to DC or silence (a saturated duty clamped
+//    Cross-sr (same Hz at 44.1/48/88.2/96k) + cross-buffer (bit-identical across
+//      partitionings) — judges shared with / in drone_test_common.h.
+//    PWM extreme duty never collapses to DC or silence (a saturated duty clamped
 //      to 0/1 -> red).
 //   Two MEASURE-ONLY aliasing probes (hard-sync splatter + narrow-pulse folding)
 //   are recorded in FINDINGS.md with "合成测试点, 非硬规格" provenance; the fix is
@@ -73,7 +73,7 @@ static void render_vco(core::Vco& v, std::size_t n, std::vector<double>& out,
 // Negative (broken) renders, one per must-test so each judge can show it RED.
 // ---------------------------------------------------------------------------
 
-// ① linear V/OCT: pitch = fBase*(1+vOct) instead of fBase*2^vOct. Frequency does
+//  linear V/OCT: pitch = fBase*(1+vOct) instead of fBase*2^vOct. Frequency does
 // NOT double every volt, so the V/OCT-ratio judge fires.
 static std::vector<double> render_vco_linear_voct(double sr, double baseHz,
                                                   double vOct, std::size_t n) {
@@ -88,7 +88,7 @@ static std::vector<double> render_vco_linear_voct(double sr, double baseHz,
   return out;
 }
 
-// ① lin/exp switch ignored: always the linear law regardless of mode. A switch
+//  lin/exp switch ignored: always the linear law regardless of mode. A switch
 // that does nothing.
 static std::vector<double> render_vco_switch_ignored(double sr, double baseHz,
                                                      double cv, std::size_t n) {
@@ -103,7 +103,7 @@ static std::vector<double> render_vco_switch_ignored(double sr, double baseHz,
   return out;
 }
 
-// ③ hard sync is a NO-OP (dead sync input): the slave is never reset, so a sync
+//  hard sync is a NO-OP (dead sync input): the slave is never reset, so a sync
 // pulse has zero effect — the continuity judge catches it.
 static std::vector<double> render_vco_noop_sync(double sr, double baseHz,
                                                 std::size_t n) {
@@ -118,16 +118,16 @@ static std::vector<double> render_vco_noop_sync(double sr, double baseHz,
   return out;
 }
 
-// ④ stepped morph: a binary switch (morph<0.5 -> saw, else -> inverted saw), the
+//  stepped morph: a binary switch (morph<0.5 -> saw, else -> inverted saw), the
 // discontinuity the continuity-in-morph judge fires on.
 static double stepped_morph(double m, double p) {
   const double a = 2.0 * p - 1.0;
   return (m < 0.5) ? a : -a;  // jump at the 0.5 boundary — the bug.
 }
 
-// ⑤ fixed 48 kHz per-sample step: the pitch increment is hardcoded to sr=48000,
+//  fixed 48 kHz per-sample step: the pitch increment is hardcoded to sr=48000,
 // never scaled by the actual sample rate, so frequency scales with sr — the
-// cross-sr detector fires (mirrors the P3-①/② fixed-increment negatives).
+// cross-sr detector fires (mirrors the / fixed-increment negatives).
 static std::vector<double> render_vco_fixed48k(double sr, double baseHz,
                                                std::size_t n) {
   (void)sr;  // the bug is precisely that SAMPLE RATE IS IGNORED.
@@ -142,7 +142,7 @@ static std::vector<double> render_vco_fixed48k(double sr, double baseHz,
   return out;
 }
 
-// ⑤ block-boundary reset: the phase is cleared at each block start, making the
+//  block-boundary reset: the phase is cleared at each block start, making the
 // output partition-dependent — the buffer-independence judge fires.
 static void render_vco_block_reset(std::size_t n, const std::vector<std::size_t>& blocks,
                                    std::vector<double>& out) {
@@ -163,7 +163,7 @@ static void render_vco_block_reset(std::size_t n, const std::vector<std::size_t>
   out = part;
 }
 
-// ⑥ saturated pulse: duty clamped to exact 0 (or 1), so the pulse never switches
+//  saturated pulse: duty clamped to exact 0 (or 1), so the pulse never switches
 // and collapses to a near-constant (DC / silence) — the both-excursion / not-silent
 // judge fires.
 static std::vector<double> render_vco_saturated_pulse(double sr, double baseHz,
@@ -180,7 +180,7 @@ static std::vector<double> render_vco_saturated_pulse(double sr, double baseHz,
 }
 
 // Fold a component at frequency h (Hz) to baseband [0, sr/2] + lowest odd harmonic
-// above Nyquist (reused logic, P3-② style).
+// above Nyquist (reused logic, style).
 static double fold_to_baseband(double h, double sr) {
   const double nyq = sr * 0.5;
   const double n = std::round(h / sr);
@@ -207,7 +207,7 @@ static bool first_folded_harmonic(double f0, double sr, int& order, double& alia
 // Must-tests.
 // ---------------------------------------------------------------------------
 
-// ① V/OCT doubling + lin/exp switch (a full 8-octave range, confirmed exponential).
+//  V/OCT doubling + lin/exp switch (a full 8-octave range, confirmed exponential).
 static bool test_vco_voct_and_lilin() {
   const double sr = 96000.0;  // high sr so the top octave stays below Nyquist.
   const double baseHz = 100.0;
@@ -278,7 +278,7 @@ static bool test_vco_voct_and_lilin() {
   return true;
 }
 
-// ② Sub = -1 octave AND phase-locked (NOT P3-①'s independence judge).
+//  Sub = -1 octave AND phase-locked (NOT the independence judge).
 static bool test_vco_sub_locked() {
   const double sr = 48000.0;
   const double baseHz = 200.0;
@@ -323,7 +323,7 @@ static bool test_vco_sub_locked() {
   return true;
 }
 
-// ③ Hard sync is a real, detectable, A-symmetric discontinuity; a wrongly-synced B
+//  Hard sync is a real, detectable, A-symmetric discontinuity; a wrongly-synced B
 // (or a dead sync) is caught.
 static bool test_vco_hardsync_asymmetry() {
   const double sr = 48000.0;
@@ -393,7 +393,7 @@ static bool test_vco_hardsync_asymmetry() {
   return true;
 }
 
-// ④ Morph is continuous across the whole 0..1 range (no step).
+//  Morph is continuous across the whole 0..1 range (no step).
 static bool test_vco_morph_continuous() {
   core::Vco v(48000.0);
   v.setWaveform(core::VcoWaveform::kMorphSawInvSaw);
@@ -424,7 +424,7 @@ static bool test_vco_morph_continuous() {
   return true;
 }
 
-// ⑤ Cross-sample-rate + cross-buffer (judges shared with P3-①/②).
+//  Cross-sample-rate + cross-buffer (judges shared with /).
 static bool test_vco_cross_sr_and_buffer() {
   const double baseHz = 440.0;
   const std::size_t n = 48000;
@@ -487,7 +487,7 @@ static bool test_vco_cross_sr_and_buffer() {
 }
 
 // ---------------------------------------------------------------------------
-// GH#19 S0 (task #117) — the PRODUCTION continuous-waveform law and the PWM consumer.
+//   the PRODUCTION continuous-waveform law and the PWM consumer.
 //
 // The three load-bearing claims of the production entry, each with its own red-negative:
 //   (1) A runtime-built Vco renders kMorphRing, and each panel icon position gives its shape
@@ -513,7 +513,7 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
   }
 
   // (1b) The knob pointing at the SINE icon == a sine, against an INDEPENDENT reference
-  //      (std::sin, this file's), never wave_map. tick() emits the shape UNSCALED (the 0.5 DRY clamp lives in the
+  //      (std::sin, this file's), never wave_map. tick emits the shape UNSCALED (the 0.5 DRY clamp lives in the
   //      DeviceAdapter, not here), and the phase convention is pre-increment: sample i reads
   //      frac((i+1)*f0/sr).
   {
@@ -531,13 +531,13 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
     double cum = 0.0;
     double maxErr = 0.0;
     for (std::size_t i = 0; i < n; ++i) {
-      cum += step;                                     // tick() advances before emitting.
+      cum += step;                                     // tick advances before emitting.
       const double ref = std::sin(core::Vco::kTwoPi * (cum - std::floor(cum)));
       maxErr = std::max(maxErr, std::fabs(buf[i] - ref));
     }
     std::printf("P3-3 gh19-s0 sine-icon-vs-sine: max|err| = %.6e\n", maxErr);
     CHECK(maxErr < 1e-12);   // the sine icon really is the sine node.
-    // RED-NEGATIVE: the pre-#117 default (a triangle at the same pitch) is a DIFFERENT buffer,
+    // RED-NEGATIVE: the earlier default (a triangle at the same pitch) is a DIFFERENT buffer,
     // so the check above cannot pass with the old fixed-triangle law left in place.
     const std::vector<double> tri = [&] {
       core::Vco t(sr);
@@ -798,7 +798,7 @@ static bool test_vco_gh19_s0_morph_ring_and_pwm() {
   return true;
 }
 
-// ⑥ PWM extreme duty never collapses to DC or silence.
+//  PWM extreme duty never collapses to DC or silence.
 static bool test_vco_pwm_extreme_duty() {
   const double sr = 48000.0;
   const double baseHz = 200.0;
@@ -831,7 +831,7 @@ static bool test_vco_pwm_extreme_duty() {
 }
 
 // ---------------------------------------------------------------------------
-// MEASURE-ONLY aliasing probes (@Claude: measure, record in FINDINGS, defer fix).
+// MEASURE-ONLY aliasing probes (measure, record in FINDINGS, defer fix).
 // ---------------------------------------------------------------------------
 
 // Hard-sync splatter: a slave saw restarted by a master clock gets energy where the
@@ -910,19 +910,19 @@ static bool test_vco_narrowpulse_fold() {
 }
 
 // ---------------------------------------------------------------------------
-// task #86 / GH#19: BLAMP triangle slope-correction STRUCTURAL contract. The
+//  : BLAMP triangle slope-correction STRUCTURAL contract. The
 // alias metric (blref_full_db) is the acceptance, but it realigns to the measured
 // fundamental phase and is scale-invariant, so these four structural controls are
 // asserted here so a regression is caught by the right detector, not by accident:
-//   A) phase-advance guard   — the corrected triangle must add NO whole-sample
+//   A) phase-advance guard — the corrected triangle must add NO whole-sample
 //      latency. Cross-correlation with the naive triangle must peak at lag 0.
-//   B) amplitude guard       — corner rounding never overshoots past the naive
+//   B) amplitude guard — corner rounding never overshoots past the naive
 //      swing, and the output is never silently volume-scaled (fake improvement).
-//   C) morph-untouched       — the morphing sine<->triangle uses the NAIVE triangle
+//   C) morph-untouched — the morphing sine<->triangle uses the NAIVE triangle
 //      (the BLAMP is applied only to the plain kTriangle core, in scope).
-//   D) block-invariance      — the correction is a pure function of the persisted
+//   D) block-invariance — the correction is a pure function of the persisted
 //      phase accumulator, so a block-boundary reset would change the output.
-//   E) BLAMP-is-active       — corrected kTriangle differs from the naive triangle
+//   E) BLAMP-is-active — corrected kTriangle differs from the naive triangle
 //      (kMorphSineTriangle @ morph=1 is the naive triangle) at the corners.
 // ---------------------------------------------------------------------------
 static bool test_vco_blamp() {
@@ -1029,19 +1029,19 @@ static bool test_vco_blamp() {
   return true;
 }
 
-// ⑦ GH#19 S5 (task #111): the PRODUCT hard-sync entry, requestSync(). ③ above covers the RAW
-// primitive syncPulse() and must keep covering exactly what it covered before — its mid-sample
-// meaning is asserted below to be UNCHANGED, so a "fix" that silently redefines syncPulse()
+//   the PRODUCT hard-sync entry, requestSync. above covers the RAW
+// primitive syncPulse and must keep covering exactly what it covered before — its mid-sample
+// meaning is asserted below to be UNCHANGED, so a "fix" that silently redefines syncPulse
 // fails here instead of shipping.
 //
-// WHAT S5 CHANGES. syncPulse() zeroes the accumulator BETWEEN ticks, so the next tick() advances
+// WHAT S5 CHANGES. syncPulse zeroes the accumulator BETWEEN ticks, so the next tick advances
 // once and reports phase `step`: the value discontinuity lands on one sample while the new cycle's
 // phase-0 sample is the NEXT one — phase and value disagree by one sample, and the emitted step is
-// unband-limited. requestSync() records the reset and lets tick() apply it AFTER its own advance,
-// so the reset sample itself reads phase 0 and tick() band-limits that jump.
+// unband-limited. requestSync records the reset and lets tick apply it AFTER its own advance,
+// so the reset sample itself reads phase 0 and tick band-limits that jump.
 //
 // HOW THE 1/2 LAW IS CHECKED WITHOUT KNOWING E(0). No public path ever emits the phase-0 value
-// E(0) (tick() always advances first), so a test cannot obtain it to compare against. It does not
+// E(0) (tick always advances first), so a test cannot obtain it to compare against. It does not
 // have to: with two resets at different phases f1 != f2 the emitted reset samples are
 // m_i = E(0) - (E(0) - E(f_i))/2, so E(0) CANCELS and the law becomes a pure slope statement
 //     m1 - m2 == (E(f1) - E(f2)) / 2.
@@ -1099,7 +1099,7 @@ static bool test_vco_hardsync_reset_alignment() {
   // two discrete timing conventions (reset-then-advance vs request-then-apply), not a defect, and
   // this test asserts which convention each entry point implements. Which one the PRODUCT path is
   // required to use is fixed by the independent master-edge vs reset-frame criterion in the S5
-  // mutation runner (task #111 item 2), not by this unit test.
+  // mutation runner (item 2), not by this unit test.
   CHECK(p1[k1 + 1] == head[0]);
   CHECK(p1[k1 + 2] == head[1]);
   CHECK(p2[k2 + 1] == head[0]);
@@ -1113,8 +1113,8 @@ static bool test_vco_hardsync_reset_alignment() {
   for (std::size_t i = 0; i < nothing.size(); ++i) nothing[i] = cont[i];
   CHECK_FALSE(same_render(nothing, p1));
 
-  // (d) RED-NEGATIVE: syncPulse() must keep its RAW meaning — it does NOT band-limit and does NOT
-  // make the reset sample read phase 0. If someone "fixes" syncPulse() to defer, r1[k1] becomes
+  // (d) RED-NEGATIVE: syncPulse must keep its RAW meaning — it does NOT band-limit and does NOT
+  // make the reset sample read phase 0. If someone "fixes" syncPulse to defer, r1[k1] becomes
   // the midpoint and this fails.
   CHECK(r1[k1] != p1[k1]);
 

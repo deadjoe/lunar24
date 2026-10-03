@@ -1,23 +1,23 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// test_engine_harness.h — the ONE shared entry for the task#78 host-family behavior harnesses.
+// test_engine_harness.h — the ONE shared entry for the host-family behavior harnesses.
 //
-// @Codex 1e34b7bb requires the gap#2/gap#3 harnesses to actually execute the agreed entry instead of
+//  requires the gap#2/gap#3 harnesses to actually execute the agreed entry instead of
 // calling buildMachineRuntimeCandidate/processFrame directly:
 //     encode_device_state -> decode_device_state -> StandaloneAudioEngine::applyDeviceState ->
 //     StandaloneAudioEngine::processBlock,
-// and to observe (a) the PUBLISHED control voltage/gate through owner.runtime() (read-only) and
+// and to observe (a) the PUBLISHED control voltage/gate through owner.runtime (read-only) and
 // (b) the REAL output buffers the DeviceAdapter writes. This header encapsulates exactly that path
 // so no test can silently drift back onto the disallowed direct-builder route: the codec roundtrip,
 // the engine apply, the render loop and the buffer capture all live here and only here.
 //
 // The engine is the framework-free StandaloneAudioEngine (host/standalone_audio_engine.h), the same
-// production path the host uses. `render()` drives the whole chain per frame and captures the four
+// production path the host uses. `render` drives the whole chain per frame and captures the four
 // real output channels (WET_L=0, WET_R=1, DRY_A=2, DRY_B=3 from device_layout.h); the caller asserts
-// on those captured buffers (audio families) and/or reads owner.runtime()->controlVoltageAt(JackId)
-// between frame steps (control families). NEVER call load() a second time on a harness whose
-// runtime() pointer you still hold — runtime() is valid only until the next commit (= the next load).
+// on those captured buffers (audio families) and/or reads owner.runtime->controlVoltageAt(JackId)
+// between frame steps (control families). NEVER call load a second time on a harness whose
+// runtime pointer you still hold — runtime is valid only until the next commit (= the next load).
 
 #pragma once
 
@@ -54,8 +54,8 @@ class EngineHarness {
   EngineHarness() = default;
 
   // Load a validated state through the codec roundtrip and prepare the engine for render.
-  // Returns true only on StateApplyStatus::Accepted. After a successful load, runtime() points at
-  // the committed definition and remains valid across render() calls (no commit happens in render).
+  // Returns true only on StateApplyStatus::Accepted. After a successful load, runtime points at
+  // the committed definition and remains valid across render calls (no commit happens in render).
   bool load(const DeviceStateV1& state, double sr = kSr, int blockFrames = 4096,
             int inCh = kInCh, int outCh = kOutCh) {
     std::vector<std::uint8_t> wire(kWire, 0);
@@ -67,20 +67,20 @@ class EngineHarness {
     return applyStatus_ == StandaloneAudioEngine::StateApplyStatus::Accepted;
   }
 
-  // The TYPED outcome of the last load() (task#80 item: a rejected candidate must be distinguished
+  // The TYPED outcome of the last load (item: a rejected candidate must be distinguished
   // as RejectedGraph vs RejectedInvalidState vs RejectedFormat, never collapsed into a bare false).
-  // Valid only after load(); NotAttempted before any load().
+  // Valid only after load; NotAttempted before any load.
   StandaloneAudioEngine::StateApplyStatus applyStatus() const { return applyStatus_; }
 
-  // GH#12 task#103: the engine-layer preset action through the OWNER API (the same seam the host
+  // the engine-layer preset action through the OWNER API (the same seam the host
   // will call at the stopped-stream boundary). Returns the accepted bit; the exact outcome is in
-  // presetStatus(). This never bypasses applyDeviceState — the owner re-commits internally.
+  // presetStatus. This never bypasses applyDeviceState — the owner re-commits internally.
   bool presetAction(std::uint32_t slot, StandaloneAudioEngine::PresetAction action) {
     presetAttempted_ = true;
     presetStatus_ = engine_.applyPresetAction(slot, action);
     return presetStatus_ == StandaloneAudioEngine::PresetActionStatus::Accepted;
   }
-  // Valid ONLY after presetAction() (presetAttempted() is true); before that it is a sentinel.
+  // Valid ONLY after presetAction (presetAttempted is true); before that it is a sentinel.
   bool presetAttempted() const { return presetAttempted_; }
   StandaloneAudioEngine::PresetActionStatus presetStatus() const { return presetStatus_; }
 
@@ -93,7 +93,7 @@ class EngineHarness {
     return applyStatus_;
   }
 
-  // The validation detail the engine recorded on the last apply(): a RejectedGraph outcome carries
+  // The validation detail the engine recorded on the last apply: a RejectedGraph outcome carries
   // ok==true here (the state VALIDATED; only the graph failed), which is exactly what distinguishes
   // a graph rejection from a state/format rejection on the agreed entry.
   const lunar24::core::StateValidationResult& validation() const {
@@ -111,7 +111,7 @@ class EngineHarness {
 
   // Render `frames` frames with a per-frame input feed. `feed(frame, &in0, &in1)` supplies each
   // frame's planar inputs — this is how an AC stimulus (e.g. a zero-centred sine on the preamp
-  // physical ch1) reaches the input stage, which the constant-`preampV` render() cannot. Returns
+  // physical ch1) reaches the input stage, which the constant-`preampV` render cannot. Returns
   // false if any processBlock is not Rendered.
   template <class Feed>
   bool renderFeed(int frames, Feed&& feed) {
@@ -129,13 +129,13 @@ class EngineHarness {
 
   // Reserve capacity for the four captured output vectors. The CPU-cost measurement must not time
   // render-loop vector growth (realloc on push_back), so callers pre-reserve the full window before
-  // the timed region (BLOCK item ⑤). No-op-safe: harmless if never called.
+  // the timed region (BLOCK item). No-op-safe: harmless if never called.
   void reserve(std::size_t n) {
     wetL_.reserve(n); wetR_.reserve(n); dryA_.reserve(n); dryB_.reserve(n);
   }
 
   // Render `frames` frames in ONE processBlock(...) call — the real-block path, distinguished from
-  // the per-frame render() above. Used to compare the four outputs under the same state + input for
+  // the per-frame render above. Used to compare the four outputs under the same state + input for
   // BLOCK-PARTITION invariance. `feed(frame, &in0, &in1)` fills the planar input buffers.
   // NOTE: requires frames <= the blockFrames the engine was loaded with, else processBlock drops to
   // silence (returns false). Appends all four outputs.
@@ -160,7 +160,7 @@ class EngineHarness {
 
   // Render `frames` frames in ONE processBlock(...) call and then invoke `onSample(runtime)` ONCE,
   // with the state as of the END of that block — the real BLOCK-BOUNDARY control sample. Combine
-  // with renderSampled() (block=1) to compare a published control trace at real block boundaries
+  // with renderSampled (block=1) to compare a published control trace at real block boundaries
   // against a per-frame reference. Requires frames <= the prepared block size.
   template <class Fn>
   bool renderBlockSampled(int frames, double preampV, Fn&& onSample) {
@@ -173,7 +173,7 @@ class EngineHarness {
     return true;
   }
 
-  // ---- host-entry inspection (task#101 review group 1) -------------------------------------
+  // host-entry inspection (review group 1) -------------------------------------
   // The committed device plan / format of the ACTIVE definition. These are the "state/format/plan"
   // a rejected apply must leave untouched (the atomic-apply contract of applyDeviceState).
   const lunar24::core::DevicePlan& plan() const { return engine_.plan(); }
@@ -187,11 +187,11 @@ class EngineHarness {
   // PRODUCER-SIDE event injection. The runtime is owned by the engine; this is the same public
   // enqueueControlEvent entry the host's keyboard/MIDI producer calls. It changes NO engine state,
   // format or plan and triggers NO commit — it is the producer seam, not an engine bypass. Same
-  // lifetime rule as runtime(): valid only until the next load() that COMMITS.
+  // lifetime rule as runtime: valid only until the next load that COMMITS.
   SynthRuntime* producerRuntime() { return const_cast<SynthRuntime*>(engine_.runtime()); }
 
   // Pure engine processBlock on CALLER-OWNED planar buffers: NO allocation, NO input generation and NO
-  // captured-output insert inside this call (BLOCK item ③). The caller supplies already-sized `in[*]` /
+  // captured-output insert inside this call (BLOCK item). The caller supplies already-sized `in[*]` /
   // `out[*]` so a CPU-cost measurement can time ONLY the DSP loop — the harness wrapper (renderBlock /
   // render) allocates six vectors, fills the inputs and inserts the outputs, which must be OUTSIDE the
   // timed region. Returns the engine Status. `frames` must be <= the blockFrames the engine was loaded
@@ -200,7 +200,7 @@ class EngineHarness {
     return engine_.processBlock(in, out, kInCh, kOutCh, frames);
   }
 
-  // Read-only published state (valid only until the next load()). Never null after a successful load.
+  // Read-only published state (valid only until the next load). Never null after a successful load.
   const SynthRuntime* runtime() const { return engine_.runtime(); }
 
   // The real captured output channels (indexed by device_layout.h WET_L/WET_R/DRY_A/DRY_B).
@@ -243,7 +243,7 @@ class EngineHarness {
       StandaloneAudioEngine::StateApplyStatus::NotAttempted;
   bool presetAttempted_ = false;
   StandaloneAudioEngine::PresetActionStatus presetStatus_ =
-      StandaloneAudioEngine::PresetActionStatus::RejectedNotReady;  // sentinel until presetAction()
+      StandaloneAudioEngine::PresetActionStatus::RejectedNotReady;  // sentinel until presetAction
   std::vector<double> wetL_, wetR_, dryA_, dryB_;
 };
 

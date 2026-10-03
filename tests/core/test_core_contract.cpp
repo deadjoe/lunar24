@@ -111,7 +111,7 @@ static void module_execution_contract_flags() {
 }
 
 static void module_contract_validation() {
-  // Invariants the scheduler relies on (design/07 §2, §4). A default contract is
+  // Invariants the scheduler relies on (§4). A default contract is
   // valid; the negative cases must each reject one specific violation.
   core::ModuleExecutionContract c;
   CHECK(core::module_contract_is_valid(c));
@@ -305,7 +305,7 @@ static void device_storage_schema() {
     if (n == "keyboard_clock_selectors") found_clock_selectors = true;
   }
   CHECK(found_params && found_presets && found_settings && found_effector);
-  // P4-②: the live keyboard non-scalar / no-domain-selector fields are present.
+  // the live keyboard non-scalar / no-domain-selector fields are present.
   CHECK(found_seq_current && found_scale_editor && found_plate_tune &&
         found_pushbutton && found_clock_selectors);
 
@@ -315,7 +315,7 @@ static void device_storage_schema() {
   CHECK(l.program == core::ProgramId{1});
 
   // A keyboard preset carries its own keyboard-owned state (not a bare id) — the
-  // frozen keyboard_params_minus_clock payload (P4-②). The shell (id / behaviour
+  // frozen keyboard_params_minus_clock payload. The shell (id / behaviour
   // / output) is preserved; the full 33-sub-field interior is name-encodable.
   core::KeyboardPreset p;
   p.id = 3u;
@@ -332,7 +332,7 @@ static void device_storage_schema() {
   CHECK_EQ(static_cast<std::uint32_t>(core::kKeyboardPresetLayout.fieldCount), 63u);
   CHECK_EQ(core::kKeyboardPresetRecordBytes, 247u + core::kKeyboardSideBankBytes);
 
-  // The live keyboard state carries the non-scalars (design/07 §6) as structured
+  // The live keyboard state carries the non-scalars as structured
   // fields, never flattened into a scalar descriptor.
   core::KeyboardSeq seq;
   CHECK_EQ(core::kKeyboardSeqStepCount, 16u);

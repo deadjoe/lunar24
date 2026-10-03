@@ -2,21 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // PatchGraph: the real signal network (NOT a modulation-matrix). The on-screen
-// cable is only a visualization of this graph (design/07 §4).
+// cable is only a visualization of this graph.
 //
-// This header implements the P2-② CONNECTION-FACTS layer (the identity and
+// This header implements the CONNECTION-FACTS layer (the identity and
 // mutation semantics of the topology): stable JackIds, normalized-route edges,
 // and patch/unpatch with the override/restore rule. It deliberately does NOT
 // implement the topology/execution compiler (SCC decomposition, z^-1 feedback
-// ordering, per-path causal delay) — that is the P2-③ deliverable, and this
+// ordering, per-path causal delay) — that is the deliverable, and this
 // header only forward-declares its input, the immutable CompiledGraph.
 //
-// Invariants enforced here (design/07 §4, design/04 §2):
+// Invariants enforced here:
 //   * User cable cardinality is DATA, not a hardcoded count. cardinality is read
 //     from JackDescriptor.maxCables (default 1) and JackDescriptor.direction.
 //     Nothing in this file writes the assumption "a jack can hold one cable" —
 //     a jack holding more than one works iff its descriptor says so, which is
-//     exactly what P2-② wants to make cheap to relax when evidence arrives.
+//     exactly what wants to make cheap to relax when evidence arrives.
 //   * Connecting to a jack already at capacity atomically replaces the old cable.
 //   * NormalizedRoute edges never consume user-cable cardinality, may be
 //     1-source-many-destination (e.g. keyboard V/OCT feeds VCO A and VCO B), and
@@ -50,11 +50,11 @@ struct PatchConnection {
 inline constexpr std::uint32_t kPatchCableBankCapacity = kDevicePatchCapacity;
 
 // Monotonic graph epoch — bumped on every topology change so the audio thread
-// can cheaply detect an out-of-date snapshot without locking (P2-③ uses this for
+// can cheaply detect an out-of-date snapshot without locking (uses this for
 // the SCC recompile trigger).
 using GraphEpoch = std::uint64_t;
 
-// An effective directed signal edge in the graph. The compiler (P2-③) consumes
+// An effective directed signal edge in the graph. The compiler consumes
 // edges only; it never needs to know whether an edge was a user cable or a
 // normalized route. Invariant: source != sink; source is an output jack, sink an
 // input jack.
@@ -74,7 +74,7 @@ inline bool patch_edge_before(const PatchEdge& a, const PatchEdge& b) {
 
 // Opaque handle to an immutable compiled graph snapshot. The audio thread holds
 // only a non-owning handle/epoch; old snapshots are reclaimed on a non-audio
-// thread. P0 declares the handle; P2-③ defines the compiler and the concrete type.
+// thread. P0 declares the handle; defines the compiler and the concrete type.
 struct CompiledGraph;
 
 // Mutable connection-facts layer. Holds non-owning pointers to the jack and
@@ -87,7 +87,7 @@ class PatchGraph {
       : jacks_(jacks), jackCount_(jackCount), routes_(routes), routeCount_(routeCount) {}
 
   // ---------------------------------------------------------------------------
-  // User-cable mutation (design/07 §4 line 96)
+  // User-cable mutation
   // ---------------------------------------------------------------------------
 
   // Connect a user cable source -> sink. Returns false (and changes nothing)
@@ -161,7 +161,7 @@ class PatchGraph {
   GraphEpoch epoch() const { return epoch_; }
 
   // ---------------------------------------------------------------------------
-  // NormalizedRoute edges (design/07 §4 line 97)
+  // NormalizedRoute edges
   // ---------------------------------------------------------------------------
 
   // Is there a normalized route source -> sink declared in the registry?
@@ -214,7 +214,7 @@ class PatchGraph {
   // Resolve what actually drives an input jack. Priority: a user cable into the
   // input; else an active normalized route. Returns false if nothing drives it.
   // This is the single graph query a module consults for its input, so module
-  // code never scatters `if (jack empty)` checks (design/07 §4 line 100).
+  // code never scatters `if (jack empty)` checks.
   bool resolveInput(JackId sink, JackId* outSource) const {
     for (std::uint32_t i = 0; i < cableCount_; ++i)
       if (cables_[i].sink == sink) {
