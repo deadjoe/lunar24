@@ -535,43 +535,6 @@ void drawJoystick(Sink& s, float cx, float cy, float gateR, float travel, float 
   dome(s, x, y, 24.f, hover ? 0x707070 : 0x555555, 0.45f);
 }
 
-// ---- keyboard menu: page tabs and the 16-step sequencer editor ---------------------------
-
-inline constexpr std::uint32_t kMenuTextRgb = 0xe6e4dc, kMenuDimRgb = 0x77767a, kMenuAmberRgb = 0xebaa00;
-
-template <class Sink>
-void drawMenuTab(Sink& s, float x0, float y0, float x1, float y1, const char* label, bool active, bool hover) {
-  s.fillRect(x0, y0, x1, y1, active ? kMenuAmberRgb : (hover ? 0x46454c : 0x2e2d33), 5.f);
-  s.text((x0 + x1) / 2, (y0 + y1) / 2, 13, active ? 0x1a1a1a : kMenuTextRgb, false, label);
-}
-
-// One step: number, vertical note slider (0..maxNote semitones above the held plate),
-// note readout and gate button. Gate on = amber.
-template <class Sink>
-void drawSeqStep(Sink& s, float x0, float x1, float sliderTop, float sliderBottom, float gateY, int step,
-                 int note, int maxNote, bool gate, bool hover) {
-  const float cx = (x0 + x1) / 2;
-  char buf[16];
-  std::snprintf(buf, sizeof buf, "%d", step + 1);
-  s.text(cx, sliderTop - 16, 13, hover ? kMenuAmberRgb : kMenuTextRgb, false, buf);
-  s.fillRect(cx - 4, sliderTop, cx + 4, sliderBottom, 0x3a393f, 3.f);
-  for (int n = 0; n <= maxNote; n += 12) {  // octave marks
-    const float y = sliderBottom - (sliderBottom - sliderTop) * float(n) / float(maxNote);
-    s.moveTo(cx - 14, y);
-    s.lineTo(cx - 8, y);
-    s.strokePath(kMenuDimRgb, 2.f);
-  }
-  const float y = sliderBottom - (sliderBottom - sliderTop) * float(note) / float(maxNote);
-  const std::uint32_t c = gate ? kMenuAmberRgb : 0x8a898e;
-  s.fillRect(cx - 4, y, cx + 4, sliderBottom, c, 3.f);
-  s.fillRect(cx - 20, y - 6, cx + 20, y + 6, hover ? 0xffffff : c, 3.f);
-  if (note > 0) std::snprintf(buf, sizeof buf, "+%d", note);
-  else std::snprintf(buf, sizeof buf, "%d", note);
-  s.text(cx, sliderBottom + 17, 13, gate ? kMenuTextRgb : kMenuDimRgb, false, buf);
-  s.fillCircle(cx, gateY, 13, gate ? kMenuAmberRgb : 0x5a595f);
-  if (!gate) s.fillCircle(cx, gateY, 10, 0x1e1e22);
-}
-
 // Everything that does not move: panel, keybed, frames, tabs, printed icons, labels, logos.
 template <class Sink>
 void drawPanelArt(Sink& s) {

@@ -26,6 +26,7 @@
 #include <functional>
 #include <chrono>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -36,6 +37,7 @@
 
 #include <host/panel_art.h>
 #include <host/ui_font.generated.h>
+#include <host/keyboard_menu_view.h>
 #include <host/midi_map_store.h>
 #include <host/midi_settings_view.h>
 #include <host/panel_format.h>
@@ -65,14 +67,9 @@ inline IRECT rectOf(const Widget& w) {
 }
 // Controls draw a little beyond their hit box (scale ticks, drop shadows): the drawing area
 // is padded, the mouse target stays the hit box.
-// Menu overlay controls also draw their name and value below (at cy+42 and cy+58), so their
-// drawing area reaches down past that text; otherwise the names were clipped in half and the
-// values hidden.
 inline IRECT drawRectOf(const Widget& w) {
   const float pad = std::max(14.f, float(std::max(w.w, w.h)) * 0.3f);
-  IRECT r = rectOf(w).GetPadded(pad);
-  if (w.menu) r = r.Union(IRECT(float(w.cx - 64), float(w.cy), float(w.cx + 64), float(w.cy + 70)));
-  return r;
+  return rectOf(w).GetPadded(pad);
 }
 inline std::uint32_t hexOf(theme::Rgb c) { return (std::uint32_t(c.r) << 16) | (std::uint32_t(c.g) << 8) | c.b; }
 // Point at `r` from (cx, cy) in direction `deg` (0 = 12 o'clock, clockwise).
@@ -105,11 +102,8 @@ struct EditorShared {
   std::vector<JackControl*> jacks;
   std::map<std::uint32_t, IRECT> jackRects;  // JackId -> socket rect (for cable drawing)
   CableLayer* cables = nullptr;
-  std::vector<IControl*> menuControls;       // SETTINGS page of the keyboard menu
-  std::vector<IControl*> seqControls;        // SEQUENCER page (16-step editor)
-  std::vector<IControl*> rhythmControls;     // RHYTHM page (arp / seq step patterns)
-  std::vector<IControl*> menuChrome;         // background and page tabs: whenever the menu is open
-  int menuPage = 0;                          // 0 = SETTINGS, 1 = SEQUENCER, 2 = RHYTHM
+  std::vector<IControl*> menuControls;       // the keyboard menu overlay (KeyboardMenuControl)
+  int menuPage = 0;                          // keyboard menu tab: kb_ui::Tab (0 = PLAY)
   int seqSide = 0;                           // menu side being edited under SPLIT: 0 = left, 1 = right
   int presetSlot = 0;                        // keyboard preset the LOAD / SAVE / INIT buttons act on: 0..3 = A..D
   std::function<void()> factoryReset;        // the plugin's requestFactoryReset (RESET PANEL)
@@ -262,14 +256,11 @@ struct EditorShared {
   void showMenu(bool open) {
     if (open) showMidi(false);
     menuOpen = open;
-    for (IControl* c : menuChrome) c->Hide(!open);
-    for (IControl* c : menuControls) c->Hide(!(open && menuPage == 0));
-    for (IControl* c : seqControls) c->Hide(!(open && menuPage == 1));
-    for (IControl* c : rhythmControls) c->Hide(!(open && menuPage == 2));
+    for (IControl* c : menuControls) c->Hide(!open);
   }
   const core::KeyboardSeqStep* seqStep(int i) const {
     const core::DeviceStateV1* st = state();
-    if (st == nullptr || i < 0 || i >= kSeqSteps) return nullptr;
+    if (st == nullptr || i < 0 || i >= kb_ui::kSeqSteps) return nullptr;
     return &(editSide() == 0 ? st->keyboardSeqCurrent : st->keyboardSeqCurrentR).steps[static_cast<std::size_t>(i)];
   }
 
@@ -391,8 +382,7 @@ inline void drawKnob(IGraphics& g, const Widget& w, double norm, bool hover) {
   GraphicsSink sink{g};
   const float ang = float(theme::kKnobMinDeg + std::clamp(norm, 0.0, 1.0) * (theme::kKnobMaxDeg - theme::kKnobMinDeg));
   art::drawKnob(sink, float(w.cx), float(w.cy), float(w.w / 2), hexOf(theme::cap(w.cap)), w.cap != Cap::Black, ang,
-                hexOf(w.menu ? theme::kMenuText : theme::kSkirt), float(theme::kKnobMinDeg), float(theme::kKnobMaxDeg),
-                hover);
+                hexOf(theme::kSkirt), float(theme::kKnobMinDeg), float(theme::kKnobMaxDeg), hover);
 }
 
 inline void drawJack(IGraphics& g, float cx, float cy, float r, bool hover) {
@@ -408,11 +398,6 @@ class KnobControl : public IControl {
     const core::ParameterDescriptor* d = desc(w_.id);
     if (d == nullptr) return;
     drawKnob(g, w_, (s_.value(w_.id) - d->min) / (d->max - d->min), mMouseIsOver || dragging_);
-    if (w_.menu) {
-      g.DrawText(txt(12, theme::kMenuText), w_.label.c_str(), float(w_.cx), float(w_.cy + 42));
-      g.DrawText(txt(11, theme::kAmber, false), formatParam(w_.id, s_.value(w_.id)).c_str(), float(w_.cx),
-                 float(w_.cy + 58));
-    }
   }
   void OnMouseOver(float x, float y, const IMouseMod& mod) override {
     IControl::OnMouseOver(x, y, mod);
@@ -469,36 +454,21 @@ class ButtonControl : public IControl {
 };
 
 // Lever switch (2 or 3 positions, pointing at the panel labels). Click the upper half to move the
-// lever up, the lower half to move it down. On the menu overlay: a box showing the option.
+// lever up, the lower half to move it down.
 class ToggleControl : public IControl {
  public:
   ToggleControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetTargetRECT(rectOf(w)); }
   void Draw(IGraphics& g) override {
     const core::ParameterDescriptor* d = desc(w_.id);
     const int n = positionsOf(d), idx = std::clamp(s_.index(w_.id), 0, n - 1);
-    if (w_.menu) {
-      const IRECT box = rectOf(w_);
-      g.DrawRoundRect(col(mMouseIsOver ? theme::kAmber : theme::kMenuText), box, 5.f, nullptr, 1.5f);
-      std::string opt = d && d->optionCount > 0 ? upper(std::string(d->options[idx])) : std::to_string(idx + 1);
-      if (opt.size() > 10) opt = opt.substr(0, 10);
-      g.DrawText(txt(11, theme::kMenuText), opt.c_str(), box);
-      g.DrawText(txt(12, theme::kMenuText), w_.label.c_str(), float(w_.cx), float(w_.cy + 42));
-      return;
-    }
     const int pos = leverPos(idx, n);
     GraphicsSink sink{g};
     art::drawToggle(sink, float(w_.cx), float(w_.cy), n <= 1 ? 0.f : float(pos) / float(n - 1), mMouseIsOver);
   }
-  void OnMouseDown(float, float y, const IMouseMod& mod) override {
+  void OnMouseDown(float, float y, const IMouseMod&) override {
     const int n = positionsOf(desc(w_.id)), idx = s_.index(w_.id);
-    if (w_.menu) {
-      s_.setIndex(w_.id, (idx + ((mod.R || mod.S) ? n - 1 : 1)) % n);
-    } else {
-      const int pos = std::clamp(leverPos(idx, n) + (y < float(w_.cy) ? -1 : 1), 0, n - 1);
-      s_.setIndex(w_.id, w_.leverIndex[pos]);
-    }
-    // PLAY changes which side the menu edits and whether EDIT: LEFT / RIGHT shows: redraw all.
-    if (w_.id == static_cast<std::uint32_t>(ParameterId::keyboard_behaviour)) GetUI()->SetAllControlsDirty();
+    const int pos = std::clamp(leverPos(idx, n) + (y < float(w_.cy) ? -1 : 1), 0, n - 1);
+    s_.setIndex(w_.id, w_.leverIndex[pos]);
     SetDirty(false);
   }
 
@@ -754,7 +724,8 @@ class CartridgeControl : public IControl {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Keyboard encoder (opens / closes the keyboard menu), octave arrows, display.
+// Keyboard encoder (opens the keyboard menu), octave arrows, display. While the menu is open
+// it covers the encoder and takes its clicks: CLOSE or Esc closes it.
 class EncoderControl : public IControl {
  public:
   EncoderControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetTargetRECT(rectOf(w)); }
@@ -944,242 +915,213 @@ class DecorControl : public IControl {
   Widget w_;
 };
 
-// The keyboard menu background: covers the plates (and swallows their clicks) while open.
-class MenuBackground : public IControl {
- public:
-  explicit MenuBackground(EditorShared& s)
-      : IControl(IRECT(float(kMenuX0), float(kMenuY0), float(kMenuX1), float(kMenuY1))), s_(s) {}
-  void Draw(IGraphics& g) override {
-    g.FillRoundRect(col(theme::kMenuBg), mRECT, 10.f);
-    g.DrawText(txt(18, theme::kMenuText), "KEYBOARD MENU", float(kMenuTitleX), mRECT.T + 22);
-    if (s_.menuPage == 2) {
-      // Row names with the pattern length (set by ARP RHYTHM / SEQ RHYTHM on SETTINGS).
-      const auto id = [](ParameterId p) { return static_cast<std::uint32_t>(p); };
-      const int arpLen = int(core::arp_length_steps(s_.value(id(ParameterId::keyboard_arp_length))));
-      const int seqLen = int(core::seq_rhythm_length_steps(s_.value(id(ParameterId::keyboard_seq_rhythm_length))));
-      char buf[24];
-      g.DrawText(txt(14, theme::kMenuText), "ARP", 520, float(kRhythmArpY) - 8.f);
-      std::snprintf(buf, sizeof buf, "%d step%s", arpLen, arpLen == 1 ? "" : "s");
-      g.DrawText(txt(11, theme::kMenuText), buf, 520, float(kRhythmArpY) + 14.f);
-      g.DrawText(txt(14, theme::kMenuText), "SEQ", 520, float(kRhythmSeqY) - 8.f);
-      std::snprintf(buf, sizeof buf, "%d step%s", seqLen, seqLen == 1 ? "" : "s");
-      g.DrawText(txt(11, theme::kMenuText), buf, 520, float(kRhythmSeqY) + 14.f);
-      g.DrawText(txt(11, theme::kMenuText),
-                 "amber = plays   dark = silent beat   outline = not used (set the length: ARP RHYTHM / SEQ RHYTHM on SETTINGS)",
-                 mRECT.MW(), float(kRhythmSeqY) + 66.f);
-    }
-    if (s_.menuPage == 1) {
-      g.DrawText(txt(12, theme::kMenuText, true, -90.f), "NOTE", 440, float(kSeqSliderTop + kSeqSliderBottom) / 2);
-      g.DrawText(txt(12, theme::kMenuText), "GATE", 440, float(kSeqGateY));
-    }
+// Text for the overlays: each label has a box and an alignment (0 left, 1 centre, 2 right);
+// long text is ellipsized at the chosen size (midi_ui::fitText), never shrunk.
+struct OverlaySink : GraphicsSink {
+  explicit OverlaySink(IGraphics& graphics) : GraphicsSink{graphics} {}
+  void label(midi_ui::Box b, float size, std::uint32_t color, const char* value, bool bold, int align) {
+    IText style = txt(size, theme::rgb(color), bold);
+    style.mAlign = align == 1 ? EAlign::Center : align == 2 ? EAlign::Far : EAlign::Near;
+    const auto fitted = midi_ui::fitText(value, b.r - b.l, [&](const char* text) {
+      IRECT measured;
+      g.MeasureText(style, text, measured);
+      return measured.W();
+    });
+    g.DrawText(style, fitted.c_str(), IRECT(b.l, b.t, b.r, b.b));
   }
-
- private:
-  EditorShared& s_;
 };
 
-// Menu title-row buttons: page tabs (SETTINGS / SEQUENCER) and the left/right side switch.
-// The side switch only shows under PLAY = SPLIT (in SINGLE / TWIN both halves share the
-// left bank); it applies to both pages.
-class MenuTabControl : public IControl {
+// The KEYBOARD MENU: six tabs of keyboard settings, the 16-step editor, the rhythm patterns,
+// presets A-D and RESET PANEL. Drawing and hit testing come from keyboard_menu_view.h; every
+// edit goes through the same EditorShared / engine calls as before (per-side routing under
+// SPLIT included). It covers the whole menu area, so the plates, encoder and keyboard jacks
+// under it take no clicks while it is open.
+class KeyboardMenuControl : public IControl {
  public:
-  enum Kind { kSettings, kSequencer, kRhythm, kSide, kClose, kReset };
-  MenuTabControl(EditorShared& s, const Rect& r, Kind k)
-      : IControl(IRECT(float(r.x0), float(r.y0), float(r.x1), float(r.y1))), s_(s), k_(k) {}
+  explicit KeyboardMenuControl(EditorShared& s)
+      : IControl(IRECT(kb_ui::kBounds.l, kb_ui::kBounds.t, kb_ui::kBounds.r, kb_ui::kBounds.b)), s_(s) {}
   void Draw(IGraphics& g) override {
-    GraphicsSink sink{g};
-    if (k_ == kSide && !s_.split()) return;  // nothing to choose outside SPLIT
-    const bool armed = k_ == kReset && armedNow();
-    const char* label = k_ == kSettings ? "SETTINGS" : k_ == kSequencer ? "SEQUENCER" : k_ == kRhythm ? "RHYTHM"
-                        : k_ == kClose ? "CLOSE"
-                        : k_ == kReset ? (armed ? "CLICK TO CONFIRM" : "RESET PANEL")
-                        : s_.seqSide == 0 ? "EDIT: LEFT" : "EDIT: RIGHT";
-    const bool active = (k_ == kSettings && s_.menuPage == 0) || (k_ == kSequencer && s_.menuPage == 1) ||
-                        (k_ == kRhythm && s_.menuPage == 2) || armed;
-    art::drawMenuTab(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, label, active, mMouseIsOver);
+    OverlaySink sink(g);
+    kb_ui::State st;
+    st.value = [this](ParameterId id) { return s_.value(static_cast<std::uint32_t>(id)); };
+    st.tab = s_.menuPage;
+    st.split = s_.split();
+    st.side = s_.seqSide;
+    st.presetSlot = s_.presetSlot;
+    const auto now = Clock::now();
+    st.resetArmed = now < resetUntil_;
+    st.initArmed = now < initUntil_;
+    st.presetDone = now < doneUntil_ ? doneKind_ : -1;
+    for (int i = 0; i < kb_ui::kSeqSteps; ++i)
+      if (const core::KeyboardSeqStep* q = s_.seqStep(i)) st.steps[i] = {int(q->note), q->gate != 0};
+    st.arpMask = s_.engine.keyboardRhythm(s_.editSide(), false);
+    st.seqMask = s_.engine.keyboardRhythm(s_.editSide(), true);
+    kb_ui::draw(sink, st, hoverX_, hoverY_);
   }
-  void OnMouseDown(float, float, const IMouseMod&) override {
-    if (k_ == kClose) {
-      s_.showMenu(false);
-      GetUI()->SetAllControlsDirty();
-      return;
-    }
-    if (k_ == kReset) {  // first click arms, a second within a few seconds resets everything
-      if (!armedNow()) {
-        armedAt_ = std::chrono::steady_clock::now();
-        SetDirty(false);
-        return;
-      }
-      armedAt_ = {};
-      for (int v = 0; v < 6; ++v) s_.engine.postDroneKey(v, true);
-      s_.octave = 0;
-      s_.seqSide = 0;
-      s_.presetSlot = 0;
-      s_.menuPage = 0;
-      if (s_.factoryReset) s_.factoryReset();
-      s_.showMenu(false);
-      GetUI()->SetAllControlsDirty();
-      return;
-    }
-    if (k_ == kSide) {
-      if (!s_.split()) return;
-      s_.seqSide = 1 - s_.seqSide;
-    }
-    else s_.menuPage = k_ == kSettings ? 0 : k_ == kSequencer ? 1 : 2;
-    s_.showMenu(true);
-    GetUI()->SetAllControlsDirty();
-  }
-
- private:
-  bool armedNow() const {
-    return armedAt_ != std::chrono::steady_clock::time_point{} &&
-           std::chrono::steady_clock::now() - armedAt_ < std::chrono::seconds(4);
-  }
-  EditorShared& s_;
-  Kind k_;
-  std::chrono::steady_clock::time_point armedAt_{};
-};
-
-// Keyboard presets A-D: the slot button (click = next, right-click = previous) and LOAD /
-// SAVE / INIT for that slot. A preset holds every keyboard menu setting of both sides and
-// both 16-step sequences, but not the tempo. INIT (back to factory settings) needs a second
-// click to confirm. The button briefly shows what happened.
-class PresetControl : public IControl {
- public:
-  enum Kind { kSlot, kLoad, kSave, kInit };
-  PresetControl(EditorShared& s, const Rect& r, Kind k)
-      : IControl(IRECT(float(r.x0), float(r.y0), float(r.x1), float(r.y1))), s_(s), k_(k) {}
-  void Draw(IGraphics& g) override {
-    GraphicsSink sink{g};
-    const auto now = std::chrono::steady_clock::now();
-    const bool armed = now < armedUntil_, flash = now < doneUntil_;
-    char slot[16];
-    std::snprintf(slot, sizeof slot, "PRESET %c", char('A' + s_.presetSlot));
-    const char* label = k_ == kSlot ? slot
-                        : flash     ? (k_ == kLoad ? "LOADED" : k_ == kSave ? "SAVED" : "CLEARED")
-                        : armed     ? "SURE?"
-                        : k_ == kLoad ? "LOAD" : k_ == kSave ? "SAVE" : "INIT";
-    art::drawMenuTab(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, label, armed || flash, mMouseIsOver);
-  }
-  // Redraw once more when the confirm or "done" label runs out.
+  // Redraw once more when a confirm or "done" label runs out.
   bool IsDirty() override {
-    const auto now = std::chrono::steady_clock::now();
-    const bool shown = now < armedUntil_ || now < doneUntil_;
+    const auto now = Clock::now();
+    const int shown = (now < resetUntil_ ? 1 : 0) | (now < initUntil_ ? 2 : 0) | (now < doneUntil_ ? 4 : 0);
     const bool changed = shown != shownLast_;
     shownLast_ = shown;
     return IControl::IsDirty() || changed;
   }
-  void OnMouseDown(float, float, const IMouseMod& mod) override {
+  void OnMouseOver(float x, float y, const IMouseMod&) override {
+    hoverX_ = x;
+    hoverY_ = y;
+    SetDirty(false);
+  }
+  void OnMouseOut() override {
+    hoverX_ = hoverY_ = -1;
+    SetDirty(false);
+  }
+  // Every close path (CLOSE, Esc, RESET PANEL, opening the MIDI overlay) hides the menu
+  // without a mouse-out, so drop the hover here; it must not light up on reopen.
+  void Hide(bool hide) override {
+    if (hide) {
+      hoverX_ = hoverY_ = -1;
+      dragItem_ = dragStep_ = -1;
+    }
+    IControl::Hide(hide);  // marks dirty
+  }
+  void OnMouseDown(float x, float y, const IMouseMod&) override { press(x, y, false); }
+  // iPlug2 reports a quick second click as a double-click: on a knob it restores the
+  // factory value and on a step fader note 0, as before; everywhere else it is a click.
+  void OnMouseDblClick(float x, float y, const IMouseMod&) override { press(x, y, true); }
+  void OnMouseUp(float, float, const IMouseMod&) override {
+    dragItem_ = dragStep_ = -1;
+    SetDirty(false);
+  }
+  void OnMouseDrag(float, float y, float, float dY, const IMouseMod& mod) override {
+    if (dragItem_ >= 0) nudge(kb_ui::kItems[dragItem_].id, -dY / (mod.S ? 2000.0 : 250.0));
+    else if (dragStep_ >= 0 && y < kb_ui::kGateT) setStep(dragStep_, kb_ui::noteAt(y), std::nullopt);
+  }
+  void OnMouseWheel(float x, float y, const IMouseMod& mod, float d) override {
+    const kb_ui::Hit h = kb_ui::hitTest(s_.menuPage, s_.split(), x, y);
+    if (h.kind != kb_ui::HitKind::Item || h.sub != 0) return;
+    const kb_ui::Item& it = kb_ui::kItems[h.index];
+    if (it.kind == kb_ui::Kind::Knob || it.kind == kb_ui::Kind::Trimmer) nudge(it.id, d / (mod.S ? 500.0 : 60.0));
+  }
+
+ private:
+  using Clock = std::chrono::steady_clock;
+  void press(float x, float y, bool dbl) {
+    using kb_ui::HitKind;
+    const kb_ui::Hit h = kb_ui::hitTest(s_.menuPage, s_.split(), x, y);
+    switch (h.kind) {
+      case HitKind::None: return;
+      case HitKind::Close: s_.showMenu(false); break;
+      case HitKind::Tab:
+        s_.menuPage = h.index;
+        s_.showMenu(true);
+        break;
+      case HitKind::Side: s_.seqSide = h.index; break;  // only under SPLIT (hitTest)
+      case HitKind::Slot: s_.presetSlot = h.index; break;  // LOAD / SAVE / INIT act on it
+      case HitKind::Load:
+      case HitKind::Save:
+      case HitKind::Init: preset(h.kind); break;
+      case HitKind::Reset: reset(); break;
+      case HitKind::Item: item(h, dbl); return;
+      case HitKind::Pad: {  // ARP tab: arpeggiator pattern, SEQ tab: sequencer pattern
+        const bool seqRow = s_.menuPage == kb_ui::kSeq;
+        const std::uint8_t mask = s_.engine.keyboardRhythm(s_.editSide(), seqRow);
+        s_.engine.postKeyboardRhythm(s_.editSide(), seqRow, static_cast<std::uint8_t>(mask ^ (1u << h.index)));
+        SetDirty(false);
+        return;
+      }
+      case HitKind::Fader:
+        setStep(h.index, dbl ? 0 : kb_ui::noteAt(y), std::nullopt);
+        if (!dbl) dragStep_ = h.index;
+        return;
+      case HitKind::Gate:
+        if (const core::KeyboardSeqStep* q = s_.seqStep(h.index)) setStep(h.index, q->note, q->gate == 0);
+        return;
+    }
+    GetUI()->SetAllControlsDirty();
+  }
+  void item(const kb_ui::Hit& h, bool dbl) {
+    const kb_ui::Item& it = kb_ui::kItems[h.index];
+    const auto id = static_cast<std::uint32_t>(it.id);
+    switch (it.kind) {
+      case kb_ui::Kind::Segmented:
+      case kb_ui::Kind::VSegmented: s_.setIndex(id, h.sub); break;
+      case kb_ui::Kind::Latch: s_.setIndex(id, s_.index(id) > 0 ? 0 : 1); break;
+      case kb_ui::Kind::Stepper:  // clamped at both ends (the arrow greys out), no wrap
+        if (const kb_ui::Count* c = kb_ui::countOf(it.id)) {
+          const int k = kb_ui::countValue(it.id, s_.value(id)), next = std::clamp(k + h.sub, c->lo, c->hi);
+          if (next != k) s_.set(id, kb_ui::countNorm(*c, next));
+        } else {
+          const int k = s_.index(id), next = std::clamp(k + h.sub, 0, kb_ui::optionCount(it.id) - 1);
+          if (next != k) s_.setIndex(id, next);
+        }
+        break;
+      case kb_ui::Kind::RootKeys:
+        if (h.sub >= 0) s_.set(id, kb_ui::rootNorm(h.sub));
+        break;
+      case kb_ui::Kind::Knob:
+      case kb_ui::Kind::Trimmer:
+        if (h.sub != 0) {  // TEMPO < >: one whole BPM
+          s_.set(id, kb_ui::bpmNorm(kb_ui::bpmValue(s_.value(id)) + h.sub));
+        } else if (dbl) {
+          if (const core::ParameterDescriptor* d = desc(id)) s_.set(id, d->initial);
+        } else {
+          dragItem_ = h.index;
+        }
+        break;
+    }
+    // PLAY changes which side the menu edits and whether EDITING shows: redraw all.
+    if (it.id == ParameterId::keyboard_behaviour) GetUI()->SetAllControlsDirty();
+    SetDirty(false);
+  }
+  void nudge(ParameterId pid, double fractionOfRange) {
+    const auto id = static_cast<std::uint32_t>(pid);
+    const core::ParameterDescriptor* d = desc(id);
+    if (d == nullptr) return;
+    s_.set(id, s_.value(id) + fractionOfRange * (d->max - d->min));
+    SetDirty(false);
+  }
+  // One sequencer step: note (0..24 semitones above the held plate) and gate; an absent gate
+  // keeps the step's current one.
+  void setStep(int step, int note, std::optional<bool> gate) {
+    const core::KeyboardSeqStep* q = s_.seqStep(step);
+    if (q == nullptr) return;
+    s_.engine.postSeqStep(s_.editSide(), step, note, gate.value_or(q->gate != 0));
+    SetDirty(false);
+  }
+  void preset(kb_ui::HitKind k) {
     using Action = StandaloneAudioEngine::PresetAction;
-    const auto now = std::chrono::steady_clock::now();
-    if (k_ == kSlot) {
-      s_.presetSlot = (s_.presetSlot + ((mod.R || mod.S) ? 3 : 1)) % 4;
-      GetUI()->SetAllControlsDirty();  // the other buttons act on the new slot
+    const auto now = Clock::now();
+    if (k == kb_ui::HitKind::Init && now >= initUntil_) {  // first click arms, a second within 4 s clears
+      initUntil_ = now + std::chrono::seconds(4);
       return;
     }
-    if (k_ == kInit && now >= armedUntil_) {  // first click arms, a second within 4 s clears
-      armedUntil_ = now + std::chrono::seconds(4);
-      SetDirty(false);
-      return;
-    }
-    armedUntil_ = {};
-    const Action a = k_ == kLoad ? Action::Load : k_ == kSave ? Action::Save : Action::Initialise;
-    if (s_.engine.postKeyboardPreset(a, static_cast<std::uint32_t>(s_.presetSlot)))
+    if (k == kb_ui::HitKind::Init) initUntil_ = {};
+    const Action a = k == kb_ui::HitKind::Load ? Action::Load : k == kb_ui::HitKind::Save ? Action::Save : Action::Initialise;
+    if (s_.engine.postKeyboardPreset(a, static_cast<std::uint32_t>(s_.presetSlot))) {
       doneUntil_ = now + std::chrono::milliseconds(1200);
-    GetUI()->SetAllControlsDirty();  // a load changes the menu settings and maybe PLAY
-  }
-
- private:
-  EditorShared& s_;
-  Kind k_;
-  std::chrono::steady_clock::time_point armedUntil_{}, doneUntil_{};
-  bool shownLast_ = false;
-};
-
-// One step of the 16-step keyboard sequencer: drag the slider for the note (semitones above
-// the held plate), click the round button for the step's gate. Double-click resets the note.
-class SeqStepControl : public IControl {
- public:
-  SeqStepControl(EditorShared& s, int step)
-      : IControl(IRECT(float(seq_step_rect(step).x0), float(seq_step_rect(step).y0), float(seq_step_rect(step).x1),
-                       float(seq_step_rect(step).y1))),
-        s_(s), step_(step) {}
-  void Draw(IGraphics& g) override {
-    const core::KeyboardSeqStep* st = s_.seqStep(step_);
-    if (st == nullptr) return;
-    GraphicsSink sink{g};
-    art::drawSeqStep(sink, mRECT.L, mRECT.R, float(kSeqSliderTop), float(kSeqSliderBottom), float(kSeqGateY), step_,
-                     st->note, StandaloneAudioEngine::kSeqStepMaxNote, st->gate != 0, mMouseIsOver);
-  }
-  void OnMouseDown(float, float y, const IMouseMod&) override {
-    const core::KeyboardSeqStep* st = s_.seqStep(step_);
-    if (st == nullptr) return;
-    if (y > float(kSeqGateY) - 20.f) post(st->note, st->gate == 0);
-    else post(noteAt(y), st->gate != 0);
-  }
-  void OnMouseDrag(float, float y, float, float, const IMouseMod&) override {
-    const core::KeyboardSeqStep* st = s_.seqStep(step_);
-    if (st != nullptr && y <= float(kSeqGateY) - 20.f) post(noteAt(y), st->gate != 0);
-  }
-  void OnMouseDblClick(float, float y, const IMouseMod&) override {
-    const core::KeyboardSeqStep* st = s_.seqStep(step_);
-    if (st != nullptr && y <= float(kSeqGateY) - 20.f) post(0, st->gate != 0);
-  }
-
- private:
-  static int noteAt(float y) {
-    const double t = (kSeqSliderBottom - double(y)) / (kSeqSliderBottom - kSeqSliderTop);
-    return int(std::lround(std::clamp(t, 0.0, 1.0) * StandaloneAudioEngine::kSeqStepMaxNote));
-  }
-  void post(int note, bool gate) {
-    s_.engine.postSeqStep(s_.editSide(), step_, note, gate);
-    SetDirty(false);
-  }
-  EditorShared& s_;
-  int step_;
-};
-
-// One step of a RHYTHM pattern (row 0 = arpeggiator, 1 = sequencer). Lit = this clock edge
-// reaches the arp / sequencer; dark = muted. Steps past the pattern length are drawn faint.
-class RhythmStepControl : public IControl {
- public:
-  RhythmStepControl(EditorShared& s, int row, int step)
-      : IControl(IRECT(float(rhythm_step_rect(row, step).x0), float(rhythm_step_rect(row, step).y0),
-                       float(rhythm_step_rect(row, step).x1), float(rhythm_step_rect(row, step).y1))),
-        s_(s), row_(row), step_(step) {}
-  void Draw(IGraphics& g) override {
-    GraphicsSink sink{g};
-    const bool on = ((mask() >> step_) & 1u) == 0;
-    const bool inUse = step_ < length();
-    char buf[4];
-    std::snprintf(buf, sizeof buf, "%d", step_ + 1);
-    const float cx = mRECT.MW(), cy = mRECT.MH();
-    sink.text(cx, cy - 32, 13, inUse ? (mMouseIsOver ? art::kMenuAmberRgb : art::kMenuTextRgb) : art::kMenuDimRgb,
-              false, buf);
-    if (!inUse) {  // past the pattern length: an empty outline
-      sink.fillCircle(cx, cy + 6, 16, 0x3a393f);
-      sink.fillCircle(cx, cy + 6, 14, 0x1e1e22);
-    } else if (on) {  // this beat plays
-      sink.fillCircle(cx, cy + 6, 16, art::kMenuAmberRgb);
-    } else {  // a silent beat: dark with a grey rim
-      sink.fillCircle(cx, cy + 6, 16, 0x8a898e);
-      sink.fillCircle(cx, cy + 6, 12, 0x1e1e22);
+      doneKind_ = k == kb_ui::HitKind::Load ? 0 : k == kb_ui::HitKind::Save ? 1 : 2;
     }
   }
-  void OnMouseDown(float, float, const IMouseMod&) override {
-    s_.engine.postKeyboardRhythm(s_.editSide(), row_ == 1, static_cast<std::uint8_t>(mask() ^ (1u << step_)));
-    SetDirty(false);
-  }
-
- private:
-  std::uint8_t mask() const { return s_.engine.keyboardRhythm(s_.editSide(), row_ == 1); }
-  int length() const {
-    const auto id = [](ParameterId p) { return static_cast<std::uint32_t>(p); };
-    return row_ == 0 ? int(core::arp_length_steps(s_.value(id(ParameterId::keyboard_arp_length))))
-                     : int(core::seq_rhythm_length_steps(s_.value(id(ParameterId::keyboard_seq_rhythm_length))));
+  void reset() {  // first click arms, a second within 4 s resets everything
+    const auto now = Clock::now();
+    if (now >= resetUntil_) {
+      resetUntil_ = now + std::chrono::seconds(4);
+      return;
+    }
+    resetUntil_ = {};
+    for (int v = 0; v < 6; ++v) s_.engine.postDroneKey(v, true);
+    s_.octave = 0;
+    s_.seqSide = 0;
+    s_.presetSlot = 0;
+    s_.menuPage = 0;
+    if (s_.factoryReset) s_.factoryReset();
+    s_.showMenu(false);
   }
   EditorShared& s_;
-  int row_, step_;
+  float hoverX_ = -1, hoverY_ = -1;
+  int dragItem_ = -1, dragStep_ = -1;  // knob or step fader being dragged
+  Clock::time_point resetUntil_{}, initUntil_{}, doneUntil_{};
+  int doneKind_ = -1, shownLast_ = 0;
 };
 
 // MIDI uses the same measured rectangles for drawing and hit testing. All labels
@@ -1190,19 +1132,7 @@ class MidiOverlayControl : public IControl {
       : IControl(IRECT(midi_ui::kBounds.l, midi_ui::kBounds.t, midi_ui::kBounds.r, midi_ui::kBounds.b)),
         s_(s) {}
   void Draw(IGraphics& g) override {
-    struct Sink : GraphicsSink {
-      explicit Sink(IGraphics& graphics) : GraphicsSink{graphics} {}
-      void label(midi_ui::Box b, float size, std::uint32_t color, const char* value, bool bold, bool center) {
-        IText style = txt(size, theme::rgb(color), bold);
-        style.mAlign = center ? EAlign::Center : EAlign::Near;
-        const auto fitted = midi_ui::fitText(value, b.r - b.l, [&](const char* text) {
-          IRECT measured;
-          g.MeasureText(style, text, measured);
-          return measured.W();
-        });
-        g.DrawText(style, fitted.c_str(), IRECT(b.l, b.t, b.r, b.b));
-      }
-    } sink(g);
+    OverlaySink sink(g);
     midi_ui::State state;
     state.map = s_.midiStore ? &s_.midiStore->map() : nullptr;
     state.device = s_.midi.inputDeviceName ? s_.midi.inputDeviceName() : "";
@@ -1420,52 +1350,9 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       if (std::fabs(l.x - kPanelLedPos[i].x) < 1.0 && std::fabs(l.y - kPanelLedPos[i].y) < 1.0)
         g->AttachControl(new LedControl(shared, i, l.x, l.y, l.r, l.rgb));
   // The keyboard menu on top of the plates, hidden until the encoder opens it.
-  shared.menuChrome.clear();
-  shared.seqControls.clear();
-  shared.rhythmControls.clear();
-  auto* menuBg = new MenuBackground(shared);
-  g->AttachControl(menuBg);
-  shared.menuChrome.push_back(menuBg);
-  for (auto k : {MenuTabControl::kSettings, MenuTabControl::kSequencer, MenuTabControl::kRhythm}) {
-    auto* t = new MenuTabControl(shared, k == MenuTabControl::kSettings    ? kMenuTabSettings
-                                         : k == MenuTabControl::kSequencer ? kMenuTabSequencer
-                                                                           : kMenuTabRhythm, k);
-    g->AttachControl(t);
-    shared.menuChrome.push_back(t);
-  }
-  auto* close = new MenuTabControl(shared, kMenuClose, MenuTabControl::kClose);
-  g->AttachControl(close);
-  shared.menuChrome.push_back(close);
-  auto* reset = new MenuTabControl(shared, kMenuReset, MenuTabControl::kReset);
-  g->AttachControl(reset);
-  shared.menuChrome.push_back(reset);
-  auto* side = new MenuTabControl(shared, kSeqSideSwitch, MenuTabControl::kSide);
-  g->AttachControl(side);
-  shared.menuChrome.push_back(side);
-  for (auto [r, k] : {std::pair{kPresetSlot, PresetControl::kSlot}, std::pair{kPresetLoad, PresetControl::kLoad},
-                      std::pair{kPresetSave, PresetControl::kSave}, std::pair{kPresetInit, PresetControl::kInit}}) {
-    auto* c = new PresetControl(shared, r, k);
-    g->AttachControl(c);
-    shared.menuChrome.push_back(c);
-  }
-  for (int row = 0; row < 2; ++row)
-    for (int i = 0; i < kRhythmSteps; ++i) {
-      auto* c = new RhythmStepControl(shared, row, i);
-      g->AttachControl(c);
-      shared.rhythmControls.push_back(c);
-    }
-  for (int i = 0; i < kSeqSteps; ++i) {
-    auto* c = new SeqStepControl(shared, i);
-    g->AttachControl(c);
-    shared.seqControls.push_back(c);
-  }
-  for (const Widget& w : widgets) {
-    if (!w.menu) continue;
-    IControl* c = w.kind == WidgetKind::Knob ? static_cast<IControl*>(new KnobControl(shared, w))
-                                             : static_cast<IControl*>(new ToggleControl(shared, w));
-    g->AttachControl(c);
-    shared.menuControls.push_back(c);
-  }
+  auto* menu = new KeyboardMenuControl(shared);
+  g->AttachControl(menu);
+  shared.menuControls.push_back(menu);
   shared.showMenu(false);
 
   shared.cables = new CableLayer(shared, all);
