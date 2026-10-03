@@ -2478,6 +2478,12 @@ class SynthRuntime {
     applyKeyboardState(kbdState_);
   }
 
+  // MIDI START (and anything else that means "from the top"): every arpeggiator /
+  // sequencer goes back to its first step, as on the RESET jack. Held notes stay.
+  void restartKeyboardPattern() {
+    for (auto& arp : keyboardArpSeq_) arp.restartPattern();
+  }
+
   // A keyboard menu setting from the UI, applied at once (in order with the right-side,
   // sequencer-step and preset commands around it). False for a non-keyboard parameter.
   bool setKeyboardParameter(ParameterId id, double v) { return applyKeyboardParam_(id, v); }

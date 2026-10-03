@@ -69,8 +69,66 @@ static void clock_events_and_bend() {
   CHECK(std::fabs(rt.controlVoltageAt(reg::JackId::keyboard_v_oct_out) - before - 1.0 / 12.0) < 1e-9);
 }
 
+// MIDI clock: every 6th tick is a step; START goes back to the first step (and the next tick
+// is a step again); CONTINUE / STOP / active sensing do nothing.
+static void clock_follower() {
+  host::MidiClockFollower f;
+  using A = host::MidiClockFollower::Action;
+  int steps = 0;
+  for (int i = 0; i < 24; ++i) steps += f.onRealtime(0xF8) == A::step ? 1 : 0;
+  CHECK_EQ(steps, 4);  // one quarter note = four 16th steps
+  CHECK(f.onRealtime(0xF8) == A::step);
+  CHECK(f.onRealtime(0xF8) == A::none);
+  CHECK(f.onRealtime(0xFA) == A::restart);
+  CHECK(f.onRealtime(0xF8) == A::step);  // the first tick after START is a step
+  CHECK(f.onRealtime(0xFB) == A::none);
+  CHECK(f.onRealtime(0xFC) == A::none);
+  CHECK(f.onRealtime(0xFE) == A::none);
+}
+
+// START restarts an arpeggio from its first note and keeps the held chord (it used to send
+// the all-gates-off reset: the arpeggio stopped and mouse / computer-key notes were dropped).
+static void start_restarts_the_arpeggio() {
+  auto def = std::make_unique<core::MachineRuntimeDefinition>(0x5EEDu, 48000.0);
+  core::SynthRuntime& rt = def->runtime();
+  std::uint64_t seq = 1;
+  auto ev = [&](core::ControlEventKind k, double v, std::uint64_t at, core::NoteId id = 1,
+                core::ParameterId p = {}) {
+    core::ControlEvent e{};
+    e.kind = k;
+    e.parameter = p;
+    e.value = static_cast<core::SignalSample>(v);
+    e.source = 2;
+    e.noteId = id;
+    e.producerSequence = seq++;
+    rt.enqueueControlEvent(core::TimedControlEvent{e, at});
+  };
+  ev(core::ControlEventKind::parameter, 1.0, 0, 1, reg::ParameterId::keyboard_mode);  // arpeggiator
+  for (core::NoteId id = 1; id <= 3; ++id) {  // a held three-note chord (0, 4, 7 semitones)
+    const double pitch = (id == 1 ? 0 : id == 2 ? 4 : 7) / 12.0;
+    ev(core::ControlEventKind::pitch, pitch, 1, id);
+    ev(core::ControlEventKind::gate_on, 1.0, 1, id);
+  }
+  auto stepAt = [&](std::uint64_t at) {
+    ev(core::ControlEventKind::clock, 1.0, at);
+    render(rt, static_cast<int>(at + 10 - rt.currentSample()));
+    return rt.controlVoltageAt(reg::JackId::keyboard_v_oct_out);
+  };
+  const double first = stepAt(100);
+  const double second = stepAt(6100);
+  CHECK(std::fabs(first - second) > 1e-6);  // the arpeggio moves on
+  (void)stepAt(12100);
+  rt.restartKeyboardPattern();               // MIDI START
+  const double again = stepAt(18100);
+  CHECK(std::fabs(again - first) < 1e-9);    // back to the first note
+  CHECK_EQ(gate(rt), 1);                     // still playing: the chord was kept
+  CHECK(std::fabs(stepAt(24100) - second) < 1e-9);
+}
+
 int main() {
   block_offsets();
   clock_events_and_bend();
+  clock_follower();
+  start_restarts_the_arpeggio();
   return ::test::finish("midi_timing");
 }

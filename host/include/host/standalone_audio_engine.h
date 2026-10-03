@@ -302,6 +302,10 @@ class StandaloneAudioEngine {
   // Audio thread only (e.g. MIDI delivered inside the audio callback): schedule a note/clock
   // event `offset` samples into the coming block.
   bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e, int offset = 0);
+  // Audio thread only: MIDI START, the arpeggiator / sequencer restart from their first step.
+  void restartKeyboardPatternFromAudioThread() {
+    if (definition_) definition_->runtime().restartKeyboardPattern();
+  }
   // Audio thread only: MIDI pitch bend in semitones, applied to the keyboard V/OCT output.
   void pitchBendFromAudioThread(double semitones) {
     if (definition_) definition_->runtime().setKeyboardBendVolts(semitones / 12.0);

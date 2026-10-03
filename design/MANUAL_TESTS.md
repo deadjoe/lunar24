@@ -1093,6 +1093,16 @@
   6. 按住 MPK 的一个键时，把 Preferences 的 MIDI Input 切成 off：声音停，板也灭。切回 MPK Mini IV MIDI Port。
   7. 鼠标 / 电脑键盘弹奏照常点亮触摸板，和 MIDI 同时弹也互不影响。
 
+**T15.9 MIDI 时钟：START 从头开始，不再停掉所有音** ⏳ (MIDI 时钟 PR)
+- 需要一个能**发出 MIDI 时钟**的软件或设备（例如 Logic Pro / Ableton Live 的"同步 → 发送 MIDI 时钟"，经 macOS 的 IAC 总线送进 Lunar 24）。MPK 手册只写了它能接收时钟，没写能发送；没有时钟源就先跳过，自动测试已覆盖。
+- 准备：Lunar 24 的 Preferences 里 MIDI Input 选时钟源所在的端口。键盘菜单 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开；电脑键盘同时按下 A、F、H 再松开。
+- 步骤与期望：
+  1. 时钟源不播放时：琶音按 Lunar 自己的 TEMPO 循环。
+  2. 时钟源按播放：琶音改跟随时钟源的速度（16 分音符），**从和弦的第一个音开始**，琶音不会停、电脑键盘按的音也不会丢（以前 START 会把所有音停掉）。
+  3. 时钟源停止：琶音停在原地不再前进（最后一个音的门在半个节拍后关闭）；再按播放，又从第一个音开始。
+  4. 改一下 Lunar 的 TEMPO：回到 Lunar 自己的时钟。
+  5. 收尾：关 HOLD，MODE 改回 KEYBOARD。
+
 ## 还没测的（⏳）
 
 - MIDI：REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。

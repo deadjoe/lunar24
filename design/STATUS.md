@@ -69,8 +69,9 @@ scales (the menu marks them NOT MODELLED; they pass notes through).
 ## Next steps (in order)
 1. The PR #80–#90 review fixes are done (PRs #91–#95: cable layer, SCALE / ROOT, pad and
    button bindings, MIDI input close, Preferences OK / Cancel, MIDI plate lights).
-2. External MIDI for the MPK MINI IV: REL, CC-button and pedal checks, clock (MIDI START
-   currently also sends all-notes-off), SINGLE / TWIN / SPLIT routing.
+2. External MIDI for the MPK MINI IV: MIDI START now restarts the pattern instead of
+   stopping every note (this PR, T15.9); then REL knobs, pedal checks, SINGLE / TWIN /
+   SPLIT routing.
 3. Remaining manual checks alongside: device DRY outputs, PREAMP override, Windows.
 4. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix).
 5. Later: decorative controls, REC, panel tweaks, AU/VST3. Known stability work: cable

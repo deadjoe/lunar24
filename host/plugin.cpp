@@ -336,25 +336,17 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
     engine_.enqueueEventFromAudioThread(e, offset);
   };
 
-  // System real-time: MIDI clock (24 per quarter note) steps the keyboard arpeggiator /
-  // sequencer every 6 ticks (16th notes, like the internal clock); START restarts the
-  // pattern, STOP releases the running note.
-  switch (msg.mStatus)
+  // System real-time: MIDI clock steps the keyboard arpeggiator / sequencer; START restarts
+  // the pattern from its first step. Transport never stops held notes (midi_timing.h).
+  if (msg.mStatus >= 0xF8)
   {
-    case 0xF8:
-      if (midiClockTicks_++ % 6 == 0) sendEvent(ControlEventKind::clock);
-      return;
-    case 0xFA:
-      midiClockTicks_ = 0;
-      sendEvent(ControlEventKind::reset);
-      return;
-    case 0xFB:
-      return;  // CONTINUE: carry on counting
-    case 0xFC:
-      sendEvent(ControlEventKind::sync);
-      return;
-    default:
-      break;
+    switch (midiClock_.onRealtime(msg.mStatus))
+    {
+      case lunar24::host::MidiClockFollower::Action::step: sendEvent(ControlEventKind::clock); break;
+      case lunar24::host::MidiClockFollower::Action::restart: engine_.restartKeyboardPatternFromAudioThread(); break;
+      default: break;
+    }
+    return;
   }
 
   PerformanceInput in{};
