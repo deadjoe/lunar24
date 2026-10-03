@@ -990,6 +990,14 @@
   - 期望：**声音立即停**，手还按着也不响。
   3. 把 MIDI Input 切回 MPK Mini IV MIDI Port，MPK 弹奏恢复正常。
 
+**T14.5 打开 Preferences 点 Cancel 不再"轰"一声** ⏳ (PR-E 附带修复)
+- 准备：同 T14.3 A：键盘菜单 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开；电脑键盘同时按下 A、F、H 再松开，琶音循环。
+- 步骤与期望：
+  1. ⌘, 打开 Preferences，什么都不改，点 **Cancel**：琶音继续，**没有"轰"一声**。
+  2. 再打开 Preferences，MIDI Input 切成 off，点 **Cancel**：琶音继续，没有"轰"一声。（这时 MIDI 输入实际已经切了，Cancel 只恢复界面里的记录，属 iPlug2 原有行为；再打开 Preferences 把 MIDI Input 选回 MPK Mini IV MIDI Port、点 OK 即可。）
+  3. 再打开 Preferences，把 Buffer Size 换一个值，点 **OK**：这次会重开音频（可能有一声，琶音停下），这是改了音频设置时的正常行为。测完改回原来的 Buffer Size。
+  4. 收尾：关 HOLD，MODE 改回 KEYBOARD。
+
 **T14.4 MIDI 切换 MUTE 时按钮跟着亮灭** ✅（PR-D，2026-10-03 Mac + MPK MINI IV 通过）
 - 准备：Learn 一个打击垫到 **MUTE**（MIDI CONTROL → + LEARN A CONTROL → 点 MUTE 按钮 → 敲垫子）。
 - 步骤：敲这个垫子几次。
@@ -1116,7 +1124,7 @@
   - 实测：用户预设下打击垫切成 CC# 后，学到的是 `CC 36 / CH 1`（CC 走通道 1，不是打击垫音符用的通道 10）。
   - 手册没写 Rel 模式用哪种相对编码，测 REL 时在 MODE 里轮流试 REL 1 / 2 / 3，哪种方向和速度正确就用哪种。
   - 手册只写了 MPK 的琶音器能**接收**外部时钟（Clock = Ext），没写它会往外发 MIDI 时钟；用 MPK 驱动 Lunar 24 的琶音 / 音序器时钟可能不行，需要实测或用 DAW 发时钟。
-- **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效。PR-D 起，音频设置（设备、采样率、缓冲、声道）没变时，OK / Apply 不再重开音频：以前只改 MIDI 输入点 OK 也会重开音频、重建引擎，琶音和按住的音被清掉，还会"轰"一声（2026-10-03 T14.3 实测发现）。音频设置变了时，OK / Apply 照旧重开音频，这时琶音停下是正常的。
+- **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效。PR-D 起，音频设置（设备、采样率、缓冲、声道）没变时，OK / Apply 不再重开音频：以前只改 MIDI 输入点 OK 也会重开音频、重建引擎，琶音和按住的音被清掉，还会"轰"一声（2026-10-03 T14.3 实测发现）。音频设置变了时，OK / Apply 照旧重开音频，这时琶音停下是正常的。PR-E 起 Cancel 也一样：音频设置没变就不重开（以前只是打开再 Cancel 也可能"轰"一声，见 T14.5）。
 - **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A，其它九路 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；滤波器等下游处理可有短暂衰减，不要求逐采样立即归零。若仍有长尾，保留接线和设置截图、录音再定位。默认同时开启的 VCO B 或直送 PREAMP 的振荡源不能用于此项隔离。
 - **MUTE 尾音（#11）**：MUTE 只淡出输出，不停止演奏或效果处理；解除时能听到静音期间音符的剩余尾音，属于既定行为，见 DECISIONS。
 

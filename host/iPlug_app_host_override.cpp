@@ -559,6 +559,16 @@ bool IPlugAPPHost::MIDISettingsInStateAreEqual(AppState& os, AppState& ns)
 
 bool IPlugAPPHost::TryToChangeAudioDriverType()
 {
+  // Lunar 24: Preferences' Cancel calls this (then TryToChangeAudio) whenever its saved and
+  // current states differ, MIDI settings included, and restores only the saved state. When the
+  // driver and every audio setting equal the running stream's, tearing the stream down only
+  // rebuilds the engine (dropping held notes and arpeggios) with an audible thump: keep it.
+  if (mDAC && mDAC->isStreamRunning() && mState.mAudioDriverType == mActiveState.mAudioDriverType &&
+      AudioSettingsInStateAreEqual(mActiveState, mState))
+  {
+    AudioLog("preferences: audio driver and settings unchanged, stream kept");
+    return true;
+  }
   CloseAudio();
 
   if (mDAC)
