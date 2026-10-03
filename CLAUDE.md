@@ -43,7 +43,9 @@ why) before changing anything.
   and merges the PR; do not merge it yourself. Start the next small PR after that merge.
 - The official manual and panel PDF are ELTA copyright and stay out of the repo. Ask the
   owner to upload them (panel PDF + `solar42n_to_agent.zip`: manual.md, cartridges.json,
-  figures) when a manual check is needed; keep them in the session scratchpad.
+  figures) when a manual check is needed; keep them in the session scratchpad. The same
+  goes for the owner's controller manual (AKAI MPK mini IV User Guide); what it tells us
+  is summarised under MANUAL_TESTS "MIDI 待办".
 
 ## Architecture (short)
 - `core/` — framework-free C++17 synth engine (header-only). No iPlug2/platform includes
