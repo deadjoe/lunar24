@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <cmath>
 #include <vector>
+#include <thread>
+#include <atomic>
 
 #include <host/standalone_audio_engine.h>
 #include <lunar24/core/midi_map.h>
@@ -190,6 +192,137 @@ int main() {
     e.syncParametersFromAudioThread();
     CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
     CHECK(e.parameterValue(core::ParameterId::keyboard_mode) == 1.0);    // preset B is back
+  }
+
+  // A publication cannot recycle a snapshot still used between lookup and apply.
+  {
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap a, b;
+    CHECK(a.bind(bindCc("", 0, 22, core::ParameterId::effector_blend,
+                        core::MidiInputMode::relativeBinOffset)));
+    CHECK(b.bind(bindCc("", 0, 22, core::ParameterId::effector_master,
+                        core::MidiInputMode::relativeBinOffset)));
+    e.publishMidiMap(a, "");
+    const int row = e.midiBindingRow(1, core::MidiBindingKind::cc, 22);
+    const double blend = e.parameterValue(core::ParameterId::effector_blend);
+    const double master = e.parameterValue(core::ParameterId::effector_master);
+    for (int i = 0; i < 5; ++i) e.publishMidiMap(b, "");
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 65);
+    e.syncParametersFromAudioThread();
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - blend - 1.0/127) < 1e-9);
+    CHECK_EQ(e.parameterValue(core::ParameterId::effector_master), master);
+    // Real producer/consumer overlap (also run this target under ThreadSanitizer).
+    std::atomic<bool> start{false};
+    std::thread producer([&] {
+      while (!start.load(std::memory_order_acquire)) {}
+      for (int i = 0; i < 20000; ++i) e.publishMidiMap(i % 2 ? a : b, "");
+    });
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < 20000; ++i) {
+      const int match = e.midiBindingRow(1, core::MidiBindingKind::cc, 22);
+      CHECK_EQ(match, 0);
+      e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(match), 64);
+    }
+    producer.join();
+  }
+
+  // The first encoder message uses panel edits made AFTER publication.
+  {
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap m;
+    CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::effector_blend,
+                        core::MidiInputMode::relativeBinOffset)));
+    e.publishMidiMap(m, "");
+    CHECK(e.postParameter(core::ParameterId::effector_blend, .8));
+    e.processBlock(nullptr, outs, 0, 2, 256);
+    e.applyMidiBindingFromAudioThread(0, 65);
+    e.syncParametersFromAudioThread();
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - .8 - 1.0/127) < 1e-9);
+  }
+
+  // Discrete selectors get the SAME snapped value in DSP and saved state.
+  {
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap m;
+    CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::vco_a_oct_sel)));
+    e.publishMidiMap(m, "");
+    e.applyMidiBindingFromAudioThread(0, 0);
+    e.applyMidiBindingFromAudioThread(0, 100);
+    e.processBlock(nullptr, outs, 0, 2, 256);
+    e.syncParametersFromAudioThread();
+    CHECK_EQ(e.parameterValue(core::ParameterId::vco_a_oct_sel), 2.0);
+    CHECK_EQ(e.runtime()->vcoAOctSelect(), 2);
+  }
+
+  // A CC button toggles on the rising edge, never on release or repeated high values.
+  {
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    auto button = bindAction(0, 22, core::MidiAction::master_mute);
+    button.key.kind = core::MidiBindingKind::cc;
+    core::MidiMap m;
+    CHECK(m.bind(button));
+    e.publishMidiMap(m, "");
+    e.applyMidiBindingFromAudioThread(0, 127);
+    CHECK(e.muted());
+    e.applyMidiBindingFromAudioThread(0, 127);
+    CHECK(e.muted());  // repeated high must not toggle, even before release
+    e.applyMidiBindingFromAudioThread(0, 0);
+    CHECK(e.muted());
+    e.applyMidiBindingFromAudioThread(0, 127);
+    CHECK(!e.muted());
+  }
+
+  // Both the panel and MIDI action use this atomic toggle. An even total of
+  // concurrent toggles must preserve the initial state.
+  {
+    E e;
+    std::atomic<bool> start{false};
+    std::thread panel([&] {
+      while (!start.load(std::memory_order_acquire)) {}
+      for (int i = 0; i < 100001; ++i) e.toggleMuted();
+    });
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < 100001; ++i) e.toggleMuted();
+    panel.join();
+    CHECK(!e.muted());
+    e.toggleMuted();
+    CHECK(e.muted());
+  }
+
+  // A pad's velocity is an absolute value, not a pickup knob needing a sweep.
+  {
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    auto pad = bindCc("", 0, 40, core::ParameterId::effector_blend);
+    pad.key.kind = core::MidiBindingKind::note;
+    core::MidiMap m;
+    CHECK(m.bind(pad));
+    e.publishMidiMap(m, "");
+    e.applyMidiBindingFromAudioThread(0, 100);
+    e.syncParametersFromAudioThread();
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - 100.0/127) < 1e-9);
+  }
+
+  // Loading presets while the UI keeps editing must never read UI state on audio.
+  {
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap m;
+    CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::keyboard_clock_bpm,
+                        core::MidiInputMode::relativeBinOffset)));
+    e.publishMidiMap(m, "");
+    std::thread ui([&] {
+      for (int i = 0; i < 10000; ++i) {
+        (void)e.postKeyboardPreset(E::PresetAction::Load, 0);
+        (void)e.postParameter(core::ParameterId::keyboard_clock_bpm, (i % 100) / 100.0);
+      }
+    });
+    for (int i = 0; i < 100; ++i) e.processBlock(nullptr, outs, 0, 2, 256);
+    ui.join();
   }
 
   return test::finish("test_midi_map_apply");

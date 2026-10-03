@@ -89,6 +89,10 @@ void LunarInvalidateAudio(IPlugAPP* plug) {
 // opening a Bluetooth headset's microphone drops its sound to call quality.
 std::atomic<bool> sFollowDefaultOutput{true};
 bool sInputOn = false;
+#ifdef OS_MAC
+// RtMidi isPortOpen() does not report virtual ports. UI thread only.
+bool sVirtualMidiInputOpen = false;
+#endif
 // The input channels the user chose. An open that fails with the input (e.g. the Mac microphone
 // together with Bluetooth headphones) falls back to output only for that open; the choice is kept
 // here and in the settings file, and the next automatic reopen (a device change, RESET PANEL,
@@ -833,14 +837,15 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
 
     if (mMidiIn)
     {
-      // Closing an OPEN input: notes held from it can never send their note-offs
-      // now, so the plugin sends its all-gates-off failsafe and drops the sustain
-      // ledger. (RtMidi has no device-removal callback, so an unplugged cable is
-      // only covered once the user re-selects; true hot-unplug detection is a
-      // known remaining gap.)
-      if (mMidiIn->isPortOpen())
-        static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
+      // Stop the old producer before invalidating its queued messages. The new
+      // port opens only after this boundary; audio performs the reset on its next block.
+      bool wasOpen = mMidiIn->isPortOpen();
+#ifdef OS_MAC
+      wasOpen = wasOpen || sVirtualMidiInputOpen;
+      sVirtualMidiInputOpen = false;
+#endif
       mMidiIn->closePort();
+      if (wasOpen) static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
       // Tell the plugin which device name bindings should match ("" = none/virtual:
       // only device-agnostic bindings fire then).
       {
@@ -869,6 +874,7 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
         std::string virtualMidiInputName = "To ";
         virtualMidiInputName += BUNDLE_NAME;
         mMidiIn->openVirtualPort(virtualMidiInputName);
+        sVirtualMidiInputOpen = true;
         return true;
       }
       else
@@ -1231,7 +1237,8 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
     // the next audio block, so MIDI timing does not jitter by up to a whole buffer.
     msg.mOffset = lunar24::host::midiArrivalStamp();
 
-    _this->mIPlug->mMidiMsgsFromCallback.Push(msg);
+    static_cast<LunarHostPlugin*>(_this->GetPlug())->queueMidiInput({
+        msg.mOffset, msg.mStatus, msg.mData1, msg.mData2});
   }
 }
 

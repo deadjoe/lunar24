@@ -9,6 +9,7 @@
 // the one place the host consumes lunar24::host::compute_window_layout.
 
 #pragma once
+#include <host/midi_input_queue.h>
 
 #include "IPlug_include_in_plug_hdr.h"
 
@@ -80,19 +81,46 @@ public:
   void requestFactoryReset();
 
   // UI thread (the app's MIDI input was closed or switched in Preferences): notes
-  // held from that input can never send their note-offs now. Sends the all-gates-off
-  // failsafe through the UI->audio queue and asks the audio thread to drop the
-  // sustain-pedal ledger (MidiSustain is audio-thread-owned).
+  // held from that input can never send their note-offs now. Invalidates the old
+  // input queue; audio releases notes and clears sustain before admitting a new epoch.
   void midiInputClosed();
+  // Driver callback pushes bytes; AppProcess drains before rendering each block.
+  void queueMidiInput(lunar24::host::MidiInputQueue::Message message) { (void)midiQueue_.push(message); }
+  void drainMidiInput(int frames);
 
   // UI thread (the app's MIDI input selection changed): the name bindings match
   // against. "" means no real device (off / virtual): only device-agnostic bindings
   // match then. Republishes the map so the audio thread's snapshot carries it.
   void setMidiInputDeviceName(const char* name);
 
+  // ---- MIDI rig settings (channel filter / octave shift / velocity curve) -----------
+  // The panel's MIDI settings overlay edits these; the store persists them. The audio
+  // thread reads the atomics, the UI thread owns the store.
+  int midiChannelFilter() const { return midiChannelFilter_.load(std::memory_order_relaxed); }
+  int midiOctaveShift() const { return midiOctaveShift_.load(std::memory_order_relaxed); }
+  int midiVelocityCurve() const { return midiVelocityCurve_.load(std::memory_order_relaxed); }
+  void setMidiRigSettings(int channelFilter, int octaveShift, int curve);
+  // The plugin's binding store (the MIDI settings overlay edits it through this).
+  lunar24::host::MidiMapStore& midiStore() { return midiMapStore_; }
+  // Republish the current map (after the overlay edits it).
+  void republishMidiMap() {
+    engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
+  }
+  // The last note/CC message seen, for the learn overlay: packed (kind << 20 |
+  // channel << 8 | number) plus a sequence that bumps per message. Audio thread
+  // writes, UI reads.
+  std::uint32_t midiLastMessage() const { return midiLastMessage_.load(std::memory_order_relaxed); }
+  std::uint64_t midiMessageSeq() const { return midiMessageSeq_.load(std::memory_order_relaxed); }
+
 private:
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
-  std::atomic<bool> sustainResetRequested_{false};  // UI thread -> audio thread
+  lunar24::host::MidiInputQueue midiQueue_;
+  lunar24::host::MidiNoteOwnership midiNotes_;
+  std::atomic<int> midiChannelFilter_{0};     // 0 = any, else 1..16
+  std::atomic<int> midiOctaveShift_{0};       // semitones, -36..+36
+  std::atomic<int> midiVelocityCurve_{0};     // core::MidiVelocityCurve
+  std::atomic<std::uint32_t> midiLastMessage_{0};
+  std::atomic<std::uint64_t> midiMessageSeq_{0};
 
   // The framework-free runtime owner, held BY VALUE. It owns the address-stable
   // MachineRuntimeDefinition (heap) + the single DeviceAdapter (task#71). ProcessBlock is a

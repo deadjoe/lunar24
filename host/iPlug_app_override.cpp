@@ -36,6 +36,7 @@
 #include "IPlugAPP.h"
 #include "IPlugAPP_host.h"
 #include <host/midi_timing.h>
+#include "plugin.h"
 
 #if defined OS_MAC || defined OS_LINUX
 #include <IPlugSWELL.h>
@@ -161,6 +162,8 @@ void IPlugAPP::AppProcess(double** inputs, double** outputs, int nFrames)
   AttachBuffers(ERoute::kInput, 0, NChannelsConnected(ERoute::kInput), inputs, GetBlockSize());
   AttachBuffers(ERoute::kOutput, 0, NChannelsConnected(ERoute::kOutput), outputs, GetBlockSize());
   
+  static_cast<LunarHostPlugin*>(this)->drainMidiInput(nFrames);
+
   if (mMidiMsgsFromCallback.ElementsAvailable())
   {
     IMidiMsg msg;

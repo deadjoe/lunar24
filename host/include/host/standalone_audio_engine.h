@@ -288,6 +288,11 @@ class StandaloneAudioEngine {
   // machine, so unmuting returns to whatever is playing. Not saved: the app starts unmuted.
   void setMuted(bool on) { muted_.store(on, std::memory_order_relaxed); }
   bool muted() const { return muted_.load(std::memory_order_relaxed); }
+  // UI and MIDI may toggle concurrently; neither toggle may overwrite the other.
+  void toggleMuted() {
+    bool current = muted_.load(std::memory_order_relaxed);
+    while (!muted_.compare_exchange_weak(current, !current, std::memory_order_relaxed)) {}
+  }
   // Bumped whenever a whole new machine state is committed (startup restore, preset load),
   // so the UI knows to redraw every control.
   std::uint64_t stateVersion() const { return stateVersion_; }
@@ -343,13 +348,13 @@ class StandaloneAudioEngine {
 
   // ---- MIDI bindings (the user's controller map) ---------------------------------
   // UI thread: publish a new binding snapshot — the map, the active input device's
-  // name, and every parameter-bound row's CURRENT value (so the audio thread's
-  // pickup/relative state starts from truth). Republish on any map edit; cheap.
+  // name. The audio thread seeds bindings from its own current parameter values.
   void publishMidiMap(const lunar24::core::MidiMap& map, const char* inputDevice);
   // Audio thread: the published map's row for this message, or -1. Device-specific
-  // bindings match only when their name equals the published input device.
+  // bindings match only when their name equals the published input device. Apply
+  // the returned row immediately, before another lookup or engine call.
   int midiBindingRow(std::uint8_t channel, lunar24::core::MidiBindingKind kind,
-                     std::uint8_t number) const;
+                     std::uint8_t number);
   // Audio thread: apply a matched row's raw data byte (0..127). Parameters honor the
   // binding's input mode (pickup for absolute, deltas for relative); drone-key and
   // mute actions take effect immediately and are recorded for the UI; cartridge /
@@ -357,7 +362,7 @@ class StandaloneAudioEngine {
   void applyMidiBindingFromAudioThread(std::uint32_t row, int rawValue);
   // The published snapshot's binding at `row` (for the UI to label it). UI thread.
   const lunar24::core::MidiBinding* midiBindingAt(std::uint32_t row) const {
-    const auto& s = midiMapSlots_[midiMapPublished_.load(std::memory_order_acquire)];
+    const auto& s = midiUiMap_;
     return row < s.map.count() ? &s.map.at(row) : nullptr;
   }
   // Current value of a parameter as the user last set it (UI readback).
@@ -492,21 +497,21 @@ class StandaloneAudioEngine {
   std::atomic<bool> eventReconcileRequested_{false};
   std::atomic<std::uint32_t> liveEventDrops_{0};
 
-  // MIDI binding snapshot, triple-buffered UI -> audio: the UI writes a slot that is
-  // neither published nor last-written, then flips the index. The seeds are the
-  // parameter values at publish time (UI thread owns the state, so the read is safe).
+  // SPSC triple buffer: UI and audio each own a slot; exchange transfers the
+  // third slot. The dirty bit means the middle slot contains a newer publication.
   struct MidiMapSlot {
     lunar24::core::MidiMap map;
     char device[lunar24::core::kMidiBindingDeviceCapacity] = {};
-    std::uint64_t generation = 0;
-    double seed[lunar24::core::kMidiMapCapacity] = {};
   };
   MidiMapSlot midiMapSlots_[3];
-  std::atomic<std::uint32_t> midiMapPublished_{0};
-  std::uint32_t midiMapWriteIdx_ = 1;      // UI thread only
-  std::uint64_t midiMapGeneration_ = 0;    // UI thread only
-  // Audio thread: per-row consumer state (rows are stable within a generation).
-  std::uint64_t midiMapGenerationSeen_ = 0;
+  MidiMapSlot midiUiMap_;  // UI-only readback
+  std::atomic<std::uint32_t> midiMapMiddle_{1};
+  std::uint32_t midiMapWriteIdx_ = 2;  // UI only
+  std::uint32_t midiMapReadIdx_ = 0;   // audio only
+  bool midiMatchPending_ = false;
+  // Audio-owned current control values, initialized at the stopped-stream boundary.
+  double midiParameterValue_[lunar24::core::kParameterIdSpace] = {};
+  void refreshMidiMap_();
   double midiValue_[lunar24::core::kMidiMapCapacity] = {};
   int midiLastRaw_[lunar24::core::kMidiMapCapacity] = {};
   bool midiPickedUp_[lunar24::core::kMidiMapCapacity] = {};
@@ -522,10 +527,8 @@ class StandaloneAudioEngine {
   void noteParameterSeen_(ParameterId id, double value);
   // UI thread: step the effector cartridge on both sides (a MIDI action handler).
   void stepCartridge(int delta);
-  bool sendParameterFromAudioThread_(ParameterId id, double value, bool rebaseBindings);
-  // Any thread that legally holds the state (UI at commit_, or the audio thread right
-  // after popping a preset command — the queue's release/acquire publishes the UI's
-  // writes): refresh every parameter-bound row's pickup/relative base.
+  bool sendParameterFromAudioThread_(ParameterId id, double value, bool rebaseBindings, int originRow = -1);
+  // Audio thread: rebase keyboard parameters from the runtime's own preset state.
   void reseedMidiBindingsFromState_();
 
   // Monotonic RT counters (plain, no lock).
@@ -914,7 +917,12 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   ready_ = true;
   for (int v = 0; v < 6; ++v) definition_->runtime().setDroneVoiceKey(v, droneKeys_[v]);
   ++stateVersion_;
-  reseedMidiBindingsFromState_();  // the committed state replaced every parameter
+  const auto& parameters = definition_->deviceState().parameters;
+  for (std::size_t i = 0; i < lunar24::core::kParameterIdSpace; ++i)
+    midiParameterValue_[i] = parameters[i];
+  refreshMidiMap_();
+  for (const auto& d : lunar24::registry::kParameters)
+    noteParameterSeen_(d.id, midiParameterValue_[static_cast<std::uint32_t>(d.id)]);
 }
 
 
@@ -1068,10 +1076,28 @@ inline bool StandaloneAudioEngine::parameterFromAudioThread(ParameterId id, doub
 // The shared tail of the MIDI-CC entry. `rebaseBindings` is false when the value came
 // FROM a binding itself (its own output must not re-arm its own pickup).
 inline bool StandaloneAudioEngine::sendParameterFromAudioThread_(ParameterId id, double value,
-                                                                 bool rebaseBindings) {
+                                                                 bool rebaseBindings, int originRow) {
   if (!definition_) return false;
+  const auto* descriptor = lunar24::core::find_parameter(id);
+  if (descriptor == nullptr || !std::isfinite(value)) return false;
+  value = std::clamp(value, descriptor->min, descriptor->max);
+  if (descriptor->step > 0.0)
+    value = descriptor->min + std::round((value - descriptor->min) / descriptor->step) * descriptor->step;
+  midiParameterValue_[static_cast<std::uint32_t>(id)] = value;
   SynthRuntime& rt = definition_->runtime();
-  if (rebaseBindings) noteParameterSeen_(id, value);  // keep the pickup/relative base fresh
+  if (rebaseBindings) noteParameterSeen_(id, value);
+  else {
+    const auto& map = midiMapSlots_[midiMapReadIdx_].map;
+    for (std::uint32_t i = 0; i < map.count(); ++i) {
+      const auto& binding = map.at(i);
+      if (binding.targetKind != lunar24::core::MidiTargetKind::parameter || binding.parameter != id) continue;
+      midiValue_[i] = value;
+      if (static_cast<int>(i) != originRow) {
+        midiPickedUp_[i] = false;
+        midiLastRaw_[i] = -1;
+      }
+    }
+  }
   // Keyboard menu params apply in place (the drainLive_ rule), never as queued events.
   if (!rt.setKeyboardParameter(id, value)) {
     lunar24::core::ControlEvent e{};
@@ -1088,60 +1114,57 @@ inline bool StandaloneAudioEngine::sendParameterFromAudioThread_(ParameterId id,
   return fromAudioQueue_.push(c);
 }
 
-// UI thread: replace the published MIDI-map snapshot. Never writes the slot the audio
-// thread reads (triple buffer: the new slot differs from the published one).
+// UI-only producer; audio owns its reader slot until it explicitly exchanges it.
 inline void StandaloneAudioEngine::publishMidiMap(const lunar24::core::MidiMap& map,
                                                   const char* inputDevice) {
-  const std::uint32_t published = midiMapPublished_.load(std::memory_order_acquire);
-  std::uint32_t w = midiMapWriteIdx_;
-  if (w == published) w = (w + 1) % 3;
-  MidiMapSlot& s = midiMapSlots_[w];
+  MidiMapSlot& s = midiMapSlots_[midiMapWriteIdx_];
   s.map = map;
   std::memset(s.device, 0, sizeof(s.device));
-  if (inputDevice != nullptr)
-    std::snprintf(s.device, sizeof(s.device), "%s", inputDevice);  // bounded; MSVC-safe
+  if (inputDevice != nullptr) std::snprintf(s.device, sizeof(s.device), "%s", inputDevice);
+  midiUiMap_ = s;
+  midiMapWriteIdx_ = midiMapMiddle_.exchange(midiMapWriteIdx_ | 4u, std::memory_order_acq_rel) & 3u;
+}
+
+inline void StandaloneAudioEngine::refreshMidiMap_() {
+  if ((midiMapMiddle_.load(std::memory_order_acquire) & 4u) == 0) return;
+  midiMapReadIdx_ = midiMapMiddle_.exchange(midiMapReadIdx_, std::memory_order_acq_rel) & 3u;
+  const auto& s = midiMapSlots_[midiMapReadIdx_];
   for (std::uint32_t i = 0; i < s.map.count(); ++i) {
-    const lunar24::core::MidiBinding& b = s.map.at(i);
-    s.seed[i] = (b.targetKind == lunar24::core::MidiTargetKind::parameter)
-                    ? parameterValue(b.parameter)
-                    : 0.0;
+    const auto& b = s.map.at(i);
+    midiValue_[i] = b.targetKind == lunar24::core::MidiTargetKind::parameter
+        ? midiParameterValue_[static_cast<std::uint32_t>(b.parameter)] : 0.0;
+    midiLastRaw_[i] = -1;
+    midiPickedUp_[i] = false;
   }
-  s.generation = ++midiMapGeneration_;
-  midiMapWriteIdx_ = w;
-  midiMapPublished_.store(w, std::memory_order_release);
 }
 
 inline int StandaloneAudioEngine::midiBindingRow(std::uint8_t channel,
                                                  lunar24::core::MidiBindingKind kind,
-                                                 std::uint8_t number) const {
-  const MidiMapSlot& s = midiMapSlots_[midiMapPublished_.load(std::memory_order_acquire)];
-  if (s.map.count() == 0) return -1;
-  const lunar24::core::MidiBinding* b =
-      lunar24::core::midi_map_find(s.map, s.device, channel, kind, number);
-  if (b == nullptr) return -1;
-  return static_cast<int>(b - &s.map.at(0));
+                                                 std::uint8_t number) {
+  refreshMidiMap_();
+  midiMatchPending_ = true;
+  const auto& s = midiMapSlots_[midiMapReadIdx_];
+  const auto* b = lunar24::core::midi_map_find(s.map, s.device, channel, kind, number);
+  return b == nullptr ? -1 : static_cast<int>(b - &s.map.at(0));
 }
 
 inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t row,
                                                                    int rawValue) {
   if (!definition_) return;
-  const MidiMapSlot& s = midiMapSlots_[midiMapPublished_.load(std::memory_order_acquire)];
-  if (row >= s.map.count()) return;
-  // A fresh publish invalidates the pickup/relative state (rows may have moved);
-  // reseed from the publish-time snapshot.
-  if (s.generation != midiMapGenerationSeen_) {
-    midiMapGenerationSeen_ = s.generation;
-    for (std::uint32_t i = 0; i < lunar24::core::kMidiMapCapacity; ++i) {
-      midiValue_[i] = 0.0;
-      midiLastRaw_[i] = -1;
-      midiPickedUp_[i] = false;
-    }
-    for (std::uint32_t i = 0; i < s.map.count(); ++i) midiValue_[i] = s.seed[i];
-  }
+  // A lookup and its application always use the same audio-owned snapshot.
+  if (!midiMatchPending_) refreshMidiMap_();
+  midiMatchPending_ = false;
+  const auto& s = midiMapSlots_[midiMapReadIdx_];
+  if (row >= s.map.count() || rawValue < 0 || rawValue > 127) return;
   const lunar24::core::MidiBinding& b = s.map.at(row);
   SynthRuntime& rt = definition_->runtime();
 
   if (b.targetKind == lunar24::core::MidiTargetKind::action) {
+    if (b.key.kind == lunar24::core::MidiBindingKind::cc) {
+      const bool wasOn = midiLastRaw_[row] >= 64;
+      midiLastRaw_[row] = rawValue;
+      if (rawValue < 64 || wasOn) return;
+    } else if (rawValue == 0) return;
     using lunar24::core::MidiAction;
     using lunar24::core::LiveCommand;
     if (b.action <= MidiAction::drone_key_6) {
@@ -1157,7 +1180,7 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
       return;
     }
     if (b.action == MidiAction::master_mute) {
-      setMuted(!muted());
+      toggleMuted();
       return;
     }
     // Cartridge / preset actions: the UI thread executes them (it owns the state).
@@ -1176,7 +1199,7 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
     // so a page/preset change never jumps the parameter.
     const double target01 = static_cast<double>(rawValue) / 127.0;
     double& cur = midiValue_[row];
-    if (!midiPickedUp_[row]) {
+    if (b.key.kind == lunar24::core::MidiBindingKind::cc && !midiPickedUp_[row]) {
       const double cur01 = range > 0.0 ? (cur - d->min) / range : 0.0;
       const int curRaw = static_cast<int>(cur01 * 127.0 + 0.5);
       const int prevRaw = midiLastRaw_[row];
@@ -1188,42 +1211,40 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
     }
     midiLastRaw_[row] = rawValue;
     cur = d->min + target01 * range;
-    (void)sendParameterFromAudioThread_(b.parameter, cur, false);
+    if (d->step > 0.0) cur = d->min + std::round((cur - d->min) / d->step) * d->step;
+    (void)sendParameterFromAudioThread_(b.parameter, cur, false, static_cast<int>(row));
     return;
   }
   // Relative modes: apply the decoded delta to the cached value.
   const int delta = lunar24::core::midi_relative_delta(b.mode, rawValue);
   if (delta == 0) return;
   double& cur = midiValue_[row];
-  const double step = range / 127.0;
+  const double step = d->step > 0.0 ? d->step : range / 127.0;
   cur = std::clamp(cur + static_cast<double>(delta) * step, d->min, d->max);
-  (void)sendParameterFromAudioThread_(b.parameter, cur, false);
+  (void)sendParameterFromAudioThread_(b.parameter, cur, false, static_cast<int>(row));
 }
 
 // Keep the pickup/relative base in step with parameter changes from every other
 // source (panel drags arrive through drainLive_, MIDI CCs through the caller above).
 inline void StandaloneAudioEngine::noteParameterSeen_(ParameterId id, double value) {
-  const MidiMapSlot& s = midiMapSlots_[midiMapPublished_.load(std::memory_order_acquire)];
+  midiParameterValue_[static_cast<std::uint32_t>(id)] = value;
+  refreshMidiMap_();
+  const MidiMapSlot& s = midiMapSlots_[midiMapReadIdx_];
   for (std::uint32_t i = 0; i < s.map.count(); ++i) {
     const lunar24::core::MidiBinding& b = s.map.at(i);
     if (b.targetKind == lunar24::core::MidiTargetKind::parameter && b.parameter == id) {
       midiValue_[i] = value;
       midiPickedUp_[i] = false;  // the value jumped: re-arm pickup
+      midiLastRaw_[i] = -1;
     }
   }
 }
 
 inline void StandaloneAudioEngine::reseedMidiBindingsFromState_() {
-  const MidiMapSlot& s = midiMapSlots_[midiMapPublished_.load(std::memory_order_acquire)];
-  const DeviceStateV1* st = canonicalState();
-  if (st == nullptr) return;
-  for (std::uint32_t i = 0; i < s.map.count(); ++i) {
-    const lunar24::core::MidiBinding& b = s.map.at(i);
-    if (b.targetKind == lunar24::core::MidiTargetKind::parameter) {
-      midiValue_[i] = st->parameters[static_cast<std::uint32_t>(b.parameter)];
-      midiPickedUp_[i] = false;
-      midiLastRaw_[i] = -1;
-    }
+  if (!definition_) return;
+  for (const auto& d : lunar24::registry::kParameters) {
+    if (d.stable_id.substr(0, 9) == "keyboard.")
+      noteParameterSeen_(d.id, definition_->runtime().keyboardParameterValue(d.id));
   }
 }
 
@@ -1332,8 +1353,7 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
         break;
       case LiveCommand::Kind::KeyboardPreset:
         rt.keyboardPresetAction(static_cast<int>(c.side), c.index);
-        // The preset moved the keyboard's parameters wholesale; the queue's
-        // release/acquire makes those UI writes visible here, so reseed the bases.
+        // Read the audio-owned preset result, never the UI's mutable saved state.
         reseedMidiBindingsFromState_();
         break;
       case LiveCommand::Kind::KeyboardSelector:

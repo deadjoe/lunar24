@@ -25,7 +25,7 @@ _Last updated: 2026-10-03._
   renders it without building the app. CI attaches a downloadable app to
   every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: ~58 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
+- **Tests**: 61 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
   `design/MANUAL_TESTS.md`.
 
 ## How to play
@@ -44,9 +44,13 @@ _Last updated: 2026-10-03._
   takes over until BPM is changed again; RESET restarts the pattern. Edit the 16 steps
   on the menu's SEQUENCER page: drag a slider for the note (0..+24 semitones above the
   held plate), click the round button to turn the step's gate on/off (off = a rest).
-- MIDI keyboard: plugged-in devices are picked up automatically. Mod wheel / CC74 =
+- MIDI keyboard: inputs are enumerated at startup (hot-plug refresh is not implemented). Mod wheel / CC74 =
   filter cutoff, CC71 = resonance, CC91 = effector blend, CC7 = master; pitch bend +/-2
   semitones; sustain pedal; MIDI clock drives the arpeggiator / sequencer (START / STOP).
+  The MIDI button (under MUTE, right of DRONE VOICES) opens the MIDI settings: learn a
+  panel control onto any CC or pad note (parameters, drone keys, cartridge, presets,
+  mute), four binding rows per page, per-binding absolute/relative pickup, channel filter,
+  transpose and velocity curve. Bindings live in their own file, not in the machine state.
 - Effector: click the cartridge slot (or the button below it) to load the next cartridge
   (right-click = previous; hover shows both program names); the L / R switches beside
   the button pick program 1-2-3 per side.
@@ -59,11 +63,13 @@ the manual, so still guesses: arp/seq clock multiply/divide ratios (not applied 
 exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco scales.
 
 ## Next steps (in order)
-1. Correctness and stability: check note-release handling under event-queue pressure next.
-   Fix reproduced product failures in small PRs; audit findings are leads, not an automatic backlog.
+1. PR #89: the available T15.5–T15.6 checks passed on macOS + MPK MINI IV with the old UI;
+   REL, CC-button edges and pedal checks remain untested. The redesigned UI passed native retesting (2a5991a).
+   Fix MIDI MUTE indicator refresh and input-close resetting mouse/computer-keyboard performance
+   in focused changes; see MANUAL_TESTS §15 / MIDI 待办 for results and remaining checks.
 2. Complete external MIDI support for the owner's MPK MINI IV: pressure, clock and reliable note
    handling; decide SINGLE / TWIN / SPLIT routing, then test with the actual controller.
-3. Continue the remaining manual checks alongside MIDI work: 5-STEP CLK, device DRY outputs,
+3. Continue the remaining manual checks alongside MIDI work: device DRY outputs,
    PREAMP input override/unplug, and saved calibration settings. Untested does not mean broken;
    finishing every manual check is not a prerequisite for MIDI work. Windows device tests remain pending.
 4. After that foundation, tune sounds from listening feedback: drone level, modulation depth,

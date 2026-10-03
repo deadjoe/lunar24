@@ -13,6 +13,7 @@
 
 #include "mini_test.h"
 #include <host/panel_art.h>
+#include <host/midi_settings_view.h>
 #include <host/panel_ui_layout.h>
 #include <lunar24/core/state_disposition.h>
 
@@ -110,6 +111,23 @@ int main() {
   CHECK_EQ(art.bad, 0);
   CHECK(art.paths > 500);   // frames, printed marks, name plates
   CHECK(art.texts > 300);   // panel labels
+  // The app-level MUTE / MIDI pair sits right of DRONE VOICES as a vertical pair whose
+  // centre is the six-key block's centre (y = 1296.5), wide enough apart for the labels.
+  {
+    const Widget* mute = nullptr;
+    const Widget* midi = nullptr;
+    for (const Widget& w : ws) {
+      if (w.kind == WidgetKind::MasterMute) mute = &w;
+      if (w.kind == WidgetKind::MidiSettings) midi = &w;
+    }
+    CHECK(mute != nullptr);
+    CHECK(midi != nullptr);
+    if (mute != nullptr && midi != nullptr) {
+      CHECK(std::fabs((mute->cy + midi->cy) / 2 - 1296.5) < 1.0);
+      CHECK(std::fabs(mute->cx - midi->cx) < 1.0);
+      CHECK(midi->cy - mute->cy >= 100.0);  // the label under MUTE stays clear of MIDI
+    }
+  }
   // Every control, drawn at its place: all paths are started before they are painted.
   CheckSink ctl;
   for (const Widget& w : ws) {
@@ -153,6 +171,28 @@ int main() {
     for (int s = 6; s < 12; ++s) CHECK(host::plate_is_right_side(s));
     CHECK(!host::plate_is_right_side(12) && host::plate_is_right_side(18));
     CHECK(host::plate_is_right_side(-1) && !host::plate_is_right_side(-12));
+  }
+  { // MIDI: deleting the last row must return to a populated page.
+    using namespace host::midi_ui;
+    CHECK_EQ(pageOffset(4, 5), 4);
+    CHECK_EQ(pageOffset(4, 4), 0);
+    CHECK_EQ(pageOffset(-4, 0), 0);
+    CHECK_EQ(pageOffset(128, 128), 124);
+    for (int i=0; i<3; ++i) {
+      CHECK(!decrement(i).contains(setting(i).l+20, setting(i).t+20));
+      CHECK(!increment(i).contains(setting(i).l+20, setting(i).t+20));
+      CHECK(decrement(i).r <= increment(i).l);
+    }
+    // A truncated UTF-8 name must end on a character boundary.
+    auto bytes = [](const char* text) { return static_cast<float>(std::string(text).size()); };
+    CHECK_EQ(fitText("ab\xc3\xa9" "cdef", 6, bytes), std::string("ab..."));
+    CHECK_EQ(fitText("short", 20, bytes), std::string("short"));
+    // Non-ASCII device names: one '?' per code point, ASCII untouched.
+    CHECK_EQ(asciiText("MPK mini IV"), std::string("MPK mini IV"));
+    CHECK_EQ(asciiText("Caf\xc3\xa9 \xe9\x94\xae\xe7\x9b\x98 \xf0\x9f\x8e\xb9!"), std::string("Caf? ?? ?!"));
+    CHECK_EQ(asciiText("a\xe9\x94"), std::string("a?"));       // truncated sequence
+    CHECK_EQ(asciiText("\x80\x80" "b"), std::string("??b"));   // one per stray byte
+    CHECK_EQ(asciiText(""), std::string());
   }
   return test::finish("test_panel_ui_layout");
 }

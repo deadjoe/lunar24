@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -56,6 +57,31 @@ inline constexpr std::uint8_t kMidiActionCount = 13;
 
 inline constexpr std::size_t kMidiBindingDeviceCapacity = 64;  // UTF-8, NUL-terminated
 inline constexpr std::uint32_t kMidiMapCapacity = 128;
+
+// Rig-level MIDI settings (not per-binding): the controller-rig companions that live
+// in the same file. Velocity curves shape the note-on strike (aftertouch is not a
+// strike and is never curved).
+enum class MidiVelocityCurve : std::uint8_t { linear = 0, soft = 1, hard = 2 };
+
+struct MidiRigSettings {
+  std::uint8_t channelFilter = 0;  // 0 = any channel, else only 1..16
+  std::int8_t octaveShift = 0;     // semitones, -36..+36 (the panel's ±3 octaves)
+  MidiVelocityCurve velocityCurve = MidiVelocityCurve::linear;
+};
+
+inline bool midi_rig_settings_valid(const MidiRigSettings& s) {
+  return s.channelFilter <= 16 && s.octaveShift >= -36 && s.octaveShift <= 36 &&
+         s.velocityCurve <= MidiVelocityCurve::hard;
+}
+
+// Velocity response, input 0..1. soft = easier to reach loud, hard = the opposite.
+inline double midi_velocity_shape(MidiVelocityCurve curve, double v) {
+  switch (curve) {
+    case MidiVelocityCurve::soft: return std::sqrt(v);
+    case MidiVelocityCurve::hard: return v * v;
+    default: return v;
+  }
+}
 
 // The hardware message a binding listens to. An empty device name means "any input
 // device"; channel 0 means "any channel".
@@ -144,23 +170,33 @@ class MidiMap {
 
 // ---- wire format --------------------------------------------------------------
 //
+// Version 2 (current):
 //   offset 0:  magic "L24M" (4 bytes)
-//   offset 4:  version u32 LE (1)
+//   offset 4:  version u32 LE (2)
 //   offset 8:  binding count u32 LE
-//   offset 12: count records, each 80 bytes:
-//     device[64] | channel u8 | kind u8 | number u8 | mode u8 | targetKind u8 |
-//     action u8 | reserved u16 | parameter u32 LE | reserved u32
+//   offset 12: globals block (16 bytes):
+//     channelFilter u8 (0 = any) | octaveShift i8 (semitones) | velocityCurve u8 |
+//     13 reserved zero bytes
+//   offset 28: count binding records, each 80 bytes (see below)
+// Version 1 (accepted, decodes with default globals): the same but with NO globals
+// block — the records start at offset 12.
+// Record: device[64] | channel u8 | kind u8 | number u8 | mode u8 | targetKind u8 |
+//   action u8 | reserved u16 | parameter u32 LE | reserved u32
 //
 // Everything multi-byte is little-endian; reserved bytes are zero on write and must
 // be zero on read (a file from a format we do not know is rejected, not guessed at).
 
-inline constexpr std::uint32_t kMidiMapWireVersion = 1;
+inline constexpr std::uint32_t kMidiMapWireVersion = 2;
 inline constexpr std::size_t kMidiMapWireHeaderBytes = 12;
+inline constexpr std::size_t kMidiMapWireGlobalsBytes = 16;
 inline constexpr std::size_t kMidiBindingWireBytes = 80;
 inline constexpr char kMidiMapWireMagic[4] = {'L', '2', '4', 'M'};
 
+// Total byte count of the current (v2) wire form. v1 files are midi_map_wire_bytes
+// shorter by exactly the globals block.
 inline constexpr std::size_t midi_map_wire_bytes(std::uint32_t count) {
-  return kMidiMapWireHeaderBytes + static_cast<std::size_t>(count) * kMidiBindingWireBytes;
+  return kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes +
+         static_cast<std::size_t>(count) * kMidiBindingWireBytes;
 }
 
 inline void put_u32le(std::uint8_t* p, std::uint32_t v) {
@@ -175,17 +211,23 @@ inline std::uint32_t get_u32le(const std::uint8_t* p) {
          (static_cast<std::uint32_t>(p[2]) << 16u) | (static_cast<std::uint32_t>(p[3]) << 24u);
 }
 
-// Encode the whole map. Returns the byte count, or 0 when the output buffer is too
-// small (nothing is written then: the size check comes first).
-inline std::size_t midi_map_encode(const MidiMap& map, std::uint8_t* out, std::size_t capacity) {
+// Encode the whole map + rig settings (current version). Returns the byte count, or 0
+// when the output buffer is too small (nothing is written then: the size check comes first).
+inline std::size_t midi_map_encode(const MidiMap& map, const MidiRigSettings& settings,
+                                   std::uint8_t* out, std::size_t capacity) {
   const std::size_t need = midi_map_wire_bytes(map.count());
   if (capacity < need) return 0;
   std::memcpy(out, kMidiMapWireMagic, 4);
   put_u32le(out + 4, kMidiMapWireVersion);
   put_u32le(out + 8, map.count());
+  std::memset(out + kMidiMapWireHeaderBytes, 0, kMidiMapWireGlobalsBytes);
+  out[kMidiMapWireHeaderBytes + 0] = settings.channelFilter;
+  out[kMidiMapWireHeaderBytes + 1] = static_cast<std::uint8_t>(settings.octaveShift);
+  out[kMidiMapWireHeaderBytes + 2] = static_cast<std::uint8_t>(settings.velocityCurve);
   for (std::uint32_t i = 0; i < map.count(); ++i) {
     const MidiBinding& b = map.at(i);
-    std::uint8_t* r = out + kMidiMapWireHeaderBytes + static_cast<std::size_t>(i) * kMidiBindingWireBytes;
+    std::uint8_t* r = out + kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes +
+                      static_cast<std::size_t>(i) * kMidiBindingWireBytes;
     std::memset(r, 0, kMidiBindingWireBytes);
     std::memcpy(r, b.key.device, kMidiBindingDeviceCapacity);
     r[64] = b.key.channel;
@@ -199,19 +241,36 @@ inline std::size_t midi_map_encode(const MidiMap& map, std::uint8_t* out, std::s
   return need;
 }
 
-// Decode into `out`, all-or-nothing: returns false and writes NOTHING unless the
-// header, the exact length and every record's fields all validate.
-inline bool midi_map_decode(const std::uint8_t* in, std::size_t n, MidiMap* out) {
-  if (in == nullptr || out == nullptr) return false;
+// Decode into `out`/`settings`, all-or-nothing: returns false and writes NOTHING
+// unless the header, the exact length and every record's fields all validate. A
+// version-1 file (no globals block) decodes with default rig settings.
+inline bool midi_map_decode(const std::uint8_t* in, std::size_t n, MidiMap* out,
+                            MidiRigSettings* settings) {
+  if (in == nullptr || out == nullptr || settings == nullptr) return false;
   if (n < kMidiMapWireHeaderBytes) return false;
   if (std::memcmp(in, kMidiMapWireMagic, 4) != 0) return false;
-  if (get_u32le(in + 4) != kMidiMapWireVersion) return false;
+  const std::uint32_t version = get_u32le(in + 4);
+  if (version < 1 || version > kMidiMapWireVersion) return false;
   const std::uint32_t count = get_u32le(in + 8);
   if (count > kMidiMapCapacity) return false;
-  if (n != midi_map_wire_bytes(count)) return false;  // truncated OR grown
+  const std::size_t globalsBytes = version >= 2 ? kMidiMapWireGlobalsBytes : 0;
+  if (n != kMidiMapWireHeaderBytes + globalsBytes +
+              static_cast<std::size_t>(count) * kMidiBindingWireBytes)
+    return false;  // truncated OR grown
+  MidiRigSettings s{};
+  if (version >= 2) {
+    const std::uint8_t* g = in + kMidiMapWireHeaderBytes;
+    s.channelFilter = g[0];
+    s.octaveShift = static_cast<std::int8_t>(g[1]);
+    s.velocityCurve = static_cast<MidiVelocityCurve>(g[2]);
+    for (std::size_t i = 3; i < kMidiMapWireGlobalsBytes; ++i)
+      if (g[i] != 0) return false;  // reserved
+    if (!midi_rig_settings_valid(s)) return false;
+  }
   MidiBinding parsed[kMidiMapCapacity];
+  const std::size_t recordsAt = kMidiMapWireHeaderBytes + globalsBytes;
   for (std::uint32_t i = 0; i < count; ++i) {
-    const std::uint8_t* r = in + kMidiMapWireHeaderBytes + static_cast<std::size_t>(i) * kMidiBindingWireBytes;
+    const std::uint8_t* r = in + recordsAt + static_cast<std::size_t>(i) * kMidiBindingWireBytes;
     MidiBinding& b = parsed[i];
     b = MidiBinding{};
     std::memcpy(b.key.device, r, kMidiBindingDeviceCapacity);
@@ -230,6 +289,7 @@ inline bool midi_map_decode(const std::uint8_t* in, std::size_t n, MidiMap* out)
     // Duplicate keys in one file collapse to the last one (same rule as bind()).
     if (!out->bind(parsed[i])) return false;
   }
+  *settings = s;
   return true;
 }
 

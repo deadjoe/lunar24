@@ -15,6 +15,8 @@
 
 using namespace lunar24::core;
 
+static const MidiRigSettings kDefaults{};
+
 static MidiBinding ccBinding(const char* dev, std::uint8_t ch, std::uint8_t num, ParameterId p) {
   MidiBinding b{};
   std::snprintf(b.key.device, kMidiBindingDeviceCapacity, "%s", dev);
@@ -105,10 +107,13 @@ int main() {
   {
     MidiMap m;
     std::vector<std::uint8_t> bytes(midi_map_wire_bytes(0));
-    CHECK_EQ(midi_map_encode(m, bytes.data(), bytes.size()), kMidiMapWireHeaderBytes);
+    CHECK_EQ(midi_map_encode(m, kDefaults, bytes.data(), bytes.size()),
+             kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes);
     MidiMap back;
-    CHECK(midi_map_decode(bytes.data(), bytes.size(), &back));
+    MidiRigSettings rig;
+    CHECK(midi_map_decode(bytes.data(), bytes.size(), &back, &rig));
     CHECK_EQ(back.count(), 0u);
+    CHECK_EQ(rig.channelFilter, 0u);
 
     CHECK(m.bind(ccBinding("MPK mini IV", 1, 74, ParameterId::vcf_l_freq)));
     MidiBinding rel = ccBinding("LinnStrument", 0, 22, ParameterId::effector_blend);
@@ -120,9 +125,13 @@ int main() {
     act.action = MidiAction::cartridge_next;
     CHECK(m.bind(act));
 
+    MidiRigSettings custom;
+    custom.channelFilter = 10;
+    custom.octaveShift = -12;
+    custom.velocityCurve = MidiVelocityCurve::hard;
     bytes.assign(midi_map_wire_bytes(m.count()), 0u);
-    CHECK_EQ(midi_map_encode(m, bytes.data(), bytes.size()), bytes.size());
-    CHECK(midi_map_decode(bytes.data(), bytes.size(), &back));
+    CHECK_EQ(midi_map_encode(m, custom, bytes.data(), bytes.size()), bytes.size());
+    CHECK(midi_map_decode(bytes.data(), bytes.size(), &back, &rig));
     CHECK_EQ(back.count(), 3u);
     CHECK(back.at(0).key.equals(keyOf("MPK mini IV", 1, MidiBindingKind::cc, 74)));
     CHECK(back.at(0).parameter == ParameterId::vcf_l_freq);
@@ -130,13 +139,16 @@ int main() {
     CHECK(back.at(2).key.kind == MidiBindingKind::note);
     CHECK(back.at(2).targetKind == MidiTargetKind::action);
     CHECK(back.at(2).action == MidiAction::cartridge_next);
+    CHECK_EQ(rig.channelFilter, 10u);
+    CHECK_EQ(rig.octaveShift, -12);
+    CHECK(rig.velocityCurve == MidiVelocityCurve::hard);
   }
   // Encode: a too-small buffer fails without writing.
   {
     MidiMap m;
     CHECK(m.bind(ccBinding("X", 1, 74, ParameterId::vcf_l_freq)));
     std::vector<std::uint8_t> bytes(4, 0xAB);
-    CHECK_EQ(midi_map_encode(m, bytes.data(), bytes.size()), 0u);
+    CHECK_EQ(midi_map_encode(m, kDefaults, bytes.data(), bytes.size()), 0u);
     CHECK_EQ(bytes[0], 0xAB);  // untouched
   }
   // Decode: malformed files are rejected all-or-nothing.
@@ -144,53 +156,85 @@ int main() {
     MidiMap m;
     CHECK(m.bind(ccBinding("X", 1, 74, ParameterId::vcf_l_freq)));
     std::vector<std::uint8_t> good(midi_map_wire_bytes(m.count()));
-    CHECK_EQ(midi_map_encode(m, good.data(), good.size()), good.size());
+    CHECK_EQ(midi_map_encode(m, kDefaults, good.data(), good.size()), good.size());
     MidiMap out;
-    CHECK(!midi_map_decode(nullptr, good.size(), &out));
-    CHECK(!midi_map_decode(good.data(), 4, &out));           // truncated header
-    CHECK(!midi_map_decode(good.data(), good.size() - 1, &out));  // truncated record
-    CHECK(!midi_map_decode(good.data(), good.size() + 1, &out));  // grown
+    MidiRigSettings rigOut;
+    CHECK(!midi_map_decode(nullptr, good.size(), &out, &rigOut));
+    CHECK(!midi_map_decode(good.data(), 4, &out, &rigOut));           // truncated header
+    CHECK(!midi_map_decode(good.data(), good.size() - 1, &out, &rigOut));  // truncated record
+    CHECK(!midi_map_decode(good.data(), good.size() + 1, &out, &rigOut));  // grown
     auto bad = good;
     bad[0] = 'X';                                            // magic
-    CHECK(!midi_map_decode(bad.data(), bad.size(), &out));
+    CHECK(!midi_map_decode(bad.data(), bad.size(), &out, &rigOut));
     bad = good;
-    put_u32le(bad.data() + 4, 2);                            // version
-    CHECK(!midi_map_decode(bad.data(), bad.size(), &out));
+    put_u32le(bad.data() + 4, 99);                           // unsupported version
+    CHECK(!midi_map_decode(bad.data(), bad.size(), &out, &rigOut));
     bad = good;
     put_u32le(bad.data() + 8, kMidiMapCapacity + 1);         // over-capacity count
-    CHECK(!midi_map_decode(bad.data(), bad.size(), &out));
+    CHECK(!midi_map_decode(bad.data(), bad.size(), &out, &rigOut));
     bad = good;
-    bad[kMidiMapWireHeaderBytes + 64] = 17;                  // channel out of range
-    CHECK(!midi_map_decode(bad.data(), bad.size(), &out));
+    bad[kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes + 64] = 17;  // channel out of range
+    CHECK(!midi_map_decode(bad.data(), bad.size(), &out, &rigOut));
     bad = good;
-    bad[kMidiMapWireHeaderBytes + 70] = 1;                   // reserved byte set
-    CHECK(!midi_map_decode(bad.data(), bad.size(), &out));
+    bad[kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes + 70] = 1;   // reserved byte set
+    CHECK(!midi_map_decode(bad.data(), bad.size(), &out, &rigOut));
     bad = good;
-    std::memset(bad.data() + kMidiMapWireHeaderBytes, 'a', kMidiBindingDeviceCapacity);
-    CHECK(!midi_map_decode(bad.data(), bad.size(), &out));   // unterminated device name
+    std::memset(bad.data() + kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes, 'a',
+                kMidiBindingDeviceCapacity);
+    CHECK(!midi_map_decode(bad.data(), bad.size(), &out, &rigOut));   // unterminated device name
+    bad = good;
+    bad[kMidiMapWireHeaderBytes + 3] = 1;                    // globals reserved byte set
+    CHECK(!midi_map_decode(bad.data(), bad.size(), &out, &rigOut));
+    bad = good;
+    bad[kMidiMapWireHeaderBytes + 0] = 17;                   // channel filter out of range
+    CHECK(!midi_map_decode(bad.data(), bad.size(), &out, &rigOut));
     // A rejected decode writes nothing.
     CHECK_EQ(out.count(), 0u);
   }
-  // Duplicate keys in one file collapse to the LAST record (same rule as bind()).
+  // A version-1 file (no globals block) decodes with default rig settings.
   {
-    // Hand-build a two-record file with the same key twice, different targets.
-    std::vector<std::uint8_t> bytes(midi_map_wire_bytes(2));
+    MidiMap m;
+    CHECK(m.bind(ccBinding("X", 1, 74, ParameterId::vcf_l_freq)));
+    const std::size_t v1Bytes = kMidiMapWireHeaderBytes + kMidiBindingWireBytes;
+    std::vector<std::uint8_t> bytes(v1Bytes);
     std::memcpy(bytes.data(), kMidiMapWireMagic, 4);
-    put_u32le(bytes.data() + 4, kMidiMapWireVersion);
+    put_u32le(bytes.data() + 4, 1);
+    put_u32le(bytes.data() + 8, 1);
+    std::vector<std::uint8_t> rec(midi_map_wire_bytes(1));
+    CHECK_EQ(midi_map_encode(m, kDefaults, rec.data(), rec.size()), rec.size());
+    std::memcpy(bytes.data() + kMidiMapWireHeaderBytes,
+                rec.data() + kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes,
+                kMidiBindingWireBytes);
+    MidiMap out;
+    MidiRigSettings rigOut;
+    CHECK(midi_map_decode(bytes.data(), bytes.size(), &out, &rigOut));
+    CHECK_EQ(out.count(), 1u);
+    CHECK_EQ(rigOut.channelFilter, 0u);
+    CHECK_EQ(rigOut.octaveShift, 0);
+  }
+  // Duplicate keys in one file collapse to the LAST record (same rule as bind()).
+  // Hand-built as a version-1 file, so this also covers the v1 record layout.
+  {
+    std::vector<std::uint8_t> bytes(kMidiMapWireHeaderBytes + 2 * kMidiBindingWireBytes);
+    std::memcpy(bytes.data(), kMidiMapWireMagic, 4);
+    put_u32le(bytes.data() + 4, 1);
     put_u32le(bytes.data() + 8, 2);
     MidiMap one;
     CHECK(one.bind(ccBinding("X", 1, 74, ParameterId::vcf_l_freq)));
     std::vector<std::uint8_t> rec(midi_map_wire_bytes(1));
-    CHECK_EQ(midi_map_encode(one, rec.data(), rec.size()), rec.size());
-    std::memcpy(bytes.data() + kMidiMapWireHeaderBytes, rec.data() + kMidiMapWireHeaderBytes,
+    CHECK_EQ(midi_map_encode(one, kDefaults, rec.data(), rec.size()), rec.size());
+    std::memcpy(bytes.data() + kMidiMapWireHeaderBytes,
+                rec.data() + kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes,
                 kMidiBindingWireBytes);
     MidiMap two;
     CHECK(two.bind(ccBinding("X", 1, 74, ParameterId::vcf_r_freq)));
-    CHECK_EQ(midi_map_encode(two, rec.data(), rec.size()), rec.size());
+    CHECK_EQ(midi_map_encode(two, kDefaults, rec.data(), rec.size()), rec.size());
     std::memcpy(bytes.data() + kMidiMapWireHeaderBytes + kMidiBindingWireBytes,
-                rec.data() + kMidiMapWireHeaderBytes, kMidiBindingWireBytes);
+                rec.data() + kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes,
+                kMidiBindingWireBytes);
     MidiMap out;
-    CHECK(midi_map_decode(bytes.data(), bytes.size(), &out));
+    MidiRigSettings rigOut;
+    CHECK(midi_map_decode(bytes.data(), bytes.size(), &out, &rigOut));
     CHECK_EQ(out.count(), 1u);
     CHECK(out.at(0).parameter == ParameterId::vcf_r_freq);
   }
