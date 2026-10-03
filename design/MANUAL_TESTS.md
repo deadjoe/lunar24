@@ -994,7 +994,7 @@
 - 准备：同 T14.3 A：键盘菜单 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开；电脑键盘同时按下 A、F、H 再松开，琶音循环。
 - 步骤与期望：
   1. ⌘, 打开 Preferences，什么都不改，点 **Cancel**：琶音继续，**没有"轰"一声**。
-  2. 再打开 Preferences，MIDI Input 切成 off，点 **Cancel**：琶音继续，没有"轰"一声。（这时 MIDI 输入实际已经切了，Cancel 只恢复界面里的记录，属 iPlug2 原有行为；再打开 Preferences 把 MIDI Input 选回 MPK Mini IV MIDI Port、点 OK 即可。）
+  2. 再打开 Preferences，MIDI Input 切成 off，点 **Cancel**：琶音继续，没有"轰"一声；MIDI 输入恢复成 MPK Mini IV MIDI Port，在 MPK 上弹能出声（Cancel 真正撤销了 MIDI 的改动）。
   3. 再打开 Preferences，把 Buffer Size 换一个值，点 **OK**：这次会重开音频（可能有一声，琶音停下），这是改了音频设置时的正常行为。测完改回原来的 Buffer Size。
   4. 收尾：关 HOLD，MODE 改回 KEYBOARD。
 

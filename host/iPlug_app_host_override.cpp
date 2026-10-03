@@ -566,6 +566,10 @@ bool IPlugAPPHost::TryToChangeAudioDriverType()
   if (mDAC && mDAC->isStreamRunning() && mState.mAudioDriverType == mActiveState.mAudioDriverType &&
       AudioSettingsInStateAreEqual(mActiveState, mState))
   {
+    // Cancel restored the MIDI choice in mState but not the open ports (a pick in the
+    // dialog applies at once): reopen the restored ones so Cancel really undoes it.
+    SelectMIDIDevice(ERoute::kInput, mState.mMidiInDev.Get());
+    SelectMIDIDevice(ERoute::kOutput, mState.mMidiOutDev.Get());
     AudioLog("preferences: audio driver and settings unchanged, stream kept");
     return true;
   }
