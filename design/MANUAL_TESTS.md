@@ -577,7 +577,7 @@
   - d：那一步变成空拍。
   - e：改由 LFO 推进节奏，不用改菜单。
 
-**T10.2 5-STEP CLK（菜单时钟开关）** ⏳
+**T10.2 5-STEP CLK（菜单时钟开关）** ✅（2026-10-03 Mac 实测：不插 EXT CLOCK 线时切 ext 停走，切回 int 按 pulser 速度恢复）
 - 说明：键盘菜单 SETTINGS 第 3 行最右的 **5-STEP CLK**（int / ext）是 5 步音序器时钟源开关唯一的 UI 入口。插线进 EXT CLOCK 插孔时线缆永远接管（T10.1 e 已测），这个开关只在**没插线**时起作用。
 - 准备：按 T10.1 接好 cv / gate（不接 EXT CLOCK 的线），音序器在走。
 - 步骤：菜单里把 **5-STEP CLK** 切到 **ext**，再切回 **int**。
@@ -910,7 +910,7 @@
 - 同一通道：踩踏板、按下并松开音符，再按住同一个音；松踏板时应仍发声，最后松琴键才释放。
 - 多通道（软件发送器可测）：通道 2 踏板按下不应延长通道 1 音符；通道 2 和 10 同音同时被各自踏板保持时，松通道 2 踏板不能释放通道 10 的音符。
 
-**T14.2 MIDI 输入关闭/切换时音符停止** ⏳（完整独立流程未测；T15.5 的切 off 松音已通过）
+**T14.2 MIDI 输入关闭/切换时音符停止** ✅（2026-10-03 Mac + MPK MINI IV：按住音时切 off 即停，切回后弹奏恢复）
 - 安排：需要 MIDI 键盘（如 MPK mini IV）。
 - 准备：Preferences 里 MIDI Input 选到该键盘；PLAY = SINGLE、MODE = KEYBOARD，BLEND 最左、DRONE VOICES 全关，只听 VCO A。
 - 步骤：
@@ -921,17 +921,19 @@
 
 ### 15. MIDI 设置与绑定
 
-2026-10-03 汇总：macOS + MPK MINI IV，测试使用重设计前的 MIDI 界面，未提供构建 SHA。T15.5 / T15.6 中具备条件的项目通过；不代表未测项或新界面已通过。以下步骤使用新界面的名称；`7e9d803` 的布局、字体、分页和点击范围仍待真机复测。
+2026-10-03 汇总：macOS（MBP M1 Max）+ MPK MINI IV。T15.5 / T15.6 中具备条件的项目先在重设计前的界面上通过；随后用 `2a5991a` 的 CI macOS 构建复测新界面（`7e9d803` + `2a5991a`）：布局、字体、分页和点击范围正常，左侧裁字（#4）和删除图标 x（#5）确认已修复；`2a5991a` 的细节（禁用按钮描边、Learn 状态文字红色、Esc 关闭后悬停高亮清除）真机确认。未测项见各条标注。
 
-**T15.1 MIDI 设置界面** 部分通过（旧界面默认值、CLOSE / Esc 通过；新界面待复测）
+**T15.1 MIDI 设置界面** ✅（2026-10-03 `2a5991a` 新界面实测：CLOSE / Esc、< / > 改值、分页、EXTRA LEARN TARGETS 通过）
 - 步骤：
   1. 点 DRONE VOICES 右边、MUTE 正下方的 **MIDI** 按钮。
   2. 看界面：暖色面板盖住键盘区；顶部 INPUT，左边 CHANNEL / TRANSPOSE / VELOCITY 和 LEARN，右边每页四条绑定（初次显示引导）。
   3. 点 **CLOSE** 关掉；再打开，按 Esc 关掉。
 - 期望：开合正常；INPUT 显示 Preferences 里选的输入设备名（没选提示 Choose an input in Preferences）。
-- 旧界面的左侧裁字、删除图标方框（反馈 #4 / #5）已在重设计中处理，尚未真机确认。缩放窗口后检查标题、设置值、行尾按钮、底部提示不截断或重叠；长设备名应带省略号，字号不被缩小。
+- 旧界面的左侧裁字、删除图标方框（反馈 #4 / #5）已在重设计中修复，2026-10-03 真机确认。缩放窗口后检查标题、设置值、行尾按钮、底部提示不截断或重叠；长设备名应带省略号，字号不被缩小。
 - 只点设置两侧的 < / > 会改变数值，点 CHANNEL 等标签不会误改；TRANSPOSE 的最低值应显示 -36 st。
+- 设置值首尾循环是既定行为：TRANSPOSE 在 -36 st 再点 < 跳到 +36 st；CHANNEL（ANY ↔ 16）、VELOCITY（LINEAR ↔ HARD）同样循环。
 - 建立五条以上绑定后检查分页；Learn 完成后应自动显示刚绑定的行，删除最后一页唯一一行后回到前一页。
+- EXTRA LEARN TARGETS：LEARN 等待选择目标时点 PRESET A，再敲 pad，应出现一行 TRIGGER；不在等待目标时这些按钮为灰色。
 
 **T15.2 Learn 绑定一个旋钮** ✅（旧界面 CC24 → FREQ，绝对拾取无跳变；删除绑定通过）
 - 准备：Preferences 里 MIDI Input 选到你的键盘；只听 VCO A。
@@ -954,7 +956,7 @@
   - 删除后该旋钮不再控制滤波。
   - 打击垫按一下开 drone 1，再按一下关（切换，不是按住才响）。
 
-**T15.4 通道过滤、八度、力度曲线与断电保存** 部分通过（八度、通道过滤、退出重开保存通过；力度曲线听感待按下述接线确认）
+**T15.4 通道过滤、八度、力度曲线与断电保存** ✅（八度、通道过滤、退出重开保存通过；2026-10-03 按下述 PRESSURE → VCO A cv 接线确认力度曲线：同样的轻 / 中 / 重击，HARD 的压力和音高低于 SOFT，反馈 #8 关闭）
 - 步骤：
   1. MIDI 设置里 TRANSPOSE 调到 +12 st（st = 半音），弹几个音。
   2. 按下面的压力接线准备，对比 SOFT / LINEAR / HARD，使用相同的中等 Note On 力度。
@@ -972,7 +974,7 @@
   3. 持续弹奏时，在 Preferences 把 MIDI Input 切成 off。不得残留持续音；切回键盘后正常弹奏。如果有延音踏板，再用踩住踏板的音重复通道切换，抬踏板后应释放。
   4. MIDI Input 已是 off 时，用键盘 MODE = ARPEGGIATOR、ARP HOLD 保持一个正在运行的琶音，再打开 Preferences，保持 off、不改任何设置，直接点 **OK**，不要点 Apply。仅重复选择 off 不应停音或重启琶音；测完关闭 ARP HOLD、恢复 MODE = KEYBOARD。另测 macOS virtual input → off：MIDI 音符应释放，但鼠标保持的琶音不应被清掉；后者本次失败，见 MIDI 待办 #14。
 
-**T15.6 映射数值与动作** 部分通过（分档开关、pad 力度到 BLEND、保存通过；REL、CC 127/0 动作、CC64 防误学未测）
+**T15.6 映射数值与动作** 部分通过（分档开关、pad 力度到 BLEND、保存通过；pad → MUTE 学成 NOTE 40 / CH 10，每按一次切换一次；REL、CC 127/0 动作（MPK pad 发的是音符）、CC64 防误学未测）
 - LEARN 一个硬件旋钮到 VCO A 的 **oct+3** 开关，保持 ABS，来回扫过全程。面板开关和实际音高应一致地按档变化，不得只动图形而声音不变。
 - 若使用相对编码器：绑定到 **BLEND**，设成与硬件编码匹配的 REL 模式；先用鼠标把 BLEND 调到较高位置，再转编码器一格。应从当前位置小幅变化，不能跳回绑定时的旧位置。
 - LEARN 一个打击垫到 **BLEND**：轻击 / 重击应直接给出不同的面板值，不必先扫过旧值。此项检查力度映射，不以音量大小判定。
@@ -982,8 +984,7 @@
 
 ## 还没测的（⏳）
 
-- MIDI：新界面 T15.1；REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板、T14.2 完整输入切换流程，以及运行中物理拔线（与 T14.2 的选 off 不同）。力度曲线按 T15.4 接线复核；pad Aftertouch → PRESSURE / VIB PRESS 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
-- T10.2（5-STEP CLK 菜单开关）。
+- MIDI：REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIB PRESS 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch：声道 3 = DRY A、声道 4 = DRY B。注意 DRY 在 VCA 之后，要按住键或点亮 envelope 的 hold 才有声）。
 - PREAMP 的 ext. source 插孔（不需要额外硬件：把 LFO A 输出插进去，麦克风输入应被取代，ENVELOPE FOLLOWER 的灯改跟 LFO 走；拔线恢复）。
 - 键盘菜单第 3 行其余 11 个校准类设置（ENCODER、CAL V/OCT、CAL PRESS、DAC REF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE）：已核实为存储但无声音/行为效果（部分是纯硬件概念），只需确认改动能保存、重启后还在。

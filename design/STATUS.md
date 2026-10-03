@@ -64,7 +64,7 @@ exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenc
 
 ## Next steps (in order)
 1. PR #89: the available T15.5–T15.6 checks passed on macOS + MPK MINI IV with the old UI;
-   REL, CC-button edges and pedal checks remain untested. The redesigned UI needs native retesting.
+   REL, CC-button edges and pedal checks remain untested. The redesigned UI passed native retesting (2a5991a).
    Fix MIDI MUTE indicator refresh and input-close resetting mouse/computer-keyboard performance
    in focused changes; see MANUAL_TESTS §15 / MIDI 待办 for results and remaining checks.
 2. Complete external MIDI support for the owner's MPK MINI IV: pressure, clock and reliable note
