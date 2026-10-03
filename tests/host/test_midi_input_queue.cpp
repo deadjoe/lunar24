@@ -102,25 +102,25 @@ int main() {
     };
     const core::JackId gate = core::JackId::keyboard_gate_left_main_out;
     const core::JackId vOct = core::JackId::keyboard_v_oct_out;
-    lunar24::host::MidiNoteOwnership notes;
+    lunar24::host::MidiNoteOwnership held;
     lunar24::host::MidiSustain sustain;
     play(1, 1000, 0.0);  // the mouse holds A
     render();
     // MIDI: note 64 held down; note 67 released under the pedal (the pedal keeps it).
-    notes.played(0, 64);
+    held.played(0, 64);
     sustain.noteOn(0, 64);
     play(3, 65, 7.0);
     sustain.pedal(0, true, 3, send);
-    notes.played(0, 67);
+    held.played(0, 67);
     sustain.noteOn(0, 67);
     play(3, 68, 10.0);
-    CHECK(notes.release(0, 67));
+    CHECK(held.release(0, 67));
     CHECK(sustain.deferNoteOff(0, 67));
     render();
     CHECK(engine->runtime()->controlVoltageAt(gate) > 1.0);
     CHECK(std::fabs(engine->runtime()->controlVoltageAt(vOct) * 12.0 - 10.0) < 1e-3);
     int released = 0;
-    lunar24::host::release_midi_notes(notes, sustain, 3, [&](core::PerformanceInput in) {
+    lunar24::host::release_midi_notes(held, sustain, 3, [&](core::PerformanceInput in) {
       CHECK(in.kind == core::PerfInputKind::note_off && in.source == 3);
       ++released;
       send(in);
@@ -129,7 +129,7 @@ int main() {
     render();
     CHECK(engine->runtime()->controlVoltageAt(gate) > 1.0);  // the mouse note still sounds
     CHECK(std::fabs(engine->runtime()->controlVoltageAt(vOct) * 12.0) < 1e-3);  // at A
-    CHECK(!notes.release(0, 64));            // nothing left to release
+    CHECK(!held.release(0, 64));            // nothing left to release
     CHECK(!sustain.deferNoteOff(0, 70));     // the pedal is up again
   }
   return test::finish("test_midi_input_queue");
