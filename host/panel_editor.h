@@ -120,6 +120,7 @@ struct EditorShared {
   std::uint64_t seenStateVersion = ~0ull;
   bool seenReady = false;
   bool seenMuted = false;
+  std::uint16_t seenMidiPlates = 0;  // the plates MIDI was lighting at the last display tick
 
   static constexpr core::NoteId kMouseId = 1000;
   static constexpr core::NoteId kKeyIdBase = 2000;
@@ -134,6 +135,7 @@ struct EditorShared {
     std::function<std::string()> inputDeviceName;
     std::function<std::uint64_t()> messageSeq;        // bumps per incoming note/CC
     std::function<std::uint32_t()> lastMessage;       // packed kind/channel/number
+    std::function<std::uint16_t()> litPlates;         // plates MIDI notes hold down (bit 0 = C)
     std::function<int()> channelFilter;
     std::function<int()> octaveShift;
     std::function<int()> velocityCurve;
@@ -610,7 +612,8 @@ class PlateControl : public IControl {
   PlateControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
-    art::drawPlate(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, s_.lit.count(int(w_.id)) > 0);
+    const bool midiLit = ((s_.seenMidiPlates >> w_.id) & 1u) != 0;  // played on a MIDI keyboard
+    art::drawPlate(sink, mRECT.L, mRECT.T, mRECT.R, mRECT.B, s_.lit.count(int(w_.id)) > 0 || midiLit);
   }
   void OnMouseDown(float, float y, const IMouseMod&) override {
     semi_ = int(w_.id) + 12 * s_.octave;
@@ -1391,6 +1394,10 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
     if (shared.engine.isReady() != shared.seenReady) {  // audio started or stopped
       shared.seenReady = shared.engine.isReady();
       g->SetAllControlsDirty();
+    }
+    if (shared.midi.litPlates && shared.midi.litPlates() != shared.seenMidiPlates) {  // MIDI notes
+      shared.seenMidiPlates = shared.midi.litPlates();
+      for (IControl* p : shared.plates) p->SetDirty(false);
     }
     if (shared.engine.muted() != shared.seenMuted) {  // MUTE toggled, also by a MIDI binding
       shared.seenMuted = shared.engine.muted();

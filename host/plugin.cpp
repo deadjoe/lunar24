@@ -92,6 +92,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     shared->midi.inputDeviceName = [this]() { return midiInputDeviceName_; };
     shared->midi.messageSeq = [this]() { return midiMessageSeq(); };
     shared->midi.lastMessage = [this]() { return midiLastMessage(); };
+    shared->midi.litPlates = [this]() { return midiLitPlates(); };
     shared->midi.channelFilter = [this]() { return midiChannelFilter(); };
     shared->midi.octaveShift = [this]() { return midiOctaveShift(); };
     shared->midi.velocityCurve = [this]() { return midiVelocityCurve(); };
@@ -158,6 +159,7 @@ void LunarHostPlugin::OnReset()
   // note-offs forever).
   sustain_.reset();
   midiNotes_.reset();
+  midiLights_.reset();
   midiQueue_.invalidate();
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
@@ -302,6 +304,7 @@ void LunarHostPlugin::drainMidiInput(int frames)
       if (midiInput_.translate(in, event, 1) == 1 && !engine_.enqueueEventFromAudioThread(event[0], 0))
         released = false;
     });
+    midiLights_.reset();
     engine_.pitchBendFromAudioThread(0.0);  // a bend held on the old input springs back
     if (!released) {
       lunar24::core::ControlEvent event{};
@@ -396,6 +399,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
           return;
         }
         midiNotes_.played(in.channel, note & 127);
+        midiLights_.on(in.channel, note & 127, note + octaveShift);  // light the plate by note name
         sustain_.noteOn(in.channel, note & 127);  // pressed again: no longer held only by the pedal
         in.kind = PerfInputKind::note_on;
         // A3 (MIDI 57) = 0 V = 220 Hz; the rig's octave shift transposes the MIDI input.
@@ -410,6 +414,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       // Learn may have bound this note since it started playing. Release follows
       // the note-on's ownership, never the current map (or current filter).
       if (!midiNotes_.release(in.channel, note & 127)) return;
+      midiLights_.off(in.channel, note & 127);
       if (sustain_.deferNoteOff(in.channel, note & 127))
       {
         return;

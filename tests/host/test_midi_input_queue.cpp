@@ -132,5 +132,30 @@ int main() {
     CHECK(!held.release(0, 64));            // nothing left to release
     CHECK(!sustain.deferNoteOff(0, 70));     // the pedal is up again
   }
+  // Plate lights: by note name across octaves and channels; a release clears the name its
+  // note-on lit even when TRANSPOSE moved in between; reset clears everything.
+  {
+    lunar24::host::MidiPlateLights lights;
+    CHECK_EQ(lights.mask(), 0u);
+    lights.on(0, 60, 60);              // C4 -> C
+    lights.on(9, 40, 40);              // pad E on channel 10 -> E
+    CHECK_EQ(lights.mask(), (1u << 0) | (1u << 4));
+    lights.on(0, 72, 72);              // another C, one octave up
+    lights.off(0, 60);
+    CHECK_EQ(lights.mask(), (1u << 0) | (1u << 4));  // C still held by 72
+    lights.off(0, 72);
+    CHECK_EQ(lights.mask(), 1u << 4);
+    lights.on(0, 61, 61 - 13);         // TRANSPOSE -13 st: C#4 sounds as C3 -> lights C
+    CHECK_EQ(lights.mask(), (1u << 0) | (1u << 4));
+    lights.off(0, 61);                 // released after TRANSPOSE changed: still clears C
+    CHECK_EQ(lights.mask(), 1u << 4);
+    lights.off(5, 50);                 // a note that never lit: no change
+    lights.on(9, 40, 40);              // the same note again without a release: counted once
+    lights.off(9, 40);
+    CHECK_EQ(lights.mask(), 0u);
+    lights.on(3, 69, 69);
+    lights.reset();
+    CHECK_EQ(lights.mask(), 0u);
+  }
   return test::finish("test_midi_input_queue");
 }

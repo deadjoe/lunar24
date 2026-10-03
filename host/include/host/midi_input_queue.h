@@ -79,6 +79,46 @@ class MidiNoteOwnership {
   bool played_[16][128] = {};
 };
 
+// Which keyboard plates MIDI is playing, for the panel: one bit per note name (bit 0 = C ..
+// bit 11 = B), set while at least one MIDI note of that name is held down. Notes are counted
+// per name across octaves and channels; a release clears the name the note-on lit, even if
+// TRANSPOSE changed in between. The audio thread writes, the UI thread reads mask().
+class MidiPlateLights {
+ public:
+  void on(unsigned channel, unsigned note, int semitone) {
+    if (channel >= 16 || note >= 128) return;
+    off(channel, note);  // a repeated note-on replaces the old one
+    const auto name = static_cast<std::uint8_t>(((semitone % 12) + 12) % 12);
+    name_[channel][note] = static_cast<std::uint8_t>(name + 1);
+    ++count_[name];
+    publish();
+  }
+  void off(unsigned channel, unsigned note) {
+    if (channel >= 16 || note >= 128 || name_[channel][note] == 0) return;
+    const unsigned name = name_[channel][note] - 1u;
+    name_[channel][note] = 0;
+    if (count_[name] > 0) --count_[name];
+    publish();
+  }
+  void reset() {
+    for (auto& channel : name_) for (auto& n : channel) n = 0;
+    for (auto& c : count_) c = 0;
+    publish();
+  }
+  std::uint16_t mask() const { return mask_.load(std::memory_order_relaxed); }
+
+ private:
+  void publish() {
+    std::uint16_t m = 0;
+    for (unsigned i = 0; i < 12; ++i)
+      if (count_[i] > 0) m = static_cast<std::uint16_t>(m | (1u << i));
+    mask_.store(m, std::memory_order_relaxed);
+  }
+  std::uint8_t name_[16][128] = {};   // 0 = not lit, else note name + 1
+  std::uint16_t count_[12] = {};
+  std::atomic<std::uint16_t> mask_{0};
+};
+
 // The MIDI input was closed, switched or overflowed: release exactly the notes MIDI is
 // still holding (pressed, or kept by a sustain pedal). Notes played with the mouse or the
 // computer keyboard, and an arpeggio they hold, are left alone. `release` receives a
