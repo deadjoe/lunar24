@@ -990,7 +990,7 @@
   - 期望：**声音立即停**，手还按着也不响。
   3. 把 MIDI Input 切回 MPK Mini IV MIDI Port，MPK 弹奏恢复正常。
 
-**T14.4 MIDI 切换 MUTE 时按钮跟着亮灭** ⏳ (PR-D，修 MIDI 待办 #10)
+**T14.4 MIDI 切换 MUTE 时按钮跟着亮灭** ✅（PR-D，2026-10-03 Mac + MPK MINI IV 通过）
 - 准备：Learn 一个打击垫到 **MUTE**（MIDI CONTROL → + LEARN A CONTROL → 点 MUTE 按钮 → 敲垫子）。
 - 步骤：敲这个垫子几次。
 - 期望：每敲一下声音静音 / 恢复，同时面板上 MUTE 按钮的琥珀色光圈**立即**跟着亮 / 灭（以前要把鼠标移过去才更新）。测完删掉这个绑定。
