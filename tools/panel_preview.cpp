@@ -328,6 +328,7 @@ int main(int argc, char** argv) {
       core::MidiBinding b{};
       std::snprintf(b.key.device,sizeof(b.key.device),"MPK mini IV");
       b.key.channel=1; b.key.number=21; b.parameter=core::ParameterId::vcf_l_freq; map.bind(b);
+      b.key.number=23; b.parameter=core::ParameterId::vco_a_sub_sel; map.bind(b);  // a CC button: TOGGLE
       b.key.number=22; b.parameter=core::ParameterId::effector_blend;
       b.mode=core::MidiInputMode::relativeBinOffset; map.bind(b);
       b.mode=core::MidiInputMode::absolute; b.key.kind=core::MidiBindingKind::note;

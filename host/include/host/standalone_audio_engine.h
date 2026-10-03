@@ -1194,6 +1194,23 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
   const lunar24::core::ParameterDescriptor* d = lunar24::core::find_parameter(b.parameter);
   if (d == nullptr) return;
   const double range = d->max - d->min;
+  const auto drive = lunar24::core::midi_parameter_drive(b);
+  if (drive != lunar24::core::MidiParameterDrive::follow) {
+    // A switch stepped by a press: a pad hit, or a CC button rising past 64.
+    if (b.key.kind == lunar24::core::MidiBindingKind::cc) {
+      const bool wasOn = midiLastRaw_[row] >= 64;
+      midiLastRaw_[row] = rawValue;
+      if (rawValue < 64 || wasOn) return;
+    } else if (rawValue == 0) {
+      return;
+    }
+    const int positions = lunar24::core::midi_parameter_positions(b.parameter);
+    const double cur = midiParameterValue_[static_cast<std::uint32_t>(b.parameter)];
+    const int at = static_cast<int>(std::lround((cur - d->min) / d->step));
+    const int next = (std::clamp(at, 0, positions - 1) + 1) % positions;
+    (void)sendParameterFromAudioThread_(b.parameter, d->min + next * d->step, false, static_cast<int>(row));
+    return;
+  }
   if (b.mode == lunar24::core::MidiInputMode::absolute) {
     // Pickup: the knob engages once the controller sweeps across the current value,
     // so a page/preset change never jumps the parameter.
@@ -1204,9 +1221,12 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
       const int curRaw = static_cast<int>(cur01 * 127.0 + 0.5);
       const int prevRaw = midiLastRaw_[row];
       midiLastRaw_[row] = rawValue;
-      if (prevRaw < 0) return;  // first message: record the approach direction only
-      const bool crossed = (prevRaw - curRaw) == 0 || ((prevRaw - curRaw) > 0) != ((rawValue - curRaw) > 0);
-      if (!crossed) return;
+      // Engage when the controller is at the current value (within one step, also on
+      // the very first message) or has just moved across it; otherwise wait.
+      const int now = rawValue - curRaw;
+      const bool atValue = now >= -1 && now <= 1;
+      const bool crossed = prevRaw >= 0 && ((prevRaw - curRaw) > 0) != (now > 0);
+      if (!atValue && !crossed) return;
       midiPickedUp_[row] = true;
     }
     midiLastRaw_[row] = rawValue;

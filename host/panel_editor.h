@@ -1222,7 +1222,8 @@ class MidiOverlayControl : public IControl {
       bool changed = false;
       if (midi_ui::remove(i).contains(x, y))
         changed = s_.midiStore->unbind(binding.key);
-      else if (midi_ui::mode(i).contains(x, y) && binding.targetKind == core::MidiTargetKind::parameter) {
+      else if (midi_ui::mode(i).contains(x, y) && binding.targetKind == core::MidiTargetKind::parameter &&
+               core::midi_parameter_drive(binding) == core::MidiParameterDrive::follow) {
         auto edited = binding;
         edited.mode = static_cast<core::MidiInputMode>((static_cast<int>(binding.mode) + 1) % 4);
         changed = s_.midiStore->bind(edited);
