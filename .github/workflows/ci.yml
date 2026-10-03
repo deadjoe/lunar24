@@ -93,3 +93,33 @@ jobs:
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure --build-config Release
+
+  # AddressSanitizer + UndefinedBehaviorSanitizer over every test: catches out-of-bounds
+  # access, use-after-free, leaks and undefined behaviour the plain builds let pass.
+  sanitizers:
+    name: ubuntu-latest (ASan + UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3
+
+      - name: Configure (sanitizers)
+        run: >
+          cmake -S . -B build-san -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build-san --parallel
+
+      # ASan keeps every scope's locals apart, so test_machine_runtime (many ~190 KB runtimes
+      # on main's stack) needs more than the default 8 MB stack.
+      - name: Run tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          ulimit -s 65536
+          ctest --test-dir build-san --output-on-failure --parallel 4

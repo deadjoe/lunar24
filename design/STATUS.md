@@ -25,7 +25,7 @@ _Last updated: 2026-10-04._
   engine. `panel_preview > panel.svg` renders it without the app. CI attaches a
   downloadable app to every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: 63 unit/engine tests, about 30 seconds. Manual test steps (by ear, in the app):
+- **Tests**: 63 unit/engine tests, about 30 seconds; CI also runs them under ASan + UBSan. Manual test steps (by ear, in the app):
   `design/MANUAL_TESTS.md`.
 
 ## How to play
