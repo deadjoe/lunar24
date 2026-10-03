@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include <lunar24/core/device_state.h>
+#include <lunar24/core/keyboard_behaviour.h>
 #include <lunar24/core/keyboard_side_bank.h>
 #include <lunar24/core/state_disposition.h>
 #include <lunar24/core/state_validation.h>
@@ -54,6 +55,8 @@ inline bool state_set_param(DeviceStateV1& st, ParameterId id, double value) noe
   // The stored compatibility mirror follows the LEFT/shared pressure selector.
   if (id == ParameterId::keyboard_pressure_output)
     st.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(v);
+  // SCALE loads its note set into the scale editor the quantiser reads.
+  if (id == ParameterId::keyboard_quantise_load_scale) st.keyboardScaleEditor = scale_editor_for_selector(v);
   return true;
 }
 
@@ -67,6 +70,7 @@ inline bool state_set_keyboard_right(DeviceStateV1& st, ParameterId id, double v
   double v = value < d->min ? d->min : (value > d->max ? d->max : value);
   if (d->step > 0.0) v = d->min + std::round((v - d->min) / d->step) * d->step;
   st.keyboardScalarRight[static_cast<std::size_t>(idx)] = v;
+  if (id == ParameterId::keyboard_quantise_load_scale) st.keyboardScaleEditorR = scale_editor_for_selector(v);
   return true;
 }
 

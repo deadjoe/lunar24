@@ -46,6 +46,14 @@ Keep these unless a listening test or a real bug says otherwise.
   changes. The joystick's two LEDs stay dark: the on-screen stick already shows its position.
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
   by ear); a CLOCK jack or MIDI clock takes over until BPM is changed again (manual p.19).
+- **Note quantiser (SCALE / ROOT)**: picking a SCALE loads its notes into the scale editor,
+  the mask the quantiser reads (`scale_editor_for_selector`); keys snap to the nearest scale
+  note (the manual warns several plates may then play the same note), and arp / sequencer
+  output is quantised too. 0 V is A3 on every pitch source, so the quantiser counts from C
+  9 semitones below it. Exactly between two notes it goes down (the manual does not say).
+  SEMITONES and the 8 scales the manual only names (blues, folk, japanese, gamelan, gypsy,
+  arabian, flamenco) pass notes through; the menu marks the latter NOT MODELLED rather than
+  inventing intervals. ROOT shows B where the manual prints the German H.
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet

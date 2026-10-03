@@ -24,6 +24,7 @@
 #include <cstdint>
 
 #include <lunar24/core/device_state.h>
+#include <lunar24/core/keyboard_behaviour.h>
 #include <lunar24/core/keyboard_side_bank.h>
 
 namespace lunar24::core {
@@ -61,6 +62,22 @@ inline void open_untouched_seq_gates(DeviceStateV1& st) {
   for (auto& p : st.keyboardPresets) {
     open_untouched_seq_gates(p.seqSteps);
     open_untouched_seq_gates(p.seqStepsR);
+  }
+}
+
+// States saved before SCALE reached the quantiser hold an empty scale editor next to a
+// chosen SCALE. Nothing else can empty the editor, so load the chosen scale into it.
+inline void load_unloaded_scale_editors(DeviceStateV1& st) {
+  const auto fill = [](std::uint16_t& editor, double selector) {
+    if (editor == kMicrotonalScaleMask) editor = scale_editor_for_selector(selector);
+  };
+  fill(st.keyboardScaleEditor,
+       st.parameters[static_cast<std::size_t>(ParameterId::keyboard_quantise_load_scale)]);
+  const std::int32_t right = keyboard_scalar_index(ParameterId::keyboard_quantise_load_scale);
+  if (right >= 0) fill(st.keyboardScaleEditorR, st.keyboardScalarRight[static_cast<std::size_t>(right)]);
+  for (auto& p : st.keyboardPresets) {
+    fill(p.quantiseScaleEditor, p.quantiseLoadScale);
+    fill(p.quantiseScaleEditorR, p.quantiseLoadScaleR);
   }
 }
 

@@ -97,9 +97,20 @@ inline constexpr std::uint16_t preset_scale_mask(std::uint8_t selector) noexcept
   }
 }
 
+// The note set SCALE (LOAD SCALE) writes into the scale editor, the mask the quantiser
+// reads. SEMITONES (0) writes an empty editor: every pitch source here (plates, computer
+// keys, MIDI, arp, sequencer) plays whole semitones, so "all 12 notes" and "pass through"
+// sound the same, and the factory state keeps its empty editor. The style scales the
+// manual only names (unresolved) also write an empty editor: notes pass through.
+inline std::uint16_t scale_editor_for_selector(double selector) noexcept {
+  if (!(selector >= 1.0) || selector > 18.0) return kMicrotonalScaleMask;
+  const std::uint16_t m = preset_scale_mask(static_cast<std::uint8_t>(std::lround(selector)));
+  return m == kScaleUnresolved || m == kChromaticScaleMask ? kMicrotonalScaleMask : m;
+}
+
 // ROOT NOTE (manual L992-993): "sets the root note of the scale applied by the
-// note quantiser from C to H." norm 0..1 -> semitone 0..11 (C..B). The exact
-// norm->step split is PROVISIONAL (manual gives nominal C..H only, no numeric).
+// note quantiser from C to H." H is the German name of B: norm 0..1 -> semitone 0..11
+// (C..B). The exact norm->step split is PROVISIONAL (manual gives nominal C..H only).
 inline std::uint8_t root_note_semitone(double norm) noexcept {
   if (norm <= 0.0) return 0;
   if (norm >= 1.0) return 11;
@@ -107,28 +118,39 @@ inline std::uint8_t root_note_semitone(double norm) noexcept {
   return static_cast<std::uint8_t>(s < 0 ? 0 : (s > 11 ? 11 : s));
 }
 
+// Every keyboard pitch source puts 0 V on A3 (220 Hz, MIDI 57), while the scale masks
+// count semitones from C: 0 V is 9 semitones above C.
+inline constexpr int kZeroVoltSemitoneAboveC = 9;
+
 // The note quantiser (manual L970-993): snap a pitch CV (1 V/oct = 12 semitones/V)
-// to the nearest in-scale note, rooted at root_semitone. The scale is the
-// scale-editor 12-bit note mask. All-off -> microtonal passthrough. Discrete,
-// stateless, deterministic (per-note decision, design/07 §3 semantics 1).
+// to the nearest in-scale note, rooted at root_semitone (0 = C). The scale is the
+// scale-editor 12-bit note mask. All-off -> microtonal passthrough. Works over the
+// whole pitch range (no octave limit). Exactly between two scale notes it picks the
+// lower one (the manual does not say). Discrete, stateless, deterministic (per-note
+// decision, design/07 §3 semantics 1).
 inline double quantize_pitch(double pitch_cv, std::uint16_t scale_mask,
                              std::uint8_t root_semitone) noexcept {
-  if (scale_mask == kMicrotonalScaleMask) return pitch_cv;
-  const double rel = pitch_cv * 12.0 - static_cast<double>(root_semitone);
-  double best_cand = rel;
-  double best_dist = -1.0;
-  for (int oct = -2; oct <= 2; ++oct) {
+  if ((scale_mask & kChromaticScaleMask) == kMicrotonalScaleMask) return pitch_cv;
+  // Semitones above the root (a C-based pitch class), then search the octave it is in
+  // and both neighbours: the nearest scale note is always among them.
+  const double rel = pitch_cv * 12.0 + kZeroVoltSemitoneAboveC - static_cast<double>(root_semitone);
+  const double base = std::floor(rel / 12.0);
+  double best = rel;
+  double bestDist = -1.0;
+  for (int oct = -1; oct <= 1; ++oct) {
     for (int note = 0; note < 12; ++note) {
       if ((scale_mask & (1u << note)) == 0u) continue;
-      const double cand = static_cast<double>(note) + 12.0 * static_cast<double>(oct);
+      const double cand = static_cast<double>(note) + 12.0 * (base + oct);
       const double d = std::fabs(rel - cand);
-      if (best_dist < 0.0 || d < best_dist) {
-        best_dist = d;
-        best_cand = cand;
+      // Candidates rise, so a tie keeps the lower note. Pitches travel as float32, so a
+      // "tie" is anything within 1/10000 of a semitone.
+      if (bestDist < 0.0 || d < bestDist - 1e-4) {
+        bestDist = d;
+        best = cand;
       }
     }
   }
-  return (static_cast<double>(root_semitone) + best_cand) / 12.0;
+  return (best + static_cast<double>(root_semitone) - kZeroVoltSemitoneAboveC) / 12.0;
 }
 
 // ------------------------------------------------------------ parameter reading -

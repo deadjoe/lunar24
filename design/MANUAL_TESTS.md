@@ -654,9 +654,18 @@
   - HOLD 时松键继续播放。
   - 切回 KEYBOARD 时声音停下，不卡住。
 
-**T12.4 SCALE / ROOT** ✅
-- 步骤：切换 **SCALE**，弹几个键；再改 **ROOT**。
-- 期望：音被"吸"到所选音阶上；ROOT 改变音阶的起始音。
+**T12.4 SCALE / ROOT** ⏳ (PR-B；之前标的 ✅ 不成立：SCALE 从没传到量化器)
+- 准备：RESET PANEL。键盘菜单 PLAY 页确认 PLAY = SINGLE、MODE = KEYBOARD。
+- 步骤与期望（电脑键盘 A W S E D F T G Y H U J K 是 C 到 C 的一个八度：A = C，W = C#，S = D，E = D#，D = E，F = F，T = F#，G = G，Y = G#，H = A，U = A#，J = B，K = 高八度 C）：
+  1. SCALE = SEMITONES（1 / 19）：从 A 到 K 依次弹 13 个键，每个键音高都不同（12 个半音 + 高八度）。
+  2. SCALE 选 **IONIAN**（2 / 19），ROOT 点 **C**：同样依次弹，只听到 C 大调 7 个音（do re mi fa sol la si do）。黑键（W、E、T、Y、U）分别和左边的白键同音（正好在中间时往下靠）。
+  3. ROOT 点 **A**：同样依次弹，听到 A 大调；W（C#）、Y（G#）等现在是自己独立的音。
+  4. SCALE 选 **AEOLIAN**、ROOT = A：听到 A 小调（和 C 大调用同一组白键）。
+  5. SCALE 翻到 BLUES-MAJOR / FOLK / JAPANESE 等：显示 **(NOT MODELLED)**，弹起来和 SEMITONES 一样（手册没给这些音阶的音）。
+  6. SCALE = IONIAN、ROOT = C，MODE 切到 ARPEGGIATOR，按住 A、W、S（C、C#、D）：琶音里 C# 也被吸到 C，只出 C 和 D。
+  7. 用 Z / X 换到最低和最高八度、MIDI 键盘的最低最高音：仍然在音阶上，不会卡在同一个音上。
+  8. PLAY = SPLIT：EDITING RIGHT 时 SCALE 选 WHOLE TONE，左半边（C–F 键）仍按左边的设置，右半边（F#–B 键）按全音音阶。
+  9. 退出重开：SCALE / ROOT 设置还在，效果也还在（含之前版本保存的设置：旧版本里选过的 SCALE 现在会生效）。
 
 **T12.5 16 步音序器（SEQ STEPS 页）** 🔧 (#68)
 - 步骤：

@@ -21,6 +21,7 @@
 #include <host/panel_art.h>
 #include <host/panel_format.h>
 #include <lunar24/core/arp_sequencer.h>
+#include <lunar24/core/keyboard_behaviour.h>
 #include <lunar24/registry.hpp>
 
 namespace lunar24::host::kb_ui {
@@ -481,7 +482,10 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
           char idx[16];
           std::snprintf(idx, sizeof idx, "%d / %d", i + 1, n);
           label({b.r - 120, b.t - 24, b.r, b.t - 4}, 14, kMuted, idx, false, 2);
-          stepper(b, optionText(it.id, i), i > 0, i < n - 1, 19);
+          // The manual only names some scales (no notes): they pass notes through unchanged.
+          const bool modelled = core::preset_scale_mask(std::uint8_t(i)) != core::kScaleUnresolved;
+          stepper(b, modelled ? optionText(it.id, i) : optionText(it.id, i) + " (NOT MODELLED)", i > 0, i < n - 1,
+                  modelled ? 19.f : 16.f);
         } else if (const Count* c = countOf(it.id)) {
           const int k = countValue(it.id, v);
           if (inHeader(it)) label({b.l - 90, b.t, b.l - 10, b.b}, 14, kMuted, it.label, true, 2);

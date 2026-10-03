@@ -250,7 +250,8 @@ static Cfg audible_split_cfg(std::uint32_t variant) {
 // banks are made asymmetric in a CONSUMED SCALAR plus the scale editor it acts on: the left bank
 // is chromatic (0x0FFF, a 0.04 V plate quantises to 0.0 V whatever the root), the right bank is
 // the single-note mask 0x0001 rooted at F (root_note norm 5/11 -> semitone 5, root_note_semitone
-// = lround(norm*11)), so the same 0.04 V plate quantises to 5/12 V. The published pressure jack —
+// = lround(norm*11)), so the same 0.04 V plate (just above A, 0 V) quantises to the nearest F,
+// four semitones below: -4/12 V. The published pressure jack —
 // left pressure in Single, right pitch in Twin/Split — therefore names WHICH bank and WHICH side
 // the consumer read. Both banks get an instant portamento so the pitch settles inside the window.
 static Cfg mode_matrix_cfg(std::uint8_t mode) {
@@ -1005,11 +1006,11 @@ static void c1_four_slots_times_three_modes_reach_the_consumer() {
   // Single: the merged left side publishes vOct = pitchL and pressure_out = pressL on the
   // jack's 0..8 V range (manual p.13), so plate pressure 0.5 reads 4 V.
   // Twin: the right side reads bank 0 (left root C), so pressure_out = pitchR = 0.0.
-  // Split: the right side reads bank 1 (right root F), so pressure_out = pitchR = 5/12 V —
+  // Split: the right side reads bank 1 (right root F), so pressure_out = pitchR = -4/12 V —
   // the three modes are mutually distinct on purpose (no criterion can pass by mode collapse).
   const Expect expect[3] = {{kGateHigh, 0.0, 0.5 * 8.0, 0.0},      // Single
                             {0.0, kGateHigh, 0.0, 0.0},            // Twin
-                            {0.0, kGateHigh, 5.0 / 12.0, 0.0}};    // Split
+                            {0.0, kGateHigh, -4.0 / 12.0, 0.0}};   // Split
   const char* modeName[3] = {"Single", "Twin", "Split"};
   const auto play = [](EngineHarness& e) {
     note(*e.producerRuntime(), core::KeyboardSide::Right, 0.04, 0.5, 2, 0);
@@ -1058,13 +1059,13 @@ static void c1_four_slots_times_three_modes_reach_the_consumer() {
 }
 
 // C2: a recalled QUANTISER SCALE is what the published pitch runs through. A 0.30 V plate is 3.6
-// semitones: the chromatic mask (0x0FFF) rounds it to 4 semitones (4/12 V), the 0x0F0F mask to 3
-// (3/12 V), and the power-on microtonal mask (0x0000) passes 0.30 V through untouched. The three
+// semitones above A (0 V), i.e. 0.6 above C: the chromatic mask (0x0FFF) rounds it to C# (4/12 V),
+// the 0x0F0D mask (no C#) to C (3/12 V), and the power-on microtonal mask (0x0000) passes 0.30 V through untouched. The three
 // values are distinct, so the criterion cannot pass by reading the wrong bank or ignoring the
 // recall.
 static void c2_recalled_scale_drives_the_published_cv() {
   std::printf("C  -- a recalled quantiser scale drives the published V/OCT\n");
-  const Cfg payload = scale_probe_cfg(0x0F0Fu);
+  const Cfg payload = scale_probe_cfg(0x0F0Du);
   EngineHarness h, hCtrl;
   if (!h.load(state_with_slot(payload, 2u)) ||
       !hCtrl.load(core::make_default_device_state(kSeed))) {  // default live: mask 0x0000
@@ -1073,7 +1074,7 @@ static void c2_recalled_scale_drives_the_published_cv() {
   }
   check(h.presetAction(2u, StandaloneAudioEngine::PresetAction::Load) &&
             live_matches(*h.canonicalState(), payload),
-        "C2 the recalled payload installed the 0x0F0F scale mask into the live config");
+        "C2 the recalled payload installed the 0x0F0D scale mask into the live config");
   const auto play = [](EngineHarness& e) {
     note(*e.producerRuntime(), core::KeyboardSide::Left, 0.30, 0.6, 1, 0);
     return e.renderSampled(64, 0.0, [](const core::SynthRuntime&) {});
@@ -1088,7 +1089,7 @@ static void c2_recalled_scale_drives_the_published_cv() {
   // of 0.30 — not a tolerance: an unquantised passthrough returns the sample EXACTLY.
   const double plate03 = static_cast<double>(static_cast<float>(0.30));
   check(near(recalled, 3.0 / 12.0, 1e-9),
-        "C2 the recalled 0x0F0F mask quantises 0.30 V to 3/12 V (the slot's scale is consumed)");
+        "C2 the recalled 0x0F0D mask quantises 0.30 V to 3/12 V (the slot's scale is consumed)");
   check(untouched == plate03,
         "C2 the never-recalled default mask (microtonal) passes 0.30 V through untouched");
   check(!near(recalled, untouched, 1e-6),
