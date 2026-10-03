@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include <host/midi_sustain.h>
+#include <lunar24/core/keyboard_mode.h>
 
 namespace lunar24::host {
 
@@ -77,6 +78,33 @@ class MidiNoteOwnership {
   }
  private:
   bool played_[16][128] = {};
+};
+
+// Which keyboard side (PLAY = TWIN / SPLIT) each MIDI note plays: notes below the split
+// note go left, the rest right. The side is fixed at note-on, so the note-off, a pedal
+// release and poly aftertouch reach the side holding the note even if the split note
+// changed meanwhile. Channel aftertouch follows the channel's latest note. Audio thread.
+class MidiNoteSides {
+ public:
+  core::KeyboardSide noteOn(unsigned channel, unsigned note, int splitNote) {
+    const bool right = static_cast<int>(note) >= splitNote;
+    if (channel < 16 && note < 128) {
+      right_[channel][note] = right;
+      lastRight_[channel] = right;
+    }
+    return right ? core::KeyboardSide::Right : core::KeyboardSide::Left;
+  }
+  core::KeyboardSide of(unsigned channel, unsigned note) const {
+    return channel < 16 && note < 128 && right_[channel][note] ? core::KeyboardSide::Right
+                                                               : core::KeyboardSide::Left;
+  }
+  core::KeyboardSide latest(unsigned channel) const {
+    return channel < 16 && lastRight_[channel] ? core::KeyboardSide::Right : core::KeyboardSide::Left;
+  }
+
+ private:
+  bool right_[16][128] = {};
+  bool lastRight_[16] = {};
 };
 
 // Which keyboard plates MIDI is playing, for the panel: one bit per note name (bit 0 = C ..

@@ -64,15 +64,22 @@ inline constexpr std::uint32_t kMidiMapCapacity = 128;
 // strike and is never curved).
 enum class MidiVelocityCurve : std::uint8_t { linear = 0, soft = 1, hard = 2 };
 
+inline constexpr std::uint8_t kMidiDefaultSplitNote = 60;  // C4
+inline constexpr std::uint8_t kMidiSplitNoteLow = 24, kMidiSplitNoteHigh = 96;  // C1 .. C7
+
 struct MidiRigSettings {
   std::uint8_t channelFilter = 0;  // 0 = any channel, else only 1..16
   std::int8_t octaveShift = 0;     // semitones, -36..+36 (the panel's ±3 octaves)
   MidiVelocityCurve velocityCurve = MidiVelocityCurve::linear;
+  // PLAY = TWIN / SPLIT: incoming notes below this MIDI note play the left side, the rest
+  // the right side (Single merges both sides). 60 = C4, middle C.
+  std::uint8_t splitNote = kMidiDefaultSplitNote;
 };
 
 inline bool midi_rig_settings_valid(const MidiRigSettings& s) {
   return s.channelFilter <= 16 && s.octaveShift >= -36 && s.octaveShift <= 36 &&
-         s.velocityCurve <= MidiVelocityCurve::hard;
+         s.velocityCurve <= MidiVelocityCurve::hard && s.splitNote >= kMidiSplitNoteLow &&
+         s.splitNote <= kMidiSplitNoteHigh;
 }
 
 // Velocity response, input 0..1. soft = easier to reach loud, hard = the opposite.
@@ -177,7 +184,8 @@ class MidiMap {
 //   offset 8:  binding count u32 LE
 //   offset 12: globals block (16 bytes):
 //     channelFilter u8 (0 = any) | octaveShift i8 (semitones) | velocityCurve u8 |
-//     13 reserved zero bytes
+//     splitNote u8 (MIDI note; 0 = the default C4, as written before it existed) |
+//     12 reserved zero bytes
 //   offset 28: count binding records, each 80 bytes (see below)
 // Version 1 (accepted, decodes with default globals): the same but with NO globals
 // block — the records start at offset 12.
@@ -225,6 +233,7 @@ inline std::size_t midi_map_encode(const MidiMap& map, const MidiRigSettings& se
   out[kMidiMapWireHeaderBytes + 0] = settings.channelFilter;
   out[kMidiMapWireHeaderBytes + 1] = static_cast<std::uint8_t>(settings.octaveShift);
   out[kMidiMapWireHeaderBytes + 2] = static_cast<std::uint8_t>(settings.velocityCurve);
+  out[kMidiMapWireHeaderBytes + 3] = settings.splitNote;
   for (std::uint32_t i = 0; i < map.count(); ++i) {
     const MidiBinding& b = map.at(i);
     std::uint8_t* r = out + kMidiMapWireHeaderBytes + kMidiMapWireGlobalsBytes +
@@ -264,7 +273,8 @@ inline bool midi_map_decode(const std::uint8_t* in, std::size_t n, MidiMap* out,
     s.channelFilter = g[0];
     s.octaveShift = static_cast<std::int8_t>(g[1]);
     s.velocityCurve = static_cast<MidiVelocityCurve>(g[2]);
-    for (std::size_t i = 3; i < kMidiMapWireGlobalsBytes; ++i)
+    s.splitNote = g[3] == 0 ? kMidiDefaultSplitNote : g[3];
+    for (std::size_t i = 4; i < kMidiMapWireGlobalsBytes; ++i)
       if (g[i] != 0) return false;  // reserved
     if (!midi_rig_settings_valid(s)) return false;
   }

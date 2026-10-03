@@ -69,6 +69,12 @@ Keep these unless a listening test or a real bug says otherwise.
   complement, REL 2). After a learn, the knob's next values decide: an absolute knob never
   repeats a value except 0 / 127 at an end stop, an encoder turned slowly does; the repeated
   value picks the dialect. Only a binding still on ABS is switched; MODE can override.
+- **MIDI notes under PLAY = TWIN / SPLIT** (owner's choice, 2026-10-04): split by note
+  range, so one controller plays both halves. Notes below the MIDI settings' SPLIT note
+  (default C4, range C1..C7, the key played before TRANSPOSE) go to the left side, the rest
+  to the right. The side is fixed at note-on (`MidiNoteSides`), so a release, a pedal
+  release or poly aftertouch reaches the half that holds the note; channel aftertouch
+  follows the channel's latest note. Single merges both sides as before.
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet

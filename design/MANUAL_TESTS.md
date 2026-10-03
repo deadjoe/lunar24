@@ -1116,6 +1116,29 @@
   5. 收尾：关 HOLD，MODE 改回 KEYBOARD；Preferences 的 MIDI Input 选回 MPK Mini IV MIDI Port。
 - 出问题时看 `~/Library/Application Support/Lunar24/audio.log`：每次播放 / 停止 / 继续后有一行 `midi clock: +N ticks ...; keyboard clock external`（N 是上一行以来收到的时钟数，每拍 24 个）。`+0 ticks` 或 `internal` 就是没跟上外部时钟（2026-10-04 的第一版就是 `+0 ticks`：MIDI 输入把时钟过滤掉了，已修）。
 
+**T15.10 MIDI 键盘在 TWIN / SPLIT 下分左右** ✅（2026-10-04 Mac + MPK MINI IV：除第 6 步踏板外全部通过；没有踏板，第 6 步未测）
+- 准备：同 T12.6（RESET PANEL；DRONE VOICES 全关；VOICE MIXER 只留 VCO A、VCO B；接线 ⊓ **GATE R** → envelope B 的 **gate**，↓ **PRESSURE** → VCO B 的 **1v/oct**）；VCO B 的 **oct+3** 拨到上面。MPK 用测试用户预设，OCT 键回到默认（屏幕不显示八度偏移）。
+- 步骤：
+  1. 打开 MIDI 设置，看左边第四行 **SPLIT**，应显示 **C4**（MPK 中间那个 C）。
+  2. 键盘菜单 **PLAY** 选 TWIN，关掉菜单。在 MPK 上弹 C4 以下的几个音，再弹 C4 和以上的几个音。分辨左右靠听高低：右边走 VCO B，高 3 个八度，很尖；想确认的话，把 VOICE MIXER 的 **VCO A** VOL 拖到最左再弹一遍（只剩右边的音响），拖回后再把 **VCO B** 拖到最左（只剩左边的音响），最后两个都拖回中间。
+  3. 左手按住 C4 以下一个音，右手按住 C4 以上一个音，然后先松开左手。
+  4. MIDI 设置里 SPLIT 点 **>** 两下改成 **D4**，再弹 C4、C#4（现在它们算左半边）。
+  5. 按住 E4 不放，把 SPLIT 点 **>** 改到 F4（E4 现在应属于左边），再松开 E4。
+  6. 踩住延音踏板（若有），按住再松开一个 D4 以上的音，再松开踏板。
+  7. PLAY 改成 SPLIT，按 T12.7 第 2 步把右半边 MODE 改成 ARPEGGIATOR；左手弹 SPLIT 以下的音，右手同时按住两个 SPLIT 以上的音。
+  8. PLAY 改回 SINGLE，再在 SPLIT 两侧各弹一下。
+  9. 退出 Lunar 24 再打开，看 MIDI 设置的 SPLIT。
+- 期望：
+  - 第 2 步：C4 以下的音是低音（VCO A，左半边），C4 和以上是高 3 个八度的尖音（VCO B，右半边）。只开 VCO B 时 C4 以下不响；只开 VCO A 时 C4 及以上不响。
+  - 第 3 步：两个音同时响；松开左手后右手的音继续响。
+  - 第 4 步：C4、C#4 变成左边的低音；D4 起是右边的高音。
+  - 第 5 步：松开 E4 时那个高音正常停掉，不会卡住（音按下时属于哪边，松开就还归哪边）。
+  - 第 6 步：松开踏板时那个音停掉，不卡音。
+  - 第 7 步：左边是普通键盘的低音，右边两个音按节奏轮流响（琶音）。
+  - 第 8 步：两边都只走 VCO A（12 个键是一个键盘），和以前一样。
+  - 第 9 步：SPLIT 还是刚才改的值（存在 MIDI 绑定文件里，不随音色设置）。
+- 收尾：SPLIT 改回 C4，PLAY 改回 SINGLE，oct+3 拨回 low，拔掉两根线。
+
 ## 还没测的（⏳）
 
 - MIDI：CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
@@ -1158,11 +1181,12 @@
 - S&H 默认太慢、跳动幅度太大。（默认约 6 秒采一次；输出 ±5 V，接 cv 后音高最多 ±5 个八度）
 - 所有 drone 一起响时混音太满。（混音器是裸加和、无归一化，靠效果器末尾 tanh 软限幅兜底）
 - 光敏传感器可以改成用鼠标操作。（目前纯装饰，无交互）
+- VCO B 拨到 oct+3 后在 MPK 中间 C 以上（约 E4）听起来有点颤、发粗（2026-10-04 T15.10 中发现；同一个键换 SPLIT 前后一样，与 MIDI 分区无关）。待调音色时听一下是否为高音区混叠。
 - VCO A → VCO B 的默认调制偏温和。（1:1 直通路由：±1 V 源进 ±5 V 输入，只用约 20% 量程）
 
 ### 键盘待办
 
-- MIDI 键盘的音符都算左半边；TWIN / SPLIT 下如何分左右（按通道或按音区）还没定。（2026-10-02 核实：MIDI 输入从不设 side，默认 Left；延音踏板延迟释放的 note_off 同样算左半边，修的时候要一起改。）
+- MIDI 键盘在 TWIN / SPLIT 下按音区分左右（2026-10-04 owner 选定）：MIDI 设置的 **SPLIT** 音以下进左半边，以上进右半边，见 T15.10。
 
 ### 音频设备备注
 

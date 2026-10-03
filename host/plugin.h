@@ -101,7 +101,8 @@ public:
   int midiChannelFilter() const { return midiChannelFilter_.load(std::memory_order_relaxed); }
   int midiOctaveShift() const { return midiOctaveShift_.load(std::memory_order_relaxed); }
   int midiVelocityCurve() const { return midiVelocityCurve_.load(std::memory_order_relaxed); }
-  void setMidiRigSettings(int channelFilter, int octaveShift, int curve);
+  int midiSplitNote() const { return midiSplitNote_.load(std::memory_order_relaxed); }
+  void setMidiRigSettings(int channelFilter, int octaveShift, int curve, int splitNote);
   // The plugin's binding store (the MIDI settings overlay edits it through this).
   lunar24::host::MidiMapStore& midiStore() { return midiMapStore_; }
   // Republish the current map (after the overlay edits it).
@@ -124,6 +125,7 @@ private:
   std::atomic<int> midiChannelFilter_{0};     // 0 = any, else 1..16
   std::atomic<int> midiOctaveShift_{0};       // semitones, -36..+36
   std::atomic<int> midiVelocityCurve_{0};     // core::MidiVelocityCurve
+  std::atomic<int> midiSplitNote_{lunar24::core::kMidiDefaultSplitNote};  // TWIN / SPLIT: right from here
   std::atomic<std::uint32_t> midiLastMessage_{0};
   std::atomic<std::uint64_t> midiMessageSeq_{0};
 
@@ -158,6 +160,7 @@ private:
   lunar24::core::InputStateMachine midiInput_{kMidiCc, 5};
   // Pitch bend range (the common default), sustain pedal state and MIDI clock tick count.
   static constexpr double kPitchBendSemitones = 2.0;
+  lunar24::host::MidiNoteSides midiSides_;  // audio thread: TWIN / SPLIT side of each note
   lunar24::host::MidiSustain sustain_;
   lunar24::host::MidiClockFollower midiClock_;  // audio thread: MIDI clock / START
   // MIDI transport diagnostics for audio.log (audio thread counts, OnIdle logs).

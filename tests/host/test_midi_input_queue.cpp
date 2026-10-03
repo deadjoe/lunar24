@@ -157,5 +157,20 @@ int main() {
     lights.reset();
     CHECK_EQ(lights.mask(), 0u);
   }
+  // MidiNoteSides: below the split note is left, from it up right; fixed at note-on.
+  {
+    lunar24::host::MidiNoteSides sides;
+    using lunar24::core::KeyboardSide;
+    CHECK(sides.noteOn(0, 59, 60) == KeyboardSide::Left);
+    CHECK(sides.noteOn(0, 60, 60) == KeyboardSide::Right);
+    CHECK(sides.latest(0) == KeyboardSide::Right);
+    // The split moves while both are held: their releases keep the note-on sides.
+    CHECK(sides.of(0, 59) == KeyboardSide::Left);
+    CHECK(sides.of(0, 60) == KeyboardSide::Right);
+    CHECK(sides.noteOn(1, 60, 72) == KeyboardSide::Left);  // per channel
+    CHECK(sides.of(0, 60) == KeyboardSide::Right);
+    CHECK(sides.latest(1) == KeyboardSide::Left);
+    CHECK(sides.of(16, 0) == KeyboardSide::Left);  // out of range: the default side
+  }
   return test::finish("test_midi_input_queue");
 }
