@@ -1141,7 +1141,9 @@ bool IPlugAPPHost::InitMidi()
   }
 
   mMidiIn->setCallback(&MIDICallback, this);
-  mMidiIn->ignoreTypes(false, true, false );
+  // Lunar 24: let MIDI clock (0xF8) through; RtMidi drops timing messages by default and the
+  // keyboard arpeggiator / sequencer follows a DAW's clock (midi_timing.h).
+  mMidiIn->ignoreTypes(false, false, false );
 
   return true;
 }
@@ -1275,6 +1277,12 @@ void IPlugAPPHost::ErrorCallback(RtAudioErrorType type, const std::string &error
   // Lunar 24: the device went away or reconfigured and the stream was closed: reopen (UI thread).
   if (type == RTAUDIO_DEVICE_DISCONNECT)
     sReopen = true;
+}
+
+// Lunar 24: one line in audio.log from the plugin (UI thread).
+extern "C" void lunar_host_log(const char* line)
+{
+  AudioLog("%s", line);
 }
 
 // Lunar 24: called from the plugin's OnIdle (UI thread): reopen the audio stream when it died or

@@ -46,6 +46,8 @@ Keep these unless a listening test or a real bug says otherwise.
   changes. The joystick's two LEDs stay dark: the on-screen stick already shows its position.
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
   by ear); a CLOCK jack or MIDI clock takes over until BPM is changed again (manual p.19).
+  MIDI START restarts the arpeggio / sequence from its first step like the RESET jack;
+  STOP / CONTINUE do nothing extra. Transport never stops held notes (`MidiClockFollower`).
 - **Note quantiser (SCALE / ROOT)**: picking a SCALE loads its notes into the scale editor,
   the mask the quantiser reads (`scale_editor_for_selector`); keys snap to the nearest scale
   note (the manual warns several plates may then play the same note), and arp / sequencer

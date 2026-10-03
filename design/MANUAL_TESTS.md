@@ -1093,6 +1093,22 @@
   6. 按住 MPK 的一个键时，把 Preferences 的 MIDI Input 切成 off：声音停，板也灭。切回 MPK Mini IV MIDI Port。
   7. 鼠标 / 电脑键盘弹奏照常点亮触摸板，和 MIDI 同时弹也互不影响。
 
+**T15.9 MIDI 时钟：START 从头开始，不再停掉所有音** ✅ (2026-10-04：Ableton 播放时琶音跟随外部速度，停止时停住)
+- 需要一个能**发出 MIDI 时钟**的软件（这里用 Ableton Live）。MPK 手册只写了它能接收时钟，没写能发送。
+- 准备（一次性，macOS 自带的虚拟 MIDI 线 IAC）：
+  1. 打开「音频 MIDI 设置」（应用程序 → 实用工具），菜单 窗口 → 显示 MIDI 工作室，双击 **IAC 驱动程序**，勾选 **设备在线**，点 应用。
+  2. Ableton Live → Settings（⌘,）→ **Link, Tempo & MIDI**：MIDI Ports 的 **Output: IAC 驱动程序 (总线 1)** 那一行，只打开 **Sync**（Track、Remote 保持关闭，免得 Ableton 的音符也传过来）。
+  3. Ableton 顶部速度改成 **80**（和 Lunar 默认的 120 分得开，好听出是谁在控制速度）。
+  4. Lunar 24 → Preferences → MIDI Input 选 **IAC 驱动程序 总线 1**（名字可能是英文 IAC Driver Bus 1），点 OK。这时 MPK 不在输入里，用电脑键盘弹。
+  5. 键盘菜单 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开；电脑键盘同时按下 A、F、H 再松开。
+- 步骤与期望：
+  1. 时钟源不播放时：琶音按 Lunar 自己的 TEMPO 循环。
+  2. Ableton 里按两下停止键（回到开头），再按播放：琶音改跟随 Ableton 的 80 BPM（变慢），**从和弦的第一个音开始**，琶音不会停、电脑键盘按的音也不会丢（以前一按播放所有音都停）。
+  3. Ableton 按停止：琶音停在原地不再前进（最后一个音在半个节拍后收掉）；按两下停止再播放，又从第一个音开始。
+  4. 改一下 Lunar 的 TEMPO：回到 Lunar 自己的时钟。
+  5. 收尾：关 HOLD，MODE 改回 KEYBOARD；Preferences 的 MIDI Input 选回 MPK Mini IV MIDI Port。
+- 出问题时看 `~/Library/Application Support/Lunar24/audio.log`：每次播放 / 停止 / 继续后有一行 `midi clock: +N ticks ...; keyboard clock external`（N 是上一行以来收到的时钟数，每拍 24 个）。`+0 ticks` 或 `internal` 就是没跟上外部时钟（2026-10-04 的第一版就是 `+0 ticks`：MIDI 输入把时钟过滤掉了，已修）。
+
 ## 还没测的（⏳）
 
 - MIDI：REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。

@@ -2478,6 +2478,17 @@ class SynthRuntime {
     applyKeyboardState(kbdState_);
   }
 
+  // MIDI START (and anything else that means "from the top"): every arpeggiator /
+  // sequencer goes back to its first step, as on the RESET jack. Held notes stay.
+  // Diagnostics for the host log: is the keyboard following an external / MIDI clock, and
+  // how many TEMPO edits took it back to the internal one. Audio thread.
+  bool keyboardFollowsExternalClock() const { return kbdExtClock_; }
+  std::uint32_t keyboardTempoEdits() const { return kbdTempoEdits_; }
+
+  void restartKeyboardPattern() {
+    for (auto& arp : keyboardArpSeq_) arp.restartPattern();
+  }
+
   // A keyboard menu setting from the UI, applied at once (in order with the right-side,
   // sequencer-step and preset commands around it). False for a non-keyboard parameter.
   bool setKeyboardParameter(ParameterId id, double v) { return applyKeyboardParam_(id, v); }
@@ -2518,7 +2529,10 @@ class SynthRuntime {
       kbdState_.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(v);
     if (id == ParameterId::keyboard_quantise_load_scale)
       kbdState_.keyboardScaleEditor = scale_editor_for_selector(v);
-    if (id == ParameterId::keyboard_clock_bpm) kbdExtClock_ = false;
+    if (id == ParameterId::keyboard_clock_bpm) {
+      kbdExtClock_ = false;
+      ++kbdTempoEdits_;
+    }
     applyKeyboardState(kbdState_);
     return true;
   }
@@ -4275,6 +4289,7 @@ class SynthRuntime {
   DeviceStateV1 kbdState_{};     // keyboard settings copy (live menu edits)
   double kbdClockPhase_ = 0.0;   // internal keyboard clock, 0..1 per step
   bool kbdExtClock_ = false;     // following the CLOCK jack instead of the BPM
+  std::uint32_t kbdTempoEdits_ = 0;  // diagnostics: TEMPO edits (each one returns to the BPM)
   bool kbdExtHigh_ = false;      // CLOCK jack level (with hysteresis)
   bool kbdResetHigh_ = false;    // RESET jack level
   std::uint64_t kbdSampleCount_ = 0;   // samples since start (clock-event timing)

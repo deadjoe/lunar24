@@ -20,6 +20,7 @@
 #include <host/app_state_store.h>
 #include <host/midi_map_store.h>
 #include <host/midi_sustain.h>
+#include <host/midi_timing.h>
 #include <host/standalone_audio_engine.h>
 #include <lunar24/core/input_state_machine.h>
 
@@ -74,6 +75,7 @@ public:
   // UI thread, every ~20 ms: autosave at most every 30 s, and only after an edit, so a crash
   // or power cut loses at most the last half minute.
   void OnIdle() override;
+  void logMidiClock_();  // UI thread: the audio.log MIDI clock diagnostics line
 
   // UI thread: put the whole machine back to its power-on default (every knob, switch, cable,
   // keyboard setting and sequence). Done at the next stopped-stream boundary: the audio stream
@@ -157,7 +159,13 @@ private:
   // Pitch bend range (the common default), sustain pedal state and MIDI clock tick count.
   static constexpr double kPitchBendSemitones = 2.0;
   lunar24::host::MidiSustain sustain_;
-  std::uint32_t midiClockTicks_ = 0;
+  lunar24::host::MidiClockFollower midiClock_;  // audio thread: MIDI clock / START
+  // MIDI transport diagnostics for audio.log (audio thread counts, OnIdle logs).
+  std::atomic<std::uint32_t> midiClockTicksIn_{0}, midiStartsIn_{0}, midiContinuesIn_{0}, midiStopsIn_{0};
+  std::uint32_t loggedClock_[4] = {};
+  bool loggedExtClock_ = false;
+  std::uint32_t loggedTempoEdits_ = 0;
+  std::chrono::steady_clock::time_point lastClockLog_{};
   std::uint64_t savedEditCount_ = 0;
   std::chrono::steady_clock::time_point lastAutosave_ = std::chrono::steady_clock::now();
   std::uint64_t midiSeq_ = 0;
