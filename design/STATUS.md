@@ -69,7 +69,7 @@ exact note patterns of the Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenc
    in focused changes; see MANUAL_TESTS §15 / MIDI 待办 for results and remaining checks.
 2. Complete external MIDI support for the owner's MPK MINI IV: pressure, clock and reliable note
    handling; decide SINGLE / TWIN / SPLIT routing, then test with the actual controller.
-3. Continue the remaining manual checks alongside MIDI work: 5-STEP CLK, device DRY outputs,
+3. Continue the remaining manual checks alongside MIDI work: device DRY outputs,
    PREAMP input override/unplug, and saved calibration settings. Untested does not mean broken;
    finishing every manual check is not a prerequisite for MIDI work. Windows device tests remain pending.
 4. After that foundation, tune sounds from listening feedback: drone level, modulation depth,
