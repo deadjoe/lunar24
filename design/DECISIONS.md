@@ -80,6 +80,12 @@ Keep these unless a listening test or a real bug says otherwise.
   sounding and then closes them, so opening the app, RESET PANEL and every audio reopen
   play a short drone swell that fades over the voices' RLS (2-5 s). The owner likes it
   as a start-up sound; keep it.
+- **Cable edits are real-time safe** (2026-10-04): compiling the patch plan allocates, so a
+  live cable edit is compiled on the UI thread against its own copy of the patch
+  (`SynthRuntime::planGraph`), sent with the edit, and swapped in by the audio thread
+  (`installGraphPlan`); the replaced plan goes back to the UI thread to be freed. The
+  audio callback that applies an edit does no heap work (`test_live_cable_rt`). If a plan
+  ever does not match the live patch, the audio thread falls back to a full rebuild.
 - **REC lives in the headphone corner** (owner's choice, 2026-10-04): software has no
   headphone output, so the socket's place is the REC button and the PHONE knob's place a
   WET / DRY / ALL selector (PHONE keeps its stored value, without a control). The engine

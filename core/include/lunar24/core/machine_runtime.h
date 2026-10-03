@@ -40,9 +40,10 @@
 // explicit binding table. The drone CLASSIC/NEW split is design/01 §3-CONFIRMED.
 //
 // RT CONTRACT (criterion ⑤): processFrame()/processBlock() allocate nothing, take
-// no lock, touch no file/log. All state is preallocated; the plan is built by
-// rebuild() OFF the audio thread and the audio path only reads the derived
-// chainExecOrder_/feedback_ tables.
+// no lock, touch no file/log. All state is preallocated. The patch plan is compiled
+// off the audio thread (rebuild() at setup, planGraph() for live cable edits) and the
+// audio thread only swaps a finished plan in (installGraphPlan()) and reads the derived
+// execution slots / feedback lines.
 //
 // DETERMINISM (criterion ④): no randomness in the audio path. The per-frame DSP
 // makes any block partition reproduce the same sequence.
@@ -2011,6 +2012,9 @@ class SynthRuntime {
 
   // Patch-graph mutation (criterion ②). Each mutation marks the plan stale; the
   // NEXT Process* rebuilds it.
+  // The live patch (cables + normalled routes), for a UI-side copy to plan cable edits on.
+  // Read it only while the audio thread is stopped.
+  const PatchGraph& patchGraph() const { return patch_; }
   bool connect(JackId source, JackId sink) {
     if (patch_.connect(source, sink)) { graphDirty_ = true; return true; }
     return false;
@@ -2052,29 +2056,67 @@ class SynthRuntime {
     missing_execution_binding,   // strict: a compiled-region module has NO ExecutionKind binding
   };
 
-  // Off-audio-thread build: recompute the effective edges and recompile the
-  // control graph (criterion ① — the product path that consumes compile_graph).
-  // The fixed internal routes are passed in and merged into the SAME plan. Returns
-  // false if the graph is rejected (cycle_unsafe_module / invalid_module_contract)
-  // or exceeds a fixed capacity. GH#13: an over-capacity COMPILED feedback plan is
-  // rejected here, BEFORE any graph_ / graphValid_ / runtime-line publishing, so it
-  // is never silently truncated to kMaxFeedback; lastRebuildStatus() gives the
-  // exact reason. Must not run on the audio thread.
+  // A compiled plan for one patch. Compiling allocates, so live cable edits build the
+  // plan away from the audio thread (planGraph, on the UI thread) and the audio thread
+  // only installs it (installGraphPlan), which swaps it in without allocating.
+  struct GraphPlan {
+    PatchEdge edges[kMaxEdges];
+    std::uint32_t edgeCount = 0;
+    CompileResult result;
+  };
+
+  // Recompute the effective edges and recompile the control graph in place. Allocates:
+  // call it at setup or at a stopped-stream boundary, never from the audio thread (live
+  // cable edits use planGraph + installGraphPlan). The fixed internal routes are merged
+  // into the same plan. Returns false if the graph is rejected (cycle_unsafe_module /
+  // invalid_module_contract) or exceeds a fixed capacity; an over-capacity feedback plan
+  // is rejected before anything is published, never truncated to kMaxFeedback.
+  // lastRebuildStatus() gives the exact reason.
   bool rebuild() {
     if (!graphDirty_ && graphValid_) { rebuildStatus_ = RebuildStatus::graph_unchanged; return true; }
     edgeCount_ = patch_.effectiveEdges(edges_, kMaxEdges);
+    CompileResult r;
+    if (edgeCount_ < kMaxEdges)
+      r = compile_graph(jacks_, jackCount_, edges_, edgeCount_, modules_, moduleCount_, fixedEdges_,
+                        fixedEdgeCount_, alwaysExecIds_, alwaysExecCount_);
+    return commitCompiled_(r);
+  }
+
+  // Compile the plan `patch` would give, on any thread while the audio thread runs: it
+  // reads only the jack / module / route tables, which are fixed once the runtime is set up.
+  void planGraph(const PatchGraph& patch, GraphPlan& plan) const {
+    plan.edgeCount = patch.effectiveEdges(plan.edges, kMaxEdges);
+    plan.result = CompileResult{};
+    if (plan.edgeCount < kMaxEdges)
+      plan.result = compile_graph(jacks_, jackCount_, plan.edges, plan.edgeCount, modules_, moduleCount_,
+                                  fixedEdges_, fixedEdgeCount_, alwaysExecIds_, alwaysExecCount_);
+  }
+
+  // Audio thread: install a plan that planGraph built for the CURRENT patch, without
+  // allocating or freeing: the plan's graph is swapped in and `plan` takes the old one,
+  // for its owner to free elsewhere. Whether the plan was accepted shows in
+  // lastRebuildStatus(), as for rebuild(). Returns false, changing nothing, only when the
+  // plan was built for a different patch; the caller then needs a rebuild() or a new plan.
+  bool installGraphPlan(GraphPlan& plan) {
+    PatchEdge now[kMaxEdges];
+    const std::uint32_t n = patch_.effectiveEdges(now, kMaxEdges);
+    if (n != plan.edgeCount) return false;
+    for (std::uint32_t i = 0; i < n && i < kMaxEdges; ++i)
+      if (now[i].source != plan.edges[i].source || now[i].sink != plan.edges[i].sink) return false;
+    for (std::uint32_t i = 0; i < n && i < kMaxEdges; ++i) edges_[i] = now[i];
+    edgeCount_ = n;
+    (void)commitCompiled_(plan.result);
+    return true;
+  }
+
+  // Validate a compiled plan against the runtime's capacities and bindings, then publish
+  // it (swap, no copy: `r` keeps the previous plan). Allocation-free.
+  bool commitCompiled_(CompileResult& r) {
     if (edgeCount_ >= kMaxEdges) {
       graphValid_ = false;
       rebuildStatus_ = RebuildStatus::edge_capacity;
       return false;
     }
-    // Always-execute sources are admitted INSIDE compile_graph (same plan) so an unwired
-    // control source is still compiled into an isolated executable region — never a
-    // plan-external pre-append (GH#11). When none are registered (legacy fixtures), the
-    // counts are 0 and the plan is unchanged.
-    CompileResult r = compile_graph(jacks_, jackCount_, edges_, edgeCount_,
-                                    modules_, moduleCount_, fixedEdges_, fixedEdgeCount_,
-                                    alwaysExecIds_, alwaysExecCount_);
     if (r.status != CompileStatus::ok) {
       graphValid_ = false;
       rebuildStatus_ = r.status == CompileStatus::cycle_unsafe_module
@@ -2118,7 +2160,7 @@ class SynthRuntime {
       rebuildStatus_ = RebuildStatus::edge_capacity;  // plan exceeds the fixed slot array.
       return false;
     }
-    graph_ = r.graph;
+    std::swap(graph_, r.graph);  // r keeps the old plan; its owner frees it
     graphValid_ = true;
     graphDirty_ = false;
     rebuildStatus_ = RebuildStatus::ok;
@@ -2128,7 +2170,8 @@ class SynthRuntime {
       // NEW graph_ alongside PARTIAL exec slots / legacy chain order / feedback lines. A
       // failed chain rebuild must read as fully invalid (graph cleared, no slots, no
       // legacy order, no feedback), so a subsequent rebuild() starts from a clean slate.
-      graph_ = CompiledGraph{};
+      graph_.regions.clear();  // keeps its storage: no free on the audio thread
+      graph_.moduleCount = 0;
       graphValid_ = false;
       graphDirty_ = false;
       execSlotCount_ = 0;
@@ -3317,7 +3360,7 @@ class SynthRuntime {
   }
 
   // Derive the RT-safe per-module execution slots + delay lines from the compiled
-  // plan. Called only from rebuild() (off the audio thread); the audio path only reads.
+  // plan (allocation-free: fixed arrays). Called when a plan is published.
   // The slots are ONE per compiled ModuleId in the plan order (@Codex 7C2: no ExecutionKind
   // dedup — the six drones are six independently-wireable modules, so each gets its own
   // slot and step_ dispatches by id). chainExecOrder_ (the legacy FixedChainRole inspector
@@ -4170,7 +4213,7 @@ class SynthRuntime {
   FixedRoleBinding roleBindings_[kMaxFixedModules] = {};
   std::uint32_t roleBindingCount_ = 0;
 
-  // Derived (rebuild_, off audio thread): the per-module execution slots — exactly one
+  // Derived when a plan is published (rebuild / installGraphPlan): the per-module execution slots — exactly one
   // slot per compiled ModuleId, in the compiled plan (region topo) order, NO ExecutionKind
   // dedup — plus the legacy FixedChainRole inspector array and the break-edge delay
   // lines. Audio path reads these only.
