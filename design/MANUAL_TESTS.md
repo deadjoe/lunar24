@@ -654,7 +654,7 @@
   - HOLD 时松键继续播放。
   - 切回 KEYBOARD 时声音停下，不卡住。
 
-**T12.4 SCALE / ROOT** 部分通过（PR-B，2026-10-03 Mac：第 1–7、9 步通过；第 8 步原写法漏了 SPLIT 右半边的接线，待按新写法复测。之前标的 ✅ 不成立：SCALE 从没传到量化器）
+**T12.4 SCALE / ROOT** ✅（PR-B，2026-10-03 Mac 实测 1–9 步全部通过；第 8 步按补上接线的新写法复测通过）
 - 界面位置：点键盘区中间的红色大旋钮打开 KEYBOARD MENU，顶部第一个页签 **PLAY**。PLAY 页有三张卡片：
   - 左边 **KEYBOARD** 卡：上面一行 **PLAY**（SINGLE / TWIN / SPLIT），下面一行 **MODE**（KEYBOARD / ARPEGGIATOR / SEQUENCER）。
   - 中间 **QUANTISER** 卡：上面是 **SCALE**，一条 `<  音阶名  >`，右上角小字 `n / 19`；点 `>` 下一个、`<` 上一个。下面是 **ROOT**，一个只有一个八度的小钢琴（C 到 B），点哪个琴键就选哪个，选中的变蓝，右上角显示字母。
