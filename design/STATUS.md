@@ -67,8 +67,8 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. Last small fix from the PR #80–#90 review: MIDI notes light the keyboard plates by note
-   name; bound pads do not (this PR, T15.8).
+1. The PR #80–#90 review fixes are done (PRs #91–#95: cable layer, SCALE / ROOT, pad and
+   button bindings, MIDI input close, Preferences OK / Cancel, MIDI plate lights).
 2. External MIDI for the MPK MINI IV: REL, CC-button and pedal checks, clock (MIDI START
    currently also sends all-notes-off), SINGLE / TWIN / SPLIT routing.
 3. Remaining manual checks alongside: device DRY outputs, PREAMP override, Windows.

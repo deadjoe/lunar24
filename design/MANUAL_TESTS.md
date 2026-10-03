@@ -990,7 +990,7 @@
   - 期望：**声音立即停**，手还按着也不响。
   3. 把 MIDI Input 切回 MPK Mini IV MIDI Port，MPK 弹奏恢复正常。
 
-**T14.5 打开 Preferences 点 Cancel 不再"轰"一声** ⏳ (PR-E 附带修复)
+**T14.5 打开 Preferences 点 Cancel 不再"轰"一声** ✅（PR-E 附带修复，2026-10-03 Mac 通过）
 - 准备：同 T14.3 A：键盘菜单 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开；电脑键盘同时按下 A、F、H 再松开，琶音循环。
 - 步骤与期望：
   1. ⌘, 打开 Preferences，什么都不改，点 **Cancel**：琶音继续，**没有"轰"一声**。
