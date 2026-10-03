@@ -185,6 +185,7 @@ void LunarHostPlugin::OnReset()
   if (factoryResetRequested_) {  // the panel's RESET: publish the power-on default instead
     factoryResetRequested_ = false;
     stateStore_.replacePending(lunar24::core::make_default_device_state(lunar24::host::kLunarStartupSeed));
+    engine_.closeDroneKeys();  // like a fresh start: the drones wait for their keys
   }
   engine_.prepare(lunar24::host::kLunarStartupSeed, GetSampleRate(), GetBlockSize(),
                   NInChansConnected(), NOutChansConnected());

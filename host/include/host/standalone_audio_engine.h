@@ -277,6 +277,10 @@ class StandaloneAudioEngine {
   // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
+  // Stopped-stream boundary (before prepare): close every DRONE VOICES key (RESET PANEL).
+  void closeDroneKeys() {
+    for (bool& k : droneKeys_) k = false;
+  }
   // Panel indicator LEDs: brightness 0..1, written by the audio thread once per block and read
   // by the UI (relaxed atomics; a slightly stale value is fine for a light).
   enum PanelLed : int {
@@ -508,7 +512,9 @@ class StandaloneAudioEngine {
   // UI -> audio live command queue (single producer: the UI thread).
   lunar24::core::SpscQueue<1024> liveQueue_;
   lunar24::core::SpscQueue<256> fromAudioQueue_;  // audio -> UI (MIDI CC knob moves)
-  bool droneKeys_[6] = {true, true, true, true, true, true};
+  // DRONE VOICES keys start closed: opening the app (or RESET PANEL) is silent until the player
+  // opens a voice. The keys are not part of the saved state.
+  bool droneKeys_[6] = {false, false, false, false, false, false};
   std::atomic<bool> muted_{false};
   std::atomic<AudioTap*> audioTap_{nullptr};  // REC; set by the UI thread
   std::vector<float> tap_;                    // one block of tapped frames (sized by prepare)
