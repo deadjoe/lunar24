@@ -976,7 +976,7 @@
 - 期望：切掉的瞬间声音停止（松不松手都不应再响）。再把 MIDI Input 切回键盘，弹奏恢复正常。
 - 备注：直接拔 USB 线的热拔场景目前还没有检测机制（RtMidi 不支持设备移除通知），拔线造成的卡音要切一次输入设备才会清；这是已知缺口。
 
-**T14.3 关闭 MIDI 输入只停 MIDI 的音，电脑键盘的琶音继续** 部分通过（PR-D，2026-10-03 Mac：B 通过；A 在下拉框选 off 时琶音继续，但点 OK 后"轰"一声琶音停止——OK 重开了音频，已修，待复测 A）
+**T14.3 关闭 MIDI 输入只停 MIDI 的音，电脑键盘的琶音继续** ✅（PR-D，2026-10-03 Mac + MPK MINI IV：B 通过；A 第一次点 OK 后"轰"一声琶音停止，修掉 OK 重开音频后复测：选 off 和点 OK 时琶音都继续，没有轰响）
 - 准备：MPK 切到测试用预设；Preferences 里 MIDI Input = MPK Mini IV MIDI Port。RESET PANEL（菜单右下角点两下）；DRONE VOICES 6 个键全部点灭。
 - A. 电脑键盘的琶音不受影响（这是修复的重点）：
   1. 点红色大旋钮打开键盘菜单。PLAY 页左边 MODE 点 **ARPEGGIATOR**；再点顶部 **ARP** 页签，点亮左上角的 **HOLD**（LED 亮）。点 CLOSE 关掉菜单。
