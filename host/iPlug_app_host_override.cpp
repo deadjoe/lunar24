@@ -611,6 +611,17 @@ bool IPlugAPPHost::TryToChangeAudio()
   }
   const bool automatic = sStartupOpen || reopen;
   const char* why = sStartupOpen ? "startup" : reopen ? "reopen" : "preferences";
+  // Lunar 24: OK / Apply in Preferences call this whenever ANY setting changed, MIDI ones
+  // included. A MIDI input change is applied the moment it is picked (SelectMIDIDevice), so
+  // when the audio settings equal the running stream's, keep that stream: reopening rebuilds
+  // the engine (dropping held notes and arpeggios) and the restart is audible.
+  if (!automatic && mDAC && mDAC->isStreamRunning() && AudioSettingsInStateAreEqual(mActiveState, mState))
+  {
+    mActiveState = mState;  // record the MIDI choice as applied
+    UpdateINI();
+    AudioLog("preferences: audio unchanged, stream kept");
+    return true;
+  }
   if (automatic)
   {
     if (sFollowDefaultOutput && mDefaultOutputDev)
