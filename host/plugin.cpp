@@ -406,7 +406,8 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
   if ((msg.StatusMsg() == IMidiMsg::kNoteOn && msg.Velocity() > 0) ||
       (msg.StatusMsg() == IMidiMsg::kControlChange && msg.ControlChangeIdx() != IMidiMsg::kSustainOnOff)) {
     const bool isCc = msg.StatusMsg() == IMidiMsg::kControlChange;
-    midiLastMessage_.store((isCc ? 1u << 20 : 0u) |
+    midiLastMessage_.store((static_cast<std::uint32_t>(msg.mData2 & 0x7F) << 21) |
+                               (isCc ? 1u << 20 : 0u) |
                                ((static_cast<std::uint32_t>(in.channel + 1) & 0x1Fu) << 8) |
                                (static_cast<std::uint32_t>(isCc ? msg.ControlChangeIdx()
                                                                 : (note & 127)) & 0xFFu),

@@ -1030,13 +1030,20 @@
   - 转动该旋钮，滤波截止跟着动，面板上的旋钮也跟着动。
   - 绝对旋钮的接管：硬件旋钮位置离软件值很远时，先扫过当前值才开始跟（不跳值）。
 
-**T15.3 相对模式、解绑、动作绑定** 部分通过（删除、pad → DRONE 1 每敲一次切换一次；REL 未测）
+**T15.3 相对模式、解绑、动作绑定** ✅（2026-10-04 MPK KnobM = Rel：Learn 后自动变 REL 2，平滑跟随；改回 Abs 再 Learn 保持 ABS；删除、pad → DRONE 1 切换通过）
+- 准备：MPK 载入测试用户预设，SHIFT + LOOP 进 Global Menu，把 **KnobM** 改成 **Rel**，按 PLUGIN/DAW 退出。
 - 步骤：
-  1. 点 T15.2 那行的 MODE，从 ABS 换成 REL 1（MPK 旋钮在硬件上设成 Relative 模式时用）。
-  2. 点行尾的 x 删掉这条绑定。
-  3. LEARN → 点 DRONE VOICES 的键 **1** → 按键盘的一个打击垫。
+  1. 打开 MIDI 设置，**+ LEARN A CONTROL** → 点 FILTER 一排左边的 **FREQ** → 把 MPK 的 **K1** 慢慢顺时针转一点。
+  2. 继续慢慢顺时针转半圈，看新出现那一行的 MODE。
+  3. 慢慢逆时针转一圈，再快转一下。
+  4. 点这行的 MODE 换一圈，回到 REL 2。
+  5. 点行尾的 x 删掉这条绑定。
+  6. LEARN → 点 DRONE VOICES 的键 **1** → 按键盘的一个打击垫。
+  7. 收尾：MPK 的 KnobM 改回 **Abs**；KnobM = Abs 时再 Learn 一个旋钮，转动后 MODE 应保持 ABS。
 - 期望：
-  - REL 1 下拧动按格增减、不跳值。
+  - 第 2 步：MODE 在转动开始后很快自己从 ABS 变成 **REL 2**（Learn 后头一两下 FREQ 可能还会跳一下，变成 REL 2 后就平滑跟随）。
+  - 第 3 步：顺时针变大、逆时针变小，不跳；转得快走得多。
+  - 第 4 步：MODE 仍可手动改（ABS → REL 1 → REL 2 → REL 3 循环），手动选的不会被自动改回。
   - 删除后该旋钮不再控制滤波。
   - 打击垫按一下开 drone 1，再按一下关（切换，不是按住才响）。
 
@@ -1111,7 +1118,7 @@
 
 ## 还没测的（⏳）
 
-- MIDI：REL（先配置 MPK 相对输出）、CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
+- MIDI：CC 127/0 动作、CC64 防误学；T14.1 踏板，以及运行中物理拔线（与 T14.2 的选 off 不同）。pad Aftertouch → PRESSURE / VIBRATO PRESSURE 未测（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - VCO A / VCO B 的 dry 输出（需要 4 个以上输出的声卡，可用 BlackHole 16ch：声道 3 = DRY A、声道 4 = DRY B。注意 DRY 在 VCA 之后，要按住键或点亮 envelope 的 hold 才有声）。
 - PREAMP 的 ext. source 插孔（不需要额外硬件：把 LFO A 输出插进去，麦克风输入应被取代，ENVELOPE FOLLOWER 的灯改跟 LFO 走；拔线恢复）。
 - 键盘菜单 SERVICE 页的 10 个校准类设置（V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE）：已核实为存储但无声音/行为效果（都是校准真机硬件的概念，软件里没有对应误差），只需确认改动能保存、重启后还在。ENCODER DIRECTION 现在会反转红色大旋钮的滚轮方向，见 T12.19。
@@ -1138,7 +1145,7 @@
   - 全局设置里和我们有关的：**Toggle**（打击垫"瞬时 / 切换"，测 TOGGLE 绑定时应为 Off）、**KnobM**（8 个旋钮一起设 Abs / Rel，测 REL 用；Program Edit 里也能单个设）、**Aft**（打击垫按压后发 Chan / Poly aftertouch，或 Off）、**MidiCh / PadCh**（琴键和打击垫的通道，打击垫默认通道 10，所以 Learn 出来是 CH 10）。
   - **测试用预设**（2026-10-03 owner 已建）：一个用户预设，全局设置 Toggle = Off、KnobM = Abs、Aft = Chan、FullVel = Off，MidiCh / PadCh 保持默认（琴键 1、打击垫 10）。以后 MIDI 测试都先切到这个预设；Lunar 24 的 MIDI 设置 CHANNEL 保持 ANY。
   - 实测：用户预设下打击垫切成 CC# 后，学到的是 `CC 36 / CH 1`（CC 走通道 1，不是打击垫音符用的通道 10）。
-  - 手册没写 Rel 模式用哪种相对编码，测 REL 时在 MODE 里轮流试 REL 1 / 2 / 3，哪种方向和速度正确就用哪种。
+  - 手册没写 Rel 模式用哪种相对编码；2026-10-04 实测是 **REL 2**（顺时针发 1、逆时针发 127）。REL 1 在最大最小之间跳，REL 3 逆时针跳到最小。Learn 后会自动识别并改成 REL 2（T15.3）。
   - 手册只写了 MPK 的琶音器能**接收**外部时钟（Clock = Ext），没写它会往外发 MIDI 时钟；用 MPK 驱动 Lunar 24 的琶音 / 音序器时钟可能不行，需要实测或用 DAW 发时钟。
 - **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效。PR-D 起，音频设置（设备、采样率、缓冲、声道）没变时，OK / Apply 不再重开音频：以前只改 MIDI 输入点 OK 也会重开音频、重建引擎，琶音和按住的音被清掉，还会"轰"一声（2026-10-03 T14.3 实测发现）。音频设置变了时，OK / Apply 照旧重开音频，这时琶音停下是正常的。PR-E 起 Cancel 也一样：音频设置没变就不重开（以前只是打开再 Cancel 也可能"轰"一声，见 T14.5）。
 - **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A，其它九路 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；滤波器等下游处理可有短暂衰减，不要求逐采样立即归零。若仍有长尾，保留接线和设置截图、录音再定位。默认同时开启的 VCO B 或直送 PREAMP 的振荡源不能用于此项隔离。

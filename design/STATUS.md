@@ -51,7 +51,7 @@ _Last updated: 2026-10-03._
   semitones; sustain pedal; MIDI clock drives the arpeggiator / sequencer (START / STOP).
   The MIDI button (under MUTE, right of DRONE VOICES) opens the MIDI settings: learn a
   panel control onto any CC or pad note (parameters, drone keys, cartridge, presets,
-  mute), four binding rows per page, per-binding absolute/relative pickup, channel filter,
+  mute), four binding rows per page, per-binding absolute/relative pickup (relative encoders detected at learn), channel filter,
   transpose and velocity curve. Bindings live in their own file, not in the machine state.
   MIDI notes light the keyboard plate of the same note name.
 - Effector: click the cartridge slot (or the button below it) to load the next cartridge

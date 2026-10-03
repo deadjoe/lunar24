@@ -63,6 +63,12 @@ Keep these unless a listening test or a real bug says otherwise.
   CC button in toggle mode (127, then 0 on the next press) needs two presses per flip; set
   such buttons to momentary. Pickup engages when the controller is within one step of the
   current value, including on its first message, or has moved across it.
+- **Relative knobs are detected at Learn** (`MidiRelativeDetector` in `core/midi_map.h`).
+  Controllers disagree on how a relative encoder says "one step" (64 +/- n, two's complement
+  1 / 127, or sign bit + amount), and the MPK manual does not say (measured: two's
+  complement, REL 2). After a learn, the knob's next values decide: an absolute knob never
+  repeats a value except 0 / 127 at an end stop, an encoder turned slowly does; the repeated
+  value picks the dialect. Only a binding still on ABS is switched; MODE can override.
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet
