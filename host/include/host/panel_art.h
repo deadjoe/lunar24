@@ -488,6 +488,55 @@ void drawButton(Sink& s, float cx, float cy, float r, bool on, bool hover) {
   }
 }
 
+// The panel face colour at height y, sheen included (drawPanelArt: kPanel under a white 10% ->
+// black 6% vertical wash), for painting over a printed mark.
+inline std::uint32_t panelFaceAt(float y) {
+  const float t = std::fmin(std::fmax(y / 1552.f, 0.f), 1.f);
+  const float wash = 255.f * (1.f - t), a = 0.10f - 0.04f * t;
+  auto ch = [&](int base) { return static_cast<std::uint32_t>(std::lround(base * (1.f - a) + wash * a)); };
+  return (ch(233) << 16) | (ch(224) << 8) | ch(210);
+}
+
+// REC (not on the hardware), in the headphone socket's place: the printed headphone icon
+// above it is painted over with the label, which shows the elapsed time while recording.
+template <class Sink>
+void drawRecordButton(Sink& s, float cx, float cy, float r, bool recording, int seconds, bool hover) {
+  s.fillRect(cx - 28.f, cy - 66.f, cx + 28.f, cy - 22.f, panelFaceAt(cy - 44.f), 0.f);  // over the headphone icon
+  char label[16] = "REC";
+  if (recording) {
+    const int t = seconds < 0 ? 0 : seconds;
+    if (t < 600) std::snprintf(label, sizeof label, "%d:%02d", t / 60, t % 60);
+    else std::snprintf(label, sizeof label, "%d'", t / 60);  // 10 min and up: minutes only
+  }
+  s.text(cx, cy - 44.f, 15.f, recording ? 0xcb2026 : 0x0c0a0a, false, label);
+  if (recording) {
+    s.circle(cx, cy, r + 12.f);
+    s.fillGrad(radialGrad(cx, cy, r, r + 12.f, 0xff2a1a, 0.55f, 0xff2a1a, 0.f));
+  }
+  drawButton(s, cx, cy, r, false, hover);
+  if (recording) {
+    s.circle(cx, cy, r + 3.f);
+    s.strokeGrad(solid(0xe0201a), 3.f);
+    s.fillCircle(cx, cy, r * 0.3f, 0xe0201a);
+  }
+}
+
+// REC's source selector, in the PHONE knob's place: a three-position knob, WET / DRY / ALL
+// printed above it (the chosen one dark, the others faint).
+inline constexpr float kRecordSourceDeg[3] = {-40.f, 0.f, 40.f};
+template <class Sink>
+void drawRecordSource(Sink& s, float cx, float cy, float r, int source, std::uint32_t capRgb, bool hover) {
+  static const char* names[3] = {"WET", "DRY", "ALL"};
+  s.fillRect(cx - 13.f, cy - r - 21.f, cx + 13.f, cy - r - 9.f, panelFaceAt(cy - r - 15.f), 0.f);  // link line behind DRY
+  for (int i = 0; i < 3; ++i) {
+    const float a = kRecordSourceDeg[i] * 3.14159265f / 180.f;
+    s.text(cx + (r + 15.f) * std::sin(a), cy - (r + 15.f) * std::cos(a), 11.f,
+           i == source ? 0x0c0a0a : 0x9a9086, false, names[i]);
+  }
+  drawKnob(s, cx, cy, r, capRgb, true, kRecordSourceDeg[source < 0 || source > 2 ? 0 : source], 0x343434,
+           -150.f, 150.f, hover);
+}
+
 // Bat-lever toggle switch. `t`: 0 = lever up, 0.5 = centre, 1 = down.
 template <class Sink>
 void drawToggle(Sink& s, float cx, float cy, float t, bool hover) {

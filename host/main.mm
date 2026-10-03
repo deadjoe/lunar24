@@ -507,3 +507,29 @@ int main(int argc, char* argv[])
 #include "resources/main.rc_mac_dlg"
 #include "swell-menugen.h"
 #include "resources/main.rc_mac_menu"
+
+// REC: the recordings folder, ~/Music/Lunar 24 (created when missing), as a UTF-8 path.
+extern "C" bool lunar_host_recordings_dir(char* out, size_t capacity)
+{
+  @autoreleasepool {
+    NSArray<NSString*>* music = NSSearchPathForDirectoriesInDomains(NSMusicDirectory, NSUserDomainMask, YES);
+    if (music.count == 0) return false;
+    NSString* dir = [music[0] stringByAppendingPathComponent:@"Lunar 24"];
+    if (![[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES
+                                                    attributes:nil error:nil])
+      return false;
+    const char* utf8 = dir.UTF8String;
+    if (utf8 == nullptr || std::strlen(utf8) + 1 > capacity) return false;
+    std::memcpy(out, utf8, std::strlen(utf8) + 1);
+    return true;
+  }
+}
+
+// REC: show the recordings folder in Finder after a recording stops.
+extern "C" void lunar_host_reveal_dir(const char* utf8Path)
+{
+  @autoreleasepool {
+    NSString* path = [NSString stringWithUTF8String:utf8Path];
+    if (path != nil) [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path isDirectory:YES]];
+  }
+}

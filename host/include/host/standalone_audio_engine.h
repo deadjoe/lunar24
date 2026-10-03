@@ -40,6 +40,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
 #include <xmmintrin.h>
@@ -56,6 +57,16 @@
 #include <lunar24/core/state_validation.h>    // StateValidationResult (inspectable reject family/field)
 
 namespace lunar24::host {
+
+// Where the REC recorder taps the outputs (host/wav_recorder.h implements it). Called on the
+// audio thread: armed() is checked once per block, push() gets the block's frames as 4
+// floats each (WET L, WET R, DRY A, DRY B), after MUTE.
+class AudioTap {
+ public:
+  virtual ~AudioTap() = default;
+  virtual bool armed() const = 0;
+  virtual void push(const float* frames, int count) = 0;
+};
 
 // The owner consumes (never re-derives) the frozen core policy, so its body reads in terms of
 // the core types directly. These are using-DECLARATIONS (one name each), not a `using namespace`
@@ -266,6 +277,10 @@ class StandaloneAudioEngine {
   // Highest note of a sequencer step, in semitones above the held plate.  // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
+  // Stopped-stream boundary (before prepare): close every DRONE VOICES key (RESET PANEL).
+  void closeDroneKeys() {
+    for (bool& k : droneKeys_) k = false;
+  }
   // Panel indicator LEDs: brightness 0..1, written by the audio thread once per block and read
   // by the UI (relaxed atomics; a slightly stale value is fine for a light).
   enum PanelLed : int {
@@ -382,6 +397,8 @@ class StandaloneAudioEngine {
   // ---- inspectable (never mutated on the audio path beyond the monotonic counters) ----
   bool isReady() const { return ready_; }
   double sampleRate() const { return sampleRate_; }
+  // UI thread: where REC taps the outputs (null = none). The tap must outlive the engine's use.
+  void setAudioTap(AudioTap* tap) { audioTap_.store(tap, std::memory_order_release); }
   int blockSize() const { return blockSize_; }
   int inputCapability() const { return inputCapability_; }
   int outputCapability() const { return outputCapability_; }
@@ -457,7 +474,7 @@ class StandaloneAudioEngine {
   // caller owns). Used on every dropped path so a dropped block is never a stale / partial /
   // repeated buffer. The audio path may touch no heap — this is a plain memset-like loop.
   void writeSilence_(double* const* outputs, int outCh, int frames) const;
-  void applyMute_(double* const* outputs, int outCh, int frames);
+  void applyMute_(double* const* outputs, int outCh, int frames, float* tap);
   void updateLeds_(int frames);
 
   // Clear the ENTIRE committed state back to the "no prepare done" sentinel. Called on every
@@ -495,8 +512,12 @@ class StandaloneAudioEngine {
   // UI -> audio live command queue (single producer: the UI thread).
   lunar24::core::SpscQueue<1024> liveQueue_;
   lunar24::core::SpscQueue<256> fromAudioQueue_;  // audio -> UI (MIDI CC knob moves)
-  bool droneKeys_[6] = {true, true, true, true, true, true};
+  // DRONE VOICES keys start closed: opening the app (or RESET PANEL) is silent until the player
+  // opens a voice. The keys are not part of the saved state.
+  bool droneKeys_[6] = {false, false, false, false, false, false};
   std::atomic<bool> muted_{false};
+  std::atomic<AudioTap*> audioTap_{nullptr};  // REC; set by the UI thread
+  std::vector<float> tap_;                    // one block of tapped frames (sized by prepare)
   // A UI note/gate event dropped by a full liveQueue_ makes the queued note stream
   // untrustworthy (some note-off is gone for good, and the UI keeps no held-note
   // ledger to resend from): the audio thread drops the backlog's note events and
@@ -781,8 +802,14 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
   // pass-through. A second output bank / a host-side scale would be a wiring defect.
   const ScopedFlushDenormals noDenormals;  // decaying tails never hit slow denormal math
   drainLive_(definition_->runtime());
-  adapter_.renderBlock(definition_->runtime(), inputs, outputs, frames);
-  applyMute_(outputs, outCh, frames);
+  AudioTap* const audioTap = audioTap_.load(std::memory_order_acquire);
+  float* const tap = audioTap != nullptr && audioTap->armed() &&
+                             tap_.size() >= static_cast<std::size_t>(frames) * 4
+                         ? tap_.data()
+                         : nullptr;
+  adapter_.renderBlock(definition_->runtime(), inputs, outputs, frames, tap);
+  applyMute_(outputs, outCh, frames, tap);
+  if (tap != nullptr) audioTap->push(tap, frames);
   updateLeds_(frames);
   ++renderedBlocks_;
   return Status::Rendered;
@@ -791,7 +818,7 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
 // ---- applyMute_ ------------------------------------------------------------
 // The MUTE button: a linear ~10 ms fade of every output toward 0 (muted) or 1. No work at all
 // while unmuted and settled, so the normal render path is untouched.
-inline void StandaloneAudioEngine::applyMute_(double* const* outputs, int outCh, int frames) {
+inline void StandaloneAudioEngine::applyMute_(double* const* outputs, int outCh, int frames, float* tap) {
   const double target = muted() ? 0.0 : 1.0;
   if (muteGain_ == 1.0 && target == 1.0) return;
   const double step = 1.0 / (0.010 * (sampleRate_ > 0.0 ? sampleRate_ : 48000.0));
@@ -800,6 +827,8 @@ inline void StandaloneAudioEngine::applyMute_(double* const* outputs, int outCh,
     g = target > g ? std::min(target, g + step) : std::max(target, g - step);
     for (int c = 0; c < outCh; ++c)
       if (outputs != nullptr && outputs[c] != nullptr) outputs[c][f] *= g;
+    if (tap != nullptr)
+      for (int c = 0; c < 4; ++c) tap[4 * f + c] *= static_cast<float>(g);
   }
   muteGain_ = g;
 }
@@ -924,6 +953,7 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   adapter_ = candAdapter;
   sampleRate_ = sampleRate;
   blockSize_ = maxBlockSize;
+  tap_.assign(static_cast<std::size_t>(maxBlockSize) * 4, 0.0f);  // the REC tap's block buffer
   inputCapability_ = inputCapability;
   outputCapability_ = outputCapability;
   ready_ = true;

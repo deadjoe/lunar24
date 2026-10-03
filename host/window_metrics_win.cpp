@@ -43,9 +43,12 @@
 #endif
 
 #include <windows.h>
+#include <shellapi.h>
+#include <shlobj.h>
 
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 // --- geometry probes (extern "C" so plugin.cpp can resolve them by name) ----------------
 
@@ -143,4 +146,25 @@ extern "C" bool lunar_host_force_clamp()
 {
   const char* v = std::getenv("LUNAR_HOST_FORCE_CLAMP");
   return (v != nullptr) && (std::strcmp(v, "1") == 0);
+}
+
+// --- REC: the recordings folder (Music\Lunar 24) ------------------------------------------
+extern "C" bool lunar_host_recordings_dir(char* out, size_t capacity)
+{
+  PWSTR music = nullptr;
+  if (FAILED(SHGetKnownFolderPath(FOLDERID_Music, KF_FLAG_CREATE, nullptr, &music))) return false;
+  std::wstring dir = std::wstring(music) + L"\\Lunar 24";
+  CoTaskMemFree(music);
+  if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return false;
+  return WideCharToMultiByte(CP_UTF8, 0, dir.c_str(), -1, out, static_cast<int>(capacity), nullptr, nullptr) > 0;
+}
+
+// REC: show the recordings folder in Explorer after a recording stops.
+extern "C" void lunar_host_reveal_dir(const char* utf8Path)
+{
+  const int n = MultiByteToWideChar(CP_UTF8, 0, utf8Path, -1, nullptr, 0);
+  if (n <= 0) return;
+  std::wstring path(static_cast<size_t>(n), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, utf8Path, -1, &path[0], n);
+  ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }

@@ -130,6 +130,9 @@ int main() {
   {
     E e;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(!e.droneKey(0));  // the app starts with every DRONE VOICES key closed
+    CHECK(!e.runtime()->droneVoiceKey(0));
+    CHECK(e.postDroneKey(0, true));
     for (int i = 0; i < 20; ++i) e.processBlock(nullptr, outs, 0, 2, 256);
     CHECK(e.panelLed(E::kLedDrone1) > 0.9f);
     CHECK(e.droneKey(0));

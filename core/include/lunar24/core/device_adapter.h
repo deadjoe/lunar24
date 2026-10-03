@@ -157,8 +157,10 @@ class DeviceAdapter {
   // output mapping are both carried by the plan; non-finite device samples are zeroed +
   // counted. Writes ONLY the plan's opened channels; every other physical output channel is
   // left untouched. NOT const: the input direction owns the non-finite anomaly counter.
+  // `tap` (optional, 4 floats per frame): every frame's WET L, WET R, DRY A, DRY B in the
+  // same device scale, whatever the plan opens, for the REC recorder.
   void renderBlock(SynthRuntime& rt, const double* const* planarIn, double* const* planarOut,
-                   int frames);
+                   int frames, float* tap = nullptr);
 
   // Diagnostic: number of non-finite device samples seen in the input direction.
   std::uint64_t nonFiniteSamples() const { return nonFinite_; }
@@ -292,7 +294,7 @@ inline void DeviceAdapter::writeOutput_(const RuntimeOutput& out, double* const*
 
 // ---- DeviceAdapter::renderBlock -------------------------------------------------------
 inline void DeviceAdapter::renderBlock(SynthRuntime& rt, const double* const* planarIn,
-                                       double* const* planarOut, int frames) {
+                                       double* const* planarOut, int frames, float* tap) {
   if (!hasPlan_) return;
   for (int f = 0; f < frames; ++f) {
     RuntimeInputs in{0.0, 0.0};
@@ -307,6 +309,13 @@ inline void DeviceAdapter::renderBlock(SynthRuntime& rt, const double* const* pl
     RuntimeOutput out{};
     rt.processBlock(&in, 1, &out, true);
     writeOutput_(out, planarOut, f);  // output direction (single primitive).
+    if (tap != nullptr) {
+      float* t = tap + 4 * f;
+      t[0] = static_cast<float>(device_normalized_from_volts(out.wetL));
+      t[1] = static_cast<float>(device_normalized_from_volts(out.wetR));
+      t[2] = static_cast<float>(device_normalized_from_volts(out.dryA));
+      t[3] = static_cast<float>(device_normalized_from_volts(out.dryB));
+    }
   }
 }
 
