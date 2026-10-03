@@ -1073,6 +1073,7 @@
 | #7：无限旋钮端点空转 | 原因未确认。用 MIDI Monitor 记录到端点后继续转、再反转的原始 CC 值，区分控制器仍发送端点值与软件拾取/相对解码问题；暂不归因于 MPK 硬件。 |
 | #9：R = 0、BLEND 最小时仍有尾音 | 尚未定位，不直接归因于混响。按下面的隔离准备复测并记录持续时间。 |
 
+- **MPK MINI IV 的 PLUGIN/DAW 键（2026-10-03 记录）**：灯为白色时 Lunar 24 能收到 MPK 的 MIDI；按一下变红色后收不到。MPK 手册说 CC# 和 Program Change 打击垫模式在 DAW / Plugin 预设下不能用，这解释了 T15.7 第 3 步切到 CC# 后仍学成 NOTE。待查：红灯时 MPK 是否改从另一个 USB MIDI 端口发送（在 Preferences 的 MIDI 输入列表里看有没有第二个 MPK 端口），以及手册里 PLUGIN/DAW 和 USER PRESETS 的说明。
 - **输入设置与 Apply（#12 / #13）**：MIDI 输入下拉框切换立即生效；Apply 即使没有改设置，也会重开音频并重置引擎。因此 T15.5 第 4 步改为“不改设置直接 OK”；不要把 Apply 造成的重置当作 MIDI 输入关闭缺陷。改变设置后 OK 也可能应用音频变化，观察输入切换时先不点 OK / Apply。
 - **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A，其它九路 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；滤波器等下游处理可有短暂衰减，不要求逐采样立即归零。若仍有长尾，保留接线和设置截图、录音再定位。默认同时开启的 VCO B 或直送 PREAMP 的振荡源不能用于此项隔离。
 - **MUTE 尾音（#11）**：MUTE 只淡出输出，不停止演奏或效果处理；解除时能听到静音期间音符的剩余尾音，属于既定行为，见 DECISIONS。
