@@ -111,11 +111,14 @@ public:
   // writes, UI reads.
   std::uint32_t midiLastMessage() const { return midiLastMessage_.load(std::memory_order_relaxed); }
   std::uint64_t midiMessageSeq() const { return midiMessageSeq_.load(std::memory_order_relaxed); }
+  // The keyboard plates MIDI notes are holding down (bit 0 = C .. bit 11 = B). UI thread.
+  std::uint16_t midiLitPlates() const { return midiLights_.mask(); }
 
 private:
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
   lunar24::host::MidiInputQueue midiQueue_;
   lunar24::host::MidiNoteOwnership midiNotes_;
+  lunar24::host::MidiPlateLights midiLights_;  // plates lit by MIDI notes (audio writes, UI reads)
   std::atomic<int> midiChannelFilter_{0};     // 0 = any, else 1..16
   std::atomic<int> midiOctaveShift_{0};       // semitones, -36..+36
   std::atomic<int> midiVelocityCurve_{0};     // core::MidiVelocityCurve

@@ -53,6 +53,7 @@ _Last updated: 2026-10-03._
   panel control onto any CC or pad note (parameters, drone keys, cartridge, presets,
   mute), four binding rows per page, per-binding absolute/relative pickup, channel filter,
   transpose and velocity curve. Bindings live in their own file, not in the machine state.
+  MIDI notes light the keyboard plate of the same note name.
 - Effector: click the cartridge slot (or the button below it) to load the next cartridge
   (right-click = previous; hover shows both program names); the L / R switches beside
   the button pick program 1-2-3 per side.
@@ -66,9 +67,8 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. Small fixes from the PR #80–#90 review, one focused PR each: MIDI MUTE indicator refresh
-   and closing the MIDI input releasing only MIDI's notes (this PR, T14.3 / T14.4); then
-   light the keyboard plates for MIDI notes (by note name; bound pads do not light).
+1. The PR #80–#90 review fixes are done (PRs #91–#95: cable layer, SCALE / ROOT, pad and
+   button bindings, MIDI input close, Preferences OK / Cancel, MIDI plate lights).
 2. External MIDI for the MPK MINI IV: REL, CC-button and pedal checks, clock (MIDI START
    currently also sends all-notes-off), SINGLE / TWIN / SPLIT routing.
 3. Remaining manual checks alongside: device DRY outputs, PREAMP override, Windows.
