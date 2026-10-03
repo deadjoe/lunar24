@@ -245,7 +245,7 @@ void LunarHostPlugin::OnIdle()
   (void)saveDeviceState();
 }
 
-// Every 2 s while anything changed: what MIDI transport arrived and which clock the keyboard
+// At most every 2 s, on a transport or clock source change: what MIDI transport arrived and which clock the keyboard
 // follows, so a clock problem on the owner's machine can be read from audio.log.
 void LunarHostPlugin::logMidiClock_()
 {
@@ -258,8 +258,10 @@ void LunarHostPlugin::logMidiClock_()
                                    midiStopsIn_.load(std::memory_order_relaxed)};
   const bool ext = engine_.keyboardFollowsExternalClock();
   const std::uint32_t edits = engine_.keyboardTempoEdits();
-  if (counts[0] == loggedClock_[0] && counts[1] == loggedClock_[1] && counts[2] == loggedClock_[2] &&
-      counts[3] == loggedClock_[3] && ext == loggedExtClock_ && edits == loggedTempoEdits_)
+  // Ticks alone do not log (they arrive all through playback); a start / continue / stop, a
+  // clock source switch or a tempo edit does, with the ticks since the previous line.
+  if (counts[1] == loggedClock_[1] && counts[2] == loggedClock_[2] && counts[3] == loggedClock_[3] &&
+      ext == loggedExtClock_ && edits == loggedTempoEdits_)
     return;
   char line[200];
   std::snprintf(line, sizeof line,
