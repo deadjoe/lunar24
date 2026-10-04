@@ -44,6 +44,7 @@
 #include "drone_test_common.h"
 
 #include <lunar24/core/vco.h>
+#include <lunar24/core/vco_wave_map.h>
 
 namespace core = lunar24::core;
 
@@ -1123,6 +1124,38 @@ static bool test_vco_hardsync_reset_alignment() {
   return true;
 }
 
+// High notes stay clean: the harmonics above Nyquist that fold back below 15 kHz are at least
+// 54 dB under the fundamental for the panel saw, pulse and triangle. (The two-point polyBLEP
+// left about -40 dB here, and the triangle fell back to its naive shape above ~3 kHz: -34 dB.)
+void test_vco_high_note_aliasing() {
+  const double sr = 48000.0;
+  struct Case { double morph, f0; } cases[] = {{lunar24::core::wave_map::kIconSaw, 3520.0},
+                                              {lunar24::core::wave_map::kIconPulse, 3520.0},
+                                              {lunar24::core::wave_map::kIconTriangle, 5274.0}};
+  for (const Case& c : cases) {
+    lunar24::core::Vco v(sr);
+    v.setWaveform(lunar24::core::VcoWaveform::kMorphRing);
+    v.setMorph(c.morph);
+    v.setOctaveSelect(1);
+    v.setBaseHz(c.f0);
+    std::vector<double> buf(1 << 15);
+    double o = 0.0;
+    for (int i = 0; i < 4800; ++i) v.tick(&o);
+    for (double& x : buf) { v.tick(&o); x = o; }
+    const double fund = drone_test::goertzel_mag(buf, c.f0, sr);
+    double worst = 0.0;
+    for (int k = 2; k * c.f0 < 2.0 * sr; ++k) {
+      if (k * c.f0 < 0.5 * sr) continue;               // a real harmonic, not an alias
+      const double alias = std::fabs(sr - k * c.f0);  // folded once
+      if (alias > 15000.0 || alias < 20.0) continue;
+      worst = std::fmax(worst, drone_test::goertzel_mag(buf, alias, sr) / fund);
+    }
+    std::printf(" high-note aliasing: morph %.3f at %.0f Hz -> worst fold %.1f dB\n", c.morph,
+                c.f0, 20.0 * std::log10(worst + 1e-30));
+    CHECK(worst < 2e-3);  // -54 dB
+  }
+}
+
 int main() {
   test_vco_voct_and_lilin();
   test_vco_sub_locked();
@@ -1135,5 +1168,6 @@ int main() {
   test_vco_blamp();
   test_vco_hardsync_reset_alignment();
   test_vco_gh19_s0_morph_ring_and_pwm();
+  test_vco_high_note_aliasing();
   return ::test::finish("vco");
 }
