@@ -1047,7 +1047,7 @@ class PhotoSensorControl : public IControl {
     handX_ = std::clamp(x, cx_ - r_, cx_ + r_);
     handY_ = std::clamp(y, cy_ - r_, cy_ + r_);
     // Fingers: moving sideways passes gaps between them over the eye.
-    const float fingers = 0.8f + 0.2f * std::cos(6.2831853f * (x - startX_) / kFingerSpacing);
+    const float fingers = 0.6f + 0.4f * std::cos(6.2831853f * (x - startX_) / kFingerSpacing);  // tuned by ear
     (void)s_.engine.postPhotoShade(group_, double(depth_ * fingers));
     SetDirty(false);
   }

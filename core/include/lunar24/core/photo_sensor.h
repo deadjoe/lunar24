@@ -47,7 +47,9 @@ class PhotoSensor {
   static constexpr double kFullShadeTransmit = 0.03;  // light left with the hand on the eye
   static constexpr double kTremorDepth = 0.035;       // hand tremor in shade units // tuned by ear
   static constexpr double kSwayDepth = 0.05;          // slower hand sway (~1 Hz) // tuned by ear
-  static constexpr double kFlickerDepth = 0.25;       // shadow flicker while the hand moves
+  static constexpr double kFlickerDepth = 0.35;       // shadow flicker while the hand moves // tuned by ear
+  static constexpr double kSweepSpeedup = 3.0;        // a sweeping hand's shadow moves this much faster
+  static constexpr double kSweepDistance = 0.5;       // shade travelled in ~0.25 s = full sweep
   // CdS cell.
   static constexpr double kGamma = 0.7;               // conductance ~ illuminance^gamma (CdS)
   static constexpr double kFastShare = 0.65;          // part of the response that is fast
@@ -113,13 +115,16 @@ class PhotoSensor {
                   kAmbientDriftStops * std::sqrt(2.0 * dt_ / kAmbientSeconds) * unit_() * 1.732;
     }
 
-    // The hand moves toward where it is told, a little faster in than out.
-    const bool handIn = shadeTarget_ > hand_;
-    hand_ += follow_(handIn ? 0.06 : 0.12) * (shadeTarget_ - hand_);
-    // How fast the target moves (fingers sweeping across the eye) drives the flicker.
-    const double speed = std::abs(shadeTarget_ - lastTarget_) / dt_;
+    // How much the hand has moved lately (fingers sweeping across the eye) drives the flicker:
+    // the distance travelled over about the last quarter second.
+    motion_ = motion_ * (1.0 - follow_(0.25)) + std::abs(shadeTarget_ - lastTarget_);
     lastTarget_ = shadeTarget_;
-    motion_ += follow_(speed > motion_ ? 0.02 : 0.25) * (std::min(speed, 4.0) - motion_);
+    const double moving = std::min(1.0, motion_ / kSweepDistance);
+    // The hand moves toward where it is told, a little faster in than out. While the fingers
+    // sweep, the shadow edges pass at once (no arm to move), so it follows much faster.
+    const bool handIn = shadeTarget_ > hand_;
+    const double sweep = 1.0 + kSweepSpeedup * moving;
+    hand_ += follow_((handIn ? 0.06 : 0.12) / sweep) * (shadeTarget_ - hand_);
 
     // A hand in the air is never still: tremor (white noise band-passed to ~7-12 Hz: random
     // input reproduces the physiological spectrum) and a slow sway. Both only matter while
@@ -133,7 +138,7 @@ class PhotoSensor {
     flicker_ += pole_(25.0) * (n3 * 2.0 - flicker_);
     noise_ += pole_(40.0) * (n4 - noise_);
     double shade = hand_ + presence * (kTremorDepth * tremor + kSwayDepth * sway_) +
-                   kFlickerDepth * std::min(1.0, motion_) * flicker_;
+                   kFlickerDepth * moving * flicker_;
     shade = std::clamp(shade, 0.0, 1.0);
 
     // Soft shadow: the light falls off along an S-curve as the hand closes in.
