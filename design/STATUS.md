@@ -72,18 +72,17 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. This PR: `design/ARCHITECTURE.md`, the page-by-page check against the manual (sound
-   round done: VCO aliasing, reverb, filter, headroom, glides, photo sensors, OSC STATUS).
-2. Next PR, knob tapers: envelope A/B A, D, R are linear over 0-10 s (0-1 s is the first
-   10 % of the turn): give them the drones' cubic taper (`DroneBank::mapAttSeconds`). LFO A/B
-   rate is linear over 0.1-20 Hz (0.1-1 Hz is the first ~5 %): make it exponential. Update
-   the manual tests.
-3. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
-   surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
-4. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix,
-   VCO B's rough top register).
-5. Later: decorative controls, panel tweaks, AU/VST3. Not planned:
-   effector tails across a cartridge switch (the hardware cuts them too).
+1. This PR: `design/ARCHITECTURE.md`, the page-by-page check against the manual.
+2. Knob tapers: envelope A/B A, D, R are linear over 0-10 s (give them the drones' cubic
+   `DroneBank::mapAttSeconds`); LFO A/B rate is linear over 0.1-20 Hz (make it exponential).
+3. Per-plate tuning (manual p.14-15): hold a plate and turn the encoder to retune it to any
+   pitch (microtonal). The state already stores `keyboardPlateTune` / `_R`; nothing reads it.
+   The pushbutton offsets (`keyboardPushbutton`) stay unwired for now (owner).
+4. Still to check by hand: the keyboard menu (T12.18), SERVICE values after a restart, the
+   Windows build; sustain-pedal items wait for a pedal.
+5. Tune sounds from listening feedback (drone level, modulation depth, S&H, mix, VCO B top).
+6. Later: decorative controls, panel tweaks, AU/VST3. Not planned: effector tails across a
+   cartridge switch (the hardware cuts them too).
 
 ## Known limits (by design)
 - No hardware is available, so sound is tuned by ear, not measured against a real unit.

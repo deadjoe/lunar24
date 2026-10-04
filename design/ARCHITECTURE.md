@@ -574,7 +574,7 @@ MIDI 进入键盘的入口在 `host/plugin.cpp`。键盘的各项功能见后续
   - 移调对两半键盘同时生效，不管当前是哪种模式。
   - 移调值不随机器状态保存，RESET PANEL 后回到 0。
   - MIDI 键盘有自己独立的移调，在 MIDI 设置里调（TRANSPOSE）。
-- **【待办，待 owner 决定】手册的偏移功能没有做**：
+- **【软件化调整，暂不做】手册的偏移功能没有做**（owner 决定现在不考虑）：
   - 按住按钮加转编码器调偏移量、TWIN / SPLIT 下按钮开关单侧偏移、量化器关闭时按电压微调的偏移，这几项都没有。
   - 状态里已经留好了存这些偏移值的位置（`keyboardPushbutton`），预设也会保存它，但目前没有任何代码读取它，所以对声音没有影响。
 
@@ -590,10 +590,50 @@ MIDI 进入键盘的入口在 `host/plugin.cpp`。键盘的各项功能见后续
 ### 9.3 触摸板
 
 - **【一致】按下触摸板，它对应的音高就以电压形式从 V/OCT 输出。**
-- **【待办，待 owner 决定】单块触摸板的微调没有做**：
+- **【待办】单块触摸板的微调没有做**（owner 已决定要做，记入 `STATUS.md` 下一步）：
   - 硬件可以按住一块触摸板再转编码器，单独调这块板的音高（音高可以是任意电压，不必是标准半音），这是手册说的"微分音键盘"的基础。
   - Lunar 24 的触摸板固定发 12 个平均律半音。状态里已经留好了每块板的调音值（`keyboardPlateTune`，左右两半各 12 个），预设也会保存，但没有代码读取它。
   - 量化器关闭（SEMITONES 等）时，音高按半音原样输出，见 `DECISIONS.md` 的 Note quantiser 条目。
 - **【软件化调整】压力**：
   - 硬件不是测按压的力度，而是测手指盖住触摸板的面积：手指贴得越多，PRESSURE 输出越高。
   - 电脑感知不到手指面积，Lunar 24 改成：鼠标点得越靠下压力越大；MIDI 用按键力度和触后（见 1.4、8.1）。
+
+---
+
+## 10. 键盘功能总览、BEHAVIOUR 与 PLATE/BUTTON EDITOR（p.15）
+
+代码：模式在 `core/include/lunar24/core/keyboard_mode.h`；左右两套参数在 `keyboard_side_bank.h`；
+触摸板分左右在 `host/include/host/panel_ui_layout.h`（`plate_is_right_side`）；菜单在 `keyboard_menu_view.h`。
+
+### 10.1 参数分组
+
+- **【一致】手册的 11 组键盘参数，在 Lunar 24 的 KEYBOARD MENU 里都有对应**：
+  - BEHAVIOUR、MODE、ARPEGGIATOR、SEQUENCER、PORTAMENTO、VIBRATO、PRESSURE、QUANTISER、CLOCK、PRESETS，分布在 PLAY、EXPRESSION、ARP、SEQ、SEQ STEPS 页签。
+  - 键盘校准设置在 SERVICE 页签。
+  - PLATE/BUTTON EDITOR 见 10.3。
+  - 各组的细节见后续章节（p.16–20）。
+
+### 10.2 BEHAVIOUR：SINGLE / TWIN / SPLIT
+
+菜单里叫 PLAY。
+
+- **【一致】SINGLE**：12 块板组成一个键盘。PRESSURE 输出由 "Pressure output" 参数决定（压力或压力包络，见 p.18 对应章节）。
+- **【一致】TWIN**：键盘分成两个各 6 块板的独立控制器，可以分别弹奏，共用同一套参数。
+  - 左半边是 C 到 F，音高从 V/OCT 输出，门信号从 GATE LEFT 输出。
+  - 右半边是 F♯ 到 B，音高从 PRESSURE 输出，门信号从 GATE RIGHT 输出。
+  - 两半边各自有独立的滑音、颤音、琶音状态。
+- **【一致】SPLIT**：同样分成左右两半，但每半边有各自独立的一套参数。例如左边开琶音器，右边当普通键盘。
+  - 菜单右上角的 "EDITING LEFT | RIGHT" 选择正在编辑哪一半；每张设置卡片上标明它是"跟随左右"还是"全局"。
+  - 两半边的参数各自存储，预设也分别保存。
+- **【手册未写明】SINGLE 模式下 GATE RIGHT 输出什么**：Lunar 24 在 SINGLE 下固定输出 0 V（见 8.2）。
+- **p.15 的接线示意图（看图判读，手册正文没有逐个写出插孔名）**：两根线从键盘右侧的插孔连到 VCO B 和包络 B。
+  - 我们的判读是：PRESSURE（即右半边的 V/OCT）→ VCO B 的 1v/oct；GATE RIGHT → 包络 B 的 gate。这样右半边就能单独弹 VCO B。
+  - Lunar 24 和硬件一样，这两根线要自己插。不插时，VCO B 仍然通过默认连线跟着左半边走（1.4）。
+- **【软件化调整】MIDI 在 TWIN / SPLIT 下**：按音区分左右，低于 MIDI 设置里 SPLIT 音（默认 C4）的音给左半边，其余给右半边，一个 MIDI 键盘就能同时弹两半（`DECISIONS.md`）。
+
+### 10.3 PLATE/BUTTON EDITOR
+
+- **硬件**：选中这一项后，可以修改按钮和触摸板的数值：按住按钮再转编码器，改按钮的偏移量；按住触摸板再转编码器，改这块板的音高。
+- **Lunar 24**：两项都还没有做（见 9.1、9.3）。
+  - 单块触摸板调音：owner 已决定要做，记入 `STATUS.md` 下一步。
+  - 按钮偏移：owner 决定暂不考虑。
