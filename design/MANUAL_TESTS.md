@@ -356,7 +356,7 @@
   - 第 5 步：5 格随声音一起慢慢暗下去。
   - 第 6 步：遮光时拍频变了，灯条的明暗节奏也跟着变。
 
-**T2.8 TUNE / VOLT 平滑，MIDI 旋钮可细调** ⏳
+**T2.8 TUNE / VOLT 平滑，MIDI 旋钮可细调** ✅（2026-10-04 Mac + MPK MINI IV 通过）
 - 准备：RESET PANEL；打开 DRONE VOICES 的 1；点亮第 3、4、5 列的 **MUTE**，只留第 1、2 列。MPK 用测试用户预设（KnobM = Rel）。
 - 步骤：
   1. MIDI 设置里 LEARN：点第 1 列的 **TUNE**，转一下 K3（应学成 REL 2）。
@@ -1274,7 +1274,6 @@
 ## 还没测的（⏳）
 
 - T0.7 打开应用时 drone 是关的（#99 新加）。
-- T2.8 TUNE / VOLT 平滑与 MIDI 细调。
 - T12.18 新版键盘菜单整体复测。
 - MIDI：延音踏板相关（T14.1、T15.10 第 6 步、CC64 防误学，没有踏板暂不测）；pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查；真用到多声道声卡时再测。
