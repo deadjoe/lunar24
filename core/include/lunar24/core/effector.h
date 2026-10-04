@@ -37,6 +37,14 @@ inline double expMap(double n, double lo, double hi) { return lo * std::pow(hi /
 inline double softClip(double x) { return std::tanh(x); }
 // Gentle limiter for feedback paths and outputs (unity below ~1, smooth above).
 inline double softLimit(double x, double ceiling) { return ceiling * std::tanh(x / ceiling); }
+// The output limiter: untouched up to the knee, then a smooth bend (same slope at the knee)
+// that never passes the ceiling. Normal levels pass clean; only loud peaks are caught.
+inline double kneeLimit(double x, double knee, double ceiling) {
+  const double a = std::fabs(x);
+  if (a <= knee) return x;
+  const double room = ceiling - knee;
+  return std::copysign(knee + room * std::tanh((a - knee) / room), x);
+}
 inline double semitonesToRatio(double s) { return std::pow(2.0, s / 12.0); }
 
 // Deterministic white noise (xorshift), -1..1.
@@ -798,6 +806,10 @@ class DualEffector {
   double blend() const { return knob_[3]; }
   double master() const { return knob_[4]; }
 
+  // Overall output level at MASTER noon: the default patch (four drones through a reverb)
+  // averages about -12 dBFS and only its loudest peaks reach the limiter. // tuned by ear
+  static constexpr double kOutputTrim = 1.75;
+
   void process(double& l, double& r) {
     double k[5];
     for (int i = 0; i < 5; ++i) {
@@ -806,16 +818,17 @@ class DualEffector {
     }
     const double wl = slot_[0].process(l, k[0], k[1], k[2]);
     const double wr = slot_[1].process(r, k[0], k[1], k[2]);
-    // Equal-power dry/wet blend, then master (knob 0.5 = unity), then a soft output limit.
+    // Equal-power dry/wet blend, then master (knob 0.5 = unity), then the output limiter.
     const double dryG = std::cos(0.5 * fx::kPi * k[3]);
     const double wetG = std::sin(0.5 * fx::kPi * k[3]);
-    const double m = 2.0 * k[4];
+    const double m = 2.0 * k[4] * kOutputTrim;
     // AC-coupled output (like the hardware line out): block DC below ~5 Hz.
     const double ol = m * (dryG * l + wetG * wl), orr = m * (dryG * r + wetG * wr);
     dcL_ = ol - dcXl_ + dcPole_ * dcL_; dcXl_ = ol;
     dcR_ = orr - dcXr_ + dcPole_ * dcR_; dcXr_ = orr;
-    l = fx::softLimit(dcL_, 1.9);
-    r = fx::softLimit(dcR_, 1.9);
+    // Knee 1.3 V (-3.7 dBFS at the device), ceiling 1.95 V (-0.2 dBFS). // tuned by ear
+    l = fx::kneeLimit(dcL_, 1.3, 1.95);
+    r = fx::kneeLimit(dcR_, 1.3, 1.95);
   }
 
  private:

@@ -43,7 +43,8 @@ int main() {
     CHECK(worst < 8.0);
   }
 
-  // BLEND = 0 passes the dry signal (at MASTER 0.5 = unity) once the knobs have settled.
+  // BLEND = 0 passes the dry signal (at MASTER 0.5 = the output trim; below the limiter knee)
+  // once the knobs have settled.
   {
     static DualEffector fx;
     fx.init(sr);
@@ -52,11 +53,11 @@ int main() {
     double maxErr = 0.0;
     for (int i = 0; i < int(sr); ++i) {
       double l = 0.3 * testInput(i, sr), r = l;
-      const double dry = l;
+      const double dry = DualEffector::kOutputTrim * l;
       fx.process(l, r);
-      if (i > int(sr) / 2) maxErr = std::fmax(maxErr, std::fabs(std::tanh(dry / 1.9) * 1.9 - l));
+      if (i > int(sr) / 2) maxErr = std::fmax(maxErr, std::fabs(dry - l));
     }
-    CHECK(maxErr < 0.03);  // only the 5 Hz DC blocker differs from the dry signal
+    CHECK(maxErr < 0.05);  // only the 5 Hz DC blocker differs from the dry signal
   }
 
   // Cartridge x 1-2-3 switch selects program cartridge*3 + switch, per side.
