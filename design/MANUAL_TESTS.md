@@ -600,7 +600,7 @@
 - 期望：效果的某个参数随 LFO 自动变化，三个插孔各控制不同的参数。
 
 **T8.4 输出电平：常用情况不再被压** ⏳
-- 准备：RESET PANEL；BLEND 拖到中间偏右；左右卡带随便选一个混响类（如 Shimmer / Space reverb）。
+- 准备：RESET PANEL；BLEND 拖到中间偏右；点卡带槽换到 **CATHEDRAL**，卡带槽下方的 **L** 开关拨到 1（Shimmer）、**R** 开关拨到 3（Space reverb）。
 - 步骤：
   1. 打开 DRONE VOICES 的 1，听一会儿；再把 2、4、5 也打开。
   2. 把 MASTER 从中间（12 点）慢慢拖到最右，再拖回中间。
