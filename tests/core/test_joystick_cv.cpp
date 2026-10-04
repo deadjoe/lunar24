@@ -62,6 +62,10 @@ int find_jack(core::JackId id) {
 // Hard-coded so it is INDEPENDENT of the header's named constants — a mutation that
 // changes those constants in the header diverges from this oracle instead of
 // moving in lockstep with it.
+// The same formula computed elsewhere can differ in the last bit (a compiler may fuse a
+// multiply and an add into one FMA instruction), so compare to a femtovolt, not bit for bit.
+static bool near_volts(double a, double b) { return std::fabs(a - b) < 1e-12; }
+
 static double expected_bipolar(double position, double offset) {
   const double pv = 5.0 * (2.0 * position - 1.0);
   const double ov = 5.0 * (2.0 * offset - 1.0);
@@ -182,7 +186,7 @@ void test_axis_monotonic_trend() {
     j.setX(v); j.setOffsetX(0.5);
     const double out = j.xOut();
     CHECK(out >= prev);
-    CHECK_EQ(out, expected_bipolar(v, 0.5));
+    CHECK(near_volts(out, expected_bipolar(v, 0.5)));
     prev = out;
   }
   // Offset-X monotone non-decreasing with fixed centre position.
@@ -192,7 +196,7 @@ void test_axis_monotonic_trend() {
     j.setX(0.5); j.setOffsetX(v);
     const double out = j.xOut();
     CHECK(out >= prev);
-    CHECK_EQ(out, expected_bipolar(0.5, v));
+    CHECK(near_volts(out, expected_bipolar(0.5, v)));
     prev = out;
   }
   // Y position + offset-Y each monotone, independent axes.
@@ -203,7 +207,7 @@ void test_axis_monotonic_trend() {
     k.setY(v); k.setOffsetY(0.5);
     const double out = k.yOut();
     CHECK(out >= prev);
-    CHECK_EQ(out, expected_bipolar(v, 0.5));
+    CHECK(near_volts(out, expected_bipolar(v, 0.5)));
     prev = out;
   }
 }
@@ -276,7 +280,7 @@ void test_rail_bounded_finite() {
       const double xo = j.xOut();
       CHECK(finite_ok(xo));
       CHECK(xo >= -10.0 && xo <= 10.0);
-      CHECK_EQ(xo, expected_bipolar(x, ox));
+      CHECK(near_volts(xo, expected_bipolar(x, ox)));
     }
   }
   for (int yi = 0; yi <= 20; ++yi) {
@@ -286,7 +290,7 @@ void test_rail_bounded_finite() {
       const double yo = j.yOut();
       CHECK(finite_ok(yo));
       CHECK(yo >= -10.0 && yo <= 10.0);
-      CHECK_EQ(yo, expected_bipolar(y, oy));
+      CHECK(near_volts(yo, expected_bipolar(y, oy)));
     }
   }
 }
