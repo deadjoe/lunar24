@@ -310,6 +310,10 @@ class SynthRuntime {
   static constexpr double kClassicCvOctPerVolt = DroneBank::kDefaultModOctPerVolt * 2.0;
   // VCO SUB switch (-1): a square one octave down, mixed under the main wave. // tuned by ear
   static constexpr double kVcoSubMix = 0.5;
+  // A classic drone voice is five generators summed (up to ~4 V together); scaled so four
+  // voices open at the default VOL leave headroom before the output limiter, and one drone
+  // sits nearer a VCO note. // tuned by ear
+  static constexpr double kClassicDroneLevel = 0.4;
   // Band-limited with polyBLEP at both edges (+2 at phase 0, -2 at phase 0.5).
   double subSquare_(const Vco& v) const {
     if (!v.subEnabled()) return 0.0;
@@ -3592,7 +3596,7 @@ class SynthRuntime {
           // plan reads the SAME-frame value (oracle).
           double s = 0.0;
           for (std::size_t i = 0; i < DroneBank::kGensPerVoice; ++i) s += out5[i];
-          chIn_[classicChannel(classicGroup)] = s;
+          chIn_[classicChannel(classicGroup)] = kClassicDroneLevel * s;
           if (envOutBound_[classicGroup]) {
             const JackId envOut = envOutJack_[classicGroup];
             const JackDescriptor* d = findJackDescriptor_(envOut);
@@ -4019,7 +4023,7 @@ class SynthRuntime {
       const int begin = c * 5;
       const int end = begin + 5;
       for (int v = begin; v < end; ++v) s += drone[v];
-      chIn[classicChannels[c]] = s;
+      chIn[classicChannels[c]] = kClassicDroneLevel * s;
     }
   }
 

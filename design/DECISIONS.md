@@ -82,6 +82,14 @@ Keep these unless a listening test or a real bug says otherwise.
   range per slow tick (about 5 cents of drone TUNE) and up to 4/512 when ticks come within
   40 ms (2/512 within 120 ms), so one encoder both fine-tunes and sweeps. Stepped switches
   keep one position per tick.
+- **Output headroom** (2026-10-04, sound round 1): the WET limiter used to be
+  `1.9 * tanh(x / 1.9)`, bending everything (1.5 dB at one drone, 3-4 dB with four drones
+  and a reverb). It is now a knee limiter (`fx::kneeLimit`): untouched up to 1.3 V (-3.7
+  dBFS), then a smooth bend to a 1.95 V ceiling. The classic drones were the hot source (five
+  generators summed, ~4 V): each voice's sum is scaled by 0.4 (`kClassicDroneLevel`), so four
+  drones with a reverb peak near -4 dBFS and never reach the knee; one drone sits about
+  5 dB above a VCO note instead of 8. Overall about 6 dB quieter; MASTER (up to +6 dB)
+  brings it back.
 - **Drone TUNE / VOLT glide** (`DroneBank::kPitchGlideSeconds`, 30 ms): a 7-bit CC step is 19
   cents of TUNE and 47 of VOLT, and any knob moves in steps, so the generators glide to each
   new pitch instead of jumping. A whole-state load lands at once (`snapGlides`).

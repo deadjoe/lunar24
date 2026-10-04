@@ -3145,8 +3145,8 @@ int main() {
         const double amp = (std::abs(nl[g]) > 1e-12) ? nlg / nl[g] : 0.0;
         l += amp * saw[g];
       }
-      actual[i] = a;
-      lin[i] = l;
+      actual[i] = core::SynthRuntime::kClassicDroneLevel * a;  // the voice's level trim
+      lin[i] = core::SynthRuntime::kClassicDroneLevel * l;
       rt.processFrame(core::RuntimeInputs{0.0, 0.0}, /*driveGraph=*/true);
       prod[i] = rt.droneChannel(0);        // the value the PRODUCT path fed to the mixer.
     }

@@ -226,7 +226,8 @@ void test_level_families() {
     EngineHarness h0, h1;
     CHECK(h0.load(p0)); CHECK(h1.load(p1));
     CHECK(h0.render(kF, 1.0)); CHECK(h1.render(kF, 1.0));   // hold a 1.0 V preamp feed on ch1.
-    CHECK(std::fabs(peakOf(h1.wetL()) - peakOf(h0.wetL())) > 0.05);
+    // The feed is DC and WET is AC-coupled, so the gain shows in the trace, not the peak.
+    CHECK(traceDiff(h1.wetL(), h0.wetL()) > 1e-3);
   }
 }
 
