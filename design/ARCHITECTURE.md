@@ -727,3 +727,60 @@ MIDI 进入键盘的入口在 `host/plugin.cpp`。键盘的各项功能见后续
 - **【手册未写明】"琶音器开着时 LEGATO 不起作用"具体指什么**：手册没说此时是"总是滑"还是"不滑"。
   - Lunar 24 没有对琶音器做特别处理：琶音器每次只发一个音，所以 LEGATO 为 on 时，琶音的音不滑；为 off 时照常滑。
 - 每半边键盘有自己独立的滑音状态。SPLIT 模式下，左右两半可以设不同的滑音参数。
+
+---
+
+## 13. 键盘 VIBRATO 振音、PRESSURE 压力输出、QUANTISER 量化器（p.18）
+
+代码：`core/include/lunar24/core/keyboard_behaviour.h`（`Vibrato`、`PressureOutlet`、`quantize_pitch`、
+`preset_scale_mask`、`scale_editor_for_selector`）；菜单 EXPRESSION 和 PLAY 页在 `keyboard_menu_view.h`；
+数值显示在 `host/include/host/panel_format.h`。
+
+### 13.1 VIBRATO 振音
+
+振音是一个正弦 LFO，叠加在 V/OCT 输出上，让音高轻微地来回摆动。每半边键盘各有一个。
+
+| 参数 | 手册 | Lunar 24 | 结论 |
+|---|---|---|---|
+| SPEED | 0–127，LFO 的速度（原文缺了"设定什么"这个词） | 菜单显示 0–127，对应 0–15 Hz，线性 | 【一致】；Hz 换算是【手册未写明】 |
+| DEPTH | 0–127，调制量 | 0–127，对应 0 到 ±2 个半音 | 【一致】；半音换算是【手册未写明】 |
+| DELAY | 0–127，振音从 0 增长到满深度之前的延迟 | 0–127，对应 0–2.5 s。按下音后，深度在这段时间里从 0 线性增长到满 | 【一致】，是对"延迟后逐渐到满"的理解 |
+| PRESSURE CONTROL | 打开后，振音深度随按压力度变化 | 改成一个 0–127 的旋钮，表示压力对深度影响多少；0 = 关。开满时，轻触几乎不摆，按满时是 DEPTH 的两倍 | 【软件化调整】：手册是开关，Lunar 24 把它做成可调的量 |
+
+- 每次按下新音，振音从相位 0 开始；松手后振音停止。
+
+### 13.2 PRESSURE 输出模式（SINGLE 模式下的 PRESSURE 插孔）
+
+| 模式 | 手册 | Lunar 24 |
+|---|---|---|
+| pressure | 电压连续跟随按压 | 一致，RISE / FALL 分别控制上升、下降时的平滑 |
+| ASR | 起音 / 保持 / 释放包络 | 一致：按下后按 RISE 升到保持电平，松手按 FALL 降到 0 |
+| AD | 起音 / 衰减包络 | 一致：按下后按 RISE 升到顶，再按 FALL 降到 0，不管是否还按着 |
+| LOOP | 循环的 AD 包络 | 一致：按住期间不停地重复 AD |
+| random | 每次按下输出一个随机电压 | 一致，随机值的变化也用 RISE / FALL 平滑 |
+
+- **【一致】RISE / FALL，菜单显示 0–255**：
+  - 在 pressure 和 random 模式下，它们是上升沿、下降沿的平滑（slew）。
+  - 在包络模式下，它们分别是起音时间和衰减 / 释放时间。
+  - 【手册未写明】0–255 对应的时间：0 = 立即，其余按指数刻度从 2 ms 到 2.5 s。旋钮前半段适合短时间，后半段是慢慢涨落。凭耳朵调定。
+- **【手册未写明】包络的高度**：ASR 的保持电平和 AD / LOOP 的峰值，取按下那一刻的压力。
+- 输出范围 0..+8 V（8.2）。压力从哪里来见 9.3（鼠标点的位置，或 MIDI 的力度、触后）。
+
+### 13.3 QUANTISER 量化器
+
+量化器把键盘发出的音高"吸附"到所选音阶里最近的音上。
+
+- **【一致】LOAD SCALE**：手册列了 19 个音阶，菜单的 SCALE 都有这 19 项。
+  - 有明确音程的 11 个照标准乐理实现：Semitones、Ionian、Dorian、Phrygian、Lydian、Mixolydian、Aeolian、Locrian、Pentatonic major / minor、Whole tone。
+  - **【手册未写明】Blues major / minor、Folk、Japanese、Gamelan、Gypsy、Arabian、Flamenco 这 8 个**：手册只给了名字，没给音程，而且这些名称在不同的乐理传统里对应不同的音阶。
+    - Lunar 24 不去猜，菜单里标 "NOT MODELLED"，选了以后音符原样通过（`STATUS.md`、`DECISIONS.md`）。
+- **【一致】选一个音阶，会把它的音写进 SCALE EDITOR**（每个音开 / 关的 12 位表），量化器按这张表工作。
+  - 键盘、MIDI、琶音器、16 步音序器的输出都会被量化。
+  - 吸附到最近的音阶音。正好在两个音中间时取低的那个（【手册未写明】）。
+- **ROOT**（p.19）：音阶的主音，C 到 H，见下一章。
+- **【待办，待 owner 决定】SCALE EDITOR 没有编辑界面**：
+  - 手册允许逐个打开 / 关闭音阶里的音，自己组合音阶。
+  - Lunar 24 的状态里有这张表，但菜单里只能用 LOAD SCALE 整套载入，不能单独开关某个音。
+  - 加上它，就能自己组合那 8 个"未建模"的音阶。
+- **【一致】所有音都关掉时，键盘变成微分音键盘**，量化器不起作用，音高原样通过。
+  - 但 Lunar 24 的触摸板目前固定发 12 个平均律半音，所以"微分音"要等单块触摸板调音做好后才真正有意义（9.3、`STATUS.md`）。
