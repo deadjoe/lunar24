@@ -73,15 +73,19 @@ scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
 1. This PR: `design/ARCHITECTURE.md`, the page-by-page check against the manual.
-2. Knob tapers: envelope A/B A, D, R are linear over 0-10 s (give them the drones' cubic
+2. Keyboard fixes (found by the manual check): turning arp HOLD off must drop the plates no
+   longer held (the arpeggio keeps running now); the 16-step sequencer's ping-pong sticks on
+   step 1 and random plays forward. (HOLD adding new plates to the chord stays, owner.)
+3. Knob tapers: envelope A/B A, D, R are linear over 0-10 s (give them the drones' cubic
    `DroneBank::mapAttSeconds`); LFO A/B rate is linear over 0.1-20 Hz (make it exponential).
-3. Per-plate tuning (manual p.14-15): hold a plate and turn the encoder to retune it to any
+4. Per-plate tuning (manual p.14-15): hold a plate and turn the encoder to retune it to any
    pitch (microtonal). The state already stores `keyboardPlateTune` / `_R`; nothing reads it.
+   Then order the arpeggio by plate number, as the manual does (it uses press order now).
    The pushbutton offsets (`keyboardPushbutton`) stay unwired for now (owner).
-4. Still to check by hand: the keyboard menu (T12.18), SERVICE values after a restart, the
+5. Still to check by hand: the keyboard menu (T12.18), SERVICE values after a restart, the
    Windows build; sustain-pedal items wait for a pedal.
-5. Tune sounds from listening feedback (drone level, modulation depth, S&H, mix, VCO B top).
-6. Later: decorative controls, panel tweaks, AU/VST3. Not planned: effector tails across a
+6. Tune sounds from listening feedback (drone level, modulation depth, S&H, mix, VCO B top).
+7. Later: decorative controls, panel tweaks, AU/VST3. Not planned: effector tails across a
    cartridge switch (the hardware cuts them too).
 
 ## Known limits (by design)
