@@ -103,6 +103,16 @@ Keep these unless a listening test or a real bug says otherwise.
   is about as loud as LP instead of 6 dB under, and a narrow one still rises above it.
   The nonlinearity is solved per sample by linearising each tanh at the previous sample
   (the "cheap zero-delay nonlinear filter" trick), so it stays one division per sample.
+- **Reverb density** (2026-10-04, sound round 3): the cartridge reverb was an 8-line FDN
+  with only the odd lines modulated. On a steady drone chord its sparse resonances made the
+  left and right reverbs (different line lengths) differ by 5 dB on average and up to 12 dB,
+  depending on the root, though they matched on noise. It is now 16 lines (31-101 ms x
+  1.35: about twice the total delay, so twice the resonance density, at the same loudness),
+  each line's length swinging by up to 2.7 ms at its own slow rate (0.15-0.4 Hz), so the
+  resonances keep drifting and the tail moves by a few cents. Space / Resonance reverb now
+  average ~1 dB apart, Shimmer ~2 dB (its octave feedback loop magnifies differences).
+  The two-tap pitch shifter still flutters at 1/window on pure tones; more taps were tried
+  and made deep pitch-dependent notches (-30 dB), so it stays until a listening test asks.
 - **Drone TUNE / VOLT glide** (`DroneBank::kPitchGlideSeconds`, 30 ms): a 7-bit CC step is 19
   cents of TUNE and 47 of VOLT, and any knob moves in steps, so the generators glide to each
   new pitch instead of jumping. A whole-state load lands at once (`snapGlides`).
