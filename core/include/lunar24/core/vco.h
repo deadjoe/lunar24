@@ -65,7 +65,7 @@
 #include <cstdint>
 
 #include "lunar24/core/blamp_kernel.h"
-#include "lunar24/core/polyblep_kernel.h"  // polyblepResidual, read DIRECTLY by sawJumpResidual_
+#include "lunar24/core/blep_kernel.h"
 #include "lunar24/core/pulse_blep_kernel.h"
 #include "lunar24/core/vco_wave_map.h"
 
@@ -312,44 +312,24 @@ class Vco {
     return v;
   }
 
-  //  the pulse's value-jump correction at an unwrapped phase, in the SAME
-  // normalize-by-phase terms as the triangle correction above: the kernel wants a normalized
-  // phase in [0,1) and the normalized per-sample increment, and `frac(cp)` is exactly the phase
-  // the naive shape was read at, so the correction is read at that same phase and not at a
-  // neighbouring one. `step` is the increment the phase accumulator actually advanced by, so a
-  // corrected and an uncorrected render share one phase trajectory (see pulse_blep_kernel.h).
-  //
-  // The duty is EFFECTIVE duty, the same value waveformSampleAt feeds the pulse node: the two
-  // edges of the waveform being corrected move with PWM, and a correction read against the raw
-  // `duty_` would place the B edge at the wrong phase whenever PWM depth is non-zero. This is the
-  // static-vs-moving-duty distinction -- a fixed-duty phase formula says nothing about a moving
-  // edge, so the correction has to be driven by the duty the sampler used.
+  // The pulse's value-jump correction at an unwrapped phase: the wide BLEP (blep_kernel.h) of
+  // both edges, read at frac(cp), the phase the naive shape was read at. The duty is the
+  // EFFECTIVE duty (the one waveformSampleAt uses), so the falling edge is corrected where it
+  // really is while PWM moves it.
   double pulseBlepCorr_(double cp, double step) const {
-    return polyblepPulseCorrection(frac(cp), effectiveDuty(), step);
+    // Up by 2 at phase 0, down by 2 at the duty edge.
+    const double dt = std::fabs(step);
+    const double t = frac(cp);
+    return 2.0 * (blepEdgeSum(t, 0.0, dt) - blepEdgeSum(t, effectiveDuty(), dt));
   }
 
-  //  the SAW / INVSAW value-jump residual at an unwrapped phase, in the same
-  // normalize-by-phase terms as the two corrections above and for the same reason: the naive shape
-  // was read at frac(cp), so the residual is read at that same phase and not at a neighbouring one.
-  //
-  // ONE residual serves both nodes. saw(p) = 2p-1 and invSaw(p) = -(2p-1) jump at the SAME phase
-  // (the wrap) by the SAME magnitude (2, downward for the saw, upward for the invSaw), so the
-  // kernel output is identical for the two and only the sign of its application differs. That is
-  // exactly the reason invSawShape is written as the negation of sawShape rather than re-derived.
-  //
-  // THE KERNEL WIDTH IS CAPPED AT kPolyblepMaxDt, exactly as the pulse sibling does and for the
-  // same reason: polyblepResidual's own contract puts dt > 0.5 outside its domain (its two windows
-  // would overlap), while the product's `step` is |instHz|/sr with no clamp anywhere on the way.
-  // Capping the WIDTH handed to the residual while the caller still advances by the true `step` is
-  // the pulse path's already-established policy, so all three polyBLEP-corrected nodes share one
-  // policy rather than two. The ternary is spelled out, not std::min, so the in-domain case is
-  // visibly the identity: for dt <= kPolyblepMaxDt the comparison is false and `w` IS `dt`, bit for
-  // bit (the same construction, and the same intent, as polyblepPulseCorrection's).
+  // The SAW / INVSAW value-jump residual at an unwrapped phase. One residual serves both nodes:
+  // saw(p) = 2p-1 and invSaw(p) = -(2p-1) jump at the same phase (the wrap) by the same size
+  // (2, down for the saw, up for the invSaw), so only the sign of its application differs.
   static double sawJumpResidual_(double cp, double step) {
-    const double dt = std::fabs(step);                  // |instHz| / sr; finite on reversal.
-    if (!(dt > 0.0) || !std::isfinite(dt)) return 0.0;  // zero/NaN step -> no correction.
-    const double w = (dt < kPolyblepMaxDt) ? dt : kPolyblepMaxDt;
-    return polyblepResidual(frac(cp), w);
+    // The saw falls by 2 at the wrap; returned as the residual R of the old convention
+    // (v -= R for the saw, v += R for the inverted saw), i.e. 2 x the unit-jump residual.
+    return 2.0 * blepEdgeSum(frac(cp), 0.0, std::fabs(step));
   }
 
   // How much of the SAW node's value-jump correction is in force for the active waveform.
@@ -548,12 +528,10 @@ inline double Vco::blampG(double u) { return blampKernel(u); }
 inline double Vco::triangleBlampCorr(double cp, double step) const {
   const double dt = std::fabs(step);        // |instHz| / sr; finite on reversal.
   if (!(dt > 0.0) || !std::isfinite(dt)) return 0.0;  // zero/NaN step -> none.
-  // Bounded high-step fallback: once the window radius reaches half a period,
-  // the peak and valley corners merge and the phase-local corner model is no
-  // longer verifiable. Return the bounded naive waveform (no correction), and
-  // list this range honestly (not as improved coverage). The predicate is SHARED
-  // with the Schmitt ramp so both callers fall back on the same physical fact.
-  if (blampSupportReachesHalfPeriod(dt)) return 0.0;
+  // At high pitch (above ~3 kHz at 48 kHz) the support of one corner reaches the next; the
+  // corrections of overlapping corners simply add (the loop below sums them all), which keeps
+  // a high triangle band-limited instead of falling back to the naive shape (-34 dB aliasing).
+  if (dt > 0.5) return 0.0;  // the fundamental itself is at Nyquist or above
   // Paper scale: the residual is scaled by 2*mu with |mu| = 2*Tphi = 4*dt for the
   // +-1 triangle, so 2*mu = 8*dt; blampKernel already carries that 8 (corner
   // 8/pi^2), so the per-sample scale here is mag = dt, i.e. 2*mu*R = dt*(8/pi^2).

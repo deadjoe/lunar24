@@ -113,6 +113,14 @@ Keep these unless a listening test or a real bug says otherwise.
   average ~1 dB apart, Shimmer ~2 dB (its octave feedback loop magnifies differences).
   The two-tap pitch shifter still flutters at 1/window on pure tones; more taps were tried
   and made deep pitch-dependent notches (-30 dB), so it stays until a listening test asks.
+- **VCO anti-aliasing** (2026-10-04, sound round 4): the saw and pulse edges used a two-point
+  polyBLEP, which leaves aliases about 40 dB under a high note (audible as a rough flutter at
+  oct+3), and the triangle's BLAMP switched itself off above ~3 kHz (naive shape, -34 dB).
+  Saw and pulse now use a wide BLEP (`blep_kernel.h`): the step counterpart of the triangle's
+  BLAMP, the same Hann-windowed sinc over 8 samples each side, summed over every edge in reach
+  (edges are predicted from the phase, so no latency). The triangle keeps correcting at high
+  pitch by summing overlapping corners. Folded aliases below 15 kHz: about -85 dB (saw,
+  pulse) and -70 dB (triangle at 5 kHz), from -40 / -34 dB.
 - **Drone TUNE / VOLT glide** (`DroneBank::kPitchGlideSeconds`, 30 ms): a 7-bit CC step is 19
   cents of TUNE and 47 of VOLT, and any knob moves in steps, so the generators glide to each
   new pitch instead of jumping. A whole-state load lands at once (`snapGlides`).
