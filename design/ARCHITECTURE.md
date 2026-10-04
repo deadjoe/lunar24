@@ -825,7 +825,39 @@ MIDI 进入键盘的入口在 `host/plugin.cpp`。键盘的各项功能见后续
   - 【软件化调整】硬件是转编码器选 A–D、按下进入子页面再选操作。Lunar 24 在菜单底部直接排着 A | B | C | D 和 LOAD / SAVE / INIT 按钮。
   - INIT 要在 4 秒内点两次才生效，防止误清。
 - 预设随机器状态一起保存，下次启动仍然在。
-- **【待办，待 owner 决定】RESET PANEL 会把预设 A–D 一起清空**：
+- **【待办】RESET PANEL 会把预设 A–D 一起清空**（owner 决定：复位时保留预设 A–D，需要改代码；核查结束后写入 `STATUS.md`）：
   - RESET PANEL 把整台机器恢复成出厂默认，键盘预设也在其中，所以存好的 4 个预设会被清掉。
   - 硬件上的预设存在键盘自己的存储里，没有"一键复位整台机器"这种操作，所以手册里没有对应的情况。
-  - 可选的做法：RESET PANEL 时保留预设 A–D，只复位面板和键盘的当前设置。MIDI 绑定已经是这样处理的，复位时会保留（`DECISIONS.md`）。
+  - 改法：RESET PANEL 时保留预设 A–D，只复位面板和键盘的当前设置，和 MIDI 绑定的处理方式一样（`DECISIONS.md`）。
+
+---
+
+## 15. 键盘校准 KEYBOARD'S CALIBRATION（p.20）
+
+代码：菜单 SERVICE 页在 `host/include/host/keyboard_menu_view.h`；数值存在机器状态里（`device_state.h`）；
+`core/include/lunar24/core/keyboard_output_calibration.h` 里有输出校准的换算函数，但目前没有被调用。
+
+### 15.1 硬件的校准菜单是做什么的
+
+手册第 20 页的设置，都是为了让真实电路的输出更准，并让触摸感应适应环境：
+
+- 开机时按住编码器进入校准模式。
+- 用万用表把 V/OCT 和 PRESSURE 输出在 0 / 2 / 5 / 8 V 四个点上校准到准确值。
+- 选择 DAC 芯片的参考电压来源（DAC 是把数字值转成电压的芯片）。
+- 调触摸感应芯片 MPR121 的触摸门限（默认 650）、松开门限（默认 690）、压力最小值和最大值、充放电时间和防抖。
+- 编码器方向；初始化校准值、保存校准值。
+
+### 15.2 Lunar 24 的做法
+
+- **【软件化调整】菜单的 SERVICE 页把这些设置都列出来了**，名称、默认值和手册一致：V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE、DIRECTION。
+  - 不用"开机按住编码器"，直接打开菜单就能看到。
+- **【软件化调整】除 ENCODER DIRECTION 外，其他都只保存、不起作用**（`STATUS.md`、`DECISIONS.md`）。原因：
+  - 软件的电压是精确计算出来的，没有 DAC 误差，不需要用万用表校准，也没有可选的 DAC 芯片。
+  - 触摸板由鼠标、电脑键盘或 MIDI 演奏，没有电容感应芯片，所以触摸门限、压力范围、充放电、防抖都没有对应的东西。
+  - `keyboard_output_calibration.h` 里准备了 V/OCT 和 PRESSURE 的校准换算（±20 %），但目前没有接到输出上。按上面的理由，接上也没有实际意义，保持现状。
+- **【一致】ENCODER DIRECTION**：normal / reversed。在 Lunar 24 里，它反转的是"在编码器上滚动鼠标滚轮"移八度的方向（9.1）。
+- **【软件化调整】不需要单独的 INIT / SAVE CALIBRATION 操作**：
+  - 改动立即保存在机器状态里，随状态一起存盘。
+  - RESET PANEL 会把它们恢复成默认值。
+- **【手册原文】TOUCH THRESHOLD 一段里，"650 # Release threshold … 690" 两个默认值写在同一句里**，单位也没说。Lunar 24 照原样保留两个默认值。
+- 还要人工确认：SERVICE 的数值在重启 app 后是否还在（`STATUS.md` 的手动检查项）。
