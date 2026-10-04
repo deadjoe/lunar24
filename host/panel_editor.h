@@ -1001,8 +1001,6 @@ class RecordSourceControl : public IControl {
   Widget w_;
 };
 
-// Non-interactive panel hardware: photo sensor, the drone LED bar (lit per unmuted tone),
-// and jacks that have no function in Lunar 24.
 // A classic drone's photo sensor, played with the mouse as a hand: press to bring the hand
 // over the eye, drag up to bring it closer (darker) and down to lift it, drag sideways to
 // sweep the fingers across it (the light flickers between them); release to take the hand
@@ -1060,25 +1058,37 @@ class PhotoSensorControl : public IControl {
   float startX_ = 0.f, startY_ = 0.f, depth_ = 0.f, handX_ = 0.f, handY_ = 0.f;
 };
 
-class DecorControl : public IControl {
+// A classic drone's OSC STATUS: one lamp per generator, as bright as that generator sounds
+// right now (MUTE, the voice's envelope, its own level), pulsing with the voice's beating.
+// The engine writes the levels once per block; this only reads them.
+class OscStatusControl : public IControl {
  public:
-  DecorControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetIgnoreMouse(true); }
+  OscStatusControl(EditorShared& s, const Widget& w)
+      : IControl(drawRectOf(w)), s_(s), group_(static_cast<int>(w.id)), w_(w) {
+    SetIgnoreMouse(true);
+  }
+  bool IsDirty() override {
+    for (int i = 0; i < 5; ++i)
+      if (std::fabs(s_.engine.oscLamp(group_, i) - shown_[i]) > 0.02f) return true;
+    return IControl::IsDirty();
+  }
   void Draw(IGraphics& g) override {
-    switch (w_.id) {
-      case 1:
-        for (std::uint32_t i = 0; i < 5; ++i) {
-          const bool muted = s_.value(w_.id2 + i) > 0.5;
-          g.FillRect(col(muted ? theme::kLedOff : theme::kLedOn),
-                     IRECT(float(w_.x() + 5 + i * 12.5), float(w_.y() + 8), float(w_.x() + 14 + i * 12.5), float(w_.y() + 38)));
-        }
-        break;
-      default: drawJack(g, float(w_.cx), float(w_.cy), float(w_.w / 2), false); break;
+    GraphicsSink sink{g};
+    for (int i = 0; i < 5; ++i) {
+      shown_[i] = s_.engine.oscLamp(group_, i);
+      // Spread the sounding range (about 0.3..0.9) over the whole lamp, so the pulse reads.
+      const float b = std::pow(std::clamp((shown_[i] - 0.3f) / 0.6f, 0.f, 1.f), 1.3f);  // tuned by eye
+      const float x0 = float(w_.x() + 5 + i * 12.5);
+      art::drawBarLed(sink, x0, float(w_.y() + 8), x0 + 9.f, float(w_.y() + 38), hexOf(theme::kLedOn),
+                      shown_[i] > 0.01f ? std::max(b, 0.08f) : 0.f);
     }
   }
 
  private:
   EditorShared& s_;
+  int group_;
   Widget w_;
+  float shown_[5] = {-1.f, -1.f, -1.f, -1.f, -1.f};
 };
 
 // Text for the overlays: each label has a box and an alignment (0 left, 1 centre, 2 right);
@@ -1486,8 +1496,8 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::Encoder: g->AttachControl(new EncoderControl(shared, w)); break;
       case WidgetKind::OctaveKey: g->AttachControl(new OctaveKeyControl(shared, w)); break;
       case WidgetKind::Display: g->AttachControl(new DisplayControl(shared, w)); break;
-      case WidgetKind::Decor: g->AttachControl(new DecorControl(shared, w)); break;
       case WidgetKind::PhotoSensor: g->AttachControl(new PhotoSensorControl(shared, w)); break;
+      case WidgetKind::OscStatus: g->AttachControl(new OscStatusControl(shared, w)); break;
     }
   }
   // The bindable widget rects for MIDI learn (panel click picks the target).

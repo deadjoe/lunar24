@@ -283,6 +283,31 @@ void roundRectPath(Sink& s, float x0, float y0, float x1, float y1, float r) {
   s.closePath();
 }
 
+// One segment of a bar-graph LED (the classic drones' OSC STATUS) at brightness b (0 = off ..
+// 1 = full). Off, the segment is a dark tinted window; lit, the die makes its middle hot and
+// pale and the edges saturated, and the light blooms onto the panel around it, growing faster
+// than the brightness (b^2) the way a real LED's glow does. Amounts tuned by eye.
+template <class Sink>
+void drawBarLed(Sink& s, float x0, float y0, float x1, float y1, std::uint32_t rgb, float b) {
+  b = b < 0.f ? 0.f : (b > 1.f ? 1.f : b);
+  const float cx = 0.5f * (x0 + x1), cy = 0.5f * (y0 + y1), w = x1 - x0, h = y1 - y0;
+  if (b > 0.01f) {  // bloom
+    s.circle(cx, cy, h * 1.1f);
+    s.fillGrad(radialGrad(cx, cy, w * 0.4f, h * 1.1f, rgb, 0.6f * b * b, rgb, 0.f));
+  }
+  roundRectPath(s, x0 - 1.5f, y0 - 1.5f, x1 + 1.5f, y1 + 1.5f, 2.f);  // the bezel
+  s.fillGrad(vertical(y0, y1, 0x16100e, 0x4a403a));
+  // Off is a deep maroon; the colour climbs faster than linear so mid levels stay visibly
+  // darker than full, and full is hot and pale in the middle.
+  const std::uint32_t off = 0x2a0e0c;
+  const std::uint32_t core = mix(off, mix(rgb, 0xffe4d8, 0.75f * b), std::pow(b, 1.2f));
+  const std::uint32_t edge = mix(0x1c0807, rgb, std::pow(b, 1.6f));
+  roundRectPath(s, x0, y0, x1, y1, 1.5f);
+  s.fillGrad(radialGrad(cx, cy, 0.f, 0.6f * h, core, 1.f, edge, 1.f));
+  roundRectPath(s, x0, y0, x1, y1, 1.5f);  // the window's glass, catching light at the top
+  s.fillGrad(vertical(y0, y0 + 0.45f * h, 0xffffff, 0xffffff, 0.22f, 0.f));
+}
+
 // A DRONE VOICES key: a square keycap standing in a well in the panel. The cap's sides show
 // below and to the right of its top (light from the top left), the top is slightly dished and
 // catches light at its upper edge, and the LED window near the top is a small red lens that

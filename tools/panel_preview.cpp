@@ -277,13 +277,11 @@ int main(int argc, char** argv) {
         art::drawDisplayGlass(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
         break;
       case WidgetKind::PhotoSensor: art::drawSensor(sink, float(w.cx), float(w.cy), float(w.w / 2)); break;
-      case WidgetKind::Decor:
-        if (w.id == 3) {
-          jack(w);
-        } else {
-          for (std::uint32_t i = 0; i < 5; ++i)
-            std::printf("<rect x='%.1f' y='%.1f' width='9' height='30' fill='%s'/>\n", w.x() + 5 + i * 12.5, w.y() + 8,
-                        col(defaults().parameters[w.id2 + i] > 0.5 ? theme::kLedOff : theme::kLedOn).c_str());
+      case WidgetKind::OscStatus:  // the app opens with the drones off: lamps dark
+        for (std::uint32_t i = 0; i < 5; ++i) {
+          const float x0 = float(w.x() + 5 + i * 12.5);
+          art::drawBarLed(sink, x0, float(w.y() + 8), x0 + 9.f, float(w.y() + 38),
+                          (std::uint32_t(theme::kLedOn.r) << 16) | (theme::kLedOn.g << 8) | theme::kLedOn.b, 0.f);
         }
         break;
     }

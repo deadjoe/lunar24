@@ -71,8 +71,8 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. Next: OSC STATUS bars as live per-oscillator levels (flickering with the beating);
-   then MIDI binding for the photo sensors (pad pressure). Photo sensors done (T2.6).
+1. Next: MIDI binding for the photo sensors (pad pressure). Done: photo sensors (T2.6),
+   OSC STATUS as live per-oscillator lamps pulsing with the beating (T2.7).
 2. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
    surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
 3. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix,
