@@ -340,7 +340,7 @@
   - 第 5 步：音高随手指扫过而快速、不规则地抖动。
   - 第 6 步：完全没有变化（MOD 没点亮的振荡器不受光线影响）。
 
-**T2.7 OSC STATUS 灯条** ⏳
+**T2.7 OSC STATUS 灯条** ✅
 - 步骤：
   1. RESET PANEL 后先不打开 DRONE VOICES 的 1，看 DRONE 1 右上角的 5 格灯条。
   2. **ATT** 拖到中间偏右，打开 DRONE VOICES 的 1。
@@ -1225,7 +1225,6 @@
 ## 还没测的（⏳）
 
 - T0.7 打开应用时 drone 是关的（#99 新加）。
-- T2.7 OSC STATUS 灯条。
 - T12.18 新版键盘菜单整体复测。
 - MIDI：延音踏板相关（T14.1、T15.10 第 6 步、CC64 防误学，没有踏板暂不测）；运行中直接拔 MPK 的 USB 线（与 T14.2 的选 off 不同）；pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查；真用到多声道声卡时再测。
