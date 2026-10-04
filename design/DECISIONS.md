@@ -91,6 +91,18 @@ Keep these unless a listening test or a real bug says otherwise.
   1.75x (`DualEffector::kOutputTrim`, owner: the first cut left the app too quiet on laptop
   speakers): four drones with a reverb average -12 dBFS at MASTER noon and only their
   loudest peaks (under 1 %) touch the knee.
+- **Filter character** (2026-10-04, sound round 2): the VCF was a clean linear SVF whose
+  RESONANCE stopped short of oscillation (damping 2 -> 0.1, linear in the knob, so most of
+  the action sat in the last third). It is now the same zero-delay SVF with saturating
+  integrators (op-amps running out of current, ~2.5 V) and a resonance that fades back to a
+  mild damping (0.7) once the band output passes ~0.45 V. The knob follows
+  `2 (1 - res)^1.6`, and the last ~7 % pushes the damping negative, so the filter sings on
+  its own (a sine at the cutoff, about one drone's level), as a Polivoks does. Loud input
+  at high resonance growls instead of shooting +20 dB into the output limiter. The LP keeps
+  unity at DC, so resonance still does not thin the bass. BP is scaled by `sqrt(2k)`: wide BP
+  is about as loud as LP instead of 6 dB under, and a narrow one still rises above it.
+  The nonlinearity is solved per sample by linearising each tanh at the previous sample
+  (the "cheap zero-delay nonlinear filter" trick), so it stays one division per sample.
 - **Drone TUNE / VOLT glide** (`DroneBank::kPitchGlideSeconds`, 30 ms): a 7-bit CC step is 19
   cents of TUNE and 47 of VOLT, and any knob moves in steps, so the generators glide to each
   new pitch instead of jumping. A whole-state load lands at once (`snapGlides`).

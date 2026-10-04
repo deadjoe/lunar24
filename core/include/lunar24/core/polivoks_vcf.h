@@ -24,8 +24,9 @@
 //     is PROVISIONAL.
 //   * RESONANCE (vcf.l_res id14 / vcf.r_res id34) — "Filter resonance (boost the
 //     frequency near cutoff point)" (L1140). unit "norm" 0..1, default 0.0, CONFIRMED
-//     (semantics — boost near cutoff). The damping/curve and the non-self-oscillation
-//     floor are PROVISIONAL (no manual number).
+//     (semantics — boost near cutoff). The damping curve, the self-oscillation over
+//     the last few percent of the knob and the integrator saturation are tuned by ear
+//     (no manual number).
 //   * MOD L/MOD R (vcf.l_mod id15 / vcf.r_mod id35) — "MOD L and MOR R – CV amount
 //     control" (L1145). unit "norm" 0..1, default 0.0, CONFIRMED. CV shifting the
 //     cutoff by 2^(mod*cv/oct) is a PROVISIONAL model (no CV range / V-oct figure).
@@ -53,6 +54,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 
 namespace lunar24::core {
 
@@ -71,6 +73,7 @@ class PolivoksFilter {
       channel_[i].mod = 0.0;   // registry default.
       channel_[i].mode = 0.0;  // BP until set; the machine applies the registry default (LP).
     }
+    channel_[1].noise ^= 0xD1B54A32D192ED03ULL;  // L and R hiss differently
   }
 
   void setSampleRate(double sr) {
@@ -138,6 +141,8 @@ class PolivoksFilter {
     for (int i = 0; i < 2; ++i) {
       channel_[i].ic1eq = 0.0;
       channel_[i].ic2eq = 0.0;
+      channel_[i].u1 = 0.0;
+      channel_[i].u2 = 0.0;
     }
   }
 
@@ -148,8 +153,24 @@ class PolivoksFilter {
   static constexpr double kFreqMinHz = 20.0;       // cutoff norm 0 (log map).
   static constexpr double kFreqMaxHz = 20000.0;    // cutoff norm 1 (log map).
   static constexpr double kCvVoltsPerOctave = 1.0; // CV -> octave depth (provisional).
+  // Resonance: damping k = kDampMax * (1 - res)^kResCurve - kOscPush * res^12. The curve
+  // spreads the audible range over the whole knob; the small push makes the filter sing on
+  // its own (self-oscillate) over the last few percent, as a Polivoks does. // tuned by ear
   static constexpr double kDampMax = 2.0;          // res=0 (flat response).
-  static constexpr double kDampMin = 0.1;          // res=1 (max resonance, kept >0).
+  static constexpr double kResCurve = 1.6;
+  static constexpr double kOscPush = 0.06;
+  // The integrators are op-amps that run out of current: each one's input goes through a
+  // soft limit at about this many volts. Quiet signals pass clean; loud ones and high
+  // resonance growl, the peak stays bounded and the pitch sags a little. // tuned by ear
+  static constexpr double kIntegratorVolts = 2.5;
+  // The resonance itself (the feedback that undoes the damping) also runs out: beyond
+  // about kResVolts at the band output the damping climbs back toward kLoudDamp. This sets
+  // the self-oscillation level and keeps a loud signal from screaming. // tuned by ear
+  static constexpr double kResVolts = 0.45;
+  static constexpr double kLoudDamp = 0.7;
+  static double dampFor(double res) {
+    return kDampMax * std::pow(1.0 - res, kResCurve) - kOscPush * std::pow(res, 12.0);
+  }
   // PROVISIONAL software safety cap: the effective cutoff is capped
   // at min(20000 Hz, 0.49·sr) so the prewarped `g = tan(pi·fc/sr)` stays away from its
   // pi/2 singularity (fc/sr < 0.49 < 0.5). This is a software safety POLICY, NOT a
@@ -171,6 +192,9 @@ class PolivoksFilter {
     mutable double memoFreq = -1.0, memoSr = 0.0, memoBaseFc = 0.0;
     mutable double memoShift = 0.0, memoShiftScale = 1.0;
     mutable double memoFc = -1.0, memoG = 0.0;
+    double memoRes = -1.0, memoK = kDampMax, memoBpGain = 2.0;
+    double u1 = 0.0, u2 = 0.0;   // last integrator inputs (the saturation's operating point).
+    std::uint64_t noise = 0x9E3779B97F4A7C15ULL;
   };
 
   static bool idx_(int ch) { return ch == 0 || ch == 1; }
@@ -225,14 +249,16 @@ class PolivoksFilter {
     return std::tanh(c.inputDrive * x) / c.inputDrive;
   }
 
-  // Two-integrator trapezoidal (TPT/ZDF) state-variable filter.
-  // Recursion numeric contract, matching Andrew Simper's
-  // SvfLinearTrapOptimised2 ("The Art of VA Filter Design", cytomic SVF):
-  //   g = tan(pi·fc/sr), k = damp (the SAME 2−1.9·res map), a1 = 1/(1+g(g+k)),
-  //   a2 = g·a1, a3 = g·a2; v3 = x − ic2eq; v1 = a1·ic1eq + a2·v3;
-  //   v2 = ic2eq + a2·ic1eq + a3·v3; ic1eq = 2v1 − ic1eq; ic2eq = 2v2 − ic2eq.
-  // Outputs: BP = v1, LP = v2. The lowpass has unity DC gain independent of `damp`,
-  // so raising resonance does not drop the low end (the Polivoks-defining property).
+  // Two-integrator trapezoidal (TPT/ZDF) state-variable filter (Simper's linear SVF,
+  // "The Art of VA Filter Design") with saturating integrators. Each integrator's input u
+  // drives it through Vs*tanh(u/Vs); following "mystran"'s cheap zero-delay
+  // nonlinear filters (KVR, 2012), the tanh is linearised around the previous sample's input, which turns
+  // it into a per-integrator gain g_i = g*tanh(u/Vs)/(u/Vs) and keeps the solve exact:
+  //   v1 = (g1*(x - s2) + s1) / (1 + g1*(k + g2)),  v2 = s2 + g2*v1,
+  //   s1 = 2v1 - s1, s2 = 2v2 - s2.     BP = v1, LP = v2.
+  // With g1 = g2 = g this is the linear SVF exactly. The lowpass keeps unity DC gain for
+  // any k (the integrators are idle at DC), so raising resonance does not drop the low end
+  // (the Polivoks-defining property).
   double tick_(Channel& c, double x) {
     if (c.sr != sr_) { c.sr = sr_; }
     x = inputStage_(c, x);  // level-dependent, per-channel input nonlinearity.
@@ -241,19 +267,46 @@ class PolivoksFilter {
       c.memoFc = fc;
       c.memoG = std::tan(3.14159265358979323846 * fc / sr_);
     }
+    if (c.res != c.memoRes) {
+      c.memoRes = c.res;
+      c.memoK = dampFor(c.res);
+      c.memoBpGain = std::sqrt(2.0 * std::fmax(c.memoK, 0.02));
+    }
     const double g = c.memoG;
-    const double damp = kDampMax + (kDampMin - kDampMax) * c.res;
-    const double k = damp;  // same-damp definition (2−1.9·res), as in the Chamberlin.
-    const double a1 = 1.0 / (1.0 + g * (g + k));
-    const double a2 = g * a1;
-    const double a3 = g * a2;
-    const double v3 = x - c.ic2eq;
-    const double v1 = a1 * c.ic1eq + a2 * v3;
-    const double v2 = c.ic2eq + a2 * c.ic1eq + a3 * v3;
+    const double k = c.memoK;
+    // A real filter past the oscillation point starts from its own noise; a whisper of
+    // noise (about -140 dB) does the same here. Only in that range, so silence stays exact.
+    if (k < 0.0) {
+      c.noise = c.noise * 6364136223846793005ULL + 1442695040888963407ULL;
+      x += 1e-7 * (static_cast<double>(c.noise >> 11) * (1.0 / 4503599627370496.0) - 1.0);
+    }
+    const double g1 = g * softGain_(c.u1, kIntegratorVolts);
+    const double g2 = g * softGain_(c.u2, kIntegratorVolts);
+    // Damping as the circuit sees it: the part of the resonance below kLoudDamp fades as
+    // the band output (u2 = last v1) grows, so the loop settles instead of running away.
+    const double push = kLoudDamp - k;
+    const double kEff = push > 0.0 ? kLoudDamp - push * softGain_(c.u2, kResVolts) : k;
+    const double v1 = (g1 * (x - c.ic2eq) + c.ic1eq) / (1.0 + g1 * (kEff + g2));
+    const double v2 = c.ic2eq + g2 * v1;
+    c.u1 = x - kEff * v1 - v2;  // what each integrator was driven with, for the next sample
+    c.u2 = v1;
     c.ic1eq = 2.0 * v1 - c.ic1eq;
     c.ic2eq = 2.0 * v2 - c.ic2eq;
-    // Two-state output selection (bp | lp), not a continuous morph.
-    return (c.mode < 0.5) ? v1 : v2;  // bp=v1, lp=v2.
+    if (!std::isfinite(c.ic1eq) || !std::isfinite(c.ic2eq)) {  // never latch a blow-up
+      c.ic1eq = c.ic2eq = c.u1 = c.u2 = 0.0;
+      return 0.0;
+    }
+    // Two-state output selection (bp | lp), not a continuous morph. The bandpass is scaled
+    // so a wide (low-resonance) BP is about as loud as LP and a narrow one still rises
+    // a little, rather than the raw SVF's 0.5x .. 10x. // tuned by ear
+    return (c.mode < 0.5) ? c.memoBpGain * v1 : v2;
+  }
+
+  // tanh(u/V)/(u/V): 1 for small u, falling as the stage runs out of current.
+  static double softGain_(double u, double volts) {
+    const double a = std::fabs(u) / volts;
+    if (a < 1e-4) return 1.0;
+    return std::tanh(a) / a;
   }
 
   // Resolve the effective CV for a channel. LINK (active) overrides the plugged CV R

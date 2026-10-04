@@ -498,13 +498,14 @@ void test_gh6_vcf_input_stage_level_nonlinearity() {
   CHECK(low > 0.3);          // small signal still has a real fundamental.
   CHECK(high > 0.05);        // and the folded high signal is not dead.
 
-  // drive==0 is exact passthrough -> low/high are bit-identical (fully linear). This
-  // pins the nonlinearity on the drive, so a bypass mutation (stage returns x) trips
-  // the high<low*0.8 check AND this check would flag a stray fold at drive=0.
+  // drive==0 is a passthrough: what is left is only the integrators' own gentle
+  // saturation (under 2 % at 3 V), far from the input stage's fold. This pins the
+  // nonlinearity on the drive, so a bypass mutation (stage returns x) trips the
+  // high<low*0.8 check AND this check would flag a stray fold at drive=0.
   const double low0 = vcf_amp_sweep_gain(sr, cn, probe, 0.15, 0.0);
   const double high0 = vcf_amp_sweep_gain(sr, cn, probe, 3.0, 0.0);
   std::printf(" VCF input stage (drive=0, linear): ratio %.4f\n", high0 / low0);
-  CHECK(std::fabs(low0 - high0) < 1e-9);
+  CHECK(std::fabs(high0 / low0 - 1.0) < 0.02);
 }
 
 // ----------------------------------------------------------------------------
@@ -696,11 +697,49 @@ static void test_gain_audibly_distorts() {
   CHECK(r1 < 2.0 * r0 && r1 > 0.5 * r0);  // the make-up keeps the level within +-6 dB.
 }
 
+// Self-oscillation over the top of RESONANCE: with no input the filter sings a steady tone
+// at its cutoff, at a bounded level; a little lower it stays silent; a loud input into a
+// high resonance stays bounded (the saturating integrators and resonance).
+void test_resonance_self_oscillation() {
+  const double sr = 48000.0;
+  auto run = [&](double res, double inAmp, double inHz, double& peak, int& crossings) {
+    PolivoksFilter f = make_filter(sr, res, false, 1000.0);
+    peak = 0.0;
+    crossings = 0;
+    double last = 0.0;
+    bool finite = true;
+    for (int i = 0; i < int(2.0 * sr); ++i) {
+      const double x = inAmp * std::sin(drone_test::kTwoPi * inHz * i / sr);
+      double l = 0.0, r = 0.0;
+      f.process(x, 0.0, l, r);
+      finite = finite && std::isfinite(l);
+      if (i >= int(sr)) {
+        peak = std::fmax(peak, std::fabs(l));
+        if (last < 0.0 && l >= 0.0) ++crossings;
+      }
+      last = l;
+    }
+    CHECK(finite);
+  };
+  double peak = 0.0;
+  int crossings = 0;
+  run(1.0, 0.0, 0.0, peak, crossings);
+  std::printf(" self-oscillation: res 1 peak %.3f V, %d Hz\n", peak, crossings);
+  CHECK(peak > 0.2 && peak < 1.0);                    // sings, at a sane level
+  CHECK(crossings > 900 && crossings < 1050);         // at (just under) the 1 kHz cutoff
+  run(0.85, 0.0, 0.0, peak, crossings);
+  CHECK_EQ(peak, 0.0);                                // below the top: silence stays silent
+  run(0.95, 4.0, 1000.0, peak, crossings);
+  std::printf(" loud input at the resonant peak: %.3f V\n", peak);
+  CHECK(peak < 4.0);                                  // the peak does not run away
+}
+
 int main() {
   test_gain_audibly_distorts();
   test_mixer_vol_glides();
   test_distortion_alias_suppressed();
   test_resonance_does_not_lose_lows();
+  test_resonance_self_oscillation();
   test_dist_independent_of_gain();
   test_lr_state_independent();
   test_cv_l_normalled_to_cv_r_route();

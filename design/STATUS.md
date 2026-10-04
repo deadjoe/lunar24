@@ -72,8 +72,8 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. The rest of the sound round: filter character, reverb, VCO aliasing. Done: output
-   headroom (T8.4), cartridge hover names (T8.5), TUNE / VOLT glide (T2.8), photo sensors (T2.6, T15.11), live OSC
+1. The rest of the sound round: reverb, VCO aliasing. Done: filter character (T7.4),
+   output headroom (T8.4), cartridge hover names (T8.5), TUNE / VOLT glide (T2.8), photo sensors (T2.6, T15.11), live OSC
    STATUS lamps (T2.7), MIDI hot-plug (T14.6).
 2. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
    surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
