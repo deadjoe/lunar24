@@ -456,13 +456,21 @@ void drawJack(Sink& s, float cx, float cy, float r, bool hover) {
   s.fillGrad(radialGrad(cx, cy - r * 0.08f, r * 0.1f, r * 0.5f, 0x000000, 1.f, 0x2a2a2a, 1.f));
 }
 
-// Photo sensor: a milky dome in a black ring.
+// Photo sensor: a milky dome in a black ring. `light` (0..1) is what the sensor sees: the dome
+// dims toward smoky grey as it darkens. `hand` (0..1) draws the hand's soft shadow at (hx, hy).
 template <class Sink>
-void drawSensor(Sink& s, float cx, float cy, float r) {
+void drawSensor(Sink& s, float cx, float cy, float r, float light = 1.f, float hand = 0.f, float hx = 0.f,
+                float hy = 0.f) {
   dropShadow(s, cx, cy, r, 4.f, 0.3f);
   s.fillCircle(cx, cy, r + 1.f, 0x0c0a0a);
+  const float l = light < 0.f ? 0.f : (light > 1.f ? 1.f : light);
   s.circle(cx, cy, r - 1.f);
-  s.fillGrad(radialGrad(cx - r * 0.25f, cy - r * 0.3f, r * 0.1f, r * 1.3f, 0xffffff, 1.f, 0xc9c6bd, 1.f));
+  s.fillGrad(radialGrad(cx - r * 0.25f, cy - r * 0.3f, r * 0.1f, r * 1.3f, mix(0x5a5650, 0xffffff, l), 1.f,
+                        mix(0x2e2c29, 0xc9c6bd, l), 1.f));
+  if (hand > 0.f) {
+    s.circle(cx, cy, r - 1.f);
+    s.fillGrad(radialGrad(hx, hy, r * 0.15f, r * 1.1f, 0x000000, 0.45f * hand, 0x000000, 0.f));
+  }
 }
 
 // Round latching push button: dark bezel and a dished cap; `on` = lit amber ring.

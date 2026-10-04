@@ -261,6 +261,14 @@ class StandaloneAudioEngine {
   bool postEffectorProgram(int side, lunar24::core::ProgramId program);
   // DRONE VOICES key: open/close drone voice 0..5 (not saved; all open at power-on).
   bool postDroneKey(int voice, bool open);
+  // The hand over a classic drone's photo sensor (group 0..3 = drone 1/2/4/5): 0 = away,
+  // 1 = covering it. Live only, never saved.
+  bool postPhotoShade(int group, double shade);
+  // What that sensor sees, 0 = dark .. 1 = room light (written once per block, for the lamp).
+  float photoLight(int group) const {
+    return group >= 0 && group < 4 ? photoLight_[static_cast<std::size_t>(group)].load(std::memory_order_relaxed)
+                                   : 1.0f;
+  }
   // 16-step sequencer: set step `step` (0..15) of the left (side 0) or right bank.
   bool postSeqStep(int side, int step, int note, bool gate);
   // The RIGHT side's copy of a per-side keyboard menu setting (PLAY = SPLIT plays the right
@@ -558,6 +566,7 @@ class StandaloneAudioEngine {
   int midiLastRaw_[lunar24::core::kMidiMapCapacity] = {};
   bool midiPickedUp_[lunar24::core::kMidiMapCapacity] = {};
   std::array<std::atomic<float>, kPanelLedCount> leds_{};
+  std::array<std::atomic<float>, 4> photoLight_{1.0f, 1.0f, 1.0f, 1.0f};
   double ledShLast_[2] = {0.0, 0.0};   // audio thread: last S&H value seen, per drone 3 / 6
   double ledShHold_[2] = {0.0, 0.0};   // audio thread: seconds left on each S&H flash
   std::atomic<bool> keyboardExternalClock_{false};      // diagnostics snapshot, per block
@@ -856,6 +865,9 @@ inline void StandaloneAudioEngine::updateLeds_(int frames) {
                                                std::memory_order_relaxed);
   };
   for (int v = 0; v < 6; ++v) put(kLedDrone1 + v, rt.droneVoiceEnvLevel(v));
+  for (int g = 0; g < 4; ++g)
+    photoLight_[static_cast<std::size_t>(g)].store(static_cast<float>(rt.dronePhotoLight01(g)),
+                                                   std::memory_order_relaxed);
   put(kLedEnvA, rt.envelopeA().level01());
   put(kLedEnvB, rt.envelopeB().level01());
   put(kLedLfoA, 0.5 * (rt.lfoA().fundamental() + 1.0));  // the LFOs swing 0..+10 V
@@ -1072,6 +1084,15 @@ inline bool StandaloneAudioEngine::postDroneKey(int voice, bool open) {
   c.kind = lunar24::core::LiveCommand::Kind::DroneKey;
   c.side = static_cast<std::uint32_t>(voice);
   c.value = open ? 1.0 : 0.0;
+  return liveQueue_.push(c);
+}
+
+inline bool StandaloneAudioEngine::postPhotoShade(int group, double shade) {
+  if (group < 0 || group > 3) return false;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::PhotoShade;
+  c.side = static_cast<std::uint32_t>(group);
+  c.value = std::clamp(shade, 0.0, 1.0);
   return liveQueue_.push(c);
 }
 
@@ -1443,6 +1464,9 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
         break;
       case LiveCommand::Kind::DroneKey:
         rt.setDroneVoiceKey(static_cast<int>(c.side), c.value > 0.5);
+        break;
+      case LiveCommand::Kind::PhotoShade:
+        rt.setDronePhotoShade(static_cast<int>(c.side), c.value);
         break;
       case LiveCommand::Kind::SeqStep:
         rt.setKeyboardSeqStep(static_cast<int>(c.side), static_cast<int>(c.index),

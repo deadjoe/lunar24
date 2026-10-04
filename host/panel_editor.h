@@ -1003,16 +1003,68 @@ class RecordSourceControl : public IControl {
 
 // Non-interactive panel hardware: photo sensor, the drone LED bar (lit per unmuted tone),
 // and jacks that have no function in Lunar 24.
+// A classic drone's photo sensor, played with the mouse as a hand: press to bring the hand
+// over the eye, drag up to bring it closer (darker) and down to lift it, drag sideways to
+// sweep the fingers across it (the light flickers between them); release to take the hand
+// away. The dome shows what the sensor sees. The light model is core/photo_sensor.h.
+class PhotoSensorControl : public IControl {
+ public:
+  PhotoSensorControl(EditorShared& s, const Widget& w)
+      : IControl(drawRectOf(w)), s_(s), group_(static_cast<int>(w.id)), cx_(float(w.cx)), cy_(float(w.cy)),
+        r_(float(w.w / 2)) {
+    SetTargetRECT(rectOf(w));
+  }
+  bool IsDirty() override {
+    return std::fabs(s_.engine.photoLight(group_) - shown_) > 0.01f || IControl::IsDirty();
+  }
+  void Draw(IGraphics& g) override {
+    shown_ = s_.engine.photoLight(group_);
+    GraphicsSink sink{g};
+    art::drawSensor(sink, cx_, cy_, r_, shown_, pressed_ ? 0.4f + 0.6f * depth_ : 0.f, handX_, handY_);
+  }
+  void OnMouseDown(float x, float y, const IMouseMod&) override {
+    pressed_ = true;
+    startX_ = x;
+    startY_ = y;
+    depth_ = kStartDepth;
+    move_(x, y);
+  }
+  void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override {
+    depth_ = std::clamp(kStartDepth + (startY_ - y) / kDepthTravel, 0.f, 1.f);
+    move_(x, y);
+  }
+  void OnMouseUp(float, float, const IMouseMod&) override {
+    pressed_ = false;
+    (void)s_.engine.postPhotoShade(group_, 0.0);
+    SetDirty(false);
+  }
+
+ private:
+  static constexpr float kStartDepth = 0.55f;   // a press: the hand hovering over the eye // tuned by ear
+  static constexpr float kDepthTravel = 120.f;  // drag this far up for a full cover
+  static constexpr float kFingerSpacing = 26.f;  // sideways travel from one finger to the next
+  void move_(float x, float y) {
+    handX_ = std::clamp(x, cx_ - r_, cx_ + r_);
+    handY_ = std::clamp(y, cy_ - r_, cy_ + r_);
+    // Fingers: moving sideways passes gaps between them over the eye.
+    const float fingers = 0.8f + 0.2f * std::cos(6.2831853f * (x - startX_) / kFingerSpacing);
+    (void)s_.engine.postPhotoShade(group_, double(depth_ * fingers));
+    SetDirty(false);
+  }
+
+  EditorShared& s_;
+  int group_;
+  float cx_, cy_, r_;
+  float shown_ = -1.f;
+  bool pressed_ = false;
+  float startX_ = 0.f, startY_ = 0.f, depth_ = 0.f, handX_ = 0.f, handY_ = 0.f;
+};
+
 class DecorControl : public IControl {
  public:
   DecorControl(EditorShared& s, const Widget& w) : IControl(drawRectOf(w)), s_(s), w_(w) { SetIgnoreMouse(true); }
   void Draw(IGraphics& g) override {
     switch (w_.id) {
-      case 0: {
-        GraphicsSink sink{g};
-        art::drawSensor(sink, float(w_.cx), float(w_.cy), float(w_.w / 2));
-        break;
-      }
       case 1:
         for (std::uint32_t i = 0; i < 5; ++i) {
           const bool muted = s_.value(w_.id2 + i) > 0.5;
@@ -1435,6 +1487,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::OctaveKey: g->AttachControl(new OctaveKeyControl(shared, w)); break;
       case WidgetKind::Display: g->AttachControl(new DisplayControl(shared, w)); break;
       case WidgetKind::Decor: g->AttachControl(new DecorControl(shared, w)); break;
+      case WidgetKind::PhotoSensor: g->AttachControl(new PhotoSensorControl(shared, w)); break;
     }
   }
   // The bindable widget rects for MIDI learn (panel click picks the target).

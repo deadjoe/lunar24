@@ -37,12 +37,13 @@ enum class WidgetKind : std::uint8_t {
   Encoder,     // keyboard encoder: opens the keyboard menu
   OctaveKey,   // keyboard arrow buttons (id 0 = down, 1 = up)
   Display,     // keyboard display (shows octave / menu state)
-  Decor,       // non-interactive art: 0 = photo sensor, 1 = LED bar (id2 = first mute param),
+  Decor,       // non-interactive art: 1 = LED bar (id2 = first mute param),
                // 3 = hardware jack with no function in Lunar 24
   MasterMute,  // app-level MUTE button next to DRONE VOICES: silences every output
   MidiSettings,  // app-level MIDI button below MUTE: opens the MIDI settings overlay
   Record,        // app-level REC button, where the hardware's headphone socket is
   RecordSource,  // app-level WET / DRY / ALL selector for REC, where the PHONE knob is
+  PhotoSensor,   // a classic drone's light-sensitive eye (id = group 0..3 = drone 1/2/4/5)
 };
 
 // The printed indicator LEDs Lunar 24 lights, in StandaloneAudioEngine::PanelLed order: centre of
@@ -183,7 +184,8 @@ inline std::vector<Widget> build_panel_layout() {
        P::drone_5_volt, P::drone_5_att, P::drone_5_rls, P::drone_5_gate_hold, P::drone_5_cv_amt,
        J::drone_5_cv_mod_in, J::drone_5_gate_in, J::drone_5_env_out},
   };
-  for (const Classic& c : classic) {
+  for (std::uint32_t group = 0; group < 4; ++group) {
+    const Classic& c = classic[group];
     for (int i = 0; i < 5; ++i) {
       button(c.mute[i], c.x[i], 295);
       plain(c.tune[i], c.x[i], 344);
@@ -197,7 +199,7 @@ inline std::vector<Widget> build_panel_layout() {
     jack(c.gate, c.x[0], 529);
     jack(c.env, c.x[2], 529);
     jack(c.cv, c.x[3], 529);
-    add(WidgetKind::Decor, c.volt - 31, 498, 113, 113, 0);  // photo sensor (the MOD light input)
+    add(WidgetKind::PhotoSensor, c.volt - 31, 498, 113, 113, group);  // the MOD light input
     plain(c.cvAmt, c.x[3], 455);                               // CV amount for the CV MOD jack
   }
 

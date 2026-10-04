@@ -7,7 +7,8 @@ _Last updated: 2026-10-04._
   - 4 classic drones (5 oscillators each) modelled on the negistor relaxation oscillator:
     capacitor-charge ramp, slow random-walk drift, per-cycle jitter; VOLT past half its
     stroke makes the oscillators frequency-modulate each other. A cable into CV MOD bends
-    the MOD-on oscillators by up to an octave; the CV knob sets how much.
+    the MOD-on oscillators by up to an octave; the CV knob sets how much. Each has a
+    modelled photo sensor (room light, hand shadow, CdS cell) that bends them too.
   - 2 "Papa Srapa" noise / S&H drones (LFO OUT, CV IN at 1 V/oct, S&H IN / CLOCK / OUT
     patchable; unpatched, the S&H samples the voice's noise on the divided LFO),
     VCO A/B (morph, PWM, sync, sub) with their VCAs
@@ -25,7 +26,7 @@ _Last updated: 2026-10-04._
   engine. `panel_preview > panel.svg` renders it without the app. CI attaches a
   downloadable app to every run (GitHub → Actions → the run → Artifacts).
 - **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: 63 unit/engine tests, about 30 seconds; CI also runs them under ASan + UBSan. Manual test steps (by ear, in the app):
+- **Tests**: 64 unit/engine tests, about 30 seconds; CI also runs them under ASan + UBSan. Manual test steps (by ear, in the app):
   `design/MANUAL_TESTS.md`.
 
 ## How to play
@@ -58,6 +59,9 @@ _Last updated: 2026-10-04._
   the button pick program 1-2-3 per side.
 - DRONE VOICES keys 1-6 switch each drone voice on/off (LED lit = on). All six start off
   when the app opens and after RESET PANEL; open the ones you want to hear.
+- Photo sensor (big white dome, drones 1/2/4/5): the mouse is a hand. Press = hand over it,
+  drag up = closer/darker, sideways = fingers sweeping, release = hand away. Only
+  generators with MOD lit bend (down, up to ~2 semitones).
 
 ## Checked against the official manual (v15)
 Mixer channel order, the 39 effector programs and their X/Y/Z roles, output voltage
@@ -67,9 +71,7 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. Wrap-up (this PR): DRONE VOICES start closed (T0.7); manual test and status docs
-   brought up to date. Done before it: external MIDI for the MPK (clock, relative knobs,
-   TWIN / SPLIT; #96-#98) and REC with the DRY check (#99).
+1. This PR: the photo sensors (T2.6). Next: MIDI binding for them (pad pressure).
 2. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
    surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
 3. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix,

@@ -32,7 +32,9 @@
 //                 voice root), keeping the manual's low / medium / high roles.
 //   * tolerance — STATIC seeded component error (about +-1.2 %): the slow beating.
 //   * drift(t) — slow Ornstein-Uhlenbeck random walk (a few cents over ~20 s).
-//   * mod(t) — per-generator MOD: CV/photo detune when the MOD button is on.
+//   * mod(t) — per-generator MOD: CV/photo detune when the MOD button is on. Each group has
+//                 a PhotoSensor (photo_sensor.h); every MOD-on generator follows it, each
+//                 with its own sensitivity, so a shadow also detunes them against each other.
 //   * mutualFM — past half the VOLT stroke, each generator frequency-modulates the
 //                 next one in its group (relative depth, so it never stalls).
 //   * cycleJitter — the negistor's noisy firing threshold: each period differs a bit.
@@ -50,6 +52,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "lunar24/core/photo_sensor.h"
 #include "lunar24/core/polyblep_kernel.h"
 #include "lunar24/core/seeded_random.h"
 
@@ -87,6 +90,7 @@ class DroneBank {
     double shapeDen;     // 1 - exp(-shapeCurve) (chargeShape denominator)
     double shapeMean;    // chargeShapeMeanOffset(shapeCurve)
     double muteGain;     // 0..1, glides toward muted ? 0 : 1 so a MUTE press does not click
+    double photoSens;    // how strongly this generator follows its group's photo sensor, seeded
   };
 
   // ---- CLASSIC group gate/ATT/RLS/HOLD envelope + dynamic variation (batch 4A) ----
@@ -123,6 +127,7 @@ class DroneBank {
   static constexpr std::uint64_t kStreamJitter = 0x4A495454ULL; // "JITT"
   static constexpr std::uint64_t kStreamDrift = 0x44524946ULL;  // "DRIF"
   static constexpr std::uint64_t kStreamCycle = 0x4359434CULL;  // "CYCL"
+  static constexpr std::uint64_t kStreamPhoto = 0x50484F54ULL;  // "PHOT"
   static constexpr double kDriftPullPerSecond = 1.0 / 20.0;     // drift wanders over ~20 s
   static constexpr double kCycleJitter = 0.0015;                // +-0.15 % period noise
 
@@ -164,6 +169,8 @@ class DroneBank {
       groupEnv_[g].level = 1.0;  // neutral default OPEN (pre-batch tests expect sound).
       modCvG_[g] = 0.0;
       modOctPerVoltG_[g] = kDefaultModOctPerVolt;
+      photo_[g].prepare(deriveSeed_(seed, g, kStreamPhoto), sampleRate_);
+      photo_[g].setAmbientEnabled(driftEnabled_);
     }
     environmentHz_ = 0.0;
     for (std::size_t i = 0; i < voiceCount_; ++i) {
@@ -209,6 +216,9 @@ class DroneBank {
       v.tuneScale = 1.0;
       v.voltScale = 1.0;
       v.muteGain = 1.0;
+      // Analog parts never match: each generator bends by its own amount under the same
+      // light (its own stream, so the draws above keep their values). Tuned by ear.
+      v.photoSens = SeededRandom(deriveSeed_(seed, static_cast<std::uint64_t>(i), kStreamPhoto)).nextUnit(0.6, 1.4);
       lastSample_[i] = 0.0;
       lastJitterHz_[i] = 0.0;  // "no jitter applied yet" (nothing has been ticked).
     }
@@ -260,6 +270,12 @@ class DroneBank {
   // Shared/correlated environment term a desktop host can provide. It
   // detunes MOD-on generators together; MOD-off generators are unchanged.
   void setEnvironment(double hz) { environmentHz_ = hz; }
+  // The hand over a group's photo sensor: 0 = away, 1 = covering it (photo_sensor.h).
+  void setGroupShade(int group, double shade) { if (inGroup_(group)) photo_[group].setShade(shade); }
+  double groupShade(int group) const { return inGroup_(group) ? photo_[group].shade() : 0.0; }
+  // What the group's sensor sees, 0 (dark) .. 1 (room light), and its detune in octaves.
+  double groupLight01(int group) const { return inGroup_(group) ? photo_[group].light01() : 1.0; }
+  double groupPhotoOctaves(int group) const { return inGroup_(group) ? photo_[group].octaves() : 0.0; }
 
   // Advance every generator by one sample and write its sample into out[i]
   // (0 if muted). out must have room for voiceCount_ values. Realtime-safe.
@@ -303,6 +319,7 @@ class DroneBank {
     }
     const double sample = groupSample_[g];   // this group's own sample counter.
     const double gLvl = e.level;             // group VCA gain 0..1 (advanced above).
+    const double photoOct = photo_[g].tick();  // the group's light-sensitive eye.
     const std::size_t begin = g * kGensPerVoice;
     const std::size_t end = std::min(begin + kGensPerVoice, voiceCount_);
     for (std::size_t i = begin; i < end; ++i) {
@@ -324,6 +341,7 @@ class DroneBank {
       effFreq += v.modAmount * v.modCv;
       if (v.modAmount > 0.0 && modCvG_[g] != 0.0)
         effFreq *= std::exp2(v.modAmount * modCvG_[g] * modOctPerVoltG_[g]);
+      if (v.modAmount > 0.0 && photoOct != 0.0) effFreq *= std::exp2(v.modAmount * photoOct * v.photoSens);
       // Environment: shared/correlated term detunes MOD-on generators together; MOD-off
       // generators are unchanged (the MOD-off generator ignores CV/env).
       if (v.modAmount > 0.0) effFreq += environmentHz_;
@@ -536,6 +554,7 @@ class DroneBank {
   double modCvG_[kMaxGroups];
   double modOctPerVoltG_[kMaxGroups];
   double environmentHz_ = 0.0;
+  PhotoSensor photo_[kMaxGroups];
 };
 
 }  // namespace lunar24::core

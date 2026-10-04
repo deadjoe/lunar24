@@ -126,6 +126,7 @@ foreach(t IN ITEMS
     state_validation
     midi_map
     effector
+    photo_sensor
 )
   lunar_add_test(test_${t} tests/core/test_${t}.cpp)
 endforeach()
