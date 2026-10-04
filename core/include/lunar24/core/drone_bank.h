@@ -85,8 +85,10 @@ class DroneBank {
     double modCv;        // live CV/photo detune input (0 => no external detune).
     double volt;         // shared VOLT transpose of the whole 5-gen group (semitones).
     // Per-sample constants, recomputed only when their inputs change (never in tick).
-    double tuneScale;    // 2^(tune/12)
-    double voltScale;    // 2^(-volt/12)
+    double tuneScale;    // 2^(tune/12), gliding toward tuneTarget
+    double voltScale;    // 2^(-volt/12), gliding toward voltTarget
+    double tuneTarget;   // where TUNE was last set (the knob moves in steps; the pitch glides)
+    double voltTarget;
     double shapeDen;     // 1 - exp(-shapeCurve) (chargeShape denominator)
     double shapeMean;    // chargeShapeMeanOffset(shapeCurve)
     double muteGain;     // 0..1, glides toward muted ? 0 : 1 so a MUTE press does not click
@@ -130,6 +132,7 @@ class DroneBank {
   static constexpr std::uint64_t kStreamPhoto = 0x50484F54ULL;  // "PHOT"
   static constexpr double kDriftPullPerSecond = 1.0 / 20.0;     // drift wanders over ~20 s
   static constexpr double kCycleJitter = 0.0015;                // +-0.15 % period noise
+  static constexpr double kPitchGlideSeconds = 0.03;            // TUNE / VOLT glide // tuned by ear
   // OSC STATUS lamps: the beating is the summed level's swell (fast envelope, two poles, so a
   // 55 Hz generator's ripple is gone) against its average (slow). Tuned by eye.
   static constexpr double kLampFastSeconds = 0.03;
@@ -166,6 +169,7 @@ class DroneBank {
     groupCount_ = (voiceCount_ + kGensPerVoice - 1) / kGensPerVoice;
     driftNoiseScale_ = std::sqrt(2.0 * kDriftPullPerSecond * (1.0 / sampleRate_));
     muteGlide_ = 1.0 - std::exp(-1.0 / (0.003 * sampleRate_));
+    pitchGlide_ = 1.0 - std::exp(-1.0 / (kPitchGlideSeconds * sampleRate_));
     lampFast_ = 1.0 - std::exp(-1.0 / (kLampFastSeconds * sampleRate_));
     lampSlow_ = 1.0 - std::exp(-1.0 / (kLampSlowSeconds * sampleRate_));
     for (std::size_t g = 0; g < kMaxGroups; ++g) {
@@ -220,8 +224,8 @@ class DroneBank {
       v.modAmount = 0.0;
       v.modCv = 0.0;
       v.volt = 0.0;
-      v.tuneScale = 1.0;
-      v.voltScale = 1.0;
+      v.tuneScale = v.tuneTarget = 1.0;
+      v.voltScale = v.voltTarget = 1.0;
       v.muteGain = 1.0;
       // Analog parts never match: each generator bends by its own amount under the same
       // light (its own stream, so the draws above keep their values). Tuned by ear.
@@ -233,14 +237,20 @@ class DroneBank {
 
   // ---------- panel CONTROL binding (structure; the runtime forwards these) ------
   void setMute(std::size_t gen, bool on) { if (gen < voiceCount_) voices_[gen].muted = on; }
-  // Land every MUTE fade on its end point now (a whole-state load is not a button press).
-  void snapMutes() {
-    for (std::size_t i = 0; i < voiceCount_; ++i) voices_[i].muteGain = voices_[i].muted ? 0.0 : 1.0;
+  // Land every MUTE fade and TUNE / VOLT glide on its end point now (a whole-state load is not
+  // a knob turn: the machine starts at its saved pitch).
+  void snapGlides() {
+    for (std::size_t i = 0; i < voiceCount_; ++i) {
+      Voice& v = voices_[i];
+      v.muteGain = v.muted ? 0.0 : 1.0;
+      v.tuneScale = v.tuneTarget;
+      v.voltScale = v.voltTarget;
+    }
   }
   void setTune(std::size_t gen, double semitones) {
     if (gen >= voiceCount_) return;
     voices_[gen].tune = semitones;
-    voices_[gen].tuneScale = std::pow(2.0, semitones / 12.0);
+    voices_[gen].tuneTarget = std::pow(2.0, semitones / 12.0);
   }
   void setMod(std::size_t gen, double amount) { if (gen < voiceCount_) voices_[gen].modAmount = amount; }
   void setModCv(std::size_t gen, double cv) { if (gen < voiceCount_) voices_[gen].modCv = cv; }
@@ -252,7 +262,7 @@ class DroneBank {
     const double scale = std::pow(2.0, -semitonesDown / 12.0);
     for (std::size_t i = gs; i < end; ++i) {
       voices_[i].volt = semitonesDown;
-      voices_[i].voltScale = scale;
+      voices_[i].voltTarget = scale;
     }
   }
 
@@ -353,7 +363,11 @@ class DroneBank {
       } else {
         v.driftNow = 0.0;
       }
-      // TUNE (semitones up) and VOLT (transposes down), cached by setTune / setVolt.
+      // TUNE (semitones up) and VOLT (transposes down): a knob or MIDI CC moves in steps
+      // (a CC step is 19 cents of TUNE, 47 of VOLT), so the pitch glides to each new value
+      // instead of jumping: turning sounds like a smooth sweep, not a staircase.
+      v.tuneScale += pitchGlide_ * (v.tuneTarget - v.tuneScale);
+      v.voltScale += pitchGlide_ * (v.voltTarget - v.voltScale);
       const double base = v.freqBaseHz * v.tuneScale * v.voltScale;
       double effFreq = base * (1.0 + v.tolerance) + v.driftNow;
       // MOD: button on => the shared CV MOD (group) or per-gen CV detunes; off => stable.
@@ -439,6 +453,9 @@ class DroneBank {
   double tuneOf(std::size_t i) const { return voices_[i].tune; }
   double voltOf(std::size_t i) const { return voices_[i].volt; }
   double modAmountOf(std::size_t i) const { return voices_[i].modAmount; }
+  // The TUNE x VOLT pitch factor the generator plays right now (mid-glide), and where it is going.
+  double pitchScaleOf(std::size_t i) const { return voices_[i].tuneScale * voices_[i].voltScale; }
+  double pitchTargetOf(std::size_t i) const { return voices_[i].tuneTarget * voices_[i].voltTarget; }
 
   // ---- batch 4A envelope / dynamic-variation inspectors (read-only executed state) ----
   std::size_t groupCount() const { return groupCount_; }
@@ -565,6 +582,7 @@ class DroneBank {
   double sampleRate_;
   double driftNoiseScale_ = 0.0;  // sqrt(2 * kDriftPullPerSecond / sampleRate)
   double muteGlide_ = 1.0;        // MUTE fade coefficient (~3 ms, tuned by ear)
+  double pitchGlide_ = 1.0;       // TUNE / VOLT glide coefficient (kPitchGlideSeconds)
   std::size_t voiceCount_;
   bool driftEnabled_;
   double groupSample_[kMaxGroups] = {};  // per-classic-group sample counter (bit-exact per-group tick).

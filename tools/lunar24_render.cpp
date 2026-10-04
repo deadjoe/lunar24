@@ -10,6 +10,7 @@
 //   lunar24_render --cable lfo_a.cv_out=vcf.cv_l_in --set vcf.l_mod=0.6
 //   lunar24_render --set keyboard.mode=2 --step 2:7 --step 3:12:0 --note 0:0:8   # 16-step sequencer
 //   lunar24_render --drone 1 --set drone_1.mod_1=1 --shade 4:1:1 --shade 8:1:0   # hand on the eye
+//   lunar24_render --drone 1 --at 2:drone_1.tune_1=0.6 --at 4:drone_1.tune_1=0.4   # turn a knob
 //   lunar24_render --list params|jacks|programs
 
 #include <host/standalone_audio_engine.h>
@@ -30,6 +31,11 @@ namespace {
 
 struct Note {
   double at = 0.0, semis = 0.0, length = 1.0;
+};
+struct KnobMove {  // a panel knob set to `value` at `at` seconds
+  double at = 0.0;
+  core::ParameterId id{};
+  double value = 0.0;
 };
 struct Shade {  // the hand over a classic drone's photo sensor from `at` on
   double at = 0.0;
@@ -52,6 +58,7 @@ void usage() {
       "  --note T:S:L         play a keyboard note at T seconds, S semitones, L seconds long\n"
       "  --step I:N[:G]       16-step sequencer step I (1-16): note N semitones, gate G (1 = on)\n"
       "  --drone N            open DRONE VOICES key N (1-6) at the start\n"
+      "  --at T:ID=VALUE      set a panel parameter at T seconds (a knob turned while playing)\n"
       "  --shade T:D:V        from T seconds, hold a hand over drone D's photo sensor (D = 1, 2, 4, 5;\n"
       "                       V = 0 away .. 1 covering); its MOD buttons decide which generators bend\n"
       "  --list params|jacks|programs");
@@ -113,6 +120,7 @@ int main(int argc, char** argv) {
   std::vector<std::string> sets, cables, progL, progR, steps;
   std::vector<Note> notes;
   std::vector<Shade> shades;
+  std::vector<KnobMove> moves;
   std::vector<int> drones;
 
   for (int i = 1; i < argc; ++i) {
@@ -137,6 +145,17 @@ int main(int argc, char** argv) {
       Note n;
       if (std::sscanf(v.c_str(), "%lf:%lf:%lf", &n.at, &n.semis, &n.length) < 2) { usage(); return 2; }
       notes.push_back(n);
+    } else if (a == "--at") {
+      next(v);
+      KnobMove mv;
+      std::string head, assign, id, val;
+      if (!splitAt(v, ':', head, assign) || !splitAt(assign, '=', id, val)) { usage(); return 2; }
+      const core::ParameterDescriptor* d = core::find_parameter_by_name(id);
+      if (d == nullptr) { std::fprintf(stderr, "unknown parameter: %s\n", id.c_str()); return 2; }
+      mv.at = std::atof(head.c_str());
+      mv.id = d->id;
+      mv.value = std::atof(val.c_str());
+      moves.push_back(mv);
     } else if (a == "--drone") {
       next(v);
       const int d = std::atoi(v.c_str());
@@ -226,7 +245,8 @@ int main(int argc, char** argv) {
   wl.reserve(total); wr.reserve(total); da.reserve(total); db.reserve(total);
 
   for (int d : drones) engine.postDroneKey(d, true);
-  std::vector<bool> on(notes.size(), false), off(notes.size(), false), shaded(shades.size(), false);
+  std::vector<bool> on(notes.size(), false), off(notes.size(), false), shaded(shades.size(), false),
+      moved(moves.size(), false);
   for (std::size_t pos = 0; pos < total; pos += block) {
     const double t = pos / sr;
     for (std::size_t n = 0; n < notes.size(); ++n) {
@@ -242,6 +262,11 @@ int main(int argc, char** argv) {
         engine.postEvent(noteEvent(core::ControlEventKind::gate_off, 0.0, id));
       }
     }
+    for (std::size_t k = 0; k < moves.size(); ++k)
+      if (!moved[k] && t >= moves[k].at) {
+        moved[k] = true;
+        engine.postParameter(moves[k].id, moves[k].value);
+      }
     for (std::size_t k = 0; k < shades.size(); ++k)
       if (!shaded[k] && t >= shades[k].at) {
         shaded[k] = true;
