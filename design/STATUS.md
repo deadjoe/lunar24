@@ -44,13 +44,14 @@ _Last updated: 2026-10-04._
 - Arpeggiator / 16-step sequencer: MODE = ARPEGGIATOR or SEQUENCER, hold plates. Clock:
   BPM (10-300, 16th notes), or the CLOCK jack / MIDI clock until BPM is changed; RESET
   restarts the pattern. SEQ STEPS tab: a fader per step (0..+24 semitones), GATE = rest.
-- MIDI keyboard (inputs listed at startup only): mod wheel / CC74 = cutoff, CC71 =
-  resonance, CC91 = blend, CC7 = master; pitch bend +/-2 semitones; sustain pedal; MIDI
-  clock drives the arpeggiator / sequencer (START restarts it).
+- MIDI keyboard (plug in or out any time; the chosen one reconnects): mod wheel / CC74 =
+  cutoff, CC71 = resonance, CC91 = blend, CC7 = master; pitch bend +/-2 semitones; sustain
+  pedal; MIDI clock drives the arpeggiator / sequencer (START restarts it).
   The MIDI button (under MUTE) opens the MIDI settings: learn a panel control onto any CC
-  or pad note (parameters, drone keys, cartridge, presets, mute); absolute (pickup) or
-  relative knobs (detected at learn); channel filter, transpose, velocity curve and SPLIT
-  note (TWIN / SPLIT: notes below it play the left side). Bindings have their own file.
+  or pad note (parameters, drone keys, cartridge, presets, mute, photo sensors); absolute
+  (pickup) or relative knobs (detected at learn); channel filter, transpose, velocity curve
+  and SPLIT note (TWIN / SPLIT: notes below it play the left side). Bindings have their own
+  file.
   MIDI notes light the keyboard plate of the same note name.
 - REC (in the headphone corner, which has no use in software): records WET, DRY (A left,
   B right) or ALL to 24-bit WAVs in Music/Lunar 24; the folder opens when it stops.
@@ -71,8 +72,8 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. Next: MIDI binding for the photo sensors (pad pressure). Done: photo sensors (T2.6),
-   OSC STATUS as live per-oscillator lamps pulsing with the beating (T2.7).
+1. Next: smooth drone TUNE / VOLT steps. Done: photo sensors (T2.6) and their MIDI (T15.11),
+   live OSC STATUS lamps (T2.7), MIDI hot-plug (T14.6).
 2. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
    surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
 3. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix,

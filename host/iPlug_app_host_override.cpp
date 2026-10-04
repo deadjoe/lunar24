@@ -107,6 +107,10 @@ bool sStartupOpen = true;  // the first TryToChangeAudio is the app starting up
 // headphones) or the system output device changed while we follow it. The UI thread then
 // reopens on the current device (lunar_host_audio_watchdog).
 std::atomic<bool> sReopen{false};
+// MIDI hot-plug (lunar_host_audio_watchdog asks ProbeMidiIO for a check once a second): the
+// port names seen last time, and whether the next ProbeMidiIO is such a check. UI thread only.
+bool sMidiHotplugCheck = false;
+std::vector<std::string> sMidiInsSeen, sMidiOutsSeen;
 // When the last stream was opened (steady_clock ticks). Device-list notifications within 2 s of an
 // open are ignored: opening a headset can itself reconfigure devices, and reacting would loop.
 std::atomic<long long> sLastOpenTicks{0};
@@ -496,39 +500,69 @@ void IPlugAPPHost::ProbeAudioIO()
   }
 }
 
+// Lunar 24: also the MIDI hot-plug check. The lists are rebuilt from scratch (the stock version
+// only appended, once at startup). On a check (sMidiHotplugCheck) nothing changes unless ports
+// came or went; then the chosen input reopens when its device comes back and closes when it goes,
+// and with no input chosen ("off") the first device plugged in is picked, as at startup.
 void IPlugAPPHost::ProbeMidiIO()
 {
+  const bool hotplug = sMidiHotplugCheck;
+  sMidiHotplugCheck = false;
   if (!mMidiIn || !mMidiOut)
     return;
-  else
+  std::vector<std::string> ins, outs;
+  for (unsigned int i = 0; i < mMidiIn->getPortCount(); i++)
+    ins.push_back(mMidiIn->getPortName(i));
+  for (unsigned int i = 0; i < mMidiOut->getPortCount(); i++)
+    outs.push_back(mMidiOut->getPortName(i));
+  if (hotplug && ins == sMidiInsSeen && outs == sMidiOutsSeen)
+    return;
+  const std::vector<std::string> insBefore = sMidiInsSeen, outsBefore = sMidiOutsSeen;
+  sMidiInsSeen = ins;
+  sMidiOutsSeen = outs;
+
+  mMidiInputDevNames.clear();
+  mMidiInputDevNames.push_back(OFF_TEXT);
+#ifdef OS_MAC
+  mMidiInputDevNames.push_back("virtual input");
+#endif
+  mMidiInputDevNames.insert(mMidiInputDevNames.end(), ins.begin(), ins.end());
+  mMidiOutputDevNames.clear();
+  mMidiOutputDevNames.push_back(OFF_TEXT);
+#ifdef OS_MAC
+  mMidiOutputDevNames.push_back("virtual output");
+#endif
+  mMidiOutputDevNames.insert(mMidiOutputDevNames.end(), outs.begin(), outs.end());
+  if (!hotplug)
+    return;
+
+  AudioLog("midi devices changed: %zu inputs, %zu outputs", ins.size(), outs.size());
+  auto has = [](const std::vector<std::string>& v, const std::string& name) {
+    return std::find(v.begin(), v.end(), name) != v.end();
+  };
+  std::string in = mState.mMidiInDev.Get();
+  if ((in == OFF_TEXT || in == "no input") && !ins.empty())
   {
-    int nInputPorts = mMidiIn->getPortCount();
-
-    mMidiInputDevNames.push_back(OFF_TEXT);
-
-#ifdef OS_MAC
-    mMidiInputDevNames.push_back("virtual input");
-#endif
-
-    for (int i=0; i<nInputPorts; i++)
-    {
-      mMidiInputDevNames.push_back(mMidiIn->getPortName(i));
-    }
-
-    int nOutputPorts = mMidiOut->getPortCount();
-
-    mMidiOutputDevNames.push_back(OFF_TEXT);
-
-#ifdef OS_MAC
-    mMidiOutputDevNames.push_back("virtual output");
-#endif
-
-    for (int i=0; i<nOutputPorts; i++)
-    {
-      mMidiOutputDevNames.push_back(mMidiOut->getPortName(i));
-      //This means the virtual output port wont be added as an input
-    }
+    in = ins.front();  // nothing chosen yet: listen to the keyboard just plugged in
+    mState.mMidiInDev.Set(in.c_str());
+    UpdateINI();
   }
+  if (has(ins, in) && !has(insBefore, in))
+  {
+    AudioLog("midi input connected: %s", in.c_str());
+    SelectMIDIDevice(ERoute::kInput, in.c_str());
+  }
+  else if (!has(ins, in) && has(insBefore, in))
+  {
+    AudioLog("midi input disconnected: %s", in.c_str());
+    mMidiIn->closePort();
+    static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
+  }
+  const std::string out = mState.mMidiOutDev.Get();
+  if (has(outs, out) && !has(outsBefore, out))
+    SelectMIDIDevice(ERoute::kOutput, out.c_str());
+  else if (!has(outs, out) && has(outsBefore, out))
+    mMidiOut->closePort();
 }
 
 bool IPlugAPPHost::AudioSettingsInStateAreEqual(AppState& os, AppState& ns)
@@ -853,12 +887,10 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
 
   if (direction == ERoute::kInput)
   {
+    // Lunar 24: a chosen device that is not plugged in stays chosen (the hot-plug check opens it
+    // when it arrives); nothing is opened meanwhile.
     if (port == -1)
-    {
-      mState.mMidiInDev.Set(OFF_TEXT);
-      UpdateINI();
       port = 0;
-    }
 
     if (mMidiIn)
     {
@@ -915,11 +947,7 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
   else
   {
     if (port == -1)
-    {
-      mState.mMidiOutDev.Set(OFF_TEXT);
-      UpdateINI();
       port = 0;
-    }
     
     if (mMidiOut)
     {
@@ -1286,11 +1314,19 @@ extern "C" void lunar_host_log(const char* line)
 }
 
 // Lunar 24: called from the plugin's OnIdle (UI thread): reopen the audio stream when it died or
-// the followed system output device changed.
+// the followed system output device changed, and once a second look for MIDI devices that were
+// plugged in or pulled out.
 extern "C" void lunar_host_audio_watchdog()
 {
   if (sReopen.load() && IPlugAPPHost::sInstance)
     IPlugAPPHost::sInstance->TryToChangeAudio();
+  static auto lastMidiCheck = std::chrono::steady_clock::now();
+  if (IPlugAPPHost::sInstance && std::chrono::steady_clock::now() - lastMidiCheck >= std::chrono::seconds(1))
+  {
+    lastMidiCheck = std::chrono::steady_clock::now();
+    sMidiHotplugCheck = true;
+    IPlugAPPHost::sInstance->ProbeMidiIO();
+  }
 
   // Every 5 s: how loud the input the stream delivered was (0 = the input is silent or not open).
   static auto lastLog = std::chrono::steady_clock::now();

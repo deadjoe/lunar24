@@ -1393,8 +1393,11 @@ class MidiOverlayControl : public IControl {
       bool changed = false;
       if (midi_ui::remove(i).contains(x, y))
         changed = s_.midiStore->unbind(binding.key);
-      else if (midi_ui::mode(i).contains(x, y) && binding.targetKind == core::MidiTargetKind::parameter &&
-               core::midi_parameter_drive(binding) == core::MidiParameterDrive::follow) {
+      else if (midi_ui::mode(i).contains(x, y) &&
+               ((binding.targetKind == core::MidiTargetKind::parameter &&
+                 core::midi_parameter_drive(binding) == core::MidiParameterDrive::follow) ||
+                (binding.targetKind == core::MidiTargetKind::action && binding.key.kind == core::MidiBindingKind::cc &&
+                 core::midi_action_is_continuous(binding.action)))) {
         auto edited = binding;
         edited.mode = static_cast<core::MidiInputMode>((static_cast<int>(binding.mode) + 1) % 4);
         changed = s_.midiStore->bind(edited);
@@ -1519,6 +1522,11 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::MasterMute:
         shared.midiBindables.push_back({w.x(), w.y() - 24, w.x() + w.w, w.y() + w.h, true,
                                         core::ParameterId::keyboard_behaviour, core::MidiAction::master_mute});
+        break;
+      case WidgetKind::PhotoSensor:
+        shared.midiBindables.push_back({w.x(), w.y(), w.x() + w.w, w.y() + w.h, true,
+                                        core::ParameterId::keyboard_behaviour,
+                                        static_cast<core::MidiAction>(static_cast<int>(core::MidiAction::photo_drone_1) + int(w.id))});
         break;
       case WidgetKind::Cartridge:
         shared.midiBindables.push_back({w.x(), w.y(), w.x() + w.w, w.y() + w.h, true,

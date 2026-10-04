@@ -1032,7 +1032,7 @@
   1. 在 MIDI 键盘上按住一个音不放（声音持续）。
   2. 保持按住，打开 Preferences，把 MIDI Input 切成 off。
 - 期望：切掉的瞬间声音停止（松不松手都不应再响）。再把 MIDI Input 切回键盘，弹奏恢复正常。
-- 备注：直接拔 USB 线的热拔场景目前还没有检测机制（RtMidi 不支持设备移除通知），拔线造成的卡音要切一次输入设备才会清；这是已知缺口。
+- 备注：运行中直接拔 / 插 USB 线见 T14.6。
 
 **T14.3 关闭 MIDI 输入只停 MIDI 的音，电脑键盘的琶音继续** ✅（#94，2026-10-03 Mac + MPK MINI IV：B 通过；A 第一次点 OK 后"轰"一声琶音停止，修掉 OK 重开音频后复测：选 off 和点 OK 时琶音都继续，没有轰响）
 - 准备：MPK 切到测试用预设；Preferences 里 MIDI Input = MPK Mini IV MIDI Port。RESET PANEL（菜单右下角点两下）；DRONE VOICES 6 个键全部点灭。
@@ -1060,6 +1060,22 @@
   2. 再打开 Preferences，MIDI Input 切成 off，点 **Cancel**：琶音继续，没有"轰"一声；MIDI 输入恢复成 MPK Mini IV MIDI Port，在 MPK 上弹能出声（Cancel 真正撤销了 MIDI 的改动）。
   3. 再打开 Preferences，把 Buffer Size 换一个值，点 **OK**：这次会重开音频（可能有一声，琶音停下），这是改了音频设置时的正常行为。测完改回原来的 Buffer Size。
   4. 收尾：关 HOLD，MODE 改回 KEYBOARD。
+
+**T14.6 运行中插拔 MIDI 键盘** ✅（2026-10-04 Mac + MPK MINI IV 全部通过）
+- 准备：先拔掉 MPK 的 USB 线，再打开 Lunar 24；DRONE VOICES 全关，只听 VCO A。
+- 步骤：
+  1. 应用开着，插上 MPK 的 USB 线，等 2 秒，在 MPK 上弹几个音。
+  2. 打开 Preferences（⌘,），看 MIDI Input 下拉列表，点 Cancel。
+  3. 在 MPK 上按住一个音不放，同时拔掉 USB 线。
+  4. 再插上 USB 线，等 2 秒，弹几个音。
+  5. 退出 Lunar 24，拔掉 MPK，再打开 Lunar 24；然后插上 MPK，等 2 秒，弹几个音。
+- 期望：
+  - 第 1 步：不用重开应用，MPK 就能弹出声音。
+  - 第 2 步：下拉列表里有 MPK 的端口，并且已选中 **MPK Mini IV MIDI Port**。
+  - 第 3 步：拔线后那个音停掉，不会卡住一直响。
+  - 第 4 步：重新插上后马上能弹。
+  - 第 5 步：应用记住了 MPK，插上后自动连上，不需要去 Preferences 里重新选。
+  - audio.log 里能看到 "midi input connected / disconnected"。
 
 ### 15. MIDI 设置与绑定
 
@@ -1197,6 +1213,24 @@
   - 第 9 步：SPLIT 还是刚才改的值（存在 MIDI 绑定文件里，不随音色设置）。
 - 收尾：SPLIT 改回 C4，PLAY 改回 SINGLE，oct+3 拨回 low，拔掉两根线。
 
+**T15.11 MIDI 控制光敏头（旋钮 / 打击垫压力）** ✅（2026-10-04 Mac + MPK MINI IV：K2 在 KnobM = Rel 下自动学成 REL 2，打击垫学成 NOTE 44 / CH 10、MODE = PRESS，全部通过）
+- 准备：RESET PANEL；打开 DRONE VOICES 的 1；点亮 DRONE 1 第 1、3、5 列的 **MOD**（同 T2.6）。MIDI 设置的 CHANNEL 过滤为 ANY。MPK 用测试用户预设，并在 Global Menu（SHIFT + LOOP）里确认 **Aft** = Chan（打击垫按住后会发压力）。
+- 步骤：
+  1. 打开 MIDI 设置，点 **LEARN**，点 DRONE 1 的大白圆（光敏头），转一下 MPK 的 K2。列表里应多一行，目标是 **DRONE 1 PHOTO**。
+  2. 关掉 MIDI 设置，把 K2 慢慢从最小转到最大，再转回最小。
+  3. 再次 LEARN：点 DRONE 1 的大白圆，敲一下 Bank A 的 1 号垫。列表里这一行的 MODE 显示 **PRESS**。
+  4. 敲下 1 号垫并按住不放：先轻按住，再慢慢加大压力，再减小，最后松开。
+  5. 轻轻敲一下 1 号垫马上松开，再用力敲一下马上松开。
+  6. （可选）若 K2 学成了 REL 2（旋钮是 Rel 模式），同样转动 K2。
+- 期望：
+  - 第 1 步：列表新行显示 CC（K2 的号码），目标 DRONE 1 PHOTO。
+  - 第 2 步：效果和 T2.6 里用鼠标往上拖一样：越转越暗，音高往下沉、出现摇晃和拍频；转回最小时音高回到原位。白圆随之变暗变亮，OSC STATUS 灯条的明暗节奏跟着变。
+  - 第 4 步：一按下音高就往下掉（手盖上来）；压力越大音高越低、白圆越暗；松开后音高按光敏头的方式慢慢回正。按住期间的压力不会让键盘或 VCO 发生变化。
+  - 第 5 步：重敲比轻敲下沉得更多。
+  - 第 6 步：从当前位置开始连续变化，不会跳；大约转两圈从"手拿开"到"完全盖住"。
+  - 鼠标和 MIDI 可以交替使用，谁最后动就听谁的。
+- 收尾：在 MIDI 设置里用 **x** 删掉这两行绑定。
+
 ### 16. 录音（REC）
 
 硬件没有录音，软件把 DUAL EFFECTOR 右上角的耳机区域改作录音：耳机插孔的位置是 **REC** 按钮，耳机音量旋钮的位置是 **WET / DRY / ALL** 选择。文件存到 **音乐 → Lunar 24**（Mac：`~/Music/Lunar 24`），24-bit 立体声 WAV：
@@ -1226,7 +1260,7 @@
 
 - T0.7 打开应用时 drone 是关的（#99 新加）。
 - T12.18 新版键盘菜单整体复测。
-- MIDI：延音踏板相关（T14.1、T15.10 第 6 步、CC64 防误学，没有踏板暂不测）；运行中直接拔 MPK 的 USB 线（与 T14.2 的选 off 不同）；pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
+- MIDI：延音踏板相关（T14.1、T15.10 第 6 步、CC64 防误学，没有踏板暂不测）；pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查；真用到多声道声卡时再测。
 - 键盘菜单 SERVICE 页的 10 个校准类设置（V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE）：已核实为存储但无声音/行为效果（都是校准真机硬件的概念，软件里没有对应误差），只需确认改动能保存、重启后还在。ENCODER DIRECTION 会反转红色大旋钮的滚轮方向，已在 T12.19 测过。
 
@@ -1238,7 +1272,7 @@
 
 | 项目 | 现状与下一步 |
 |---|---|
-| #1 / #2：设备发现和默认选择 | 设备列表只在启动时枚举，运行中插上的设备要重开应用才出现。启动时输入为未设置或 off，会自动选第一个真实设备（连保存的 off 也会被覆盖）。 |
+| #1 / #2：设备发现和默认选择 | 运行中插拔会被检测（每秒一次，T14.6）：选中的设备插回自动连上，拔掉自动断开；输入为 off 时，插上的第一个设备会被自动选中（和启动时一样，保存的 off 也会被覆盖）。Preferences 打开期间插上的设备，要关掉再打开 Preferences 才出现在列表里。 |
 | #3 / #6 / #15：交互提示 | ABS 旋钮等待接管时没有提示；CHANNEL 会过滤 Learn 的输入且没有提示，Learn 前先确认 CHANNEL = ANY。（MIDI 弹奏点亮触摸板已做，T15.8。）RESET PANEL 保留 MIDI 配置，见 DECISIONS。 |
 | #9：R = 0、BLEND 最小时仍有尾音 | 尚未定位，不直接归因于混响。按下面的隔离准备复测并记录持续时间。 |
 
@@ -1247,7 +1281,7 @@
   - 第三种是 **User Presets**（用户预设）：按住 SHIFT 再按 PLUGIN/DAW，旋转屏幕下的大旋钮选择，按下旋钮载入。只有用户预设下才能：把打击垫切成 CC#（SHIFT + 3 号垫；SHIFT + 4 号垫回音符）、改打击垫 / 旋钮发的号码（SHIFT + OCT− 进 Program Edit）、改全局设置（SHIFT + LOOP 进 Global Menu，按 PLUGIN/DAW 退出）。
   - 琴键、打击垫、旋钮、弯音 / 调制轮、延音踏板的演奏数据都从 **MPK Mini IV MIDI Port** 发出（所有预设都是）；另外几个端口（DAW / Plugin / Software Control / Din）发的是给软件脚本的按钮和屏幕控制，Lunar 24 不需要。Preferences 里 MIDI 输入选 MIDI Port。
   - 全局设置里和我们有关的：**Toggle**（打击垫"瞬时 / 切换"，测 TOGGLE 绑定时应为 Off）、**KnobM**（8 个旋钮一起设 Abs / Rel，测 REL 用；Program Edit 里也能单个设）、**Aft**（打击垫按压后发 Chan / Poly aftertouch，或 Off）、**MidiCh / PadCh**（琴键和打击垫的通道，打击垫默认通道 10，所以 Learn 出来是 CH 10）。
-  - **测试用预设**（2026-10-03 owner 已建）：一个用户预设，全局设置 Toggle = Off、KnobM = Abs、Aft = Chan、FullVel = Off，MidiCh / PadCh 保持默认（琴键 1、打击垫 10）。以后 MIDI 测试都先切到这个预设；Lunar 24 的 MIDI 设置 CHANNEL 保持 ANY。
+  - **测试用预设**（2026-10-03 owner 已建）：一个用户预设，全局设置 Toggle = Off、KnobM = Rel（2026-10-04 起改为 Rel：无限旋钮不用对刻度，Learn 自动识别为 REL 2）、Aft = Chan、FullVel = Off，MidiCh / PadCh 保持默认（琴键 1、打击垫 10）。以后 MIDI 测试都先切到这个预设；Lunar 24 的 MIDI 设置 CHANNEL 保持 ANY。
   - 实测：用户预设下打击垫切成 CC# 后，学到的是 `CC 36 / CH 1`（CC 走通道 1，不是打击垫音符用的通道 10）。
   - 手册没写 Rel 模式用哪种相对编码；2026-10-04 实测是 **REL 2**（顺时针发 1、逆时针发 127）。REL 1 在最大最小之间跳，REL 3 逆时针跳到最小。Learn 后会自动识别并改成 REL 2（T15.3）。
   - 手册只写了 MPK 的琶音器能**接收**外部时钟（Clock = Ext），没写它会往外发 MIDI 时钟；用 MPK 驱动 Lunar 24 的琶音 / 音序器时钟可能不行，需要实测或用 DAW 发时钟。
@@ -1261,7 +1295,7 @@
 - DRONE 3 的 mod 最大跨度太大。（当前峰峰正好 6 个八度：kNewDroneFmOctaves = ±3）
 - S&H 默认太慢、跳动幅度太大。（默认约 6 秒采一次；输出 ±5 V，接 cv 后音高最多 ±5 个八度）
 - 所有 drone 一起响时混音太满。（混音器是裸加和、无归一化，靠效果器末尾 tanh 软限幅兜底）
-- 光敏传感器可以改成用鼠标操作。（目前纯装饰，无交互）
+- 光敏头 MIDI 手感：打击垫敲击的起始深度、压力范围、REL 旋钮从"手拿开"到"盖住"要转几圈。（当前：敲击 0.5 + 力度、压力 0.4–1、每格 1/64 ≈ 两圈）
 - VCO B 拨到 oct+3 后在 MPK 中间 C 以上（约 E4）听起来有点颤、发粗（2026-10-04 T15.10 中发现；同一个键换 SPLIT 前后一样，与 MIDI 分区无关）。待调音色时听一下是否为高音区混叠。
 - VCO A → VCO B 的默认调制偏温和。（1:1 直通路由：±1 V 源进 ±5 V 输入，只用约 20% 量程）
 

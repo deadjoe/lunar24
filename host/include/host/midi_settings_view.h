@@ -73,7 +73,8 @@ inline const char* actionName(core::MidiAction a) {
   static const char* names[] = {"DRONE 1",       "DRONE 2",       "DRONE 3",        "DRONE 4",
                                 "DRONE 5",       "DRONE 6",       "CARTRIDGE NEXT", "CARTRIDGE PREV",
                                 "LOAD PRESET A", "LOAD PRESET B", "LOAD PRESET C",  "LOAD PRESET D",
-                                "MUTE"};
+                                "MUTE",          "DRONE 1 PHOTO", "DRONE 2 PHOTO",  "DRONE 4 PHOTO",
+                                "DRONE 5 PHOTO"};
   const auto i = static_cast<unsigned>(a);
   return i < core::kMidiActionCount ? names[i] : "?";
 }
@@ -192,7 +193,12 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     label({846, y + 26, 1196, y + 47}, 14, kMuted, b.key.device[0] ? asciiText(b.key.device) : "Any device");
     label({1220, y + 4, 1688, y + 46}, 18, kInk, targetText(b), true);
     const auto drive = core::midi_parameter_drive(b);
-    if (b.targetKind != core::MidiTargetKind::parameter)
+    if (b.targetKind != core::MidiTargetKind::parameter && core::midi_action_is_continuous(b.action)) {
+      if (b.key.kind == core::MidiBindingKind::note)
+        label(mode(i), 15, kMuted, "PRESS", true, true);  // a pad: hit, pressure, release
+      else
+        button(mode(i), modeText(b), st.editable);
+    } else if (b.targetKind != core::MidiTargetKind::parameter)
       label(mode(i), 15, kMuted, "TRIGGER", true, true);
     else if (drive == core::MidiParameterDrive::toggleOnPress)
       label(mode(i), 15, kMuted, "TOGGLE", true, true);  // a press flips the switch
