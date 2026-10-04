@@ -276,11 +276,10 @@ int main(int argc, char** argv) {
         text(w.cx, w.cy, 18, {235, 240, 255}, "OCT +0");
         art::drawDisplayGlass(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
         break;
+      case WidgetKind::PhotoSensor: art::drawSensor(sink, float(w.cx), float(w.cy), float(w.w / 2)); break;
       case WidgetKind::Decor:
         if (w.id == 3) {
           jack(w);
-        } else if (w.id == 0) {
-          art::drawSensor(sink, float(w.cx), float(w.cy), float(w.w / 2));
         } else {
           for (std::uint32_t i = 0; i < 5; ++i)
             std::printf("<rect x='%.1f' y='%.1f' width='9' height='30' fill='%s'/>\n", w.x() + 5 + i * 12.5, w.y() + 8,

@@ -9,6 +9,7 @@
 //   lunar24_render --note 0:0:4 --note 4:7:4 --out notes.wav      # time:semitone:length (s)
 //   lunar24_render --cable lfo_a.cv_out=vcf.cv_l_in --set vcf.l_mod=0.6
 //   lunar24_render --set keyboard.mode=2 --step 2:7 --step 3:12:0 --note 0:0:8   # 16-step sequencer
+//   lunar24_render --drone 1 --set drone_1.mod_1=1 --shade 4:1:1 --shade 8:1:0   # hand on the eye
 //   lunar24_render --list params|jacks|programs
 
 #include <host/standalone_audio_engine.h>
@@ -30,6 +31,11 @@ namespace {
 struct Note {
   double at = 0.0, semis = 0.0, length = 1.0;
 };
+struct Shade {  // the hand over a classic drone's photo sensor from `at` on
+  double at = 0.0;
+  int group = 0;  // 0..3 = drone 1/2/4/5
+  double value = 0.0;
+};
 
 void usage() {
   std::puts(
@@ -45,6 +51,9 @@ void usage() {
       "  --program-r NAME     right effector program\n"
       "  --note T:S:L         play a keyboard note at T seconds, S semitones, L seconds long\n"
       "  --step I:N[:G]       16-step sequencer step I (1-16): note N semitones, gate G (1 = on)\n"
+      "  --drone N            open DRONE VOICES key N (1-6) at the start\n"
+      "  --shade T:D:V        from T seconds, hold a hand over drone D's photo sensor (D = 1, 2, 4, 5;\n"
+      "                       V = 0 away .. 1 covering); its MOD buttons decide which generators bend\n"
       "  --list params|jacks|programs");
 }
 
@@ -103,6 +112,8 @@ int main(int argc, char** argv) {
   std::string out = "lunar24.wav", dryOut;
   std::vector<std::string> sets, cables, progL, progR, steps;
   std::vector<Note> notes;
+  std::vector<Shade> shades;
+  std::vector<int> drones;
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -126,6 +137,20 @@ int main(int argc, char** argv) {
       Note n;
       if (std::sscanf(v.c_str(), "%lf:%lf:%lf", &n.at, &n.semis, &n.length) < 2) { usage(); return 2; }
       notes.push_back(n);
+    } else if (a == "--drone") {
+      next(v);
+      const int d = std::atoi(v.c_str());
+      if (d < 1 || d > 6) { usage(); return 2; }
+      drones.push_back(d - 1);
+    } else if (a == "--shade") {
+      next(v);
+      Shade sh;
+      int d = 0;
+      if (std::sscanf(v.c_str(), "%lf:%d:%lf", &sh.at, &d, &sh.value) != 3) { usage(); return 2; }
+      static constexpr int kGroupOfDrone[7] = {-1, 0, 1, -1, 2, 3, -1};
+      sh.group = d >= 1 && d <= 6 ? kGroupOfDrone[d] : -1;
+      if (sh.group < 0) { std::fprintf(stderr, "--shade: drones 1, 2, 4 and 5 have photo sensors\n"); return 2; }
+      shades.push_back(sh);
     } else if (a == "--list") {
       next(v);
       if (v == "params")
@@ -200,7 +225,8 @@ int main(int argc, char** argv) {
   std::vector<float> wl, wr, da, db;
   wl.reserve(total); wr.reserve(total); da.reserve(total); db.reserve(total);
 
-  std::vector<bool> on(notes.size(), false), off(notes.size(), false);
+  for (int d : drones) engine.postDroneKey(d, true);
+  std::vector<bool> on(notes.size(), false), off(notes.size(), false), shaded(shades.size(), false);
   for (std::size_t pos = 0; pos < total; pos += block) {
     const double t = pos / sr;
     for (std::size_t n = 0; n < notes.size(); ++n) {
@@ -216,6 +242,11 @@ int main(int argc, char** argv) {
         engine.postEvent(noteEvent(core::ControlEventKind::gate_off, 0.0, id));
       }
     }
+    for (std::size_t k = 0; k < shades.size(); ++k)
+      if (!shaded[k] && t >= shades[k].at) {
+        shaded[k] = true;
+        engine.postPhotoShade(shades[k].group, shades[k].value);
+      }
     engine.processBlock(ins, outs, 2, 4, block);
     for (int i = 0; i < block && pos + i < total; ++i) {
       wl.push_back(static_cast<float>(o[0][i]));

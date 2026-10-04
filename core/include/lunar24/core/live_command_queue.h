@@ -21,6 +21,7 @@ struct LiveCommand {
                                   KeyboardPreset,    // side = action (0 load, 1 save, 2 clear), index = slot
                                   KeyboardSelector,  // side 0/1, index = clock selector 0..3, value
                                   Action,            // audio -> UI only: index = core::MidiAction id
+                                  PhotoShade,        // side = classic drone group 0..3, value = 0..1
                                   GraphPlanDone };   // audio -> UI only: graphPlan to free
   Kind kind = Kind::Parameter;
   ParameterId parameter = ParameterId{0};

@@ -1120,6 +1120,11 @@ class SynthRuntime {
   // Shared/correlated environment term a desktop host can provide. It
   // detunes the MOD-on generators of every classic group together; MOD-off unchanged.
   void setDroneEnvironment(double hz) { drone_.setEnvironment(hz); }
+  // The hand over a classic drone's photo sensor (group 0..3 = drone 1/2/4/5): 0 = away,
+  // 1 = covering it. A performance gesture, not saved state.
+  void setDronePhotoShade(int voiceGroup, double shade) { drone_.setGroupShade(voiceGroup, shade); }
+  // What that sensor sees: 0 = dark .. 1 = room light (the panel lamp).
+  double dronePhotoLight01(int voiceGroup) const { return drone_.groupLight01(voiceGroup); }
 
   // Registry CV binding for the 4 CLASSIC drone groups (order 0..3 == drone 1/2/4/5):
   // env_out jacks the product WRITES virtual volts to, cv_mod_in jacks the product READS

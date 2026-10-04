@@ -80,6 +80,17 @@ Keep these unless a listening test or a real bug says otherwise.
   sounding and then closes them, so opening the app, RESET PANEL and every audio reopen
   play a short drone swell that fades over the voices' RLS (2-5 s). The owner likes it
   as a start-up sound; keep it.
+- **The classic drones' photo sensors are played with the mouse** (owner, 2026-10-04): the
+  four big white domes were decor. Light cannot be simulated, so `core/photo_sensor.h`
+  models the chain instead of a knob: room light drifting slowly, a hand shadow with
+  tremor, sway and finger flicker, and a CdS cell (conductance ~ light^0.7, a fast part
+  plus a slow tail that is quicker toward light than toward dark, slower back after a long
+  cover — the published vactrol/LDR behaviour), beside a fixed resistor so the pitch drop
+  saturates (~2 semitones covered). MOD-on generators follow it, each with its own
+  sensitivity. Press = hand over the eye, drag up/down = closer/further, sideways =
+  fingers sweeping, release = hand away; the dome dims with the light. Not saved; MIDI
+  binding later (a new parameter would change the state format). The manual says the CV
+  MOD input lights a red LED on this sensor; the CV path stays direct for now.
 - **Cable edits are real-time safe** (2026-10-04): compiling the patch plan allocates, so a
   live cable edit is compiled on the UI thread against its own copy of the patch
   (`SynthRuntime::planGraph`), sent with the edit, and swapped in by the audio thread
