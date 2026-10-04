@@ -72,8 +72,8 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. This PR: reverb balance (T8.6). Then VCO aliasing, the last of the sound round. Done:
-   filter character (T7.4), output headroom (T8.4), cartridge hover names (T8.5), TUNE /
+1. VCO aliasing, the last of the sound round. Done: reverb balance (T8.6), filter
+   character (T7.4), output headroom (T8.4), cartridge hover names (T8.5), TUNE /
    VOLT glide (T2.8), photo sensors (T2.6, T15.11), live OSC STATUS lamps (T2.7), MIDI
    hot-plug (T14.6).
 2. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
