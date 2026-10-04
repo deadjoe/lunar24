@@ -790,7 +790,7 @@ MIDI 进入键盘的入口在 `host/plugin.cpp`。键盘的各项功能见后续
 ## 14. 键盘 ROOT NOTE、CLOCK、PRESETS（p.19）
 
 代码：主音在 `keyboard_behaviour.h`（`root_note_semitone`、`quantize_pitch`）；时钟在 `machine_runtime.h`
-（`tickKeyboardClock_`、`keyboardBpm`）和 `host/include/host/midi_timing.h` 相关的 MIDI 时钟跟随；
+（`tickKeyboardClock_`、`keyboardBpm`）和 `host/include/host/midi_timing.h`（`MidiClockFollower`，MIDI 时钟跟随）；
 预设在 `core/include/lunar24/core/keyboard_presets.h`，菜单底部的 A–D / LOAD / SAVE / INIT 在 `keyboard_menu_view.h`。
 
 ### 14.1 ROOT NOTE 主音
