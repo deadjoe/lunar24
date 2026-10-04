@@ -806,6 +806,10 @@ class DualEffector {
   double blend() const { return knob_[3]; }
   double master() const { return knob_[4]; }
 
+  // Overall output level at MASTER noon: the default patch (four drones through a reverb)
+  // averages about -12 dBFS and only its loudest peaks reach the limiter. // tuned by ear
+  static constexpr double kOutputTrim = 1.75;
+
   void process(double& l, double& r) {
     double k[5];
     for (int i = 0; i < 5; ++i) {
@@ -817,7 +821,7 @@ class DualEffector {
     // Equal-power dry/wet blend, then master (knob 0.5 = unity), then the output limiter.
     const double dryG = std::cos(0.5 * fx::kPi * k[3]);
     const double wetG = std::sin(0.5 * fx::kPi * k[3]);
-    const double m = 2.0 * k[4];
+    const double m = 2.0 * k[4] * kOutputTrim;
     // AC-coupled output (like the hardware line out): block DC below ~5 Hz.
     const double ol = m * (dryG * l + wetG * wl), orr = m * (dryG * r + wetG * wr);
     dcL_ = ol - dcXl_ + dcPole_ * dcL_; dcXl_ = ol;
