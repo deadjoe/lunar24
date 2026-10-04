@@ -849,7 +849,8 @@ MIDI 进入键盘的入口在 `host/plugin.cpp`。键盘的各项功能见后续
 
 ### 15.2 Lunar 24 的做法
 
-- **【软件化调整】菜单的 SERVICE 页把这些设置都列出来了**，名称、默认值和手册一致：V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE、DIRECTION。
+- **【软件化调整】菜单的 SERVICE 页把这些设置都列出来了**：V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE、DIRECTION。
+  - 名称和手册对应，但数值是 0–100 % 的旋钮，默认都在 0。手册的默认值（650、690）没有照搬，因为这些设置在软件里本来就不起作用。
   - 不用"开机按住编码器"，直接打开菜单就能看到。
 - **【软件化调整】除 ENCODER DIRECTION 外，其他都只保存、不起作用**（`STATUS.md`、`DECISIONS.md`）。原因：
   - 软件的电压是精确计算出来的，没有 DAC 误差，不需要用万用表校准，也没有可选的 DAC 芯片。
@@ -859,5 +860,5 @@ MIDI 进入键盘的入口在 `host/plugin.cpp`。键盘的各项功能见后续
 - **【软件化调整】不需要单独的 INIT / SAVE CALIBRATION 操作**：
   - 改动立即保存在机器状态里，随状态一起存盘。
   - RESET PANEL 会把它们恢复成默认值。
-- **【手册原文】TOUCH THRESHOLD 一段里，"650 # Release threshold … 690" 两个默认值写在同一句里**，单位也没说。Lunar 24 照原样保留两个默认值。
+- **【手册原文】TOUCH THRESHOLD 一段里，"650 # Release threshold … 690" 两个默认值写在同一句里**，单位也没说。
 - 还要人工确认：SERVICE 的数值在重启 app 后是否还在（`STATUS.md` 的手动检查项）。
