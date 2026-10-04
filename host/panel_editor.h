@@ -1073,12 +1073,14 @@ class OscStatusControl : public IControl {
     return IControl::IsDirty();
   }
   void Draw(IGraphics& g) override {
+    GraphicsSink sink{g};
     for (int i = 0; i < 5; ++i) {
       shown_[i] = s_.engine.oscLamp(group_, i);
-      const std::uint32_t c = art::mix(hexOf(theme::kLedOff), hexOf(theme::kLedOn), std::clamp(shown_[i], 0.f, 1.f));
-      g.FillRect(IColor(255, int((c >> 16) & 0xff), int((c >> 8) & 0xff), int(c & 0xff)),
-                 IRECT(float(w_.x() + 5 + i * 12.5), float(w_.y() + 8), float(w_.x() + 14 + i * 12.5),
-                       float(w_.y() + 38)));
+      // Spread the sounding range (about 0.3..0.9) over the whole lamp, so the pulse reads.
+      const float b = std::pow(std::clamp((shown_[i] - 0.3f) / 0.6f, 0.f, 1.f), 1.3f);  // tuned by eye
+      const float x0 = float(w_.x() + 5 + i * 12.5);
+      art::drawBarLed(sink, x0, float(w_.y() + 8), x0 + 9.f, float(w_.y() + 38), hexOf(theme::kLedOn),
+                      shown_[i] > 0.01f ? std::max(b, 0.08f) : 0.f);
     }
   }
 

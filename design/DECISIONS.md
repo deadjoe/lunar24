@@ -50,6 +50,9 @@ Keep these unless a listening test or a real bug says otherwise.
   level (MUTE fade x the voice's VCA x its own level), pulsing with the beating: the ratio
   of a fast to a slow envelope of the summed generators, as the owner saw on the hardware
   in demo videos. `DroneBank::lampLevel`; written per block like the other LEDs.
+  Drawn as real bar LEDs (`art::drawBarLed`): deep maroon off, hot pale core and a red
+  bloom growing with b^2 when lit; the panel spreads the sounding range (~0.3..0.9) over the
+  whole lamp so the pulse reads (tuned by eye, owner feedback on T2.7).
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
   by ear); a CLOCK jack or MIDI clock takes over until BPM is changed again (manual p.19).
   MIDI START restarts the arpeggio / sequence from its first step like the RESET jack;

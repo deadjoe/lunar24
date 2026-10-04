@@ -278,9 +278,11 @@ int main(int argc, char** argv) {
         break;
       case WidgetKind::PhotoSensor: art::drawSensor(sink, float(w.cx), float(w.cy), float(w.w / 2)); break;
       case WidgetKind::OscStatus:  // the app opens with the drones off: lamps dark
-        for (std::uint32_t i = 0; i < 5; ++i)
-          std::printf("<rect x='%.1f' y='%.1f' width='9' height='30' fill='%s'/>\n", w.x() + 5 + i * 12.5, w.y() + 8,
-                      col(theme::kLedOff).c_str());
+        for (std::uint32_t i = 0; i < 5; ++i) {
+          const float x0 = float(w.x() + 5 + i * 12.5);
+          art::drawBarLed(sink, x0, float(w.y() + 8), x0 + 9.f, float(w.y() + 38),
+                          (std::uint32_t(theme::kLedOn.r) << 16) | (theme::kLedOn.g << 8) | theme::kLedOn.b, 0.f);
+        }
         break;
     }
   }
