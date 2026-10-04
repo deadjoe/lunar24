@@ -97,8 +97,10 @@ Keep these unless a listening test or a real bug says otherwise.
   cover — the published vactrol/LDR behaviour), beside a fixed resistor so the pitch drop
   saturates (~2 semitones covered). MOD-on generators follow it, each with its own
   sensitivity. Press = hand over the eye, drag up/down = closer/further, sideways =
-  fingers sweeping, release = hand away; the dome dims with the light. Not saved; MIDI
-  binding later (a new parameter would change the state format). The manual says the CV
+  fingers sweeping, release = hand away; the dome dims with the light. Not saved. MIDI
+  drives the hand through four continuous actions (DRONE 1/2/4/5 PHOTO), not parameters, so
+  the state format is unchanged: a knob sets it (absolute or relative), a pad puts it down on
+  a hit, follows the pad's aftertouch and lifts it on release. The manual says the CV
   MOD input lights a red LED on this sensor; the CV path stays direct for now.
 - **Cable edits are real-time safe** (2026-10-04): compiling the patch plan allocates, so a
   live cable edit is compiled on the UI thread against its own copy of the patch

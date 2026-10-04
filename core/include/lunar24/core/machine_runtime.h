@@ -1123,6 +1123,7 @@ class SynthRuntime {
   // The hand over a classic drone's photo sensor (group 0..3 = drone 1/2/4/5): 0 = away,
   // 1 = covering it. A performance gesture, not saved state.
   void setDronePhotoShade(int voiceGroup, double shade) { drone_.setGroupShade(voiceGroup, shade); }
+  double dronePhotoShade(int voiceGroup) const { return drone_.groupShade(voiceGroup); }
   // What that sensor sees: 0 = dark .. 1 = room light (the panel lamp).
   double dronePhotoLight01(int voiceGroup) const { return drone_.groupLight01(voiceGroup); }
   // OSC STATUS lamp of generator gen (0..4) of classic group voiceGroup, 0..1.

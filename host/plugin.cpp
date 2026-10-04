@@ -508,7 +508,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
         if (bound >= 0)
         {
           engine_.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(bound),
-                                                  msg.Velocity());
+                                                  msg.Velocity(), static_cast<std::uint8_t>(in.channel + 1));
           return;
         }
         midiNotes_.played(in.channel, note & 127);
@@ -528,7 +528,12 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
     case IMidiMsg::kNoteOff:
       // Learn may have bound this note since it started playing. Release follows
       // the note-on's ownership, never the current map (or current filter).
-      if (!midiNotes_.release(in.channel, note & 127)) return;
+      if (!midiNotes_.release(in.channel, note & 127))
+      {
+        // Not a played note: maybe a pad holding a photo sensor's hand down.
+        (void)engine_.photoPadRelease(static_cast<std::uint8_t>(in.channel + 1), static_cast<std::uint8_t>(note & 127));
+        return;
+      }
       midiLights_.off(in.channel, note & 127);
       if (sustain_.deferNoteOff(in.channel, note & 127))
       {
@@ -539,12 +544,18 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       in.side = midiSides_.of(in.channel, note & 127);
       break;
     case IMidiMsg::kPolyAftertouch:
+      if (engine_.photoPadPressure(static_cast<std::uint8_t>(in.channel + 1), note & 127,
+                                   msg.PolyAfterTouch() / 127.0))
+        return;  // a photo pad's pressure moves its hand, not the keyboard
       in.kind = PerfInputKind::aftertouch;
       in.value = static_cast<SignalSample>(msg.PolyAfterTouch() / 127.0);
       in.noteId = static_cast<NoteId>(note + 1);
       in.side = midiSides_.of(in.channel, note & 127);
       break;
     case IMidiMsg::kChannelAftertouch:
+      if (engine_.photoPadPressure(static_cast<std::uint8_t>(in.channel + 1), -1,
+                                   msg.ChannelAfterTouch() / 127.0))
+        return;
       in.kind = PerfInputKind::aftertouch;
       in.side = midiSides_.latest(in.channel);
       in.value = static_cast<SignalSample>(msg.ChannelAfterTouch() / 127.0);

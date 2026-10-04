@@ -103,6 +103,15 @@ int main() {
     b.action = MidiAction::drone_key_4;
     b.mode = MidiInputMode::relativeBinOffset;  // actions keep the canonical mode
     CHECK(!m.bind(b));
+    b.action = MidiAction::photo_drone_4;  // ... except a photo sensor, a continuous target
+    CHECK(m.bind(b));
+    MidiRigSettings rig{};
+    std::vector<std::uint8_t> bytes(midi_map_wire_bytes(m.count()));
+    CHECK_EQ(midi_map_encode(m, rig, bytes.data(), bytes.size()), bytes.size());
+    MidiMap back;
+    CHECK(midi_map_decode(bytes.data(), bytes.size(), &back, &rig));
+    CHECK_EQ(back.at(0).action, MidiAction::photo_drone_4);
+    CHECK_EQ(back.at(0).mode, MidiInputMode::relativeBinOffset);
   }
   // Wire round-trip: empty and populated maps, field by field.
   {

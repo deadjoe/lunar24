@@ -399,8 +399,14 @@ class StandaloneAudioEngine {
   // Audio thread: apply a matched row's raw data byte (0..127). Parameters honor the
   // binding's input mode (pickup for absolute, deltas for relative); drone-key and
   // mute actions take effect immediately and are recorded for the UI; cartridge /
-  // preset actions hand over to the UI thread via fromAudioQueue_.
-  void applyMidiBindingFromAudioThread(std::uint32_t row, int rawValue);
+  // preset actions hand over to the UI thread via fromAudioQueue_. A photo-sensor
+  // binding moves the hand at once; for a pad, `channel` (1..16) is the pad's channel.
+  void applyMidiBindingFromAudioThread(std::uint32_t row, int rawValue, std::uint8_t channel = 0);
+  // Audio thread: a pad bound to a photo sensor. Release lifts the hand; pressure (poly
+  // aftertouch on that note, or channel aftertouch with note -1) sets how close it is.
+  // Both return true when a held photo pad took the message.
+  bool photoPadRelease(std::uint8_t channel, std::uint8_t note);
+  bool photoPadPressure(std::uint8_t channel, int note, double pressure01);
   // The published snapshot's binding at `row` (for the UI to label it). UI thread.
   const lunar24::core::MidiBinding* midiBindingAt(std::uint32_t row) const {
     const auto& s = midiUiMap_;
@@ -571,6 +577,12 @@ class StandaloneAudioEngine {
   void refreshMidiMap_();
   double midiValue_[lunar24::core::kMidiMapCapacity] = {};
   int midiLastRaw_[lunar24::core::kMidiMapCapacity] = {};
+  // Photo-sensor hands driven by MIDI (audio thread): where each hand is, and the pad
+  // holding it down (channel 1..16, note; channel 0 = no pad held).
+  double photoShade_[4] = {0.0, 0.0, 0.0, 0.0};
+  std::uint8_t photoPadChannel_[4] = {0, 0, 0, 0};
+  std::uint8_t photoPadNote_[4] = {0, 0, 0, 0};
+  void setPhotoShade_(int group, double shade);
   bool midiPickedUp_[lunar24::core::kMidiMapCapacity] = {};
   std::array<std::atomic<float>, kPanelLedCount> leds_{};
   std::array<std::atomic<float>, 4> photoLight_{1.0f, 1.0f, 1.0f, 1.0f};
@@ -614,6 +626,11 @@ inline bool StandaloneAudioEngine::prepare(std::uint64_t seed, double sampleRate
   // failure into a later successful/other prepare on the same owner.
   dspApplyFirstFailParamId_ = static_cast<ParameterId>(kParameterCount);
   dspApplyFirstFailStatus_ = ParameterApplyStatus::applied;
+  // A new runtime starts with every photo-sensor hand away (the stream is stopped here).
+  for (int g = 0; g < 4; ++g) {
+    photoShade_[g] = 0.0;
+    photoPadChannel_[g] = 0;
+  }
   // (1) Impossible / illegal format -> fail-closed. On ANY of these the OLD definition is
   // released and the engine goes NOT-READY: the host is re-configuring for a new stream, and
   // keeping a stale sample-rate runtime would be exactly the "old runtime kept" defect. A
@@ -1248,8 +1265,39 @@ inline int StandaloneAudioEngine::midiBindingRow(std::uint8_t channel,
   return b == nullptr ? -1 : static_cast<int>(b - &s.map.at(0));
 }
 
+inline void StandaloneAudioEngine::setPhotoShade_(int group, double shade) {
+  photoShade_[group] = std::clamp(shade, 0.0, 1.0);
+  definition_->runtime().setDronePhotoShade(group, photoShade_[group]);
+}
+
+// A pad's hit puts the hand on the eye, its pressure presses closer. Tuned by ear.
+inline constexpr double kPhotoPadHitBase = 0.5, kPhotoPadPressureBase = 0.4;
+
+inline bool StandaloneAudioEngine::photoPadRelease(std::uint8_t channel, std::uint8_t note) {
+  if (!definition_) return false;
+  bool took = false;
+  for (int g = 0; g < 4; ++g)
+    if (photoPadChannel_[g] == channel && photoPadNote_[g] == note) {
+      photoPadChannel_[g] = 0;
+      setPhotoShade_(g, 0.0);
+      took = true;
+    }
+  return took;
+}
+
+inline bool StandaloneAudioEngine::photoPadPressure(std::uint8_t channel, int note, double pressure01) {
+  if (!definition_ || channel == 0) return false;
+  bool took = false;
+  for (int g = 0; g < 4; ++g)
+    if (photoPadChannel_[g] == channel && (note < 0 || photoPadNote_[g] == note)) {
+      setPhotoShade_(g, kPhotoPadPressureBase + (1.0 - kPhotoPadPressureBase) * std::clamp(pressure01, 0.0, 1.0));
+      took = true;
+    }
+  return took;
+}
+
 inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t row,
-                                                                   int rawValue) {
+                                                                   int rawValue, std::uint8_t channel) {
   if (!definition_) return;
   // A lookup and its application always use the same audio-owned snapshot.
   if (!midiMatchPending_) refreshMidiMap_();
@@ -1258,6 +1306,21 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
   if (row >= s.map.count() || rawValue < 0 || rawValue > 127) return;
   const lunar24::core::MidiBinding& b = s.map.at(row);
   SynthRuntime& rt = definition_->runtime();
+
+  if (b.targetKind == lunar24::core::MidiTargetKind::action &&
+      lunar24::core::midi_action_is_continuous(b.action)) {
+    const int g = static_cast<int>(b.action) - static_cast<int>(lunar24::core::MidiAction::photo_drone_1);
+    if (b.key.kind == lunar24::core::MidiBindingKind::note) {  // a pad hit: the hand comes down
+      photoPadChannel_[g] = channel;
+      photoPadNote_[g] = b.key.number;
+      setPhotoShade_(g, kPhotoPadHitBase + (1.0 - kPhotoPadHitBase) * rawValue / 127.0);
+    } else if (b.mode == lunar24::core::MidiInputMode::absolute) {
+      setPhotoShade_(g, rawValue / 127.0);
+    } else {  // a relative knob: about two turns of an MPK encoder from away to covered
+      setPhotoShade_(g, photoShade_[g] + lunar24::core::midi_relative_delta(b.mode, rawValue) / 64.0);
+    }
+    return;
+  }
 
   if (b.targetKind == lunar24::core::MidiTargetKind::action) {
     if (b.key.kind == lunar24::core::MidiBindingKind::cc) {
@@ -1477,7 +1540,8 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
       case LiveCommand::Kind::DroneKey:
         rt.setDroneVoiceKey(static_cast<int>(c.side), c.value > 0.5);
         break;
-      case LiveCommand::Kind::PhotoShade:
+      case LiveCommand::Kind::PhotoShade:  // the mouse's hand; a relative knob continues from it
+        if (c.side < 4) photoShade_[c.side] = c.value;
         rt.setDronePhotoShade(static_cast<int>(c.side), c.value);
         break;
       case LiveCommand::Kind::SeqStep:

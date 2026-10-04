@@ -416,5 +416,56 @@ int main() {
     ui.join();
   }
 
+  // Photo sensors: a knob sets the hand (absolute, or relative steps); a pad puts it down
+  // on a hit, presses closer with aftertouch and lifts it on release.
+  {
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap m;
+    auto knob = bindCc("", 0, 30, core::ParameterId::vcf_l_freq);
+    knob.targetKind = core::MidiTargetKind::action;
+    knob.action = core::MidiAction::photo_drone_1;
+    CHECK(m.bind(knob));
+    auto rel = bindCc("", 0, 31, core::ParameterId::vcf_l_freq, core::MidiInputMode::relativeTwosComplement);
+    rel.targetKind = core::MidiTargetKind::action;
+    rel.action = core::MidiAction::photo_drone_2;
+    CHECK(m.bind(rel));
+    CHECK(m.bind(bindAction(10, 36, core::MidiAction::photo_drone_5)));
+    auto trigger = bindAction(0, 37, core::MidiAction::master_mute);
+    trigger.mode = core::MidiInputMode::relativeTwosComplement;
+    CHECK(!m.bind(trigger));  // a press action stays absolute
+    e.publishMidiMap(m, "Pads");
+
+    int row = e.midiBindingRow(1, core::MidiBindingKind::cc, 30);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 127);
+    CHECK(std::fabs(e.runtime()->dronePhotoShade(0) - 1.0) < 1e-9);
+    row = e.midiBindingRow(1, core::MidiBindingKind::cc, 30);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 0);
+    CHECK_EQ(e.runtime()->dronePhotoShade(0), 0.0);
+
+    for (int i = 0; i < 16; ++i) {  // 16 steps up = a quarter of the way
+      row = e.midiBindingRow(1, core::MidiBindingKind::cc, 31);
+      e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 1);
+    }
+    CHECK(std::fabs(e.runtime()->dronePhotoShade(1) - 0.25) < 1e-9);
+    row = e.midiBindingRow(1, core::MidiBindingKind::cc, 31);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 127);  // one step down
+    CHECK(std::fabs(e.runtime()->dronePhotoShade(1) - 15.0 / 64.0) < 1e-9);
+
+    row = e.midiBindingRow(10, core::MidiBindingKind::note, 36);
+    CHECK(row >= 0);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 127, 10);
+    CHECK(std::fabs(e.runtime()->dronePhotoShade(3) - 1.0) < 1e-9);
+    CHECK(e.photoPadPressure(10, 36, 0.0));
+    CHECK(std::fabs(e.runtime()->dronePhotoShade(3) - 0.4) < 1e-9);
+    CHECK(e.photoPadPressure(10, -1, 1.0));  // channel aftertouch reaches the held pad
+    CHECK(std::fabs(e.runtime()->dronePhotoShade(3) - 1.0) < 1e-9);
+    CHECK(!e.photoPadPressure(1, -1, 0.5));  // another channel: the keyboard's aftertouch
+    CHECK(!e.photoPadRelease(10, 37));
+    CHECK(e.photoPadRelease(10, 36));
+    CHECK_EQ(e.runtime()->dronePhotoShade(3), 0.0);
+    CHECK(!e.photoPadPressure(10, 36, 0.5));  // released: no longer held
+    e.processBlock(nullptr, outs, 0, 2, 256);
+  }
   return test::finish("test_midi_map_apply");
 }

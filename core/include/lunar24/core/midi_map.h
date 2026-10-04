@@ -53,8 +53,19 @@ enum class MidiAction : std::uint8_t {
   preset_load_c = 10,
   preset_load_d = 11,
   master_mute = 12,
+  // The hand over a classic drone's photo sensor (drone 1, 2, 4, 5): a continuous target.
+  // A knob sets how close the hand is (absolute or relative); a pad puts the hand down on a
+  // hit, follows the pad's pressure (aftertouch) and lifts it on release.
+  photo_drone_1 = 13,
+  photo_drone_2 = 14,
+  photo_drone_4 = 15,
+  photo_drone_5 = 16,
 };
-inline constexpr std::uint8_t kMidiActionCount = 13;
+inline constexpr std::uint8_t kMidiActionCount = 17;
+// Actions that take a value rather than a press (they accept the relative modes too).
+inline bool midi_action_is_continuous(MidiAction a) {
+  return a >= MidiAction::photo_drone_1 && a <= MidiAction::photo_drone_5;
+}
 
 inline constexpr std::size_t kMidiBindingDeviceCapacity = 64;  // UTF-8, NUL-terminated
 inline constexpr std::uint32_t kMidiMapCapacity = 128;
@@ -128,7 +139,8 @@ inline bool midi_binding_valid(const MidiBinding& b) {
            b.mode <= MidiInputMode::relativeSignMagnitude;
   if (b.targetKind == MidiTargetKind::action)
     return static_cast<std::uint8_t>(b.action) < kMidiActionCount &&
-           b.mode == MidiInputMode::absolute;  // mode is meaningless for an action: keep files canonical
+           (b.mode == MidiInputMode::absolute ||  // a press: mode is meaningless, keep files canonical
+            (midi_action_is_continuous(b.action) && b.mode <= MidiInputMode::relativeSignMagnitude));
   return false;
 }
 
