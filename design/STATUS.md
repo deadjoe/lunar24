@@ -72,8 +72,8 @@ exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian /
 scales (the menu marks them NOT MODELLED; they pass notes through).
 
 ## Next steps (in order)
-1. This PR: MIDI for the photo sensors (knob, or a pad with pressure; T15.11). Next: smooth
-   drone TUNE / VOLT steps. Done: photo sensors (T2.6), live OSC STATUS lamps (T2.7).
+1. Next: smooth drone TUNE / VOLT steps. Done: photo sensors (T2.6) and their MIDI (T15.11),
+   live OSC STATUS lamps (T2.7), MIDI hot-plug (T14.6).
 2. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
    surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
 3. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix,
