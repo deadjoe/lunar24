@@ -74,9 +74,10 @@ scales (the menu marks them NOT MODELLED; they pass notes through).
 ## Next steps (in order)
 1. This PR: `design/ARCHITECTURE.md`, the page-by-page check against the manual (sound
    round done: VCO aliasing, reverb, filter, headroom, glides, photo sensors, OSC STATUS).
-2. Next PR: envelope A/B knobs A, D, R are linear over 0-10 s, so 0-1 s is only the first
-   10 % of the turn and short envelopes are hard to set. Give them the drones' cubic taper
-   (`DroneBank::mapAttSeconds`, 1 ms..10 s) and update the manual test.
+2. Next PR, knob tapers: envelope A/B A, D, R are linear over 0-10 s (0-1 s is the first
+   10 % of the turn): give them the drones' cubic taper (`DroneBank::mapAttSeconds`). LFO A/B
+   rate is linear over 0.1-20 Hz (0.1-1 Hz is the first ~5 %): make it exponential. Update
+   the manual tests.
 3. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
    surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
 4. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix,
