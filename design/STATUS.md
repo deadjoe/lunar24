@@ -35,9 +35,7 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
 - REC (headphone corner): WET, DRY or ALL to 24-bit WAVs in Music/Lunar 24.
 
 ## Next steps (in order; owner-approved after the manual check)
-1. Keyboard fixes: turning arp HOLD off must drop the plates no longer held (the arpeggio
-   keeps running now); the 16-step sequencer's ping-pong sticks on step 1 and random
-   plays forward.
+1. ~~Keyboard fixes: arp HOLD off drops released plates; 16-step ping-pong and random.~~
 2. Knob tapers: envelope A/B A, D, R linear over 0-10 s → the drones' cubic taper
    (`DroneBank::mapAttSeconds`); LFO A/B rate linear over 0.1-20 Hz → exponential.
 3. RESET PANEL keeps keyboard presets A-D (it wipes them now), as it keeps MIDI bindings.
@@ -50,7 +48,7 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
 6. Scale editor UI: switch single notes of the quantiser scale on / off
    (`keyboardScaleEditor` exists; only LOAD SCALE sets it now).
 7. Small cleanups: stale comments in `machine_runtime.h` (header route ledger, drone ENV
-   OUT range) and `arp_sequencer.h` ("pitch order").
+   OUT range).
 8. Check by hand: the keyboard menu (T12.18), SERVICE values after a restart, the Windows
    build, sustain-pedal items (need a pedal).
 9. Tune sounds from listening (drone level, modulation depth, S&H, mix, VCO B top).

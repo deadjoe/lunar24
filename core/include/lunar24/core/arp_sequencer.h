@@ -38,13 +38,13 @@
 //     pattern is stored in the side's arp_rhythm / seq_rhythm selector byte as a mask of
 //     MUTED steps (bit i = step i), so 0 (every saved state so far) lets every edge through.
 //   * The arp note ORDERING — manual L817 says the arpeggiator "goes through the
-//     sequence number of pressed plates". The plate -> sequence-number table is not
-//     evidenced, so the chord is ordered by PITCH as a PROVISIONAL fallback and the
-//     plate-sequence ordering is left UN-RESOLVED (FINDINGS).
+//     sequence number of pressed plates". The chord is currently kept in PRESS order
+//     (first pressed plays first); ordering by plate number comes with per-plate tuning.
 //   * note_off / gate_off carries the SAME press identity as its note_on, so
 //     the arp chord is a fixed table of held-plate identities: note_on adds by identity,
 //     gate_off deletes the EXACT matching identity (never a LIFO pop, so releasing a
-//     middle/most-recent chord member in any order leaves the others intact).
+//     middle/most-recent chord member in any order leaves the others intact). With arp
+//     HOLD on, gate_off only marks the note released; turning HOLD off drops those notes.
 //   * norm -> semitone/step maps (interval 1..12, arp length 1..8, seq length 2..16,
 //     seq rhythm length 1..8) are documented linear ceilings (manual bounds the
 //     ranges; no curve is evidenced). PROVISIONAL; the bpm -> step-Hz law is NOT
@@ -190,18 +190,33 @@ inline std::uint8_t seq_rhythm_length_steps(double norm) noexcept {  // 1..8
 class ArpSeq {
  public:
   // Only a MODE change restarts the run, so live menu edits (tempo, direction, interval)
-  // keep the held chord and the running pattern.
-  void configure(const ArpSeqParams& p, double sample_rate) {
+  // keep the held chord and the running pattern. Turning arp HOLD off drops the plates
+  // that were let go while it was on; if none is still held, the sounding note is
+  // released through `sink`.
+  template <typename Sink>
+  void configure(const ArpSeqParams& p, double sample_rate, Sink&& sink) {
     const bool restart = p.mode != params_.mode;
+    const bool holdOff = params_.arpHold != 0 && p.arpHold == 0;
     params_ = p;
     fs_ = sample_rate;
-    if (restart) reset();
+    if (restart) {
+      reset();
+    } else if (holdOff) {
+      chordDropReleased_();
+      if (chordEmpty() && arp_seq_mode(params_.mode) == ArpSeqMode::Arpeggiator)
+        emitRelease(sink, runningGate_, lastNoteSrc_);
+    }
+  }
+  void configure(const ArpSeqParams& p, double sample_rate) {
+    configure(p, sample_rate, [](const ControlEvent&) {});
   }
 
   void reset() {
     chordSize_ = 0;
     arpIndex_ = 0;
     seqIndex_ = 0;
+    seqDown_ = false;
+    seqRandomStep_ = 0;
     seqBase_ = 0.0;   // track last state so reset also clears the running note
     seqBaseValid_ = false;
     runningGate_ = false;
@@ -215,6 +230,8 @@ class ArpSeq {
   void restartPattern() {
     arpIndex_ = 0;
     seqIndex_ = 0;
+    seqDown_ = false;
+    seqRandomStep_ = 0;
     rhythmIndex_ = 0;
   }
 
@@ -266,6 +283,7 @@ class ArpSeq {
     std::uint8_t channel = 0;
     NoteId noteId = 0;
     double pitch = 0.0;
+    bool held = true;  // false: let go while arp HOLD was on (kept until HOLD goes off)
   };
   std::uint32_t chordSize() const { return chordSize_; }
   bool chordEmpty() const { return chordSize_ == 0; }
@@ -280,6 +298,7 @@ class ArpSeq {
       if (chord_[i].source == ev.source && chord_[i].channel == ev.channel &&
           chord_[i].noteId == ev.noteId) {
         chord_[i].pitch = static_cast<double>(ev.value);  // re-pitch the held plate
+        chord_[i].held = true;
         return;
       }
     if (chordSize_ >= kMaxChord) { ++chordOverflow_; return; }  // reject, observable
@@ -288,6 +307,21 @@ class ArpSeq {
     n.channel = ev.channel;
     n.noteId = ev.noteId;
     n.pitch = static_cast<double>(ev.value);
+    n.held = true;
+  }
+  // Mark the chord member matching the release identity as let go (arp HOLD on).
+  void chordMarkReleased_(const ControlEvent& ev) {
+    for (std::uint32_t i = 0; i < chordSize_; ++i)
+      if (chord_[i].source == ev.source && chord_[i].channel == ev.channel &&
+          chord_[i].noteId == ev.noteId)
+        chord_[i].held = false;
+  }
+  // Drop every chord member that is no longer held, keeping the press order of the rest.
+  void chordDropReleased_() {
+    std::uint32_t k = 0;
+    for (std::uint32_t i = 0; i < chordSize_; ++i)
+      if (chord_[i].held) chord_[k++] = chord_[i];
+    chordSize_ = k;
   }
   // Delete the chord member matching the release identity (precise, no LIFO).
   void chordDelete(const ControlEvent& ev) {
@@ -407,9 +441,9 @@ class ArpSeq {
         chordPush(ev);
         break;
       case ControlEventKind::gate_off:
-        // Precise delete by the release identity (no LIFO). HOLD persists the
-        // chord through a release.
-        if (params_.arpHold != 0) break;
+        // Precise delete by the release identity (no LIFO). HOLD keeps the note in the
+        // chord, marked released, until HOLD is turned off (configure).
+        if (params_.arpHold != 0) { chordMarkReleased_(ev); break; }
         chordDelete(ev);
         if (chordEmpty()) emitRelease(sink, runningGate_, ev);
         break;
@@ -444,9 +478,9 @@ class ArpSeq {
 
   // Select the next arp pitch from the held chord. Manual p.16: the chord is played by
   // DIRECTION; VARIATION (OFF, x1, x2, x3) then repeats the whole progression that many
-  // more times, each pass transposed up by INTERVAL (1..12 semitones). The chord is ordered
-  // by pitch (the plate order the manual mentions is the same thing on a 12-plate keyboard
-  // tuned upward).
+  // more times, each pass transposed up by INTERVAL (1..12 semitones). The chord is in press
+  // order (first pressed plays first); the manual orders it by plate number, which comes
+  // with per-plate tuning.
   double nextArpPitch() const {
     const std::uint32_t n = chordSize_;
     const std::uint32_t passes = 1u + static_cast<std::uint32_t>(params_.arpVariation % 4u);
@@ -467,10 +501,17 @@ class ArpSeq {
     const double semitone = static_cast<double>(arp_interval_semitones(params_.arpInterval));
     return chord_[idx].pitch + pass * semitone / 12.0;  // CV: 1 V/oct
   }
-  std::uint32_t randomIndex_(std::uint32_t n) const {
-    std::uint32_t x = (arpIndex_ + 1u) * 2654435761u;  // deterministic hash of the step
+  std::uint32_t randomIndex_(std::uint32_t n) const { return stepHash_(arpIndex_ + 1u) % n; }
+  // Deterministic hash of a step count, so a random run is the same every time. A full
+  // integer mixer: a single multiply left the low bits barely changing, and random played
+  // one note for its first ~20 steps with 2, 4 or 8 to choose from.
+  static std::uint32_t stepHash_(std::uint32_t x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
     x ^= x >> 15;
-    return x % n;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
   }
 
   // -- sequencer ---------------------------------------------------------------- --
@@ -530,7 +571,7 @@ class ArpSeq {
       if (params_.seqCvOutput == 0) emitPitch_(sink, pitch, kCvOnlyNoteId, ev);
     }
     const std::uint32_t len = seq_length_steps(params_.seqLength);
-    seqIndex_ = advanceIndex(seqIndex_, len, params_.seqDirection % 4u);
+    seqIndex_ = advanceSeqIndex_(seqIndex_, len, params_.seqDirection % 4u);
   }
 
   // RHYTHM: walk the 1..8 step pattern one step per clock edge; false = this step is
@@ -541,15 +582,22 @@ class ArpSeq {
     return ((mutedMask >> step) & 1u) == 0;
   }
 
-  // Forward/backward/ping-pong index advance within a circular run of `len`.
-  static std::uint32_t advanceIndex(std::uint32_t index, std::uint32_t len, std::uint32_t dir) {
+  // The step after `index` in a run of `len` steps. Ping-pong turns at both ends without
+  // repeating them (1,2,..,N,N-1,..,2,1,2..), like the arpeggiator; its direction lives in
+  // seqDown_ because the position alone cannot tell up from down. Random picks any step
+  // from a deterministic hash of the step count, so a run is reproducible.
+  std::uint32_t advanceSeqIndex_(std::uint32_t index, std::uint32_t len, std::uint32_t dir) {
     if (len == 0) return 0;
     switch (dir) {
       case 1: return (index == 0) ? (len - 1) : (index - 1);
-      case 2: {  // ping-pong over 2*len
-        const std::uint32_t m = index % (len * 2);
-        return m < len ? m : (len * 2 - 1 - m);
+      case 2: {
+        if (len < 2) return 0;
+        if (index >= len) index = len - 1;  // LENGTH shortened mid-run
+        if (seqDown_ && index == 0) seqDown_ = false;
+        else if (!seqDown_ && index + 1 >= len) seqDown_ = true;
+        return seqDown_ ? index - 1 : index + 1;
       }
+      case 3: return stepHash_(++seqRandomStep_) % len;
       default: return (index + 1) % len;
     }
   }
@@ -561,6 +609,8 @@ class ArpSeq {
   std::uint32_t chordOverflow_ = 0;
   std::uint32_t arpIndex_ = 0;
   std::uint32_t seqIndex_ = 0;
+  bool seqDown_ = false;               // ping-pong: walking back towards step 1
+  std::uint32_t seqRandomStep_ = 0;    // random: steps taken, hashed into the next step
   std::uint32_t rhythmIndex_ = 0;  // RHYTHM pattern position
   double seqBase_ = 0.0;
   bool seqBaseValid_ = false;
