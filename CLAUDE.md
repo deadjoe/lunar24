@@ -21,7 +21,9 @@ good-sounding instrument with a usable panel UI.
   reasonable defaults; mark them `// tuned by ear` and move on. Do not build machinery to
   "prove" a guess.
 - **Docs stay short.** `README.md` (what/how to build), `design/STATUS.md` (what works, what's
-  next — plain language, kept under ~80 lines), `design/HARDWARE.md`, `design/DECISIONS.md` and
+  next — plain language, kept under ~80 lines), `design/HARDWARE.md`, `design/DECISIONS.md`,
+  `design/ARCHITECTURE.md` (module-by-module mechanism vs the Solar 42N manual, in Chinese:
+  same / software adaptation / not stated by the manual / manual contradiction) and
   `design/MANUAL_TESTS.md` (the owner's step-by-step manual test guide, in Chinese, using the
   exact panel names; add or update the test case whenever a fix changes what the owner should
   check). No governance logs, role rosters, or message IDs in the repo.

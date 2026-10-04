@@ -1,88 +1,70 @@
-# Lunar 24 — status (plain language)
+# Lunar 24 — status
 
-_Last updated: 2026-10-04._
+_Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
+`design/ARCHITECTURE.md`. Manual test steps: `design/MANUAL_TESTS.md`.
 
 ## What works
-- **Sound engine (core/)**
-  - 4 classic drones (5 oscillators each) modelled on the negistor relaxation oscillator:
-    capacitor-charge ramp, slow random-walk drift, per-cycle jitter; VOLT past half its
-    stroke makes the oscillators frequency-modulate each other. A cable into CV MOD bends
-    the MOD-on oscillators by up to an octave; the CV knob sets how much. Each has a
-    modelled photo sensor (room light, hand shadow, CdS cell) that bends them too.
-  - 2 "Papa Srapa" noise / S&H drones (LFO OUT, CV IN at 1 V/oct, S&H IN / CLOCK / OUT
-    patchable; unpatched, the S&H samples the voice's noise on the divided LFO),
-    VCO A/B (morph, PWM, sync, sub) with their VCAs
-    driven by Envelope A/B, 10-channel mixer, dual Polivoks-style filter, distortion.
-  - **Dual effector: all 13 cartridges x 3 programs** (reverbs, shimmer, pitch/reverse
-    delays, chorus/flanger/phaser, filters, ring mod, bit-crush, mini synths).
-  - 2 LFOs, 2 envelopes, joystick, 5-step sequencer, envelope follower, keyboard
-    (single/twin/split, arp, 16-step, rhythm patterns, glide, vibrato, quantiser, 4 presets).
-  - Patch cables, normalled connections and feedback loops.
-- **App (host/)**: macOS/Windows standalone with the full panel UI, MIDI input, REC, and
-  the machine state restored on launch (saved on exit and every 30 s after an edit; the
-  DRONE VOICES keys always start closed, so launching is silent). The panel follows the official
-  Solar 42N panel drawing: same module frames, labels, printed icons, LEDs and control
-  positions (from the PDF via `tools/gen_panel_art.py`), branded Lunar 24, LEDs lit by the
-  engine. `panel_preview > panel.svg` renders it without the app. CI attaches a
-  downloadable app to every run (GitHub → Actions → the run → Artifacts).
-- **Listening without the app**: `lunar24_render` renders the engine to a WAV file.
-- **Tests**: 64 unit/engine tests, about 30 seconds; CI also runs them under ASan + UBSan. Manual test steps (by ear, in the app):
-  `design/MANUAL_TESTS.md`.
+- **Engine (core/)**: every module of the Solar 42N panel. 4 classic drones (negistor
+  generators, drift, VOLT FM, CV MOD, photo sensor), 2 Papa Srapa noise / S&H drones,
+  VCO A/B with envelopes and VCAs, 10-channel mixer, dual Polivoks-style filter,
+  distortion, dual effector (13 cartridges x 3 programs), 2 LFOs, joystick, 5-step
+  sequencer, preamp + envelope follower, touch keyboard (single / twin / split, arp,
+  16-step sequencer, glide, vibrato, pressure modes, quantiser, presets A-D).
+  Patch cables, normalled connections and feedback loops.
+- **App (host/)**: macOS / Windows standalone with the official panel layout, MIDI input
+  and MIDI learn, REC to WAV, machine state restored on launch. CI builds a downloadable
+  app on every run (Actions → run → Artifacts).
+- **Tools**: `lunar24_render` (engine to WAV), `panel_preview` (panel to SVG).
+- **Tests**: 64 unit / engine tests (~30 s), also under ASan + UBSan in CI.
 
 ## How to play
-- Knobs: drag up/down (Shift = fine), wheel, double-click resets. Buttons toggle (amber
-  ring = on); levers move toward the half you click. Cables: drag jack to jack; drag a
-  cable off an input to unplug it.
-- Touch plates: click (lower on the plate = more pressure), or the computer keyboard
-  like a piano: `A W S E D F T G Y H U J K O L P ;`. Octave: the arrow buttons next to
-  the encoder, or `Z` / `X`; the display shows it.
-- Keyboard settings (play mode, scale, arp, sequencer, glide, vibrato, ...): click the
-  red encoder to open the KEYBOARD MENU over the plates (tabs PLAY, EXPRESSION, ARP, SEQ,
-  SEQ STEPS, SERVICE); CLOSE or Esc closes it. Values show in the manual's units and apply
-  at once, except SERVICE (hardware calibration: stored only; ENCODER DIRECTION flips the
-  encoder's mouse wheel, which changes the octave).
-- Arpeggiator / 16-step sequencer: MODE = ARPEGGIATOR or SEQUENCER, hold plates. Clock:
-  BPM (10-300, 16th notes), or the CLOCK jack / MIDI clock until BPM is changed; RESET
-  restarts the pattern. SEQ STEPS tab: a fader per step (0..+24 semitones), GATE = rest.
-- MIDI keyboard (plug in or out any time; the chosen one reconnects): mod wheel / CC74 =
-  cutoff, CC71 = resonance, CC91 = blend, CC7 = master; pitch bend +/-2 semitones; sustain
-  pedal; MIDI clock drives the arpeggiator / sequencer (START restarts it).
-  The MIDI button (under MUTE) opens the MIDI settings: learn a panel control onto any CC
-  or pad note (parameters, drone keys, cartridge, presets, mute, photo sensors); absolute
-  (pickup) or relative knobs (detected at learn); channel filter, transpose, velocity curve
-  and SPLIT note (TWIN / SPLIT: notes below it play the left side). Bindings have their own
-  file.
-  MIDI notes light the keyboard plate of the same note name.
-- REC (in the headphone corner, which has no use in software): records WET, DRY (A left,
-  B right) or ALL to 24-bit WAVs in Music/Lunar 24; the folder opens when it stops.
-- Effector: click the cartridge slot (or the button below it) to load the next cartridge
-  (right-click = previous; hover shows both program names); the L / R switches beside
-  the button pick program 1-2-3 per side.
-- DRONE VOICES keys 1-6 switch each drone voice on/off (LED lit = on). All six start off
-  when the app opens and after RESET PANEL; open the ones you want to hear.
-- Photo sensor (big white dome, drones 1/2/4/5): the mouse is a hand. Press = hand over it,
-  drag up = closer/darker, sideways = fingers sweeping, release = hand away. Only
-  generators with MOD lit bend (down, up to ~2 semitones).
+- Knobs: drag (Shift = fine), wheel, double-click resets. Cables: drag jack to jack; drag
+  off an input to unplug.
+- Plates: click (lower = more pressure) or keys `A W S E D F T G Y H U J K O L P ;`;
+  octave with the arrows or `Z` / `X`.
+- Red encoder opens the KEYBOARD MENU (PLAY, EXPRESSION, ARP, SEQ, SEQ STEPS, SERVICE);
+  CLOSE or Esc closes it. SERVICE is stored only, except ENCODER DIRECTION.
+- DRONE VOICES keys 1-6 latch each voice on / off; all start off (launch, RESET PANEL).
+- Photo sensor (white dome, drones 1/2/4/5): press = hand over it, drag up = darker,
+  sideways = fingers; bends only MOD-lit generators.
+- Effector: click the cartridge slot for the next cartridge (right-click = previous);
+  the L / R switches pick program 1-2-3.
+- MIDI: notes play the plates; mod wheel / CC74 cutoff, CC71 resonance, CC91 blend, CC7
+  master; pitch bend, sustain, MIDI clock. The MIDI button opens learn and controller
+  settings (channel, transpose, velocity curve, SPLIT note).
+- REC (headphone corner): WET, DRY or ALL to 24-bit WAVs in Music/Lunar 24.
 
-## Checked against the official manual (v15)
-Mixer channel order, the 39 effector programs and their X/Y/Z roles, output voltage
-ranges, normalled connections and the keyboard ranges all match the manual. Not given by
-the manual, so still guesses: arp/seq clock multiply/divide ratios (not applied yet) and the
-exact note patterns of the Blues / Folk / Japanese / Gamelan / Gypsy / Arabian / Flamenco
-scales (the menu marks them NOT MODELLED; they pass notes through).
+## Next steps (in order; owner-approved after the manual check)
+1. Keyboard fixes: turning arp HOLD off must drop the plates no longer held (the arpeggio
+   keeps running now); the 16-step sequencer's ping-pong sticks on step 1 and random
+   plays forward.
+2. Knob tapers: envelope A/B A, D, R linear over 0-10 s → the drones' cubic taper
+   (`DroneBank::mapAttSeconds`); LFO A/B rate linear over 0.1-20 Hz → exponential.
+3. RESET PANEL keeps keyboard presets A-D (it wipes them now), as it keeps MIDI bindings.
+4. Effector: a different cartridge per side, as on the hardware (pick the cartridge in the
+   slot, flipping a side's 1-2-3 switch loads it there; the engine and state already hold
+   one per side). Make the cartridge display taller so both sides read clearly, and fix
+   the hover tip to name each side's cartridge and program.
+5. Per-plate tuning (hold a plate + encoder, any pitch; `keyboardPlateTune` is stored but
+   unread), then order the arpeggio by plate number as the manual does (press order now).
+6. Scale editor UI: switch single notes of the quantiser scale on / off
+   (`keyboardScaleEditor` exists; only LOAD SCALE sets it now).
+7. Small cleanups: stale comments in `machine_runtime.h` (header route ledger, drone ENV
+   OUT range) and `arp_sequencer.h` ("pitch order").
+8. Check by hand: the keyboard menu (T12.18), SERVICE values after a restart, the Windows
+   build, sustain-pedal items (need a pedal).
+9. Tune sounds from listening (drone level, modulation depth, S&H, mix, VCO B top).
+10. Later: AU / VST3, panel tweaks.
 
-## Next steps (in order)
-1. This PR: VCO aliasing (T5.9), the last of the sound round. Done: reverb balance (T8.6),
-   filter character (T7.4), output headroom (T8.4), cartridge hover names (T8.5), TUNE /
-   VOLT glide (T2.8), photo sensors (T2.6, T15.11), live OSC STATUS lamps (T2.7), MIDI
-   hot-plug (T14.6).
-2. Still to check by hand: the new keyboard menu as a whole (T12.18), SERVICE values
-   surviving a restart, the Windows build; sustain-pedal items wait for a pedal.
-3. Then tune sounds from listening feedback (drone level, modulation depth, S&H, mix,
-   VCO B's rough top register).
-4. Later: decorative controls, panel tweaks, AU/VST3. Not planned:
-   effector tails across a cartridge switch (the hardware cuts them too).
+## Decided not to do (for now)
+- Keyboard pushbutton offsets (hold arrow + encoder; TWIN / SPLIT per-side offset).
+- Arp HOLD replacing the chord on a new press: new plates join the held chord (max 12).
+- Effector tails across a program switch (the hardware cuts them too).
 
-## Known limits (by design)
-- No hardware is available, so sound is tuned by ear, not measured against a real unit.
-- Only features the hardware has (plus the WAV recorder); no mod matrix, no patch library.
+## Known limits
+- No hardware here: sound is tuned by ear, not measured against a real unit.
+- The manual gives no arp / seq clock multiply / divide ratios (the setting is 1:1) and no
+  notes for 8 named scales (Blues x2, Folk, Japanese, Gamelan, Gypsy, Arabian, Flamenco:
+  marked NOT MODELLED, notes pass through).
+- Only what the hardware has, plus MIDI and the WAV recorder: no mod matrix, no patch
+  library.
