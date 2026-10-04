@@ -32,7 +32,9 @@
 
 #include "mini_test.h"
 
+#include <algorithm>
 #include <cmath>
+#include <memory>
 #include <cstring>
 #include <vector>
 
@@ -281,9 +283,47 @@ static void test_drift_rate_bounded() {
   CHECK_FALSE(white_delta < kDriftRateBound);
 }
 
+// OSC STATUS lamps follow what each generator actually contributes: dark with the voice's
+// VCA closed or the generator muted, lit while it sounds, and pulsing with the beating of the
+// summed generators (a lone generator does not beat, so its lamp holds steady).
+void test_osc_status_lamps() {
+  using lunar24::core::DroneBank;
+  const double sr = 48000.0;
+  auto run = [&](DroneBank& b, double seconds, std::size_t gen, double* lo, double* hi) {
+    double out[DroneBank::kMaxVoices];
+    *lo = 1.0;
+    *hi = 0.0;
+    for (int i = 0; i < int(seconds * sr); ++i) {
+      b.tick(out);
+      *lo = std::min(*lo, b.lampLevel(gen));
+      *hi = std::max(*hi, b.lampLevel(gen));
+    }
+  };
+  double lo = 0.0, hi = 0.0;
+  auto bank = std::make_unique<DroneBank>(3, sr);
+  run(*bank, 2.0, 0, &lo, &hi);
+  run(*bank, 4.0, 0, &lo, &hi);
+  CHECK(hi > 0.4);           // sounding: lit
+  CHECK(hi - lo > 0.1);      // five generators beat: the lamp pulses
+  bank->setMute(1, true);
+  run(*bank, 0.2, 1, &lo, &hi);
+  CHECK(bank->lampLevel(1) < 0.01);  // muted: dark
+  CHECK(bank->lampLevel(0) > 0.2);   // its neighbours stay lit
+  bank->setGroupGate(0, false);      // the voice's key closed (RLS is 1 ms by default)
+  run(*bank, 0.2, 0, &lo, &hi);
+  CHECK(bank->lampLevel(0) < 0.01);
+
+  auto lone = std::make_unique<DroneBank>(3, sr);
+  for (std::size_t i = 1; i < 5; ++i) lone->setMute(i, true);
+  run(*lone, 3.0, 0, &lo, &hi);
+  run(*lone, 3.0, 0, &lo, &hi);
+  CHECK(hi > 0.4 && hi - lo < 0.1);
+}
+
 }  // namespace
 
 int main() {
+  test_osc_status_lamps();
   test_free_running();
   test_tolerance_vs_drift();
   test_sample_rate_independence();

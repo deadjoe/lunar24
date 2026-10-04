@@ -265,6 +265,13 @@ class StandaloneAudioEngine {
   // 1 = covering it. Live only, never saved.
   bool postPhotoShade(int group, double shade);
   // What that sensor sees, 0 = dark .. 1 = room light (written once per block, for the lamp).
+  // OSC STATUS lamp of a classic drone's generator (group 0..3 = drone 1/2/4/5, gen 0..4),
+  // 0..1: how much it sounds, pulsing with the beating. Written once per block.
+  float oscLamp(int group, int gen) const {
+    return group >= 0 && group < 4 && gen >= 0 && gen < 5
+               ? oscLamps_[static_cast<std::size_t>(group * 5 + gen)].load(std::memory_order_relaxed)
+               : 0.0f;
+  }
   float photoLight(int group) const {
     return group >= 0 && group < 4 ? photoLight_[static_cast<std::size_t>(group)].load(std::memory_order_relaxed)
                                    : 1.0f;
@@ -567,6 +574,7 @@ class StandaloneAudioEngine {
   bool midiPickedUp_[lunar24::core::kMidiMapCapacity] = {};
   std::array<std::atomic<float>, kPanelLedCount> leds_{};
   std::array<std::atomic<float>, 4> photoLight_{1.0f, 1.0f, 1.0f, 1.0f};
+  std::array<std::atomic<float>, 20> oscLamps_{};
   double ledShLast_[2] = {0.0, 0.0};   // audio thread: last S&H value seen, per drone 3 / 6
   double ledShHold_[2] = {0.0, 0.0};   // audio thread: seconds left on each S&H flash
   std::atomic<bool> keyboardExternalClock_{false};      // diagnostics snapshot, per block
@@ -865,9 +873,13 @@ inline void StandaloneAudioEngine::updateLeds_(int frames) {
                                                std::memory_order_relaxed);
   };
   for (int v = 0; v < 6; ++v) put(kLedDrone1 + v, rt.droneVoiceEnvLevel(v));
-  for (int g = 0; g < 4; ++g)
+  for (int g = 0; g < 4; ++g) {
     photoLight_[static_cast<std::size_t>(g)].store(static_cast<float>(rt.dronePhotoLight01(g)),
                                                    std::memory_order_relaxed);
+    for (int i = 0; i < 5; ++i)
+      oscLamps_[static_cast<std::size_t>(g * 5 + i)].store(static_cast<float>(rt.droneOscLamp(g, i)),
+                                                           std::memory_order_relaxed);
+  }
   put(kLedEnvA, rt.envelopeA().level01());
   put(kLedEnvB, rt.envelopeB().level01());
   put(kLedLfoA, 0.5 * (rt.lfoA().fundamental() + 1.0));  // the LFOs swing 0..+10 V

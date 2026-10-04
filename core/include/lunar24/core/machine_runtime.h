@@ -1125,6 +1125,11 @@ class SynthRuntime {
   void setDronePhotoShade(int voiceGroup, double shade) { drone_.setGroupShade(voiceGroup, shade); }
   // What that sensor sees: 0 = dark .. 1 = room light (the panel lamp).
   double dronePhotoLight01(int voiceGroup) const { return drone_.groupLight01(voiceGroup); }
+  // OSC STATUS lamp of generator gen (0..4) of classic group voiceGroup, 0..1.
+  double droneOscLamp(int voiceGroup, int gen) const {
+    if (voiceGroup < 0 || voiceGroup >= kClassicDroneVoices || gen < 0 || gen >= 5) return 0.0;
+    return drone_.lampLevel(static_cast<std::size_t>(voiceGroup * 5 + gen));
+  }
 
   // Registry CV binding for the 4 CLASSIC drone groups (order 0..3 == drone 1/2/4/5):
   // env_out jacks the product WRITES virtual volts to, cv_mod_in jacks the product READS

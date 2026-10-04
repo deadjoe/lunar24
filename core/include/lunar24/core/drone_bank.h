@@ -130,6 +130,11 @@ class DroneBank {
   static constexpr std::uint64_t kStreamPhoto = 0x50484F54ULL;  // "PHOT"
   static constexpr double kDriftPullPerSecond = 1.0 / 20.0;     // drift wanders over ~20 s
   static constexpr double kCycleJitter = 0.0015;                // +-0.15 % period noise
+  // OSC STATUS lamps: the beating is the summed level's swell (fast envelope, two poles, so a
+  // 55 Hz generator's ripple is gone) against its average (slow). Tuned by eye.
+  static constexpr double kLampFastSeconds = 0.03;
+  static constexpr double kLampSlowSeconds = 0.8;
+  static constexpr double kLampBeatDepth = 1.5;
 
   // Named PROVISIONAL default for the group gate: a host that never touches the gate
   // hears the voice (the pre-batch structure tests probe the raw bank). The default is
@@ -161,6 +166,8 @@ class DroneBank {
     groupCount_ = (voiceCount_ + kGensPerVoice - 1) / kGensPerVoice;
     driftNoiseScale_ = std::sqrt(2.0 * kDriftPullPerSecond * (1.0 / sampleRate_));
     muteGlide_ = 1.0 - std::exp(-1.0 / (0.003 * sampleRate_));
+    lampFast_ = 1.0 - std::exp(-1.0 / (kLampFastSeconds * sampleRate_));
+    lampSlow_ = 1.0 - std::exp(-1.0 / (kLampSlowSeconds * sampleRate_));
     for (std::size_t g = 0; g < kMaxGroups; ++g) {
       groupEnv_[g].gate = kDefaultGroupGateOpen;  // named provisional default (not evidence).
       groupEnv_[g].hold = false;
@@ -276,6 +283,17 @@ class DroneBank {
   // What the group's sensor sees, 0 (dark) .. 1 (room light), and its detune in octaves.
   double groupLight01(int group) const { return inGroup_(group) ? photo_[group].light01() : 1.0; }
   double groupPhotoOctaves(int group) const { return inGroup_(group) ? photo_[group].octaves() : 0.0; }
+  // OSC STATUS lamp of generator i, 0..1: how much it sounds right now (MUTE fade x the
+  // group's VCA x its own level), pulsing with the group's beating (the swell of the summed
+  // generators). Updated every sample; the host reads it once per block.
+  double lampLevel(std::size_t i) const {
+    if (i >= voiceCount_) return 0.0;
+    const std::size_t g = i / kGensPerVoice;
+    const double beat = lampSlowEnv_[g] > 1e-6 ? lampFastEnv2_[g] / lampSlowEnv_[g] : 1.0;
+    const double pulse = 1.0 + kLampBeatDepth * (std::clamp(beat, 0.0, 2.0) - 1.0);
+    const Voice& v = voices_[i];
+    return std::clamp(v.muteGain * groupEnv_[g].level * (0.4 + 0.35 * v.amplitude) * pulse, 0.0, 1.0);
+  }
 
   // Advance every generator by one sample and write its sample into out[i]
   // (0 if muted). out must have room for voiceCount_ values. Realtime-safe.
@@ -322,6 +340,7 @@ class DroneBank {
     const double photoOct = photo_[g].tick();  // the group's light-sensitive eye.
     const std::size_t begin = g * kGensPerVoice;
     const std::size_t end = std::min(begin + kGensPerVoice, voiceCount_);
+    double groupSum = 0.0;  // the generators summed before the VCA: carries their beating
     for (std::size_t i = begin; i < end; ++i) {
       Voice& v = voices_[i];
       if (driftEnabled_) {
@@ -384,6 +403,7 @@ class DroneBank {
       v.muteGain += muteGlide_ * ((v.muted ? 0.0 : 1.0) - v.muteGain);
       const double s = v.muteGain < 1e-9 ? 0.0 : v.amplitude * nonlinearity(bent) * v.muteGain;
       lastSample_[i] = s;          // RAW pre-group-VCA: mutual-FM peers use the oscillator value.
+      groupSum += s;
       out[i - begin] = s * gLvl;   // the group's envelope/VCA gates the final audio.
       v.phase += twoPi_ * effFreq / sampleRate_;
       if (driftEnabled_ && v.phase >= twoPi_) {
@@ -394,6 +414,11 @@ class DroneBank {
       while (v.phase >= twoPi_) v.phase -= twoPi_;
       if (v.phase < 0.0) v.phase = std::fmod(v.phase, twoPi_) + twoPi_;
     }
+    // OSC STATUS lamps: a fast and a slow envelope of the summed generators; their ratio
+    // swells and dips with the beating (lampLevel).
+    lampFastEnv_[g] += lampFast_ * (std::abs(groupSum) - lampFastEnv_[g]);
+    lampFastEnv2_[g] += lampFast_ * (lampFastEnv_[g] - lampFastEnv2_[g]);
+    lampSlowEnv_[g] += lampSlow_ * (lampFastEnv2_[g] - lampSlowEnv_[g]);
     ++groupSample_[g];
   }
 
@@ -546,6 +571,8 @@ class DroneBank {
   Voice voices_[kMaxVoices];
   double lastSample_[kMaxVoices];
   double lastJitterHz_[kMaxVoices] = {};  // last-APPLIED per-gen jitter (see noiseJitterHz).
+  double lampFast_ = 1.0, lampSlow_ = 1.0;  // OSC STATUS envelope coefficients
+  double lampFastEnv_[kMaxGroups] = {}, lampFastEnv2_[kMaxGroups] = {}, lampSlowEnv_[kMaxGroups] = {};
 
   // ---- batch 4A state (classic group gate/ATT/RLS/HOLD + CV MOD + environment) ----
   std::uint64_t seed_ = 0;

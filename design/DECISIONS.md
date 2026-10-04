@@ -44,6 +44,12 @@ Keep these unless a listening test or a real bug says otherwise.
   levels, LFOs, the 5-step position, preamp clip, follower level / gate, S&H steps). The engine
   writes one snapshot per audio block (relaxed atomics) and each LED redraws only when it
   changes. The joystick's two LEDs stay dark: the on-screen stick already shows its position.
+- **OSC STATUS shows what each generator sounds** (owner, 2026-10-04): the classic drones'
+  5-segment bars used to mirror the MUTE buttons (lit = not muted), which repeated the
+  buttons and stayed lit with the voice silent. Each segment is now that generator's live
+  level (MUTE fade x the voice's VCA x its own level), pulsing with the beating: the ratio
+  of a fast to a slow envelope of the summed generators, as the owner saw on the hardware
+  in demo videos. `DroneBank::lampLevel`; written per block like the other LEDs.
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
   by ear); a CLOCK jack or MIDI clock takes over until BPM is changed again (manual p.19).
   MIDI START restarts the arpeggio / sequence from its first step like the RESET jack;

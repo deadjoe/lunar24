@@ -37,13 +37,12 @@ enum class WidgetKind : std::uint8_t {
   Encoder,     // keyboard encoder: opens the keyboard menu
   OctaveKey,   // keyboard arrow buttons (id 0 = down, 1 = up)
   Display,     // keyboard display (shows octave / menu state)
-  Decor,       // non-interactive art: 1 = LED bar (id2 = first mute param),
-               // 3 = hardware jack with no function in Lunar 24
   MasterMute,  // app-level MUTE button next to DRONE VOICES: silences every output
   MidiSettings,  // app-level MIDI button below MUTE: opens the MIDI settings overlay
   Record,        // app-level REC button, where the hardware's headphone socket is
   RecordSource,  // app-level WET / DRY / ALL selector for REC, where the PHONE knob is
   PhotoSensor,   // a classic drone's light-sensitive eye (id = group 0..3 = drone 1/2/4/5)
+  OscStatus,     // a classic drone's OSC STATUS lamps, one per generator (id = group 0..3)
 };
 
 // The printed indicator LEDs Lunar 24 lights, in StandaloneAudioEngine::PanelLed order: centre of
@@ -192,7 +191,7 @@ inline std::vector<Widget> build_panel_layout() {
       button(c.mod[i], c.x[i], 406);
     }
     knob(c.vol, c.volt, 381, Cap::Teal);
-    add(WidgetKind::Decor, c.volt, 295, 69, 54, 1, Cap::Black, static_cast<std::uint32_t>(c.mute[0]));
+    add(WidgetKind::OscStatus, c.volt, 295, 69, 54, group);
     button(c.hold, c.x[0], 455);
     plain(c.att, c.x[1], 455);
     plain(c.rls, c.x[2], 455);
