@@ -1032,7 +1032,7 @@
   1. 在 MIDI 键盘上按住一个音不放（声音持续）。
   2. 保持按住，打开 Preferences，把 MIDI Input 切成 off。
 - 期望：切掉的瞬间声音停止（松不松手都不应再响）。再把 MIDI Input 切回键盘，弹奏恢复正常。
-- 备注：直接拔 USB 线的热拔场景目前还没有检测机制（RtMidi 不支持设备移除通知），拔线造成的卡音要切一次输入设备才会清；这是已知缺口。
+- 备注：运行中直接拔 / 插 USB 线见 T14.6。
 
 **T14.3 关闭 MIDI 输入只停 MIDI 的音，电脑键盘的琶音继续** ✅（#94，2026-10-03 Mac + MPK MINI IV：B 通过；A 第一次点 OK 后"轰"一声琶音停止，修掉 OK 重开音频后复测：选 off 和点 OK 时琶音都继续，没有轰响）
 - 准备：MPK 切到测试用预设；Preferences 里 MIDI Input = MPK Mini IV MIDI Port。RESET PANEL（菜单右下角点两下）；DRONE VOICES 6 个键全部点灭。
@@ -1060,6 +1060,22 @@
   2. 再打开 Preferences，MIDI Input 切成 off，点 **Cancel**：琶音继续，没有"轰"一声；MIDI 输入恢复成 MPK Mini IV MIDI Port，在 MPK 上弹能出声（Cancel 真正撤销了 MIDI 的改动）。
   3. 再打开 Preferences，把 Buffer Size 换一个值，点 **OK**：这次会重开音频（可能有一声，琶音停下），这是改了音频设置时的正常行为。测完改回原来的 Buffer Size。
   4. 收尾：关 HOLD，MODE 改回 KEYBOARD。
+
+**T14.6 运行中插拔 MIDI 键盘** ⏳
+- 准备：先拔掉 MPK 的 USB 线，再打开 Lunar 24；DRONE VOICES 全关，只听 VCO A。
+- 步骤：
+  1. 应用开着，插上 MPK 的 USB 线，等 2 秒，在 MPK 上弹几个音。
+  2. 打开 Preferences（⌘,），看 MIDI Input 下拉列表，点 Cancel。
+  3. 在 MPK 上按住一个音不放，同时拔掉 USB 线。
+  4. 再插上 USB 线，等 2 秒，弹几个音。
+  5. 退出 Lunar 24，拔掉 MPK，再打开 Lunar 24；然后插上 MPK，等 2 秒，弹几个音。
+- 期望：
+  - 第 1 步：不用重开应用，MPK 就能弹出声音。
+  - 第 2 步：下拉列表里有 MPK 的端口，并且已选中 **MPK Mini IV MIDI Port**。
+  - 第 3 步：拔线后那个音停掉，不会卡住一直响。
+  - 第 4 步：重新插上后马上能弹。
+  - 第 5 步：应用记住了 MPK，插上后自动连上，不需要去 Preferences 里重新选。
+  - audio.log 里能看到 "midi input connected / disconnected"。
 
 ### 15. MIDI 设置与绑定
 
@@ -1244,8 +1260,9 @@
 
 - T0.7 打开应用时 drone 是关的（#99 新加）。
 - T15.11 MIDI 控制光敏头。
+- T14.6 运行中插拔 MIDI 键盘。
 - T12.18 新版键盘菜单整体复测。
-- MIDI：延音踏板相关（T14.1、T15.10 第 6 步、CC64 防误学，没有踏板暂不测）；运行中直接拔 MPK 的 USB 线（与 T14.2 的选 off 不同）；pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
+- MIDI：延音踏板相关（T14.1、T15.10 第 6 步、CC64 防误学，没有踏板暂不测）；pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查；真用到多声道声卡时再测。
 - 键盘菜单 SERVICE 页的 10 个校准类设置（V/OCT OUT、PRESS OUT、DAC VREF、TOUCH、RELEASE、P MIN、P MAX、CHARGE、DISCHARGE、DEBOUNCE）：已核实为存储但无声音/行为效果（都是校准真机硬件的概念，软件里没有对应误差），只需确认改动能保存、重启后还在。ENCODER DIRECTION 会反转红色大旋钮的滚轮方向，已在 T12.19 测过。
 
@@ -1257,7 +1274,7 @@
 
 | 项目 | 现状与下一步 |
 |---|---|
-| #1 / #2：设备发现和默认选择 | 设备列表只在启动时枚举，运行中插上的设备要重开应用才出现。启动时输入为未设置或 off，会自动选第一个真实设备（连保存的 off 也会被覆盖）。 |
+| #1 / #2：设备发现和默认选择 | 运行中插拔会被检测（每秒一次，T14.6）：选中的设备插回自动连上，拔掉自动断开；输入为 off 时，插上的第一个设备会被自动选中（和启动时一样，保存的 off 也会被覆盖）。Preferences 打开期间插上的设备，要关掉再打开 Preferences 才出现在列表里。 |
 | #3 / #6 / #15：交互提示 | ABS 旋钮等待接管时没有提示；CHANNEL 会过滤 Learn 的输入且没有提示，Learn 前先确认 CHANNEL = ANY。（MIDI 弹奏点亮触摸板已做，T15.8。）RESET PANEL 保留 MIDI 配置，见 DECISIONS。 |
 | #9：R = 0、BLEND 最小时仍有尾音 | 尚未定位，不直接归因于混响。按下面的隔离准备复测并记录持续时间。 |
 

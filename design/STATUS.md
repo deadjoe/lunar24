@@ -44,9 +44,9 @@ _Last updated: 2026-10-04._
 - Arpeggiator / 16-step sequencer: MODE = ARPEGGIATOR or SEQUENCER, hold plates. Clock:
   BPM (10-300, 16th notes), or the CLOCK jack / MIDI clock until BPM is changed; RESET
   restarts the pattern. SEQ STEPS tab: a fader per step (0..+24 semitones), GATE = rest.
-- MIDI keyboard (inputs listed at startup only): mod wheel / CC74 = cutoff, CC71 =
-  resonance, CC91 = blend, CC7 = master; pitch bend +/-2 semitones; sustain pedal; MIDI
-  clock drives the arpeggiator / sequencer (START restarts it).
+- MIDI keyboard (plug in or out any time; the chosen one reconnects): mod wheel / CC74 =
+  cutoff, CC71 = resonance, CC91 = blend, CC7 = master; pitch bend +/-2 semitones; sustain
+  pedal; MIDI clock drives the arpeggiator / sequencer (START restarts it).
   The MIDI button (under MUTE) opens the MIDI settings: learn a panel control onto any CC
   or pad note (parameters, drone keys, cartridge, presets, mute, photo sensors); absolute
   (pickup) or relative knobs (detected at learn); channel filter, transpose, velocity curve

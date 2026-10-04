@@ -115,6 +115,11 @@ Keep these unless a listening test or a real bug says otherwise.
   preallocated ring (`WavRecorder`); a writer thread writes 24-bit stereo WAVs (DRY: A
   left, B right) to Music/Lunar 24. A full ring drops and counts frames instead of
   blocking the audio thread; a sample-rate change stops the recording.
+- **MIDI hot-plug by polling** (2026-10-04): RtMidi has no device-change notification, so the
+  idle watchdog asks the host's `ProbeMidiIO` to compare the port names once a second. On a
+  change the lists are rebuilt; the chosen input reopens when its device returns and closes
+  (all its notes released) when it goes. A chosen device that is not plugged in stays chosen
+  rather than being reset to "off".
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet
