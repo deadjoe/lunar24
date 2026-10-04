@@ -559,9 +559,16 @@ class CableLayer : public IControl {
     }
     if (drag_) drawCable(g, dx0_, dy0_, dx1_, dy1_, {235, 235, 235});
     if (!s_.readout.empty()) {
-      const IRECT r(s_.readoutX - 52, s_.readoutY - 13, s_.readoutX + 52, s_.readoutY + 13);
+      // The box grows with its text (a cartridge's two program names can be long), never
+      // narrower than a knob value's, and stays inside the panel.
+      const IText style = txt(16, theme::kMenuText);
+      IRECT measured;
+      g.MeasureText(style, s_.readout.c_str(), measured);
+      const float half = std::max(52.f, 0.5f * measured.W() + 12.f);
+      const float cx = std::clamp(s_.readoutX, half + 4.f, 2400.f - half - 4.f);
+      const IRECT r(cx - half, s_.readoutY - 14, cx + half, s_.readoutY + 14);
       g.FillRoundRect(col(theme::kMenuBg, 235), r, 5.f);
-      g.DrawText(txt(15, theme::kMenuText), s_.readout.c_str(), r);
+      g.DrawText(style, s_.readout.c_str(), r);
     }
   }
 
@@ -747,11 +754,14 @@ class CartridgeControl : public IControl {
   }
   void OnMouseOver(float x, float y, const IMouseMod& mod) override {
     IControl::OnMouseOver(x, y, mod);
-    const core::DeviceStateV1* st = s_.state();
-    if (st == nullptr) return;
-    const core::ProgramDescriptor* l = core::find_program(st->leftEffector.program);
-    const core::ProgramDescriptor* r = core::find_program(st->rightEffector.program);
-    s_.readout = (l ? std::string(l->name) : "?") + " | " + (r ? std::string(r->name) : "?");
+    // The programs actually playing: the cartridge plus each side's 1-2-3 switch (the stored
+    // program is the cartridge's first one; the switch picks within it).
+    const int base = cartridge() * 3;
+    const core::ProgramDescriptor* l = core::find_program(static_cast<core::ProgramId>(
+        base + s_.index(static_cast<std::uint32_t>(ParameterId::effector_select_l))));
+    const core::ProgramDescriptor* r = core::find_program(static_cast<core::ProgramId>(
+        base + s_.index(static_cast<std::uint32_t>(ParameterId::effector_select_r))));
+    s_.readout = "L: " + (l ? std::string(l->name) : "?") + "   R: " + (r ? std::string(r->name) : "?");
     s_.readoutX = 1200;
     s_.readoutY = 214;
     GetUI()->SetAllControlsDirty();
