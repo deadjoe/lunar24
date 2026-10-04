@@ -21,9 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             cxx: g++
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             cxx: clang++
           - os: macos-latest
             cxx: clang++
@@ -97,8 +97,8 @@ jobs:
   # AddressSanitizer + UndefinedBehaviorSanitizer over every test: catches out-of-bounds
   # access, use-after-free, leaks and undefined behaviour the plain builds let pass.
   sanitizers:
-    name: ubuntu-24.04 (ASan + UBSan)
-    runs-on: ubuntu-24.04
+    name: ubuntu-26.04 (ASan + UBSan)
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
 
