@@ -1,7 +1,8 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Dual effector: every program stays finite and bounded, BLEND=0 is dry, program switching works.
+// Dual effector: every program stays finite and bounded, BLEND=0 is dry, program switching works,
+// and the two reverbs stay balanced on a steady chord.
 
 #include <cmath>
 
@@ -84,6 +85,33 @@ int main() {
     }
     CHECK(b.program() == 13);
     CHECK(diff > 100.0);
+  }
+
+  // A steady drone chord into both sides of Space reverb: the left and right reverbs (different
+  // line lengths) come out about equally loud, whatever the root, instead of one side sitting
+  // on a resonance and the other between two.
+  {
+    static EffectorSlot left, right;
+    double sumDiff = 0.0;
+    int n = 0;
+    for (double root : {49.0, 55.0, 65.4, 82.4, 98.0, 110.0}) {
+      left.init(sr, 0);
+      right.init(sr, 1);
+      left.setProgram(2);
+      right.setProgram(2);
+      double el = 0.0, er = 0.0;
+      for (int i = 0; i < int(16 * sr); ++i) {
+        const double t = i / sr;
+        const double x = 0.3 * (std::sin(6.283185307 * root * t) +
+                                std::sin(6.283185307 * root * 1.502 * t) +
+                                std::sin(6.283185307 * root * 2.003 * t));
+        const double a = left.process(x, 0.5, 0.5, 0.5), b = right.process(x, 0.5, 0.5, 0.5);
+        if (t > 6.0) { el += a * a; er += b * b; }
+      }
+      sumDiff += std::fabs(10.0 * std::log10(el / er));
+      ++n;
+    }
+    CHECK(sumDiff / n < 3.5);  // the eight-line reverb averaged ~5 dB
   }
 
   return test::finish("test_effector");

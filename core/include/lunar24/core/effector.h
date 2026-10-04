@@ -191,19 +191,27 @@ class PitchShifter {
   double sr_ = 48000.0, window_ = 2880.0, ratio_ = 1.0, phase_ = 0.0;
 };
 
-// 8-line feedback delay network reverb, mono in / mono out, with input diffusion, per-line
-// damping and slow modulation. `variant` gives the left/right slots different line lengths.
+// 16-line feedback delay network reverb, mono in / mono out, with input diffusion, per-line
+// damping and slow modulation on every line. `variant` gives the left/right slots different
+// line lengths. Sixteen lines (rather than eight) double the density of the reverb's
+// resonances, and the modulation keeps them drifting, so a steady drone chord does not sit
+// on a resonance on one side and between two on the other (that made L and R differ by up
+// to ~10 dB on the same input).
 class Reverb {
  public:
+  static constexpr int kLines = 16;
   void init(double sr, int variant) {
     sr_ = sr;
-    static constexpr double kLineMs[8] = {37.1, 41.9, 47.3, 53.1, 59.9, 67.3, 73.7, 81.1};
+    modDepth_ = kModMs * 0.001 * sr;
+    static constexpr double kLineMs[kLines] = {31.3, 34.7, 38.9, 42.1, 46.3, 50.9, 55.1, 59.3,
+                                               63.7, 68.9, 73.1, 78.7, 83.9, 89.3, 95.1, 101.3};
     static constexpr double kApMs[4] = {4.77, 3.59, 12.73, 9.31};
     const double spread = variant == 0 ? 1.0 : 1.083;
-    for (int i = 0; i < 8; ++i) {
-      baseLen_[i] = kLineMs[i] * spread * 1.6 * 0.001 * sr;  // up to ~140 ms per line
-      lines_[i].init(static_cast<std::size_t>(baseLen_[i] + 64));
-      lfo_[i].reset(0.125 * i);
+    for (int i = 0; i < kLines; ++i) {
+      baseLen_[i] = kLineMs[i] * spread * 1.35 * 0.001 * sr;  // up to ~150 ms per line
+      lines_[i].init(static_cast<std::size_t>(baseLen_[i] + 2.0 * modDepth_ + 8));
+      lfo_[i].reset((variant == 0 ? 0.0 : 0.5) + 0.0625 * i);
+      rate_[i] = kModHz * (1.0 + 0.11 * i) * (variant == 0 ? 1.0 : 1.07);
     }
     for (int i = 0; i < 4; ++i) {
       apLen_[i] = kApMs[i] * (variant == 0 ? 1.0 : 1.11) * 0.001 * sr;
@@ -216,14 +224,14 @@ class Reverb {
     for (auto& a : ap_) a.clear();
     for (auto& d : damp_) d.reset();
   }
-  // Called every sample by the programs; the 8 gains and dampers are only recomputed when
+  // Called every sample by the programs; the gains and dampers are only recomputed when
   // the (smoothed) knob value actually changed.
   void set(double t60Seconds, double dampHz) {
     if (t60Seconds == lastT60Arg_ && dampHz == lastDampArg_) return;
     lastT60Arg_ = t60Seconds;
     lastDampArg_ = dampHz;
     t60_ = clamp(t60Seconds, 0.1, 120.0);
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < kLines; ++i) {
       gain_[i] = std::pow(10.0, -3.0 * baseLen_[i] / (t60_ * sr_));
       damp_[i].setCutoff(dampHz, sr_);
     }
@@ -237,42 +245,48 @@ class Reverb {
       ap_[i].write(v);
       d = delayed - 0.62 * v;
     }
-    double y[8];
-    for (int i = 0; i < 8; ++i) {
-      const double mod = (i & 1) ? 6.0 * lfo_[i].sine(0.07 + 0.013 * i, sr_) : 0.0;
-      y[i] = lines_[i].read(baseLen_[i] + mod);
+    double y[kLines], s[kLines];
+    for (int i = 0; i < kLines; ++i) {
+      y[i] = lines_[i].read(baseLen_[i] + modDepth_ * (1.0 + lfo_[i].sine(rate_[i], sr_)));
+      s[i] = damp_[i].tick(y[i]) * gain_[i];
     }
-    double s[8];
-    for (int i = 0; i < 8; ++i) s[i] = damp_[i].tick(y[i]) * gain_[i];
-    hadamard8_(s);
+    hadamard_(s);
     double out = 0.0;
-    for (int i = 0; i < 8; ++i) {
-      const double in = (i & 1 ? -0.35 : 0.35) * d;
+    for (int i = 0; i < kLines; ++i) {
+      const double in = (i & 1 ? -kInGain : kInGain) * d;
       lines_[i].write(softLimit(s[i] + in, 8.0));
       out += (i & 2 ? -y[i] : y[i]);
     }
-    return out * 0.5;
+    return out * kOutGain;
   }
 
  private:
-  static void hadamard8_(double* v) {
-    for (int h = 1; h < 8; h <<= 1)
-      for (int i = 0; i < 8; i += h << 1)
+  // Line-length wobble: each line swings by up to 2 x kModMs at its own slow rate, from kModHz
+  // to about 2.6x that. The tail drifts by a few cents, like a lush hall. // tuned by ear
+  static constexpr double kModMs = 1.33;
+  static constexpr double kModHz = 0.15;
+  // Level into and out of the lines: the input scales with the line count, and the output
+  // is set so the reverb is as loud as the eight-line version was. // tuned by ear
+  static constexpr double kInGain = 0.35 * 0.70710678118654752;
+  static constexpr double kOutGain = 0.45;
+  static void hadamard_(double* v) {
+    for (int h = 1; h < kLines; h <<= 1)
+      for (int i = 0; i < kLines; i += h << 1)
         for (int j = i; j < i + h; ++j) {
           const double a = v[j], b = v[j + h];
           v[j] = a + b;
           v[j + h] = a - b;
         }
-    const double n = 1.0 / std::sqrt(8.0);
-    for (int i = 0; i < 8; ++i) v[i] *= n;
+    const double n = 0.25;  // 1 / sqrt(16)
+    for (int i = 0; i < kLines; ++i) v[i] *= n;
   }
-  double sr_ = 48000.0, t60_ = 3.0;
+  double sr_ = 48000.0, t60_ = 3.0, modDepth_ = 64.0;
   double lastT60Arg_ = -1.0, lastDampArg_ = -1.0;
-  DelayLine lines_[8];
+  DelayLine lines_[kLines];
   DelayLine ap_[4];
-  double baseLen_[8] = {}, apLen_[4] = {}, gain_[8] = {};
-  OnePoleLP damp_[8];
-  Lfo lfo_[8];
+  double baseLen_[kLines] = {}, apLen_[4] = {}, gain_[kLines] = {}, rate_[kLines] = {};
+  OnePoleLP damp_[kLines];
+  Lfo lfo_[kLines];
 };
 
 }  // namespace fx
