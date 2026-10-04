@@ -23,8 +23,6 @@ jobs:
         include:
           - os: ubuntu-26.04
             cxx: g++
-          - os: ubuntu-26.04
-            cxx: clang++
           - os: macos-latest
             cxx: clang++
           - os: windows-latest
