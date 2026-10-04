@@ -102,8 +102,8 @@ int main() {
     CHECK(std::fabs(e.parameterValue(core::ParameterId::vcf_l_freq) - d->max) < 1e-9);
   }
 
-  // Relative (bin-offset): each +1 tick steps the parameter by 1/127 of its range and
-  // it clamps at the maximum.
+  // Relative (bin-offset): a slow tick steps the parameter by 1/512 of its range, ticks in
+  // quick succession by 4/512 (a spun encoder), and it clamps at the maximum.
   {
     E e;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
@@ -114,11 +114,16 @@ int main() {
     const core::ParameterDescriptor* d = core::find_parameter(core::ParameterId::effector_blend);
     CHECK(d != nullptr);
     const double base = e.parameterValue(core::ParameterId::effector_blend);
-    const double step = (d->max - d->min) / 127.0;
-    for (int i = 0; i < 5; ++i) e.applyMidiBindingFromAudioThread(0, 65);  // +1
+    const double step = (d->max - d->min) / 512.0;
+    for (int i = 0; i < 5; ++i) e.applyMidiBindingFromAudioThread(0, 65);  // +1, a quick burst
     e.processBlock(nullptr, outs, 0, 2, 256);
     e.syncParametersFromAudioThread();
-    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - (base + 5 * step)) < 1e-9);
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - (base + (1 + 4 * 4) * step)) < 1e-9);
+    for (int i = 0; i < 48; ++i) e.processBlock(nullptr, outs, 0, 2, 256);  // a quarter second later
+    const double before = e.parameterValue(core::ParameterId::effector_blend);
+    e.applyMidiBindingFromAudioThread(0, 65);  // a slow tick: fine again
+    e.syncParametersFromAudioThread();
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - (before + step)) < 1e-9);
     for (int i = 0; i < 300; ++i) e.applyMidiBindingFromAudioThread(0, 65);
     e.processBlock(nullptr, outs, 0, 2, 256);
     e.syncParametersFromAudioThread();
@@ -214,7 +219,7 @@ int main() {
     for (int i = 0; i < 5; ++i) e.publishMidiMap(b, "");
     e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 65);
     e.syncParametersFromAudioThread();
-    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - blend - 1.0/127) < 1e-9);
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - blend - 1.0/512) < 1e-9);
     CHECK_EQ(e.parameterValue(core::ParameterId::effector_master), master);
     // Real producer/consumer overlap (also run this target under ThreadSanitizer).
     std::atomic<bool> start{false};
@@ -243,7 +248,7 @@ int main() {
     e.processBlock(nullptr, outs, 0, 2, 256);
     e.applyMidiBindingFromAudioThread(0, 65);
     e.syncParametersFromAudioThread();
-    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - .8 - 1.0/127) < 1e-9);
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::effector_blend) - .8 - 1.0/512) < 1e-9);
   }
 
   // Discrete selectors get the SAME snapped value in DSP and saved state.

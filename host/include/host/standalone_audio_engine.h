@@ -577,6 +577,9 @@ class StandaloneAudioEngine {
   void refreshMidiMap_();
   double midiValue_[lunar24::core::kMidiMapCapacity] = {};
   int midiLastRaw_[lunar24::core::kMidiMapCapacity] = {};
+  // When each binding's relative encoder last ticked (runtime sample), for its speed.
+  static constexpr std::uint64_t kNoTick = ~std::uint64_t{0};
+  std::uint64_t midiLastTickAt_[lunar24::core::kMidiMapCapacity] = {};  // kNoTick from prepare()
   // Photo-sensor hands driven by MIDI (audio thread): where each hand is, and the pad
   // holding it down (channel 1..16, note; channel 0 = no pad held).
   double photoShade_[4] = {0.0, 0.0, 0.0, 0.0};
@@ -631,6 +634,7 @@ inline bool StandaloneAudioEngine::prepare(std::uint64_t seed, double sampleRate
     photoShade_[g] = 0.0;
     photoPadChannel_[g] = 0;
   }
+  for (std::uint64_t& t : midiLastTickAt_) t = kNoTick;  // the new runtime's clock starts at 0
   // (1) Impossible / illegal format -> fail-closed. On ANY of these the OLD definition is
   // released and the engine goes NOT-READY: the host is re-configuring for a new stream, and
   // keeping a stale sample-rate runtime would be exactly the "old runtime kept" defect. A
@@ -1252,6 +1256,7 @@ inline void StandaloneAudioEngine::refreshMidiMap_() {
         ? midiParameterValue_[static_cast<std::uint32_t>(b.parameter)] : 0.0;
     midiLastRaw_[i] = -1;
     midiPickedUp_[i] = false;
+    midiLastTickAt_[i] = kNoTick;
   }
 }
 
@@ -1398,11 +1403,18 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
     (void)sendParameterFromAudioThread_(b.parameter, cur, false, static_cast<int>(row));
     return;
   }
-  // Relative modes: apply the decoded delta to the cached value.
+  // Relative modes: apply the decoded delta to the cached value. A continuous knob steps
+  // finely when the encoder turns slowly (1/512 of the range: about 5 cents of drone TUNE)
+  // and up to 4x faster when it spins, so it can both fine-tune and sweep. // tuned by ear
   const int delta = lunar24::core::midi_relative_delta(b.mode, rawValue);
   if (delta == 0) return;
   double& cur = midiValue_[row];
-  const double step = d->step > 0.0 ? d->step : range / 127.0;
+  const std::uint64_t now = rt.currentSample();
+  const std::uint64_t last = midiLastTickAt_[row];
+  const double gapSeconds = last == kNoTick || now < last ? 1.0 : static_cast<double>(now - last) / sampleRate_;
+  midiLastTickAt_[row] = now;
+  const double speed = gapSeconds < 0.04 ? 4.0 : gapSeconds < 0.12 ? 2.0 : 1.0;
+  const double step = d->step > 0.0 ? d->step : range / 512.0 * speed;
   cur = std::clamp(cur + static_cast<double>(delta) * step, d->min, d->max);
   (void)sendParameterFromAudioThread_(b.parameter, cur, false, static_cast<int>(row));
 }

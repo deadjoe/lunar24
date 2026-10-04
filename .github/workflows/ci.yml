@@ -21,17 +21,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             cxx: g++
-          - os: ubuntu-latest
-            cxx: clang++
           - os: macos-latest
             cxx: clang++
           - os: windows-latest
             cxx: cl
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # iPlug2 is a pinned submodule; the mac/win host build needs it.
           submodules: recursive
@@ -80,13 +78,13 @@ jobs:
           cd build/out && ditto -c -k --keepParent Lunar24.app Lunar24-macOS.zip
       - name: Upload app (mac)
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Lunar24-macOS
           path: build/out/Lunar24-macOS.zip
       - name: Upload app (windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Lunar24-Windows
           path: build/out/Lunar24.exe
@@ -97,10 +95,10 @@ jobs:
   # AddressSanitizer + UndefinedBehaviorSanitizer over every test: catches out-of-bounds
   # access, use-after-free, leaks and undefined behaviour the plain builds let pass.
   sanitizers:
-    name: ubuntu-latest (ASan + UBSan)
-    runs-on: ubuntu-latest
+    name: ubuntu-26.04 (ASan + UBSan)
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3

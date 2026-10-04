@@ -78,6 +78,13 @@ Keep these unless a listening test or a real bug says otherwise.
   complement, REL 2). After a learn, the knob's next values decide: an absolute knob never
   repeats a value except 0 / 127 at an end stop, an encoder turned slowly does; the repeated
   value picks the dialect. Only a binding still on ABS is switched; MODE can override.
+- **Relative knobs step by speed** (2026-10-04): a continuous parameter moves 1/512 of its
+  range per slow tick (about 5 cents of drone TUNE) and up to 4/512 when ticks come within
+  40 ms (2/512 within 120 ms), so one encoder both fine-tunes and sweeps. Stepped switches
+  keep one position per tick.
+- **Drone TUNE / VOLT glide** (`DroneBank::kPitchGlideSeconds`, 30 ms): a 7-bit CC step is 19
+  cents of TUNE and 47 of VOLT, and any knob moves in steps, so the generators glide to each
+  new pitch instead of jumping. A whole-state load lands at once (`snapGlides`).
 - **MIDI notes under PLAY = TWIN / SPLIT** (owner's choice, 2026-10-04): split by note
   range, so one controller plays both halves. Notes below the MIDI settings' SPLIT note
   (default C4, range C1..C7, the key played before TRANSPOSE) go to the left side, the rest

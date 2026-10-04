@@ -320,9 +320,30 @@ void test_osc_status_lamps() {
   CHECK(hi > 0.4 && hi - lo < 0.1);
 }
 
+// TUNE and VOLT glide to a new value instead of jumping (a knob or MIDI CC moves in steps),
+// and a whole-state load lands at once.
+void test_pitch_glide() {
+  using lunar24::core::DroneBank;
+  const double sr = 48000.0;
+  auto bank = std::make_unique<DroneBank>(5, sr);
+  double out[DroneBank::kMaxVoices];
+  bank->setTune(0, 12.0);
+  CHECK(std::abs(bank->pitchScaleOf(0) - 1.0) < 1e-12);  // not yet: no jump
+  for (int i = 0; i < int(0.01 * sr); ++i) bank->tick(out);
+  const double early = bank->pitchScaleOf(0);
+  CHECK(early > 1.1 && early < 1.9);                      // on its way after 10 ms
+  for (int i = 0; i < int(0.3 * sr); ++i) bank->tick(out);
+  CHECK(std::abs(bank->pitchScaleOf(0) - 2.0) < 1e-3);    // there after 0.3 s
+  bank->setVolt(0, 12.0);
+  bank->snapGlides();                                     // a state load: at once
+  CHECK(std::abs(bank->pitchScaleOf(0) - 1.0) < 1e-12);
+  CHECK(std::abs(bank->pitchScaleOf(1) - bank->pitchTargetOf(1)) < 1e-12);
+}
+
 }  // namespace
 
 int main() {
+  test_pitch_glide();
   test_osc_status_lamps();
   test_free_running();
   test_tolerance_vs_drift();

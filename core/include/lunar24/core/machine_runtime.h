@@ -1034,7 +1034,7 @@ class SynthRuntime {
   void snapSmoothedLevels() {
     mixer_.snap();
     preamp_.snap();
-    drone_.snapMutes();
+    drone_.snapGlides();
     pv3_.snapNoise();
     pv6_.snapNoise();
   }

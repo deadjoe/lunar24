@@ -187,10 +187,12 @@ static void test_classic_mutual_fm() {
   // BELOW half the stroke: VOLT transposes but there is NO mutual FM => steady period.
   core::DroneBank below = make_bank(seed, sr, 5, false);
   below.setVolt(0, 20.0);  // < kVvoltMid (30).
+  below.snapGlides();  // the steady state, not the glide to it
   const double spread_below = zero_crossing_interval_spread(render_channel(below, ch, n));
   // ABOVE half the stroke: mutual FM kicks in => the period de-uniforms.
   core::DroneBank above = make_bank(seed, sr, 5, false);
   above.setVolt(0, 45.0);  // > kVvoltMid (30).
+  above.snapGlides();  // the steady state, not the glide to it
   const double spread_above = zero_crossing_interval_spread(render_channel(above, ch, n));
   CHECK(spread_above > 10.0 * (spread_below + 5.0));  // FM de-uniforms the period.
   // RED NEGATIVE: no mutual FM => above steady, same as below.
