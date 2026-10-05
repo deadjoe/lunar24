@@ -13,7 +13,8 @@ Keep these unless a listening test or a real bug says otherwise.
   line-drawn figure round its joystick and a sun under the display. Lunar 24 prints the
   Bearbone.Studio bear round the joystick (traced from the logo by `tools/gen_panel_bear.py`,
   double outline, stick in the belly; the 42N's arrows and dots there are dropped) and a full
-  moon under the display (`drawMoon`: halftone seas and crater rings, white on the keybed).
+  moon under the display (`drawMoon`: halftone seas and crater rings, white on the keybed,
+  with broken orbit arcs round it).
 - **Label text uses an embedded Noto Sans** (OFL, `tools/gen_ui_font.py`), loaded from
   memory. Looking up a system font by name failed on macOS and left the panel with no text.
 - **Controls are drawn with depth, not bitmaps.** Knobs, jacks, switches, buttons and the

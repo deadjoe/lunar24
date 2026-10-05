@@ -172,13 +172,31 @@ void drawShapes(Sink& s, const float* pts, const SubPath* subs, const Shape* sha
 }
 
 // The moon printed under the display (where the Solar 42F prints its sun): the near side at
-// full moon, white on the keybed. The dark seas (maria) are a halftone of dots, bigger towards
+// full moon, white on the keybed, with broken orbit arcs round it. The dark seas (maria) are a halftone of dots, bigger towards
 // their middles; a few named craters are rings. Positions follow the real near side, drawn
 // freehand on a unit disk (x right, y down); sizes tuned by eye.
 template <class Sink>
 void drawMoon(Sink& s, float cx, float cy, float r, std::uint32_t light, std::uint32_t dark) {
-  s.circle(cx, cy, r + 9.f);
-  s.strokePath(light, 1.4f);
+  // Broken orbits round it (owner's pick, 2026-10-05): three rings of arcs, each with its gaps
+  // somewhere else. Radius, then arcs as (from, to) in degrees clockwise from the right.
+  struct Orbit { float r, width; int count; float arcs[4][2]; };
+  static constexpr Orbit kOrbits[] = {
+      {1.15f, 1.8f, 4, {{-160, -95}, {-70, 20}, {45, 140}, {160, 190}}},
+      {1.28f, 1.2f, 3, {{-140, -110}, {-30, 60}, {100, 175}}},
+      {1.43f, 1.0f, 2, {{-10, 35}, {150, 215}}},
+  };
+  for (const Orbit& o : kOrbits) {
+    for (int a = 0; a < o.count; ++a) {
+      const float a0 = o.arcs[a][0] * 0.0174533f, a1 = o.arcs[a][1] * 0.0174533f;
+      for (int k = 0; k <= 32; ++k) {
+        const float t = a0 + (a1 - a0) * float(k) / 32.f;
+        const float x = cx + o.r * r * std::cos(t), y = cy + o.r * r * std::sin(t);
+        if (k == 0) s.moveTo(x, y);
+        else s.lineTo(x, y);
+      }
+      s.strokePath(light, o.width);
+    }
+  }
   s.fillCircle(cx, cy, r, light);
   struct Sea { float x, y, rx, ry; };
   static constexpr Sea kSeas[] = {
