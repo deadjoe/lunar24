@@ -42,7 +42,7 @@ double param(const StandaloneAudioEngine& e, ParameterId id) {
 // What the audio thread saw. Written by the audio thread, read after it is joined.
 struct AudioStats {
   std::size_t rendered = 0;
-  std::size_t closed = 0;          // callbacks that found the scope closed
+  std::atomic<std::size_t> closed{0};  // callbacks that found the scope closed (UI polls it)
   std::size_t nonFinite = 0;
   std::size_t nestedClosed = 0;    // a nested scope disagreeing with its open outer one
   double peak = 0.0;
@@ -76,7 +76,7 @@ void audioLoop(StandaloneAudioEngine& e, std::atomic<bool>& stop, AudioStats& st
       } else {
         if (prevOpen) st.lastBeforePark = std::max(st.lastBeforePark, prevEnd);
         prevOpen = false;
-        ++st.closed;
+        st.closed.fetch_add(1, std::memory_order_relaxed);
       }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -133,26 +133,28 @@ int main() {
     AudioStats st;
     g_countedHeapOps.store(0);
     std::thread audio(audioLoop, std::ref(*e), std::ref(stop), std::ref(st));
-    constexpr int kSwaps = 24;
-    int accepted = 0;
-    for (int i = 0; i < kSwaps; ++i) {
+    // At least 24 swaps, and on until the audio thread has met one in progress (a loaded
+    // machine may need more tries); an even count so the last one installs `b`.
+    int swaps = 0, accepted = 0;
+    while (swaps < 24 || (st.closed.load(std::memory_order_relaxed) == 0 && swaps < 1000) || swaps % 2) {
       std::this_thread::sleep_for(std::chrono::milliseconds(4));
       (void)e->syncParametersFromAudioThread();
-      (void)e->postParameter(ParameterId::vco_a_tune, 0.01 * (i % 5));
-      if (e->swapDeviceState(i % 2 ? b : a) == Status::Accepted) ++accepted;
+      (void)e->postParameter(ParameterId::vco_a_tune, 0.01 * (swaps % 5));
+      if (e->swapDeviceState(swaps % 2 ? b : a) == Status::Accepted) ++accepted;
+      ++swaps;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     stop.store(true, std::memory_order_release);
     audio.join();
 
-    CHECK_EQ(accepted, kSwaps);
-    CHECK_EQ(e->swapCount(), static_cast<std::uint64_t>(kSwaps));
+    CHECK_EQ(accepted, swaps);
+    CHECK_EQ(e->swapCount(), static_cast<std::uint64_t>(swaps));
     CHECK(param(*e, ParameterId::effector_master) == 0.7);  // the last swap won
     CHECK_EQ(g_countedHeapOps.load(), 0u);                  // the audio thread never allocated
     CHECK_EQ(st.nonFinite, 0u);
     CHECK_EQ(st.nestedClosed, 0u);
     CHECK(st.rendered > 0);
-    CHECK(st.closed > 0);              // the audio thread really met a swap in progress
+    CHECK(st.closed.load() > 0);       // the audio thread really met a swap in progress
     CHECK(st.peak > 1e-4);             // the machine was sounding
     CHECK(st.lastBeforePark < 1e-12);  // faded to silence before going quiet
     CHECK(st.firstAfterResume < 0.01); // and fades back in
