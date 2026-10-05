@@ -22,8 +22,8 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
   off an input to unplug.
 - Plates: click (lower = more pressure) or keys `A W S E D F T G Y H U J K O L P ;`;
   octave with the arrows or `Z` / `X`.
-- Hold plates + mouse wheel (over the red encoder, or over the held plate) tunes them: 10 cents
-  a notch, a semitone with Option; click the encoder while holding = back to 0.
+- Plate tuning: hold plates (keys) + wheel over the red encoder, or Command + wheel over a plate;
+  10 cents a notch, a semitone with Option; encoder click / Command-click = back to 0.
 - Red encoder opens the KEYBOARD MENU (PLAY, EXPRESSION, ARP, SEQ, SEQ STEPS, SERVICE);
   CLOSE or Esc closes it. SERVICE is stored only, except ENCODER DIRECTION.
 - DRONE VOICES keys 1-6 latch each voice on / off; all start off (launch, RESET PANEL).

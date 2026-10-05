@@ -55,9 +55,10 @@ Keep these unless a listening test or a real bug says otherwise.
   bloom growing with b^2 when lit; the panel spreads the sounding range (~0.3..0.9) over the
   whole lamp so the pulse reads (tuned by eye, owner feedback on T2.7).
 - **Per-plate tuning** (manual p.15 PLATE EDITOR; owner, 2026-10-05): no editor mode. While
-  plates are held (mouse or computer keys) the wheel over the red encoder or over the held plate
-  tunes them, 10 cents a notch, a semitone with Option, +-24 semitones (all tuned by ear); a click
-  on the encoder resets them. The offset is added in the runtime to touch-plate notes only
+  plates are held the wheel over the red encoder tunes them (a click on it resets them), and
+  Command + wheel over any plate tunes that plate without holding it (Command-click resets it):
+  a MacBook trackpad cannot scroll while it holds a click. 10 cents a notch, a semitone with
+  Option, +-24 semitones (all tuned by ear). The offset is added in the runtime to touch-plate notes only
   (`ControlEvent::plate`), from the bank the plate's side plays; held notes are re-sent so they
   move at once. The arpeggiator orders plate notes by plate number (manual p.16), other notes
   after them in press order; the 16-step sequencer transposes by the lowest held plate.
