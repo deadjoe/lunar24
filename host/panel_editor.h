@@ -112,6 +112,9 @@ struct EditorShared {
   int octave = 0;
   std::set<int> lit;                         // plates currently sounding (0..11)
   std::map<int, int> heldKeys;               // computer key semitone -> sounding semitone
+  int mousePlate = -1, mouseSemi = 0;        // the plate the mouse holds (-1 = none) and its semitone
+  int tunePlate = -1;                        // plate last tuned while held (the display shows it)
+  double tuneWheelAcc = 0.0;                 // wheel travel not yet a whole notch
   // Value readout for the knob under the mouse (drawn by the top layer).
   std::string readout;
   float readoutX = 0, readoutY = 0;
@@ -289,9 +292,64 @@ struct EditorShared {
     in.noteId = id;
     in.source = source;
     in.seq = ++seq;
+    in.plate = static_cast<std::uint8_t>(((plate % 12) + 12) % 12);  // the upper computer keys are plates 0-4
     core::ControlEvent ev[3];
     const std::uint32_t n = input.translate(in, ev, 3);
     for (std::uint32_t i = 0; i < n; ++i) engine.postEvent(ev[i]);
+  }
+
+  // ---- per-plate tuning (PLATE EDITOR, manual p.15): hold plates, turn the encoder -----------
+  // The plates held by the mouse or the computer keys right now: {plate, sounding semitone, id, source}.
+  struct HeldPlate { int plate, semi; core::NoteId id; core::ControlSourceId source; };
+  std::vector<HeldPlate> heldPlates() const {
+    std::vector<HeldPlate> h;
+    if (mousePlate >= 0) h.push_back({mousePlate, mouseSemi, kMouseId, kMouseSource});
+    for (const auto& [key, semi] : heldKeys)
+      h.push_back({key % 12, semi, static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(key)), kKeySource});
+    return h;
+  }
+  // Add `delta` semitones to every held plate's tuning (reset = true sets it to 0), and send the
+  // held notes' pitch again so they move at once. False when no plate is held.
+  bool tuneHeldPlates(double delta, bool reset = false) {
+    const auto held = heldPlates();
+    if (held.empty()) return false;
+    std::set<int> done;
+    for (const HeldPlate& h : held) {
+      if (!done.insert(h.plate).second) continue;
+      const double t = reset ? 0.0 : engine.keyboardPlateTune(h.plate) + delta;
+      engine.postKeyboardPlateTune(h.plate, std::round(t * 100.0) / 100.0);  // whole cents
+      tunePlate = h.plate;
+    }
+    for (const HeldPlate& h : held) {
+      core::ControlEvent ev{};
+      ev.kind = core::ControlEventKind::pitch;
+      ev.value = static_cast<core::SignalSample>((h.semi - 9) / 12.0);
+      ev.source = h.source;
+      ev.noteId = h.id;
+      ev.side = sideOf(h.plate);
+      ev.plate = static_cast<std::uint8_t>(h.plate);
+      engine.postEvent(ev);
+    }
+    return true;
+  }
+  // A wheel turn while plates are held (over the encoder, or over the held plate itself, since
+  // the mouse cannot leave a plate it holds): each notch retunes them by 10 cents, a semitone
+  // with Option (or Shift: macOS may turn Shift+wheel sideways); ENCODER DIRECTION reverses it. False when no plate is held. // tuned by ear
+  bool wheelTuneHeldPlates(float d, bool coarse) {
+    if (heldPlates().empty()) {
+      tuneWheelAcc = 0.0;
+      return false;
+    }
+    tuneWheelAcc += d;
+    const int notches = int(tuneWheelAcc);  // whole notches; a trackpad's small steps add up
+    if (notches == 0) return true;
+    tuneWheelAcc -= notches;
+    const double dir = engine.parameterValue(ParameterId::keyboard_encoder_direction) > 0.5 ? -1.0 : 1.0;
+    return tuneHeldPlates(dir * notches * (coarse ? 1.0 : 0.1));
+  }
+  // The display shows the plate being tuned until every plate is let go.
+  void platesMaybeReleased() {
+    if (heldPlates().empty()) tunePlate = -1;
   }
   void pressure(core::NoteId id, double p, core::ControlSourceId source, int plate) {
     core::PerformanceInput in{};
@@ -344,6 +402,7 @@ struct EditorShared {
       note(false, heldKeys[semi], id, 0.0, kKeySource, semi);
       heldKeys.erase(semi);
       lit.erase(semi % 12);
+      platesMaybeReleased();
     }
     return true;
   }
@@ -682,6 +741,8 @@ class PlateControl : public IControl {
     semi_ = int(w_.id) + 12 * s_.octave;
     s_.note(true, semi_, EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource, int(w_.id));
     s_.lit.insert(int(w_.id));
+    s_.mousePlate = int(w_.id);
+    s_.mouseSemi = semi_;
     SetDirty(false);
   }
   void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override {
@@ -690,6 +751,10 @@ class PlateControl : public IControl {
     else s_.pressure(EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource, int(w_.id));
   }
   void OnMouseUp(float, float, const IMouseMod&) override { release(); }
+  // The wheel over a held plate tunes it (the mouse cannot reach the encoder while it holds one).
+  void OnMouseWheel(float, float, const IMouseMod& mod, float d) override {
+    if (s_.wheelTuneHeldPlates(d, mod.A || mod.S)) GetUI()->SetAllControlsDirty();
+  }
 
  private:
   static constexpr int kNone = -1000;
@@ -698,7 +763,11 @@ class PlateControl : public IControl {
     s_.note(false, semi_, EditorShared::kMouseId, 0.0, EditorShared::kMouseSource, int(w_.id));
     s_.lit.erase(int(w_.id));
     semi_ = kNone;
-    SetDirty(false);
+    s_.mousePlate = -1;
+    const bool wasTuning = s_.tunePlate >= 0;
+    s_.platesMaybeReleased();
+    if (wasTuning) GetUI()->SetAllControlsDirty();  // the display goes back to OCT
+    else SetDirty(false);
   }
   double pressureAt(float y) const { return std::clamp(double((y - mRECT.T) / mRECT.H()), 0.1, 1.0); }
   EditorShared& s_;
@@ -822,10 +891,15 @@ class EncoderControl : public IControl {
     art::drawEncoder(sink, float(w_.cx), float(w_.cy), s_.menuOpen || mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
-    s_.showMenu(!s_.menuOpen);
+    // Holding plates: a click sets their tuning back to 0. Otherwise it opens the menu.
+    if (!s_.tuneHeldPlates(0.0, true)) s_.showMenu(!s_.menuOpen);
     GetUI()->SetAllControlsDirty();
   }
-  void OnMouseWheel(float, float, const IMouseMod&, float d) override {
+  void OnMouseWheel(float, float, const IMouseMod& mod, float d) override {
+    if (s_.wheelTuneHeldPlates(d, mod.A || mod.S)) {  // holding plates: the wheel tunes them
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
     const auto now = std::chrono::steady_clock::now();
     const double gap = std::chrono::duration<double>(now - lastWheel_).count();
     lastWheel_ = now;
@@ -872,7 +946,10 @@ class DisplayControl : public IControl {
     char b[32];
     if (!s_.engine.isReady()) std::snprintf(b, sizeof b, "NO AUDIO");  // see Preferences > audio device
     else if (s_.menuOpen) std::snprintf(b, sizeof b, "MENU");
-    else std::snprintf(b, sizeof b, "OCT %+d", s_.octave);
+    else if (s_.tunePlate >= 0) {  // the plate being tuned: its name and offset in semitones
+      static const char* const kNames[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+      std::snprintf(b, sizeof b, "%s %+.2f", kNames[s_.tunePlate % 12], s_.engine.keyboardPlateTune(s_.tunePlate));
+    } else std::snprintf(b, sizeof b, "OCT %+d", s_.octave);
     g.DrawText(txt(18, {235, 240, 255}), b, r);
     art::drawDisplayGlass(sink, r.L, r.T, r.R, r.B);
   }

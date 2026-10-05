@@ -14,8 +14,8 @@
 //     pattern are UN-RESOLVED and read as raw selectors, NEVER applied numerically.
 //
 // The value maps (arp interval 1..12, seq length 2..16, etc.) are PROVISIONAL linear
-// ceilings, and the arp chord plays in press order (the manual's "sequence number of
-// pressed plates" ordering comes with per-plate tuning). Following the
+// ceilings; the arp chord plays plates in plate-number order (the manual's "sequence number
+// of pressed plates"), other notes in press order. Following the
 //  test discipline, these tests pin the STRUCTURE — the mode mux, the chord/step
 // advancement on the clock, the per-side independence, and the mandate-#4 divergence
 // — not invented exact curves.
@@ -90,6 +90,17 @@ void note_on(core::ArpSeq& s, Recorder& r, double pitch, core::NoteId id) {
   g.source = 1;
   g.noteId = id;
   s.handleControlEvent(g, r);
+}
+
+// A note from touch plate `plate` (0..11): same as note_on, with the plate number set.
+void plate_on(core::ArpSeq& s, Recorder& r, double pitch, core::NoteId id, std::uint8_t plate) {
+  core::ControlEvent p{};
+  p.kind = core::ControlEventKind::pitch;
+  p.value = static_cast<core::SignalSample>(pitch);
+  p.source = 1;
+  p.noteId = id;
+  p.plate = plate;
+  s.handleControlEvent(p, r);
 }
 
 void note_off(core::ArpSeq& s, Recorder& r, core::NoteId id) {
@@ -333,6 +344,28 @@ static void arp_hold_off_with_no_plate_held_stops() {
   clock_edge(s, r);  // the arpeggio has stopped
   clock_edge(s, r);
   CHECK_EQ(r.count(core::ControlEventKind::gate_on), 1u);
+}
+
+// Manual p.16: the arpeggio goes through the pressed plates by plate number, not press order
+// and not pitch: a retuned plate keeps its place. MIDI notes (no plate) follow, in press order.
+static void arp_orders_plates_by_number() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 1;
+  p.arpDirection = 0;
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  plate_on(s, r, 7.0 / 12.0, 1, 7);    // G pressed first
+  note_on(s, r, 2.0, 9);               // a MIDI note (no plate)
+  plate_on(s, r, 14.0 / 12.0, 2, 0);   // plate C, tuned up above G
+  plate_on(s, r, 4.0 / 12.0, 3, 4);    // E
+  plate_on(s, r, 11.0 / 12.0, 4, 11);  // B, the highest plate, pressed after the MIDI note
+  for (int i = 0; i < 5; ++i) clock_edge(s, r);
+  CHECK_TRUE(r.near(r.pitchAt(0), 14.0 / 12.0));  // plate 0 first, whatever its pitch
+  CHECK_TRUE(r.near(r.pitchAt(1), 4.0 / 12.0));   // plate 4
+  CHECK_TRUE(r.near(r.pitchAt(2), 7.0 / 12.0));   // plate 7
+  CHECK_TRUE(r.near(r.pitchAt(3), 11.0 / 12.0));  // plate 11
+  CHECK_TRUE(r.near(r.pitchAt(4), 2.0));          // then the MIDI note
 }
 
 // ------------------------------------------------------- sequencer step advance --
@@ -604,6 +637,7 @@ int main() {
   seq_ping_pong_turns_at_both_ends();
   seq_random_is_shuffled_and_repeatable();
   arp_random_moves_around_the_chord();
+  arp_orders_plates_by_number();
   per_side_instantiation_independent();
   side_drop_produces_divergent_stream();
   return ::test::finish("test_arp_sequencer");

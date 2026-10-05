@@ -129,8 +129,69 @@ static void slot_cartridge_loads_one_side() {
   CHECK_EQ(e.slotCartridge(), (start + 12) % 13);
 }
 
+// Per-plate tuning: a plate plays its own offset (saved in the state); a held plate retunes
+// when its pitch is sent again; SPLIT keeps the right half's tuning in the right bank.
+static void plate_tuning_reaches_v_oct() {
+  auto engine = std::make_unique<host::StandaloneAudioEngine>();
+  host::StandaloneAudioEngine& e = *engine;
+  CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+  std::vector<double> l(256), r(256);
+  double* outs[2] = {l.data(), r.data()};
+  core::InputStateMachine in{nullptr, 0};
+  const core::JackId vOct = core::find_jack_by_name("keyboard.v_oct_out")->id;
+  auto send = [&](core::PerfInputKind kind, int plate) {
+    core::PerformanceInput p{};
+    p.kind = kind;
+    p.pitch = static_cast<core::SignalSample>((plate - 9) / 12.0);  // A3 = 0 V, as the panel sends
+    p.value = static_cast<core::SignalSample>(0.8);
+    p.noteId = 7;
+    p.source = 1;
+    p.plate = static_cast<std::uint8_t>(plate);
+    core::ControlEvent ev[3];
+    const std::uint32_t n = in.translate(p, ev, 3);
+    for (std::uint32_t i = 0; i < n; ++i) e.postEvent(ev[i]);
+    for (int b = 0; b < 4; ++b)
+      CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    return e.runtime()->controlVoltageAt(vOct) * 12.0;  // semitones from A3
+  };
+  CHECK(std::fabs(send(core::PerfInputKind::note_on, 4) - (-5.0)) < 1e-3);  // untuned E
+  send(core::PerfInputKind::note_off, 4);
+  CHECK(e.postKeyboardPlateTune(4, 0.5));
+  CHECK(std::fabs(e.canonicalState()->keyboardPlateTune[4] - 0.5f) < 1e-6);
+  CHECK(std::fabs(e.keyboardPlateTune(4) - 0.5) < 1e-6);
+  CHECK(std::fabs(send(core::PerfInputKind::note_on, 4) - (-4.5)) < 1e-3);  // a quarter tone up
+  // Held: a new tuning plus the plate's pitch sent again moves the sounding note.
+  CHECK(e.postKeyboardPlateTune(4, -1.0));
+  {
+    core::ControlEvent ev{};
+    ev.kind = core::ControlEventKind::pitch;
+    ev.value = static_cast<core::SignalSample>((4 - 9) / 12.0);
+    ev.source = 1;
+    ev.noteId = 7;
+    ev.plate = 4;
+    CHECK(e.postEvent(ev));
+    for (int b = 0; b < 4; ++b)
+      CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+    CHECK(std::fabs(e.runtime()->controlVoltageAt(vOct) * 12.0 - (-6.0)) < 1e-3);
+  }
+  send(core::PerfInputKind::note_off, 4);
+  CHECK(std::fabs(send(core::PerfInputKind::note_on, 5) - (-4.0)) < 1e-3);  // other plates untouched
+  send(core::PerfInputKind::note_off, 5);
+  CHECK(e.postKeyboardPlateTune(4, 99.0));  // clamped to the range
+  CHECK(std::fabs(e.keyboardPlateTune(4) - 24.0) < 1e-6);
+  // SPLIT: the right half (plates 6-11) has its own tuning, saved in the right bank.
+  CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 2.0));
+  CHECK(e.postKeyboardPlateTune(8, 0.25));
+  CHECK(std::fabs(e.canonicalState()->keyboardPlateTuneR[8] - 0.25f) < 1e-6);
+  CHECK(e.canonicalState()->keyboardPlateTune[8] == 0.0f);
+  CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+  CHECK(std::fabs(e.runtime()->keyboardPlateTune(core::KeyboardSide::Right, 8) - 0.25) < 1e-6);
+  CHECK(e.runtime()->keyboardPlateTune(core::KeyboardSide::Left, 8) == 0.0);
+}
+
 int main() {
   slot_cartridge_loads_one_side();
+  plate_tuning_reaches_v_oct();
   host::StandaloneAudioEngine engine;
   CHECK(engine.prepare(1, 48000.0, 256, 0, 2));
 

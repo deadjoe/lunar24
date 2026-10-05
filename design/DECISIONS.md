@@ -54,6 +54,13 @@ Keep these unless a listening test or a real bug says otherwise.
   Drawn as real bar LEDs (`art::drawBarLed`): deep maroon off, hot pale core and a red
   bloom growing with b^2 when lit; the panel spreads the sounding range (~0.3..0.9) over the
   whole lamp so the pulse reads (tuned by eye, owner feedback on T2.7).
+- **Per-plate tuning** (manual p.15 PLATE EDITOR; owner, 2026-10-05): no editor mode. While
+  plates are held (mouse or computer keys) the wheel over the red encoder or over the held plate
+  tunes them, 10 cents a notch, a semitone with Option, +-24 semitones (all tuned by ear); a click
+  on the encoder resets them. The offset is added in the runtime to touch-plate notes only
+  (`ControlEvent::plate`), from the bank the plate's side plays; held notes are re-sent so they
+  move at once. The arpeggiator orders plate notes by plate number (manual p.16), other notes
+  after them in press order; the 16-step sequencer transposes by the lowest held plate.
 - **Keyboard clock**: the internal clock is 16th notes at 10-300 BPM (steps-per-beat tuned
   by ear); a CLOCK jack or MIDI clock takes over until BPM is changed again (manual p.19).
   MIDI START restarts the arpeggio / sequence from its first step like the RESET jack;

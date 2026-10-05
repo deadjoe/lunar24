@@ -22,6 +22,8 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
   off an input to unplug.
 - Plates: click (lower = more pressure) or keys `A W S E D F T G Y H U J K O L P ;`;
   octave with the arrows or `Z` / `X`.
+- Hold plates + mouse wheel (over the red encoder, or over the held plate) tunes them: 10 cents
+  a notch, a semitone with Option; click the encoder while holding = back to 0.
 - Red encoder opens the KEYBOARD MENU (PLAY, EXPRESSION, ARP, SEQ, SEQ STEPS, SERVICE);
   CLOSE or Esc closes it. SERVICE is stored only, except ENCODER DIRECTION.
 - DRONE VOICES keys 1-6 latch each voice on / off; all start off (launch, RESET PANEL).
@@ -39,8 +41,7 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
 2. ~~Knob tapers: envelope A/B A, D, R cubic; LFO A/B rate exponential.~~
 3. ~~RESET PANEL keeps keyboard presets A-D, as it keeps MIDI bindings.~~
 4. ~~Effector: a different cartridge per side, as on the hardware; taller cartridge display.~~
-5. Per-plate tuning (hold a plate + encoder, any pitch; `keyboardPlateTune` is stored but
-   unread), then order the arpeggio by plate number as the manual does (press order now).
+5. ~~Per-plate tuning (hold a plate + wheel), arpeggio in plate-number order.~~
 6. Scale editor UI: switch single notes of the quantiser scale on / off
    (`keyboardScaleEditor` exists; only LOAD SCALE sets it now).
 7. Small cleanups: stale comments in `machine_runtime.h` (header route ledger, drone ENV

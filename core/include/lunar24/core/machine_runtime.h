@@ -2545,6 +2545,22 @@ class SynthRuntime {
   bool keyboardFollowsExternalClock() const { return kbdExtClock_; }
   std::uint32_t keyboardTempoEdits() const { return kbdTempoEdits_; }
 
+  // Per-plate tuning (PLATE EDITOR, manual p.15), semitones added to plate `plate` (0..11):
+  // `bank` 0 = left / shared, 1 = the right bank SPLIT plays. Read at each press, so it
+  // applies to the next note (the UI re-sends a held plate's pitch to retune it). Audio thread.
+  static constexpr double kPlateTuneRange = 24.0;  // +-2 octaves around the plate's semitone
+  void setKeyboardPlateTune(int bank, std::uint32_t plate, double semitones) {
+    if (plate >= kKeyboardPlateTuneCount || !std::isfinite(semitones)) return;
+    (bank == 0 ? kbdState_.keyboardPlateTune : kbdState_.keyboardPlateTuneR)[plate] =
+        static_cast<float>(std::clamp(semitones, -kPlateTuneRange, kPlateTuneRange));
+  }
+  double keyboardPlateTune(KeyboardSide side, std::uint32_t plate) const {
+    if (plate >= kKeyboardPlateTuneCount) return 0.0;
+    const float* t = side_bank(keyboardMode_, side) == 0u ? kbdState_.keyboardPlateTune
+                                                           : kbdState_.keyboardPlateTuneR;
+    return static_cast<double>(t[plate]);
+  }
+
   void restartKeyboardPattern() {
     for (auto& arp : keyboardArpSeq_) arp.restartPattern();
   }
@@ -2700,7 +2716,12 @@ class SynthRuntime {
         auto kbdSink = [this, idx](const ControlEvent& nkb) {
           keyboardBeh_[idx].handleControlEvent(nkb);
         };
-        keyboardArpSeq_[idx].handleControlEvent(e, kbdSink);
+        // A touch plate plays its own tuning (PLATE EDITOR, manual p.15): the plate's offset
+        // in semitones, from the bank its side plays (the right bank under SPLIT).
+        ControlEvent tuned = e;
+        if (e.kind == ControlEventKind::pitch && e.plate < kKeyboardPlateTuneCount)
+          tuned.value += static_cast<SignalSample>(keyboardPlateTune(e.side, e.plate) / 12.0);
+        keyboardArpSeq_[idx].handleControlEvent(tuned, kbdSink);
         return;  // a note event is fully consumed by the keyboard owner, never a parameter.
       }
       case ControlEventKind::reset: {
