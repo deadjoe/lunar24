@@ -46,7 +46,7 @@ _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manua
 1. Check the Windows build by hand (MANUAL_TESTS ⏳; the owner schedules it separately).
 2. Later, when the owner asks: tune sounds from listening (MANUAL_TESTS "调音待办":
    drone level, modulation depth, S&H, mix, VCO B top).
-3. Later: AU / VST3, panel tweaks.
+3. AU / VST3 plugin: plan in `design/PLUGIN_PLAN.md` (phase 1 next). Later: panel tweaks.
 
 ## Decided not to do (for now)
 - Keyboard pushbutton offsets (hold arrow + encoder; TWIN / SPLIT per-side offset).
