@@ -170,20 +170,27 @@ int main() {
     CHECK(!e.muted());
   }
 
-  // Cartridge action: the UI steps both sides' programs on sync (cartridge = program/3).
+  // Cartridge action: the UI puts the next cartridge in the slot on sync; nothing loads until
+  // a side's 1-2-3 switch flips (a MIDI-bound switch here), and then only that side loads it.
   {
     E e;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     const auto before = e.canonicalState()->leftEffector.program;
+    const int cart = static_cast<int>(static_cast<std::uint32_t>(before) / 3u);
     core::MidiMap m;
     CHECK(m.bind(bindAction(0, 41, core::MidiAction::cartridge_next)));
+    CHECK(m.bind(bindCc("", 0, 23, core::ParameterId::effector_select_r, core::MidiInputMode::absolute)));
     e.publishMidiMap(m, "TestKit");
     e.applyMidiBindingFromAudioThread(0, 127);
-    CHECK(e.canonicalState()->leftEffector.program == before);  // nothing yet
     e.syncParametersFromAudioThread();
-    CHECK(static_cast<std::uint32_t>(e.canonicalState()->leftEffector.program) ==
-          (static_cast<std::uint32_t>(before) + 3) % 39);
-    CHECK(e.canonicalState()->leftEffector.program == e.canonicalState()->rightEffector.program);
+    CHECK_EQ(e.slotCartridge(), (cart + 1) % 13);
+    CHECK(e.canonicalState()->leftEffector.program == before);   // nothing loaded
+    CHECK(e.canonicalState()->rightEffector.program == before);
+    e.applyMidiBindingFromAudioThread(1, 0);                    // R switch moved (picks up at 1)
+    e.syncParametersFromAudioThread();
+    CHECK_EQ(static_cast<int>(static_cast<std::uint32_t>(e.canonicalState()->rightEffector.program) / 3u),
+             (cart + 1) % 13);
+    CHECK(e.canonicalState()->leftEffector.program == before);   // L keeps its cartridge
   }
 
   // Preset action: the UI loads the slot on sync.

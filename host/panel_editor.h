@@ -521,8 +521,14 @@ class ToggleControl : public IControl {
   void OnMouseDown(float, float y, const IMouseMod&) override {
     const int n = positionsOf(desc(w_.id)), idx = s_.index(w_.id);
     const int pos = std::clamp(leverPos(idx, n) + (y < float(w_.cy) ? -1 : 1), 0, n - 1);
+    // An effector 1-2-3 switch: flipping it loads the slot's cartridge into its side first, and
+    // the cartridge slot's L / R lines redraw.
+    const bool fx = w_.id == static_cast<std::uint32_t>(ParameterId::effector_select_l) ||
+                    w_.id == static_cast<std::uint32_t>(ParameterId::effector_select_r);
+    if (fx) s_.engine.loadSlotCartridge(w_.id == static_cast<std::uint32_t>(ParameterId::effector_select_l) ? 0 : 1);
     s_.setIndex(w_.id, w_.leverIndex[pos]);
-    SetDirty(false);
+    if (fx) GetUI()->SetAllControlsDirty();
+    else SetDirty(false);
   }
 
   // Lever position (0 = top) that shows parameter index `idx`.
@@ -732,9 +738,10 @@ class JoystickControl : public IControl {
 };
 
 // ---------------------------------------------------------------------------------------------
-// The effector cartridge slot (id 0, shows the cartridge and both programs) and its button
-// (id 1). Clicking either loads the next cartridge into both effector sides (right-click or
-// Shift = previous); the L / R switches pick the program 1-2-3 on each side.
+// The effector cartridge slot (id 0) and its button (id 1). As on the hardware, clicking either
+// puts the next cartridge in the slot (right-click or Shift = previous) without loading it;
+// flipping a side's 1-2-3 switch loads the slot's cartridge into that side (ToggleControl).
+// The slot shows the cartridge in it on the label, and under it what each side is running.
 class CartridgeControl : public IControl {
  public:
   CartridgeControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
@@ -744,27 +751,24 @@ class CartridgeControl : public IControl {
       g.FillCircle(col(mMouseIsOver ? theme::kAmber : theme::Rgb{60, 60, 60}), float(w_.cx), float(w_.cy), 10);
       return;
     }
-    g.FillRect(col(theme::kInk), IRECT(1143, 238, 1257, 289));
-    g.FillRect(col(mMouseIsOver ? theme::Rgb{190, 142, 58} : theme::Rgb{160, 118, 46}), IRECT(1150, 247, 1250, 280));
-    const core::ProgramDescriptor* p = core::find_program(static_cast<core::ProgramId>(cartridge() * 3));
-    g.DrawText(txt(12, theme::kInk), p ? upper(std::string(p->cartridge)).c_str() : "", 1200, 256);
-    char progs[64];
-    std::snprintf(progs, sizeof progs, "L%d  R%d", s_.index(static_cast<std::uint32_t>(ParameterId::effector_select_l)) + 1,
-                  s_.index(static_cast<std::uint32_t>(ParameterId::effector_select_r)) + 1);
-    g.DrawText(txt(10, theme::kInk, false), progs, 1200, 271);
+    const IRECT r = rectOf(w_);
+    g.FillRect(col(theme::kInk), r);
+    const IRECT label(r.L + 7, r.T + 5, r.R - 7, r.T + 23);
+    g.FillRect(col(mMouseIsOver ? theme::Rgb{190, 142, 58} : theme::Rgb{160, 118, 46}), label);
+    g.DrawText(txt(12, theme::kInk), cartridgeName(s_.engine.slotCartridge()).c_str(), label);
+    const theme::Rgb lit{235, 190, 110};
+    g.DrawText(txt(11, lit, false), sideLine(0).c_str(), IRECT(r.L, r.T + 27, r.R, r.T + 43));
+    g.DrawText(txt(11, lit, false), sideLine(1).c_str(), IRECT(r.L, r.T + 44, r.R, r.T + 60));
   }
   void OnMouseOver(float x, float y, const IMouseMod& mod) override {
     IControl::OnMouseOver(x, y, mod);
-    // The programs actually playing: the cartridge plus each side's 1-2-3 switch (the stored
-    // program is the cartridge's first one; the switch picks within it).
-    const int base = cartridge() * 3;
-    const core::ProgramDescriptor* l = core::find_program(static_cast<core::ProgramId>(
-        base + s_.index(static_cast<std::uint32_t>(ParameterId::effector_select_l))));
-    const core::ProgramDescriptor* r = core::find_program(static_cast<core::ProgramId>(
-        base + s_.index(static_cast<std::uint32_t>(ParameterId::effector_select_r))));
-    s_.readout = "L: " + (l ? std::string(l->name) : "?") + "   R: " + (r ? std::string(r->name) : "?");
-    s_.readoutX = 1200;
-    s_.readoutY = 214;
+    std::string tip = sideTip(0) + "    " + sideTip(1);
+    const int slot = s_.engine.slotCartridge();
+    if (slot != sideCartridge(0) || slot != sideCartridge(1))
+      tip += "    SLOT: " + cartridgeName(slot) + " (flip L / R to load)";
+    s_.readout = tip;
+    s_.readoutX = float(w_.cx);
+    s_.readoutY = float(w_.y() - 22);
     GetUI()->SetAllControlsDirty();
   }
   void OnMouseOut() override {
@@ -773,16 +777,35 @@ class CartridgeControl : public IControl {
     GetUI()->SetAllControlsDirty();
   }
   void OnMouseDown(float x, float y, const IMouseMod& mod) override {
-    const int next = (cartridge() + ((mod.R || mod.S) ? 12 : 1)) % 13;
-    s_.engine.postEffectorProgram(0, static_cast<core::ProgramId>(next * 3));
-    s_.engine.postEffectorProgram(1, static_cast<core::ProgramId>(next * 3));
+    s_.engine.stepSlotCartridge((mod.R || mod.S) ? -1 : 1);
     OnMouseOver(x, y, mod);
   }
 
  private:
-  int cartridge() const {
+  static std::string cartridgeName(int cart) {
+    const core::ProgramDescriptor* p = core::find_program(static_cast<core::ProgramId>(cart * 3));
+    return p ? upper(std::string(p->cartridge)) : std::string();
+  }
+  int sideCartridge(int side) const {
     const core::DeviceStateV1* st = s_.state();
-    return st == nullptr ? 0 : int(static_cast<std::uint32_t>(st->leftEffector.program) / 3u);
+    if (st == nullptr) return 0;
+    return int(static_cast<std::uint32_t>((side == 0 ? st->leftEffector : st->rightEffector).program) / 3u);
+  }
+  int sideSelect(int side) const {
+    return s_.index(static_cast<std::uint32_t>(side == 0 ? ParameterId::effector_select_l
+                                                          : ParameterId::effector_select_r));
+  }
+  // "L  CATHEDRAL 2": the side, its cartridge and its 1-2-3 switch.
+  std::string sideLine(int side) const {
+    return std::string(side == 0 ? "L  " : "R  ") + cartridgeName(sideCartridge(side)) + " " +
+           std::to_string(sideSelect(side) + 1);
+  }
+  // "L: CATHEDRAL 2 - <program name>".
+  std::string sideTip(int side) const {
+    const core::ProgramDescriptor* p = core::find_program(
+        static_cast<core::ProgramId>(sideCartridge(side) * 3 + sideSelect(side)));
+    return std::string(side == 0 ? "L: " : "R: ") + cartridgeName(sideCartridge(side)) + " " +
+           std::to_string(sideSelect(side) + 1) + " - " + (p ? std::string(p->name) : "?");
   }
   EditorShared& s_;
   Widget w_;

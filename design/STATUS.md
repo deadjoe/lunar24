@@ -27,8 +27,8 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
 - DRONE VOICES keys 1-6 latch each voice on / off; all start off (launch, RESET PANEL).
 - Photo sensor (white dome, drones 1/2/4/5): press = hand over it, drag up = darker,
   sideways = fingers; bends only MOD-lit generators.
-- Effector: click the cartridge slot for the next cartridge (right-click = previous);
-  the L / R switches pick program 1-2-3.
+- Effector: click the cartridge slot to put the next cartridge in it (right-click = previous);
+  flipping a side's L / R switch loads it there and picks program 1-2-3.
 - MIDI: notes play the plates; mod wheel / CC74 cutoff, CC71 resonance, CC91 blend, CC7
   master; pitch bend, sustain, MIDI clock. The MIDI button opens learn and controller
   settings (channel, transpose, velocity curve, SPLIT note).
@@ -38,10 +38,7 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
 1. ~~Keyboard fixes: arp HOLD off drops released plates; 16-step ping-pong and random.~~
 2. ~~Knob tapers: envelope A/B A, D, R cubic; LFO A/B rate exponential.~~
 3. ~~RESET PANEL keeps keyboard presets A-D, as it keeps MIDI bindings.~~
-4. Effector: a different cartridge per side, as on the hardware (pick the cartridge in the
-   slot, flipping a side's 1-2-3 switch loads it there; the engine and state already hold
-   one per side). Make the cartridge display taller so both sides read clearly, and fix
-   the hover tip to name each side's cartridge and program.
+4. ~~Effector: a different cartridge per side, as on the hardware; taller cartridge display.~~
 5. Per-plate tuning (hold a plate + encoder, any pitch; `keyboardPlateTune` is stored but
    unread), then order the arpeggio by plate number as the manual does (press order now).
 6. Scale editor UI: switch single notes of the quantiser scale on / off

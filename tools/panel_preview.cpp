@@ -241,12 +241,21 @@ int main(int argc, char** argv) {
         art::drawJoystick(sink, float(w.cx), float(w.cy), 55.f, 90.f, float(w.cx), float(w.cy), false);
         break;
       case WidgetKind::Cartridge: {
-        if (w.id != 0) break;
-        std::printf("<rect x='1143' y='238' width='114' height='51' fill='%s'/>\n", col(theme::kInk).c_str());
-        std::printf("<rect x='1150' y='254' width='100' height='18' fill='%s'/>\n", col({160, 118, 46}).c_str());
+        if (w.id != 0) {
+          std::printf("<circle cx='%.1f' cy='%.1f' r='16' fill='%s'/>\n", w.cx, w.cy, col(theme::kInk).c_str());
+          break;
+        }
+        // Same layout as host CartridgeControl: the slot's cartridge on the label, then L and R.
+        std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s'/>\n", w.x(), w.y(), w.w, w.h,
+                    col(theme::kInk).c_str());
+        std::printf("<rect x='%.1f' y='%.1f' width='%.1f' height='18' fill='%s'/>\n", w.x() + 7, w.y() + 5,
+                    w.w - 14, col({160, 118, 46}).c_str());
         const core::ProgramDescriptor* p = core::find_program(defaults().leftEffector.program);
-        text(1200, 263, 12, theme::kInk, p ? std::string(p->cartridge) : "");
-        std::printf("<circle cx='1200' cy='323' r='16' fill='%s'/>\n", col(theme::kInk).c_str());
+        std::string cart = p ? std::string(p->cartridge) : "";
+        for (auto& ch : cart) ch = char(std::toupper(static_cast<unsigned char>(ch)));
+        text(w.cx, w.y() + 14, 12, theme::kInk, cart);
+        text(w.cx, w.y() + 35, 11, {235, 190, 110}, "L  " + cart + " 1");
+        text(w.cx, w.y() + 52, 11, {235, 190, 110}, "R  " + cart + " 1");
         break;
       }
       case WidgetKind::DroneKey:
