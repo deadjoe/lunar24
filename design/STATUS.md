@@ -42,8 +42,8 @@ _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manua
 - REC (headphone corner): WET, DRY or ALL to 24-bit WAVs in Music/Lunar 24.
 
 ## Next steps
-1. Check by hand (MANUAL_TESTS ⏳): drones off at launch (T0.7), clean VCO top (T5.9),
-   the whole keyboard menu incl. SERVICE values after a restart (T12.18), the Windows build.
+1. Check by hand (MANUAL_TESTS ⏳): keyboard menu steps 1-8 (T12.18), the Windows build
+   (owner schedules it separately).
 2. Later, when the owner asks: tune sounds from listening (MANUAL_TESTS "调音待办":
    drone level, modulation depth, S&H, mix, VCO B top).
 3. Later: AU / VST3, panel tweaks.
