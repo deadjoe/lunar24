@@ -318,6 +318,9 @@ void LunarHostPlugin::toggleRecording(int source)
 
 void LunarHostPlugin::OnIdle()
 {
+  // Record what MIDI changed on the audio thread. Here, not in the panel's redraw, so it is
+  // saved even while the panel is closed (a plugin window usually is).
+  engine_.syncParametersFromAudioThread();
   lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
   logMidiClock_();
 

@@ -359,6 +359,9 @@ class StandaloneAudioEngine {
   // UI thread: bumped by every edit of the saved state (knob, cable, cartridge, MIDI CC), so
   // the host can autosave only when something changed.
   std::uint64_t editCount() const { return editCount_ + stateVersion_; }
+  // UI thread: bumped by every record syncParametersFromAudioThread applies, so the panel
+  // knows to redraw after a sync it did not run itself.
+  std::uint64_t audioSyncCount() const { return audioSyncCount_; }
   // Audio thread only (e.g. MIDI delivered inside the audio callback): schedule a note/clock
   // event `offset` samples into the coming block.
   bool enqueueEventFromAudioThread(const lunar24::core::ControlEvent& e, int offset = 0);
@@ -377,7 +380,9 @@ class StandaloneAudioEngine {
   // Audio thread only: a knob changed by MIDI CC. The value is heard at once (as a live event)
   // and handed back to the UI thread, which records it in the saved state and redraws.
   bool parameterFromAudioThread(ParameterId id, double value);
-  // UI thread: apply the MIDI-CC knob moves queued by the audio thread. Returns how many.
+  // UI thread, from the host's idle timer (so it also runs with the panel closed): record the
+  // MIDI-CC knob moves and MIDI-bound actions the audio thread queued, and free the graph
+  // plans it is done with. Returns how many records it applied.
   int syncParametersFromAudioThread();
   // Event-scheduler pressure diagnostics, for tests and future UI/log
   // display. Safe from any thread: the underlying counters are relaxed atomics, so a
@@ -625,6 +630,7 @@ class StandaloneAudioEngine {
   double muteGain_ = 1.0;  // audio thread: the faded output gain the MUTE button drives
   std::uint64_t stateVersion_ = 0;
   std::uint64_t editCount_ = 0;
+  std::uint64_t audioSyncCount_ = 0;
   void drainLive_(SynthRuntime& rt);
   // Audio thread: a parameter moved (any source) — rebase the MIDI pickup/relative state.
   void noteParameterSeen_(ParameterId id, double value);
@@ -1577,6 +1583,7 @@ inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
     }
     ++n;
   }
+  audioSyncCount_ += static_cast<std::uint64_t>(n);
   return n;
 }
 

@@ -77,8 +77,9 @@ public:
   // the only thread that edits the saved state, so the save never races an edit.
   lunar24::host::StateSaveOutcome saveDeviceState();
 
-  // UI thread, every ~20 ms: autosave at most every 30 s, and only after an edit, so a crash
-  // or power cut loses at most the last half minute.
+  // UI thread, every ~20 ms: record the MIDI edits the audio thread queued, then autosave at
+  // most every 30 s, and only after an edit, so a crash or power cut loses at most the last
+  // half minute.
   void OnIdle() override;
   void logMidiClock_();  // UI thread: the audio.log MIDI clock diagnostics line
 

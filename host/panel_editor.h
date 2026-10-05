@@ -121,6 +121,7 @@ struct EditorShared {
   core::InputStateMachine input{nullptr, 0};
   std::uint64_t seq = 0;
   std::uint64_t seenStateVersion = ~0ull;
+  std::uint64_t seenAudioSync = 0;
   bool seenReady = false;
   bool seenMuted = false;
   std::uint16_t seenMidiPlates = 0;  // the plates MIDI was lighting at the last display tick
@@ -1715,9 +1716,13 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
     if (used) g->SetAllControlsDirty();
     return used;
   });
-  // Redraw when MIDI CC moved knobs, or a whole new machine state lands (startup restore).
+  // Redraw when MIDI moved knobs (recorded by the plugin's OnIdle), or a whole new machine
+  // state lands (startup restore).
   g->SetDisplayTickFunc([&shared, g]() {
-    if (shared.engine.syncParametersFromAudioThread() > 0) g->SetAllControlsDirty();  // MIDI CC
+    if (shared.engine.audioSyncCount() != shared.seenAudioSync) {
+      shared.seenAudioSync = shared.engine.audioSyncCount();
+      g->SetAllControlsDirty();
+    }
     if (shared.engine.isReady() != shared.seenReady) {  // audio started or stopped
       shared.seenReady = shared.engine.isReady();
       g->SetAllControlsDirty();
