@@ -16,6 +16,7 @@
 #include <lunar24/core/device_state.h>
 #include <lunar24/core/keyboard_presets.h>
 #include <lunar24/core/keyboard_side_bank.h>
+#include <lunar24/core/state_default.h>
 #include <lunar24/core/state_serializer.h>
 #include <lunar24/registry_ids.hpp>
 
@@ -766,6 +767,31 @@ static void live_state_holds_non_scalars() {
   CHECK_EQ(st.keyboardClockSelectors[3], 7u);
 }
 
+// RESET PANEL: everything back to the power-on default except the keyboard presets A-D.
+static void reset_keeps_presets() {
+  core::DeviceStateV1 st = core::make_default_device_state(7u);
+  const auto hold = static_cast<std::size_t>(core::ParameterId::keyboard_arp_hold);
+  const auto dir = static_cast<std::size_t>(core::ParameterId::keyboard_arp_direction);
+  st.parameters[hold] = 1.0;
+  st.parameters[dir] = 2.0;
+  CHECK_TRUE(core::save_live_to_preset(st, 2u));  // the player's preset C
+  st.keyboardSeqCurrent.steps[3].note = 12u;      // and a live edit that is not saved
+  const core::DeviceStateV1 reset = core::make_reset_device_state(st, 7u);
+  const core::DeviceStateV1 factory = core::make_default_device_state(7u);
+  for (std::uint32_t k = 0; k < core::kDeviceKeyboardPresetCount; ++k)
+    CHECK_TRUE(std::memcmp(&reset.keyboardPresets[k], &st.keyboardPresets[k],
+                           sizeof(core::KeyboardPreset)) == 0);
+  CHECK_EQ(reset.keyboardPresets[2].arpHold, 1u);  // preset C still holds the saved setting
+  CHECK_TRUE(reset.parameters[hold] == factory.parameters[hold]);  // live settings back to factory
+  CHECK_TRUE(reset.parameters[dir] == factory.parameters[dir]);
+  CHECK_EQ(reset.keyboardSeqCurrent.steps[3].note, factory.keyboardSeqCurrent.steps[3].note);
+  // Loading preset C after the reset brings the saved settings back.
+  core::DeviceStateV1 again = reset;
+  CHECK_TRUE(core::load_preset_to_live(again, 2u));
+  CHECK_TRUE(again.parameters[hold] == 1.0);
+  CHECK_TRUE(again.parameters[dir] == 2.0);
+}
+
 int main() {
   only_four_presets();
   preset_id_pinned_to_slot();
@@ -780,5 +806,6 @@ int main() {
   full_preset_live_preset_round_trip_lossless();
   invalid_slot_returns_false_zero_mutation();
   pressure_output_canonicality();
+  reset_keeps_presets();
   return ::test::finish("keyboard presets (full transfer)");
 }

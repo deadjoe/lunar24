@@ -182,9 +182,13 @@ void LunarHostPlugin::OnReset()
   midiQueue_.invalidate();
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
-  if (factoryResetRequested_) {  // the panel's RESET: publish the power-on default instead
+  if (factoryResetRequested_) {  // the panel's RESET: the power-on default, keyboard presets kept
     factoryResetRequested_ = false;
-    stateStore_.replacePending(lunar24::core::make_default_device_state(lunar24::host::kLunarStartupSeed));
+    const lunar24::core::DeviceStateV1* current = stateStore_.pending();  // just captured above
+    stateStore_.replacePending(
+        current != nullptr
+            ? lunar24::core::make_reset_device_state(*current, lunar24::host::kLunarStartupSeed)
+            : lunar24::core::make_default_device_state(lunar24::host::kLunarStartupSeed));
     engine_.closeDroneKeys();  // like a fresh start: the drones wait for their keys
   }
   engine_.prepare(lunar24::host::kLunarStartupSeed, GetSampleRate(), GetBlockSize(),

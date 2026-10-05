@@ -37,7 +37,7 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
 ## Next steps (in order; owner-approved after the manual check)
 1. ~~Keyboard fixes: arp HOLD off drops released plates; 16-step ping-pong and random.~~
 2. ~~Knob tapers: envelope A/B A, D, R cubic; LFO A/B rate exponential.~~
-3. RESET PANEL keeps keyboard presets A-D (it wipes them now), as it keeps MIDI bindings.
+3. ~~RESET PANEL keeps keyboard presets A-D, as it keeps MIDI bindings.~~
 4. Effector: a different cartridge per side, as on the hardware (pick the cartridge in the
    slot, flipping a side's 1-2-3 switch loads it there; the engine and state already hold
    one per side). Make the cartridge display taller so both sides read clearly, and fix
