@@ -527,7 +527,7 @@
 - 步骤：对 VCO B 重复 T5.1–T5.4（VCO B 没有 sync）。
 - 期望：和 VCO A 一致。
 
-**T5.9 高音干净（没有混叠杂音）** ⏳
+**T5.9 高音干净（没有混叠杂音）** ✅
 - 准备：本节通用准备；**FILTER L、FILTER R 的 FREQ 都拖到最右**（滤波器全开，否则 oct+3 的高音被滤掉，听不出波形和杂音）；戴耳机，MASTER 中间。
 - 步骤：
   1. VCO A 拨到 **oct+3**，大旋钮对准锯齿波图标，按住键盘右边的高音键。
@@ -1474,7 +1474,6 @@
 
 ## 还没测的（⏳）
 
-- T5.9 VCO 高音干净：按新写的准备（FILTER 的 FREQ 拖到最右）再听一遍第 3、4 步。
 - T12.18 键盘菜单整体检查的第 1–8 步（第 9 步 SERVICE 重启后还在已通过）。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
