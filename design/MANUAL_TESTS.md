@@ -274,7 +274,7 @@
   - 第 1 步：弹出关于窗口，从上到下：应用图标；**Lunar 24**；**Version 1.0.0 (Build 编号 · 构建时间 UTC · 提交号)**；黑熊 logo；**© 2026 Bearbone.Studio**。构建编号就是 GitHub Actions 那次运行的编号（运行列表里的 #数字），提交号是这次构建的代码版本，两者都能在 Actions 页面对上。
   - 第 2 步：菜单栏只有 Lunar 24 一个菜单（About、Preferences…、Hide、Quit），没有 Debug 菜单。
 
-**T0.10 摇杆周围的熊耳轨道和键盘区的月亮** ⏳
+**T0.10 摇杆周围的熊耳轨道和键盘区的月亮** ✅ (#122)
 - 步骤：
   1. 看键盘区左下角的摇杆。
   2. 看键盘区中间蓝色小屏下面。
@@ -1182,7 +1182,7 @@
   - DRONE 2–6 的 GATE 输入用同样方法各试一下（3 和 6 的 GATE 在最下排最左）。
   - 第 3 步对 DRONE 6 同样适用：只开 DRONE VOICES 的 **6**，线改接到 DRONE 6 的 **cv** 输入。
 
-**T12.18 键盘菜单整体检查** ⏳
+**T12.18 键盘菜单整体检查** ✅
 - 准备：RESET PANEL；红色大旋钮打开键盘菜单。
 - 步骤与期望：
   1. 6 个页签逐个点开：每个设置都能改，名字完整不截断（PLAY 页 QUANTISER 卡有 NOTES 一行）；SERVICE 页顶部有警告条。
@@ -1192,7 +1192,7 @@
   5. PLAY = SPLIT：EDITING 切到 RIGHT 后只改右半边（参照 T12.7）；共用设置显示 GLOBAL。
   6. PRESET 直接点 A–D；LOAD / SAVE / INIT 按 T12.8 检查（INIT 两次确认，LOAD 不确认）。
   7. RESET PANEL 点两下（4 秒内）：面板复位，菜单关掉；再打开是 PLAY 页。
-  8. 换到 ARP 页后按 Esc 关闭，再打开仍是 ARP 页；鼠标停在某个按钮上时按 Esc，再打开不残留高亮。菜单打开时点 MIDI 按钮会关掉菜单（反之亦然）；菜单区域内的点击不会传到下面的面板。
+  8. 换到 ARP 页后按 Esc 关闭，再打开仍是 ARP 页；鼠标停在某个按钮上时按 Esc，再打开不残留高亮。菜单打开时点 MIDI 按钮会关掉菜单、打开 MIDI 设置（MIDI 设置盖住整个键盘区，这时红色大旋钮点不到，是正常的）；菜单区域内的点击不会传到下面的面板。
   9. SERVICE 页把几个校准旋钮（如 TOUCH、P MAX）拖到别的值，DIRECTION 保持 NORMAL。重启程序后这些值和菜单里的其它设置都在（SERVICE 的校准值只保存、不影响声音）；拉伸窗口后菜单比例正常、点击位置准确；MIDI LEARN 学一个面板旋钮仍正常（菜单设置不能学）。
 
 **T12.19 菜单盖住接线与插孔；ENCODER DIRECTION** ✅ (#91)
@@ -1492,7 +1492,6 @@
 
 ## 还没测的（⏳）
 
-- T12.18 键盘菜单整体检查的第 1–8 步（第 9 步 SERVICE 重启后还在已通过）。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。
