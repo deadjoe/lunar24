@@ -1,63 +1,63 @@
 # Lunar 24 — status
 
-_Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
-`design/ARCHITECTURE.md`. Manual test steps: `design/MANUAL_TESTS.md`.
+_Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manual:
+`design/ARCHITECTURE.md`. Manual test steps and results: `design/MANUAL_TESTS.md`.
 
 ## What works
 - **Engine (core/)**: every module of the Solar 42N panel. 4 classic drones (negistor
   generators, drift, VOLT FM, CV MOD, photo sensor), 2 Papa Srapa noise / S&H drones,
   VCO A/B with envelopes and VCAs, 10-channel mixer, dual Polivoks-style filter,
-  distortion, dual effector (13 cartridges x 3 programs), 2 LFOs, joystick, 5-step
-  sequencer, preamp + envelope follower, touch keyboard (single / twin / split, arp,
-  16-step sequencer, glide, vibrato, pressure modes, quantiser, presets A-D).
-  Patch cables, normalled connections and feedback loops.
+  distortion, dual effector (13 cartridges x 3 programs, a different cartridge per side),
+  2 LFOs, joystick, 5-step sequencer, preamp + envelope follower, touch keyboard (single /
+  twin / split, arp in plate order, 16-step sequencer, glide, vibrato, pressure modes,
+  quantiser with scale editor, per-plate tuning, presets A-D). Patch cables, normalled
+  connections and feedback loops.
 - **App (host/)**: macOS / Windows standalone with the official panel layout, MIDI input
   and MIDI learn, REC to WAV, machine state restored on launch. CI builds a downloadable
-  app on every run (Actions → run → Artifacts).
+  app on every run (Actions → run → Artifacts: Lunar24-macOS, Lunar24-Windows).
 - **Tools**: `lunar24_render` (engine to WAV), `panel_preview` (panel to SVG).
-- **Tests**: 64 unit / engine tests (~30 s), also under ASan + UBSan in CI.
+- **Tests**: 65 unit / engine tests (~70 s), also under ASan + UBSan in CI.
+- **Checked by hand on the Mac**: everything in MANUAL_TESTS except the ⏳ items below.
 
 ## How to play
-- Knobs: drag (Shift = fine), wheel, double-click resets. Cables: drag jack to jack; drag
-  off an input to unplug.
+- Knobs: drag (Shift = fine), wheel, double-click resets. Envelope A / D / R and LFO rate
+  knobs are fine at the slow / short end. Cables: drag jack to jack; drag off an input to
+  unplug.
 - Plates: click (lower = more pressure) or keys `A W S E D F T G Y H U J K O L P ;`;
-  octave with the arrows or `Z` / `X`.
-- Plate tuning: hold plates (keys) + wheel over the red encoder, or Command + wheel over a plate;
-  10 cents a notch, a semitone with Option; encoder click / Command-click = back to 0.
+  octave with the arrows, `Z` / `X`, or the wheel over the red encoder.
+- Plate tuning: hold plates (keys) + wheel over the red encoder, or Command + wheel over a
+  plate; 10 cents a notch, a semitone with Option; encoder click / Command-click = back to 0.
 - Red encoder opens the KEYBOARD MENU (PLAY, EXPRESSION, ARP, SEQ, SEQ STEPS, SERVICE);
-  CLOSE or Esc closes it. SERVICE is stored only, except ENCODER DIRECTION.
+  CLOSE or Esc closes it. PLAY → NOTES switches single notes of the scale. SERVICE values
+  are stored only, except ENCODER DIRECTION.
 - DRONE VOICES keys 1-6 latch each voice on / off; all start off (launch, RESET PANEL).
+- RESET PANEL keeps keyboard presets A-D and MIDI settings.
 - Photo sensor (white dome, drones 1/2/4/5): press = hand over it, drag up = darker,
   sideways = fingers; bends only MOD-lit generators.
-- Effector: click the cartridge slot to put the next cartridge in it (right-click = previous);
-  flipping a side's L / R switch loads it there and picks program 1-2-3.
+- Effector: click the cartridge slot to pick a cartridge (right-click = previous); flipping
+  a side's 1-2-3 switch loads it on that side and picks the program.
 - MIDI: notes play the plates; mod wheel / CC74 cutoff, CC71 resonance, CC91 blend, CC7
   master; pitch bend, sustain, MIDI clock. The MIDI button opens learn and controller
   settings (channel, transpose, velocity curve, SPLIT note).
 - REC (headphone corner): WET, DRY or ALL to 24-bit WAVs in Music/Lunar 24.
 
-## Next steps (in order; owner-approved after the manual check)
-1. ~~Keyboard fixes: arp HOLD off drops released plates; 16-step ping-pong and random.~~
-2. ~~Knob tapers: envelope A/B A, D, R cubic; LFO A/B rate exponential.~~
-3. ~~RESET PANEL keeps keyboard presets A-D, as it keeps MIDI bindings.~~
-4. ~~Effector: a different cartridge per side, as on the hardware; taller cartridge display.~~
-5. ~~Per-plate tuning (hold a plate + wheel), arpeggio in plate-number order.~~
-6. ~~Scale editor UI: switch single notes of the quantiser scale (PLAY tab, NOTES row).~~
-7. ~~Small cleanups: stale comments in `machine_runtime.h` (route ledger, drone ENV OUT).~~
-8. Check by hand: the keyboard menu (T12.18), SERVICE values after a restart, the Windows
-   build, sustain-pedal items (need a pedal).
-9. Tune sounds from listening (drone level, modulation depth, S&H, mix, VCO B top).
-10. Later: AU / VST3, panel tweaks.
+## Next steps
+1. Check by hand (MANUAL_TESTS ⏳): drones off at launch (T0.7), clean VCO top (T5.9),
+   the whole keyboard menu incl. SERVICE values after a restart (T12.18), the Windows build.
+2. Later, when the owner asks: tune sounds from listening (MANUAL_TESTS "调音待办":
+   drone level, modulation depth, S&H, mix, VCO B top).
+3. Later: AU / VST3, panel tweaks.
 
 ## Decided not to do (for now)
 - Keyboard pushbutton offsets (hold arrow + encoder; TWIN / SPLIT per-side offset).
 - Arp HOLD replacing the chord on a new press: new plates join the held chord (max 12).
 - Effector tails across a program switch (the hardware cuts them too).
+- Photo-eye LED lit by CV MOD / LFO: CV acts on pitch directly.
 
 ## Known limits
 - No hardware here: sound is tuned by ear, not measured against a real unit.
 - The manual gives no arp / seq clock multiply / divide ratios (the setting is 1:1) and no
   notes for 8 named scales (Blues x2, Folk, Japanese, Gamelan, Gypsy, Arabian, Flamenco:
-  marked NOT MODELLED, notes pass through).
+  marked NOT MODELLED, notes pass through; the scale editor can build them by hand).
 - Only what the hardware has, plus MIDI and the WAV recorder: no mod matrix, no patch
   library.
