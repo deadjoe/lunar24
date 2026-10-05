@@ -947,7 +947,7 @@
   - 第 5 步：第一次点 INIT 显示 SURE?，第二次显示 CLEARED；再 LOAD 后 MODE 回到 KEYBOARD。
 - 测完点 **RESET PANEL**（预设会保留；要清空某个预设用 INIT）。
 
-**T12.8a RESET PANEL 保留预设 A–D** 🔧（复位保留预设 PR）
+**T12.8a RESET PANEL 保留预设 A–D** ✅（#114，2026-10-05 Mac 实测通过）
 - 修正前：RESET PANEL 把整台机器恢复出厂，存好的 4 个预设也一起被清掉。
 - 现在：RESET PANEL 只复位面板和键盘菜单的当前设置，预设 A–D 保留，和 MIDI 绑定一样。
 - 准备：RESET PANEL；DRONE VOICES 全关；只听键盘的声音。
