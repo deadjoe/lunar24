@@ -150,9 +150,9 @@
 | # | PR | 内容 | 完成标准 |
 |---|---|---|---|
 | 0 | **本方案入库** | `design/PLUGIN_PLAN.md` | 业主确认 |
-| 1 | **拆分 + 写回挪到 OnIdle** | App 专用代码用 `#if APP_API` 隔开；CC / 绑定动作的写回挪到 `OnIdle` | 独立 App 行为不变；现有测试全过；业主在 Mac 上过一遍 MIDI CC 相关用例 |
+| 1 | **写回挪到 OnIdle** | CC / 绑定动作的写回从面板刷新挪到 `OnIdle` | 独立 App 行为不变；现有测试全过；业主在 Mac 上过一遍 T15.2 / T15.3 |
 | 2 | **引擎：播放中安全切换（方案 A）** | 第三节第 4 点；独立 App 的 RESET PANEL 改用它 | 新测试全过（含 ASan / UBSan / TSan）；独立 App 的 RESET PANEL 手测正常 |
-| 3 | **插件构建** | VST3 / AUv2 目标、固定 SDK 版本、plist、`config.h`、插件专用平台实现、CI 出插件包 | Ableton 里能载入 VST3 和 AU，能用 MIDI 弹出声音 |
+| 3 | **拆分 + 插件构建** | App 专用代码用 `#if APP_API` 隔开（要有插件目标才能编译验证，所以和构建放在一起）；VST3 / AUv2 目标、固定 SDK 版本、plist、`config.h`、插件专用平台实现、CI 出插件包 | Ableton 里能载入 VST3 和 AU，能用 MIDI 弹出声音 |
 | 4 | **插件 `OnReset` 规则 + 长块拆分** | 第三节第 3 点；块超过最大块时在插件入口拆开 | 停止 / 播放、旁路不让声音从头开始；新测试覆盖拆块 |
 | 5 | **音色存进工程** | `SerializeState` / `UnserializeState`，带分段头 | 存工程 → 退出 Ableton → 重开，音色、连线、键盘设置都回来；播放中切预置只有一下短静音 |
 | 6 | **插件窗口** | 默认大小、几档缩放、无外壳、隐藏 REC 等 App 专用项 | Ableton 里窗口大小正确、面板不被裁切 |
