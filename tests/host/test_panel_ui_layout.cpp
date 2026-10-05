@@ -341,6 +341,18 @@ int main() {
       centre(kb::segment(kb::kPresetSlots, 4, i, false), x, y);
       CHECK(kb::hitTest(kb::kPlay, false, x, y).index == i);
     }
+    // SCALE EDITOR notes: inside the QUANTISER card, clear of SCALE and ROOT, hit where drawn,
+    // and only on the PLAY tab.
+    for (int n = 0; n < 12; ++n) {
+      const Box b = kb::scaleNote(n);
+      CHECK(inside(b, kb::kCards[1].box));
+      for (const auto& it : kb::kItems)
+        if (it.tab == kb::kPlay) CHECK(!overlap(b, it.box));
+      if (n > 0) CHECK(!overlap(b, kb::scaleNote(n - 1)));
+      centre(b, x, y);
+      CHECK(kb::hitTest(kb::kPlay, false, x, y).kind == kb::HitKind::Note && kb::hitTest(kb::kPlay, false, x, y).index == n);
+      CHECK(kb::hitTest(kb::kArp, false, x, y).kind != kb::HitKind::Note);
+    }
     centre(kb::kClose, x, y);
     CHECK(kb::hitTest(kb::kSteps, false, x, y).kind == kb::HitKind::Close);
     for (int i = 0; i < kb::kRhythmSteps; ++i) {

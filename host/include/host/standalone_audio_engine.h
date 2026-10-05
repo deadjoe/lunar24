@@ -305,6 +305,15 @@ class StandaloneAudioEngine {
                                                                 : st->keyboardPlateTuneR)[plate]);
   }
   bool postKeyboardPlateTune(int plate, double semitones);
+  // SCALE EDITOR (manual p.19): side 0 = left / shared, 1 = the right bank under SPLIT; bit i = the
+  // note i semitones above ROOT is in the scale. Switching the last note off picks SEMITONES, so
+  // "notes pass through" is also what a restart loads. UI thread.
+  std::uint16_t keyboardScaleEditor(int side) const {
+    const DeviceStateV1* st = canonicalState();
+    if (st == nullptr) return 0;
+    return side == 0 ? st->keyboardScaleEditor : st->keyboardScaleEditorR;
+  }
+  bool postKeyboardScaleEditor(int side, std::uint16_t mask);
   std::uint8_t keyboardRhythm(int side, bool seq) const {
     const DeviceStateV1* st = canonicalState();
     if (st == nullptr) return 0;
@@ -1214,6 +1223,23 @@ inline bool StandaloneAudioEngine::postKeyboardPlateTune(int plate, double semit
   return liveQueue_.push(c);
 }
 
+inline bool StandaloneAudioEngine::postKeyboardScaleEditor(int side, std::uint16_t mask) {
+  mask = static_cast<std::uint16_t>(mask & lunar24::core::kChromaticScaleMask);
+  if (mask == lunar24::core::kMicrotonalScaleMask)  // an empty editor next to a picked scale would
+    return side == 0                               // be refilled on load: pick SEMITONES instead
+               ? postParameter(ParameterId::keyboard_quantise_load_scale, 0.0)
+               : postKeyboardRightParameter(ParameterId::keyboard_quantise_load_scale, 0.0);
+  if (!definition_ || !liveQueue_.canPush()) return false;
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  (side == 0 ? st.keyboardScaleEditor : st.keyboardScaleEditorR) = mask;
+  ++editCount_;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::KeyboardScaleEditor;
+  c.side = side == 0 ? 0u : 1u;
+  c.value = mask;
+  return liveQueue_.push(c);
+}
+
 inline bool StandaloneAudioEngine::postKeyboardPreset(PresetAction action, std::uint32_t slot) {
   if (!definition_ || !liveQueue_.canPush() || !lunar24::core::preset_slot_is_valid(slot)) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
@@ -1633,6 +1659,9 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
         break;
       case LiveCommand::Kind::KeyboardPlateTune:
         rt.setKeyboardPlateTune(static_cast<int>(c.side), c.index, c.value);
+        break;
+      case LiveCommand::Kind::KeyboardScaleEditor:
+        rt.setKeyboardScaleEditor(static_cast<int>(c.side), static_cast<std::uint16_t>(c.value));
         break;
       case LiveCommand::Kind::GraphPlanDone:
       case LiveCommand::Kind::Action:

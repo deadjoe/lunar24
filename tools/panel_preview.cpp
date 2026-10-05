@@ -308,6 +308,7 @@ int main(int argc, char** argv) {
     const char* tabs[kb_ui::kTabCount] = {"play", "expression", "arp", "seq", "steps", "service"};
     for (int i = 0; i < kb_ui::kTabCount; ++i)
       if (tab == tabs[i]) st.tab = i;
+    st.scaleMask = defaults().keyboardScaleEditor;
     for (int i = 0; i < kb_ui::kSeqSteps; ++i) {
       const auto& q = defaults().keyboardSeqCurrent.steps[static_cast<std::size_t>(i)];
       st.steps[i] = {int(q.note), q.gate != 0};
@@ -323,6 +324,7 @@ int main(int argc, char** argv) {
            {P::keyboard_seq_length, 10.0 / 14.0}, {P::keyboard_seq_rhythm_length, 5.0 / 7.0}};
       st.arpMask = 0x12;
       st.seqMask = 0x04;
+      st.scaleMask = core::scale_editor_for_selector(2) | (1u << 6);  // DORIAN plus its b5: EDITED
       const int notes[kb_ui::kSeqSteps] = {0, 7, 12, 7, 3, 10, 15, 10, 0, 5, 12, 19, 24, 12, 7, 0};
       for (int i = 0; i < kb_ui::kSeqSteps; ++i) st.steps[i] = {notes[i], i != 3 && i != 9};
     }

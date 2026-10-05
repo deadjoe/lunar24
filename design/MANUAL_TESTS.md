@@ -919,6 +919,30 @@
      - 弹完把 PLAY 点回 **SINGLE**，拔掉这两根线。
   9. SCALE 设成 IONIAN、ROOT 设成 D，⌘Q 退出，再打开程序：打开菜单 PLAY 页仍是 IONIAN / D，依次弹仍是 D 大调：W（C#）和 T（F#）是自己的音；A（C）被吸到它下面的 B，比 J（B）低一个八度。
 
+**T12.4a SCALE EDITOR（逐个开关音阶里的音）** 🔧（音阶编辑 PR）
+- 界面位置：键盘菜单 PLAY 页中间的 **QUANTISER** 卡，SCALE 和 ROOT 之间新加了一行 **NOTES**：12 个小按钮 C 到 B，和下面 ROOT 小钢琴对齐。
+  - 蓝底白字 = 这个音在音阶里；白底灰字 = 不在。ROOT 那个音的按钮边框是黑的。
+  - 点一下按钮：加入 / 去掉这个音。改过以后 SCALE 显示 "…（EDITED）"。
+  - 一个都不亮 = 音原样通过（SCALE 自动变回 SEMITONES，右上角写 "none lit: notes pass through"）。
+  - 音阶是"从 ROOT 数起"的：改 ROOT，亮着的音整体跟着移。
+  - SPLIT 时，EDITING 选哪边就改哪边。
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。打开键盘菜单 PLAY 页，菜单开着也能用电脑键盘弹（没声音时先在菜单空白处点一下）。
+- 步骤：
+  1. 看 NOTES 一行：一个都不亮，右上角 "none lit: notes pass through"，SCALE 是 SEMITONES。
+  2. SCALE 点 `>` 一次到 **IONIAN**（ROOT 保持 C）：NOTES 亮起 C D E F G A B。
+  3. 点 NOTES 的 **E**（E 变白）：SCALE 变成 "IONIAN (EDITED)"。依次弹 **A S D F**（C D E F）。
+  4. 点 NOTES 的 **C#**（C# 变蓝），依次弹 **A W S**（C C# D）。
+  5. ROOT 点 **D**，看 NOTES 一行。
+  6. 把亮着的音一个个点掉，直到一个都不亮。依次弹 **A W S E D**。
+  7. 再把 SCALE 点到 IONIAN、ROOT 点回 C，点掉 **B**；⌘Q 退出再打开，看 PLAY 页。
+  8. 收尾：RESET PANEL。
+- 期望：
+  - 第 3 步：E 键（D）和 F 键（F）发同一个音（E 被吸到最近的 F），C、D 正常。
+  - 第 4 步：W（C#）现在是自己的音，不再和 A（C）同音。
+  - 第 5 步：亮着的音整体往上移两个半音，变成 **D D# E G A B C#**（同一组音程，从 D 开始）。
+  - 第 6 步：最后一个点掉时 SCALE 变回 **SEMITONES**，右上角 "none lit"；A W S E D 五个音都不同（原样通过）。
+  - 第 7 步：重启后仍是 "IONIAN (EDITED)"，B 不亮。
+
 **T12.5 16 步音序器（SEQ STEPS 页）** 🔧 (#68)
 - 步骤：
   1. 点 **SEQ STEPS** 页签：把几步的推子拖到不同高度，关掉一两步的 GATE 按钮。

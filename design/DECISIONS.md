@@ -73,7 +73,10 @@ Keep these unless a listening test or a real bug says otherwise.
   9 semitones below it. Exactly between two notes it goes down (the manual does not say).
   SEMITONES and the 8 scales the manual only names (blues, folk, japanese, gamelan, gypsy,
   arabian, flamenco) pass notes through; the menu marks the latter NOT MODELLED rather than
-  inventing intervals. ROOT shows B where the manual prints the German H.
+  inventing intervals. ROOT shows B where the manual prints the German H. The SCALE EDITOR is a
+  row of 12 note buttons (C..B) on the QUANTISER card; the mask counts from ROOT, an edited scale
+  shows "(EDITED)", and switching the last note off picks SEMITONES (else a restart would refill
+  the empty editor from the picked scale).
 - **MIDI bindings on panel switches** (`midi_parameter_drive` in `core/midi_map.h`): knobs follow
   the controller (absolute with pickup, or relative). Switches and levers with 2-4 positions
   are stepped by a press instead: a pad moves to the next position (wrapping), and a CC
