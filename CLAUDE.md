@@ -50,6 +50,12 @@ why) before changing anything.
   goes for the owner's controller manual (AKAI MPK mini IV User Guide); what it tells us
   is summarised under MANUAL_TESTS "MIDI 待办".
 
+## Target platforms
+- Users run the app and the plugins on **Apple-silicon Macs (arm64) and Windows** only. No
+  Intel Mac builds.
+- Linux CI only runs the platform-independent tests (engine, layout, state, tools); there is
+  no Linux app or plugin.
+
 ## Architecture (short)
 - `core/` — framework-free C++17 synth engine (header-only). No iPlug2/platform includes
   (enforced by `tools/check_core_headers.py`). Audio thread: no allocation, no locks, no I/O.
