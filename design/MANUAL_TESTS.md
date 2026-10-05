@@ -851,7 +851,7 @@
   - 第 5 步：只有按住键时才播放，松开就停。
   - 第 6 步：声音停下，不卡住。
 
-**T12.5a 音序器 DIRECTION：PING-PONG 和 RANDOM** 🔧（键盘修正 PR）
+**T12.5a 音序器 DIRECTION：PING-PONG 和 RANDOM** ✅（#112，2026-10-05 Mac 实测准备和步骤全部通过）
 - 修正前：PING-PONG 一直停在第 1 步（同一个音反复响）；RANDOM 和 FORWARD 一模一样。
 - 本项只用 SEQ 页左边的 **SEQUENCER** 卡片和 SEQ STEPS 页。SEQ 页右边的 **SEQ RHYTHM** 卡片（它也有一个 LENGTH，下面有 1–8 号节奏按钮）**不要动**：保持默认的 LENGTH = 1 step、只有 1 号亮，意思是每个时钟都通过。
 - 准备（按顺序做）：
