@@ -919,7 +919,7 @@
      - 弹完把 PLAY 点回 **SINGLE**，拔掉这两根线。
   9. SCALE 设成 IONIAN、ROOT 设成 D，⌘Q 退出，再打开程序：打开菜单 PLAY 页仍是 IONIAN / D，依次弹仍是 D 大调：W（C#）和 T（F#）是自己的音；A（C）被吸到它下面的 B，比 J（B）低一个八度。
 
-**T12.4a SCALE EDITOR（逐个开关音阶里的音）** 🔧（音阶编辑 PR）
+**T12.4a SCALE EDITOR（逐个开关音阶里的音）** ✅（#117，2026-10-05 Mac 实测通过）
 - 界面位置：键盘菜单 PLAY 页中间的 **QUANTISER** 卡，SCALE 和 ROOT 之间新加了一行 **NOTES**：12 个小按钮 C 到 B，和下面 ROOT 小钢琴对齐。
   - 蓝底白字 = 这个音在音阶里；白底灰字 = 不在。ROOT 那个音的按钮边框是黑的。
   - 点一下按钮：加入 / 去掉这个音。改过以后 SCALE 显示 "…（EDITED）"。
