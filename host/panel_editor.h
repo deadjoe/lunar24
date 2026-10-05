@@ -812,7 +812,7 @@ class JoystickControl : public IControl {
     const float x = cx + float(s_.value(w_.id) * 2.0 - 1.0) * kTravel;
     const float y = cy - float(s_.value(w_.id2) * 2.0 - 1.0) * kTravel;
     GraphicsSink sink{g};
-    art::drawJoystick(sink, cx, cy, 55.f, kTravel, x, y, mMouseIsOver);
+    art::drawJoystick(sink, cx, cy, 55.f, x, y, mMouseIsOver);
   }
   void OnMouseDown(float x, float y, const IMouseMod&) override { move(x, y); }
   void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override { move(x, y); }

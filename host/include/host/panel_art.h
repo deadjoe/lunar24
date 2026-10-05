@@ -168,6 +168,95 @@ void drawShapes(Sink& s, const float* pts, const SubPath* subs, const Shape* sha
   }
 }
 
+// The moon printed under the display (where the Solar 42F prints its sun): the near side at
+// full moon, white on the keybed, with broken orbit arcs round it. The dark seas (maria) are a halftone of dots, bigger towards
+// their middles; a few named craters are rings. Positions follow the real near side, drawn
+// freehand on a unit disk (x right, y down); sizes tuned by eye.
+template <class Sink>
+void drawMoon(Sink& s, float cx, float cy, float r, std::uint32_t light, std::uint32_t dark) {
+  // Broken orbits round it (owner's pick, 2026-10-05): three rings of arcs, each with its gaps
+  // somewhere else. Radius, then arcs as (from, to) in degrees clockwise from the right.
+  struct Orbit { float r, width; int count; float arcs[4][2]; };
+  static constexpr Orbit kOrbits[] = {
+      {1.15f, 1.8f, 4, {{-160, -95}, {-70, 20}, {45, 140}, {160, 190}}},
+      {1.28f, 1.2f, 3, {{-140, -110}, {-30, 60}, {100, 175}}},
+      {1.43f, 1.0f, 2, {{-10, 35}, {150, 215}}},
+  };
+  for (const Orbit& o : kOrbits) {
+    for (int a = 0; a < o.count; ++a) {
+      const float a0 = o.arcs[a][0] * 0.0174533f, a1 = o.arcs[a][1] * 0.0174533f;
+      for (int k = 0; k <= 32; ++k) {
+        const float t = a0 + (a1 - a0) * float(k) / 32.f;
+        const float x = cx + o.r * r * std::cos(t), y = cy + o.r * r * std::sin(t);
+        if (k == 0) s.moveTo(x, y);
+        else s.lineTo(x, y);
+      }
+      s.strokePath(light, o.width);
+    }
+  }
+  s.fillCircle(cx, cy, r, light);
+  struct Sea { float x, y, rx, ry; };
+  static constexpr Sea kSeas[] = {
+      {-0.56f, 0.02f, 0.27f, 0.44f},   // Oceanus Procellarum
+      {-0.42f, -0.18f, 0.22f, 0.22f},  // where it meets Imbrium
+      {-0.30f, -0.40f, 0.27f, 0.22f},  // Imbrium
+      {0.15f, -0.34f, 0.17f, 0.16f},   // Serenitatis
+      {0.31f, -0.06f, 0.24f, 0.19f},   // Tranquillitatis
+      {0.67f, -0.27f, 0.11f, 0.09f},   // Crisium
+      {0.53f, 0.15f, 0.13f, 0.19f},    // Fecunditatis
+      {0.36f, 0.31f, 0.08f, 0.08f},    // Nectaris
+      {-0.22f, 0.33f, 0.21f, 0.14f},   // Nubium
+      {-0.49f, 0.42f, 0.10f, 0.09f},   // Humorum
+      {0.08f, -0.70f, 0.36f, 0.06f},   // Frigoris
+      {0.00f, -0.10f, 0.13f, 0.10f},   // Vaporum
+      {-0.04f, 0.08f, 0.10f, 0.09f},   // Sinus Medii
+  };
+  // How deep inside a sea a point lies (0 = outside, 1 = its middle); edges wobble a little.
+  auto depth = [](float x, float y) {
+    float best = 0.f;
+    for (const Sea& m : kSeas) {
+      const float dx = (x - m.x) / m.rx, dy = (y - m.y) / m.ry;
+      const float wobble = 1.f + 0.12f * std::sin(7.f * x + 3.f * y) + 0.08f * std::sin(11.f * y - 5.f * x);
+      const float d = 1.f - std::sqrt(dx * dx + dy * dy) / wobble;
+      if (d > best) best = d;
+    }
+    return best;
+  };
+  const float step = r / 21.f;
+  for (float gy = -r; gy <= r; gy += step) {
+    for (float gx = -r; gx <= r; gx += step) {
+      const float x = gx + (int(std::lround(gy / step)) % 2 ? step / 2 : 0.f);  // staggered rows
+      const float u = x / r, v = gy / r;
+      if (u * u + v * v > 0.93f) continue;
+      const float d = depth(u, v);
+      if (d <= 0.f) continue;
+      s.fillCircle(cx + x, cy + gy, step * (0.14f + 0.36f * std::fmin(1.f, d * 2.0f)), dark);
+    }
+  }
+  struct Crater { float x, y, r; bool peak; };
+  static constexpr Crater kCraters[] = {
+      {-0.10f, 0.65f, 0.085f, true},   // Tycho
+      {-0.26f, 0.84f, 0.070f, false},  // Clavius
+      {-0.33f, -0.12f, 0.075f, true},  // Copernicus
+      {-0.60f, -0.10f, 0.040f, false}, // Kepler
+      {-0.72f, -0.33f, 0.032f, false}, // Aristarchus
+      {-0.14f, -0.66f, 0.045f, false}, // Plato
+      {0.29f, 0.22f, 0.050f, true},    // Theophilus
+      {0.80f, 0.12f, 0.045f, false},   // Langrenus
+      {0.20f, 0.58f, 0.050f, false},
+      {0.45f, 0.56f, 0.040f, false},
+      {-0.42f, 0.64f, 0.040f, false},
+      {0.05f, 0.45f, 0.035f, false},
+      {0.58f, 0.40f, 0.030f, false},
+      {0.62f, -0.55f, 0.035f, false},
+  };
+  for (const Crater& c : kCraters) {
+    s.circle(cx + c.x * r, cy + c.y * r, c.r * r);
+    s.strokePath(dark, 1.2f);
+    if (c.peak) s.fillCircle(cx + c.x * r, cy + c.y * r, 1.3f, dark);
+  }
+}
+
 // Marks printed on the keybed (drawn here: the official keybed is a bitmap). Positions
 // measured from the official drawing.
 template <class Sink>
@@ -216,6 +305,7 @@ void drawKeybedMarks(Sink& s) {
   s.moveTo(1483, 1142); s.lineTo(1473, 1142); s.lineTo(1473, 1149); s.lineTo(1481, 1149);  // return arrow
   s.strokePath(c, 1.8f);
   s.moveTo(1478, 1146); s.lineTo(1482, 1149); s.lineTo(1478, 1152); s.strokePath(c, 1.6f);
+  drawMoon(s, 1200.f, 1386.f, 60.f, c, kKeybedRgb);
   // Mounting screws along the keybed edges.
   for (float x : {412.f, 806.f, 1200.f, 1592.f, 1986.f}) {
     s.fillCircle(x, 1115, 4, 0xd0d0d0);
@@ -598,15 +688,91 @@ void drawToggle(Sink& s, float cx, float cy, float t, bool hover) {
   dome(s, cx, ly, 6.f, hover ? 0xebaa00 : 0xd4d4d4, 0.4f);
 }
 
+// The emblem printed round the joystick (where the Solar 42F prints a line-drawn figure;
+// owner's pick, 2026-10-05): a ring with two bear ears (a nod to Bearbone.Studio), drawn as a
+// double line like the panel's other line art, and broken orbit arcs round it that echo the
+// moon under the display. Sizes tuned by eye.
+template <class Sink>
+void drawJoystickEmblem(Sink& s, float cx, float cy, std::uint32_t ink) {
+  constexpr float kPi = 3.14159265f, kDeg = kPi / 180.f;
+  constexpr float kRing = 80.f, kEar = 25.f, kEarAt = 84.f, kEarAngle = 42.f, kGap = 7.5f;
+  const float ex[2] = {cx - kEarAt * std::sin(kEarAngle * kDeg), cx + kEarAt * std::sin(kEarAngle * kDeg)};
+  const float ey = cy - kEarAt * std::cos(kEarAngle * kDeg);
+  // The outline of the ring and the two ears together, `inset` inside the outer line.
+  auto outline = [&](float inset) {
+    const float R = kRing - inset, r = kEar - inset;
+    // Where ear e crosses the ring: angles on the ring (a0 < a1) and on the ear (b0 meets a0,
+    // b1 meets a1; the ear's outer part runs from b0 up to b1 + 2 pi).
+    struct Cross { float a0, a1, b0, b1; };
+    Cross c[2];
+    for (int e = 0; e < 2; ++e) {
+      const float dx = ex[e] - cx, dy = ey - cy, d = std::sqrt(dx * dx + dy * dy);
+      const float alpha = std::atan2(dy, dx);
+      const float beta = std::acos((R * R + d * d - r * r) / (2 * R * d));
+      const float gamma = std::acos((r * r + d * d - R * R) / (2 * r * d));
+      c[e] = {alpha - beta, alpha + beta, alpha + kPi + gamma, alpha + kPi - gamma};
+    }
+    auto arcTo = [&](float x0, float y0, float rad, float from, float to, bool first) {
+      const int n = 48;
+      for (int k = 0; k <= n; ++k) {
+        const float t = from + (to - from) * float(k) / float(n);
+        const float x = x0 + rad * std::cos(t), y = y0 + rad * std::sin(t);
+        if (first && k == 0) s.moveTo(x, y);
+        else s.lineTo(x, y);
+      }
+    };
+    // Clockwise (angles grow clockwise on screen): bottom of the ring from the right ear round to
+    // the left ear, over the left ear, the ring's top between the ears, over the right ear.
+    arcTo(cx, cy, R, c[1].a1, c[0].a0 + 2 * kPi, true);
+    arcTo(ex[0], ey, r, c[0].b0, c[0].b1 + 2 * kPi, false);
+    arcTo(cx, cy, R, c[0].a1, c[1].a0, false);
+    arcTo(ex[1], ey, r, c[1].b0, c[1].b1 + 2 * kPi, false);
+    s.closePath();
+  };
+  outline(0.f);
+  s.strokePath(ink, 4.6f);
+  outline(kGap);
+  s.strokePath(ink, 1.8f);
+  // The inside of each ear: an arc, where it shows outside the ring.
+  for (int e = 0; e < 2; ++e) {
+    bool drawing = false;
+    for (int k = 0; k <= 64; ++k) {
+      const float t = 2 * kPi * float(k) / 64.f;
+      const float x = ex[e] + 12.f * std::cos(t), y = ey + 12.f * std::sin(t);
+      const bool out = std::hypot(x - cx, y - cy) > kRing + kGap;
+      if (out && !drawing) s.moveTo(x, y);
+      else if (out) s.lineTo(x, y);
+      drawing = out;
+    }
+    s.strokePath(ink, 2.6f);
+  }
+  // Broken orbits: radius, line width, then arcs as (from, to) in degrees clockwise from the right.
+  struct Orbit { float r, width; int count; float arcs[3][2]; };
+  static constexpr Orbit kOrbits[] = {
+      {104.f, 2.0f, 3, {{-30, 40}, {70, 150}, {175, 215}}},
+      {122.f, 1.4f, 2, {{-10, 55}, {95, 170}}},
+      {140.f, 1.0f, 2, {{20, 70}, {120, 160}}},
+  };
+  for (const Orbit& o : kOrbits) {
+    for (int a = 0; a < o.count; ++a) {
+      for (int k = 0; k <= 40; ++k) {
+        const float t = (o.arcs[a][0] + (o.arcs[a][1] - o.arcs[a][0]) * float(k) / 40.f) * kDeg;
+        const float x = cx + o.r * std::cos(t), y = cy + o.r * std::sin(t);
+        if (k == 0) s.moveTo(x, y);
+        else s.lineTo(x, y);
+      }
+      s.strokePath(ink, o.width);
+    }
+  }
+}
+
 // The joystick: recessed gate, shaft and a round knob at (x, y).
 template <class Sink>
-void drawJoystick(Sink& s, float cx, float cy, float gateR, float travel, float x, float y, bool hover) {
+void drawJoystick(Sink& s, float cx, float cy, float gateR, float x, float y, bool hover) {
   s.circle(cx, cy, gateR);
   s.fillGrad(vertical(cy - gateR, cy + gateR, 0x161616, 0x3c3c3c));
   s.circle(cx, cy, gateR - 1.f);
   s.strokeGrad(vertical(cy - gateR, cy + gateR, 0x000000, 0xffffff, 0.5f, 0.3f), 2.f);
-  s.circle(cx, cy, travel);
-  s.strokeGrad(solid(0x5a5a5a), 1.5f);
   s.moveTo(cx + 4.f, cy + 7.f);
   s.lineTo(x + 6.f, y + 10.f);
   s.strokeGrad(solid(0x000000, 0.35f), 16.f);
@@ -643,6 +809,7 @@ void drawPanelArt(Sink& s) {
   for (const auto& l : kLeds) drawLed(s, l.x, l.y, l.r, l.rgb, 0.f);
   for (const auto& t : kTexts) s.text(t.x, t.y, t.size * 0.92f, t.rgb, t.vertical, t.text);
   drawShapes(s, kLogoPoints, kLogoSubPaths, kLogoShapes, sizeof(kLogoShapes) / sizeof(kLogoShapes[0]));
+  drawJoystickEmblem(s, 180.f, 1297.f, kInkRgb);  // the stick: panel_ui_layout.h
   drawKeybedMarks(s);
 }
 
