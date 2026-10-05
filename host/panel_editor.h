@@ -120,8 +120,8 @@ struct EditorShared {
   float readoutX = 0, readoutY = 0;
   core::InputStateMachine input{nullptr, 0};
   std::uint64_t seq = 0;
-  // The plugins: no REC (the hardware's PHONE knob instead), MIDI comes from the DAW.
-  bool withRecorder = true;
+  // The plugins: REC looks the same but does not respond (a DAW records), MIDI comes from the DAW.
+  bool recorderEnabled = true;
   const char* midiNoDevice = "Choose an input in Preferences";
   std::uint64_t seenStateVersion = ~0ull;
   std::uint64_t seenAudioSync = 0;
@@ -1610,7 +1610,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   g->LoadFont(kFontBold, const_cast<unsigned char*>(font::kBold), static_cast<int>(font::kBoldSize));
   g->AttachPanelBackground(col(theme::kPanel));
 
-  const std::vector<Widget> widgets = build_panel_layout(shared.withRecorder);
+  const std::vector<Widget> widgets = build_panel_layout();
   const IRECT all = g->GetBounds();
   g->AttachControl(new BackgroundControl(all));
 
@@ -1644,9 +1644,15 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::MidiSettings: g->AttachControl(new MidiSettingsControl(shared, w)); break;
       case WidgetKind::Record:
         shared.recordControl = new RecordControl(shared, w);
+        shared.recordControl->SetIgnoreMouse(!shared.recorderEnabled);
         g->AttachControl(shared.recordControl);
         break;
-      case WidgetKind::RecordSource: g->AttachControl(new RecordSourceControl(shared, w)); break;
+      case WidgetKind::RecordSource: {
+        auto* source = new RecordSourceControl(shared, w);
+        source->SetIgnoreMouse(!shared.recorderEnabled);
+        g->AttachControl(source);
+        break;
+      }
       case WidgetKind::Encoder: g->AttachControl(new EncoderControl(shared, w)); break;
       case WidgetKind::OctaveKey: g->AttachControl(new OctaveKeyControl(shared, w)); break;
       case WidgetKind::Display: g->AttachControl(new DisplayControl(shared, w)); break;
