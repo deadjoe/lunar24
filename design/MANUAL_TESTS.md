@@ -1491,9 +1491,103 @@
   - 录音时声音不卡、不爆音；停止时没有“轰”的一声。
 - 补充：录音中在 Preferences 里改了采样率，录音会自动停止（文件照常可播）；只是重开同一个设备则继续录。出问题时 audio.log 里有 `recording ...` 的记录。
 
+### 17. 插件（VST3 / AU，Ableton Live）
+
+插件和独立 App 是同一个面板、同一个声音引擎，差别只在这几处：
+- 没有 REC：耳机区显示硬件原样的耳机图标和 **PHONE** 旋钮（它只管耳机音量，插件里没有耳机输出，拧了不影响声音）；录音用 DAW 自己的录音。
+- 音频设备、采样率、MIDI 输入都由 DAW 管，没有 Preferences。MIDI 设置面板的 INPUT 一行显示 MIDI comes from the DAW track。
+- 音色、接线、键盘设置和 DRONE VOICES 的开关存进 DAW 工程，不读写独立 App 的状态文件。
+- MIDI 绑定和 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 与独立 App **共用**同一份设置：哪边改了，另一边下次打开时也是新的。在独立 App 里学会的绑定在插件里照样生效（插件不知道 MIDI 来自哪个控制器，任何设备的绑定都算数）。
+- 电脑键盘弹琴在插件窗口里不一定可用：Ableton 会先拿走按键。用 Ableton 自己的电脑 MIDI 键盘（按 **M** 打开）或 MIDI 控制器弹，这是正常行为。
+
+**安装（Mac）**
+1. GitHub 上这个 PR 最新一次 CI 运行（Actions → 对应运行 → Artifacts）下载 **Lunar24-Plugins-macOS**。双击解开后里面还有一个 `Lunar24-Plugins-macOS.zip`，再双击解开，得到 `Lunar24-Plugins` 文件夹（里面是 `Lunar24.vst3` 和 `Lunar24.component`）。
+2. 打开"终端"，逐行粘贴执行（假设文件夹在"下载"里）：
+   ```sh
+   xattr -dr com.apple.quarantine ~/Downloads/Lunar24-Plugins
+   mkdir -p ~/Library/Audio/Plug-Ins/VST3 ~/Library/Audio/Plug-Ins/Components
+   rm -rf ~/Library/Audio/Plug-Ins/VST3/Lunar24.vst3 ~/Library/Audio/Plug-Ins/Components/Lunar24.component
+   cp -R ~/Downloads/Lunar24-Plugins/Lunar24.vst3 ~/Library/Audio/Plug-Ins/VST3/
+   cp -R ~/Downloads/Lunar24-Plugins/Lunar24.component ~/Library/Audio/Plug-Ins/Components/
+   killall -9 AudioComponentRegistrar 2>/dev/null; true
+   ```
+3. Ableton Live → Settings → Plug-Ins：打开 **Use VST3 Plug-in System Folders** 和 **Use Audio Units v2**，点 **Rescan**。
+4. 期望：浏览器的 Plug-Ins 里出现 **Lunar24**，下面有 **Lunar 24**（VST3 一个、AU 一个）。
+- 更新插件时重复第 1、2 步，然后重启 Ableton。
+
+**安装（Windows）**：下载 **Lunar24-Plugins-Windows**，解开得到 `Lunar24.vst3` 文件夹，整个复制到 `C:\Program Files\Common Files\VST3\`，在 Ableton 里 Rescan。
+
+下面的测试先用 **VST3** 版走一遍；T17.10 再用 AU 版重复关键几项。
+
+**T17.1 载入、弹奏、面板** ⏳
+- 步骤：
+  1. 新建一条 MIDI 轨，把 **Lunar 24**（VST3）拖到轨上；插件窗口自动打开。
+  2. 选中这条轨（Arm），用 MPK 弹几个音；再按 **M** 打开 Ableton 的电脑 MIDI 键盘，用电脑键盘弹。
+  3. 看面板右上角耳机区；点 **MIDI** 按钮看 INPUT 一行。
+- 期望：
+  - 第 1 步：窗口大约是面板的一半大小，面板完整、清晰，和独立 App 一样。
+  - 第 2 步：两种方式都出声，触摸板随音符点亮。
+  - 第 3 步：耳机区是耳机图标和 PHONE 旋钮，没有 REC；INPUT 显示 MIDI comes from the DAW track。
+
+**T17.2 窗口缩放** ⏳
+- 步骤：拖插件窗口的边缘放大、缩小；再拖面板右下角的小三角。
+- 期望：面板始终保持原来的长宽比例，不被裁切、不变形；最小是一开始的一半大小，最大是面板原尺寸（2400 宽）；放大后文字和旋钮清晰。
+
+**T17.3 走带停止不打断声音** ⏳
+- 准备：打开 DRONE VOICES 的 1 和 4；BLEND 放中间（混响尾巴一直在）。
+- 步骤：
+  1. 在 Ableton 里反复按空格（播放 / 停止）几次。
+  2. 按住 MPK 一个键不放，按空格停止。
+  3. 点轨道上插件的电源开关（Device Activator）关掉再打开。
+- 期望：
+  - 第 1 步：drone 和混响尾巴一直在，不会每次停止都重新开始。
+  - 第 2 步：停止时按住的音松开（按包络释放），drone 不受影响。
+  - 第 3 步：关掉时没声，打开后接着出声，面板设置不变。
+
+**T17.4 存工程、重新打开** ⏳
+- 步骤：
+  1. 转几个旋钮（比如 FILTER L 的 FREQ、BLEND），接一根线，键盘菜单把 MODE 改成 ARPEGGIATOR，打开 DRONE VOICES 的 1 和 4。
+  2. 保存 Ableton 工程，退出 Ableton。
+  3. 重新打开这个工程，打开插件窗口。
+- 期望：旋钮、接线、MODE、DRONE VOICES 1 和 4 都和保存前一样，声音也一样（drone 在响）。
+
+**T17.5 播放中切换音色** ⏳
+- 步骤：
+  1. 设一个音色，在插件标题栏点保存（Save Preset）存成 A；改得很不一样，存成 B。
+  2. 让声音一直响着（drone 打开），在浏览器里把 A、B 轮流拖到插件上。
+- 期望：每次切换是一下很短的淡出淡入，没有咔哒声、没有卡顿；切换后面板显示新音色。
+
+**T17.6 窗口关着时 MIDI 旋钮也会保存** ⏳
+- 准备：在 MIDI 设置里 Learn 一个旋钮（T15.2 的做法）。
+- 步骤：关掉插件窗口；拧这个 MPK 旋钮到一个明显的位置；保存工程；退出再打开；打开插件窗口。
+- 期望：面板上那个旋钮停在你最后拧到的位置。
+
+**T17.7 两个实例互不影响** ⏳
+- 步骤：再建一条 MIDI 轨也放一个 Lunar 24，两边设成不同的音色，两条轨同时弹。
+- 期望：各响各的，互不影响；关掉一个的窗口、删掉一个，另一个照常。Ableton 的 CPU 表正常（每个实例大约占一个核的十几个百分点）。
+
+**T17.8 MIDI 绑定与独立 App 共用** ⏳
+- 步骤：
+  1. 在插件里看 MIDI 设置：之前在独立 App 里学的绑定都在。拧对应的 MPK 旋钮。
+  2. 在插件里新 Learn 一个绑定；退出 Ableton，打开独立 App，看 MIDI 设置。
+- 期望：第 1 步面板旋钮跟着动；第 2 步独立 App 里也有这条新绑定。
+
+**T17.9 RESET PANEL 和采样率变化** ⏳
+- 步骤：
+  1. 打开几个 DRONE VOICES，键盘菜单 → RESET PANEL（点两次）。
+  2. Ableton → Settings → Audio，把 Sample Rate 从 48000 改成 44100（或反过来）。
+- 期望：
+  - 第 1 步：和独立 App 的 T0.4 一样恢复出厂，只有一下很短的淡出淡入。
+  - 第 2 步：短暂无声后继续出声，面板设置不变，音高不变。
+
+**T17.10 AU 版** ⏳
+- 步骤：用 **Lunar 24（AU）** 重复 T17.1、T17.3、T17.4。
+- 期望：和 VST3 版一样。
+
 ## 还没测的（⏳）
 
 - T0.4 RESET PANEL：现在原地切换整台机器（插件第 2 步），Mac 上复测一次。
+- 第 17 节插件（T17.1–T17.10）：在 Ableton Live 里走一遍，VST3 为主，AU 走 T17.10。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。

@@ -23,14 +23,16 @@ dependencies keep their own licenses (inventory: `third_party/licenses/`).
 
 ## Target platforms
 
-- **macOS** and **Windows** (standalone desktop app). No iPad/iOS/Android, and no Linux
-  desktop product support (Linux may only supplement core CI builds).
+- **macOS on Apple silicon** and **Windows** (standalone app, VST3 / AU plugins). No Intel
+  Macs, no iPad/iOS/Android, and no Linux desktop product (Linux CI runs the
+  platform-independent tests).
 
 ## Tech stack
 
 - C++17 w/ warnings-as-errors, CMake.
-- Standalone only; audio device + MIDI via a pinned iPlug2 submodule; iPlug2's
-  IGraphics provides the UI. No AU/VST/CLAP/AAX/WAM, no WebView.
+- Standalone app plus VST3 / AUv2 instrument plugins, all through a pinned iPlug2
+  submodule (audio, MIDI, plugin formats); iPlug2's IGraphics provides the UI. No
+  CLAP/AAX/WAM, no WebView.
 - The **synth core** is a framework-free pure C++ library — it never includes iPlug2,
   IGraphics, CoreAudio/WASAPI, window, or filesystem types.
 
@@ -54,7 +56,12 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-CI builds the macOS and Windows apps and attaches them to each run as downloadable artifacts.
+The VST3 plugin needs the VST3 SDK (MIT licensed) in `third_party/iPlug2/Dependencies/IPlug/VST3_SDK`;
+CI fetches tag `v3.8.1_build_84` there (see `.github/workflows/ci.yml`). Without it only the
+app and, on macOS, the AU plugin are built.
+
+CI builds the macOS and Windows apps and plugins and attaches them to each run as downloadable
+artifacts (plugin install steps: `design/MANUAL_TESTS.md` section 17).
 The mac app is signed ad hoc, not notarized: after downloading, clear the quarantine flag
 once with `xattr -cr Lunar24.app` (otherwise macOS reports it as damaged).
 
