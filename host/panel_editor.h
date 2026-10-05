@@ -449,7 +449,7 @@ class KnobControl : public IControl {
   void Draw(IGraphics& g) override {
     const core::ParameterDescriptor* d = desc(w_.id);
     if (d == nullptr) return;
-    drawKnob(g, w_, (s_.value(w_.id) - d->min) / (d->max - d->min), mMouseIsOver || dragging_);
+    drawKnob(g, w_, core::value_to_knob(*d, s_.value(w_.id)), mMouseIsOver || dragging_);
   }
   void OnMouseOver(float x, float y, const IMouseMod& mod) override {
     IControl::OnMouseOver(x, y, mod);
@@ -473,7 +473,8 @@ class KnobControl : public IControl {
   void nudge(double fractionOfRange) {
     const core::ParameterDescriptor* d = desc(w_.id);
     if (d == nullptr) return;
-    s_.set(w_.id, s_.value(w_.id) + fractionOfRange * (d->max - d->min));
+    // Move the knob, not the value: time and rate knobs are tapered (knob_taper.h).
+    s_.set(w_.id, core::knob_to_value(*d, core::value_to_knob(*d, s_.value(w_.id)) + fractionOfRange));
     showReadout();
   }
   void showReadout() {
