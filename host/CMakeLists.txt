@@ -50,6 +50,11 @@ if(NOT EXISTS "${IPLUG2_DIR}/iPlug2.cmake")
     "on macOS and Windows).")
 endif()
 
+# The AU wrapper has a C source (dfx-au-utilities.c); the root project enables only C++.
+if(APPLE)
+  enable_language(C)
+endif()
+
 # Built plugins stay in build/out; nothing is copied into the system plug-in folders.
 set(IPLUG_DEPLOY_PLUGINS OFF CACHE BOOL "Copy built plugins into the system plug-in folders")
 
