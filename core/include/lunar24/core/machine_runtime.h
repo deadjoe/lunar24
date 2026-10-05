@@ -51,31 +51,25 @@
 // SAMPLE RATE — a constructor parameter, because the voice sources pin it at
 // creation (Vco/Preamp/DroneBank/EnvFollower/Distortion carry a fixed sr).
 //
-// FINDINGS — FIXED-ROUTE INJECTION/OMISSION LEDGER (requiredFixedRoutes, 28 total).
-// The design (status.md §"所有省略逐条登记") requires every route be
-// classified by whether loads it or defers it, and by which later slice picks it
-// up. The runtime consumes ONLY module->module dependency routes for the plan; the
-// two DRY taps are terminal outputs the runtime resolves from the VCO roles, and WET
-// is the distortion output directly (the effector is out-of-P6, see below).
+// FIXED ROUTES (requiredFixedRoutes, 28 total; machine_definition.h classifies them).
+// The compile plan carries only the module->module audio routes; the rest of the
+// signal flow is wired directly in the render, so every route is in use:
 //
-//   INJECTED (17, carried by this slice):
+//   IN THE PLAN (17):
 //     drone{1..6}_to_mixer, ext_audio_to_mixer, vco_a_to_mixer, vco_b_to_mixer,
 //     preamp_to_mixer, mixer_to_vcf_l, mixer_to_vcf_r, vcf_l_to_dist_l,
 //     vcf_r_to_dist_r, preamp_to_env_follower (15 module->module plan edges)
-//     vco_a_to_dry_a, vco_b_to_dry_b (2 DRY A/B terminal taps)
+//     vco_a_to_dry_a, vco_b_to_dry_b (2 DRY A/B terminal taps, resolved from the VCO roles)
 //
-//   OMITTED (11, deferred; NOT wired here):
-//     dist_l_to_eff_l, dist_r_to_eff_r, eff_l_to_wet_l, eff_r_to_wet_r
-//       (4 effector routes — P6 out of scope. DECLARED OMISSION, asserted absent by
-//        (d). WET is therefore the distortion output, never a post-effector
-//        tap — a future P6 patch must replace this and the WET criterion together.)
-//     piezzo_to_preamp (1 later slice — piezzo not here)
-//     voice{1..6}_gate_to_drone{1..6} (6 keyboard/voice slice)
-//
-//    wires NO effector. The 4 effector routes are the only ones whose absence is a
-//   contract, not a staging gap: the acceptance asserts WET L/R come straight from the
-//   distortion while the eff chain is absent, so re-adding them is a P6 task, not a
-//   bug in the fixed chain.
+//   WIRED OUTSIDE THE PLAN (11):
+//     dist_l_to_eff_l, dist_r_to_eff_r, eff_l_to_wet_l, eff_r_to_wet_r: the dual
+//       effector runs on the distortion's L/R pair after the plan (processFrame, when
+//       setEffectorEnabled — the product always enables it) and its output is WET L/R.
+//     piezzo_to_preamp: there is no piezo; the preamp's default source is the computer's
+//       audio input (RuntimeInputs::preamp), replaced by a cable on EXT SOURCE.
+//     voice{1..6}_gate_to_drone{1..6}: the DRONE VOICES keys (setDroneVoiceKey) open each
+//       drone's envelope, and a cable on the voice's GATE jack takes over (the classic
+//       groups and the Papa voices read their gate in their tick).
 
 #pragma once
 
@@ -3620,10 +3614,9 @@ class SynthRuntime {
           double out5[DroneBank::kGensPerVoice] = {};
           drone_.tickGroup(classicGroup, out5);
           // (3) publish this group's channel + ENV OUT through the single write. The
-          // gate/ATT/RLS/HOLD envelope is inside tickGroup; the ENV OUT transfer is
-          // descriptor-driven: nominalMin + level*(nominalMax-nominalMin), range read
-          // ONLY from the bound JackDescriptor (方案2b). A consumer running LATER in the
-          // plan reads the SAME-frame value (oracle).
+          // gate/ATT/RLS/HOLD envelope is inside tickGroup; ENV OUT is 0 V at rest up to
+          // the bound JackDescriptor's top rail (0..+10 V, droneEnvOutVolts_). A consumer
+          // running LATER in the plan reads the SAME-frame value (oracle).
           double s = 0.0;
           for (std::size_t i = 0; i < DroneBank::kGensPerVoice; ++i) s += out5[i];
           chIn_[classicChannel(classicGroup)] = kClassicDroneLevel * s;
@@ -4091,10 +4084,9 @@ class SynthRuntime {
   // lets the gate actually close the voice.
   //
   // (2) TICK the voice (its AR envelope is inside, advanced then applied to the audio).
-  // (3) PUBLISH channel + ENV OUT. The env_out transfer is descriptor-driven, exactly
-  // like the classic groups: nominalMin + level*(nominalMax-nominalMin), range read ONLY
-  // from the bound JackDescriptor. The level->volts transfer is PROVISIONAL (no measured
-  // hardware transfer) — the SAME provisional convention the classic ENV OUT already uses.
+  // (3) PUBLISH channel + ENV OUT, exactly like the classic groups: 0 V at rest up to the
+  // bound JackDescriptor's top rail (0..+10 V, droneEnvOutVolts_). The level->volts
+  // transfer is PROVISIONAL (no measured hardware transfer).
   void tickPapaVoice_(PapaVoice& pv, int voice, int channel, double& shCvOut, bool driveGraph) {
     bool gateHigh = DroneBank::kDefaultGroupGateOpen && droneKeyOpen_[voice == 0 ? 2 : 5];
     if (voiceGateBound_[voice]) {

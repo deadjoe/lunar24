@@ -43,8 +43,7 @@ _Last updated: 2026-10-04._ How each module compares with the Solar 42N manual:
 4. ~~Effector: a different cartridge per side, as on the hardware; taller cartridge display.~~
 5. ~~Per-plate tuning (hold a plate + wheel), arpeggio in plate-number order.~~
 6. ~~Scale editor UI: switch single notes of the quantiser scale (PLAY tab, NOTES row).~~
-7. Small cleanups: stale comments in `machine_runtime.h` (header route ledger, drone ENV
-   OUT range).
+7. ~~Small cleanups: stale comments in `machine_runtime.h` (route ledger, drone ENV OUT).~~
 8. Check by hand: the keyboard menu (T12.18), SERVICE values after a restart, the Windows
    build, sustain-pedal items (need a pedal).
 9. Tune sounds from listening (drone level, modulation depth, S&H, mix, VCO B top).
