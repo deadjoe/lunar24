@@ -14,8 +14,8 @@
 //     pattern are UN-RESOLVED and read as raw selectors, NEVER applied numerically.
 //
 // The value maps (arp interval 1..12, seq length 2..16, etc.) are PROVISIONAL linear
-// ceilings, and the arp note ordering is pitch-ordered PROVISIONAL
-// (the manual's "sequence number of pressed plates" is UN-RESOLVED). Following the
+// ceilings, and the arp chord plays in press order (the manual's "sequence number of
+// pressed plates" ordering comes with per-plate tuning). Following the
 //  test discipline, these tests pin the STRUCTURE — the mode mux, the chord/step
 // advancement on the clock, the per-side independence, and the mandate-#4 divergence
 // — not invented exact curves.
@@ -290,6 +290,51 @@ static void arp_hold_keeps_chord_through_release() {
   CHECK_EQ(r.count(core::ControlEventKind::gate_on), 1u);
 }
 
+// Turning HOLD off drops the plates let go while it was on and keeps the ones still held.
+static void arp_hold_off_drops_released_plates() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 1;
+  p.arpDirection = 0;
+  p.arpHold = 1;
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  note_on(s, r, 0.0 / 12.0, 1);  // C
+  note_on(s, r, 4.0 / 12.0, 2);  // E
+  note_off(s, r, 1);             // C let go, HOLD keeps it
+  p.arpHold = 0;
+  s.configure(p, 48000, r);      // HOLD off: C leaves the chord, E is still held
+  CHECK_EQ(r.n, 0u);             // nothing was sounding, nothing to release
+  clock_edge(s, r);
+  clock_edge(s, r);
+  CHECK_EQ(r.count(core::ControlEventKind::gate_on), 2u);
+  CHECK_TRUE(r.near(r.pitchAt(0), 4.0 / 12.0));
+  CHECK_TRUE(r.near(r.pitchAt(1), 4.0 / 12.0));
+}
+
+// Turning HOLD off with every plate let go stops the arpeggio and releases its note.
+static void arp_hold_off_with_no_plate_held_stops() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 1;
+  p.arpHold = 1;
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  note_on(s, r, 0.0 / 12.0, 1);
+  note_off(s, r, 1);
+  clock_edge(s, r);  // the held chord is sounding
+  CHECK_EQ(r.count(core::ControlEventKind::gate_on), 1u);
+  const core::NoteId sounding = r.ev[r.n - 1].noteId;
+  p.arpHold = 0;
+  s.configure(p, 48000, r);
+  CHECK_EQ(r.count(core::ControlEventKind::gate_off), 1u);
+  CHECK_TRUE(r.ev[r.n - 1].kind == core::ControlEventKind::gate_off);
+  CHECK_EQ(r.ev[r.n - 1].noteId, sounding);
+  clock_edge(s, r);  // the arpeggio has stopped
+  clock_edge(s, r);
+  CHECK_EQ(r.count(core::ControlEventKind::gate_on), 1u);
+}
+
 // ------------------------------------------------------- sequencer step advance --
 
 static void seq_advances_steps_and_gates() {
@@ -346,6 +391,66 @@ static void seq_gate_off_step_is_a_rest() {
   clock_edge(g, rg);
   CHECK_EQ(rg.count(core::ControlEventKind::gate_on), 0u);
   CHECK_EQ(rg.count(core::ControlEventKind::pitch), 0u);
+}
+
+// Ping-pong turns at both ends without repeating them: LENGTH 4 plays 1 2 3 4 3 2 1 2 3 4.
+static void seq_ping_pong_turns_at_both_ends() {
+  core::ArpSeqParams p = base_params();  // step i plays note i
+  p.mode = 2;
+  p.seqRun = 0;
+  p.seqDirection = 2;
+  p.seqLength = 2.0 / 14.0;  // 4 steps
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  for (int i = 0; i < 10; ++i) clock_edge(s, r);
+  const int want[10] = {0, 1, 2, 3, 2, 1, 0, 1, 2, 3};
+  for (std::uint32_t i = 0; i < 10; ++i)
+    CHECK_TRUE(r.near(r.pitchAt(i), want[i] / 12.0));
+}
+
+// Random picks steps in no fixed order, within LENGTH, and the same run repeats exactly.
+static void seq_random_is_shuffled_and_repeatable() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 2;
+  p.seqRun = 0;
+  p.seqDirection = 3;
+  p.seqLength = 6.0 / 14.0;  // 8 steps
+  core::ArpSeq a, b;
+  a.configure(p, 48000);
+  b.configure(p, 48000);
+  Recorder ra, rb;
+  for (int i = 0; i < 16; ++i) { clock_edge(a, ra); clock_edge(b, rb); }
+  bool forward = true;
+  std::uint32_t seen = 0;
+  for (std::uint32_t i = 0; i < 16; ++i) {
+    const double v = ra.pitchAt(i) * 12.0;
+    const auto step = static_cast<std::uint32_t>(std::lround(v));
+    CHECK_TRUE(step < 8u);
+    seen |= 1u << step;
+    if (step != i % 8u) forward = false;
+    CHECK_TRUE(ra.near(ra.pitchAt(i), rb.pitchAt(i)));
+  }
+  CHECK_TRUE(!forward);
+  std::uint32_t distinct = 0;
+  for (std::uint32_t k = 0; k < 8; ++k) distinct += (seen >> k) & 1u;
+  CHECK_TRUE(distinct >= 5u);  // the old one-multiply hash played one step 16 times
+}
+
+// Arp random also moves around the chord from the first steps (same hash).
+static void arp_random_moves_around_the_chord() {
+  core::ArpSeqParams p = base_params();
+  p.mode = 1;
+  p.arpDirection = 3;
+  core::ArpSeq s;
+  s.configure(p, 48000);
+  Recorder r;
+  for (core::NoteId i = 1; i <= 4; ++i) note_on(s, r, i / 12.0, i);
+  for (int i = 0; i < 8; ++i) clock_edge(s, r);
+  std::uint32_t seen = 0;
+  for (std::uint32_t i = 0; i < 8; ++i)
+    seen |= 1u << static_cast<std::uint32_t>(std::lround(r.pitchAt(i) * 12.0));
+  CHECK_TRUE(seen != 0x2u && seen != 0x4u && seen != 0x8u && seen != 0x10u);
 }
 
 // ----------------------------------------------- per-side, no global singleton --
@@ -489,11 +594,16 @@ int main() {
   arp_release_uses_the_sounding_notes_identity();
   arp_emits_one_note_per_clock();
   arp_hold_keeps_chord_through_release();
+  arp_hold_off_drops_released_plates();
+  arp_hold_off_with_no_plate_held_stops();
   arp_variation_repeats_transposed();
   arp_rhythm_mutes_steps();
   arp_restart_keeps_chord();
   seq_advances_steps_and_gates();
   seq_gate_off_step_is_a_rest();
+  seq_ping_pong_turns_at_both_ends();
+  seq_random_is_shuffled_and_repeatable();
+  arp_random_moves_around_the_chord();
   per_side_instantiation_independent();
   side_drop_produces_divergent_stream();
   return ::test::finish("test_arp_sequencer");

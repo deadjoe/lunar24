@@ -710,12 +710,14 @@ class SynthRuntime {
           (b == 0u) ? state.keyboardClockSelectors : state.keyboardClockSelectorsR;
       const std::array<std::uint8_t, 4> selectors{sel[0], sel[1], sel[2], sel[3]};
       const ArpSeqMode modeBefore = keyboardArpSeq_[s].mode();
+      // Turning arp HOLD off releases the arpeggio through this sink when no plate is held.
+      auto kbdSink = [this, s](const ControlEvent& nkb) { keyboardBeh_[s].handleControlEvent(nkb); };
       keyboardArpSeq_[s].configure(
           read_arp_seq_params(bank, keyboardMode_, side,
                               state.parameters[static_cast<std::size_t>(
                                   ParameterId::keyboard_clock_bpm)],
                               steps, selectors),
-          sampleRate_);
+          sampleRate_, kbdSink);
       // A MODE change (keyboard / arpeggiator / sequencer) restarts the arp/seq run, which
       // forgets the note it was sounding; release every note downstream too, or a note held
       // at the moment of the switch would never get its gate-off and would drone on.

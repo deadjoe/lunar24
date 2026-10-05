@@ -788,8 +788,21 @@
 - 期望：
   - 按住时按节奏循环弹这几个音，**松开马上停**。
   - TEMPO 改变速度；DIRECTION 改变顺序。
-  - HOLD 时松键继续播放。
+  - HOLD 时松键继续播放；关掉 HOLD 后停下（详见 T12.3a）。
   - 切回 KEYBOARD 时声音停下，不卡住。
+
+**T12.3a 关掉 HOLD 后琶音停下；RANDOM 一开始就乱序** ✅（#112，2026-10-05 Mac 实测全部通过）
+- 修正前：HOLD 打开时松开的音一直留在和弦里，关掉 HOLD 琶音也不停，只有切 MODE 才停；RANDOM 在按住 2 个或 4 个音时，前 20 来步一直弹同一个音。
+- 准备：RESET PANEL；BLEND 最左；DRONE VOICES 全关。打开键盘菜单：PLAY 页 **MODE** 点 **ARPEGGIATOR**，**TEMPO** 调到 60 左右（听得清每个音）；ARP 页点亮 **HOLD**。菜单开着就能用电脑键盘弹（没声音时先在菜单空白处点一下）。
+- 步骤与期望：
+  1. 同时按下 **A**、**D**、**G** 再全部松开：琶音 C E G 一直循环（HOLD 保持）。
+  2. 鼠标点 ARP 页 **HOLD** 关掉（LED 灭）：琶音在一步之内停下，最后一个音按包络的释放淡出，不再继续。
+  3. 再点亮 **HOLD**。同时按下 **A**、**D**、**G** 再松开 **D**、**G**，**A 一直按着不放**；这时琶音仍是 C E G。
+  4. A 还按着，用鼠标点 **HOLD** 关掉：琶音只剩 **C** 一个音在重复（松开的 E、G 被移除，按着的 C 保留）。
+  5. 松开 **A**：琶音停下。
+  6. 点亮 **HOLD**，ARP 页 **DIRECTION** 选 **RANDOM**。同时按下 **A**、**D**、**G**、**K**（C E G 高八度 C）再松开：从第一步起 4 个音就乱序跳动，听不出固定的顺序，也不会长时间停在同一个音上。
+  7. 收尾：关掉 HOLD（琶音停），DIRECTION 选回 **FORWARD**，MODE 点回 **KEYBOARD**。
+- 若第 3–4 步点鼠标时按住的 A 被当成松开（琶音直接停了），记下来告诉我；这是按键焦点的问题，不影响 HOLD 本身。
 
 **T12.4 SCALE / ROOT** ✅（#92，2026-10-03 Mac 实测 1–9 步全部通过；第 8 步按补上接线的新写法复测通过）
 - 界面位置：点键盘区中间的红色大旋钮打开 KEYBOARD MENU，顶部第一个页签 **PLAY**。PLAY 页有三张卡片：
@@ -837,6 +850,24 @@
   - 第 4 步：长度和方向变化（BACKWARD / PING-PONG / RANDOM）。
   - 第 5 步：只有按住键时才播放，松开就停。
   - 第 6 步：声音停下，不卡住。
+
+**T12.5a 音序器 DIRECTION：PING-PONG 和 RANDOM** ✅（#112，2026-10-05 Mac 实测准备和步骤全部通过）
+- 修正前：PING-PONG 一直停在第 1 步（同一个音反复响）；RANDOM 和 FORWARD 一模一样。
+- 本项只用 SEQ 页左边的 **SEQUENCER** 卡片和 SEQ STEPS 页。SEQ 页右边的 **SEQ RHYTHM** 卡片（它也有一个 LENGTH，下面有 1–8 号节奏按钮）**不要动**：保持默认的 LENGTH = 1 step、只有 1 号亮，意思是每个时钟都通过。
+- 准备（按顺序做）：
+  1. 菜单右下角 **RESET PANEL** 点两下（4 秒内）；BLEND 拖到最左；DRONE VOICES 6 个键全灭。
+  2. 点红色大旋钮打开键盘菜单。**PLAY** 页：左边 KEYBOARD 卡的 **MODE** 点 **SEQUENCER**；右边 CLOCK 卡的 **TEMPO** 旋钮往左拖，悬停看数值，调到 60 左右。
+  3. **SEQ** 页左边 SEQUENCER 卡：**RUN** 点 **FREE**（默认就是），**CV OUTPUT** 不用管；**LENGTH**（DIRECTION 右边那个 `< 2 steps >`）点 `>` 6 次，显示 **8 steps**。
+     - 先改 LENGTH 的原因：默认 LENGTH 是 2，SEQ STEPS 页第 3 步以后是暗的。暗的步也能编辑，但看不清。
+  4. **SEQ STEPS** 页：现在 1–8 步是亮的。把第 1–8 步的推子依次拖到 **0、2、4、5、7、9、11、12**（推子下面的小框显示半音数，拖到显示这个数就行；第 1 步保持 0）。8 个 GATE 按钮的红灯都亮着（默认就是亮的，不用点）。
+     - 这时不用按键就能听到一段 do re mi fa sol la si do 循环，这就是 FORWARD。
+- 步骤与期望（都在 **SEQ** 页左边 SEQUENCER 卡上操作）：
+  1. **LENGTH** 点 `<` 4 次到 **4 steps**，**DIRECTION** 点 **FORWARD**：do re mi fa、do re mi fa……（对照用）。
+  2. **DIRECTION** 点 **PING-PONG**：do re mi fa mi re do re mi fa mi re……上去再下来，两头的 do 和 fa 不连着弹两次。
+  3. **LENGTH** 点 `>` 4 次回到 **8 steps**，**DIRECTION** 点 **RANDOM**：8 个音乱序跳，听不出音阶顺序；偶尔同一个音连着出现是正常的。
+  4. **DIRECTION** 点回 **FORWARD**：又是 do 到高音 do 依次往上。
+  5. 收尾：PLAY 页 MODE 点回 **KEYBOARD**。
+- 附：SEQ STEPS 页上，超过 LENGTH 的暗步也能拖推子、点 GATE，这是设计如此（先编好，加长 LENGTH 后就会播放）。暗步的 GATE 显示成灰色小圆点 = 开，点一下圆点消失 = 关（这一步变成休止），再点一下恢复。
 
 **T12.6 PLAY = TWIN（两个 6 键的键盘）** 🔧 (#75)
 - 准备：RESET PANEL；DRONE VOICES 6 个键全关；VOICE MIXER 只留 **VCO A** 和 **VCO B**。
