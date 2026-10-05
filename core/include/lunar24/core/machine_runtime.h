@@ -2554,6 +2554,13 @@ class SynthRuntime {
     (bank == 0 ? kbdState_.keyboardPlateTune : kbdState_.keyboardPlateTuneR)[plate] =
         static_cast<float>(std::clamp(semitones, -kPlateTuneRange, kPlateTuneRange));
   }
+  // SCALE EDITOR (manual p.19), live: side 0 = left / shared, 1 = the right bank; bit i = the note
+  // i semitones above ROOT is in the scale (0 = notes pass through). Audio thread.
+  void setKeyboardScaleEditor(int side, std::uint16_t mask) {
+    (side == 0 ? kbdState_.keyboardScaleEditor : kbdState_.keyboardScaleEditorR) =
+        static_cast<std::uint16_t>(mask & kChromaticScaleMask);
+    applyKeyboardState(kbdState_);
+  }
   double keyboardPlateTune(KeyboardSide side, std::uint32_t plate) const {
     if (plate >= kKeyboardPlateTuneCount) return 0.0;
     const float* t = side_bank(keyboardMode_, side) == 0u ? kbdState_.keyboardPlateTune

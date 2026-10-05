@@ -99,8 +99,8 @@ inline constexpr Item kItems[] = {
     // PLAY: keyboard behaviour, quantiser, clocks
     {P::keyboard_behaviour, kPlay, Kind::Segmented, {454, 1240, 864, 1282}, "PLAY"},
     {P::keyboard_mode, kPlay, Kind::Segmented, {454, 1322, 864, 1364}, "MODE"},
-    {P::keyboard_quantise_load_scale, kPlay, Kind::Stepper, {920, 1240, 1480, 1282}, "SCALE"},
-    {P::keyboard_root_note, kPlay, Kind::RootKeys, {920, 1322, 1480, 1404}, "ROOT"},
+    {P::keyboard_quantise_load_scale, kPlay, Kind::Stepper, {920, 1236, 1480, 1272}, "SCALE"},
+    {P::keyboard_root_note, kPlay, Kind::RootKeys, {920, 1358, 1480, 1408}, "ROOT"},
     {P::keyboard_clock_bpm, kPlay, Kind::Knob, {1536, 1222, 1700, 1404}, "TEMPO"},
     {P::sequencer_clock, kPlay, Kind::Segmented, {1720, 1262, 1946, 1304}, "5-STEP SEQ CLOCK"},
     // EXPRESSION: portamento, vibrato, pressure output
@@ -177,8 +177,15 @@ inline Box rootKey(Box b, int semitone) {
   for (int k = 0; k < 7; ++k)
     if (kWhiteKeys[k] == semitone) return {b.l + ww * float(k) + 1.5f, b.t + 1.5f, b.l + ww * float(k + 1) - 1.5f, b.b - 1.5f};
   for (int k = 0; k < 5; ++k)
-    if (kBlackKeys[k] == semitone) return {b.l + kBlackAt[k] * ww - 24, b.t + 1.5f, b.l + kBlackAt[k] * ww + 24, b.t + 50};
+    if (kBlackKeys[k] == semitone)
+      return {b.l + kBlackAt[k] * ww - 24, b.t + 1.5f, b.l + kBlackAt[k] * ww + 24, b.t + (b.b - b.t) * 0.52f};
   return {0, 0, 0, 0};
+}
+// SCALE EDITOR (manual p.19): the 12 notes C..B between SCALE and ROOT, lit = in the scale.
+inline constexpr float kNotesT = 1302, kNotesB = 1332;
+inline Box scaleNote(int note) {
+  const float w = (1480.f - 920.f) / 12.f;
+  return {920.f + w * float(note) + 2.f, kNotesT, 920.f + w * float(note + 1) - 2.f, kNotesB};
 }
 // Rhythm pads (ARP tab: arpeggiator pattern, SEQ tab: sequencer pattern, same place) and the
 // 16 sequencer step columns (fader above, gate button below).
@@ -240,7 +247,7 @@ inline std::string optionText(P id, int i) {
 }
 
 // ---- hit testing -------------------------------------------------------------------------------
-enum class HitKind : std::uint8_t { None, Close, Tab, Side, Slot, Load, Save, Init, Reset, Item, Pad, Fader, Gate };
+enum class HitKind : std::uint8_t { None, Close, Tab, Side, Slot, Load, Save, Init, Reset, Item, Pad, Fader, Gate, Note };
 // Item: index = kItems index; sub = option (segmented), -1 / +1 (stepper arrows, TEMPO
 // nudge; 0 = the value between them), semitone (root keys, -1 = between keys), 0 = knob.
 struct Hit {
@@ -289,6 +296,9 @@ inline Hit hitTest(int page, bool split, float x, float y) {
       default: return {HitKind::Item, i, 0};
     }
   }
+  if (page == kPlay)
+    for (int n = 0; n < 12; ++n)
+      if (scaleNote(n).contains(x, y)) return {HitKind::Note, n};
   if (page == kArp || page == kSeq)
     for (int i = 0; i < kRhythmSteps; ++i)
       if (rhythmPad(i).contains(x, y)) return {HitKind::Pad, i};
@@ -314,6 +324,7 @@ struct State {
   int presetDone = -1;  // 0 LOAD, 1 SAVE, 2 INIT: briefly shows what happened
   SeqStep steps[kSeqSteps];
   unsigned arpMask = 0, seqMask = 0;  // bit set = silent beat (engine convention)
+  unsigned scaleMask = 0;  // the edited side's scale editor: bit i = i semitones above ROOT
 };
 inline constexpr std::uint32_t kLedOn = 0xeb3c32, kLedOff = 0x9c9284, kHover = 0xd9cdbc, kAltCard = 0xe2d8c9;
 inline constexpr std::uint32_t kKnobCap = 0xd9362b, kTick = 0x343434, kBarText = 0xc8bdad;
@@ -484,8 +495,12 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
           label({b.r - 120, b.t - 24, b.r, b.t - 4}, 14, kMuted, idx, false, 2);
           // The manual only names some scales (no notes): they pass notes through unchanged.
           const bool modelled = core::preset_scale_mask(std::uint8_t(i)) != core::kScaleUnresolved;
-          stepper(b, modelled ? optionText(it.id, i) : optionText(it.id, i) + " (NOT MODELLED)", i > 0, i < n - 1,
-                  modelled ? 19.f : 16.f);
+          // Notes switched in SCALE EDITOR since the scale was picked.
+          const bool edited = st.scaleMask != core::scale_editor_for_selector(double(i));
+          std::string name = optionText(it.id, i);
+          if (edited) name += " (EDITED)";
+          else if (!modelled) name += " (NOT MODELLED)";
+          stepper(b, name, i > 0, i < n - 1, modelled && !edited ? 19.f : 16.f);
         } else if (const Count* c = countOf(it.id)) {
           const int k = countValue(it.id, v);
           if (inHeader(it)) label({b.l - 90, b.t, b.l - 10, b.b}, 14, kMuted, it.label, true, 2);
@@ -549,6 +564,19 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
           arp ? "VARIATION repeats the pattern, transposed up by INTERVAL." : "Notes and gates of the 16 steps: SEQ STEPS tab.");
   }
   if (st.tab == kPlay) {
+    // SCALE EDITOR: the notes of the scale, by name (the editor counts from ROOT, so a note's
+    // bit is its distance above ROOT). None lit = notes pass through (microtonal keyboard).
+    static const char* noteNames[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    const int root = rootValue(st.value(P::keyboard_root_note));
+    label({920, kNotesT - 24, 1080, kNotesT - 4}, 14, kMuted, "NOTES", true);
+    label({1080, kNotesT - 24, 1480, kNotesT - 4}, 13, kMuted,
+          (st.scaleMask & 0xfffu) == 0 ? "none lit: notes pass through" : "click a note to add / remove it", false, 2);
+    for (int n = 0; n < 12; ++n) {
+      const Box b = scaleNote(n);
+      const bool on = ((st.scaleMask >> ((n - root + 12) % 12)) & 1u) != 0;
+      framed(b, n == root ? kInk : kRule, on ? kTeal : (hot(b) ? kHover : kWhite), 5);
+      label(b, 13, on ? kWhite : kMuted, noteNames[n], true, 1);
+    }
     label({454, 1374, 864, 1398}, 13, kMuted, "TWIN / SPLIT: plates C-F play left, F#-B right.");
     label({1720, 1312, 1946, 1334}, 13, kMuted, "Panel 5-step sequencer: EXT");
     label({1720, 1332, 1946, 1354}, 13, kMuted, "waits for its EXT CLOCK jack.");

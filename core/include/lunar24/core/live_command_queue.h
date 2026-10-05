@@ -21,6 +21,7 @@ struct LiveCommand {
                                   KeyboardPreset,    // side = action (0 load, 1 save, 2 clear), index = slot
                                   KeyboardSelector,  // side 0/1, index = clock selector 0..3, value
                                   KeyboardPlateTune, // side = bank 0/1, index = plate 0..11, value = semitones
+                                  KeyboardScaleEditor, // side 0/1, value = 12-bit scale editor mask
                                   Action,            // audio -> UI only: index = core::MidiAction id
                                   PhotoShade,        // side = classic drone group 0..3, value = 0..1
                                   GraphPlanDone };   // audio -> UI only: graphPlan to free

@@ -189,8 +189,60 @@ static void plate_tuning_reaches_v_oct() {
   CHECK(e.runtime()->keyboardPlateTune(core::KeyboardSide::Left, 8) == 0.0);
 }
 
+// SCALE EDITOR: switching single notes of the quantiser scale reaches the quantiser; the last
+// note off picks SEMITONES (notes pass through, also after a restart); SPLIT keeps the right one.
+static void scale_editor_switches_notes() {
+  auto engine = std::make_unique<host::StandaloneAudioEngine>();
+  host::StandaloneAudioEngine& e = *engine;
+  CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+  std::vector<double> l(256), r(256);
+  double* outs[2] = {l.data(), r.data()};
+  core::InputStateMachine in{nullptr, 0};
+  const core::JackId vOct = core::find_jack_by_name("keyboard.v_oct_out")->id;
+  auto play = [&](double semitones) {  // semitones from A3; returns the V/OCT out, same unit
+    double out = 0.0;
+    for (core::PerfInputKind kind : {core::PerfInputKind::note_on, core::PerfInputKind::note_off}) {
+      core::PerformanceInput p{};
+      p.kind = kind;
+      p.pitch = static_cast<core::SignalSample>(semitones / 12.0);
+      p.value = static_cast<core::SignalSample>(0.8);
+      p.noteId = 5;
+      p.source = 1;
+      core::ControlEvent ev[3];
+      const std::uint32_t n = in.translate(p, ev, 3);
+      for (std::uint32_t i = 0; i < n; ++i) e.postEvent(ev[i]);
+      for (int b = 0; b < 4; ++b)
+        CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+      if (kind == core::PerfInputKind::note_on) out = e.runtime()->controlVoltageAt(vOct) * 12.0;
+    }
+    return out;
+  };
+  CHECK(e.postParameter(core::ParameterId::keyboard_quantise_load_scale, 1.0));  // IONIAN, ROOT C
+  CHECK_EQ(e.keyboardScaleEditor(0), core::kScaleIonian);
+  CHECK(std::fabs(play(-5.0) - (-5.0)) < 1e-3);  // E is in C major
+  // Switch E (4 above C) off: E snaps to the nearest scale note left, F (D is 2 below, F 1 above).
+  CHECK(e.postKeyboardScaleEditor(0, static_cast<std::uint16_t>(core::kScaleIonian & ~(1u << 4))));
+  CHECK_EQ(e.canonicalState()->keyboardScaleEditor, std::uint16_t(core::kScaleIonian & ~(1u << 4)));
+  CHECK(std::fabs(play(-5.0) - (-4.0)) < 1e-3);  // E -> F
+  // Add C# (1 above C): it plays as itself now.
+  CHECK(std::fabs(play(-8.0) - (-9.0)) < 1e-3);  // C# -> C before
+  CHECK(e.postKeyboardScaleEditor(0, static_cast<std::uint16_t>(e.keyboardScaleEditor(0) | (1u << 1))));
+  CHECK(std::fabs(play(-8.0) - (-8.0)) < 1e-3);
+  // The last note off: SEMITONES, an empty editor, everything passes through.
+  CHECK(e.postKeyboardScaleEditor(0, 0));
+  CHECK_EQ(e.keyboardScaleEditor(0), std::uint16_t(0));
+  CHECK(e.parameterValue(core::ParameterId::keyboard_quantise_load_scale) == 0.0);
+  CHECK(std::fabs(play(-5.0) - (-5.0)) < 1e-3);
+  // SPLIT: the right half's editor is its own.
+  CHECK(e.postParameter(core::ParameterId::keyboard_behaviour, 2.0));
+  CHECK(e.postKeyboardScaleEditor(1, core::kScaleIonian));
+  CHECK_EQ(e.canonicalState()->keyboardScaleEditorR, core::kScaleIonian);
+  CHECK_EQ(e.canonicalState()->keyboardScaleEditor, std::uint16_t(0));
+}
+
 int main() {
   slot_cartridge_loads_one_side();
+  scale_editor_switches_notes();
   plate_tuning_reaches_v_oct();
   host::StandaloneAudioEngine engine;
   CHECK(engine.prepare(1, 48000.0, 256, 0, 2));

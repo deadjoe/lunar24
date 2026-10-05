@@ -1270,6 +1270,7 @@ class KeyboardMenuControl : public IControl {
       if (const core::KeyboardSeqStep* q = s_.seqStep(i)) st.steps[i] = {int(q->note), q->gate != 0};
     st.arpMask = s_.engine.keyboardRhythm(s_.editSide(), false);
     st.seqMask = s_.engine.keyboardRhythm(s_.editSide(), true);
+    st.scaleMask = s_.engine.keyboardScaleEditor(s_.editSide());
     kb_ui::draw(sink, st, hoverX_, hoverY_);
   }
   // Redraw once more when a confirm or "done" label runs out.
@@ -1350,6 +1351,13 @@ class KeyboardMenuControl : public IControl {
       case HitKind::Gate:
         if (const core::KeyboardSeqStep* q = s_.seqStep(h.index)) setStep(h.index, q->note, q->gate == 0);
         return;
+      case HitKind::Note: {  // SCALE EDITOR: switch one note of the scale (bits count from ROOT)
+        const int root = kb_ui::rootValue(s_.value(static_cast<std::uint32_t>(ParameterId::keyboard_root_note)));
+        const std::uint16_t mask = s_.engine.keyboardScaleEditor(s_.editSide());
+        s_.engine.postKeyboardScaleEditor(s_.editSide(),
+                                          static_cast<std::uint16_t>(mask ^ (1u << ((h.index - root + 12) % 12))));
+        break;
+      }
     }
     GetUI()->SetAllControlsDirty();
   }
