@@ -32,7 +32,7 @@
 | 1 | DAW 与格式 | 主力 Ableton Live（MacBook Pro 上的最新版）；VST3 和 AU 都要支持；不考虑只认老格式的老 DAW | 见下方"AU 格式说明"：AU 做 **AUv2** |
 | 2 | 插件里的 MIDI 绑定 | 和独立 App **共用全局文件**；实施中发现必须改再说 | 见下方"以后改成随工程保存的代价" |
 | 3 | 插件里的 REC | **隐藏** | 插件版不编录音相关的平台代码 |
-| 4 | 分发 | 不走 App Store / Apple 开发者账号；附一份说明，用户照着执行一两条命令 | 技术上可行，见第六节；需要出 **通用二进制**（Apple 芯片 + Intel） |
+| 4 | 分发 | 不走 App Store / Apple 开发者账号；附一份说明，用户照着执行一两条命令 | 技术上可行，见第六节；只支持 Apple 芯片的 Mac，不考虑 Intel Mac |
 | 5 | 播放中切换音色 | **方案 A**：切换瞬间短暂静音 | 见第三节第 4 点 |
 
 **AU 格式说明（AUv2 和 AUv3）**
@@ -59,7 +59,7 @@
   - VST3 分类 `Instrument|Synth`；
   - Objective-C 类名唯一前缀，避免同一 DAW 同时载入 AU 和 VST3 时冲突。
 - 新文件：`host/resources/Lunar24-AU-Info.plist`、`host/resources/Lunar24-VST3-Info.plist`。
-- macOS 插件出**通用二进制**（arm64 + x86_64）。CI 的 `macos-latest` 是 Apple 芯片，默认只出 arm64：Intel Mac 用不了，用 Rosetta 模式运行的 DAW 也载入不了。
+- macOS 只出 Apple 芯片（arm64）版本，和独立 App 一样（CI 的 `macos-latest` 就是 Apple 芯片）。不支持 Intel Mac；DAW 也要以原生模式运行，不能用 Rosetta 模式打开。
 - CI：mac / win 作业额外编插件，上传为 Actions 产物（`Lunar24-Plugins-macOS`、`Lunar24-Plugins-Windows`）。独立 App 的产物照旧。
 
 ### 2. 把只属于独立 App 的功能拆开
@@ -152,7 +152,7 @@
 | 0 | **本方案入库** | `design/PLUGIN_PLAN.md` | 业主确认 |
 | 1 | **拆分 + 写回挪到 OnIdle** | App 专用代码用 `#if APP_API` 隔开；CC / 绑定动作的写回挪到 `OnIdle` | 独立 App 行为不变；现有测试全过；业主在 Mac 上过一遍 MIDI CC 相关用例 |
 | 2 | **引擎：播放中安全切换（方案 A）** | 第三节第 4 点；独立 App 的 RESET PANEL 改用它 | 新测试全过（含 ASan / UBSan / TSan）；独立 App 的 RESET PANEL 手测正常 |
-| 3 | **插件构建** | VST3 / AUv2 目标、固定 SDK 版本、plist、`config.h`、插件专用平台实现、通用二进制、CI 出插件包 | Ableton 里能载入 VST3 和 AU，能用 MIDI 弹出声音 |
+| 3 | **插件构建** | VST3 / AUv2 目标、固定 SDK 版本、plist、`config.h`、插件专用平台实现、CI 出插件包 | Ableton 里能载入 VST3 和 AU，能用 MIDI 弹出声音 |
 | 4 | **插件 `OnReset` 规则 + 长块拆分** | 第三节第 3 点；块超过最大块时在插件入口拆开 | 停止 / 播放、旁路不让声音从头开始；新测试覆盖拆块 |
 | 5 | **音色存进工程** | `SerializeState` / `UnserializeState`，带分段头 | 存工程 → 退出 Ableton → 重开，音色、连线、键盘设置都回来；播放中切预置只有一下短静音 |
 | 6 | **插件窗口** | 默认大小、几档缩放、无外壳、隐藏 REC 等 App 专用项 | Ableton 里窗口大小正确、面板不被裁切 |
@@ -189,7 +189,7 @@
   - 用户复制插件：VST3 放 `~/Library/Audio/Plug-Ins/VST3/`，AU 放 `~/Library/Audio/Plug-Ins/Components/`。
   - 网上下载的文件带"隔离"标记，执行一条命令解除：`xattr -dr com.apple.quarantine <插件路径>`。
   - AU 新装后如果 DAW 没看到，执行 `killall -9 AudioComponentRegistrar` 或重新登录一次。
-  - 出通用二进制，Apple 芯片和 Intel Mac 都能用。
+  - 只支持 Apple 芯片的 Mac；DAW 要以原生模式运行（Ableton 默认就是）。
 - **Windows**：`.vst3` 文件夹放进 `C:\Program Files\Common Files\VST3\`；不签名也能被 DAW 载入。
 - **商标**：只写"VST3 格式"；不使用 VST 标志。
 - **多实例同声**：每个实例从同一个固定种子开始，同样音色的两个实例漂移完全一样。要不要每实例不同种子，由业主听了再定。
