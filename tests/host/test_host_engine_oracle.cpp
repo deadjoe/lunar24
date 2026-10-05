@@ -42,7 +42,9 @@
 #include "mini_test.h"
 
 #include <host/standalone_audio_engine.h>
+#include <lunar24/core/input_state_machine.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -616,6 +618,71 @@ void max_block_guard() {
   CHECK(e.droppedBlocks() == 1);
 }
 
+// ---- 11. a DAW block longer than the prepared max -----------------------------------------
+// processAnyLength renders it in pieces of at most the max: bit-identical to the host feeding
+// those pieces itself, a MIDI note scheduled past the first piece still lands, and nothing is
+// allocated.
+void long_block_split() {
+  constexpr std::uint64_t kSeed = 910u;
+  constexpr int kMax = 16, kLong = 40;  // 16 + 16 + 8
+  StandaloneAudioEngine whole, pieces;
+  CHECK(whole.prepare(kSeed, 48000.0, kMax, 0, 2));
+  CHECK(pieces.prepare(kSeed, 48000.0, kMax, 0, 2));
+  lunar24::core::InputStateMachine input{nullptr, 0};
+  lunar24::core::PerformanceInput note{};
+  note.kind = lunar24::core::PerfInputKind::note_on;
+  note.value = static_cast<SignalSample>(0.8);
+  note.noteId = 7;
+  note.source = 3;
+  note.seq = 1;
+  ControlEvent events[3];
+  const std::uint32_t count = input.translate(note, events, 3);
+  CHECK(count > 0);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    CHECK(whole.enqueueEventFromAudioThread(events[i], 21));  // inside the second piece
+    CHECK(pieces.enqueueEventFromAudioThread(events[i], 21));
+  }
+
+  double a[2][kLong] = {}, b[2][kLong] = {};
+  double* outA[2] = {a[0], a[1]};
+  const std::size_t before = g_allocCount;
+  CHECK(whole.processAnyLength(nullptr, outA, 0, 2, kLong) == EngineStatus::Rendered);
+  CHECK(g_allocCount == before);
+  CHECK(whole.renderedBlocks() == 3);
+  CHECK(whole.droppedBlocks() == 0);
+  for (int done = 0; done < kLong; done += kMax) {
+    double* outB[2] = {b[0] + done, b[1] + done};
+    CHECK(pieces.processBlock(nullptr, outB, 0, 2, std::min(kMax, kLong - done)) == EngineStatus::Rendered);
+  }
+  bool same = true, sounding = false;
+  for (int c = 0; c < 2; ++c)
+    for (int f = 0; f < kLong; ++f) {
+      same = same && a[c][f] == b[c][f];
+      sounding = sounding || a[c][f] != 0.0;
+    }
+  CHECK(same);
+  CHECK(sounding);
+  // The note really lands at sample 21: the same machine without it matches only before that.
+  StandaloneAudioEngine quiet;
+  CHECK(quiet.prepare(kSeed, 48000.0, kMax, 0, 2));
+  double q[2][kLong] = {};
+  double* outQ[2] = {q[0], q[1]};
+  CHECK(quiet.processAnyLength(nullptr, outQ, 0, 2, kLong) == EngineStatus::Rendered);
+  bool sameBefore = true, differsAfter = false;
+  for (int c = 0; c < 2; ++c)
+    for (int f = 0; f < kLong; ++f) {
+      if (f < 21) sameBefore = sameBefore && a[c][f] == q[c][f];
+      else differsAfter = differsAfter || a[c][f] != q[c][f];
+    }
+  CHECK(sameBefore);
+  CHECK(differsAfter);
+  // Within the max it is exactly processBlock.
+  double c1[2][kMax] = {};
+  double* outC[2] = {c1[0], c1[1]};
+  CHECK(whole.processAnyLength(nullptr, outC, 0, 2, kMax) == EngineStatus::Rendered);
+  CHECK(whole.renderedBlocks() == 4);
+}
+
 }  // namespace
 
 int main() {
@@ -630,6 +697,7 @@ int main() {
   allocator_probe();
   format_mismatch_drop();
   max_block_guard();
+  long_block_split();
   churn();
   return ::test::finish("host_engine_oracle");
 }
