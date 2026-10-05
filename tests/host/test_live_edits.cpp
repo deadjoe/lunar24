@@ -94,7 +94,43 @@ static void scale_and_root_reach_the_quantiser() {
   }
 }
 
+// The effector cartridge slot: picking a cartridge loads nothing; a side's 1-2-3 switch loads
+// it into that side only, so L and R can run programs from different cartridges.
+static void slot_cartridge_loads_one_side() {
+  auto engine = std::make_unique<host::StandaloneAudioEngine>();
+  host::StandaloneAudioEngine& e = *engine;
+  CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+  std::vector<double> l(256), r(256);
+  double* outs[2] = {l.data(), r.data()};
+  auto cart = [&](int side) {
+    const auto& fx = side == 0 ? e.canonicalState()->leftEffector : e.canonicalState()->rightEffector;
+    return static_cast<int>(static_cast<std::uint32_t>(fx.program) / 3u);
+  };
+  const int start = cart(0);
+  CHECK_EQ(e.slotCartridge(), start);          // the slot shows the left side's cartridge
+  e.stepSlotCartridge(1);
+  e.stepSlotCartridge(1);                      // e.g. CATHEDRAL -> MAGIC -> TIME
+  CHECK_EQ(e.slotCartridge(), (start + 2) % 13);
+  CHECK_EQ(cart(0), start);                    // nothing loaded yet
+  CHECK_EQ(cart(1), start);
+  CHECK(e.loadSlotCartridge(1));               // flip R
+  CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
+  CHECK_EQ(cart(1), (start + 2) % 13);
+  CHECK_EQ(cart(0), start);
+  CHECK_EQ(e.runtime()->effectorProgram(1) / 3, (start + 2) % 13);  // the audio side follows
+  CHECK_EQ(e.runtime()->effectorProgram(0) / 3, start);
+  const auto edits = e.editCount();
+  CHECK(e.loadSlotCartridge(1));               // already loaded: no reload (no tail cut)
+  CHECK_EQ(e.editCount(), edits);
+  e.stepSlotCartridge(-1);
+  CHECK_EQ(e.slotCartridge(), (start + 1) % 13);
+  e.stepSlotCartridge(-1);
+  e.stepSlotCartridge(-1);                     // wraps backwards
+  CHECK_EQ(e.slotCartridge(), (start + 12) % 13);
+}
+
 int main() {
+  slot_cartridge_loads_one_side();
   host::StandaloneAudioEngine engine;
   CHECK(engine.prepare(1, 48000.0, 256, 0, 2));
 

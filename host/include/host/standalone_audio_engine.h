@@ -260,6 +260,13 @@ class StandaloneAudioEngine {
   bool postConnect(lunar24::core::JackId source, lunar24::core::JackId sink);
   bool postDisconnect(lunar24::core::JackId sink);
   bool postEffectorProgram(int side, lunar24::core::ProgramId program);
+  // The effector's cartridge slot, as on the hardware (manual p.21): the cartridge in the slot
+  // (0..12) is picked on its own and plays nowhere yet; flipping a side's 1-2-3 switch loads it
+  // into that side, so the two sides can run programs from different cartridges. Until a pick,
+  // the slot shows the left side's cartridge. UI thread.
+  int slotCartridge() const;
+  void stepSlotCartridge(int delta);
+  bool loadSlotCartridge(int side);  // false only when the live queue is full
   // DRONE VOICES key: open/close drone voice 0..5 (not saved; all open at power-on).
   bool postDroneKey(int voice, bool open);
   // The hand over a classic drone's photo sensor (group 0..3 = drone 1/2/4/5): 0 = away,
@@ -602,8 +609,7 @@ class StandaloneAudioEngine {
   void drainLive_(SynthRuntime& rt);
   // Audio thread: a parameter moved (any source) — rebase the MIDI pickup/relative state.
   void noteParameterSeen_(ParameterId id, double value);
-  // UI thread: step the effector cartridge on both sides (a MIDI action handler).
-  void stepCartridge(int delta);
+  int slotCartridge_ = -1;  // -1: not picked since the last state install (shows the left side's)
   bool sendParameterFromAudioThread_(ParameterId id, double value, bool rebaseBindings, int originRow = -1);
   // Audio thread: rebase keyboard parameters from the runtime's own preset state.
   void reseedMidiBindingsFromState_();
@@ -999,6 +1005,7 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
                                            const DeviceAdapter& candAdapter, double sampleRate,
                                            int maxBlockSize, int inputCapability,
                                            int outputCapability) {
+  slotCartridge_ = -1;  // a new machine state: the slot shows its left side's cartridge again
   // Install definition + adapter + format + canonical state in ONE shot. Releasing the OLD
   // definition here (its destructor runs ONCE) is the stopped-stream boundary; the new definition,
   // plan, format, and canonical state become visible atomically. No intermediate state is
@@ -1447,14 +1454,26 @@ inline void StandaloneAudioEngine::reseedMidiBindingsFromState_() {
   }
 }
 
-// UI thread: step the effector cartridge on BOTH sides (the CartridgeControl rule).
-inline void StandaloneAudioEngine::stepCartridge(int delta) {
+inline int StandaloneAudioEngine::slotCartridge() const {
+  if (slotCartridge_ >= 0) return slotCartridge_;
   const DeviceStateV1* st = canonicalState();
-  if (st == nullptr) return;
-  const int cur = static_cast<int>(static_cast<std::uint32_t>(st->leftEffector.program) / 3u);
-  const int next = (cur + 13 + (delta < 0 ? -1 : 1)) % 13;
-  (void)postEffectorProgram(0, static_cast<lunar24::core::ProgramId>(next * 3));
-  (void)postEffectorProgram(1, static_cast<lunar24::core::ProgramId>(next * 3));
+  return st == nullptr ? 0 : static_cast<int>(static_cast<std::uint32_t>(st->leftEffector.program) / 3u);
+}
+
+// UI thread: the next / previous cartridge into the slot. Nothing is loaded yet.
+inline void StandaloneAudioEngine::stepSlotCartridge(int delta) {
+  slotCartridge_ = (slotCartridge() + 13 + (delta < 0 ? -1 : 1)) % 13;
+}
+
+// UI thread: a side's 1-2-3 switch was flipped — that side loads the slot's cartridge (its
+// switch then picks program 1, 2 or 3 within it).
+inline bool StandaloneAudioEngine::loadSlotCartridge(int side) {
+  const DeviceStateV1* st = canonicalState();
+  if (st == nullptr) return false;
+  const auto& fx = side == 0 ? st->leftEffector : st->rightEffector;
+  const int cart = slotCartridge();
+  if (static_cast<int>(static_cast<std::uint32_t>(fx.program) / 3u) == cart) return true;
+  return postEffectorProgram(side, static_cast<lunar24::core::ProgramId>(cart * 3));
 }
 
 inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
@@ -1470,6 +1489,9 @@ inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
       case lunar24::core::LiveCommand::Kind::Parameter:
         lunar24::core::state_set_param(definition_->mutableDeviceState(), c.parameter, c.value);
         ++editCount_;
+        // A MIDI-bound 1-2-3 switch flips like the panel one: that side loads the slot.
+        if (c.parameter == lunar24::core::ParameterId::effector_select_l) (void)loadSlotCartridge(0);
+        if (c.parameter == lunar24::core::ParameterId::effector_select_r) (void)loadSlotCartridge(1);
         break;
       case lunar24::core::LiveCommand::Kind::DroneKey:
         // Record-only: the audio thread already applied it to the runtime.
@@ -1479,9 +1501,9 @@ inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
       case lunar24::core::LiveCommand::Kind::Action: {
         const auto action = static_cast<lunar24::core::MidiAction>(c.index);
         if (action == lunar24::core::MidiAction::cartridge_next) {
-          stepCartridge(1);
+          stepSlotCartridge(1);
         } else if (action == lunar24::core::MidiAction::cartridge_prev) {
-          stepCartridge(-1);
+          stepSlotCartridge(-1);
         } else if (action >= lunar24::core::MidiAction::preset_load_a &&
                    action <= lunar24::core::MidiAction::preset_load_d) {
           (void)postKeyboardPreset(PresetAction::Load,

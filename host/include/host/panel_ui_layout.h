@@ -32,7 +32,7 @@ enum class WidgetKind : std::uint8_t {
   Jack,        // patch point (id = JackId)
   Plate,       // one of the 12 touch plates (id = 0..11)
   Joystick,    // the stick (id = joystick.x, id2 = joystick.y)
-  Cartridge,   // effector cartridge slot (id 0) and its button (id 1): click = next cartridge
+  Cartridge,   // effector cartridge slot (id 0) and its button (id 1): click = next cartridge in the slot
   DroneKey,    // DRONE VOICES key (id = 0..5 -> drone 1..6)
   Encoder,     // keyboard encoder: opens the keyboard menu
   OctaveKey,   // keyboard arrow buttons (id 0 = down, 1 = up)
@@ -308,7 +308,7 @@ inline std::vector<Widget> build_panel_layout() {
   knob(P::effector_x, 845, 356, Cap::Orange);
   knob(P::effector_y, 964, 356, Cap::Orange);
   knob(P::effector_z, 1082, 356, Cap::Orange);
-  add(WidgetKind::Cartridge, 1200, 264, 116, 54, 0);   // the slot (click: next cartridge)
+  add(WidgetKind::Cartridge, 1200, 267, 138, 62, 0);   // the slot: its cartridge + what L / R run
   add(WidgetKind::Cartridge, 1200, 323, 34, 34, 1);    // the button between the switches (same)
   toggle(P::effector_select_l, 1157, 323);
   toggle(P::effector_select_r, 1243, 323);
