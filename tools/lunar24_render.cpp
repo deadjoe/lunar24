@@ -57,6 +57,7 @@ void usage() {
       "  --program-r NAME     right effector program\n"
       "  --note T:S:L         play a keyboard note at T seconds, S semitones, L seconds long\n"
       "  --step I:N[:G]       16-step sequencer step I (1-16): note N semitones, gate G (1 = on)\n"
+      "  --tune P:S           tune touch plate P (1 = C .. 12 = B) by S semitones (e.g. 5:-0.5)\n"
       "  --drone N            open DRONE VOICES key N (1-6) at the start\n"
       "  --at T:ID=VALUE      set a panel parameter at T seconds (a knob turned while playing)\n"
       "  --shade T:D:V        from T seconds, hold a hand over drone D's photo sensor (D = 1, 2, 4, 5;\n"
@@ -103,6 +104,14 @@ core::ControlEvent noteEvent(core::ControlEventKind kind, double value, core::No
   return e;
 }
 
+// The touch plate (0 = C .. 11 = B) a whole-semitone note sits on (0 V = A3), so the note plays
+// that plate's --tune and the arpeggiator orders it like a plate; kNoPlate for a fractional note.
+std::uint8_t plateOf(double semis) {
+  const double r = std::round(semis);
+  if (std::fabs(semis - r) > 1e-9) return core::kNoPlate;
+  return static_cast<std::uint8_t>(((static_cast<int>(r) + 9) % 12 + 12) % 12);
+}
+
 void printStats(const char* name, const std::vector<float>& x) {
   double peak = 0.0, ss = 0.0;
   for (float v : x) { peak = std::fmax(peak, std::fabs(v)); ss += double(v) * v; }
@@ -117,7 +126,7 @@ int main(int argc, char** argv) {
   double seconds = 20.0, sr = 48000.0;
   std::uint64_t seed = host::kLunarStartupSeed;
   std::string out = "lunar24.wav", dryOut;
-  std::vector<std::string> sets, cables, progL, progR, steps;
+  std::vector<std::string> sets, cables, progL, progR, steps, tunes;
   std::vector<Note> notes;
   std::vector<Shade> shades;
   std::vector<KnobMove> moves;
@@ -156,6 +165,9 @@ int main(int argc, char** argv) {
       mv.id = d->id;
       mv.value = std::atof(val.c_str());
       moves.push_back(mv);
+    } else if (a == "--tune") {
+      next(v);
+      tunes.push_back(v);
     } else if (a == "--drone") {
       next(v);
       const int d = std::atoi(v.c_str());
@@ -189,6 +201,16 @@ int main(int argc, char** argv) {
   }
 
   core::DeviceStateV1 st = core::make_default_device_state(seed);
+  for (const auto& t : tunes) {  // P:S, P = 1..12
+    int p = 0;
+    double semis = 0.0;
+    if (std::sscanf(t.c_str(), "%d:%lf", &p, &semis) < 2 || p < 1 || p > 12) {
+      std::fprintf(stderr, "bad --tune %s\n", t.c_str());
+      return 1;
+    }
+    st.keyboardPlateTune[p - 1] = static_cast<float>(semis);
+    st.keyboardPlateTuneR[p - 1] = static_cast<float>(semis);
+  }
   for (const auto& s : steps) {  // I:N[:G], I = 1..16
     int i = 0, n = 0, g = 1;
     if (std::sscanf(s.c_str(), "%d:%d:%d", &i, &n, &g) < 2 || i < 1 || i > 16) {
@@ -253,7 +275,9 @@ int main(int argc, char** argv) {
       const auto id = static_cast<core::NoteId>(n + 1);
       if (!on[n] && t >= notes[n].at) {
         on[n] = true;
-        engine.postEvent(noteEvent(core::ControlEventKind::pitch, notes[n].semis / 12.0, id));
+        core::ControlEvent pitch = noteEvent(core::ControlEventKind::pitch, notes[n].semis / 12.0, id);
+        pitch.plate = plateOf(notes[n].semis);
+        engine.postEvent(pitch);
         engine.postEvent(noteEvent(core::ControlEventKind::pressure, 0.8, id));
         engine.postEvent(noteEvent(core::ControlEventKind::gate_on, 1.0, id));
       }

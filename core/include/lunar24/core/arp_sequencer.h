@@ -38,8 +38,9 @@
 //     pattern is stored in the side's arp_rhythm / seq_rhythm selector byte as a mask of
 //     MUTED steps (bit i = step i), so 0 (every saved state so far) lets every edge through.
 //   * The arp note ORDERING — manual L817 says the arpeggiator "goes through the
-//     sequence number of pressed plates". The chord is currently kept in PRESS order
-//     (first pressed plays first); ordering by plate number comes with per-plate tuning.
+//     sequence number of pressed plates": plate notes are kept in PLATE order (plate 1
+//     first), whatever their tuning. Notes without a plate (MIDI) keep press order, after
+//     the plates, as a piano-keyboard synth would.
 //   * note_off / gate_off carries the SAME press identity as its note_on, so
 //     the arp chord is a fixed table of held-plate identities: note_on adds by identity,
 //     gate_off deletes the EXACT matching identity (never a LIFO pop, so releasing a
@@ -283,6 +284,7 @@ class ArpSeq {
     std::uint8_t channel = 0;
     NoteId noteId = 0;
     double pitch = 0.0;
+    std::uint8_t plate = kNoPlate;
     bool held = true;  // false: let go while arp HOLD was on (kept until HOLD goes off)
   };
   std::uint32_t chordSize() const { return chordSize_; }
@@ -302,7 +304,22 @@ class ArpSeq {
         return;
       }
     if (chordSize_ >= kMaxChord) { ++chordOverflow_; return; }  // reject, observable
-    ChordNote& n = chord_[chordSize_++];
+    // Plate notes stay in plate-number order ahead of the other notes, which stay in press
+    // order: a plate note goes before the first plate note with a higher number, or else
+    // right after the last plate note; any other note goes to the end.
+    std::uint32_t at = chordSize_;
+    if (ev.plate != kNoPlate) {
+      at = 0;
+      for (std::uint32_t i = 0; i < chordSize_; ++i) {
+        if (chord_[i].plate == kNoPlate) continue;
+        if (chord_[i].plate > ev.plate) { at = i; break; }
+        at = i + 1;
+      }
+    }
+    for (std::uint32_t j = chordSize_; j > at; --j) chord_[j] = chord_[j - 1];
+    ++chordSize_;
+    ChordNote& n = chord_[at];
+    n.plate = ev.plate;
     n.source = ev.source;
     n.channel = ev.channel;
     n.noteId = ev.noteId;
@@ -478,9 +495,8 @@ class ArpSeq {
 
   // Select the next arp pitch from the held chord. Manual p.16: the chord is played by
   // DIRECTION; VARIATION (OFF, x1, x2, x3) then repeats the whole progression that many
-  // more times, each pass transposed up by INTERVAL (1..12 semitones). The chord is in press
-  // order (first pressed plays first); the manual orders it by plate number, which comes
-  // with per-plate tuning.
+  // more times, each pass transposed up by INTERVAL (1..12 semitones). The chord is in plate
+  // order (chordPush), so a retuned plate keeps its place.
   double nextArpPitch() const {
     const std::uint32_t n = chordSize_;
     const std::uint32_t passes = 1u + static_cast<std::uint32_t>(params_.arpVariation % 4u);
@@ -521,7 +537,7 @@ class ArpSeq {
       case ControlEventKind::pitch:
         // The pressing plates from note_on -> pitch form the transposition base
         // (manual L818: the sequencer is "transposed by the active note plate values").
-        // Base = first held plate by insertion order (PROVISIONAL), tracked by identity.
+        // Base = the first held note in chord order (the lowest-numbered plate), by identity.
         chordPush(ev);
         seqBase_ = chord_[0].pitch;
         seqBaseValid_ = true;

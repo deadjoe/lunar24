@@ -66,6 +66,7 @@ struct PerformanceInput {
   // emits; a source adapter states the side it read, it is never inferred from the
   // channel/pitch/noteId. Defaults to Left so every earlier caller is unchanged.
   KeyboardSide side = KeyboardSide::Left;
+  std::uint8_t plate = kNoPlate;           // touch plate 0..11, or kNoPlate (see ControlEvent)
 };
 
 // Data-driven CC-learn binding: a controller number -> the ParameterId of an
@@ -123,6 +124,7 @@ inline std::uint32_t InputStateMachine::translate(const PerformanceInput& in,
     out[n].noteId = in.noteId;   // the SAME press identity every event of this note carries
     out[n].producerSequence = in.seq;
     out[n].side = in.side;       // the SAME side every event of this input carries
+    out[n].plate = in.plate;
     ++n;
   };
 

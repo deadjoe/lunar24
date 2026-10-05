@@ -84,6 +84,8 @@ constexpr std::uint32_t control_event_phase(ControlEventKind k) {
   return kControlEventPhaseCount;  // defensive: out of range marks an invalid kind
 }
 
+inline constexpr std::uint8_t kNoPlate = 0xFF;
+
 struct ControlEvent {
   ControlEventKind kind;
   ParameterId parameter = ParameterId{0};  // for kind == parameter
@@ -100,6 +102,9 @@ struct ControlEvent {
   // Old callers that never set it keep the Left default, which is the earlier behaviour.
   // Appended last so every existing positional aggregate initialisation stays valid.
   KeyboardSide side = KeyboardSide::Left;
+  // The touch plate (0..11) a note came from, or kNoPlate (MIDI, sequencer, tests). Plate
+  // notes get that plate's tuning and the arpeggiator orders them by plate number.
+  std::uint8_t plate = kNoPlate;
 
   ControlLane lane() const { return control_event_lane(kind); }
 };

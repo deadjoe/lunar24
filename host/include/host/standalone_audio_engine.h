@@ -295,6 +295,16 @@ class StandaloneAudioEngine {
   // RHYTHM pattern of a side (0 left, 1 right): `seq` false = arpeggiator, true = sequencer.
   // `mutedMask` bit i mutes step i (0 = every step plays).
   bool postKeyboardRhythm(int side, bool seq, std::uint8_t mutedMask);
+  // Per-plate tuning (hold a plate + turn the encoder, manual p.15): plate 0..11's offset in
+  // semitones, kept in the bank that plate's side plays under the current PLAY mode (the right
+  // bank under SPLIT), clamped to +-SynthRuntime::kPlateTuneRange. UI thread.
+  double keyboardPlateTune(int plate) const {
+    const DeviceStateV1* st = canonicalState();
+    if (st == nullptr || plate < 0 || plate >= 12) return 0.0;
+    return static_cast<double>((plateTuneBank_(*st, plate) == 0 ? st->keyboardPlateTune
+                                                                : st->keyboardPlateTuneR)[plate]);
+  }
+  bool postKeyboardPlateTune(int plate, double semitones);
   std::uint8_t keyboardRhythm(int side, bool seq) const {
     const DeviceStateV1* st = canonicalState();
     if (st == nullptr) return 0;
@@ -609,6 +619,7 @@ class StandaloneAudioEngine {
   void drainLive_(SynthRuntime& rt);
   // Audio thread: a parameter moved (any source) — rebase the MIDI pickup/relative state.
   void noteParameterSeen_(ParameterId id, double value);
+  static int plateTuneBank_(const DeviceStateV1& st, int plate);
   int slotCartridge_ = -1;  // -1: not picked since the last state install (shows the left side's)
   bool sendParameterFromAudioThread_(ParameterId id, double value, bool rebaseBindings, int originRow = -1);
   // Audio thread: rebase keyboard parameters from the runtime's own preset state.
@@ -1180,6 +1191,29 @@ inline bool StandaloneAudioEngine::postKeyboardRhythm(int side, bool seq, std::u
   return liveQueue_.push(c);
 }
 
+inline int StandaloneAudioEngine::plateTuneBank_(const DeviceStateV1& st, int plate) {
+  const auto mode = lunar24::core::mode_from_behaviour(st.keyboardSettings.pressureBehaviour);
+  const auto side = plate >= 6 ? lunar24::core::KeyboardSide::Right : lunar24::core::KeyboardSide::Left;
+  return lunar24::core::side_bank(mode, side) == 0u ? 0 : 1;
+}
+
+inline bool StandaloneAudioEngine::postKeyboardPlateTune(int plate, double semitones) {
+  if (!definition_ || !liveQueue_.canPush() || plate < 0 || plate >= 12 || !std::isfinite(semitones))
+    return false;
+  const double range = SynthRuntime::kPlateTuneRange;
+  semitones = std::clamp(semitones, -range, range);
+  DeviceStateV1& st = definition_->mutableDeviceState();
+  const int bank = plateTuneBank_(st, plate);
+  (bank == 0 ? st.keyboardPlateTune : st.keyboardPlateTuneR)[plate] = static_cast<float>(semitones);
+  ++editCount_;
+  lunar24::core::LiveCommand c;
+  c.kind = lunar24::core::LiveCommand::Kind::KeyboardPlateTune;
+  c.side = static_cast<std::uint32_t>(bank);
+  c.index = static_cast<std::uint32_t>(plate);
+  c.value = semitones;
+  return liveQueue_.push(c);
+}
+
 inline bool StandaloneAudioEngine::postKeyboardPreset(PresetAction action, std::uint32_t slot) {
   if (!definition_ || !liveQueue_.canPush() || !lunar24::core::preset_slot_is_valid(slot)) return false;
   DeviceStateV1& st = definition_->mutableDeviceState();
@@ -1596,6 +1630,9 @@ inline void StandaloneAudioEngine::drainLive_(SynthRuntime& rt) {
         break;
       case LiveCommand::Kind::KeyboardSelector:
         rt.setKeyboardClockSelector(static_cast<int>(c.side), c.index, static_cast<std::uint8_t>(c.value));
+        break;
+      case LiveCommand::Kind::KeyboardPlateTune:
+        rt.setKeyboardPlateTune(static_cast<int>(c.side), c.index, c.value);
         break;
       case LiveCommand::Kind::GraphPlanDone:
       case LiveCommand::Kind::Action:
