@@ -26,7 +26,8 @@ good-sounding instrument with a usable panel UI.
   same / software adaptation / not stated by the manual / manual contradiction) and
   `design/MANUAL_TESTS.md` (the owner's step-by-step manual test guide, in Chinese, using the
   exact panel names; add or update the test case whenever a fix changes what the owner should
-  check). No governance logs, role rosters, or message IDs in the repo.
+  check). `design/PLUGIN_PLAN.md` (in Chinese) is the AU / VST3 plugin plan; update it when
+  the plan changes. No governance logs, role rosters, or message IDs in the repo.
 - **Commit messages are plain English**: what changed and why, no internal ticket jargon.
 - Before finishing: `cmake --build build && ctest --test-dir build` must pass, and for audio
   changes render a WAV with `lunar24_render` and describe what changed in the sound.
