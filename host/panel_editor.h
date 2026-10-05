@@ -760,10 +760,10 @@ class PlateControl : public IControl {
   }
   void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override {
     if (semi_ == kNone) return;
-    if (!mRECT.Contains(x, y)) release();
+    if (!mRECT.Contains(x, y)) releasePlate();
     else s_.pressure(EditorShared::kMouseId, pressureAt(y), EditorShared::kMouseSource, int(w_.id));
   }
-  void OnMouseUp(float, float, const IMouseMod&) override { release(); }
+  void OnMouseUp(float, float, const IMouseMod&) override { releasePlate(); }
   // Command (Ctrl on Windows) + wheel over a plate tunes that plate, held or not: a trackpad
   // cannot scroll while it holds a click. Without Command the wheel tunes the held plates.
   // (iPlug2 reports Command as mod.R on macOS.)
@@ -786,7 +786,7 @@ class PlateControl : public IControl {
 
  private:
   static constexpr int kNone = -1000;
-  void release() {
+  void releasePlate() {
     if (semi_ == kNone) return;
     s_.note(false, semi_, EditorShared::kMouseId, 0.0, EditorShared::kMouseSource, int(w_.id));
     s_.lit.erase(int(w_.id));
