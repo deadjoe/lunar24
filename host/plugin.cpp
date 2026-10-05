@@ -21,7 +21,9 @@
 // retina is a separate SetScreenScale multiplier (slice), never folded in.
 
 #include "plugin.h"
+#ifdef APP_API
 #include "about.h"
+#endif
 #include <host/midi_timing.h>
 #include "IPlug_include_in_plug_src.h"
 
@@ -38,9 +40,10 @@
 
 using namespace iplug::igraphics;
 
-// Platform geometry probes implemented in host/main.mm (the ObjC++ bootstrap).
-// The plugin (framework-free-ish C++) asks the host for the screen's LOGICAL
-// area + retina scale; the layout math is all done here via the core module.
+#ifdef APP_API
+// The standalone app's platform layer (host/main.mm, host/window_metrics_win.cpp and
+// host/iPlug_app_host_override.cpp): screen geometry, the metal case, the audio device, the
+// log and the REC folder. The plugins have none of these.
 extern "C" double lunar_host_avail_logical_w();
 extern "C" double lunar_host_avail_logical_h();
 extern "C" double lunar_host_screen_scale();
@@ -52,13 +55,43 @@ extern "C" void lunar_host_request_audio_reopen();
 extern "C" void lunar_host_log(const char* line);
 extern "C" bool lunar_host_recordings_dir(char* out, std::size_t capacity);
 extern "C" void lunar_host_reveal_dir(const char* utf8Path);
+#else
+#include "plugin_settings_dir.h"
+#endif
+
+namespace {
+#ifndef APP_API
+// The plugins always run the engine with the stereo WET output and no input (config.h "0-2").
+constexpr int kPluginInputs = 0;
+constexpr int kPluginOutputs = 2;
+#endif
+
+// A line for the app's audio.log; the plugins keep no log.
+void hostLog([[maybe_unused]] const char* line)
+{
+#ifdef APP_API
+  lunar_host_log(line);
+#endif
+}
+}  // namespace
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
 {
   engine_.setAudioTap(&recorder_);
+#ifndef APP_API
+  // The plugins share the app's MIDI controller map (its settings folder); the machine state
+  // lives in the DAW project instead of the app's state file.
+  useMidiMapDirectory_(lunar24::host::plugin_settings_dir());
+#endif
 #if IPLUG_EDITOR
   mMakeGraphicsFunc = [&]() {
+#ifndef APP_API
+    // A plugin window opens at half the panel size (config.h); the DAW may resize it.
+    return MakeGraphics(*this, static_cast<int>(lunar24::core::kDesignWidth),
+                        static_cast<int>(lunar24::core::kDesignHeight), PLUG_FPS,
+                        static_cast<float>(PLUG_WIDTH / lunar24::core::kDesignWidth));
+#else
     // zoomScale <= 0 -> fit (delegate to core); zoomScale > 0 -> explicit zoom.
     // The env var is the ONLY place the fit-vs-clamp decision is injected, so the
     // negative path (clamp) is reproducible on demand.
@@ -86,6 +119,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     // so the internal view fills the dialog the host just sized.
     return MakeGraphics(*this, static_cast<int>(designW), static_cast<int>(designH),
                         PLUG_FPS, static_cast<float>(layout.drawScale));
+#endif
   };
 
   mLayoutFunc = [&](IGraphics* pGraphics) {
@@ -119,23 +153,29 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
 #endif
 }
 
+#ifdef APP_API
 bool LunarHostPlugin::OnHostRequestingAboutBox() { return lunar24::host::showAboutBox(); }
+#endif
 
 #if IPLUG_EDITOR
 void LunarHostPlugin::OnParentWindowResize(int width, int height)
 {
   // Zoom the panel to the window (iPlug2's default would reset the zoom to 1 and crop it).
-  // On macOS the window also draws a metal case round the panel (host/main.mm).
+  // In the macOS app the window also draws a metal case round the panel (host/main.mm).
   IGraphics* g = GetUI();
   if (g == nullptr || width <= 0 || height <= 0) return;
   const double windowScale = g->GetPlatformWindowScale();
   lunar24::host::CaseMargins margins;
+#ifdef APP_API
   lunar_host_case_margins(g->GetWindow(), &margins.side, &margins.top, &margins.bottom);
+#endif
   const auto p = lunar24::host::place_panel(width / windowScale, height / windowScale, lunar24::core::kDesignWidth,
                                             lunar24::core::kDesignHeight, margins);
   g->Resize(static_cast<int>(lunar24::core::kDesignWidth), static_cast<int>(lunar24::core::kDesignHeight),
             static_cast<float>(p.scale), false);
+#ifdef APP_API
   lunar_host_place_view(g->GetWindow(), p.x * windowScale, p.y * windowScale);
+#endif
 }
 #endif
 
@@ -151,16 +191,18 @@ static_assert(std::is_same_v<sample, double>,
 void LunarHostPlugin::OnReset()
 {
   // the stopped-stream boundary. Rebuild the runtime owner for the REAL device
-  // format the host is about to open. The physical connector counts are read from the host
-  // (NOT hardcoded): with the plan is negotiated from the device capability and
+  // format the host is about to open. In the app the physical connector counts are read from
+  // the host (NOT hardcoded): the plan is negotiated from the device capability and
   // installed via setActualChannelPlan BEFORE this runs, so NInChansConnected/
-  // NOutChansConnected are the actual open counts. A failure (e.g. <2 outputs, or the 0/0
-  // failure sentinel) leaves the engine not-ready and ProcessBlock fail-silent.
+  // NOutChansConnected are the actual open counts. The plugins use their fixed stereo output
+  // (engineInputs_ / engineOutputs_). A failure (e.g. <2 outputs, or the 0/0 failure
+  // sentinel) leaves the engine not-ready and ProcessBlock fail-silent.
   //
   //  this SAME boundary carries the state policy, in this exact order:
   //   1. captureCanonical: keep the committed config BEFORE prepare releases the owner, so a
   //      device reopen can never fall back to the power-on default or re-read the disk;
-  //   2. loadOnce: ONE startup read attempt per APP session (the store latches it explicitly);
+  //   2. loadOnce: ONE startup read attempt per APP session (the store latches it explicitly;
+  //      the plugins give the store no directory, so it never touches the app's state file);
   //   3. prepare: the unchanged owner (re)build for the real device format;
   //   4. publishPending: only when prepare produced a ready owner — publish the pending restore
   //      through the engine's ONE real candidate path. A rejection is atomic and the store records
@@ -174,7 +216,7 @@ void LunarHostPlugin::OnReset()
     const auto r = recorder_.stop();
     char line[160];
     std::snprintf(line, sizeof line, "recording stopped (sample rate changed): %.1f s", r.seconds);
-    lunar_host_log(line);
+    hostLog(line);
   }
   // The old runtime's notes die with it; the sustain pedal's held-note ledger
   // belongs to that stream (a stale pedal-down would defer the new stream's
@@ -194,11 +236,10 @@ void LunarHostPlugin::OnReset()
             : lunar24::core::make_default_device_state(lunar24::host::kLunarStartupSeed));
     engine_.closeDroneKeys();  // like a fresh start: the drones wait for their keys
   }
-  engine_.prepare(lunar24::host::kLunarStartupSeed, GetSampleRate(), GetBlockSize(),
-                  NInChansConnected(), NOutChansConnected());
+  engine_.prepare(lunar24::host::kLunarStartupSeed, GetSampleRate(), GetBlockSize(), engineInputs_(),
+                  engineOutputs_());
   if (engine_.isReady())
-    stateStore_.publishPending(engine_, GetSampleRate(), GetBlockSize(), NInChansConnected(),
-                               NOutChansConnected());
+    stateStore_.publishPending(engine_, GetSampleRate(), GetBlockSize(), engineInputs_(), engineOutputs_());
 }
 
 void LunarHostPlugin::setStateDirectory(const char* dir)
@@ -207,8 +248,13 @@ void LunarHostPlugin::setStateDirectory(const char* dir)
   // must never re-derive it (no environment lookup, no platform branch here) — the APP host owns
   // the one resolution, and this seam only carries it into the store.
   stateStore_.setDirectory(dir != nullptr ? std::string(dir) : std::string());
-  // The MIDI map lives in the same directory; load it once here and publish the snapshot.
-  midiMapStore_.setDirectory(dir != nullptr ? std::string(dir) : std::string());
+  useMidiMapDirectory_(dir != nullptr ? std::string(dir) : std::string());
+}
+
+void LunarHostPlugin::useMidiMapDirectory_(const std::string& dir)
+{
+  // Load the MIDI map from that directory once and publish the snapshot.
+  midiMapStore_.setDirectory(dir);
   midiMapStore_.load();
   engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
   const lunar24::core::MidiRigSettings& s = midiMapStore_.settings();
@@ -253,10 +299,12 @@ lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
 
 void LunarHostPlugin::requestFactoryReset()
 {
-  // Without a running machine there is nothing to swap: reset at the next stream open instead.
+  // Without a running machine there is nothing to swap: reset at the next OnReset instead.
   if (!engine_.isReady()) {
     factoryResetRequested_ = true;
+#ifdef APP_API
     lunar_host_request_audio_reopen();  // OnReset runs when the stream reopens
+#endif
     return;
   }
   engine_.syncParametersFromAudioThread();  // the reset keeps presets edited by MIDI too
@@ -281,8 +329,9 @@ void LunarHostPlugin::midiInputClosed()
   midiQueue_.invalidate();
 }
 
-void LunarHostPlugin::toggleRecording(int source)
+void LunarHostPlugin::toggleRecording([[maybe_unused]] int source)
 {
+#ifdef APP_API
   char line[1200];
   if (recorder_.recording()) {
     const auto r = recorder_.stop();
@@ -333,6 +382,7 @@ void LunarHostPlugin::toggleRecording(int source)
   std::snprintf(line, sizeof line, "recording %s at %d Hz: %s", lunar24::host::record_source_name(what), rate,
                 base.c_str());
   lunar_host_log(line);
+#endif
 }
 
 void LunarHostPlugin::OnIdle()
@@ -340,6 +390,7 @@ void LunarHostPlugin::OnIdle()
   // Record what MIDI changed on the audio thread. Here, not in the panel's redraw, so it is
   // saved even while the panel is closed (a plugin window usually is).
   engine_.syncParametersFromAudioThread();
+#ifdef APP_API
   lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
   logMidiClock_();
 
@@ -350,6 +401,7 @@ void LunarHostPlugin::OnIdle()
   lastAutosave_ = now;
   savedEditCount_ = engine_.editCount();
   (void)saveDeviceState();
+#endif
 }
 
 // At most every 2 s, on a transport or clock source change: what MIDI transport arrived and which clock the keyboard
@@ -375,12 +427,13 @@ void LunarHostPlugin::logMidiClock_()
                 "midi clock: +%u ticks, +%u start, +%u continue, +%u stop; keyboard clock %s; tempo edits %u",
                 counts[0] - loggedClock_[0], counts[1] - loggedClock_[1], counts[2] - loggedClock_[2],
                 counts[3] - loggedClock_[3], ext ? "external" : "internal", edits);
-  lunar_host_log(line);
+  hostLog(line);
   for (int i = 0; i < 4; ++i) loggedClock_[i] = counts[i];
   loggedExtClock_ = ext;
   loggedTempoEdits_ = edits;
 }
 
+#ifdef APP_API
 bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
 {
   //  disconnect ALL declared max channels first, then connect only
@@ -413,6 +466,7 @@ bool LunarHostPlugin::setActualChannelPlan(int inCh, int outCh)
   if (outCh > 0) SetChannelConnections(ERoute::kOutput, 0, outCh, true);
   return true;
 }
+#endif
 
 void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
@@ -422,7 +476,8 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
   // pass-through / second output bank in the host — that would be a wiring defect. The host's
   // only own output is silence while the UI thread swaps the machine.
   const lunar24::host::StandaloneAudioEngine::AudioScope scope(engine_);
-  if (!scope) {  // the UI thread is swapping the machine
+  // While the UI thread swaps the machine, or (plugins) the DAW has not connected both outputs.
+  if (!scope || NOutChansConnected() < engineOutputs_()) {
     for (int c = 0; c < NOutChansConnected(); ++c)
       if (outputs[c] != nullptr) std::fill_n(outputs[c], nFrames, 0.0);
     return;
@@ -433,7 +488,25 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
   // adds const / re-types at the compile-time layer, and the host touches no data itself.
   engine_.processBlock(reinterpret_cast<const double* const*>(inputs),
                        reinterpret_cast<double* const*>(outputs),
-                       NInChansConnected(), NOutChansConnected(), nFrames);
+                       engineInputs_(), engineOutputs_(), nFrames);
+}
+
+int LunarHostPlugin::engineInputs_() const
+{
+#ifdef APP_API
+  return NInChansConnected();  // the device plan setActualChannelPlan installed
+#else
+  return kPluginInputs;
+#endif
+}
+
+int LunarHostPlugin::engineOutputs_() const
+{
+#ifdef APP_API
+  return NOutChansConnected();
+#else
+  return kPluginOutputs;
+#endif
 }
 
 void LunarHostPlugin::drainMidiInput(int frames)

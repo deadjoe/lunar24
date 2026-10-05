@@ -1,12 +1,11 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// host/config.h — iPlug2 standalone build configuration for the Lunar 24 host
-// standalone editor. This is the APP_API config (the desktop app that opens a
-// real macOS window), NOT a DAW plugin. The window itself is sized by the
-// geometry choke point in host/include/host/window_layout.h, so the
-// PLUG_WIDTH/PLUG_HEIGHT here are only the initial editor size that the host
-// then overrides via SetEditorSize inside the mMakeGraphicsFunc lambda.
+// host/config.h — iPlug2 build configuration for Lunar 24: the standalone app (APP_API) and
+// the VST3 / AUv2 instrument plugins (every other API). The app's window is sized by the
+// geometry choke point in host/include/host/window_layout.h, so its PLUG_WIDTH/PLUG_HEIGHT are
+// only the initial editor size that the host then overrides via SetEditorSize inside the
+// mMakeGraphicsFunc lambda.
 //
 // ⚠️ Do NOT #define BUNDLE_ID or APP_GROUP_ID: IPlug_include_in_plug_hdr.h
 // derives them as
@@ -47,35 +46,54 @@
 // 4. Every VALID negotiated plan must be admitted by iPlug2's AUTHORITATIVE parsed-config check
 // IPlugProcessor::LegalIO(in,out) (see host/plugin.cpp setActualChannelPlan); stream_plan.h
 // ::is_legal_io is only the framework-free STREAM-POLICY invariant that agrees with it.
+// The plugins are instruments with the stereo WET output.
 #ifdef APP_API
 #define PLUG_CHANNEL_IO "0-2 1-2 2-2 0-4 1-4 2-4"
+#define PLUG_TYPE 0
 #else
-#define PLUG_CHANNEL_IO "1-1 2-2"
+#define PLUG_CHANNEL_IO "0-2"
+#define PLUG_TYPE 1
 #endif
 
 #define PLUG_LATENCY 0
-#define PLUG_TYPE 0
 #define PLUG_DOES_MIDI_IN 1
 #define PLUG_DOES_MIDI_OUT 0
 #define PLUG_DOES_MPE 0
 #define PLUG_DOES_STATE_CHUNKS 1
 #define PLUG_HAS_UI 1
 
+// The panel stops shrinking at half size (IGraphics' smallest zoom, 0.5: labels are ~6 pt
+// there), so the window may not get smaller either, or the panel would be cut off.
+#ifdef APP_API
 // Initial editor size (design space). The host overrides these with the fit
 // logical size at open time; these are just the "default editor" the library
 // seeds before the geometry choke point runs.
 #define PLUG_WIDTH 2400
 #define PLUG_HEIGHT 1551
-// The panel stops shrinking at half size (IGraphics' smallest zoom, 0.5: labels are ~6 pt
-// there), so the window may not get smaller either, or the panel would be cut off. Windows
-// applies this to the whole window (frame, title and menu bar included), hence the margin;
-// macOS sets the same limit on the content area in main.mm. MAX is left to the library.
+// Windows applies the minimum to the whole window (frame, title and menu bar included), hence
+// the margin; macOS sets the same limit on the content area in main.mm. MAX is left to the
+// library.
 #define PLUG_MIN_WIDTH 1216
 #define PLUG_MIN_HEIGHT 836
+#else
+// A plugin window opens at half the panel size.
+#define PLUG_WIDTH 1200
+#define PLUG_HEIGHT 776
+#define PLUG_MIN_WIDTH 1200
+#define PLUG_MIN_HEIGHT 776
+#endif
 
 #define PLUG_FPS 60
 #define PLUG_SHARED_RESOURCES 0
 #define PLUG_HOST_RESIZE 1
+
+#define AUV2_ENTRY Lunar24_Entry
+#define AUV2_ENTRY_STR "Lunar24_Entry"
+#define AUV2_FACTORY Lunar24_Factory
+#define AUV2_VIEW_CLASS Lunar24_View
+#define AUV2_VIEW_CLASS_STR "Lunar24_View"
+
+#define VST3_SUBCATEGORY "Instrument|Synth"
 
 #define APP_NUM_CHANNELS 2
 #define APP_N_VECTOR_WAIT 0

@@ -1,12 +1,10 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// host/plugin.h — the Lunar 24 host standalone plugin. This is the
-// IPlugAPP plugin class the host opens. Its editor is intentionally empty for
-// the mandate is to prove the self-authored host bootstrap opens a real
-// macOS window sized by the geometry choke point, not to render controls yet.
-// The window-sizing logic lives in the mMakeGraphicsFunc lambda (below) — that is
-// the one place the host consumes lunar24::host::compute_window_layout.
+// host/plugin.h — the Lunar 24 iPlug2 plugin class: the standalone app (APP_API) and the
+// VST3 / AUv2 plugins build the same class; APP_API marks the app-only parts. In the app the
+// window-sizing logic lives in the mMakeGraphicsFunc lambda — the one place the host consumes
+// lunar24::host::compute_window_layout.
 
 #pragma once
 #include <host/midi_input_queue.h>
@@ -33,8 +31,10 @@ class LunarHostPlugin final : public Plugin
 public:
   LunarHostPlugin(const InstanceInfo& info);
 
+#ifdef APP_API
   // Lunar 24 → About Lunar 24: version, build stamp and copyright (host/about.h).
   bool OnHostRequestingAboutBox() override;
+#endif
 
 #if IPLUG_EDITOR
   // The window was resized (also once when it opens). iPlug2's default turns the window
@@ -64,7 +64,9 @@ public:
   // rejected: the host installs a 0-in/0-out sentinel and returns false so the owner is NOT-READY
   // (never "a device channel plan silently clamped/truncated"). The host MUST check the return.
   // 0/0 is itself legal (the fail-closed NOT-READY sentinel the invalidation helper installs).
+#ifdef APP_API
   bool setActualChannelPlan(int inCh, int outCh);
+#endif
 #endif
 
   // the APP host hands in the ALREADY-RESOLVED per-user settings directory (the
@@ -110,7 +112,7 @@ public:
   int midiSplitNote() const { return midiSplitNote_.load(std::memory_order_relaxed); }
   void setMidiRigSettings(int channelFilter, int octaveShift, int curve, int splitNote);
   // UI thread: REC. Starts recording `source` (0 WET, 1 DRY, 2 ALL) to Music/Lunar 24, or stops
-  // and opens that folder.
+  // and opens that folder. The app only (a DAW records the plugin itself).
   void toggleRecording(int source);
   bool recording() const { return recorder_.recording(); }
   double recordingSeconds() const { return recorder_.seconds(); }
@@ -129,6 +131,12 @@ public:
   std::uint16_t midiLitPlates() const { return midiLights_.mask(); }
 
 private:
+  // The channel counts the engine is prepared for and renders with: the app's opened device
+  // plan, or the plugins' fixed stereo output.
+  int engineInputs_() const;
+  int engineOutputs_() const;
+  // UI thread: load the MIDI controller map from `dir` and publish it to the audio thread.
+  void useMidiMapDirectory_(const std::string& dir);
   // Audio thread: after a machine swap, forget the notes and pedal the old machine was holding.
   void dropMidiLedgersAfterSwap_();
   std::uint64_t seenSwaps_ = 0;  // audio thread
@@ -145,7 +153,9 @@ private:
 
   // REC: declared before engine_ so it outlives the engine's pointer to it.
   lunar24::host::WavRecorder recorder_;
+#ifdef APP_API
   std::string recordingDir_;  // where the last recording went (opened when it stops)
+#endif
 
   // The framework-free runtime owner, held BY VALUE. It owns the address-stable
   // MachineRuntimeDefinition (heap) + the single DeviceAdapter. ProcessBlock is a
@@ -187,7 +197,9 @@ private:
   bool loggedExtClock_ = false;
   std::uint32_t loggedTempoEdits_ = 0;
   std::chrono::steady_clock::time_point lastClockLog_{};
+#ifdef APP_API
   std::uint64_t savedEditCount_ = 0;
   std::chrono::steady_clock::time_point lastAutosave_ = std::chrono::steady_clock::now();
+#endif
   std::uint64_t midiSeq_ = 0;
 };
