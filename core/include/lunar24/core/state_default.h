@@ -92,4 +92,13 @@ inline DeviceStateV1 make_default_device_state(std::uint64_t seed) noexcept {
   return st;
 }
 
+// The panel's RESET PANEL: the power-on default, except the keyboard presets A-D, which are the
+// player's saved work and survive a reset (like the MIDI bindings, which live in their own file).
+inline DeviceStateV1 make_reset_device_state(const DeviceStateV1& current, std::uint64_t seed) noexcept {
+  DeviceStateV1 st = make_default_device_state(seed);
+  for (std::uint32_t k = 0; k < kDeviceKeyboardPresetCount; ++k)
+    st.keyboardPresets[k] = current.keyboardPresets[k];
+  return st;
+}
+
 }  // namespace lunar24::core

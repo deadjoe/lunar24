@@ -32,7 +32,8 @@ Keep these unless a listening test or a real bug says otherwise.
   (no wrap); presets A-D are picked directly. While open it covers the encoder, so CLOSE or
   Esc closes it. Its footer holds RESET PANEL (two clicks): the reset publishes the power-on
   default at a stopped-stream boundary (the audio stream is briefly reopened), the same path
-  as a startup restore, so it covers the stored machine state, not just knobs. MIDI bindings and CHANNEL /
+  as a startup restore, so it covers the stored machine state, not just knobs. Keyboard presets
+  A-D are kept (the player's saved work; INIT clears one), and MIDI bindings and CHANNEL /
   TRANSPOSE / VELOCITY belong to the separate controller configuration and are not reset.
 - **MUTE button** (right of DRONE VOICES, not on the hardware): an app-level output mute with a
   10 ms fade; the machine keeps running, nothing is saved, the app starts unmuted. This is

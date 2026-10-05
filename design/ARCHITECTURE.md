@@ -822,10 +822,10 @@ MIDI 进入键盘的入口在 `host/plugin.cpp`。键盘的各项功能见后续
   - 【软件化调整】硬件是转编码器选 A–D、按下进入子页面再选操作。Lunar 24 在菜单底部直接排着 A | B | C | D 和 LOAD / SAVE / INIT 按钮。
   - INIT 要在 4 秒内点两次才生效，防止误清。
 - 预设随机器状态一起保存，下次启动仍然在。
-- **【待办】RESET PANEL 会把预设 A–D 一起清空**（owner 决定：复位时保留预设 A–D，需要改代码；已写入 `STATUS.md`）：
-  - RESET PANEL 把整台机器恢复成出厂默认，键盘预设也在其中，所以存好的 4 个预设会被清掉。
+- **【软件化调整】RESET PANEL 保留预设 A–D**（owner 决定，复位保留预设 PR 已改）：
+  - RESET PANEL 只把面板和键盘的当前设置恢复出厂，存好的 4 个预设保留，和 MIDI 绑定的处理方式一样（`DECISIONS.md`；代码 `make_reset_device_state`）。
   - 硬件上的预设存在键盘自己的存储里，没有"一键复位整台机器"这种操作，所以手册里没有对应的情况。
-  - 改法：RESET PANEL 时保留预设 A–D，只复位面板和键盘的当前设置，和 MIDI 绑定的处理方式一样（`DECISIONS.md`）。
+  - 要清空某个预设，用 INIT。
 
 ---
 

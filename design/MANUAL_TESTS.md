@@ -26,7 +26,7 @@
 
 ### 测试常用准备
 
-- **出厂状态**：RESET PANEL（点两次）。几乎每项测试都从这里开始；不会清除 MIDI 绑定或 CHANNEL / TRANSPOSE / VELOCITY / SPLIT。RESET 后（和每次刚打开应用时一样）DRONE VOICES 的 6 个键都是**关的**，没有 drone 声；要听 drone 就在 DRONE VOICES 里手动打开。
+- **出厂状态**：RESET PANEL（点两次）。几乎每项测试都从这里开始；不会清除键盘预设 A–D、MIDI 绑定或 CHANNEL / TRANSPOSE / VELOCITY / SPLIT。RESET 后（和每次刚打开应用时一样）DRONE VOICES 的 6 个键都是**关的**，没有 drone 声；要听 drone 就在 DRONE VOICES 里手动打开。
 - **去掉混响**：DUAL EFFECTOR 区的 **BLEND** 拖到最左。待参数平滑结束后只听干声；这不排除包络释放、滤波器振铃或其它仍在发声的通道。
 - **只听某一路（solo）**：VOICE MIXER 里其它 9 路的 **VOL** 拖到最左。或者在 DRONE VOICES 里只打开要听的 drone。
 - **关掉所有 drone**：键盘区右边 DRONE VOICES 的 6 个键全部关掉（RESET PANEL 后本来就是全关的）。
@@ -945,7 +945,26 @@
   - 第 3 步：LOAD 短暂显示 LOADED，菜单里 MODE 变回 ARPEGGIATOR；两个音轮流响。载入时声音不中断。
   - 第 4 步：MODE 仍是 ARPEGGIATOR（预设随程序一起保存）。
   - 第 5 步：第一次点 INIT 显示 SURE?，第二次显示 CLEARED；再 LOAD 后 MODE 回到 KEYBOARD。
-- 测完点 **RESET PANEL**（会清掉所有预设）。
+- 测完点 **RESET PANEL**（预设会保留；要清空某个预设用 INIT）。
+
+**T12.8a RESET PANEL 保留预设 A–D** 🔧（复位保留预设 PR）
+- 修正前：RESET PANEL 把整台机器恢复出厂，存好的 4 个预设也一起被清掉。
+- 现在：RESET PANEL 只复位面板和键盘菜单的当前设置，预设 A–D 保留，和 MIDI 绑定一样。
+- 准备：RESET PANEL；DRONE VOICES 全关；只听键盘的声音。
+- 步骤：
+  1. 打开键盘菜单。PLAY 页 **MODE** 点 **ARPEGGIATOR**；ARP 页 **DIRECTION** 点 **BACKWARD**。
+  2. 菜单底部 PRESET 点 **C**，点 **SAVE**（短暂显示 SAVED）。
+  3. 菜单右下角 **RESET PANEL** 点两下（4 秒内），菜单关掉。
+  4. 打开菜单，看 PLAY 页 MODE、ARP 页 DIRECTION。
+  5. PRESET 点 **C**，点 **LOAD**。
+  6. 关掉菜单，依次按下 **A**、**D**、**G** 并一直按住（先 A 再 D 再 G）。
+  7. ⌘Q 退出程序再打开，打开菜单，PRESET 点 **C**，点 **LOAD**。
+  8. 收尾：PRESET C 点 **INIT** 两次（显示 CLEARED），再 RESET PANEL。
+- 期望：
+  - 第 4 步：MODE = **KEYBOARD**、DIRECTION = **FORWARD**（当前设置回到出厂）。
+  - 第 5 步：短暂显示 LOADED，MODE 变成 **ARPEGGIATOR**、DIRECTION 变成 **BACKWARD**（预设 C 还在）。
+  - 第 6 步：琶音从高往低弹：G E C G E C……
+  - 第 7 步：重启后预设 C 仍能载入，MODE / DIRECTION 同第 5 步。
 
 **T12.9 PRESSURE OUTPUT / RISE / FALL（压力输出）** 🔧 (#77)
 - 准备：同 T4.2（PRESSURE → FILTER 的 **CV L**，**MOD L** 一半以上，左边 **FREQ** 约 1/4）。用鼠标按触摸板：按得越靠下压力越大，按住上下拖动压力跟着变。
