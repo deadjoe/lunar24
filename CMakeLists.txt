@@ -7,7 +7,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(Lunar24
-  VERSION 0.0.1
+  VERSION 1.0.0
   DESCRIPTION "Independent, unaffiliated desktop study of the ELTA Solar 42N panel and behaviour"
   LANGUAGES CXX)
 

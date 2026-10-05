@@ -33,6 +33,9 @@ class LunarHostPlugin final : public Plugin
 public:
   LunarHostPlugin(const InstanceInfo& info);
 
+  // Lunar 24 → About Lunar 24: version, build stamp and copyright (host/about.h).
+  bool OnHostRequestingAboutBox() override;
+
 #if IPLUG_EDITOR
   // The window was resized (also once when it opens). iPlug2's default turns the window
   // size into the drawing size at scale 1, which crops the fixed 2400 x 1552 panel; keep the

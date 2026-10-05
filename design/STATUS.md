@@ -15,6 +15,7 @@ _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manua
 - **App (host/)**: macOS / Windows standalone with the official panel layout, MIDI input
   and MIDI learn, REC to WAV, machine state restored on launch. CI builds a downloadable
   app on every run (Actions → run → Artifacts: Lunar24-macOS, Lunar24-Windows).
+- **Version**: 1.0.0; About Lunar 24 shows the build number, time and commit.
 - **Tools**: `lunar24_render` (engine to WAV), `panel_preview` (panel to SVG).
 - **Tests**: 65 unit / engine tests (~70 s), also under ASan + UBSan in CI.
 - **Checked by hand on the Mac**: everything in MANUAL_TESTS except the ⏳ items below.

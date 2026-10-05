@@ -24,6 +24,11 @@ Keep these unless a listening test or a real bug says otherwise.
   is `place_panel` (`window_layout.h`), shared by the case drawing and the resize code.
   In full screen the case shrinks to a thin rim (no screws) so the panel fills the screen.
   Windows keeps a plain window.
+- **Version and build stamp** (owner, 2026-10-05): the version is the root `project()` VERSION
+  (1.0.0), the only place to bump it; config.h, the Windows .rc and the Info.plist read it. Each
+  build writes the CI run number, UTC time and commit to `build_info.h` (`host/build_info.cmake`),
+  shown in About Lunar 24 with the Bearbone.Studio logo and copyright. No Debug menu (iPlug2's
+  live edit / bounds / FPS / screenshot tools are for library developers).
 - **The window scales the whole panel to fit** (`LunarHostPlugin::OnParentWindowResize`);
   iPlug2's default resets the zoom to 1 on every resize, which cropped the panel.
 - **Keyboard menu** (36 settings in 6 function tabs, `host/include/host/keyboard_menu_view.h`)
