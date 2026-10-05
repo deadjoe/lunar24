@@ -31,9 +31,10 @@
 #include <cstring>
 
 #include "IPlugAPP_host.h"   // IPlugAPPHost, sInstance, MainDlgProc, WDL_String
-#include "IPlugSWELL.h"      // SWELL API: CreateDialog, LoadMenu, SetMenu, menu...
+#include "IPlugSWELL.h"      // SWELL API: CreateDialog, SetMenu, menu...
 #include "config.h"
 #include "resource.h"
+#include "about.h"
 #include <lunar24/core/host_window_fit.h>  // panel design size
 #include <host/window_layout.h>          // the case round the panel (place_panel)
 
@@ -264,71 +265,13 @@ INT_PTR SWELLAppMain(int msg, INT_PTR parm1, INT_PTR parm2)
     {
       pAppHost = IPlugAPPHost::sInstance.get();
 
+      // The menu bar is the application menu built in main() (About, Preferences, Hide, Quit).
+      // iPlug2's stock File / Debug menus are not added (no menu resource): File's items are
+      // already in the application menu, and Debug (live edit, control bounds, FPS, screenshot)
+      // is a library developer's tool.
       HMENU menu = SWELL_GetCurrentMenu();
-
       if (menu)
-      {
-        // work on a new menu
         menu = SWELL_DuplicateMenu(menu);
-        HMENU src = LoadMenu(NULL, MAKEINTRESOURCE(IDR_MENU1));
-
-        for (int x = 0; x < GetMenuItemCount(src) - 1; x++)
-        {
-          HMENU sm = GetSubMenu(src, x);
-          if (sm)
-          {
-            char str[1024];
-            MENUITEMINFO mii = {sizeof(mii), MIIM_TYPE};
-            mii.dwTypeData = str;
-            mii.cch = sizeof(str);
-            str[0] = 0;
-            GetMenuItemInfo(src, x, TRUE, &mii);
-            MENUITEMINFO mi = {sizeof(mi), MIIM_STATE|MIIM_SUBMENU|MIIM_TYPE, MFT_STRING,
-                               0, 0, SWELL_DuplicateMenu(sm), NULL, NULL, 0, str};
-            InsertMenuItem(menu, x + 1, TRUE, &mi);
-          }
-        }
-      }
-
-      if (menu)
-      {
-        HMENU sm = GetSubMenu(menu, 1);
-        DeleteMenu(sm, ID_QUIT, MF_BYCOMMAND);        // in the system menu on OSX
-        DeleteMenu(sm, ID_PREFERENCES, MF_BYCOMMAND); // in the system menu on OSX
-
-        // remove any trailing separators
-        int a = GetMenuItemCount(sm);
-        while (a > 0 && GetMenuItemID(sm, a - 1) == 0)
-          DeleteMenu(sm, --a, MF_BYPOSITION);
-
-        DeleteMenu(menu, 1, MF_BYPOSITION); // delete file menu
-      }
-#ifdef ID_SCREENSHOT
-      SetMenuItemModifier(menu, ID_SCREENSHOT, MF_BYCOMMAND, 'S', FCONTROL | FSHIFT);
-#endif
-
-#if !defined _DEBUG || defined NO_IGRAPHICS
-      if (menu)
-      {
-        HMENU sm = GetSubMenu(menu, 1);
-        DeleteMenu(sm, ID_LIVE_EDIT, MF_BYCOMMAND);
-        DeleteMenu(sm, ID_SHOW_BOUNDS, MF_BYCOMMAND);
-        DeleteMenu(sm, ID_SHOW_DRAWN, MF_BYCOMMAND);
-        DeleteMenu(sm, ID_SHOW_FPS, MF_BYCOMMAND);
-
-        int a = GetMenuItemCount(sm);
-        while (a > 0 && GetMenuItemID(sm, a - 1) == 0)
-          DeleteMenu(sm, --a, MF_BYPOSITION);
-
-        if (GetMenuItemCount(sm) == 0)
-          DeleteMenu(menu, 1, MF_BYPOSITION);
-      }
-#else
-      SetMenuItemModifier(menu, ID_LIVE_EDIT, MF_BYCOMMAND, 'E', FCONTROL);
-      SetMenuItemModifier(menu, ID_SHOW_DRAWN, MF_BYCOMMAND, 'D', FCONTROL);
-      SetMenuItemModifier(menu, ID_SHOW_BOUNDS, MF_BYCOMMAND, 'B', FCONTROL);
-      SetMenuItemModifier(menu, ID_SHOW_FPS, MF_BYCOMMAND, 'F', FCONTROL);
-#endif
 
       HWND hwnd = CreateDialog(gHINST, MAKEINTRESOURCE(IDD_DIALOG_MAIN), NULL,
                                IPlugAPPHost::MainDlgProc);
@@ -494,8 +437,8 @@ int main(int argc, char* argv[])
 // ---------------------------------------------------------------------------
 // SWELL resource generation. MUST be in this TU (the one that would otherwise be
 // IPlugAPP_main.cpp): swell-dlggen.h + main.rc_mac_dlg build the dialog resource
-// index (SWELL_curmodule_dialogresource_head) and swell-menugen.h + main.rc_mac_menu
-// build the menu resource index, both consumed by CreateDialog/LoadMenu above.
+// index (SWELL_curmodule_dialogresource_head) consumed by CreateDialog above. There is no
+// menu resource: the menu bar is built in main().
 // ---------------------------------------------------------------------------
 #define CBS_HASSTRINGS 0
 #define SWELL_DLG_SCALE_AUTOGEN 1
@@ -505,8 +448,6 @@ int main(int argc, char* argv[])
 #endif
 #include "swell-dlggen.h"
 #include "resources/main.rc_mac_dlg"
-#include "swell-menugen.h"
-#include "resources/main.rc_mac_menu"
 
 // REC: the recordings folder, ~/Music/Lunar 24 (created when missing), as a UTF-8 path.
 extern "C" bool lunar_host_recordings_dir(char* out, size_t capacity)
@@ -532,4 +473,38 @@ extern "C" void lunar_host_reveal_dir(const char* utf8Path)
     NSString* path = [NSString stringWithUTF8String:utf8Path];
     if (path != nil) [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path isDirectory:YES]];
   }
+}
+
+// About Lunar 24 (host/about.h): the standard macOS about panel. Under the name: the version and
+// build stamp; then the Bearbone.Studio logo (Contents/Resources/bearbone_logo.png) and the
+// copyright line.
+bool lunar24::host::showAboutBox()
+{
+  @autoreleasepool {
+    NSMutableDictionary* options = [NSMutableDictionary dictionary];
+    options[NSAboutPanelOptionApplicationName] = @"Lunar 24";
+    options[NSAboutPanelOptionApplicationVersion] = [NSString stringWithUTF8String:aboutVersion()];
+    options[NSAboutPanelOptionVersion] = [NSString stringWithUTF8String:aboutBuild()];
+    options[@"Copyright"] = [NSString stringWithUTF8String:aboutCopyright()];
+
+    NSString* logoPath = [[NSBundle mainBundle] pathForResource:@"bearbone_logo" ofType:@"png"];
+    NSImage* logo = logoPath ? [[[NSImage alloc] initWithContentsOfFile:logoPath] autorelease] : nil;
+    if (logo && logo.size.width > 0)
+    {
+      const CGFloat width = 64;  // points; the PNG is 256 px, sharp on Retina
+      logo.size = NSMakeSize(width, width * logo.size.height / logo.size.width);
+      NSTextAttachment* attachment = [[[NSTextAttachment alloc] init] autorelease];
+      attachment.image = logo;
+      NSMutableAttributedString* credits = [[[NSMutableAttributedString alloc]
+          initWithAttributedString:[NSAttributedString attributedStringWithAttachment:attachment]] autorelease];
+      NSMutableParagraphStyle* centred = [[[NSMutableParagraphStyle alloc] init] autorelease];
+      centred.alignment = NSTextAlignmentCenter;
+      [credits addAttribute:NSParagraphStyleAttributeName value:centred range:NSMakeRange(0, credits.length)];
+      options[NSAboutPanelOptionCredits] = credits;
+    }
+
+    [NSApp orderFrontStandardAboutPanelWithOptions:options];
+    [NSApp activateIgnoringOtherApps:YES];
+  }
+  return true;
 }

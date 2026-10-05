@@ -17,15 +17,18 @@
 #ifndef HOST_CONFIG_H
 #define HOST_CONFIG_H
 
+// Version and copyright come from the build (root CMakeLists.txt project VERSION).
+#include "lunar24_version.h"
+
 #define PLUG_NAME "Lunar 24"
 #define PLUG_MFR "Lunar24"
-#define PLUG_VERSION_HEX 0x00000001
-#define PLUG_VERSION_STR "0.0.1"
+#define PLUG_VERSION_HEX LUNAR24_VERSION_HEX
+#define PLUG_VERSION_STR LUNAR24_VERSION
 #define PLUG_UNIQUE_ID 'Lu24'
 #define PLUG_MFR_ID 'Lua2'
 #define PLUG_URL_STR "https://github.com/deadjoe/lunar24"
 #define PLUG_EMAIL_STR "lunar24@example.invalid"
-#define PLUG_COPYRIGHT_STR "Copyright 2026 Lunar 24 contributors"
+#define PLUG_COPYRIGHT_STR LUNAR24_COPYRIGHT_ASCII
 #define PLUG_CLASS_NAME LunarHostPlugin
 
 // macOS bundle id pieces (BUNDLE_ID is derived by the iPlug header).

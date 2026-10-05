@@ -27,11 +27,15 @@
 //
 // Lunar alterations (vs Examples/IPlugVisualizer/resources/main.rc):
 //   * caption changed from the IPlugVisualizer default to "Lunar24".
-//   * version/product string fields reshaped to Lunar24 0.0.1 (mirrors host/config.h).
+//   * version/product/copyright fields read lunar24_version.h (generated from the CMake project
+//     VERSION, see host/CMakeLists.txt).
+//   * the Debug menu's accelerators (live edit, bounds, drawn area, FPS, screenshot) removed;
+//     the stock WinMain drops the Debug menu itself in release builds.
 //   * the IPlugVisualizer .ico / .ttf resource entries removed (the host ships no icon/font).
 //   * the 'IDD_DIALOG1 AFX_DIALOG_LAYOUT' block removed (no host/resource.h ID backs it).
 //
 #include "resource.h"
+#include "lunar24_version.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////
@@ -187,11 +191,6 @@ END
 IDR_ACCELERATOR1 ACCELERATORS
 BEGIN
     VK_OEM_COMMA,   ID_PREFERENCES,         VIRTKEY, CONTROL, NOINVERT
-    "B",            ID_SHOW_BOUNDS,         VIRTKEY, CONTROL, NOINVERT
-    "D",            ID_SHOW_DRAWN,          VIRTKEY, CONTROL, NOINVERT
-    "F",            ID_SHOW_FPS,            VIRTKEY, CONTROL, NOINVERT
-    "E",            ID_LIVE_EDIT,           VIRTKEY, CONTROL, NOINVERT
-    "S",            ID_SCREENSHOT,          VIRTKEY, CONTROL, SHIFT, NOINVERT
 END
 
 /////////////////////////////////////////////////////////////////////////////
@@ -202,8 +201,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 0,0,1,0
-PRODUCTVERSION 0,0,1,0
+FILEVERSION LUNAR24_VERSION_RC
+PRODUCTVERSION LUNAR24_VERSION_RC
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -218,13 +217,13 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "FileVersion", "0.0.1"
-            VALUE "ProductVersion", "0.0.1"
+            VALUE "FileVersion", LUNAR24_VERSION
+            VALUE "ProductVersion", LUNAR24_VERSION
             VALUE "FileDescription", "Lunar 24"
             VALUE "InternalName", "Lunar24"
             VALUE "ProductName", "Lunar 24"
             VALUE "CompanyName", "Lunar24"
-            VALUE "LegalCopyright", "Copyright 2026 Lunar 24 contributors"
+            VALUE "LegalCopyright", LUNAR24_COPYRIGHT_ASCII
             VALUE "OriginalFilename", "Lunar24.exe"
         END
     END

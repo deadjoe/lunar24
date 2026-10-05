@@ -21,6 +21,7 @@
 // retina is a separate SetScreenScale multiplier (slice), never folded in.
 
 #include "plugin.h"
+#include "about.h"
 #include <host/midi_timing.h>
 #include "IPlug_include_in_plug_src.h"
 
@@ -117,6 +118,8 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
   };
 #endif
 }
+
+bool LunarHostPlugin::OnHostRequestingAboutBox() { return lunar24::host::showAboutBox(); }
 
 #if IPLUG_EDITOR
 void LunarHostPlugin::OnParentWindowResize(int width, int height)

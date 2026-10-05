@@ -266,6 +266,14 @@
   4. 一边插拔，一边听混响尾巴和 drone。
 - 期望：声音一直连续，没有"咔"、"噗"或一瞬间的断音；插上时调制马上起作用，拔掉马上停。
 
+**T0.9 About 和菜单栏** ⏳
+- 步骤：
+  1. 屏幕顶部菜单栏点 **Lunar 24 → About Lunar 24**。
+  2. 看菜单栏。
+- 期望：
+  - 第 1 步：弹出关于窗口，从上到下：应用图标；**Lunar 24**；**Version 1.0.0 (Build 编号 · 构建时间 UTC · 提交号)**；黑熊 logo；**© 2026 Bearbone.Studio**。构建编号就是 GitHub Actions 那次运行的编号（运行列表里的 #数字），提交号是这次构建的代码版本，两者都能在 Actions 页面对上。
+  - 第 2 步：菜单栏只有 Lunar 24 一个菜单（About、Preferences…、Hide、Quit），没有 Debug 菜单。
+
 ### 1. VOICE MIXER
 
 **T1.1 VOL** ✅

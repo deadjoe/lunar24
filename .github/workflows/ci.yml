@@ -28,6 +28,10 @@ jobs:
           - os: windows-latest
             cxx: cl
     runs-on: ${{ matrix.os }}
+    env:
+      # The commit shown in About Lunar 24 (host/build_info.cmake): a pull request's own head
+      # commit, not the merge commit the run checks out.
+      LUNAR24_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v5
         with:
