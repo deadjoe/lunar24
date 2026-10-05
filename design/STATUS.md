@@ -17,7 +17,7 @@ _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manua
   app on every run (Actions → run → Artifacts: Lunar24-macOS, Lunar24-Windows).
 - **Plugins**: VST3 (Mac, Windows) and AUv2 (Mac) instruments built from the same code.
   The machine and drone keys are saved in the DAW project; MIDI bindings are shared with
-  the app; no REC (PHONE knob in its place). CI checks them with Steinberg's validator and
+  the app; REC is shown but does not respond. CI checks them with Steinberg's validator and
   auval (Artifacts: Lunar24-Plugins-macOS, Lunar24-Plugins-Windows). Install and test steps:
   MANUAL_TESTS section 17. Plan and decisions: `design/PLUGIN_PLAN.md`.
 - **Version**: 1.0.0; About Lunar 24 shows the build number, time and commit.

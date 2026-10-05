@@ -1494,10 +1494,10 @@
 ### 17. 插件（VST3 / AU，Ableton Live）
 
 插件和独立 App 是同一个面板、同一个声音引擎，差别只在这几处：
-- 没有 REC：耳机区显示硬件原样的耳机图标和 **PHONE** 旋钮（它只管耳机音量，插件里没有耳机输出，拧了不影响声音）；录音用 DAW 自己的录音。
+- REC 不能用：REC 按钮和 WET / DRY / ALL 旋钮看起来和独立 App 一样，但点了没有反应；录音用 DAW 自己的录音。
 - 音频设备、采样率、MIDI 输入都由 DAW 管，没有 Preferences。MIDI 设置面板的 INPUT 一行显示 MIDI comes from the DAW track。
 - 音色、接线、键盘设置和 DRONE VOICES 的开关存进 DAW 工程，不读写独立 App 的状态文件。
-- MIDI 绑定和 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 与独立 App **共用**同一份设置：哪边改了，另一边下次打开时也是新的。在独立 App 里学会的绑定在插件里照样生效（插件不知道 MIDI 来自哪个控制器，任何设备的绑定都算数）。
+- MIDI 绑定和 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 与独立 App **共用**同一份设置：哪边改了，另一边下次打开时也是新的。在独立 App 里学会的绑定在插件里照样生效：DAW 不告诉插件 MIDI 来自哪个控制器，所以插件只核对通道和 CC 号，不核对设备名。如果在 App 里给两个控制器的同一个 CC 号绑了不同旋钮，插件里只认列表里靠前的那一条。
 - 电脑键盘弹琴在插件窗口里不一定可用：Ableton 会先拿走按键。用 Ableton 自己的电脑 MIDI 键盘（按 **M** 打开）或 MIDI 控制器弹，这是正常行为。
 
 **安装（Mac）**
@@ -1527,7 +1527,7 @@
 - 期望：
   - 第 1 步：窗口大约是面板的一半大小，面板完整、清晰，和独立 App 一样。
   - 第 2 步：两种方式都出声，触摸板随音符点亮。
-  - 第 3 步：耳机区是耳机图标和 PHONE 旋钮，没有 REC；INPUT 显示 MIDI comes from the DAW track。
+  - 第 3 步：REC 区和独立 App 一样，但点 REC、点 WET / DRY / ALL 都没有反应；INPUT 显示 MIDI comes from the DAW track。
 
 **T17.2 窗口缩放** ⏳
 - 步骤：拖插件窗口的边缘放大、缩小；再拖面板右下角的小三角。
