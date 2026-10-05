@@ -7,9 +7,13 @@ Keep these unless a listening test or a real bug says otherwise.
   live in `host/include/host/panel_ui_layout.h`. Branded "Lunar 24" (non-commercial; the
   owner confirmed no conflict).
 - **Name plates** are set in Saira (OFL), expanded width, stored as outlines by
-  `tools/gen_panel_logo.py` — no font file ships, and the preview matches the app. No moon
-  or other emblem: like the hardware, the name alone. Static art is drawn once through
-  `host/include/host/panel_art.h` by both the app and `panel_preview`.
+  `tools/gen_panel_logo.py` — no font file ships, and the preview matches the app. Static
+  art is drawn once through `host/include/host/panel_art.h` by both the app and `panel_preview`.
+- **Two printed emblems in the Solar 42F's places** (owner, 2026-10-05): the 42F prints a
+  line-drawn figure round its joystick and a sun under the display. Lunar 24 prints the
+  Bearbone.Studio bear round the joystick (traced from the logo by `tools/gen_panel_bear.py`,
+  double outline, stick in the belly; the 42N's arrows and dots there are dropped) and a full
+  moon under the display (`drawMoon`: halftone seas and crater rings, white on the keybed).
 - **Label text uses an embedded Noto Sans** (OFL, `tools/gen_ui_font.py`), loaded from
   memory. Looking up a system font by name failed on macOS and left the panel with no text.
 - **Controls are drawn with depth, not bitmaps.** Knobs, jacks, switches, buttons and the

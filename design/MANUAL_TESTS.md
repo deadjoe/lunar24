@@ -45,7 +45,7 @@
 | 上排 | DRONE 1 · DRONE 2 · DUAL EFFECTOR（上半）+ FILTER L / FILTER R（下半一排）· DRONE 4 · DRONE 5 |
 | 中排 | DRONE 3 · VCO A · VOICE MIXER（下方是 envelope A / envelope B）· VCO B · DRONE 6 |
 | 下排（白字标签） | LFO A · JOYSTICK · 5 STEP SEQ. VOLTAGE · PREAMP · ENVELOPE FOLLOWER · LFO B |
-| 键盘区 | 左下角摇杆 · 12 块触摸板 · 中间红色大旋钮（菜单）和蓝色小屏 · 右边 DRONE VOICES（1 2 3 / 4 5 6）和上下排列的 **MUTE**、**MIDI** 按钮 |
+| 键盘区 | 左下角摇杆（印在线条熊的肚子上） · 12 块触摸板 · 中间红色大旋钮（菜单）和蓝色小屏（下面印着月亮） · 右边 DRONE VOICES（1 2 3 / 4 5 6）和上下排列的 **MUTE**、**MIDI** 按钮 |
 
 ### 各模块控件（与面板印字对应）
 
@@ -273,6 +273,16 @@
 - 期望：
   - 第 1 步：弹出关于窗口，从上到下：应用图标；**Lunar 24**；**Version 1.0.0 (Build 编号 · 构建时间 UTC · 提交号)**；黑熊 logo；**© 2026 Bearbone.Studio**。构建编号就是 GitHub Actions 那次运行的编号（运行列表里的 #数字），提交号是这次构建的代码版本，两者都能在 Actions 页面对上。
   - 第 2 步：菜单栏只有 Lunar 24 一个菜单（About、Preferences…、Hide、Quit），没有 Debug 菜单。
+
+**T0.10 摇杆的线条熊和键盘区的月亮** ⏳
+- 步骤：
+  1. 看键盘区左下角的摇杆。
+  2. 看键盘区中间蓝色小屏下面。
+  3. 拖动摇杆到各个方向，双击回中心；拉伸窗口、进出全屏各看一次。
+- 期望：
+  - 第 1 步：一只黑色线条的熊（Bearbone.Studio logo 的样子：双线外轮廓、耳朵、眼睛、口鼻、腿），摇杆在熊的肚子上；熊头不碰上面的 LFO A 标签，左右不出面板。原来摇杆四周的箭头和小圆点没有了。
+  - 第 2 步：一个白色的满月：外面一圈细白环，里面是灰点组成的月海和几个环形山（下方的 Tycho 中间有一个点）；和小屏、两边的触摸板、下面的螺丝都有间隔。
+  - 第 3 步：摇杆照常拖动，推到最远时摇杆头会盖住熊的线条（印刷图案在摇杆下面，正常）；缩放后熊和月亮清晰、不错位。
 
 ### 1. VOICE MIXER
 

@@ -9,6 +9,8 @@
 //                            from the official panel drawing (tools/gen_panel_art.py)
 //   panel_logo.generated.h — the Lunar 24 name plates, as outlines of the Saira font
 //                            (tools/gen_panel_logo.py)
+//   panel_bear.generated.h — the Bearbone.Studio bear round the joystick, as line art
+//                            (tools/gen_panel_bear.py)
 //
 // Sink interface (all coordinates in 2400 x 1552 panel units, colours 0xRRGGBB):
 //   void fillRect(float x0, float y0, float x1, float y1, std::uint32_t rgb, float radius);
@@ -57,6 +59,7 @@ struct Grad {
 
 #include <host/panel_art.generated.h>
 #include <host/panel_logo.generated.h>
+#include <host/panel_bear.generated.h>
 
 namespace lunar24::host::art {
 
@@ -168,6 +171,77 @@ void drawShapes(Sink& s, const float* pts, const SubPath* subs, const Shape* sha
   }
 }
 
+// The moon printed under the display (where the Solar 42F prints its sun): the near side at
+// full moon, white on the keybed. The dark seas (maria) are a halftone of dots, bigger towards
+// their middles; a few named craters are rings. Positions follow the real near side, drawn
+// freehand on a unit disk (x right, y down); sizes tuned by eye.
+template <class Sink>
+void drawMoon(Sink& s, float cx, float cy, float r, std::uint32_t light, std::uint32_t dark) {
+  s.circle(cx, cy, r + 9.f);
+  s.strokePath(light, 1.4f);
+  s.fillCircle(cx, cy, r, light);
+  struct Sea { float x, y, rx, ry; };
+  static constexpr Sea kSeas[] = {
+      {-0.56f, 0.02f, 0.27f, 0.44f},   // Oceanus Procellarum
+      {-0.42f, -0.18f, 0.22f, 0.22f},  // where it meets Imbrium
+      {-0.30f, -0.40f, 0.27f, 0.22f},  // Imbrium
+      {0.15f, -0.34f, 0.17f, 0.16f},   // Serenitatis
+      {0.31f, -0.06f, 0.24f, 0.19f},   // Tranquillitatis
+      {0.67f, -0.27f, 0.11f, 0.09f},   // Crisium
+      {0.53f, 0.15f, 0.13f, 0.19f},    // Fecunditatis
+      {0.36f, 0.31f, 0.08f, 0.08f},    // Nectaris
+      {-0.22f, 0.33f, 0.21f, 0.14f},   // Nubium
+      {-0.49f, 0.42f, 0.10f, 0.09f},   // Humorum
+      {0.08f, -0.70f, 0.36f, 0.06f},   // Frigoris
+      {0.00f, -0.10f, 0.13f, 0.10f},   // Vaporum
+      {-0.04f, 0.08f, 0.10f, 0.09f},   // Sinus Medii
+  };
+  // How deep inside a sea a point lies (0 = outside, 1 = its middle); edges wobble a little.
+  auto depth = [](float x, float y) {
+    float best = 0.f;
+    for (const Sea& m : kSeas) {
+      const float dx = (x - m.x) / m.rx, dy = (y - m.y) / m.ry;
+      const float wobble = 1.f + 0.12f * std::sin(7.f * x + 3.f * y) + 0.08f * std::sin(11.f * y - 5.f * x);
+      const float d = 1.f - std::sqrt(dx * dx + dy * dy) / wobble;
+      if (d > best) best = d;
+    }
+    return best;
+  };
+  const float step = r / 21.f;
+  for (float gy = -r; gy <= r; gy += step) {
+    for (float gx = -r; gx <= r; gx += step) {
+      const float x = gx + (int(std::lround(gy / step)) % 2 ? step / 2 : 0.f);  // staggered rows
+      const float u = x / r, v = gy / r;
+      if (u * u + v * v > 0.93f) continue;
+      const float d = depth(u, v);
+      if (d <= 0.f) continue;
+      s.fillCircle(cx + x, cy + gy, step * (0.14f + 0.36f * std::fmin(1.f, d * 2.0f)), dark);
+    }
+  }
+  struct Crater { float x, y, r; bool peak; };
+  static constexpr Crater kCraters[] = {
+      {-0.10f, 0.65f, 0.085f, true},   // Tycho
+      {-0.26f, 0.84f, 0.070f, false},  // Clavius
+      {-0.33f, -0.12f, 0.075f, true},  // Copernicus
+      {-0.60f, -0.10f, 0.040f, false}, // Kepler
+      {-0.72f, -0.33f, 0.032f, false}, // Aristarchus
+      {-0.14f, -0.66f, 0.045f, false}, // Plato
+      {0.29f, 0.22f, 0.050f, true},    // Theophilus
+      {0.80f, 0.12f, 0.045f, false},   // Langrenus
+      {0.20f, 0.58f, 0.050f, false},
+      {0.45f, 0.56f, 0.040f, false},
+      {-0.42f, 0.64f, 0.040f, false},
+      {0.05f, 0.45f, 0.035f, false},
+      {0.58f, 0.40f, 0.030f, false},
+      {0.62f, -0.55f, 0.035f, false},
+  };
+  for (const Crater& c : kCraters) {
+    s.circle(cx + c.x * r, cy + c.y * r, c.r * r);
+    s.strokePath(dark, 1.2f);
+    if (c.peak) s.fillCircle(cx + c.x * r, cy + c.y * r, 1.3f, dark);
+  }
+}
+
 // Marks printed on the keybed (drawn here: the official keybed is a bitmap). Positions
 // measured from the official drawing.
 template <class Sink>
@@ -216,6 +290,7 @@ void drawKeybedMarks(Sink& s) {
   s.moveTo(1483, 1142); s.lineTo(1473, 1142); s.lineTo(1473, 1149); s.lineTo(1481, 1149);  // return arrow
   s.strokePath(c, 1.8f);
   s.moveTo(1478, 1146); s.lineTo(1482, 1149); s.lineTo(1478, 1152); s.strokePath(c, 1.6f);
+  drawMoon(s, 1200.f, 1386.f, 60.f, c, kKeybedRgb);
   // Mounting screws along the keybed edges.
   for (float x : {412.f, 806.f, 1200.f, 1592.f, 1986.f}) {
     s.fillCircle(x, 1115, 4, 0xd0d0d0);
@@ -643,6 +718,7 @@ void drawPanelArt(Sink& s) {
   for (const auto& l : kLeds) drawLed(s, l.x, l.y, l.r, l.rgb, 0.f);
   for (const auto& t : kTexts) s.text(t.x, t.y, t.size * 0.92f, t.rgb, t.vertical, t.text);
   drawShapes(s, kLogoPoints, kLogoSubPaths, kLogoShapes, sizeof(kLogoShapes) / sizeof(kLogoShapes[0]));
+  drawShapes(s, kBearPoints, kBearSubPaths, kBearShapes, sizeof(kBearShapes) / sizeof(kBearShapes[0]));
   drawKeybedMarks(s);
 }
 
