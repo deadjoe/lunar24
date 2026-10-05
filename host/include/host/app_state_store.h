@@ -109,6 +109,52 @@ enum class StateLoadOutcome : std::uint8_t {
   // engine's exact StateApplyStatus (e.g. RejectedGraph). saveAllowed is false either way.
 };
 
+// Turn one saved machine-state record into a validated state. The app's state file and a
+// plugin's DAW project both store this record. Accepts the current wire size or the size saved
+// before the patch bank grew (upgraded here), then decodes, migrates, repairs what older builds
+// left behind and validates. `validation` gets the validator's verdict once it ran. On anything
+// but Ok, `out` is untouched.
+inline StateLoadOutcome restore_saved_state(const std::uint8_t* bytes, std::size_t size,
+                                            DeviceStateV1* out,
+                                            StateValidationResult* validation = nullptr) {
+  std::vector<std::uint8_t> upgraded;
+  if (size == lunar24::core::legacy_patch67_wire_bytes()) {
+    upgraded.assign(kAppStateWireBytes, 0u);
+    lunar24::core::upgrade_legacy_patch67(bytes, upgraded.data());
+    bytes = upgraded.data();
+    size = upgraded.size();
+  } else if (size != kAppStateWireBytes) {
+    return StateLoadOutcome::LengthMismatch;
+  }
+
+  DeviceStateV1 decoded;
+  if (!lunar24::core::decode_device_state(bytes, size, &decoded)) return StateLoadOutcome::LengthMismatch;
+
+  DeviceStateV1 migrated;
+  const auto m = lunar24::core::migrate_device_state(decoded, migrated);
+  if (!m.ok) {
+    return m.status == MigrationStatus::requires_newer_codec ? StateLoadOutcome::RequiresNewerCodec
+                                                             : StateLoadOutcome::UnsupportedVersion;
+  }
+
+  lunar24::core::open_untouched_seq_gates(migrated);
+  lunar24::core::load_unloaded_scale_editors(migrated);
+  StateValidationResult verdict = lunar24::core::validate_device_state(migrated);
+  if (verdict.family == lunar24::core::ValidationFamily::keyboard_live_invalid && verdict.field == 9003u) {
+    // Older live PRESSURE edits updated the left scalar but not its compatibility
+    // mirror. The validator has already checked both selector ranges. Recover the
+    // mirror from the actual panel/DSP value, then validate the ENTIRE candidate
+    // again (presets are checked after this field). Nothing saved is changed on load.
+    migrated.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(
+        migrated.parameters[static_cast<std::size_t>(lunar24::core::ParameterId::keyboard_pressure_output)]);
+    verdict = lunar24::core::validate_device_state(migrated);
+  }
+  if (validation != nullptr) *validation = verdict;
+  if (!verdict.ok) return StateLoadOutcome::InvalidState;
+  *out = migrated;
+  return StateLoadOutcome::Ok;
+}
+
 // A fixed, inspectable outcome of a lifecycle (exit) save.
 enum class StateSaveOutcome : std::uint8_t {
   NotAttempted = 0,
@@ -452,11 +498,6 @@ class AppStateStore {
     const bool exact =
         readExactRecord(f, &bytes, &bytesRead_, &ioError, legacy ? legacyBytes : kAppStateWireBytes);
     std::fclose(f);
-    if (exact && legacy) {
-      std::vector<std::uint8_t> upgraded(kAppStateWireBytes, 0u);
-      lunar24::core::upgrade_legacy_patch67(bytes.data(), upgraded.data());
-      bytes.swap(upgraded);
-    }
     if (!exact) {
       loadOutcome_ = ioError ? StateLoadOutcome::Unreadable : StateLoadOutcome::LengthMismatch;
       fileUnadopted_ = true;
@@ -464,40 +505,13 @@ class AppStateStore {
       return loadOutcome_;
     }
 
-    DeviceStateV1 decoded;
-    if (!lunar24::core::decode_device_state(bytes.data(), bytes.size(), &decoded)) {
-      loadOutcome_ = StateLoadOutcome::LengthMismatch;
-      saveAllowed_ = false;
-      return loadOutcome_;
-    }
-
     DeviceStateV1 migrated;
-    const auto m = lunar24::core::migrate_device_state(decoded, migrated);
-    if (!m.ok) {
-      loadOutcome_ = (m.status == MigrationStatus::requires_newer_codec)
-                         ? StateLoadOutcome::RequiresNewerCodec
-                         : StateLoadOutcome::UnsupportedVersion;
-      fileUnadopted_ = true;
-      saveAllowed_ = false;
-      return loadOutcome_;
-    }
-
-    lunar24::core::open_untouched_seq_gates(migrated);
-    lunar24::core::load_unloaded_scale_editors(migrated);
-    lastValidation_ = lunar24::core::validate_device_state(migrated);
-    if (lastValidation_.family == lunar24::core::ValidationFamily::keyboard_live_invalid &&
-        lastValidation_.field == 9003u) {
-      // Older live PRESSURE edits updated the left scalar but not its compatibility
-      // mirror. The validator has already checked both selector ranges. Recover the
-      // mirror from the actual panel/DSP value, then validate the ENTIRE candidate
-      // again (presets are checked after this field). No file is changed on load.
-      migrated.keyboardSettings.pressureOutput = static_cast<std::uint8_t>(
-          migrated.parameters[static_cast<std::size_t>(lunar24::core::ParameterId::keyboard_pressure_output)]);
-      lastValidation_ = lunar24::core::validate_device_state(migrated);
-    }
-    if (!lastValidation_.ok) {
-      loadOutcome_ = StateLoadOutcome::InvalidState;
-      fileUnadopted_ = true;
+    const StateLoadOutcome restored = restore_saved_state(bytes.data(), bytes.size(), &migrated, &lastValidation_);
+    if (restored != StateLoadOutcome::Ok) {
+      loadOutcome_ = restored;
+      // A decode failure cannot happen at the exact wire size, and never marked the file
+      // unadopted; every other refusal does.
+      if (restored != StateLoadOutcome::LengthMismatch) fileUnadopted_ = true;
       saveAllowed_ = false;
       return loadOutcome_;
     }

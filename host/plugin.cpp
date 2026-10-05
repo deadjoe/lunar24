@@ -57,6 +57,8 @@ extern "C" bool lunar_host_recordings_dir(char* out, std::size_t capacity);
 extern "C" void lunar_host_reveal_dir(const char* utf8Path);
 #else
 #include "plugin_settings_dir.h"
+#include <host/plugin_state_chunk.h>
+#include <vector>
 #endif
 
 namespace {
@@ -257,6 +259,53 @@ void LunarHostPlugin::rebuildEngine_()
   if (engine_.isReady())
     stateStore_.publishPending(engine_, GetSampleRate(), GetBlockSize(), engineInputs_(), engineOutputs_());
 }
+
+#ifndef APP_API
+bool LunarHostPlugin::SerializeState(IByteChunk& chunk) const
+{
+  // Before the first OnReset the engine has no machine yet: then a state the DAW handed over
+  // waits in the store, or the plugin is still at its power-on default.
+  lunar24::host::PluginProjectState project;
+  if (const lunar24::core::DeviceStateV1* live = engine_.canonicalState())
+    project.machine = *live;
+  else if (const lunar24::core::DeviceStateV1* pending = stateStore_.pending())
+    project.machine = *pending;
+  else
+    project.machine = lunar24::core::make_default_device_state(lunar24::host::kLunarStartupSeed);
+  project.hasDroneKeys = true;
+  for (int v = 0; v < 6; ++v) project.droneKeys[v] = engine_.droneKey(v);
+  std::vector<std::uint8_t> bytes;
+  if (!lunar24::host::write_plugin_chunk(project, bytes)) return false;
+  chunk.PutBytes(bytes.data(), static_cast<int>(bytes.size()));
+  return true;
+}
+
+int LunarHostPlugin::UnserializeState(const IByteChunk& chunk, int startPos)
+{
+  const int available = chunk.Size() - startPos;
+  lunar24::host::PluginProjectState project;
+  const lunar24::host::PluginChunkResult r =
+      available > 0 ? lunar24::host::read_plugin_chunk(chunk.GetData() + startPos,
+                                                       static_cast<std::size_t>(available), &project)
+                    : lunar24::host::PluginChunkResult{};
+  if (r.read != lunar24::host::PluginChunkRead::Ok) {  // keep the current machine
+#ifdef AU_API
+    return 0;  // the AU wrapper reads 0 as "not restored"
+#else
+    // VST3 reads its bypass flag right after the chunk.
+    return r.bytes > 0 ? startPos + static_cast<int>(r.bytes) : chunk.Size();
+#endif
+  }
+  if (project.hasDroneKeys) engine_.setDroneKeys(project.droneKeys);
+  if (engine_.isReady()) {
+    engine_.syncParametersFromAudioThread();
+    (void)engine_.swapDeviceState(project.machine);
+  } else {
+    stateStore_.replacePending(project.machine);  // OnReset publishes it
+  }
+  return startPos + static_cast<int>(r.bytes);
+}
+#endif
 
 void LunarHostPlugin::setStateDirectory(const char* dir)
 {
