@@ -99,6 +99,7 @@ foreach(t IN ITEMS
     state_publish
     state_persistence
     drone_bank
+    knob_taper
     polyblep_kernel
     drone_classic
     drone_mod

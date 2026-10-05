@@ -52,7 +52,8 @@
 #include <lunar24/core/midi_map.h>
 #include <lunar24/core/state_edit.h>
 #include <lunar24/core/device_adapter.h>
-#include <lunar24/core/keyboard_presets.h>    // load/save/initialise preset transfer helpers
+#include <lunar24/core/keyboard_presets.h>
+#include <lunar24/core/knob_taper.h>       // knob position <-> value (time / rate tapers)    // load/save/initialise preset transfer helpers
 #include <lunar24/core/machine_candidate.h>   // buildMachineRuntimeCandidate (state-aware builder)
 #include <lunar24/core/machine_definition.h>
 #include <lunar24/core/state_default.h>       // make_default_device_state (safe-boot default)
@@ -1361,7 +1362,6 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
 
   const lunar24::core::ParameterDescriptor* d = lunar24::core::find_parameter(b.parameter);
   if (d == nullptr) return;
-  const double range = d->max - d->min;
   const auto drive = lunar24::core::midi_parameter_drive(b);
   if (drive != lunar24::core::MidiParameterDrive::follow) {
     // A switch stepped by a press: a pad hit, or a CC button rising past 64.
@@ -1385,7 +1385,7 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
     const double target01 = static_cast<double>(rawValue) / 127.0;
     double& cur = midiValue_[row];
     if (b.key.kind == lunar24::core::MidiBindingKind::cc && !midiPickedUp_[row]) {
-      const double cur01 = range > 0.0 ? (cur - d->min) / range : 0.0;
+      const double cur01 = lunar24::core::value_to_knob(*d, cur);
       const int curRaw = static_cast<int>(cur01 * 127.0 + 0.5);
       const int prevRaw = midiLastRaw_[row];
       midiLastRaw_[row] = rawValue;
@@ -1398,7 +1398,7 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
       midiPickedUp_[row] = true;
     }
     midiLastRaw_[row] = rawValue;
-    cur = d->min + target01 * range;
+    cur = lunar24::core::knob_to_value(*d, target01);  // the controller turns the knob
     if (d->step > 0.0) cur = d->min + std::round((cur - d->min) / d->step) * d->step;
     (void)sendParameterFromAudioThread_(b.parameter, cur, false, static_cast<int>(row));
     return;
@@ -1414,8 +1414,12 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
   const double gapSeconds = last == kNoTick || now < last ? 1.0 : static_cast<double>(now - last) / sampleRate_;
   midiLastTickAt_[row] = now;
   const double speed = gapSeconds < 0.04 ? 4.0 : gapSeconds < 0.12 ? 2.0 : 1.0;
-  const double step = d->step > 0.0 ? d->step : range / 512.0 * speed;
-  cur = std::clamp(cur + static_cast<double>(delta) * step, d->min, d->max);
+  if (d->step > 0.0) {
+    cur = std::clamp(cur + static_cast<double>(delta) * d->step, d->min, d->max);
+  } else {  // continuous: step the knob's travel, so tapered knobs stay fine at the slow end
+    const double pos = lunar24::core::value_to_knob(*d, cur) + static_cast<double>(delta) / 512.0 * speed;
+    cur = lunar24::core::knob_to_value(*d, pos);
+  }
   (void)sendParameterFromAudioThread_(b.parameter, cur, false, static_cast<int>(row));
 }
 
