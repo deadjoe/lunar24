@@ -273,6 +273,15 @@ int main() {
     CHECK(midi_map_find(m, "Other", 9, cc, 74)->parameter == ParameterId::effector_master);
     CHECK(midi_map_find(m, "Kit", 1, MidiBindingKind::note, 74) == nullptr);  // kind must match
     CHECK(midi_map_find(m, "Kit", 1, cc, 71) == nullptr);
+    // Unknown input (a plugin): bindings for any device match, ranked the same way.
+    CHECK(midi_map_find(m, nullptr, 1, cc, 74)->parameter == ParameterId::vcf_l_freq);
+    CHECK(midi_map_find(m, nullptr, 9, cc, 74)->parameter == ParameterId::vcf_l_res);
+    CHECK(midi_map_find(m, nullptr, 2, cc, 74)->parameter == ParameterId::vcf_l_res);
+    CHECK(midi_map_find(m, nullptr, 1, cc, 71) == nullptr);
+    MidiMap other;
+    CHECK(other.bind(ccBinding("Kit", 0, 20, ParameterId::vcf_l_freq)));
+    CHECK(midi_map_find(other, nullptr, 5, cc, 20)->parameter == ParameterId::vcf_l_freq);
+    CHECK(midi_map_find(other, "", 5, cc, 20) == nullptr);  // a known "no device" still filters
   }
   // midi_relative_delta: the three vendor dialects.
   {

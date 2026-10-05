@@ -60,6 +60,7 @@ struct State {
   int channel = 0, octave = 0, curve = 0, offset = 0;
   int split = core::kMidiDefaultSplitNote;  // MIDI note: TWIN / SPLIT right side starts here
   bool armed = false, awaitTarget = false, editable = true;
+  const char* noDevice = "Choose an input in Preferences";  // shown when `device` is empty
 };
 // MIDI note name with octave, middle C (60) = C4.
 inline std::string noteName(int note) {
@@ -149,7 +150,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   label({434, 1124, 798, 1168}, 24, kWhite, "MIDI CONTROL", true);
   label({832, 1128, 904, 1164}, 14, 0xc8bdad, "INPUT", true);
   label({914, 1128, 1816, 1164}, 19, kWhite,
-        st.device.empty() ? "Choose an input in Preferences" : asciiText(st.device), true);
+        st.device.empty() ? std::string(st.noDevice) : asciiText(st.device), true);
   button(kClose, "CLOSE", true);
   rect({810, 1186, 812, 1404}, kRule, 0);
   const char* labels[] = {"CHANNEL", "TRANSPOSE", "VELOCITY", "SPLIT"};

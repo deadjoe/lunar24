@@ -472,7 +472,8 @@ class StandaloneAudioEngine {
 
   // ---- MIDI bindings (the user's controller map) ---------------------------------
   // UI thread: publish a new binding snapshot — the map, the active input device's
-  // name. The audio thread seeds bindings from its own current parameter values.
+  // name (nullptr: unknown, as in a plugin, so bindings for any device match). The audio
+  // thread seeds bindings from its own current parameter values.
   void publishMidiMap(const lunar24::core::MidiMap& map, const char* inputDevice);
   // Audio thread: the published map's row for this message, or -1. Device-specific
   // bindings match only when their name equals the published input device. Apply
@@ -648,6 +649,7 @@ class StandaloneAudioEngine {
   struct MidiMapSlot {
     lunar24::core::MidiMap map;
     char device[lunar24::core::kMidiBindingDeviceCapacity] = {};
+    bool deviceKnown = true;  // false: a plugin, every binding's device matches
   };
   MidiMapSlot midiMapSlots_[3];
   MidiMapSlot midiUiMap_;  // UI-only readback
@@ -1465,6 +1467,7 @@ inline void StandaloneAudioEngine::publishMidiMap(const lunar24::core::MidiMap& 
   s.map = map;
   std::memset(s.device, 0, sizeof(s.device));
   if (inputDevice != nullptr) std::snprintf(s.device, sizeof(s.device), "%s", inputDevice);
+  s.deviceKnown = inputDevice != nullptr;
   midiUiMap_ = s;
   midiMapWriteIdx_ = midiMapMiddle_.exchange(midiMapWriteIdx_ | 4u, std::memory_order_acq_rel) & 3u;
 }
@@ -1489,7 +1492,7 @@ inline int StandaloneAudioEngine::midiBindingRow(std::uint8_t channel,
   refreshMidiMap_();
   midiMatchPending_ = true;
   const auto& s = midiMapSlots_[midiMapReadIdx_];
-  const auto* b = lunar24::core::midi_map_find(s.map, s.device, channel, kind, number);
+  const auto* b = lunar24::core::midi_map_find(s.map, s.deviceKnown ? s.device : nullptr, channel, kind, number);
   return b == nullptr ? -1 : static_cast<int>(b - &s.map.at(0));
 }
 

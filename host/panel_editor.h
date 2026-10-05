@@ -120,6 +120,9 @@ struct EditorShared {
   float readoutX = 0, readoutY = 0;
   core::InputStateMachine input{nullptr, 0};
   std::uint64_t seq = 0;
+  // The plugins: no REC (the hardware's PHONE knob instead), MIDI comes from the DAW.
+  bool withRecorder = true;
+  const char* midiNoDevice = "Choose an input in Preferences";
   std::uint64_t seenStateVersion = ~0ull;
   std::uint64_t seenAudioSync = 0;
   bool seenReady = false;
@@ -1459,6 +1462,7 @@ class MidiOverlayControl : public IControl {
     midi_ui::State state;
     state.map = s_.midiStore ? &s_.midiStore->map() : nullptr;
     state.device = s_.midi.inputDeviceName ? s_.midi.inputDeviceName() : "";
+    state.noDevice = s_.midiNoDevice;
     state.channel = s_.midi.channelFilter ? s_.midi.channelFilter() : 0;
     state.octave = s_.midi.octaveShift ? s_.midi.octaveShift() : 0;
     state.curve = s_.midi.velocityCurve ? s_.midi.velocityCurve() : 0;
@@ -1606,7 +1610,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   g->LoadFont(kFontBold, const_cast<unsigned char*>(font::kBold), static_cast<int>(font::kBoldSize));
   g->AttachPanelBackground(col(theme::kPanel));
 
-  const std::vector<Widget> widgets = build_panel_layout();
+  const std::vector<Widget> widgets = build_panel_layout(shared.withRecorder);
   const IRECT all = g->GetBounds();
   g->AttachControl(new BackgroundControl(all));
 

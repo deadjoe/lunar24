@@ -123,7 +123,9 @@ inline constexpr JackId kJacksNotOnPanel[] = {
     JackId::vco_a_wave_out, JackId::vco_b_wave_out,
     JackId::envelope_a_vca_cv_out, JackId::envelope_b_vca_cv_out};
 
-inline std::vector<Widget> build_panel_layout() {
+// `withRecorder` false (the plugins): the hardware's PHONE knob instead of the app's REC button
+// and its source selector.
+inline std::vector<Widget> build_panel_layout(bool withRecorder = true) {
   using P = ParameterId;
   using J = JackId;
   std::vector<Widget> ws;
@@ -317,8 +319,12 @@ inline std::vector<Widget> build_panel_layout() {
   // The headphone corner (no headphone output in software) holds the recorder: REC where
   // the socket is, its WET / DRY / ALL selector where the PHONE knob is. PHONE keeps its
   // stored value but has no control.
-  add(WidgetKind::Record, 1555, 279, 40, 40, 0);
-  add(WidgetKind::RecordSource, 1554, 356, 52, 52, 0, Cap::Orange);
+  if (withRecorder) {
+    add(WidgetKind::Record, 1555, 279, 40, 40, 0);
+    add(WidgetKind::RecordSource, 1554, 356, 52, 52, 0, Cap::Orange);
+  } else {
+    knob(P::effector_phone, 1554, 356, Cap::Orange, 52);
+  }
   plain(P::vcf_l_mod, 1158, 382, 40);
   plain(P::vcf_r_mod, 1244, 382, 40);
   knob(P::vcf_l_freq, 885, 481, Cap::Orange);

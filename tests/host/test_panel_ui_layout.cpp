@@ -63,6 +63,19 @@ struct CheckSink {
 
 int main() {
   const std::vector<Widget> ws = host::build_panel_layout();
+  // The plugins' panel: the hardware's PHONE knob where the app has REC and its source selector,
+  // everything else the same.
+  {
+    const std::vector<Widget> plug = host::build_panel_layout(false);
+    CHECK_EQ(plug.size() + 1, ws.size());
+    int rec = 0, phone = 0;
+    for (const Widget& w : plug) {
+      if (w.kind == WidgetKind::Record || w.kind == WidgetKind::RecordSource) ++rec;
+      if (w.kind == WidgetKind::Knob && w.id == static_cast<std::uint32_t>(core::ParameterId::effector_phone)) ++phone;
+    }
+    CHECK_EQ(rec, 0);
+    CHECK_EQ(phone, 1);
+  }
 
   std::map<std::uint32_t, int> params, jacks;
   for (const Widget& w : ws) {

@@ -9,6 +9,7 @@
 //   panel_preview --menu-example=<tab> / --menu-split / --menu-armed
 //   panel_preview --midi / --midi-example / --midi-learn / --midi-wait / --midi-error
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
+//   panel_preview --plugin > p.svg     (the VST3 / AU panel, without REC)
 
 #include <algorithm>
 #include <utility>
@@ -204,7 +205,8 @@ int main(int argc, char** argv) {
   const bool showMenu = option.rfind("--menu", 0) == 0;
   const bool showLeds = argc > 1 && std::strcmp(argv[1], "--leds") == 0;
   const bool showRecording = option == "--recording";  // REC running for 12 s, recording ALL
-  const auto ws = build_panel_layout();
+  const bool plugin = option == "--plugin";  // the VST3 / AU panel: no REC
+  const auto ws = build_panel_layout(!plugin);
   if (argc > 1 && std::strcmp(argv[1], "--widgets") == 0) {
     std::printf("[\n");
     bool first = true;
