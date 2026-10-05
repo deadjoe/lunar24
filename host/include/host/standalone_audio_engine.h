@@ -23,6 +23,10 @@
 //      DeviceAdapter::renderBlock and does NO frame loop / scale / mapping /
 //     pass-through / second output bank of its own.
 //
+// "The stopped-stream boundary" below also covers a parked audio thread: swapDeviceState fades
+// the audio out and holds it behind a closed AudioScope, so applyDeviceState and commit_ run
+// there exactly as if the stream were stopped.
+//
 // The frozen policy is consumed, not re-derived here: the
 // device scale (0.5), the output strategy (<2 reject, 2-3 WET, >=4 WET+DRY), and the
 // input-route rules (<2 route = explicit, never an implicit copy) live in device_adapter.h.
@@ -34,6 +38,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 
 #include <cmath>
 #include <cstdint>
@@ -42,6 +47,7 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
@@ -241,6 +247,33 @@ class StandaloneAudioEngine {
   //     — this is the engine seam, not a finished product entry.
   PresetActionStatus applyPresetAction(std::uint32_t slot, PresetAction action);
 
+  // ---- replacing the whole machine while audio runs -----------------------------------------
+  // The host wraps everything its audio callback does with the engine (MIDI and processBlock)
+  // in an AudioScope. While the UI thread swaps the machine the scope is closed: the callback
+  // then writes silence and touches nothing else in the engine. Scopes may nest (MIDI handling
+  // inside a callback that already holds one); the outermost one decides.
+  class AudioScope {
+   public:
+    explicit AudioScope(StandaloneAudioEngine& engine);
+    ~AudioScope();
+    AudioScope(const AudioScope&) = delete;
+    AudioScope& operator=(const AudioScope&) = delete;
+    explicit operator bool() const { return open_; }
+
+   private:
+    StandaloneAudioEngine& engine_;
+    bool open_ = false;
+  };
+  // UI thread: replace the whole machine state in the committed format while audio may be
+  // running (a DAW loading a project, RESET PANEL). The outputs fade out (~10 ms), stay silent
+  // while the new machine is installed, then fade back in. The result is applyDeviceState's: a
+  // rejection keeps the current machine. Edits the audio thread queued for the UI are dropped,
+  // so sync them first if they should count.
+  StateApplyStatus swapDeviceState(const DeviceStateV1& state);
+  // Bumped by every accepted swap (any thread): the host drops its held-note ledgers, since
+  // the notes they track died with the old machine.
+  std::uint64_t swapCount() const { return swaps_.load(std::memory_order_acquire); }
+
   // The production block delegate — the ONLY render entry the host's ProcessBlock calls. The
   // channel counts and block size are the ACTUAL device facts right now. `inputs` and `outputs`
   // are two planar arrays of channel pointers (inCh input channels / outCh output channels);
@@ -322,7 +355,7 @@ class StandaloneAudioEngine {
   // Highest note of a sequencer step, in semitones above the held plate. // tuned by ear
   static constexpr int kSeqStepMaxNote = 24;
   bool droneKey(int voice) const { return voice >= 0 && voice < 6 && droneKeys_[voice]; }
-  // Stopped-stream boundary (before prepare): close every DRONE VOICES key (RESET PANEL).
+  // UI thread, before prepare or swapDeviceState: close every DRONE VOICES key (RESET PANEL).
   void closeDroneKeys() {
     for (bool& k : droneKeys_) k = false;
   }
@@ -631,6 +664,17 @@ class StandaloneAudioEngine {
   std::uint64_t stateVersion_ = 0;
   std::uint64_t editCount_ = 0;
   std::uint64_t audioSyncCount_ = 0;
+  // Whole-machine swap handshake (see AudioScope / swapDeviceState).
+  std::atomic<bool> audioBusy_{false};      // audio: inside an open AudioScope
+  std::atomic<bool> swapping_{false};       // UI: the machine is being replaced
+  std::atomic<bool> swapFade_{false};       // UI: fade the outputs to silence for a swap
+  std::atomic<bool> swapFadedOut_{false};   // audio: the outputs have reached silence
+  std::atomic<std::uint64_t> audioCallbacks_{0};  // audio: AudioScopes opened
+  std::atomic<std::uint64_t> swaps_{0};
+  int scopeDepth_ = 0;       // audio thread: AudioScopes currently held
+  bool scopeOpen_ = false;   // audio thread: whether the outermost one is open
+  void parkAudio_();
+  void resumeAudio_();
   void drainLive_(SynthRuntime& rt);
   // Audio thread: a parameter moved (any source) — rebase the MIDI pickup/relative state.
   void noteParameterSeen_(ParameterId id, double value);
@@ -836,6 +880,73 @@ inline StandaloneAudioEngine::PresetActionStatus StandaloneAudioEngine::applyPre
                                             : PresetActionStatus::RejectedState;
 }
 
+// ---- whole-machine swap -----------------------------------------------------
+// A Dekker-style handshake: the audio side raises audioBusy_ and then reads swapping_; the UI side
+// raises swapping_ and then waits for audioBusy_ to drop. With sequentially consistent ordering at
+// least one of them sees the other's flag, so the audio thread is never inside the engine while
+// the UI thread replaces it. The audio thread never waits.
+inline StandaloneAudioEngine::AudioScope::AudioScope(StandaloneAudioEngine& engine) : engine_(engine) {
+  if (engine_.scopeDepth_++ > 0) {
+    open_ = engine_.scopeOpen_;
+    return;
+  }
+  engine_.audioBusy_.store(true, std::memory_order_seq_cst);
+  open_ = !engine_.swapping_.load(std::memory_order_seq_cst);
+  if (open_)
+    engine_.audioCallbacks_.fetch_add(1, std::memory_order_release);
+  else
+    engine_.audioBusy_.store(false, std::memory_order_release);
+  engine_.scopeOpen_ = open_;
+}
+
+inline StandaloneAudioEngine::AudioScope::~AudioScope() {
+  if (--engine_.scopeDepth_ == 0 && open_) engine_.audioBusy_.store(false, std::memory_order_release);
+}
+
+inline void StandaloneAudioEngine::parkAudio_() {
+  using Clock = std::chrono::steady_clock;
+  swapFadedOut_.store(false, std::memory_order_relaxed);
+  swapFade_.store(true, std::memory_order_release);
+  if (ready_) {
+    // Wait for the fade-out. Give up once no callback has arrived for a few blocks (the host is
+    // not processing, so nothing is sounding), or after a hard limit.
+    const double blockMs = 1000.0 * blockSize_ / sampleRate_;
+    const auto patience = std::chrono::duration<double, std::milli>(20.0 + 3.0 * blockMs);
+    const auto start = Clock::now();
+    std::uint64_t seen = audioCallbacks_.load(std::memory_order_acquire);
+    auto lastCallback = start;
+    while (!swapFadedOut_.load(std::memory_order_acquire)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      const auto now = Clock::now();
+      const std::uint64_t n = audioCallbacks_.load(std::memory_order_acquire);
+      if (n != seen) {
+        seen = n;
+        lastCallback = now;
+      } else if (now - lastCallback > patience) {
+        break;
+      }
+      if (now - start > std::chrono::milliseconds(500)) break;
+    }
+  }
+  swapping_.store(true, std::memory_order_seq_cst);
+  while (audioBusy_.load(std::memory_order_seq_cst)) std::this_thread::yield();  // one callback at most
+}
+
+inline void StandaloneAudioEngine::resumeAudio_() {
+  swapping_.store(false, std::memory_order_seq_cst);
+  swapFade_.store(false, std::memory_order_release);  // the outputs fade back in from silence
+}
+
+inline StandaloneAudioEngine::StateApplyStatus StandaloneAudioEngine::swapDeviceState(
+    const DeviceStateV1& state) {
+  parkAudio_();
+  const StateApplyStatus status =
+      applyDeviceState(state, sampleRate_, blockSize_, inputCapability_, outputCapability_);
+  if (status == StateApplyStatus::Accepted) swaps_.fetch_add(1, std::memory_order_release);
+  resumeAudio_();
+  return status;
+}
+
 // ---- processBlock ---------------------------------------------------------
 inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
     const double* const* inputs, double* const* outputs, int inCh, int outCh, int frames) {
@@ -903,7 +1014,8 @@ inline StandaloneAudioEngine::Status StandaloneAudioEngine::processBlock(
 // The MUTE button: a linear ~10 ms fade of every output toward 0 (muted) or 1. No work at all
 // while unmuted and settled, so the normal render path is untouched.
 inline void StandaloneAudioEngine::applyMute_(double* const* outputs, int outCh, int frames, float* tap) {
-  const double target = muted() ? 0.0 : 1.0;
+  const bool swapFade = swapFade_.load(std::memory_order_acquire);
+  const double target = muted() || swapFade ? 0.0 : 1.0;
   if (muteGain_ == 1.0 && target == 1.0) return;
   const double step = 1.0 / (0.010 * (sampleRate_ > 0.0 ? sampleRate_ : 48000.0));
   double g = muteGain_;
@@ -915,6 +1027,7 @@ inline void StandaloneAudioEngine::applyMute_(double* const* outputs, int outCh,
       for (int c = 0; c < 4; ++c) tap[4 * f + c] *= static_cast<float>(g);
   }
   muteGain_ = g;
+  if (swapFade && g == 0.0) swapFadedOut_.store(true, std::memory_order_release);
 }
 
 // ---- updateLeds_ ----------------------------------------------------------
@@ -1044,7 +1157,7 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   fromAudioQueue_.clear();
   eventReconcileRequested_.store(false, std::memory_order_relaxed);
   definition_ = std::move(cand);
-  uiPatch_.emplace(definition_->runtime().patchGraph());  // the audio thread is stopped here
+  uiPatch_.emplace(definition_->runtime().patchGraph());  // the audio thread is stopped or parked
   adapter_ = candAdapter;
   sampleRate_ = sampleRate;
   blockSize_ = maxBlockSize;

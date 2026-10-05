@@ -155,6 +155,7 @@ lunar_add_host_test(test_drone_voice_jacks tests/host/test_drone_voice_jacks.cpp
 lunar_add_host_test(test_midi_timing tests/host/test_midi_timing.cpp)
 lunar_add_host_test(test_wav_recorder tests/host/test_wav_recorder.cpp)
 lunar_add_host_test(test_live_cable_rt tests/host/test_live_cable_rt.cpp tests/host/test_live_cable_rt_allocator.cpp)
+lunar_add_host_test(test_state_swap tests/host/test_state_swap.cpp tests/host/test_state_swap_allocator.cpp)
 lunar_add_host_test(test_midi_sustain tests/host/test_midi_sustain.cpp)
 lunar_add_host_test(test_midi_map_store tests/host/test_midi_map_store.cpp)
 lunar_add_host_test(test_midi_map_apply tests/host/test_midi_map_apply.cpp)
@@ -163,6 +164,7 @@ target_link_libraries(test_midi_map_apply PRIVATE Threads::Threads)
 lunar_add_host_test(test_midi_input_queue tests/host/test_midi_input_queue.cpp)
 target_link_libraries(test_midi_input_queue PRIVATE Threads::Threads)
 target_link_libraries(test_wav_recorder PRIVATE Threads::Threads)
+target_link_libraries(test_state_swap PRIVATE Threads::Threads)
 
 # Offline renderer: listen to the engine without the app (see CLAUDE.md).
 add_executable(lunar24_render tools/lunar24_render.cpp)

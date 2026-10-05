@@ -125,3 +125,31 @@ jobs:
         run: |
           ulimit -s 65536
           ctest --test-dir build-san --output-on-failure --parallel 4
+
+  # ThreadSanitizer over the tests where the UI and audio threads really run at once.
+  thread-sanitizer:
+    name: ubuntu-26.04 (TSan)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3
+
+      - name: Configure (TSan)
+        run: >
+          cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          "-DCMAKE_CXX_FLAGS=-fsanitize=thread -fno-omit-frame-pointer"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread"
+
+      - name: Build
+        run: >
+          cmake --build build-tsan --parallel --target
+          test_state_swap test_midi_map_apply test_midi_input_queue test_wav_recorder test_live_edits
+
+      - name: Run tests
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: >
+          ctest --test-dir build-tsan --output-on-failure
+          -R "^(test_state_swap|test_midi_map_apply|test_midi_input_queue|test_wav_recorder|test_live_edits)$"

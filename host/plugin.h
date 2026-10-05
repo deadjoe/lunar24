@@ -84,8 +84,8 @@ public:
   void logMidiClock_();  // UI thread: the audio.log MIDI clock diagnostics line
 
   // UI thread: put the whole machine back to its power-on default (every knob, switch, cable,
-  // keyboard setting and sequence). Done at the next stopped-stream boundary: the audio stream
-  // is briefly reopened and OnReset publishes the default instead of the current state.
+  // keyboard setting and sequence; keyboard presets kept). Swapped in place with a short fade;
+  // with no running machine it happens at the next stream open (OnReset).
   void requestFactoryReset();
 
   // UI thread (the app's MIDI input was closed or switched in Preferences): notes
@@ -129,6 +129,9 @@ public:
   std::uint16_t midiLitPlates() const { return midiLights_.mask(); }
 
 private:
+  // Audio thread: after a machine swap, forget the notes and pedal the old machine was holding.
+  void dropMidiLedgersAfterSwap_();
+  std::uint64_t seenSwaps_ = 0;  // audio thread
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
   lunar24::host::MidiInputQueue midiQueue_;
   lunar24::host::MidiNoteOwnership midiNotes_;

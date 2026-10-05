@@ -253,8 +253,27 @@ lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
 
 void LunarHostPlugin::requestFactoryReset()
 {
-  factoryResetRequested_ = true;
-  lunar_host_request_audio_reopen();  // OnReset runs when the stream reopens
+  // Without a running machine there is nothing to swap: reset at the next stream open instead.
+  if (!engine_.isReady()) {
+    factoryResetRequested_ = true;
+    lunar_host_request_audio_reopen();  // OnReset runs when the stream reopens
+    return;
+  }
+  engine_.syncParametersFromAudioThread();  // the reset keeps presets edited by MIDI too
+  const lunar24::core::DeviceStateV1 reset =
+      lunar24::core::make_reset_device_state(*engine_.canonicalState(), lunar24::host::kLunarStartupSeed);
+  engine_.closeDroneKeys();  // like a fresh start: the drones wait for their keys
+  (void)engine_.swapDeviceState(reset);
+}
+
+void LunarHostPlugin::dropMidiLedgersAfterSwap_()
+{
+  const std::uint64_t swaps = engine_.swapCount();
+  if (swaps == seenSwaps_) return;
+  seenSwaps_ = swaps;
+  sustain_.reset();
+  midiNotes_.reset();
+  midiLights_.reset();
 }
 
 void LunarHostPlugin::midiInputClosed()
@@ -400,8 +419,15 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
   // a PURE delegate to the framework-free owner. The owner either renders through
   // the production DeviceAdapter::renderBlock or returns a dropped status after
   // writing deterministic silence into the outputs. There is NO frame loop / scale / mapping /
-  // pass-through / second output bank in the host — that would be a wiring defect.
-  //
+  // pass-through / second output bank in the host — that would be a wiring defect. The host's
+  // only own output is silence while the UI thread swaps the machine.
+  const lunar24::host::StandaloneAudioEngine::AudioScope scope(engine_);
+  if (!scope) {  // the UI thread is swapping the machine
+    for (int c = 0; c < NOutChansConnected(); ++c)
+      if (outputs[c] != nullptr) std::fill_n(outputs[c], nFrames, 0.0);
+    return;
+  }
+  dropMidiLedgersAfterSwap_();
   // sample==double, so the pointer casts into the owner's framework-free surface are a
   // same-representation reinterpret_to_const (double** -> const double* const*): it only
   // adds const / re-types at the compile-time layer, and the host touches no data itself.
@@ -412,6 +438,10 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
 
 void LunarHostPlugin::drainMidiInput(int frames)
 {
+  // During a machine swap the messages wait in the queue for the next block.
+  const lunar24::host::StandaloneAudioEngine::AudioScope scope(engine_);
+  if (!scope) return;
+  dropMidiLedgersAfterSwap_();
   const int now = lunar24::host::midiArrivalStamp();
   midiQueue_.drain([&] {
     // The old input's stream ended: release only the notes it still holds, so mouse and
@@ -447,6 +477,9 @@ void LunarHostPlugin::drainMidiInput(int frames)
 void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
 {
   using namespace lunar24::core;
+  const lunar24::host::StandaloneAudioEngine::AudioScope scope(engine_);
+  if (!scope) return;  // the machine is being swapped; its notes are gone anyway
+  dropMidiLedgersAfterSwap_();
   const int offset = msg.mOffset > 0 ? msg.mOffset : 0;  // sample position inside the block
   auto sendEvent = [&](ControlEventKind kind) {
     ControlEvent e{};

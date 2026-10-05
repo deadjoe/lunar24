@@ -40,9 +40,10 @@ Keep these unless a listening test or a real bug says otherwise.
   is an overlay opened by the red encoder; values are shown in the manual's units
   (`host/include/host/panel_format.h`). Count settings use steppers that stop at both ends
   (no wrap); presets A-D are picked directly. While open it covers the encoder, so CLOSE or
-  Esc closes it. Its footer holds RESET PANEL (two clicks): the reset publishes the power-on
-  default at a stopped-stream boundary (the audio stream is briefly reopened), the same path
-  as a startup restore, so it covers the stored machine state, not just knobs. Keyboard presets
+  Esc closes it. Its footer holds RESET PANEL (two clicks): the reset swaps the power-on
+  default in place (`StandaloneAudioEngine::swapDeviceState`: a ~10 ms fade out, the new
+  machine installed, a fade back in; no audio reopen), through the same candidate path as a
+  startup restore, so it covers the stored machine state, not just knobs. Keyboard presets
   A-D are kept (the player's saved work; INIT clears one), and MIDI bindings and CHANNEL /
   TRANSPOSE / VELOCITY belong to the separate controller configuration and are not reset.
 - **MUTE button** (right of DRONE VOICES, not on the hardware): an app-level output mute with a
@@ -227,3 +228,9 @@ Keep these unless a listening test or a real bug says otherwise.
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also
   reloads the program and cuts the tail (manual p.22).
 - **Per-sample constants are memoised**; the render stayed within 2e-15 of the old output.
+- **Whole-machine swap while audio runs** (owner chose "plan A", 2026-10-05): a DAW loading a
+  project and RESET PANEL replace the machine with `swapDeviceState`. The outputs fade to
+  silence, the audio callback sits behind its closed `AudioScope` (writes silence, touches
+  nothing) while the UI thread installs the new machine, then fades back in. The audio thread
+  never waits or allocates; a seamless double-buffered swap is the upgrade if the short gap
+  is ever audible. Hosts wrap every engine call from their audio callback in an `AudioScope`.

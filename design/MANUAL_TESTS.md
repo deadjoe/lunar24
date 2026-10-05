@@ -210,11 +210,12 @@
   - 音频启动不了时，蓝色小屏显示 NO AUDIO。
   - Preferences 窗口能打开。
 
-**T0.4 RESET PANEL** ✅ (#58)
+**T0.4 RESET PANEL** ⏳ (#58, 改为原地切换后待复测)
 - 步骤：
-  1. 随便转几个旋钮，接一根线。
+  1. 打开 DRONE VOICES 的 1，随便转几个旋钮，接一根线。
   2. 键盘菜单 → RESET PANEL → 4 秒内再点一次。
 - 期望：旋钮回到原位、线消失；DRONE VOICES 的 6 个键全部变成关的，drone 声在几秒内淡出（要听再手动打开）。
+- 重置时声音先极快地淡出再淡入（约 10 ms），没有咔哒声；不再重开音频设备，所以没有以前那一下明显的断音。重置后用 MIDI 键盘弹奏正常，没有挂音。
 
 **T0.4a 重置和设备重开后的操作** ✅ (#81)
 - 准备：记录想保留的面板设置；这项测试会 RESET PANEL。
@@ -1492,6 +1493,7 @@
 
 ## 还没测的（⏳）
 
+- T0.4 RESET PANEL：现在原地切换整台机器（插件第 2 步），Mac 上复测一次。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。
