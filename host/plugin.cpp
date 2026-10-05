@@ -150,7 +150,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
       republishMidiMap();
     };
 #ifndef APP_API
-    shared->withRecorder = false;
+    shared->recorderEnabled = false;
     shared->midiNoDevice = "MIDI comes from the DAW track";
 #endif
     uiState_ = shared;
