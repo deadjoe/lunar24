@@ -238,7 +238,7 @@ int main(int argc, char** argv) {
         art::drawPlate(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), false);
         break;
       case WidgetKind::Joystick:
-        art::drawJoystick(sink, float(w.cx), float(w.cy), 55.f, 90.f, float(w.cx), float(w.cy), false);
+        art::drawJoystick(sink, float(w.cx), float(w.cy), 55.f, float(w.cx), float(w.cy), false);
         break;
       case WidgetKind::Cartridge: {
         if (w.id != 0) {

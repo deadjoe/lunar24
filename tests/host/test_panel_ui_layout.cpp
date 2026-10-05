@@ -142,7 +142,7 @@ int main() {
     if (w.kind == WidgetKind::Button) host::art::drawButton(ctl, cx, cy, float(w.w / 2), true, true);
     if (w.kind == WidgetKind::Toggle) host::art::drawToggle(ctl, cx, cy, 0.f, true);
     if (w.kind == WidgetKind::Jack) host::art::drawJack(ctl, cx, cy, float(w.w / 2), true);
-    if (w.kind == WidgetKind::Joystick) host::art::drawJoystick(ctl, cx, cy, 55.f, 90.f, cx + 90.f, cy - 90.f, true);
+    if (w.kind == WidgetKind::Joystick) host::art::drawJoystick(ctl, cx, cy, 55.f, cx + 90.f, cy - 90.f, true);
   }
   CHECK_EQ(ctl.bad, 0);
   CHECK(ctl.paths > 1000);

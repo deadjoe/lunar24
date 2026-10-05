@@ -161,7 +161,7 @@ def main(pdf, widgets_json):
     for w in json.load(open(widgets_json)):
         k, cx, cy, ww, hh = w["kind"], w["cx"], w["cy"], w["w"], w["h"]
         if k == JOYSTICK:
-            ww = hh = 260  # the stick and its printed arrows: the Bearbone bear replaces them (gen_panel_bear.py)
+            ww = hh = 260  # the stick and its printed arrows: the emblem in panel_art.h replaces them
         m = WIDGET_MARGIN.get(k, 1.2)
         boxes.append((cx - ww * m / 2, cy - hh * m / 2, cx + ww * m / 2, cy + hh * m / 2))
 

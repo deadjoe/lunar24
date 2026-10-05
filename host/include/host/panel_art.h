@@ -9,8 +9,6 @@
 //                            from the official panel drawing (tools/gen_panel_art.py)
 //   panel_logo.generated.h — the Lunar 24 name plates, as outlines of the Saira font
 //                            (tools/gen_panel_logo.py)
-//   panel_bear.generated.h — the Bearbone.Studio bear round the joystick, as line art
-//                            (tools/gen_panel_bear.py)
 //
 // Sink interface (all coordinates in 2400 x 1552 panel units, colours 0xRRGGBB):
 //   void fillRect(float x0, float y0, float x1, float y1, std::uint32_t rgb, float radius);
@@ -59,7 +57,6 @@ struct Grad {
 
 #include <host/panel_art.generated.h>
 #include <host/panel_logo.generated.h>
-#include <host/panel_bear.generated.h>
 
 namespace lunar24::host::art {
 
@@ -691,15 +688,91 @@ void drawToggle(Sink& s, float cx, float cy, float t, bool hover) {
   dome(s, cx, ly, 6.f, hover ? 0xebaa00 : 0xd4d4d4, 0.4f);
 }
 
+// The emblem printed round the joystick (where the Solar 42F prints a line-drawn figure;
+// owner's pick, 2026-10-05): a ring with two bear ears (a nod to Bearbone.Studio), drawn as a
+// double line like the panel's other line art, and broken orbit arcs round it that echo the
+// moon under the display. Sizes tuned by eye.
+template <class Sink>
+void drawJoystickEmblem(Sink& s, float cx, float cy, std::uint32_t ink) {
+  constexpr float kPi = 3.14159265f, kDeg = kPi / 180.f;
+  constexpr float kRing = 80.f, kEar = 25.f, kEarAt = 84.f, kEarAngle = 42.f, kGap = 7.5f;
+  const float ex[2] = {cx - kEarAt * std::sin(kEarAngle * kDeg), cx + kEarAt * std::sin(kEarAngle * kDeg)};
+  const float ey = cy - kEarAt * std::cos(kEarAngle * kDeg);
+  // The outline of the ring and the two ears together, `inset` inside the outer line.
+  auto outline = [&](float inset) {
+    const float R = kRing - inset, r = kEar - inset;
+    // Where ear e crosses the ring: angles on the ring (a0 < a1) and on the ear (b0 meets a0,
+    // b1 meets a1; the ear's outer part runs from b0 up to b1 + 2 pi).
+    struct Cross { float a0, a1, b0, b1; };
+    Cross c[2];
+    for (int e = 0; e < 2; ++e) {
+      const float dx = ex[e] - cx, dy = ey - cy, d = std::sqrt(dx * dx + dy * dy);
+      const float alpha = std::atan2(dy, dx);
+      const float beta = std::acos((R * R + d * d - r * r) / (2 * R * d));
+      const float gamma = std::acos((r * r + d * d - R * R) / (2 * r * d));
+      c[e] = {alpha - beta, alpha + beta, alpha + kPi + gamma, alpha + kPi - gamma};
+    }
+    auto arcTo = [&](float x0, float y0, float rad, float from, float to, bool first) {
+      const int n = 48;
+      for (int k = 0; k <= n; ++k) {
+        const float t = from + (to - from) * float(k) / float(n);
+        const float x = x0 + rad * std::cos(t), y = y0 + rad * std::sin(t);
+        if (first && k == 0) s.moveTo(x, y);
+        else s.lineTo(x, y);
+      }
+    };
+    // Clockwise (angles grow clockwise on screen): bottom of the ring from the right ear round to
+    // the left ear, over the left ear, the ring's top between the ears, over the right ear.
+    arcTo(cx, cy, R, c[1].a1, c[0].a0 + 2 * kPi, true);
+    arcTo(ex[0], ey, r, c[0].b0, c[0].b1 + 2 * kPi, false);
+    arcTo(cx, cy, R, c[0].a1, c[1].a0, false);
+    arcTo(ex[1], ey, r, c[1].b0, c[1].b1 + 2 * kPi, false);
+    s.closePath();
+  };
+  outline(0.f);
+  s.strokePath(ink, 4.6f);
+  outline(kGap);
+  s.strokePath(ink, 1.8f);
+  // The inside of each ear: an arc, where it shows outside the ring.
+  for (int e = 0; e < 2; ++e) {
+    bool drawing = false;
+    for (int k = 0; k <= 64; ++k) {
+      const float t = 2 * kPi * float(k) / 64.f;
+      const float x = ex[e] + 12.f * std::cos(t), y = ey + 12.f * std::sin(t);
+      const bool out = std::hypot(x - cx, y - cy) > kRing + kGap;
+      if (out && !drawing) s.moveTo(x, y);
+      else if (out) s.lineTo(x, y);
+      drawing = out;
+    }
+    s.strokePath(ink, 2.6f);
+  }
+  // Broken orbits: radius, line width, then arcs as (from, to) in degrees clockwise from the right.
+  struct Orbit { float r, width; int count; float arcs[3][2]; };
+  static constexpr Orbit kOrbits[] = {
+      {104.f, 2.0f, 3, {{-30, 40}, {70, 150}, {175, 215}}},
+      {122.f, 1.4f, 2, {{-10, 55}, {95, 170}}},
+      {140.f, 1.0f, 2, {{20, 70}, {120, 160}}},
+  };
+  for (const Orbit& o : kOrbits) {
+    for (int a = 0; a < o.count; ++a) {
+      for (int k = 0; k <= 40; ++k) {
+        const float t = (o.arcs[a][0] + (o.arcs[a][1] - o.arcs[a][0]) * float(k) / 40.f) * kDeg;
+        const float x = cx + o.r * std::cos(t), y = cy + o.r * std::sin(t);
+        if (k == 0) s.moveTo(x, y);
+        else s.lineTo(x, y);
+      }
+      s.strokePath(ink, o.width);
+    }
+  }
+}
+
 // The joystick: recessed gate, shaft and a round knob at (x, y).
 template <class Sink>
-void drawJoystick(Sink& s, float cx, float cy, float gateR, float travel, float x, float y, bool hover) {
+void drawJoystick(Sink& s, float cx, float cy, float gateR, float x, float y, bool hover) {
   s.circle(cx, cy, gateR);
   s.fillGrad(vertical(cy - gateR, cy + gateR, 0x161616, 0x3c3c3c));
   s.circle(cx, cy, gateR - 1.f);
   s.strokeGrad(vertical(cy - gateR, cy + gateR, 0x000000, 0xffffff, 0.5f, 0.3f), 2.f);
-  s.circle(cx, cy, travel);
-  s.strokeGrad(solid(0x5a5a5a), 1.5f);
   s.moveTo(cx + 4.f, cy + 7.f);
   s.lineTo(x + 6.f, y + 10.f);
   s.strokeGrad(solid(0x000000, 0.35f), 16.f);
@@ -736,7 +809,7 @@ void drawPanelArt(Sink& s) {
   for (const auto& l : kLeds) drawLed(s, l.x, l.y, l.r, l.rgb, 0.f);
   for (const auto& t : kTexts) s.text(t.x, t.y, t.size * 0.92f, t.rgb, t.vertical, t.text);
   drawShapes(s, kLogoPoints, kLogoSubPaths, kLogoShapes, sizeof(kLogoShapes) / sizeof(kLogoShapes[0]));
-  drawShapes(s, kBearPoints, kBearSubPaths, kBearShapes, sizeof(kBearShapes) / sizeof(kBearShapes[0]));
+  drawJoystickEmblem(s, 180.f, 1297.f, kInkRgb);  // the stick: panel_ui_layout.h
   drawKeybedMarks(s);
 }
 
