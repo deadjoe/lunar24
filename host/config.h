@@ -36,7 +36,7 @@
 #define LUNAR_OLD_BUNDLE_NAME "Lunar24Host"
 #define BUNDLE_MFR "Lunar24"
 #define BUNDLE_DOMAIN "com"
-#define SHARED_RESOURCES_SUBPATH "Lunar24"  // unused (PLUG_SHARED_RESOURCES 0); silences iPlug2's notice
+#define SHARED_RESOURCES_SUBPATH PLUG_NAME  // iPlug2's own default, named to silence its build notice
 
 //  PLUG_CHANNEL_IO is an EXACT set of legal I/O configs, not a "max capability"
 // string. The APP branch declares the six legal combos the standalone host may open; iPlug2's
