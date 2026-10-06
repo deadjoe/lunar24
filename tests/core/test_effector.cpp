@@ -4,7 +4,11 @@
 // Dual effector: every program stays finite and bounded, BLEND=0 is dry, program switching works,
 // and the two reverbs stay balanced on a steady chord.
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <limits>
+#include <vector>
 
 #include "mini_test.h"
 #include <lunar24/core/effector.h>
@@ -19,9 +23,69 @@ double testInput(int i, double sr) {
   return 0.6 * std::sin(6.283185307 * 110.0 * t) + 0.3 * std::sin(6.283185307 * 331.0 * t);
 }
 
+// Reference history stores newest first and really zeroes on clear. It has no ring cursor
+// or written-count bookkeeping, so stale samples / off-by-one errors cannot hide in both.
+void delayLineClear() {
+  lunar24::core::fx::DelayLine line;
+  for (std::size_t minLen : {0u, 13u, 29u, 125u, 0u}) {  // also re-init used storage
+    line.init(minLen);
+    const std::size_t n = line.size();
+    std::vector<float> history(n, 0.0f);
+    auto write = [&](double x) {
+      line.write(x);
+      std::move_backward(history.begin(), history.end() - 1, history.end());
+      history[0] = static_cast<float>(x);
+    };
+    auto clear = [&] {
+      line.clear();
+      std::fill(history.begin(), history.end(), 0.0f);
+    };
+    auto verify = [&] {
+      bool integersMatch = true, fractionsMatch = true;
+      for (std::size_t d = 0; d < 3 * n; ++d)
+        integersMatch = integersMatch && line.readInt(d) == history[d % n];
+      CHECK(integersMatch);  // includes wrapped reads after only a partial refill
+      CHECK_EQ(line.readInt(std::numeric_limits<std::size_t>::max()), history[n - 1]);
+      for (int quarter = -4; quarter <= static_cast<int>(4 * n); ++quarter) {
+        const double delay = quarter * 0.25;
+        const double d = std::max(0.0, std::min(delay, static_cast<double>(n - 4)));
+        const auto i = static_cast<std::size_t>(std::floor(d));
+        const double f = d - std::floor(d);
+        const double y0 = history[i], y1 = history[i + 1];
+        const double ym1 = history[i == 0 ? 0 : i - 1], y2 = history[i + 2];
+        const double c1 = 0.5 * (y1 - ym1);
+        const double c2 = ym1 - 2.5 * y0 + 2.0 * y1 - 0.5 * y2;
+        const double c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
+        const double expected = ((c3 * f + c2) * f + c1) * f + y0;
+        const double actual = line.read(delay);
+        fractionsMatch = fractionsMatch && std::memcmp(&actual, &expected, sizeof(double)) == 0;
+      }
+      CHECK(fractionsMatch);  // four taps straddling the written / unwritten boundary
+    };
+    verify();
+    clear();
+    clear();
+    verify();
+    for (std::size_t k = 0; k < 5 * n; ++k) {
+      // Clear partially filled and full lines at different cursor positions, including wrap.
+      if (k == 3 || k == n - 1 || k == 2 * n + 3) { clear(); verify(); }
+      write(std::sin(static_cast<double>(k) * 0.73) + 0.123456789);
+      verify();
+    }
+    // Even a non-finite old value must be hidden, not multiplied by zero into another NaN.
+    write(std::numeric_limits<double>::quiet_NaN());
+    write(std::numeric_limits<double>::infinity());
+    clear();
+    verify();
+    write(0.375);
+    verify();
+  }
+}
+
 }  // namespace
 
 int main() {
+  delayLineClear();
   const double sr = 48000.0;
 
   // Every program, knobs at the extremes: finite, bounded (feedback paths are limited).

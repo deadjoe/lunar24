@@ -460,6 +460,9 @@ void input_route() {
 
 // ---- C. scale ---------------------------------------------------------------------------
 void scale() {
+  CHECK_EQ(dev_norm(std::numeric_limits<double>::quiet_NaN()), 0.0);
+  CHECK_EQ(dev_norm(std::numeric_limits<double>::infinity()), 0.0);
+  CHECK_EQ(dev_norm(-std::numeric_limits<double>::infinity()), 0.0);
   // Unified 0.5 clamp: WET max 2V -> +1.0, DRY max 1V -> +0.5 (2:1 preserved).
   CHECK(std::fabs(dev_norm(2.0) - 1.0) < 1e-9);
   CHECK(std::fabs(dev_norm(1.0) - 0.5) < 1e-9);

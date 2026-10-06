@@ -138,12 +138,17 @@ class DelayLine {
     buf_.assign(n, 0.0f);
     mask_ = n - 1;
     w_ = 0;
+    written_ = 0;
   }
-  void clear() { std::fill(buf_.begin(), buf_.end(), 0.0f); }
+  // Forget the contents in constant time: a position not written since reads as 0, exactly
+  // as if the line were zeroed. Keep the write cursor, including wrapped readInt semantics.
+  // Program switches call this on the audio thread, even for seconds-long delay lines.
+  void clear() { written_ = 0; }
   std::size_t size() const { return buf_.size(); }
   void write(double x) {
     buf_[w_] = static_cast<float>(x);
     w_ = (w_ + 1) & mask_;
+    if (written_ <= mask_) ++written_;
   }
   // Delay in samples measured from the most recently written sample (0 = newest).
   double read(double d) const {
@@ -151,7 +156,12 @@ class DelayLine {
     const double fi = std::floor(d);
     const double f = d - fi;
     const std::size_t i = static_cast<std::size_t>(fi);
-    const double y0 = at_(i), y1 = at_(i + 1), ym1 = at_(i == 0 ? 0 : i - 1), y2 = at_(i + 2);
+    double y0, y1, ym1, y2;
+    if (i + 2 < written_) {  // the usual case: all four taps written since the last clear
+      y0 = raw_(i), y1 = raw_(i + 1), ym1 = raw_(i == 0 ? 0 : i - 1), y2 = raw_(i + 2);
+    } else {
+      y0 = at_(i), y1 = at_(i + 1), ym1 = at_(i == 0 ? 0 : i - 1), y2 = at_(i + 2);
+    }
     // 4-point Hermite, interpolating from y0 (delay i) toward y1 (delay i+1).
     const double c1 = 0.5 * (y1 - ym1);
     const double c2 = ym1 - 2.5 * y0 + 2.0 * y1 - 0.5 * y2;
@@ -161,9 +171,11 @@ class DelayLine {
   double readInt(std::size_t d) const { return at_(d); }
 
  private:
-  double at_(std::size_t d) const { return buf_[(w_ - 1 - d) & mask_]; }
+  double raw_(std::size_t d) const { return buf_[(w_ - 1 - d) & mask_]; }
+  double at_(std::size_t d) const { return (d & mask_) < written_ ? raw_(d) : 0.0; }
   std::vector<float> buf_;
   std::size_t mask_ = 0, w_ = 0;
+  std::size_t written_ = 0;  // samples written since the last clear, up to the size
 };
 
 // Two-tap granular pitch shifter over a short delay (sin^2 crossfaded taps).
