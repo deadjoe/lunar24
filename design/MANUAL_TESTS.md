@@ -210,7 +210,7 @@
   - 音频启动不了时，蓝色小屏显示 NO AUDIO。
   - Preferences 窗口能打开。
 
-**T0.4 RESET PANEL** ⏳ (#58, 改为原地切换后待复测)
+**T0.4 RESET PANEL** ✅ (#58；改为原地切换后 #126 复测通过)
 - 步骤：
   1. 打开 DRONE VOICES 的 1，随便转几个旋钮，接一根线。
   2. 键盘菜单 → RESET PANEL → 4 秒内再点一次。
@@ -1491,9 +1491,105 @@
   - 录音时声音不卡、不爆音；停止时没有“轰”的一声。
 - 补充：录音中在 Preferences 里改了采样率，录音会自动停止（文件照常可播）；只是重开同一个设备则继续录。出问题时 audio.log 里有 `recording ...` 的记录。
 
+### 17. 插件（VST3 / AU，Ableton Live）
+
+插件和独立 App 是同一个面板、同一个声音引擎，差别只在这几处：
+- REC 不能用：REC 按钮和 WET / DRY / ALL 旋钮看起来和独立 App 一样，但点了没有反应；录音用 DAW 自己的录音。
+- 音频设备、采样率、MIDI 输入都由 DAW 管，没有 Preferences。MIDI 设置面板的 INPUT 一行显示 MIDI comes from the DAW track。
+- 音色、接线、键盘设置和 DRONE VOICES 的开关存进 DAW 工程，不读写独立 App 的状态文件。
+- MIDI 绑定和 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 与独立 App **共用**同一份设置：哪边改了，另一边下次打开时也是新的。在独立 App 里学会的绑定在插件里照样生效：DAW 不告诉插件 MIDI 来自哪个控制器，所以插件只核对通道和 CC 号，不核对设备名。如果在 App 里给两个控制器的同一个 CC 号绑了不同旋钮，插件里只认列表里靠前的那一条。
+- 电脑键盘弹琴在插件窗口里不一定可用：Ableton 会先拿走按键。用 Ableton 自己的电脑 MIDI 键盘（按 **M** 打开）或 MIDI 控制器弹，这是正常行为。
+- MPK 用测试用户预设（和独立 App 一样）。Ableton 的 Settings → Link, Tempo & MIDI 里 `MPK mini IV (MIDI Port)` 的 **Track** 要打开；轨道 MIDI From = All Ins、Monitor = Auto、Arm 亮着即可（owner 实测）。弹不出声时先看右上角 MIDI 输入灯闪不闪，再把 MIDI From 直接选成这个端口试。PLUGIN/DAW 模式下 MPK 也能弹，但旋钮被 Ableton 的 MPK 脚本拿去控制设备参数，不作为 CC 进轨道，插件的 MIDI 绑定收不到；插件目前没有对外公开参数（第 2 阶段才做自动化），所以那时拧旋钮不起作用。
+- 插件窗口被别的窗口挡住或隐藏后：在轨道的设备区（Device View）点 Lunar 24 标题栏上的扳手图标（Show / Hide Plug-in Window），或者 ⌥⌘P（Show / Hide Plug-in Windows）。窗口跟着选中的轨道显示，切到别的轨道会自动收起，这是 Ableton 的 Auto-Hide Plug-in Windows 设置（Settings → Plug-Ins）。
+
+**安装（Mac）**
+1. GitHub 上这个 PR 最新一次 CI 运行（Actions → 对应运行 → Artifacts）下载 **Lunar24-Plugins-macOS**。双击解开后里面还有一个 `Lunar24-Plugins-macOS.zip`，再双击解开，得到 `Lunar24-Plugins` 文件夹（里面是 `Lunar24.vst3` 和 `Lunar24.component`）。
+2. 打开"终端"，逐行粘贴执行（假设文件夹在"下载"里）：
+   ```sh
+   xattr -dr com.apple.quarantine ~/Downloads/Lunar24-Plugins
+   mkdir -p ~/Library/Audio/Plug-Ins/VST3 ~/Library/Audio/Plug-Ins/Components
+   rm -rf ~/Library/Audio/Plug-Ins/VST3/Lunar24.vst3 ~/Library/Audio/Plug-Ins/Components/Lunar24.component
+   cp -R ~/Downloads/Lunar24-Plugins/Lunar24.vst3 ~/Library/Audio/Plug-Ins/VST3/
+   cp -R ~/Downloads/Lunar24-Plugins/Lunar24.component ~/Library/Audio/Plug-Ins/Components/
+   killall -9 AudioComponentRegistrar 2>/dev/null; true
+   ```
+3. Ableton Live → Settings → Plug-Ins：打开 **Use VST3 Plug-in System Folders** 和 **Use Audio Units v2**，点 **Rescan**。
+4. 期望：浏览器的 Plug-Ins 里出现 **Lunar24**，下面有 **Lunar 24**（VST3 一个、AU 一个）。
+- 更新插件时重复第 1、2 步，然后重启 Ableton。
+
+**安装（Windows）**：下载 **Lunar24-Plugins-Windows**，解开得到 `Lunar24.vst3` 文件夹，整个复制到 `C:\Program Files\Common Files\VST3\`，在 Ableton 里 Rescan。
+
+下面的测试先用 **VST3** 版走一遍；T17.10 再用 AU 版重复关键几项。
+
+**T17.1 载入、弹奏、面板** ✅
+- 步骤：
+  1. 新建一条 MIDI 轨，把 **Lunar 24**（VST3）拖到轨上；插件窗口自动打开。
+  2. 选中这条轨（Arm），用 MPK 弹几个音；再按 **M** 打开 Ableton 的电脑 MIDI 键盘，用电脑键盘弹。
+  3. 看面板右上角耳机区；点 **MIDI** 按钮看 INPUT 一行。
+- 期望：
+  - 第 1 步：窗口大约是面板的一半大小，面板完整、清晰，和独立 App 一样。
+  - 第 2 步：两种方式都出声，触摸板随音符点亮。
+  - 第 3 步：REC 区和独立 App 一样，但点 REC、点 WET / DRY / ALL 都没有反应；INPUT 显示 MIDI comes from the DAW track。
+
+**T17.2 窗口缩放** ✅
+- 步骤：拖插件窗口的边缘放大、缩小；再拖面板右下角的小三角。
+- 期望：面板始终保持原来的长宽比例，不被裁切、不变形；最小是一开始的一半大小，最大是面板原尺寸（2400 宽）；放大后文字和旋钮清晰。
+
+**T17.3 走带停止不打断声音** ✅
+- 准备：打开 DRONE VOICES 的 1 和 4；BLEND 放中间（混响尾巴一直在）。
+- 步骤：
+  1. 在 Ableton 里反复按空格（播放 / 停止）几次。
+  2. 按住 MPK 一个键不放，按空格停止。
+  3. 点轨道上插件的电源开关（Device Activator）关掉再打开。
+- 期望：
+  - 第 1 步：drone 和混响尾巴一直在，不会每次停止都重新开始。
+  - 第 2 步：停止走带不影响按住的音（Ableton 停止时不让插件复位）；松开键后按包络慢慢释放，不挂音；drone 不受影响。
+  - 第 3 步：关掉时没声，打开后接着出声，面板设置不变。
+
+**T17.4 存工程、重新打开** ✅
+- 步骤：
+  1. 转几个旋钮（比如 FILTER L 的 FREQ、BLEND），接一根线，键盘菜单把 MODE 改成 ARPEGGIATOR，打开 DRONE VOICES 的 1 和 4。
+  2. 保存 Ableton 工程，退出 Ableton。
+  3. 重新打开这个工程，打开插件窗口。
+- 期望：旋钮、接线、MODE、DRONE VOICES 1 和 4 都和保存前一样，声音也一样（drone 在响）。
+
+**T17.5 播放中切换音色** ✅
+- 步骤：
+  1. 音色 A：键盘菜单 RESET PANEL（点两次），打开 DRONE VOICES 1。点 Ableton 下方设备区 Lunar 24 标题条右边的软盘图标（Save Preset），命名 `Lunar A`。
+  2. 音色 B：再打开 DRONE VOICES 4，BLEND 转到最右，FILTER L 的 FREQ 转到很低；同样存成 `Lunar B`。
+  3. drone 响着，点标题条上的热交换图标（两个相反箭头，或选中设备按 **Q**），在浏览器里轮流双击 `Lunar A`、`Lunar B`，来回几次。
+- 期望：每次切换只有很短的一顿（约 10 ms 淡出淡入），声音不完全断掉再升起；没有咔哒声、爆音或卡顿；面板马上变成对应音色。用热交换才是同一个插件里原地切换；直接拖到轨道上 Ableton 可能新建一个插件。
+
+**T17.6 窗口关着时 MIDI 旋钮也会保存** ✅
+- 准备：在 MIDI 设置里 Learn 一个旋钮（T15.2 的做法）。
+- 步骤：关掉插件窗口；拧这个 MPK 旋钮到一个明显的位置；保存工程；退出再打开；打开插件窗口。
+- 期望：面板上那个旋钮停在你最后拧到的位置。
+
+**T17.7 两个实例互不影响** ✅（两个实例同时响，Ableton CPU 表约 9%）
+- 步骤：再建一条 MIDI 轨也放一个 Lunar 24，两边设成不同的音色，两条轨同时弹。
+- 期望：各响各的，互不影响；关掉一个的窗口、删掉一个，另一个照常。Ableton 的 CPU 表正常（每个实例大约占一个核的十几个百分点）。
+
+**T17.8 MIDI 绑定与独立 App 共用** ✅
+- 步骤：
+  1. 在插件里看 MIDI 设置：之前在独立 App 里学的绑定都在。拧对应的 MPK 旋钮。
+  2. 在插件里新 Learn 一个绑定；退出 Ableton，打开独立 App，看 MIDI 设置。
+- 期望：第 1 步面板旋钮跟着动；第 2 步独立 App 里也有这条新绑定。
+
+**T17.9 RESET PANEL 和采样率变化** ✅
+- 步骤：
+  1. 打开几个 DRONE VOICES，键盘菜单 → RESET PANEL（点两次）。
+  2. Ableton → Settings → Audio，把 Sample Rate 从 48000 改成 44100（或反过来）。
+- 期望：
+  - 第 1 步：和独立 App 的 T0.4 一样恢复出厂，只有一下很短的淡出淡入。
+  - 第 2 步：切换时有一下很短的声音（机器按新采样率重建，和 RESET 时那一下类似），随后正常出声；面板设置不变，音高不变。
+
+**T17.10 AU 版** ✅
+- 步骤：用 **Lunar 24（AU）** 重复 T17.1、T17.3、T17.4。
+- 期望：和 VST3 版一样。
+
 ## 还没测的（⏳）
 
-- T0.4 RESET PANEL：现在原地切换整台机器（插件第 2 步），Mac 上复测一次。
+- 第 17 节插件的 Windows VST3：随 Windows 版一起测（Mac 上 VST3 和 AU 的 T17.1–T17.10 已通过）。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。

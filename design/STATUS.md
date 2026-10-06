@@ -15,9 +15,15 @@ _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manua
 - **App (host/)**: macOS / Windows standalone with the official panel layout, MIDI input
   and MIDI learn, REC to WAV, machine state restored on launch. CI builds a downloadable
   app on every run (Actions → run → Artifacts: Lunar24-macOS, Lunar24-Windows).
+- **Plugins**: VST3 (Mac, Windows) and AUv2 (Mac) instruments built from the same code.
+  The machine and drone keys are saved in the DAW project; MIDI bindings are shared with
+  the app; REC is shown but does not respond. CI checks them with Steinberg's validator and
+  auval (Artifacts: Lunar24-Plugins-macOS, Lunar24-Plugins-Windows). Install and test steps:
+  MANUAL_TESTS section 17. Plan and decisions: `design/PLUGIN_PLAN.md`.
 - **Version**: 1.0.0; About Lunar 24 shows the build number, time and commit.
 - **Tools**: `lunar24_render` (engine to WAV), `panel_preview` (panel to SVG).
-- **Tests**: 65 unit / engine tests (~70 s), also under ASan + UBSan in CI.
+- **Tests**: 67 unit / engine tests (~70 s), also under ASan + UBSan in CI; the threaded
+  ones under ThreadSanitizer too.
 - **Checked by hand on the Mac**: everything in MANUAL_TESTS except the ⏳ items below.
 
 ## How to play
@@ -46,7 +52,8 @@ _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manua
 1. Check the Windows build by hand (MANUAL_TESTS ⏳; the owner schedules it separately).
 2. Later, when the owner asks: tune sounds from listening (MANUAL_TESTS "调音待办":
    drone level, modulation depth, S&H, mix, VCO B top).
-3. AU / VST3 plugin: plan in `design/PLUGIN_PLAN.md` (phase 1 next). Later: panel tweaks.
+3. Plugins: phase 1 passed in Ableton Live on the Mac (VST3 and AU, MANUAL_TESTS 17).
+   Next, when the owner asks: phase 2 (automation, DAW tempo, extra outputs). Later: panel tweaks.
 
 ## Decided not to do (for now)
 - Keyboard pushbutton offsets (hold arrow + encoder; TWIN / SPLIT per-side offset).
