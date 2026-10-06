@@ -211,9 +211,31 @@ static void plugin_window_constraint() {
   }
 }
 
+// Windows resize keeps the panel's shape, so the dialog background never shows around it.
+static void client_aspect() {
+  using lunar24::host::client_size_for_aspect;
+  using lunar24::host::largest_client_for_aspect;
+  const double W = 2400.0, H = 1551.0;
+  int w = 3000, h = 1000;  // a wide drag: height follows the width
+  client_size_for_aspect(w, h, W, H, false);
+  CHECK(w == 3000);
+  CHECK(h == static_cast<int>(3000.0 * H / W + 0.5));
+  w = 1000;
+  h = 1551;  // a vertical drag: width follows the height
+  client_size_for_aspect(w, h, W, H, true);
+  CHECK(h == 1551);
+  CHECK(w == static_cast<int>(1551.0 * W / H + 0.5));
+  int cw = 0, ch = 0;
+  largest_client_for_aspect(1920, 1080, W, H, cw, ch);  // 16:9 screen, height binds
+  CHECK(ch == 1080);
+  CHECK(cw == static_cast<int>(1080.0 * W / H + 0.5));
+  CHECK(cw < 1920);
+}
+
 int main() {
   std::printf("== P5-1 host window layout: consume core fit + reachability ==\n");
   case_placement();
   plugin_window_constraint();
+  client_aspect();
   return run("host_window_layout");
 }

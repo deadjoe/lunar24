@@ -41,6 +41,9 @@
 using namespace iplug::igraphics;
 
 #ifdef APP_API
+#if defined(OS_WIN)
+extern "C" void lunar_host_track_aspect(void* view, double designW, double designH);
+#endif
 // The standalone app's platform layer (host/main.mm, host/window_metrics_win.cpp and
 // host/iPlug_app_host_override.cpp): screen geometry, the metal case, the audio device, the
 // log and the REC folder. The plugins have none of these.
@@ -185,6 +188,11 @@ void LunarHostPlugin::OnParentWindowResize(int width, int height)
   IGraphics* g = GetUI();
   if (g == nullptr || width <= 0 || height <= 0) return;
   const double windowScale = g->GetPlatformWindowScale();
+#if defined(APP_API) && defined(OS_WIN)
+  // Keep the dialog the same shape as the panel, so resizing cannot leave a
+  // white band of dialog background around the UI.
+  lunar_host_track_aspect(g->GetWindow(), lunar24::core::kDesignWidth, lunar24::core::kDesignHeight);
+#endif
   lunar24::host::CaseMargins margins;
 #ifdef APP_API
   lunar_host_case_margins(g->GetWindow(), &margins.side, &margins.top, &margins.bottom);

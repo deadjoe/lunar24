@@ -50,6 +50,8 @@
 #include <cstring>
 #include <string>
 
+#include <host/window_layout.h>
+
 // --- geometry probes (extern "C" so plugin.cpp can resolve them by name) ----------------
 
 // DPI factor (logical -> physical). Clamped to >= 1.0: a 96-DPI desktop or a task where
@@ -146,6 +148,91 @@ extern "C" bool lunar_host_force_clamp()
 {
   const char* v = std::getenv("LUNAR_HOST_FORCE_CLAMP");
   return (v != nullptr) && (std::strcmp(v, "1") == 0);
+}
+
+// --- keep the dialog the same shape as the panel --------------------------------------------
+// A free resize leaves the panel (fixed shape) smaller than the dialog, and the dialog's
+// own background shows as a white band. While the user drags, and when the window is
+// maximized, the client is forced back to the panel's aspect.
+
+static double aspectW_ = 2400.0;
+static double aspectH_ = 1551.0;
+static WNDPROC prevProc_ = nullptr;
+
+static void non_client(HWND hwnd, int* ncX, int* ncY)
+{
+  RECT window{};
+  RECT client{};
+  GetWindowRect(hwnd, &window);
+  GetClientRect(hwnd, &client);
+  *ncX = (window.right - window.left) - (client.right - client.left);
+  *ncY = (window.bottom - window.top) - (client.bottom - client.top);
+  if (*ncX < 0) *ncX = 0;
+  if (*ncY < 0) *ncY = 0;
+}
+
+static void write_client(RECT* rect, int edge, int ncX, int ncY, int clientW, int clientH)
+{
+  const int winW = clientW + ncX;
+  const int winH = clientH + ncY;
+  const bool left = edge == WMSZ_LEFT || edge == WMSZ_TOPLEFT || edge == WMSZ_BOTTOMLEFT;
+  const bool top = edge == WMSZ_TOP || edge == WMSZ_TOPLEFT || edge == WMSZ_TOPRIGHT;
+  if (left) rect->left = rect->right - winW;
+  else rect->right = rect->left + winW;
+  if (top) rect->top = rect->bottom - winH;
+  else rect->bottom = rect->top + winH;
+}
+
+static LRESULT CALLBACK aspect_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+  if (msg == WM_SIZING && aspectW_ > 0.0 && aspectH_ > 0.0) {
+    RECT* rect = reinterpret_cast<RECT*>(lp);
+    int ncX = 0, ncY = 0;
+    non_client(hwnd, &ncX, &ncY);
+    int clientW = (rect->right - rect->left) - ncX;
+    int clientH = (rect->bottom - rect->top) - ncY;
+    const bool fromHeight = wp == WMSZ_TOP || wp == WMSZ_BOTTOM;
+    lunar24::host::client_size_for_aspect(clientW, clientH, aspectW_, aspectH_, fromHeight);
+    write_client(rect, static_cast<int>(wp), ncX, ncY, clientW, clientH);
+    return TRUE;
+  }
+  const LRESULT handled = prevProc_ != nullptr ? CallWindowProcW(prevProc_, hwnd, msg, wp, lp)
+                                               : DefWindowProcW(hwnd, msg, wp, lp);
+  if (msg == WM_GETMINMAXINFO && aspectW_ > 0.0 && aspectH_ > 0.0) {
+    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    if (GetMonitorInfoW(monitor, &info)) {
+      int ncX = 0, ncY = 0;
+      non_client(hwnd, &ncX, &ncY);
+      const RECT& work = info.rcWork;
+      int clientW = 0, clientH = 0;
+      lunar24::host::largest_client_for_aspect((work.right - work.left) - ncX,
+                                               (work.bottom - work.top) - ncY, aspectW_, aspectH_,
+                                               clientW, clientH);
+      auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
+      mmi->ptMaxSize.x = clientW + ncX;
+      mmi->ptMaxSize.y = clientH + ncY;
+      mmi->ptMaxPosition.x = work.left + ((work.right - work.left) - mmi->ptMaxSize.x) / 2;
+      mmi->ptMaxPosition.y = work.top + ((work.bottom - work.top) - mmi->ptMaxSize.y) / 2;
+    }
+  }
+  return handled;
+}
+
+// Called on every resize. Subclasses the top-level dialog once.
+extern "C" void lunar_host_track_aspect(void* view, double designW, double designH)
+{
+  if (designW > 0.0 && designH > 0.0) {
+    aspectW_ = designW;
+    aspectH_ = designH;
+  }
+  HWND child = static_cast<HWND>(view);
+  if (child == nullptr) return;
+  HWND root = GetAncestor(child, GA_ROOT);
+  if (root == nullptr || prevProc_ != nullptr) return;
+  prevProc_ = reinterpret_cast<WNDPROC>(
+      SetWindowLongPtrW(root, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(aspect_proc)));
 }
 
 // --- REC: the recordings folder (Music\Lunar 24) ------------------------------------------

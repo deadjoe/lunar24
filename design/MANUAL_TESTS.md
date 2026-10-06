@@ -1601,7 +1601,7 @@
 ## 还没测的（⏳）
 
 - 第 17 节插件的 Windows VST3：随 Windows 版一起测（Mac 上 VST3 和 AU 的 T17.1–T17.10 已通过）。
-- Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。另外看两处：面板标题、旋钮读数、键盘菜单都有字；拖边框和点最大化后面板变大、保持比例、不被裁切。Mac 上的绿色全屏按钮这条不适用。
+- Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。另外看两处：面板标题、旋钮读数、键盘菜单的字清楚（和 Mac 同一套嵌入字体，不是系统字体）；拖边框和点最大化时窗口保持面板比例，黄色面板铺满窗口，四周不出现白边。Mac 上的绿色全屏按钮这条不适用。
 - T8.8：高采样率、小缓冲下切卡带不掉音（独立 App / VST3 / AU，96 / 192 kHz、64 样本；记录实际支持的配置）。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。

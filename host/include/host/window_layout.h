@@ -149,4 +149,31 @@ inline bool constrain_plugin_window(int& w, int& h, double designW, double desig
   return false;
 }
 
+// A client rectangle that keeps the panel's shape. A top or bottom drag follows the
+// height; a side or a corner follows the width.
+inline void client_size_for_aspect(int& w, int& h, double designW, double designH, bool fromHeight) {
+  if (designW <= 0.0 || designH <= 0.0) return;
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+  const double aspect = designW / designH;
+  if (fromHeight) w = static_cast<int>(static_cast<double>(h) * aspect + 0.5);
+  else h = static_cast<int>(static_cast<double>(w) / aspect + 0.5);
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+}
+
+// Largest panel-shaped client that fits in availW x availH (a maximized window).
+inline void largest_client_for_aspect(int availW, int availH, double designW, double designH,
+                                      int& w, int& h) {
+  w = availW > 0 ? availW : 1;
+  h = availH > 0 ? availH : 1;
+  if (designW <= 0.0 || designH <= 0.0) return;
+  const double aspect = designW / designH;
+  if (static_cast<double>(w) / aspect <= static_cast<double>(h))
+    h = static_cast<int>(static_cast<double>(w) / aspect + 0.5);
+  else w = static_cast<int>(static_cast<double>(h) * aspect + 0.5);
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+}
+
 }  // namespace lunar24::host

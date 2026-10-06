@@ -1608,19 +1608,11 @@ class LearnCaptureControl : public IControl {
 // Build the whole panel into `g`. `shared` must outlive the editor.
 inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   // The label font is built into the app (a system font looked up by name can be missing,
-  // and IGraphics then draws no text at all). macOS draws these bytes directly. Windows
-  // hands them to GDI and then asks for the family by name; when that is refused,
-  // LoadFont fails and every label is blank. Segoe UI ships with Windows, and the
-  // font ids stay the same, so the panel text still draws.
-#if defined(OS_WIN) || defined(_WIN32)
-  if (!g->LoadFont(kFont, const_cast<unsigned char*>(font::kRegular), static_cast<int>(font::kRegularSize)))
-    g->LoadFont(kFont, "Segoe UI", ETextStyle::Normal);
-  if (!g->LoadFont(kFontBold, const_cast<unsigned char*>(font::kBold), static_cast<int>(font::kBoldSize)))
-    g->LoadFont(kFontBold, "Segoe UI", ETextStyle::Bold);
-#else
+  // and IGraphics then draws no text at all). Both platforms draw this same static
+  // Noto Sans. Windows installs it through GDI, which refuses a variable-font STAT
+  // table; the generated face has that table removed.
   g->LoadFont(kFont, const_cast<unsigned char*>(font::kRegular), static_cast<int>(font::kRegularSize));
   g->LoadFont(kFontBold, const_cast<unsigned char*>(font::kBold), static_cast<int>(font::kBoldSize));
-#endif
   g->AttachPanelBackground(col(theme::kPanel));
 
   const std::vector<Widget> widgets = build_panel_layout();
