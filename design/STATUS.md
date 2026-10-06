@@ -52,8 +52,8 @@ _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manua
 1. Check the Windows build by hand (MANUAL_TESTS ⏳; the owner schedules it separately).
 2. Later, when the owner asks: tune sounds from listening (MANUAL_TESTS "调音待办":
    drone level, modulation depth, S&H, mix, VCO B top).
-3. Plugins: the owner tests MANUAL_TESTS section 17 in Ableton Live (phase 1 done in
-   code). Phase 2 (automation, DAW tempo, extra outputs) only after that. Later: panel tweaks.
+3. Plugins: phase 1 passed in Ableton Live on the Mac (VST3 and AU, MANUAL_TESTS 17).
+   Next, when the owner asks: phase 2 (automation, DAW tempo, extra outputs). Later: panel tweaks.
 
 ## Decided not to do (for now)
 - Keyboard pushbutton offsets (hold arrow + encoder; TWIN / SPLIT per-side offset).

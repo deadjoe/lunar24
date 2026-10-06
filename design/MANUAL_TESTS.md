@@ -1583,13 +1583,13 @@
   - 第 1 步：和独立 App 的 T0.4 一样恢复出厂，只有一下很短的淡出淡入。
   - 第 2 步：切换时有一下很短的声音（机器按新采样率重建，和 RESET 时那一下类似），随后正常出声；面板设置不变，音高不变。
 
-**T17.10 AU 版** ⏳
+**T17.10 AU 版** ✅
 - 步骤：用 **Lunar 24（AU）** 重复 T17.1、T17.3、T17.4。
 - 期望：和 VST3 版一样。
 
 ## 还没测的（⏳）
 
-- 第 17 节插件 T17.10（AU 版）：在 Ableton Live 里走一遍（VST3 的 T17.1–T17.9 已在 Mac 上通过）。
+- 第 17 节插件的 Windows VST3：随 Windows 版一起测（Mac 上 VST3 和 AU 的 T17.1–T17.10 已通过）。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。
