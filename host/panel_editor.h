@@ -123,6 +123,7 @@ struct EditorShared {
   // The plugins: REC looks the same but does not respond (a DAW records), MIDI comes from the DAW.
   bool recorderEnabled = true;
   const char* midiNoDevice = "Choose an input in Preferences";
+  std::string midiVersion, midiBuild;  // plugins: shown in the MIDI panel (the app has About)
   std::uint64_t seenStateVersion = ~0ull;
   std::uint64_t seenAudioSync = 0;
   bool seenReady = false;
@@ -1463,6 +1464,8 @@ class MidiOverlayControl : public IControl {
     state.map = s_.midiStore ? &s_.midiStore->map() : nullptr;
     state.device = s_.midi.inputDeviceName ? s_.midi.inputDeviceName() : "";
     state.noDevice = s_.midiNoDevice;
+    state.version = s_.midiVersion;
+    state.build = s_.midiBuild;
     state.channel = s_.midi.channelFilter ? s_.midi.channelFilter() : 0;
     state.octave = s_.midi.octaveShift ? s_.midi.octaveShift() : 0;
     state.curve = s_.midi.velocityCurve ? s_.midi.velocityCurve() : 0;

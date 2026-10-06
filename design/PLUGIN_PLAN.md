@@ -81,7 +81,7 @@
 | MIDI 设备热插拔、自动选择输入 | 不要，DAW 负责送 MIDI |
 | 启动读状态文件、30 秒自动保存、退出保存 | **关掉**。插件绝不能读独立 App 的状态文件，否则每个新实例都带着 App 上次的音色打开。改为存进 DAW 工程（第 5 点） |
 | MIDI 绑定文件 | 和独立 App 共用全局文件。多个实例同时写时文件不会损坏（整文件原子替换），后写的覆盖先写的 |
-| 菜单栏 About | 插件没有菜单栏；版本号放进 MIDI 设置面板或键盘菜单 SERVICE 页 |
+| 菜单栏 About | 插件没有菜单栏；版本号和 Build 号显示在 MIDI 设置面板右下角（已做） |
 | 面板上"NO AUDIO（见 Preferences）"提示 | 插件版换成不提 Preferences 的说法 |
 
 **做法**：只属于独立 App 的代码用 `#if APP_API` 隔开，独立 App 编译出来的代码和现在一致；插件专用实现放新文件，不改 `main.mm`、`iPlug_app_host_override.cpp`、`window_metrics_win.cpp`。
