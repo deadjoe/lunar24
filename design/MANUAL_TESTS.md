@@ -1546,7 +1546,7 @@
   - 第 2 步：停止走带不影响按住的音（Ableton 停止时不让插件复位）；松开键后按包络慢慢释放，不挂音；drone 不受影响。
   - 第 3 步：关掉时没声，打开后接着出声，面板设置不变。
 
-**T17.4 存工程、重新打开** ⏳
+**T17.4 存工程、重新打开** ✅
 - 步骤：
   1. 转几个旋钮（比如 FILTER L 的 FREQ、BLEND），接一根线，键盘菜单把 MODE 改成 ARPEGGIATOR，打开 DRONE VOICES 的 1 和 4。
   2. 保存 Ableton 工程，退出 Ableton。
@@ -1588,7 +1588,7 @@
 
 ## 还没测的（⏳）
 
-- 第 17 节插件（T17.4–T17.10）：在 Ableton Live 里走一遍，VST3 为主，AU 走 T17.10（T17.1–T17.3 已在 Mac 上通过）。
+- 第 17 节插件（T17.5–T17.10）：在 Ableton Live 里走一遍，VST3 为主，AU 走 T17.10（T17.1–T17.4 已在 Mac 上通过）。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。
