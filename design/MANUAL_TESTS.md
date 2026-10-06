@@ -210,7 +210,7 @@
   - 音频启动不了时，蓝色小屏显示 NO AUDIO。
   - Preferences 窗口能打开。
 
-**T0.4 RESET PANEL** ⏳ (#58, 改为原地切换后待复测)
+**T0.4 RESET PANEL** ✅ (#58；改为原地切换后 #126 复测通过)
 - 步骤：
   1. 打开 DRONE VOICES 的 1，随便转几个旋钮，接一根线。
   2. 键盘菜单 → RESET PANEL → 4 秒内再点一次。
@@ -1586,7 +1586,6 @@
 
 ## 还没测的（⏳）
 
-- T0.4 RESET PANEL：现在原地切换整台机器（插件第 2 步），Mac 上复测一次。
 - 第 17 节插件（T17.1–T17.10）：在 Ableton Live 里走一遍，VST3 为主，AU 走 T17.10。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
