@@ -132,6 +132,27 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: Compress-Archive -Path build/out/Lunar24.vst3 -DestinationPath build/out/Lunar24-Plugins-Windows.zip
+      # Steinberg's VST3 validator (built from the same SDK) and Apple's auval check the plugins
+      # the way a DAW loads them: bus layout, state save / restore, processing at many block
+      # sizes, and for the AU the Component Manager registration.
+      - name: Validate VST3 (mac/win)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          cmake -S third_party/iPlug2/Dependencies/IPlug/VST3_SDK -B build-vst3sdk \
+            -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF > /dev/null
+          cmake --build build-vst3sdk --config Release --target validator --parallel > /dev/null
+          validator=$(find build-vst3sdk/bin -name 'validator' -o -name 'validator.exe' | head -n 1)
+          "$validator" build/out/Lunar24.vst3
+      - name: Validate AU (mac)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/out/Lunar24.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -a | grep -Eq "aumu +Lu24 +Lua2" || { auval -a | tail -n 20; echo "FAIL: AU not registered"; exit 1; }
+          auval -strict -v aumu Lu24 Lua2
+
       - name: Upload plugins (mac)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v6
