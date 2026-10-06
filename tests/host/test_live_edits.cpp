@@ -373,6 +373,21 @@ int main() {
     CHECK(e.runtime()->keyboardArpSeqMode(core::KeyboardSide::Left) == core::ArpSeqMode::Arpeggiator);
     CHECK(e.parameterValue(core::ParameterId::effector_master) == 0.23);
   }
+  // audioSyncCount counts every record a sync applies (the panel redraws on a change).
+  {
+    using E = host::StandaloneAudioEngine;
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    CHECK(e.audioSyncCount() == 0);
+    CHECK(e.parameterFromAudioThread(core::ParameterId::effector_master, 0.4));
+    CHECK(e.parameterFromAudioThread(core::ParameterId::effector_blend, 0.6));
+    CHECK_EQ(e.syncParametersFromAudioThread(), 2);
+    CHECK(e.audioSyncCount() == 2);
+    CHECK_EQ(e.syncParametersFromAudioThread(), 0);
+    CHECK(e.audioSyncCount() == 2);
+    CHECK(e.parameterValue(core::ParameterId::effector_master) == 0.4);
+    CHECK(e.parameterValue(core::ParameterId::effector_blend) == 0.6);
+  }
   // An all-zero (never edited) saved sequence gets the factory gates; an edited one is kept.
   core::DeviceStateV1 old = core::make_default_device_state(1);
   old.keyboardSeqCurrent = core::KeyboardSeq{};
