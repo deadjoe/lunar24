@@ -42,6 +42,17 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3
 
+      # The VST3 SDK (MIT licensed since 3.8) is not in the repo: fetch a pinned tag into the
+      # iPlug2 submodule, where iPlug2's VST3 build looks for it.
+      - name: Fetch VST3 SDK (mac/win)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          cd third_party/iPlug2/Dependencies/IPlug
+          rm -rf VST3_SDK
+          git clone --quiet --depth 1 --branch v3.8.1_build_84 https://github.com/steinbergmedia/vst3sdk.git VST3_SDK
+          git -C VST3_SDK submodule update --quiet --init --depth 1 base pluginterfaces public.sdk cmake
+
       - name: Configure project
         run: |
           python3 --version || python --version
@@ -92,6 +103,47 @@ jobs:
         with:
           name: Lunar24-Windows
           path: build/out/Lunar24.exe
+
+      # The plugins (built by the Build step above): VST3 on mac and Windows, AU on mac.
+      - name: Assert plugin bundles (mac/win)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            test -f build/out/Lunar24.vst3/Contents/MacOS/Lunar24 \
+              || { echo "FAIL: VST3 bundle missing"; exit 1; }
+            test -f build/out/Lunar24.component/Contents/MacOS/Lunar24 \
+              || { echo "FAIL: AU bundle missing"; exit 1; }
+          else
+            test -f build/out/Lunar24.vst3/Contents/x86_64-win/Lunar24.vst3 \
+              || { echo "FAIL: VST3 bundle missing"; exit 1; }
+          fi
+      - name: Package plugins (mac)
+        if: runner.os == 'macOS'
+        run: |
+          for b in Lunar24.vst3 Lunar24.component; do
+            codesign --force --deep --sign - "build/out/$b"
+            codesign --verify --deep --strict --verbose=2 "build/out/$b"
+          done
+          mkdir -p build/out/Lunar24-Plugins
+          cp -R build/out/Lunar24.vst3 build/out/Lunar24.component build/out/Lunar24-Plugins/
+          cd build/out && ditto -c -k --keepParent Lunar24-Plugins Lunar24-Plugins-macOS.zip
+      - name: Package plugins (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path build/out/Lunar24.vst3 -DestinationPath build/out/Lunar24-Plugins-Windows.zip
+      - name: Upload plugins (mac)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v6
+        with:
+          name: Lunar24-Plugins-macOS
+          path: build/out/Lunar24-Plugins-macOS.zip
+      - name: Upload plugins (windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: Lunar24-Plugins-Windows
+          path: build/out/Lunar24-Plugins-Windows.zip
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure --build-config Release
