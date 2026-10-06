@@ -32,6 +32,7 @@
 //   * the Debug menu's accelerators (live edit, bounds, drawn area, FPS, screenshot) removed;
 //     the stock WinMain drops the Debug menu itself in release builds.
 //   * the IPlugVisualizer .ico / .ttf resource entries removed (the host ships no icon/font).
+//   * the main window has a sizing border and a maximize button (WS_THICKFRAME | WS_MAXIMIZEBOX).
 //   * the 'IDD_DIALOG1 AFX_DIALOG_LAYOUT' block removed (no host/resource.h ID backs it).
 //
 #include "resource.h"
@@ -102,7 +103,7 @@ BEGIN
 END
 
 IDD_DIALOG_MAIN DIALOG 0, 0, 300, 300
-STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Lunar 24"
 MENU IDR_MENU1
 FONT 8, "MS Sans Serif"
