@@ -191,6 +191,9 @@ int main() {
     }
     CHECK(setting(kSettingCount - 1).b < kLearn.t);  // the rows clear LEARN
     CHECK(kLearn.b < 1412);                          // and LEARN clears the footer rule
+    // The plugins' version lines sit in the footer between the action buttons and the pager.
+    CHECK(action(4).r < kVersion.l && kVersion.r < kPrevious.l);
+    CHECK(kVersion.t > 1414 && kVersion.b <= kBounds.b);
     CHECK_EQ(noteName(60), std::string("C4"));
     CHECK_EQ(noteName(24), std::string("C1"));
     CHECK_EQ(noteName(61), std::string("C#4"));

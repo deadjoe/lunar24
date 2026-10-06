@@ -23,6 +23,7 @@ inline constexpr Box kClose{1846, 1126, 1966, 1166};
 inline constexpr Box kLearn{434, 1364, 788, 1404};
 inline constexpr Box kPrevious{1722, 1430, 1770, 1470};
 inline constexpr Box kNext{1918, 1430, 1966, 1470};
+inline constexpr Box kVersion{1540, 1436, 1712, 1472};  // plugins: two lines, version and build
 inline constexpr int kVisibleRows = 4;
 inline constexpr float kTableY = 1204, kRowH = 50;
 inline constexpr int kSettingCount = 4;  // CHANNEL, TRANSPOSE, VELOCITY, SPLIT
@@ -61,6 +62,8 @@ struct State {
   int split = core::kMidiDefaultSplitNote;  // MIDI note: TWIN / SPLIT right side starts here
   bool armed = false, awaitTarget = false, editable = true;
   const char* noDevice = "Choose an input in Preferences";  // shown when `device` is empty
+  // The plugins have no About box: their version and build are shown here (empty: not shown).
+  std::string version, build;
 };
 // MIDI note name with octave, middle C (60) = C4.
 inline std::string noteName(int note) {
@@ -233,6 +236,10 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   label({434, 1449, 802, 1474}, 15, kMuted, line2);
   label({832, 1416, 1532, 1435}, 12, kMuted, "EXTRA LEARN TARGETS", true);
   for (int i = 0; i < 5; ++i) button(action(i), kActionLabels[i], st.editable && st.armed && st.awaitTarget);
+  if (!st.version.empty()) {
+    label({kVersion.l, kVersion.t, kVersion.r, kVersion.t + 18}, 13, kMuted, st.version, true);
+    label({kVersion.l, kVersion.t + 18, kVersion.r, kVersion.b}, 12, kMuted, st.build);
+  }
   button(kPrevious, "<", offset > 0);
   button(kNext, ">", offset + kVisibleRows < count);
   char page[32];

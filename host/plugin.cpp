@@ -56,6 +56,7 @@ extern "C" void lunar_host_log(const char* line);
 extern "C" bool lunar_host_recordings_dir(char* out, std::size_t capacity);
 extern "C" void lunar_host_reveal_dir(const char* utf8Path);
 #else
+#include "build_info.h"
 #include "plugin_settings_dir.h"
 #include <host/plugin_state_chunk.h>
 #include <vector>
@@ -152,6 +153,8 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
 #ifndef APP_API
     shared->recorderEnabled = false;
     shared->midiNoDevice = "MIDI comes from the DAW track";
+    shared->midiVersion = "Lunar 24 " LUNAR24_VERSION;
+    shared->midiBuild = "Build " LUNAR24_BUILD_NUMBER " - " LUNAR24_BUILD_COMMIT;
 #endif
     uiState_ = shared;
     lunar24::host::ui::BuildPanel(pGraphics, *shared);

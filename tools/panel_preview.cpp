@@ -7,7 +7,7 @@
 //   panel_preview > panel.svg          (--leds shows the indicator LEDs lit)
 //   panel_preview --menu[=play|expression|arp|seq|steps|service]   keyboard menu, factory values
 //   panel_preview --menu-example=<tab> / --menu-split / --menu-armed
-//   panel_preview --midi / --midi-example / --midi-learn / --midi-wait / --midi-error
+//   panel_preview --midi / --midi-example / --midi-learn / --midi-wait / --midi-error / --midi-plugin
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
@@ -356,6 +356,12 @@ int main(int argc, char** argv) {
     if (option == "--midi-learn") { state.armed=true; state.awaitTarget=true; }
     if (option == "--midi-wait") state.armed=true;
     if (option == "--midi-error") state.editable=false;
+    if (option == "--midi-plugin") {  // the plugin's MIDI panel: no device, version shown
+      state.device.clear();
+      state.noDevice = "MIDI comes from the DAW track";
+      state.version = "Lunar 24 1.0.0";
+      state.build = "Build 629 - 04cb244";
+    }
     if (option == "--midi-long") {
       state.device = std::string(63,'W');
       core::MidiBinding b{};

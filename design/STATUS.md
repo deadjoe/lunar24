@@ -20,7 +20,8 @@ _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manua
   the app; REC is shown but does not respond. CI checks them with Steinberg's validator and
   auval (Artifacts: Lunar24-Plugins-macOS, Lunar24-Plugins-Windows). Install and test steps:
   MANUAL_TESTS section 17. Plan and decisions: `design/PLUGIN_PLAN.md`.
-- **Version**: 1.0.0; About Lunar 24 shows the build number, time and commit.
+- **Version**: 1.0.0; About Lunar 24 shows the build number, time and commit (the plugins:
+  bottom right of the MIDI panel, build number and commit).
 - **Tools**: `lunar24_render` (engine to WAV), `panel_preview` (panel to SVG).
 - **Tests**: 67 unit / engine tests (~70 s), also under ASan + UBSan in CI; the threaded
   ones under ThreadSanitizer too.
