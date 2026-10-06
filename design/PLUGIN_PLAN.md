@@ -1,6 +1,6 @@
 # Lunar 24 AU / VST3 插件版实施方案（第三版）
 
-- 日期：2026-10-05
+- 日期：2026-10-05。2026-10-06 按代码更正两处：插件的 REC 留在面板上、点击无效；插件输出固定为立体声 WET。
 - 依据：main 分支（版本 1.0.0，提交 `075431d`）的逐项代码核查；锁定的 iPlug2 子模块（`d54f6905`）源码；VST3 SDK 官方仓库。
 - 第三版 = 第二版 + 业主对五个问题的决定（第二节）。实施中有变化时更新本文件。
 
@@ -31,7 +31,7 @@
 |---|---|---|---|
 | 1 | DAW 与格式 | 主力 Ableton Live（MacBook Pro 上的最新版）；VST3 和 AU 都要支持；不考虑只认老格式的老 DAW | 见下方"AU 格式说明"：AU 做 **AUv2** |
 | 2 | 插件里的 MIDI 绑定 | 和独立 App **共用全局文件**；实施中发现必须改再说 | 见下方"以后改成随工程保存的代价" |
-| 3 | 插件里的 REC | **隐藏** | 插件版不编录音相关的平台代码 |
+| 3 | 插件里的 REC | **面板保留，点击无效** | 外观和独立应用相同（实施时隐藏会改掉面板，业主否掉了）。`recorderEnabled = false`，REC 按钮和 WET / DRY / ALL 不接收鼠标。`toggleRecording` 在插件里是空函数，不调用 `lunar_host_recordings_dir` / `lunar_host_reveal_dir`。录音用 DAW 自己的录音 |
 | 4 | 分发 | 不走 App Store / Apple 开发者账号；附一份说明，用户照着执行一两条命令 | 技术上可行，见第六节；只支持 Apple 芯片的 Mac，不考虑 Intel Mac |
 | 5 | 播放中切换音色 | **方案 A**：切换瞬间短暂静音 | 见第三节第 4 点 |
 
@@ -54,7 +54,8 @@
 - VST3 SDK：3.8.0 起是 MIT 许可（已核对官方 LICENSE），与本项目的 Apache-2.0 兼容。不进仓库，CI 按**固定的 3.8.x 版本**下载（iPlug2 下载脚本默认拉 master，不能用默认值）。
 - `config.h` 按格式区分：
   - 乐器类型 `PLUG_TYPE 1`；
-  - 声道：插件 `"0-2"`；独立 App 分支保持现有 `"0-2 1-2 2-2 0-4 1-4 2-4"` 不变；
+  - 声道：插件 `"0-2"`；独立 App 分支保持现有 `"0-2 1-2 2-2 0-4 1-4 2-4"` 不变。
+  - 插件实际出声（`plugin.cpp` 的 `kPluginInputs` / `kPluginOutputs`，`ProcessBlock`）：引擎固定按 0 个输入、2 个输出准备，这两路是 WET L 和 WET R。DRY A、DRY B 在引擎里照常计算，第 1 阶段不送到 DAW（单独出轨是第 2 阶段）。DAW 接上的输出少于 2 路时，这一块写成静音，不把引擎写进缓冲区。立体声乐器轨会接上两路，听到的是 WET。
   - AU：`AUV2_ENTRY` / `AUV2_ENTRY_STR` / `AUV2_FACTORY` 等宏，类型 `aumu`、子类型 `Lu24`、厂商 `Lua2`（沿用现有编码）；
   - VST3 分类 `Instrument|Synth`；
   - Objective-C 类名唯一前缀，避免同一 DAW 同时载入 AU 和 VST3 时冲突。
@@ -71,7 +72,7 @@
 | `lunar_host_case_margins`、`lunar_host_place_view` | 同上 | 没有金属外壳，边距为 0，面板铺满窗口 |
 | `lunar_host_audio_watchdog`、`lunar_host_request_audio_reopen` | `iPlug_app_host_override.cpp` | 插件没有自己的音频设备：不要看门狗；"重开音频"改用第 4 点的安全切换 |
 | `lunar_host_log` | `iPlug_app_host_override.cpp` | 不写 audio.log |
-| `lunar_host_recordings_dir`、`lunar_host_reveal_dir` | `main.mm` / `window_metrics_win.cpp` | REC 隐藏，不需要 |
+| `lunar_host_recordings_dir`、`lunar_host_reveal_dir` | `main.mm` / `window_metrics_win.cpp` | 插件不调用。面板上的 REC 仍画着，点击无效 |
 
 其它独立 App 功能：
 
@@ -116,7 +117,7 @@
 
 ### 6. 插件窗口
 - 默认大小约为面板的一半（接近现有最小尺寸 1216×836），可缩放并保持比例。先给几档固定大小，在 Ableton 里测稳后再开放自由拖动。
-- 没有金属外壳；REC 和 Preferences 相关的界面项隐藏。
+- 没有金属外壳。REC 按钮和 WET / DRY / ALL 照面板画，点击没有反应。没有 Preferences。
 - 窗口关闭再打开时面板重建；面板自身状态（键盘菜单页、MIDI 学习状态）随窗口重置，音色不受影响。
 
 ### 7. 插件窗口关着时的状态写回
@@ -140,7 +141,7 @@
 - 双向同步：DAW 改参数走现有实时队列，面板跟着动；面板拧旋钮通知宿主（开始 / 数值 / 结束），DAW 能录自动化。
 
 ### 11. 多路输出与音频输入（第 2–3 阶段）
-- 引擎已有 WET L/R + DRY A/B 四路输出：做成"主输出 + 一组辅助输出"。DAW 开关辅助输出会改变声道数，按第 3 点"声道配置变了"处理。
+- 引擎已有 WET L/R + DRY A/B 四路输出。第 1 阶段的主输出已经是立体声 WET（第一节）。第 2 阶段把 DRY A/B 做成一组辅助输出。DAW 开关辅助输出会改变声道数，按第 3 点"声道配置变了"处理。
 - PREAMP 接 DAW 的声音：做成带输入的乐器（AU 的 music effect 类型、VST3 的侧链），放在最后按需做。
 
 ---
@@ -155,7 +156,7 @@
 | 3 | **拆分 + 插件构建** | App 专用代码用 `#if APP_API` 隔开（要有插件目标才能编译验证，所以和构建放在一起）；VST3 / AUv2 目标、固定 SDK 版本、plist、`config.h`、插件专用平台实现、CI 出插件包 | Ableton 里能载入 VST3 和 AU，能用 MIDI 弹出声音 |
 | 4 | **插件 `OnReset` 规则 + 长块拆分** | 第三节第 3 点；块超过最大块时在插件入口拆开 | 停止 / 播放、旁路不让声音从头开始；新测试覆盖拆块 |
 | 5 | **音色存进工程** | `SerializeState` / `UnserializeState`，带分段头 | 存工程 → 退出 Ableton → 重开，音色、连线、键盘设置都回来；播放中切预置只有一下短静音 |
-| 6 | **插件窗口** | 默认大小、几档缩放、无外壳、隐藏 REC 等 App 专用项 | Ableton 里窗口大小正确、面板不被裁切 |
+| 6 | **插件窗口** | 默认大小、几档缩放、无外壳；REC 照面板保留、点击无反应 | Ableton 里窗口大小正确、面板不被裁切 |
 | 7 | **CI 验证** | VST3 validator（mac / win）、`auval`（mac） | CI 全绿 |
 | 8 | **MANUAL_TESTS"插件"一节 + 业主在 Ableton 里测 + 修问题** | 载入、弹奏、存工程重开、多实例、窗口缩放、播放中切预置、窗口关着时 MIDI CC 是否存进工程 | 业主验收；可能要 1–2 轮 |
 
@@ -165,9 +166,7 @@
 
 **实施中和方案不同、或方案没写到的地方**：
 - VST3 SDK 固定为 `v3.8.1_build_84`（MIT）。
-- 插件的引擎固定按"0 进 2 出"准备；DAW 没接上两个输出时输出静音。
 - 窗口不做"几档固定大小"：DAW 拖动和右下角三角都能连续缩放，但始终保持面板比例、限制在半尺寸到原尺寸之间。
-- 插件里 REC 区和独立 App 外观完全一样，只是点了没有反应（业主决定：不改面板设计）。
 - DRONE VOICES 的开关也存进工程（分段 `KEYS`），重开工程和保存时一样在响；独立 App 仍然每次启动都关着。
 - 共用 MIDI 绑定的前提：App 里 Learn 会记下设备名，插件不知道 MIDI 来自哪个控制器。插件里改为"任何设备的绑定都算数"，否则 App 里学的绑定在插件里全部失效。
 - 独立 App 的状态文件和插件的工程数据共用同一个读取函数（`restore_saved_state`），旧格式升级和修补只有一份。
