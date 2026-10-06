@@ -270,6 +270,14 @@ class StandaloneAudioEngine {
   // rejection keeps the current machine. Edits the audio thread queued for the UI are dropped,
   // so sync them first if they should count.
   StateApplyStatus swapDeviceState(const DeviceStateV1& state);
+  // UI / non-audio thread: run `work` (prepare, applyDeviceState, ...) with the audio parked the
+  // same way: faded out and outside the engine until `work` returns.
+  template <class Work>
+  void runParked(Work&& work) {
+    parkAudio_();
+    work();
+    resumeAudio_();
+  }
   // Bumped by every accepted swap (any thread): the host drops its held-note ledgers, since
   // the notes they track died with the old machine.
   std::uint64_t swapCount() const { return swaps_.load(std::memory_order_acquire); }
@@ -283,6 +291,11 @@ class StandaloneAudioEngine {
   // further work. This path allocates nothing, locks nothing, and logs nothing.
   Status processBlock(const double* const* inputs, double* const* outputs, int inCh, int outCh,
                       int frames);
+  // processBlock for a host that may hand over more frames than the prepared maximum (some DAWs
+  // do): renders them in consecutive pieces of at most that size instead of dropping the block.
+  // Returns the last piece's Status. Allocates nothing.
+  Status processAnyLength(const double* const* inputs, double* const* outputs, int inCh, int outCh,
+                          int frames);
 
   // ---- live control (UI / MIDI) ------------------------------------------------------------
   // Non-audio thread (UI): change a knob, play a note, plug a cable, pick an effector program.
@@ -939,11 +952,29 @@ inline void StandaloneAudioEngine::resumeAudio_() {
 
 inline StandaloneAudioEngine::StateApplyStatus StandaloneAudioEngine::swapDeviceState(
     const DeviceStateV1& state) {
-  parkAudio_();
-  const StateApplyStatus status =
-      applyDeviceState(state, sampleRate_, blockSize_, inputCapability_, outputCapability_);
-  if (status == StateApplyStatus::Accepted) swaps_.fetch_add(1, std::memory_order_release);
-  resumeAudio_();
+  StateApplyStatus status = StateApplyStatus::NotAttempted;
+  runParked([&] {
+    status = applyDeviceState(state, sampleRate_, blockSize_, inputCapability_, outputCapability_);
+    if (status == StateApplyStatus::Accepted) swaps_.fetch_add(1, std::memory_order_release);
+  });
+  return status;
+}
+
+inline StandaloneAudioEngine::Status StandaloneAudioEngine::processAnyLength(
+    const double* const* inputs, double* const* outputs, int inCh, int outCh, int frames) {
+  constexpr int kMaxChannels = 8;
+  if (!ready_ || frames <= blockSize_ || inCh > kMaxChannels || outCh > kMaxChannels || outputs == nullptr)
+    return processBlock(inputs, outputs, inCh, outCh, frames);
+  const double* in[kMaxChannels] = {};
+  double* out[kMaxChannels] = {};
+  Status status = Status::Rendered;
+  for (int done = 0; done < frames;) {
+    const int n = std::min(blockSize_, frames - done);
+    for (int c = 0; c < inCh; ++c) in[c] = inputs != nullptr && inputs[c] != nullptr ? inputs[c] + done : nullptr;
+    for (int c = 0; c < outCh; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + done : nullptr;
+    status = processBlock(inputs != nullptr ? in : nullptr, out, inCh, outCh, n);
+    done += n;
+  }
   return status;
 }
 

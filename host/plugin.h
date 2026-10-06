@@ -137,9 +137,13 @@ private:
   int engineOutputs_() const;
   // UI thread: load the MIDI controller map from `dir` and publish it to the audio thread.
   void useMidiMapDirectory_(const std::string& dir);
-  // Audio thread: after a machine swap, forget the notes and pedal the old machine was holding.
-  void dropMidiLedgersAfterSwap_();
+  // OnReset's body: rebuild the engine for the current format, keeping the machine state.
+  void rebuildEngine_();
+  // Audio thread: forget the notes and pedal the MIDI ledgers hold after a machine swap, and
+  // release them all after a DAW reset.
+  void applyPendingMidiResets_();
   std::uint64_t seenSwaps_ = 0;  // audio thread
+  std::atomic<bool> notesOffRequested_{false};  // set by a plugin OnReset, taken by the audio thread
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
   lunar24::host::MidiInputQueue midiQueue_;
   lunar24::host::MidiNoteOwnership midiNotes_;
