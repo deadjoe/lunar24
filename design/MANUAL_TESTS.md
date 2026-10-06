@@ -1499,6 +1499,8 @@
 - 音色、接线、键盘设置和 DRONE VOICES 的开关存进 DAW 工程，不读写独立 App 的状态文件。
 - MIDI 绑定和 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 与独立 App **共用**同一份设置：哪边改了，另一边下次打开时也是新的。在独立 App 里学会的绑定在插件里照样生效：DAW 不告诉插件 MIDI 来自哪个控制器，所以插件只核对通道和 CC 号，不核对设备名。如果在 App 里给两个控制器的同一个 CC 号绑了不同旋钮，插件里只认列表里靠前的那一条。
 - 电脑键盘弹琴在插件窗口里不一定可用：Ableton 会先拿走按键。用 Ableton 自己的电脑 MIDI 键盘（按 **M** 打开）或 MIDI 控制器弹，这是正常行为。
+- MPK 用测试用户预设（和独立 App 一样）。Ableton 里 MPK 轨的 **MIDI From** 选 `MPK mini IV (MIDI Port)`、Monitor 选 **In**，否则用户预设弹不出声（Settings → Link, Tempo & MIDI 里这个端口的 Track 要打开）。PLUGIN/DAW 模式下 MPK 也能弹，但旋钮被 Ableton 的 MPK 脚本拿去控制设备参数，不作为 CC 进轨道，插件的 MIDI 绑定收不到；插件目前没有对外公开参数（第 2 阶段才做自动化），所以那时拧旋钮不起作用。
+- 插件窗口被别的窗口挡住或隐藏后：在轨道的设备区（Device View）点 Lunar 24 标题栏上的扳手图标（Show / Hide Plug-in Window），或者 ⌥⌘P（Show / Hide Plug-in Windows）。窗口跟着选中的轨道显示，切到别的轨道会自动收起，这是 Ableton 的 Auto-Hide Plug-in Windows 设置（Settings → Plug-Ins）。
 
 **安装（Mac）**
 1. GitHub 上这个 PR 最新一次 CI 运行（Actions → 对应运行 → Artifacts）下载 **Lunar24-Plugins-macOS**。双击解开后里面还有一个 `Lunar24-Plugins-macOS.zip`，再双击解开，得到 `Lunar24-Plugins` 文件夹（里面是 `Lunar24.vst3` 和 `Lunar24.component`）。
