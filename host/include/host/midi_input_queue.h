@@ -59,8 +59,11 @@ class MidiInputQueue {
 // Track the disposition at note-on, independently of later Learn/filter edits.
 class MidiNoteOwnership {
  public:
-  void played(unsigned channel, unsigned note) { played_[channel][note] = true; }
+  void played(unsigned channel, unsigned note) {
+    if (channel < 16 && note < 128) played_[channel][note] = true;
+  }
   bool release(unsigned channel, unsigned note) {
+    if (channel >= 16 || note >= 128) return false;
     const bool wasPlayed = played_[channel][note];
     played_[channel][note] = false;
     return wasPlayed;

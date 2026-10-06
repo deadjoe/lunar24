@@ -3,6 +3,7 @@
 #include "mini_test.h"
 #include <host/midi_input_queue.h>
 #include <host/standalone_audio_engine.h>
+#include <limits>
 #include <memory>
 #include <thread>
 
@@ -64,6 +65,18 @@ int main() {
   concurrent.drain([] {}, consume);
 
   lunar24::host::MidiNoteOwnership ownership;
+  ownership.played(0, 0);
+  ownership.played(15, 127);
+  for (unsigned channel : {0u, 15u, 16u, std::numeric_limits<unsigned>::max()}) {
+    for (unsigned note : {0u, 127u, 128u, std::numeric_limits<unsigned>::max()}) {
+      if (channel < 16 && note < 128) continue;
+      ownership.played(channel, note);
+      CHECK(!ownership.release(channel, note));
+    }
+  }
+  CHECK(ownership.release(0, 0));
+  CHECK(ownership.release(15, 127));
+  CHECK(!ownership.release(15, 127));
   ownership.played(0, 60);
   // A Learn/filter edit does not change the accepted note's ownership.
   CHECK(ownership.release(0, 60));

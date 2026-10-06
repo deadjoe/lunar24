@@ -97,8 +97,10 @@ inline double clamp_val(double v, double lo, double hi) {
 // driftable truth source for the 0.5 policy — a named constant, never a runtime parameter.
 inline constexpr double kDeviceScaleProvisional = 0.5;
 
-// The frozen output choke point: virtual volts -> device-normalized (shared scale).
+// The frozen output choke point: virtual volts -> device-normalized (shared scale). A
+// non-finite sample leaves as silence: in a DAW a NaN would poison the whole mix bus.
 inline double device_normalized_from_volts(double volts) {
+  if (!std::isfinite(volts)) return 0.0;
   return detail::clamp_val(volts * kDeviceScaleProvisional, -1.0, 1.0);
 }
 
