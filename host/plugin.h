@@ -41,6 +41,10 @@ public:
   // size into the drawing size at scale 1, which crops the fixed 2400 x 1552 panel; keep the
   // panel's size and scale it to fit the window instead.
   void OnParentWindowResize(int width, int height) override;
+#ifndef APP_API
+  // A DAW resizing the window keeps the panel's shape, between half and full size.
+  bool ConstrainEditorResize(int& w, int& h) const override;
+#endif
 #endif
 
 #if IPLUG_DSP
@@ -125,9 +129,7 @@ public:
   // The plugin's binding store (the MIDI settings overlay edits it through this).
   lunar24::host::MidiMapStore& midiStore() { return midiMapStore_; }
   // Republish the current map (after the overlay edits it).
-  void republishMidiMap() {
-    engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
-  }
+  void republishMidiMap() { engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_()); }
   // The last note/CC message seen, for the learn overlay: packed (kind << 20 |
   // channel << 8 | number) plus a sequence that bumps per message. Audio thread
   // writes, UI reads.
@@ -137,6 +139,15 @@ public:
   std::uint16_t midiLitPlates() const { return midiLights_.mask(); }
 
 private:
+  // The input device MIDI bindings match against: the app's selected input; a plugin does not
+  // know which controller the DAW's MIDI comes from (nullptr), so every binding's device matches.
+  const char* bindingDevice_() const {
+#ifdef APP_API
+    return midiInputDeviceName_.c_str();
+#else
+    return nullptr;
+#endif
+  }
   // The channel counts the engine is prepared for and renders with: the app's opened device
   // plan, or the plugins' fixed stereo output.
   int engineInputs_() const;

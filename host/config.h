@@ -82,6 +82,8 @@
 #define PLUG_HEIGHT 776
 #define PLUG_MIN_WIDTH 1200
 #define PLUG_MIN_HEIGHT 776
+#define PLUG_MAX_WIDTH 2400
+#define PLUG_MAX_HEIGHT 1551
 #endif
 
 #define PLUG_FPS 60

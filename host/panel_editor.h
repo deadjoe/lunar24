@@ -120,6 +120,9 @@ struct EditorShared {
   float readoutX = 0, readoutY = 0;
   core::InputStateMachine input{nullptr, 0};
   std::uint64_t seq = 0;
+  // The plugins: REC looks the same but does not respond (a DAW records), MIDI comes from the DAW.
+  bool recorderEnabled = true;
+  const char* midiNoDevice = "Choose an input in Preferences";
   std::uint64_t seenStateVersion = ~0ull;
   std::uint64_t seenAudioSync = 0;
   bool seenReady = false;
@@ -1459,6 +1462,7 @@ class MidiOverlayControl : public IControl {
     midi_ui::State state;
     state.map = s_.midiStore ? &s_.midiStore->map() : nullptr;
     state.device = s_.midi.inputDeviceName ? s_.midi.inputDeviceName() : "";
+    state.noDevice = s_.midiNoDevice;
     state.channel = s_.midi.channelFilter ? s_.midi.channelFilter() : 0;
     state.octave = s_.midi.octaveShift ? s_.midi.octaveShift() : 0;
     state.curve = s_.midi.velocityCurve ? s_.midi.velocityCurve() : 0;
@@ -1640,9 +1644,15 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::MidiSettings: g->AttachControl(new MidiSettingsControl(shared, w)); break;
       case WidgetKind::Record:
         shared.recordControl = new RecordControl(shared, w);
+        shared.recordControl->SetIgnoreMouse(!shared.recorderEnabled);
         g->AttachControl(shared.recordControl);
         break;
-      case WidgetKind::RecordSource: g->AttachControl(new RecordSourceControl(shared, w)); break;
+      case WidgetKind::RecordSource: {
+        auto* source = new RecordSourceControl(shared, w);
+        source->SetIgnoreMouse(!shared.recorderEnabled);
+        g->AttachControl(source);
+        break;
+      }
       case WidgetKind::Encoder: g->AttachControl(new EncoderControl(shared, w)); break;
       case WidgetKind::OctaveKey: g->AttachControl(new OctaveKeyControl(shared, w)); break;
       case WidgetKind::Display: g->AttachControl(new DisplayControl(shared, w)); break;

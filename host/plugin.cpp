@@ -149,14 +149,29 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
       (void)midiMapStore_.save();
       republishMidiMap();
     };
+#ifndef APP_API
+    shared->recorderEnabled = false;
+    shared->midiNoDevice = "MIDI comes from the DAW track";
+#endif
     uiState_ = shared;
     lunar24::host::ui::BuildPanel(pGraphics, *shared);
+#ifndef APP_API
+    // Drag the bottom-right corner to resize; the panel keeps its shape (ConstrainEditorResize).
+    pGraphics->SetScaleConstraints(static_cast<float>(lunar24::host::kMinPanelScale),
+                                   static_cast<float>(lunar24::host::kMaxPluginPanelScale));
+    pGraphics->AttachCornerResizer(EUIResizerMode::Scale, false);
+#endif
   };
 #endif
 }
 
 #ifdef APP_API
 bool LunarHostPlugin::OnHostRequestingAboutBox() { return lunar24::host::showAboutBox(); }
+#elif IPLUG_EDITOR
+bool LunarHostPlugin::ConstrainEditorResize(int& w, int& h) const
+{
+  return lunar24::host::constrain_plugin_window(w, h, lunar24::core::kDesignWidth, lunar24::core::kDesignHeight);
+}
 #endif
 
 #if IPLUG_EDITOR
@@ -321,7 +336,7 @@ void LunarHostPlugin::useMidiMapDirectory_(const std::string& dir)
   // Load the MIDI map from that directory once and publish the snapshot.
   midiMapStore_.setDirectory(dir);
   midiMapStore_.load();
-  engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
+  republishMidiMap();
   const lunar24::core::MidiRigSettings& s = midiMapStore_.settings();
   midiChannelFilter_.store(s.channelFilter, std::memory_order_relaxed);
   midiOctaveShift_.store(s.octaveShift, std::memory_order_relaxed);
@@ -332,7 +347,7 @@ void LunarHostPlugin::useMidiMapDirectory_(const std::string& dir)
 void LunarHostPlugin::setMidiInputDeviceName(const char* name)
 {
   midiInputDeviceName_ = name != nullptr ? name : "";
-  engine_.publishMidiMap(midiMapStore_.map(), midiInputDeviceName_.c_str());
+  republishMidiMap();
 }
 
 void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int curve, int splitNote)

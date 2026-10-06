@@ -187,8 +187,33 @@ static void case_placement() {
   CHECK(std::fabs(p.x) < 1e-9);
 }
 
+// A plugin window the DAW resizes keeps the panel's shape, between half and full size.
+static void plugin_window_constraint() {
+  using lunar24::host::constrain_plugin_window;
+  const double W = 2400.0, H = 1551.0;
+  int w = 1200, h = 776;  // the default size already fits
+  CHECK(constrain_plugin_window(w, h, W, H));
+  CHECK(w == 1200 && h == 776);
+  w = 1800; h = 900;  // too wide: the height decides
+  CHECK(!constrain_plugin_window(w, h, W, H));
+  CHECK(h == 900 && w == 1393);
+  w = 300; h = 200;  // never below half size
+  CHECK(!constrain_plugin_window(w, h, W, H));
+  CHECK(w == 1200 && h == 776);
+  w = 5000; h = 4000;  // never above full size
+  CHECK(!constrain_plugin_window(w, h, W, H));
+  CHECK(w == 2400 && h == 1551);
+  for (int t = 1200; t <= 2400; t += 7) {  // a constrained size is stable
+    int a = t, b = 2000;
+    constrain_plugin_window(a, b, W, H);
+    int a2 = a, b2 = b;
+    CHECK(constrain_plugin_window(a2, b2, W, H));
+  }
+}
+
 int main() {
   std::printf("== P5-1 host window layout: consume core fit + reachability ==\n");
   case_placement();
+  plugin_window_constraint();
   return run("host_window_layout");
 }

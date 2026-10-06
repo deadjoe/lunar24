@@ -132,4 +132,21 @@ inline PanelPlacement place_panel(double windowW, double windowH, double designW
   return p;
 }
 
+// A plugin window the DAW wants at w x h (logical units): the panel's own shape, between half
+// and full size, as close to the request as fits. Returns true when the request already is one.
+inline constexpr double kMaxPluginPanelScale = 1.0;
+inline bool constrain_plugin_window(int& w, int& h, double designW, double designH) {
+  // The height always follows from the width, so a size this returns comes back unchanged
+  // (a DAW checking it again must not see it move by a pixel).
+  const auto heightFor = [&](int width) { return static_cast<int>(designH * width / designW + 0.5); };
+  const int minW = static_cast<int>(designW * kMinPanelScale + 0.5);
+  const int maxW = static_cast<int>(designW * kMaxPluginPanelScale + 0.5);
+  if (w >= minW && w <= maxW && h == heightFor(w)) return true;
+  const double fit = std::min(w / designW, h / designH);
+  const double scale = std::min(kMaxPluginPanelScale, std::max(kMinPanelScale, fit));
+  w = std::min(maxW, std::max(minW, static_cast<int>(designW * scale + 0.5)));
+  h = heightFor(w);
+  return false;
+}
+
 }  // namespace lunar24::host

@@ -320,7 +320,9 @@ inline bool midi_map_decode(const std::uint8_t* in, std::size_t n, MidiMap* out,
 //
 // The best binding for an incoming message. More specific keys win: exact
 // device+channel first, then device-only, then channel-only, then the full
-// wildcard. Ties keep the earliest row (list order).
+// wildcard. Ties keep the earliest row (list order). A null `device` means the
+// input is unknown (a plugin: the DAW passes MIDI on without naming the
+// controller), so a binding for any device matches, ranked the same way.
 inline const MidiBinding* midi_map_find(const MidiMap& map, const char* device,
                                         std::uint8_t channel, MidiBindingKind kind,
                                         std::uint8_t number) {
@@ -331,7 +333,7 @@ inline const MidiBinding* midi_map_find(const MidiMap& map, const char* device,
     if (b.key.kind != kind || b.key.number != number) continue;
     if (b.key.channel != 0 && b.key.channel != channel) continue;
     const bool anyDevice = b.key.device[0] == '\0';
-    if (!anyDevice &&
+    if (!anyDevice && device != nullptr &&
         std::strncmp(b.key.device, device, kMidiBindingDeviceCapacity) != 0)
       continue;
     const int score = (anyDevice ? 0 : 2) + (b.key.channel == 0 ? 0 : 1);
