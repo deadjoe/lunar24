@@ -372,6 +372,11 @@ class StandaloneAudioEngine {
   void closeDroneKeys() {
     for (bool& k : droneKeys_) k = false;
   }
+  // UI thread, before prepare or swapDeviceState: set the six DRONE VOICES keys (a plugin's
+  // project reopening).
+  void setDroneKeys(const bool (&open)[6]) {
+    for (int v = 0; v < 6; ++v) droneKeys_[v] = open[v];
+  }
   // Panel indicator LEDs: brightness 0..1, written by the audio thread once per block and read
   // by the UI (relaxed atomics; a slightly stale value is fine for a light).
   enum PanelLed : int {

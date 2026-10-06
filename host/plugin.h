@@ -66,6 +66,12 @@ public:
   // 0/0 is itself legal (the fail-closed NOT-READY sentinel the invalidation helper installs).
 #ifdef APP_API
   bool setActualChannelPlan(int inCh, int outCh);
+#else
+  // The DAW project (host/include/host/plugin_state_chunk.h): the machine state and the DRONE
+  // VOICES keys. Restoring swaps the machine in place (a short fade) or, before the first
+  // OnReset, leaves it for OnReset to publish.
+  bool SerializeState(IByteChunk& chunk) const override;
+  int UnserializeState(const IByteChunk& chunk, int startPos) override;
 #endif
 #endif
 
