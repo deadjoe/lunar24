@@ -1553,11 +1553,12 @@
   3. 重新打开这个工程，打开插件窗口。
 - 期望：旋钮、接线、MODE、DRONE VOICES 1 和 4 都和保存前一样，声音也一样（drone 在响）。
 
-**T17.5 播放中切换音色** ⏳
+**T17.5 播放中切换音色** ✅
 - 步骤：
-  1. 设一个音色，在插件标题栏点保存（Save Preset）存成 A；改得很不一样，存成 B。
-  2. 让声音一直响着（drone 打开），在浏览器里把 A、B 轮流拖到插件上。
-- 期望：每次切换是一下很短的淡出淡入，没有咔哒声、没有卡顿；切换后面板显示新音色。
+  1. 音色 A：键盘菜单 RESET PANEL（点两次），打开 DRONE VOICES 1。点 Ableton 下方设备区 Lunar 24 标题条右边的软盘图标（Save Preset），命名 `Lunar A`。
+  2. 音色 B：再打开 DRONE VOICES 4，BLEND 转到最右，FILTER L 的 FREQ 转到很低；同样存成 `Lunar B`。
+  3. drone 响着，点标题条上的热交换图标（两个相反箭头，或选中设备按 **Q**），在浏览器里轮流双击 `Lunar A`、`Lunar B`，来回几次。
+- 期望：每次切换只有很短的一顿（约 10 ms 淡出淡入），声音不完全断掉再升起；没有咔哒声、爆音或卡顿；面板马上变成对应音色。用热交换才是同一个插件里原地切换；直接拖到轨道上 Ableton 可能新建一个插件。
 
 **T17.6 窗口关着时 MIDI 旋钮也会保存** ⏳
 - 准备：在 MIDI 设置里 Learn 一个旋钮（T15.2 的做法）。
@@ -1588,7 +1589,7 @@
 
 ## 还没测的（⏳）
 
-- 第 17 节插件（T17.5–T17.10）：在 Ableton Live 里走一遍，VST3 为主，AU 走 T17.10（T17.1–T17.4 已在 Mac 上通过）。
+- 第 17 节插件（T17.6–T17.10）：在 Ableton Live 里走一遍，VST3 为主，AU 走 T17.10（T17.1–T17.5 已在 Mac 上通过）。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。
