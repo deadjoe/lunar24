@@ -1569,7 +1569,7 @@
 - 步骤：再建一条 MIDI 轨也放一个 Lunar 24，两边设成不同的音色，两条轨同时弹。
 - 期望：各响各的，互不影响；关掉一个的窗口、删掉一个，另一个照常。Ableton 的 CPU 表正常（每个实例大约占一个核的十几个百分点）。
 
-**T17.8 MIDI 绑定与独立 App 共用** ⏳
+**T17.8 MIDI 绑定与独立 App 共用** ✅
 - 步骤：
   1. 在插件里看 MIDI 设置：之前在独立 App 里学的绑定都在。拧对应的 MPK 旋钮。
   2. 在插件里新 Learn 一个绑定；退出 Ableton，打开独立 App，看 MIDI 设置。
@@ -1589,7 +1589,7 @@
 
 ## 还没测的（⏳）
 
-- 第 17 节插件（T17.8–T17.10）：在 Ableton Live 里走一遍，VST3 为主，AU 走 T17.10（T17.1–T17.7 已在 Mac 上通过）。
+- 第 17 节插件（T17.9–T17.10）：在 Ableton Live 里走一遍，VST3 为主，AU 走 T17.10（T17.1–T17.8 已在 Mac 上通过）。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T4.1、T8.7、T12.18 走一遍。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
 - 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。
