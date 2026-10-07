@@ -47,6 +47,15 @@ def build(path, weight):
             table.removeNames(nameID=rec.nameID)
     for nid, value in names.items():
         table.setName(value, nid, 3, 1, 0x409)
+    # Supply the unique-ID record and remove unused variation metadata from this
+    # static instance. This is font compatibility, not a text rasterization fix.
+    table.setName(f"Noto Sans {style}", 3, 3, 1, 0x409)
+    for tag in ("STAT", "fvar", "avar", "gvar", "HVAR", "MVAR", "cvar"):
+        if tag in font:
+            del font[tag]
+    for rec in list(table.names):
+        if rec.nameID >= 256:
+            table.removeNames(nameID=rec.nameID)
     font["OS/2"].usWeightClass = weight
     font["OS/2"].fsSelection = (font["OS/2"].fsSelection & ~0x61) | (0x20 if style == "Bold" else 0x40)
     font["head"].macStyle = 1 if style == "Bold" else 0

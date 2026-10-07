@@ -211,9 +211,62 @@ static void plugin_window_constraint() {
   }
 }
 
+// Windows resize keeps the panel's shape, so the dialog background never shows around it.
+static void client_aspect() {
+  using lunar24::host::client_size_for_aspect;
+  using lunar24::host::largest_client_for_aspect;
+  const double W = 2400.0, H = 1551.0;
+  int w = 3000, h = 1000;  // a wide drag: height follows the width
+  client_size_for_aspect(w, h, W, H, false);
+  CHECK(w == 3000);
+  CHECK(h == static_cast<int>(3000.0 * H / W + 0.5));
+  w = 1000;
+  h = 1551;  // a vertical drag: width follows the height
+  client_size_for_aspect(w, h, W, H, true);
+  CHECK(h == 1551);
+  CHECK(w == static_cast<int>(1551.0 * W / H + 0.5));
+  int cw = 0, ch = 0;
+  largest_client_for_aspect(1920, 1080, W, H, cw, ch);  // 16:9 screen, height binds
+  CHECK(ch == 1080);
+  CHECK(cw == static_cast<int>(1080.0 * W / H + 0.5));
+  CHECK(cw < 1920);
+}
+
+static void windows_dpi_fit() {
+  using namespace lunar24::host;
+  const double W = 2400.0, H = 1551.0;
+  for (double dpi : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+    for (auto screen : {std::array<int, 2>{1366, 768}, {1920, 1080}, {3840, 2160}}) {
+      // Representative physical frame/title/menu/taskbar reservations.
+      const int availW = screen[0] - static_cast<int>(16 * dpi);
+      const int availH = screen[1] - static_cast<int>(100 * dpi);
+      const auto limits = windows_client_limits(availW, availH, dpi, W, H);
+      CHECK(limits.minW > 0 && limits.minH > 0);
+      CHECK(limits.minW < limits.maxW && limits.minH < limits.maxH);
+      CHECK(limits.maxW <= availW && limits.maxH <= availH);
+      for (auto size : {std::array<int, 2>{limits.minW, limits.minH},
+                       {limits.maxW, limits.maxH}}) {
+        const auto p = place_panel(size[0] / dpi, size[1] / dpi, W, H, {}, 0.01);
+        CHECK(p.x >= -1e-9 && p.y >= -1e-9);
+        CHECK((p.x + p.w) * dpi <= size[0] + 1e-9);
+        CHECK((p.y + p.h) * dpi <= size[1] + 1e-9);
+        CHECK(std::abs(size[0] * H / W - size[1]) <= 1.0);
+      }
+    }
+  }
+  // Primary, right-hand and negative-coordinate monitors give the same offset.
+  for (int origin : {0, 1920, -2560}) {
+    CHECK(maximized_position(origin, origin, 1920, 1600) == 160);
+    // A taskbar at the left/top is a work-area offset within the monitor.
+    CHECK(maximized_position(origin + 48, origin, 1872, 1600) == 184);
+  }
+}
+
 int main() {
   std::printf("== P5-1 host window layout: consume core fit + reachability ==\n");
   case_placement();
   plugin_window_constraint();
+  client_aspect();
+  windows_dpi_fit();
   return run("host_window_layout");
 }

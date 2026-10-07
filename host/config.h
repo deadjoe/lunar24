@@ -71,9 +71,9 @@
 // seeds before the geometry choke point runs.
 #define PLUG_WIDTH 2400
 #define PLUG_HEIGHT 1551
-// Windows applies the minimum to the whole window (frame, title and menu bar included), hence
-// the margin; macOS sets the same limit on the content area in main.mm. MAX is left to the
-// library.
+// Bootstrap defaults only on Windows: window_metrics_win.cpp replaces them with
+// DPI-aware client + frame limits capped to the current monitor. macOS sets its
+// content-area minimum in main.mm.
 #define PLUG_MIN_WIDTH 1216
 #define PLUG_MIN_HEIGHT 836
 #else

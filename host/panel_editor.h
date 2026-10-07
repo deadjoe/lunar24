@@ -424,6 +424,7 @@ struct EditorShared {
 // Draws host/panel_art.h artwork with IGraphics.
 struct GraphicsSink {
   IGraphics& g;
+  bool drawText = true;
   static IColor hex(std::uint32_t c) { return IColor(255, int((c >> 16) & 0xff), int((c >> 8) & 0xff), int(c & 0xff)); }
   void fillRect(float x0, float y0, float x1, float y1, std::uint32_t c, float radius) {
     if (radius > 0.f) g.FillRoundRect(hex(c), IRECT(x0, y0, x1, y1), radius);
@@ -447,7 +448,7 @@ struct GraphicsSink {
     open_ = false;
   }
   void text(float x, float y, float size, std::uint32_t c, bool vertical, const char* s) {
-    g.DrawText(txt(size, theme::rgb(c), true, vertical ? -90.f : 0.f), s, x, y);
+    if (drawText) g.DrawText(txt(size, theme::rgb(c), true, vertical ? -90.f : 0.f), s, x, y);
   }
   void circle(float cx, float cy, float r) {
     if (!open_) g.PathClear();
@@ -490,10 +491,20 @@ class BackgroundControl : public IControl {
     if (!g.CheckLayer(layer_)) {
       g.StartLayer(this, mRECT);
       GraphicsSink sink{g};
+#ifdef OS_WIN
+      // Keep labels out of the panel texture: fractional DPI/zoom would filter
+      // already rasterized glyphs again when the cached layer is composited.
+      sink.drawText = false;
+#endif
       art::drawPanelArt(sink);
       layer_ = g.EndLayer();
     }
     g.DrawLayer(layer_);
+#ifdef OS_WIN
+    GraphicsSink sink{g};
+    for (const auto& t : art::kTexts)
+      sink.text(t.x, t.y, t.size * 0.92f, t.rgb, t.vertical, t.text);
+#endif
   }
 
  private:
@@ -1608,9 +1619,17 @@ class LearnCaptureControl : public IControl {
 // Build the whole panel into `g`. `shared` must outlive the editor.
 inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   // The label font is built into the app (a system font looked up by name can be missing,
-  // and IGraphics then draws no text at all).
-  g->LoadFont(kFont, const_cast<unsigned char*>(font::kRegular), static_cast<int>(font::kRegularSize));
-  g->LoadFont(kFontBold, const_cast<unsigned char*>(font::kBold), static_cast<int>(font::kBoldSize));
+  // and IGraphics then draws no text at all). Prefer the same static Noto Sans on
+  // both platforms; a Windows GDI rejection must not leave the UI without labels.
+  const bool regularLoaded = g->LoadFont(kFont, const_cast<unsigned char*>(font::kRegular), static_cast<int>(font::kRegularSize));
+  const bool boldLoaded = g->LoadFont(kFontBold, const_cast<unsigned char*>(font::kBold), static_cast<int>(font::kBoldSize));
+#ifdef OS_WIN
+  if (!regularLoaded) g->LoadFont(kFont, "Segoe UI", ETextStyle::Normal);
+  if (!boldLoaded) g->LoadFont(kFontBold, "Segoe UI", ETextStyle::Bold);
+#else
+  (void)regularLoaded;
+  (void)boldLoaded;
+#endif
   g->AttachPanelBackground(col(theme::kPanel));
 
   const std::vector<Widget> widgets = build_panel_layout();

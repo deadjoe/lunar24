@@ -41,6 +41,9 @@
 using namespace iplug::igraphics;
 
 #ifdef APP_API
+#if defined(OS_WIN)
+extern "C" void lunar_host_init_window(IGraphics* graphics, double designW, double designH);
+#endif
 // The standalone app's platform layer (host/main.mm, host/window_metrics_win.cpp and
 // host/iPlug_app_host_override.cpp): screen geometry, the metal case, the audio device, the
 // log and the REC folder. The plugins have none of these.
@@ -120,8 +123,13 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
 
     // Design-space IGraphics. WindowWidth = designW * drawScale == logicalW,
     // so the internal view fills the dialog the host just sized.
-    return MakeGraphics(*this, static_cast<int>(designW), static_cast<int>(designH),
-                        PLUG_FPS, static_cast<float>(layout.drawScale));
+    auto* graphics = MakeGraphics(*this, static_cast<int>(designW), static_cast<int>(designH),
+                                  PLUG_FPS, static_cast<float>(layout.drawScale));
+#ifdef OS_WIN
+    // Native track limits enforce usability; small/high-DPI screens must still fit.
+    graphics->SetScaleConstraints(0.01f, static_cast<float>(DEFAULT_MAX_DRAW_SCALE));
+#endif
+    return graphics;
 #endif
   };
 
@@ -178,6 +186,23 @@ bool LunarHostPlugin::ConstrainEditorResize(int& w, int& h) const
 #endif
 
 #if IPLUG_EDITOR
+#if defined(APP_API) && defined(OS_WIN)
+void LunarHostPlugin::OnUIOpen()
+{
+  Plugin::OnUIOpen();
+  if (GetUI() && GetUI()->GetWindow())
+    lunar_host_init_window(GetUI(), lunar24::core::kDesignWidth, lunar24::core::kDesignHeight);
+}
+
+bool LunarHostPlugin::EditorResize(int width, int height)
+{
+  // The native dialog owns its outer rectangle. Tell IGraphics not to resize its
+  // parent by the child's delta (which re-enters WM_SIZE during DPI changes).
+  SetEditorSize(width, height);
+  return true;
+}
+#endif
+
 void LunarHostPlugin::OnParentWindowResize(int width, int height)
 {
   // Zoom the panel to the window (iPlug2's default would reset the zoom to 1 and crop it).
@@ -189,8 +214,13 @@ void LunarHostPlugin::OnParentWindowResize(int width, int height)
 #ifdef APP_API
   lunar_host_case_margins(g->GetWindow(), &margins.side, &margins.top, &margins.bottom);
 #endif
+  double minScale = lunar24::host::kMinPanelScale;
+#if defined(APP_API) && defined(OS_WIN)
+  minScale = 0.01;
+  SetEditorSize(width, height);
+#endif
   const auto p = lunar24::host::place_panel(width / windowScale, height / windowScale, lunar24::core::kDesignWidth,
-                                            lunar24::core::kDesignHeight, margins);
+                                            lunar24::core::kDesignHeight, margins, minScale);
   g->Resize(static_cast<int>(lunar24::core::kDesignWidth), static_cast<int>(lunar24::core::kDesignHeight),
             static_cast<float>(p.scale), false);
 #ifdef APP_API

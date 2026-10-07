@@ -41,6 +41,10 @@ public:
   // size into the drawing size at scale 1, which crops the fixed 2400 x 1552 panel; keep the
   // panel's size and scale it to fit the window instead.
   void OnParentWindowResize(int width, int height) override;
+#if defined(APP_API) && defined(OS_WIN)
+  void OnUIOpen() override;
+  bool EditorResize(int width, int height) override;
+#endif
 #ifndef APP_API
   // A DAW resizing the window keeps the panel's shape, between half and full size.
   bool ConstrainEditorResize(int& w, int& h) const override;
