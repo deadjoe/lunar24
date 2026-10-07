@@ -127,7 +127,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
                                   PLUG_FPS, static_cast<float>(layout.drawScale));
 #ifdef OS_WIN
     // Native track limits enforce usability; small/high-DPI screens must still fit.
-    graphics->SetScaleConstraints(0.01f, 10.f);
+    graphics->SetScaleConstraints(0.01f, static_cast<float>(DEFAULT_MAX_DRAW_SCALE));
 #endif
     return graphics;
 #endif
