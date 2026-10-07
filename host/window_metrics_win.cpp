@@ -16,6 +16,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <commctrl.h>
+#include <commdlg.h>  // IGraphics/WDL declarations with WIN32_LEAN_AND_MEAN
 #include "IGraphics.h"
 #include <host/panel_theme.h>
 

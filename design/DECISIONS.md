@@ -38,6 +38,8 @@ Keep these unless a listening test or a real bug says otherwise.
   DPI changes, monitor-relative maximize and track limits that fit the current work area
   (including title/menu/frame). Small/high-DPI screens can shrink below half design size.
   There is no metal case.
+  The Windows exe declares PerMonitorV2 in its manifest before audio initialization,
+  rather than relying only on the unchecked DPI-awareness request later in WinMain.
 - **Version and build stamp** (owner, 2026-10-05): the version is the root `project()` VERSION
   (1.0.0), the only place to bump it; config.h, the Windows .rc and the Info.plist read it. Each
   build writes the CI run number, UTC time and commit to `build_info.h` (`host/build_info.cmake`),

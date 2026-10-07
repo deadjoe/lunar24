@@ -317,6 +317,11 @@ elseif(WIN32)
   set_source_files_properties(resources/main.rc PROPERTIES
     COMPILE_FLAGS "/I\"${CMAKE_CURRENT_SOURCE_DIR}\" /I\"${LUNAR24_GEN_DIR}\""
   )
+  if(MSVC)
+    # main.rc owns resource #1, including asInvoker and PerMonitorV2. Do not let
+    # the linker's default manifest replace it with a DPI-unaware one.
+    target_link_options(${HOST_APP_NAME} PRIVATE /MANIFEST:NO)
+  endif()
 
   # APP.cmake WIN32 defs / include dirs / libs (the override TUs need the APP headers, and
   # compile as APP_API/IPLUG_DSP so config.h stays on the APP_API "2-4" branch).
