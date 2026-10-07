@@ -232,10 +232,41 @@ static void client_aspect() {
   CHECK(cw < 1920);
 }
 
+static void windows_dpi_fit() {
+  using namespace lunar24::host;
+  const double W = 2400.0, H = 1551.0;
+  for (double dpi : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+    for (auto screen : {std::array<int, 2>{1366, 768}, {1920, 1080}, {3840, 2160}}) {
+      // Representative physical frame/title/menu/taskbar reservations.
+      const int availW = screen[0] - static_cast<int>(16 * dpi);
+      const int availH = screen[1] - static_cast<int>(100 * dpi);
+      const auto limits = windows_client_limits(availW, availH, dpi, W, H);
+      CHECK(limits.minW > 0 && limits.minH > 0);
+      CHECK(limits.minW < limits.maxW && limits.minH < limits.maxH);
+      CHECK(limits.maxW <= availW && limits.maxH <= availH);
+      for (auto size : {std::array<int, 2>{limits.minW, limits.minH},
+                       {limits.maxW, limits.maxH}}) {
+        const auto p = place_panel(size[0] / dpi, size[1] / dpi, W, H, {}, 0.01);
+        CHECK(p.x >= -1e-9 && p.y >= -1e-9);
+        CHECK((p.x + p.w) * dpi <= size[0] + 1e-9);
+        CHECK((p.y + p.h) * dpi <= size[1] + 1e-9);
+        CHECK(std::abs(size[0] * H / W - size[1]) <= 1.0);
+      }
+    }
+  }
+  // Primary, right-hand and negative-coordinate monitors give the same offset.
+  for (int origin : {0, 1920, -2560}) {
+    CHECK(maximized_position(origin, origin, 1920, 1600) == 160);
+    // A taskbar at the left/top is a work-area offset within the monitor.
+    CHECK(maximized_position(origin + 48, origin, 1872, 1600) == 184);
+  }
+}
+
 int main() {
   std::printf("== P5-1 host window layout: consume core fit + reachability ==\n");
   case_placement();
   plugin_window_constraint();
   client_aspect();
+  windows_dpi_fit();
   return run("host_window_layout");
 }

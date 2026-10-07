@@ -121,10 +121,10 @@ struct PanelPlacement {
   double w = 0.0, h = 0.0;  // panel size
 };
 inline PanelPlacement place_panel(double windowW, double windowH, double designW, double designH,
-                                  CaseMargins m = {}) {
+                                  CaseMargins m = {}, double minScale = kMinPanelScale) {
   const double totalW = designW + 2.0 * m.side, totalH = designH + m.top + m.bottom;
   PanelPlacement p;
-  p.scale = std::max(kMinPanelScale, std::min(windowW / totalW, windowH / totalH));
+  p.scale = std::max(minScale, std::min(windowW / totalW, windowH / totalH));
   p.w = designW * p.scale;
   p.h = designH * p.scale;
   p.x = (windowW - totalW * p.scale) / 2.0 + m.side * p.scale;
@@ -174,6 +174,30 @@ inline void largest_client_for_aspect(int availW, int availH, double designW, do
   else w = static_cast<int>(static_cast<double>(h) * aspect + 0.5);
   if (w < 1) w = 1;
   if (h < 1) h = 1;
+}
+
+// Windows limits are physical client pixels. At high desktop scaling, half the
+// design can be larger than the entire work area: lower the minimum to what fits.
+struct ClientLimits {
+  int minW, minH, maxW, maxH;
+};
+inline ClientLimits windows_client_limits(int availW, int availH, double dpiScale,
+                                          double designW, double designH) {
+  ClientLimits out{};
+  largest_client_for_aspect(availW, availH, designW, designH, out.maxW, out.maxH);
+  const int preferredW = static_cast<int>(designW * kMinPanelScale * dpiScale + 0.5);
+  const int preferredH = static_cast<int>(designH * kMinPanelScale * dpiScale + 0.5);
+  // Keep some resize travel even when the preferred minimum cannot fit. 75% is
+  // a usability choice, not a DPI conversion.
+  largest_client_for_aspect(std::min(preferredW, out.maxW * 3 / 4),
+                            std::min(preferredH, out.maxH * 3 / 4),
+                            designW, designH, out.minW, out.minH);
+  return out;
+}
+
+// MINMAXINFO uses monitor-relative coordinates, not virtual-desktop coordinates.
+inline int maximized_position(int workStart, int monitorStart, int workSize, int windowSize) {
+  return workStart - monitorStart + (workSize - windowSize) / 2;
 }
 
 }  // namespace lunar24::host

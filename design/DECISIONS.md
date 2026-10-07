@@ -17,9 +17,10 @@ Keep these unless a listening test or a real bug says otherwise.
   with broken orbit arcs round it).
 - **Label text uses an embedded Noto Sans** (OFL, `tools/gen_ui_font.py`), loaded from
   memory. Looking up a system font by name failed on macOS and left the panel with no text.
-  The face is static: the variable-font STAT table is removed and a unique name is set,
-  because Windows GDI refuses the variable face and then draws nothing. macOS and Windows
-  draw these same outlines.
+  The generated faces are static instances with unused variation metadata removed.
+  Windows falls back to Segoe UI only if loading an embedded face fails. Its printed
+  labels are drawn directly at the current DPI/zoom, outside the cached panel texture,
+  to avoid filtering already rasterized text again.
 - **Controls are drawn with depth, not bitmaps.** Knobs, jacks, switches, buttons and the
   joystick are vector-drawn in `panel_art.h` with top-left light: drop shadows, top-lit
   gradients, highlights (amounts tuned by eye). Stays sharp at any window size and the SVG
@@ -33,7 +34,10 @@ Keep these unless a listening test or a real bug says otherwise.
   In full screen the case shrinks to a thin rim (no screws) so the panel fills the screen.
   Windows keeps a plain window, with a sizing border and a maximize button
   (`host/resources/main.rc`). Dragging and maximizing keep the panel's shape, so the
-  dialog background does not show around the UI. There is no metal case.
+  dialog background does not show around the UI. A per-window subclass handles fractional
+  DPI changes, monitor-relative maximize and track limits that fit the current work area
+  (including title/menu/frame). Small/high-DPI screens can shrink below half design size.
+  There is no metal case.
 - **Version and build stamp** (owner, 2026-10-05): the version is the root `project()` VERSION
   (1.0.0), the only place to bump it; config.h, the Windows .rc and the Info.plist read it. Each
   build writes the CI run number, UTC time and commit to `build_info.h` (`host/build_info.cmake`),

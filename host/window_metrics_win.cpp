@@ -1,39 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// host/window_metrics_win.cpp — the Windows half of the host geometry probes.
-//
-// host/plugin.cpp (shared across platforms) calls four extern "C" probes to get the
-// screen's LOGICAL visible area and the DPI factor, then feeds them into the single
-// framework-free geometry choke point (lunar24::host::compute_window_layout in
-// window_layout.h). On macOS those probes live in main.mm (NSScreen.visibleFrame /
-// backingScaleFactor). On Windows the bootstrap differs: the stock IPlugAPP_main.cpp
-// (compiled from the pinned iPlug2::APP) owns WinMain, gHINSTANCE, gHWND and
-// SaveWindowScreenshot, so THIS file defines only the four geometry probes and nothing
-// else — redefining any of those symbols would be a duplicate-definition link error.
-//
-// Units follow the standard Windows logical-pixel model, mirrored from macOS:
-//   * avail* = LOGICAL window units (macOS: points; here: physical pixels / DPI).
-//   * screenScale= logical -> physical (macOS: backingScaleFactor; here: DPI / 96).
-//   * backing = logical * screenScale (compute_window_layout multiplies this itself).
-// This file reads REAL values from the Win32 work area + system DPI, never a hardcoded
-// desktop size (the mandate forbids a fixed 2400x1551 here).
-//
-// DPI model: the pinned IPlugAPP_main.cpp (compiled from iPlug2::APP) publishes a
-// PER_MONITOR_AWARE_V2 DPI context via SetProcessDpiAwarenessContext before it calls
-// CreateDialog on the host window — i.e. awareness is established by the stock bootstrap,
-// not by a DPI manifest embedded in the .rc. GetSystemMetrics reports the primary physical
-// work area and GetDeviceCaps(LOGPIXELSX)/96 is the system DPI scale factor, so we divide
-// by the factor to hand the layout choke point LOGICAL units, matching macOS points. This
-// shim still derives from the primary physical work area + the system DPI; exact per-monitor
-// DPI / multi-monitor virtualization (and whether the NanoVG/GL2 window consumes these as
-// logical-then-scaled or as physical) is a runtime detail to confirm on a real Windows host.
-// The scope here is that the target COMPILES and LINKS (actual-target CI) and that it
-// feeds real work area + DPI numbers, not constants.
-//
-// Framework-free on purpose: this TU only needs <windows.h> + the C stdlib probes; it
-// pulls no iPlug2 header, so it stays compilable on any Windows toolchain and never
-// drags SWELL/IGNanoVG into the probe boundary.
+// Windows window geometry and lifecycle. The stock bootstrap owns WinMain;
+// our per-window subclass owns sizing, DPI changes and monitor-relative maximize.
+// Screen probes return logical units; Win32 rectangles and track limits are physical.
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -45,6 +15,9 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <commctrl.h>
+#include "IGraphics.h"
+#include <host/panel_theme.h>
 
 #include <cstdlib>
 #include <cstring>
@@ -150,89 +123,170 @@ extern "C" bool lunar_host_force_clamp()
   return (v != nullptr) && (std::strcmp(v, "1") == 0);
 }
 
-// --- keep the dialog the same shape as the panel --------------------------------------------
-// A free resize leaves the panel (fixed shape) smaller than the dialog, and the dialog's
-// own background shows as a white band. While the user drags, and when the window is
-// maximized, the client is forced back to the panel's aspect.
+// --- standalone window sizing ----------------------------------------------------------
+namespace {
+using iplug::igraphics::IGraphics;
+constexpr UINT_PTR kWindowSubclass = 1;
 
-static double aspectW_ = 2400.0;
-static double aspectH_ = 1551.0;
-static WNDPROC prevProc_ = nullptr;
+struct WindowState {
+  IGraphics* graphics;
+  double designW, designH;
+  bool firstShow = true;
+};
 
-static void non_client(HWND hwnd, int* ncX, int* ncY)
-{
-  RECT window{};
-  RECT client{};
-  GetWindowRect(hwnd, &window);
-  GetClientRect(hwnd, &client);
-  *ncX = (window.right - window.left) - (client.right - client.left);
-  *ncY = (window.bottom - window.top) - (client.bottom - client.top);
-  if (*ncX < 0) *ncX = 0;
-  if (*ncY < 0) *ncY = 0;
+UINT window_dpi(HWND hwnd) {
+  // Same Windows 10 API used by iPlug2; keep a fallback for older systems.
+  using GetDpi = UINT(WINAPI*)(HWND);
+  static const auto getDpi = reinterpret_cast<GetDpi>(
+      GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+  const UINT dpi = getDpi ? getDpi(hwnd) : 0;
+  return dpi ? dpi : static_cast<UINT>(96.0 * lunar_win_scale());
 }
 
-static void write_client(RECT* rect, int edge, int ncX, int ncY, int clientW, int clientH)
-{
-  const int winW = clientW + ncX;
-  const int winH = clientH + ncY;
+struct WindowGeometry {
+  MONITORINFO monitor{};
+  int ncX = 0, ncY = 0;
+  lunar24::host::ClientLimits client{};
+};
+
+WindowGeometry geometry(HWND hwnd, const WindowState& state, UINT dpi, const RECT* proposed = nullptr) {
+  WindowGeometry out;
+  out.monitor.cbSize = sizeof(out.monitor);
+  const HMONITOR monitor = proposed ? MonitorFromRect(proposed, MONITOR_DEFAULTTONEAREST)
+                                   : MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+  if (!GetMonitorInfoW(monitor, &out.monitor)) {
+    out.monitor.rcWork = lunar_work_area();
+    out.monitor.rcMonitor = out.monitor.rcWork;
+  }
+  RECT frame{};
+  const DWORD style = static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_STYLE));
+  const DWORD exStyle = static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
+  using AdjustForDpi = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+  static const auto adjust = reinterpret_cast<AdjustForDpi>(
+      GetProcAddress(GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi"));
+  // Derive the normal sizing frame, even while maximized or changing monitors.
+  if (adjust) adjust(&frame, style & ~WS_MAXIMIZE, GetMenu(hwnd) != nullptr, exStyle, dpi);
+  else AdjustWindowRectEx(&frame, style & ~WS_MAXIMIZE, GetMenu(hwnd) != nullptr, exStyle);
+  out.ncX = frame.right - frame.left;
+  out.ncY = frame.bottom - frame.top;
+  const RECT& work = out.monitor.rcWork;
+  out.client = lunar24::host::windows_client_limits(
+      work.right - work.left - out.ncX, work.bottom - work.top - out.ncY,
+      dpi / 96.0, state.designW, state.designH);
+  return out;
+}
+
+void write_client(RECT& rect, int edge, int ncX, int ncY, int clientW, int clientH) {
+  const int winW = clientW + ncX, winH = clientH + ncY;
   const bool left = edge == WMSZ_LEFT || edge == WMSZ_TOPLEFT || edge == WMSZ_BOTTOMLEFT;
   const bool top = edge == WMSZ_TOP || edge == WMSZ_TOPLEFT || edge == WMSZ_TOPRIGHT;
-  if (left) rect->left = rect->right - winW;
-  else rect->right = rect->left + winW;
-  if (top) rect->top = rect->bottom - winH;
-  else rect->bottom = rect->top + winH;
+  if (left) rect.left = rect.right - winW;
+  else rect.right = rect.left + winW;
+  if (top) rect.top = rect.bottom - winH;
+  else rect.bottom = rect.top + winH;
 }
 
-static LRESULT CALLBACK aspect_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
-{
-  if (msg == WM_SIZING && aspectW_ > 0.0 && aspectH_ > 0.0) {
-    RECT* rect = reinterpret_cast<RECT*>(lp);
-    int ncX = 0, ncY = 0;
-    non_client(hwnd, &ncX, &ncY);
-    int clientW = (rect->right - rect->left) - ncX;
-    int clientH = (rect->bottom - rect->top) - ncY;
-    const bool fromHeight = wp == WMSZ_TOP || wp == WMSZ_BOTTOM;
-    lunar24::host::client_size_for_aspect(clientW, clientH, aspectW_, aspectH_, fromHeight);
-    write_client(rect, static_cast<int>(wp), ncX, ncY, clientW, clientH);
+void fit_rect(RECT& rect, const WindowGeometry& g, const WindowState& state, bool maximized) {
+  int w = std::clamp<int>(rect.right - rect.left - g.ncX, g.client.minW, g.client.maxW);
+  int h = std::clamp<int>(rect.bottom - rect.top - g.ncY, g.client.minH, g.client.maxH);
+  if (maximized) { w = g.client.maxW; h = g.client.maxH; }
+  lunar24::host::largest_client_for_aspect(w, h, state.designW, state.designH, w, h);
+  const RECT& work = g.monitor.rcWork;
+  const int x = maximized ? work.left + (work.right - work.left - w - g.ncX) / 2
+                         : std::clamp<int>(rect.left, work.left, work.right - w - g.ncX);
+  const int y = maximized ? work.top + (work.bottom - work.top - h - g.ncY) / 2
+                         : std::clamp<int>(rect.top, work.top, work.bottom - h - g.ncY);
+  rect = {x, y, x + w + g.ncX, y + h + g.ncY};
+}
+
+LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                             UINT_PTR id, DWORD_PTR data) {
+  auto& state = *reinterpret_cast<WindowState*>(data);
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, window_proc, id);
+    delete &state;
+    return DefSubclassProc(hwnd, msg, wp, lp);
+  }
+  if (msg == WM_ERASEBKGND) {
+    // Integer logical/physical conversion can leave a one-pixel strip.
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    const auto color = lunar24::host::theme::kPanel;
+    HDC dc = reinterpret_cast<HDC>(wp);
+    const COLORREF previous = SetDCBrushColor(dc, RGB(color.r, color.g, color.b));
+    FillRect(dc, &client, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    SetDCBrushColor(dc, previous);
     return TRUE;
   }
-  const LRESULT handled = prevProc_ != nullptr ? CallWindowProcW(prevProc_, hwnd, msg, wp, lp)
-                                               : DefWindowProcW(hwnd, msg, wp, lp);
-  if (msg == WM_GETMINMAXINFO && aspectW_ > 0.0 && aspectH_ > 0.0) {
-    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO info{};
-    info.cbSize = sizeof(info);
-    if (GetMonitorInfoW(monitor, &info)) {
-      int ncX = 0, ncY = 0;
-      non_client(hwnd, &ncX, &ncY);
-      const RECT& work = info.rcWork;
-      int clientW = 0, clientH = 0;
-      lunar24::host::largest_client_for_aspect((work.right - work.left) - ncX,
-                                               (work.bottom - work.top) - ncY, aspectW_, aspectH_,
-                                               clientW, clientH);
-      auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
-      mmi->ptMaxSize.x = clientW + ncX;
-      mmi->ptMaxSize.y = clientH + ncY;
-      mmi->ptMaxPosition.x = work.left + ((work.right - work.left) - mmi->ptMaxSize.x) / 2;
-      mmi->ptMaxPosition.y = work.top + ((work.bottom - work.top) - mmi->ptMaxSize.y) / 2;
-    }
+  if (msg == WM_SHOWWINDOW && wp && state.firstShow) {
+    state.firstShow = false;
+    const auto g = geometry(hwnd, state, window_dpi(hwnd));
+    RECT rect{};
+    GetWindowRect(hwnd, &rect);
+    // Stock ClientResize centers only the client against the full primary screen.
+    // Center the complete framed window inside this monitor's taskbar-free area.
+    fit_rect(rect, g, state, false);
+    const RECT& work = g.monitor.rcWork;
+    const int w = rect.right - rect.left, h = rect.bottom - rect.top;
+    SetWindowPos(hwnd, nullptr, work.left + (work.right - work.left - w) / 2,
+                 work.top + (work.bottom - work.top - h) / 2, w, h,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
   }
-  return handled;
+  if (msg == WM_DPICHANGED) {
+    const UINT dpi = HIWORD(wp);
+    RECT rect = *reinterpret_cast<RECT*>(lp);
+    const auto g = geometry(hwnd, state, dpi, &rect);
+    // Update the backing buffer before WM_SIZE fits the panel in logical units.
+    // EditorResize acknowledges this without changing the native parent rectangle.
+    state.graphics->SetScreenScale(static_cast<float>(dpi) / 96.f);
+    fit_rect(rect, g, state, IsZoomed(hwnd) != FALSE);
+    SetWindowPos(hwnd, nullptr, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    return 0;
+  }
+  if (msg == WM_SIZING) {
+    const auto g = geometry(hwnd, state, window_dpi(hwnd));
+    auto& rect = *reinterpret_cast<RECT*>(lp);
+    int w = std::clamp<int>(rect.right - rect.left - g.ncX, g.client.minW, g.client.maxW);
+    int h = std::clamp<int>(rect.bottom - rect.top - g.ncY, g.client.minH, g.client.maxH);
+    lunar24::host::client_size_for_aspect(w, h, state.designW, state.designH,
+                                         wp == WMSZ_TOP || wp == WMSZ_BOTTOM);
+    write_client(rect, static_cast<int>(wp), g.ncX, g.ncY, w, h);
+    return TRUE;
+  }
+  const LRESULT result = DefSubclassProc(hwnd, msg, wp, lp);
+  if (msg == WM_GETMINMAXINFO) {
+    const auto g = geometry(hwnd, state, window_dpi(hwnd));
+    auto& mmi = *reinterpret_cast<MINMAXINFO*>(lp);
+    mmi.ptMinTrackSize = {g.client.minW + g.ncX, g.client.minH + g.ncY};
+    mmi.ptMaxTrackSize = {g.client.maxW + g.ncX, g.client.maxH + g.ncY};
+    mmi.ptMaxSize = mmi.ptMaxTrackSize;
+    const RECT& work = g.monitor.rcWork;
+    mmi.ptMaxPosition.x = lunar24::host::maximized_position(
+        work.left, g.monitor.rcMonitor.left, work.right - work.left, mmi.ptMaxSize.x);
+    mmi.ptMaxPosition.y = lunar24::host::maximized_position(
+        work.top, g.monitor.rcMonitor.top, work.bottom - work.top, mmi.ptMaxSize.y);
+  }
+  return result;
 }
+}  // namespace
 
-// Called on every resize. Subclasses the top-level dialog once.
-extern "C" void lunar_host_track_aspect(void* view, double designW, double designH)
-{
-  if (designW > 0.0 && designH > 0.0) {
-    aspectW_ = designW;
-    aspectH_ = designH;
-  }
-  HWND child = static_cast<HWND>(view);
-  if (child == nullptr) return;
+// Run once, before the stock dialog's initial ClientResize/ShowWindow. Its integer
+// screenScale truncates 125/150/175%; correct it before the first visible frame.
+extern "C" void lunar_host_init_window(IGraphics* graphics, double designW, double designH) {
+  HWND child = static_cast<HWND>(graphics->GetWindow());
   HWND root = GetAncestor(child, GA_ROOT);
-  if (root == nullptr || prevProc_ != nullptr) return;
-  prevProc_ = reinterpret_cast<WNDPROC>(
-      SetWindowLongPtrW(root, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(aspect_proc)));
+  if (!root) return;
+  auto* state = new WindowState{graphics, designW, designH};
+  if (!SetWindowSubclass(root, window_proc, kWindowSubclass, reinterpret_cast<DWORD_PTR>(state))) {
+    delete state;
+    return;
+  }
+  const UINT dpi = window_dpi(root);
+  const auto g = geometry(root, *state, dpi);
+  graphics->SetScreenScale(static_cast<float>(dpi) / 96.f);
+  // Leave room for title, menu, sizing border and taskbar at the first open too.
+  graphics->GetDelegate()->OnParentWindowResize(g.client.maxW, g.client.maxH);
 }
 
 // --- REC: the recordings folder (Music\Lunar 24) ------------------------------------------

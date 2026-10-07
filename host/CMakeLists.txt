@@ -340,6 +340,7 @@ elseif(WIN32)
     winmm.lib
     shell32.lib  # REC: the Music folder, opening it in Explorer
     ole32.lib
+    comctl32.lib  # per-window subclass lifecycle
   )
 
   # APP.cmake WIN32 artifact props: out/<name>.exe, WinMain entry point. GH#4 8B3 (task#73, G6): a
