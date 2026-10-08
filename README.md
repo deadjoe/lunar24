@@ -1,77 +1,34 @@
 # Lunar 24
 
-An open-source desktop software musical instrument: an **independent, unaffiliated study**
-of the ELTA Music **Solar 42N** — the analogue microtonal ambient drone machine and
-semi-modular stand-alone synthesizer. Lunar 24 is not affiliated with, endorsed by, or a
-product of ELTA Music / Analogue Solutions; it is a clean-room engineering study built from
-the freely published manual and the project's own fact mapping.
+Open-source ambient / drone instrument for Apple silicon Mac and Windows.
+The panel and its functions follow the published ELTA Solar 42N manual.
+Lunar 24 is not affiliated with ELTA Music. Sound is tuned by ear, not matched
+to the hardware.
 
-Lunar 24 aims to reproduce the Solar 42N **panel layout and operating behaviour** as
-documented. The product boundary is strict: it does **not** add sound sources, modulators,
-general-purpose routing matrices, macros, plugin/DAW hosts, or a multi-preset library
-beyond the hardware's own four keyboard presets. The goal is architectural and behavioural, **not** a claim of calibrated or
-identical sonic fidelity, which would need the hardware as a reference. Sound is tuned by ear.
+Standalone app, VST3 (Mac and Windows), and AU (Mac). No Intel Mac build.
+Linux CI runs the portable tests only.
 
-> This repository tracks its own source and design documents only. The ELTA Solar 42N
-> reference manual and panel drawing are copyrighted third-party material and are
-> intentionally **not** committed — see `design/reference/SOURCES.md` for their sources.
+The Solar 42N manual and panel drawing are ELTA copyright and are not in this
+repository (`design/reference/SOURCES.md`).
 
 ## License
 
-**Apache-2.0.** See [LICENSE](LICENSE). Lunar 24's own code is Apache-2.0; third-party
-dependencies keep their own licenses (inventory: `third_party/licenses/`).
-
-## Target platforms
-
-- **macOS on Apple silicon** and **Windows** (standalone app, VST3 / AU plugins). No Intel
-  Macs, no iPad/iOS/Android, and no Linux desktop product (Linux CI runs the
-  platform-independent tests).
-
-## Tech stack
-
-- C++17 w/ warnings-as-errors, CMake.
-- Standalone app plus VST3 / AUv2 instrument plugins, all through a pinned iPlug2
-  submodule (audio, MIDI, plugin formats); iPlug2's IGraphics provides the UI. No
-  CLAP/AAX/WAM, no WebView.
-- The **synth core** is a framework-free pure C++ library — it never includes iPlug2,
-  IGraphics, CoreAudio/WASAPI, window, or filesystem types.
-
-## Project layout
-
-```
-core/          framework-free synth engine (header-only C++17)
-host/          macOS/Windows standalone app (iPlug2: audio, MIDI, UI)
-spec/machine/  machine registry (modules, parameters, jacks, programs) — source of truth
-generated/     C++ headers generated from spec/ (tools/generate_registry.py)
-tests/         unit and engine tests
-design/        STATUS.md (progress), HARDWARE.md (the manual's facts), DECISIONS.md
-```
+Apache-2.0. See [LICENSE](LICENSE). Dependencies keep their own licenses
+(`third_party/licenses/`).
 
 ## Build
 
 ```sh
-git submodule update --init --recursive   # iPlug2 (needed for the mac/win app)
+git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-The VST3 plugin needs the VST3 SDK (MIT licensed) in `third_party/iPlug2/Dependencies/IPlug/VST3_SDK`;
-CI fetches tag `v3.8.1_build_84` there (see `.github/workflows/ci.yml`). Without it only the
-app and, on macOS, the AU plugin are built.
+VST3 needs the SDK at `third_party/iPlug2/Dependencies/IPlug/VST3_SDK`
+(CI uses tag `v3.8.1_build_84`). Without it, the app still builds, and on macOS so does the AU.
 
-CI builds the macOS and Windows apps and plugins and attaches them to each run as downloadable
-artifacts (plugin install steps: `design/MANUAL_TESTS.md` section 17).
-The mac app is signed ad hoc, not notarized: after downloading, clear the quarantine flag
-once with `xattr -cr Lunar24.app` (otherwise macOS reports it as damaged).
+CI attaches the app and plugins to each run. Clear quarantine on a downloaded
+Mac build once: `xattr -cr Lunar24.app`.
 
-Audio: the app plays through the system's current output device (headphones, AirPods)
-unless another one is chosen in Preferences (app menu > Preferences…, or ⌘,); the audio
-input (microphone) stays off until it is switched on there. Devices open at the rate they already run at. When the output
-device changes or drops out (AirPods connected or put away), the app reopens on the current
-one. If the saved setup cannot open, it falls back to one that can; if nothing opens, the
-keyboard display reads NO AUDIO.
-
-## Status
-
-See [`design/STATUS.md`](design/STATUS.md).
+Progress and how to play: [`design/STATUS.md`](design/STATUS.md).
