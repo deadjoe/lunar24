@@ -2,6 +2,7 @@
 
 _Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manual:
 `design/ARCHITECTURE.md`. Manual test steps and results: `design/MANUAL_TESTS.md`.
+Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md`.
 
 ## What works
 - **Engine (core/)**: every module of the Solar 42N panel. 4 classic drones (negistor
