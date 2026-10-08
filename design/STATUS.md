@@ -1,6 +1,6 @@
 # Lunar 24 — status
 
-_Last updated: 2026-10-05._ Module-by-module comparison with the Solar 42N manual:
+_Last updated: 2026-10-08._ Module-by-module comparison with the Solar 42N manual:
 `design/ARCHITECTURE.md`. Manual test steps and results: `design/MANUAL_TESTS.md`.
 Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md`.
 
@@ -54,14 +54,20 @@ Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md
 1. Check the Windows build by hand (MANUAL_TESTS ⏳; the owner schedules it separately).
 2. Later, when the owner asks: tune sounds from listening (MANUAL_TESTS "调音待办":
    drone level, modulation depth, S&H, mix, VCO B top).
-3. Plugins: phase 1 passed in Ableton Live on the Mac (VST3 and AU, MANUAL_TESTS 17).
-   Next, when the owner asks: phase 2 (automation, DAW tempo, extra outputs). Later: panel tweaks.
+3. Plugins: phase 1 passed in Ableton Live on the Mac. VST3 and AU ran the same
+   checks (MANUAL_TESTS 17); the MIDI-panel version is visible, and REC stays inert.
+   ~~Windows Ableton VST3 hand test.~~ Not doing it: no Windows machine. CI still
+   builds that VST3 and runs Steinberg's validator. Phase 2 and phase 3 stay written
+   in PLUGIN_PLAN and are not started. AUv3 and CLAP are not planned.
 
 ## Decided not to do (for now)
 - Keyboard pushbutton offsets (hold arrow + encoder; TWIN / SPLIT per-side offset).
 - Arp HOLD replacing the chord on a new press: new plates join the held chord (max 12).
 - Effector tails across a program switch (the hardware cuts them too).
 - Photo-eye LED lit by CV MOD / LFO: CV acts on pitch directly.
+- AUv3 and CLAP plugin formats. Desktop delivery is the app, Mac VST3, Mac AUv2,
+  and the Windows VST3 build. Ableton does not load CLAP. AUv3 needs an app
+  extension and an Apple Developer Program account; there is no iPad app.
 
 ## Known limits
 - No hardware here: sound is tuned by ear, not measured against a real unit.

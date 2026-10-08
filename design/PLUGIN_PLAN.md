@@ -1,6 +1,6 @@
 # Lunar 24 AU / VST3 插件版实施方案（第三版）
 
-- 日期：2026-10-05。2026-10-06 按代码更正两处：插件的 REC 留在面板上、点击无效；插件输出固定为立体声 WET。
+- 日期：2026-10-05。2026-10-06 按代码更正两处：插件的 REC 留在面板上、点击无效；插件输出固定为立体声 WET。2026-10-08 按业主验收改进度：Mac 上 AU 与 VST3 测了同一套；版本号已核对；Windows 上 Ableton 的手测划掉；第 2、3 阶段暂时不启动；AUv3 和 CLAP 不做。
 - 依据：main 分支（版本 1.0.0，提交 `075431d`）的逐项代码核查；锁定的 iPlug2 子模块（`d54f6905`）源码；VST3 SDK 官方仓库。
 - 第三版 = 第二版 + 业主对五个问题的决定（第二节）。实施中有变化时更新本文件。
 
@@ -19,9 +19,9 @@
 
 | 阶段 | 内容 | 工作量（以现在一个 PR 的大小计） |
 |---|---|---|
-| **第 1 阶段：能用的插件** | macOS 上的 AU（AUv2）+ VST3、Windows 上的 VST3；乐器类型，立体声 WET 输出；音色随 DAW 工程保存和恢复；MIDI 弹奏；界面可缩放 | 约 8–10 个 PR |
-| **第 2 阶段：像样的插件** | 宿主自动化；跟随 DAW 速度和播放 / 停止；多路输出（DRY A/B 单独出轨） | 约 4–6 个 PR |
-| **第 3 阶段：可选** | 音频输入（PREAMP 处理 DAW 里的声音）；CLAP；AUv3 | 每项 1–3 个 PR |
+| **第 1 阶段：能用的插件** | macOS 上的 AU（AUv2）+ VST3、Windows 上的 VST3；乐器类型，立体声 WET 输出；音色随 DAW 工程保存和恢复；MIDI 弹奏；界面可缩放 | 约 8–10 个 PR。已完成 |
+| **第 2 阶段：像样的插件** | 宿主自动化；跟随 DAW 速度和播放 / 停止；多路输出（DRY A/B 单独出轨） | 约 4–6 个 PR。暂时不启动 |
+| **第 3 阶段：可选** | 音频输入（PREAMP 处理 DAW 里的声音）。~~CLAP；AUv3~~ | 音频输入约 1–3 个 PR。暂时不启动 |
 
 ---
 
@@ -36,9 +36,13 @@
 | 5 | 播放中切换音色 | **方案 A**：切换瞬间短暂静音 | 见第三节第 4 点 |
 
 **AU 格式说明（AUv2 和 AUv3）**
-- AUv2 是 Mac 桌面上的主流 AU 格式，Logic、Ableton Live 等都直接支持，不是"过时格式"。插件就是一个放进 `~/Library/Audio/Plug-Ins/Components` 的 `.component` 包。
-- AUv3 主要为 iPad / iPhone 设计。在 Mac 上它必须装在一个 App 里，以"App 扩展"形式运行，要求沙盒和带权限声明的签名，安装和分发都比 AUv2 麻烦得多。
-- 所以第 1 阶段做 AUv2；AUv3 留在第 3 阶段，只有将来要做 iPad 版才值得。
+- AUv2 是 Mac 桌面上的主流 AU 格式，Logic、Ableton Live 等都直接支持，不是"过时格式"。插件就是一个放进 `~/Library/Audio/Plug-Ins/Components` 的 `.component` 包。本地签名就能载入，不需要 Apple 开发者账号。第 1 阶段做的就是这个。
+- AUv3 主要为 iPad / iPhone 设计。在 Mac 上它也必须装在一个 App 里，以"App 扩展"形式运行，要求沙盒和带权限声明的签名。
+- ~~AUv3 留在第 3 阶段，只有将来要做 iPad 版才值得。~~ **AUv3 不做**（业主，2026-10-08）。Lunar 24 只做电脑上的独立 App 和插件，不做能在 iPad 上运行的版本。没有 Apple Developer Program，签不了这种扩展。已经做好的 AUv2 不受这个限制。
+
+**CLAP**
+- CLAP（CLever Audio Plugin）是 Bitwig 和 u-he 在 2022 年公布的另一种插件格式，协议公开。Bitwig、Reaper 等能加载它。Ableton Live 加载 VST3 和 AU，不加载 CLAP。
+- ~~第 3 阶段可选做 CLAP。~~ 规划时写进去的。业主的宿主是 Ableton，不做 CLAP。
 
 **以后 MIDI 绑定改成随工程保存的代价：不大，约 1 个 PR。**
 - 绑定已经有现成的编码 / 解码（`midi_map_encode` / `midi_map_decode`）。
@@ -129,6 +133,8 @@
 - Ableton 自己有电脑 MIDI 键盘，按键一般被它拿走；插件窗口里用 A W S E D… 弹琴板不可靠。
 - 插件里弹奏走 DAW 的 MIDI 轨道；鼠标点琴板、拧旋钮不受影响。MANUAL_TESTS 写明，不当作 bug。
 
+第 2 阶段和第 3 阶段的做法写在下面。业主 2026-10-08 决定暂时不启动。
+
 ### 9. DAW 的速度和走带（第 2 阶段）
 - 引擎已通过 `ControlEventKind::clock` 事件接收外部节拍（现在来自 MIDI 时钟或 CLOCK 插孔）。
 - 插件版每个块读 iPlug2 提供的速度、播放位置（PPQ）和播放状态，算出本块内每个节拍的样本位置，生成同样的时钟事件；播放开始对齐小节，停止时停下。
@@ -162,7 +168,7 @@
 
 完成后：在 Ableton 里像普通软件乐器一样用 Lunar 24——载入、弹奏、存工程。
 
-**进度（2026-10-06）**：第 1 阶段完成。0–8 的 PR 依次是 #124（方案）、#125–#130（第 1–6 步）、#131、#132（第 7、8 步）。业主在 Mac 上的 Ableton Live 里验收通过（MANUAL_TESTS 第 17 节，VST3 和 AU；两个实例同时响时 Ableton CPU 表约 9%），独立 App 回归（T0.4、T0.4a、T0.7、T15.2、T15.3）也通过。Windows 上的 VST3 随 Windows 版一起测。
+**进度（2026-10-06，2026-10-08 补验收）**：第 1 阶段完成。0–8 的 PR 依次是 #124（方案）、#125–#130（第 1–6 步）、#131、#132（第 7、8 步）。业主在 Mac 上的 Ableton Live 里验收通过（MANUAL_TESTS 第 17 节；两个实例同时响时 Ableton CPU 表约 9%），独立 App 回归（T0.4、T0.4a、T0.7、T15.2、T15.3）也通过。2026-10-08 再核对：MIDI 面板上有明确的版本号；REC 点击无反应，和设计一致；AU 走了和 VST3 同一套测试，结果一致。~~Windows 上的 VST3 随 Windows 版一起在 Ableton 里测。~~ 业主没有 Windows 电脑，这项手测不做了。CI 仍编 Windows VST3，并用 Steinberg 的 validator 检查它能否被宿主加载。
 
 **实施中和方案不同、或方案没写到的地方**：
 - VST3 SDK 固定为 `v3.8.1_build_84`（MIT）。
@@ -170,6 +176,7 @@
 - DRONE VOICES 的开关也存进工程（分段 `KEYS`），重开工程和保存时一样在响；独立 App 仍然每次启动都关着。
 - 共用 MIDI 绑定的前提：App 里 Learn 会记下设备名，插件不知道 MIDI 来自哪个控制器。插件里改为"任何设备的绑定都算数"，否则 App 里学的绑定在插件里全部失效。
 - 独立 App 的状态文件和插件的工程数据共用同一个读取函数（`restore_saved_state`），旧格式升级和修补只有一份。
+- VST3 和 AUv2 编的是同一份 `plugin.cpp` / `plugin.h`。声音、面板、MIDI、工程数据格式没有两套。唯一的格式分支：状态块读坏时，AU 返回 0（它的包装层把 0 当成"没恢复"），VST3 返回已经读过的字节数（后面紧跟着宿主自己的 bypass 标志）。正常存档两条路相同。
 
 ---
 
@@ -193,14 +200,14 @@
 ## 六、测试与分发
 
 - **自动验证**：现有全部测试照跑；新增拆块、状态切换、状态存取测试；CI 跑 VST3 validator 和 `auval`。
-- **人工测试**：Ableton Live（VST3 和 AU 各测一遍），按 MANUAL_TESTS"插件"一节。
+- **人工测试**：Mac 上的 Ableton Live，VST3 和 AU 按 MANUAL_TESTS 第 17 节同一套测过。~~Windows 上的 Ableton 再测一遍 VST3。~~ 不做了（没有 Windows 电脑）。
 - **macOS 分发（不用开发者账号）**：技术上可行，普通用户照说明执行即可。
   - CI 给插件做本地签名（`codesign --sign -`，和现在的独立 App 一样）；Apple 芯片要求至少有本地签名，否则系统拒绝载入。
   - 用户复制插件：VST3 放 `~/Library/Audio/Plug-Ins/VST3/`，AU 放 `~/Library/Audio/Plug-Ins/Components/`。
   - 网上下载的文件带"隔离"标记，执行一条命令解除：`xattr -dr com.apple.quarantine <插件路径>`。
   - AU 新装后如果 DAW 没看到，执行 `killall -9 AudioComponentRegistrar` 或重新登录一次。
   - 只支持 Apple 芯片的 Mac；DAW 要以原生模式运行（Ableton 默认就是）。
-- **Windows**：`.vst3` 文件夹放进 `C:\Program Files\Common Files\VST3\`；不签名也能被 DAW 载入。
+- **Windows**：`.vst3` 文件夹放进 `C:\Program Files\Common Files\VST3\`；不签名也能被 DAW 载入。CI 照旧打出这个包。~~在 Windows 的 Ableton 里手测。~~ 业主没有 Windows 电脑，不测。
 - **商标**：只写"VST3 格式"；不使用 VST 标志。
 - **多实例同声**：每个实例从同一个固定种子开始，同样音色的两个实例漂移完全一样。要不要每实例不同种子，由业主听了再定。
 
@@ -214,7 +221,7 @@
 | 宿主频繁调用 `OnReset` 导致声音重启或实时问题 | **中高** | PR 4 插件版规则 |
 | 插件窗口关着时 CC 变化没存进工程 | 中 | PR 1 挪到 `OnIdle` |
 | 宿主给的块大于声明的最大块 | 低–中 | PR 4 拆块 |
-| 窗口缩放在各 DAW / Windows 高分屏表现不一 | 中 | 先几档固定大小，逐个测 |
+| 窗口缩放在各 DAW / Windows 高分屏表现不一 | 中 | Mac 的 Ableton 已测（连续缩放，保持比例）。~~Windows 高分屏手测~~ 不做了 |
 | 电脑键盘在 DAW 里弹不了 | 低（预期行为） | MANUAL_TESTS 说明 |
 | 自动化参数编号必须永久稳定 | 中（第 2 阶段） | 注册表数字 id + 防变化测试 |
 | `auval` 对参数和状态较严格 | 中 | CI 跑 `auval` |
