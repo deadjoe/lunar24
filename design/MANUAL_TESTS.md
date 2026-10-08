@@ -166,7 +166,7 @@
 | **SERVICE** | 顶部警告条 · OUTPUT CALIBRATION：V/OCT OUT、PRESS OUT、DAC VREF · TOUCH SENSOR：TOUCH、RELEASE、P MIN、P MAX · MPR121：CHARGE、DISCHARGE、DEBOUNCE · ENCODER：DIRECTION |
 
 - 选项直接点选（亮的是当前项）；开关（LEGATO、HOLD）的红灯亮 = ON。< > 到头时变灰，不循环。
-- 底部一排：左边 **PANEL** 十个色块（只换面板底色，菜单卡片仍是奶油色；本次打开有效，退出不记住），然后 **PRESET** A B C D（直接点选）、**LOAD**、**SAVE**、**INIT**，右边 **RESET PANEL**。
+- 底部一排：左边 **PANEL** 十个色块（只换面板底色，菜单卡片仍是奶油色；退出再打开还是上次选的），然后 **PRESET** A B C D（直接点选）、**LOAD**、**SAVE**、**INIT**，右边 **RESET PANEL**。
 - PLAY = SPLIT 时标题行出现 **EDITING LEFT C-F / RIGHT F#-B**；按左右分开的卡片标签显示 LEFT / RIGHT，共用的显示 GLOBAL。
 - 重新打开菜单回到上次的页签；RESET PANEL 后回到 PLAY。
 
@@ -302,11 +302,11 @@
 - 步骤：
   1. 点红色大旋钮打开键盘菜单。看底部左侧 **PANEL**。
   2. 从左到右点每个色块，每点一个就关掉菜单看面板，再打开菜单点下一个。
-  3. 点回最左边的奶油色。再点一次 **RESET PANEL**（确认两次）。退出应用再打开。
+  3. 点一个颜色后完全退出应用，再打开。然后 **RESET PANEL**（确认两次）。
 - 期望：
-  - 第 1 步：六个页签底部都有这一排。菜单卡片本身仍是原来的奶油色，黑字清楚。最左边奶油色块有黑框，表示当前颜色。
+  - 第 1 步：六个页签底部都有这一排。菜单卡片本身仍是原来的奶油色，黑字清楚。当前颜色的色块有黑框。
   - 第 2 步：面板底色马上换成那个色块。旋钮帽子、插孔、丝印、灯、键盘区、线的颜色不变。REC 上面的字和 WET / DRY / ALL 后面没有留下一块旧奶油色。
-  - 第 3 步：RESET PANEL 只复位声音和旋钮，不改面板颜色。退出再打开回到奶油色。
+  - 第 3 步：重新打开仍是退出前的颜色。RESET PANEL 只复位声音和旋钮，面板颜色不动。
 
 ### 1. VOICE MIXER
 

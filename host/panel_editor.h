@@ -104,7 +104,8 @@ struct EditorShared {
   CableLayer* cables = nullptr;
   std::vector<IControl*> menuControls;       // the keyboard menu overlay (KeyboardMenuControl)
   int menuPage = 0;                          // keyboard menu tab: kb_ui::Tab (0 = PLAY)
-  int panelFace = 0;                         // kb_ui::kPanelFaces index; this session only
+  int panelFace = 0;                         // kb_ui::kPanelFaces index
+  std::function<void(int)> savePanelFace;    // remember it for the next launch; not machine state
   std::uint32_t panelFaceRgb() const {
     const int i = std::clamp(panelFace, 0, kb_ui::kPanelFaceCount - 1);
     return kb_ui::kPanelFaces[i];
@@ -1371,6 +1372,7 @@ class KeyboardMenuControl : public IControl {
           theme::windowGap() = theme::rgb(s_.panelFaceRgb());
           if (IControl* bg = GetUI()->GetBackgroundControl())
             if (auto* panel = bg->As<IPanelControl>()) panel->SetPattern(IPattern(col(theme::windowGap())));
+          if (s_.savePanelFace) s_.savePanelFace(h.index);
         }
         break;
       case HitKind::Item: item(h, dbl); return;
@@ -1651,7 +1653,8 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   (void)regularLoaded;
   (void)boldLoaded;
 #endif
-  g->AttachPanelBackground(col(theme::kPanel));
+  theme::windowGap() = theme::rgb(shared.panelFaceRgb());
+  g->AttachPanelBackground(col(theme::windowGap()));
 
   const std::vector<Widget> widgets = build_panel_layout();
   const IRECT all = g->GetBounds();
