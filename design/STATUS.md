@@ -1,6 +1,6 @@
 # Lunar 24 — status
 
-_Last updated: 2026-10-08._ Module-by-module comparison with the Solar 42N manual:
+_Last updated: 2026-10-09._ Module-by-module comparison with the Solar 42N manual:
 `design/ARCHITECTURE.md`. Manual test steps and results: `design/MANUAL_TESTS.md`.
 Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md`.
 
@@ -57,8 +57,10 @@ Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md
 3. Plugins: phase 1 passed in Ableton Live on the Mac. VST3 and AU ran the same
    checks (MANUAL_TESTS 17); the MIDI-panel version is visible, and REC stays inert.
    ~~Windows Ableton VST3 hand test.~~ Not doing it: no Windows machine. CI still
-   builds that VST3 and runs Steinberg's validator. Phase 2 and phase 3 stay written
-   in PLUGIN_PLAN and are not started. AUv3 and CLAP are not planned.
+   builds that VST3 and runs Steinberg's validator. PLUGIN_PLAN section 8 inventories
+   phase 1 capabilities and recording/export checks still to verify; section 9 preserves
+   phase 2/3 analysis. The owner is considering options; neither phase is starting.
+   AUv3 and CLAP are not planned.
 
 ## Decided not to do (for now)
 - Keyboard pushbutton offsets (hold arrow + encoder; TWIN / SPLIT per-side offset).
