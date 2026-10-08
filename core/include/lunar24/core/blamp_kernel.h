@@ -112,11 +112,4 @@ inline double blampKernel(double u) {
   return kBlampLut[i] * (1.0 - fr) + kBlampLut[i + 1] * fr;
 }
 
-// True when the kernel supports of adjacent peak/valley corners overlap.
-// VCO and Schmitt triangles now sum those overlapping contributions; overlap
-// alone does not require falling back to the uncorrected waveform.
-inline bool blampSupportReachesHalfPeriod(double stepCycles) {
-  return stepCycles * kBlampSupport >= 0.5;
-}
-
 }  // namespace lunar24::core
