@@ -37,6 +37,7 @@
 #include <host/window_layout.h>
 #include <lunar24/core/state_default.h>
 #include "panel_editor.h"
+#include <host/panel_face_pref.h>
 
 using namespace iplug::igraphics;
 
@@ -158,6 +159,8 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
       (void)midiMapStore_.save();
       republishMidiMap();
     };
+    shared->panelFace = panelFaceIndex_;
+    shared->savePanelFace = [this](int index) { rememberPanelFace_(index); };
 #ifndef APP_API
     shared->recorderEnabled = false;
     shared->midiNoDevice = "MIDI comes from the DAW track";
@@ -375,6 +378,16 @@ void LunarHostPlugin::useMidiMapDirectory_(const std::string& dir)
   midiOctaveShift_.store(s.octaveShift, std::memory_order_relaxed);
   midiVelocityCurve_.store(static_cast<int>(s.velocityCurve), std::memory_order_relaxed);
   midiSplitNote_.store(s.splitNote, std::memory_order_relaxed);
+  panelFaceDir_ = dir;
+  panelFaceIndex_ = lunar24::host::loadPanelFaceIndex(dir, lunar24::host::kb_ui::kPanelFaceCount);
+  lunar24::host::theme::windowGap() =
+      lunar24::host::theme::rgb(lunar24::host::kb_ui::kPanelFaces[panelFaceIndex_]);
+}
+
+void LunarHostPlugin::rememberPanelFace_(int index)
+{
+  panelFaceIndex_ = index;
+  (void)lunar24::host::savePanelFaceIndex(panelFaceDir_, index, lunar24::host::kb_ui::kPanelFaceCount);
 }
 
 void LunarHostPlugin::setMidiInputDeviceName(const char* name)

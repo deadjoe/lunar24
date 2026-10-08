@@ -38,7 +38,9 @@ Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md
   plate; 10 cents a notch, a semitone with Option; encoder click / Command-click = back to 0.
 - Red encoder opens the KEYBOARD MENU (PLAY, EXPRESSION, ARP, SEQ, SEQ STEPS, SERVICE);
   CLOSE or Esc closes it. PLAY → NOTES switches single notes of the scale. SERVICE values
-  are stored only, except ENCODER DIRECTION.
+  are stored only, except ENCODER DIRECTION. Footer PANEL swatches recolor the face and
+  the choice is kept for the next launch (the menu card stays cream; RESET PANEL does not
+  change it).
 - DRONE VOICES keys 1-6 latch each voice on / off; all start off (launch, RESET PANEL).
 - RESET PANEL keeps keyboard presets A-D and MIDI settings.
 - Photo sensor (white dome, drones 1/2/4/5): press = hand over it, drag up = darker,

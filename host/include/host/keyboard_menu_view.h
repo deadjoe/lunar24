@@ -47,7 +47,29 @@ inline constexpr Box tab(int i) { return {652.f + i * 138.f, 1124, 786.f + i * 1
 inline constexpr Box sideHalf(int i) {
   return {kSide.l + 1 + 106.f * i + (i ? 1.f : 0.f), kSide.t + 1, kSide.l + 1 + 106.f * (i + 1), kSide.b - 1};
 }
-// ---- footer: presets A-D (manual p.19) and RESET PANEL ------------------------------------------
+// ---- footer: panel face, presets A-D (manual p.19) and RESET PANEL ------------------------------
+// Ten faces. Index 0 is the printed warm cream and the default. Only the panel fill follows
+// these; the menu card stays kPaper. Not a parameter and not saved with the machine.
+inline constexpr int kPanelFaceCount = 10;
+inline constexpr std::uint32_t kPanelFaces[kPanelFaceCount] = {
+    0xe9e0d2,  // warm cream
+    0x8eaac2,  // steel blue
+    0xa993bd,  // dusk lilac
+    0x97b99e,  // sage
+    0xb8a798,  // warm stone
+    0xb69aa8,  // dusty rose
+    0xde2910,  // Chinese red
+    0xff4d3a,  // vermilion
+    0xe36a58,  // coral lacquer
+    0xf07a6a,  // light cinnabar
+};
+inline constexpr float kPanelSwatchL = 512.f, kPanelSwatchR = 996.f, kPanelSwatchGap = 6.f;
+inline constexpr Box panelSwatch(int i) {
+  const float w =
+      (kPanelSwatchR - kPanelSwatchL - kPanelSwatchGap * (kPanelFaceCount - 1)) / float(kPanelFaceCount);
+  const float x = kPanelSwatchL + float(i) * (w + kPanelSwatchGap);
+  return {x, 1438.f, x + w, 1466.f};
+}
 inline constexpr float kFooterRule = 1424;
 inline constexpr Box kPresetSlots{1100, 1434, 1280, 1470};  // A | B | C | D
 inline constexpr Box kPresetLoad{1292, 1434, 1374, 1470};
@@ -247,7 +269,9 @@ inline std::string optionText(P id, int i) {
 }
 
 // ---- hit testing -------------------------------------------------------------------------------
-enum class HitKind : std::uint8_t { None, Close, Tab, Side, Slot, Load, Save, Init, Reset, Item, Pad, Fader, Gate, Note };
+enum class HitKind : std::uint8_t {
+  None, Close, Tab, Side, Slot, Load, Save, Init, Reset, Face, Item, Pad, Fader, Gate, Note
+};
 // Item: index = kItems index; sub = option (segmented), -1 / +1 (stepper arrows, TEMPO
 // nudge; 0 = the value between them), semitone (root keys, -1 = between keys), 0 = knob.
 struct Hit {
@@ -267,6 +291,8 @@ inline Hit hitTest(int page, bool split, float x, float y) {
   if (kPresetSave.contains(x, y)) return {HitKind::Save};
   if (kPresetInit.contains(x, y)) return {HitKind::Init};
   if (kReset.contains(x, y)) return {HitKind::Reset};
+  for (int i = 0; i < kPanelFaceCount; ++i)
+    if (panelSwatch(i).contains(x, y)) return {HitKind::Face, i};
   for (int i = 0; i < kItemCount; ++i) {
     const Item& it = kItems[i];
     if (it.tab != page || !it.box.contains(x, y)) continue;
@@ -318,6 +344,7 @@ struct SeqStep {
 struct State {
   std::function<double(P)> value;  // the value shown: per-side settings read the edited side
   int tab = kPlay;
+  int panelFace = 0;  // index into kPanelFaces
   bool split = false;
   int side = 0, presetSlot = 0;
   bool resetArmed = false, initArmed = false;
@@ -648,21 +675,15 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
           "Saved only, no effect on the sound - except ENCODER DIRECTION, which flips the red encoder's wheel.");
   }
 
-  // Footer: hint, presets, RESET PANEL.
+  // Footer: panel face, presets, RESET PANEL. The old per-tab hint yields this strip.
   rect({434, kFooterRule, 1966, kFooterRule + 2}, kRule, 0);
-  static const char* hints[kTabCount] = {
-      "Drag knobs up / down (Shift = fine), wheel, double-click = default.",
-      "Drag knobs up / down (Shift = fine), wheel, double-click = default.",
-      "Hold plates with MODE = ARPEGGIATOR (PLAY tab).",
-      "Hold a plate with MODE = SEQUENCER (PLAY tab).",
-      "",
-      "Mirrors the Solar 42N calibration menu (manual p.20).",
-  };
-  if (st.tab == kSteps) {
-    label({434, 1430, 1000, 1452}, 13, kMuted, "Drag a fader: note above the held plate (double-click = 0).");
-    label({434, 1451, 1000, 1473}, 13, kMuted, "Dim steps are past LENGTH (SEQ tab); GATE off = a rest.");
-  } else {
-    label({434, 1434, 1000, 1470}, 14, kMuted, hints[std::clamp(st.tab, 0, kTabCount - 1)]);
+  label({434, 1434, 508, 1470}, 13, kMuted, "PANEL", true);
+  for (int i = 0; i < kPanelFaceCount; ++i) {
+    const Box b = panelSwatch(i);
+    const bool on = st.panelFace == i;
+    if (on) rect({b.l - 2.f, b.t - 2.f, b.r + 2.f, b.b + 2.f}, kInk, 4);
+    rect(b, (on || hot(b)) ? kInk : kRule, 3);
+    rect({b.l + 2.f, b.t + 2.f, b.r - 2.f, b.b - 2.f}, kPanelFaces[i], 2);
   }
   label({1010, 1434, 1092, 1470}, 14, kMuted, "PRESET", true, 2);
   segmented(kPresetSlots, 4, st.presetSlot, false, [](int i) { return std::string(1, char('A' + i)); });
