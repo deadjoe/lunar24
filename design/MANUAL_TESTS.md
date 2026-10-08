@@ -1554,9 +1554,9 @@
 
 **安装（Windows）**：下载 **Lunar24-Plugins-Windows**，解开得到 `Lunar24.vst3` 文件夹，整个复制到 `C:\Program Files\Common Files\VST3\`，在 Ableton 里 Rescan。
 
-下面的测试先用 **VST3** 版走一遍；T17.10 再用 AU 版重复关键几项。
+下面的测试用 **VST3** 走一遍。AU 用同一套再走一遍（T17.10）。
 
-**T17.1 载入、弹奏、面板** ✅（MIDI 面板的版本号为新加，待复测）
+**T17.1 载入、弹奏、面板** ✅（2026-10-08：MIDI 面板有明确的版本号；REC 点击无反应，和设计一致）
 - 步骤：
   1. 新建一条 MIDI 轨，把 **Lunar 24**（VST3）拖到轨上；插件窗口自动打开。
   2. 选中这条轨（Arm），用 MPK 弹几个音；再按 **M** 打开 Ableton 的电脑 MIDI 键盘，用电脑键盘弹。
@@ -1618,13 +1618,14 @@
   - 第 1 步：和独立 App 的 T0.4 一样恢复出厂，只有一下很短的淡出淡入。
   - 第 2 步：切换时有一下很短的声音（机器按新采样率重建，和 RESET 时那一下类似），随后正常出声；面板设置不变，音高不变。
 
-**T17.10 AU 版** ✅
-- 步骤：用 **Lunar 24（AU）** 重复 T17.1、T17.3、T17.4。
+**T17.10 AU 版** ✅（2026-10-08：和 VST3 同一套 T17.1–T17.9，结果一致）
+- 步骤：用 **Lunar 24（AU）** 重复 T17.1–T17.9。
 - 期望：和 VST3 版一样。
+- 结果：和 VST3 一致，没有问题。VST3 和 AU 编的是同一份插件代码，见 PLUGIN_PLAN。
 
 ## 还没测的（⏳）
 
-- 第 17 节插件的 Windows VST3：随 Windows 版一起测（Mac 上 VST3 和 AU 的 T17.1–T17.10 已通过）。
+- ~~第 17 节插件的 Windows VST3：随 Windows 版一起测。~~ 不做了（2026-10-08）：业主没有 Windows 电脑，不在 Windows 的 Ableton 里测。CI 仍编出 Windows VST3，并用 validator 检查它能否被宿主加载。Mac 上 VST3 和 AU 的 T17.1–T17.10 已通过。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T0.1W、T4.1、T8.7、T12.18 走一遍。窗口与 DPI/文字的具体检查见 T0.1W。
 - T8.8：高采样率、小缓冲下切卡带不掉音（独立 App / VST3 / AU，96 / 192 kHz、64 样本；记录实际支持的配置）。
 - MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
