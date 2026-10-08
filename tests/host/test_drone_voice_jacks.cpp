@@ -69,9 +69,105 @@ int jumps(const std::vector<int>& v) {
   for (std::size_t i = 1; i < v.size(); ++i) j += (v[i] - v[i - 1] > 3 || v[i - 1] - v[i] > 3) ? 1 : 0;
   return j;
 }
+// Verify pitch through the actual mixer/filter output at both RANGE settings.
+// This catches a nominal-frequency getter being correct while the sound is not.
+void check_drone_pitch_and_clock() {
+  for (double sr : {44100.0, 48000.0, 88200.0, 96000.0}) {
+    for (int drone : {3, 6}) for (int low : {0, 1}) {
+      auto st = core::make_default_device_state(1);
+      const std::string prefix = "drone_" + std::to_string(drone) + ".";
+      for (int ch = 1; ch <= 10; ++ch) {
+        const std::string id = "mixer.ch" + std::to_string(ch) + "_vol";
+        set(st, id.c_str(), ch == (drone == 3 ? 3 : 10) ? 0.5 : 0.0);
+      }
+      set(st, (prefix + "hold").c_str(), 1);
+      set(st, (prefix + "noise").c_str(), 0);
+      set(st, (prefix + "pitch").c_str(), 1);
+      set(st, (prefix + "hi_low").c_str(), low);
+      set(st, (prefix + "fm").c_str(), 0);
+      set(st, (prefix + "am").c_str(), 0);
+      set(st, "effector.blend", 0);
+      set(st, "vcf.l_freq", 1); set(st, "vcf.r_freq", 1);
+      set(st, "vcf.l_res", 0); set(st, "vcf.r_res", 0);
+      host::StandaloneAudioEngine e;
+      CHECK(e.prepare(1, sr, kBlock, 0, 2));
+      CHECK(e.applyDeviceState(st, sr, kBlock, 0, 2) == host::StandaloneAudioEngine::StateApplyStatus::Accepted);
+      if (!e.runtime()) { CHECK(false); return; }
+      const double target = drone == 3 ? e.runtime()->drone3PitchHz() : e.runtime()->drone6PitchHz();
+      double left[kBlock]{}, right[kBlock]{};
+      double* outs[] = {left, right};
+      double prev = 0.0, first = 0.0, last = 0.0;
+      int count = 0;
+      for (int pos = 0; pos < static_cast<int>(sr); pos += kBlock) {
+        e.processBlock(nullptr, outs, 0, 2, kBlock);
+        for (int i = 0; i < kBlock; ++i) {
+          const double x = left[i];
+          if (pos + i > sr * 0.25 && prev <= 0.0 && x > 0.0) {
+            const double at = pos + i - 1 - prev / (x - prev);
+            if (count++ == 0) first = at;
+            last = at;
+          }
+          prev = x;
+        }
+      }
+      CHECK(count > 2);
+      const double measured = (count - 1) * sr / (last - first);
+      CHECK(std::fabs(1200.0 * std::log2(measured / target)) < 1.0);
+    }
+    // Both published LF outputs and fractional S&H dividers, including the
+    // existing initial-high clock edge. S&H values may change; edge counts may not.
+    auto st = core::make_default_device_state(1);
+    for (int drone : {3, 6}) {
+      const std::string prefix = "drone_" + std::to_string(drone) + ".";
+      set(st, (prefix + "rate").c_str(), 0.999);
+      set(st, (prefix + "rate_switch").c_str(), 1);
+      set(st, (prefix + "divider").c_str(), 0.1);  // divide by 2.5
+    }
+    host::StandaloneAudioEngine e;
+    CHECK(e.prepare(1, sr, kBlock, 0, 2));
+    CHECK(e.applyDeviceState(st, sr, kBlock, 0, 2) == host::StandaloneAudioEngine::StateApplyStatus::Accepted);
+    if (!e.runtime()) { CHECK(false); return; }
+    double left = 0.0, right = 0.0;
+    double* outs[] = {&left, &right};
+    double prev[2]{}, lastSh[2]{}, accumulator[2]{};
+    int edges[2]{}, captures[2]{};
+    for (int i = 0; i < static_cast<int>(sr / 4); ++i) {
+      e.processBlock(nullptr, outs, 0, 2, 1);
+      const auto& rt = *e.runtime();
+      for (int voice = 0; voice < 2; ++voice) {
+        const double sq = rt.controlVoltageAt(voice == 0 ? core::JackId::drone_3_cv_out : core::JackId::drone_6_cv_out);
+        const double sh = voice == 0 ? rt.sampleHold3Cv() : rt.sampleHold6Cv();
+        bool capture = false;
+        if (sq > 0 && prev[voice] <= 0) {
+          ++edges[voice];
+          if (edges[voice] > 1) {
+            const double hz = voice == 0 ? rt.drone3RateHz() : rt.drone6RateHz();
+            CHECK(std::fabs((i + 1) - (edges[voice] - 1) * sr / hz) <= 1.00001);
+          }
+          accumulator[voice] += 1.0;
+          if (accumulator[voice] >= 2.5) { accumulator[voice] -= 2.5; capture = true; }
+        }
+        CHECK((sh != lastSh[voice]) == capture);
+        if (capture) ++captures[voice];
+        prev[voice] = sq; lastSh[voice] = sh;
+      }
+    }
+    CHECK(edges[0] > 40 && edges[1] > 40);
+    CHECK_EQ(captures[0], static_cast<int>(edges[0] / 2.5));
+    CHECK_EQ(captures[1], static_cast<int>(edges[1] / 2.5));
+    e.postParameter(core::ParameterId::drone_3_rate, 0);
+    e.postParameter(core::ParameterId::drone_6_rate, 0);
+    for (int i = 0; i < 1000; ++i) {
+      e.processBlock(nullptr, outs, 0, 2, 1);
+      CHECK_EQ(e.runtime()->sampleHold3Cv(), lastSh[0]);
+      CHECK_EQ(e.runtime()->sampleHold6Cv(), lastSh[1]);
+    }
+  }
+}
 }  // namespace
 
 int main() {
+  check_drone_pitch_and_clock();
   // LFO OUT: patched into VCO A's V/OCT, the square flips the VCO between two pitches.
   {
     core::DeviceStateV1 st = core::make_default_device_state(1);

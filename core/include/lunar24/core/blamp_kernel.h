@@ -11,7 +11,7 @@
 // result. Both users are frozen to the SAME L=8 window:
 //
 //   * Vco::triangleBlampCorr (VCO triangle: slope reversal at the peak/valley)
-//   * SchmittOsc::railBlampCorr (Schmitt ramp: slope reversal at the rail clamp)
+//   * SchmittOsc::triangleBlampCorr (Schmitt ramp: slope reversal at the threshold)
 //
 // Windowed analytic BLAMP residual (Esqueda, Valimaki & Bilbao, "Rounding Corners
 // with BLAMP", Proc. DAFx-16, Brno, 2016).
@@ -110,18 +110,6 @@ inline double blampKernel(double u) {
   const int i = static_cast<int>(tk);
   const double fr = tk - (double)i;
   return kBlampLut[i] * (1.0 - fr) + kBlampLut[i + 1] * fr;
-}
-
-// True when the support radius has reached half a period, i.e. when the peak and
-// valley corners merge and the phase-local corner model is no longer verifiable.
-// `stepCycles` is the caller's per-sample phase increment in cycles. Both callers
-// reach the SAME physical predicate because each passes its own increment:
-//   VCO triangle: step = dt -> 8*dt >= 0.5
-//   Schmitt ramp: step = 0.5*r -> 8*(r/2) = 4r >= 0.5 <=> M = 1/r <= 8
-// On this branch the caller must return the bounded naive waveform (NO correction)
-// and list the range honestly (not as improved coverage).
-inline bool blampSupportReachesHalfPeriod(double stepCycles) {
-  return stepCycles * kBlampSupport >= 0.5;
 }
 
 }  // namespace lunar24::core

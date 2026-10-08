@@ -245,3 +245,11 @@ Keep these unless a listening test or a real bug says otherwise.
   nothing) while the UI thread installs the new machine, then fades back in. The audio thread
   never waits or allocates; a seamless double-buffered swap is the upgrade if the short gap
   is ever audible. Hosts wrap every engine call from their audio callback in an `AudioScope`.
+
+- **DRONE 3/6 retain fractional threshold-crossing time** (2026-10-08): the audio and
+  internal LF Schmitt oscillators integrate continuous phase instead of clamping away
+  each sample's overshoot. BLAMP follows the actual corners, including overlapping
+  supports. This corrects pitch plateaus and sample-rate-dependent detuning; existing
+  patches can sound higher and their FM/AM/S&H timing can shift. The triangle, seeded
+  tolerance, parameter mappings, envelopes and latching keys are retained. This is a
+  numerical correction to the software model, not a claim of circuit-level replication.

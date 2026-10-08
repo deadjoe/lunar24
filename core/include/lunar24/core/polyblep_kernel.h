@@ -124,13 +124,9 @@ namespace lunar24::core {
 // overlap and the phase-local model this residual is built on no longer holds.
 inline constexpr double kPolyblepMaxDt = 0.5;
 
-// True when the caller's increment has left the kernel's domain of definition.
-// Mirrors blampSupportReachesHalfPeriod in blamp_kernel.h so both discontinuity
-// classes expose the same shape of predicate and a caller can test either without
-// knowing which family it is holding. NOTE the difference in what the caller must do:
-// the BLAMP header's callers return the bounded naive waveform on that branch, while
-// here option (B) means there is no fallback at all -- a true result is a CONTRACT
-// VIOLATION to be reported, not a branch to be handled.
+// True at or beyond the half-period boundary. At dt == 0.5 the correction
+// windows touch and the residual is still within its declared domain; only
+// dt > 0.5 violates the contract. This query does not apply a runtime fallback.
 inline bool polyblepSupportReachesHalfPeriod(double dt) {
   return dt >= kPolyblepMaxDt;
 }
