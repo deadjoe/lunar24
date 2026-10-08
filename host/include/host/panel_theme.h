@@ -19,7 +19,14 @@ inline constexpr Rgb rgb(std::uint32_t hex) {
   return {static_cast<std::uint8_t>(hex >> 16), static_cast<std::uint8_t>(hex >> 8), static_cast<std::uint8_t>(hex)};
 }
 
-constexpr Rgb kPanel{233, 224, 210};       // warm light panel
+constexpr Rgb kPanel{233, 224, 210};       // warm light panel (the default face)
+
+// The one-pixel gap behind the panel on Windows (WM_ERASEBKGND). The KEYBOARD MENU
+// face row updates this on the UI thread. Not machine state; starts as warm cream.
+inline Rgb& windowGap() {
+  static Rgb color = kPanel;
+  return color;
+}
 constexpr Rgb kInk{12, 10, 10};            // frames, tabs, text
 constexpr Rgb kRed{203, 32, 38};           // "env", output markers
 constexpr Rgb kSkirt{52, 52, 52};          // knob skirts / ticks

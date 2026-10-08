@@ -2,6 +2,11 @@
 
 Keep these unless a listening test or a real bug says otherwise.
 
+- **Panel face colour is a session choice** (owner, 2026-10-09). The KEYBOARD MENU footer
+  PANEL row picks one of ten faces, warm cream first. Only the panel fill and the REC / DRY
+  cover patches follow it. Knob caps, jacks, silk, LEDs, the keybed, cables and the Mac
+  case stay. The menu card stays cream so its black text stays readable on a red face.
+  The choice is not saved, and RESET PANEL does not change it.
 - **Panel = the official Solar 42N drawing.** Labels, frames and tabs are extracted by
   `tools/gen_panel_art.py` into `host/include/host/panel_art.generated.h`; control positions
   live in `host/include/host/panel_ui_layout.h`. Branded "Lunar 24" (non-commercial; the

@@ -104,6 +104,11 @@ struct EditorShared {
   CableLayer* cables = nullptr;
   std::vector<IControl*> menuControls;       // the keyboard menu overlay (KeyboardMenuControl)
   int menuPage = 0;                          // keyboard menu tab: kb_ui::Tab (0 = PLAY)
+  int panelFace = 0;                         // kb_ui::kPanelFaces index; this session only
+  std::uint32_t panelFaceRgb() const {
+    const int i = std::clamp(panelFace, 0, kb_ui::kPanelFaceCount - 1);
+    return kb_ui::kPanelFaces[i];
+  }
   int seqSide = 0;                           // menu side being edited under SPLIT: 0 = left, 1 = right
   int presetSlot = 0;                        // keyboard preset the LOAD / SAVE / INIT buttons act on: 0..3 = A..D
   std::function<void()> factoryReset;        // the plugin's requestFactoryReset (RESET PANEL)
@@ -486,8 +491,13 @@ struct GraphicsSink {
 // Drawn once into a cached layer.
 class BackgroundControl : public IControl {
  public:
-  explicit BackgroundControl(const IRECT& r) : IControl(r) { SetIgnoreMouse(true); }
+  BackgroundControl(const IRECT& r, EditorShared& s) : IControl(r), s_(s) { SetIgnoreMouse(true); }
   void Draw(IGraphics& g) override {
+    const std::uint32_t face = s_.panelFaceRgb();
+    if (face != painted_) {  // the cached layer is the old face until it is dropped
+      layer_ = nullptr;
+      painted_ = face;
+    }
     if (!g.CheckLayer(layer_)) {
       g.StartLayer(this, mRECT);
       GraphicsSink sink{g};
@@ -496,7 +506,7 @@ class BackgroundControl : public IControl {
       // already rasterized glyphs again when the cached layer is composited.
       sink.drawText = false;
 #endif
-      art::drawPanelArt(sink);
+      art::drawPanelArt(sink, face);
       layer_ = g.EndLayer();
     }
     g.DrawLayer(layer_);
@@ -508,6 +518,8 @@ class BackgroundControl : public IControl {
   }
 
  private:
+  EditorShared& s_;
+  std::uint32_t painted_ = art::kPanelRgb;
   ILayerPtr layer_;
 };
 
@@ -1116,7 +1128,7 @@ class RecordControl : public IControl {
     GraphicsSink sink{g};
     const bool on = s_.isRecording();
     art::drawRecordButton(sink, float(w_.cx), float(w_.cy), float(w_.w / 2), on,
-                          on && s_.rec.seconds ? int(s_.rec.seconds()) : 0, mMouseIsOver);
+                          on && s_.rec.seconds ? int(s_.rec.seconds()) : 0, mMouseIsOver, s_.panelFaceRgb());
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
     if (s_.rec.toggle) s_.rec.toggle(s_.recordSource);
@@ -1142,7 +1154,7 @@ class RecordSourceControl : public IControl {
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
     art::drawRecordSource(sink, float(w_.cx), float(w_.cy), float(w_.w / 2), s_.recordSource,
-                          hexOf(theme::cap(w_.cap)), mMouseIsOver && !s_.isRecording());
+                          hexOf(theme::cap(w_.cap)), mMouseIsOver && !s_.isRecording(), s_.panelFaceRgb());
   }
   void OnMouseDown(float, float, const IMouseMod& mod) override {
     if (s_.isRecording()) return;
@@ -1275,6 +1287,7 @@ class KeyboardMenuControl : public IControl {
     kb_ui::State st;
     st.value = [this](ParameterId id) { return s_.value(static_cast<std::uint32_t>(id)); };
     st.tab = s_.menuPage;
+    st.panelFace = s_.panelFace;
     st.split = s_.split();
     st.side = s_.seqSide;
     st.presetSlot = s_.presetSlot;
@@ -1352,6 +1365,14 @@ class KeyboardMenuControl : public IControl {
       case HitKind::Save:
       case HitKind::Init: preset(h.kind); break;
       case HitKind::Reset: reset(); break;
+      case HitKind::Face:  // panel fill only; presets and RESET PANEL stay sound settings
+        if (h.index >= 0 && h.index < kb_ui::kPanelFaceCount) {
+          s_.panelFace = h.index;
+          theme::windowGap() = theme::rgb(s_.panelFaceRgb());
+          if (IControl* bg = GetUI()->GetBackgroundControl())
+            if (auto* panel = bg->As<IPanelControl>()) panel->SetPattern(IPattern(col(theme::windowGap())));
+        }
+        break;
       case HitKind::Item: item(h, dbl); return;
       case HitKind::Pad: {  // ARP tab: arpeggiator pattern, SEQ tab: sequencer pattern
         const bool seqRow = s_.menuPage == kb_ui::kSeq;
@@ -1634,7 +1655,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
 
   const std::vector<Widget> widgets = build_panel_layout();
   const IRECT all = g->GetBounds();
-  g->AttachControl(new BackgroundControl(all));
+  g->AttachControl(new BackgroundControl(all, shared));
 
   shared.jacks.clear();
   shared.jackRects.clear();

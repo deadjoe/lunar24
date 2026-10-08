@@ -114,6 +114,18 @@ int main() {
   CheckSink art;
   host::art::drawPanelArt(art);
   CHECK_EQ(art.bad, 0);
+  // REC / DRY covers use the same sheen as the fill, including a non-cream face.
+  auto faceAt = [](float y, std::uint32_t face) {
+    const float t = std::min(std::max(y / 1552.f, 0.f), 1.f);
+    const float wash = 255.f * (1.f - t), a = 0.10f - 0.04f * t;
+    auto ch = [&](unsigned base) {
+      return static_cast<std::uint32_t>(std::lround(float(base) * (1.f - a) + wash * a));
+    };
+    return (ch((face >> 16) & 0xff) << 16) | (ch((face >> 8) & 0xff) << 8) | ch(face & 0xff);
+  };
+  CHECK_EQ(host::art::panelFaceAt(235.f), faceAt(235.f, host::art::kPanelRgb));
+  CHECK_EQ(host::art::panelFaceAt(315.f, 0x8eaac2u), faceAt(315.f, 0x8eaac2u));
+  CHECK(host::art::panelFaceAt(235.f, 0x8eaac2u) != host::art::panelFaceAt(235.f));
   CHECK(art.paths > 500);   // frames, printed marks, name plates
   CHECK(art.texts > 300);   // panel labels
   // The app-level MUTE / MIDI pair sits right of DRONE VOICES as a vertical pair whose
@@ -339,6 +351,19 @@ int main() {
       for (int k = i + 1; k < 5; ++k) CHECK(!overlap(footer[i], footer[k]));
       centre(i == 0 ? kb::segment(footer[0], 4, 0, false) : footer[i], x, y);
       for (int t = 0; t < kb::kTabCount; ++t) CHECK(kb::hitTest(t, true, x, y).kind == footerKind[i]);
+    }
+    CHECK_EQ(kb::kPanelFaces[0], 0xe9e0d2u);
+    CHECK_EQ(kb::kPanelFaceCount, 10);
+    for (int i = 0; i < kb::kPanelFaceCount; ++i) {
+      const Box b = kb::panelSwatch(i);
+      CHECK(inside(b, kb::kBounds) && b.t > kb::kFooterRule);
+      CHECK(!overlap(b, kb::kPresetSlots) && !overlap(b, kb::kPresetLoad) && !overlap(b, kb::kReset));
+      if (i > 0) CHECK(!overlap(b, kb::panelSwatch(i - 1)));
+      centre(b, x, y);
+      for (int t = 0; t < kb::kTabCount; ++t) {
+        const kb::Hit h = kb::hitTest(t, true, x, y);
+        CHECK(h.kind == kb::HitKind::Face && h.index == i);
+      }
     }
     for (int i = 0; i < 4; ++i) {
       centre(kb::segment(kb::kPresetSlots, 4, i, false), x, y);

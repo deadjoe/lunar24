@@ -611,20 +611,24 @@ void drawButton(Sink& s, float cx, float cy, float r, bool on, bool hover) {
   }
 }
 
-// The panel face colour at height y, sheen included (drawPanelArt: kPanel under a white 10% ->
-// black 6% vertical wash), for painting over a printed mark.
-inline std::uint32_t panelFaceAt(float y) {
+// The panel face colour at height y, sheen included (drawPanelArt: the face under a white 10% ->
+// black 6% vertical wash), for painting over a printed mark. `face` is the flat base
+// (default warm cream). REC and the DRY link must use the same base as the fill.
+inline std::uint32_t panelFaceAt(float y, std::uint32_t face = kPanelRgb) {
   const float t = std::fmin(std::fmax(y / 1552.f, 0.f), 1.f);
   const float wash = 255.f * (1.f - t), a = 0.10f - 0.04f * t;
-  auto ch = [&](int base) { return static_cast<std::uint32_t>(std::lround(base * (1.f - a) + wash * a)); };
-  return (ch(233) << 16) | (ch(224) << 8) | ch(210);
+  auto ch = [&](unsigned base) {
+    return static_cast<std::uint32_t>(std::lround(float(base) * (1.f - a) + wash * a));
+  };
+  return (ch((face >> 16) & 0xff) << 16) | (ch((face >> 8) & 0xff) << 8) | ch(face & 0xff);
 }
 
 // REC (not on the hardware), in the headphone socket's place: the printed headphone icon
 // above it is painted over with the label, which shows the elapsed time while recording.
 template <class Sink>
-void drawRecordButton(Sink& s, float cx, float cy, float r, bool recording, int seconds, bool hover) {
-  s.fillRect(cx - 28.f, cy - 66.f, cx + 28.f, cy - 22.f, panelFaceAt(cy - 44.f), 0.f);  // over the headphone icon
+void drawRecordButton(Sink& s, float cx, float cy, float r, bool recording, int seconds, bool hover,
+                      std::uint32_t face = kPanelRgb) {
+  s.fillRect(cx - 28.f, cy - 66.f, cx + 28.f, cy - 22.f, panelFaceAt(cy - 44.f, face), 0.f);  // over the headphone icon
   char label[16] = "REC";
   if (recording) {
     const int t = seconds < 0 ? 0 : seconds;
@@ -648,9 +652,10 @@ void drawRecordButton(Sink& s, float cx, float cy, float r, bool recording, int 
 // printed above it (the chosen one dark, the others faint).
 inline constexpr float kRecordSourceDeg[3] = {-40.f, 0.f, 40.f};
 template <class Sink>
-void drawRecordSource(Sink& s, float cx, float cy, float r, int source, std::uint32_t capRgb, bool hover) {
+void drawRecordSource(Sink& s, float cx, float cy, float r, int source, std::uint32_t capRgb, bool hover,
+                      std::uint32_t face = kPanelRgb) {
   static const char* names[3] = {"WET", "DRY", "ALL"};
-  s.fillRect(cx - 13.f, cy - r - 21.f, cx + 13.f, cy - r - 9.f, panelFaceAt(cy - r - 15.f), 0.f);  // link line behind DRY
+  s.fillRect(cx - 13.f, cy - r - 21.f, cx + 13.f, cy - r - 9.f, panelFaceAt(cy - r - 15.f, face), 0.f);  // link line behind DRY
   for (int i = 0; i < 3; ++i) {
     const float a = kRecordSourceDeg[i] * 3.14159265f / 180.f;
     s.text(cx + (r + 15.f) * std::sin(a), cy - (r + 15.f) * std::cos(a), 11.f,
@@ -785,8 +790,8 @@ void drawJoystick(Sink& s, float cx, float cy, float gateR, float x, float y, bo
 
 // Everything that does not move: panel, keybed, frames, tabs, printed icons, labels, logos.
 template <class Sink>
-void drawPanelArt(Sink& s) {
-  s.fillRect(0, 0, 2400, 1552, kPanelRgb, 0);
+void drawPanelArt(Sink& s, std::uint32_t face = kPanelRgb) {
+  s.fillRect(0, 0, 2400, 1552, face, 0);
   auto rect = [&s](float x0, float y0, float x1, float y1) {
     s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1); s.closePath();
   };

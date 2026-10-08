@@ -212,7 +212,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
     // Integer logical/physical conversion can leave a one-pixel strip.
     RECT client{};
     GetClientRect(hwnd, &client);
-    const auto color = lunar24::host::theme::kPanel;
+    const auto color = lunar24::host::theme::windowGap();
     HDC dc = reinterpret_cast<HDC>(wp);
     const COLORREF previous = SetDCBrushColor(dc, RGB(color.r, color.g, color.b));
     FillRect(dc, &client, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
