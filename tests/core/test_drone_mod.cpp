@@ -14,9 +14,8 @@
 //   * S&H cross-sr asserts the HOLD DURATION IN SECONDS only, never the held-value
 //     sequence (a per-sample-advancing noise stream makes values differ by sr as a
 //     physical necessity; the only sr-invariant is the period).
-//   * ALIASING is MEASURE-ONLY this slice (fix deferred to P3 exit by evidence):
-//     the folded harmonic (Schmitt) and the folded peak-instantaneous-frequency
-//     (FM, high fDev) are measured by Goertzel and recorded in FINDINGS.md.
+//   * Schmitt alias suppression is checked against a same-pitch naive triangle.
+//     The separate FmAmVoice high-deviation alias test remains a characterization.
 //   * NEW: measure AUDIBLE-BAND NOISE POWER (20 Hz..20 kHz) across
 //     44.1/48/88.2/96k. White noise is flat up to Nyquist, so a fixed amplitude
 //     spreads over a wider band at higher sr -> LESS power in the audible slice.
@@ -245,70 +244,137 @@ static bool first_folded_harmonic(double f0, double sr, int& order, double& alia
   return false;
 }
 
-// Pick a seed whose Schmitt oscillation gives a clean, loud mid-band fold (largest
-// f0 among the candidates that satisfy the cleanliness guards). Deterministic.
-static bool pick_schmitt_alias(double sr, std::uint64_t& seed, int& order,
-                               double& f0, double& aliasHz) {
-  double bestF0 = -1.0;
-  bool found = false;
-  for (std::uint64_t s = 1; s <= 32; ++s) {
-    core::SchmittOsc o(s, sr);
-    const double f0v = o.effectiveFreqHz();
-    int ord = 0;
-    double al = 0.0;
-    if (!first_folded_harmonic(f0v, sr, ord, al)) continue;
-    if (std::fabs(al - f0v) < 0.1 * f0v) continue;  // would collide with f0.
-    if (al < 0.05 * sr || al > 0.47 * sr) continue;  // keep off DC/Nyquist edges.
-    if (f0v > bestF0) {
-      bestF0 = f0v;
-      seed = s;
-      order = ord;
-      f0 = f0v;
-      aliasHz = al;
-      found = true;
-    }
-  }
-  return found;
-}
-
 }  // namespace
 
 // ---------------------------------------------------------------------------
 // Must-tests.
 // ---------------------------------------------------------------------------
 
-// Schmitt: frequency = chargeRate/(4*vT) with a dt-scaled rate. It must be sr
-// independent (same Hz at 44.1/48/88.2/96k) and match the analytic value.
-static bool test_schmitt_cross_sr() {
-  const std::uint64_t seed = 0x5A17u;
-  core::SchmittOsc ref(seed, kRates[0]);
-  const double expect = ref.effectiveFreqHz();
-  double minHz = 1e18, maxHz = -1e18;
-  for (const double sr : kRates) {
-    core::SchmittOsc o(seed, sr);
-    CHECK(std::fabs(o.effectiveFreqHz() - expect) < 1e-9);
-    const auto buf = render_schmitt(o, 48000);
-    const double hz = measure_freq_hz(buf, sr);
-    // The relaxation osc quantizes to integer ramp samples (see schmitt_osc.h), so
-    // the measured Hz is at most one sub-sample per half-swing below the continuous
-    // chargeRate/(4*vT) value — a few %. Use a 5 % bound that covers that, and that
-    // the buggy fixed-increment negative blows apart.
-    CHECK(std::fabs(hz - o.effectiveFreqHz()) < 0.05 * o.effectiveFreqHz());
-    minHz = std::min(minHz, hz);
-    maxHz = std::max(maxHz, hz);
+// Measure complete periods with interpolated crossings; a partial final period
+// must not consume the one-cent error budget, especially in the low range.
+static double schmitt_frequency(const std::vector<double>& samples, double sr) {
+  double first = 0.0, last = 0.0;
+  int crossings = 0;
+  for (std::size_t i = 32; i < samples.size(); ++i) {
+    if (samples[i - 1] <= 0.0 && samples[i] > 0.0) {
+      const double at = static_cast<double>(i - 1) -
+                        samples[i - 1] / (samples[i] - samples[i - 1]);
+      if (crossings++ == 0) first = at;
+      last = at;
+    }
   }
-  // Correct: cross-sr spread tiny (detector would say "same Hz everywhere").
-  CHECK((maxHz - minHz) < 0.05 * expect);
+  return crossings > 1 ? (crossings - 1) * sr / (last - first) : 0.0;
+}
 
-  // Negative: fixed 48k step makes frequency scale with sr -> wide spread.
-  double bmin = 1e18, bmax = -1e18;
-  for (const double sr : kRates) {
-    const auto b = render_schmitt_buggy_fixed48k(seed, sr, 48000);
-    const double hz = measure_freq_hz(b, sr);
-    bmin = std::min(bmin, hz);
-    bmax = std::max(bmax, hz);
+static bool test_schmitt_cross_sr() {
+  double worstCents = 0.0;
+  for (double sr : kRates) {
+    // Include adjacent frequencies that previously collapsed onto one plateau,
+    // low-range notes, and the seeded product voices' upper pitch region.
+    for (double target : {16.35, 220.0, 999.0, 1001.0, 1999.0, 2001.0,
+                          2499.0, 2501.0, 2650.114042387, 2671.271858799}) {
+      core::SchmittOsc osc(0x5A17u, sr);
+      osc.setFreqHz(target);
+      const double hz = schmitt_frequency(render_schmitt(osc, static_cast<std::size_t>(2 * sr)), sr);
+      CHECK(hz > 0.0);
+      const double cents = std::fabs(1200.0 * std::log2(hz / target));
+      CHECK(cents < 1.0);
+      worstCents = std::max(worstCents, cents);
+    }
+    // Construction still applies its seeded tolerance, once, to the base pitch.
+    core::SchmittOsc seeded(0x5A17u, sr);
+    const double expected = seeded.freqBaseHz() * (1.0 + seeded.toleranceOf());
+    const double measured = schmitt_frequency(render_schmitt(seeded, static_cast<std::size_t>(2 * sr)), sr);
+    CHECK(std::fabs(1200.0 * std::log2(measured / expected)) < 1.0);
   }
-  CHECK((bmax - bmin) > 0.5 * expect);  // detector sees the sr-dependence.
+  std::printf("Schmitt pitch: worst error %.6f cents across four sample rates\n", worstCents);
+  // The existing fixed-step/clamped implementation fails the same measurement.
+  const auto old = render_schmitt_buggy_fixed48k(0x5A17u, 48000.0, 96000);
+  core::SchmittOsc target(0x5A17u, 48000.0);
+  CHECK(std::fabs(1200.0 * std::log2(schmitt_frequency(old, 48000.0) /
+                                  target.effectiveFreqHz())) > 1.0);
+  return true;
+}
+
+static bool test_schmitt_modulation_and_pause() {
+  for (double sr : kRates) {
+    for (bool fm : {false, true}) for (bool am : {false, true}) {
+      core::SchmittOsc osc(1, sr), unmodulatedAmplitude(1, sr);
+      osc.setAmDepth(am ? 1.0 : 0.0);
+      // Independent threshold-reflection integrator verifies the raw square's
+      // phase through changing pitch/CV/FM, including reversals between samples.
+      double ramp = 0.0, direction = 1.0;
+      for (int i = 0; i < 12000; ++i) {
+        const double mod = (i % 317 < 173) ? 0.8 : -0.8;
+        const double hz = 400.0 + (i % 1700) * 0.7;
+        const double cv = (i % 911 < 450) ? 0.3 : -0.2;
+        for (auto* o : {&osc, &unmodulatedAmplitude}) {
+          o->setFreqHz(hz);
+          o->setPitchCvOctaves(cv);
+          o->setFmOctaves(fm ? 3.0 : 0.0);
+          o->setFmDevHz(fm ? 75.0 : 0.0);
+          o->setMod(mod);
+        }
+        const double f = hz * std::exp2(cv + (fm ? 3.0 * mod : 0.0)) + (fm ? 75.0 * mod : 0.0);
+        ramp += direction * 2.0 * f / sr;
+        if (ramp > 0.5) { ramp = 1.0 - ramp; direction = -1.0; }
+        if (ramp < -0.5) { ramp = -1.0 - ramp; direction = 1.0; }
+        double x = 0.0, dry = 0.0;
+        osc.tick(&x); unmodulatedAmplitude.tick(&dry);
+        CHECK(std::isfinite(x) && std::fabs(x) < 1.1);
+        CHECK(std::fabs(x - dry * (am ? 1.0 + mod : 1.0)) < 1e-12);
+        if (std::fabs(ramp) > 1e-8) CHECK_EQ(osc.square(), ramp > 0.0 ? 1.0 : -1.0);
+      }
+    }
+    core::SchmittOsc paused(1, sr), reference(1, sr);
+    paused.setFreqHz(137.3); reference.setFreqHz(137.3);
+    for (int i = 0; i < 237; ++i) { double x; paused.tick(&x); reference.tick(&x); }
+    const double square = paused.square();
+    paused.setFreqHz(0.0);
+    double held = 0.0; paused.tick(&held);
+    for (int i = 0; i < 100; ++i) {
+      double x; paused.tick(&x);
+      CHECK_EQ(x, held); CHECK_EQ(paused.square(), square);
+    }
+    paused.setFreqHz(137.3);
+    paused.setPitchSemitones(core::SchmittOsc::kSilenceSt);
+    for (int i = 0; i < 100; ++i) { double x; paused.tick(&x); CHECK_EQ(x, 0.0); }
+    paused.setPitchSemitones(0.0);
+    for (int i = 0; i < 1000; ++i) {
+      double x, y; paused.tick(&x); reference.tick(&y); CHECK_EQ(x, y);
+    }
+    // Strong positive CV can cross many periods per frame. It must not create
+    // unbounded loops or poison the phase when the pitch returns to normal.
+    for (double f : {1e-9, sr * 0.49, sr * 0.5, sr * 1.7, 1e8, 137.3}) {
+      paused.setFreqHz(f);
+      for (int i = 0; i < 1000; ++i) {
+        double x; paused.tick(&x); CHECK(std::isfinite(x) && std::fabs(x) < 0.6);
+      }
+    }
+    paused.setFreqHz(100.0); paused.setFmDevHz(200.0); paused.setMod(-1.0);
+    paused.tick(&held);
+    for (int i = 0; i < 100; ++i) { double x; paused.tick(&x); CHECK_EQ(x, held); }
+  }
+  return true;
+}
+
+static bool test_schmitt_lf_edges() {
+  for (double sr : kRates) for (double hz : {0.13, 3.71, 19.97, 199.7}) {
+    core::SchmittOsc osc(1, sr);
+    osc.setFreqHz(hz);
+    double prev = osc.square();
+    int edge = 0;
+    for (int i = 0; i < static_cast<int>(10 * sr); ++i) {
+      double x; osc.tick(&x);
+      const double sq = osc.square();
+      if (sq > 0.0 && prev < 0.0) {
+        ++edge;
+        CHECK(std::fabs((i + 1) - edge * sr / hz) <= 1.00001);
+      }
+      prev = sq;
+    }
+    CHECK(std::abs(edge - static_cast<int>(10 * hz)) <= 1);
+  }
   return true;
 }
 
@@ -555,32 +621,33 @@ static bool test_fm_am_buffer_determinism() {
 }
 
 // ---------------------------------------------------------------------------
-// MEASURE-ONLY tests (measure, record in FINDINGS, don't fix this slice).
+// Spectral regression and FM/noise characterization.
 // ---------------------------------------------------------------------------
 
-// Schmitt aliasing: the folded first harmonic above Nyquist, relative to the
-// fundamental. A clean low-sample-rate case (select the loudest clean fold).
+// Coherent one-second renders keep spectral leakage out of the comparison.
+// Compare against an uncorrected triangle at the SAME actual frequency, not the
+// old clamped oscillator whose different pitch would invalidate the measurement.
 static bool test_schmitt_aliasing() {
-  const double sr = 8000.0;  // N = 4 kHz; seeded f0 (20..2000) is a real fraction
-                             // of Nyquist, so harmonics genuinely fold.
-  std::uint64_t seed = 0;
-  int order = 0;
-  double f0 = 0.0, aliasHz = 0.0;
-  if (!pick_schmitt_alias(sr, seed, order, f0, aliasHz)) {
-    CHECK(false);  // no clean fold among candidates -> fixture bug, not a pass.
-    return true;
+  for (double sr : kRates) for (double f : {503.0, 1001.0, 2501.0, 5003.0, 10003.0, 21001.0}) {
+    core::SchmittOsc osc(1, sr);
+    osc.setFreqHz(f);
+    const int n = static_cast<int>(sr);
+    std::vector<double> corrected(n), naive(n);
+    for (int i = 0; i < n; ++i) {
+      osc.tick(&corrected[i]);
+      const double cycles = 0.75 + (i + 1) * f / sr;
+      naive[i] = 2.0 * std::fabs(cycles - std::floor(cycles) - 0.5) - 0.5;
+    }
+    int order = 0;
+    double aliasHz = 0.0;
+    CHECK(first_folded_harmonic(f, sr, order, aliasHz));
+    const double fund = goertzel_mag(corrected, f, sr);
+    const double alias = goertzel_mag(corrected, aliasHz, sr);
+    const double plainAlias = goertzel_mag(naive, aliasHz, sr);
+    CHECK(fund > 0.1 * n);
+    CHECK(alias < plainAlias * 0.6);
+    CHECK(alias / fund < std::pow(10.0, -30.0 / 20.0));
   }
-  core::SchmittOsc o(seed, sr);
-  const auto buf = render_schmitt(o, 65536);
-  const double fund = goertzel_mag(buf, f0, sr);
-  const double alias = goertzel_mag(buf, aliasHz, sr);
-  CHECK(fund > 0.0);
-  CHECK(alias > 0.0);
-  const double db = 20.0 * std::log10((alias + 1e-12) / (fund + 1e-12));
-  std::printf("P3-2 schmitt-alias: sr=%.0f f0=%.2fHz fold-order=%d alias=%.2fHz -> %.2f dB\n",
-              sr, f0, order, aliasHz, db);
-  // Aliasing is present (not a numerical ghost): folded component > -60 dB rel.
-  CHECK(db > -80.0);
   return true;
 }
 
@@ -776,6 +843,8 @@ static bool test_noise_variance_contract() {
 int main() {
   test_schmitt_cross_sr();
   test_schmitt_buffer_independence();
+  test_schmitt_modulation_and_pause();
+  test_schmitt_lf_edges();
   test_noise_reproducible_buffer();
   test_sandhold_cross_sr_duration();
   test_sandhold_buffer_independence();
