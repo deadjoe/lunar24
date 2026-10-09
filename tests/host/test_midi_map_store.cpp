@@ -68,11 +68,15 @@ static void corrupt(const std::string& path, std::size_t size = 17) {
 
 int main() {
   const auto dir = makeTempDir("profiles-UTF8-\xc3\xa9");
+  const auto legacyPath = host::app_state_file_ops::joinUtf8(dir, "lunar24-midi-map.bin");
+  corrupt(legacyPath);
+  const auto legacyBytes = readFile(legacyPath);
   host::MidiMapStore store;
   store.setDirectory(dir);
   CHECK(store.load() == host::MidiMapLoadOutcome::NoFile);
   const auto first = store.id();
   CHECK_EQ(store.map().count(), 0u);
+  CHECK(readFile(legacyPath) == legacyBytes);
   CHECK(store.rename("Studio"));
   auto binding = ccBinding("Controller A", 3, 24, core::ParameterId::vcf_l_freq);
   binding.mode = core::MidiInputMode::relativeTwosComplement;
@@ -157,6 +161,23 @@ int main() {
     CHECK(!store.save());
   }
   CHECK(store.save());
+
+  // A failed last-selection write must not half-switch or leave a new orphan profile.
+  auto preferenceFailure = real;
+  preferenceFailure.atomicReplace = [](void*, const char* from, const char* to) {
+    if (std::filesystem::u8path(to).filename() == "selected.txt") return false;
+    return host::app_state_file_ops::realOps().atomicReplace(nullptr, from, to);
+  };
+  store.setFileOps(preferenceFailure, nullptr);
+  CHECK(!store.select(first));
+  CHECK_EQ(store.id(), second);
+  CHECK(store.refresh());
+  const auto profileCount = store.profiles().size();
+  CHECK(!store.create("Failed creation", true));
+  CHECK_EQ(store.id(), second);
+  CHECK(store.refresh());
+  CHECK_EQ(store.profiles().size(), profileCount);
+  store.setFileOps(real, nullptr);
 
   // A bad target never replaces the working map; bad records are not overwritten at startup.
   const auto live = store.livePath();

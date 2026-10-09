@@ -475,7 +475,7 @@ class StandaloneAudioEngine {
   // name (nullptr: unknown, as in a plugin, so bindings for any device match). The audio
   // thread seeds bindings from its own current parameter values.
   void publishMidiMap(const lunar24::core::MidiMap& map, const char* inputDevice,
-                      const lunar24::core::MidiRigSettings& settings = {});
+                      const lunar24::core::MidiRigSettings& settings = {}, bool resetBindings = true);
   // Pin one complete configuration from filtering through application of a MIDI message.
   class MidiMessageScope {
    public:
@@ -667,6 +667,7 @@ class StandaloneAudioEngine {
   struct MidiMapSlot {
     lunar24::core::MidiMap map;
     lunar24::core::MidiRigSettings settings;
+    std::uint64_t bindingRevision = 0;
     char device[lunar24::core::kMidiBindingDeviceCapacity] = {};
     bool deviceKnown = true;  // false: a plugin, every binding's device matches
   };
@@ -675,6 +676,8 @@ class StandaloneAudioEngine {
   std::atomic<std::uint32_t> midiMapMiddle_{1};
   std::uint32_t midiMapWriteIdx_ = 2;  // UI only
   std::uint32_t midiMapReadIdx_ = 0;   // audio only
+  std::uint64_t midiUiBindingRevision_ = 0;    // UI only
+  std::uint64_t midiSeenBindingRevision_ = 0;  // audio only
   bool midiMessageActive_ = false;
   bool midiMatchPending_ = false;
   // Audio-owned current control values, initialized at the stopped-stream boundary.
@@ -1483,10 +1486,12 @@ inline bool StandaloneAudioEngine::sendParameterFromAudioThread_(ParameterId id,
 // UI-only producer; audio owns its reader slot until it explicitly exchanges it.
 inline void StandaloneAudioEngine::publishMidiMap(const lunar24::core::MidiMap& map,
                                                   const char* inputDevice,
-                                                  const lunar24::core::MidiRigSettings& settings) {
+                                                  const lunar24::core::MidiRigSettings& settings, bool resetBindings) {
   MidiMapSlot& s = midiMapSlots_[midiMapWriteIdx_];
   s.map = map;
   s.settings = settings;
+  if (resetBindings) ++midiUiBindingRevision_;
+  s.bindingRevision = midiUiBindingRevision_;
   std::memset(s.device, 0, sizeof(s.device));
   if (inputDevice != nullptr) std::snprintf(s.device, sizeof(s.device), "%s", inputDevice);
   s.deviceKnown = inputDevice != nullptr;
@@ -1499,6 +1504,9 @@ inline void StandaloneAudioEngine::refreshMidiMap_() {
   if ((midiMapMiddle_.load(std::memory_order_acquire) & 4u) == 0) return;
   midiMapReadIdx_ = midiMapMiddle_.exchange(midiMapReadIdx_, std::memory_order_acq_rel) & 3u;
   const auto& s = midiMapSlots_[midiMapReadIdx_];
+  // Adjusting only the playing settings must not re-arm pickup or held CC buttons.
+  if (s.bindingRevision == midiSeenBindingRevision_) return;
+  midiSeenBindingRevision_ = s.bindingRevision;
   for (std::uint32_t i = 0; i < s.map.count(); ++i) {
     const auto& b = s.map.at(i);
     midiValue_[i] = b.targetKind == lunar24::core::MidiTargetKind::parameter

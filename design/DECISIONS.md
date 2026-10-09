@@ -2,6 +2,23 @@
 
 Keep these unless a listening test or a real bug says otherwise.
 
+- **Named MIDI profiles** (owner, 2026-10-10): bindings and CHANNEL / TRANSPOSE /
+  VELOCITY / SPLIT form one controller setup. The app and plugins share `midi-profiles/`
+  in the settings folder; DAW projects do not contain profiles. Each instance switches
+  independently and refreshes the library when opening PROFILE. Edits auto-save; COPY
+  preserves an alternate layout (or rescues edits after a conflicting save elsewhere).
+  English names, 1–39 printable ASCII characters, no outer spaces, unique ignoring case.
+  NEW starts with no bindings and the current four settings; the first profile is Untitled
+  with ANY / 0 / LINEAR / C4. Clearing bindings keeps the profile and the built-in MIDI
+  behaviour; at least one readable profile remains. Legacy `lunar24-midi-map.bin` is neither
+  imported nor modified: this is an unreleased development app, and migration was declined.
+  Switching stops Learn and its pending relative-mode observation; ordinary Learn still
+  learns ABS first, then detects REL 1/2/3 from messages, independent of controller brand.
+  Bindings and settings cross to audio as one snapshot, pinned for each MIDI message;
+  held notes/pads retain their release ownership. No sound preset or audio restart is involved.
+- **Sustain pedal scope** (owner, 2026-10-10): no pedal hardware is available. Do not add
+  pedal features or require pedal hand tests for MIDI profiles. Existing handling and
+  automated regressions remain; keyboard and pad release still need profile-switch checks.
 - **Panel face colour is a look preference** (owner, 2026-10-09). The KEYBOARD MENU footer
   PANEL row picks one of ten faces, warm cream first. Only the panel fill and the REC / DRY
   cover patches follow it. Knob caps, jacks, silk, LEDs, the keybed, cables and the Mac

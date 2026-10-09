@@ -169,9 +169,9 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   rect(kProfile, kProfile.contains(mouseX, mouseY) ? 0x504940 : 0x39342e, 5);
   label({846, 1128, 922, 1164}, 12, 0xc8bdad, "PROFILE", true);
   label({930, 1128, 1288, 1164}, 19, kWhite, st.profileName + (st.dirty ? " *" : ""), true);
-  s.moveTo(1298, st.profileBrowser ? 1150 : 1142);
-  s.lineTo(1304, st.profileBrowser ? 1142 : 1150);
-  s.lineTo(1310, st.profileBrowser ? 1150 : 1142);
+  s.moveTo(1298, st.profileBrowser ? 1150.f : 1142.f);
+  s.lineTo(1304, st.profileBrowser ? 1142.f : 1150.f);
+  s.lineTo(1310, st.profileBrowser ? 1150.f : 1142.f);
   s.closePath(); s.fillPath(kWhite, false);
   label({kInput.l, kInput.t, 1410, kInput.b}, 12, 0xc8bdad, "INPUT", true);
   label({1420, kInput.t, kInput.r, kInput.b}, 17, kWhite,

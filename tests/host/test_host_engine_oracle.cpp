@@ -683,6 +683,28 @@ void long_block_split() {
   CHECK(whole.renderedBlocks() == 4);
 }
 
+void midi_profile_realtime() {
+  StandaloneAudioEngine engine;
+  CHECK(engine.prepare(1, 48000.0, 64, 0, 2));
+  lunar24::core::MidiMap map;
+  lunar24::core::MidiBinding binding;
+  binding.key.number = 22;
+  binding.parameter = lunar24::core::ParameterId::effector_blend;
+  binding.mode = lunar24::core::MidiInputMode::relativeTwosComplement;
+  CHECK(map.bind(binding));
+  const lunar24::core::MidiRigSettings rig{3, 12, lunar24::core::MidiVelocityCurve::soft, 48};
+  engine.publishMidiMap(map, "Any controller", rig);
+  const auto allocated = g_allocCount, freed = g_freeCount;
+  {
+    StandaloneAudioEngine::MidiMessageScope message(engine);
+    CHECK_EQ(message.settings().channelFilter, 3);
+    CHECK_EQ(engine.midiBindingRow(3, lunar24::core::MidiBindingKind::cc, 22), 0);
+    engine.applyMidiBindingFromAudioThread(0, 1);
+  }
+  CHECK_EQ(g_allocCount, allocated);
+  CHECK_EQ(g_freeCount, freed);
+}
+
 }  // namespace
 
 int main() {
@@ -695,6 +717,7 @@ int main() {
   block_partitions();
   prepare_atomic_fail();
   allocator_probe();
+  midi_profile_realtime();
   format_mismatch_drop();
   max_block_guard();
   long_block_split();

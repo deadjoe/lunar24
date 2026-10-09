@@ -403,7 +403,7 @@ void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int
   s.splitNote = static_cast<std::uint8_t>(std::clamp(splitNote, int(kMidiSplitNoteLow), int(kMidiSplitNoteHigh)));
   if (midiMapStore_.setSettings(s)) {
     (void)midiMapStore_.save();
-    republishMidiMap();
+    engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_(), s, false);
   }
 }
 

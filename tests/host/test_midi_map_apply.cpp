@@ -100,6 +100,17 @@ int main() {
     e.processBlock(nullptr, outs, 0, 2, 256);
     e.syncParametersFromAudioThread();
     CHECK(std::fabs(e.parameterValue(core::ParameterId::vcf_l_freq) - d->max) < 1e-9);
+    const core::MidiRigSettings settings{0, 12, core::MidiVelocityCurve::soft, 48};
+    e.publishMidiMap(m, "TestKit", settings, false);
+    e.applyMidiBindingFromAudioThread(0, 64);
+    e.syncParametersFromAudioThread();
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::vcf_l_freq) - core::knob_to_value(*d, 64.0 / 127)) < 1e-9);
+    const auto beforeSwitch = e.parameterValue(core::ParameterId::vcf_l_freq);
+    e.publishMidiMap(m, "TestKit", settings);  // a profile switch DOES re-arm pickup
+    e.applyMidiBindingFromAudioThread(0, 0);
+    e.syncParametersFromAudioThread();
+    CHECK_EQ(e.parameterValue(core::ParameterId::vcf_l_freq), beforeSwitch);
+
   }
 
   // Relative (bin-offset): a slow tick steps the parameter by 1/512 of its range, ticks in
@@ -509,6 +520,21 @@ int main() {
       CHECK_EQ(e.midiBindingRow(9, core::MidiBindingKind::cc, 22), 0);
       e.applyMidiBindingFromAudioThread(0, 65);
     }
+    std::thread publisher([&] {
+      for (int i = 0; i < 20000; ++i)
+        e.publishMidiMap(i % 2 ? a : b, i % 2 ? "Controller A" : "Controller B", i % 2 ? sa : sb);
+    });
+    for (int i = 0; i < 20000; ++i) {
+      E::MidiMessageScope message(e);
+      const auto& rig = message.settings();
+      const bool first = rig.channelFilter == 3;
+      CHECK_EQ(rig.octaveShift, first ? 12 : -12);
+      CHECK_EQ(rig.splitNote, first ? 48 : 72);
+      CHECK(rig.velocityCurve == (first ? core::MidiVelocityCurve::soft : core::MidiVelocityCurve::hard));
+      CHECK_EQ(e.midiBindingRow(rig.channelFilter, core::MidiBindingKind::cc, 22), 0);
+      CHECK_EQ(e.midiBindingRow(first ? 9 : 3, core::MidiBindingKind::cc, 22), -1);
+    }
+    publisher.join();
     // A held photo pad still releases its old target after switching to an empty map.
     core::MidiMap pads;
     CHECK(pads.bind(bindAction(10, 36, core::MidiAction::photo_drone_5)));
