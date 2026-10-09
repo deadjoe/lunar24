@@ -50,7 +50,8 @@ int main() {
   // Match precedence: exact device+channel > device-only > channel-only > wildcard;
   // a device-named binding never matches a different published input device.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("TestKit", 1, 74, core::ParameterId::vcf_l_freq)));
@@ -69,7 +70,8 @@ int main() {
 
   // Absolute pickup: nothing moves until the controller crosses the current value.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("TestKit", 1, 74, core::ParameterId::vcf_l_freq)));
@@ -116,7 +118,8 @@ int main() {
   // Relative (bin-offset): a slow tick steps the parameter by 1/512 of its range, ticks in
   // quick succession by 4/512 (a spun encoder), and it clamps at the maximum.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("TestKit", 0, 22, core::ParameterId::effector_blend,
@@ -144,7 +147,8 @@ int main() {
   // Drone-key action: heard at once (the runtime's voice state flips immediately,
   // before the UI records it), then the engine record follows on sync.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     CHECK(!e.droneKey(0));  // the app starts with every DRONE VOICES key closed
     CHECK(!e.runtime()->droneVoiceKey(0));
@@ -169,7 +173,8 @@ int main() {
 
   // Mute action: immediate, nothing to record.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindAction(0, 40, core::MidiAction::master_mute)));
@@ -184,7 +189,8 @@ int main() {
   // Cartridge action: the UI puts the next cartridge in the slot on sync; nothing loads until
   // a side's 1-2-3 switch flips (a MIDI-bound switch here), and then only that side loads it.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     const auto before = e.canonicalState()->leftEffector.program;
     const int cart = static_cast<int>(static_cast<std::uint32_t>(before) / 3u);
@@ -206,7 +212,8 @@ int main() {
 
   // Preset action: the UI loads the slot on sync.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     CHECK(e.postParameter(core::ParameterId::keyboard_mode, 1.0));       // arpeggiator
     CHECK(e.postKeyboardPreset(E::PresetAction::Save, 1));               // stash into B
@@ -223,7 +230,8 @@ int main() {
 
   // A publication cannot recycle a snapshot still used between lookup and apply.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap a, b;
     CHECK(a.bind(bindCc("", 0, 22, core::ParameterId::effector_blend,
@@ -256,7 +264,8 @@ int main() {
 
   // The first encoder message uses panel edits made AFTER publication.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::effector_blend,
@@ -271,7 +280,8 @@ int main() {
 
   // Discrete selectors get the SAME snapped value in DSP and saved state.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::vco_a_oct_sel)));
@@ -286,7 +296,8 @@ int main() {
 
   // A CC button toggles on the rising edge, never on release or repeated high values.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     auto button = bindAction(0, 22, core::MidiAction::master_mute);
     button.key.kind = core::MidiBindingKind::cc;
@@ -393,7 +404,8 @@ int main() {
   // Both the panel and MIDI action use this atomic toggle. An even total of
   // concurrent toggles must preserve the initial state.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     std::atomic<bool> start{false};
     std::thread panel([&] {
       while (!start.load(std::memory_order_acquire)) {}
@@ -409,7 +421,8 @@ int main() {
 
   // A pad's velocity is an absolute value, not a pickup knob needing a sweep.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     auto pad = bindCc("", 0, 40, core::ParameterId::effector_blend);
     pad.key.kind = core::MidiBindingKind::note;
@@ -423,7 +436,8 @@ int main() {
 
   // Loading presets while the UI keeps editing must never read UI state on audio.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::keyboard_clock_bpm,
@@ -442,7 +456,8 @@ int main() {
   // Photo sensors: a knob sets the hand (absolute, or relative steps); a pad puts it down
   // on a hit, presses closer with aftertouch and lifts it on release.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     auto knob = bindCc("", 0, 30, core::ParameterId::vcf_l_freq);
@@ -493,7 +508,8 @@ int main() {
   // Filtering/settings and the matched binding stay on one snapshot, even when the
   // UI publishes a different profile between the message's filter and lookup.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap a, b;
     CHECK(a.bind(bindCc("Controller A", 3, 22, core::ParameterId::effector_blend,
