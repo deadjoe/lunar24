@@ -159,6 +159,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
       (void)midiMapStore_.save();
       republishMidiMap();
     };
+    shared->midi.profileChanged = [this]() { republishMidiMap(); };
     shared->panelFace = panelFaceIndex_;
     shared->savePanelFace = [this](int index) { rememberPanelFace_(index); };
 #ifndef APP_API

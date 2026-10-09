@@ -8,6 +8,7 @@
 //   panel_preview --menu[=play|expression|arp|seq|steps|service]   keyboard menu, factory values
 //   panel_preview --menu-example=<tab> / --menu-split / --menu-armed
 //   panel_preview --midi / --midi-example / --midi-learn / --midi-wait / --midi-error / --midi-plugin
+//   panel_preview --midi-profiles / --midi-profiles-plugin / --midi-profile-name / --midi-profile-error
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
@@ -377,6 +378,23 @@ int main(int argc, char** argv) {
       state.offset=4;
     }
     if (option == "--midi-min") { state.octave=-36; state.curve=2; }
+    state.profileName = "Studio controls";
+    if (option == "--midi-profiles" || option == "--midi-profiles-plugin" || option == "--midi-profile-name" ||
+        option == "--midi-profile-delete" || option == "--midi-profile-error") {
+      state.profileBrowser = true;
+      state.profiles = {{"Drone tuning", 24, false, true}, {"Live performance", 16, false, true},
+                        {"Studio controls", 5, true, true}, {"Untitled", 0, false, true},
+                        {"Unavailable profile", 0, false, false}};
+      state.deleteArmed = option == "--midi-profile-delete";
+      if (option == "--midi-profiles-plugin") {
+        state.device.clear(); state.noDevice = "MIDI comes from the DAW track";
+        state.version = "Lunar 24 1.0.0"; state.build = "Build 123 - abcdef0";
+      }
+      if (option == "--midi-profile-name") { state.nameAction = 1; state.nameText = "Studio controls Copy"; }
+      if (option == "--midi-profile-error") {
+        state.error = "Changed elsewhere. Copy to keep your edits."; state.dirty = true;
+      }
+    }
     midi_ui::draw(sink,state);
   }
   std::printf("</svg>\n");
