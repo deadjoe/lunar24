@@ -479,5 +479,48 @@ int main() {
     CHECK(!e.photoPadPressure(10, 36, 0.5));  // released: no longer held
     e.processBlock(nullptr, outs, 0, 2, 256);
   }
+  // Filtering/settings and the matched binding stay on one snapshot, even when the
+  // UI publishes a different profile between the message's filter and lookup.
+  {
+    E e;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap a, b;
+    CHECK(a.bind(bindCc("Controller A", 3, 22, core::ParameterId::effector_blend,
+                        core::MidiInputMode::relativeTwosComplement)));
+    CHECK(b.bind(bindCc("Controller B", 9, 22, core::ParameterId::effector_master,
+                        core::MidiInputMode::relativeBinOffset)));
+    core::MidiRigSettings sa{3, 12, core::MidiVelocityCurve::soft, 48};
+    core::MidiRigSettings sb{9, -12, core::MidiVelocityCurve::hard, 72};
+    e.publishMidiMap(a, "Controller A", sa);
+    {
+      E::MidiMessageScope message(e);
+      CHECK_EQ(message.settings().channelFilter, 3);
+      e.publishMidiMap(b, "Controller B", sb);
+      CHECK_EQ(message.settings().octaveShift, 12);
+      CHECK_EQ(e.midiBindingRow(3, core::MidiBindingKind::cc, 22), 0);
+      CHECK_EQ(e.midiBindingRow(9, core::MidiBindingKind::cc, 22), -1);
+    }
+    {
+      E::MidiMessageScope message(e);
+      CHECK_EQ(message.settings().channelFilter, 9);
+      CHECK_EQ(message.settings().splitNote, 72);
+      CHECK(message.settings().velocityCurve == core::MidiVelocityCurve::hard);
+      CHECK_EQ(e.midiBindingRow(3, core::MidiBindingKind::cc, 22), -1);
+      CHECK_EQ(e.midiBindingRow(9, core::MidiBindingKind::cc, 22), 0);
+      e.applyMidiBindingFromAudioThread(0, 65);
+    }
+    // A held photo pad still releases its old target after switching to an empty map.
+    core::MidiMap pads;
+    CHECK(pads.bind(bindAction(10, 36, core::MidiAction::photo_drone_5)));
+    e.publishMidiMap(pads, nullptr, sa);
+    e.applyMidiBindingFromAudioThread(0, 127, 10);
+    e.publishMidiMap(core::MidiMap{}, nullptr, sb);
+    {
+      E::MidiMessageScope message(e);
+      CHECK_EQ(e.midiBindingRow(10, core::MidiBindingKind::note, 36), -1);
+      CHECK(e.photoPadRelease(10, 36));
+      CHECK_EQ(e.runtime()->dronePhotoShade(3), 0.0);
+    }
+  }
   return test::finish("test_midi_map_apply");
 }

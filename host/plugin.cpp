@@ -373,11 +373,6 @@ void LunarHostPlugin::useMidiMapDirectory_(const std::string& dir)
   midiMapStore_.setDirectory(dir);
   midiMapStore_.load();
   republishMidiMap();
-  const lunar24::core::MidiRigSettings& s = midiMapStore_.settings();
-  midiChannelFilter_.store(s.channelFilter, std::memory_order_relaxed);
-  midiOctaveShift_.store(s.octaveShift, std::memory_order_relaxed);
-  midiVelocityCurve_.store(static_cast<int>(s.velocityCurve), std::memory_order_relaxed);
-  midiSplitNote_.store(s.splitNote, std::memory_order_relaxed);
   panelFaceDir_ = dir;
   panelFaceIndex_ = lunar24::host::loadPanelFaceIndex(dir, lunar24::host::kb_ui::kPanelFaceCount);
   lunar24::host::theme::windowGap() =
@@ -400,18 +395,15 @@ void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int
 {
   using lunar24::core::kMidiSplitNoteLow;
   using lunar24::core::kMidiSplitNoteHigh;
-  midiSplitNote_.store(std::clamp(splitNote, int(kMidiSplitNoteLow), int(kMidiSplitNoteHigh)),
-                       std::memory_order_relaxed);
-  midiChannelFilter_.store(std::clamp(channelFilter, 0, 16), std::memory_order_relaxed);
-  midiOctaveShift_.store(std::clamp(octaveShift, -36, 36), std::memory_order_relaxed);
-  midiVelocityCurve_.store(std::clamp(curve, 0, 2), std::memory_order_relaxed);
   lunar24::core::MidiRigSettings s;
-  s.channelFilter = static_cast<std::uint8_t>(midiChannelFilter_.load(std::memory_order_relaxed));
-  s.octaveShift = static_cast<std::int8_t>(midiOctaveShift_.load(std::memory_order_relaxed));
-  s.velocityCurve = static_cast<lunar24::core::MidiVelocityCurve>(
-      midiVelocityCurve_.load(std::memory_order_relaxed));
-  s.splitNote = static_cast<std::uint8_t>(midiSplitNote_.load(std::memory_order_relaxed));
-  if (midiMapStore_.setSettings(s)) (void)midiMapStore_.save();
+  s.channelFilter = static_cast<std::uint8_t>(std::clamp(channelFilter, 0, 16));
+  s.octaveShift = static_cast<std::int8_t>(std::clamp(octaveShift, -36, 36));
+  s.velocityCurve = static_cast<lunar24::core::MidiVelocityCurve>(std::clamp(curve, 0, 2));
+  s.splitNote = static_cast<std::uint8_t>(std::clamp(splitNote, int(kMidiSplitNoteLow), int(kMidiSplitNoteHigh)));
+  if (midiMapStore_.setSettings(s)) {
+    (void)midiMapStore_.save();
+    republishMidiMap();
+  }
 }
 
 lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
@@ -725,6 +717,8 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
   }
   if (msg.mStatus >= 0xF0) return;  // other system messages (MIDI time code, song position)
 
+  const lunar24::host::StandaloneAudioEngine::MidiMessageScope configuration(engine_);
+  const auto& rig = configuration.settings();
   PerformanceInput in{};
   in.source = 3;  // MIDI producer
   in.channel = static_cast<std::uint8_t>(msg.Channel());
@@ -735,7 +729,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       (msg.StatusMsg() == IMidiMsg::kNoteOn && msg.Velocity() == 0);
   const bool pedalRelease = msg.StatusMsg() == IMidiMsg::kControlChange &&
       msg.ControlChangeIdx() == IMidiMsg::kSustainOnOff && msg.mData2 < 64;
-  const int channelFilter = midiChannelFilter_.load(std::memory_order_relaxed);
+  const int channelFilter = rig.channelFilter;
   if (channelFilter > 0 && msg.Channel() + 1 != channelFilter && !noteRelease && !pedalRelease) return;
   // Remember the last note/CC for the learn overlay (the overlay polls the seq).
   if ((msg.StatusMsg() == IMidiMsg::kNoteOn && msg.Velocity() > 0) ||
@@ -749,9 +743,9 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
                            std::memory_order_relaxed);
     midiMessageSeq_.fetch_add(1, std::memory_order_relaxed);
   }
-  const int octaveShift = midiOctaveShift_.load(std::memory_order_relaxed);
+  const int octaveShift = rig.octaveShift;
   const auto velocityCurve =
-      static_cast<lunar24::core::MidiVelocityCurve>(midiVelocityCurve_.load(std::memory_order_relaxed));
+      static_cast<lunar24::core::MidiVelocityCurve>(rig.velocityCurve);
   switch (msg.StatusMsg())
   {
     case IMidiMsg::kNoteOn:
@@ -772,7 +766,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
         sustain_.noteOn(in.channel, note & 127);  // pressed again: no longer held only by the pedal
         in.kind = PerfInputKind::note_on;
         // TWIN / SPLIT: the played key (before TRANSPOSE) picks the side.
-        in.side = midiSides_.noteOn(in.channel, note & 127, midiSplitNote_.load(std::memory_order_relaxed));
+        in.side = midiSides_.noteOn(in.channel, note & 127, rig.splitNote);
         // A3 (MIDI 57) = 0 V = 220 Hz; the rig's octave shift transposes the MIDI input.
         in.pitch = static_cast<SignalSample>((note - 57 + octaveShift) / 12.0);
         in.value = static_cast<SignalSample>(

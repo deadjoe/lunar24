@@ -474,7 +474,25 @@ class StandaloneAudioEngine {
   // UI thread: publish a new binding snapshot — the map, the active input device's
   // name (nullptr: unknown, as in a plugin, so bindings for any device match). The audio
   // thread seeds bindings from its own current parameter values.
-  void publishMidiMap(const lunar24::core::MidiMap& map, const char* inputDevice);
+  void publishMidiMap(const lunar24::core::MidiMap& map, const char* inputDevice,
+                      const lunar24::core::MidiRigSettings& settings = {});
+  // Pin one complete configuration from filtering through application of a MIDI message.
+  class MidiMessageScope {
+   public:
+    explicit MidiMessageScope(StandaloneAudioEngine& engine) : engine_(engine) {
+      engine_.refreshMidiMap_();
+      engine_.midiMessageActive_ = true;
+      engine_.midiMatchPending_ = false;
+    }
+    ~MidiMessageScope() { engine_.midiMessageActive_ = false; engine_.midiMatchPending_ = false; }
+    MidiMessageScope(const MidiMessageScope&) = delete;
+    MidiMessageScope& operator=(const MidiMessageScope&) = delete;
+    const lunar24::core::MidiRigSettings& settings() const {
+      return engine_.midiMapSlots_[engine_.midiMapReadIdx_].settings;
+    }
+   private:
+    StandaloneAudioEngine& engine_;
+  };
   // Audio thread: the published map's row for this message, or -1. Device-specific
   // bindings match only when their name equals the published input device. Apply
   // the returned row immediately, before another lookup or engine call.
@@ -648,6 +666,7 @@ class StandaloneAudioEngine {
   // third slot. The dirty bit means the middle slot contains a newer publication.
   struct MidiMapSlot {
     lunar24::core::MidiMap map;
+    lunar24::core::MidiRigSettings settings;
     char device[lunar24::core::kMidiBindingDeviceCapacity] = {};
     bool deviceKnown = true;  // false: a plugin, every binding's device matches
   };
@@ -656,6 +675,7 @@ class StandaloneAudioEngine {
   std::atomic<std::uint32_t> midiMapMiddle_{1};
   std::uint32_t midiMapWriteIdx_ = 2;  // UI only
   std::uint32_t midiMapReadIdx_ = 0;   // audio only
+  bool midiMessageActive_ = false;
   bool midiMatchPending_ = false;
   // Audio-owned current control values, initialized at the stopped-stream boundary.
   double midiParameterValue_[lunar24::core::kParameterIdSpace] = {};
@@ -1462,9 +1482,11 @@ inline bool StandaloneAudioEngine::sendParameterFromAudioThread_(ParameterId id,
 
 // UI-only producer; audio owns its reader slot until it explicitly exchanges it.
 inline void StandaloneAudioEngine::publishMidiMap(const lunar24::core::MidiMap& map,
-                                                  const char* inputDevice) {
+                                                  const char* inputDevice,
+                                                  const lunar24::core::MidiRigSettings& settings) {
   MidiMapSlot& s = midiMapSlots_[midiMapWriteIdx_];
   s.map = map;
+  s.settings = settings;
   std::memset(s.device, 0, sizeof(s.device));
   if (inputDevice != nullptr) std::snprintf(s.device, sizeof(s.device), "%s", inputDevice);
   s.deviceKnown = inputDevice != nullptr;
@@ -1473,6 +1495,7 @@ inline void StandaloneAudioEngine::publishMidiMap(const lunar24::core::MidiMap& 
 }
 
 inline void StandaloneAudioEngine::refreshMidiMap_() {
+  if (midiMessageActive_) return;
   if ((midiMapMiddle_.load(std::memory_order_acquire) & 4u) == 0) return;
   midiMapReadIdx_ = midiMapMiddle_.exchange(midiMapReadIdx_, std::memory_order_acq_rel) & 3u;
   const auto& s = midiMapSlots_[midiMapReadIdx_];
