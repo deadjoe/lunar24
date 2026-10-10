@@ -147,6 +147,7 @@ class MidiMapStore {
   const std::string& id() const { return id_; }
   const std::string& name() const { return name_; }
   const std::string& error() const { return error_; }
+  bool needsRecovery() const { return !error_.empty() && recoverableError_; }
   const std::vector<MidiProfileInfo>& profiles() const { return profiles_; }
   bool editable() const { return !id_.empty(); }
   bool dirty() const { return dirty_; }
@@ -167,7 +168,7 @@ class MidiMapStore {
     std::vector<std::uint8_t> selected;
     midi_profile_files::read(path("selected.txt"), selected, 64);
     const std::string wanted(selected.begin(), selected.end());
-    if (!adoptReadable(wanted, false)) return loadOutcome_ = MidiMapLoadOutcome::Malformed;
+    if (!adoptReadable(wanted)) return loadOutcome_ = MidiMapLoadOutcome::Malformed;
     return loadOutcome_ = MidiMapLoadOutcome::Ok;
   }
   bool refresh() {
@@ -201,20 +202,21 @@ class MidiMapStore {
     if (dirty_ && !saveUnlocked()) return false;
     return adoptFile(id, true);
   }
-  // Explicitly confirmed by the UI: discard local edits only after a replacement is read.
+  // Confirmed by the UI: reread this profile without changing the shared startup selection.
   bool reload() {
     midi_profile_files::Lock lock(path("library.lock"));
     if (!lock) return fail("Profile library busy. Retry.");
-    return scan() && adoptReadable(id_, true);
+    if (!adoptFile(id_, false)) return fail("Cannot reload this profile. Copy to keep this setup.");
+    return true;
   }
   bool removeUnavailable(const std::string& id) {
     midi_profile_files::Lock lock(path("library.lock"));
     if (!lock) return fail("Profile library busy. Retry.");
     if (!scan()) return false;
     const auto it = std::find_if(profiles_.begin(), profiles_.end(), [&](const auto& p) { return p.id == id; });
-    if (it == profiles_.end()) return fail("Profile no longer exists. List refreshed.");
-    if (it->readable) return fail("Profile is readable again. List refreshed.");
-    if (id == id_) return fail("Current setup is still in use. Copy it first.");
+    if (it == profiles_.end()) return fail("Profile no longer exists. List refreshed.", false);
+    if (it->readable) return fail("Profile is readable again. List refreshed.", false);
+    if (id == id_) return fail("Current setup is still in use. Copy it first.", false);
     std::error_code ec;
     if (!std::filesystem::remove(std::filesystem::u8path(path(id + ".bin")), ec) || ec)
       return fail("Cannot delete profile.");
@@ -242,7 +244,7 @@ class MidiMapStore {
     if (!lock) return fail("Profile library busy. Retry.");
     if (!editable() || !scan()) return false;
     const auto other = std::find_if(profiles_.begin(), profiles_.end(), [&](const auto& p) { return p.id != id_ && p.readable; });
-    if (other == profiles_.end()) return fail("Keep at least one readable profile.");
+    if (other == profiles_.end()) return fail("Keep at least one readable profile.", false);
     if (!unchanged()) return false;
     const std::string oldPath = livePath(), nextId = other->id;
     // Read the replacement before deleting anything. Selection may safely outlive a failed delete.
@@ -260,7 +262,9 @@ class MidiMapStore {
 
  private:
   std::string path(const std::string& file) const { return app_state_file_ops::joinUtf8(libraryPath(), file); }
-  bool fail(const char* message) { error_ = message; return false; }
+  bool fail(const char* message, bool recoverable = true) {
+    error_ = message; recoverableError_ = recoverable; return false;
+  }
   bool scan() {
     std::vector<MidiProfileInfo> list;
     std::error_code ec;
@@ -285,10 +289,10 @@ class MidiMapStore {
     return true;
   }
   bool nameAvailable(const std::string& name, const std::string& except = "") {
-    if (!midi_profile_files::validName(name)) return fail("Use 1-39 English characters; no outer spaces.");
+    if (!midi_profile_files::validName(name)) return fail("Use 1-39 English characters; no outer spaces.", false);
     for (const auto& p : profiles_)
       if (p.id != except && midi_profile_files::folded(p.name) == midi_profile_files::folded(name))
-        return fail("That profile name already exists.");
+        return fail("That profile name already exists.", false);
     return true;
   }
   bool readProfile(const std::string& id, std::vector<std::uint8_t>& bytes, std::string& name,
@@ -338,7 +342,7 @@ class MidiMapStore {
     adopt(id, name, map, settings, bytes);
     return true;
   }
-  bool adoptReadable(const std::string& preferred, bool persist) {
+  bool adoptReadable(const std::string& preferred) {
     // A file may become unreadable between scanning the library and opening it again.
     core::MidiMap map; core::MidiRigSettings settings; std::string name;
     std::vector<std::uint8_t> bytes;
@@ -352,7 +356,6 @@ class MidiMapStore {
         if (p.id != preferred && p.readable && tryRead(p.id)) { chosen = p.id; break; }
     }
     if (chosen.empty()) return fail("No readable profile. Create a new one.");
-    if (persist && !remember(chosen)) return false;
     adopt(chosen, name, map, settings, bytes);
     return true;
   }
@@ -386,6 +389,6 @@ class MidiMapStore {
   void* opsCtx_ = nullptr;
   MidiMapLoadOutcome loadOutcome_ = MidiMapLoadOutcome::NotAttempted;
   std::uint64_t generation_ = 0;
-  bool dirty_ = false;
+  bool dirty_ = false, recoverableError_ = false;
 };
 }  // namespace lunar24::host

@@ -1510,6 +1510,7 @@ class MidiOverlayControl : public IControl {
     if (s_.midiStore) {
       state.profileName = s_.midiStore->editable() ? s_.midiStore->name() : "No profile";
       state.error = s_.midiStore->error();
+      state.recovery = s_.midiStore->needsRecovery();
       state.dirty = s_.midiStore->dirty();
       for (const auto& p : s_.midiStore->profiles())
         state.profiles.push_back({p.name, p.id == s_.midiStore->id() ? s_.midiStore->map().count() : p.bindings,
@@ -1549,8 +1550,8 @@ class MidiOverlayControl : public IControl {
       GetUI()->SetAllControlsDirty();
       return;
     }
-    const bool failedSave = s_.midiStore->dirty() && !s_.midiStore->error().empty();
-    if (editable() && !s_.midiStore->error().empty() && midi_ui::kReload.contains(x, y)) {
+    const bool failedSave = s_.midiStore->dirty() && s_.midiStore->needsRecovery();
+    if (editable() && s_.midiStore->needsRecovery() && midi_ui::kReload.contains(x, y)) {
       s_.profileDeleteArmed = false;
       s_.unavailableDeleteId.clear();
       if (s_.profileReloadArmed) {
@@ -1561,7 +1562,7 @@ class MidiOverlayControl : public IControl {
       return;
     }
     s_.profileReloadArmed = false;
-    if (midi_ui::kLearn.contains(x, y) && !s_.midiStore->error().empty()) {
+    if (midi_ui::kLearn.contains(x, y) && s_.midiStore->needsRecovery()) {
       if (!editable()) {
         const auto outcome = s_.midiStore->load();
         if (outcome == MidiMapLoadOutcome::Ok || outcome == MidiMapLoadOutcome::NoFile) s_.adoptedMidiProfile();

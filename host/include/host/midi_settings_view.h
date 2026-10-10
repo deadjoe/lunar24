@@ -74,7 +74,7 @@ struct State {
   std::string device;
   std::string profileName = "Untitled", error, nameText;
   std::vector<ProfileRow> profiles;
-  bool profileBrowser = false, deleteArmed = false, dirty = false, reloadArmed = false;
+  bool profileBrowser = false, deleteArmed = false, dirty = false, reloadArmed = false, recovery = false;
   int nameAction = -1;
   int channel = 0, octave = 0, curve = 0, offset = 0;
   int split = core::kMidiDefaultSplitNote;  // MIDI note: TWIN / SPLIT right side starts here
@@ -199,13 +199,13 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     button(increment(i), ">", st.editable && !st.profileBrowser);
     label({640, b.t, 740, b.b}, 20, kInk, values[i], true, true);
   }
-  if (!st.error.empty() && st.editable) {
+  if (st.recovery && st.editable) {
     button(kRetrySave, st.dirty ? "RETRY SAVE" : "RETRY", true);
     button(kReload, st.reloadArmed ? "RELOAD?" : "RELOAD", true);
   } else {
-    button(kLearn, !st.error.empty() ? (st.editable ? "RETRY" : "RETRY LOAD") :
+    button(kLearn, st.recovery ? (st.editable ? "RETRY" : "RETRY LOAD") :
                    st.profileBrowser ? "BACK TO BINDINGS" : st.armed ? "CANCEL LEARN" : "+ LEARN A CONTROL",
-           st.editable || st.profileBrowser || !st.error.empty(), !st.profileBrowser);
+           st.editable || st.profileBrowser || st.recovery, !st.profileBrowser);
   }
   const int count = st.profileBrowser ? static_cast<int>(st.profiles.size()) :
                     st.map ? static_cast<int>(st.map->count()) : 0;
@@ -314,7 +314,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     }
     line1 = error1.c_str(); line2 = error2.c_str();
   }
-  if (st.reloadArmed) { line1 = st.dirty ? "Discard local edits?" : "Read saved setup?"; line2 = "Click RELOAD? to read saved setup."; }
+  if (st.reloadArmed) { line1 = st.dirty ? "Discard local edits?" : "Reload current profile?"; line2 = "Click RELOAD? to read this profile."; }
   label({434, 1424, 802, 1448}, 15, !st.error.empty() ? kRed : st.armed ? kArmedText : kMuted, line1, true);
   label({434, 1449, 802, 1474}, 14, kMuted, line2);
   if (st.profileBrowser) {

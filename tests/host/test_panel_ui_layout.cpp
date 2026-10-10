@@ -256,6 +256,7 @@ int main() {
       state.nameAction = view == 3 ? 1 : -1;
       state.error = view == 4 ? "Changed elsewhere. Copy or reload your setup." : "";
       state.dirty = view == 4;
+      state.recovery = view == 4;
       Sink sink;
       draw(sink, state);
       CHECK_EQ(sink.bad, 0);
@@ -278,15 +279,25 @@ int main() {
       bool has(const char* value) const { return std::find(labels.begin(), labels.end(), value) != labels.end(); }
     };
     State state;
-    state.editable = false; state.error = "Profile library unavailable. Retry.";
+    state.editable = false; state.error = "Profile library unavailable. Retry."; state.recovery = true;
     Sink retry; draw(retry, state); CHECK(retry.has("RETRY LOAD"));
     state.editable = true; state.dirty = true; state.reloadArmed = true;
     Sink reload; draw(reload, state);
     CHECK(reload.has("RELOAD?")); CHECK(reload.has("Discard local edits?"));
-    state.profileBrowser = true; state.dirty = false; state.reloadArmed = false; state.error.clear();
+    state.profileBrowser = true; state.dirty = false; state.reloadArmed = false; state.error.clear(); state.recovery = false;
     state.profiles = {{"Good", 0, true, true}, {"Broken", 0, false, false, true}};
     Sink broken; draw(broken, state);
     CHECK(broken.has("SAVED PROFILES / 1 AVAILABLE")); CHECK(broken.has("DELETE?"));
+    for (const auto* message : {"Use 1-39 English characters; no outer spaces.",
+                                "That profile name already exists.", "Keep at least one readable profile."}) {
+      state.error = message;
+      for (bool browser : {false, true}) {
+        state.profileBrowser = browser;
+        Sink validation; draw(validation, state);
+        CHECK(validation.has(browser ? "BACK TO BINDINGS" : "+ LEARN A CONTROL"));
+        CHECK(!validation.has("RETRY")); CHECK(!validation.has("RELOAD"));
+      }
+    }
     state.nameAction = 0;
     Sink name; draw(name, state); CHECK(name.has("Enter or click outside to confirm. Esc to cancel."));
   }

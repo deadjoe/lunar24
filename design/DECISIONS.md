@@ -7,7 +7,9 @@ Keep these unless a listening test or a real bug says otherwise.
   in the settings folder; DAW projects do not contain profiles. Each instance switches
   independently and refreshes the library when opening PROFILE. Edits auto-save; COPY
   preserves an alternate layout (or rescues edits after a conflicting save elsewhere).
-  Confirmed RELOAD discards local edits only after a saved replacement is read. Library
+  Confirmed RELOAD rereads only the current profile; failure keeps local edits and never
+  switches profiles. It does not write selected.txt. Validation messages retain normal
+  Learn/navigation controls; recovery buttons are for storage failures. Library
   locks never wait on the UI thread; startup failures expose RETRY LOAD. Unavailable
   files have separate confirmed deletion, rechecked under the library lock.
   English names, 1–39 printable ASCII characters, no outer spaces, unique ignoring case.

@@ -10,6 +10,7 @@
 //   panel_preview --midi / --midi-example / --midi-learn / --midi-wait / --midi-error / --midi-plugin
 //   panel_preview --midi-profiles / --midi-profiles-plugin / --midi-profile-name
 //   panel_preview --midi-profile-error / --midi-profile-delete / --midi-profile-unavailable / --midi-profile-retry
+//   panel_preview --midi-validation / --midi-profile-validation
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
@@ -382,7 +383,7 @@ int main(int argc, char** argv) {
     state.profileName = "Studio controls";
     if (option == "--midi-profiles" || option == "--midi-profiles-plugin" || option == "--midi-profile-name" ||
         option == "--midi-profile-delete" || option == "--midi-profile-error" ||
-        option == "--midi-profile-unavailable" || option == "--midi-profile-retry") {
+        option == "--midi-profile-unavailable" || option == "--midi-profile-retry" || option == "--midi-profile-validation") {
       state.profileBrowser = true;
       state.profiles = {{"Drone tuning", 24, false, true}, {"Live performance", 16, false, true},
                         {"Studio controls", 5, true, true}, {"Untitled", 0, false, true},
@@ -393,7 +394,7 @@ int main(int argc, char** argv) {
       }
       if (option == "--midi-profile-retry") {
         state.editable = false; state.profileName = "No profile"; state.profiles.clear();
-        state.error = "Profile library unavailable. Retry.";
+        state.error = "Profile library unavailable. Retry."; state.recovery = true;
       }
       if (option == "--midi-profiles-plugin") {
         state.device.clear(); state.noDevice = "MIDI comes from the DAW track";
@@ -401,9 +402,11 @@ int main(int argc, char** argv) {
       }
       if (option == "--midi-profile-name") { state.nameAction = 1; state.nameText = "Studio controls Copy"; }
       if (option == "--midi-profile-error") {
-        state.error = "Changed elsewhere. Copy or reload your setup."; state.dirty = true;
+        state.error = "Changed elsewhere. Copy or reload your setup."; state.dirty = true; state.recovery = true;
       }
     }
+    if (option == "--midi-validation" || option == "--midi-profile-validation")
+      state.error = "That profile name already exists.";
     midi_ui::draw(sink,state);
   }
   std::printf("</svg>\n");

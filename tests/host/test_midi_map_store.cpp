@@ -98,7 +98,9 @@ int main() {
   CHECK(store.select(first));
   CHECK_EQ(store.map().count(), 1u);
   CHECK(!store.create("studio", false));
+  CHECK(!store.needsRecovery());
   CHECK(!store.rename(""));
+  CHECK(!store.needsRecovery());
   CHECK(!store.rename(" leading"));
   CHECK(!store.rename(std::string(40, 'a')));
   CHECK(!store.rename("\xe4\xb8\xad\xe6\x96\x87"));
@@ -128,6 +130,7 @@ int main() {
   CHECK(store.unbind(binding.key));
   CHECK(!store.save());
   CHECK(store.dirty());
+  CHECK(store.needsRecovery());
   CHECK(!store.select(second));
   CHECK(store.create("Recovered", true));
   CHECK_EQ(store.map().count(), 0u);
@@ -230,16 +233,20 @@ int main() {
       CHECK(starting.load() == host::MidiMapLoadOutcome::Unreadable);
       CHECK(!starting.editable()); CHECK(!starting.error().empty());
     }
+    // Reload needs no writes, even when selected.txt cannot be replaced.
     b.setFileOps(preferenceFailure, nullptr);
-    CHECK(!b.reload()); CHECK(b.dirty()); CHECK_EQ(b.generation(), generation);
-    b.setFileOps(real, nullptr);
     CHECK(b.reload()); CHECK(!b.dirty()); CHECK(b.error().empty());
+    b.setFileOps(real, nullptr);
     CHECK_EQ(b.map().count(), 1u); CHECK_EQ(b.settings().channelFilter, 0);
     CHECK(b.generation() > generation);
     CHECK(b.setSettings(settings)); CHECK(b.save()); // editing works again
     CHECK(a.reload()); CHECK_EQ(a.settings().channelFilter, 3);
     CHECK(a.create("Second", false));
     const auto alternate = a.id();
+    const auto selectedPath = host::app_state_file_ops::joinUtf8(a.libraryPath(), "selected.txt");
+    const auto selectedBytes = readFile(selectedPath);
+    CHECK(b.reload()); CHECK_EQ(b.id(), initial);
+    CHECK(readFile(selectedPath) == selectedBytes); // another instance's startup choice is unchanged
     CHECK(a.select(initial));
     const auto damaged = a.livePath();
     corrupt(damaged);
@@ -252,9 +259,14 @@ int main() {
     CHECK(starting.removeUnavailable(initial));
     CHECK_EQ(starting.profiles().size(), 1u);
     CHECK_EQ(starting.id(), alternate);
-    CHECK(!starting.removeCurrent());
-    CHECK(b.reload()); // another instance deleted our file: use a readable replacement
-    CHECK_EQ(b.id(), alternate);
+    CHECK(!starting.removeCurrent()); CHECK(!starting.needsRecovery());
+    const auto beforeReload = b.generation();
+    const auto beforeSelection = readFile(selectedPath);
+    CHECK(!b.reload()); // a missing current file must not switch to another profile
+    CHECK_EQ(b.id(), initial); CHECK_EQ(b.generation(), beforeReload);
+    CHECK_EQ(b.map().count(), 1u); CHECK(b.needsRecovery());
+    CHECK(readFile(selectedPath) == beforeSelection);
+    CHECK(b.select(alternate)); // only an explicit selection switches profiles
     CHECK(b.setSettings(settings));
     corrupt(b.livePath());
     CHECK(!b.reload()); CHECK(b.dirty()); CHECK_EQ(b.settings().channelFilter, 3);
