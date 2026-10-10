@@ -119,11 +119,11 @@ public:
 
   // ---- MIDI rig settings (channel filter / octave shift / velocity curve) -----------
   // The panel's MIDI settings overlay edits these; the store persists them. The audio
-  // thread reads the atomics, the UI thread owns the store.
-  int midiChannelFilter() const { return midiChannelFilter_.load(std::memory_order_relaxed); }
-  int midiOctaveShift() const { return midiOctaveShift_.load(std::memory_order_relaxed); }
-  int midiVelocityCurve() const { return midiVelocityCurve_.load(std::memory_order_relaxed); }
-  int midiSplitNote() const { return midiSplitNote_.load(std::memory_order_relaxed); }
+  // thread receives a complete snapshot; the UI thread owns the store.
+  int midiChannelFilter() const { return midiMapStore_.settings().channelFilter; }
+  int midiOctaveShift() const { return midiMapStore_.settings().octaveShift; }
+  int midiVelocityCurve() const { return static_cast<int>(midiMapStore_.settings().velocityCurve); }
+  int midiSplitNote() const { return midiMapStore_.settings().splitNote; }
   void setMidiRigSettings(int channelFilter, int octaveShift, int curve, int splitNote);
   // UI thread: REC. Starts recording `source` (0 WET, 1 DRY, 2 ALL) to Music/Lunar 24, or stops
   // and opens that folder. The app only (a DAW records the plugin itself).
@@ -133,7 +133,7 @@ public:
   // The plugin's binding store (the MIDI settings overlay edits it through this).
   lunar24::host::MidiMapStore& midiStore() { return midiMapStore_; }
   // Republish the current map (after the overlay edits it).
-  void republishMidiMap() { engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_()); }
+  void republishMidiMap() { engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_(), midiMapStore_.settings()); }
   // The last note/CC message seen, for the learn overlay: packed (kind << 20 |
   // channel << 8 | number) plus a sequence that bumps per message. Audio thread
   // writes, UI reads.
@@ -170,10 +170,6 @@ private:
   lunar24::host::MidiInputQueue midiQueue_;
   lunar24::host::MidiNoteOwnership midiNotes_;
   lunar24::host::MidiPlateLights midiLights_;  // plates lit by MIDI notes (audio writes, UI reads)
-  std::atomic<int> midiChannelFilter_{0};     // 0 = any, else 1..16
-  std::atomic<int> midiOctaveShift_{0};       // semitones, -36..+36
-  std::atomic<int> midiVelocityCurve_{0};     // core::MidiVelocityCurve
-  std::atomic<int> midiSplitNote_{lunar24::core::kMidiDefaultSplitNote};  // TWIN / SPLIT: right from here
   std::atomic<std::uint32_t> midiLastMessage_{0};
   std::atomic<std::uint64_t> midiMessageSeq_{0};
 

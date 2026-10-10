@@ -39,6 +39,7 @@
 #include <host/ui_font.generated.h>
 #include <host/keyboard_menu_view.h>
 #include <host/midi_map_store.h>
+#include <host/midi_learn.h>
 #include <host/midi_settings_view.h>
 #include <host/panel_format.h>
 #include <host/panel_theme.h>
@@ -156,6 +157,7 @@ struct EditorShared {
     std::function<int()> splitNote;
     std::function<void(int, int, int, int)> setRigSettings;
     std::function<void()> bindingsChanged;            // save + republish
+    std::function<void()> profileChanged;             // already saved: publish only
   };
   MidiUi midi;
   // REC (the plugin owns the recorder; the source choice lives here for the session).
@@ -170,12 +172,33 @@ struct EditorShared {
   int recordShownSecond = -1;
   bool isRecording() const { return rec.recording && rec.recording(); }
   std::vector<IControl*> midiControls;
-  bool midiOpen = false;
+  bool midiOpen = false, profileBrowser = false, profileDeleteArmed = false, profileReloadArmed = false;
+  std::string unavailableDeleteId;
+  int profileListOffset = 0;
+  void showProfiles(bool open) {
+    profileBrowser = open;
+    profileDeleteArmed = profileReloadArmed = false;
+    unavailableDeleteId.clear();
+    if (open && midiStore) {
+      (void)midiStore->refresh();
+      profileListOffset = midi_ui::pageOffset(profileListOffset, static_cast<int>(midiStore->profiles().size()));
+    }
+    // Browsing is not a switch. Discard messages received while browsing on return.
+    if (midi.messageSeq) { learnArmSeq = midi.messageSeq(); relativeLearn.skipToSequence(learnArmSeq); }
+    if (learnCapture) learnCapture->SetIgnoreMouse(!(learnArmed && learnAwaitTarget && !open));
+  }
+  void adoptedMidiProfile() {
+    setLearnArmed(false, false);
+    relativeLearn.cancel();
+    midiListOffset = 0;
+    showProfiles(false);
+    if (midi.profileChanged) midi.profileChanged();
+  }
   void showMidi(bool open) {
     midiOpen = open;
     for (IControl* c : midiControls) c->Hide(!open);
     if (open) showMenu(false);
-    if (!open) setLearnArmed(false, false);
+    if (!open) { showProfiles(false); setLearnArmed(false, false); }
   }
   // Learn: armed while the user picks a panel target and then moves a hardware control.
   IControl* learnCapture = nullptr;  // the full-panel click catcher (mouse-ignored unless picking)
@@ -184,16 +207,18 @@ struct EditorShared {
   bool learnTargetIsAction = false;
   core::ParameterId learnParameter = core::ParameterId{0};
   core::MidiAction learnAction = core::MidiAction::master_mute;
-  std::uint64_t learnArmSeq = 0;
+  std::uint64_t learnArmSeq = 0, learnGeneration = 0;
   int midiListOffset = 0;  // bindings table paging
   void setLearnArmed(bool armed, bool awaitTarget) {
     learnArmed = armed;
     learnAwaitTarget = awaitTarget;
-    if (learnCapture != nullptr) learnCapture->SetIgnoreMouse(!(armed && awaitTarget));
+    if (armed && midiStore) learnGeneration = midiStore->generation();
+    if (learnCapture != nullptr) learnCapture->SetIgnoreMouse(!(armed && awaitTarget && !profileBrowser));
   }
   // Called from the display tick: a hardware message arrived while awaiting one.
   void pollLearn() {
-    if (!learnArmed || learnAwaitTarget || midiStore == nullptr) return;
+    if (profileBrowser || !learnArmed || learnAwaitTarget || midiStore == nullptr) return;
+    if (learnGeneration != midiStore->generation()) { setLearnArmed(false, false); return; }
     if (!midi.messageSeq || midi.messageSeq() == learnArmSeq) return;
     const std::uint32_t m = midi.lastMessage();
     core::MidiBinding b{};
@@ -210,43 +235,16 @@ struct EditorShared {
       const int row = midiStore->map().find(b.key);
       midiListOffset = midi_ui::pageOffset(row, static_cast<int>(midiStore->map().count()));
       if (midi.bindingsChanged) midi.bindingsChanged();
-      // A learned knob: watch its next values for a relative encoder (MPK KnobM = Rel).
-      detectActive = b.key.kind == core::MidiBindingKind::cc && row >= 0 &&
-                     core::midi_parameter_drive(midiStore->map().at(static_cast<std::uint32_t>(row))) ==
-                         core::MidiParameterDrive::follow;
-      detectKey = b.key;
-      detector = core::MidiRelativeDetector{};
-      detectSeq = midi.messageSeq();
-      if (detectActive) (void)detector.feed(static_cast<int>((m >> 21) & 0x7Fu));
+      relativeLearn.start(b, midiStore->generation(), midi.messageSeq(), static_cast<int>((m >> 21) & 0x7Fu));
     }
     setLearnArmed(false, false);
   }
-  // Display tick after a learn: switch the new binding to the relative mode its values show.
-  // Returns true when the binding changed.
-  bool detectActive = false;
-  core::MidiBindingKey detectKey{};
-  core::MidiRelativeDetector detector;
-  std::uint64_t detectSeq = 0;
+  MidiRelativeLearn relativeLearn;
   bool pollRelativeDetect() {
-    if (!detectActive || midiStore == nullptr || !midi.messageSeq) return false;
-    const std::uint64_t seqNow = midi.messageSeq();
-    if (seqNow == detectSeq) return false;
-    detectSeq = seqNow;
-    const std::uint32_t m = midi.lastMessage();
-    if (((m >> 20) & 1u) == 0 || ((m >> 8) & 0x1Fu) != detectKey.channel || (m & 0xFFu) != detectKey.number)
-      return false;
-    const core::MidiInputMode mode = detector.feed(static_cast<int>((m >> 21) & 0x7Fu));
-    if (mode == core::MidiInputMode::absolute) {
-      if (detector.exhausted()) detectActive = false;
-      return false;
-    }
-    detectActive = false;
-    const int row = midiStore->map().find(detectKey);
-    if (row < 0) return false;
-    auto edited = midiStore->map().at(static_cast<std::uint32_t>(row));
-    if (edited.mode != core::MidiInputMode::absolute) return false;  // the user already chose one
-    edited.mode = mode;
-    if (!midiStore->bind(edited)) return false;
+    if (profileBrowser || midiStore == nullptr || !midi.messageSeq) return false;
+    core::MidiBinding edited;
+    if (!relativeLearn.observe(midiStore->map(), midiStore->generation(), midi.messageSeq(),
+                                midi.lastMessage(), edited) || !midiStore->bind(edited)) return false;
     if (midi.bindingsChanged) midi.bindingsChanged();
     return true;
   }
@@ -396,7 +394,7 @@ struct EditorShared {
   bool key(const IKeyPress& k, bool up) {
     static const char kKeys[] = "awsedftgyhujkolp;";
     if (k.VK == kVK_ESCAPE && midiOpen) {
-      if (!up) showMidi(false);  // also cancels an armed learn
+      if (!up) { if (profileBrowser) showProfiles(false); else showMidi(false); }
       return true;
     }
     if (k.VK == kVK_ESCAPE && menuOpen) {
@@ -1491,7 +1489,7 @@ class MidiOverlayControl : public IControl {
  public:
   explicit MidiOverlayControl(EditorShared& s)
       : IControl(IRECT(midi_ui::kBounds.l, midi_ui::kBounds.t, midi_ui::kBounds.r, midi_ui::kBounds.b)),
-        s_(s) {}
+        s_(s) { SetTextEntryLength(static_cast<int>(kMidiProfileNameBytes - 1)); }
   void Draw(IGraphics& g) override {
     OverlaySink sink(g);
     midi_ui::State state;
@@ -1504,7 +1502,20 @@ class MidiOverlayControl : public IControl {
     state.octave = s_.midi.octaveShift ? s_.midi.octaveShift() : 0;
     state.curve = s_.midi.velocityCurve ? s_.midi.velocityCurve() : 0;
     state.split = s_.midi.splitNote ? s_.midi.splitNote() : core::kMidiDefaultSplitNote;
-    state.offset = s_.midiListOffset;
+    state.offset = s_.profileBrowser ? s_.profileListOffset : s_.midiListOffset;
+    state.profileBrowser = s_.profileBrowser;
+    state.deleteArmed = s_.profileDeleteArmed;
+    state.reloadArmed = s_.profileReloadArmed;
+    if (g.GetControlInTextEntry() == this) state.nameAction = nameAction_;
+    if (s_.midiStore) {
+      state.profileName = s_.midiStore->editable() ? s_.midiStore->name() : "No profile";
+      state.error = s_.midiStore->error();
+      state.recovery = s_.midiStore->needsRecovery();
+      state.dirty = s_.midiStore->dirty();
+      for (const auto& p : s_.midiStore->profiles())
+        state.profiles.push_back({p.name, p.id == s_.midiStore->id() ? s_.midiStore->map().count() : p.bindings,
+                                  p.id == s_.midiStore->id(), p.readable, p.id == s_.unavailableDeleteId});
+    }
     state.armed = s_.learnArmed;
     state.awaitTarget = s_.learnAwaitTarget;
     state.editable = editable();
@@ -1531,16 +1542,84 @@ class MidiOverlayControl : public IControl {
       GetUI()->SetAllControlsDirty();
       return;
     }
-    const int count = s_.midiStore ? static_cast<int>(s_.midiStore->map().count()) : 0;
-    s_.midiListOffset = midi_ui::pageOffset(s_.midiListOffset, count);
-    if (midi_ui::kPrevious.contains(x, y)) {
-      s_.midiListOffset = midi_ui::pageOffset(s_.midiListOffset - midi_ui::kVisibleRows, count);
+    if (!s_.midiStore) return;
+    const auto unavailableDeleteId = s_.unavailableDeleteId;
+    s_.unavailableDeleteId.clear();
+    if (midi_ui::kProfile.contains(x, y)) {
+      s_.showProfiles(!s_.profileBrowser);
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
+    const bool failedSave = s_.midiStore->dirty() && s_.midiStore->needsRecovery();
+    if (editable() && s_.midiStore->needsRecovery() && midi_ui::kReload.contains(x, y)) {
+      s_.profileDeleteArmed = false;
+      s_.unavailableDeleteId.clear();
+      if (s_.profileReloadArmed) {
+        s_.profileReloadArmed = false;
+        if (s_.midiStore->reload()) s_.adoptedMidiProfile();
+      } else s_.profileReloadArmed = true;
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
+    s_.profileReloadArmed = false;
+    if (midi_ui::kLearn.contains(x, y) && s_.midiStore->needsRecovery()) {
+      if (!editable()) {
+        const auto outcome = s_.midiStore->load();
+        if (outcome == MidiMapLoadOutcome::Ok || outcome == MidiMapLoadOutcome::NoFile) s_.adoptedMidiProfile();
+      } else if (failedSave) (void)s_.midiStore->save();
+      else (void)s_.midiStore->refresh();
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
+    const int count = s_.profileBrowser ? static_cast<int>(s_.midiStore->profiles().size()) :
+                                        static_cast<int>(s_.midiStore->map().count());
+    int& offset = s_.profileBrowser ? s_.profileListOffset : s_.midiListOffset;
+    offset = midi_ui::pageOffset(offset, count);
+    if (midi_ui::kPrevious.contains(x, y) || midi_ui::kNext.contains(x, y)) {
+      const int delta = midi_ui::kPrevious.contains(x, y) ? -midi_ui::kVisibleRows : midi_ui::kVisibleRows;
+      offset = midi_ui::pageOffset(offset + delta, count);
+      s_.profileDeleteArmed = false;
+      s_.unavailableDeleteId.clear();
       SetDirty(false);
       return;
     }
-    if (midi_ui::kNext.contains(x, y)) {
-      s_.midiListOffset = midi_ui::pageOffset(s_.midiListOffset + midi_ui::kVisibleRows, count);
-      SetDirty(false);
+    if (s_.profileBrowser) {
+      if (midi_ui::kLearn.contains(x, y)) s_.showProfiles(false);
+      for (int i = 0; i < midi_ui::kVisibleRows && offset + i < count; ++i) {
+        if (!midi_ui::profileRow(i).contains(x, y)) continue;
+        const auto profile = s_.midiStore->profiles()[static_cast<std::size_t>(offset + i)];
+        if (!profile.readable && midi_ui::unavailableRemove(i).contains(x, y)) {
+          s_.profileDeleteArmed = false;
+          if (unavailableDeleteId == profile.id) {
+            (void)s_.midiStore->removeUnavailable(profile.id);
+            s_.unavailableDeleteId.clear();
+          } else s_.unavailableDeleteId = profile.id;
+          GetUI()->SetAllControlsDirty();
+          return;
+        }
+        s_.unavailableDeleteId.clear();
+        s_.profileDeleteArmed = false;
+        if (profile.readable && s_.midiStore->select(profile.id)) s_.adoptedMidiProfile();
+      }
+      for (int i = 0; i < 4; ++i) {
+        if (!midi_ui::profileAction(i).contains(x, y)) continue;
+        s_.unavailableDeleteId.clear();
+        if (i != 0 && !editable()) break;
+        if (i < 3) {
+          s_.profileDeleteArmed = false;
+          beginNameEntry(i);
+        } else {
+          int readable = 0;
+          for (const auto& p : s_.midiStore->profiles()) if (p.readable) ++readable;
+          if (readable > 1) {
+            if (s_.profileDeleteArmed) {
+              if (s_.midiStore->removeCurrent()) s_.adoptedMidiProfile();
+              s_.profileDeleteArmed = false;
+            } else s_.profileDeleteArmed = true;
+          }
+        }
+      }
+      GetUI()->SetAllControlsDirty();
       return;
     }
     if (!editable()) return;
@@ -1600,11 +1679,35 @@ class MidiOverlayControl : public IControl {
     }
   }
 
- private:
-  bool editable() const {
-    return s_.midiStore && s_.midiStore->loadOutcome() != host::MidiMapLoadOutcome::Malformed &&
-           s_.midiStore->loadOutcome() != host::MidiMapLoadOutcome::Unreadable;
+  void OnTextEntryCompletion(const char* text, int) override {
+    if (!s_.midiStore || !text || nameGeneration_ != s_.midiStore->generation()) return;
+    const bool ok = nameAction_ == 2 ? s_.midiStore->rename(text) : s_.midiStore->create(text, nameAction_ == 1);
+    if (ok && nameAction_ != 2) s_.adoptedMidiProfile();
+    GetUI()->SetAllControlsDirty();
   }
+ private:
+  void beginNameEntry(int action) {
+    nameAction_ = action;
+    nameGeneration_ = s_.midiStore->generation();
+    std::string name = action == 2 ? s_.midiStore->name() : action == 1 ? s_.midiStore->name().substr(0, 29) + " Copy" : "Untitled";
+    if (action != 2) {
+      const std::string base = name;
+      int suffix = 2;
+      auto exists = [&]() {
+        for (const auto& p : s_.midiStore->profiles())
+          if (midi_profile_files::folded(p.name) == midi_profile_files::folded(name)) return true;
+        return false;
+      };
+      while (exists()) name = base + " " + std::to_string(suffix++);
+    }
+    const auto b = midi_ui::kNameEntry;
+    IText style = txt(19, theme::rgb(midi_ui::kInk));
+    style.mAlign = EAlign::Near;
+    GetUI()->CreateTextEntry(*this, style, IRECT(b.l, b.t, b.r, b.b), name.c_str(), kNoValIdx);
+  }
+  bool editable() const { return s_.midiStore && s_.midiStore->editable(); }
+  int nameAction_ = 0;
+  std::uint64_t nameGeneration_ = 0;
   EditorShared& s_;
   float hoverX_ = -1, hoverY_ = -1;
 };
@@ -1766,8 +1869,13 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   addMidi(new MidiOverlayControl(shared));
   shared.showMidi(false);
 
+  g->AttachTextEntryControl();
   g->EnableMouseOver(true);  // hover highlights and knob value readouts
   g->SetKeyHandlerFunc([&shared, g](const IKeyPress& key, bool isUp) {
+    if (g->GetControlInTextEntry()) {
+      if (isUp) (void)shared.key(key, true);
+      return true;
+    }
     const bool used = shared.key(key, isUp);
     if (used) g->SetAllControlsDirty();
     return used;

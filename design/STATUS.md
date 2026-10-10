@@ -1,6 +1,6 @@
 # Lunar 24 — status
 
-_Last updated: 2026-10-09._ Module-by-module comparison with the Solar 42N manual:
+_Last updated: 2026-10-10._ Module-by-module comparison with the Solar 42N manual:
 `design/ARCHITECTURE.md`. Manual test steps and results: `design/MANUAL_TESTS.md`.
 Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md`.
 
@@ -24,7 +24,7 @@ Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md
 - **Version**: 1.0.0; About Lunar 24 shows the build number, time and commit (the plugins:
   bottom right of the MIDI panel, build number and commit).
 - **Tools**: `lunar24_render` (engine to WAV), `panel_preview` (panel to SVG).
-- **Tests**: 67 unit / engine tests (~70 s), also under ASan + UBSan in CI; the threaded
+- **Tests**: 69 portable unit / engine tests (~70 s), also under ASan + UBSan in CI; the threaded
   ones under ThreadSanitizer too.
 - **Checked by hand on the Mac**: everything in MANUAL_TESTS except the ⏳ items below.
 
@@ -49,7 +49,8 @@ Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md
   a side's 1-2-3 switch loads it on that side and picks the program.
 - MIDI: notes play the plates; mod wheel / CC74 cutoff, CC71 resonance, CC91 blend, CC7
   master; pitch bend, sustain, MIDI clock. The MIDI button opens learn and controller
-  settings (channel, transpose, velocity curve, SPLIT note).
+  settings. PROFILE manages named setups (bindings, channel, transpose, velocity, SPLIT),
+  shared by App/plugins; edits auto-save. New profile UI/controller hand test: T15.12 ⏳.
 - REC (headphone corner): WET, DRY or ALL to 24-bit WAVs in Music/Lunar 24.
 
 ## Next steps

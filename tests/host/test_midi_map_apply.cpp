@@ -50,7 +50,8 @@ int main() {
   // Match precedence: exact device+channel > device-only > channel-only > wildcard;
   // a device-named binding never matches a different published input device.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("TestKit", 1, 74, core::ParameterId::vcf_l_freq)));
@@ -69,7 +70,8 @@ int main() {
 
   // Absolute pickup: nothing moves until the controller crosses the current value.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("TestKit", 1, 74, core::ParameterId::vcf_l_freq)));
@@ -100,12 +102,24 @@ int main() {
     e.processBlock(nullptr, outs, 0, 2, 256);
     e.syncParametersFromAudioThread();
     CHECK(std::fabs(e.parameterValue(core::ParameterId::vcf_l_freq) - d->max) < 1e-9);
+    const core::MidiRigSettings settings{0, 12, core::MidiVelocityCurve::soft, 48};
+    e.publishMidiMap(m, "TestKit", settings, false);
+    e.applyMidiBindingFromAudioThread(0, 64);
+    e.syncParametersFromAudioThread();
+    CHECK(std::fabs(e.parameterValue(core::ParameterId::vcf_l_freq) - core::knob_to_value(*d, 64.0 / 127)) < 1e-9);
+    const auto beforeSwitch = e.parameterValue(core::ParameterId::vcf_l_freq);
+    e.publishMidiMap(m, "TestKit", settings);  // a profile switch DOES re-arm pickup
+    e.applyMidiBindingFromAudioThread(0, 0);
+    e.syncParametersFromAudioThread();
+    CHECK_EQ(e.parameterValue(core::ParameterId::vcf_l_freq), beforeSwitch);
+
   }
 
   // Relative (bin-offset): a slow tick steps the parameter by 1/512 of its range, ticks in
   // quick succession by 4/512 (a spun encoder), and it clamps at the maximum.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("TestKit", 0, 22, core::ParameterId::effector_blend,
@@ -133,7 +147,8 @@ int main() {
   // Drone-key action: heard at once (the runtime's voice state flips immediately,
   // before the UI records it), then the engine record follows on sync.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     CHECK(!e.droneKey(0));  // the app starts with every DRONE VOICES key closed
     CHECK(!e.runtime()->droneVoiceKey(0));
@@ -158,7 +173,8 @@ int main() {
 
   // Mute action: immediate, nothing to record.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindAction(0, 40, core::MidiAction::master_mute)));
@@ -173,7 +189,8 @@ int main() {
   // Cartridge action: the UI puts the next cartridge in the slot on sync; nothing loads until
   // a side's 1-2-3 switch flips (a MIDI-bound switch here), and then only that side loads it.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     const auto before = e.canonicalState()->leftEffector.program;
     const int cart = static_cast<int>(static_cast<std::uint32_t>(before) / 3u);
@@ -195,7 +212,8 @@ int main() {
 
   // Preset action: the UI loads the slot on sync.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     CHECK(e.postParameter(core::ParameterId::keyboard_mode, 1.0));       // arpeggiator
     CHECK(e.postKeyboardPreset(E::PresetAction::Save, 1));               // stash into B
@@ -212,7 +230,8 @@ int main() {
 
   // A publication cannot recycle a snapshot still used between lookup and apply.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap a, b;
     CHECK(a.bind(bindCc("", 0, 22, core::ParameterId::effector_blend,
@@ -245,7 +264,8 @@ int main() {
 
   // The first encoder message uses panel edits made AFTER publication.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::effector_blend,
@@ -260,7 +280,8 @@ int main() {
 
   // Discrete selectors get the SAME snapped value in DSP and saved state.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::vco_a_oct_sel)));
@@ -275,7 +296,8 @@ int main() {
 
   // A CC button toggles on the rising edge, never on release or repeated high values.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     auto button = bindAction(0, 22, core::MidiAction::master_mute);
     button.key.kind = core::MidiBindingKind::cc;
@@ -382,7 +404,8 @@ int main() {
   // Both the panel and MIDI action use this atomic toggle. An even total of
   // concurrent toggles must preserve the initial state.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     std::atomic<bool> start{false};
     std::thread panel([&] {
       while (!start.load(std::memory_order_acquire)) {}
@@ -398,7 +421,8 @@ int main() {
 
   // A pad's velocity is an absolute value, not a pickup knob needing a sweep.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     auto pad = bindCc("", 0, 40, core::ParameterId::effector_blend);
     pad.key.kind = core::MidiBindingKind::note;
@@ -412,7 +436,8 @@ int main() {
 
   // Loading presets while the UI keeps editing must never read UI state on audio.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     CHECK(m.bind(bindCc("", 0, 22, core::ParameterId::keyboard_clock_bpm,
@@ -431,7 +456,8 @@ int main() {
   // Photo sensors: a knob sets the hand (absolute, or relative steps); a pad puts it down
   // on a hit, presses closer with aftertouch and lifts it on release.
   {
-    E e;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
     auto knob = bindCc("", 0, 30, core::ParameterId::vcf_l_freq);
@@ -478,6 +504,65 @@ int main() {
     CHECK_EQ(e.runtime()->dronePhotoShade(3), 0.0);
     CHECK(!e.photoPadPressure(10, 36, 0.5));  // released: no longer held
     e.processBlock(nullptr, outs, 0, 2, 256);
+  }
+  // Filtering/settings and the matched binding stay on one snapshot, even when the
+  // UI publishes a different profile between the message's filter and lookup.
+  {
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap a, b;
+    CHECK(a.bind(bindCc("Controller A", 3, 22, core::ParameterId::effector_blend,
+                        core::MidiInputMode::relativeTwosComplement)));
+    CHECK(b.bind(bindCc("Controller B", 9, 22, core::ParameterId::effector_master,
+                        core::MidiInputMode::relativeBinOffset)));
+    core::MidiRigSettings sa{3, 12, core::MidiVelocityCurve::soft, 48};
+    core::MidiRigSettings sb{9, -12, core::MidiVelocityCurve::hard, 72};
+    e.publishMidiMap(a, "Controller A", sa);
+    {
+      E::MidiMessageScope message(e);
+      CHECK_EQ(message.settings().channelFilter, 3);
+      e.publishMidiMap(b, "Controller B", sb);
+      CHECK_EQ(message.settings().octaveShift, 12);
+      CHECK_EQ(e.midiBindingRow(3, core::MidiBindingKind::cc, 22), 0);
+      CHECK_EQ(e.midiBindingRow(9, core::MidiBindingKind::cc, 22), -1);
+    }
+    {
+      E::MidiMessageScope message(e);
+      CHECK_EQ(message.settings().channelFilter, 9);
+      CHECK_EQ(message.settings().splitNote, 72);
+      CHECK(message.settings().velocityCurve == core::MidiVelocityCurve::hard);
+      CHECK_EQ(e.midiBindingRow(3, core::MidiBindingKind::cc, 22), -1);
+      CHECK_EQ(e.midiBindingRow(9, core::MidiBindingKind::cc, 22), 0);
+      e.applyMidiBindingFromAudioThread(0, 65);
+    }
+    std::thread publisher([&] {
+      for (int i = 0; i < 20000; ++i)
+        e.publishMidiMap(i % 2 ? a : b, i % 2 ? "Controller A" : "Controller B", i % 2 ? sa : sb);
+    });
+    for (int i = 0; i < 20000; ++i) {
+      E::MidiMessageScope message(e);
+      const auto& rig = message.settings();
+      const bool first = rig.channelFilter == 3;
+      CHECK_EQ(rig.octaveShift, first ? 12 : -12);
+      CHECK_EQ(rig.splitNote, first ? 48 : 72);
+      CHECK(rig.velocityCurve == (first ? core::MidiVelocityCurve::soft : core::MidiVelocityCurve::hard));
+      CHECK_EQ(e.midiBindingRow(rig.channelFilter, core::MidiBindingKind::cc, 22), 0);
+      CHECK_EQ(e.midiBindingRow(first ? 9 : 3, core::MidiBindingKind::cc, 22), -1);
+    }
+    publisher.join();
+    // A held photo pad still releases its old target after switching to an empty map.
+    core::MidiMap pads;
+    CHECK(pads.bind(bindAction(10, 36, core::MidiAction::photo_drone_5)));
+    e.publishMidiMap(pads, nullptr, sa);
+    e.applyMidiBindingFromAudioThread(0, 127, 10);
+    e.publishMidiMap(core::MidiMap{}, nullptr, sb);
+    {
+      E::MidiMessageScope message(e);
+      CHECK_EQ(e.midiBindingRow(10, core::MidiBindingKind::note, 36), -1);
+      CHECK(e.photoPadRelease(10, 36));
+      CHECK_EQ(e.runtime()->dronePhotoShade(3), 0.0);
+    }
   }
   return test::finish("test_midi_map_apply");
 }

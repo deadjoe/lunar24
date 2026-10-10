@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace lunar24::host::midi_ui {
 
@@ -20,7 +21,15 @@ struct Box {
 };
 inline constexpr Box kBounds{410, 1112, 1990, 1482};
 inline constexpr Box kClose{1846, 1126, 1966, 1166};
+inline constexpr Box kProfile{832, 1126, 1332, 1166};
+inline constexpr Box kInput{1350, 1128, 1816, 1164};
+inline constexpr Box profileRow(int row) { return {832, 1205.f + row * 50, 1966, 1253.f + row * 50}; }
+inline constexpr Box profileAction(int i) { return {832.f + i * 168, 1436, 988.f + i * 168, 1472}; }
+inline constexpr Box kNameEntry{846, 1208, 1668, 1248};
 inline constexpr Box kLearn{434, 1364, 788, 1404};
+inline constexpr Box kRetrySave{434, 1364, 604, 1404};
+inline constexpr Box kReload{614, 1364, 788, 1404};
+inline constexpr Box unavailableRemove(int row) { return {1858, 1210.f + row * 50, 1958, 1250.f + row * 50}; }
 inline constexpr Box kPrevious{1722, 1430, 1770, 1470};
 inline constexpr Box kNext{1918, 1430, 1966, 1470};
 inline constexpr Box kVersion{1540, 1436, 1712, 1472};  // plugins: two lines, version and build
@@ -55,9 +64,18 @@ inline constexpr std::uint32_t kPaper = 0xe9e0d2, kCard = 0xf5eee3, kInk = 0x242
 // Armed status text is a deeper kRed, readable at small sizes on paper (WCAG AA).
 inline constexpr std::uint32_t kDisabledEdge = 0xb5a998, kDisabledText = 0x8a8174, kArmedText = 0xa81b20;
 
+struct ProfileRow {
+  std::string name;
+  std::uint32_t bindings = 0;
+  bool current = false, readable = true, deleteArmed = false;
+};
 struct State {
   const core::MidiMap* map = nullptr;
   std::string device;
+  std::string profileName = "Untitled", error, nameText;
+  std::vector<ProfileRow> profiles;
+  bool profileBrowser = false, deleteArmed = false, dirty = false, reloadArmed = false, recovery = false;
+  int nameAction = -1;
   int channel = 0, octave = 0, curve = 0, offset = 0;
   int split = core::kMidiDefaultSplitNote;  // MIDI note: TWIN / SPLIT right side starts here
   bool armed = false, awaitTarget = false, editable = true;
@@ -151,8 +169,15 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   rect({412, 1114, 1988, 1480}, kPaper, 10);
   rect({414, 1116, 1986, 1176}, kInk, 8);
   label({434, 1124, 798, 1168}, 24, kWhite, "MIDI CONTROL", true);
-  label({832, 1128, 904, 1164}, 14, 0xc8bdad, "INPUT", true);
-  label({914, 1128, 1816, 1164}, 19, kWhite,
+  rect(kProfile, kProfile.contains(mouseX, mouseY) ? 0x504940 : 0x39342e, 5);
+  label({846, 1128, 922, 1164}, 12, 0xc8bdad, "PROFILE", true);
+  label({930, 1128, 1288, 1164}, 19, kWhite, st.profileName + (st.dirty ? " *" : ""), true);
+  s.moveTo(1298, st.profileBrowser ? 1150.f : 1142.f);
+  s.lineTo(1304, st.profileBrowser ? 1142.f : 1150.f);
+  s.lineTo(1310, st.profileBrowser ? 1150.f : 1142.f);
+  s.closePath(); s.fillPath(kWhite, false);
+  label({kInput.l, kInput.t, 1410, kInput.b}, 12, 0xc8bdad, "INPUT", true);
+  label({1420, kInput.t, kInput.r, kInput.b}, 17, kWhite,
         st.device.empty() ? std::string(st.noDevice) : asciiText(st.device), true);
   button(kClose, "CLOSE", true);
   rect({810, 1186, 812, 1404}, kRule, 0);
@@ -170,61 +195,104 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     const auto b = setting(i);
     rect(b, kCard);
     label({b.l + 14, b.t, 590, b.b}, 16, kMuted, labels[i], true);
-    button(decrement(i), "<", st.editable);
-    button(increment(i), ">", st.editable);
+    button(decrement(i), "<", st.editable && !st.profileBrowser);
+    button(increment(i), ">", st.editable && !st.profileBrowser);
     label({640, b.t, 740, b.b}, 20, kInk, values[i], true, true);
   }
-  button(kLearn, st.armed ? "CANCEL LEARN" : "+ LEARN A CONTROL", st.editable, true);
-  label({844, 1180, 1198, 1202}, 14, kMuted, "CONTROLLER", true);
-  label({1220, 1180, 1688, 1202}, 14, kMuted, "PANEL TARGET", true);
-  label({1708, 1180, 1848, 1202}, 14, kMuted, "MODE", true, true);
-  const int count = st.map ? static_cast<int>(st.map->count()) : 0;
+  if (st.recovery && st.editable) {
+    button(kRetrySave, st.dirty ? "RETRY SAVE" : "RETRY", true);
+    button(kReload, st.reloadArmed ? "RELOAD?" : "RELOAD", true);
+  } else {
+    button(kLearn, st.recovery ? (st.editable ? "RETRY" : "RETRY LOAD") :
+                   st.profileBrowser ? "BACK TO BINDINGS" : st.armed ? "CANCEL LEARN" : "+ LEARN A CONTROL",
+           st.editable || st.profileBrowser || st.recovery, !st.profileBrowser);
+  }
+  const int count = st.profileBrowser ? static_cast<int>(st.profiles.size()) :
+                    st.map ? static_cast<int>(st.map->count()) : 0;
   const int offset = pageOffset(st.offset, count);
-  for (int i = 0; i < kVisibleRows; ++i) {
-    const float y = kTableY + i * kRowH;
-    rect({832, y + 1, 1966, y + 49}, i % 2 == 0 ? kCard : 0xe2d8c9, 5);
-    if (offset + i >= count) continue;
-    const auto& b = st.map->at(static_cast<std::uint32_t>(offset + i));
-    char source[48];
-    if (b.key.channel == 0)
-      std::snprintf(source, sizeof(source), "%s %u / ANY CH",
-                    b.key.kind == core::MidiBindingKind::cc ? "CC" : "NOTE", unsigned(b.key.number));
-    else
-      std::snprintf(source, sizeof(source), "%s %u / CH %u",
-                    b.key.kind == core::MidiBindingKind::cc ? "CC" : "NOTE", unsigned(b.key.number),
-                    unsigned(b.key.channel));
-    label({846, y + 2, 1196, y + 27}, 18, kInk, source, true);
-    label({846, y + 26, 1196, y + 47}, 14, kMuted, b.key.device[0] ? asciiText(b.key.device) : "Any device");
-    label({1220, y + 4, 1688, y + 46}, 18, kInk, targetText(b), true);
-    const auto drive = core::midi_parameter_drive(b);
-    if (b.targetKind != core::MidiTargetKind::parameter && core::midi_action_is_continuous(b.action)) {
-      if (b.key.kind == core::MidiBindingKind::note)
-        label(mode(i), 15, kMuted, "PRESS", true, true);  // a pad: hit, pressure, release
+  if (st.nameAction >= 0) {
+    const char* titles[] = {"NEW PROFILE NAME", "COPY PROFILE AS", "RENAME CURRENT PROFILE"};
+    label({844, 1180, 1640, 1202}, 14, kMuted, titles[std::clamp(st.nameAction, 0, 2)], true);
+    rect({832, 1205, 1966, 1403}, kCard);
+    rect(kNameEntry, kWhite, 4);
+    label(kNameEntry, 19, kInk, st.nameText, true);
+    label({846, 1270, 1948, 1310}, 18, kMuted, "English names, up to 39 characters.");
+    label({846, 1314, 1948, 1354}, 16, kMuted, "Enter or click outside to confirm. Esc to cancel.");
+  } else if (st.profileBrowser) {
+    int readable = 0;
+    for (const auto& p : st.profiles) if (p.readable) ++readable;
+    label({844, 1180, 1640, 1202}, 14, kMuted,
+          "SAVED PROFILES / " + std::to_string(readable) + " AVAILABLE", true);
+    label({1720, 1180, 1950, 1202}, 14, kMuted, "BINDINGS", true, true);
+    for (int i = 0; i < kVisibleRows; ++i) {
+      const auto box = profileRow(i);
+      const int row = offset + i;
+      rect(box, i % 2 == 0 ? kCard : 0xe2d8c9, 5);
+      if (row >= count) continue;
+      const auto& profile = st.profiles[static_cast<std::size_t>(row)];
+      if (profile.readable && box.contains(mouseX, mouseY)) rect(box, 0xd9cdbc, 5);
+      if (profile.current) rect({box.l, box.t + 5, box.l + 4, box.b - 5}, kTeal, 1);
+      label({850, box.t, 1620, box.b}, 19, profile.readable ? kInk : kMuted, profile.name, true);
+      if (profile.current) label({1628, box.t, 1732, box.b}, 12, kTeal, "CURRENT", true, true);
+      if (profile.readable) label({1750, box.t, 1950, box.b}, 17, kMuted, std::to_string(profile.bindings), false, true);
+      else {
+        label({1690, box.t, 1850, box.b}, 14, kMuted, "UNAVAILABLE", false, true);
+        button(unavailableRemove(i), profile.deleteArmed ? "DELETE?" : "DELETE", true);
+      }
+    }
+  } else {
+    label({844, 1180, 1198, 1202}, 14, kMuted, "CONTROLLER", true);
+    label({1220, 1180, 1688, 1202}, 14, kMuted, "PANEL TARGET", true);
+    label({1708, 1180, 1848, 1202}, 14, kMuted, "MODE", true, true);
+    for (int i = 0; i < kVisibleRows; ++i) {
+      const float y = kTableY + i * kRowH;
+      rect({832, y + 1, 1966, y + 49}, i % 2 == 0 ? kCard : 0xe2d8c9, 5);
+      if (offset + i >= count) continue;
+      const auto& b = st.map->at(static_cast<std::uint32_t>(offset + i));
+      char source[48];
+      if (b.key.channel == 0)
+        std::snprintf(source, sizeof(source), "%s %u / ANY CH",
+                      b.key.kind == core::MidiBindingKind::cc ? "CC" : "NOTE", unsigned(b.key.number));
+      else
+        std::snprintf(source, sizeof(source), "%s %u / CH %u",
+                      b.key.kind == core::MidiBindingKind::cc ? "CC" : "NOTE", unsigned(b.key.number),
+                      unsigned(b.key.channel));
+      label({846, y + 2, 1196, y + 27}, 18, kInk, source, true);
+      label({846, y + 26, 1196, y + 47}, 14, kMuted, b.key.device[0] ? asciiText(b.key.device) : "Any device");
+      label({1220, y + 4, 1688, y + 46}, 18, kInk, targetText(b), true);
+      const auto drive = core::midi_parameter_drive(b);
+      if (b.targetKind != core::MidiTargetKind::parameter && core::midi_action_is_continuous(b.action)) {
+        if (b.key.kind == core::MidiBindingKind::note)
+          label(mode(i), 15, kMuted, "PRESS", true, true);  // a pad: hit, pressure, release
+        else
+          button(mode(i), modeText(b), st.editable);
+      } else if (b.targetKind != core::MidiTargetKind::parameter)
+        label(mode(i), 15, kMuted, "TRIGGER", true, true);
+      else if (drive == core::MidiParameterDrive::toggleOnPress)
+        label(mode(i), 15, kMuted, "TOGGLE", true, true);  // a press flips the switch
+      else if (drive == core::MidiParameterDrive::stepOnPress)
+        label(mode(i), 15, kMuted, "STEP", true, true);    // a hit moves to the next position
       else
         button(mode(i), modeText(b), st.editable);
-    } else if (b.targetKind != core::MidiTargetKind::parameter)
-      label(mode(i), 15, kMuted, "TRIGGER", true, true);
-    else if (drive == core::MidiParameterDrive::toggleOnPress)
-      label(mode(i), 15, kMuted, "TOGGLE", true, true);  // a press flips the switch
-    else if (drive == core::MidiParameterDrive::stepOnPress)
-      label(mode(i), 15, kMuted, "STEP", true, true);    // a hit moves to the next position
-    else
-      button(mode(i), modeText(b), st.editable);
-    button(remove(i), "x", st.editable);
-  }
-  if (count == 0) {
-    rect({832, 1204, 1966, 1404}, kCard);
-    label({866, 1240, 1932, 1282}, 22, kInk, "No controller bindings yet", true, true);
-    label({866, 1284, 1932, 1320}, 18, kMuted,
-          "Click LEARN, choose a panel control, then move a knob or press a pad.", false, true);
-    label({866, 1326, 1932, 1360}, 16, kMuted, "Bindings are saved separately from your sound settings.",
-          false, true);
+      button(remove(i), "x", st.editable);
+    }
+    if (count == 0) {
+      rect({832, 1204, 1966, 1404}, kCard);
+      label({866, 1240, 1932, 1282}, 22, kInk, "No controller bindings yet", true, true);
+      label({866, 1284, 1932, 1320}, 18, kMuted,
+            "Click LEARN, choose a panel control, then move a knob or press a pad.", false, true);
+      label({866, 1326, 1932, 1360}, 16, kMuted, "Bindings are saved separately from your sound settings.",
+            false, true);
+    }
   }
   rect({434, 1412, 1966, 1414}, kRule, 0);
   const char *line1 = "Link a panel control to a knob,", *line2 = "button or pad on your controller.";
-  if (!st.editable) {
-    line1 = "Bindings file cannot be read.";
-    line2 = "Editing is disabled to protect it.";
+  if (st.profileBrowser) {
+    line1 = "Choose a profile to switch.";
+    line2 = "Edits are saved automatically.";
+  } else if (!st.editable) {
+    line1 = "No editable profile.";
+    line2 = "Open PROFILE to create one.";
   } else if (st.armed && st.awaitTarget) {
     line1 = "1. Choose a panel control above";
     line2 = "or an EXTRA LEARN TARGET.";
@@ -232,10 +300,35 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     line1 = "2. Move a knob or press a pad.";
     line2 = "Esc or CANCEL LEARN to cancel.";
   }
-  label({434, 1424, 802, 1448}, 16, st.armed ? kArmedText : kMuted, line1, true);
-  label({434, 1449, 802, 1474}, 15, kMuted, line2);
-  label({832, 1416, 1532, 1435}, 12, kMuted, "EXTRA LEARN TARGETS", true);
-  for (int i = 0; i < 5; ++i) button(action(i), kActionLabels[i], st.editable && st.armed && st.awaitTarget);
+  std::string error1, error2;
+  if (!st.error.empty()) {
+    auto cut = st.error.find(". ");
+    if (cut == std::string::npos) cut = st.error.find("; ");
+    if (cut != std::string::npos && cut < 38) {
+      error1 = st.error.substr(0, cut + 1);
+      error2 = st.error.substr(cut + 2);
+    } else {
+      cut = st.error.size() > 38 ? st.error.rfind(' ', 38) : std::string::npos;
+      error1 = st.error.substr(0, cut);
+      if (cut != std::string::npos) error2 = st.error.substr(cut + 1);
+    }
+    line1 = error1.c_str(); line2 = error2.c_str();
+  }
+  if (st.reloadArmed) { line1 = st.dirty ? "Discard local edits?" : "Reload current profile?"; line2 = "Click RELOAD? to read this profile."; }
+  label({434, 1424, 802, 1448}, 15, !st.error.empty() ? kRed : st.armed ? kArmedText : kMuted, line1, true);
+  label({434, 1449, 802, 1474}, 14, kMuted, line2);
+  if (st.profileBrowser) {
+    label({832, 1416, 1532, 1435}, 12, kMuted, "MANAGE CURRENT PROFILE", true);
+    button(profileAction(0), "NEW", st.nameAction < 0);
+    button(profileAction(1), "COPY", st.editable && st.nameAction < 0);
+    button(profileAction(2), "RENAME", st.editable && st.nameAction < 0);
+    int readable = 0;
+    for (const auto& p : st.profiles) if (p.readable) ++readable;
+    button(profileAction(3), st.deleteArmed ? "DELETE?" : "DELETE", st.editable && readable > 1 && st.nameAction < 0);
+  } else {
+    label({832, 1416, 1532, 1435}, 12, kMuted, "EXTRA LEARN TARGETS", true);
+    for (int i = 0; i < 5; ++i) button(action(i), kActionLabels[i], st.editable && st.armed && st.awaitTarget);
+  }
   if (!st.version.empty()) {
     label({kVersion.l, kVersion.t, kVersion.r, kVersion.t + 18}, 13, kMuted, st.version, true);
     label({kVersion.l, kVersion.t + 18, kVersion.r, kVersion.b}, 12, kMuted, st.build);
@@ -247,7 +340,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
                 std::max(1, (count + kVisibleRows - 1) / kVisibleRows));
   label({1776, 1428, 1912, 1453}, 18, kInk, page, true, true);
   char total[32];
-  std::snprintf(total, sizeof(total), "%d %s", count, count == 1 ? "binding" : "bindings");
+  std::snprintf(total, sizeof(total), "%d %s", count, st.profileBrowser ? (count == 1 ? "profile" : "profiles") : (count == 1 ? "binding" : "bindings"));
   label({1776, 1452, 1912, 1475}, 13, kMuted, total, false, true);
 }
 }  // namespace lunar24::host::midi_ui

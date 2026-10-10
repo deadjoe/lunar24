@@ -163,6 +163,7 @@ lunar_add_host_test(test_live_cable_rt tests/host/test_live_cable_rt.cpp tests/h
 lunar_add_host_test(test_plugin_state_chunk tests/host/test_plugin_state_chunk.cpp)
 lunar_add_host_test(test_state_swap tests/host/test_state_swap.cpp tests/host/test_state_swap_allocator.cpp)
 lunar_add_host_test(test_midi_sustain tests/host/test_midi_sustain.cpp)
+lunar_add_host_test(test_midi_learn tests/host/test_midi_learn.cpp)
 lunar_add_host_test(test_midi_map_store tests/host/test_midi_map_store.cpp)
 lunar_add_host_test(test_midi_map_apply tests/host/test_midi_map_apply.cpp)
 find_package(Threads REQUIRED)
