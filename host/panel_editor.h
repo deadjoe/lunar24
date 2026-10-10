@@ -172,11 +172,13 @@ struct EditorShared {
   int recordShownSecond = -1;
   bool isRecording() const { return rec.recording && rec.recording(); }
   std::vector<IControl*> midiControls;
-  bool midiOpen = false, profileBrowser = false, profileDeleteArmed = false;
+  bool midiOpen = false, profileBrowser = false, profileDeleteArmed = false, profileReloadArmed = false;
+  std::string unavailableDeleteId;
   int profileListOffset = 0;
   void showProfiles(bool open) {
     profileBrowser = open;
-    profileDeleteArmed = false;
+    profileDeleteArmed = profileReloadArmed = false;
+    unavailableDeleteId.clear();
     if (open && midiStore) {
       (void)midiStore->refresh();
       profileListOffset = midi_ui::pageOffset(profileListOffset, static_cast<int>(midiStore->profiles().size()));
@@ -1503,6 +1505,7 @@ class MidiOverlayControl : public IControl {
     state.offset = s_.profileBrowser ? s_.profileListOffset : s_.midiListOffset;
     state.profileBrowser = s_.profileBrowser;
     state.deleteArmed = s_.profileDeleteArmed;
+    state.reloadArmed = s_.profileReloadArmed;
     if (g.GetControlInTextEntry() == this) state.nameAction = nameAction_;
     if (s_.midiStore) {
       state.profileName = s_.midiStore->editable() ? s_.midiStore->name() : "No profile";
@@ -1510,7 +1513,7 @@ class MidiOverlayControl : public IControl {
       state.dirty = s_.midiStore->dirty();
       for (const auto& p : s_.midiStore->profiles())
         state.profiles.push_back({p.name, p.id == s_.midiStore->id() ? s_.midiStore->map().count() : p.bindings,
-                                  p.id == s_.midiStore->id(), p.readable});
+                                  p.id == s_.midiStore->id(), p.readable, p.id == s_.unavailableDeleteId});
     }
     state.armed = s_.learnArmed;
     state.awaitTarget = s_.learnAwaitTarget;
@@ -1539,13 +1542,31 @@ class MidiOverlayControl : public IControl {
       return;
     }
     if (!s_.midiStore) return;
+    const auto unavailableDeleteId = s_.unavailableDeleteId;
+    s_.unavailableDeleteId.clear();
     if (midi_ui::kProfile.contains(x, y)) {
       s_.showProfiles(!s_.profileBrowser);
       GetUI()->SetAllControlsDirty();
       return;
     }
-    if (midi_ui::kLearn.contains(x, y) && s_.midiStore->dirty() && !s_.midiStore->error().empty()) {
-      (void)s_.midiStore->save();
+    const bool failedSave = s_.midiStore->dirty() && !s_.midiStore->error().empty();
+    if (editable() && !s_.midiStore->error().empty() && midi_ui::kReload.contains(x, y)) {
+      s_.profileDeleteArmed = false;
+      s_.unavailableDeleteId.clear();
+      if (s_.profileReloadArmed) {
+        s_.profileReloadArmed = false;
+        if (s_.midiStore->reload()) s_.adoptedMidiProfile();
+      } else s_.profileReloadArmed = true;
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
+    s_.profileReloadArmed = false;
+    if (midi_ui::kLearn.contains(x, y) && !s_.midiStore->error().empty()) {
+      if (!editable()) {
+        const auto outcome = s_.midiStore->load();
+        if (outcome == MidiMapLoadOutcome::Ok || outcome == MidiMapLoadOutcome::NoFile) s_.adoptedMidiProfile();
+      } else if (failedSave) (void)s_.midiStore->save();
+      else (void)s_.midiStore->refresh();
       GetUI()->SetAllControlsDirty();
       return;
     }
@@ -1557,6 +1578,7 @@ class MidiOverlayControl : public IControl {
       const int delta = midi_ui::kPrevious.contains(x, y) ? -midi_ui::kVisibleRows : midi_ui::kVisibleRows;
       offset = midi_ui::pageOffset(offset + delta, count);
       s_.profileDeleteArmed = false;
+      s_.unavailableDeleteId.clear();
       SetDirty(false);
       return;
     }
@@ -1565,10 +1587,22 @@ class MidiOverlayControl : public IControl {
       for (int i = 0; i < midi_ui::kVisibleRows && offset + i < count; ++i) {
         if (!midi_ui::profileRow(i).contains(x, y)) continue;
         const auto profile = s_.midiStore->profiles()[static_cast<std::size_t>(offset + i)];
+        if (!profile.readable && midi_ui::unavailableRemove(i).contains(x, y)) {
+          s_.profileDeleteArmed = false;
+          if (unavailableDeleteId == profile.id) {
+            (void)s_.midiStore->removeUnavailable(profile.id);
+            s_.unavailableDeleteId.clear();
+          } else s_.unavailableDeleteId = profile.id;
+          GetUI()->SetAllControlsDirty();
+          return;
+        }
+        s_.unavailableDeleteId.clear();
+        s_.profileDeleteArmed = false;
         if (profile.readable && s_.midiStore->select(profile.id)) s_.adoptedMidiProfile();
       }
       for (int i = 0; i < 4; ++i) {
         if (!midi_ui::profileAction(i).contains(x, y)) continue;
+        s_.unavailableDeleteId.clear();
         if (i != 0 && !editable()) break;
         if (i < 3) {
           s_.profileDeleteArmed = false;

@@ -208,6 +208,83 @@ int main() {
   CHECK(reopened.create("New setup", false));
   CHECK(reopened.editable());
   removeTree(badDir);
+  // Recovery never overwrites another instance or drops edits before a successful read.
+  const auto recoveryDir = makeTempDir("recovery");
+  {
+    host::MidiMapStore a, b;
+    a.setDirectory(recoveryDir); b.setDirectory(recoveryDir);
+    CHECK(a.load() == host::MidiMapLoadOutcome::NoFile);
+    CHECK(a.rename("First"));
+    const auto initial = a.id();
+    CHECK(b.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK(a.bind(binding)); CHECK(a.save());
+    CHECK(b.setSettings(settings)); CHECK(!b.save());
+    CHECK(b.dirty());
+    const auto generation = b.generation();
+    {
+      host::midi_profile_files::Lock lock(host::app_state_file_ops::joinUtf8(a.libraryPath(), "library.lock"));
+      CHECK(!b.reload());
+      CHECK(b.dirty()); CHECK_EQ(b.generation(), generation);
+      host::MidiMapStore starting;
+      starting.setDirectory(recoveryDir);
+      CHECK(starting.load() == host::MidiMapLoadOutcome::Unreadable);
+      CHECK(!starting.editable()); CHECK(!starting.error().empty());
+    }
+    b.setFileOps(preferenceFailure, nullptr);
+    CHECK(!b.reload()); CHECK(b.dirty()); CHECK_EQ(b.generation(), generation);
+    b.setFileOps(real, nullptr);
+    CHECK(b.reload()); CHECK(!b.dirty()); CHECK(b.error().empty());
+    CHECK_EQ(b.map().count(), 1u); CHECK_EQ(b.settings().channelFilter, 0);
+    CHECK(b.generation() > generation);
+    CHECK(b.setSettings(settings)); CHECK(b.save()); // editing works again
+    CHECK(a.reload()); CHECK_EQ(a.settings().channelFilter, 3);
+    CHECK(a.create("Second", false));
+    const auto alternate = a.id();
+    CHECK(a.select(initial));
+    const auto damaged = a.livePath();
+    corrupt(damaged);
+    host::MidiMapStore starting;
+    starting.setDirectory(recoveryDir);
+    CHECK(starting.load() == host::MidiMapLoadOutcome::Ok); // selected corrupt: use another
+    CHECK_EQ(starting.id(), alternate);
+    CHECK(!starting.removeUnavailable(alternate)); // last good profile is protected
+    CHECK(!starting.removeUnavailable("../../unrelated"));
+    CHECK(starting.removeUnavailable(initial));
+    CHECK_EQ(starting.profiles().size(), 1u);
+    CHECK_EQ(starting.id(), alternate);
+    CHECK(!starting.removeCurrent());
+    CHECK(b.reload()); // another instance deleted our file: use a readable replacement
+    CHECK_EQ(b.id(), alternate);
+    CHECK(b.setSettings(settings));
+    corrupt(b.livePath());
+    CHECK(!b.reload()); CHECK(b.dirty()); CHECK_EQ(b.settings().channelFilter, 3);
+    CHECK(!b.removeUnavailable(alternate)); // preserve the current in-memory rescue copy
+    CHECK(b.create("Rescued", true));
+    CHECK(b.removeUnavailable(alternate));
+    CHECK_EQ(b.settings().channelFilter, 3);
+    // A repaired profile must not be removed using stale UNAVAILABLE UI state.
+    CHECK(b.create("Repair", false));
+    const auto repairId = b.id();
+    const auto repairPath = b.livePath();
+    const auto repairBytes = readFile(repairPath);
+    CHECK(starting.refresh());
+    corrupt(repairPath); CHECK(starting.refresh());
+    CHECK(real.writeFile(nullptr, repairPath.c_str(), repairBytes.data(), repairBytes.size()));
+    CHECK(!starting.removeUnavailable(repairId));
+    CHECK(readFile(repairPath) == repairBytes);
+  }
+  {
+    host::MidiMapStore retry;
+    retry.setDirectory(recoveryDir);
+    {
+      host::midi_profile_files::Lock lock(host::app_state_file_ops::joinUtf8(retry.libraryPath(), "library.lock"));
+      CHECK(retry.load() == host::MidiMapLoadOutcome::Unreadable);
+    }
+    CHECK(retry.refresh()); CHECK(!retry.error().empty()); // keep the RETRY LOAD affordance
+    CHECK(retry.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK(retry.editable()); CHECK(retry.error().empty());
+  }
+  removeTree(recoveryDir);
   host::MidiMapStore noPath;
   CHECK(noPath.load() == host::MidiMapLoadOutcome::NoPath);
   CHECK(!noPath.save());

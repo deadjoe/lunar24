@@ -1,5 +1,9 @@
 // Copyright (c) 2026 Lunar 24 contributors
 // SPDX-License-Identifier: Apache-2.0
+// Shared settings/midi-profiles/: library.lock serializes UI transactions;
+// selected.txt contains the last selected ID; p<steady-clock ticks>-<sequence>.bin
+// contains "L24P", LE u32 version 1, a zero-padded 40-byte ASCII name, then the
+// core MIDI map/settings payload. Each file is replaced atomically. No audio-thread I/O.
 #pragma once
 
 #include <algorithm>
@@ -163,18 +167,16 @@ class MidiMapStore {
     std::vector<std::uint8_t> selected;
     midi_profile_files::read(path("selected.txt"), selected, 64);
     const std::string wanted(selected.begin(), selected.end());
-    const auto it = std::find_if(profiles_.begin(), profiles_.end(), [&](const auto& p) { return p.id == wanted && p.readable; });
-    const auto fallback = std::find_if(profiles_.begin(), profiles_.end(), [](const auto& p) { return p.readable; });
-    if (fallback == profiles_.end() || !adoptFile(it != profiles_.end() ? it->id : fallback->id, false)) {
-      fail("No readable profile. Create a new one.");
-      return loadOutcome_ = MidiMapLoadOutcome::Malformed;
-    }
+    if (!adoptReadable(wanted, false)) return loadOutcome_ = MidiMapLoadOutcome::Malformed;
     return loadOutcome_ = MidiMapLoadOutcome::Ok;
   }
   bool refresh() {
     if (directory_.empty()) return fail("Profile folder unavailable.");
     midi_profile_files::Lock lock(path("library.lock"));
-    return lock ? scan() : fail("Profile library busy. Retry.");
+    if (!lock) return fail("Profile library busy. Retry.");
+    if (!scan()) return false;
+    if (editable() && !dirty_) error_.clear();
+    return true;
   }
   bool setSettings(const core::MidiRigSettings& s) {
     if (!editable() || !core::midi_rig_settings_valid(s)) return false;
@@ -198,6 +200,26 @@ class MidiMapStore {
     if (!lock) return fail("Profile library busy. Retry.");
     if (dirty_ && !saveUnlocked()) return false;
     return adoptFile(id, true);
+  }
+  // Explicitly confirmed by the UI: discard local edits only after a replacement is read.
+  bool reload() {
+    midi_profile_files::Lock lock(path("library.lock"));
+    if (!lock) return fail("Profile library busy. Retry.");
+    return scan() && adoptReadable(id_, true);
+  }
+  bool removeUnavailable(const std::string& id) {
+    midi_profile_files::Lock lock(path("library.lock"));
+    if (!lock) return fail("Profile library busy. Retry.");
+    if (!scan()) return false;
+    const auto it = std::find_if(profiles_.begin(), profiles_.end(), [&](const auto& p) { return p.id == id; });
+    if (it == profiles_.end()) return fail("Profile no longer exists. List refreshed.");
+    if (it->readable) return fail("Profile is readable again. List refreshed.");
+    if (id == id_) return fail("Current setup is still in use. Copy it first.");
+    std::error_code ec;
+    if (!std::filesystem::remove(std::filesystem::u8path(path(id + ".bin")), ec) || ec)
+      return fail("Cannot delete profile.");
+    if (editable() && !dirty_) error_.clear();
+    return scan();
   }
   bool create(const std::string& name, bool copyCurrent) {
     midi_profile_files::Lock lock(path("library.lock"));
@@ -293,7 +315,7 @@ class MidiMapStore {
   bool unchanged() {
     std::vector<std::uint8_t> current;
     if (!midi_profile_files::read(livePath(), current) || current != baseline_)
-      return fail("Changed elsewhere. Copy to keep your edits.");
+      return fail("Changed elsewhere. Copy or reload your setup.");
     return true;
   }
   bool saveUnlocked() {
@@ -314,6 +336,24 @@ class MidiMapStore {
     std::vector<std::uint8_t> bytes;
     if (!readProfile(id, bytes, name, map, settings) || (persist && !remember(id))) return false;
     adopt(id, name, map, settings, bytes);
+    return true;
+  }
+  bool adoptReadable(const std::string& preferred, bool persist) {
+    // A file may become unreadable between scanning the library and opening it again.
+    core::MidiMap map; core::MidiRigSettings settings; std::string name;
+    std::vector<std::uint8_t> bytes;
+    auto tryRead = [&](const std::string& id) {
+      return readProfile(id, bytes, name, map, settings);
+    };
+    std::string chosen;
+    if (midi_profile_files::validId(preferred) && tryRead(preferred)) chosen = preferred;
+    if (chosen.empty()) {
+      for (const auto& p : profiles_)
+        if (p.id != preferred && p.readable && tryRead(p.id)) { chosen = p.id; break; }
+    }
+    if (chosen.empty()) return fail("No readable profile. Create a new one.");
+    if (persist && !remember(chosen)) return false;
+    adopt(chosen, name, map, settings, bytes);
     return true;
   }
   bool createUnlocked(const std::string& name, bool copyCurrent) {

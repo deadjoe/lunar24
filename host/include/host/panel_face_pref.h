@@ -5,7 +5,7 @@
 //
 // It is a look preference, not the machine: RESET PANEL, keyboard presets and the
 // state file do not touch it. The app and the plugins share one file in the settings
-// folder (a sibling of lunar24-state.bin and lunar24-midi-map.bin). UI thread only.
+// folder (a sibling of lunar24-state.bin and midi-profiles/). UI thread only.
 
 #pragma once
 

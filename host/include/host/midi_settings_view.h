@@ -27,6 +27,9 @@ inline constexpr Box profileRow(int row) { return {832, 1205.f + row * 50, 1966,
 inline constexpr Box profileAction(int i) { return {832.f + i * 168, 1436, 988.f + i * 168, 1472}; }
 inline constexpr Box kNameEntry{846, 1208, 1668, 1248};
 inline constexpr Box kLearn{434, 1364, 788, 1404};
+inline constexpr Box kRetrySave{434, 1364, 604, 1404};
+inline constexpr Box kReload{614, 1364, 788, 1404};
+inline constexpr Box unavailableRemove(int row) { return {1858, 1210.f + row * 50, 1958, 1250.f + row * 50}; }
 inline constexpr Box kPrevious{1722, 1430, 1770, 1470};
 inline constexpr Box kNext{1918, 1430, 1966, 1470};
 inline constexpr Box kVersion{1540, 1436, 1712, 1472};  // plugins: two lines, version and build
@@ -64,14 +67,14 @@ inline constexpr std::uint32_t kDisabledEdge = 0xb5a998, kDisabledText = 0x8a817
 struct ProfileRow {
   std::string name;
   std::uint32_t bindings = 0;
-  bool current = false, readable = true;
+  bool current = false, readable = true, deleteArmed = false;
 };
 struct State {
   const core::MidiMap* map = nullptr;
   std::string device;
   std::string profileName = "Untitled", error, nameText;
   std::vector<ProfileRow> profiles;
-  bool profileBrowser = false, deleteArmed = false, dirty = false;
+  bool profileBrowser = false, deleteArmed = false, dirty = false, reloadArmed = false;
   int nameAction = -1;
   int channel = 0, octave = 0, curve = 0, offset = 0;
   int split = core::kMidiDefaultSplitNote;  // MIDI note: TWIN / SPLIT right side starts here
@@ -196,9 +199,14 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     button(increment(i), ">", st.editable && !st.profileBrowser);
     label({640, b.t, 740, b.b}, 20, kInk, values[i], true, true);
   }
-  const bool retry = st.dirty && !st.error.empty();
-  button(kLearn, retry ? "RETRY SAVE" : st.profileBrowser ? "BACK TO BINDINGS" :
-                 st.armed ? "CANCEL LEARN" : "+ LEARN A CONTROL", st.editable || st.profileBrowser, !st.profileBrowser);
+  if (!st.error.empty() && st.editable) {
+    button(kRetrySave, st.dirty ? "RETRY SAVE" : "RETRY", true);
+    button(kReload, st.reloadArmed ? "RELOAD?" : "RELOAD", true);
+  } else {
+    button(kLearn, !st.error.empty() ? (st.editable ? "RETRY" : "RETRY LOAD") :
+                   st.profileBrowser ? "BACK TO BINDINGS" : st.armed ? "CANCEL LEARN" : "+ LEARN A CONTROL",
+           st.editable || st.profileBrowser || !st.error.empty(), !st.profileBrowser);
+  }
   const int count = st.profileBrowser ? static_cast<int>(st.profiles.size()) :
                     st.map ? static_cast<int>(st.map->count()) : 0;
   const int offset = pageOffset(st.offset, count);
@@ -209,9 +217,12 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     rect(kNameEntry, kWhite, 4);
     label(kNameEntry, 19, kInk, st.nameText, true);
     label({846, 1270, 1948, 1310}, 18, kMuted, "English names, up to 39 characters.");
-    label({846, 1314, 1948, 1354}, 16, kMuted, "Enter to confirm. Esc to cancel.");
+    label({846, 1314, 1948, 1354}, 16, kMuted, "Enter or click outside to confirm. Esc to cancel.");
   } else if (st.profileBrowser) {
-    label({844, 1180, 1640, 1202}, 14, kMuted, "SAVED PROFILES", true);
+    int readable = 0;
+    for (const auto& p : st.profiles) if (p.readable) ++readable;
+    label({844, 1180, 1640, 1202}, 14, kMuted,
+          "SAVED PROFILES / " + std::to_string(readable) + " AVAILABLE", true);
     label({1720, 1180, 1950, 1202}, 14, kMuted, "BINDINGS", true, true);
     for (int i = 0; i < kVisibleRows; ++i) {
       const auto box = profileRow(i);
@@ -223,8 +234,11 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
       if (profile.current) rect({box.l, box.t + 5, box.l + 4, box.b - 5}, kTeal, 1);
       label({850, box.t, 1620, box.b}, 19, profile.readable ? kInk : kMuted, profile.name, true);
       if (profile.current) label({1628, box.t, 1732, box.b}, 12, kTeal, "CURRENT", true, true);
-      label({1750, box.t, 1950, box.b}, 17, kMuted,
-            profile.readable ? std::to_string(profile.bindings) : "UNAVAILABLE", false, true);
+      if (profile.readable) label({1750, box.t, 1950, box.b}, 17, kMuted, std::to_string(profile.bindings), false, true);
+      else {
+        label({1690, box.t, 1850, box.b}, 14, kMuted, "UNAVAILABLE", false, true);
+        button(unavailableRemove(i), profile.deleteArmed ? "DELETE?" : "DELETE", true);
+      }
     }
   } else {
     label({844, 1180, 1198, 1202}, 14, kMuted, "CONTROLLER", true);
@@ -300,6 +314,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     }
     line1 = error1.c_str(); line2 = error2.c_str();
   }
+  if (st.reloadArmed) { line1 = st.dirty ? "Discard local edits?" : "Read saved setup?"; line2 = "Click RELOAD? to read saved setup."; }
   label({434, 1424, 802, 1448}, 15, !st.error.empty() ? kRed : st.armed ? kArmedText : kMuted, line1, true);
   label({434, 1449, 802, 1474}, 14, kMuted, line2);
   if (st.profileBrowser) {

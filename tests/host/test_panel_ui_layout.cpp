@@ -227,6 +227,7 @@ int main() {
     CHECK(kProfile.r < kInput.l && kInput.r < kClose.l);
     for (int i = 0; i < 4; ++i) {
       CHECK(inside(profileRow(i), kBounds));
+      CHECK(inside(unavailableRemove(i), profileRow(i)));
       CHECK(inside(profileAction(i), kBounds));
       CHECK(profileAction(i).r < kVersion.l);
       if (i < 3) {
@@ -253,7 +254,7 @@ int main() {
       state.profileBrowser = view > 0;
       state.offset = view == 2 ? 4 : 0;
       state.nameAction = view == 3 ? 1 : -1;
-      state.error = view == 4 ? "Changed elsewhere. Copy to keep your edits." : "";
+      state.error = view == 4 ? "Changed elsewhere. Copy or reload your setup." : "";
       state.dirty = view == 4;
       Sink sink;
       draw(sink, state);
@@ -263,10 +264,31 @@ int main() {
       CHECK(sink.has("NEW") == state.profileBrowser);
       CHECK(sink.has("EXTRA LEARN TARGETS") != state.profileBrowser);
       CHECK(sink.has("RETRY SAVE") == (view == 4));
+      CHECK(sink.has("RELOAD") == (view == 4));
       if (view == 1) { CHECK(sink.has("UNAVAILABLE")); CHECK(sink.has("CURRENT")); }
       if (view == 2) { CHECK(sink.has("Studio")); CHECK(!sink.has("Main")); }
       if (view == 3) { CHECK(sink.has("COPY PROFILE AS")); CHECK(!sink.has("SAVED PROFILES")); }
     }
+  }
+  {
+    using namespace host::midi_ui;
+    struct Sink : CheckSink {
+      std::vector<std::string> labels;
+      void label(Box, float, std::uint32_t, const char* value, bool, int) { labels.emplace_back(value); }
+      bool has(const char* value) const { return std::find(labels.begin(), labels.end(), value) != labels.end(); }
+    };
+    State state;
+    state.editable = false; state.error = "Profile library unavailable. Retry.";
+    Sink retry; draw(retry, state); CHECK(retry.has("RETRY LOAD"));
+    state.editable = true; state.dirty = true; state.reloadArmed = true;
+    Sink reload; draw(reload, state);
+    CHECK(reload.has("RELOAD?")); CHECK(reload.has("Discard local edits?"));
+    state.profileBrowser = true; state.dirty = false; state.reloadArmed = false; state.error.clear();
+    state.profiles = {{"Good", 0, true, true}, {"Broken", 0, false, false, true}};
+    Sink broken; draw(broken, state);
+    CHECK(broken.has("SAVED PROFILES / 1 AVAILABLE")); CHECK(broken.has("DELETE?"));
+    state.nameAction = 0;
+    Sink name; draw(name, state); CHECK(name.has("Enter or click outside to confirm. Esc to cancel."));
   }
   { // Keyboard menu: each of the 36 settings on exactly one tab, inside a card of that tab,
     // nothing overlapping on a tab (names included), clicks land on what is drawn there.
