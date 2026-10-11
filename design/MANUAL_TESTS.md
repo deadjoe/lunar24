@@ -520,6 +520,23 @@
   - 第 5 步：重启后 E 板仍是 +1.20 的音高。
   - 第 6 步：E 板回到标准音高。
 
+**T4.4 按着电脑键盘切走窗口，音不会卡住** ⏳
+- 背景：窗口失去键盘（切到别的程序、弹出 Preferences 等对话框）后，系统不再把松开按键的消息发给 Lunar 24，以前按着的音会一直响。现在一失去键盘就把按着的电脑键盘音全部松开（按 RELEASE 收掉）。
+- 准备：RESET PANEL；BLEND 最左。
+- 步骤：
+  1. 按住电脑键盘 **A** 不放，同时按 ⌘Tab 切到别的程序，再松开 A。
+  2. 切回 Lunar 24，按一下 A 再松开。
+  3. 按住 **A**，同时按 Shift，先松开 A 再松开 Shift。
+  4. 按住 **S**，用鼠标点菜单 Lunar 24 → Preferences…，再关掉 Preferences。
+  5. 用 MPK 按住一个键，⌘Tab 切走再切回来，再松开 MPK 的键。
+- 期望：
+  - 第 1 步：切走的同时 A 的声音按包络收掉，不会一直响。
+  - 第 2 步：A 照常弹，按下响、松开停。
+  - 第 3 步：松开 A 时声音停下（改按键码对上松开）。
+  - 第 4 步：Preferences 打开时 S 的声音收掉。
+  - 第 5 步：MPK 的音不受窗口切换影响，松开 MPK 键时才停。
+  - 日志里第 1、4 步各有一行 `ui     keyboard focus lost: released 1 computer key(s)`。
+
 ### 5. VCO A / VCO B
 
 准备（本节通用）：RESET PANEL；BLEND 最左；DRONE VOICES 全关；VOICE MIXER 只留 VCO A（测 VCO B 时只留 VCO B）；按住一个键让声音持续。
@@ -1707,6 +1724,7 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 
 ## 还没测的（⏳）
 
+- T4.4：按着电脑键盘切走窗口、按 Shift、打开 Preferences 时音不卡住。
 - T0.7：打开应用和 RESET 时只有提示音、drone 不出声；插拔耳机时关着的 drone 不冒声。
 - 第 18 节诊断日志：T18.1–T18.4。
 

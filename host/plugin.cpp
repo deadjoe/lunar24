@@ -58,6 +58,7 @@ extern "C" void lunar_host_audio_watchdog();
 extern "C" void lunar_host_request_audio_reopen();
 extern "C" bool lunar_host_recordings_dir(char* out, std::size_t capacity);
 extern "C" void lunar_host_reveal_dir(const char* utf8Path);
+extern "C" bool lunar_host_view_has_keyboard(void* view);
 #else
 #include "build_info.h"
 #include "plugin_settings_dir.h"
@@ -612,6 +613,14 @@ void LunarHostPlugin::OnIdle()
     playChime_("app ready");
   }
   lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
+#if IPLUG_EDITOR
+  // Keys held while the window loses the keyboard never get their key-ups: release them now.
+  if (uiState_ && GetUI() != nullptr && GetUI()->GetWindow() != nullptr &&
+      !lunar_host_view_has_keyboard(GetUI()->GetWindow())) {
+    auto& ui = *std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_);
+    if (!ui.keys.empty() && ui.releaseHeldKeys("keyboard focus lost") > 0) GetUI()->SetAllControlsDirty();
+  }
+#endif
 
   constexpr auto kAutosaveInterval = std::chrono::seconds(30);
   const auto now = std::chrono::steady_clock::now();
@@ -689,8 +698,9 @@ void LunarHostPlugin::logSnapshot_(const std::string& reason)
   if (uiState_) {
     const auto& ui = *std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_);
     extra += "\nui holds: computer keys";
-    if (ui.heldKeys.empty()) extra += " none";
-    for (const auto& [key, semi] : ui.heldKeys) extra += " " + std::to_string(key) + "(semi " + std::to_string(semi) + ")";
+    if (ui.keys.empty()) extra += " none";
+    for (const auto& [key, held] : ui.keys.held())
+      extra += " " + std::to_string(key) + "(semi " + std::to_string(held.sounding) + " vk " + std::to_string(held.vk) + ")";
     extra += ui.mousePlate >= 0 ? "; mouse plate " + std::to_string(ui.mousePlate) : std::string("; mouse none");
   }
 #endif

@@ -36,6 +36,7 @@
 #include "IControl.h"
 #include "IGraphics.h"
 
+#include <host/computer_keys.h>
 #include <host/diag_log.h>
 #include <host/panel_art.h>
 #include <host/ui_font.generated.h>
@@ -136,7 +137,7 @@ struct EditorShared {
   bool menuOpen = false;
   int octave = 0;
   std::set<int> lit;                         // plates currently sounding (0..11)
-  std::map<int, int> heldKeys;               // computer key semitone -> sounding semitone
+  ComputerKeys keys;                         // computer plate keys held down (host/computer_keys.h)
   int mousePlate = -1, mouseSemi = 0;        // the plate the mouse holds (-1 = none) and its semitone
   int tunePlate = -1;                        // plate last tuned while held (the display shows it)
   double tuneWheelAcc = 0.0;                 // wheel travel not yet a whole notch
@@ -360,8 +361,9 @@ struct EditorShared {
   std::vector<HeldPlate> heldPlates() const {
     std::vector<HeldPlate> h;
     if (mousePlate >= 0) h.push_back({mousePlate, mouseSemi, kMouseId, kMouseSource});
-    for (const auto& [key, semi] : heldKeys)
-      h.push_back({key % 12, semi, static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(key)), kKeySource});
+    for (const auto& [key, held] : keys.held())
+      h.push_back({key % 12, held.sounding, static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(key)),
+                   kKeySource});
     return h;
   }
   // Add `delta` semitones to one plate's tuning (reset = true sets it to 0), show it on the
@@ -460,27 +462,52 @@ struct EditorShared {
     }
     noteVk = k.VK;
     const char* p = c ? std::strchr(kKeys, c) : nullptr;
-    if (p == nullptr) {
+    const int semi = p != nullptr ? int(p - kKeys) : -1;
+    if (up) {
+      // By character, or by key code when the character changed while it was down.
+      ComputerKeys::Held held;
+      const int released = keys.release(semi, k.VK, &held);
+      if (released >= 0) {
+        releaseKey_(released, held);
+        platesMaybeReleased();
+        return true;
+      }
       // A release we cannot match while keys are held: if its note-on was a key, that note sticks.
-      if (up && !heldKeys.empty())
+      if (p == nullptr && !keys.empty())
         logUi(diag::Level::info, "key-up vk=%d char=0x%02X matches no held key (%u held)", k.VK,
-              static_cast<unsigned>(static_cast<unsigned char>(k.utf8[0])), unsigned(heldKeys.size()));
-      return false;
+              static_cast<unsigned>(static_cast<unsigned char>(k.utf8[0])), unsigned(keys.held().size()));
+      return p != nullptr;
     }
-    const int semi = int(p - kKeys);
-    const core::NoteId id = static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(semi));
-    if (!up && heldKeys.count(semi) == 0) {
-      heldKeys[semi] = semi + 12 * octave;
-      note(true, heldKeys[semi], id, 0.8, kKeySource, semi);
+    if (p == nullptr) return false;
+    if (keys.press(semi, k.VK, semi + 12 * octave)) {
+      note(true, semi + 12 * octave, keyNoteId_(semi), 0.8, kKeySource, semi);
       lit.insert(semi % 12);
-    } else if (up && heldKeys.count(semi) > 0) {
-      note(false, heldKeys[semi], id, 0.0, kKeySource, semi);
-      heldKeys.erase(semi);
-      lit.erase(semi % 12);
-      platesMaybeReleased();
     }
     return true;
   }
+
+  // The window lost the keyboard (another app, a dialog): the OS sends no key-ups for keys held
+  // down now, so release them here or their notes would sound forever. Returns how many.
+  int releaseHeldKeys(const char* why) {
+    const int n = keys.releaseAll([&](int semi, const ComputerKeys::Held& held) { releaseKey_(semi, held); });
+    if (n > 0) {
+      platesMaybeReleased();
+      logUi(diag::Level::info, "%s: released %d computer key(s)", why, n);
+    }
+    return n;
+  }
+
+ private:
+  static core::NoteId keyNoteId_(int semi) {
+    return static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(semi));
+  }
+  void releaseKey_(int semi, const ComputerKeys::Held& held) {
+    noteVk = held.vk;
+    note(false, held.sounding, keyNoteId_(semi), 0.0, kKeySource, semi);
+    lit.erase(semi % 12);
+  }
+
+ public:
 };
 
 // ---------------------------------------------------------------------------------------------
