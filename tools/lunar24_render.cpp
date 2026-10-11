@@ -251,6 +251,13 @@ int main(int argc, char** argv) {
 
   const int block = 256;
   host::StandaloneAudioEngine engine;
+  // The --drone keys are open before the machine is installed, so those voices sound from the
+  // first sample; the others start closed and silent, as in the app.
+  bool open[6] = {};
+  for (int d : drones) open[d] = true;
+  engine.setDroneKeys(open);
+  if (drones.empty() && notes.empty())
+    std::fprintf(stderr, "note: no --drone and no --note; every drone starts closed, so this may be silent\n");
   if (!engine.prepare(seed, sr, block, 2, 4)) { std::fprintf(stderr, "prepare failed\n"); return 1; }
   const auto status = engine.applyDeviceState(st, sr, block, 2, 4);
   if (status != host::StandaloneAudioEngine::StateApplyStatus::Accepted) {
@@ -266,7 +273,6 @@ int main(int argc, char** argv) {
   std::vector<float> wl, wr, da, db;
   wl.reserve(total); wr.reserve(total); da.reserve(total); db.reserve(total);
 
-  for (int d : drones) engine.postDroneKey(d, true);
   std::vector<bool> on(notes.size(), false), off(notes.size(), false), shaded(shades.size(), false),
       moved(moves.size(), false);
   for (std::size_t pos = 0; pos < total; pos += block) {

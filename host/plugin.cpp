@@ -347,8 +347,10 @@ void LunarHostPlugin::rebuildEngine_()
   midiQueue_.invalidate();
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
+  bool resetHere = false;
   if (factoryResetRequested_) {  // the panel's RESET: the power-on default, keyboard presets kept
     factoryResetRequested_ = false;
+    resetHere = true;
     const lunar24::core::DeviceStateV1* current = stateStore_.pending();  // just captured above
     stateStore_.replacePending(
         current != nullptr
@@ -360,6 +362,11 @@ void LunarHostPlugin::rebuildEngine_()
                   engineOutputs_());
   if (engine_.isReady())
     stateStore_.publishPending(engine_, GetSampleRate(), GetBlockSize(), engineInputs_(), engineOutputs_());
+#ifdef APP_API
+  if (resetHere && engine_.isReady()) playChime_("RESET PANEL");
+#else
+  (void)resetHere;
+#endif
   diag::log().writef(Cat::audio, engine_.isReady() ? Level::info : Level::warn, logInstance_,
                      "engine %s: %.0f Hz, block %d, %d in / %d out; state file: %s",
                      engine_.isReady() ? "ready" : "NOT ready", GetSampleRate(), GetBlockSize(), engineInputs_(),
@@ -495,7 +502,19 @@ void LunarHostPlugin::requestFactoryReset()
       lunar24::core::make_reset_device_state(*engine_.canonicalState(), lunar24::host::kLunarStartupSeed);
   engine_.closeDroneKeys();  // like a fresh start: the drones wait for their keys
   (void)engine_.swapDeviceState(reset);
+#ifdef APP_API
+  playChime_("RESET PANEL");
+#endif
 }
+
+#ifdef APP_API
+void LunarHostPlugin::playChime_(const char* why)
+{
+  chime_.trigger();
+  startupChimed_ = true;  // a RESET before the first ready machine already announced it
+  diag::log().writef(Cat::app, Level::info, logInstance_, "chime (%s)", why);
+}
+#endif
 
 void LunarHostPlugin::applyPendingMidiResets_()
 {
@@ -588,6 +607,10 @@ void LunarHostPlugin::OnIdle()
   engine_.syncParametersFromAudioThread();
   logIdle_();
 #ifdef APP_API
+  if (!startupChimed_ && engine_.isReady()) {  // the first machine of this run is up
+    startupChimed_ = true;
+    playChime_("app ready");
+  }
   lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
 
   constexpr auto kAutosaveInterval = std::chrono::seconds(30);
@@ -739,6 +762,13 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
   engine_.processAnyLength(reinterpret_cast<const double* const*>(inputs),
                        reinterpret_cast<double* const*>(outputs),
                        engineInputs_(), engineOutputs_(), nFrames);
+#ifdef APP_API
+  // The ready chime on top of WET (silent, but still consumed, while MUTE is on).
+  if (engineOutputs_() >= 2) {
+    const bool muted = engine_.muted();
+    chime_.render(muted ? nullptr : outputs[0], muted ? nullptr : outputs[1], nFrames, GetSampleRate());
+  }
+#endif
   // Peaks for the log's sound / silence lines (read and reset by the UI thread).
   auto peak = [nFrames](const sample* x) {
     double m = 0.0;

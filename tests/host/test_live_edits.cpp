@@ -18,6 +18,7 @@
 #include <lunar24/core/state_default.h>
 #include <lunar24/core/state_edit.h>
 #include <lunar24/core/state_serializer.h>
+#include "open_drones.h"
 
 using namespace lunar24;
 
@@ -511,10 +512,39 @@ int main() {
     CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == host::StandaloneAudioEngine::Status::Rendered);
     CHECK(e.runtime()->keyboardArpSeqParams(core::KeyboardSide::Right).seqRhythm == 0x80);
   }
+  // A new machine (launch, RESET, an audio reopen, a DAW project) never sounds a closed drone:
+  // each drone's VCA starts at its key. It used to start open and release, so every closed
+  // voice sounded for about a second, plus the effector's tail.
+  {
+    using E = host::StandaloneAudioEngine;
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    auto peak = [&](int blocks) {
+      double p = 0.0;
+      for (int b = 0; b < blocks; ++b) {
+        CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+        for (int i = 0; i < 256; ++i) p = std::max({p, std::fabs(l[i]), std::fabs(r[i])});
+      }
+      return p;
+    };
+    CHECK(peak(400) == 0.0);  // launch: two seconds of silence
+    CHECK(e.swapDeviceState(*e.canonicalState()) == E::StateApplyStatus::Accepted);  // RESET / project
+    CHECK(peak(400) == 0.0);
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));  // an audio reopen
+    CHECK(peak(400) == 0.0);
+    CHECK(e.postDroneKey(1, true));           // drone 2 open: only drone 2 sounds, through a swap too
+    CHECK(peak(400) > 0.01);
+    CHECK(e.swapDeviceState(*e.canonicalState()) == E::StateApplyStatus::Accepted);
+    peak(1);
+    CHECK(e.panelLed(E::kLedDrone1 + 1) > 0.99f);
+    for (int v : {0, 2, 3, 4, 5}) CHECK(e.panelLed(E::kLedDrone1 + v) == 0.0f);
+  }
   // MUTE silences every output with a short fade and brings the sound back when released; the
   // machine keeps running underneath.
   {
     host::StandaloneAudioEngine e;
+    openDrones(e);
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     auto peak = [&]() {
       double p = 0.0;
@@ -522,7 +552,7 @@ int main() {
       for (int i = 0; i < 256; ++i) p = std::max({p, std::fabs(l[i]), std::fabs(r[i])});
       return p;
     };
-    for (int i = 0; i < 40; ++i) peak();          // the default drones are sounding
+    for (int i = 0; i < 40; ++i) peak();          // the open drones are sounding
     CHECK(peak() > 0.01);
     CHECK(!e.muted());
     e.setMuted(true);
@@ -540,13 +570,14 @@ int main() {
   {
     using E = host::StandaloneAudioEngine;
     E e;
+    openDrones(e);
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     auto run = [&](int blocks) {
       for (int i = 0; i < blocks; ++i)
         CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
     };
     run(20);
-    for (int v = 0; v < 6; ++v) CHECK(e.panelLed(E::kLedDrone1 + v) > 0.9f);  // default: all open
+    for (int v = 0; v < 6; ++v) CHECK(e.panelLed(E::kLedDrone1 + v) > 0.9f);  // opened above
     CHECK(e.panelLed(E::kLedEnvA) < 0.01f);
     core::InputStateMachine in{nullptr, 0};
     core::PerformanceInput p{};

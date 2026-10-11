@@ -80,6 +80,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include "open_drones.h"
 
 // Defined by the isolated allocator TU built into this target.
 extern std::size_t g_allocCount;
@@ -244,6 +245,8 @@ void default_roundtrip_apply() {
   CHECK(validate_device_state(migrated).ok);
 
   StandaloneAudioEngine e;
+
+  openDrones(e);
   CHECK(e.applyDeviceState(migrated, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
   CHECK(e.isReady());
   CHECK(e.identityApplied());
@@ -275,6 +278,10 @@ void distinct_calibration_trace() {
   b.calibration.vcfRightTrim = 2.00f;
 
   StandaloneAudioEngine ea, eb;
+
+  openDrones(ea);
+
+  openDrones(eb);
   CHECK(ea.applyDeviceState(a, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
   CHECK(eb.applyDeviceState(b, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
 
@@ -307,6 +314,10 @@ void distinct_seed_trace() {
   DeviceStateV1 b = make_default_device_state(0x222u);
 
   StandaloneAudioEngine ea, eb;
+
+  openDrones(ea);
+
+  openDrones(eb);
   CHECK(ea.applyDeviceState(a, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
   CHECK(eb.applyDeviceState(b, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
 
@@ -551,6 +562,8 @@ void runtime_seed_drives_drone() {
   DeviceStateV1 b = make_default_device_state(0x77Au);
 
   StandaloneAudioEngine ea, eb;
+  openDrones(ea);
+  openDrones(eb);
   CHECK(ea.applyDeviceState(a, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
   CHECK(eb.applyDeviceState(b, 48000.0, kF, 1, 4) == StateApplyStatus::Accepted);
 

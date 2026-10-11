@@ -1252,6 +1252,9 @@ inline void StandaloneAudioEngine::commit_(std::unique_ptr<MachineRuntimeDefinit
   outputCapability_ = outputCapability;
   ready_ = true;
   for (int v = 0; v < 6; ++v) definition_->runtime().setDroneVoiceKey(v, droneKeys_[v]);
+  // Closed drones start silent: without this every new machine (launch, RESET, an audio
+  // reopen, a DAW project load) briefly sounded all closed voices as they released from open.
+  definition_->runtime().snapDroneVoiceLevels();
   ++stateVersion_;
   const auto& parameters = definition_->deviceState().parameters;
   for (std::size_t i = 0; i < lunar24::core::kParameterIdSpace; ++i)

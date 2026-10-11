@@ -79,6 +79,10 @@ class ArEnvelope {
   // "the gate the caller resolved", so a held voice reads gate==false with level==1.0.
   void setHold(bool on) { hold_ = on; }
 
+  // Jump straight to the current target (no attack / release ramp). For a machine being
+  // installed: a closed voice must start silent, not release from the open default.
+  void snapToTarget() { level_ = (gate_ || hold_) ? 1.0 : 0.0; }
+
   // Advance one sample. This is the classic GroupEnv law verbatim — `(e.gate || e.hold)`
   // included — moving toward the target at the stage's rate and CLAMPING at the target so
   // the level can overshoot neither 1.0 nor 0.0.

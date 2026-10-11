@@ -1091,6 +1091,18 @@ class SynthRuntime {
     if (kClassicGroup[voice] >= 0) drone_.setGroupGate(kClassicGroup[voice], open);
   }
   bool droneVoiceKey(int voice) const { return voice >= 0 && voice < 6 && droneKeyOpen_[voice]; }
+  // A machine being installed: start every drone VCA at its key's state (HOLD included)
+  // instead of releasing from the open default, so closed voices are silent from the first
+  // sample. A cable in drone 3/6's GATE input still decides that voice from the next sample.
+  void snapDroneVoiceLevels() {
+    drone_.snapGroupLevels();
+    for (int v = 0; v < kPapaVoiceCount; ++v) {
+      PapaVoice& pv = v == 0 ? pv3_ : pv6_;
+      // The unpatched gate is the key (tickPapaVoice_); a GATE cable re-decides on the next sample.
+      pv.setVoiceGate(DroneBank::kDefaultGroupGateOpen && droneKeyOpen_[v == 0 ? 2 : 5]);
+      pv.ar.snapToTarget();
+    }
+  }
   // Panel indicator readouts (the host turns these into the printed LEDs).
   // Drone 1..6 (voice 0..5) VCA envelope level, 0..1: the amber LED under each HOLD.
   double droneVoiceEnvLevel(int voice) const {

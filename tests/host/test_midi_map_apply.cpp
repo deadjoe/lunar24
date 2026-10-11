@@ -154,7 +154,7 @@ int main() {
     CHECK(!e.runtime()->droneVoiceKey(0));
     CHECK(e.postDroneKey(0, true));
     for (int i = 0; i < 20; ++i) e.processBlock(nullptr, outs, 0, 2, 256);
-    CHECK(e.panelLed(E::kLedDrone1) > 0.9f);
+    CHECK(e.panelLed(E::kLedDrone1) > 0.0f);  // rising from silent (the drone's ATTACK)
     CHECK(e.droneKey(0));
     core::MidiMap m;
     CHECK(m.bind(bindAction(10, 36, core::MidiAction::drone_key_1)));

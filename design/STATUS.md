@@ -43,7 +43,8 @@ Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md
   are stored only, except ENCODER DIRECTION. Footer PANEL swatches recolor the face and
   the choice is kept for the next launch (the menu card stays cream; RESET PANEL does not
   change it).
-- DRONE VOICES keys 1-6 latch each voice on / off; all start off (launch, RESET PANEL).
+- DRONE VOICES keys 1-6 latch each voice on / off; all start off and silent (launch, RESET PANEL),
+  which the app marks with a short chime.
 - RESET PANEL keeps keyboard presets A-D and MIDI settings.
 - Photo sensor (white dome, drones 1/2/4/5): press = hand over it, drag up = darker,
   sideways = fingers; bends only MOD-lit generators.
