@@ -269,6 +269,12 @@ class DroneBank {
   // ---- CLASSIC group gate/ATT/RLS/HOLD + shared CV MOD + environment (batch 4A) ----
   void setGroupGate(int group, bool on) { if (inGroup_(group)) groupEnv_[group].gate = on; }
   void setGroupHold(int group, bool on) { if (inGroup_(group)) groupEnv_[group].hold = on; }
+  // Every group's VCA straight to its target (gate || hold), skipping the ramp. Used once when
+  // a machine is installed, so a closed voice starts silent instead of releasing from open.
+  void snapGroupLevels() {
+    for (std::size_t g = 0; g < groupCount_; ++g)
+      groupEnv_[g].level = (groupEnv_[g].gate || groupEnv_[g].hold) ? 1.0 : 0.0;
+  }
   // ATT/RLS come from the registry as a normalized 0..1 control. The ONLY mapping in
   // the bank is mapAttSeconds/mapRlsSeconds (named, PROVISIONAL, monotonic): tests
   // clamp the norm and assert the monotonic + speed trend, never a hardware value.

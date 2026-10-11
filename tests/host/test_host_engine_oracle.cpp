@@ -50,6 +50,7 @@
 #include <cstdio>
 #include <limits>
 #include <new>
+#include "open_drones.h"
 
 // Defined by the isolated allocator TU built into this target.
 extern std::size_t g_allocCount;
@@ -317,6 +318,8 @@ void sample_rate_determinism() {
     for (int f = 0; f < kF; ++f) in[0][f] = 0.2;
     const double* inp[1] = {in[0]};
     StandaloneAudioEngine e1, e2;
+    openDrones(e1);
+    openDrones(e2);
     CHECK(e1.prepare(kSeed, 44100.0, kF, 1, 4));
     CHECK(e2.prepare(kSeed, 96000.0, kF, 1, 4));
     double o1[4][kF] = {{0}}, o2[4][kF] = {{0}};
@@ -408,6 +411,7 @@ void prepare_atomic_fail() {
 // ---- 8. churn + owner address stability --------------------------------------------------
 void churn() {
   StandaloneAudioEngine e;
+  openDrones(e);
   const StandaloneAudioEngine* owner = &e;
   for (int i = 0; i < 40; ++i) {
     // Deterministic variation of seed + rate forces a full definition release/re-install.

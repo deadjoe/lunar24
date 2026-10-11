@@ -17,6 +17,7 @@
 #include <string>
 
 #include <host/app_state_store.h>
+#include <host/chime.h>
 #include <host/diag_log.h>
 #include <host/panel_diagnostics.h>
 #include <host/rt_log.h>
@@ -187,7 +188,16 @@ private:
   std::chrono::steady_clock::time_point engineWatchAt_{};
   std::uint32_t midiOverflowsLogged_ = 0;
   int marks_ = 0;
-  bool hostLogged_ = false;
+#ifndef APP_API
+  bool hostLogged_ = false;  // the DAW's name is logged once
+#endif
+#ifdef APP_API
+  // The app's "ready" chime (host/chime.h): once when the app has started, once after RESET.
+  // Added to WET after the machine; the plugins never play it.
+  lunar24::host::Chime chime_;
+  bool startupChimed_ = false;
+  void playChime_(const char* why);
+#endif
   std::uint64_t seenSwaps_ = 0;  // audio thread
   std::atomic<bool> notesOffRequested_{false};  // set by a plugin OnReset, taken by the audio thread
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)

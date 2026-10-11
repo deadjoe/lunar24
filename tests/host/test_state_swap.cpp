@@ -18,6 +18,7 @@
 #include <host/standalone_audio_engine.h>
 #include <lunar24/core/state_default.h>
 #include <lunar24/core/state_edit.h>
+#include "open_drones.h"
 
 void countHeapOpsOnThisThread(bool on);
 extern std::atomic<std::size_t> g_countedHeapOps;
@@ -90,6 +91,7 @@ int main() {
   // that never comes, and installs the state.
   {
     auto e = std::make_unique<StandaloneAudioEngine>();
+    openDrones(*e);
     CHECK(e->prepare(1, 48000.0, kBlock, 0, 2));
     const auto t0 = std::chrono::steady_clock::now();
     CHECK(e->swapDeviceState(stateWithMaster(0.3)) == Status::Accepted);
@@ -102,6 +104,7 @@ int main() {
   // Not prepared: nothing to swap into, so the format is rejected and nothing is counted.
   {
     auto e = std::make_unique<StandaloneAudioEngine>();
+    openDrones(*e);
     CHECK(e->swapDeviceState(stateWithMaster(0.3)) == Status::RejectedFormat);
     CHECK_EQ(e->swapCount(), 0u);
     CHECK(!e->isReady());
@@ -109,6 +112,7 @@ int main() {
   // A rejected state keeps the current machine, and audio resumes.
   {
     auto e = std::make_unique<StandaloneAudioEngine>();
+    openDrones(*e);
     CHECK(e->prepare(1, 48000.0, kBlock, 0, 2));
     DeviceStateV1 bad = stateWithMaster(0.3);
     bad.parameters[static_cast<std::size_t>(ParameterId::effector_master)] = std::nan("");
@@ -124,6 +128,7 @@ int main() {
   // Swaps while an audio thread keeps playing.
   {
     auto e = std::make_unique<StandaloneAudioEngine>();
+    openDrones(*e);
     CHECK(e->prepare(1, 48000.0, kBlock, 0, 2));
     double l[kBlock], r[kBlock];
     double* outs[] = {l, r};

@@ -63,6 +63,9 @@ class EngineHarness {
     if (!encode_device_state(state, wire.data(), wire.size(), &written)) return false;
     DeviceStateV1 decoded;
     if (!decode_device_state(wire.data(), wire.size(), &decoded)) return false;
+    // The machine under test sounds: its six DRONE VOICES keys are open, as a player would.
+    const bool open[6] = {true, true, true, true, true, true};
+    engine_.setDroneKeys(open);
     applyStatus_ = engine_.applyDeviceState(decoded, sr, blockFrames, inCh, outCh);
     return applyStatus_ == StandaloneAudioEngine::StateApplyStatus::Accepted;
   }

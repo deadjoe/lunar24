@@ -1530,7 +1530,6 @@ class KeyboardMenuControl : public IControl {
       return;
     }
     resetUntil_ = {};
-    for (int v = 0; v < 6; ++v) s_.engine.postDroneKey(v, true);
     s_.octave = 0;
     s_.seqSide = 0;
     s_.presetSlot = 0;

@@ -58,6 +58,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include "open_drones.h"
 
 namespace {
 
@@ -1311,6 +1312,7 @@ void renderDrive(const DeviceStateV1& st, std::array<double, kRenderFrames>& l,
   for (int f = 0; f < kF; ++f) in[f] = 0.05 * std::sin(0.4 * f);
   const double* inp[1] = {in.data()};
   StandaloneAudioEngine e;
+  openDrones(e);
   CHECK(e.applyDeviceState(st, 48000.0, kF, 1, 2) == StandaloneAudioEngine::StateApplyStatus::Accepted);
   CHECK(e.isReady());
   double* o[2] = {l.data(), r.data()};
@@ -1329,6 +1331,7 @@ static void owner_engine_accepted_state_renders_live() {
   // (a) default -> Accepted, ready, live render non-silent (the driver actually produced audio).
   {
     StandaloneAudioEngine e;
+    openDrones(e);
     const auto st = e.applyDeviceState(def, 48000.0, kF, 1, 2);
     CHECK(st == StandaloneAudioEngine::StateApplyStatus::Accepted);
     CHECK(e.isReady());
@@ -1368,6 +1371,7 @@ static void owner_engine_rejected_apply_is_atomic() {
   std::array<double, kF> refL{}, refR{};
   {
     StandaloneAudioEngine e;
+    openDrones(e);
     CHECK(e.applyDeviceState(def, 48000.0, kF, 1, 2) == StandaloneAudioEngine::StateApplyStatus::Accepted);
     double* o[2] = {refL.data(), refR.data()};
     CHECK(ownerRender(e, inp, o, 1, 2, kF) == StandaloneAudioEngine::Status::Rendered);
@@ -1378,6 +1382,7 @@ static void owner_engine_rejected_apply_is_atomic() {
   // engine STAYS READY, first block rendered afterwards equals the fresh default's first block.
   {
     StandaloneAudioEngine e;
+    openDrones(e);
     CHECK(e.applyDeviceState(def, 48000.0, kF, 1, 2) == StandaloneAudioEngine::StateApplyStatus::Accepted);
     const double sr = e.sampleRate(), bs = e.blockSize();
     const int icap = e.inputCapability(), ocap = e.outputCapability();
@@ -1406,6 +1411,7 @@ static void owner_engine_rejected_apply_is_atomic() {
   // still-intact default definition keeps rendering (Rendered, not a dropped status).
   {
     StandaloneAudioEngine e;
+    openDrones(e);
     CHECK(e.applyDeviceState(def, 48000.0, kF, 1, 2) == StandaloneAudioEngine::StateApplyStatus::Accepted);
     CHECK(e.applyDeviceState(def, std::nan(""), kF, 1, 2) == StandaloneAudioEngine::StateApplyStatus::RejectedFormat);
     CHECK(e.applyDeviceState(def, 48000.0, 0, 1, 2) == StandaloneAudioEngine::StateApplyStatus::RejectedFormat);

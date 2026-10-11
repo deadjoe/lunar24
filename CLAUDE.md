@@ -71,6 +71,6 @@ why) before changing anything.
 ## Handy commands
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build && ctest --test-dir build
-./build/lunar24_render --seconds 20 --out wet.wav      # listen to the engine offline
+./build/lunar24_render --seconds 20 --drone 1 --drone 4 --out wet.wav   # listen offline
 ./build/panel_preview > panel.svg                      # look at the panel layout
 ```
