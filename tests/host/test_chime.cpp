@@ -29,16 +29,16 @@ int main() {
     const double onset = std::max(std::fabs(l[0]), std::fabs(r[0]));
     int blocks = 1;
     peak = first;
-    while (c.active() && blocks < 2 * kSr / kBlock) { peak = std::max(peak, block()); ++blocks; }
+    while (c.active() && blocks < 8 * kSr / kBlock) { peak = std::max(peak, block()); ++blocks; }
     CHECK(first > 0.0);                     // starts in the next block
     CHECK(onset < 1e-3);                    // ... with a soft onset, not a click
-    CHECK(peak > 0.05 && peak < 0.25);      // clearly heard, well below full scale (-12 dBFS)
+    CHECK(peak > 0.05 && peak < 0.32);      // clearly heard, well below full scale (-10 dBFS)
     CHECK(!c.active());                     // over by itself ...
-    CHECK(blocks * kBlock < 1.5 * kSr);     // ... within 1.5 s: no long tail
+    CHECK(blocks * kBlock < 5 * kSr);       // ... within 5 s: a phrase, not a tail
     CHECK(block() == 0.0);
     // While MUTE is on the host renders it into nothing: consumed, never heard later.
     c.trigger();
-    for (int i = 0; i < 2 * kSr / kBlock; ++i) c.render(nullptr, nullptr, kBlock, kSr);
+    for (int i = 0; i < 8 * kSr / kBlock; ++i) c.render(nullptr, nullptr, kBlock, kSr);
     CHECK(!c.active());
     CHECK(block() == 0.0);
   }

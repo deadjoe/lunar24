@@ -300,6 +300,7 @@ Keep these unless a listening test or a real bug says otherwise.
   at its key's state (`SynthRuntime::snapDroneVoiceLevels`). They used to start open and
   release, so all closed voices sounded for about a second plus the effector's tail; it was
   kept as a "startup sound" but also fired while playing (headphones plugged, a device
-  reconnected). The standalone app now plays a short chime (`host/chime.h`, under 1 s, added
-  to WET after the effector, silent under MUTE) once when it is ready and after RESET PANEL;
+  reconnected). The standalone app now plays a short synth phrase (`host/chime.h`, 2-3 s, a
+  recognisable motif rather than a phone-like ding, added to WET after the effector, silent
+  under MUTE) once when it is ready and after RESET PANEL;
   the plugins never play it, a DAW session is not the place for it.
