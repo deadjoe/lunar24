@@ -1659,6 +1659,8 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 
 每行的格式：`时间  启动后秒数  级别  类别  内容`。级别：E 错误、W 警告（丢了东西或出了问题）、I 信息、D 细节、T 更细（默认不记）。类别：`app`（启动、退出、MARK）、`audio`（设备、开始有声 / 变安静、爆音）、`midi`（每个 MIDI 音符、踏板、时钟、设备插拔）、`ui`（电脑键盘、鼠标弹的音，接线、DRONE VOICES）、`state`（快照、旋钮变化、存盘）、`engine`（引擎丢事件）、`rec`（录音）、`log`（日志自身）。
 
+不用退出 App 就能复制日志：每条记录在发生后约 20 ms 内就写进文件。只是还没退出时文件末尾没有 `session end`，属正常。
+
 设置文件 `log.conf` 在 logs 旁边（第一次启动自动生成，里面有说明）：`level = info` 只记信息以上；`midi = trace` 额外记每个 MIDI CC；`segment_kib`、`total_mib` 改文件大小。改完重开 App / 插件生效。
 
 **MARK（按 M）**：听到问题的那一刻按电脑键盘 **M**，日志里出现 `MARK 1 (key M)` 和一份完整快照（所有旋钮、接线、DRONE VOICES、引擎还按着几个键盘音、电脑键盘 / 鼠标 / MIDI 当前按着什么、输出有没有声）。不会改变声音。
@@ -1671,7 +1673,7 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 - 期望：
   - 弹奏、拖动旋钮和平常一样流畅。
   - 开头是 `session …`、版本号和 `log.conf …` 一行；按顺序有 `ui     note-on key vk=…`、`note-off`、`note-on mouse …`、`plug … -> …`、`unplug …`、`drone key 1 open / close`。
-  - 有 `audio  output sounding` 和之后的 `output silent`。
+  - 有 `audio  output sounding` 和之后的 `output silent`；输出有声时每 10 秒一行 `levels`（wet、dry、effector in、audio input），输出安静时不写。
   - 旋钮一组 `state  panel` 加 `param vco_a.tune=…`（半秒内只记最后的值）。
   - 有 `MARK 1 (key M)`，紧接着一份 `snapshot begin reason=MARK 1` … `snapshot end`。
   - 最后一行是 `session end (clean shutdown)`。再开一次 App，新文件开头有 `previous app session ended cleanly`。
@@ -1684,6 +1686,8 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 - 期望（看日志能回答的问题）：
   - MARK 快照里 `dsp keyboard: left holds N note(s)`：N 大于 0 而 `ui holds` 和 `midi notes down` 都是 none，就是有音没收到松开（卡键）。
   - `drone_keys`、`cable` 行和 `lights` 里的 drone VCA 亮度说明 drone 是否真的关了。
+  - MARK 快照末尾一行 `output sounding; effector input silent for N s (what sounds on WET is only the effector tail)`：声源早就停了，听到的是效果器尾巴（Shimmer、延迟反馈等），不是卡音；调小 effector 的 X / Y / Z 或 BLEND 尾巴就短。没有这句而 `effector input sounding`，就是还有声源在响。
+  - 声音最后停下时的 `output silent; the last N s of WET were only the effector tail` 给出尾巴长度。
   - `output sounding` / `output silent` 的时间和你的操作对得上；`W` 开头的行说明丢过事件。
   - RESET 时有 `snapshot begin reason=before RESET PANEL`。
 

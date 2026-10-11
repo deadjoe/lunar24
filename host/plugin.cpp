@@ -633,7 +633,8 @@ void LunarHostPlugin::logIdle_()
   diag::Logger& logger = diag::log();
   diag::drainRtLog(rtLog_, logger, logInstance_, &midiHeld_);
   const auto now = std::chrono::steady_clock::now();
-  levelWatch_.update(now, wetPeak_.take(), dryPeak_.take(), inPeak_.take(), engine_.isReady(),
+  levelWatch_.update(now, wetPeak_.take(), dryPeak_.take(), engine_.takeEffectorInputPeak(), inPeak_.take(),
+                     engine_.isReady(),
                      [&](Level level, const std::string& text) { logger.write(Cat::audio, level, text, logInstance_); });
   panelWatch_.poll(engine_, now, [&](const std::string& text) {
     // A whole new state (startup, RESET, preset, project) is a full snapshot; edits are one line.
@@ -670,7 +671,7 @@ void LunarHostPlugin::logSnapshot_(const std::string& reason)
     extra += ui.mousePlate >= 0 ? "; mouse plate " + std::to_string(ui.mousePlate) : std::string("; mouse none");
   }
 #endif
-  extra += "\noutput " + std::string(levelWatch_.sounding() ? "sounding" : "silent");
+  extra += "\n" + levelWatch_.describe(std::chrono::steady_clock::now());
   const std::string text = lunar24::host::diag::machineSnapshot(engine_, reason, extra);
   logger.write(Cat::state, Level::info, text, logInstance_);
 }

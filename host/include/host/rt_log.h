@@ -233,25 +233,36 @@ inline std::string dbfs(float peak) {
 }
 
 // When the output starts sounding and when it falls silent, plus a level summary while it
-// sounds. UI thread; fed the peaks taken since the previous call (every idle tick).
+// sounds. It also times how long nothing has entered the effector: when the output falls
+// silent, or in a snapshot, "effector input silent for 20 s" means the last 20 s were only the
+// effector's tail (reverb, delay feedback). A gating LFO cuts the input every cycle, so this
+// is reported as a duration, never as on / off events. UI thread; fed the peaks taken since
+// the previous call (every idle tick).
 class LevelWatch {
  public:
   static constexpr float kSoundOn = 0.0003f;   // -70 dBFS
   static constexpr float kSoundOff = 0.0001f;  // -80 dBFS for kSilentFor
   static constexpr auto kSilentFor = std::chrono::milliseconds(500);
   static constexpr auto kSummaryEvery = std::chrono::seconds(10);
+  using Clock = std::chrono::steady_clock;
 
+  // wet / dry: the outputs; fxIn: the signal entering the effector; in: the audio input.
   template <class Emit>  // Emit(Level, const std::string&)
-  void update(std::chrono::steady_clock::time_point now, float wet, float dry, float in, bool running, Emit emit) {
+  void update(Clock::time_point now, float wet, float dry, float fxIn, float in, bool running, Emit emit) {
     if (!running) {
       if (sounding_) emit(Level::info, "output stopped (no audio stream)");
       sounding_ = false;
       quietSince_ = {};
+      fxLoudAt_ = wetLoudAt_ = {};
       return;
     }
+    if (fxLoudAt_ == Clock::time_point{}) fxLoudAt_ = wetLoudAt_ = now;  // stream start
+    if (fxIn >= kSoundOff) fxLoudAt_ = now;
+    if (wet >= kSoundOff) wetLoudAt_ = now;
     const float out = std::max(wet, dry);
     maxWet_ = std::max(maxWet_, wet);
     maxDry_ = std::max(maxDry_, dry);
+    maxFx_ = std::max(maxFx_, fxIn);
     maxIn_ = std::max(maxIn_, in);
     if (!sounding_ && out > kSoundOn) {
       sounding_ = true;
@@ -259,32 +270,59 @@ class LevelWatch {
       summaryAt_ = now + kSummaryEvery;  // the summary covers this sounding stretch
       maxWet_ = wet;
       maxDry_ = dry;
+      maxFx_ = fxIn;
       maxIn_ = in;
       emit(Level::info, "output sounding: peak " + dbfs(out) + " dBFS");
     } else if (sounding_) {
       if (out >= kSoundOff) {
         quietSince_ = {};
-      } else if (quietSince_ == std::chrono::steady_clock::time_point{}) {
+      } else if (quietSince_ == Clock::time_point{}) {
         quietSince_ = now;
       } else if (now - quietSince_ >= kSilentFor) {
         sounding_ = false;
-        emit(Level::info, "output silent (below -80 dBFS for 0.5 s)");
+        // How long WET rang on after nothing entered the effector any more.
+        // Only when WET is what fell silent just now (not a DRY-only stretch after it).
+        const bool wetEnded = quietSince_ - wetLoudAt_ < std::chrono::seconds(1);
+        const double tail = wetEnded ? std::chrono::duration<double>(wetLoudAt_ - fxLoudAt_).count() : 0.0;
+        emit(Level::info, tail >= 1.0 ? "output silent; the last " + seconds_(tail) +
+                                            " of WET were only the effector tail (nothing entered it)"
+                                      : std::string("output silent (below -80 dBFS for 0.5 s)"));
       }
     }
     if (now >= summaryAt_) {
-      if (sounding_ || maxIn_ > kSoundOn)
-        emit(Level::debug, "levels (10 s max dBFS): wet " + dbfs(maxWet_) + ", dry " + dbfs(maxDry_) + ", input " +
-                               dbfs(maxIn_));
-      maxWet_ = maxDry_ = maxIn_ = 0.f;
+      if (sounding_)
+        emit(Level::debug, "levels (10 s max dBFS): wet " + dbfs(maxWet_) + ", dry " + dbfs(maxDry_) +
+                               ", effector in " + dbfs(maxFx_) + ", audio input " + dbfs(maxIn_));
+      maxWet_ = maxDry_ = maxFx_ = maxIn_ = 0.f;
       summaryAt_ = now + kSummaryEvery;
     }
   }
   bool sounding() const { return sounding_; }
+  // Seconds since anything entered the effector, as of `now` (0 while something does).
+  double fxSilentSeconds(Clock::time_point now) const {
+    if (fxLoudAt_ == Clock::time_point{} || now <= fxLoudAt_) return 0.0;
+    return std::chrono::duration<double>(now - fxLoudAt_).count();
+  }
+  // For a snapshot: "output sounding; effector input silent for 12.3 s (what sounds on WET is
+  // only the effector tail)".
+  std::string describe(Clock::time_point now) const {
+    const double fx = fxSilentSeconds(now);
+    std::string s = std::string("output ") + (sounding_ ? "sounding" : "silent") + "; effector input ";
+    if (fx < 0.5) return s + "sounding";
+    s += "silent for " + seconds_(fx);
+    if (sounding_ && now - wetLoudAt_ < kSilentFor) s += " (what sounds on WET is only the effector tail)";
+    return s;
+  }
 
  private:
+  static std::string seconds_(double s) {
+    char b[24];
+    std::snprintf(b, sizeof b, "%.1f s", s);
+    return b;
+  }
   bool sounding_ = false;
-  std::chrono::steady_clock::time_point quietSince_{}, summaryAt_{};
-  float maxWet_ = 0.f, maxDry_ = 0.f, maxIn_ = 0.f;
+  Clock::time_point quietSince_{}, summaryAt_{}, fxLoudAt_{}, wetLoudAt_{};
+  float maxWet_ = 0.f, maxDry_ = 0.f, maxFx_ = 0.f, maxIn_ = 0.f;
 };
 
 }  // namespace lunar24::host::diag

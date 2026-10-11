@@ -72,26 +72,47 @@ int main() {
     CHECK(has(m.describe(), "down: none") && has(m.describe(), "may be incomplete"));
   }
 
-  // ---- sound / silence ----
+  // ---- sound / silence, and the effector tail ----
   {
     LevelWatch w;
     std::vector<std::string> lines;
     auto emit = [&](Level, const std::string& t) { lines.push_back(t); };
     auto t = Clock::now();
-    w.update(t, 0.f, 0.f, 0.f, true, emit);
+    const auto ms20 = std::chrono::milliseconds(20);
+    // update(now, wet, dry, effector in, audio input, running)
+    w.update(t, 0.f, 0.f, 0.f, 0.f, true, emit);
     CHECK(lines.empty());
-    w.update(t += std::chrono::milliseconds(20), 0.5f, 0.f, 0.f, true, emit);
+    w.update(t += ms20, 0.5f, 0.f, 0.3f, 0.f, true, emit);
     CHECK(w.sounding() && lines.size() == 1 && has(lines[0], "output sounding: peak -6.0 dBFS"));
-    for (int i = 0; i < 20; ++i) w.update(t += std::chrono::milliseconds(20), 0.00005f, 0.f, 0.f, true, emit);
-    CHECK(w.sounding());  // a 400 ms dip is not silence
-    w.update(t += std::chrono::milliseconds(20), 0.01f, 0.f, 0.f, true, emit);
-    for (int i = 0; i < 30; ++i) w.update(t += std::chrono::milliseconds(20), 0.f, 0.f, 0.f, true, emit);
-    CHECK(!w.sounding() && has(lines.back(), "output silent"));
-    w.update(t += std::chrono::milliseconds(20), 0.f, 0.2f, 0.f, true, emit);  // DRY counts too
-    CHECK(w.sounding());
-    w.update(t += std::chrono::seconds(11), 0.f, 0.2f, 0.f, true, emit);
-    CHECK(has(lines.back(), "levels (10 s max dBFS): wet -inf, dry -14.0"));
-    w.update(t, 0.f, 0.f, 0.f, false, emit);
+    for (int i = 0; i < 20; ++i) w.update(t += ms20, 0.00005f, 0.f, 0.00005f, 0.f, true, emit);
+    CHECK(w.sounding() && lines.size() == 1);  // a 400 ms dip is not silence
+    // A gating LFO: the effector input drops out for a second at a time. Nothing is logged.
+    for (int cycle = 0; cycle < 5; ++cycle) {
+      for (int i = 0; i < 50; ++i) w.update(t += ms20, 0.3f, 0.f, 0.f, 0.f, true, emit);
+      for (int i = 0; i < 50; ++i) w.update(t += ms20, 0.3f, 0.f, 0.2f, 0.f, true, emit);
+    }
+    std::size_t news = 0;
+    for (const auto& l : lines) news += has(l, "levels") ? 0 : 1;
+    CHECK_EQ(news, std::size_t(1));  // only the summaries every 10 s
+    CHECK(has(w.describe(t), "effector input sounding"));
+    // The sources stop; the effector rings on for 3 s, then dies away.
+    for (int i = 0; i < 150; ++i) w.update(t += ms20, 0.2f, 0.f, 0.f, 0.f, true, emit);
+    CHECK(has(w.describe(t), "effector input silent for 3.0 s (what sounds on WET is only the effector tail)"));
+    for (int i = 0; i < 30; ++i) w.update(t += ms20, 0.f, 0.f, 0.f, 0.f, true, emit);
+    CHECK(!w.sounding() && has(lines.back(), "output silent; the last 3.0 s of WET were only the effector tail"));
+    // DRY bypasses the effector: DRY alone fading out is no effector tail.
+    for (int i = 0; i < 100; ++i) w.update(t += ms20, 0.f, 0.2f, 0.f, 0.f, true, emit);
+    CHECK(w.sounding() && has(w.describe(t), "silent for") && !has(w.describe(t), "tail"));
+    w.update(t += std::chrono::seconds(11), 0.f, 0.2f, 0.f, 0.f, true, emit);
+    CHECK(has(lines.back(), "levels (10 s max dBFS): wet -inf, dry -14.0, effector in -inf, audio input -inf"));
+    for (int i = 0; i < 30; ++i) w.update(t += ms20, 0.f, 0.f, 0.f, 0.f, true, emit);
+    CHECK(has(lines.back(), "output silent (below -80 dBFS for 0.5 s)"));
+    // A silent output writes no summaries, however loud the (unrouted) microphone is.
+    const std::size_t quiet = lines.size();
+    for (int i = 0; i < 1600; ++i) w.update(t += ms20, 0.f, 0.f, 0.f, 0.5f, true, emit);
+    CHECK_EQ(lines.size(), quiet);
+    w.update(t, 0.3f, 0.f, 0.f, 0.f, true, emit);
+    w.update(t, 0.f, 0.f, 0.f, 0.f, false, emit);
     CHECK(has(lines.back(), "no audio stream") && !w.sounding());
   }
 
@@ -123,6 +144,10 @@ int main() {
   CHECK(e.postConnect(core::JackId::keyboard_gate_left_main_out, core::JackId::envelope_b_gate_in));
   note(core::PerfInputKind::note_on);
   CHECK_EQ(e.keyboardHeldNotes(0), 1u);  // the running keyboard reports the held note
+  e.takeEffectorInputPeak();
+  run(8);
+  CHECK(e.takeEffectorInputPeak() > 0.001f);  // the open drone reaches the effector
+  CHECK_EQ(e.takeEffectorInputPeak(), 0.f);   // taken: nothing new until the next block
   {
     const std::string s = machineSnapshot(e, "mark 1");
     CHECK(has(s, "snapshot begin reason=mark 1"));

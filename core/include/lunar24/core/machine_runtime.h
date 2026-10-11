@@ -1113,6 +1113,13 @@ class SynthRuntime {
     preampPeak_ = 0.0;
     return p;
   }
+  // Largest |signal| (volts) entering the dual effector since the last call: with the output
+  // still sounding, ~0 here means what is heard is the effector's tail. Diagnostics only.
+  double takeEffectorInputPeak() {
+    const double p = effectorInPeak_;
+    effectorInPeak_ = 0.0;
+    return p;
+  }
   void setDroneGroupHold(int voiceGroup, bool on) { drone_.setGroupHold(voiceGroup, on); }
   void setDroneGroupAtt(int voiceGroup, double norm) { drone_.setGroupAtt(voiceGroup, norm); }
   void setDroneGroupRls(int voiceGroup, double norm) { drone_.setGroupRls(voiceGroup, norm); }
@@ -2231,6 +2238,7 @@ class SynthRuntime {
     effCv_[0] = effCv_[1] = effCv_[2] = 0.0;
     for (std::uint32_t i = 0; i < execSlotCount_; ++i) step_(execSlots_[i], driveGraph);
     if (effectorEnabled_) {
+      effectorInPeak_ = std::max(effectorInPeak_, std::max(std::fabs(wetL_), std::fabs(wetR_)));
       for (int i = 0; i < 3; ++i) effector_.setCv(i, effCv_[i]);
       effector_.process(wetL_, wetR_);
     }
@@ -4290,6 +4298,7 @@ class SynthRuntime {
   double vcfL_ = 0.0, vcfR_ = 0.0;
   double preampOut_ = 0.0;
   double preampPeak_ = 0.0;  // largest |preamp output| since takePreampPeak
+  double effectorInPeak_ = 0.0;  // largest |effector input| since takeEffectorInputPeak
 
   //  VCF→distortion staging gains (calibration trim × identity path-gain micro).
   // Default 1.0 (no staging adjustment) so the runtime is bit-identical to the
