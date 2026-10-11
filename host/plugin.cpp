@@ -360,7 +360,7 @@ void LunarHostPlugin::rebuildEngine_()
                   engineOutputs_());
   if (engine_.isReady())
     stateStore_.publishPending(engine_, GetSampleRate(), GetBlockSize(), engineInputs_(), engineOutputs_());
-  diag::log().writef(engine_.isReady() ? Level::info : Level::warn, Cat::audio, logInstance_,
+  diag::log().writef(Cat::audio, engine_.isReady() ? Level::info : Level::warn, logInstance_,
                      "engine %s: %.0f Hz, block %d, %d in / %d out; state file: %s",
                      engine_.isReady() ? "ready" : "NOT ready", GetSampleRate(), GetBlockSize(), engineInputs_(),
                      engineOutputs_(), loadOutcomeName(stateStore_.loadOutcome()));
