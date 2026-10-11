@@ -45,7 +45,7 @@ int main() {
 
   // Rotation keeps three predecessors, whole records, and Unicode paths.
   const auto dir = std::filesystem::temp_directory_path() /
-      std::filesystem::u8path("lunar-log-测试-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+      std::filesystem::u8path(u8"lunar-log-\u6d4b\u8bd5-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   std::filesystem::create_directory(dir);
   const auto path = dir / "audio.log";
   host::RotatingAudioLog file(path);
