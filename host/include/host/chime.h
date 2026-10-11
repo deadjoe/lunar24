@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // host/include/host/chime.h — the app's "ready" signature, played once when the app has
-// started and once after RESET PANEL. A short synth phrase (detuned saws through an opening
-// low-pass filter, or an FM bell), 2-3 s long, so it is recognisably the instrument and not a
-// phone's ding. It is added to the WET outputs after the whole machine (no effector, no long
+// started and once after RESET PANEL. A short synth phrase, 2-3 s long, so it is
+// recognisably the instrument and not a phone's ding: a rising A-minor arpeggio of detuned
+// saws that lands as a chord while its low-pass filter opens, with a bell on the top note. It is added to the WET outputs after the whole machine (no effector, no long
 // tail) and is not part of the instrument: the plugins never play it. Tuned by ear.
 #pragma once
 
@@ -18,9 +18,6 @@ namespace lunar24::host {
 
 class Chime {
  public:
-  // The candidate phrases the owner chooses between by ear.
-  enum class Style { ascent, motif, swell };
-  explicit Chime(Style style = Style::ascent) : style_(style) {}
 
   // Any thread: play the phrase from the start of the next rendered block.
   void trigger() { pending_.store(true, std::memory_order_release); }
@@ -132,38 +129,17 @@ class Chime {
     sr_ = sr;
     now_ = 0;
     count_ = 0;
-    // Notes in A (the drones' default key). Hz: A2 110, E3 164.8, G3 196, A3 220, B3 246.9,
-    // C4 261.6, E4 329.6, G4 392, A4 440, C5 523.3, D5 587.3, E5 659.3, A5 880.
-    switch (style_) {
-      case Style::ascent:  // a rising A-minor arpeggio that lands as a chord, filter opening
-        add_(0.00, 1.70, 220.0, 0.060, -0.30, Wave::saws, 0.010, 0.40, 0.55, 0.35, 500, 3500, 1.4, 0.35);
-        add_(0.15, 1.55, 329.6, 0.055, -0.10, Wave::saws, 0.010, 0.40, 0.55, 0.35, 600, 4000, 1.3, 0.35);
-        add_(0.30, 1.40, 440.0, 0.050, 0.10, Wave::saws, 0.010, 0.40, 0.55, 0.35, 700, 4500, 1.2, 0.35);
-        add_(0.45, 1.25, 523.3, 0.045, 0.25, Wave::saws, 0.010, 0.40, 0.55, 0.35, 800, 5000, 1.1, 0.35);
-        add_(0.60, 1.10, 659.3, 0.045, 0.35, Wave::saws, 0.010, 0.40, 0.55, 0.35, 900, 6000, 1.0, 0.35);
-        add_(0.60, 0.20, 1318.5, 0.030, 0.0, Wave::bell, 0.002, 0.30, 0.0, 0.30);
-        break;
-      case Style::motif:  // a four-note bell call, A - E - D - A (short, short, short, long)
-        add_(0.00, 0.18, 880.0, 0.085, -0.20, Wave::bell, 0.003, 0.25, 0.30, 0.30);
-        add_(0.20, 0.18, 1318.5, 0.075, 0.10, Wave::bell, 0.003, 0.25, 0.30, 0.30);
-        add_(0.40, 0.18, 1174.7, 0.075, -0.10, Wave::bell, 0.003, 0.25, 0.30, 0.30);
-        add_(0.62, 0.90, 1760.0, 0.070, 0.20, Wave::bell, 0.003, 0.40, 0.30, 0.40);
-        add_(0.62, 1.20, 110.0, 0.090, 0.0, Wave::saws, 0.150, 0.60, 0.60, 0.35, 300, 1800, 1.0, 0.25);
-        add_(0.62, 1.20, 220.0, 0.050, 0.0, Wave::saws, 0.150, 0.60, 0.60, 0.35, 300, 2200, 1.0, 0.25);
-        break;
-      case Style::swell:  // an Am9 pad that swells and opens, crowned by a high E bell
-        add_(0.00, 1.50, 110.0, 0.055, -0.40, Wave::saws, 0.60, 0.80, 0.80, 0.35, 250, 3000, 1.6, 0.40);
-        add_(0.00, 1.50, 164.8, 0.045, 0.40, Wave::saws, 0.60, 0.80, 0.80, 0.35, 250, 3200, 1.6, 0.40);
-        add_(0.05, 1.45, 196.0, 0.040, -0.20, Wave::saws, 0.60, 0.80, 0.80, 0.35, 300, 3500, 1.6, 0.40);
-        add_(0.05, 1.45, 246.9, 0.040, 0.20, Wave::saws, 0.60, 0.80, 0.80, 0.35, 300, 3800, 1.6, 0.40);
-        add_(0.10, 1.40, 261.6, 0.035, 0.0, Wave::saws, 0.60, 0.80, 0.80, 0.35, 350, 4000, 1.6, 0.40);
-        add_(1.10, 0.30, 1318.5, 0.060, 0.15, Wave::bell, 0.003, 0.35, 0.20, 0.45);
-        break;
-    }
+    // In A, the drones' default key. Tuned by ear.
+    // A3 E4 A4 C5 E5, 0.15 s apart, each held until about 1.7 s, the filter opening as they enter.
+    add_(0.00, 1.70, 220.0, 0.060, -0.30, Wave::saws, 0.010, 0.40, 0.55, 0.35, 500, 3500, 1.4, 0.35);
+    add_(0.15, 1.55, 329.6, 0.055, -0.10, Wave::saws, 0.010, 0.40, 0.55, 0.35, 600, 4000, 1.3, 0.35);
+    add_(0.30, 1.40, 440.0, 0.050, 0.10, Wave::saws, 0.010, 0.40, 0.55, 0.35, 700, 4500, 1.2, 0.35);
+    add_(0.45, 1.25, 523.3, 0.045, 0.25, Wave::saws, 0.010, 0.40, 0.55, 0.35, 800, 5000, 1.1, 0.35);
+    add_(0.60, 1.10, 659.3, 0.045, 0.35, Wave::saws, 0.010, 0.40, 0.55, 0.35, 900, 6000, 1.0, 0.35);
+    add_(0.60, 0.20, 1318.5, 0.030, 0.0, Wave::bell, 0.002, 0.30, 0.0, 0.30);  // E6 bell on top
     active_ = count_ > 0;
   }
 
-  Style style_;
   std::atomic<bool> pending_{false};
   // audio thread
   bool active_ = false;

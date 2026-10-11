@@ -11,8 +11,8 @@ using lunar24::host::Chime;
 
 int main() {
   constexpr int kSr = 48000, kBlock = 256;
-  for (int style = 0; style < 3; ++style) {
-    Chime c(static_cast<Chime::Style>(style));
+  {
+    Chime c;
     std::vector<double> l(kBlock), r(kBlock);
     auto block = [&]() {
       std::fill(l.begin(), l.end(), 0.0);
