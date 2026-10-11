@@ -94,6 +94,15 @@ extern "C" void lunar_host_place_view(void* view, double x, double y)
                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+// Does the panel's window get the keyboard now? Not when another app is in front or one of our
+// own dialogs (Preferences) is: then no key-ups reach the panel, so it releases its held keys.
+extern "C" bool lunar_host_view_has_keyboard(void* view)
+{
+  HWND child = static_cast<HWND>(view);
+  if (child == nullptr) return false;
+  return GetForegroundWindow() == GetAncestor(child, GA_ROOT);
+}
+
 // No case round the panel on Windows.
 extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom)
 {

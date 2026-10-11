@@ -304,3 +304,10 @@ Keep these unless a listening test or a real bug says otherwise.
   recognisable motif rather than a phone-like ding, added to WET after the effector, silent
   under MUTE) once when it is ready and after RESET PANEL;
   the plugins never play it, a DAW session is not the place for it.
+
+- **Held computer keys are released when the window loses the keyboard** (2026-10-12).
+  macOS and Windows send no key-up to a window that is no longer in front, and iPlug2 ignores
+  focus changes, so a plate key held while switching apps (or opening Preferences) used to
+  sound forever. The app polls `lunar_host_view_has_keyboard` from OnIdle and releases every
+  held key (`host/computer_keys.h`); a key-up whose character changed while the key was down
+  (Shift, an input method) is matched by its key code. MIDI notes are not affected.
