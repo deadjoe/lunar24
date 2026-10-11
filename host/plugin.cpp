@@ -141,6 +141,9 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     // The whole panel (host/panel_editor.h). The shared editor state lives as long as the plugin.
     auto shared = std::make_shared<lunar24::host::ui::EditorShared>(engine_);
     shared->factoryReset = [this]() { requestFactoryReset(); };
+#ifdef APP_API
+    shared->diagnostic = [](const char* line) { hostLog(line); };
+#endif
     // The MIDI settings overlay reads/edits the plugin's binding store through these bridges.
     shared->midiStore = &midiMapStore_;
     shared->midi.inputDeviceName = [this]() { return midiInputDeviceName_; };
@@ -416,10 +419,30 @@ lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
   return stateStore_.save(engine_);
 }
 
+void LunarHostPlugin::logResetSnapshot_() noexcept
+{
+#ifdef APP_API
+  try {
+    std::string text = lunar24::host::diagnosticSnapshot(engine_, "before-reset");
+#if IPLUG_EDITOR
+    if (uiState_) {
+      const auto& ui = *std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_);
+      text += "\nUI-held computer keys (not DSP active voices):";
+      for (const auto& key : ui.heldKeys)
+        text += " key=" + std::to_string(key.first) + " semitone=" + std::to_string(key.second);
+      text += "\nUI-held mouse plate=" + std::to_string(ui.mousePlate);
+    }
+#endif
+    hostLog(text.c_str());
+  } catch (...) { hostLog("snapshot before-reset failed (diagnostics only)"); }
+#endif
+}
+
 void LunarHostPlugin::requestFactoryReset()
 {
   // Without a running machine there is nothing to swap: reset at the next OnReset instead.
   if (!engine_.isReady()) {
+    logResetSnapshot_();
     factoryResetRequested_ = true;
 #ifdef APP_API
     lunar_host_request_audio_reopen();  // OnReset runs when the stream reopens
@@ -427,6 +450,7 @@ void LunarHostPlugin::requestFactoryReset()
     return;
   }
   engine_.syncParametersFromAudioThread();  // the reset keeps presets edited by MIDI too
+  logResetSnapshot_();  // before closing keys / replacing the machine
   const lunar24::core::DeviceStateV1 reset =
       lunar24::core::make_reset_device_state(*engine_.canonicalState(), lunar24::host::kLunarStartupSeed);
   engine_.closeDroneKeys();  // like a fresh start: the drones wait for their keys
@@ -526,6 +550,10 @@ void LunarHostPlugin::OnIdle()
 #ifdef APP_API
   lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
   logMidiClock_();
+  try {
+    panelDiagnostics_.poll(engine_, std::chrono::steady_clock::now(),
+                           [](const std::string& text) { hostLog(text.c_str()); });
+  } catch (...) { /* Logging must not interrupt UI, autosave, or playback. */ }
 
   constexpr auto kAutosaveInterval = std::chrono::seconds(30);
   const auto now = std::chrono::steady_clock::now();

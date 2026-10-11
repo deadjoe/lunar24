@@ -40,6 +40,8 @@
 // divergent host truths.
 // ---------------------------------------------------------------------------
 
+#include <host/audio_log.h>
+#include "about.h"
 #include "IPlugAPP_host.h"
 
 #ifdef OS_WIN
@@ -128,44 +130,25 @@ double sStageOut[4][APP_SIGNAL_VECTOR_SIZE];
 
 #define STRBUFSZ 100
 
-std::unique_ptr<IPlugAPPHost> IPlugAPPHost::sInstance;
 
 namespace {
-// Lunar 24: a short audio log, audio.log next to settings.ini. It records every device open and
-// its outcome, RtAudio's errors, and every 5 s the loudest input sample the stream delivered, so
-// a device problem on the owner's machine can be read instead of guessed. Kept under ~256 KB.
-char sAudioLogPath[MAX_PATH_LEN] = "";
-std::atomic<float> sInputPeak{0.f};  // audio thread raises it, the UI thread reads and clears it
-std::atomic<int> sOpenInputs{-1};    // input channels of the running stream; -1 = no stream
+// All disk work is on a bounded, best-effort background logger.
+AsyncAudioLog sAudioLog;
+std::atomic<float> sInputPeak{0.f};
+std::atomic<int> sOpenInputs{-1};
 
 void AudioLog(const char* fmt, ...)
 {
-  if (!sAudioLogPath[0])
-    return;
-  // fopen / strftime unqualified: on Windows win32_utf8.h maps them to their UTF-8 forms.
-  FILE* f = fopen(sAudioLogPath, "a");
-  if (!f)
-    return;
-  std::fseek(f, 0, SEEK_END);
-  if (std::ftell(f) > 256 * 1024)
-  {
-    std::fclose(f);
-    f = fopen(sAudioLogPath, "w");
-    if (!f)
-      return;
-  }
-  char stamp[32];
-  const std::time_t now = std::time(nullptr);
-  strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-  std::fprintf(f, "%s  ", stamp);
+  char line[2048];
   va_list args;
   va_start(args, fmt);
-  std::vfprintf(f, fmt, args);
+  const int n = std::vsnprintf(line, sizeof line, fmt, args);
   va_end(args);
-  std::fputc('\n', f);
-  std::fclose(f);
+  if (n >= 0) sAudioLog.submit(line);
 }
 }  // namespace
+// Destroy the host (and stop audio) before the logger drains at process exit.
+std::unique_ptr<IPlugAPPHost> IPlugAPPHost::sInstance;
 UINT gSCROLLMSG;
 
 IPlugAPPHost::IPlugAPPHost()
@@ -271,8 +254,7 @@ bool IPlugAPPHost::InitState()
 #endif
     }
   }
-  std::snprintf(sAudioLogPath, sizeof sAudioLogPath, "%saudio.log", mINIPath.Get());
-  AudioLog("---- app start ----");
+  const std::string audioLogPath = std::string(mINIPath.Get()) + "audio.log";
 
   // hand the ALREADY-RESOLVED per-user settings directory to the plugin. This must
   // happen BEFORE any Append("settings.ini") below mutates mINIPath, and the plugin must never
@@ -350,6 +332,14 @@ bool IPlugAPPHost::InitState()
 #endif
   }
 
+  try {
+    char start[512];
+    std::snprintf(start, sizeof start,
+                  "---- app start ---- version=%s %s\n"
+                  "diagnostics: audio.log + .1/.2/.3, 256 KiB each; async best-effort; panel changes coalesced 500ms",
+                  aboutVersion(), aboutBuild());
+    sAudioLog.start(RotatingAudioLog(std::filesystem::u8path(audioLogPath)), start);
+  } catch (...) { /* Diagnostics must never prevent startup. */ }
   return true;
 }
 
@@ -1310,7 +1300,7 @@ void IPlugAPPHost::ErrorCallback(RtAudioErrorType type, const std::string &error
 // Lunar 24: one line in audio.log from the plugin (UI thread).
 extern "C" void lunar_host_log(const char* line)
 {
-  AudioLog("%s", line);
+  if (line) sAudioLog.submit(line);
 }
 
 // Lunar 24: called from the plugin's OnIdle (UI thread): reopen the audio stream when it died or

@@ -113,6 +113,7 @@ struct EditorShared {
   }
   int seqSide = 0;                           // menu side being edited under SPLIT: 0 = left, 1 = right
   int presetSlot = 0;                        // keyboard preset the LOAD / SAVE / INIT buttons act on: 0..3 = A..D
+  std::function<void(const char*)> diagnostic;  // app only, bounded asynchronous logger
   std::function<void()> factoryReset;        // the plugin's requestFactoryReset (RESET PANEL)
   std::vector<IControl*> plates;
   bool menuOpen = false;
@@ -304,7 +305,36 @@ struct EditorShared {
     in.plate = static_cast<std::uint8_t>(((plate % 12) + 12) % 12);  // the upper computer keys are plates 0-4
     core::ControlEvent ev[3];
     const std::uint32_t n = input.translate(in, ev, 3);
-    for (std::uint32_t i = 0; i < n; ++i) engine.postEvent(ev[i]);
+    bool accepted = true;
+    for (std::uint32_t i = 0; i < n; ++i) {
+      const bool ok = engine.postEvent(ev[i]);
+      accepted = ok && accepted;
+    }
+    if (diagnostic) {
+      char line[192];
+      std::snprintf(line, sizeof line, "UI note %s source=%u id=%u plate=%d semi=%d translated=%u accepted=%d",
+                    on ? "on" : "off", unsigned(source), unsigned(id), plate, semitoneFromC3, n, int(accepted));
+      diagnostic(line);
+    }
+  }
+
+  void diagnosticCable(bool connect, core::JackId source, core::JackId sink, bool accepted) {
+    if (!diagnostic) return;
+    char line[128];
+    std::snprintf(line, sizeof line, "UI cable %s source=%u sink=%u accepted=%d",
+                  connect ? "connect" : "disconnect", unsigned(source), unsigned(sink), int(accepted));
+    diagnostic(line);
+  }
+  void disconnectCable(core::JackId sink) {
+    const auto* st = state();
+    const auto i = static_cast<unsigned>(sink);
+    const auto source = st && i < core::kDevicePatchCapacity ? st->cableSource[i] : core::JackId{0};
+    const bool ok = engine.postDisconnect(sink);
+    diagnosticCable(false, source, sink, ok);
+  }
+  void connectCable(core::JackId source, core::JackId sink) {
+    const bool ok = engine.postConnect(source, sink);
+    diagnosticCable(true, source, sink, ok);
   }
 
   // ---- per-plate tuning (PLATE EDITOR, manual p.15): hold plates, turn the encoder -----------
@@ -407,7 +437,14 @@ struct EditorShared {
       return true;
     }
     const char* p = c ? std::strchr(kKeys, c) : nullptr;
-    if (p == nullptr) return false;
+    if (p == nullptr) {
+      if (up && !heldKeys.empty() && diagnostic) {
+        char line[128];
+        std::snprintf(line, sizeof line, "UI unmatched key-up vk=%d held_count=%u", k.VK, unsigned(heldKeys.size()));
+        diagnostic(line);  // no typed text / profile names in the log
+      }
+      return false;
+    }
     const int semi = int(p - kKeys);
     const core::NoteId id = static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(semi));
     if (!up && heldKeys.count(semi) == 0) {
@@ -714,7 +751,7 @@ class JackControl : public IControl {
     // Pulling a cable off an input: unplug it and keep dragging from its source.
     if (!isOutput() && st != nullptr && sink < core::kDevicePatchCapacity && st->inputCable[sink] != 0u) {
       const JackId src = st->cableSource[sink];
-      s_.engine.postDisconnect(id());
+      s_.disconnectCable(id());
       for (JackControl* j : s_.jacks)
         if (j->id() == src) origin_ = j;
     }
@@ -750,10 +787,10 @@ class JackControl : public IControl {
       if (st->inputCable[k] != 0u && st->cableSource[k] == out->id() && static_cast<JackId>(k) != in->id()) ++used;
     for (std::uint32_t k = 0; k < core::kDevicePatchCapacity && used >= maxCables; ++k)
       if (st->inputCable[k] != 0u && st->cableSource[k] == out->id() && static_cast<JackId>(k) != in->id()) {
-        s_.engine.postDisconnect(static_cast<JackId>(k));
+        s_.disconnectCable(static_cast<JackId>(k));
         --used;
       }
-    s_.engine.postConnect(out->id(), in->id());
+    s_.connectCable(out->id(), in->id());
   }
   EditorShared& s_;
   Widget w_;
@@ -1027,7 +1064,13 @@ class DroneKeyControl : public IControl {
     art::drawDroneKey(sink, r.L, r.T, r.R, r.B, s_.engine.droneKey(int(w_.id)), mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
-    s_.engine.postDroneKey(int(w_.id), !s_.engine.droneKey(int(w_.id)));
+    const bool open = !s_.engine.droneKey(int(w_.id));
+    const bool ok = s_.engine.postDroneKey(int(w_.id), open);
+    if (s_.diagnostic) {
+      char line[96];
+      std::snprintf(line, sizeof line, "UI drone voice=%u open=%d accepted=%d", unsigned(w_.id) + 1, int(open), int(ok));
+      s_.diagnostic(line);
+    }
     SetDirty(false);
   }
 

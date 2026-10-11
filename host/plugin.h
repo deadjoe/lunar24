@@ -22,6 +22,9 @@
 #include <host/midi_timing.h>
 #include <host/wav_recorder.h>
 #include <host/standalone_audio_engine.h>
+#ifdef APP_API
+#include <host/panel_diagnostics.h>
+#endif
 #include <lunar24/core/input_state_machine.h>
 
 using namespace iplug;
@@ -97,6 +100,7 @@ public:
   // most every 30 s, and only after an edit, so a crash or power cut loses at most the last
   // half minute.
   void OnIdle() override;
+  void logResetSnapshot_() noexcept;
   void logMidiClock_();  // UI thread: the audio.log MIDI clock diagnostics line
 
   // UI thread: put the whole machine back to its power-on default (every knob, switch, cable,
@@ -223,6 +227,7 @@ private:
   std::chrono::steady_clock::time_point lastClockLog_{};
 #ifdef APP_API
   std::uint64_t savedEditCount_ = 0;
+  lunar24::host::PanelDiagnostics panelDiagnostics_;
   std::chrono::steady_clock::time_point lastAutosave_ = std::chrono::steady_clock::now();
 #endif
   std::uint64_t midiSeq_ = 0;

@@ -24,7 +24,9 @@ Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md
 - **Version**: 1.0.0; About Lunar 24 shows the build number, time and commit (the plugins:
   bottom right of the MIDI panel, build number and commit).
 - **Tools**: `lunar24_render` (engine to WAV), `panel_preview` (panel to SVG).
-- **Tests**: 69 portable unit / engine tests (~70 s), also under ASan + UBSan in CI; the threaded
+- **Diagnostics**: bounded background audio.log with three backups, build stamps, coalesced
+  panel edits and pre-RESET state snapshots. Native log/playability checks: MANUAL_TESTS.
+- **Tests**: 70 portable unit / engine tests (~70 s), also under ASan + UBSan in CI; the threaded
   ones under ThreadSanitizer too.
 - **Checked by hand on the Mac**: everything in MANUAL_TESTS except the ⏳ items below.
 

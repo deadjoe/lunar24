@@ -1694,4 +1694,7 @@
 
 - MacBook 麦克风是单声道，Preferences 里 Input 1 (L) / Input 2 (R) 显示为空（iPlug2 设置窗口的显示问题），麦克风其实是开的。
 - AirPods 的麦克风只有通话音质（24000 Hz），48000 Hz 打不开；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」。选了打不开的输入时，程序只开输出，并弹窗「Audio input is off」（每个设备每次运行只提示一次）。
-- 音频日志：`~/Library/Application Support/Lunar24/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。
+- 音频日志：`~/Library/Application Support/Lunar24/audio.log`（Finder 里按 ⇧⌘G 粘贴）。启动记录版本、构建号、commit；保留设备和输入峰值诊断。文件轮转为 `audio.log.1`～`.3`，每份最多 256 KiB（合计约 1 MiB），升级/重启追加，不按版本清空。复现后尽快一起复制这四份文件。
+- **日志检查（Mac / Windows）**：按电脑键盘 A 并松开，插拔一根线，切换 DRONE VOICES，连续拖动旋钮；确认弹奏、拖动不受影响。日志应有 `UI note on/off`、`UI cable`、`UI drone`，旋钮变化最多每半秒一组（记录最后值，不是逐事件回放）。打开文字输入框时不记录输入内容。
+- **Reset 前现场**：先记录设置，再打开 envelope A HOLD、插一根线、保持一个电脑键盘音符，确认 RESET PANEL。日志应有 `snapshot begin reason=before-reset`，包含清除前的具名参数、接线、DRONE VOICES、UI 认为按住的键、已有包络灯读数，以及完整设备状态的 `device_state_hex`；随后是新状态。UI 按键和包络读数不等同于同一时刻的 DSP 活跃声部/Gate，效果器缓冲区不在快照内。
+- **容量与故障**：自动测试覆盖轮转、不可写目录及故意阻塞写线程时的队列溢出。日志在后台写，队列满/忙时可丢记录，恢复后标 `log records lost`；不阻塞 Reset 或弹奏。异常退出可能丢失尚未写入的记录。Windows 也检查含中文用户名的路径。
