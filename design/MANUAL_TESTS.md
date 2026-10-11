@@ -1359,7 +1359,7 @@
   - 第 3 步：拔线后那个音停掉，不会卡住一直响。
   - 第 4 步：重新插上后马上能弹。
   - 第 5 步：应用记住了 MPK，插上后自动连上，不需要去 Preferences 里重新选。
-  - audio.log 里能看到 "midi input connected / disconnected"。
+  - 日志（第 18 节）里能看到 `midi   input connected / disconnected`。
 
 ### 15. MIDI 设置与绑定
 
@@ -1470,7 +1470,7 @@
   3. Ableton 按停止：琶音停在原地不再前进（最后一个音在半个节拍后收掉）；按两下停止再播放，又从第一个音开始。
   4. 改一下 Lunar 的 TEMPO：回到 Lunar 自己的时钟。
   5. 收尾：关 HOLD，MODE 改回 KEYBOARD；Preferences 的 MIDI Input 选回 MPK Mini IV MIDI Port。
-- 出问题时看 `~/Library/Application Support/Lunar24/audio.log`：每次播放 / 停止 / 继续后有一行 `midi clock: +N ticks ...; keyboard clock external`（N 是上一行以来收到的时钟数，每拍 24 个）。`+0 ticks` 或 `internal` 就是没跟上外部时钟。
+- 出问题时看日志（第 18 节）：每次播放 / 停止 / 继续后有一行 `midi   clock: +N ticks ...; keyboard clock external`（N 是上一行以来收到的时钟数，每拍 24 个）。`+0 ticks` 或 `internal` 就是没跟上外部时钟。
 
 **T15.10 MIDI 键盘在 TWIN / SPLIT 下分左右** ✅ (#98)
 - 准备：同 T12.6（RESET PANEL；DRONE VOICES 全关；VOICE MIXER 只留 VCO A、VCO B；接线 ⊓ **GATE R** → envelope B 的 **gate**，↓ **PRESSURE** → VCO B 的 **1v/oct**）；VCO B 的 **oct+3** 拨到上面。MPK 用测试用户预设，OCT 键回到默认（屏幕不显示八度偏移）。
@@ -1550,7 +1550,7 @@
   - 第 6 步，带 dry 的（DRY）：左声道是 VCO A，右声道是 VCO B（戴耳机最清楚）；**整段都不变**——VCO A VOL 和 FREQ 的改动都不影响它（DRY 不经过混音台和滤波器）。
   - 第 7 步：WET 只生成不带 dry 的一个文件，DRY 只生成带 dry 的一个文件。
   - 录音时声音不卡、不爆音；停止时没有“轰”的一声。
-- 补充：录音中在 Preferences 里改了采样率，录音会自动停止（文件照常可播）；只是重开同一个设备则继续录。出问题时 audio.log 里有 `recording ...` 的记录。
+- 补充：录音中在 Preferences 里改了采样率，录音会自动停止（文件照常可播）；只是重开同一个设备则继续录。出问题时日志（第 18 节）里有 `rec    recording ...` 的记录。
 
 ### 17. 插件（VST3 / AU，Ableton Live）
 
@@ -1649,7 +1649,55 @@
 - 期望：和 VST3 版一样。
 - 结果：和 VST3 一致，没有问题。VST3 和 AU 编的是同一份插件代码，见 PLUGIN_PLAN。
 
+### 18. 诊断日志（logs 文件夹）
+
+App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
+- Mac：`~/Library/Application Support/Lunar24/logs/`（Finder 里按 ⇧⌘G 粘贴这个路径）
+- Windows：`%LOCALAPPDATA%\Lunar24\logs\`（资源管理器地址栏粘贴）
+
+每次运行一个文件，名字是「种类-日期-时间-p进程号-段号.log」，例如 `app-20261011-155440-p4242-001.log`；插件是 `vst3-…`、`au-…`（同一个 DAW 进程里的几个插件实例写同一个文件，行里用 `#1`、`#2` 区分）。一个文件写满 2 MiB 就接着写 `-002.log`；所有日志合计超过 64 MiB 时自动删最旧的。每个文件开头都有版本、构建号、commit 和当前日志设置；正常退出时最后一行是 `session end`，下次启动会在开头写上一次有没有正常结束（崩溃、强退、断电时没有这一行）。旧版的 `audio.log` 在第一次启动时删掉。
+
+每行的格式：`时间  启动后秒数  级别  类别  内容`。级别：E 错误、W 警告（丢了东西或出了问题）、I 信息、D 细节、T 更细（默认不记）。类别：`app`（启动、退出、MARK）、`audio`（设备、开始有声 / 变安静、爆音）、`midi`（每个 MIDI 音符、踏板、时钟、设备插拔）、`ui`（电脑键盘、鼠标弹的音，接线、DRONE VOICES）、`state`（快照、旋钮变化、存盘）、`engine`（引擎丢事件）、`rec`（录音）、`log`（日志自身）。
+
+设置文件 `log.conf` 在 logs 旁边（第一次启动自动生成，里面有说明）：`level = info` 只记信息以上；`midi = trace` 额外记每个 MIDI CC；`segment_kib`、`total_mib` 改文件大小。改完重开 App / 插件生效。
+
+**MARK（按 M）**：听到问题的那一刻按电脑键盘 **M**，日志里出现 `MARK 1 (key M)` 和一份完整快照（所有旋钮、接线、DRONE VOICES、引擎还按着几个键盘音、电脑键盘 / 鼠标 / MIDI 当前按着什么、输出有没有声）。不会改变声音。
+
+**T18.1 日志文件与 MARK** ⏳
+- 步骤：
+  1. 打开 App，弹几下电脑键盘 A、S，鼠标点一下琴键，接一根线再拔掉，打开再关上 DRONE VOICES 1，拧一下 VCO A 的 **tune**。
+  2. 按 **M**。
+  3. 退出 App，打开 logs 文件夹里最新的 `app-…-001.log`。
+- 期望：
+  - 弹奏、拖动旋钮和平常一样流畅。
+  - 开头是 `session …`、版本号和 `log.conf …` 一行；按顺序有 `ui     note-on key vk=…`、`note-off`、`note-on mouse …`、`plug … -> …`、`unplug …`、`drone key 1 open / close`。
+  - 有 `audio  output sounding` 和之后的 `output silent`。
+  - 旋钮一组 `state  panel` 加 `param vco_a.tune=…`（半秒内只记最后的值）。
+  - 有 `MARK 1 (key M)`，紧接着一份 `snapshot begin reason=MARK 1` … `snapshot end`。
+  - 最后一行是 `session end (clean shutdown)`。再开一次 App，新文件开头有 `previous app session ended cleanly`。
+
+**T18.2 卡音现场（停不下来的声音）** ⏳
+- 步骤：
+  1. 照你平常复杂的弹法弹，接线、开 drone、用 MPK 和电脑键盘。
+  2. 一旦出现「关掉 DRONE VOICES、拔掉线后声音还在」，立刻按 **M**，再按住不动观察几秒，再按一次 **M**。
+  3. 然后按你平常的办法让它停（RESET PANEL 等），停了以后退出 App，把 logs 文件夹里这次的文件发过来。
+- 期望（看日志能回答的问题）：
+  - MARK 快照里 `dsp keyboard: left holds N note(s)`：N 大于 0 而 `ui holds` 和 `midi notes down` 都是 none，就是有音没收到松开（卡键）。
+  - `drone_keys`、`cable` 行和 `lights` 里的 drone VCA 亮度说明 drone 是否真的关了。
+  - `output sounding` / `output silent` 的时间和你的操作对得上；`W` 开头的行说明丢过事件。
+  - RESET 时有 `snapshot begin reason=before RESET PANEL`。
+
+**T18.3 插件日志（Ableton）** ⏳
+- 步骤：在 Ableton 里放两个 Lunar 24（VST3），各弹几个音（MPK），按一次 M（插件窗口在前），关闭 Ableton。
+- 期望：logs 里有 `vst3-…` 文件；行里有 `#1`、`#2`；有 `DAW: Ableton Live …`、`midi   #1 note-on ch=1 …`；最后是 `session end`。
+
+**T18.4 Windows 中文用户名** ⏳
+- 步骤：Windows 版（用户名含中文时最有意义）打开 App 弹几下，退出。
+- 期望：`%LOCALAPPDATA%\Lunar24\logs\` 下有新文件，内容和 Mac 一样。
+
 ## 还没测的（⏳）
+
+- 第 18 节诊断日志：T18.1–T18.4。
 
 - ~~第 17 节插件的 Windows VST3：随 Windows 版一起测。~~ 不做了（2026-10-08）：业主没有 Windows 电脑，不在 Windows 的 Ableton 里测。CI 仍编出 Windows VST3，并用 validator 检查它能否被宿主加载。Mac 上 VST3 和 AU 的 T17.1–T17.10 已通过。
 - Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T0.1W、T4.1、T8.7、T12.18 走一遍。窗口与 DPI/文字的具体检查见 T0.1W。
@@ -1694,4 +1742,4 @@
 
 - MacBook 麦克风是单声道，Preferences 里 Input 1 (L) / Input 2 (R) 显示为空（iPlug2 设置窗口的显示问题），麦克风其实是开的。
 - AirPods 的麦克风只有通话音质（24000 Hz），48000 Hz 打不开；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」。选了打不开的输入时，程序只开输出，并弹窗「Audio input is off」（每个设备每次运行只提示一次）。
-- 音频日志：`~/Library/Application Support/Lunar24/audio.log`（Finder 里按 ⇧⌘G 粘贴这个路径）。记录每次打开设备的设备名、声道、采样率、成功或失败，以及每 5 秒收到的输入峰值（input peak 为 0 表示输入没声音）。复现问题后把这个文件发过来。
+- 设备打开记录（设备名、声道、采样率、成功或失败）和爆音（xrun）在日志的 `audio` 行里，见第 18 节。

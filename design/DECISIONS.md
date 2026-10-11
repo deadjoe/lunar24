@@ -282,3 +282,15 @@ Keep these unless a listening test or a real bug says otherwise.
   patches can sound higher and their FM/AM/S&H timing can shift. The triangle, seeded
   tolerance, parameter mappings, envelopes and latching keys are retained. This is a
   numerical correction to the software model, not a claim of circuit-level replication.
+
+- **Diagnostics log** (2026-10-11, replaces `audio.log`): one process-wide logger
+  (`host/diag_log.h`) for the app and the plugins. Records carry a level and a category;
+  a background thread writes them to session files in `<settings>/logs`, rolling at 2 MiB and
+  deleting the oldest past 64 MiB in total (`log.conf` changes levels and sizes). Writers only
+  copy into a fixed buffer under a short lock, so slow disks drop and count records instead of
+  stalling the panel; the audio thread never logs directly but pushes fixed-size events into a
+  lock-free ring (`host/rt_log.h`) that the UI thread drains with their original times. Every
+  MIDI note and pedal, every panel note, cable and drone key is logged at debug (the default)
+  because stuck-note reports need the exact sequence; knob changes coalesce to two per second.
+  A plugin process starts its session on the first instance and ends it on the last, so no
+  thread is joined from a DLL's static destructor.

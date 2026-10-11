@@ -399,6 +399,15 @@ class StandaloneAudioEngine {
   // machine, so unmuting returns to whatever is playing. Not saved: the app starts unmuted.
   void setMuted(bool on) { muted_.store(on, std::memory_order_relaxed); }
   bool muted() const { return muted_.load(std::memory_order_relaxed); }
+  // Diagnostics (any thread, one block old): the notes the running keyboard holds on a side
+  // (0 = left, 1 = right; under SINGLE everything is left) and that side's MODE
+  // (0 keyboard, 1 arpeggiator, 2 sequencer). A held count with no key down is a stuck note.
+  std::uint32_t keyboardHeldNotes(int side) const {
+    return side >= 0 && side < 2 ? keyboardHeld_[static_cast<std::size_t>(side)].load(std::memory_order_relaxed) : 0;
+  }
+  int keyboardMode(int side) const {
+    return side >= 0 && side < 2 ? keyboardArpMode_[static_cast<std::size_t>(side)].load(std::memory_order_relaxed) : 0;
+  }
   // UI and MIDI may toggle concurrently; neither toggle may overwrite the other.
   void toggleMuted() {
     bool current = muted_.load(std::memory_order_relaxed);
@@ -698,6 +707,8 @@ class StandaloneAudioEngine {
   std::array<std::atomic<float>, kPanelLedCount> leds_{};
   std::array<std::atomic<float>, 4> photoLight_{1.0f, 1.0f, 1.0f, 1.0f};
   std::array<std::atomic<float>, 20> oscLamps_{};
+  std::array<std::atomic<std::uint32_t>, 2> keyboardHeld_{};    // diagnostics, one block old
+  std::array<std::atomic<std::uint8_t>, 2> keyboardArpMode_{};
   double ledShLast_[2] = {0.0, 0.0};   // audio thread: last S&H value seen, per drone 3 / 6
   double ledShHold_[2] = {0.0, 0.0};   // audio thread: seconds left on each S&H flash
   std::atomic<bool> keyboardExternalClock_{false};      // diagnostics snapshot, per block
@@ -1119,6 +1130,12 @@ inline void StandaloneAudioEngine::updateLeds_(int frames) {
   ledClipHold_ = std::max(0.0, ledClipHold_ - blockSec);
   put(kLedFollowerLevel, rt.envFollowerLevel01());
   put(kLedFollowerGate, rt.envFollowerGateOn() ? 1.0 : 0.0);
+  for (int s = 0; s < 2; ++s) {
+    const auto side = s ? core::KeyboardSide::Right : core::KeyboardSide::Left;
+    keyboardHeld_[static_cast<std::size_t>(s)].store(rt.keyboardEngagedNotes(side), std::memory_order_relaxed);
+    keyboardArpMode_[static_cast<std::size_t>(s)].store(static_cast<std::uint8_t>(rt.keyboardArpSeqMode(side)),
+                                                         std::memory_order_relaxed);
+  }
   keyboardExternalClock_.store(rt.keyboardFollowsExternalClock(), std::memory_order_relaxed);
   keyboardTempoEdits_.store(rt.keyboardTempoEdits(), std::memory_order_relaxed);
   const int shVoice[2] = {2, 5};

@@ -520,6 +520,7 @@ class KeyboardBehaviour {
     *pressure_cv = pressure_.tick(livePressure_);
   }
   bool gate() const { return engagedCount_() > 0; }
+  std::uint32_t engagedNotes() const { return engagedCount_(); }  // notes holding the gate open
   double rootSemitone() const { return static_cast<double>(rootSemitone_); }
   std::uint16_t scaleMask() const { return scaleMask_; }
   // the configured parameter set, READ BACK verbatim. This is the set the

@@ -52,8 +52,10 @@
 // Lunar 24: plugin.h declares LunarHostPlugin::setActualChannelPlan (the plugin is the
 // one place the real host may drive the protected IPlugProcessor::SetChannelConnections);
 // stream_plan.h is the shared pure negotiation the host + oracle both call. The standard headers
-// below serve those and the audio log.
+// below serve those and the diagnostics log.
 #include "plugin.h"
+#include "about.h"
+#include <host/diag_log.h>
 
 #include <algorithm>
 #include <atomic>
@@ -62,6 +64,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <host/midi_timing.h>
@@ -131,46 +134,34 @@ double sStageOut[4][APP_SIGNAL_VECTOR_SIZE];
 std::unique_ptr<IPlugAPPHost> IPlugAPPHost::sInstance;
 
 namespace {
-// Lunar 24: a short audio log, audio.log next to settings.ini. It records every device open and
-// its outcome, RtAudio's errors, and every 5 s the loudest input sample the stream delivered, so
-// a device problem on the owner's machine can be read instead of guessed. Kept under ~256 KB.
-char sAudioLogPath[MAX_PATH_LEN] = "";
-std::atomic<float> sInputPeak{0.f};  // audio thread raises it, the UI thread reads and clears it
-std::atomic<int> sOpenInputs{-1};    // input channels of the running stream; -1 = no stream
-
-void AudioLog(const char* fmt, ...)
+// Lunar 24: device, stream and MIDI-port lines for the diagnostics log (host/diag_log.h). The
+// background writer does the disk work; the plugin adds notes, levels, panel changes and
+// snapshots to the same session file.
+using diag::Cat;  // lunar24::host::diag, through the using-directive above
+using diag::Level;
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((format(printf, 3, 4)))
+#endif
+void HostLog(Cat cat, Level level, const char* fmt, ...)
 {
-  if (!sAudioLogPath[0])
+  if (!diag::log().enabled(cat, level))
     return;
-  // fopen / strftime unqualified: on Windows win32_utf8.h maps them to their UTF-8 forms.
-  FILE* f = fopen(sAudioLogPath, "a");
-  if (!f)
-    return;
-  std::fseek(f, 0, SEEK_END);
-  if (std::ftell(f) > 256 * 1024)
-  {
-    std::fclose(f);
-    f = fopen(sAudioLogPath, "w");
-    if (!f)
-      return;
-  }
-  char stamp[32];
-  const std::time_t now = std::time(nullptr);
-  strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-  std::fprintf(f, "%s  ", stamp);
+  char line[1024];
   va_list args;
   va_start(args, fmt);
-  std::vfprintf(f, fmt, args);
+  std::vsnprintf(line, sizeof line, fmt, args);
   va_end(args);
-  std::fputc('\n', f);
-  std::fclose(f);
+  diag::log().write(cat, level, line);
 }
+// Buffer over- / underruns the device reported to the audio callback (it counts, the UI logs).
+std::atomic<std::uint32_t> sInputOverflows{0}, sOutputUnderflows{0};
 }  // namespace
 UINT gSCROLLMSG;
 
 IPlugAPPHost::IPlugAPPHost()
 : mIPlug(MakePlug(InstanceInfo{this}))
 {
+  diag::log().attach();  // the plugin attached too; the last of the two to detach ends the session
 }
 
 IPlugAPPHost::~IPlugAPPHost()
@@ -191,6 +182,8 @@ IPlugAPPHost::~IPlugAPPHost()
 
   if (mMidiOut)
     mMidiOut->closePort();
+  HostLog(Cat::app, Level::info, "app quitting");
+  diag::log().detach();
 }
 
 //static
@@ -271,8 +264,28 @@ bool IPlugAPPHost::InitState()
 #endif
     }
   }
-  std::snprintf(sAudioLogPath, sizeof sAudioLogPath, "%saudio.log", mINIPath.Get());
-  AudioLog("---- app start ----");
+  {
+#if defined(OS_MAC)
+    const char* os = "macOS";
+#else
+    const char* os = "Windows";
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+    const char* arch = "arm64";
+#else
+    const char* arch = "x64";
+#endif
+    char header[256];
+    std::snprintf(header, sizeof header, "Lunar 24 app %s, %s, %s %s", aboutVersion(), aboutBuild(), os, arch);
+    diag::log().open(mINIPath.Get(), "app", header);
+    // The single audio.log of earlier builds is replaced by the logs folder.
+    for (const char* old : {"audio.log", "audio.log.1", "audio.log.2", "audio.log.3"})
+    {
+      std::error_code ec;
+      if (std::filesystem::remove(std::filesystem::u8path(std::string(mINIPath.Get()) + old), ec))
+        HostLog(Cat::log, Level::info, "removed the old %s (logs now live in the logs folder)", old);
+    }
+  }
 
   // hand the ALREADY-RESOLVED per-user settings directory to the plugin. This must
   // happen BEFORE any Append("settings.ini") below mutates mINIPath, and the plugin must never
@@ -474,7 +487,7 @@ void IPlugAPPHost::ProbeAudioIO()
   for (auto deviceID : deviceIDs)
   {
     info = mDAC->getDeviceInfo(deviceID);
-    AudioLog("  device %u '%s': in %u, out %u%s%s", deviceID, info.name.c_str(), info.inputChannels,
+    HostLog(Cat::audio, Level::info, "  device %u '%s': in %u, out %u%s%s", deviceID, info.name.c_str(), info.inputChannels,
              info.outputChannels, info.isDefaultInput ? ", default input" : "",
              info.isDefaultOutput ? ", default output" : "");
 
@@ -536,7 +549,7 @@ void IPlugAPPHost::ProbeMidiIO()
   if (!hotplug)
     return;
 
-  AudioLog("midi devices changed: %zu inputs, %zu outputs", ins.size(), outs.size());
+  HostLog(Cat::midi, Level::info, "devices changed: %zu inputs, %zu outputs", ins.size(), outs.size());
   auto has = [](const std::vector<std::string>& v, const std::string& name) {
     return std::find(v.begin(), v.end(), name) != v.end();
   };
@@ -549,12 +562,12 @@ void IPlugAPPHost::ProbeMidiIO()
   }
   if (has(ins, in) && !has(insBefore, in))
   {
-    AudioLog("midi input connected: %s", in.c_str());
+    HostLog(Cat::midi, Level::info, "input connected: %s", in.c_str());
     SelectMIDIDevice(ERoute::kInput, in.c_str());
   }
   else if (!has(ins, in) && has(insBefore, in))
   {
-    AudioLog("midi input disconnected: %s", in.c_str());
+    HostLog(Cat::midi, Level::info, "input disconnected: %s", in.c_str());
     mMidiIn->closePort();
     static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
   }
@@ -604,7 +617,7 @@ bool IPlugAPPHost::TryToChangeAudioDriverType()
     // dialog applies at once): reopen the restored ones so Cancel really undoes it.
     SelectMIDIDevice(ERoute::kInput, mState.mMidiInDev.Get());
     SelectMIDIDevice(ERoute::kOutput, mState.mMidiOutDev.Get());
-    AudioLog("preferences: audio driver and settings unchanged, stream kept");
+    HostLog(Cat::audio, Level::info, "preferences: audio driver and settings unchanged, stream kept");
     return true;
   }
   CloseAudio();
@@ -667,7 +680,7 @@ bool IPlugAPPHost::TryToChangeAudio()
   {
     mActiveState = mState;  // record the MIDI choice as applied
     UpdateINI();
-    AudioLog("preferences: audio unchanged, stream kept");
+    HostLog(Cat::audio, Level::info, "preferences: audio unchanged, stream kept");
     return true;
   }
   if (automatic)
@@ -700,7 +713,7 @@ bool IPlugAPPHost::TryToChangeAudio()
   }
   sInputDroppedByFallback = false;
   UpdateINI();
-  AudioLog("open (%s): in '%s' ch %u/%u, out '%s', %u Hz, inputOn %d, followDefault %d", why,
+  HostLog(Cat::audio, Level::info, "open (%s): in '%s' ch %u/%u, out '%s', %u Hz, inputOn %d, followDefault %d", why,
            mState.mAudioInDev.Get(), mState.mAudioInChanL, mState.mAudioInChanR, mState.mAudioOutDev.Get(),
            mState.mAudioSR, sInputOn ? 1 : 0, sFollowDefaultOutput.load() ? 1 : 0);
 
@@ -824,7 +837,7 @@ bool IPlugAPPHost::TryToChangeAudio()
     if (sReported == failedInput)
       return;
     sReported = failedInput;
-    AudioLog("  input '%s' did not open: running without input", failedInput.c_str());
+    HostLog(Cat::audio, Level::warn, "  input '%s' did not open: running without input", failedInput.c_str());
     WDL_String msg;
     msg.SetFormatted(1024,
                      "The input device \"%s\" could not be opened at %u Hz, so Lunar 24 is running "
@@ -986,7 +999,6 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
 
 void IPlugAPPHost::CloseAudio()
 {
-  sOpenInputs = -1;
   if (mDAC && mDAC->isStreamOpen())
   {
     if (mDAC->isStreamRunning())
@@ -1039,7 +1051,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
     UpdateINI();
   }
   if (plan.status != StreamPlanStatus::Valid) {
-    AudioLog("  no valid channel plan (device in %d / out %d channels)", deviceInputChans, deviceOutputChans);
+    HostLog(Cat::audio, Level::error, "  no valid channel plan (device in %d / out %d channels)", deviceInputChans, deviceOutputChans);
     LunarInvalidateAudio(GetPlug());
     return false;
   }
@@ -1091,7 +1103,8 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
   mIPlug->OnReset();
 
   auto status = mDAC->openStream(&oParams, iParams.nChannels > 0 ? &iParams : nullptr, RTAUDIO_FLOAT64, sr, &mBufferSize, &AudioCallback, this, &options);
-  AudioLog("  try in '%s' %d ch (from %d), out '%s' %d ch, %u Hz, buffer %u: %s", inDevName.c_str(),
+  HostLog(Cat::audio, status == RtAudioErrorType::RTAUDIO_NO_ERROR ? Level::info : Level::error,
+          "  try in '%s' %d ch (from %d), out '%s' %d ch, %u Hz, buffer %u: %s", inDevName.c_str(),
            static_cast<int>(iParams.nChannels), static_cast<int>(iParams.firstChannel),
            GetAudioDeviceName(outID).c_str(), static_cast<int>(oParams.nChannels), sr, mBufferSize,
            status == RtAudioErrorType::RTAUDIO_NO_ERROR ? "opened" : mDAC->getErrorText().c_str());
@@ -1123,7 +1136,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
 
   if (mDAC->startStream() != RTAUDIO_NO_ERROR)
   {
-    AudioLog("  start failed: %s", mDAC->getErrorText().c_str());
+    HostLog(Cat::audio, Level::error, "  start failed: %s", mDAC->getErrorText().c_str());
     DBGMSG("Error starting stream: %s\n", mDAC->getErrorText().c_str());
     // Lunar 24: startStream failed -> the just-opened stream is closed; invalidate to
     // NOT-READY.
@@ -1134,8 +1147,6 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
 
   mActiveState = mState;
   sLastOpenTicks = std::chrono::steady_clock::now().time_since_epoch().count();
-  sInputPeak = 0.f;
-  sOpenInputs = static_cast<int>(iParams.nChannels);
 
   return true;
 }
@@ -1209,6 +1220,11 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
   int nouts = _this->mOutputBufPtrs.GetSize();
   
   double* pInputBufferD = static_cast<double*>(pInputBuffer);
+  // Lunar 24: count the device's xruns for the log (lunar_host_audio_watchdog writes them).
+  if (status & RTAUDIO_INPUT_OVERFLOW)
+    sInputOverflows.fetch_add(1, std::memory_order_relaxed);
+  if (status & RTAUDIO_OUTPUT_UNDERFLOW)
+    sOutputUnderflows.fetch_add(1, std::memory_order_relaxed);
   double* pOutputBufferD = static_cast<double*>(pOutputBuffer);
 
   bool startWait = _this->mVecWait >= APP_N_VECTOR_WAIT; // wait APP_N_VECTOR_WAIT * iovs before processing audio, to avoid clicks
@@ -1221,15 +1237,12 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
     
     // Lunar 24: stage the device buffer through fixed APP_SIGNAL_VECTOR_SIZE blocks, whatever
     // nFrames is. Each output sample comes from the previous full block (one block of latency).
-    float inPeak = 0.f;
     for (uint32_t i = 0; i < nFrames; i++)
     {
       const uint32_t pos = _this->mBufIndex;
       for (int c = 0; c < nins; c++)
       {
-        const double x = pInputBufferD[c * nFrames + i];
-        sStageIn[c][pos] = x;
-        inPeak = std::max(inPeak, static_cast<float>(x < 0.0 ? -x : x));
+        sStageIn[c][pos] = pInputBufferD[c * nFrames + i];
       }
       for (int c = 0; c < nouts; c++)
         pOutputBufferD[c * nFrames + i] = sStageOut[c][pos] * APP_MULT;
@@ -1242,8 +1255,6 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
       }
     }
     
-    if (inPeak > sInputPeak.load(std::memory_order_relaxed))
-      sInputPeak.store(inPeak, std::memory_order_relaxed);
 
     if (doFade)
       ApplyFades(pOutputBufferD, nouts, nFrames, _this->mAudioEnding);
@@ -1301,16 +1312,11 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
 void IPlugAPPHost::ErrorCallback(RtAudioErrorType type, const std::string &errorText)
 {
   std::cerr << "\nerrorCallback: " << errorText << "\n\n";
-  AudioLog("RtAudio error %d: %s", static_cast<int>(type), errorText.c_str());
+  HostLog(Cat::audio, type == RTAUDIO_WARNING ? Level::warn : Level::error, "RtAudio error %d: %s",
+          static_cast<int>(type), errorText.c_str());
   // Lunar 24: the device went away or reconfigured and the stream was closed: reopen (UI thread).
   if (type == RTAUDIO_DEVICE_DISCONNECT)
     sReopen = true;
-}
-
-// Lunar 24: one line in audio.log from the plugin (UI thread).
-extern "C" void lunar_host_log(const char* line)
-{
-  AudioLog("%s", line);
 }
 
 // Lunar 24: called from the plugin's OnIdle (UI thread): reopen the audio stream when it died or
@@ -1328,15 +1334,16 @@ extern "C" void lunar_host_audio_watchdog()
     IPlugAPPHost::sInstance->ProbeMidiIO();
   }
 
-  // Every 5 s: how loud the input the stream delivered was (0 = the input is silent or not open).
-  static auto lastLog = std::chrono::steady_clock::now();
+  // At most once a second: buffer under- / overruns the device reported (heard as clicks).
+  static auto lastXrunCheck = std::chrono::steady_clock::now();
   const auto now = std::chrono::steady_clock::now();
-  if (now - lastLog >= std::chrono::seconds(5))
+  if (now - lastXrunCheck >= std::chrono::seconds(1))
   {
-    lastLog = now;
-    const int ins = sOpenInputs.load();
-    if (ins >= 0)
-      AudioLog("input peak %.5f (%d input channels open)", sInputPeak.exchange(0.f), ins);
+    lastXrunCheck = now;
+    const std::uint32_t over = sInputOverflows.exchange(0), under = sOutputUnderflows.exchange(0);
+    if (over || under)
+      HostLog(Cat::audio, Level::warn, "device xruns in the last second: %u output underflow, %u input overflow",
+              under, over);
   }
 }
 

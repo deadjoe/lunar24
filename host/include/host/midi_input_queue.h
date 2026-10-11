@@ -24,12 +24,15 @@ class MidiInputQueue {
     const auto h = head_.load(std::memory_order_relaxed);
     if (h - tail_.load(std::memory_order_acquire) >= kCapacity) {
       invalidate();  // a lost note-off makes the old stream untrustworthy
+      overflows_.fetch_add(1, std::memory_order_relaxed);
       return false;
     }
     slots_[h % kCapacity] = {message, epoch_.load(std::memory_order_acquire)};
     head_.store(h + 1, std::memory_order_release);
     return true;
   }
+  // Messages lost to a full queue (each one also reset the input's held notes). Any thread.
+  std::uint32_t overflows() const { return overflows_.load(std::memory_order_relaxed); }
   template <class Reset, class Receive>
   void drain(Reset reset, Receive receive) {
     // One epoch and one bounded backlog per audio block. A switch during this
@@ -52,7 +55,7 @@ class MidiInputQueue {
   static constexpr std::uint32_t kCapacity = 1024;
   struct Entry { Message message; std::uint32_t epoch = 0; };
   Entry slots_[kCapacity];
-  std::atomic<std::uint32_t> head_{0}, tail_{0}, epoch_{0};
+  std::atomic<std::uint32_t> head_{0}, tail_{0}, epoch_{0}, overflows_{0};
   std::uint32_t seen_ = 0;  // audio only
 };
 

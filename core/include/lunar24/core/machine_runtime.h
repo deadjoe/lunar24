@@ -744,6 +744,10 @@ class SynthRuntime {
   ArpSeqMode keyboardArpSeqMode(KeyboardSide side) const {
     return keyboardArpSeq_[keyboardSideIndex_(side)].mode();
   }
+  // How many notes this side's keyboard behaviour holds (its gate is high while > 0).
+  std::uint32_t keyboardEngagedNotes(KeyboardSide side) const {
+    return keyboardBeh_[keyboardSideIndex_(side)].engagedNotes();
+  }
   // The keyboard.clock_bpm knob value as parsed into the arp/seq params (norm 0..1);
   // keyboardBpm turns it into the internal clock tempo.
   double keyboardParsedBpm(KeyboardSide side) const {
