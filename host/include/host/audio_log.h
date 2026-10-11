@@ -43,7 +43,8 @@ class RotatingAudioLog {
       }
     }
 #ifdef _WIN32
-    FILE* f = _wfopen(path_.c_str(), L"ab");
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path_.c_str(), L"ab") != 0) return false;
 #else
     FILE* f = std::fopen(path_.c_str(), "ab");
 #endif
