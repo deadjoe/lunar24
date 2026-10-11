@@ -17,6 +17,9 @@
 #include <string>
 
 #include <host/app_state_store.h>
+#include <host/diag_log.h>
+#include <host/panel_diagnostics.h>
+#include <host/rt_log.h>
 #include <host/midi_map_store.h>
 #include <host/midi_sustain.h>
 #include <host/midi_timing.h>
@@ -30,6 +33,7 @@ class LunarHostPlugin final : public Plugin
 {
 public:
   LunarHostPlugin(const InstanceInfo& info);
+  ~LunarHostPlugin() override;
 
 #ifdef APP_API
   // Lunar 24 → About Lunar 24: version, build stamp and copyright (host/about.h).
@@ -97,7 +101,9 @@ public:
   // most every 30 s, and only after an edit, so a crash or power cut loses at most the last
   // half minute.
   void OnIdle() override;
-  void logMidiClock_();  // UI thread: the audio.log MIDI clock diagnostics line
+
+  // UI thread (key M): "I just heard it" — a numbered MARK line and a full snapshot in the log.
+  void logMark(const char* source);
 
   // UI thread: put the whole machine back to its power-on default (every knob, switch, cable,
   // keyboard setting and sequence; keyboard presets kept). Swapped in place with a short fade;
@@ -164,6 +170,24 @@ private:
   // Audio thread: forget the notes and pedal the MIDI ledgers hold after a machine swap, and
   // release them all after a DAW reset.
   void applyPendingMidiResets_();
+  // Audio thread: a MIDI-made event into the engine; a full queue is logged (a lost note-off
+  // is a stuck note).
+  bool enqueueMidi_(const lunar24::core::ControlEvent& e, int offset);
+  // ---- diagnostics log (host/diag_log.h), UI thread ----
+  void logIdle_();       // OnIdle: audio-thread events, levels, panel changes, engine losses
+  void logMidiClock_();  // the MIDI clock line
+  void logSnapshot_(const std::string& reason);  // machine + what the UI and MIDI hold
+  std::uint16_t logInstance_ = 0;                  // #n in a plugin's lines; 0 in the app
+  lunar24::host::diag::RtLog rtLog_;               // audio thread -> logIdle_
+  lunar24::host::diag::PeakMeter wetPeak_, dryPeak_, inPeak_;
+  lunar24::host::diag::LevelWatch levelWatch_;
+  lunar24::host::diag::PanelWatch panelWatch_;
+  lunar24::host::diag::EngineWatch engineWatch_;
+  lunar24::host::diag::MidiHeldMirror midiHeld_;
+  std::chrono::steady_clock::time_point engineWatchAt_{};
+  std::uint32_t midiOverflowsLogged_ = 0;
+  int marks_ = 0;
+  bool hostLogged_ = false;
   std::uint64_t seenSwaps_ = 0;  // audio thread
   std::atomic<bool> notesOffRequested_{false};  // set by a plugin OnReset, taken by the audio thread
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
@@ -215,7 +239,7 @@ private:
   lunar24::host::MidiNoteSides midiSides_;  // audio thread: TWIN / SPLIT side of each note
   lunar24::host::MidiSustain sustain_;
   lunar24::host::MidiClockFollower midiClock_;  // audio thread: MIDI clock / START
-  // MIDI transport diagnostics for audio.log (audio thread counts, OnIdle logs).
+  // MIDI transport diagnostics for the log (audio thread counts, OnIdle logs).
   std::atomic<std::uint32_t> midiClockTicksIn_{0}, midiStartsIn_{0}, midiContinuesIn_{0}, midiStopsIn_{0};
   std::uint32_t loggedClock_[4] = {};
   bool loggedExtClock_ = false;

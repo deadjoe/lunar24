@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdarg>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -35,6 +36,7 @@
 #include "IControl.h"
 #include "IGraphics.h"
 
+#include <host/diag_log.h>
 #include <host/panel_art.h>
 #include <host/ui_font.generated.h>
 #include <host/keyboard_menu_view.h>
@@ -114,6 +116,22 @@ struct EditorShared {
   int seqSide = 0;                           // menu side being edited under SPLIT: 0 = left, 1 = right
   int presetSlot = 0;                        // keyboard preset the LOAD / SAVE / INIT buttons act on: 0..3 = A..D
   std::function<void()> factoryReset;        // the plugin's requestFactoryReset (RESET PANEL)
+  std::function<void(const char*)> mark;     // the plugin's logMark (key M): a MARK + snapshot in the log
+  std::uint16_t logInstance = 0;             // this plugin instance's #n in the log (0 in the app)
+  int noteVk = -1;                           // the computer key behind the note() being logged
+  // A UI-thread line in the diagnostics log (category ui).
+#if defined(__GNUC__) || defined(__clang__)
+  __attribute__((format(printf, 3, 4)))
+#endif
+  void logUi(diag::Level level, const char* fmt, ...) const {
+    if (!diag::log().enabled(diag::Cat::ui, level)) return;
+    char line[256];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(line, sizeof line, fmt, args);
+    va_end(args);
+    diag::log().write(diag::Cat::ui, level, line, logInstance);
+  }
   std::vector<IControl*> plates;
   bool menuOpen = false;
   int octave = 0;
@@ -304,7 +322,36 @@ struct EditorShared {
     in.plate = static_cast<std::uint8_t>(((plate % 12) + 12) % 12);  // the upper computer keys are plates 0-4
     core::ControlEvent ev[3];
     const std::uint32_t n = input.translate(in, ev, 3);
-    for (std::uint32_t i = 0; i < n; ++i) engine.postEvent(ev[i]);
+    bool accepted = true;
+    for (std::uint32_t i = 0; i < n; ++i) accepted = engine.postEvent(ev[i]) && accepted;
+    // A rejected note-off is the classic stuck note; the engine then resets all gates.
+    const auto level = accepted ? diag::Level::debug : diag::Level::warn;
+    if (source == kKeySource)
+      logUi(level, "%s key vk=%d plate=%d semi=%d side=%s%s", on ? "note-on" : "note-off", noteVk, plate,
+            semitoneFromC3, in.side == core::KeyboardSide::Right ? "R" : "L", accepted ? "" : " REJECTED (live queue full)");
+    else
+      logUi(level, "%s mouse plate=%d semi=%d side=%s%s", on ? "note-on" : "note-off", plate, semitoneFromC3,
+            in.side == core::KeyboardSide::Right ? "R" : "L", accepted ? "" : " REJECTED (live queue full)");
+  }
+
+  // Cables from the panel (the log names both ends as the panel prints them).
+  void disconnectCable(core::JackId sink) {
+    const core::DeviceStateV1* st = state();
+    const auto i = static_cast<unsigned>(sink);
+    const core::JackId source = st != nullptr && i < core::kDevicePatchCapacity ? st->cableSource[i] : core::JackId{};
+    const bool ok = engine.postDisconnect(sink);
+    logUi(ok ? diag::Level::debug : diag::Level::warn, "unplug %s -> %s%s", jackName_(source).c_str(),
+          jackName_(sink).c_str(), ok ? "" : " REJECTED");
+  }
+  void connectCable(core::JackId source, core::JackId sink) {
+    const bool ok = engine.postConnect(source, sink);
+    logUi(ok ? diag::Level::debug : diag::Level::warn, "plug %s -> %s%s", jackName_(source).c_str(),
+          jackName_(sink).c_str(), ok ? "" : " REJECTED");
+  }
+  static std::string jackName_(core::JackId id) {
+    for (const auto& j : registry::kJacks)
+      if (j.id == id) return std::string(j.stable_id);
+    return "jack#" + std::to_string(static_cast<unsigned>(id));
   }
 
   // ---- per-plate tuning (PLATE EDITOR, manual p.15): hold plates, turn the encoder -----------
@@ -404,10 +451,22 @@ struct EditorShared {
     const char c = char(std::tolower(static_cast<unsigned char>(k.utf8[0])));
     if (!up && (c == 'z' || c == 'x')) {
       shiftOctave(c == 'x' ? 1 : -1);
+      logUi(diag::Level::debug, "octave %+d (key %c)", octave, c);
       return true;
     }
+    if (c == 'm') {  // MARK: "I heard it just now" -> a numbered mark and a snapshot in the log
+      if (!up && !k.S && !k.C && !k.A && mark) mark("key M");
+      return true;
+    }
+    noteVk = k.VK;
     const char* p = c ? std::strchr(kKeys, c) : nullptr;
-    if (p == nullptr) return false;
+    if (p == nullptr) {
+      // A release we cannot match while keys are held: if its note-on was a key, that note sticks.
+      if (up && !heldKeys.empty())
+        logUi(diag::Level::info, "key-up vk=%d char=0x%02X matches no held key (%u held)", k.VK,
+              static_cast<unsigned>(static_cast<unsigned char>(k.utf8[0])), unsigned(heldKeys.size()));
+      return false;
+    }
     const int semi = int(p - kKeys);
     const core::NoteId id = static_cast<core::NoteId>(kKeyIdBase + static_cast<core::NoteId>(semi));
     if (!up && heldKeys.count(semi) == 0) {
@@ -714,7 +773,7 @@ class JackControl : public IControl {
     // Pulling a cable off an input: unplug it and keep dragging from its source.
     if (!isOutput() && st != nullptr && sink < core::kDevicePatchCapacity && st->inputCable[sink] != 0u) {
       const JackId src = st->cableSource[sink];
-      s_.engine.postDisconnect(id());
+      s_.disconnectCable(id());
       for (JackControl* j : s_.jacks)
         if (j->id() == src) origin_ = j;
     }
@@ -750,10 +809,10 @@ class JackControl : public IControl {
       if (st->inputCable[k] != 0u && st->cableSource[k] == out->id() && static_cast<JackId>(k) != in->id()) ++used;
     for (std::uint32_t k = 0; k < core::kDevicePatchCapacity && used >= maxCables; ++k)
       if (st->inputCable[k] != 0u && st->cableSource[k] == out->id() && static_cast<JackId>(k) != in->id()) {
-        s_.engine.postDisconnect(static_cast<JackId>(k));
+        s_.disconnectCable(static_cast<JackId>(k));
         --used;
       }
-    s_.engine.postConnect(out->id(), in->id());
+    s_.connectCable(out->id(), in->id());
   }
   EditorShared& s_;
   Widget w_;
@@ -1027,7 +1086,10 @@ class DroneKeyControl : public IControl {
     art::drawDroneKey(sink, r.L, r.T, r.R, r.B, s_.engine.droneKey(int(w_.id)), mMouseIsOver);
   }
   void OnMouseDown(float, float, const IMouseMod&) override {
-    s_.engine.postDroneKey(int(w_.id), !s_.engine.droneKey(int(w_.id)));
+    const bool open = !s_.engine.droneKey(int(w_.id));
+    const bool ok = s_.engine.postDroneKey(int(w_.id), open);
+    s_.logUi(ok ? diag::Level::debug : diag::Level::warn, "drone key %d %s%s", int(w_.id) + 1, open ? "open" : "close",
+             ok ? "" : " REJECTED");
     SetDirty(false);
   }
 

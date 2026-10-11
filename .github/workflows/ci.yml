@@ -218,11 +218,11 @@ jobs:
       - name: Build
         run: >
           cmake --build build-tsan --parallel --target
-          test_state_swap test_midi_map_apply test_midi_input_queue test_wav_recorder test_live_edits
+          test_state_swap test_midi_map_apply test_midi_input_queue test_wav_recorder test_live_edits test_diag_log test_diag_panel
 
       - name: Run tests
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
         run: >
           ctest --test-dir build-tsan --output-on-failure
-          -R "^(test_state_swap|test_midi_map_apply|test_midi_input_queue|test_wav_recorder|test_live_edits)$"
+          -R "^(test_state_swap|test_midi_map_apply|test_midi_input_queue|test_wav_recorder|test_live_edits|test_diag_log|test_diag_panel)$"

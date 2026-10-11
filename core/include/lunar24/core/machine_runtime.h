@@ -744,6 +744,10 @@ class SynthRuntime {
   ArpSeqMode keyboardArpSeqMode(KeyboardSide side) const {
     return keyboardArpSeq_[keyboardSideIndex_(side)].mode();
   }
+  // How many notes this side's keyboard behaviour holds (its gate is high while > 0).
+  std::uint32_t keyboardEngagedNotes(KeyboardSide side) const {
+    return keyboardBeh_[keyboardSideIndex_(side)].engagedNotes();
+  }
   // The keyboard.clock_bpm knob value as parsed into the arp/seq params (norm 0..1);
   // keyboardBpm turns it into the internal clock tempo.
   double keyboardParsedBpm(KeyboardSide side) const {
@@ -1107,6 +1111,13 @@ class SynthRuntime {
   double takePreampPeak() {
     const double p = preampPeak_;
     preampPeak_ = 0.0;
+    return p;
+  }
+  // Largest |signal| (volts) entering the dual effector since the last call: with the output
+  // still sounding, ~0 here means what is heard is the effector's tail. Diagnostics only.
+  double takeEffectorInputPeak() {
+    const double p = effectorInPeak_;
+    effectorInPeak_ = 0.0;
     return p;
   }
   void setDroneGroupHold(int voiceGroup, bool on) { drone_.setGroupHold(voiceGroup, on); }
@@ -2227,6 +2238,7 @@ class SynthRuntime {
     effCv_[0] = effCv_[1] = effCv_[2] = 0.0;
     for (std::uint32_t i = 0; i < execSlotCount_; ++i) step_(execSlots_[i], driveGraph);
     if (effectorEnabled_) {
+      effectorInPeak_ = std::max(effectorInPeak_, std::max(std::fabs(wetL_), std::fabs(wetR_)));
       for (int i = 0; i < 3; ++i) effector_.setCv(i, effCv_[i]);
       effector_.process(wetL_, wetR_);
     }
@@ -4286,6 +4298,7 @@ class SynthRuntime {
   double vcfL_ = 0.0, vcfR_ = 0.0;
   double preampOut_ = 0.0;
   double preampPeak_ = 0.0;  // largest |preamp output| since takePreampPeak
+  double effectorInPeak_ = 0.0;  // largest |effector input| since takeEffectorInputPeak
 
   //  VCF→distortion staging gains (calibration trim × identity path-gain micro).
   // Default 1.0 (no staging adjustment) so the runtime is bit-identical to the

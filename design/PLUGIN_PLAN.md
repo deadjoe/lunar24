@@ -86,7 +86,7 @@
 | `lunar_host_avail_logical_w/h`、`lunar_host_screen_scale`、`lunar_host_force_clamp` | `main.mm` / `window_metrics_win.cpp` | 不按屏幕开窗，用固定默认大小（第 6 点） |
 | `lunar_host_case_margins`、`lunar_host_place_view` | 同上 | 没有金属外壳，边距为 0，面板铺满窗口 |
 | `lunar_host_audio_watchdog`、`lunar_host_request_audio_reopen` | `iPlug_app_host_override.cpp` | 插件没有自己的音频设备：不要看门狗；"重开音频"改用第 4 点的安全切换 |
-| `lunar_host_log` | `iPlug_app_host_override.cpp` | 不写 audio.log |
+| ~~`lunar_host_log`~~ | 已去掉 | 日志改为共用的 `host/diag_log.h`：插件也写设置文件夹下的 logs（`vst3-…` / `au-…`，每个 DAW 进程一个文件，实例用 `#n` 区分） |
 | `lunar_host_recordings_dir`、`lunar_host_reveal_dir` | `main.mm` / `window_metrics_win.cpp` | 插件不调用。面板上的 REC 仍画着，点击无效 |
 
 其它独立 App 功能：

@@ -56,7 +56,6 @@ extern "C" void lunar_host_place_view(void* view, double x, double y);
 extern "C" void lunar_host_case_margins(void* view, double* side, double* top, double* bottom);
 extern "C" void lunar_host_audio_watchdog();
 extern "C" void lunar_host_request_audio_reopen();
-extern "C" void lunar_host_log(const char* line);
 extern "C" bool lunar_host_recordings_dir(char* out, std::size_t capacity);
 extern "C" void lunar_host_reveal_dir(const char* utf8Path);
 #else
@@ -73,18 +72,56 @@ constexpr int kPluginInputs = 0;
 constexpr int kPluginOutputs = 2;
 #endif
 
-// A line for the app's audio.log; the plugins keep no log.
-void hostLog([[maybe_unused]] const char* line)
+namespace diag = lunar24::host::diag;
+using diag::Cat;
+using diag::Level;
+
+const char* loadOutcomeName(lunar24::host::StateLoadOutcome o)
 {
-#ifdef APP_API
-  lunar_host_log(line);
-#endif
+  static const char* names[] = {"not attempted", "no folder", "no file (first run)", "ok", "unreadable",
+                                "wrong length", "unsupported version", "needs a newer app", "invalid state"};
+  const auto i = static_cast<unsigned>(o);
+  return i < sizeof names / sizeof names[0] ? names[i] : "?";
+}
+const char* saveOutcomeName(lunar24::host::StateSaveOutcome o)
+{
+  static const char* names[] = {"not attempted", "saved", "skipped: no folder", "skipped: no state",
+                                "skipped: the file on disk was not adopted", "encode failed", "temp write failed",
+                                "flush failed", "replace failed"};
+  const auto i = static_cast<unsigned>(o);
+  return i < sizeof names / sizeof names[0] ? names[i] : "?";
 }
 }  // namespace
 
 LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     : Plugin(info, MakeConfig(0, 0))
 {
+  // The diagnostics log (host/diag_log.h). The app host names the folder; a plugin uses the
+  // shared settings folder and starts one session per DAW process.
+  diag::log().attach();
+#ifdef APP_API
+  logInstance_ = 0;
+#else
+  logInstance_ = diag::Logger::nextInstance();
+  {
+#if defined(VST3_API)
+    const char* kind = "vst3";
+#elif defined(AU_API)
+    const char* kind = "au";
+#else
+    const char* kind = "plugin";
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+    const char* arch = "arm64";
+#else
+    const char* arch = "x64";
+#endif
+    const std::string header = std::string("Lunar 24 ") + kind + " " LUNAR24_VERSION " build " LUNAR24_BUILD_NUMBER
+                               " (" LUNAR24_BUILD_TIME ", commit " LUNAR24_BUILD_COMMIT "), " + arch;
+    diag::log().open(lunar24::host::plugin_settings_dir(), kind, header);
+  }
+#endif
+  diag::log().writef(Cat::app, Level::info, logInstance_, "plugin instance created");
   engine_.setAudioTap(&recorder_);
 #ifndef APP_API
   // The plugins share the app's MIDI controller map (its settings folder); the machine state
@@ -141,6 +178,8 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     // The whole panel (host/panel_editor.h). The shared editor state lives as long as the plugin.
     auto shared = std::make_shared<lunar24::host::ui::EditorShared>(engine_);
     shared->factoryReset = [this]() { requestFactoryReset(); };
+    shared->mark = [this](const char* source) { logMark(source); };
+    shared->logInstance = logInstance_;
     // The MIDI settings overlay reads/edits the plugin's binding store through these bridges.
     shared->midiStore = &midiMapStore_;
     shared->midi.inputDeviceName = [this]() { return midiInputDeviceName_; };
@@ -178,6 +217,12 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
 #endif
   };
 #endif
+}
+
+LunarHostPlugin::~LunarHostPlugin()
+{
+  diag::log().writef(Cat::app, Level::info, logInstance_, "plugin instance destroyed");
+  diag::log().detach();  // the last user ends the session ("session end")
 }
 
 #ifdef APP_API
@@ -250,6 +295,12 @@ void LunarHostPlugin::OnReset()
   // A DAW resets a plugin often: transport stop, bypass, processing switched off. Keep the
   // running machine (drones, effector tails) and only let go of the held notes. A new sample
   // rate or block size rebuilds it, with the audio parked in case the DAW is still processing.
+  if (!hostLogged_) {
+    hostLogged_ = true;
+    WDL_String host;
+    GetHostStr(host);
+    diag::log().writef(Cat::app, Level::info, logInstance_, "DAW: %s (version %d)", host.Get(), GetHostVersion(false));
+  }
   if (engine_.isReady() && GetSampleRate() == engine_.sampleRate() && GetBlockSize() == engine_.blockSize()) {
     notesOffRequested_.store(true, std::memory_order_release);
     return;
@@ -284,9 +335,8 @@ void LunarHostPlugin::rebuildEngine_()
   // play back at the wrong speed, so the recording stops there.
   if (recorder_.recording() && std::lround(GetSampleRate()) != recorder_.sampleRate()) {
     const auto r = recorder_.stop();
-    char line[160];
-    std::snprintf(line, sizeof line, "recording stopped (sample rate changed): %.1f s", r.seconds);
-    hostLog(line);
+    diag::log().writef(Cat::rec, Level::warn, logInstance_, "recording stopped (sample rate changed): %.1f s",
+                       r.seconds);
   }
   // The old runtime's notes die with it; the sustain pedal's held-note ledger
   // belongs to that stream (a stale pedal-down would defer the new stream's
@@ -310,6 +360,10 @@ void LunarHostPlugin::rebuildEngine_()
                   engineOutputs_());
   if (engine_.isReady())
     stateStore_.publishPending(engine_, GetSampleRate(), GetBlockSize(), engineInputs_(), engineOutputs_());
+  diag::log().writef(Cat::audio, engine_.isReady() ? Level::info : Level::warn, logInstance_,
+                     "engine %s: %.0f Hz, block %d, %d in / %d out; state file: %s",
+                     engine_.isReady() ? "ready" : "NOT ready", GetSampleRate(), GetBlockSize(), engineInputs_(),
+                     engineOutputs_(), loadOutcomeName(stateStore_.loadOutcome()));
 }
 
 #ifndef APP_API
@@ -340,6 +394,10 @@ int LunarHostPlugin::UnserializeState(const IByteChunk& chunk, int startPos)
       available > 0 ? lunar24::host::read_plugin_chunk(chunk.GetData() + startPos,
                                                        static_cast<std::size_t>(available), &project)
                     : lunar24::host::PluginChunkResult{};
+  diag::log().writef(Cat::state, r.read == lunar24::host::PluginChunkRead::Ok ? Level::info : Level::warn,
+                     logInstance_, "DAW project state %s (%d bytes)",
+                     r.read == lunar24::host::PluginChunkRead::Ok ? "restored" : "NOT readable, machine kept",
+                     available);
   if (r.read != lunar24::host::PluginChunkRead::Ok) {  // keep the current machine
 #ifdef AU_API
     return 0;  // the AU wrapper reads 0 as "not restored"
@@ -413,11 +471,17 @@ lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
   // source (committed canonical, else the retained last legal config), encodes to the exact wire
   // size and runs the atomic temp->flush->replace. Never a disk read, never an overwrite of a file
   // that was present but unusable.
-  return stateStore_.save(engine_);
+  const lunar24::host::StateSaveOutcome outcome = stateStore_.save(engine_);
+  diag::log().writef(Cat::state, outcome == lunar24::host::StateSaveOutcome::Saved ? Level::debug : Level::warn,
+                     logInstance_, "state save: %s", saveOutcomeName(outcome));
+  return outcome;
 }
 
 void LunarHostPlugin::requestFactoryReset()
 {
+  // The panel as it was, so a sound that RESET had to stop can be explained afterwards.
+  if (engine_.isReady()) engine_.syncParametersFromAudioThread();
+  logSnapshot_("before RESET PANEL");
   // Without a running machine there is nothing to swap: reset at the next OnReset instead.
   if (!engine_.isReady()) {
     factoryResetRequested_ = true;
@@ -439,12 +503,14 @@ void LunarHostPlugin::applyPendingMidiResets_()
   const std::uint64_t swaps = engine_.swapCount();
   if (swaps != seenSwaps_) {
     seenSwaps_ = swaps;
+    rtLog_.push(lunar24::host::diag::RtKind::swap_reset);
     sustain_.reset();
     midiNotes_.reset();
     midiLights_.reset();
   }
   // A DAW reset (plugins): release every held note, the sustain pedal and the pitch bend.
   if (notesOffRequested_.exchange(false, std::memory_order_acq_rel)) {
+    rtLog_.push(lunar24::host::diag::RtKind::daw_reset);
     sustain_.reset();
     midiNotes_.reset();
     midiLights_.reset();
@@ -465,19 +531,18 @@ void LunarHostPlugin::midiInputClosed()
 void LunarHostPlugin::toggleRecording([[maybe_unused]] int source)
 {
 #ifdef APP_API
-  char line[1200];
   if (recorder_.recording()) {
     const auto r = recorder_.stop();
-    std::snprintf(line, sizeof line, "recording stopped: %.1f s, %llu frames dropped", r.seconds,
-                  static_cast<unsigned long long>(r.droppedFrames));
-    lunar_host_log(line);
+    diag::log().writef(Cat::rec, r.droppedFrames ? Level::warn : Level::info, logInstance_,
+                       "recording stopped: %.1f s, %llu frames dropped", r.seconds,
+                       static_cast<unsigned long long>(r.droppedFrames));
     if (!recordingDir_.empty()) lunar_host_reveal_dir(recordingDir_.c_str());
     return;
   }
   const int rate = static_cast<int>(std::lround(engine_.sampleRate()));
   char dir[1024];
   if (rate <= 0 || !lunar_host_recordings_dir(dir, sizeof dir)) {
-    lunar_host_log("recording not started: no audio stream or no Music/Lunar 24 folder");
+    diag::log().write(Cat::rec, Level::warn, "recording not started: no audio stream or no Music/Lunar 24 folder");
     return;
   }
   recordingDir_ = dir;
@@ -508,13 +573,11 @@ void LunarHostPlugin::toggleRecording([[maybe_unused]] int source)
     wetFile = dryFile = nullptr;
   }
   if ((wetFile == nullptr && dryFile == nullptr) || !recorder_.start(wetFile, dryFile, rate)) {  // start closes on failure
-    std::snprintf(line, sizeof line, "recording not started: cannot write %s", base.c_str());
-    lunar_host_log(line);
+    diag::log().writef(Cat::rec, Level::error, logInstance_, "recording not started: cannot write %s", base.c_str());
     return;
   }
-  std::snprintf(line, sizeof line, "recording %s at %d Hz: %s", lunar24::host::record_source_name(what), rate,
-                base.c_str());
-  lunar_host_log(line);
+  diag::log().writef(Cat::rec, Level::info, logInstance_, "recording %s at %d Hz: %s",
+                     lunar24::host::record_source_name(what), rate, base.c_str());
 #endif
 }
 
@@ -523,9 +586,9 @@ void LunarHostPlugin::OnIdle()
   // Record what MIDI changed on the audio thread. Here, not in the panel's redraw, so it is
   // saved even while the panel is closed (a plugin window usually is).
   engine_.syncParametersFromAudioThread();
+  logIdle_();
 #ifdef APP_API
   lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
-  logMidiClock_();
 
   constexpr auto kAutosaveInterval = std::chrono::seconds(30);
   const auto now = std::chrono::steady_clock::now();
@@ -538,7 +601,7 @@ void LunarHostPlugin::OnIdle()
 }
 
 // At most every 2 s, on a transport or clock source change: what MIDI transport arrived and which clock the keyboard
-// follows, so a clock problem on the owner's machine can be read from audio.log.
+// follows, so a clock problem on the owner's machine can be read from the log.
 void LunarHostPlugin::logMidiClock_()
 {
   const auto now = std::chrono::steady_clock::now();
@@ -555,15 +618,69 @@ void LunarHostPlugin::logMidiClock_()
   if (counts[1] == loggedClock_[1] && counts[2] == loggedClock_[2] && counts[3] == loggedClock_[3] &&
       ext == loggedExtClock_ && edits == loggedTempoEdits_)
     return;
-  char line[200];
-  std::snprintf(line, sizeof line,
-                "midi clock: +%u ticks, +%u start, +%u continue, +%u stop; keyboard clock %s; tempo edits %u",
-                counts[0] - loggedClock_[0], counts[1] - loggedClock_[1], counts[2] - loggedClock_[2],
-                counts[3] - loggedClock_[3], ext ? "external" : "internal", edits);
-  hostLog(line);
+  diag::log().writef(Cat::midi, Level::info, logInstance_,
+                     "clock: +%u ticks, +%u start, +%u continue, +%u stop; keyboard clock %s; tempo edits %u",
+                     counts[0] - loggedClock_[0], counts[1] - loggedClock_[1], counts[2] - loggedClock_[2],
+                     counts[3] - loggedClock_[3], ext ? "external" : "internal", edits);
   for (int i = 0; i < 4; ++i) loggedClock_[i] = counts[i];
   loggedExtClock_ = ext;
   loggedTempoEdits_ = edits;
+}
+
+// Every idle tick (~20 ms), app and plugins alike, with the panel open or closed.
+void LunarHostPlugin::logIdle_()
+{
+  diag::Logger& logger = diag::log();
+  diag::drainRtLog(rtLog_, logger, logInstance_, &midiHeld_);
+  const auto now = std::chrono::steady_clock::now();
+  levelWatch_.update(now, wetPeak_.take(), dryPeak_.take(), engine_.takeEffectorInputPeak(), inPeak_.take(),
+                     engine_.isReady(),
+                     [&](Level level, const std::string& text) { logger.write(Cat::audio, level, text, logInstance_); });
+  panelWatch_.poll(engine_, now, [&](const std::string& text) {
+    // A whole new state (startup, RESET, preset, project) is a full snapshot; edits are one line.
+    logger.write(Cat::state, text.rfind("snapshot", 0) == 0 ? Level::info : Level::debug, text, logInstance_);
+  });
+  if (now >= engineWatchAt_) {
+    engineWatchAt_ = now + std::chrono::seconds(1);
+    engineWatch_.poll(engine_, [&](Level level, const std::string& text) {
+      logger.write(Cat::engine, level, text, logInstance_);
+    });
+    if (const std::uint32_t lost = midiQueue_.overflows(); lost != midiOverflowsLogged_) {
+      logger.writef(Cat::midi, Level::warn, logInstance_,
+                 "MIDI input queue overflowed %u time(s): the input's held notes were released",
+                 lost - midiOverflowsLogged_);
+      midiOverflowsLogged_ = lost;
+    }
+  }
+  logMidiClock_();
+}
+
+void LunarHostPlugin::logSnapshot_(const std::string& reason)
+{
+  diag::Logger& logger = diag::log();
+  if (!logger.enabled(Cat::state, Level::info)) return;
+  // Drain first, so the MIDI picture includes everything played up to now.
+  diag::drainRtLog(rtLog_, logger, logInstance_, &midiHeld_);
+  std::string extra = midiHeld_.describe();
+#if IPLUG_EDITOR
+  if (uiState_) {
+    const auto& ui = *std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_);
+    extra += "\nui holds: computer keys";
+    if (ui.heldKeys.empty()) extra += " none";
+    for (const auto& [key, semi] : ui.heldKeys) extra += " " + std::to_string(key) + "(semi " + std::to_string(semi) + ")";
+    extra += ui.mousePlate >= 0 ? "; mouse plate " + std::to_string(ui.mousePlate) : std::string("; mouse none");
+  }
+#endif
+  extra += "\n" + levelWatch_.describe(std::chrono::steady_clock::now());
+  const std::string text = lunar24::host::diag::machineSnapshot(engine_, reason, extra);
+  logger.write(Cat::state, Level::info, text, logInstance_);
+}
+
+void LunarHostPlugin::logMark(const char* source)
+{
+  ++marks_;
+  diag::log().writef(Cat::app, Level::info, logInstance_, "MARK %d (%s)", marks_, source);
+  logSnapshot_("MARK " + std::to_string(marks_));
 }
 
 #ifdef APP_API
@@ -622,6 +739,28 @@ void LunarHostPlugin::ProcessBlock(sample** inputs, sample** outputs, int nFrame
   engine_.processAnyLength(reinterpret_cast<const double* const*>(inputs),
                        reinterpret_cast<double* const*>(outputs),
                        engineInputs_(), engineOutputs_(), nFrames);
+  // Peaks for the log's sound / silence lines (read and reset by the UI thread).
+  auto peak = [nFrames](const sample* x) {
+    double m = 0.0;
+    for (int i = 0; i < nFrames; ++i) m = std::max(m, std::fabs(x[i]));
+    return static_cast<float>(m);
+  };
+  const int outs = engineOutputs_(), ins = engineInputs_();
+  float wet = 0.f, dry = 0.f, in = 0.f;
+  for (int c = 0; c < outs && c < 4; ++c)
+    if (outputs[c] != nullptr) (c < 2 ? wet : dry) = std::max(c < 2 ? wet : dry, peak(outputs[c]));
+  for (int c = 0; c < ins; ++c)
+    if (inputs[c] != nullptr) in = std::max(in, peak(inputs[c]));
+  wetPeak_.raise(wet);
+  dryPeak_.raise(dry);
+  inPeak_.raise(in);
+}
+
+bool LunarHostPlugin::enqueueMidi_(const lunar24::core::ControlEvent& e, int offset)
+{
+  if (engine_.enqueueEventFromAudioThread(e, offset)) return true;
+  rtLog_.push(lunar24::host::diag::RtKind::event_rejected, static_cast<unsigned>(e.kind));
+  return false;
 }
 
 int LunarHostPlugin::engineInputs_() const
@@ -654,13 +793,16 @@ void LunarHostPlugin::drainMidiInput(int frames)
     // computer-keyboard playing (and an arpeggio they hold) keep going. Should the event
     // queue be full, fall back to the all-gates-off failsafe rather than leave a note stuck.
     bool released = true;
+    int count = 0;
     lunar24::host::release_midi_notes(midiNotes_, sustain_, 3, [&](lunar24::core::PerformanceInput in) {
       in.seq = ++midiSeq_;
       in.side = midiSides_.of(in.channel, in.noteId - 1);
+      ++count;
       lunar24::core::ControlEvent event[1];
-      if (midiInput_.translate(in, event, 1) == 1 && !engine_.enqueueEventFromAudioThread(event[0], 0))
+      if (midiInput_.translate(in, event, 1) == 1 && !enqueueMidi_(event[0], 0))
         released = false;
     });
+    rtLog_.push(lunar24::host::diag::RtKind::midi_input_reset, 0, 0, released ? 0 : 1, count);
     midiLights_.reset();
     engine_.pitchBendFromAudioThread(0.0);  // a bend held on the old input springs back
     if (!released) {
@@ -693,14 +835,14 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
     e.value = 1;
     e.source = 3;
     e.producerSequence = ++midiSeq_;
-    engine_.enqueueEventFromAudioThread(e, offset);
+    enqueueMidi_(e, offset);
   };
 
   // System real-time: MIDI clock steps the keyboard arpeggiator / sequencer; START restarts
   // the pattern from its first step. Transport never stops held notes (midi_timing.h).
   if (msg.mStatus >= 0xF8)
   {
-    switch (msg.mStatus)  // counted for the audio.log diagnostics line
+    switch (msg.mStatus)  // counted for the log's MIDI clock line
     {
       case 0xF8: midiClockTicksIn_.fetch_add(1, std::memory_order_relaxed); break;
       case 0xFA: midiStartsIn_.fetch_add(1, std::memory_order_relaxed); break;
@@ -731,7 +873,13 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
   const bool pedalRelease = msg.StatusMsg() == IMidiMsg::kControlChange &&
       msg.ControlChangeIdx() == IMidiMsg::kSustainOnOff && msg.mData2 < 64;
   const int channelFilter = rig.channelFilter;
-  if (channelFilter > 0 && msg.Channel() + 1 != channelFilter && !noteRelease && !pedalRelease) return;
+  using lunar24::host::diag::RtKind;
+  const bool traceMidi = lunar24::host::diag::log().enabled(lunar24::host::diag::Cat::midi,
+                                                            lunar24::host::diag::Level::trace);
+  if (channelFilter > 0 && msg.Channel() + 1 != channelFilter && !noteRelease && !pedalRelease) {
+    if (traceMidi) rtLog_.push(RtKind::midi_filtered, in.channel, msg.mStatus);
+    return;
+  }
   // Remember the last note/CC for the learn overlay (the overlay polls the seq).
   if ((msg.StatusMsg() == IMidiMsg::kNoteOn && msg.Velocity() > 0) ||
       (msg.StatusMsg() == IMidiMsg::kControlChange && msg.ControlChangeIdx() != IMidiMsg::kSustainOnOff)) {
@@ -758,6 +906,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
                                                  static_cast<std::uint8_t>(note & 127));
         if (bound >= 0)
         {
+          rtLog_.push(RtKind::midi_binding, in.channel, note & 127, msg.Velocity(), bound);
           engine_.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(bound),
                                                   msg.Velocity(), static_cast<std::uint8_t>(in.channel + 1));
           return;
@@ -773,6 +922,8 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
         in.value = static_cast<SignalSample>(
             lunar24::core::midi_velocity_shape(velocityCurve, msg.Velocity() / 127.0));
         in.noteId = static_cast<NoteId>(note + 1);
+        rtLog_.push(RtKind::midi_note_on, in.channel, note & 127, msg.Velocity(),
+                    in.side == lunar24::core::KeyboardSide::Right ? 1 : 0);
         break;
       }
       [[fallthrough]];  // note-on with velocity 0 is a note-off
@@ -781,6 +932,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       // the note-on's ownership, never the current map (or current filter).
       if (!midiNotes_.release(in.channel, note & 127))
       {
+        rtLog_.push(RtKind::midi_note_off_free, in.channel, note & 127);
         // Not a played note: maybe a pad holding a photo sensor's hand down.
         (void)engine_.photoPadRelease(static_cast<std::uint8_t>(in.channel + 1), static_cast<std::uint8_t>(note & 127));
         return;
@@ -788,8 +940,10 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       midiLights_.off(in.channel, note & 127);
       if (sustain_.deferNoteOff(in.channel, note & 127))
       {
+        rtLog_.push(RtKind::midi_note_off, in.channel, note & 127, 0, 1);
         return;
       }
+      rtLog_.push(RtKind::midi_note_off, in.channel, note & 127);
       in.kind = PerfInputKind::note_off;
       in.noteId = static_cast<NoteId>(note + 1);
       in.side = midiSides_.of(in.channel, note & 127);
@@ -818,13 +972,16 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       if (msg.ControlChangeIdx() == IMidiMsg::kSustainOnOff)
       {
         const bool on = msg.ControlChange(IMidiMsg::kSustainOnOff) >= 0.5;
+        int releasedCount = 0;
         sustain_.pedal(in.channel, on, in.source, [&](PerformanceInput released) {
           released.seq = ++midiSeq_;
           released.side = midiSides_.of(released.channel, released.noteId - 1);
+          ++releasedCount;
           ControlEvent event[1];
           if (midiInput_.translate(released, event, 1) == 1)
-            engine_.enqueueEventFromAudioThread(event[0], offset);
+            enqueueMidi_(event[0], offset);
         });
+        rtLog_.push(RtKind::midi_sustain, in.channel, 64, on ? 1 : 0, releasedCount);
         return;
       }
       // A user binding wins over the factory CC table (the map is the user's rig).
@@ -834,10 +991,15 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
                                                  static_cast<std::uint8_t>(msg.ControlChangeIdx()));
         if (bound >= 0)
         {
+          if (traceMidi) rtLog_.push(RtKind::midi_binding_cc, in.channel, msg.ControlChangeIdx(), msg.mData2, bound);
           engine_.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(bound), msg.mData2);
           return;
         }
       }
+      if (msg.ControlChangeIdx() >= 120)  // channel mode: all sound off, reset, all notes off ...
+        rtLog_.push(RtKind::midi_channel_mode, in.channel, msg.ControlChangeIdx(), msg.mData2);
+      else if (traceMidi)
+        rtLog_.push(RtKind::midi_cc, in.channel, msg.ControlChangeIdx(), msg.mData2);
       in.kind = PerfInputKind::cc;
       in.controller = static_cast<std::uint16_t>(msg.ControlChangeIdx());
       in.value = static_cast<SignalSample>(msg.ControlChange(msg.ControlChangeIdx()));
@@ -855,7 +1017,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       if (d != nullptr)
         engine_.parameterFromAudioThread(ev[i].parameter, knob_to_value(*d, double(ev[i].value)));
     } else {
-      engine_.enqueueEventFromAudioThread(ev[i], offset);
+      enqueueMidi_(ev[i], offset);
     }
   }
 }
