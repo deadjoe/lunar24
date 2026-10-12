@@ -221,7 +221,8 @@ int main() {
     const auto initial = a.id();
     CHECK(b.load() == host::MidiMapLoadOutcome::Ok);
     CHECK(a.bind(binding)); CHECK(a.save());
-    CHECK(b.setSettings(settings)); CHECK(!b.save());
+    const auto local = ccBinding("Controller B", 5, 30, core::ParameterId::effector_blend);
+    CHECK(b.bind(local)); CHECK(!b.save());
     CHECK(b.dirty());
     const auto generation = b.generation();
     {
@@ -240,7 +241,8 @@ int main() {
     CHECK_EQ(b.map().count(), 1u); CHECK_EQ(b.settings().channelFilter, 0);
     CHECK(b.generation() > generation);
     CHECK(b.setSettings(settings)); CHECK(b.save()); // editing works again
-    CHECK(a.reload()); CHECK_EQ(a.settings().channelFilter, 3);
+    CHECK_EQ(a.settings().channelFilter, 0);
+    CHECK(a.refresh()); CHECK_EQ(a.settings().channelFilter, 3);  // global: seen on refresh
     CHECK(a.create("Second", false));
     const auto alternate = a.id();
     const auto selectedPath = host::app_state_file_ops::joinUtf8(a.libraryPath(), "selected.txt");
@@ -267,7 +269,7 @@ int main() {
     CHECK_EQ(b.map().count(), 1u); CHECK(b.needsRecovery());
     CHECK(readFile(selectedPath) == beforeSelection);
     CHECK(b.select(alternate)); // only an explicit selection switches profiles
-    CHECK(b.setSettings(settings));
+    CHECK(b.bind(local));
     corrupt(b.livePath());
     CHECK(!b.reload()); CHECK(b.dirty()); CHECK_EQ(b.settings().channelFilter, 3);
     CHECK(!b.removeUnavailable(alternate)); // preserve the current in-memory rescue copy
@@ -297,6 +299,127 @@ int main() {
     CHECK(retry.editable()); CHECK(retry.error().empty());
   }
   removeTree(recoveryDir);
+  // Global settings, profile switch keys and performance stepping.
+  {
+    const auto gdir = makeTempDir("global");
+    // An older library (no global.bin): the selected profile's own settings seed it.
+    {
+      host::MidiMapStore seed;
+      seed.setDirectory(gdir);
+      CHECK(seed.load() == host::MidiMapLoadOutcome::NoFile);
+      CHECK(seed.rename("Bravo"));
+      core::MidiMap m;
+      const core::MidiRigSettings legacy{7, -12, core::MidiVelocityCurve::soft, 50};
+      CHECK(real.writeFile(nullptr, seed.livePath().c_str(),
+                           host::midi_profile_files::encode("Bravo", m, legacy).data(),
+                           host::midi_profile_files::encode("Bravo", m, legacy).size()));
+      std::error_code ec;
+      std::filesystem::remove(std::filesystem::u8path(seed.globalPath()), ec);
+    }
+    host::MidiMapStore s1;
+    s1.setDirectory(gdir);
+    CHECK(s1.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK_EQ(s1.settings().channelFilter, 7);
+    CHECK_EQ(s1.settings().splitNote, 50);
+    CHECK(!readFile(s1.globalPath()).empty());  // the seed is written at once
+    const auto bravo = s1.id();
+    CHECK(s1.create("alpha", false));
+    const auto alpha = s1.id();
+    CHECK(s1.create("Charlie", false));
+    const auto charlie = s1.id();
+    CHECK_EQ(s1.settings().channelFilter, 7);  // global: same in every profile
+    CHECK(s1.select(bravo));
+    const auto selectedPath = host::app_state_file_ops::joinUtf8(s1.libraryPath(), "selected.txt");
+    const auto selected = readFile(selectedPath);
+    // Name order ignoring case: alpha, Bravo, Charlie; both ways wrap; startup choice kept.
+    CHECK_EQ(s1.step(1), 1); CHECK_EQ(s1.id(), charlie);
+    CHECK_EQ(s1.step(1), 1); CHECK_EQ(s1.id(), alpha);
+    CHECK_EQ(s1.step(-1), 1); CHECK_EQ(s1.id(), charlie);
+    CHECK_EQ(s1.step(-1), 1); CHECK_EQ(s1.id(), bravo);
+    CHECK(readFile(selectedPath) == selected);
+    // Pending edits are saved before stepping away.
+    const auto k1 = ccBinding("MPK", 1, 70, core::ParameterId::effector_blend);
+    CHECK(s1.bind(k1));
+    CHECK_EQ(s1.step(1), 1);
+    CHECK(s1.select(bravo));
+    CHECK_EQ(s1.map().count(), 1u);
+    // An unreadable profile is skipped.
+    corrupt(host::app_state_file_ops::joinUtf8(s1.libraryPath(), charlie + ".bin"));
+    CHECK_EQ(s1.step(1), 1); CHECK_EQ(s1.id(), alpha);
+    CHECK_EQ(s1.step(-1), 1); CHECK_EQ(s1.id(), bravo);
+    // Switch keys: one key per triangle, and the later bind wins everywhere it is visible.
+    CHECK(s1.bindSwitch(1, k1.key));                 // k1 was BLEND in Bravo: now NEXT
+    CHECK(s1.global().switchBound[1]);
+    CHECK_EQ(s1.map().count(), 0u);
+    CHECK(s1.dirty());
+    CHECK(s1.save());
+    CHECK(s1.bindSwitch(0, k1.key));                 // the same key on PREV leaves NEXT
+    CHECK(s1.global().switchBound[0] && !s1.global().switchBound[1]);
+    auto k2 = k1.key;
+    k2.number = 71;
+    CHECK(s1.bindSwitch(0, k2));                     // PREV takes a new key: k1 is free
+    CHECK(s1.global().switchKey[0].equals(k2));
+    CHECK(s1.bindSwitch(1, k1.key));
+    auto blendOnK2 = k1;
+    blendOnK2.key = k2;
+    CHECK(s1.bind(blendOnK2));                       // k2 back to a profile row: PREV unbound
+    CHECK(!s1.global().switchBound[0] && s1.global().switchBound[1]);
+    core::MidiBinding sw{};
+    sw.targetKind = core::MidiTargetKind::action;
+    sw.action = core::MidiAction::profile_next;
+    CHECK(!s1.bind(sw));                             // never into a profile
+    CHECK(s1.unbindSwitch(1));
+    CHECK(!s1.unbindSwitch(1));
+    CHECK(s1.bindSwitch(1, k1.key));
+    // Another profile's row on the switch key is reported by name, and left in place.
+    CHECK(s1.save());
+    CHECK(s1.select(alpha));
+    auto freq = ccBinding("MPK", 1, 72, core::ParameterId::vcf_l_freq);
+    CHECK(s1.bind(freq));
+    CHECK(s1.save());
+    CHECK(s1.select(bravo));
+    const auto uses = s1.otherProfilesUsing(freq.key);
+    CHECK_EQ(uses.size(), 1u);
+    if (!uses.empty()) {
+      CHECK_EQ(uses[0].profile, "alpha");
+      CHECK(uses[0].binding.parameter == core::ParameterId::vcf_l_freq);
+    }
+    CHECK(s1.otherProfilesUsing(k2).empty());        // Bravo is current, not "other"
+    CHECK(s1.bindSwitch(0, freq.key));
+    CHECK(s1.select(alpha));
+    CHECK_EQ(s1.map().count(), 1u);                  // alpha's row stays (greyed by the UI)
+    // A second instance sees the global file on load and on refresh.
+    host::MidiMapStore s2;
+    s2.setDirectory(gdir);
+    CHECK(s2.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK(s2.global().switchBound[0] && s2.global().switchKey[0].equals(freq.key));
+    CHECK(s1.setSettings(core::MidiRigSettings{2, 0, core::MidiVelocityCurve::linear, 60}));
+    CHECK_EQ(s2.settings().channelFilter, 7);
+    CHECK(s2.refresh());
+    CHECK_EQ(s2.settings().channelFilter, 2);
+    // A profile file holding a switch action is not a profile this version wrote: unreadable.
+    {
+      core::MidiMap bad;
+      CHECK(bad.bind(sw));
+      const auto bytes = host::midi_profile_files::encode("Odd", bad, core::MidiRigSettings{});
+      std::string name; core::MidiMap map; core::MidiRigSettings rs;
+      CHECK(!host::midi_profile_files::decode(bytes, name, map, rs));
+    }
+    // Only one readable profile: nothing to step to.
+    const auto odir = makeTempDir("one");
+    host::MidiMapStore one;
+    one.setDirectory(odir);
+    CHECK(one.load() == host::MidiMapLoadOutcome::NoFile);
+    const auto only = one.id();
+    CHECK_EQ(one.step(1), 0); CHECK_EQ(one.step(-1), 0);
+    CHECK_EQ(one.id(), only);
+    {
+      host::midi_profile_files::Lock lock(host::app_state_file_ops::joinUtf8(s1.libraryPath(), "library.lock"));
+      CHECK_EQ(s1.step(1), -1);  // busy: the caller retries
+    }
+    removeTree(odir);
+    removeTree(gdir);
+  }
   host::MidiMapStore noPath;
   CHECK(noPath.load() == host::MidiMapLoadOutcome::NoPath);
   CHECK(!noPath.save());

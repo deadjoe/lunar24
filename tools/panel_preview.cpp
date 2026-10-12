@@ -11,6 +11,7 @@
 //   panel_preview --midi-profiles / --midi-profiles-plugin / --midi-profile-name
 //   panel_preview --midi-profile-error / --midi-profile-delete / --midi-profile-unavailable / --midi-profile-retry
 //   panel_preview --midi-validation / --midi-profile-validation
+//   panel_preview --midi-switch / --midi-confirm   (profile switch keys: NEXT bound, the BIND confirmation)
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
@@ -285,7 +286,8 @@ int main(int argc, char** argv) {
       case WidgetKind::OctaveKey: art::drawOctaveKey(sink, float(w.cx), float(w.cy), false); break;
       case WidgetKind::Display:
         art::drawDisplay(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
-        text(w.cx, w.cy, 18, {235, 240, 255}, "OCT +0");
+        text(w.cx, w.cy - 13, 18, {235, 240, 255}, "OCT +0");
+        text(w.cx, w.cy + 14, 15, {235, 240, 255}, "Untitled");
         art::drawDisplayGlass(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h));
         break;
       case WidgetKind::PhotoSensor: art::drawSensor(sink, float(w.cx), float(w.cy), float(w.w / 2)); break;
@@ -295,7 +297,7 @@ int main(int argc, char** argv) {
           art::drawBarLed(sink, x0, float(w.y() + 8), x0 + 9.f, float(w.y() + 38),
                           (std::uint32_t(theme::kLedOn.r) << 16) | (theme::kLedOn.g << 8) | theme::kLedOn.b, 0.f);
         }
-        break;
+        break;      case WidgetKind::ProfileStep: break;  // the printed keybed triangle (art::drawKeybedMarks)
     }
   }
   if (showMenu) {
@@ -355,6 +357,20 @@ int main(int argc, char** argv) {
       b.mode=core::MidiInputMode::absolute; b.key.kind=core::MidiBindingKind::note;
       b.key.number=36; b.targetKind=core::MidiTargetKind::action; b.action=core::MidiAction::drone_key_1; map.bind(b);
       b.key.number=37; b.action=core::MidiAction::master_mute; map.bind(b);
+    }
+    if (option == "--midi-switch" || option == "--midi-confirm") {  // NEXT on pad 37 (greys its row)
+      std::snprintf(state.global.switchKey[1].device, sizeof(state.global.switchKey[1].device), "MPK mini IV");
+      state.global.switchKey[1].channel = 1;
+      state.global.switchKey[1].kind = core::MidiBindingKind::note;
+      state.global.switchKey[1].number = 37;
+      state.global.switchBound[1] = true;
+      state.offset = 4;
+    }
+    if (option == "--midi-confirm") {
+      state.confirmSwitch = true;
+      state.confirmDirection = 0;
+      state.confirmUses = {"Drone tuning: VCF / FREQ L", "Live performance: DRONE 1", "Pads: EFFECTOR / BLEND",
+                           "Studio: MUTE"};
     }
     if (option == "--midi-learn") { state.armed=true; state.awaitTarget=true; }
     if (option == "--midi-wait") state.armed=true;

@@ -325,5 +325,66 @@ int main() {
     for (int i = 0; i < MidiRelativeDetector::kMaxSamples; ++i) (void)d.feed(i % 2 ? 30 : 31);
     CHECK(d.exhausted());
   }
+  // Global settings ("L24G"): round trip, one or two switch keys, all-or-nothing decode.
+  {
+    MidiGlobalSettings g;
+    g.rig = MidiRigSettings{10, -12, MidiVelocityCurve::hard, 48};
+    std::uint8_t buf[kMidiGlobalMaxBytes];
+    std::size_t n = midi_global_encode(g, buf, sizeof buf);
+    CHECK_EQ(n, kMidiGlobalHeaderBytes + kMidiGlobalRigBytes);
+    MidiGlobalSettings back;
+    CHECK(midi_global_decode(buf, n, &back));
+    CHECK_EQ(back.rig.channelFilter, 10);
+    CHECK_EQ(back.rig.octaveShift, -12);
+    CHECK(back.rig.velocityCurve == MidiVelocityCurve::hard);
+    CHECK_EQ(back.rig.splitNote, 48);
+    CHECK(!back.switchBound[0] && !back.switchBound[1]);
+    // Only NEXT bound: the PREV triangle stays empty.
+    std::snprintf(g.switchKey[1].device, kMidiBindingDeviceCapacity, "%s", "MPK");
+    g.switchKey[1].channel = 10;
+    g.switchKey[1].kind = MidiBindingKind::note;
+    g.switchKey[1].number = 43;
+    g.switchBound[1] = true;
+    n = midi_global_encode(g, buf, sizeof buf);
+    CHECK_EQ(n, kMidiGlobalHeaderBytes + kMidiGlobalRigBytes + kMidiGlobalSwitchBytes);
+    CHECK(midi_global_decode(buf, n, &back));
+    CHECK(!back.switchBound[0] && back.switchBound[1]);
+    CHECK(back.switchKey[1].equals(g.switchKey[1]));
+    const MidiMap sw = midi_switch_map(back);
+    CHECK_EQ(sw.count(), 1u);
+    CHECK(sw.at(0).action == MidiAction::profile_next);
+    // Both triangles on one key is not a valid state (the later bind clears the other).
+    g.switchKey[0] = g.switchKey[1];
+    g.switchBound[0] = true;
+    CHECK(!midi_global_valid(g));
+    CHECK_EQ(midi_global_encode(g, buf, sizeof buf), 0u);
+    g.switchKey[0].number = 44;
+    n = midi_global_encode(g, buf, sizeof buf);
+    CHECK(midi_global_decode(buf, n, &back));
+    CHECK(back.switchBound[0] && back.switchKey[0].number == 44);
+    CHECK_EQ(midi_switch_map(back).count(), 2u);
+    // Every truncation, a stray reserved byte and a bad direction are rejected untouched.
+    MidiGlobalSettings untouched;
+    untouched.rig.splitNote = 30;
+    for (std::size_t k = 0; k < n; ++k) CHECK(!midi_global_decode(buf, k, &untouched));
+    std::uint8_t bad[kMidiGlobalMaxBytes];
+    std::memcpy(bad, buf, n);
+    bad[kMidiGlobalHeaderBytes + 70] = 1;  // rig reserved
+    CHECK(!midi_global_decode(bad, n, &untouched));
+    std::memcpy(bad, buf, n);
+    bad[kMidiGlobalHeaderBytes + kMidiGlobalRigBytes + 67] = 2;  // direction
+    CHECK(!midi_global_decode(bad, n, &untouched));
+    std::memcpy(bad, buf, n);
+    bad[kMidiGlobalHeaderBytes + 65] = 100;  // transpose out of range
+    CHECK(!midi_global_decode(bad, n, &untouched));
+    CHECK_EQ(untouched.rig.splitNote, 30);
+    // The profile switch actions are presses, like the other action targets.
+    MidiBinding b;
+    b.targetKind = MidiTargetKind::action;
+    b.action = MidiAction::profile_next;
+    CHECK(midi_binding_valid(b));
+    CHECK(midi_action_is_profile_switch(b.action));
+    CHECK(!midi_action_is_profile_switch(MidiAction::master_mute));
+  }
   return test::finish("test_midi_map");
 }

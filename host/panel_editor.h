@@ -41,6 +41,7 @@
 #include <host/panel_art.h>
 #include <host/ui_font.generated.h>
 #include <host/keyboard_menu_view.h>
+#include <host/lcd_display.h>
 #include <host/midi_map_store.h>
 #include <host/midi_learn.h>
 #include <host/midi_settings_view.h>
@@ -155,6 +156,16 @@ struct EditorShared {
   bool seenReady = false;
   bool seenMuted = false;
   std::uint16_t seenMidiPlates = 0;  // the plates MIDI was lighting at the last display tick
+  // UI clock (seconds) for the LCD backlights, the marquee and the triangles' press flash.
+  static double uiNow() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  }
+  double stepFlashAt[2] = {-100.0, -100.0};  // when each keybed triangle was last pressed
+  void flashStep(int direction) { stepFlashAt[direction > 0 ? 1 : 0] = uiNow(); }
+  // The current MIDI profile's name, for the keyboard display's second line.
+  std::string midiProfileName() const {
+    return midiStore != nullptr && midiStore->editable() ? midi_ui::asciiText(midiStore->name()) : std::string("NO MIDI PROFILE");
+  }
 
   static constexpr core::NoteId kMouseId = 1000;
   static constexpr core::NoteId kKeyIdBase = 2000;
@@ -177,6 +188,9 @@ struct EditorShared {
     std::function<void(int, int, int, int)> setRigSettings;
     std::function<void()> bindingsChanged;            // save + republish
     std::function<void()> profileChanged;             // already saved: publish only
+    std::function<void(int)> stepProfile;             // keybed triangle / [ ]: -1 previous, +1 next
+    std::function<void(bool)> panelOpen;              // the MIDI panel opened / closed
+    std::function<void()> switchesChanged;            // switch keys saved: publish only
   };
   MidiUi midi;
   // REC (the plugin owns the recorder; the source choice lives here for the session).
@@ -208,22 +222,44 @@ struct EditorShared {
   }
   void adoptedMidiProfile() {
     setLearnArmed(false, false);
+    cancelSwitchConfirm();
     relativeLearn.cancel();
     midiListOffset = 0;
     showProfiles(false);
     if (midi.profileChanged) midi.profileChanged();
   }
   void showMidi(bool open) {
+    if (midi.panelOpen && open != midiOpen) midi.panelOpen(open);
     midiOpen = open;
     for (IControl* c : midiControls) c->Hide(!open);
     if (open) showMenu(false);
-    if (!open) { showProfiles(false); setLearnArmed(false, false); }
+    if (!open) { showProfiles(false); setLearnArmed(false, false); cancelSwitchConfirm(); }
   }
   // Learn: armed while the user picks a panel target and then moves a hardware control.
   IControl* learnCapture = nullptr;  // the full-panel click catcher (mouse-ignored unless picking)
   bool learnArmed = false;
   bool learnAwaitTarget = false;
   bool learnTargetIsAction = false;
+  int learnSwitch = -1;  // learning a PROFILE SWITCH KEY: 0 = PREV, 1 = NEXT; -1 = a panel / action target
+  // A learned switch key that other profiles also bind, waiting for BIND / CANCEL.
+  struct SwitchConfirm {
+    bool open = false;
+    int direction = 0;
+    core::MidiBindingKey key;
+    std::vector<std::string> uses;  // "<profile>: <target>"
+    std::uint64_t generation = 0;
+  } switchConfirm;
+  void cancelSwitchConfirm() { switchConfirm = SwitchConfirm{}; }
+  void confirmSwitch() {
+    if (switchConfirm.open && midiStore != nullptr && switchConfirm.generation == midiStore->generation())
+      bindSwitch(switchConfirm.direction, switchConfirm.key);
+    cancelSwitchConfirm();
+  }
+  void bindSwitch(int direction, const core::MidiBindingKey& key) {
+    if (midiStore == nullptr || !midiStore->bindSwitch(direction, key)) return;
+    midiListOffset = midi_ui::pageOffset(midiListOffset, static_cast<int>(midiStore->map().count()));
+    if (midi.bindingsChanged) midi.bindingsChanged();  // saves the profile (the key left it) and republishes
+  }
   core::ParameterId learnParameter = core::ParameterId{0};
   core::MidiAction learnAction = core::MidiAction::master_mute;
   std::uint64_t learnArmSeq = 0, learnGeneration = 0;
@@ -231,6 +267,7 @@ struct EditorShared {
   void setLearnArmed(bool armed, bool awaitTarget) {
     learnArmed = armed;
     learnAwaitTarget = awaitTarget;
+    if (!armed) learnSwitch = -1;
     if (armed && midiStore) learnGeneration = midiStore->generation();
     if (learnCapture != nullptr) learnCapture->SetIgnoreMouse(!(armed && awaitTarget && !profileBrowser));
   }
@@ -247,6 +284,21 @@ struct EditorShared {
     if (b.key.kind == core::MidiBindingKind::cc && b.key.number == 64) return;
     const std::string dev = midi.inputDeviceName ? midi.inputDeviceName() : "";
     std::snprintf(b.key.device, core::kMidiBindingDeviceCapacity, "%s", dev.c_str());
+    if (learnSwitch >= 0) {  // a PROFILE SWITCH KEY: the later bind wins, after a warning
+      const int direction = learnSwitch;
+      setLearnArmed(false, false);
+      const auto uses = midiStore->otherProfilesUsing(b.key);
+      if (uses.empty()) {
+        bindSwitch(direction, b.key);
+        return;
+      }
+      switchConfirm.open = true;
+      switchConfirm.direction = direction;
+      switchConfirm.key = b.key;
+      switchConfirm.generation = midiStore->generation();
+      for (const auto& u : uses) switchConfirm.uses.push_back(u.profile + ": " + midi_ui::targetText(u.binding));
+      return;
+    }
     b.targetKind = learnTargetIsAction ? core::MidiTargetKind::action : core::MidiTargetKind::parameter;
     b.parameter = learnParameter;
     b.action = learnAction;
@@ -443,7 +495,11 @@ struct EditorShared {
   bool key(const IKeyPress& k, bool up) {
     static const char kKeys[] = "awsedftgyhujkolp;";
     if (k.VK == kVK_ESCAPE && midiOpen) {
-      if (!up) { if (profileBrowser) showProfiles(false); else showMidi(false); }
+      if (!up) {
+        if (switchConfirm.open) cancelSwitchConfirm();
+        else if (profileBrowser) showProfiles(false);
+        else showMidi(false);
+      }
       return true;
     }
     if (k.VK == kVK_ESCAPE && menuOpen) {
@@ -454,6 +510,13 @@ struct EditorShared {
     if (!up && (c == 'z' || c == 'x')) {
       shiftOctave(c == 'x' ? 1 : -1);
       logUi(diag::Level::debug, "octave %+d (key %c)", octave, c);
+      return true;
+    }
+    if (c == '[' || c == ']') {  // the keybed triangles: previous / next MIDI profile
+      if (!up && !midiOpen && midi.stepProfile) {
+        flashStep(c == ']' ? 1 : -1);
+        midi.stepProfile(c == ']' ? 1 : -1);
+      }
       return true;
     }
     if (c == 'm') {  // MARK: "I heard it just now" -> a numbered mark and a snapshot in the log
@@ -954,18 +1017,28 @@ class JoystickControl : public IControl {
 class CartridgeControl : public IControl {
  public:
   CartridgeControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  // The slot's LCD lights up for 3 s whenever what it shows changes (lcd_display.h).
+  bool IsDirty() override {
+    if (w_.id == 1) return IControl::IsDirty();
+    const double now = EditorShared::uiNow();
+    const bool changed = backlight_.show(cartridgeName(s_.engine.slotCartridge()) + "|" + sideLine(0) + "|" + sideLine(1), now);
+    return changed || backlight_.animating(now) || IControl::IsDirty();
+  }
   void Draw(IGraphics& g) override {
     if (w_.id == 1) {
       g.FillCircle(col(theme::kInk), float(w_.cx), float(w_.cy), 16);
       g.FillCircle(col(mMouseIsOver ? theme::kAmber : theme::Rgb{60, 60, 60}), float(w_.cx), float(w_.cy), 10);
       return;
     }
+    const float glow = static_cast<float>(backlight_.glow(EditorShared::uiNow()));
+    auto mix = [glow](int a, int b) { return static_cast<std::uint8_t>(a + (b - a) * glow); };
     const IRECT r = rectOf(w_);
     g.FillRect(col(theme::kInk), r);
     const IRECT label(r.L + 7, r.T + 5, r.R - 7, r.T + 23);
-    g.FillRect(col(mMouseIsOver ? theme::Rgb{190, 142, 58} : theme::Rgb{160, 118, 46}), label);
+    g.FillRect(col(mMouseIsOver ? theme::Rgb{mix(190, 215), mix(142, 168), mix(58, 80)}
+                                : theme::Rgb{mix(160, 210), mix(118, 160), mix(46, 72)}), label);
     g.DrawText(txt(12, theme::kInk), cartridgeName(s_.engine.slotCartridge()).c_str(), label);
-    const theme::Rgb lit{235, 190, 110};
+    const theme::Rgb lit{mix(235, 255), mix(190, 225), mix(110, 160)};
     g.DrawText(txt(11, lit, false), sideLine(0).c_str(), IRECT(r.L, r.T + 27, r.R, r.T + 43));
     g.DrawText(txt(11, lit, false), sideLine(1).c_str(), IRECT(r.L, r.T + 44, r.R, r.T + 60));
   }
@@ -1018,6 +1091,7 @@ class CartridgeControl : public IControl {
   }
   EditorShared& s_;
   Widget w_;
+  LcdBacklight backlight_;
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1079,10 +1153,46 @@ class DisplayControl : public IControl {
   DisplayControl(EditorShared& s, const Widget& w) : IControl(rectOf(w).GetPadded(12.f)), s_(s), screen_(rectOf(w)) {
     SetIgnoreMouse(true);
   }
+  // Two lines: OCT / MENU / the plate being tuned, over the MIDI profile name. Any change
+  // lights the screen up for 3 s (lcd_display.h); a name too long for the line slides.
+  bool IsDirty() override {
+    const double now = EditorShared::uiNow();
+    const std::string name = s_.midiProfileName();
+    if (name != name_) {
+      name_ = name;
+      nameAt_ = now;
+    }
+    const bool changed = backlight_.show(line1() + "\n" + name_, now);
+    return changed || backlight_.animating(now) || overflow_ > 0.f || IControl::IsDirty();
+  }
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
     const IRECT& r = screen_;
-    art::drawDisplay(sink, r.L, r.T, r.R, r.B);
+    const double now = EditorShared::uiNow();
+    const float glow = static_cast<float>(backlight_.glow(now));
+    art::drawDisplay(sink, r.L, r.T, r.R, r.B, glow);
+    const theme::Rgb ink{static_cast<std::uint8_t>(225 + 30 * glow), static_cast<std::uint8_t>(232 + 23 * glow), 255};
+    g.DrawText(txt(18, ink), line1().c_str(), IRECT(r.L, r.T + 4, r.R, r.T + 30));
+    // The profile name: centred when it fits, else sliding inside the line.
+    const IRECT line(r.L + 8, r.T + 32, r.R - 8, r.B - 6);
+    IText style = txt(15, ink);
+    IRECT measured;
+    g.MeasureText(style, name_.c_str(), measured);
+    overflow_ = std::max(0.f, measured.W() - line.W());
+    if (overflow_ <= 0.f) {
+      g.DrawText(style, name_.c_str(), line);
+    } else {
+      style.mAlign = EAlign::Near;
+      const float shift = static_cast<float>(lcd_marquee_offset(overflow_, now - nameAt_));
+      g.PathClipRegion(line);
+      g.DrawText(style, name_.c_str(), IRECT(line.L - shift, line.T, line.L - shift + measured.W() + 4.f, line.B));
+      g.PathClipRegion();
+    }
+    art::drawDisplayGlass(sink, r.L, r.T, r.R, r.B);
+  }
+
+ private:
+  std::string line1() const {
     char b[32];
     if (!s_.engine.isReady()) std::snprintf(b, sizeof b, "NO AUDIO");  // see Preferences > audio device
     else if (s_.menuOpen) std::snprintf(b, sizeof b, "MENU");
@@ -1090,13 +1200,62 @@ class DisplayControl : public IControl {
       static const char* const kNames[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
       std::snprintf(b, sizeof b, "%s %+.2f", kNames[s_.tunePlate % 12], s_.engine.keyboardPlateTune(s_.tunePlate));
     } else std::snprintf(b, sizeof b, "OCT %+d", s_.octave);
-    g.DrawText(txt(18, {235, 240, 255}), b, r);
-    art::drawDisplayGlass(sink, r.L, r.T, r.R, r.B);
+    return b;
+  }
+  EditorShared& s_;
+  IRECT screen_;
+  LcdBacklight backlight_;
+  std::string name_;
+  double nameAt_ = 0.0;
+  float overflow_ = 0.f;
+};
+
+// A keybed triangle (printed by art::drawKeybedMarks): the left one steps to the previous MIDI
+// profile, the right one to the next. A press fills the outline for a moment.
+class ProfileStepControl : public IControl {
+ public:
+  ProfileStepControl(EditorShared& s, const Widget& w) : IControl(rectOf(w)), s_(s), w_(w) {}
+  static constexpr double kFlashSeconds = 0.15;  // tuned by eye
+  bool IsDirty() override {
+    const bool flashing = EditorShared::uiNow() - s_.stepFlashAt[w_.id] < kFlashSeconds;
+    if (flashing != shownFlash_) return true;
+    return flashing || IControl::IsDirty();
+  }
+  void Draw(IGraphics& g) override {
+    shownFlash_ = EditorShared::uiNow() - s_.stepFlashAt[w_.id] < kFlashSeconds;
+    if (!shownFlash_ && !mMouseIsOver) return;
+    // The printed outline's inner edge (art::drawKeybedMarks: tip 1380, base 1463, half 49, line 9).
+    const float cx = float(w_.cx), tip = 1380.f, base = 1463.f, half = 49.f;
+    const float alpha = shownFlash_ ? 0.95f : 0.18f;
+    g.PathMoveTo(cx, tip + 4.f);
+    g.PathLineTo(cx + half - 6.f, base - 2.f);
+    g.PathLineTo(cx - half + 6.f, base - 2.f);
+    g.PathClose();
+    g.PathFill(IPattern(IColor(static_cast<int>(alpha * 255), 242, 242, 242)));
+  }
+  void OnMouseOver(float x, float y, const IMouseMod& mod) override {
+    IControl::OnMouseOver(x, y, mod);
+    s_.readout = w_.id == 0 ? "PREVIOUS MIDI PROFILE  [" : "NEXT MIDI PROFILE  ]";
+    s_.readoutX = float(w_.cx);
+    s_.readoutY = float(w_.y() - 22);
+    GetUI()->SetAllControlsDirty();
+  }
+  void OnMouseOut() override {
+    IControl::OnMouseOut();
+    s_.readout.clear();
+    GetUI()->SetAllControlsDirty();
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override {
+    const int direction = w_.id == 0 ? -1 : 1;
+    s_.flashStep(direction);
+    if (s_.midi.stepProfile) s_.midi.stepProfile(direction);
+    SetDirty(false);
   }
 
  private:
   EditorShared& s_;
-  IRECT screen_;
+  Widget w_;
+  bool shownFlash_ = false;
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1607,6 +1766,10 @@ class MidiOverlayControl : public IControl {
     state.armed = s_.learnArmed;
     state.awaitTarget = s_.learnAwaitTarget;
     state.editable = editable();
+    if (s_.midiStore) state.global = s_.midiStore->global();
+    state.confirmSwitch = s_.switchConfirm.open;
+    state.confirmDirection = s_.switchConfirm.direction;
+    state.confirmUses = s_.switchConfirm.uses;
     midi_ui::draw(sink, state, hoverX_, hoverY_);
   }
   void OnMouseOver(float x, float y, const IMouseMod&) override {
@@ -1631,6 +1794,12 @@ class MidiOverlayControl : public IControl {
       return;
     }
     if (!s_.midiStore) return;
+    if (s_.switchConfirm.open) {  // BIND or CANCEL first; nothing else answers meanwhile
+      if (midi_ui::kConfirmBind.contains(x, y)) s_.confirmSwitch();
+      else if (midi_ui::kConfirmCancel.contains(x, y)) s_.cancelSwitchConfirm();
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
     const auto unavailableDeleteId = s_.unavailableDeleteId;
     s_.unavailableDeleteId.clear();
     if (midi_ui::kProfile.contains(x, y)) {
@@ -1732,9 +1901,24 @@ class MidiOverlayControl : public IControl {
       SetDirty(false);
       return;
     }
+    for (int i = 0; i < 2; ++i) {
+      if (s_.learnArmed && s_.learnAwaitTarget && midi_ui::switchTarget(i).contains(x, y)) {
+        s_.setLearnArmed(true, false);
+        s_.learnSwitch = i;  // wait for the hardware key that will step this way
+        s_.learnArmSeq = s_.midi.messageSeq ? s_.midi.messageSeq() : 0;
+        GetUI()->SetAllControlsDirty();
+        return;
+      }
+      if (s_.midiStore->global().switchBound[i] && midi_ui::switchRemove(i).contains(x, y)) {
+        if (s_.midiStore->unbindSwitch(i) && s_.midi.switchesChanged) s_.midi.switchesChanged();
+        GetUI()->SetAllControlsDirty();
+        return;
+      }
+    }
     if (s_.learnArmed && s_.learnAwaitTarget) {
       for (int i = 0; i < 5; ++i)
         if (midi_ui::action(i).contains(x, y)) {
+          s_.learnSwitch = -1;
           s_.learnTargetIsAction = true;
           s_.learnAction = midi_ui::kActions[i];
           s_.setLearnArmed(true, false);
@@ -1748,7 +1932,7 @@ class MidiOverlayControl : public IControl {
       bool changed = false;
       if (midi_ui::remove(i).contains(x, y))
         changed = s_.midiStore->unbind(binding.key);
-      else if (midi_ui::mode(i).contains(x, y) &&
+      else if (midi_ui::mode(i).contains(x, y) && !midi_ui::shadowedBySwitch(s_.midiStore->global(), binding.key) &&
                ((binding.targetKind == core::MidiTargetKind::parameter &&
                  core::midi_parameter_drive(binding) == core::MidiParameterDrive::follow) ||
                 (binding.targetKind == core::MidiTargetKind::action && binding.key.kind == core::MidiBindingKind::cc &&
@@ -1812,6 +1996,7 @@ class LearnCaptureControl : public IControl {
   void OnMouseDown(float x, float y, const IMouseMod&) override {
     for (const auto& b : s_.midiBindables) {
       if (x >= float(b.x0) && x <= float(b.x1) && y >= float(b.y0) && y <= float(b.y1)) {
+        s_.learnSwitch = -1;
         s_.learnTargetIsAction = b.isAction;
         s_.learnParameter = b.param;
         s_.learnAction = b.action;
@@ -1893,6 +2078,7 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       case WidgetKind::Encoder: g->AttachControl(new EncoderControl(shared, w)); break;
       case WidgetKind::OctaveKey: g->AttachControl(new OctaveKeyControl(shared, w)); break;
       case WidgetKind::Display: g->AttachControl(new DisplayControl(shared, w)); break;
+      case WidgetKind::ProfileStep: g->AttachControl(new ProfileStepControl(shared, w)); break;
       case WidgetKind::PhotoSensor: g->AttachControl(new PhotoSensorControl(shared, w)); break;
       case WidgetKind::OscStatus: g->AttachControl(new OscStatusControl(shared, w)); break;
     }

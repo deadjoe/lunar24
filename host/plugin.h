@@ -46,6 +46,10 @@ public:
   // size into the drawing size at scale 1, which crops the fixed 2400 x 1552 panel; keep the
   // panel's size and scale it to fit the window instead.
   void OnParentWindowResize(int width, int height) override;
+#if IPLUG_EDITOR
+  // The editor went away: a MIDI panel it had open is closed too (switch keys work again).
+  void OnUIClose() override;
+#endif
 #if defined(APP_API) && defined(OS_WIN)
   void OnUIOpen() override;
   bool EditorResize(int width, int height) override;
@@ -139,8 +143,14 @@ public:
   double recordingSeconds() const { return recorder_.seconds(); }
   // The plugin's binding store (the MIDI settings overlay edits it through this).
   lunar24::host::MidiMapStore& midiStore() { return midiMapStore_; }
-  // Republish the current map (after the overlay edits it).
-  void republishMidiMap() { engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_(), midiMapStore_.settings()); }
+  // Republish the current map (after the overlay edits it). `resetBindings` false: only the
+  // playing settings or switch keys changed, so held knobs keep their pickup.
+  void republishMidiMap(bool resetBindings = true);
+  // UI thread: step to the previous (-1) / next (+1) MIDI profile (keybed triangles, [ / ],
+  // switch keys via OnIdle). Ignored while the MIDI panel is open. A busy library retries.
+  void stepMidiProfile(int direction);
+  // UI thread: the MIDI panel opened / closed. While open, switch keys do not switch.
+  void setMidiPanelOpen(bool open);
   // The last note/CC message seen, for the learn overlay: packed (kind << 20 |
   // channel << 8 | number) plus a sequence that bumps per message. Audio thread
   // writes, UI reads.
@@ -232,6 +242,9 @@ private:
   // snapshot the engine publishes.
   lunar24::host::MidiMapStore midiMapStore_;
   std::string midiInputDeviceName_;
+  bool midiPanelOpen_ = false;    // UI thread
+  int pendingProfileSteps_ = 0;   // UI thread: steps waiting for the profile library
+  void applyProfileSteps_();
   std::string panelFaceDir_;
   int panelFaceIndex_ = 0;  // loaded with the settings folder, before the panel is built
 

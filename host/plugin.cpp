@@ -200,6 +200,9 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
       republishMidiMap();
     };
     shared->midi.profileChanged = [this]() { republishMidiMap(); };
+    shared->midi.stepProfile = [this](int direction) { stepMidiProfile(direction); };
+    shared->midi.panelOpen = [this](bool open) { setMidiPanelOpen(open); };
+    shared->midi.switchesChanged = [this]() { republishMidiMap(false); };
     shared->panelFace = panelFaceIndex_;
     shared->savePanelFace = [this](int index) { rememberPanelFace_(index); };
 #ifndef APP_API
@@ -452,6 +455,54 @@ void LunarHostPlugin::rememberPanelFace_(int index)
   (void)lunar24::host::savePanelFaceIndex(panelFaceDir_, index, lunar24::host::kb_ui::kPanelFaceCount);
 }
 
+void LunarHostPlugin::republishMidiMap(bool resetBindings)
+{
+  const lunar24::core::MidiMap switches = lunar24::core::midi_switch_map(midiMapStore_.global());
+  engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_(), midiMapStore_.settings(), resetBindings,
+                         &switches, !midiPanelOpen_);
+}
+
+void LunarHostPlugin::setMidiPanelOpen(bool open)
+{
+  if (midiPanelOpen_ == open) return;
+  midiPanelOpen_ = open;
+  if (open) pendingProfileSteps_ = 0;  // presses queued before the panel opened are dropped
+  republishMidiMap(false);
+}
+
+void LunarHostPlugin::stepMidiProfile(int direction)
+{
+  if (midiPanelOpen_ || direction == 0) return;
+  pendingProfileSteps_ += direction > 0 ? 1 : -1;
+  applyProfileSteps_();
+}
+
+// One profile per step, in order; a busy library (another instance saving) keeps the rest
+// for the next OnIdle.
+void LunarHostPlugin::applyProfileSteps_()
+{
+  bool switched = false;
+  while (pendingProfileSteps_ != 0 && !midiPanelOpen_) {
+    const int direction = pendingProfileSteps_ > 0 ? 1 : -1;
+    const int result = midiMapStore_.step(direction);
+    if (result < 0) break;
+    pendingProfileSteps_ -= direction;
+    if (result > 0) switched = true;
+  }
+  if (midiPanelOpen_) pendingProfileSteps_ = 0;
+  if (!switched) return;
+  republishMidiMap();
+  lunar24::host::diag::log().writef(lunar24::host::diag::Cat::midi, lunar24::host::diag::Level::info, logInstance_,
+                                    "profile step -> %s", midiMapStore_.name().c_str());
+}
+
+#if IPLUG_EDITOR
+void LunarHostPlugin::OnUIClose()
+{
+  setMidiPanelOpen(false);
+}
+#endif
+
 void LunarHostPlugin::setMidiInputDeviceName(const char* name)
 {
   midiInputDeviceName_ = name != nullptr ? name : "";
@@ -467,10 +518,7 @@ void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int
   s.octaveShift = static_cast<std::int8_t>(std::clamp(octaveShift, -36, 36));
   s.velocityCurve = static_cast<lunar24::core::MidiVelocityCurve>(std::clamp(curve, 0, 2));
   s.splitNote = static_cast<std::uint8_t>(std::clamp(splitNote, int(kMidiSplitNoteLow), int(kMidiSplitNoteHigh)));
-  if (midiMapStore_.setSettings(s)) {
-    (void)midiMapStore_.save();
-    engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_(), s, false);
-  }
+  if (midiMapStore_.setSettings(s)) republishMidiMap(false);  // global: saved by the store
 }
 
 lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
@@ -606,6 +654,14 @@ void LunarHostPlugin::OnIdle()
   // Record what MIDI changed on the audio thread. Here, not in the panel's redraw, so it is
   // saved even while the panel is closed (a plugin window usually is).
   engine_.syncParametersFromAudioThread();
+  if (const int keySteps = engine_.takeProfileSteps()) {  // switch keys pressed on the controller
+    pendingProfileSteps_ += keySteps;
+#if IPLUG_EDITOR
+    if (uiState_ && GetUI() != nullptr)  // the keybed triangle flashes as if clicked
+      std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_)->flashStep(keySteps);
+#endif
+  }
+  if (pendingProfileSteps_ != 0) applyProfileSteps_();
   logIdle_();
 #ifdef APP_API
   if (!startupChimed_ && engine_.isReady()) {  // the first machine of this run is up

@@ -564,5 +564,51 @@ int main() {
       CHECK_EQ(e.runtime()->dronePhotoShade(3), 0.0);
     }
   }
+  // Profile switch keys: outrank profile rows, one step per press (pad hit or CC rising past
+  // 64), swallowed while the MIDI panel is open, and stepped by the UI thread.
+  {
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap m;
+    CHECK(m.bind(bindAction(10, 40, core::MidiAction::drone_key_1)));   // the same pad in the profile
+    CHECK(m.bind(bindCc("TestKit", 1, 20, core::ParameterId::effector_blend)));
+    core::MidiGlobalSettings g;
+    g.switchKey[1] = bindAction(10, 40, core::MidiAction::drone_key_1).key;  // NEXT = pad 40, ch 10
+    g.switchBound[1] = true;
+    g.switchKey[0] = bindCc("TestKit", 1, 21, core::ParameterId::effector_blend).key;  // PREV = CC 21
+    g.switchBound[0] = true;
+    const core::MidiMap sw = core::midi_switch_map(g);
+    e.publishMidiMap(m, "TestKit", {}, true, &sw, true);
+    const int nextRow = e.midiBindingRow(10, core::MidiBindingKind::note, 40);
+    CHECK(nextRow >= E::kMidiSwitchRowBase);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(nextRow), 100, 10);
+    const int prevRow = e.midiBindingRow(1, core::MidiBindingKind::cc, 21);
+    CHECK(prevRow >= E::kMidiSwitchRowBase);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(prevRow), 127);  // press
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(e.midiBindingRow(1, core::MidiBindingKind::cc, 21)), 127);  // held: no repeat
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(e.midiBindingRow(1, core::MidiBindingKind::cc, 21)), 0);    // release
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(e.midiBindingRow(1, core::MidiBindingKind::cc, 21)), 127);  // press again
+    CHECK(e.processBlock(nullptr, outs, 0, 2, 256) == E::Status::Rendered);
+    e.syncParametersFromAudioThread();
+    CHECK_EQ(e.takeProfileSteps(), 1 - 2);  // one NEXT, two PREVs
+    CHECK_EQ(e.takeProfileSteps(), 0);
+    CHECK(!e.runtime()->droneVoiceKey(0));   // the profile's pad row never fired
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20), 1);  // other rows unaffected
+    // The MIDI panel is open: the key is still swallowed (never a note) but does not step.
+    e.publishMidiMap(m, "TestKit", {}, false, &sw, false);
+    const int closedRow = e.midiBindingRow(10, core::MidiBindingKind::note, 40);
+    CHECK(closedRow >= E::kMidiSwitchRowBase);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(closedRow), 100, 10);
+    e.processBlock(nullptr, outs, 0, 2, 256);
+    e.syncParametersFromAudioThread();
+    CHECK_EQ(e.takeProfileSteps(), 0);
+    // No switch keys published: the profile row is back.
+    e.publishMidiMap(m, "TestKit", {}, false);
+    CHECK_EQ(e.midiBindingRow(10, core::MidiBindingKind::note, 40), 0);
+    // A switch key named for another device does not match this input.
+    e.publishMidiMap(m, "OtherKit", {}, false, &sw, true);
+    CHECK(e.midiBindingRow(1, core::MidiBindingKind::cc, 21) < E::kMidiSwitchRowBase);
+  }
   return test::finish("test_midi_map_apply");
 }

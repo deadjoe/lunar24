@@ -3,7 +3,10 @@
 // Shared settings/midi-profiles/: library.lock serializes UI transactions;
 // selected.txt contains the last selected ID; p<steady-clock ticks>-<sequence>.bin
 // contains "L24P", LE u32 version 1, a zero-padded 40-byte ASCII name, then the
-// core MIDI map/settings payload. Each file is replaced atomically. No audio-thread I/O.
+// core MIDI map/settings payload. global.bin holds the global MIDI settings (CHANNEL /
+// TRANSPOSE / VELOCITY / SPLIT and the two profile switch keys, core "L24G"); a profile
+// file's own settings block is kept as written but no longer read for playing.
+// Each file is replaced atomically. No audio-thread I/O.
 #pragma once
 
 #include <algorithm>
@@ -31,6 +34,12 @@ struct MidiProfileInfo {
   std::string id, name;
   std::uint32_t bindings = 0;
   bool readable = true;
+};
+// A hardware key that another (not current) profile binds: shown before the key becomes a
+// switch key there, so the player knows which profile to check.
+struct MidiKeyUse {
+  std::string profile;
+  core::MidiBinding binding;
 };
 
 namespace midi_profile_files {
@@ -125,8 +134,15 @@ inline bool decode(const std::vector<std::uint8_t>& bytes, std::string& name,
   const std::string parsed(text, end);
   if (!validName(parsed) || !std::all_of(end, text + kMidiProfileNameBytes, [](char c) { return c == 0; }))
     return false;
+  core::MidiMap parsedMap;
+  core::MidiRigSettings parsedSettings;
   if (!core::midi_map_decode(bytes.data() + kMidiProfileHeaderBytes,
-                             bytes.size() - kMidiProfileHeaderBytes, &map, &settings)) return false;
+                             bytes.size() - kMidiProfileHeaderBytes, &parsedMap, &parsedSettings)) return false;
+  for (std::uint32_t i = 0; i < parsedMap.count(); ++i)  // switch keys live only in global.bin
+    if (parsedMap.at(i).targetKind == core::MidiTargetKind::action &&
+        core::midi_action_is_profile_switch(parsedMap.at(i).action)) return false;
+  map = parsedMap;
+  settings = parsedSettings;
   name = parsed;
   return true;
 }
@@ -143,7 +159,10 @@ class MidiMapStore {
   std::string libraryPath() const { return app_state_file_ops::joinUtf8(directory_, "midi-profiles"); }
   std::string livePath() const { return path(id_ + ".bin"); }
   const core::MidiMap& map() const { return map_; }
-  const core::MidiRigSettings& settings() const { return settings_; }
+  // The playing settings are global (global.bin), the same whichever profile is current.
+  const core::MidiRigSettings& settings() const { return global_.rig; }
+  const core::MidiGlobalSettings& global() const { return global_; }
+  std::string globalPath() const { return path("global.bin"); }
   const std::string& id() const { return id_; }
   const std::string& name() const { return name_; }
   const std::string& error() const { return error_; }
@@ -163,12 +182,14 @@ class MidiMapStore {
     if (!lock || !scan()) { fail("Profile library unavailable. Retry."); return loadOutcome_ = MidiMapLoadOutcome::Unreadable; }
     if (profiles_.empty()) {
       if (!createUnlocked("Untitled", false)) return loadOutcome_ = MidiMapLoadOutcome::Unreadable;
+      loadGlobalUnlocked();
       return loadOutcome_ = MidiMapLoadOutcome::NoFile;
     }
     std::vector<std::uint8_t> selected;
     midi_profile_files::read(path("selected.txt"), selected, 64);
     const std::string wanted(selected.begin(), selected.end());
     if (!adoptReadable(wanted)) return loadOutcome_ = MidiMapLoadOutcome::Malformed;
+    loadGlobalUnlocked();
     return loadOutcome_ = MidiMapLoadOutcome::Ok;
   }
   bool refresh() {
@@ -176,16 +197,89 @@ class MidiMapStore {
     midi_profile_files::Lock lock(path("library.lock"));
     if (!lock) return fail("Profile library busy. Retry.");
     if (!scan()) return false;
+    loadGlobalUnlocked();  // another instance may have changed the global settings
     if (editable() && !dirty_) error_.clear();
     return true;
   }
+  // Global: saved at once to global.bin (no profile is touched).
   bool setSettings(const core::MidiRigSettings& s) {
     if (!editable() || !core::midi_rig_settings_valid(s)) return false;
-    settings_ = s; dirty_ = true; return true;
+    core::MidiGlobalSettings g = global_;
+    g.rig = s;
+    return saveGlobal(g);
   }
+  // A profile binding. The later bind wins: a key that was a switch key stops being one.
+  // Switch actions never go into a profile (bindSwitch).
   bool bind(const core::MidiBinding& b) {
-    if (!editable() || !map_.bind(b)) return false;
-    dirty_ = true; return true;
+    if (!editable()) return false;
+    if (b.targetKind == core::MidiTargetKind::action && core::midi_action_is_profile_switch(b.action)) return false;
+    core::MidiGlobalSettings g = global_;
+    bool releasesSwitch = false;
+    for (int i = 0; i < 2; ++i)
+      if (g.switchBound[i] && g.switchKey[i].equals(b.key)) { g.switchBound[i] = false; releasesSwitch = true; }
+    if (!map_.bind(b)) return false;
+    dirty_ = true;
+    if (releasesSwitch) (void)saveGlobal(g);
+    return true;
+  }
+  // The PREV (0) / NEXT (1) triangle's one hardware key. The later bind wins: the key leaves
+  // the other triangle and the current profile. Other profiles keep their row, which the
+  // switch key then outranks (the MIDI panel greys it); otherProfilesUsing warns first.
+  bool bindSwitch(int direction, const core::MidiBindingKey& key) {
+    if (!editable() || direction < 0 || direction > 1 || !core::midi_binding_key_valid(key)) return false;
+    core::MidiGlobalSettings g = global_;
+    g.switchKey[direction] = key;
+    g.switchBound[direction] = true;
+    if (g.switchBound[1 - direction] && g.switchKey[1 - direction].equals(key)) g.switchBound[1 - direction] = false;
+    if (!saveGlobal(g)) return false;
+    if (map_.unbind(key)) dirty_ = true;
+    return true;
+  }
+  bool unbindSwitch(int direction) {
+    if (direction < 0 || direction > 1 || !global_.switchBound[direction]) return false;
+    core::MidiGlobalSettings g = global_;
+    g.switchBound[direction] = false;
+    return saveGlobal(g);
+  }
+  // Rows in the other readable profiles bound to exactly this key (profile name order).
+  std::vector<MidiKeyUse> otherProfilesUsing(const core::MidiBindingKey& key) {
+    std::vector<MidiKeyUse> uses;
+    midi_profile_files::Lock lock(path("library.lock"));
+    if (!lock || !scan()) return uses;
+    for (const auto& p : profiles_) {
+      if (p.id == id_ || !p.readable) continue;
+      std::vector<std::uint8_t> bytes; std::string name; core::MidiMap map; core::MidiRigSettings settings;
+      if (!midi_profile_files::read(path(p.id + ".bin"), bytes) ||
+          !midi_profile_files::decode(bytes, name, map, settings)) continue;
+      const int row = map.find(key);
+      if (row >= 0) uses.push_back({name, map.at(static_cast<std::uint32_t>(row))});
+    }
+    return uses;
+  }
+  // Performance switch (keybed triangles / switch keys): the previous (-1) or next (+1)
+  // readable profile in name order, wrapping. Pending edits are saved first. Unlike
+  // select(), the startup choice (selected.txt) is left alone. 1 = switched, 0 = nothing
+  // to switch to (or a save / read failed: see error()), -1 = library busy, retry later.
+  int step(int direction) {
+    if (direction == 0) return 0;
+    midi_profile_files::Lock lock(path("library.lock"));
+    if (!lock) return -1;
+    if (!scan()) return 0;
+    if (dirty_ && !saveUnlocked()) return 0;
+    const int n = static_cast<int>(profiles_.size());
+    int at = -1;
+    for (int i = 0; i < n; ++i)
+      if (profiles_[static_cast<std::size_t>(i)].id == id_) at = i;
+    if (at < 0) at = direction > 0 ? -1 : n;  // current file gone: start from an end
+    for (int k = 1; k <= n; ++k) {
+      const int i = ((at + (direction > 0 ? k : -k)) % n + n) % n;
+      const auto& p = profiles_[static_cast<std::size_t>(i)];
+      if (p.id == id_) break;  // went all the way round
+      if (!p.readable) continue;
+      if (adoptFile(p.id, false)) return 1;
+      error_.clear();  // unreadable since the scan: try the next one
+    }
+    return 0;
   }
   bool unbind(const core::MidiBindingKey& key) {
     if (!editable() || !map_.unbind(key)) return false;
@@ -262,6 +356,37 @@ class MidiMapStore {
 
  private:
   std::string path(const std::string& file) const { return app_state_file_ops::joinUtf8(libraryPath(), file); }
+  // global.bin: read when present and valid; otherwise the current profile's own playing
+  // settings seed it (an older library, or a damaged file), with no switch keys.
+  void loadGlobalUnlocked() {
+    std::vector<std::uint8_t> bytes;
+    core::MidiGlobalSettings g;
+    if (midi_profile_files::read(globalPath(), bytes, core::kMidiGlobalMaxBytes) &&
+        core::midi_global_decode(bytes.data(), bytes.size(), &g)) {
+      global_ = g;
+      return;
+    }
+    if (!globalSeeded_) {
+      global_ = core::MidiGlobalSettings{};
+      global_.rig = settings_;
+      globalSeeded_ = true;
+      // Write the seed at once (the caller holds the library lock), so every instance
+      // starting from this library agrees on it. A failed write is retried on the next change.
+      std::vector<std::uint8_t> seed(core::midi_global_wire_bytes(global_));
+      if (core::midi_global_encode(global_, seed.data(), seed.size()) == seed.size()) (void)write(globalPath(), seed);
+      error_.clear();
+    }
+  }
+  bool saveGlobal(const core::MidiGlobalSettings& g) {
+    std::vector<std::uint8_t> bytes(core::midi_global_wire_bytes(g));
+    if (core::midi_global_encode(g, bytes.data(), bytes.size()) != bytes.size()) return false;
+    midi_profile_files::Lock lock(path("library.lock"));
+    if (!lock) return fail("Profile library busy. Retry.");
+    if (!write(globalPath(), bytes)) return false;
+    global_ = g;
+    globalSeeded_ = true;
+    return true;
+  }
   bool fail(const char* message, bool recoverable = true) {
     error_ = message; recoverableError_ = recoverable; return false;
   }
@@ -381,7 +506,9 @@ class MidiMapStore {
     return true;
   }
   core::MidiMap map_;
-  core::MidiRigSettings settings_;
+  core::MidiRigSettings settings_;  // the current profile file's own block (kept, not played)
+  core::MidiGlobalSettings global_;
+  bool globalSeeded_ = false;
   std::string directory_, id_, name_, error_;
   std::vector<std::uint8_t> baseline_;
   std::vector<MidiProfileInfo> profiles_;

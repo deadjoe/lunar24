@@ -171,6 +171,8 @@ lunar_add_host_test(test_state_swap tests/host/test_state_swap.cpp tests/host/te
 lunar_add_host_test(test_midi_sustain tests/host/test_midi_sustain.cpp)
 lunar_add_host_test(test_midi_learn tests/host/test_midi_learn.cpp)
 lunar_add_host_test(test_midi_map_store tests/host/test_midi_map_store.cpp)
+lunar_add_host_test(test_lcd_display tests/host/test_lcd_display.cpp)
+lunar_add_host_test(test_midi_profile_switch_sim tests/host/test_midi_profile_switch_sim.cpp)
 lunar_add_host_test(test_midi_map_apply tests/host/test_midi_map_apply.cpp)
 find_package(Threads REQUIRED)
 target_link_libraries(test_midi_map_apply PRIVATE Threads::Threads)

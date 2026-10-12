@@ -1,6 +1,6 @@
 # Lunar 24 — status
 
-_Last updated: 2026-10-11._ Module-by-module comparison with the Solar 42N manual:
+_Last updated: 2026-10-12._ Module-by-module comparison with the Solar 42N manual:
 `design/ARCHITECTURE.md`. Manual test steps and results: `design/MANUAL_TESTS.md`.
 Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md`.
 
@@ -54,6 +54,8 @@ Sound-source review and the 2026-10-08 listening notes: `design/SOURCE_REVIEW.md
   master; pitch bend, sustain, MIDI clock. The MIDI button opens learn and controller
   settings. PROFILE manages named setups (bindings, channel, transpose, velocity, SPLIT),
   shared by App/plugins; edits auto-save. New profile UI/controller hand test: T15.12 ⏳.
+  Keybed triangles, `[` / `]` or learned switch keys step profiles while playing; the
+  display's second line names it; the four settings are global. Hand test: T15.13 ⏳.
 - REC (headphone corner): WET, DRY or ALL to 24-bit WAVs in Music/Lunar 24. `M` = log MARK.
 
 ## Next steps

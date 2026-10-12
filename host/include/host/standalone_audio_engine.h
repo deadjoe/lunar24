@@ -485,8 +485,16 @@ class StandaloneAudioEngine {
   // UI thread: publish a new binding snapshot — the map, the active input device's
   // name (nullptr: unknown, as in a plugin, so bindings for any device match). The audio
   // thread seeds bindings from its own current parameter values.
+  // `switches` are the global profile switch keys (core::midi_switch_map): they outrank
+  // every profile binding; while `switchesEnabled` is false (the MIDI panel is open) they are
+  // swallowed without switching.
   void publishMidiMap(const lunar24::core::MidiMap& map, const char* inputDevice,
-                      const lunar24::core::MidiRigSettings& settings = {}, bool resetBindings = true);
+                      const lunar24::core::MidiRigSettings& settings = {}, bool resetBindings = true,
+                      const lunar24::core::MidiMap* switches = nullptr, bool switchesEnabled = true);
+  // Rows at or above this are switch keys (row - kMidiSwitchRowBase indexes the switch map).
+  static constexpr int kMidiSwitchRowBase = static_cast<int>(lunar24::core::kMidiMapCapacity);
+  // UI thread: net profile steps the switch keys asked for since the last call (+ = NEXT).
+  int takeProfileSteps() { const int n = profileSteps_; profileSteps_ = 0; return n; }
   // Pin one complete configuration from filtering through application of a MIDI message.
   class MidiMessageScope {
    public:
@@ -677,6 +685,8 @@ class StandaloneAudioEngine {
   // third slot. The dirty bit means the middle slot contains a newer publication.
   struct MidiMapSlot {
     lunar24::core::MidiMap map;
+    lunar24::core::MidiMap switches;  // the global profile switch keys
+    bool switchesEnabled = true;
     lunar24::core::MidiRigSettings settings;
     std::uint64_t bindingRevision = 0;
     char device[lunar24::core::kMidiBindingDeviceCapacity] = {};
@@ -706,6 +716,8 @@ class StandaloneAudioEngine {
   std::uint8_t photoPadNote_[4] = {0, 0, 0, 0};
   void setPhotoShade_(int group, double shade);
   bool midiPickedUp_[lunar24::core::kMidiMapCapacity] = {};
+  int midiSwitchLastRaw_[2] = {-1, -1};  // audio: a CC switch key's last value (press = rise past 64)
+  int profileSteps_ = 0;                 // UI: queued switch-key steps (takeProfileSteps)
   std::array<std::atomic<float>, kPanelLedCount> leds_{};
   std::array<std::atomic<float>, 4> photoLight_{1.0f, 1.0f, 1.0f, 1.0f};
   std::array<std::atomic<float>, 20> oscLamps_{};
@@ -1514,9 +1526,13 @@ inline bool StandaloneAudioEngine::sendParameterFromAudioThread_(ParameterId id,
 // UI-only producer; audio owns its reader slot until it explicitly exchanges it.
 inline void StandaloneAudioEngine::publishMidiMap(const lunar24::core::MidiMap& map,
                                                   const char* inputDevice,
-                                                  const lunar24::core::MidiRigSettings& settings, bool resetBindings) {
+                                                  const lunar24::core::MidiRigSettings& settings, bool resetBindings,
+                                                  const lunar24::core::MidiMap* switches, bool switchesEnabled) {
   MidiMapSlot& s = midiMapSlots_[midiMapWriteIdx_];
   s.map = map;
+  if (switches != nullptr) s.switches = *switches;
+  else s.switches.clear();
+  s.switchesEnabled = switchesEnabled;
   s.settings = settings;
   if (resetBindings) ++midiUiBindingRevision_;
   s.bindingRevision = midiUiBindingRevision_;
@@ -1535,6 +1551,7 @@ inline void StandaloneAudioEngine::refreshMidiMap_() {
   // Adjusting only the playing settings must not re-arm pickup or held CC buttons.
   if (s.bindingRevision == midiSeenBindingRevision_) return;
   midiSeenBindingRevision_ = s.bindingRevision;
+  midiSwitchLastRaw_[0] = midiSwitchLastRaw_[1] = -1;
   for (std::uint32_t i = 0; i < s.map.count(); ++i) {
     const auto& b = s.map.at(i);
     midiValue_[i] = b.targetKind == lunar24::core::MidiTargetKind::parameter
@@ -1551,7 +1568,10 @@ inline int StandaloneAudioEngine::midiBindingRow(std::uint8_t channel,
   refreshMidiMap_();
   midiMatchPending_ = true;
   const auto& s = midiMapSlots_[midiMapReadIdx_];
-  const auto* b = lunar24::core::midi_map_find(s.map, s.deviceKnown ? s.device : nullptr, channel, kind, number);
+  const char* device = s.deviceKnown ? s.device : nullptr;
+  if (const auto* sw = lunar24::core::midi_map_find(s.switches, device, channel, kind, number))
+    return kMidiSwitchRowBase + static_cast<int>(sw - &s.switches.at(0));
+  const auto* b = lunar24::core::midi_map_find(s.map, device, channel, kind, number);
   return b == nullptr ? -1 : static_cast<int>(b - &s.map.at(0));
 }
 
@@ -1593,7 +1613,27 @@ inline void StandaloneAudioEngine::applyMidiBindingFromAudioThread(std::uint32_t
   if (!midiMatchPending_) refreshMidiMap_();
   midiMatchPending_ = false;
   const auto& s = midiMapSlots_[midiMapReadIdx_];
-  if (row >= s.map.count() || rawValue < 0 || rawValue > 127) return;
+  if (rawValue < 0 || rawValue > 127) return;
+  if (row >= static_cast<std::uint32_t>(kMidiSwitchRowBase)) {  // a profile switch key: one step per press
+    const std::uint32_t i = row - static_cast<std::uint32_t>(kMidiSwitchRowBase);
+    if (i >= s.switches.count()) return;
+    const lunar24::core::MidiBinding& b = s.switches.at(i);
+    const int dir = b.action == lunar24::core::MidiAction::profile_prev ? 0 : 1;
+    if (b.key.kind == lunar24::core::MidiBindingKind::cc) {
+      const bool wasOn = midiSwitchLastRaw_[dir] >= 64;
+      midiSwitchLastRaw_[dir] = rawValue;
+      if (rawValue < 64 || wasOn) return;
+    } else if (rawValue == 0) {
+      return;
+    }
+    if (!s.switchesEnabled) return;  // the MIDI panel is open: a stray press does nothing
+    lunar24::core::LiveCommand c;
+    c.kind = lunar24::core::LiveCommand::Kind::Action;
+    c.index = static_cast<std::uint32_t>(b.action);
+    (void)fromAudioQueue_.push(c);
+    return;
+  }
+  if (row >= s.map.count()) return;
   const lunar24::core::MidiBinding& b = s.map.at(row);
   SynthRuntime& rt = definition_->runtime();
 
@@ -1781,6 +1821,8 @@ inline int StandaloneAudioEngine::syncParametersFromAudioThread() {
           stepSlotCartridge(1);
         } else if (action == lunar24::core::MidiAction::cartridge_prev) {
           stepSlotCartridge(-1);
+        } else if (lunar24::core::midi_action_is_profile_switch(action)) {
+          profileSteps_ += action == lunar24::core::MidiAction::profile_next ? 1 : -1;  // the host steps
         } else if (action >= lunar24::core::MidiAction::preset_load_a &&
                    action <= lunar24::core::MidiAction::preset_load_d) {
           (void)postKeyboardPreset(PresetAction::Load,
