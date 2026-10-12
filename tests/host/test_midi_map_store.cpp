@@ -399,9 +399,9 @@ int main() {
     CHECK_EQ(s2.settings().channelFilter, 2);
     // A profile file holding a switch action is not a profile this version wrote: unreadable.
     {
-      core::MidiMap bad;
-      CHECK(bad.bind(sw));
-      const auto bytes = host::midi_profile_files::encode("Odd", bad, core::MidiRigSettings{});
+      core::MidiMap odd;
+      CHECK(odd.bind(sw));
+      const auto bytes = host::midi_profile_files::encode("Odd", odd, core::MidiRigSettings{});
       std::string name; core::MidiMap map; core::MidiRigSettings rs;
       CHECK(!host::midi_profile_files::decode(bytes, name, map, rs));
     }
