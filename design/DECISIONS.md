@@ -33,6 +33,14 @@ Keep these unless a listening test or a real bug says otherwise.
   pad also fires from that key and a played key on a bound note does not play. Rule for any
   pad you bind: give it a note outside the keyboard's playing range, counting octave shifts
   (e.g. a very high note), or set the pads to send CC instead of notes.
+  Way out without that rule (owner, 2026-10-12, after an AU test in Live): the plugins declare
+  all 16 MIDI channels (iPlug2's VST3 default is 1; AU always has 16), so Live's "MIDI To"
+  offers a channel and a pads track can send on channel 10. Each plugin instance remembers
+  the channels it has received this session; a row on such a channel answers only that
+  channel, so a key on channel 1 with the pad's note plays again. Not saved with the project,
+  so routing back to one channel and reloading the plugin (or the set) restores the
+  any-channel rule. Before the first pad hit after loading, that old rule still applies. Plugin Learn keeps a real channel
+  (anything but 1) and records channel 1 as ANY.
 - **Named MIDI profiles** (owner, 2026-10-10; settings made global 2026-10-12, see above):
   bindings form one controller setup. The app and plugins share `midi-profiles/`
   in the settings folder; DAW projects do not contain profiles. Each instance switches

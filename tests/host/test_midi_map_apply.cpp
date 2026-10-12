@@ -614,6 +614,18 @@ int main() {
     e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(pluginRow), 87, 1);
     e.syncParametersFromAudioThread();
     CHECK_EQ(e.takeProfileSteps(), 1);
+    // Live routes the pads' track to channel 10 (owner's AU log, 2026-10-12): from the first
+    // message on channel 10, rows on 10 answer 10 only, so a key on channel 1 with the pad's
+    // note plays again; the pad still switches.
+    const int routedRow = e.midiBindingRow(10, core::MidiBindingKind::note, 40);
+    CHECK(routedRow >= E::kMidiSwitchRowBase);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(routedRow), 90, 10);
+    e.syncParametersFromAudioThread();
+    CHECK_EQ(e.takeProfileSteps(), 1);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::note, 40), -1);
+    CHECK(e.midiBindingRow(10, core::MidiBindingKind::note, 40) >= E::kMidiSwitchRowBase);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20), 1);   // channel 1 is real too:
+    CHECK_EQ(e.midiBindingRow(5, core::MidiBindingKind::cc, 20), -1);  // its rows answer 1 only
     // A switch key named for another device does not match this input.
     e.publishMidiMap(m, "OtherKit", {}, false, &sw, true);
     CHECK(e.midiBindingRow(1, core::MidiBindingKind::cc, 21) < E::kMidiSwitchRowBase);

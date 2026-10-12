@@ -469,17 +469,23 @@ inline bool midi_global_decode(const std::uint8_t* in, std::size_t n, MidiGlobal
 // input is unknown (a plugin: the DAW passes MIDI on without naming the
 // controller), so a binding for any device matches, ranked the same way. Its
 // channel is not trusted either (Ableton Live hands every note to a plugin on
-// channel 1): any channel matches, a row on the message's own channel ranking first.
+// channel 1 unless a track routes it to a channel): any channel matches, a row on
+// the message's own channel ranking first. Once the plugin has seen a message
+// arrive on a channel (`realChannels`, bit c-1 for channel c), the DAW evidently
+// keeps that channel, so a row on it answers its own channel only: a pad on 10
+// no longer fires from a key with the same note on channel 1.
 inline const MidiBinding* midi_map_find(const MidiMap& map, const char* device,
                                         std::uint8_t channel, MidiBindingKind kind,
-                                        std::uint8_t number) {
+                                        std::uint8_t number, std::uint16_t realChannels = 0) {
   const MidiBinding* best = nullptr;
   int bestScore = -1;
   const bool plugin = device == nullptr;
   for (std::uint32_t i = 0; i < map.count(); ++i) {
     const MidiBinding& b = map.at(i);
     if (b.key.kind != kind || b.key.number != number) continue;
-    if (!plugin && b.key.channel != 0 && b.key.channel != channel) continue;
+    const bool strict = !plugin || (b.key.channel >= 1 && b.key.channel <= 16 &&
+                                    ((realChannels >> (b.key.channel - 1)) & 1u) != 0);
+    if (strict && b.key.channel != 0 && b.key.channel != channel) continue;
     const bool anyDevice = b.key.device[0] == '\0';
     if (!anyDevice && !plugin && std::strncmp(b.key.device, device, kMidiBindingDeviceCapacity) != 0)
       continue;

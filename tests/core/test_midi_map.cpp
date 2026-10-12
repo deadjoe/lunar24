@@ -292,6 +292,20 @@ int main() {
     CHECK(midi_map_find(pads, nullptr, 1, cc, 39)->parameter == ParameterId::effector_blend);
     CHECK(midi_map_find(pads, nullptr, 10, cc, 39)->parameter == ParameterId::vcf_l_freq);
     CHECK(midi_map_find(other, "", 5, cc, 20) == nullptr);  // a known "no device" still filters
+    // Once the plugin has seen channel 10 arrive (a DAW that keeps it), a row on 10 answers 10
+    // only; rows on channels never seen still take any channel; the app ignores the mask.
+    const std::uint16_t seen10 = 1u << 9;
+    MidiMap pad10;
+    CHECK(pad10.bind(ccBinding("MPK", 10, 39, ParameterId::vcf_l_freq)));
+    CHECK(midi_map_find(pad10, nullptr, 1, cc, 39, seen10) == nullptr);
+    CHECK(midi_map_find(pad10, nullptr, 10, cc, 39, seen10)->parameter == ParameterId::vcf_l_freq);
+    CHECK(midi_map_find(pad10, nullptr, 1, cc, 39, 1u)->parameter == ParameterId::vcf_l_freq);  // only 1 seen
+    CHECK(midi_map_find(pads, nullptr, 3, cc, 39, seen10)->parameter == ParameterId::effector_blend);
+    CHECK(midi_map_find(pads, nullptr, 1, cc, 39, seen10)->parameter == ParameterId::effector_blend);
+    CHECK(midi_map_find(pad10, "MPK", 10, cc, 39, 0xFFFFu)->parameter == ParameterId::vcf_l_freq);
+    MidiMap anyCh;
+    CHECK(anyCh.bind(ccBinding("", 0, 39, ParameterId::vcf_l_res)));
+    CHECK(midi_map_find(anyCh, nullptr, 7, cc, 39, 0xFFFFu)->parameter == ParameterId::vcf_l_res);
   }
   // midi_relative_delta: the three vendor dialects.
   {

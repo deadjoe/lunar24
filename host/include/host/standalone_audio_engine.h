@@ -701,6 +701,10 @@ class StandaloneAudioEngine {
   std::uint64_t midiSeenBindingRevision_ = 0;  // audio only
   bool midiMessageActive_ = false;
   bool midiMatchPending_ = false;
+  // Audio only, plugins: the channels messages have arrived on (bit c-1). A DAW that keeps
+  // a channel makes the bindings on it answer that channel only (midi_map_find). Never
+  // cleared: a routing change back to one channel just stops new channels from appearing.
+  std::uint16_t midiRealChannels_ = 0;
   // Audio-owned current control values, initialized at the stopped-stream boundary.
   double midiParameterValue_[lunar24::core::kParameterIdSpace] = {};
   void refreshMidiMap_();
@@ -1569,9 +1573,10 @@ inline int StandaloneAudioEngine::midiBindingRow(std::uint8_t channel,
   midiMatchPending_ = true;
   const auto& s = midiMapSlots_[midiMapReadIdx_];
   const char* device = s.deviceKnown ? s.device : nullptr;
-  if (const auto* sw = lunar24::core::midi_map_find(s.switches, device, channel, kind, number))
+  if (device == nullptr && channel >= 1 && channel <= 16) midiRealChannels_ |= static_cast<std::uint16_t>(1u << (channel - 1));
+  if (const auto* sw = lunar24::core::midi_map_find(s.switches, device, channel, kind, number, midiRealChannels_))
     return kMidiSwitchRowBase + static_cast<int>(sw - &s.switches.at(0));
-  const auto* b = lunar24::core::midi_map_find(s.map, device, channel, kind, number);
+  const auto* b = lunar24::core::midi_map_find(s.map, device, channel, kind, number, midiRealChannels_);
   return b == nullptr ? -1 : static_cast<int>(b - &s.map.at(0));
 }
 

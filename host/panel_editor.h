@@ -150,8 +150,9 @@ struct EditorShared {
   // The plugins: REC looks the same but does not respond (a DAW records), MIDI comes from the DAW.
   bool recorderEnabled = true;
   const char* midiNoDevice = "Choose an input in Preferences";
-  // The plugins: the DAW may rewrite MIDI channels (Live sends everything on channel 1), so
-  // Learn records ANY channel there and the CHANNEL setting applies to the app only.
+  // The plugins: the DAW may rewrite MIDI channels (Live sends everything on channel 1 unless
+  // a track routes it to a channel), so Learn records channel 1 as ANY channel there (any
+  // other channel is real and kept), and the CHANNEL setting applies to the app only.
   bool midiFromDaw = false;
   std::string midiVersion, midiBuild;  // plugins: shown in the MIDI panel (the app has About)
   std::uint64_t seenStateVersion = ~0ull;
@@ -284,7 +285,8 @@ struct EditorShared {
     const std::uint32_t m = midi.lastMessage();
     core::MidiBinding b{};
     b.key.kind = ((m >> 20) & 1u) ? core::MidiBindingKind::cc : core::MidiBindingKind::note;
-    b.key.channel = midiFromDaw ? std::uint8_t{0} : static_cast<std::uint8_t>((m >> 8) & 0x1Fu);
+    b.key.channel = static_cast<std::uint8_t>((m >> 8) & 0x1Fu);
+    if (midiFromDaw && b.key.channel == 1) b.key.channel = 0;
     b.key.number = static_cast<std::uint8_t>(m & 0xFFu);
     if (b.key.kind == core::MidiBindingKind::cc && b.key.number == 64) return;
     const std::string dev = midi.inputDeviceName ? midi.inputDeviceName() : "";

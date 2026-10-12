@@ -399,6 +399,9 @@ endfunction()
 
 if(EXISTS "${IPLUG2_DIR}/Dependencies/IPlug/VST3_SDK/pluginterfaces/vst/ivstaudioprocessor.h")
   lunar_add_plugin(Lunar24-vst3 VST3)
+  # All 16 MIDI channels (iPlug2 declares 1): a DAW then offers them for routing (Live's
+  # "MIDI To" channel list), so pads on channel 10 stay apart from keys on channel 1.
+  target_compile_definitions(Lunar24-vst3 PRIVATE VST3_NUM_MIDI_IN_CHANS=16 VST3_NUM_CC_CHANS=16)
 else()
   message(STATUS "Lunar24: no VST3 SDK in ${IPLUG2_DIR}/Dependencies/IPlug/VST3_SDK; the VST3 plugin is not built.")
 endif()
