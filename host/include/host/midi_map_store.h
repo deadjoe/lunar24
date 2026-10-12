@@ -45,9 +45,9 @@ struct MidiKeyUse {
 
 namespace midi_profile_files {
 // UI-thread transactions only. A crashed process releases the OS lock automatically.
-// Another instance holds it for a few milliseconds per transaction, so wait up to
-// kLockWait before reporting the library busy.
-inline constexpr std::chrono::milliseconds kLockWait{100};
+// Another instance holds it for one transaction (a few fsync'd writes: usually milliseconds,
+// longer on a busy disk), so wait up to kLockWait before reporting the library busy.
+inline constexpr std::chrono::milliseconds kLockWait{500};
 class Lock {
  public:
   explicit Lock(const std::string& path) {

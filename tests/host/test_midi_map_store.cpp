@@ -568,7 +568,14 @@ int main() {
       });
       while (held == 0) std::this_thread::yield();
       CHECK_EQ(held.load(), 1);
-      CHECK(w.save());
+      const auto start = std::chrono::steady_clock::now();
+      const bool saved = w.save();
+      if (!saved)
+        std::printf("  save under a 30 ms peer lock failed after %lld ms: %s\n",
+                    static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - start).count()),
+                    w.error().c_str());
+      CHECK(saved);
       CHECK(w.error().empty());
       peer.join();
     }
