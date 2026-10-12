@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -21,7 +22,9 @@
 #include <host/diag_log.h>
 #include <host/panel_diagnostics.h>
 #include <host/rt_log.h>
+#include <host/midi_devices.h>
 #include <host/midi_map_store.h>
+#include <host/midi_settings_view.h>
 #include <host/midi_sustain.h>
 #include <host/midi_timing.h>
 #include <host/wav_recorder.h>
@@ -131,14 +134,17 @@ public:
   void setMidiInputDeviceName(const char* name) { setMidiInputDevice(0, name); }
   void setMidiInputDevice(unsigned device, const char* name);
 
-  // ---- MIDI rig settings (channel filter / octave shift / velocity curve) -----------
-  // The panel's MIDI settings overlay edits these; the store persists them. The audio
-  // thread receives a complete snapshot; the UI thread owns the store.
-  int midiChannelFilter() const { return midiMapStore_.settings().channelFilter; }
-  int midiOctaveShift() const { return midiMapStore_.settings().octaveShift; }
-  int midiVelocityCurve() const { return static_cast<int>(midiMapStore_.settings().velocityCurve); }
-  int midiSplitNote() const { return midiMapStore_.settings().splitNote; }
-  void setMidiRigSettings(int channelFilter, int octaveShift, int curve, int splitNote);
+  // ---- MIDI inputs and their settings (the MIDI panel's DEVICES tab) -----------------
+  // UI thread. The app's host owns the ports: it reports the ports it sees to midiDevices(),
+  // applies its plan (opening input slots, setMidiInputDevice) and saves the choice; it sets
+  // applyMidiDevices to do that after the panel turns a port on or off. A plugin has one
+  // input, the DAW track. Each input's CHANNEL / TRANSPOSE / VELOCITY / SPLIT live in the store
+  // (global.bin); the audio thread receives them in the published snapshot.
+  lunar24::host::MidiDeviceSetup& midiDevices() { return midiDevices_; }
+  std::function<void()> applyMidiDevices;
+  std::vector<lunar24::host::midi_ui::DeviceRow> midiDeviceRows();
+  bool setMidiDeviceOn(const std::string& name, bool on);
+  bool setMidiDeviceRig(const std::string& name, const lunar24::core::MidiRigSettings& rig);
   // UI thread: REC. Starts recording `source` (0 WET, 1 DRY, 2 ALL) to Music/Lunar 24, or stops
   // and opens that folder. The app only (a DAW records the plugin itself).
   void toggleRecording(int source);
@@ -246,7 +252,14 @@ private:
   // ("" = none/virtual). Both are UI-thread state; the audio thread sees only the
   // snapshot the engine publishes.
   lunar24::host::MidiMapStore midiMapStore_;
-  std::string midiInputDeviceNames_[lunar24::host::kMidiInputDevices];
+  std::string midiInputDeviceNames_[lunar24::host::kMidiInputDevices];  // what bindings match ("" = any)
+  lunar24::host::MidiDeviceSetup midiDevices_;  // UI thread: which ports the app listens to
+  // Activity lights: the audio thread counts each input's messages; the UI notes when each
+  // count last moved.
+  std::atomic<std::uint32_t> midiActivity_[lunar24::host::kMidiInputDevices] = {};
+  std::uint32_t midiActivitySeen_[lunar24::host::kMidiInputDevices] = {};
+  std::chrono::steady_clock::time_point midiActivityAt_[lunar24::host::kMidiInputDevices] = {};
+  bool midiActive_(unsigned device);
   bool midiPanelOpen_ = false;    // UI thread
   int pendingProfileSteps_ = 0;   // UI thread: steps waiting for the profile library
   std::chrono::steady_clock::time_point lastGlobalCheck_{};  // UI thread: global.bin polled from OnIdle

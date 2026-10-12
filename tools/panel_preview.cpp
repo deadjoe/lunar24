@@ -12,6 +12,7 @@
 //   panel_preview --midi-profile-error / --midi-profile-delete / --midi-profile-unavailable / --midi-profile-retry
 //   panel_preview --midi-validation / --midi-profile-validation
 //   panel_preview --midi-switch / --midi-confirm   (profile switch keys: NEXT bound, the BIND confirmation)
+//   panel_preview --midi-devices / --midi-devices-plugin / --midi-devices-note / --midi-devices-none
 //   panel_preview --widgets > w.json   (control boxes, for tools/gen_panel_art.py)
 
 #include <algorithm>
@@ -347,8 +348,22 @@ int main(int argc, char** argv) {
     core::MidiMap map;
     midi_ui::State state;
     state.map = &map;
+    // The app's DEVICES: the MPK and the iPad on (the iPad just sent a message), a port
+    // turned off, one that is on but unplugged, and the virtual input.
+    auto rig = [](int ch, int oct, int curve, int split) {
+      core::MidiRigSettings r;
+      r.channelFilter = static_cast<std::uint8_t>(ch);
+      r.octaveShift = static_cast<std::int8_t>(oct);
+      r.velocityCurve = static_cast<core::MidiVelocityCurve>(curve);
+      r.splitNote = static_cast<std::uint8_t>(split);
+      return r;
+    };
+    state.devices = {{"MPK mini IV", true, true, false, false, false, rig(0, 0, 0, 60)},
+                     {"iPad", true, true, false, false, true, rig(10, -12, 2, 48)},
+                     {"IAC Driver Bus 1", false, true, false, false, false, rig(0, 0, 0, 60)},
+                     {"Launch Control XL", true, false, false, false, false, rig(9, 0, 1, 60)},
+                     {"To Lunar 24", false, true, false, true, false, rig(0, 0, 0, 60)}};
     if (midiExample) {
-      state.device = "MPK mini IV";
       core::MidiBinding b{};
       std::snprintf(b.key.device,sizeof(b.key.device),"MPK mini IV");
       b.key.channel=1; b.key.number=21; b.parameter=core::ParameterId::vcf_l_freq; map.bind(b);
@@ -376,16 +391,25 @@ int main(int argc, char** argv) {
     if (option == "--midi-learn") { state.armed=true; state.awaitTarget=true; }
     if (option == "--midi-wait") state.armed=true;
     if (option == "--midi-error") state.editable=false;
-    if (option == "--midi-plugin") {  // the plugin's MIDI panel: no device, version shown
-      state.device.clear();
-      state.noDevice = "MIDI comes from the DAW track";
+    const bool pluginPanel = option == "--midi-plugin" || option == "--midi-profiles-plugin" ||
+                             option == "--midi-devices-plugin";
+    if (pluginPanel) {  // the plugin's MIDI panel: the DAW track, version shown
+      state.fromDaw = true;
+      state.devices = {{"DAW track", true, true, false, false, true, rig(0, 0, 1, 60)}};
+    }
+    if (option.rfind("--midi-devices", 0) == 0) state.devicesTab = true;
+    if (option == "--midi-devices-note") state.deviceNote = "Four devices are on already.";
+    if (option == "--midi-devices-none") state.devices.clear();
+    if (option == "--midi-devices-plugin") { state.version = "Lunar 24 1.0.0"; state.build = "Build 629 - 04cb244"; }
+    if (option == "--midi-plugin") {
       state.version = "Lunar 24 1.0.0";
       state.build = "Build 629 - 04cb244";
     }
     if (option == "--midi-long") {
-      state.device = std::string(63,'W');
+      const std::string longName(63, 'W');
+      state.devices[0].name = longName;
       core::MidiBinding b{};
-      std::snprintf(b.key.device,sizeof(b.key.device),"%s",state.device.c_str());
+      std::snprintf(b.key.device,sizeof(b.key.device),"%s",longName.c_str());
       b.key.number=99; b.parameter=core::ParameterId::vcf_l_freq; map.bind(b);
       state.offset=4;
     }
@@ -396,7 +420,7 @@ int main(int argc, char** argv) {
       }
       state.offset=4;
     }
-    if (option == "--midi-min") { state.octave=-36; state.curve=2; }
+    if (option == "--midi-min") { state.devicesTab = true; state.devices[0].rig = rig(16, -36, 2, 36); }
     state.profileName = "Studio controls";
     if (option == "--midi-profiles" || option == "--midi-profiles-plugin" || option == "--midi-profile-name" ||
         option == "--midi-profile-delete" || option == "--midi-profile-error" ||
@@ -414,7 +438,6 @@ int main(int argc, char** argv) {
         state.error = "Profile library unavailable. Retry."; state.recovery = true;
       }
       if (option == "--midi-profiles-plugin") {
-        state.device.clear(); state.noDevice = "MIDI comes from the DAW track";
         state.version = "Lunar 24 1.0.0"; state.build = "Build 123 - abcdef0";
       }
       if (option == "--midi-profile-name") { state.nameAction = 1; state.nameText = "Studio controls Copy"; }

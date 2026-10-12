@@ -24,6 +24,7 @@
 | 恢复出厂 | 键盘菜单右下角 **RESET PANEL**，点一次变成 CLICK TO CONFIRM，4 秒内再点一次 |
 | 静音 | DRONE VOICES 右边的 **MUTE** 按钮：所有输出以约 10 ms 淡出静音，再点恢复；静音时亮琥珀色光圈（MIDI 绑定触发时也一样） |
 | 音频设备 / 麦克风 | 屏幕顶部菜单栏 Lunar 24 → Preferences…（⌘,） |
+| MIDI 设备 | 面板上 **MIDI** 按钮 → 顶部 **DEVICES** 页签：每个设备一行，点行首 **ON / OFF** 开关（Preferences 里已没有 MIDI 区） |
 
 ### 测试常用准备
 
@@ -1330,30 +1331,30 @@
 - 再只换源头到 VCO B 模块最下排最右红字 osc：应有声，幅度可以更大（两个输出的现有标度不同），不要求等响。
 - 最后回接 envelope B 的 VCO B，再拔掉线：PREAMP 恢复音频输入设备信号；不要把麦克风本底当作残留振荡声。PREAMP 灯是否亮取决于增益和峰值，不把亮灯作为唯一通过条件。
 
-### 14. MIDI 输入（关闭输入、Preferences、插拔）
+### 14. MIDI 输入（DEVICES、多个设备、插拔）
 
-**T14.2 MIDI 输入关闭/切换时音符停止** ✅
+**T14.2 关掉 MIDI 设备时音符停止** ⏳（原 ✅；改用 DEVICES 页签后重测）
 - 安排：需要 MIDI 键盘（如 MPK mini IV）。
-- 准备：Preferences 里 MIDI Input 选到该键盘；PLAY = SINGLE、MODE = KEYBOARD，BLEND 最左、DRONE VOICES 全关，只听 VCO A。
+- 准备：MIDI → DEVICES 里 MPK Mini IV MIDI Port 是 **ON**；PLAY = SINGLE、MODE = KEYBOARD，BLEND 最左、DRONE VOICES 全关，只听 VCO A。
 - 步骤：
   1. 在 MIDI 键盘上按住一个音不放（声音持续）。
-  2. 保持按住，打开 Preferences，把 MIDI Input 切成 off。
-- 期望：切掉的瞬间声音停止（松不松手都不应再响）。再把 MIDI Input 切回键盘，弹奏恢复正常。
+  2. 保持按住，用鼠标在 DEVICES 里把 MPK 那一行点成 **OFF**。
+- 期望：点 OFF 的瞬间声音停止（松不松手都不应再响）。再点回 **ON**，弹奏恢复正常。
 - 备注：运行中直接拔 / 插 USB 线见 T14.6。
 
-**T14.3 关闭 MIDI 输入只停 MIDI 的音，电脑键盘的琶音继续** ✅ (#94)
-- 准备：MPK 切到测试用预设；Preferences 里 MIDI Input = MPK Mini IV MIDI Port。RESET PANEL（菜单右下角点两下）；DRONE VOICES 6 个键全部点灭。
+**T14.3 关掉 MIDI 设备只停 MIDI 的音，电脑键盘的琶音继续** ⏳（原 ✅ #94；改用 DEVICES 后重测）
+- 准备：MPK 切到测试用预设；DEVICES 里 MPK Mini IV MIDI Port = ON。RESET PANEL（菜单右下角点两下）；DRONE VOICES 6 个键全部点灭。
 - A. 电脑键盘的琶音不受影响（这是修复的重点）：
   1. 点红色大旋钮打开键盘菜单。PLAY 页左边 MODE 点 **ARPEGGIATOR**；再点顶部 **ARP** 页签，点亮左上角的 **HOLD**（LED 亮）。点 CLOSE 关掉菜单。
   2. 电脑键盘同时按下 A、F、H 三个键，再全部松开：琶音一直循环 C、F、A。
-  3. 琶音还在响的时候，⌘, 打开 Preferences，把 MIDI Input 切成 **off**，再点 **OK**。
-  - 期望：选 off 时和点 OK 后，**琶音都继续循环 C、F、A，不停，也没有"轰"的一声**。（修复前选 off 就会全停；第一版修复后点 OK 会重开音频而停掉。）
-  4. 收尾：Preferences 把 MIDI Input 切回 MPK Mini IV MIDI Port；打开菜单，ARP 页关掉 HOLD（琶音停下），PLAY 页 MODE 点回 **KEYBOARD**。
+  3. 琶音还在响的时候，点 **MIDI** → **DEVICES**，把 MPK 点成 **OFF**。
+  - 期望：**琶音继续循环 C、F、A，不停，也没有"轰"的一声**。
+  4. 收尾：MPK 点回 **ON**，关掉 MIDI 面板；打开菜单，ARP 页关掉 HOLD（琶音停下），PLAY 页 MODE 点回 **KEYBOARD**。
 - B. MIDI 自己的音照样会停（确认修复没把这点弄坏，同 T14.2）：
   1. 在 MPK 上按住一个键不放，声音一直响。
-  2. 保持按住，⌘, 打开 Preferences，把 MIDI Input 切成 **off**，点 OK。
+  2. 保持按住，在 DEVICES 里把 MPK 点成 **OFF**。
   - 期望：**声音立即停**，手还按着也不响。
-  3. 把 MIDI Input 切回 MPK Mini IV MIDI Port，MPK 弹奏恢复正常。
+  3. 把 MPK 点回 **ON**，MPK 弹奏恢复正常。
 
 **T14.4 MIDI 切换 MUTE 时按钮跟着亮灭** ✅ (#94)
 - 准备：Learn 一个打击垫到 **MUTE**（MIDI CONTROL → + LEARN A CONTROL → 点 MUTE 按钮 → 敲垫子）。
@@ -1363,45 +1364,98 @@
 **T14.5 Preferences 点 Cancel 不打断声音** ✅ (#95)
 - 准备：同 T14.3 A：键盘菜单 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开；电脑键盘同时按下 A、F、H 再松开，琶音循环。
 - 步骤与期望：
-  1. ⌘, 打开 Preferences，什么都不改，点 **Cancel**：琶音继续，**没有"轰"一声**。
-  2. 再打开 Preferences，MIDI Input 切成 off，点 **Cancel**：琶音继续，没有"轰"一声；MIDI 输入恢复成 MPK Mini IV MIDI Port，在 MPK 上弹能出声（Cancel 真正撤销了 MIDI 的改动）。
-  3. 再打开 Preferences，把 Buffer Size 换一个值，点 **OK**：这次会重开音频（可能有一声，琶音停下），这是改了音频设置时的正常行为。测完改回原来的 Buffer Size。
-  4. 收尾：关 HOLD，MODE 改回 KEYBOARD。
+  1. ⌘, 打开 Preferences，什么都不改，点 **Cancel**：琶音继续，**没有"轰"一声**。Preferences 里已经没有 MIDI 区，底部一行写着 MIDI 设备在面板 MIDI 按钮的 DEVICES 里。在 MPK 上弹仍能出声。
+  2. 再打开 Preferences，把 Buffer Size 换一个值，点 **OK**：这次会重开音频（可能有一声，琶音停下），这是改了音频设置时的正常行为。测完改回原来的 Buffer Size。
+  3. 收尾：关 HOLD，MODE 改回 KEYBOARD。
 
-**T14.6 运行中插拔 MIDI 键盘** ✅
+**T14.6 运行中插拔 MIDI 键盘** ⏳（原 ✅；第 2 步改看 DEVICES）
 - 准备：先拔掉 MPK 的 USB 线，再打开 Lunar 24；DRONE VOICES 全关，只听 VCO A。
 - 步骤：
   1. 应用开着，插上 MPK 的 USB 线，等 2 秒，在 MPK 上弹几个音。
-  2. 打开 Preferences（⌘,），看 MIDI Input 下拉列表，点 Cancel。
+  2. 点 **MIDI** → **DEVICES**，看 MPK 那一行，再关掉 MIDI 面板。
   3. 在 MPK 上按住一个音不放，同时拔掉 USB 线。
   4. 再插上 USB 线，等 2 秒，弹几个音。
   5. 退出 Lunar 24，拔掉 MPK，再打开 Lunar 24；然后插上 MPK，等 2 秒，弹几个音。
 - 期望：
   - 第 1 步：不用重开应用，MPK 就能弹出声音。
-  - 第 2 步：下拉列表里有 MPK 的端口，并且已选中 **MPK Mini IV MIDI Port**。
+  - 第 2 步：列表里有 MPK 的几个端口；**MPK Mini IV MIDI Port** 是 **ON**、写着 CONNECTED，其它端口是 OFF。
   - 第 3 步：拔线后那个音停掉，不会卡住一直响。
   - 第 4 步：重新插上后马上能弹。
-  - 第 5 步：应用记住了 MPK，插上后自动连上，不需要去 Preferences 里重新选。
-  - 日志（第 18 节）里能看到 `midi   input connected / disconnected`。
+  - 第 5 步：应用记住了 MPK，插上后自动连上，不需要重新打开。
+  - 日志（第 18 节）里能看到 `midi   port connected / disconnected` 和 `input 1 open / closed`。
+
+以下 T14.7–T14.13 用两个设备：MPK mini IV 和 iPad Pro 上的 Mult Controller（USB-C 连 MacBook；「音频 MIDI 设置」里叫 **iPad**）。准备（通用）：RESET PANEL；DRONE VOICES 全关；PLAY = SINGLE、MODE = KEYBOARD；只听 VCO A；BLEND 最左。
+
+**T14.7 升级后 MPK 仍然是开的；DEVICES 页签** ⏳
+- 步骤：
+  1. 装新版本后第一次打开 Lunar 24（不要插 iPad），在 MPK 上弹几个音。
+  2. 点 **MIDI**，看顶部：PROFILE 右边有 **BINDINGS / DEVICES / PROFILES** 三个页签；点 **DEVICES**。
+  3. 插上 iPad，打开 Mult Controller，等 2 秒，看 DEVICES。
+- 期望：
+  - 第 1 步：不用任何设置就能弹（以前在 Preferences 里选的 MPK 自动保留为 ON）。
+  - 第 2 步：每个端口一行：行首 ON / OFF、绿灯 / 灰灯、名字和状态，右边 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 四个设置。MPK Mini IV MIDI Port = ON，CONNECTED；其它是 OFF，设置是灰的、点不动。
+  - 第 3 步：出现 **iPad** 一行，是 **OFF**（新设备默认不开）；在 iPad 上推推子、弹音，Lunar 24 没有反应。
+
+**T14.8 两个设备一起弹** ⏳
+- 步骤：
+  1. DEVICES 里把 **iPad** 点成 **ON**。在 iPad 上弹几个音；在 MPK 上弹几个音；两边一起弹。
+  2. 在 MPK 上按住 C4 不放；在 iPad 上也按一下 C4 再松开（同一个音）。
+  3. 看 DEVICES 和 BINDINGS 左边的 INPUTS。
+- 期望：
+  - 第 1 步：两个设备都能弹出声，触摸板都会亮。
+  - 第 2 步：iPad 松开后 **MPK 按住的 C4 继续响**（两个设备的同一个音是两个音），MPK 松开才停。
+  - 第 3 步：哪个设备在发消息，它那一行的小灯就**闪绿**；INPUTS 列出 MPK 和 iPad 两行，点 INPUTS 会跳到 DEVICES。
+
+**T14.9 每个设备自己的 CHANNEL / TRANSPOSE / VELOCITY / SPLIT** ⏳
+- 步骤：
+  1. DEVICES 里 iPad 的 **TRANSPOSE** 点 > 调到 **+12 st**，MPK 保持 +0 st。两边各弹同一个音。
+  2. MPK 的 **CHANNEL** 改成一个 MPK 琴键不用的通道（如 5），弹 MPK；再弹 iPad。
+  3. 退出 Lunar 24 再打开，看 DEVICES。
+  4. 收尾：两边的 CHANNEL 回 ANY、TRANSPOSE 回 +0 st。
+- 期望：第 1 步 iPad 高一个八度、MPK 不变；第 2 步 MPK 不出声、iPad 照常；第 3 步 iPad 仍是 ON，两边的设置都还在。
+
+**T14.10 绑定只认学它的那个设备** ⏳
+- 步骤：
+  1. BINDINGS 页签 → **+ LEARN A CONTROL** → 点 DUAL EFFECTOR 的 **BLEND** → 在 iPad 上推一个推子。
+  2. 看新的一行；推 iPad 推子；再转 MPK 上发同一个 CC 号的旋钮（不知道号码就跳过这一步）。
+  3. 测完点 **x** 删掉这行。
+- 期望：新行第二行写着 **iPad**；推 iPad 推子 BLEND 跟着动；MPK 的同号 CC 不会动 BLEND（会照旧控制它原来的功能，或者什么都不做）。
+
+**T14.11 拔掉一个设备只停它自己的音** ⏳
+- 步骤：
+  1. 在 MPK 上按住一个音；在 iPad 上按住另一个音（两个音一起响）。
+  2. 保持按住，拔掉 iPad 的 USB-C 线。
+  3. 看 DEVICES 和 BINDINGS。再插回 iPad，等 2 秒，在 iPad 上弹。
+- 期望：拔线后只有 iPad 的音停，**MPK 按住的音继续响**；DEVICES 里 iPad 仍是 ON、写着 **NOT CONNECTED**（INPUTS 里也是）；插回后自动连上，马上能弹；T14.10 学过的 iPad 绑定（若还没删）插回后照常生效。
+
+**T14.12 最多同时开 4 个设备** ⏳
+- 准备：「音频 MIDI 设置」→ MIDI 工作室 → **IAC 驱动程序**，勾选 **设备在线**，并用 + 加到 3 条总线（共 3 个 IAC 端口）。
+- 步骤：DEVICES 里 MPK、iPad 已 ON；依次把 IAC 的端口点成 ON（用 > 翻页）。
+- 期望：第 4 个能开；第 5 个点了不变，左下角红字 **Four devices are on already.**；关掉一个后就能开另一个。测完把 IAC 端口都点回 OFF。
+
+**T14.13 Preferences 没有 MIDI 区** ⏳
+- 步骤：⌘, 打开 Preferences。
+- 期望：只有音频设置；底部一行 `MIDI devices: the MIDI button on the panel, then DEVICES.`；OK / Apply / Cancel 在下面，窗口没有大片空白。
 
 ### 15. MIDI 设置与绑定
 
 测试环境：macOS（MBP M1 Max）+ MPK MINI IV（用下面 TODO 里记的测试用户预设）。
 
-**T15.1 MIDI 设置界面** ✅
+**T15.1 MIDI 设置界面** ⏳（原 ✅；设置移到 DEVICES 页签后重测）
 - 步骤：
   1. 点 DRONE VOICES 右边、MUTE 正下方的 **MIDI** 按钮。
-  2. 看界面：暖色面板盖住键盘区；顶部 PROFILE / INPUT，左边 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 和 LEARN，右边每页四条绑定（初次显示引导）。
-  3. 点 **CLOSE** 关掉；再打开，按 Esc 关掉。
-- 期望：开合正常；INPUT 显示 Preferences 里选的输入设备名（没选提示 Choose an input in Preferences）。
+  2. 看界面：暖色面板盖住键盘区；顶部 PROFILE 和 **BINDINGS / DEVICES / PROFILES** 页签；BINDINGS 左边是 INPUTS（开着的设备）、PROFILE SWITCH KEYS 和 LEARN，右边每页四条绑定（初次显示引导）。
+  3. 点 **DEVICES**，再点 **PROFILES**，再点 **BINDINGS**；点 PROFILE 名字也会打开 PROFILES。
+  4. 点 **CLOSE** 关掉；再打开，按 Esc（在 DEVICES / PROFILES 里按 Esc 先回 BINDINGS，再按一次关掉）。
+- 期望：开合正常；当前页签是浅色的。
 - 旧界面的左侧裁字、删除图标方框（反馈 #4 / #5）已在重设计中修复，2026-10-03 真机确认。缩放窗口后检查标题、设置值、行尾按钮、底部提示不截断或重叠；长设备名应带省略号，字号不被缩小。
-- 只点设置两侧的 < / > 会改变数值，点 CHANNEL 等标签不会误改；TRANSPOSE 的最低值应显示 -36 st。
+- DEVICES 里只点设置两侧的 < / > 会改变数值，点中间的值不会误改；TRANSPOSE 的最低值应显示 -36 st。
 - 设置值首尾循环是既定行为：TRANSPOSE 在 -36 st 再点 < 跳到 +36 st；CHANNEL（ANY ↔ 16）、VELOCITY（LINEAR ↔ HARD）同样循环。
 - 建立五条以上绑定后检查分页；Learn 完成后应自动显示刚绑定的行，删除最后一页唯一一行后回到前一页。
 - EXTRA LEARN TARGETS：LEARN 等待选择目标时点 PRESET A，再敲 pad，应出现一行 TRIGGER；不在等待目标时这些按钮为灰色。
 
 **T15.2 Learn 绑定一个旋钮** ✅
-- 准备：Preferences 里 MIDI Input 选到你的键盘；只听 VCO A。
+- 准备：DEVICES 里你的键盘是 ON；只听 VCO A。
 - 步骤：
   1. 打开 MIDI 设置，点 **+ LEARN A CONTROL**（变红色 CANCEL LEARN，底部显示操作提示）。
   2. 点面板上 FILTER 一排左边的 **FREQ** 旋钮。
@@ -1428,9 +1482,9 @@
   - 删除后该旋钮不再控制滤波。
   - 打击垫按一下开 drone 1，再按一下关（切换，不是按住才响）。
 
-**T15.4 通道过滤、八度、力度曲线与断电保存** ✅
+**T15.4 通道过滤、八度、力度曲线与断电保存** ✅（设置现在在 DEVICES 里 MPK 那一行，每个设备各自一份，见 T14.9）
 - 步骤：
-  1. MIDI 设置里 TRANSPOSE 调到 +12 st（st = 半音），弹几个音。
+  1. MIDI → DEVICES 里 MPK 的 TRANSPOSE 调到 +12 st（st = 半音），弹几个音。
   2. 按下面的压力接线准备，对比 SOFT / LINEAR / HARD，使用相同的中等 Note On 力度。
   3. CHANNEL 设成一个键盘不在用的通道，弹琴；设回 ANY。
   4. 绑定一两条后退出应用重开。
@@ -1443,24 +1497,23 @@
 - 步骤与期望：
   1. CHANNEL = ANY，按住一个琴键；改成键盘不使用的通道，再松键。原来的音应释放；新按下的键不发声。恢复 ANY 后弹奏正常。
   2. LEARN → 点 MUTE → 按住一个琴键，等绑定出现在列表后再松开。第一次按下可能仍作为演奏音，但松开后必须停止。随后按此键只切换 MUTE，松开不再切换。测完删除绑定，恢复 MUTE 关闭。
-  3. 持续弹奏时，在 Preferences 把 MIDI Input 切成 off。不得残留持续音；切回键盘后正常弹奏。
-  4. MIDI Input 已是 off 时，用键盘 MODE = ARPEGGIATOR、HOLD（ARP 页）保持一个正在运行的琶音，再打开 Preferences，保持 off、不改任何设置，直接点 **OK**，不要点 Apply。仅重复选择 off 不应停音或重启琶音；测完关闭 HOLD、恢复 MODE = KEYBOARD。virtual input → off 时鼠标保持的琶音不应被清掉，见 T14.3。
+  3. 持续弹奏时，在 DEVICES 里把键盘点成 OFF。不得残留持续音；点回 ON 后正常弹奏（同 T14.2）。
 
 **T15.6 映射数值与动作** ✅
 - LEARN 一个硬件旋钮到 VCO A 的 **oct+3** 开关，保持 ABS，来回扫过全程。面板开关和实际音高应一致地按档变化，不得只动图形而声音不变。
 - 若使用相对编码器：绑定到 **BLEND**，设成与硬件编码匹配的 REL 模式；先用鼠标把 BLEND 调到较高位置，再转编码器一格。应从当前位置小幅变化，不能跳回绑定时的旧位置。
 - LEARN 一个打击垫到 **BLEND**：轻击 / 重击应直接给出不同的面板值，不必先扫过旧值。此项检查力度映射，不以音量大小判定。
 - 若控制器有发送 CC 127 / 0 的按钮或可设为 CC 的打击垫：绑定 **MUTE**，按下只切换一次、松开不切换；再按才切换回来。
-- 测完退出重开，确认绑定、CHANNEL / TRANSPOSE / VELOCITY 设置仍在；清除本次临时测试绑定。
+- 测完退出重开，确认绑定、DEVICES 里的 CHANNEL / TRANSPOSE / VELOCITY 设置仍在；清除本次临时测试绑定。
 
 **T15.7 打击垫 / 按钮控制面板开关；旋钮拾取** ✅ (#93)
-- 准备：RESET PANEL；DRONE VOICES 6 个键全部点灭；按住电脑键盘 H（A 音）能听到 VCO A。MIDI 输入在 Preferences 里选 MPK MINI IV。
+- 准备：RESET PANEL；DRONE VOICES 6 个键全部点灭；按住电脑键盘 H（A 音）能听到 VCO A。DEVICES 里 MPK Mini IV MIDI Port 是 ON。
 - Learn 的方法（下面每一步都用）：点 **MIDI** 按钮（MUTE 下面）打开 MIDI CONTROL → 点 **+ LEARN A CONTROL** → 点面板上要控制的开关或旋钮 → 敲一下打击垫 / 转一下旋钮。表格里出现新的一行就是学好了。
 - 步骤与期望：
   1. 打击垫 → VCO A 的 **-1 / sub** 拨杆。表格这一行 MODE 列显示 **STEP**。关掉 MIDI CONTROL，按住 H 不放，敲这个垫：每敲一下拨杆翻一次（拨到 sub 时叠加一个低八度的底音，拨回 -1 时底音消失），第一下就生效；轻敲重敲效果一样；松开垫子拨杆不动。
   2. 另一个打击垫 → VCO A 的 **oct+3 / low** 拨杆（三档）。MODE 显示 **STEP**。每敲一下拨杆移到下一档，三下回到原位，音高跟着变。
   3. 按钮发 CC 的情况（可选）。Learn 后看表格 **CONTROLLER** 列：`NOTE 数字` 是音符，`CC 数字` 是 CC。MPK 的 DAW / Plugin 预设下打击垫只能发音符，要先换到用户预设：
-     - 按住 SHIFT 再按 **PLUGIN/DAW**（屏幕出现 User Presets），转大旋钮选一个用户预设，按下旋钮载入。弹一下琴键，确认 Lunar 24 还能收到（Preferences 里输入仍是 MPK Mini IV MIDI Port）。
+     - 按住 SHIFT 再按 **PLUGIN/DAW**（屏幕出现 User Presets），转大旋钮选一个用户预设，按下旋钮载入。弹一下琴键，确认 Lunar 24 还能收到（DEVICES 里 MPK Mini IV MIDI Port 仍是 ON，小灯会闪）。
      - 按住 SHIFT 再按 **3 号垫（CC#）**；继续按住 SHIFT，3 号垫一直亮绿灯才说明 CC# 模式开了。
      - Learn 一个垫子到 **-1 / sub**：CONTROLLER 显示 `CC …`，MODE 显示 **TOGGLE**；每按一下翻一次，松开不翻，第一下就生效。若要按两下才翻一次，是 MPK 全局设置 Toggle = On，改成 Off（SHIFT + LOOP 进 Global Menu）。
      - 测完删掉绑定，SHIFT + 4 号垫切回音符，再按 PLUGIN/DAW 回到原来的预设。
@@ -1475,8 +1528,8 @@
   2. 同时按住 C、E、G：三块板一起亮；松开其中一个，只灭那一块。
   3. 敲一个没有绑定的打击垫（它发音符，比如 NOTE 40 = E）：对应音名的板（E）亮，松开灭。
   4. 敲一个绑定了 MUTE 或开关的打击垫：声音 / 开关照常变化，但**不点亮**任何触摸板。
-  5. MIDI 设置里 TRANSPOSE 调到 +2：按 C 键，亮的是 **D**（亮的是实际发出的音）。测完调回 +0。
-  6. 按住 MPK 的一个键时，把 Preferences 的 MIDI Input 切成 off：声音停，板也灭。切回 MPK Mini IV MIDI Port。
+  5. DEVICES 里 MPK 的 TRANSPOSE 调到 +2：按 C 键，亮的是 **D**（亮的是实际发出的音）。测完调回 +0。
+  6. 按住 MPK 的一个键时，在 DEVICES 里把 MPK 点成 OFF：声音停，板也灭。点回 ON。
   7. 鼠标 / 电脑键盘弹奏照常点亮触摸板，和 MIDI 同时弹也互不影响。
 
 **T15.9 MIDI 时钟：START 从头开始，按住的音不丢** ✅ (#96)
@@ -1485,20 +1538,21 @@
   1. 打开「音频 MIDI 设置」（应用程序 → 实用工具），菜单 窗口 → 显示 MIDI 工作室，双击 **IAC 驱动程序**，勾选 **设备在线**，点 应用。
   2. Ableton Live → Settings（⌘,）→ **Link, Tempo & MIDI**：MIDI Ports 的 **Output: IAC 驱动程序 (总线 1)** 那一行，只打开 **Sync**（Track、Remote 保持关闭，免得 Ableton 的音符也传过来）。
   3. Ableton 顶部速度改成 **80**（和 Lunar 默认的 120 分得开，好听出是谁在控制速度）。
-  4. Lunar 24 → Preferences → MIDI Input 选 **IAC 驱动程序 总线 1**（名字可能是英文 IAC Driver Bus 1），点 OK。这时 MPK 不在输入里，用电脑键盘弹。
+  4. Lunar 24 → MIDI → DEVICES，把 **IAC 驱动程序 总线 1**（名字可能是英文 IAC Driver Bus 1）点成 ON（MPK 可以一起开着）。用电脑键盘弹。
   5. 键盘菜单 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开；电脑键盘同时按下 A、F、H 再松开。
 - 步骤与期望：
   1. 时钟源不播放时：琶音按 Lunar 自己的 TEMPO 循环。
   2. Ableton 里按两下停止键（回到开头），再按播放：琶音改跟随 Ableton 的 80 BPM（变慢），**从和弦的第一个音开始**，琶音不会停、电脑键盘按的音也不会丢。
   3. Ableton 按停止：琶音停在原地不再前进（最后一个音在半个节拍后收掉）；按两下停止再播放，又从第一个音开始。
   4. 改一下 Lunar 的 TEMPO：回到 Lunar 自己的时钟。
-  5. 收尾：关 HOLD，MODE 改回 KEYBOARD；Preferences 的 MIDI Input 选回 MPK Mini IV MIDI Port。
+  5. 收尾：关 HOLD，MODE 改回 KEYBOARD；DEVICES 里 IAC 点回 OFF。
+- 两个设备都发时钟时，以先发时钟的那个为准；它停发约 1 秒后，另一个才能接管。
 - 出问题时看日志（第 18 节）：每次播放 / 停止 / 继续后有一行 `midi   clock: +N ticks ...; keyboard clock external`（N 是上一行以来收到的时钟数，每拍 24 个）。`+0 ticks` 或 `internal` 就是没跟上外部时钟。
 
 **T15.10 MIDI 键盘在 TWIN / SPLIT 下分左右** ✅ (#98)
 - 准备：同 T12.6（RESET PANEL；DRONE VOICES 全关；VOICE MIXER 只留 VCO A、VCO B；接线 ⊓ **GATE R** → envelope B 的 **gate**，↓ **PRESSURE** → VCO B 的 **1v/oct**）；VCO B 的 **oct+3** 拨到上面。MPK 用测试用户预设，OCT 键回到默认（屏幕不显示八度偏移）。
 - 步骤：
-  1. 打开 MIDI 设置，看左边第四行 **SPLIT**，应显示 **C4**（MPK 中间那个 C）。
+  1. 打开 MIDI 设置 → DEVICES，看 MPK 那一行的 **SPLIT**，应显示 **C4**（MPK 中间那个 C）。
   2. 键盘菜单 **PLAY** 选 TWIN，关掉菜单。在 MPK 上弹 C4 以下的几个音，再弹 C4 和以上的几个音。分辨左右靠听高低：右边走 VCO B，高 3 个八度，很尖；想确认的话，把 VOICE MIXER 的 **VCO A** VOL 拖到最左再弹一遍（只剩右边的音响），拖回后再把 **VCO B** 拖到最左（只剩左边的音响），最后两个都拖回中间。
   3. 左手按住 C4 以下一个音，右手按住 C4 以上一个音，然后先松开左手。
   4. MIDI 设置里 SPLIT 点 **>** 两下改成 **D4**，再弹 C4、C#4（现在它们算左半边）。
@@ -1624,9 +1678,9 @@
 
 插件和独立 App 是同一个面板、同一个声音引擎，差别只在这几处：
 - REC 不能用：REC 按钮和 WET / DRY / ALL 旋钮看起来和独立 App 一样，但点了没有反应；录音用 DAW 自己的录音。
-- 音频设备、采样率、MIDI 输入都由 DAW 管，没有 Preferences。MIDI 设置面板的 INPUT 一行显示 MIDI comes from the DAW track。
+- 音频设备、采样率、MIDI 输入都由 DAW 管，没有 Preferences。MIDI 设置面板的 DEVICES 只有一行 **DAW track**（没有 ON / OFF，CHANNEL 显示 DAW，由轨道决定），底部写 MIDI comes from the DAW track。
 - 音色、接线、键盘设置和 DRONE VOICES 的开关存进 DAW 工程，不读写独立 App 的状态文件。
-- MIDI 绑定和 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 与独立 App **共用**同一份设置：哪边改了，另一边下次打开时也是新的。在独立 App 里学会的绑定在插件里照样生效：DAW 不告诉插件 MIDI 来自哪个控制器，所以插件只核对通道和 CC 号，不核对设备名。如果在 App 里给两个控制器的同一个 CC 号绑了不同旋钮，插件里只认列表里靠前的那一条。
+- MIDI 绑定与独立 App **共用**同一份设置（插件 DAW track 一行的 TRANSPOSE / VELOCITY / SPLIT 是 App 里"没有单独设置过的设备"用的那一份；App 里每个设备自己的设置插件不用）：哪边改了，另一边下次打开时也是新的。在独立 App 里学会的绑定在插件里照样生效：DAW 不告诉插件 MIDI 来自哪个控制器，所以插件只核对通道和 CC 号，不核对设备名。如果在 App 里给两个控制器的同一个 CC 号绑了不同旋钮，插件里只认列表里靠前的那一条。
 - 电脑键盘弹琴在插件窗口里不一定可用：Ableton 会先拿走按键。用 Ableton 自己的电脑 MIDI 键盘（按 **M** 打开）或 MIDI 控制器弹，这是正常行为。
 - MPK 用测试用户预设（和独立 App 一样）。Ableton 的 Settings → Link, Tempo & MIDI 里 `MPK mini IV (MIDI Port)` 的 **Track** 要打开；轨道 MIDI From = All Ins、Monitor = Auto、Arm 亮着即可（owner 实测）。弹不出声时先看右上角 MIDI 输入灯闪不闪，再把 MIDI From 直接选成这个端口试。PLUGIN/DAW 模式下 MPK 也能弹，但旋钮被 Ableton 的 MPK 脚本拿去控制设备参数，不作为 CC 进轨道，插件的 MIDI 绑定收不到；插件目前没有对外公开参数（第 2 阶段才做自动化），所以那时拧旋钮不起作用。
 - 插件窗口被别的窗口挡住或隐藏后：在轨道的设备区（Device View）点 Lunar 24 标题栏上的扳手图标（Show / Hide Plug-in Window），或者 ⌥⌘P（Show / Hide Plug-in Windows）。窗口跟着选中的轨道显示，切到别的轨道会自动收起，这是 Ableton 的 Auto-Hide Plug-in Windows 设置（Settings → Plug-Ins）。
@@ -1654,11 +1708,11 @@
 - 步骤：
   1. 新建一条 MIDI 轨，把 **Lunar 24**（VST3）拖到轨上；插件窗口自动打开。
   2. 选中这条轨（Arm），用 MPK 弹几个音；再按 **M** 打开 Ableton 的电脑 MIDI 键盘，用电脑键盘弹。
-  3. 看面板右上角耳机区；点 **MIDI** 按钮看 INPUT 一行。
+  3. 看面板右上角耳机区；点 **MIDI** 按钮，再点 **DEVICES**。
 - 期望：
   - 第 1 步：窗口大约是面板的一半大小，面板完整、清晰，和独立 App 一样。
   - 第 2 步：两种方式都出声，触摸板随音符点亮。
-  - 第 3 步：REC 区和独立 App 一样，但点 REC、点 WET / DRY / ALL 都没有反应；INPUT 显示 MIDI comes from the DAW track。MIDI 面板右下角（< 按钮左边）显示 `Lunar 24 1.0.0` 和 `Build <CI 运行号> - <提交号>`，和下载的那次 CI 运行一致。
+  - 第 3 步：REC 区和独立 App 一样，但点 REC、点 WET / DRY / ALL 都没有反应；DEVICES 只有 DAW track 一行，弹琴时它的小灯闪绿。MIDI 面板右下角（< 按钮左边）显示 `Lunar 24 1.0.0` 和 `Build <CI 运行号> - <提交号>`，和下载的那次 CI 运行一致。
 
 **T17.2 窗口缩放** ✅
 - 步骤：拖插件窗口的边缘放大、缩小；再拖面板右下角的小三角。
@@ -1792,20 +1846,20 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 
 | 项目 | 现状与下一步 |
 |---|---|
-| #1 / #2：设备发现和默认选择 | 运行中插拔会被检测（每秒一次，T14.6）：选中的设备插回自动连上，拔掉自动断开；输入为 off 时，插上的第一个设备会被自动选中（和启动时一样，保存的 off 也会被覆盖）。Preferences 打开期间插上的设备，要关掉再打开 Preferences 才出现在列表里。 |
+| #1 / #2：设备发现和默认选择 | 运行中插拔会被检测（每秒一次，T14.6）：ON 的设备插回自动连上，拔掉自动断开（保持 ON，显示 NOT CONNECTED）。新设备默认 OFF；只有从来没设置过时（第一次用），插上的第一个设备会自动 ON。最多同时 ON 4 个（T14.12）。 |
 | #3 / #6 / #15：交互提示 | ABS 旋钮等待接管时没有提示；CHANNEL 会过滤 Learn 的输入且没有提示，Learn 前先确认 CHANNEL = ANY。（MIDI 弹奏点亮触摸板已做，T15.8。）RESET PANEL 保留 MIDI 配置，见 DECISIONS。 |
 | #9：R = 0、BLEND 最小时仍有尾音 | 尚未定位，不直接归因于混响。按下面的隔离准备复测并记录持续时间。 |
 
 - **MPK MINI IV 的预设与端口（据 MPK mini IV User Guide v1.2，手册由 owner 按需上传，不进仓库）**：
   - PLUGIN/DAW 键在两种"厂商预设"之间切换：Plugin 模式（配 AKAI 自带软件）和 DAW 模式（配一般 DAW）。owner 实测：白灯时 Lunar 24 能收到，按成红灯后收不到。
   - 第三种是 **User Presets**（用户预设）：按住 SHIFT 再按 PLUGIN/DAW，旋转屏幕下的大旋钮选择，按下旋钮载入。只有用户预设下才能：把打击垫切成 CC#（SHIFT + 3 号垫；SHIFT + 4 号垫回音符）、改打击垫 / 旋钮发的号码（SHIFT + OCT− 进 Program Edit）、改全局设置（SHIFT + LOOP 进 Global Menu，按 PLUGIN/DAW 退出）。
-  - 琴键、打击垫、旋钮、弯音 / 调制轮的演奏数据都从 **MPK Mini IV MIDI Port** 发出（所有预设都是）；另外几个端口（DAW / Plugin / Software Control / Din）发的是给软件脚本的按钮和屏幕控制，Lunar 24 不需要。Preferences 里 MIDI 输入选 MIDI Port。
+  - 琴键、打击垫、旋钮、弯音 / 调制轮的演奏数据都从 **MPK Mini IV MIDI Port** 发出（所有预设都是）；另外几个端口（DAW / Plugin / Software Control / Din）发的是给软件脚本的按钮和屏幕控制，Lunar 24 不需要。DEVICES 里只开 MIDI Port。
   - 全局设置里和我们有关的：**Toggle**（打击垫"瞬时 / 切换"，测 TOGGLE 绑定时应为 Off）、**KnobM**（8 个旋钮一起设 Abs / Rel，测 REL 用；Program Edit 里也能单个设）、**Aft**（打击垫按压后发 Chan / Poly aftertouch，或 Off）、**MidiCh / PadCh**（琴键和打击垫的通道，打击垫默认通道 10，所以 Learn 出来是 CH 10）。
   - **测试用预设**（owner 已建）：一个用户预设，全局设置 Toggle = Off、KnobM = Rel（无限旋钮不用对刻度，Learn 自动识别为 REL 2）、Aft = Chan、FullVel = Off，MidiCh / PadCh 保持默认（琴键 1、打击垫 10）。以后 MIDI 测试都先切到这个预设；Lunar 24 的 MIDI 设置 CHANNEL 保持 ANY。
   - 实测：用户预设下打击垫切成 CC# 后，学到的是 `CC 36 / CH 1`（CC 走通道 1，不是打击垫音符用的通道 10）。
   - 手册没写 Rel 模式用哪种相对编码；实测是 **REL 2**（顺时针发 1、逆时针发 127）。REL 1 在最大最小之间跳，REL 3 逆时针跳到最小。Learn 后会自动识别并改成 REL 2（T15.3）。
   - 手册只写了 MPK 的琶音器能**接收**外部时钟（Clock = Ext），没写它会往外发 MIDI 时钟；用 MPK 驱动 Lunar 24 的琶音 / 音序器时钟可能不行，需要实测或用 DAW 发时钟。
-- **Preferences 的 OK / Apply / Cancel（#12 / #13）**：MIDI 输入下拉框切换立即生效。音频设置（设备、采样率、缓冲、声道）没变时，OK / Apply / Cancel 都不重开音频，琶音和按住的音不受影响（T14.3、T14.5）；音频设置变了时会重开音频，这时琶音停下是正常的。
+- **Preferences 的 OK / Apply / Cancel（#12 / #13）**：音频设置（设备、采样率、缓冲、声道）没变时，OK / Apply / Cancel 都不重开音频，琶音和按住的音不受影响（T14.5）；音频设置变了时会重开音频，这时琶音停下是正常的。MIDI 设备不在 Preferences 里了（DEVICES 页签，立即生效）。
 - **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A，其它九路 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；滤波器等下游处理可有短暂衰减，不要求逐采样立即归零。若仍有长尾，保留接线和设置截图、录音再定位。默认同时开启的 VCO B 或直送 PREAMP 的振荡源不能用于此项隔离。
 - **MUTE 尾音（#11）**：MUTE 只淡出输出，不停止演奏或效果处理；解除时能听到静音期间音符的剩余尾音，属于既定行为，见 DECISIONS。
 

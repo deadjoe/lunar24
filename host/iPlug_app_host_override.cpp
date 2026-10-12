@@ -92,10 +92,24 @@ void LunarInvalidateAudio(IPlugAPP* plug) {
 // opening a Bluetooth headset's microphone drops its sound to call quality.
 std::atomic<bool> sFollowDefaultOutput{true};
 bool sInputOn = false;
+// Lunar 24: the MIDI inputs (the MIDI panel's DEVICES tab; which ports are on is decided by the
+// plugin's host::MidiDeviceSetup). Each input slot has its own RtMidiIn and callback context, so
+// its messages land in its own queue (one producer each). mMidiIn only lists the ports; MIDI out
+// is not used. The slots are opened and closed on the UI thread.
+struct MidiSlot {
+  std::unique_ptr<RtMidiIn> in;
+  IPlugAPPHost* host = nullptr;
+  unsigned index = 0;
+};
+MidiSlot sMidiSlots[lunar24::host::kMidiInputDevices];
+// The app's own virtual input other apps can send to (macOS only).
 #ifdef OS_MAC
-// RtMidi isPortOpen does not report virtual ports. UI thread only.
-bool sVirtualMidiInputOpen = false;
+const char* const kVirtualMidiInput = "To " BUNDLE_NAME;
+#else
+const char* const kVirtualMidiInput = "";
 #endif
+// The next ProbeMidiIO only applies the DEVICES choice (a port turned on or off).
+bool sMidiApplyOnly = false;
 // The input channels the user chose. An open that fails with the input (e.g. the Mac microphone
 // together with Bluetooth headphones) falls back to output only for that open; the choice is kept
 // here and in the settings file, and the next automatic reopen (a device change, RESET PANEL,
@@ -113,7 +127,7 @@ std::atomic<bool> sReopen{false};
 // MIDI hot-plug (lunar_host_audio_watchdog asks ProbeMidiIO for a check once a second): the
 // port names seen last time, and whether the next ProbeMidiIO is such a check. UI thread only.
 bool sMidiHotplugCheck = false;
-std::vector<std::string> sMidiInsSeen, sMidiOutsSeen;
+std::vector<std::string> sMidiInsSeen;
 // When the last stream was opened (steady_clock ticks). Device-list notifications within 2 s of an
 // open are ignored: opening a headset can itself reconfigure devices, and reacting would loop.
 std::atomic<long long> sLastOpenTicks{0};
@@ -177,11 +191,12 @@ IPlugAPPHost::~IPlugAPPHost()
   // that was present but unusable is never overwritten.
   static_cast<LunarHostPlugin*>(GetPlug())->saveDeviceState();
 
-  if (mMidiIn)
-    mMidiIn->cancelCallback();
-
-  if (mMidiOut)
-    mMidiOut->closePort();
+  for (auto& slot : sMidiSlots)
+    if (slot.in)
+    {
+      slot.in->cancelCallback();
+      slot.in->closePort();
+    }
   HostLog(Cat::app, Level::info, "app quitting");
   diag::log().detach();
 }
@@ -202,23 +217,14 @@ bool IPlugAPPHost::Init()
   
   TryToChangeAudioDriverType(); // will init RTAudio with an API type based on gState->mAudioDriverType
   ProbeAudioIO(); // find out what audio IO devs are available and put their IDs in the global variables gAudioInputDevs / gAudioOutputDevs
-  InitMidi(); // creates RTMidiIn and RTMidiOut objects
-  ProbeMidiIO(); // find out what midi IO devs are available and put their names in the global variables gMidiInputDevs / gMidiOutputDevs
-  // Lunar 24: with no saved choice, listen to the first real MIDI input so a keyboard
-  // works as soon as it is plugged in (the Preferences dialog can still change it).
-  if (strcmp(mState.mMidiInDev.Get(), "no input") == 0 || strcmp(mState.mMidiInDev.Get(), OFF_TEXT) == 0)
-  {
-    for (const auto& name : mMidiInputDevNames)
-    {
-      if (name != OFF_TEXT && name != "virtual input")
-      {
-        mState.mMidiInDev.Set(name.c_str());
-        break;
-      }
-    }
-  }
-  SelectMIDIDevice(ERoute::kInput, mState.mMidiInDev.Get());
-  SelectMIDIDevice(ERoute::kOutput, mState.mMidiOutDev.Get());
+  InitMidi(); // Lunar 24: the RtMidiIn that lists the ports
+  // Lunar 24: the MIDI panel's DEVICES tab turns ports on and off: apply it and save the choice.
+  static_cast<LunarHostPlugin*>(GetPlug())->applyMidiDevices = [this]() {
+    sMidiApplyOnly = true;
+    ProbeMidiIO();
+    UpdateINI();
+  };
+  ProbeMidiIO(); // Lunar 24: lists the ports and opens the ones that are on (first use: the first one)
   
   mIPlug->OnParamReset(kReset);
   mIPlug->OnActivate(true);
@@ -325,6 +331,26 @@ bool IPlugAPPHost::InitState()
 
       //midi
       GetPrivateProfileString("midi", "indev", "no input", buf, STRBUFSZ, mINIPath.Get()); mState.mMidiInDev.Set(buf);
+      // Lunar 24: the MIDI inputs that are on (DEVICES). Before them the app had one input,
+      // "indev" (chosen in Preferences): a real port there is on now; "off" / none / never set
+      // is first use (the old app also picked the first port then).
+      std::vector<std::string> midiOn;
+      bool midiChosen = GetPrivateProfileInt("midi", "devicesset", 0, mINIPath.Get()) != 0;
+      if (midiChosen)
+      {
+        for (unsigned i = 0; i < lunar24::host::kMidiInputDevices; ++i)
+        {
+          const std::string key = "dev" + std::to_string(i + 1);
+          GetPrivateProfileString("midi", key.c_str(), "", buf, STRBUFSZ, mINIPath.Get());
+          if (buf[0]) midiOn.push_back(buf);
+        }
+      }
+      else if (std::strcmp(buf, "no input") != 0 && std::strcmp(buf, OFF_TEXT) != 0)
+      {
+        midiOn.push_back(std::strcmp(buf, "virtual input") == 0 ? std::string(kVirtualMidiInput) : std::string(buf));
+        midiChosen = !midiOn.back().empty();
+      }
+      static_cast<LunarHostPlugin*>(GetPlug())->midiDevices().restore(midiChosen, midiOn);
       GetPrivateProfileString("midi", "outdev", "no output", buf, STRBUFSZ, mINIPath.Get()); mState.mMidiOutDev.Set(buf);
 
       mState.mMidiInChan = GetPrivateProfileInt("midi", "inchan", 0, mINIPath.Get()); // 0 is any
@@ -398,6 +424,15 @@ void IPlugAPPHost::UpdateINI()
   WritePrivateProfileString("audio", "inputon", sInputOn ? "1" : "0", ini);
 
   WritePrivateProfileString("midi", "indev", mState.mMidiInDev.Get(), ini);
+  {  // Lunar 24: the MIDI inputs that are on (DEVICES)
+    const auto& midiDevices = static_cast<LunarHostPlugin*>(GetPlug())->midiDevices();
+    WritePrivateProfileString("midi", "devicesset", midiDevices.configured() ? "1" : "0", ini);
+    for (unsigned i = 0; i < lunar24::host::kMidiInputDevices; ++i)
+    {
+      const std::string key = "dev" + std::to_string(i + 1);
+      WritePrivateProfileString("midi", key.c_str(), i < midiDevices.on().size() ? midiDevices.on()[i].c_str() : "", ini);
+    }
+  }
   WritePrivateProfileString("midi", "outdev", mState.mMidiOutDev.Get(), ini);
 
   sprintf(buf, "%u", mState.mMidiInChan);
@@ -432,6 +467,8 @@ std::optional<uint32_t> IPlugAPPHost::GetAudioDeviceID(const char* deviceNameToT
 
 int IPlugAPPHost::GetMIDIPortNumber(ERoute direction, const char* nameToTest) const
 {
+  if (!mMidiIn || (direction != ERoute::kInput && !mMidiOut))
+    return -1;
   int start = 1;
   
   auto nameStrView = std::string_view(nameToTest);
@@ -513,69 +550,100 @@ void IPlugAPPHost::ProbeAudioIO()
   }
 }
 
-// Lunar 24: also the MIDI hot-plug check. The lists are rebuilt from scratch (the stock version
-// only appended, once at startup). On a check (sMidiHotplugCheck) nothing changes unless ports
-// came or went; then the chosen input reopens when its device comes back and closes when it goes,
-// and with no input chosen ("off") the first device plugged in is picked, as at startup.
+// Lunar 24: the MIDI inputs. Lists the ports (on a hot-plug check, sMidiHotplugCheck, nothing
+// happens unless ports came or went), tells the plugin's MidiDeviceSetup, then applies its plan:
+// slots whose port was turned off or unplugged close (their notes are released), ports that are
+// on and plugged in open. With sMidiApplyOnly only the plan is applied (DEVICES changed).
 void IPlugAPPHost::ProbeMidiIO()
 {
   const bool hotplug = sMidiHotplugCheck;
-  sMidiHotplugCheck = false;
-  if (!mMidiIn || !mMidiOut)
+  const bool applyOnly = sMidiApplyOnly;
+  sMidiHotplugCheck = sMidiApplyOnly = false;
+  if (!mMidiIn)
     return;
-  std::vector<std::string> ins, outs;
-  for (unsigned int i = 0; i < mMidiIn->getPortCount(); i++)
-    ins.push_back(mMidiIn->getPortName(i));
-  for (unsigned int i = 0; i < mMidiOut->getPortCount(); i++)
-    outs.push_back(mMidiOut->getPortName(i));
-  if (hotplug && ins == sMidiInsSeen && outs == sMidiOutsSeen)
-    return;
-  const std::vector<std::string> insBefore = sMidiInsSeen, outsBefore = sMidiOutsSeen;
-  sMidiInsSeen = ins;
-  sMidiOutsSeen = outs;
-
-  mMidiInputDevNames.clear();
-  mMidiInputDevNames.push_back(OFF_TEXT);
-#ifdef OS_MAC
-  mMidiInputDevNames.push_back("virtual input");
-#endif
-  mMidiInputDevNames.insert(mMidiInputDevNames.end(), ins.begin(), ins.end());
-  mMidiOutputDevNames.clear();
-  mMidiOutputDevNames.push_back(OFF_TEXT);
-#ifdef OS_MAC
-  mMidiOutputDevNames.push_back("virtual output");
-#endif
-  mMidiOutputDevNames.insert(mMidiOutputDevNames.end(), outs.begin(), outs.end());
-  if (!hotplug)
-    return;
-
-  HostLog(Cat::midi, Level::info, "devices changed: %zu inputs, %zu outputs", ins.size(), outs.size());
-  auto has = [](const std::vector<std::string>& v, const std::string& name) {
-    return std::find(v.begin(), v.end(), name) != v.end();
-  };
-  std::string in = mState.mMidiInDev.Get();
-  if ((in == OFF_TEXT || in == "no input") && !ins.empty())
+  auto* plug = static_cast<LunarHostPlugin*>(GetPlug());
+  auto& devices = plug->midiDevices();
+  if (!applyOnly)
   {
-    in = ins.front();  // nothing chosen yet: listen to the keyboard just plugged in
-    mState.mMidiInDev.Set(in.c_str());
-    UpdateINI();
+    std::vector<std::string> ins;
+    for (unsigned int i = 0; i < mMidiIn->getPortCount(); i++)
+      ins.push_back(mMidiIn->getPortName(i));
+    if (hotplug && ins == sMidiInsSeen)
+      return;
+    auto has = [](const std::vector<std::string>& v, const std::string& name) {
+      return std::find(v.begin(), v.end(), name) != v.end();
+    };
+    if (hotplug)
+    {
+      HostLog(Cat::midi, Level::info, "devices changed: %zu inputs", ins.size());
+      for (const auto& name : ins)
+        if (!has(sMidiInsSeen, name)) HostLog(Cat::midi, Level::info, "port connected: %s", name.c_str());
+      for (const auto& name : sMidiInsSeen)
+        if (!has(ins, name)) HostLog(Cat::midi, Level::info, "port disconnected: %s", name.c_str());
+    }
+    sMidiInsSeen = ins;
+    mMidiInputDevNames = ins;
+    if (devices.setPorts(ins, kVirtualMidiInput))
+    {
+      HostLog(Cat::midi, Level::info, "first use: listening to %s", devices.on().front().c_str());
+      UpdateINI();
+    }
   }
-  if (has(ins, in) && !has(insBefore, in))
+  for (const auto& change : devices.plan())
   {
-    HostLog(Cat::midi, Level::info, "input connected: %s", in.c_str());
-    SelectMIDIDevice(ERoute::kInput, in.c_str());
+    MidiSlot& slot = sMidiSlots[change.slot];
+    if (!change.open)
+    {
+      // Stop the producer before invalidating its queued messages; audio releases that
+      // input's notes on its next block.
+      if (slot.in)
+        slot.in->closePort();
+      plug->midiInputClosed(change.slot);
+      plug->setMidiInputDevice(change.slot, "");
+      HostLog(Cat::midi, Level::info, "input %u closed: %s", change.slot + 1, change.name.c_str());
+      continue;
+    }
+    const bool isVirtual = devices.isVirtual(change.name);
+    // The name bindings match ("" for the virtual input: only bindings for any device).
+    plug->setMidiInputDevice(change.slot, isVirtual ? "" : change.name.c_str());
+    try
+    {
+      if (!slot.in)
+      {
+        slot.in = std::make_unique<RtMidiIn>();
+        slot.host = this;
+        slot.index = change.slot;
+        slot.in->setCallback(&MIDICallback, &slot);
+        // Let MIDI clock (0xF8) through (the arpeggiator / sequencer follows it,
+        // midi_timing.h); SysEx is not used.
+        slot.in->ignoreTypes(true, false, false);
+      }
+      bool opened = false;
+      if (isVirtual)
+      {
+        slot.in->openVirtualPort(change.name);
+        opened = true;
+      }
+      else
+      {
+        for (unsigned int i = 0; i < slot.in->getPortCount() && !opened; i++)
+          if (slot.in->getPortName(i) == change.name)
+          {
+            slot.in->openPort(i, "Lunar 24");
+            opened = slot.in->isPortOpen();
+          }
+      }
+      if (!opened)
+        throw RtMidiError("the port did not open", RtMidiError::DRIVER_ERROR);
+      HostLog(Cat::midi, Level::info, "input %u open: %s", change.slot + 1, change.name.c_str());
+    }
+    catch (RtMidiError& error)
+    {
+      devices.openFailed(change.slot);
+      plug->setMidiInputDevice(change.slot, "");
+      HostLog(Cat::midi, Level::warn, "input %s did not open: %s", change.name.c_str(), error.getMessage().c_str());
+    }
   }
-  else if (!has(ins, in) && has(insBefore, in))
-  {
-    HostLog(Cat::midi, Level::info, "input disconnected: %s", in.c_str());
-    mMidiIn->closePort();
-    static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed(0);
-  }
-  const std::string out = mState.mMidiOutDev.Get();
-  if (has(outs, out) && !has(outsBefore, out))
-    SelectMIDIDevice(ERoute::kOutput, out.c_str());
-  else if (!has(outs, out) && has(outsBefore, out))
-    mMidiOut->closePort();
 }
 
 bool IPlugAPPHost::AudioSettingsInStateAreEqual(AppState& os, AppState& ns)
@@ -613,10 +681,6 @@ bool IPlugAPPHost::TryToChangeAudioDriverType()
   if (mDAC && mDAC->isStreamRunning() && mState.mAudioDriverType == mActiveState.mAudioDriverType &&
       AudioSettingsInStateAreEqual(mActiveState, mState))
   {
-    // Cancel restored the MIDI choice in mState but not the open ports (a pick in the
-    // dialog applies at once): reopen the restored ones so Cancel really undoes it.
-    SelectMIDIDevice(ERoute::kInput, mState.mMidiInDev.Get());
-    SelectMIDIDevice(ERoute::kOutput, mState.mMidiOutDev.Get());
     HostLog(Cat::audio, Level::info, "preferences: audio driver and settings unchanged, stream kept");
     return true;
   }
@@ -672,13 +736,12 @@ bool IPlugAPPHost::TryToChangeAudio()
   }
   const bool automatic = sStartupOpen || reopen;
   const char* why = sStartupOpen ? "startup" : reopen ? "reopen" : "preferences";
-  // Lunar 24: OK / Apply in Preferences call this whenever ANY setting changed, MIDI ones
-  // included. A MIDI input change is applied the moment it is picked (SelectMIDIDevice), so
-  // when the audio settings equal the running stream's, keep that stream: reopening rebuilds
-  // the engine (dropping held notes and arpeggios) and the restart is audible.
+  // Lunar 24: OK / Apply in Preferences call this whenever ANY setting changed. When the
+  // audio settings equal the running stream's, keep that stream: reopening rebuilds the
+  // engine (dropping held notes and arpeggios) and the restart is audible.
   if (!automatic && mDAC && mDAC->isStreamRunning() && AudioSettingsInStateAreEqual(mActiveState, mState))
   {
-    mActiveState = mState;  // record the MIDI choice as applied
+    mActiveState = mState;
     UpdateINI();
     HostLog(Cat::audio, Level::info, "preferences: audio unchanged, stream kept");
     return true;
@@ -894,107 +957,11 @@ bool IPlugAPPHost::TryToChangeAudio()
   return false;
 }
 
-bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
+// Lunar 24: MIDI ports are chosen in the MIDI panel's DEVICES tab (ProbeMidiIO applies them);
+// Preferences has no MIDI section any more. Kept for the upstream dialog code, which still names it.
+bool IPlugAPPHost::SelectMIDIDevice(ERoute, const char*)
 {
-  int port = GetMIDIPortNumber(direction, pPortName);
-
-  if (direction == ERoute::kInput)
-  {
-    // Lunar 24: a chosen device that is not plugged in stays chosen (the hot-plug check opens it
-    // when it arrives); nothing is opened meanwhile.
-    if (port == -1)
-      port = 0;
-
-    if (mMidiIn)
-    {
-      // Stop the old producer before invalidating its queued messages. The new
-      // port opens only after this boundary; audio performs the reset on its next block.
-      bool wasOpen = mMidiIn->isPortOpen();
-#ifdef OS_MAC
-      wasOpen = wasOpen || sVirtualMidiInputOpen;
-      sVirtualMidiInputOpen = false;
-#endif
-      mMidiIn->closePort();
-      if (wasOpen) static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed(0);
-      // Tell the plugin which device name bindings should match ("" = none/virtual:
-      // only device-agnostic bindings fire then).
-      {
-        const char* sel = mState.mMidiInDev.Get();
-        const bool none = std::strcmp(sel, OFF_TEXT) == 0 || std::strcmp(sel, "no input") == 0
-#ifdef OS_MAC
-                          || std::strcmp(sel, "virtual input") == 0
-#endif
-            ;
-        static_cast<LunarHostPlugin*>(GetPlug())->setMidiInputDeviceName(none ? "" : sel);
-      }
-
-      if (port == 0)
-      {
-        return true;
-      }
-  #if defined OS_WIN
-      else
-      {
-        mMidiIn->openPort(port-1);
-        return true;
-      }
-  #elif defined OS_MAC
-      else if (port == 1)
-      {
-        std::string virtualMidiInputName = "To ";
-        virtualMidiInputName += BUNDLE_NAME;
-        mMidiIn->openVirtualPort(virtualMidiInputName);
-        sVirtualMidiInputOpen = true;
-        return true;
-      }
-      else
-      {
-        mMidiIn->openPort(port-2);
-        return true;
-      }
-  #else
-   #error NOT IMPLEMENTED
-  #endif
-    }
-  }
-  else
-  {
-    if (port == -1)
-      port = 0;
-    
-    if (mMidiOut)
-    {
-      //TODO: send all notes off?
-      mMidiOut->closePort();
-      
-      if (port == 0)
-        return true;
-#if defined OS_WIN
-      else
-      {
-        mMidiOut->openPort(port-1);
-        return true;
-      }
-#elif defined OS_MAC
-      else if (port == 1)
-      {
-        std::string virtualMidiOutputName = "From ";
-        virtualMidiOutputName += BUNDLE_NAME;
-        mMidiOut->openVirtualPort(virtualMidiOutputName);
-        return true;
-      }
-      else
-      {
-        mMidiOut->openPort(port-2);
-        return true;
-      }
-#else
-  #error NOT IMPLEMENTED
-#endif
-    }
-  }
-  
-  return false;
+  return true;
 }
 
 void IPlugAPPHost::CloseAudio()
@@ -1168,22 +1135,8 @@ bool IPlugAPPHost::InitMidi()
     return false;
   }
 
-  try
-  {
-    mMidiOut = std::make_unique<RtMidiOut>();
-  }
-  catch (RtMidiError &error)
-  {
-    mMidiOut = nullptr;
-    error.printMessage();
-    return false;
-  }
-
-  mMidiIn->setCallback(&MIDICallback, this);
-  // Lunar 24: let MIDI clock (0xF8) through; RtMidi drops timing messages by default and the
-  // keyboard arpeggiator / sequencer follows a DAW's clock (midi_timing.h).
-  mMidiIn->ignoreTypes(false, false, false );
-
+  // Lunar 24: mMidiIn only lists the ports (each input slot opens its own, ProbeMidiIO); no
+  // MIDI out (mMidiOut stays empty, so Preferences shows no MIDI section).
   return true;
 }
 
@@ -1273,27 +1226,17 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
 }
 
 // static
-void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, void* pUserData)
+// Lunar 24: one input slot's callback (pUserData is its MidiSlot): its messages go to its own
+// queue. SysEx is ignored (several slots must not share the SysEx queue's one producer).
+void IPlugAPPHost::MIDICallback(double, std::vector<uint8_t>* pMsg, void* pUserData)
 {
-  IPlugAPPHost* _this = (IPlugAPPHost*) pUserData;
+  const MidiSlot* slot = static_cast<const MidiSlot*>(pUserData);
+  IPlugAPPHost* _this = slot->host;
   
-  if (pMsg->size() == 0 || _this->mExiting)
+  if (pMsg->size() == 0 || pMsg->size() > 3 || _this == nullptr || _this->mExiting)
     return;
   
-  if (pMsg->size() > 3)
-  {
-    if (pMsg->size() > MAX_SYSEX_SIZE)
-    {
-      DBGMSG("SysEx message exceeds MAX_SYSEX_SIZE\n");
-      return;
-    }
-    
-    SysExData data { 0, static_cast<int>(pMsg->size()), pMsg->data() };
-    
-    _this->mIPlug->mSysExMsgsFromCallback.Push(data);
-    return;
-  }
-  else if (pMsg->size())
+  if (pMsg->size())
   {
     IMidiMsg msg;
     msg.mStatus = pMsg->at(0);
@@ -1303,7 +1246,7 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
     // the next audio block, so MIDI timing does not jitter by up to a whole buffer.
     msg.mOffset = lunar24::host::midiArrivalStamp();
 
-    static_cast<LunarHostPlugin*>(_this->GetPlug())->queueMidiInput(0, {
+    static_cast<LunarHostPlugin*>(_this->GetPlug())->queueMidiInput(slot->index, {
         msg.mOffset, msg.mStatus, msg.mData1, msg.mData2});
   }
 }

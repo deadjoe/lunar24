@@ -42,9 +42,10 @@ review and listening notes: `design/SOURCE_REVIEW.md`.
 - Effector: click the cartridge slot to pick a cartridge (right-click = previous); a
   side's 1-2-3 switch loads it on that side and picks the program.
 - MIDI: notes play the plates; mod wheel / CC74 cutoff, CC71 resonance, CC91 blend, CC7
-  master; pitch bend, sustain, MIDI clock. The MIDI button opens Learn and the settings.
-  A profile holds bindings; CHANNEL / TRANSPOSE / VELOCITY / SPLIT and the two switch keys
-  are global. The keybed triangles, `[` / `]` or the switch keys step profiles while
+  master; pitch bend, sustain, MIDI clock. The MIDI button opens BINDINGS (Learn), DEVICES
+  and PROFILES. DEVICES turns ports on (up to four at once, any of them plays) and holds each
+  device's CHANNEL / TRANSPOSE / VELOCITY / SPLIT. A profile holds bindings; the two switch
+  keys are global. The keybed triangles, `[` / `]` or the switch keys step profiles while
   playing; the display's second line names the profile.
 - MIDI in a plugin: bindings ignore the channel unless the DAW keeps it (in Live, route the
   pads' track to channel 10, T15.15); otherwise a pad and a key on the same note are one
@@ -53,7 +54,7 @@ review and listening notes: `design/SOURCE_REVIEW.md`.
 
 ## Next steps
 1. Hand-test the Windows app (MANUAL_TESTS ⏳; the owner schedules it).
-2. Design multi-controller MIDI support (several inputs at once).
+2. Hand-test several MIDI devices at once (MANUAL_TESTS T14.7-T14.13, MPK + iPad).
 3. When the owner asks: tune sounds by ear (MANUAL_TESTS "调音待办").
 4. Plugin phases 2/3: options analysed in PLUGIN_PLAN section 9; not started.
 

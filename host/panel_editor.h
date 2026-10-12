@@ -149,10 +149,9 @@ struct EditorShared {
   std::uint64_t seq = 0;
   // The plugins: REC looks the same but does not respond (a DAW records), MIDI comes from the DAW.
   bool recorderEnabled = true;
-  const char* midiNoDevice = "Choose an input in Preferences";
   // The plugins: the DAW may rewrite MIDI channels (Live sends everything on channel 1 unless
   // a track routes it to a channel), so Learn records channel 1 as ANY channel there (any
-  // other channel is real and kept), and the CHANNEL setting applies to the app only.
+  // other channel is real and kept), and DEVICES shows the one DAW track (no CHANNEL).
   bool midiFromDaw = false;
   std::string midiVersion, midiBuild;  // plugins: shown in the MIDI panel (the app has About)
   std::uint64_t seenStateVersion = ~0ull;
@@ -193,11 +192,11 @@ struct EditorShared {
     std::function<std::uint64_t()> messageSeq;        // bumps per incoming note/CC
     std::function<std::uint32_t()> lastMessage;       // packed value/kind/channel/number
     std::function<std::uint16_t()> litPlates;         // plates MIDI notes hold down (bit 0 = C)
-    std::function<int()> channelFilter;
-    std::function<int()> octaveShift;
-    std::function<int()> velocityCurve;
-    std::function<int()> splitNote;
-    std::function<void(int, int, int, int)> setRigSettings;
+    // DEVICES: the rows (plugins: the DAW track), turning a port on / off (false: refused,
+    // four are on) and a row's settings (false: not saved).
+    std::function<std::vector<midi_ui::DeviceRow>()> devices;
+    std::function<bool(const std::string&, bool)> setDeviceOn;
+    std::function<bool(const std::string&, const core::MidiRigSettings&)> setDeviceRig;
     std::function<void()> bindingsChanged;            // save + republish
     std::function<void()> profileChanged;             // already saved: publish only
     std::function<void(int)> stepProfile;             // keybed triangle / [ ]: -1 previous, +1 next
@@ -220,7 +219,28 @@ struct EditorShared {
   bool midiOpen = false, profileBrowser = false, profileDeleteArmed = false, profileReloadArmed = false;
   std::string unavailableDeleteId;
   int profileListOffset = 0;
+  // The DEVICES tab (profileBrowser is the PROFILES tab; neither: BINDINGS, where Learn listens).
+  bool devicesTab = false;
+  int deviceListOffset = 0;
+  std::string deviceNote;            // why the last DEVICES click did nothing
+  std::string seenDevices;           // the rows as last drawn (redraw when a light or a port changes)
+  IControl* midiOverlay = nullptr;
+  static std::string devicesKey(const std::vector<midi_ui::DeviceRow>& rows) {
+    std::string key;
+    for (const auto& d : rows)
+      key += d.name + char('0' + d.on + 2 * d.connected + 4 * d.failed + 8 * d.active) + '\n';
+    return key;
+  }
+  bool bindingsTab() const { return !profileBrowser && !devicesTab; }
+  void showDevices(bool open) {
+    if (open && profileBrowser) showProfiles(false);
+    devicesTab = open;
+    deviceNote.clear();
+    if (midi.messageSeq) { learnArmSeq = midi.messageSeq(); relativeLearn.skipToSequence(learnArmSeq); }
+    if (learnCapture) learnCapture->SetIgnoreMouse(!(learnArmed && learnAwaitTarget && bindingsTab()));
+  }
   void showProfiles(bool open) {
+    if (open && devicesTab) showDevices(false);
     profileBrowser = open;
     profileDeleteArmed = profileReloadArmed = false;
     unavailableDeleteId.clear();
@@ -231,7 +251,7 @@ struct EditorShared {
     }
     // Browsing is not a switch. Discard messages received while browsing on return.
     if (midi.messageSeq) { learnArmSeq = midi.messageSeq(); relativeLearn.skipToSequence(learnArmSeq); }
-    if (learnCapture) learnCapture->SetIgnoreMouse(!(learnArmed && learnAwaitTarget && !open));
+    if (learnCapture) learnCapture->SetIgnoreMouse(!(learnArmed && learnAwaitTarget && bindingsTab()));
   }
   void adoptedMidiProfile() {
     setLearnArmed(false, false);
@@ -249,7 +269,7 @@ struct EditorShared {
     // A profile switched while the panel was closed may have fewer rows: stay on a real page.
     if (open && midiStore)
       midiListOffset = midi_ui::pageOffset(midiListOffset, static_cast<int>(midiStore->map().count()));
-    if (!open) { showProfiles(false); setLearnArmed(false, false); cancelSwitchConfirm(); }
+    if (!open) { showProfiles(false); showDevices(false); setLearnArmed(false, false); cancelSwitchConfirm(); }
   }
   // Learn: armed while the user picks a panel target and then moves a hardware control.
   IControl* learnCapture = nullptr;  // the full-panel click catcher (mouse-ignored unless picking)
@@ -285,11 +305,11 @@ struct EditorShared {
     learnAwaitTarget = awaitTarget;
     if (!armed) learnSwitch = -1;
     if (armed && midiStore) learnGeneration = midiStore->generation();
-    if (learnCapture != nullptr) learnCapture->SetIgnoreMouse(!(armed && awaitTarget && !profileBrowser));
+    if (learnCapture != nullptr) learnCapture->SetIgnoreMouse(!(armed && awaitTarget && bindingsTab()));
   }
   // Called from the display tick: a hardware message arrived while awaiting one.
   void pollLearn() {
-    if (profileBrowser || !learnArmed || learnAwaitTarget || midiStore == nullptr) return;
+    if (!bindingsTab() || !learnArmed || learnAwaitTarget || midiStore == nullptr) return;
     if (learnGeneration != midiStore->generation()) { setLearnArmed(false, false); return; }
     if (!midi.messageSeq || midi.messageSeq() == learnArmSeq) return;
     const std::uint32_t m = midi.lastMessage();
@@ -332,7 +352,7 @@ struct EditorShared {
   }
   MidiRelativeLearn relativeLearn;
   bool pollRelativeDetect() {
-    if (profileBrowser || midiStore == nullptr || !midi.messageSeq) return false;
+    if (!bindingsTab() || midiStore == nullptr || !midi.messageSeq) return false;
     core::MidiBinding edited;
     if (!relativeLearn.observe(midiStore->map(), midiStore->generation(), midi.messageSeq(),
                                 midi.lastMessage(), edited) || !midiStore->bind(edited)) return false;
@@ -518,6 +538,7 @@ struct EditorShared {
       if (!up) {
         if (switchConfirm.open) cancelSwitchConfirm();
         else if (profileBrowser) showProfiles(false);
+        else if (devicesTab) showDevices(false);
         else showMidi(false);
       }
       return true;
@@ -1774,16 +1795,14 @@ class MidiOverlayControl : public IControl {
     OverlaySink sink(g);
     midi_ui::State state;
     state.map = s_.midiStore ? &s_.midiStore->map() : nullptr;
-    state.device = s_.midi.inputDeviceName ? s_.midi.inputDeviceName() : "";
-    state.noDevice = s_.midiNoDevice;
     state.version = s_.midiVersion;
     state.build = s_.midiBuild;
-    state.channel = s_.midi.channelFilter ? s_.midi.channelFilter() : 0;
-    state.octave = s_.midi.octaveShift ? s_.midi.octaveShift() : 0;
-    state.curve = s_.midi.velocityCurve ? s_.midi.velocityCurve() : 0;
-    state.split = s_.midi.splitNote ? s_.midi.splitNote() : core::kMidiDefaultSplitNote;
-    state.offset = s_.profileBrowser ? s_.profileListOffset : s_.midiListOffset;
+    if (s_.midi.devices) state.devices = s_.midi.devices();
+    s_.seenDevices = EditorShared::devicesKey(state.devices);
+    state.offset = s_.profileBrowser ? s_.profileListOffset : s_.devicesTab ? s_.deviceListOffset : s_.midiListOffset;
     state.profileBrowser = s_.profileBrowser;
+    state.devicesTab = s_.devicesTab;
+    state.deviceNote = s_.deviceNote;
     state.deleteArmed = s_.profileDeleteArmed;
     state.reloadArmed = s_.profileReloadArmed;
     if (g.GetControlInTextEntry() == this) state.nameAction = nameAction_;
@@ -1799,7 +1818,7 @@ class MidiOverlayControl : public IControl {
     state.armed = s_.learnArmed;
     state.awaitTarget = s_.learnAwaitTarget;
     state.editable = editable();
-    state.channelAppOnly = s_.midiFromDaw;
+    state.fromDaw = s_.midiFromDaw;
     if (s_.midiStore) state.global = s_.midiStore->global();
     state.confirmSwitch = s_.switchConfirm.open;
     state.confirmDirection = s_.switchConfirm.direction;
@@ -1839,6 +1858,18 @@ class MidiOverlayControl : public IControl {
     if (midi_ui::kProfile.contains(x, y)) {
       s_.showProfiles(!s_.profileBrowser);
       GetUI()->SetAllControlsDirty();
+      return;
+    }
+    for (int i = 0; i < midi_ui::kTabCount; ++i) {
+      if (!midi_ui::tab(i).contains(x, y)) continue;
+      if (i == 0) { s_.showProfiles(false); s_.showDevices(false); }
+      else if (i == 1) s_.showDevices(true);
+      else s_.showProfiles(true);
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
+    if (s_.devicesTab) {
+      devicesClick(x, y);
       return;
     }
     const bool failedSave = s_.midiStore->dirty() && s_.midiStore->needsRecovery();
@@ -1913,26 +1944,15 @@ class MidiOverlayControl : public IControl {
       GetUI()->SetAllControlsDirty();
       return;
     }
+    if (midi_ui::kInputsList.contains(x, y)) {  // the devices that are on: open DEVICES
+      s_.showDevices(true);
+      GetUI()->SetAllControlsDirty();
+      return;
+    }
     if (!editable()) return;
     if (midi_ui::kLearn.contains(x, y)) {
       s_.setLearnArmed(!s_.learnArmed, !s_.learnArmed);
       GetUI()->SetAllControlsDirty();
-      return;
-    }
-    for (int i = 0; i < midi_ui::kSettingCount; ++i) {
-      const int delta = midi_ui::decrement(i).contains(x, y)   ? -1
-                        : midi_ui::increment(i).contains(x, y) ? 1
-                                                               : 0;
-      if (!delta || !s_.midi.setRigSettings) continue;
-      int values[] = {s_.midi.channelFilter(), s_.midi.octaveShift(), s_.midi.velocityCurve(),
-                      s_.midi.splitNote()};
-      constexpr int low[] = {0, -36, 0, core::kMidiSplitNoteLow},
-                    high[] = {16, 36, 2, core::kMidiSplitNoteHigh};
-      values[i] += delta;
-      if (values[i] < low[i]) values[i] = high[i];
-      if (values[i] > high[i]) values[i] = low[i];
-      s_.midi.setRigSettings(values[0], values[1], values[2], values[3]);
-      SetDirty(false);
       return;
     }
     for (int i = 0; i < 2; ++i) {
@@ -1992,6 +2012,42 @@ class MidiOverlayControl : public IControl {
     GetUI()->SetAllControlsDirty();
   }
  private:
+  // DEVICES: paging, ON / OFF and each row's settings.
+  void devicesClick(float x, float y) {
+    const auto rows = s_.midi.devices ? s_.midi.devices() : std::vector<midi_ui::DeviceRow>{};
+    const int count = static_cast<int>(rows.size());
+    int& offset = s_.deviceListOffset;
+    offset = midi_ui::pageOffset(offset, count);
+    s_.deviceNote.clear();
+    if (midi_ui::kPrevious.contains(x, y) || midi_ui::kNext.contains(x, y)) {
+      offset = midi_ui::pageOffset(offset + (midi_ui::kPrevious.contains(x, y) ? -1 : 1) * midi_ui::kVisibleRows, count);
+      SetDirty(false);
+      return;
+    }
+    for (int i = 0; i < midi_ui::kVisibleRows && offset + i < count; ++i) {
+      const auto& d = rows[static_cast<std::size_t>(offset + i)];
+      if (!s_.midiFromDaw && midi_ui::deviceToggle(i).contains(x, y)) {
+        if (s_.midi.setDeviceOn && !s_.midi.setDeviceOn(d.name, !d.on))
+          s_.deviceNote = "Four devices are on already.";
+        GetUI()->SetAllControlsDirty();
+        return;
+      }
+      if (!editable() || (!s_.midiFromDaw && !d.on)) continue;
+      for (int k = 0; k < midi_ui::kSettingCount; ++k) {
+        if (s_.midiFromDaw && k == 0) continue;  // the DAW track's channel is the DAW's
+        const int delta = midi_ui::deviceDecrement(i, k).contains(x, y)   ? -1
+                          : midi_ui::deviceIncrement(i, k).contains(x, y) ? 1
+                                                                           : 0;
+        if (!delta || !s_.midi.setDeviceRig) continue;
+        if (!s_.midi.setDeviceRig(d.name, midi_ui::stepSetting(d.rig, k, delta)))
+          s_.deviceNote = s_.midiStore && !s_.midiStore->error().empty() ? s_.midiStore->error()
+                                                                         : "Too many devices with their own settings.";
+        SetDirty(false);
+        return;
+      }
+    }
+    SetDirty(false);
+  }
   void beginNameEntry(int action) {
     nameAction_ = action;
     nameGeneration_ = s_.midiStore->generation();
@@ -2174,7 +2230,8 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
   shared.learnCapture = capture;
   shared.midiControls.clear();
   auto addMidi = [&](IControl* c) { g->AttachControl(c); shared.midiControls.push_back(c); };
-  addMidi(new MidiOverlayControl(shared));
+  shared.midiOverlay = new MidiOverlayControl(shared);
+  addMidi(shared.midiOverlay);
   shared.showMidi(false);
 
   g->AttachTextEntryControl();
@@ -2216,6 +2273,10 @@ inline void BuildPanel(IGraphics* g, EditorShared& shared) {
       if (!shared.learnArmed) g->SetAllControlsDirty();
     }
     if (shared.pollRelativeDetect()) g->SetAllControlsDirty();
+    // The MIDI panel: an activity light, or a port plugged in / unplugged.
+    if (shared.midiOpen && shared.midiOverlay != nullptr && shared.midi.devices &&
+        EditorShared::devicesKey(shared.midi.devices()) != shared.seenDevices)
+      shared.midiOverlay->SetDirty(false);
     // REC: redraw the elapsed time once a second, and once more when recording stops.
     const int recSecond = shared.isRecording() && shared.rec.seconds ? int(shared.rec.seconds()) : -1;
     if (recSecond != shared.recordShownSecond && shared.recordControl != nullptr) {

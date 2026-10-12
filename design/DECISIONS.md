@@ -284,6 +284,10 @@ Keep these unless a listening test or a real bug says otherwise.
   CHANNEL / TRANSPOSE / VELOCITY / SPLIT are per input (named records in global.bin, older
   versions ignore them). MIDI clock follows the first input to send it until it is silent
   for a second; pitch bend is one for the machine, the last input to move it wins.
+  The MIDI panel's DEVICES tab chooses the ports (`host/midi_devices.h`; Preferences has no
+  MIDI section and the app has no MIDI out): a new port starts off, the ones that are on are
+  remembered by name in settings.ini and reopen when plugged in; only on first use does the
+  first port turn on by itself (the old single Preferences choice carries over).
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet

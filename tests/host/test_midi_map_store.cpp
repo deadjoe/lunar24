@@ -601,6 +601,42 @@ int main() {
     }
     removeTree(wdir);
   }
+  // Per-device settings: a device without its own plays with the every-device settings;
+  // its own are saved in global.bin, shared with other instances, and the file holds at
+  // most kMidiMaxDeviceRigs of them.
+  {
+    const auto ddir = makeTempDir("devices");
+    host::MidiMapStore a, b;
+    a.setDirectory(ddir);
+    b.setDirectory(ddir);
+    CHECK(a.load() == host::MidiMapLoadOutcome::NoFile);
+    const core::MidiRigSettings every{0, 0, core::MidiVelocityCurve::linear, 60};
+    const core::MidiRigSettings ipad{10, -12, core::MidiVelocityCurve::hard, 72};
+    CHECK(a.setSettingsFor("", every));                      // "" = the every-device settings
+    CHECK(a.setSettingsFor("iPad", ipad));
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 10);
+    CHECK_EQ(a.settingsFor("MPK mini IV").channelFilter, 0);  // no record: every-device
+    CHECK_EQ(a.settingsFor(nullptr).splitNote, 60);
+    CHECK_EQ(a.settings().channelFilter, 0);                  // the every-device record is untouched
+    CHECK(!a.setSettingsFor("iPad", core::MidiRigSettings{17, 0, core::MidiVelocityCurve::linear, 60}));
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 10);
+    CHECK(b.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK_EQ(b.settingsFor("iPad").octaveShift, -12);         // read back from global.bin
+    CHECK(b.setSettings(core::MidiRigSettings{4, 0, core::MidiVelocityCurve::soft, 60}));
+    CHECK(a.refresh());
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 10);        // a device's own survive an every-device edit
+    CHECK_EQ(a.settingsFor("Other").channelFilter, 4);
+    for (int i = 1; i < core::kMidiMaxDeviceRigs; ++i)
+      CHECK(a.setSettingsFor(("Device " + std::to_string(i)).c_str(), ipad));
+    CHECK_EQ(a.global().deviceRigCount, core::kMidiMaxDeviceRigs);
+    CHECK(!a.setSettingsFor("One too many", ipad));           // full: refused, nothing written
+    CHECK_EQ(a.settingsFor("One too many").channelFilter, 4);
+    CHECK(a.setSettingsFor("iPad", every));                   // an existing record still updates
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 0);
+    CHECK(b.refresh());
+    CHECK_EQ(b.global().deviceRigCount, core::kMidiMaxDeviceRigs);
+    removeTree(ddir);
+  }
   host::MidiMapStore noPath;
   CHECK(noPath.load() == host::MidiMapLoadOutcome::NoPath);
   CHECK(!noPath.save());

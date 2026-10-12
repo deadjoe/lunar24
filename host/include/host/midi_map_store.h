@@ -245,6 +245,23 @@ class MidiMapStore {
       return true;
     });
   }
+  // The settings input device `device` plays with: its own record, else the every-device
+  // settings (a device first seen, and the plugins, which do not know the device).
+  const core::MidiRigSettings& settingsFor(const char* device) const {
+    return core::midi_global_rig_for(global_, device);
+  }
+  // Saved at once to global.bin. An empty or null `device` sets the every-device settings.
+  // False when the file already holds the most device records it can (kMidiMaxDeviceRigs).
+  bool setSettingsFor(const char* device, const core::MidiRigSettings& s) {
+    if (device == nullptr || device[0] == '\0') return setSettings(s);
+    if (!editable() || !core::midi_rig_settings_valid(s)) return false;
+    bool full = false;
+    const bool saved = updateGlobal([&](core::MidiGlobalSettings& g) {
+      full = !core::midi_global_set_device_rig(g, device, s);
+      return !full;
+    });
+    return saved && !full;
+  }
   // A profile binding. The later bind wins: a key that was a switch key (or overlaps one,
   // core::midi_keys_overlap) stops being one. Switch actions never go into a profile.
   bool bind(const core::MidiBinding& b) {
