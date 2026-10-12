@@ -57,5 +57,14 @@ int main() {
     CHECK(!learn.observe(map, 2, static_cast<std::uint64_t>(101 + v), message(v), result));
   CHECK(!learn.observe(map, 2, 300, message(1), result)); // exhausted absolute observation stays off
   CHECK(!learn.observe(map, 2, 301, message(1), result));
+  // A plugin learns ANY channel (the DAW may rewrite it): the encoder is still detected.
+  core::MidiBinding anyChannel = binding;
+  anyChannel.key.channel = 0;
+  core::MidiMap pluginMap;
+  CHECK(pluginMap.bind(anyChannel));
+  learn.start(anyChannel, 5, 400, 1);
+  CHECK(learn.observe(pluginMap, 5, 401, message(1, 1), result));
+  CHECK(result.mode == core::MidiInputMode::relativeTwosComplement);
+  CHECK_EQ(result.key.channel, 0);
   return test::finish("test_midi_learn");
 }

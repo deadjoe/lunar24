@@ -188,7 +188,10 @@ class MidiMapStore {
     std::vector<std::uint8_t> selected;
     midi_profile_files::read(path("selected.txt"), selected, 64);
     const std::string wanted(selected.begin(), selected.end());
-    if (!adoptReadable(wanted)) return loadOutcome_ = MidiMapLoadOutcome::Malformed;
+    if (!adoptReadable(wanted)) {
+      loadGlobalUnlocked();  // the global settings stand on their own: keep them for a NEW profile
+      return loadOutcome_ = MidiMapLoadOutcome::Malformed;
+    }
     loadGlobalUnlocked();
     return loadOutcome_ = MidiMapLoadOutcome::Ok;
   }
@@ -204,44 +207,77 @@ class MidiMapStore {
   // Global: saved at once to global.bin (no profile is touched).
   bool setSettings(const core::MidiRigSettings& s) {
     if (!editable() || !core::midi_rig_settings_valid(s)) return false;
-    core::MidiGlobalSettings g = global_;
-    g.rig = s;
-    return saveGlobal(g);
+    return updateGlobal([&](core::MidiGlobalSettings& g) {
+      g.rig = s;
+      return true;
+    });
   }
-  // A profile binding. The later bind wins: a key that was a switch key stops being one.
-  // Switch actions never go into a profile (bindSwitch).
+  // A profile binding. The later bind wins: a key that was a switch key (or overlaps one,
+  // core::midi_keys_overlap) stops being one. Switch actions never go into a profile.
   bool bind(const core::MidiBinding& b) {
     if (!editable()) return false;
     if (b.targetKind == core::MidiTargetKind::action && core::midi_action_is_profile_switch(b.action)) return false;
-    core::MidiGlobalSettings g = global_;
-    bool releasesSwitch = false;
-    for (int i = 0; i < 2; ++i)
-      if (g.switchBound[i] && g.switchKey[i].equals(b.key)) { g.switchBound[i] = false; releasesSwitch = true; }
     if (!map_.bind(b)) return false;
     dirty_ = true;
-    if (releasesSwitch) (void)saveGlobal(g);
+    (void)updateGlobal([&](core::MidiGlobalSettings& g) {
+      bool changed = false;
+      for (int i = 0; i < 2; ++i)
+        if (g.switchBound[i] && core::midi_keys_overlap(g.switchKey[i], b.key)) { g.switchBound[i] = false; changed = true; }
+      return changed;
+    });
     return true;
   }
   // The PREV (0) / NEXT (1) triangle's one hardware key. The later bind wins: the key leaves
-  // the other triangle and the current profile. Other profiles keep their row, which the
-  // switch key then outranks (the MIDI panel greys it); otherProfilesUsing warns first.
+  // the other triangle and the current profile. Other profiles keep their rows, which the
+  // switch key then outranks (the MIDI panel greys them); otherProfilesUsing warns first.
   bool bindSwitch(int direction, const core::MidiBindingKey& key) {
     if (!editable() || direction < 0 || direction > 1 || !core::midi_binding_key_valid(key)) return false;
-    core::MidiGlobalSettings g = global_;
-    g.switchKey[direction] = key;
-    g.switchBound[direction] = true;
-    if (g.switchBound[1 - direction] && g.switchKey[1 - direction].equals(key)) g.switchBound[1 - direction] = false;
-    if (!saveGlobal(g)) return false;
-    if (map_.unbind(key)) dirty_ = true;
+    if (!updateGlobal([&](core::MidiGlobalSettings& g) {
+          g.switchKey[direction] = key;
+          g.switchBound[direction] = true;
+          if (g.switchBound[1 - direction] && core::midi_keys_overlap(g.switchKey[1 - direction], key))
+            g.switchBound[1 - direction] = false;
+          return true;
+        })) return false;
+    for (std::uint32_t i = map_.count(); i-- > 0;) {
+      const core::MidiBindingKey row = map_.at(i).key;
+      if (core::midi_keys_overlap(row, key) && map_.unbind(row)) dirty_ = true;
+    }
     return true;
   }
   bool unbindSwitch(int direction) {
-    if (direction < 0 || direction > 1 || !global_.switchBound[direction]) return false;
-    core::MidiGlobalSettings g = global_;
-    g.switchBound[direction] = false;
-    return saveGlobal(g);
+    if (!editable() || direction < 0 || direction > 1 || !global_.switchBound[direction]) return false;
+    return updateGlobal([&](core::MidiGlobalSettings& g) {
+      g.switchBound[direction] = false;
+      return true;
+    });
   }
-  // Rows in the other readable profiles bound to exactly this key (profile name order).
+  // Another instance (the app beside a plugin) changed global.bin since we last looked:
+  // adopt it. Cheap enough to call about once a second: the file is reread only when its
+  // time or size changed, and needs no lock (it is replaced atomically). True when the
+  // global settings in memory changed (republish them).
+  bool reloadGlobalIfChanged() {
+    if (directory_.empty() || !globalSeeded_) return false;
+    std::error_code ec;
+    const auto file = std::filesystem::u8path(globalPath());
+    const auto stamp = std::filesystem::last_write_time(file, ec);
+    if (ec) return false;
+    const auto size = std::filesystem::file_size(file, ec);
+    if (ec) return false;
+    if (globalStampKnown_ && stamp == globalStamp_ && size == globalSize_) return false;
+    globalStamp_ = stamp;
+    globalSize_ = size;
+    globalStampKnown_ = true;
+    std::vector<std::uint8_t> bytes;
+    core::MidiGlobalSettings g;
+    if (!midi_profile_files::read(globalPath(), bytes, core::kMidiGlobalMaxBytes) ||
+        !core::midi_global_decode(bytes.data(), bytes.size(), &g)) return false;
+    std::vector<std::uint8_t> mine(core::midi_global_wire_bytes(global_));
+    if (core::midi_global_encode(global_, mine.data(), mine.size()) == mine.size() && mine == bytes) return false;
+    global_ = g;
+    return true;
+  }
+  // Rows in the other readable profiles on this key, or overlapping it (profile name order).
   std::vector<MidiKeyUse> otherProfilesUsing(const core::MidiBindingKey& key) {
     std::vector<MidiKeyUse> uses;
     midi_profile_files::Lock lock(path("library.lock"));
@@ -251,8 +287,8 @@ class MidiMapStore {
       std::vector<std::uint8_t> bytes; std::string name; core::MidiMap map; core::MidiRigSettings settings;
       if (!midi_profile_files::read(path(p.id + ".bin"), bytes) ||
           !midi_profile_files::decode(bytes, name, map, settings)) continue;
-      const int row = map.find(key);
-      if (row >= 0) uses.push_back({name, map.at(static_cast<std::uint32_t>(row))});
+      for (std::uint32_t i = 0; i < map.count(); ++i)
+        if (core::midi_keys_overlap(map.at(i).key, key)) uses.push_back({name, map.at(i)});
     }
     return uses;
   }
@@ -356,32 +392,49 @@ class MidiMapStore {
 
  private:
   std::string path(const std::string& file) const { return app_state_file_ops::joinUtf8(libraryPath(), file); }
-  // global.bin: read when present and valid; otherwise the current profile's own playing
-  // settings seed it (an older library, or a damaged file), with no switch keys.
+  // global.bin: read when present and valid. Missing (an older library): the current
+  // profile's own playing settings seed it, with no switch keys, and the seed is written.
+  // Present but unreadable (damaged, or written by a newer build): keep what this instance
+  // already has and leave the file alone; the next deliberate change replaces it.
   void loadGlobalUnlocked() {
     std::vector<std::uint8_t> bytes;
     core::MidiGlobalSettings g;
     if (midi_profile_files::read(globalPath(), bytes, core::kMidiGlobalMaxBytes) &&
         core::midi_global_decode(bytes.data(), bytes.size(), &g)) {
       global_ = g;
+      globalSeeded_ = true;
       return;
     }
-    if (!globalSeeded_) {
-      global_ = core::MidiGlobalSettings{};
-      global_.rig = settings_;
-      globalSeeded_ = true;
-      // Write the seed at once (the caller holds the library lock), so every instance
-      // starting from this library agrees on it. A failed write is retried on the next change.
-      std::vector<std::uint8_t> seed(core::midi_global_wire_bytes(global_));
-      if (core::midi_global_encode(global_, seed.data(), seed.size()) == seed.size()) (void)write(globalPath(), seed);
-      error_.clear();
-    }
+    if (globalSeeded_) return;
+    global_ = core::MidiGlobalSettings{};
+    global_.rig = settings_;
+    globalSeeded_ = true;
+    std::error_code ec;
+    if (std::filesystem::exists(std::filesystem::u8path(globalPath()), ec) || ec) return;
+    // The caller holds the library lock. A failed write is retried by the next change.
+    const std::string kept = error_;
+    std::vector<std::uint8_t> seed(core::midi_global_wire_bytes(global_));
+    if (core::midi_global_encode(global_, seed.data(), seed.size()) == seed.size()) (void)write(globalPath(), seed);
+    error_ = kept;
   }
-  bool saveGlobal(const core::MidiGlobalSettings& g) {
-    std::vector<std::uint8_t> bytes(core::midi_global_wire_bytes(g));
-    if (core::midi_global_encode(g, bytes.data(), bytes.size()) != bytes.size()) return false;
+  // Change the global settings: under the library lock, start from the file as saved now
+  // (another instance may have changed it since this one read it), apply `change`, write.
+  // `change` returns false when it changed nothing: then nothing is written.
+  template <class Change>
+  bool updateGlobal(Change change) {
     midi_profile_files::Lock lock(path("library.lock"));
     if (!lock) return fail("Profile library busy. Retry.");
+    core::MidiGlobalSettings g = global_;
+    std::vector<std::uint8_t> current;
+    core::MidiGlobalSettings saved;
+    if (midi_profile_files::read(globalPath(), current, core::kMidiGlobalMaxBytes) &&
+        core::midi_global_decode(current.data(), current.size(), &saved)) g = saved;
+    if (!change(g)) {
+      global_ = g;  // still pick up what the file holds now
+      return true;
+    }
+    std::vector<std::uint8_t> bytes(core::midi_global_wire_bytes(g));
+    if (core::midi_global_encode(g, bytes.data(), bytes.size()) != bytes.size()) return false;
     if (!write(globalPath(), bytes)) return false;
     global_ = g;
     globalSeeded_ = true;
@@ -509,6 +562,9 @@ class MidiMapStore {
   core::MidiRigSettings settings_;  // the current profile file's own block (kept, not played)
   core::MidiGlobalSettings global_;
   bool globalSeeded_ = false;
+  std::filesystem::file_time_type globalStamp_{};  // global.bin as reloadGlobalIfChanged last saw it
+  std::uintmax_t globalSize_ = 0;
+  bool globalStampKnown_ = false;
   std::string directory_, id_, name_, error_;
   std::vector<std::uint8_t> baseline_;
   std::vector<MidiProfileInfo> profiles_;

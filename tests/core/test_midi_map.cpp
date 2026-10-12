@@ -273,14 +273,24 @@ int main() {
     CHECK(midi_map_find(m, "Other", 9, cc, 74)->parameter == ParameterId::effector_master);
     CHECK(midi_map_find(m, "Kit", 1, MidiBindingKind::note, 74) == nullptr);  // kind must match
     CHECK(midi_map_find(m, "Kit", 1, cc, 71) == nullptr);
-    // Unknown input (a plugin): bindings for any device match, ranked the same way.
+    // Unknown input (a plugin): bindings for any device and any channel match (the DAW may
+    // have rewritten the channel); a device-named row first, then one on this very channel.
     CHECK(midi_map_find(m, nullptr, 1, cc, 74)->parameter == ParameterId::vcf_l_freq);
-    CHECK(midi_map_find(m, nullptr, 9, cc, 74)->parameter == ParameterId::vcf_l_res);
-    CHECK(midi_map_find(m, nullptr, 2, cc, 74)->parameter == ParameterId::vcf_l_res);
+    CHECK(midi_map_find(m, nullptr, 9, cc, 74)->parameter == ParameterId::vcf_l_freq);
+    CHECK(midi_map_find(m, nullptr, 0, cc, 74)->parameter == ParameterId::vcf_l_res);
     CHECK(midi_map_find(m, nullptr, 1, cc, 71) == nullptr);
     MidiMap other;
     CHECK(other.bind(ccBinding("Kit", 0, 20, ParameterId::vcf_l_freq)));
     CHECK(midi_map_find(other, nullptr, 5, cc, 20)->parameter == ParameterId::vcf_l_freq);
+    // A pad learned in the app on channel 10 still answers in Ableton, which sends channel 1;
+    // with two rows, the one on the message's channel wins (hosts that keep channels).
+    MidiMap pads;
+    CHECK(pads.bind(ccBinding("MPK", 10, 39, ParameterId::vcf_l_freq)));
+    CHECK(midi_map_find(pads, nullptr, 1, cc, 39)->parameter == ParameterId::vcf_l_freq);
+    CHECK(midi_map_find(pads, "MPK", 1, cc, 39) == nullptr);  // the app keeps channels apart
+    CHECK(pads.bind(ccBinding("MPK", 1, 39, ParameterId::effector_blend)));
+    CHECK(midi_map_find(pads, nullptr, 1, cc, 39)->parameter == ParameterId::effector_blend);
+    CHECK(midi_map_find(pads, nullptr, 10, cc, 39)->parameter == ParameterId::vcf_l_freq);
     CHECK(midi_map_find(other, "", 5, cc, 20) == nullptr);  // a known "no device" still filters
   }
   // midi_relative_delta: the three vendor dialects.
@@ -385,6 +395,31 @@ int main() {
     CHECK(midi_binding_valid(b));
     CHECK(midi_action_is_profile_switch(b.action));
     CHECK(!midi_action_is_profile_switch(MidiAction::master_mute));
+  }
+  // midi_keys_overlap: one pad seen as a plugin key (any device) and an app key (named device).
+  {
+    auto k = [](const char* dev, std::uint8_t ch, MidiBindingKind kind, std::uint8_t n) {
+      MidiBindingKey key;
+      std::snprintf(key.device, kMidiBindingDeviceCapacity, "%s", dev);
+      key.channel = ch;
+      key.kind = kind;
+      key.number = n;
+      return key;
+    };
+    const auto pad = k("MPK", 10, MidiBindingKind::note, 40);
+    CHECK(midi_keys_overlap(pad, pad));
+    CHECK(midi_keys_overlap(pad, k("", 10, MidiBindingKind::note, 40)));
+    CHECK(midi_keys_overlap(pad, k("MPK", 0, MidiBindingKind::note, 40)));
+    CHECK(midi_keys_overlap(k("", 0, MidiBindingKind::note, 40), pad));
+    CHECK(!midi_keys_overlap(pad, k("Other", 10, MidiBindingKind::note, 40)));
+    CHECK(!midi_keys_overlap(pad, k("MPK", 9, MidiBindingKind::note, 40)));
+    CHECK(!midi_keys_overlap(pad, k("MPK", 10, MidiBindingKind::cc, 40)));
+    CHECK(!midi_keys_overlap(pad, k("MPK", 10, MidiBindingKind::note, 41)));
+    MidiGlobalSettings g;  // two triangles can never share a pad, even through a wildcard
+    g.switchKey[0] = pad;
+    g.switchKey[1] = k("", 0, MidiBindingKind::note, 40);
+    g.switchBound[0] = g.switchBound[1] = true;
+    CHECK(!midi_global_valid(g));
   }
   return test::finish("test_midi_map");
 }
