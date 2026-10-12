@@ -1582,7 +1582,7 @@
 - 通用规则：凡是要绑定的打击垫，音符号都要放在琴键弹奏范围之外，并把八度移调也算进去（例如在 MPK 的用户预设里给打击垫设很高的音符号）；或者把打击垫改成 CC 模式（SHIFT + 3 号垫，见下方"MIDI 待办"），CC 不会和琴键冲突。
 - 不想改打击垫音符号时，见 T15.15：在 Live 里把打击垫单独走第 10 通道送进插件。
 
-**T15.15 Live 里打击垫走第 10 通道，和琴键分开** ⏳
+**T15.15 Live 里打击垫走第 10 通道，和琴键分开** ✅ (#152，VST3 与 AU)
 - 准备：用本 PR 的 CI 构建物。独立 App 里 NEXT 绑在 pad4（`NOTE 39` / `CH 10`）。MPK 不调八度。Ableton 新建 Live Set。
 - 1 号 MIDI 轨道加载 Lunar 24 **VST3**：MIDI From 选 `MPK mini IV (MIDI Port)`、通道 **Ch. 1**、Monitor **In**。
 - 2 号 MIDI 轨道（空轨道，不放插件）：MIDI From 选 `MPK mini IV (MIDI Port)`、通道 **Ch. 10**、Monitor **In**；MIDI To 选 `1-Lunar 24`，下面第二个下拉框应列出 `1-Lunar 24` … `16-Lunar 24`（以前 VST3 只有 `Track In` 和 `1-Lunar 24`），选 **`10-Lunar 24`**。
