@@ -503,6 +503,15 @@ int main() {
     CHECK(e.photoPadRelease(10, 36));
     CHECK_EQ(e.runtime()->dronePhotoShade(3), 0.0);
     CHECK(!e.photoPadPressure(10, 36, 0.5));  // released: no longer held
+    // A DAW reset while the pad is held (its note-off may never come): the hand lifts; the
+    // knob-driven hands stay where they are.
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 127, 10);
+    const double knobShade = e.runtime()->dronePhotoShade(1);
+    CHECK_EQ(e.releasePhotoPadsFromAudioThread(), 1);
+    CHECK_EQ(e.runtime()->dronePhotoShade(3), 0.0);
+    CHECK_EQ(e.runtime()->dronePhotoShade(1), knobShade);
+    CHECK(!e.photoPadRelease(10, 36));  // the late note-off finds nothing
+    CHECK_EQ(e.releasePhotoPadsFromAudioThread(), 0);
     e.processBlock(nullptr, outs, 0, 2, 256);
   }
   // Filtering/settings and the matched binding stay on one snapshot, even when the

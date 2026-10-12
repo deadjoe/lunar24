@@ -167,8 +167,14 @@ struct EditorShared {
   double stepFlashAt[2] = {-100.0, -100.0};  // when each keybed triangle was last pressed
   bool stepKeyHeld[2] = {false, false};       // [ / ] down (their key-ups end the hold)
   void flashStep(int direction) { stepFlashAt[direction > 0 ? 1 : 0] = uiNow(); }
+  // A profile switch failed (edits not saved, or no other profile readable; the MIDI panel
+  // shows why): the display's second line says so for kSwitchFailedSeconds.
+  static constexpr double kSwitchFailedSeconds = 3.0;  // same as the LCD backlight hold
+  double switchFailedAt = -100.0;
+  void switchFailed() { switchFailedAt = uiNow(); }
   // The current MIDI profile's name, for the keyboard display's second line.
   std::string midiProfileName() const {
+    if (uiNow() - switchFailedAt < kSwitchFailedSeconds) return "SWITCH FAILED";
     return midiStore != nullptr && midiStore->editable() ? midi_ui::asciiText(midiStore->name()) : std::string("NO MIDI PROFILE");
   }
 
@@ -239,6 +245,9 @@ struct EditorShared {
     midiOpen = open;
     for (IControl* c : midiControls) c->Hide(!open);
     if (open) showMenu(false);
+    // A profile switched while the panel was closed may have fewer rows: stay on a real page.
+    if (open && midiStore)
+      midiListOffset = midi_ui::pageOffset(midiListOffset, static_cast<int>(midiStore->map().count()));
     if (!open) { showProfiles(false); setLearnArmed(false, false); cancelSwitchConfirm(); }
   }
   // Learn: armed while the user picks a panel target and then moves a hardware control.

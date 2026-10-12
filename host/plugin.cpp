@@ -58,13 +58,14 @@ extern "C" void lunar_host_audio_watchdog();
 extern "C" void lunar_host_request_audio_reopen();
 extern "C" bool lunar_host_recordings_dir(char* out, std::size_t capacity);
 extern "C" void lunar_host_reveal_dir(const char* utf8Path);
-extern "C" bool lunar_host_view_has_keyboard(void* view);
 #else
 #include "build_info.h"
 #include "plugin_settings_dir.h"
 #include <host/plugin_state_chunk.h>
 #include <vector>
 #endif
+// keyboard_focus.mm / keyboard_focus_win.cpp (the app and the plugins).
+extern "C" bool lunar_host_view_has_keyboard(void* view);
 
 namespace {
 #ifndef APP_API
@@ -418,11 +419,14 @@ int LunarHostPlugin::UnserializeState(const IByteChunk& chunk, int startPos)
     return r.bytes > 0 ? startPos + static_cast<int>(r.bytes) : chunk.Size();
 #endif
   }
-  if (project.hasDroneKeys) engine_.setDroneKeys(project.droneKeys);
   if (engine_.isReady()) {
+    // Record what MIDI changed first: a drone key pressed just now must not overwrite the
+    // project's keys set below.
     engine_.syncParametersFromAudioThread();
+    if (project.hasDroneKeys) engine_.setDroneKeys(project.droneKeys);
     (void)engine_.swapDeviceState(project.machine);
   } else {
+    if (project.hasDroneKeys) engine_.setDroneKeys(project.droneKeys);
     stateStore_.replacePending(project.machine);  // OnReset publishes it
   }
   return startPos + static_cast<int>(r.bytes);
@@ -486,7 +490,17 @@ void LunarHostPlugin::applyProfileSteps_()
   while (pendingProfileSteps_ != 0 && !midiPanelOpen_) {
     const int direction = pendingProfileSteps_ > 0 ? 1 : -1;
     const int result = midiMapStore_.step(direction);
-    if (result < 0) break;
+    if (result == -1) break;  // busy: the next OnIdle retries
+    if (result == -2) {       // edits not saved, or no other profile readable: say so, drop the rest
+      pendingProfileSteps_ = 0;
+      lunar24::host::diag::log().writef(lunar24::host::diag::Cat::midi, lunar24::host::diag::Level::warn,
+                                        logInstance_, "profile step failed: %s", midiMapStore_.error().c_str());
+#if IPLUG_EDITOR
+      if (uiState_)
+        std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_)->switchFailed();
+#endif
+      break;
+    }
     pendingProfileSteps_ -= direction;
     if (result > 0) switched = true;
   }
@@ -501,6 +515,9 @@ void LunarHostPlugin::applyProfileSteps_()
 void LunarHostPlugin::OnUIClose()
 {
   setMidiPanelOpen(false);
+  // A plugin window closed with a computer key down never gets its key-up.
+  if (uiState_)
+    (void)std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_)->releaseHeldKeys("window closed");
 }
 #endif
 
@@ -584,6 +601,7 @@ void LunarHostPlugin::applyPendingMidiResets_()
     midiNotes_.reset();
     midiLights_.reset();
     engine_.pitchBendFromAudioThread(0.0);
+    (void)engine_.releasePhotoPadsFromAudioThread();  // a held pad's note-off may never come
     lunar24::core::ControlEvent event{};
     event.kind = lunar24::core::ControlEventKind::reset;  // all gates off
     event.value = 1;
@@ -680,8 +698,10 @@ void LunarHostPlugin::OnIdle()
     playChime_("app ready");
   }
   lunar_host_audio_watchdog();  // reopen audio if the device went away or the system output changed
+#endif
 #if IPLUG_EDITOR
-  // Keys held while the window loses the keyboard never get their key-ups: release them now.
+  // Keys held while the window loses the keyboard (another app, a dialog, the DAW's own window)
+  // never get their key-ups: release them now.
   if (uiState_ && GetUI() != nullptr && GetUI()->GetWindow() != nullptr &&
       !lunar_host_view_has_keyboard(GetUI()->GetWindow())) {
     auto& ui = *std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_);
@@ -690,7 +710,7 @@ void LunarHostPlugin::OnIdle()
       GetUI()->SetAllControlsDirty();
   }
 #endif
-
+#ifdef APP_API
   constexpr auto kAutosaveInterval = std::chrono::seconds(30);
   const auto now = std::chrono::steady_clock::now();
   if (!engine_.isReady() || engine_.editCount() == savedEditCount_ || now - lastAutosave_ < kAutosaveInterval)

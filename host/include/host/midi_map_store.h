@@ -14,6 +14,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <host/app_state_store.h>
@@ -44,6 +45,9 @@ struct MidiKeyUse {
 
 namespace midi_profile_files {
 // UI-thread transactions only. A crashed process releases the OS lock automatically.
+// Another instance holds it for a few milliseconds per transaction, so wait up to
+// kLockWait before reporting the library busy.
+inline constexpr std::chrono::milliseconds kLockWait{100};
 class Lock {
  public:
   explicit Lock(const std::string& path) {
@@ -51,11 +55,10 @@ class Lock {
     if (!file_) return;
 #if defined(_WIN32)
     handle_ = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(file_)));
-    locked_ = LockFileEx(handle_, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
-                         0, 1, 0, &overlap_) != 0;
-#else
-    locked_ = ::flock(::fileno(file_), LOCK_EX | LOCK_NB) == 0;
 #endif
+    const auto giveUp = std::chrono::steady_clock::now() + kLockWait;
+    while (!tryLock_() && std::chrono::steady_clock::now() < giveUp)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   ~Lock() {
     if (!file_) return;
@@ -70,6 +73,15 @@ class Lock {
   Lock& operator=(const Lock&) = delete;
   explicit operator bool() const { return locked_; }
  private:
+  bool tryLock_() {
+#if defined(_WIN32)
+    locked_ = LockFileEx(handle_, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                         0, 1, 0, &overlap_) != 0;
+#else
+    locked_ = ::flock(::fileno(file_), LOCK_EX | LOCK_NB) == 0;
+#endif
+    return locked_;
+  }
   std::FILE* file_ = nullptr;
   bool locked_ = false;
 #if defined(_WIN32)
@@ -219,7 +231,13 @@ class MidiMapStore {
     if (b.targetKind == core::MidiTargetKind::action && core::midi_action_is_profile_switch(b.action)) return false;
     if (!map_.bind(b)) return false;
     dirty_ = true;
-    (void)updateGlobal([&](core::MidiGlobalSettings& g) {
+    // Only a key that overlaps a switch key (as global.bin holds them now: another instance
+    // may have bound one) writes global.bin, and so needs the library lock.
+    adoptSavedGlobal_();
+    bool overlapsSwitch = false;
+    for (int i = 0; i < 2; ++i)
+      overlapsSwitch = overlapsSwitch || (global_.switchBound[i] && core::midi_keys_overlap(global_.switchKey[i], b.key));
+    if (overlapsSwitch) (void)updateGlobal([&](core::MidiGlobalSettings& g) {
       bool changed = false;
       for (int i = 0; i < 2; ++i)
         if (g.switchBound[i] && core::midi_keys_overlap(g.switchKey[i], b.key)) { g.switchBound[i] = false; changed = true; }
@@ -295,27 +313,32 @@ class MidiMapStore {
   // Performance switch (keybed triangles / switch keys): the previous (-1) or next (+1)
   // readable profile in name order, wrapping. Pending edits are saved first. Unlike
   // select(), the startup choice (selected.txt) is left alone. 1 = switched, 0 = nothing
-  // to switch to (or a save / read failed: see error()), -1 = library busy, retry later.
+  // to switch to, -1 = library busy (retry later), -2 = failed: the edits could not be
+  // saved or no other profile could be read (see error()).
   int step(int direction) {
     if (direction == 0) return 0;
     midi_profile_files::Lock lock(path("library.lock"));
     if (!lock) return -1;
-    if (!scan()) return 0;
-    if (dirty_ && !saveUnlocked()) return 0;
+    if (!scan()) return -2;
+    if (dirty_ && !saveUnlocked()) return -2;
     const int n = static_cast<int>(profiles_.size());
     int at = -1;
     for (int i = 0; i < n; ++i)
       if (profiles_[static_cast<std::size_t>(i)].id == id_) at = i;
     if (at < 0) at = direction > 0 ? -1 : n;  // current file gone: start from an end
+    std::string lastError;
     for (int k = 1; k <= n; ++k) {
       const int i = ((at + (direction > 0 ? k : -k)) % n + n) % n;
       const auto& p = profiles_[static_cast<std::size_t>(i)];
       if (p.id == id_) break;  // went all the way round
       if (!p.readable) continue;
       if (adoptFile(p.id, false)) return 1;
-      error_.clear();  // unreadable since the scan: try the next one
+      lastError = error_;  // unreadable since the scan: try the next one
+      error_.clear();
     }
-    return 0;
+    if (lastError.empty()) return 0;
+    error_ = lastError;
+    return -2;
   }
   bool unbind(const core::MidiBindingKey& key) {
     if (!editable() || !map_.unbind(key)) return false;
@@ -416,6 +439,14 @@ class MidiMapStore {
     std::vector<std::uint8_t> seed(core::midi_global_wire_bytes(global_));
     if (core::midi_global_encode(global_, seed.data(), seed.size()) == seed.size()) (void)write(globalPath(), seed);
     error_ = kept;
+  }
+  // Adopt global.bin as saved now. It is replaced atomically, so reading needs no lock.
+  void adoptSavedGlobal_() {
+    std::vector<std::uint8_t> bytes;
+    core::MidiGlobalSettings saved;
+    if (midi_profile_files::read(globalPath(), bytes, core::kMidiGlobalMaxBytes) &&
+        core::midi_global_decode(bytes.data(), bytes.size(), &saved))
+      global_ = saved;
   }
   // Change the global settings: under the library lock, start from the file as saved now
   // (another instance may have changed it since this one read it), apply `change`, write.

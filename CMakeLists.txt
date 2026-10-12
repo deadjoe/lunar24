@@ -176,6 +176,7 @@ lunar_add_host_test(test_midi_profile_switch_sim tests/host/test_midi_profile_sw
 lunar_add_host_test(test_midi_map_apply tests/host/test_midi_map_apply.cpp)
 find_package(Threads REQUIRED)
 target_link_libraries(test_midi_map_apply PRIVATE Threads::Threads)
+target_link_libraries(test_midi_map_store PRIVATE Threads::Threads)
 lunar_add_host_test(test_midi_input_queue tests/host/test_midi_input_queue.cpp)
 target_link_libraries(test_midi_input_queue PRIVATE Threads::Threads)
 target_link_libraries(test_wav_recorder PRIVATE Threads::Threads)
