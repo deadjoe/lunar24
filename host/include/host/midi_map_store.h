@@ -51,14 +51,15 @@ inline constexpr std::chrono::milliseconds kLockWait{100};
 class Lock {
  public:
   explicit Lock(const std::string& path) {
-    file_ = app_state_file_ops::openNative(path, "a+b");
-    if (!file_) return;
-#if defined(_WIN32)
-    handle_ = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(file_)));
-#endif
     const auto giveUp = std::chrono::steady_clock::now() + kLockWait;
-    while (!tryLock_() && std::chrono::steady_clock::now() < giveUp)
+    for (;;) {
+      // Windows opens the file unshared (_wfopen_s), so while another instance holds the
+      // lock even the open fails: retry it too.
+      if (!file_) file_ = app_state_file_ops::openNative(path, "a+b");
+      if (file_ && tryLock_()) return;
+      if (std::chrono::steady_clock::now() >= giveUp) return;
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
   }
   ~Lock() {
     if (!file_) return;
@@ -75,6 +76,7 @@ class Lock {
  private:
   bool tryLock_() {
 #if defined(_WIN32)
+    handle_ = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(file_)));
     locked_ = LockFileEx(handle_, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
                          0, 1, 0, &overlap_) != 0;
 #else
