@@ -29,7 +29,10 @@ Keep these unless a listening test or a real bug says otherwise.
   channel (a row on the message's own channel ranks first), learns keys as ANY channel, and
   ignores CHANNEL (shown "CHANNEL (APP)"; the track's MIDI input picks the channel). The app
   still tells channels apart. Cost: in a plugin a pad and a key with the same note number are
-  one key, so give switch pads notes outside the playing range.
+  one key, for every binding (switch keys, drone keys, switches, photo sensors), so a bound
+  pad also fires from that key and a played key on a bound note does not play. Rule for any
+  pad you bind: give it a note outside the keyboard's playing range, counting octave shifts
+  (e.g. a very high note), or set the pads to send CC instead of notes.
 - **Named MIDI profiles** (owner, 2026-10-10; settings made global 2026-10-12, see above):
   bindings form one controller setup. The app and plugins share `midi-profiles/`
   in the settings folder; DAW projects do not contain profiles. Each instance switches
