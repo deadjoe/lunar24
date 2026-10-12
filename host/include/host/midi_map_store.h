@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>  // _doserrno (Windows)
 #include <filesystem>
 #include <string>
 #include <thread>
@@ -46,17 +47,22 @@ struct MidiKeyUse {
 namespace midi_profile_files {
 // UI-thread transactions only. A crashed process releases the OS lock automatically.
 // Another instance holds it for one transaction (a few fsync'd writes: usually milliseconds,
-// longer on a busy disk), so wait up to kLockWait before reporting the library busy.
+// longer on a busy disk), so a user action waits up to kLockWait before reporting the library
+// busy. A lock file that cannot be opened at all (folder gone or not writable) fails at once:
+// waiting cannot fix it.
 inline constexpr std::chrono::milliseconds kLockWait{500};
 class Lock {
  public:
-  explicit Lock(const std::string& path) {
-    const auto giveUp = std::chrono::steady_clock::now() + kLockWait;
+  explicit Lock(const std::string& path, std::chrono::milliseconds maxWait = kLockWait) {
+    const auto giveUp = std::chrono::steady_clock::now() + maxWait;
     for (;;) {
-      // Windows opens the file unshared (_wfopen_s), so while another instance holds the
-      // lock even the open fails: retry it too.
       if (!file_) file_ = app_state_file_ops::openNative(path, "a+b");
-      if (file_ && tryLock_()) return;
+      if (file_) {
+        if (tryLock_()) return;
+      } else if (!openFailedBusy_()) {
+        return;  // not another instance: busy() stays false
+      }
+      busy_ = true;
       if (std::chrono::steady_clock::now() >= giveUp) return;
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -73,7 +79,19 @@ class Lock {
   Lock(const Lock&) = delete;
   Lock& operator=(const Lock&) = delete;
   explicit operator bool() const { return locked_; }
+  // Not locked because another instance holds the lock (retry later), not because the lock
+  // file cannot be opened.
+  bool busy() const { return !locked_ && busy_; }
  private:
+  // Windows opens the file unshared (_wfopen_s), so while another instance holds the lock even
+  // the open fails, with a sharing violation. Elsewhere the open never fails for that reason.
+  static bool openFailedBusy_() {
+#if defined(_WIN32)
+    return _doserrno == ERROR_SHARING_VIOLATION || _doserrno == ERROR_LOCK_VIOLATION;
+#else
+    return false;
+#endif
+  }
   bool tryLock_() {
 #if defined(_WIN32)
     handle_ = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(file_)));
@@ -86,6 +104,7 @@ class Lock {
   }
   std::FILE* file_ = nullptr;
   bool locked_ = false;
+  bool busy_ = false;
 #if defined(_WIN32)
   HANDLE handle_ = INVALID_HANDLE_VALUE;
   OVERLAPPED overlap_{};
@@ -315,12 +334,17 @@ class MidiMapStore {
   // Performance switch (keybed triangles / switch keys): the previous (-1) or next (+1)
   // readable profile in name order, wrapping. Pending edits are saved first. Unlike
   // select(), the startup choice (selected.txt) is left alone. 1 = switched, 0 = nothing
-  // to switch to, -1 = library busy (retry later), -2 = failed: the edits could not be
-  // saved or no other profile could be read (see error()).
+  // to switch to, -1 = library busy (retry later), -2 = failed: the profile folder cannot be
+  // written, the edits could not be saved or no other profile could be read (see error()).
   int step(int direction) {
     if (direction == 0) return 0;
-    midi_profile_files::Lock lock(path("library.lock"));
-    if (!lock) return -1;
+    // One try, no wait: the host's idle loop calls this and retries a busy library itself.
+    midi_profile_files::Lock lock(path("library.lock"), std::chrono::milliseconds{0});
+    if (!lock) {
+      if (lock.busy()) return -1;
+      fail("Profile folder unavailable. Check it can be written.");
+      return -2;
+    }
     if (!scan()) return -2;
     if (dirty_ && !saveUnlocked()) return -2;
     const int n = static_cast<int>(profiles_.size());
