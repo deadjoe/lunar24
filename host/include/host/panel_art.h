@@ -180,7 +180,7 @@ void drawMoon(Sink& s, float cx, float cy, float r, std::uint32_t light, std::ui
   static constexpr Orbit kOrbits[] = {
       {1.15f, 1.8f, 4, {{-160, -95}, {-70, 20}, {45, 140}, {160, 190}}},
       {1.28f, 1.2f, 3, {{-140, -110}, {-30, 60}, {100, 175}}},
-      {1.43f, 1.0f, 2, {{-10, 35}, {150, 215}}},
+      {1.43f, 1.0f, 3, {{-60, -25}, {-10, 35}, {150, 215}}},  // upper-right arc: owner, 2026-10-12
   };
   for (const Orbit& o : kOrbits) {
     for (int a = 0; a < o.count; ++a) {
