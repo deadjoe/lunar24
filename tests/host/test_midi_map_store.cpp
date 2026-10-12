@@ -429,11 +429,31 @@ int main() {
     const auto only = one.id();
     CHECK_EQ(one.step(1), 0); CHECK_EQ(one.step(-1), 0);
     CHECK_EQ(one.id(), only);
+    auto msSince = [](std::chrono::steady_clock::time_point t) {
+      return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count();
+    };
     {
       host::midi_profile_files::Lock lock(host::app_state_file_ops::joinUtf8(s1.libraryPath(), "library.lock"));
-      CHECK_EQ(s1.step(1), -1);  // busy: the caller retries
+      const auto start = std::chrono::steady_clock::now();
+      CHECK_EQ(s1.step(1), -1);  // busy: the caller (the idle loop) retries...
+      CHECK(msSince(start) < 250);  // ...so a switch never waits for the lock
+    }
+    // A lock file that cannot be opened (folder gone, or not writable) is not "busy": no
+    // waiting, and a switch fails (-2) instead of being retried forever.
+    {
+      const auto start = std::chrono::steady_clock::now();
+      host::midi_profile_files::Lock gone(host::app_state_file_ops::joinUtf8(odir, "no-such-folder/library.lock"));
+      CHECK(!gone);
+      CHECK(!gone.busy());
+      CHECK(msSince(start) < 250);
     }
     removeTree(odir);
+    {
+      const auto start = std::chrono::steady_clock::now();
+      CHECK_EQ(one.step(1), -2);
+      CHECK(!one.error().empty());
+      CHECK(msSince(start) < 250);
+    }
     removeTree(gdir);
   }
   // Review fixes (#148): several instances share global.bin; damaged or missing files.

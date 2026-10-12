@@ -55,8 +55,10 @@ Keep these unless a listening test or a real bug says otherwise.
   preserves an alternate layout (or rescues edits after a conflicting save elsewhere).
   Confirmed RELOAD rereads only the current profile; failure keeps local edits and never
   switches profiles. It does not write selected.txt. Validation messages retain normal
-  Learn/navigation controls; recovery buttons are for storage failures. Library
-  locks never wait on the UI thread; startup failures expose RETRY LOAD. Unavailable
+  Learn/navigation controls; recovery buttons are for storage failures. A user action
+  waits up to 500 ms for another instance's transaction on the library lock (2026-10-12);
+  a profile switch from the idle loop never waits (a busy library is retried next idle),
+  and a lock file that cannot be opened fails at once. Startup failures expose RETRY LOAD. Unavailable
   files have separate confirmed deletion, rechecked under the library lock.
   English names, 1–39 printable ASCII characters, no outer spaces, unique ignoring case.
   NEW starts with no bindings and the current four settings; the first profile is Untitled
