@@ -4,6 +4,8 @@
 #include <host/midi_input_queue.h>
 #include <host/standalone_audio_engine.h>
 #include <limits>
+#include <utility>
+#include <vector>
 #include <memory>
 #include <thread>
 
@@ -67,9 +69,10 @@ int main() {
   lunar24::host::MidiNoteOwnership ownership;
   ownership.played(0, 0);
   ownership.played(15, 127);
-  for (unsigned channel : {0u, 15u, 16u, std::numeric_limits<unsigned>::max()}) {
+  // Keyed by lane (input device * 16 + channel): 64 lanes, anything past them is ignored.
+  for (unsigned channel : {0u, 15u, 16u, lunar24::host::kMidiLanes, std::numeric_limits<unsigned>::max()}) {
     for (unsigned note : {0u, 127u, 128u, std::numeric_limits<unsigned>::max()}) {
-      if (channel < 16 && note < 128) continue;
+      if (channel < lunar24::host::kMidiLanes && note < 128) continue;
       ownership.played(channel, note);
       CHECK(!ownership.release(channel, note));
     }
@@ -183,7 +186,62 @@ int main() {
     CHECK(sides.noteOn(1, 60, 72) == KeyboardSide::Left);  // per channel
     CHECK(sides.of(0, 60) == KeyboardSide::Right);
     CHECK(sides.latest(1) == KeyboardSide::Left);
-    CHECK(sides.of(16, 0) == KeyboardSide::Left);  // out of range: the default side
+    CHECK(sides.of(lunar24::host::kMidiLanes, 0) == KeyboardSide::Left);  // out of range: the default side
+  }
+  // Several input devices: each has its own lanes and its own queue, and closing one device
+  // releases only its notes, pedals and plate lights.
+  {
+    using lunar24::host::midi_lane;
+    lunar24::host::MidiNoteOwnership owned;
+    lunar24::host::MidiSustain sustain;
+    lunar24::host::MidiPlateLights lights;
+    // The same channel 1 note 60 on device 0 and device 1 are two notes.
+    owned.played(midi_lane(0, 0), 60);
+    owned.played(midi_lane(1, 0), 60);
+    lights.on(midi_lane(0, 0), 60, 60);
+    lights.on(midi_lane(1, 0), 64, 64);
+    CHECK_EQ(lights.mask(), static_cast<std::uint16_t>((1u << 0) | (1u << 4)));
+    CHECK(owned.release(midi_lane(1, 0), 60));          // device 1's note-off...
+    CHECK(!owned.release(midi_lane(1, 0), 60));
+    owned.played(midi_lane(1, 0), 60);
+    // A pedal held on device 1 holds back device 1's notes only.
+    sustain.pedal(midi_lane(1, 0), true, 3, [](lunar24::core::PerformanceInput) {});
+    CHECK(sustain.deferNoteOff(midi_lane(1, 0), 62));
+    CHECK(!sustain.deferNoteOff(midi_lane(0, 0), 62));
+    // Device 1 goes away: its note and its pedal's note are released, device 0's stays.
+    std::vector<std::pair<unsigned, unsigned>> released;
+    lunar24::host::release_midi_device_notes(1, owned, sustain, 3, [&](lunar24::core::PerformanceInput in) {
+      CHECK(in.kind == lunar24::core::PerfInputKind::note_off);
+      released.emplace_back(in.channel, in.noteId - 1);
+    });
+    CHECK_EQ(released.size(), 2u);
+    for (const auto& r : released) CHECK_EQ(r.first, midi_lane(1, 0));
+    CHECK(!sustain.deferNoteOff(midi_lane(1, 0), 62));   // its pedal was lifted
+    lights.resetDevice(1);
+    CHECK_EQ(lights.mask(), static_cast<std::uint16_t>(1u << 0));  // device 0's C still lit
+    CHECK(owned.release(midi_lane(0, 0), 60));          // device 0's note was untouched
+    // Out-of-range devices are ignored.
+    lunar24::host::release_midi_device_notes(lunar24::host::kMidiInputDevices, owned, sustain, 3,
+                                             [&](lunar24::core::PerformanceInput) { CHECK(false); });
+
+    // One queue per device: invalidating device 2 resetDevices device 2 only, and its stale
+    // messages are dropped while the other devices' arrive.
+    lunar24::host::MidiInputQueues queues;
+    CHECK(queues.push(0, {1, 0x90, 60, 100}));
+    CHECK(queues.push(2, {2, 0x90, 61, 100}));
+    CHECK(!queues.push(lunar24::host::kMidiInputDevices, {3, 0x90, 62, 100}));
+    queues.invalidate(2);
+    CHECK(queues.push(2, {4, 0x90, 63, 100}));
+    std::vector<unsigned> resetDevices;
+    std::vector<std::pair<unsigned, int>> got;
+    queues.drain([&](unsigned d) { resetDevices.push_back(d); },
+                 [&](unsigned d, lunar24::host::MidiInputQueue::Message m) { got.emplace_back(d, m.data1); });
+    CHECK(resetDevices == std::vector<unsigned>{2u});
+    CHECK(got == (std::vector<std::pair<unsigned, int>>{{0u, 60}, {2u, 63}}));
+    resetDevices.clear();
+    queues.invalidateAll();
+    queues.drain([&](unsigned d) { resetDevices.push_back(d); }, [&](unsigned, lunar24::host::MidiInputQueue::Message) {});
+    CHECK_EQ(resetDevices.size(), static_cast<std::size_t>(lunar24::host::kMidiInputDevices));
   }
   return test::finish("test_midi_input_queue");
 }

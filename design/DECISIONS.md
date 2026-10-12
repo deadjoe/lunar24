@@ -277,6 +277,13 @@ Keep these unless a listening test or a real bug says otherwise.
   change the lists are rebuilt; the chosen input reopens when its device returns and closes
   (all its notes released) when it goes. A chosen device that is not plugged in stays chosen
   rather than being reset to "off".
+- **Several MIDI inputs** (owner's choice, 2026-10-12; the app opens up to 4, plugins take the
+  DAW's): each input has its own queue (one producer each) and its notes live on lanes
+  (input * 16 + channel), so two inputs playing the same note are two notes, and closing one
+  input releases only its notes and pedal. Bindings naming a device answer only that input;
+  CHANNEL / TRANSPOSE / VELOCITY / SPLIT are per input (named records in global.bin, older
+  versions ignore them). MIDI clock follows the first input to send it until it is silent
+  for a second; pitch bend is one for the machine, the last input to move it wins.
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet

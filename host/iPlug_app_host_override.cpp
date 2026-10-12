@@ -569,7 +569,7 @@ void IPlugAPPHost::ProbeMidiIO()
   {
     HostLog(Cat::midi, Level::info, "input disconnected: %s", in.c_str());
     mMidiIn->closePort();
-    static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
+    static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed(0);
   }
   const std::string out = mState.mMidiOutDev.Get();
   if (has(outs, out) && !has(outsBefore, out))
@@ -915,7 +915,7 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute direction, const char* pPortName)
       sVirtualMidiInputOpen = false;
 #endif
       mMidiIn->closePort();
-      if (wasOpen) static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed();
+      if (wasOpen) static_cast<LunarHostPlugin*>(GetPlug())->midiInputClosed(0);
       // Tell the plugin which device name bindings should match ("" = none/virtual:
       // only device-agnostic bindings fire then).
       {
@@ -1303,7 +1303,7 @@ void IPlugAPPHost::MIDICallback(double deltatime, std::vector<uint8_t>* pMsg, vo
     // the next audio block, so MIDI timing does not jitter by up to a whole buffer.
     msg.mOffset = lunar24::host::midiArrivalStamp();
 
-    static_cast<LunarHostPlugin*>(_this->GetPlug())->queueMidiInput({
+    static_cast<LunarHostPlugin*>(_this->GetPlug())->queueMidiInput(0, {
         msg.mOffset, msg.mStatus, msg.mData1, msg.mData2});
   }
 }

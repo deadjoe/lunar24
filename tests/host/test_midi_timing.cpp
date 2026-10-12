@@ -86,6 +86,36 @@ static void clock_follower() {
   CHECK(f.onRealtime(0xFE) == A::none);
 }
 
+// Two inputs sending clock: the first one leads; the other takes over only after the leader
+// has been silent for a second.
+static void clock_first_input_leads() {
+  host::MidiClockFollower f;
+  using A = host::MidiClockFollower::Action;
+  const int second = static_cast<int>(host::MidiClockFollower::kHandOverUs);
+  CHECK(f.onRealtime(0xF8, 1, 1000) == A::step);       // input 2 leads
+  CHECK(f.onRealtime(0xF8, 0, 2000) == A::none);       // input 1's tick is ignored
+  CHECK(f.onRealtime(0xFA, 0, 3000) == A::none);       // and so is its START
+  int steps = 0;
+  for (int i = 1; i < 12; ++i) {
+    steps += f.onRealtime(0xF8, 1, 1000 + i * 20000) == A::step ? 1 : 0;
+    CHECK(f.onRealtime(0xF8, 0, 1000 + i * 20000 + 5) == A::none);
+  }
+  CHECK_EQ(steps, 1);  // 12 ticks from input 2: steps on the 1st and 7th
+  const int last = 1000 + 11 * 20000;
+  CHECK(f.onRealtime(0xF8, 0, last + second - 1) == A::none);  // just under a second: still input 2
+  CHECK(f.onRealtime(0xFA, 0, last + second) == A::restart);   // a second of silence: input 1 leads
+  CHECK(f.onRealtime(0xF8, 1, last + second + 10) == A::none);
+  CHECK(f.onRealtime(0xF8, 0, last + second + 20) == A::step);
+  // The arrival stamp wraps at 2^30 microseconds.
+  host::MidiClockFollower w;
+  const int nearWrap = 0x3FFFFFFF - 100;
+  CHECK(w.onRealtime(0xF8, 2, nearWrap) == A::step);
+  CHECK(w.onRealtime(0xF8, 3, 50) == A::none);  // 151 us later, across the wrap
+  CHECK(w.onRealtime(0xF8, 2, 60) == A::none);  // the leader's second tick
+  CHECK(w.onRealtime(0xF8, 3, 60 + second - 1) == A::none);
+  CHECK(w.onRealtime(0xFA, 3, 60 + second) == A::restart);
+}
+
 // START restarts an arpeggio from its first note and keeps the held chord (it used to send
 // the all-gates-off reset: the arpeggio stopped and mouse / computer-key notes were dropped).
 static void start_restarts_the_arpeggio() {
@@ -129,6 +159,7 @@ int main() {
   block_offsets();
   clock_events_and_bend();
   clock_follower();
+  clock_first_input_leads();
   start_restarts_the_arpeggio();
   return ::test::finish("midi_timing");
 }

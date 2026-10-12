@@ -66,6 +66,17 @@ int main() {
     m.apply(ev(RtKind::midi_sustain, 1, 64, 0, 1));    // pedal up on channel 2
     m.apply(ev(RtKind::midi_note_off, 0, 60));
     CHECK_EQ(m.describe(), std::string("midi notes down: none; held by sustain: none"));
+    // A second input device (lanes 16-31): named in the text, reset on its own.
+    m.apply(ev(RtKind::midi_note_on, 0, 60, 100));
+    m.apply(ev(RtKind::midi_note_on, 16, 60, 100));
+    CHECK_EQ(m.describe(), std::string("midi notes down: ch1:C4 in2 ch1:C4; held by sustain: none"));
+    m.apply(ev(RtKind::midi_input_reset, 1, 0, 0, 1));  // device 1 (the second) was closed
+    CHECK_EQ(m.describe(), std::string("midi notes down: ch1:C4; held by sustain: none"));
+    CHECK_EQ(rtText(ev(RtKind::midi_note_on, 16 + 9, 36, 90)), std::string("note-on ch=10 in=2 note=36(C2) vel=90 side=L"));
+    CHECK_EQ(rtText(ev(RtKind::midi_note_on, 9, 36, 90)), std::string("note-on ch=10 note=36(C2) vel=90 side=L"));
+    CHECK_EQ(rtText(ev(RtKind::midi_input_reset, 1, 0, 0, 2)), std::string("input 2 reset: released 2 held notes"));
+    CHECK_EQ(rtText(ev(RtKind::midi_input_reset, 0, 0, 0, 2)), std::string("input reset: released 2 held notes"));
+    m.apply(ev(RtKind::midi_note_off, 0, 60));
     m.apply(ev(RtKind::midi_note_on, 0, 62, 90));
     m.apply(ev(RtKind::swap_reset, 0, 0));
     m.lost();

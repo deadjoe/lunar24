@@ -67,6 +67,60 @@ int main() {
     CHECK_EQ(e.midiBindingRow(2, core::MidiBindingKind::cc, 74), 2);   // channel-only now surfaces
     CHECK_EQ(e.midiBindingRow(9, core::MidiBindingKind::cc, 74), 3);   // wildcard
   }
+  // Several input devices: a device-named row answers only that device's messages, every
+  // device plays with its own settings, and a switch key learned on one device is that
+  // device's alone. A plugin (no device names) matches every row whatever the device.
+  {
+    auto heap = std::make_unique<E>();
+    E& e = *heap;
+    CHECK(e.prepare(1, 48000.0, 256, 0, 2));
+    core::MidiMap m;
+    CHECK(m.bind(bindCc("iPad", 1, 20, core::ParameterId::effector_blend)));
+    CHECK(m.bind(bindCc("MPK mini IV", 1, 20, core::ParameterId::effector_master)));
+    CHECK(m.bind(bindCc("", 1, 21, core::ParameterId::vcf_l_res)));
+    E::MidiInputSet inputs;
+    std::snprintf(inputs.name[0], sizeof(inputs.name[0]), "MPK mini IV");
+    std::snprintf(inputs.name[1], sizeof(inputs.name[1]), "iPad");
+    inputs.rig[0] = core::MidiRigSettings{0, 12, core::MidiVelocityCurve::soft, 48};
+    inputs.rig[1] = core::MidiRigSettings{10, -12, core::MidiVelocityCurve::hard, 72};
+    core::MidiGlobalSettings g;
+    g.switchKey[1] = bindCc("iPad", 1, 30, core::ParameterId::effector_blend).key;
+    g.switchBound[1] = true;
+    const core::MidiMap sw = core::midi_switch_map(g);
+    e.publishMidiMap(m, "MPK mini IV", {}, true, &sw, true, &inputs);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20, 0), 1);   // the MPK's row
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20, 1), 0);   // the iPad's row
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20, 2), -1);  // a device with no name
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 21, 0), 2);   // a generic row: every device
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 21, 1), 2);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 21, 3), 2);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 30, 0), -1);  // the iPad's switch key
+    CHECK(e.midiBindingRow(1, core::MidiBindingKind::cc, 30, 1) >= E::kMidiSwitchRowBase);
+    {
+      E::MidiMessageScope message(e);
+      CHECK_EQ(message.settings(0).octaveShift, 12);
+      CHECK(message.settings(0).velocityCurve == core::MidiVelocityCurve::soft);
+      CHECK_EQ(message.settings(1).channelFilter, 10);
+      CHECK_EQ(message.settings(1).splitNote, 72);
+      CHECK_EQ(message.settings(2).octaveShift, 0);  // a device not set up: the defaults
+    }
+    // The single-input call: device 0 is the named input, and every device plays its settings.
+    const core::MidiRigSettings one{5, 24, core::MidiVelocityCurve::hard, 60};
+    e.publishMidiMap(m, "iPad", one);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20, 0), 0);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20, 1), -1);
+    {
+      E::MidiMessageScope message(e);
+      for (unsigned d = 0; d < core::kMidiMaxInputDevices; ++d) {
+        CHECK_EQ(message.settings(d).channelFilter, 5);
+        CHECK_EQ(message.settings(d).octaveShift, 24);
+      }
+    }
+    // A plugin: the DAW's MIDI has no device, so the first device-named row matches.
+    e.publishMidiMap(m, nullptr);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20, 0), 0);
+    CHECK_EQ(e.midiBindingRow(1, core::MidiBindingKind::cc, 20, 2), 0);
+  }
 
   // Absolute pickup: nothing moves until the controller crosses the current value.
   {

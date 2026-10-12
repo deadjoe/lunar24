@@ -410,6 +410,73 @@ int main() {
     CHECK(midi_action_is_profile_switch(b.action));
     CHECK(!midi_action_is_profile_switch(MidiAction::master_mute));
   }
+  // Per-device settings: a device plays with its own record, else the every-device one; the
+  // records survive a round trip, and a file written before them still reads the same.
+  {
+    MidiGlobalSettings g;
+    g.rig = MidiRigSettings{0, 0, MidiVelocityCurve::linear, 60};
+    const MidiRigSettings ipad{5, 12, MidiVelocityCurve::soft, 48};
+    CHECK(midi_global_rig_for(g, "iPad").splitNote == 60);
+    CHECK(midi_global_set_device_rig(g, "iPad", ipad));
+    CHECK_EQ(g.deviceRigCount, 1);
+    CHECK(midi_global_rig_for(g, "iPad").octaveShift == 12);
+    CHECK(midi_global_rig_for(g, "MPK mini IV").octaveShift == 0);  // no record: every-device
+    CHECK(midi_global_rig_for(g, "").octaveShift == 0);
+    CHECK(midi_global_rig_for(g, nullptr).octaveShift == 0);
+    MidiRigSettings ipad2 = ipad;
+    ipad2.channelFilter = 6;
+    CHECK(midi_global_set_device_rig(g, "iPad", ipad2));  // replaces, does not add
+    CHECK_EQ(g.deviceRigCount, 1);
+    CHECK(!midi_global_set_device_rig(g, "", ipad));
+    MidiRigSettings badRig = ipad;
+    badRig.octaveShift = 100;
+    CHECK(!midi_global_set_device_rig(g, "Bad", badRig));
+    char tooLong[kMidiBindingDeviceCapacity + 4];
+    std::memset(tooLong, 'x', sizeof tooLong - 1);
+    tooLong[sizeof tooLong - 1] = '\0';
+    CHECK(!midi_global_set_device_rig(g, tooLong, ipad));
+    CHECK(midi_global_set_device_rig(g, "MPK mini IV (MIDI Port)", ipad));
+    std::uint8_t buf[kMidiGlobalMaxBytes];
+    std::size_t n = midi_global_encode(g, buf, sizeof buf);
+    CHECK_EQ(n, kMidiGlobalHeaderBytes + 3 * kMidiGlobalRigBytes);
+    MidiGlobalSettings back;
+    CHECK(midi_global_decode(buf, n, &back));
+    CHECK_EQ(back.deviceRigCount, 2);
+    CHECK_EQ(back.rig.splitNote, 60);
+    CHECK_EQ(midi_global_rig_for(back, "iPad").channelFilter, 6);
+    CHECK_EQ(midi_global_rig_for(back, "MPK mini IV (MIDI Port)").splitNote, 48);
+    CHECK(buf[kMidiGlobalHeaderBytes] == '\0');  // the every-device record comes first
+    // Two records for one device are not a valid file.
+    std::uint8_t dup[kMidiGlobalMaxBytes];
+    std::memcpy(dup, buf, n);
+    std::memcpy(dup + kMidiGlobalHeaderBytes + 2 * kMidiGlobalRigBytes,
+                dup + kMidiGlobalHeaderBytes + kMidiGlobalRigBytes, kMidiBindingDeviceCapacity);
+    CHECK(!midi_global_decode(dup, n, &back));
+    CHECK(midi_global_clear_device_rig(g, "iPad"));
+    CHECK(!midi_global_clear_device_rig(g, "iPad"));
+    CHECK_EQ(g.deviceRigCount, 1);
+    CHECK(midi_global_rig_for(g, "iPad").octaveShift == 0);
+    CHECK(midi_global_rig_for(g, "MPK mini IV (MIDI Port)").splitNote == 48);
+    // Every record taken: one more device is refused, the file stays at the format's 16.
+    MidiGlobalSettings full;
+    for (int i = 0; i < kMidiMaxDeviceRigs; ++i) {
+      char name[16];
+      std::snprintf(name, sizeof name, "dev%d", i);
+      CHECK(midi_global_set_device_rig(full, name, ipad));
+    }
+    CHECK(!midi_global_set_device_rig(full, "one more", ipad));
+    n = midi_global_encode(full, buf, sizeof buf);
+    CHECK_EQ(n, kMidiGlobalHeaderBytes + kMidiGlobalMaxRigRecords * kMidiGlobalRigBytes);
+    CHECK(midi_global_decode(buf, n, &back));
+    CHECK_EQ(back.deviceRigCount, kMidiMaxDeviceRigs);
+    // A file with only the every-device record (what earlier versions write) has no
+    // device records.
+    MidiGlobalSettings old;
+    n = midi_global_encode(old, buf, sizeof buf);
+    CHECK_EQ(n, kMidiGlobalHeaderBytes + kMidiGlobalRigBytes);
+    CHECK(midi_global_decode(buf, n, &back));
+    CHECK_EQ(back.deviceRigCount, 0);
+  }
   // midi_keys_overlap: one pad seen as a plugin key (any device) and an app key (named device).
   {
     auto k = [](const char* dev, std::uint8_t ch, MidiBindingKind kind, std::uint8_t n) {

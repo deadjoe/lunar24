@@ -22,16 +22,16 @@
 namespace lunar24::host::diag {
 
 enum class RtKind : std::uint8_t {
-  midi_note_on,       // a channel(0-15), b note, c velocity, d side (0 left, 1 right)
-  midi_note_off,      // a channel, b note, d 0 released / 1 held on by the sustain pedal
-  midi_note_off_free, // a channel, b note: a release for a note that is not playing
-  midi_binding,       // a channel, b note, c velocity, d binding row: a pad bound to an action / knob
-  midi_binding_cc,    // a channel, b CC number, c value, d binding row (trace: knobs send many)
-  midi_sustain,       // a channel, c 1 down / 0 up, d notes the pedal-up released
-  midi_cc,            // a channel, b controller, c value (trace: knobs send many)
-  midi_channel_mode,  // a channel, b controller (120-127: all sound / notes off ...), c value
-  midi_filtered,      // a channel, b status: ignored by the MIDI channel setting
-  midi_input_reset,   // the input was switched or closed: d notes released, c 1 = all-gates-off
+  midi_note_on,       // a lane (device * 16 + channel 0-15), b note, c velocity, d side (0 left, 1 right)
+  midi_note_off,      // a lane, b note, d 0 released / 1 held on by the sustain pedal
+  midi_note_off_free, // a lane, b note: a release for a note that is not playing
+  midi_binding,       // a lane, b note, c velocity, d binding row: a pad bound to an action / knob
+  midi_binding_cc,    // a lane, b CC number, c value, d binding row (trace: knobs send many)
+  midi_sustain,       // a lane, c 1 down / 0 up, d notes the pedal-up released
+  midi_cc,            // a lane, b controller, c value (trace: knobs send many)
+  midi_channel_mode,  // a lane, b controller (120-127: all sound / notes off ...), c value
+  midi_filtered,      // a lane, b status: ignored by the MIDI channel setting
+  midi_input_reset,   // an input was switched or closed: a device (0-3), d notes released, c 1 = all-gates-off
   daw_reset,          // a DAW reset (transport stop / bypass): all notes off
   swap_reset,         // the machine was swapped (RESET, preset, project): MIDI notes forgotten
   event_rejected,     // the engine's event queue was full: a ControlEventKind
@@ -104,46 +104,53 @@ inline Level rtLevel(RtKind k) {
 }
 inline Cat rtCat(RtKind k) { return k == RtKind::event_rejected ? Cat::engine : Cat::midi; }
 inline std::string rtText(const RtEvent& ev) {
-  char line[160], n[16];
-  const unsigned ch = ev.a + 1u;  // MIDI channels are 1-16 to people
+  char line[192], n[16], chText[24];
+  // `a` is the lane (input device * 16 + channel): MIDI channels are 1-16 to people, and a
+  // second, third or fourth input device is named by its number.
+  const unsigned lane = ev.a, device = lane / 16u;
+  if (device == 0) std::snprintf(chText, sizeof chText, "%u", lane % 16u + 1u);
+  else std::snprintf(chText, sizeof chText, "%u in=%u", lane % 16u + 1u, device + 1u);
+  const char* ch = chText;
   const unsigned b = ev.b, c = ev.c;
   const int d = ev.d;
   switch (ev.kind) {
     case RtKind::midi_note_on:
-      std::snprintf(line, sizeof line, "note-on ch=%u note=%u(%s) vel=%u side=%s", ch, b,
+      std::snprintf(line, sizeof line, "note-on ch=%s note=%u(%s) vel=%u side=%s", ch, b,
                     midiNoteName(b, n, sizeof n), c, d ? "R" : "L");
       break;
     case RtKind::midi_note_off:
-      std::snprintf(line, sizeof line, "note-off ch=%u note=%u(%s)%s", ch, b, midiNoteName(b, n, sizeof n),
+      std::snprintf(line, sizeof line, "note-off ch=%s note=%u(%s)%s", ch, b, midiNoteName(b, n, sizeof n),
                     d ? " held-by-sustain" : "");
       break;
     case RtKind::midi_note_off_free:
-      std::snprintf(line, sizeof line, "note-off ch=%u note=%u(%s) not-playing (pad release, or forgotten by a reset)",
+      std::snprintf(line, sizeof line, "note-off ch=%s note=%u(%s) not-playing (pad release, or forgotten by a reset)",
                     ch, b, midiNoteName(b, n, sizeof n));
       break;
     case RtKind::midi_binding:
-      std::snprintf(line, sizeof line, "bound pad ch=%u note=%u(%s) vel=%u row=%d", ch, b,
+      std::snprintf(line, sizeof line, "bound pad ch=%s note=%u(%s) vel=%u row=%d", ch, b,
                     midiNoteName(b, n, sizeof n), c, d);
       break;
     case RtKind::midi_binding_cc:
-      std::snprintf(line, sizeof line, "bound cc ch=%u cc=%u value=%u row=%d", ch, b, c, d);
+      std::snprintf(line, sizeof line, "bound cc ch=%s cc=%u value=%u row=%d", ch, b, c, d);
       break;
     case RtKind::midi_sustain:
-      if (c) std::snprintf(line, sizeof line, "sustain down ch=%u", ch);
-      else std::snprintf(line, sizeof line, "sustain up ch=%u released=%d", ch, d);
+      if (c) std::snprintf(line, sizeof line, "sustain down ch=%s", ch);
+      else std::snprintf(line, sizeof line, "sustain up ch=%s released=%d", ch, d);
       break;
     case RtKind::midi_cc:
-      std::snprintf(line, sizeof line, "cc ch=%u cc=%u value=%u", ch, b, c);
+      std::snprintf(line, sizeof line, "cc ch=%s cc=%u value=%u", ch, b, c);
       break;
     case RtKind::midi_channel_mode:
-      std::snprintf(line, sizeof line, "channel-mode ch=%u cc=%u value=%u (not acted on)", ch, b, c);
+      std::snprintf(line, sizeof line, "channel-mode ch=%s cc=%u value=%u (not acted on)", ch, b, c);
       break;
     case RtKind::midi_filtered:
-      std::snprintf(line, sizeof line, "filtered ch=%u status=0x%02X (MIDI channel setting)", ch, b);
+      std::snprintf(line, sizeof line, "filtered ch=%s status=0x%02X (MIDI channel setting)", ch, b);
       break;
     case RtKind::midi_input_reset:
-      std::snprintf(line, sizeof line, "input reset: released %d held notes%s", d,
-                    c ? ", queue full so all gates off" : "");
+      if (ev.a == 0) std::snprintf(line, sizeof line, "input reset: released %d held notes%s", d,
+                                   c ? ", queue full so all gates off" : "");
+      else std::snprintf(line, sizeof line, "input %u reset: released %d held notes%s", unsigned(ev.a) + 1u, d,
+                         c ? ", queue full so all gates off" : "");
       break;
     case RtKind::daw_reset:
       std::snprintf(line, sizeof line, "DAW reset: all notes and the sustain pedal released");
@@ -163,14 +170,17 @@ inline std::string rtText(const RtEvent& ev) {
 class MidiHeldMirror {
  public:
   void apply(const RtEvent& e) {
-    const unsigned ch = e.a & 15u, note = e.b & 127u;
+    const unsigned lane = e.a % kLanes, note = e.b & 127u;
     switch (e.kind) {
-      case RtKind::midi_note_on: state_[ch][note] = 1; break;
-      case RtKind::midi_note_off: state_[ch][note] = e.d ? 2 : 0; break;
+      case RtKind::midi_note_on: state_[lane][note] = 1; break;
+      case RtKind::midi_note_off: state_[lane][note] = e.d ? 2 : 0; break;
       case RtKind::midi_sustain:
-        if (!e.c) for (auto& s : state_[ch]) if (s == 2) s = 0;
+        if (!e.c) for (auto& s : state_[lane]) if (s == 2) s = 0;
         break;
-      case RtKind::midi_input_reset:
+      case RtKind::midi_input_reset:  // one input device: its lanes only
+        for (unsigned l = 0; l < kLanes; ++l)
+          if (l / 16u == e.a) for (auto& s : state_[l]) s = 0;
+        break;
       case RtKind::daw_reset:
       case RtKind::swap_reset:
         for (auto& c : state_) for (auto& s : c) s = 0;
@@ -182,11 +192,12 @@ class MidiHeldMirror {
   std::string describe() const {
     std::string down, pedal;
     char n[16], item[32];
-    for (unsigned ch = 0; ch < 16; ++ch)
+    for (unsigned lane = 0; lane < kLanes; ++lane)
       for (unsigned note = 0; note < 128; ++note) {
-        if (!state_[ch][note]) continue;
-        std::snprintf(item, sizeof item, " ch%u:%s", ch + 1, midiNoteName(note, n, sizeof n));
-        (state_[ch][note] == 1 ? down : pedal) += item;
+        if (!state_[lane][note]) continue;
+        if (lane < 16) std::snprintf(item, sizeof item, " ch%u:%s", lane + 1, midiNoteName(note, n, sizeof n));
+        else std::snprintf(item, sizeof item, " in%u ch%u:%s", lane / 16 + 1, lane % 16 + 1, midiNoteName(note, n, sizeof n));
+        (state_[lane][note] == 1 ? down : pedal) += item;
       }
     return "midi notes down:" + (down.empty() ? std::string(" none") : down) +
            "; held by sustain:" + (pedal.empty() ? std::string(" none") : pedal) +
@@ -194,7 +205,8 @@ class MidiHeldMirror {
   }
 
  private:
-  std::uint8_t state_[16][128] = {};  // 0 up, 1 down, 2 released but held by the pedal
+  static constexpr unsigned kLanes = 64;  // input device * 16 + channel (midi_input_queue.h)
+  std::uint8_t state_[kLanes][128] = {};  // 0 up, 1 down, 2 released but held by the pedal
   bool incomplete_ = false;
 };
 

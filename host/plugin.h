@@ -115,18 +115,21 @@ public:
   // with no running machine it happens at the next stream open (OnReset).
   void requestFactoryReset();
 
-  // UI thread (the app's MIDI input was closed or switched in Preferences): notes
-  // held from that input can never send their note-offs now. Invalidates the old
-  // input queue; audio releases notes and clears sustain before admitting a new epoch.
-  void midiInputClosed();
-  // Driver callback pushes bytes; AppProcess drains before rendering each block.
-  void queueMidiInput(lunar24::host::MidiInputQueue::Message message) { (void)midiQueue_.push(message); }
+  // UI thread (an app MIDI input `device` (0-3) was closed or switched): notes held from
+  // that input can never send their note-offs now. Invalidates its queue; audio releases
+  // its notes and sustain (only its own) before admitting a new epoch.
+  void midiInputClosed(unsigned device = 0);
+  // Each input's driver callback pushes its bytes; AppProcess drains before each block.
+  void queueMidiInput(unsigned device, lunar24::host::MidiInputQueue::Message message) {
+    (void)midiQueue_.push(device, message);
+  }
   void drainMidiInput(int frames);
 
   // UI thread (the app's MIDI input selection changed): the name bindings match
   // against. "" means no real device (off / virtual): only device-agnostic bindings
   // match then. Republishes the map so the audio thread's snapshot carries it.
-  void setMidiInputDeviceName(const char* name);
+  void setMidiInputDeviceName(const char* name) { setMidiInputDevice(0, name); }
+  void setMidiInputDevice(unsigned device, const char* name);
 
   // ---- MIDI rig settings (channel filter / octave shift / velocity curve) -----------
   // The panel's MIDI settings overlay edits these; the store persists them. The audio
@@ -164,11 +167,13 @@ private:
   // know which controller the DAW's MIDI comes from (nullptr), so every binding's device matches.
   const char* bindingDevice_() const {
 #ifdef APP_API
-    return midiInputDeviceName_.c_str();
+    return midiInputDeviceNames_[0].c_str();
 #else
     return nullptr;
 #endif
   }
+  // One MIDI message from input `device` (0-3); `stamp` is its arrival (midiArrivalStamp).
+  void processMidi_(const IMidiMsg& msg, unsigned device, int stamp);
   // The channel counts the engine is prepared for and renders with: the app's opened device
   // plan, or the plugins' fixed stereo output.
   int engineInputs_() const;
@@ -211,7 +216,7 @@ private:
   std::uint64_t seenSwaps_ = 0;  // audio thread
   std::atomic<bool> notesOffRequested_{false};  // set by a plugin OnReset, taken by the audio thread
   bool factoryResetRequested_ = false;  // UI thread only (OnReset runs on the UI thread in the app)
-  lunar24::host::MidiInputQueue midiQueue_;
+  lunar24::host::MidiInputQueues midiQueue_;
   lunar24::host::MidiNoteOwnership midiNotes_;
   lunar24::host::MidiPlateLights midiLights_;  // plates lit by MIDI notes (audio writes, UI reads)
   std::atomic<std::uint32_t> midiLastMessage_{0};
@@ -241,7 +246,7 @@ private:
   // ("" = none/virtual). Both are UI-thread state; the audio thread sees only the
   // snapshot the engine publishes.
   lunar24::host::MidiMapStore midiMapStore_;
-  std::string midiInputDeviceName_;
+  std::string midiInputDeviceNames_[lunar24::host::kMidiInputDevices];
   bool midiPanelOpen_ = false;    // UI thread
   int pendingProfileSteps_ = 0;   // UI thread: steps waiting for the profile library
   std::chrono::steady_clock::time_point lastGlobalCheck_{};  // UI thread: global.bin polled from OnIdle
@@ -263,6 +268,7 @@ private:
   lunar24::host::MidiNoteSides midiSides_;  // audio thread: TWIN / SPLIT side of each note
   lunar24::host::MidiSustain sustain_;
   lunar24::host::MidiClockFollower midiClock_;  // audio thread: MIDI clock / START
+  unsigned midiBendDevice_ = 0;  // audio thread: the input that moved pitch bend last
   // MIDI transport diagnostics for the log (audio thread counts, OnIdle logs).
   std::atomic<std::uint32_t> midiClockTicksIn_{0}, midiStartsIn_{0}, midiContinuesIn_{0}, midiStopsIn_{0};
   std::uint32_t loggedClock_[4] = {};
