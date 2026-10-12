@@ -39,8 +39,15 @@ Keep these unless a listening test or a real bug says otherwise.
   the channels it has received this session; a row on such a channel answers only that
   channel, so a key on channel 1 with the pad's note plays again. Not saved with the project,
   so routing back to one channel and reloading the plugin (or the set) restores the
-  any-channel rule. Before the first pad hit after loading, that old rule still applies. Plugin Learn keeps a real channel
-  (anything but 1) and records channel 1 as ANY.
+  any-channel rule. Before the first pad hit after loading, that old rule still applies
+  (kept on purpose: remembering the channels in the project would strand the pads after a
+  routing change). Plugin Learn keeps a real channel (anything but 1) and records channel 1
+  as ANY. An ANY-channel row never becomes channel-only, so a pad bound as `ANY CH` (learned
+  in a plugin while Live sent it on channel 1) must be learned again after routing the pads
+  to channel 10. In the VST3 the 16 channels also make iPlug2 register its hidden MIDI CC
+  proxy parameters for each channel (16 × 130 = 2080 instead of 130; not automatable, IDs
+  from 65538, the instrument's own parameter IDs unchanged), so CCs, pitch bend and channel
+  pressure on channels 2–16 now reach the VST3 (before, the DAW dropped them).
 - **Named MIDI profiles** (owner, 2026-10-10; settings made global 2026-10-12, see above):
   bindings form one controller setup. The app and plugins share `midi-profiles/`
   in the settings folder; DAW projects do not contain profiles. Each instance switches

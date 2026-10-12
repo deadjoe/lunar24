@@ -172,14 +172,6 @@ extern "C" void lunar_host_place_view(void* view, double x, double y)
     if ([sibling isKindOfClass:[LunarCaseView class]]) [sibling setNeedsDisplay:YES];
 }
 
-// Does the panel's window get the keyboard now? Not when another app is in front or one of our
-// own dialogs (Preferences) is: then no key-ups reach the panel, so it releases its held keys.
-extern "C" bool lunar_host_view_has_keyboard(void* view)
-{
-  NSView* v = (NSView*)view;
-  return v != nil && [NSApp isActive] && v.window != nil && v.window.isKeyWindow;
-}
-
 // Follow the system output device: tell the host when it changes (it reopens on the UI thread).
 extern "C" void lunar_host_default_output_changed();
 static OSStatus LunarDefaultOutputChanged(AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void*)

@@ -527,6 +527,9 @@ class StandaloneAudioEngine {
   // aftertouch on that note, or channel aftertouch with note -1) sets how close it is.
   // Both return true when a held photo pad took the message.
   bool photoPadRelease(std::uint8_t channel, std::uint8_t note);
+  // Audio thread, a DAW reset: every held photo pad lets go, as if its note-off came (a knob
+  // keeps its hand where it is). Returns how many hands lifted.
+  int releasePhotoPadsFromAudioThread();
   bool photoPadPressure(std::uint8_t channel, int note, double pressure01);
   // The published snapshot's binding at `row` (for the UI to label it). UI thread.
   const lunar24::core::MidiBinding* midiBindingAt(std::uint32_t row) const {
@@ -1598,6 +1601,18 @@ inline bool StandaloneAudioEngine::photoPadRelease(std::uint8_t channel, std::ui
       took = true;
     }
   return took;
+}
+
+inline int StandaloneAudioEngine::releasePhotoPadsFromAudioThread() {
+  if (!definition_) return 0;
+  int lifted = 0;
+  for (int g = 0; g < 4; ++g)
+    if (photoPadChannel_[g] != 0) {
+      photoPadChannel_[g] = 0;
+      setPhotoShade_(g, 0.0);
+      ++lifted;
+    }
+  return lifted;
 }
 
 inline bool StandaloneAudioEngine::photoPadPressure(std::uint8_t channel, int note, double pressure01) {

@@ -5,11 +5,14 @@
 
 #include "mini_test.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include <host/midi_map_store.h>
@@ -347,6 +350,19 @@ int main() {
     corrupt(host::app_state_file_ops::joinUtf8(s1.libraryPath(), charlie + ".bin"));
     CHECK_EQ(s1.step(1), 1); CHECK_EQ(s1.id(), alpha);
     CHECK_EQ(s1.step(-1), 1); CHECK_EQ(s1.id(), bravo);
+    // Edits that cannot be saved: the switch fails (-2, the display says so), nothing moves.
+    {
+      auto noWrites = host::app_state_file_ops::realOps();
+      noWrites.atomicReplace = [](void*, const char*, const char*) { return false; };
+      s1.setFileOps(noWrites, nullptr);
+      CHECK(s1.bind(ccBinding("MPK", 1, 71, core::ParameterId::effector_blend)));
+      CHECK_EQ(s1.step(1), -2);
+      CHECK_EQ(s1.id(), bravo);
+      CHECK(!s1.error().empty());
+      s1.setFileOps(host::app_state_file_ops::realOps(), nullptr);
+      CHECK(s1.unbind(ccBinding("MPK", 1, 71, core::ParameterId::effector_blend).key));
+      CHECK(s1.save());
+    }
     // Switch keys: one key per triangle, and the later bind wins everywhere it is visible.
     CHECK(s1.bindSwitch(1, k1.key));                 // k1 was BLEND in Bravo: now NEXT
     CHECK(s1.global().switchBound[1]);
@@ -525,6 +541,44 @@ int main() {
     CHECK(!w.global().switchBound[1]);              // ...takes the pad from NEXT (later wins)
     CHECK(w.bind(specific));                        // and a profile row on that pad frees it again
     CHECK(!w.global().switchBound[0]);
+    // Binding a key no switch key uses needs no library lock: another instance holding it
+    // must not report "busy" for a bind that worked.
+    CHECK(w.bindSwitch(1, key("MPK", 10, 50)));
+    CHECK(w.save());
+    {
+      host::midi_profile_files::Lock lock(host::app_state_file_ops::joinUtf8(w.libraryPath(), "library.lock"));
+      CHECK(static_cast<bool>(lock));
+      core::MidiBinding unswitched = anyDevice;
+      unswitched.key = key("MPK", 1, 60);
+      CHECK(w.bind(unswitched));
+      CHECK(w.error().empty());
+      core::MidiBinding onSwitch = anyDevice;  // overlaps NEXT: global.bin must change, so busy
+      onSwitch.key = key("MPK", 10, 50);
+      CHECK(w.bind(onSwitch));
+      CHECK(!w.error().empty());
+      CHECK(w.global().switchBound[1]);  // not released: the error tells the user to retry
+    }
+    // The lock waits a little: another instance's short transaction is not "busy".
+    {
+      std::atomic<int> held{0};  // 1 = the other instance has the lock, 2 = it could not get it
+      std::thread peer([&] {
+        host::midi_profile_files::Lock lock(host::app_state_file_ops::joinUtf8(w.libraryPath(), "library.lock"));
+        held = lock ? 1 : 2;
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+      });
+      while (held == 0) std::this_thread::yield();
+      CHECK_EQ(held.load(), 1);
+      const auto start = std::chrono::steady_clock::now();
+      const bool saved = w.save();
+      if (!saved)
+        std::printf("  save under a 30 ms peer lock failed after %lld ms: %s\n",
+                    static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - start).count()),
+                    w.error().c_str());
+      CHECK(saved);
+      CHECK(w.error().empty());
+      peer.join();
+    }
     removeTree(wdir);
   }
   host::MidiMapStore noPath;

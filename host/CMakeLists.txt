@@ -170,6 +170,7 @@ if(APPLE)
     plugin.cpp
     about.cpp
     main.mm
+    keyboard_focus.mm
   )
 
   target_include_directories(${HOST_APP_NAME} PRIVATE
@@ -189,7 +190,7 @@ if(APPLE)
   )
 
   lunar_host_common(${HOST_APP_NAME})
-  lunar_host_owned_warnings(${HOST_APP_NAME} "plugin.cpp" "about.cpp" "main.mm")
+  lunar_host_owned_warnings(${HOST_APP_NAME} "plugin.cpp" "about.cpp" "main.mm" "keyboard_focus.mm")
 
   target_link_libraries(${HOST_APP_NAME} PRIVATE
     "-framework AppKit"
@@ -302,6 +303,7 @@ elseif(WIN32)
     plugin.cpp
     about.cpp
     window_metrics_win.cpp
+    keyboard_focus_win.cpp
     resources/main.rc
     ${APP_SRC_LIST}
     "${RTAUDIO_DIR}/RtAudio.cpp"
@@ -366,7 +368,7 @@ elseif(WIN32)
   )
 
   lunar_host_common(${HOST_APP_NAME})
-  lunar_host_owned_warnings(${HOST_APP_NAME} "plugin.cpp" "about.cpp" "window_metrics_win.cpp")
+  lunar_host_owned_warnings(${HOST_APP_NAME} "plugin.cpp" "about.cpp" "window_metrics_win.cpp" "keyboard_focus_win.cpp")
 else()
   message(FATAL_ERROR "Lunar24 only supports APPLE and WIN32 (root CMake gates this).")
 endif()
@@ -383,9 +385,14 @@ endif()
 set(PLUG_RESOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources")
 
 function(lunar_add_plugin target format)
-  add_library(${target} MODULE plugin.cpp plugin_settings_dir.cpp)
+  if(APPLE)
+    set(_lunar_focus keyboard_focus.mm)
+  else()
+    set(_lunar_focus keyboard_focus_win.cpp)
+  endif()
+  add_library(${target} MODULE plugin.cpp plugin_settings_dir.cpp ${_lunar_focus})
   lunar_host_common(${target})
-  lunar_host_owned_warnings(${target} "plugin.cpp" "plugin_settings_dir.cpp")
+  lunar_host_owned_warnings(${target} "plugin.cpp" "plugin_settings_dir.cpp" "${_lunar_focus}")
   iplug_configure_target(${target} ${format} ${HOST_APP_NAME})
   if(APPLE)
     set_target_properties(${target} PROPERTIES
