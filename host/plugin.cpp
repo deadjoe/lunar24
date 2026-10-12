@@ -208,6 +208,7 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
 #ifndef APP_API
     shared->recorderEnabled = false;
     shared->midiNoDevice = "MIDI comes from the DAW track";
+    shared->midiFromDaw = true;
     shared->midiVersion = "Lunar 24 " LUNAR24_VERSION;
     shared->midiBuild = "Build " LUNAR24_BUILD_NUMBER " - " LUNAR24_BUILD_COMMIT;
 #endif
@@ -662,6 +663,16 @@ void LunarHostPlugin::OnIdle()
 #endif
   }
   if (pendingProfileSteps_ != 0) applyProfileSteps_();
+  // Global MIDI settings another instance saved (the app beside a plugin): play and show them.
+  if (std::chrono::steady_clock::now() - lastGlobalCheck_ >= std::chrono::seconds(1)) {
+    lastGlobalCheck_ = std::chrono::steady_clock::now();
+    if (midiMapStore_.reloadGlobalIfChanged()) {
+      republishMidiMap(false);
+#if IPLUG_EDITOR
+      if (GetUI() != nullptr) GetUI()->SetAllControlsDirty();
+#endif
+    }
+  }
   logIdle_();
 #ifdef APP_API
   if (!startupChimed_ && engine_.isReady()) {  // the first machine of this run is up
@@ -970,7 +981,11 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       (msg.StatusMsg() == IMidiMsg::kNoteOn && msg.Velocity() == 0);
   const bool pedalRelease = msg.StatusMsg() == IMidiMsg::kControlChange &&
       msg.ControlChangeIdx() == IMidiMsg::kSustainOnOff && msg.mData2 < 64;
+#ifdef APP_API
   const int channelFilter = rig.channelFilter;
+#else
+  const int channelFilter = 0;  // the DAW track picks the channel (and Live rewrites it to 1)
+#endif
   using lunar24::host::diag::RtKind;
   const bool traceMidi = lunar24::host::diag::log().enabled(lunar24::host::diag::Cat::midi,
                                                             lunar24::host::diag::Level::trace);

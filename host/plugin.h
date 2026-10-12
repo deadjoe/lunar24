@@ -244,6 +244,7 @@ private:
   std::string midiInputDeviceName_;
   bool midiPanelOpen_ = false;    // UI thread
   int pendingProfileSteps_ = 0;   // UI thread: steps waiting for the profile library
+  std::chrono::steady_clock::time_point lastGlobalCheck_{};  // UI thread: global.bin polled from OnIdle
   void applyProfileSteps_();
   std::string panelFaceDir_;
   int panelFaceIndex_ = 0;  // loaded with the settings folder, before the panel is built

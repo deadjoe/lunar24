@@ -606,6 +606,14 @@ int main() {
     // No switch keys published: the profile row is back.
     e.publishMidiMap(m, "TestKit", {}, false);
     CHECK_EQ(e.midiBindingRow(10, core::MidiBindingKind::note, 40), 0);
+    // A plugin (no device name; Live sends every note on channel 1): the switch key the app
+    // learned on channel 10 still switches, and still never plays (owner's Live log, 2026-10-12).
+    e.publishMidiMap(m, nullptr, {}, false, &sw, true);
+    const int pluginRow = e.midiBindingRow(1, core::MidiBindingKind::note, 40);
+    CHECK(pluginRow >= E::kMidiSwitchRowBase);
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(pluginRow), 87, 1);
+    e.syncParametersFromAudioThread();
+    CHECK_EQ(e.takeProfileSteps(), 1);
     // A switch key named for another device does not match this input.
     e.publishMidiMap(m, "OtherKit", {}, false, &sw, true);
     CHECK(e.midiBindingRow(1, core::MidiBindingKind::cc, 21) < E::kMidiSwitchRowBase);

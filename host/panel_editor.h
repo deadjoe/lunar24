@@ -150,6 +150,9 @@ struct EditorShared {
   // The plugins: REC looks the same but does not respond (a DAW records), MIDI comes from the DAW.
   bool recorderEnabled = true;
   const char* midiNoDevice = "Choose an input in Preferences";
+  // The plugins: the DAW may rewrite MIDI channels (Live sends everything on channel 1), so
+  // Learn records ANY channel there and the CHANNEL setting applies to the app only.
+  bool midiFromDaw = false;
   std::string midiVersion, midiBuild;  // plugins: shown in the MIDI panel (the app has About)
   std::uint64_t seenStateVersion = ~0ull;
   std::uint64_t seenAudioSync = 0;
@@ -281,7 +284,7 @@ struct EditorShared {
     const std::uint32_t m = midi.lastMessage();
     core::MidiBinding b{};
     b.key.kind = ((m >> 20) & 1u) ? core::MidiBindingKind::cc : core::MidiBindingKind::note;
-    b.key.channel = static_cast<std::uint8_t>((m >> 8) & 0x1Fu);
+    b.key.channel = midiFromDaw ? std::uint8_t{0} : static_cast<std::uint8_t>((m >> 8) & 0x1Fu);
     b.key.number = static_cast<std::uint8_t>(m & 0xFFu);
     if (b.key.kind == core::MidiBindingKind::cc && b.key.number == 64) return;
     const std::string dev = midi.inputDeviceName ? midi.inputDeviceName() : "";
@@ -1781,6 +1784,7 @@ class MidiOverlayControl : public IControl {
     state.armed = s_.learnArmed;
     state.awaitTarget = s_.learnAwaitTarget;
     state.editable = editable();
+    state.channelAppOnly = s_.midiFromDaw;
     if (s_.midiStore) state.global = s_.midiStore->global();
     state.confirmSwitch = s_.switchConfirm.open;
     state.confirmDirection = s_.switchConfirm.direction;

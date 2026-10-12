@@ -97,6 +97,7 @@ struct State {
   int channel = 0, octave = 0, curve = 0, offset = 0;
   int split = core::kMidiDefaultSplitNote;  // MIDI note: TWIN / SPLIT right side starts here
   bool armed = false, awaitTarget = false, editable = true;
+  bool channelAppOnly = false;  // a plugin: CHANNEL filters the app's input only
   const char* noDevice = "Choose an input in Preferences";  // shown when `device` is empty
   // The plugins have no About box: their version and build are shown here (empty: not shown).
   std::string version, build;
@@ -245,7 +246,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
       }
     }
   }
-  const char* labels[] = {"CHANNEL", "TRANSPOSE", "VELOCITY", "SPLIT"};
+  const char* labels[] = {st.channelAppOnly ? "CHANNEL (APP)" : "CHANNEL", "TRANSPOSE", "VELOCITY", "SPLIT"};
   const char* curves[] = {"LINEAR", "SOFT", "HARD"};
   char values[kSettingCount][24];
   if (st.channel == 0)

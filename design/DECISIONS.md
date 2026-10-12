@@ -22,7 +22,14 @@ Keep these unless a listening test or a real bug says otherwise.
   plugin learns no device) is the same key as any key it would match (`midi_keys_overlap`).
   Every global change rereads global.bin under the library lock and changes only its own
   field, so the app and plugins never overwrite each other's global settings; an unreadable
-  global.bin is left alone until the next deliberate change.
+  global.bin is left alone until the next deliberate change. Each instance checks
+  global.bin about once a second and adopts another instance's change at once.
+- **MIDI channels in the plugins** (owner, 2026-10-12): a DAW may rewrite channels (Ableton
+  Live hands every note to a plugin on channel 1), so a plugin matches bindings on any
+  channel (a row on the message's own channel ranks first), learns keys as ANY channel, and
+  ignores CHANNEL (shown "CHANNEL (APP)"; the track's MIDI input picks the channel). The app
+  still tells channels apart. Cost: in a plugin a pad and a key with the same note number are
+  one key, so give switch pads notes outside the playing range.
 - **Named MIDI profiles** (owner, 2026-10-10; settings made global 2026-10-12, see above):
   bindings form one controller setup. The app and plugins share `midi-profiles/`
   in the settings folder; DAW projects do not contain profiles. Each instance switches

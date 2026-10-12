@@ -25,7 +25,8 @@ class MidiRelativeLearn {
     if (generation != generation_) cancel();
     if (!active_ || sequence == sequence_) return false;
     sequence_ = sequence;
-    if (((message >> 20) & 1u) == 0 || ((message >> 8) & 0x1fu) != binding_.key.channel ||
+    if (((message >> 20) & 1u) == 0 ||
+        (binding_.key.channel != 0 && ((message >> 8) & 0x1fu) != binding_.key.channel) ||
         (message & 0xffu) != binding_.key.number) return false;
     const auto mode = detector_.feed(static_cast<int>((message >> 21) & 0x7fu));
     if (mode == core::MidiInputMode::absolute) {

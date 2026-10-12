@@ -252,6 +252,31 @@ class MidiMapStore {
       return true;
     });
   }
+  // Another instance (the app beside a plugin) changed global.bin since we last looked:
+  // adopt it. Cheap enough to call about once a second: the file is reread only when its
+  // time or size changed, and needs no lock (it is replaced atomically). True when the
+  // global settings in memory changed (republish them).
+  bool reloadGlobalIfChanged() {
+    if (directory_.empty() || !globalSeeded_) return false;
+    std::error_code ec;
+    const auto file = std::filesystem::u8path(globalPath());
+    const auto stamp = std::filesystem::last_write_time(file, ec);
+    if (ec) return false;
+    const auto size = std::filesystem::file_size(file, ec);
+    if (ec) return false;
+    if (globalStampKnown_ && stamp == globalStamp_ && size == globalSize_) return false;
+    globalStamp_ = stamp;
+    globalSize_ = size;
+    globalStampKnown_ = true;
+    std::vector<std::uint8_t> bytes;
+    core::MidiGlobalSettings g;
+    if (!midi_profile_files::read(globalPath(), bytes, core::kMidiGlobalMaxBytes) ||
+        !core::midi_global_decode(bytes.data(), bytes.size(), &g)) return false;
+    std::vector<std::uint8_t> mine(core::midi_global_wire_bytes(global_));
+    if (core::midi_global_encode(global_, mine.data(), mine.size()) == mine.size() && mine == bytes) return false;
+    global_ = g;
+    return true;
+  }
   // Rows in the other readable profiles on this key, or overlapping it (profile name order).
   std::vector<MidiKeyUse> otherProfilesUsing(const core::MidiBindingKey& key) {
     std::vector<MidiKeyUse> uses;
@@ -537,6 +562,9 @@ class MidiMapStore {
   core::MidiRigSettings settings_;  // the current profile file's own block (kept, not played)
   core::MidiGlobalSettings global_;
   bool globalSeeded_ = false;
+  std::filesystem::file_time_type globalStamp_{};  // global.bin as reloadGlobalIfChanged last saw it
+  std::uintmax_t globalSize_ = 0;
+  bool globalStampKnown_ = false;
   std::string directory_, id_, name_, error_;
   std::vector<std::uint8_t> baseline_;
   std::vector<MidiProfileInfo> profiles_;

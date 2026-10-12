@@ -450,6 +450,12 @@ int main() {
     CHECK(b.bindSwitch(0, key("MPK", 10, 41)));
     CHECK(c.refresh());
     CHECK(!c.global().switchBound[1] && c.global().switchBound[0]);
+    // Live: the other instance's change shows up here without reopening anything.
+    CHECK(!c.reloadGlobalIfChanged());              // nothing new since c refreshed
+    CHECK(b.bindSwitch(1, key("MPK", 10, 42)));
+    CHECK(c.reloadGlobalIfChanged());
+    CHECK(c.global().switchBound[1] && c.global().switchKey[1].number == 42);
+    CHECK(!c.reloadGlobalIfChanged());              // once only
     // A global.bin this build cannot read is neither replaced by a seed nor emptied in memory.
     const auto globalPath = c.globalPath();
     {
