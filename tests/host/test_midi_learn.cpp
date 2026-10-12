@@ -66,5 +66,16 @@ int main() {
   CHECK(learn.observe(pluginMap, 5, 401, message(1, 1), result));
   CHECK(result.mode == core::MidiInputMode::relativeTwosComplement);
   CHECK_EQ(result.key.channel, 0);
+  // Several inputs: the device rides in bits 13-14, and only the learned device's
+  // messages are watched (another device's same CC on the same channel is not this knob).
+  const std::uint32_t fromIpad = message(1) | (1u << 13);
+  CHECK_EQ(host::midi_learn_device(message(1)), 0u);
+  CHECK_EQ(host::midi_learn_device(fromIpad), 1u);
+  CHECK_EQ(host::midi_learn_device(message(1) | (3u << 13)), 3u);
+  CHECK_EQ((fromIpad >> 8) & 0x1fu, 3u);  // the channel field is untouched
+  learn.start(binding, 6, 500, 1, 1);
+  CHECK(!learn.observe(map, 6, 501, message(1), result));   // device 0: ignored
+  CHECK(learn.observe(map, 6, 502, fromIpad, result));      // device 1: detected
+  CHECK(result.mode == core::MidiInputMode::relativeTwosComplement);
   return test::finish("test_midi_learn");
 }

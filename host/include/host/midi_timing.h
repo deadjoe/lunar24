@@ -44,16 +44,25 @@ inline int midiBlockOffset(int stamp, int now, double sampleRate, int frames) {
 class MidiClockFollower {
  public:
   enum class Action { none, step, restart };
-  Action onRealtime(std::uint8_t status) {
-    switch (status) {
-      case 0xF8: return ticks_++ % 6 == 0 ? Action::step : Action::none;  // clock
-      case 0xFA: ticks_ = 0; return Action::restart;                        // start
-      default: return Action::none;  // continue, stop, active sensing, ...
-    }
+  // Several inputs: the first one to send clock or START leads. Another input's clock is
+  // ignored until the leader has sent nothing for kHandOverUs (`stamp` is midiArrivalStamp()).
+  static constexpr std::uint32_t kHandOverUs = 1000000;  // tuned by ear
+  Action onRealtime(std::uint8_t status, unsigned device = 0, int stamp = 0) {
+    if (status != 0xF8 && status != 0xFA) return Action::none;  // continue, stop, active sensing, ...
+    const std::uint32_t age = (static_cast<std::uint32_t>(stamp) - lastStamp_) & 0x3FFFFFFFu;
+    if (hasLeader_ && device != leader_ && age < kHandOverUs) return Action::none;
+    hasLeader_ = true;
+    leader_ = device;
+    lastStamp_ = static_cast<std::uint32_t>(stamp);
+    if (status == 0xFA) { ticks_ = 0; return Action::restart; }  // start
+    return ticks_++ % 6 == 0 ? Action::step : Action::none;       // clock
   }
 
  private:
   std::uint32_t ticks_ = 0;
+  std::uint32_t lastStamp_ = 0;
+  unsigned leader_ = 0;
+  bool hasLeader_ = false;
 };
 
 }  // namespace lunar24::host

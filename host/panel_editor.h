@@ -189,6 +189,7 @@ struct EditorShared {
   host::MidiMapStore* midiStore = nullptr;
   struct MidiUi {
     std::function<std::string()> inputDeviceName;
+    std::function<std::string(unsigned)> inputDeviceNameAt;  // by input device index (0-3)
     std::function<std::uint64_t()> messageSeq;        // bumps per incoming note/CC
     std::function<std::uint32_t()> lastMessage;       // packed value/kind/channel/number
     std::function<std::uint16_t()> litPlates;         // plates MIDI notes hold down (bit 0 = C)
@@ -298,7 +299,9 @@ struct EditorShared {
     if (midiFromDaw && b.key.channel == 1) b.key.channel = 0;
     b.key.number = static_cast<std::uint8_t>(m & 0xFFu);
     if (b.key.kind == core::MidiBindingKind::cc && b.key.number == 64) return;
-    const std::string dev = midi.inputDeviceName ? midi.inputDeviceName() : "";
+    const unsigned inputDevice = midi_learn_device(m);
+    const std::string dev = midi.inputDeviceNameAt ? midi.inputDeviceNameAt(inputDevice)
+                            : midi.inputDeviceName ? midi.inputDeviceName() : "";
     std::snprintf(b.key.device, core::kMidiBindingDeviceCapacity, "%s", dev.c_str());
     if (learnSwitch >= 0) {  // a PROFILE SWITCH KEY: the later bind wins, after a warning
       const int direction = learnSwitch;
@@ -322,7 +325,8 @@ struct EditorShared {
       const int row = midiStore->map().find(b.key);
       midiListOffset = midi_ui::pageOffset(row, static_cast<int>(midiStore->map().count()));
       if (midi.bindingsChanged) midi.bindingsChanged();
-      relativeLearn.start(b, midiStore->generation(), midi.messageSeq(), static_cast<int>((m >> 21) & 0x7Fu));
+      relativeLearn.start(b, midiStore->generation(), midi.messageSeq(), static_cast<int>((m >> 21) & 0x7Fu),
+                        inputDevice);
     }
     setLearnArmed(false, false);
   }

@@ -488,9 +488,17 @@ class StandaloneAudioEngine {
   // `switches` are the global profile switch keys (core::midi_switch_map): they outrank
   // every profile binding; while `switchesEnabled` is false (the MIDI panel is open) they are
   // swallowed without switching.
+  // The app's input devices by index (0-3): each one's name (bindings naming a device match
+  // only its messages) and the settings it plays with. Without them (`inputs` nullptr) device
+  // 0 is `inputDevice` playing with `settings`, and so are the others.
+  struct MidiInputSet {
+    char name[lunar24::core::kMidiMaxInputDevices][lunar24::core::kMidiBindingDeviceCapacity] = {};
+    lunar24::core::MidiRigSettings rig[lunar24::core::kMidiMaxInputDevices];
+  };
   void publishMidiMap(const lunar24::core::MidiMap& map, const char* inputDevice,
                       const lunar24::core::MidiRigSettings& settings = {}, bool resetBindings = true,
-                      const lunar24::core::MidiMap* switches = nullptr, bool switchesEnabled = true);
+                      const lunar24::core::MidiMap* switches = nullptr, bool switchesEnabled = true,
+                      const MidiInputSet* inputs = nullptr);
   // Rows at or above this are switch keys (row - kMidiSwitchRowBase indexes the switch map).
   static constexpr int kMidiSwitchRowBase = static_cast<int>(lunar24::core::kMidiMapCapacity);
   // UI thread: net profile steps the switch keys asked for since the last call (+ = NEXT).
@@ -506,22 +514,24 @@ class StandaloneAudioEngine {
     ~MidiMessageScope() { engine_.midiMessageActive_ = false; engine_.midiMatchPending_ = false; }
     MidiMessageScope(const MidiMessageScope&) = delete;
     MidiMessageScope& operator=(const MidiMessageScope&) = delete;
-    const lunar24::core::MidiRigSettings& settings() const {
-      return engine_.midiMapSlots_[engine_.midiMapReadIdx_].settings;
+    // The settings input device `device` (0-3) plays with.
+    const lunar24::core::MidiRigSettings& settings(unsigned device = 0) const {
+      return engine_.midiMapSlots_[engine_.midiMapReadIdx_].inputs.rig[device % lunar24::core::kMidiMaxInputDevices];
     }
    private:
     StandaloneAudioEngine& engine_;
   };
-  // Audio thread: the published map's row for this message, or -1. Device-specific
-  // bindings match only when their name equals the published input device. Apply
+  // Audio thread: the published map's row for this message from input device `device`
+  // (0-3), or -1. Device-specific bindings match only that device's published name. Apply
   // the returned row immediately, before another lookup or engine call.
   int midiBindingRow(std::uint8_t channel, lunar24::core::MidiBindingKind kind,
-                     std::uint8_t number);
+                     std::uint8_t number, unsigned device = 0);
   // Audio thread: apply a matched row's raw data byte (0..127). Parameters honor the
   // binding's input mode (pickup for absolute, deltas for relative); drone-key and
   // mute actions take effect immediately and are recorded for the UI; cartridge /
   // preset actions hand over to the UI thread via fromAudioQueue_. A photo-sensor
-  // binding moves the hand at once; for a pad, `channel` (1..16) is the pad's channel.
+  // binding moves the hand at once; for a pad, `channel` (non-zero) identifies where it came from
+  // (the host passes its lane + 1, the input device * 16 + channel + 1).
   void applyMidiBindingFromAudioThread(std::uint32_t row, int rawValue, std::uint8_t channel = 0);
   // Audio thread: a pad bound to a photo sensor. Release lifts the hand; pressure (poly
   // aftertouch on that note, or channel aftertouch with note -1) sets how close it is.
@@ -690,9 +700,8 @@ class StandaloneAudioEngine {
     lunar24::core::MidiMap map;
     lunar24::core::MidiMap switches;  // the global profile switch keys
     bool switchesEnabled = true;
-    lunar24::core::MidiRigSettings settings;
+    MidiInputSet inputs;      // names and settings by input device
     std::uint64_t bindingRevision = 0;
-    char device[lunar24::core::kMidiBindingDeviceCapacity] = {};
     bool deviceKnown = true;  // false: a plugin, every binding's device matches
   };
   MidiMapSlot midiMapSlots_[3];
@@ -1534,17 +1543,22 @@ inline bool StandaloneAudioEngine::sendParameterFromAudioThread_(ParameterId id,
 inline void StandaloneAudioEngine::publishMidiMap(const lunar24::core::MidiMap& map,
                                                   const char* inputDevice,
                                                   const lunar24::core::MidiRigSettings& settings, bool resetBindings,
-                                                  const lunar24::core::MidiMap* switches, bool switchesEnabled) {
+                                                  const lunar24::core::MidiMap* switches, bool switchesEnabled,
+                                                  const MidiInputSet* inputs) {
   MidiMapSlot& s = midiMapSlots_[midiMapWriteIdx_];
   s.map = map;
   if (switches != nullptr) s.switches = *switches;
   else s.switches.clear();
   s.switchesEnabled = switchesEnabled;
-  s.settings = settings;
+  if (inputs != nullptr) {
+    s.inputs = *inputs;
+  } else {
+    s.inputs = MidiInputSet{};
+    if (inputDevice != nullptr) std::snprintf(s.inputs.name[0], sizeof(s.inputs.name[0]), "%s", inputDevice);
+    for (auto& rig : s.inputs.rig) rig = settings;
+  }
   if (resetBindings) ++midiUiBindingRevision_;
   s.bindingRevision = midiUiBindingRevision_;
-  std::memset(s.device, 0, sizeof(s.device));
-  if (inputDevice != nullptr) std::snprintf(s.device, sizeof(s.device), "%s", inputDevice);
   s.deviceKnown = inputDevice != nullptr;
   midiUiMap_ = s;
   midiMapWriteIdx_ = midiMapMiddle_.exchange(midiMapWriteIdx_ | 4u, std::memory_order_acq_rel) & 3u;
@@ -1571,11 +1585,11 @@ inline void StandaloneAudioEngine::refreshMidiMap_() {
 
 inline int StandaloneAudioEngine::midiBindingRow(std::uint8_t channel,
                                                  lunar24::core::MidiBindingKind kind,
-                                                 std::uint8_t number) {
+                                                 std::uint8_t number, unsigned inputDevice) {
   refreshMidiMap_();
   midiMatchPending_ = true;
   const auto& s = midiMapSlots_[midiMapReadIdx_];
-  const char* device = s.deviceKnown ? s.device : nullptr;
+  const char* device = s.deviceKnown ? s.inputs.name[inputDevice % lunar24::core::kMidiMaxInputDevices] : nullptr;
   if (device == nullptr && channel >= 1 && channel <= 16) midiRealChannels_ |= static_cast<std::uint16_t>(1u << (channel - 1));
   if (const auto* sw = lunar24::core::midi_map_find(s.switches, device, channel, kind, number, midiRealChannels_))
     return kMidiSwitchRowBase + static_cast<int>(sw - &s.switches.at(0));

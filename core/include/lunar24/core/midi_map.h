@@ -340,6 +340,8 @@ inline bool midi_map_decode(const std::uint8_t* in, std::size_t n, MidiMap* out,
 // and the two profile switch keys (one hardware key per keybed triangle, or none). Stored
 // in its own file next to the profiles. The rig settings are kept per input device: `rig`
 // is the one for every device, and a device may have its own (deviceRig, by device name).
+// How many MIDI input devices the app listens to at once.
+inline constexpr unsigned kMidiMaxInputDevices = 4;
 inline constexpr int kMidiMaxDeviceRigs = 15;  // + the every-device record = the file's 16
 struct MidiDeviceRig {
   char device[kMidiBindingDeviceCapacity] = {};

@@ -184,7 +184,10 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     shared->logInstance = logInstance_;
     // The MIDI settings overlay reads/edits the plugin's binding store through these bridges.
     shared->midiStore = &midiMapStore_;
-    shared->midi.inputDeviceName = [this]() { return midiInputDeviceName_; };
+    shared->midi.inputDeviceName = [this]() { return midiInputDeviceNames_[0]; };
+    shared->midi.inputDeviceNameAt = [this](unsigned d) {
+      return d < lunar24::host::kMidiInputDevices ? midiInputDeviceNames_[d] : std::string();
+    };
     shared->midi.messageSeq = [this]() { return midiMessageSeq(); };
     shared->midi.lastMessage = [this]() { return midiLastMessage(); };
     shared->midi.litPlates = [this]() { return midiLitPlates(); };
@@ -350,7 +353,7 @@ void LunarHostPlugin::rebuildEngine_()
   sustain_.reset();
   midiNotes_.reset();
   midiLights_.reset();
-  midiQueue_.invalidate();
+  midiQueue_.invalidateAll();
   stateStore_.captureCanonical(engine_);
   stateStore_.loadOnce();
   bool resetHere = false;
@@ -463,8 +466,15 @@ void LunarHostPlugin::rememberPanelFace_(int index)
 void LunarHostPlugin::republishMidiMap(bool resetBindings)
 {
   const lunar24::core::MidiMap switches = lunar24::core::midi_switch_map(midiMapStore_.global());
+  lunar24::host::StandaloneAudioEngine::MidiInputSet inputs;
+  for (unsigned d = 0; d < lunar24::host::kMidiInputDevices; ++d) {
+#ifdef APP_API
+    std::snprintf(inputs.name[d], sizeof(inputs.name[d]), "%s", midiInputDeviceNames_[d].c_str());
+#endif
+    inputs.rig[d] = midiMapStore_.settings();
+  }
   engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_(), midiMapStore_.settings(), resetBindings,
-                         &switches, !midiPanelOpen_);
+                         &switches, !midiPanelOpen_, &inputs);
 }
 
 void LunarHostPlugin::setMidiPanelOpen(bool open)
@@ -521,9 +531,10 @@ void LunarHostPlugin::OnUIClose()
 }
 #endif
 
-void LunarHostPlugin::setMidiInputDeviceName(const char* name)
+void LunarHostPlugin::setMidiInputDevice(unsigned device, const char* name)
 {
-  midiInputDeviceName_ = name != nullptr ? name : "";
+  if (device >= lunar24::host::kMidiInputDevices) return;
+  midiInputDeviceNames_[device] = name != nullptr ? name : "";
   republishMidiMap();
 }
 
@@ -610,9 +621,9 @@ void LunarHostPlugin::applyPendingMidiResets_()
   }
 }
 
-void LunarHostPlugin::midiInputClosed()
+void LunarHostPlugin::midiInputClosed(unsigned device)
 {
-  midiQueue_.invalidate();
+  midiQueue_.invalidate(device);
 }
 
 void LunarHostPlugin::toggleRecording([[maybe_unused]] int source)
@@ -917,13 +928,13 @@ void LunarHostPlugin::drainMidiInput(int frames)
   if (!scope) return;
   applyPendingMidiResets_();
   const int now = lunar24::host::midiArrivalStamp();
-  midiQueue_.drain([&] {
-    // The old input's stream ended: release only the notes it still holds, so mouse and
-    // computer-keyboard playing (and an arpeggio they hold) keep going. Should the event
+  midiQueue_.drain([&](unsigned device) {
+    // That input's stream ended: release only the notes it still holds, so mouse, computer
+    // keyboard and the other inputs (and an arpeggio they hold) keep going. Should the event
     // queue be full, fall back to the all-gates-off failsafe rather than leave a note stuck.
     bool released = true;
     int count = 0;
-    lunar24::host::release_midi_notes(midiNotes_, sustain_, 3, [&](lunar24::core::PerformanceInput in) {
+    lunar24::host::release_midi_device_notes(device, midiNotes_, sustain_, 3, [&](lunar24::core::PerformanceInput in) {
       in.seq = ++midiSeq_;
       in.side = midiSides_.of(in.channel, in.noteId - 1);
       ++count;
@@ -931,9 +942,10 @@ void LunarHostPlugin::drainMidiInput(int frames)
       if (midiInput_.translate(in, event, 1) == 1 && !enqueueMidi_(event[0], 0))
         released = false;
     });
-    rtLog_.push(lunar24::host::diag::RtKind::midi_input_reset, 0, 0, released ? 0 : 1, count);
-    midiLights_.reset();
-    engine_.pitchBendFromAudioThread(0.0);  // a bend held on the old input springs back
+    rtLog_.push(lunar24::host::diag::RtKind::midi_input_reset, device, 0, released ? 0 : 1, count);
+    midiLights_.resetDevice(device);
+    if (device == midiBendDevice_)
+      engine_.pitchBendFromAudioThread(0.0);  // a bend held on that input springs back
     if (!released) {
       lunar24::core::ControlEvent event{};
       event.kind = lunar24::core::ControlEventKind::reset;
@@ -941,17 +953,23 @@ void LunarHostPlugin::drainMidiInput(int frames)
       event.source = 3;
       engine_.enqueueEventFromAudioThread(event, 0);
     }
-  }, [&](lunar24::host::MidiInputQueue::Message input) {
+  }, [&](unsigned device, lunar24::host::MidiInputQueue::Message input) {
     IMidiMsg message;
     message.mStatus = input.status;
     message.mData1 = input.data1;
     message.mData2 = input.data2;
     message.mOffset = lunar24::host::midiBlockOffset(input.stamp, now, GetSampleRate(), frames);
-    ProcessMidiMsg(message);
+    processMidi_(message, device, input.stamp);
   });
 }
 
+// The DAW's MIDI (plugins): one input.
 void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
+{
+  processMidi_(msg, 0, 0);
+}
+
+void LunarHostPlugin::processMidi_(const IMidiMsg& msg, unsigned device, int stamp)
 {
   using namespace lunar24::core;
   const lunar24::host::StandaloneAudioEngine::AudioScope scope(engine_);
@@ -979,7 +997,7 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       case 0xFC: midiStopsIn_.fetch_add(1, std::memory_order_relaxed); break;
       default: break;
     }
-    switch (midiClock_.onRealtime(msg.mStatus))
+    switch (midiClock_.onRealtime(msg.mStatus, device, stamp))
     {
       case lunar24::host::MidiClockFollower::Action::step: sendEvent(ControlEventKind::clock); break;
       case lunar24::host::MidiClockFollower::Action::restart: engine_.restartKeyboardPatternFromAudioThread(); break;
@@ -990,10 +1008,13 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
   if (msg.mStatus >= 0xF0) return;  // other system messages (MIDI time code, song position)
 
   const lunar24::host::StandaloneAudioEngine::MidiMessageScope configuration(engine_);
-  const auto& rig = configuration.settings();
+  const auto& rig = configuration.settings(device);
   PerformanceInput in{};
   in.source = 3;  // MIDI producer
-  in.channel = static_cast<std::uint8_t>(msg.Channel());
+  // A note's identity is its lane (input device * 16 + channel): two inputs playing the same
+  // note on the same channel are two notes. Bindings and the log use the real channel.
+  const auto channel = static_cast<std::uint8_t>(msg.Channel());
+  in.channel = static_cast<std::uint8_t>(lunar24::host::midi_lane(device, channel));
   in.seq = ++midiSeq_;
   const int note = msg.NoteNumber();
   // Releases must reach notes/pedals admitted before the channel filter changed.
@@ -1019,7 +1040,8 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
     const bool isCc = msg.StatusMsg() == IMidiMsg::kControlChange;
     midiLastMessage_.store((static_cast<std::uint32_t>(msg.mData2 & 0x7F) << 21) |
                                (isCc ? 1u << 20 : 0u) |
-                               ((static_cast<std::uint32_t>(in.channel + 1) & 0x1Fu) << 8) |
+                               ((static_cast<std::uint32_t>(channel + 1) & 0x1Fu) << 8) |
+                               ((device & 3u) << 13) |
                                (static_cast<std::uint32_t>(isCc ? msg.ControlChangeIdx()
                                                                 : (note & 127)) & 0xFFu),
                            std::memory_order_relaxed);
@@ -1034,9 +1056,9 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       if (msg.Velocity() > 0)
       {
         // A bound note is a pad command, never a played note (bindings are 1-based channels).
-        const int bound = engine_.midiBindingRow(static_cast<std::uint8_t>(in.channel + 1),
+        const int bound = engine_.midiBindingRow(static_cast<std::uint8_t>(channel + 1),
                                                  lunar24::core::MidiBindingKind::note,
-                                                 static_cast<std::uint8_t>(note & 127));
+                                                 static_cast<std::uint8_t>(note & 127), device);
         if (bound >= 0)
         {
           rtLog_.push(RtKind::midi_binding, in.channel, note & 127, msg.Velocity(), bound);
@@ -1098,7 +1120,8 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       in.side = midiSides_.latest(in.channel);
       in.value = static_cast<SignalSample>(msg.ChannelAfterTouch() / 127.0);
       break;
-    case IMidiMsg::kPitchWheel:
+    case IMidiMsg::kPitchWheel:  // one bend for the machine: the last input to move it wins
+      midiBendDevice_ = device;
       engine_.pitchBendFromAudioThread(kPitchBendSemitones * msg.PitchWheel());
       return;
     case IMidiMsg::kControlChange:
@@ -1119,9 +1142,9 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
       }
       // A user binding wins over the factory CC table (the map is the user's rig).
       {
-        const int bound = engine_.midiBindingRow(static_cast<std::uint8_t>(in.channel + 1),
+        const int bound = engine_.midiBindingRow(static_cast<std::uint8_t>(channel + 1),
                                                  lunar24::core::MidiBindingKind::cc,
-                                                 static_cast<std::uint8_t>(msg.ControlChangeIdx()));
+                                                 static_cast<std::uint8_t>(msg.ControlChangeIdx()), device);
         if (bound >= 0)
         {
           if (traceMidi) rtLog_.push(RtKind::midi_binding_cc, in.channel, msg.ControlChangeIdx(), msg.mData2, bound);
