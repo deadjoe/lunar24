@@ -2,8 +2,25 @@
 
 Keep these unless a listening test or a real bug says otherwise.
 
-- **Named MIDI profiles** (owner, 2026-10-10): bindings and CHANNEL / TRANSPOSE /
-  VELOCITY / SPLIT form one controller setup. The app and plugins share `midi-profiles/`
+- **MIDI profile switching while playing** (owner, 2026-10-12): the two outline triangles
+  under plates 3 and 10 step to the previous / next profile in name order (case ignored),
+  wrapping; rename profiles to set the order. Also `[` / `]` and one hardware key per triangle
+  (PROFILE SWITCH KEYS in the MIDI panel; one triangle may stay unset). Stepping saves pending
+  edits and never changes the startup choice (`selected.txt`); picking in the PROFILE list does.
+  While the MIDI panel is open switch keys do nothing (still swallowed, never played).
+  **GLOBAL MIDI SETTINGS** = CHANNEL / TRANSPOSE / VELOCITY / SPLIT + the switch keys, in
+  `midi-profiles/global.bin`, the same in every profile (seeded once from the profile that was
+  current; profile files keep their old settings block, unread). Only these are global; MUTE
+  and everything else stay per profile. One key, one meaning, the later bind wins: Learn into
+  a profile frees that key from a triangle; a switch key leaves the other triangle and the
+  current profile. Rows other profiles hold on a switch key stay but are outranked (greyed,
+  MODE "SWITCH KEY"); before binding such a key the panel names those profiles and asks
+  BIND / CANCEL. The keyboard display has a second line with the profile name (slides when
+  too long), and every LCD (keyboard display, cartridge slot) lights up for 3 s after any
+  change. global.bin keeps rig settings per input device (one "all devices" record today)
+  so several controllers can later get their own.
+- **Named MIDI profiles** (owner, 2026-10-10; settings made global 2026-10-12, see above):
+  bindings form one controller setup. The app and plugins share `midi-profiles/`
   in the settings folder; DAW projects do not contain profiles. Each instance switches
   independently and refreshes the library when opening PROFILE. Edits auto-save; COPY
   preserves an alternate layout (or rescues edits after a conflicting save elsewhere).

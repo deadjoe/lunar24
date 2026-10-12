@@ -43,6 +43,7 @@ enum class WidgetKind : std::uint8_t {
   RecordSource,  // app-level WET / DRY / ALL selector for REC, where the PHONE knob is
   PhotoSensor,   // a classic drone's light-sensitive eye (id = group 0..3 = drone 1/2/4/5)
   OscStatus,     // a classic drone's OSC STATUS lamps, one per generator (id = group 0..3)
+  ProfileStep,   // a keybed triangle (id 0 = left = previous MIDI profile, 1 = right = next)
 };
 
 // The printed indicator LEDs Lunar 24 lights, in StandaloneAudioEngine::PanelLed order: centre of
@@ -393,7 +394,13 @@ inline std::vector<Widget> build_panel_layout() {
   add(WidgetKind::OctaveKey, 1093, 1186, 46, 46, 0);
   add(WidgetKind::Encoder, 1200, 1188, 90, 90, 0);
   add(WidgetKind::OctaveKey, 1307, 1186, 46, 46, 1);
-  add(WidgetKind::Display, 1200, 1274, 116, 38, 0);
+  // Two lines: OCT / menu / tuning over the MIDI profile name. The moon below was made
+  // smaller and lower for it (art::drawKeybedMarks); gaps measured, tuned by eye.
+  add(WidgetKind::Display, 1200, 1281, 160, 60, 0);
+  // The outline triangles printed under plates 3 and 10 (art::drawKeybedMarks) step through
+  // the MIDI profiles: the box each triangle fills.
+  add(WidgetKind::ProfileStep, 700, 1421.5, 98, 83, 0);
+  add(WidgetKind::ProfileStep, 1700, 1421.5, 98, 83, 1);
   {
     const double kx[2] = {2167, 2264};
     const double ky[3] = {1166, 1296, 1427};

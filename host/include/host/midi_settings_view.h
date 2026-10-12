@@ -23,12 +23,25 @@ inline constexpr Box kBounds{410, 1112, 1990, 1482};
 inline constexpr Box kClose{1846, 1126, 1966, 1166};
 inline constexpr Box kProfile{832, 1126, 1332, 1166};
 inline constexpr Box kInput{1350, 1128, 1816, 1164};
-inline constexpr Box profileRow(int row) { return {832, 1205.f + row * 50, 1966, 1253.f + row * 50}; }
+// The bindings / profiles table (x 1020..1966) leaves room on its left for the PROFILE
+// SWITCH KEYS card (x 812..984); the GLOBAL MIDI SETTINGS heading spans the settings and it.
+inline constexpr float kTableL = 1020;
+inline constexpr Box profileRow(int row) { return {kTableL, 1205.f + row * 50, 1966, 1253.f + row * 50}; }
 inline constexpr Box profileAction(int i) { return {832.f + i * 168, 1436, 988.f + i * 168, 1472}; }
-inline constexpr Box kNameEntry{846, 1208, 1668, 1248};
-inline constexpr Box kLearn{434, 1364, 788, 1404};
-inline constexpr Box kRetrySave{434, 1364, 604, 1404};
-inline constexpr Box kReload{614, 1364, 788, 1404};
+inline constexpr Box kNameEntry{1034, 1208, 1668, 1248};
+inline constexpr Box kLearn{434, 1368, 788, 1404};
+inline constexpr Box kRetrySave{434, 1368, 604, 1404};
+inline constexpr Box kReload{614, 1368, 788, 1404};
+// PROFILE SWITCH KEYS: one triangle per keybed triangle (0 = PREV, 1 = NEXT). A click while
+// Learn waits for a target picks it; x clears its key.
+inline constexpr Box kSwitchCard{812, 1208, 984, 1404};
+inline constexpr float switchCenterX(int i) { return i == 0 ? 855.f : 941.f; }
+inline constexpr Box switchTarget(int i) { return {switchCenterX(i) - 40, 1230, switchCenterX(i) + 40, 1292}; }
+inline constexpr Box switchRemove(int i) { return {switchCenterX(i) - 16, 1342, switchCenterX(i) + 16, 1374}; }
+// The confirmation before a key another profile uses becomes a switch key (over the table).
+inline constexpr Box kConfirmCard{kTableL, 1204, 1966, 1404};
+inline constexpr Box kConfirmBind{1620, 1356, 1780, 1394};
+inline constexpr Box kConfirmCancel{1792, 1356, 1952, 1394};
 inline constexpr Box unavailableRemove(int row) { return {1858, 1210.f + row * 50, 1958, 1250.f + row * 50}; }
 inline constexpr Box kPrevious{1722, 1430, 1770, 1470};
 inline constexpr Box kNext{1918, 1430, 1966, 1470};
@@ -36,7 +49,7 @@ inline constexpr Box kVersion{1540, 1436, 1712, 1472};  // plugins: two lines, v
 inline constexpr int kVisibleRows = 4;
 inline constexpr float kTableY = 1204, kRowH = 50;
 inline constexpr int kSettingCount = 4;  // CHANNEL, TRANSPOSE, VELOCITY, SPLIT
-inline constexpr Box setting(int i) { return {434, 1186.f + i * 44, 788, 1226.f + i * 44}; }
+inline constexpr Box setting(int i) { return {434, 1208.f + i * 40, 788, 1244.f + i * 40}; }
 inline constexpr Box decrement(int i) {
   const auto r = setting(i);
   return {594, r.t + 2, 638, r.b - 2};
@@ -71,6 +84,11 @@ struct ProfileRow {
 };
 struct State {
   const core::MidiMap* map = nullptr;
+  core::MidiGlobalSettings global;  // switch keys shown in their card; their rows are greyed
+  // A key another profile uses, waiting for BIND / CANCEL: "<profile>: <target>" lines.
+  bool confirmSwitch = false;
+  int confirmDirection = 0;
+  std::vector<std::string> confirmUses;
   std::string device;
   std::string profileName = "Untitled", error, nameText;
   std::vector<ProfileRow> profiles;
@@ -96,9 +114,23 @@ inline const char* actionName(core::MidiAction a) {
                                 "DRONE 5",       "DRONE 6",       "CARTRIDGE NEXT", "CARTRIDGE PREV",
                                 "LOAD PRESET A", "LOAD PRESET B", "LOAD PRESET C",  "LOAD PRESET D",
                                 "MUTE",          "DRONE 1 PHOTO", "DRONE 2 PHOTO",  "DRONE 4 PHOTO",
-                                "DRONE 5 PHOTO"};
+                                "DRONE 5 PHOTO", "PROFILE PREV",  "PROFILE NEXT"};
   const auto i = static_cast<unsigned>(a);
   return i < core::kMidiActionCount ? names[i] : "?";
+}
+inline std::string keyText(const core::MidiBindingKey& k) {
+  char text[32];
+  std::snprintf(text, sizeof(text), "%s %u", k.kind == core::MidiBindingKind::cc ? "CC" : "NOTE", unsigned(k.number));
+  return text;
+}
+inline std::string channelText(const core::MidiBindingKey& k) {
+  return k.channel == 0 ? std::string("ANY CH") : "CH " + std::to_string(unsigned(k.channel));
+}
+// A profile row on a key that is now a switch key: the switch key outranks it.
+inline bool shadowedBySwitch(const core::MidiGlobalSettings& g, const core::MidiBindingKey& k) {
+  for (int i = 0; i < 2; ++i)
+    if (g.switchBound[i] && g.switchKey[i].equals(k)) return true;
+  return false;
 }
 inline const char* modeText(const core::MidiBinding& b) {
   switch (b.mode) {
@@ -180,7 +212,39 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   label({1420, kInput.t, kInput.r, kInput.b}, 17, kWhite,
         st.device.empty() ? std::string(st.noDevice) : asciiText(st.device), true);
   button(kClose, "CLOSE", true);
-  rect({810, 1186, 812, 1404}, kRule, 0);
+  rect({1000, 1186, 1002, 1404}, kRule, 0);
+  label({434, 1182, 990, 1202}, 14, kTeal, "GLOBAL MIDI SETTINGS", true);
+  {  // PROFILE SWITCH KEYS: raised triangles standing for the keybed's two
+    rect(kSwitchCard, kCard);
+    label({kSwitchCard.l, 1210, kSwitchCard.r, 1228}, 12, kMuted, "PROFILE SWITCH KEYS", true, true);
+    const bool pick = st.editable && st.armed && st.awaitTarget && !st.profileBrowser && !st.confirmSwitch;
+    const char* names[2] = {"PREV", "NEXT"};
+    for (int i = 0; i < 2; ++i) {
+      const float cx = switchCenterX(i), tip = 1238, base = 1266, half = 16;
+      const bool hover = pick && switchTarget(i).contains(mouseX, mouseY);
+      auto tri = [&](float dx, float dy, float inset, std::uint32_t c) {
+        s.moveTo(cx + dx, tip + dy + inset * 1.6f);
+        s.lineTo(cx + dx + half - inset, base + dy - inset * 0.6f);
+        s.lineTo(cx + dx - half + inset, base + dy - inset * 0.6f);
+        s.closePath();
+        s.fillPath(c, false);
+      };
+      const std::uint32_t face = pick ? (hover ? 0x1f8aa8 : kTeal) : 0x3a3633;
+      tri(1.5f, 3.f, 0, 0xb5a998);                    // shadow on the card
+      tri(0, 0, 0, pick ? 0x003e52 : 0x1c1a18);       // the key's dark lower edge
+      tri(0, -1.5f, 1.2f, pick ? 0x4fb0c8 : 0x6b6560);  // light catching the upper edges
+      tri(0, 0, 2.6f, face);                          // the face
+      label({cx - 40, 1272, cx + 40, 1292}, 13, pick ? kTeal : kInk, names[i], true, true);
+      if (st.global.switchBound[i]) {
+        const auto& k = st.global.switchKey[i];
+        label({cx - 43, 1296, cx + 43, 1316}, 14, kInk, keyText(k), true, true);
+        label({cx - 43, 1316, cx + 43, 1334}, 12, kMuted, channelText(k), false, true);
+        button(switchRemove(i), "x", st.editable && !st.confirmSwitch);
+      } else {
+        label({cx - 43, 1296, cx + 43, 1316}, 14, kMuted, "NOT SET", true, true);
+      }
+    }
+  }
   const char* labels[] = {"CHANNEL", "TRANSPOSE", "VELOCITY", "SPLIT"};
   const char* curves[] = {"LINEAR", "SOFT", "HARD"};
   char values[kSettingCount][24];
@@ -212,16 +276,30 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   const int offset = pageOffset(st.offset, count);
   if (st.nameAction >= 0) {
     const char* titles[] = {"NEW PROFILE NAME", "COPY PROFILE AS", "RENAME CURRENT PROFILE"};
-    label({844, 1180, 1640, 1202}, 14, kMuted, titles[std::clamp(st.nameAction, 0, 2)], true);
-    rect({832, 1205, 1966, 1403}, kCard);
+    label({1032, 1180, 1640, 1202}, 14, kMuted, titles[std::clamp(st.nameAction, 0, 2)], true);
+    rect({kTableL, 1205, 1966, 1403}, kCard);
     rect(kNameEntry, kWhite, 4);
     label(kNameEntry, 19, kInk, st.nameText, true);
-    label({846, 1270, 1948, 1310}, 18, kMuted, "English names, up to 39 characters.");
-    label({846, 1314, 1948, 1354}, 16, kMuted, "Enter or click outside to confirm. Esc to cancel.");
+    label({1034, 1270, 1948, 1310}, 18, kMuted, "English names, up to 39 characters.");
+    label({1034, 1314, 1948, 1354}, 16, kMuted, "Enter or click outside to confirm. Esc to cancel.");
+  } else if (st.confirmSwitch) {
+    label({1032, 1180, 1950, 1202}, 14, kMuted, st.confirmDirection == 0 ? "PREV SWITCH KEY" : "NEXT SWITCH KEY", true);
+    rect(kConfirmCard, kCard);
+    label({1040, 1212, 1950, 1240}, 19, kInk, "This key is also bound in other profiles:", true);
+    const int shown = std::min<int>(3, static_cast<int>(st.confirmUses.size()));
+    for (int i = 0; i < shown; ++i)
+      label({1056, 1244.f + i * 26, 1950, 1268.f + i * 26}, 16, kInk, st.confirmUses[static_cast<std::size_t>(i)]);
+    if (static_cast<int>(st.confirmUses.size()) > shown)
+      label({1056, 1322, 1950, 1344}, 15, kMuted,
+            "and " + std::to_string(st.confirmUses.size() - static_cast<std::size_t>(shown)) + " more");
+    label({1040, 1356, 1600, 1376}, 14, kMuted, "Bound, it switches profiles there too;");
+    label({1040, 1376, 1600, 1396}, 14, kMuted, "those rows stay, greyed. Cancel to check first.");
+    button(kConfirmBind, "BIND", true, true);
+    button(kConfirmCancel, "CANCEL", true);
   } else if (st.profileBrowser) {
     int readable = 0;
     for (const auto& p : st.profiles) if (p.readable) ++readable;
-    label({844, 1180, 1640, 1202}, 14, kMuted,
+    label({1032, 1180, 1640, 1202}, 14, kMuted,
           "SAVED PROFILES / " + std::to_string(readable) + " AVAILABLE", true);
     label({1720, 1180, 1950, 1202}, 14, kMuted, "BINDINGS", true, true);
     for (int i = 0; i < kVisibleRows; ++i) {
@@ -232,7 +310,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
       const auto& profile = st.profiles[static_cast<std::size_t>(row)];
       if (profile.readable && box.contains(mouseX, mouseY)) rect(box, 0xd9cdbc, 5);
       if (profile.current) rect({box.l, box.t + 5, box.l + 4, box.b - 5}, kTeal, 1);
-      label({850, box.t, 1620, box.b}, 19, profile.readable ? kInk : kMuted, profile.name, true);
+      label({1038, box.t, 1620, box.b}, 19, profile.readable ? kInk : kMuted, profile.name, true);
       if (profile.current) label({1628, box.t, 1732, box.b}, 12, kTeal, "CURRENT", true, true);
       if (profile.readable) label({1750, box.t, 1950, box.b}, 17, kMuted, std::to_string(profile.bindings), false, true);
       else {
@@ -241,12 +319,12 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
       }
     }
   } else {
-    label({844, 1180, 1198, 1202}, 14, kMuted, "CONTROLLER", true);
-    label({1220, 1180, 1688, 1202}, 14, kMuted, "PANEL TARGET", true);
+    label({1032, 1180, 1226, 1202}, 14, kMuted, "CONTROLLER", true);
+    label({1236, 1180, 1700, 1202}, 14, kMuted, "PANEL TARGET", true);
     label({1708, 1180, 1848, 1202}, 14, kMuted, "MODE", true, true);
     for (int i = 0; i < kVisibleRows; ++i) {
       const float y = kTableY + i * kRowH;
-      rect({832, y + 1, 1966, y + 49}, i % 2 == 0 ? kCard : 0xe2d8c9, 5);
+      rect({kTableL, y + 1, 1966, y + 49}, i % 2 == 0 ? kCard : 0xe2d8c9, 5);
       if (offset + i >= count) continue;
       const auto& b = st.map->at(static_cast<std::uint32_t>(offset + i));
       char source[48];
@@ -257,11 +335,14 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
         std::snprintf(source, sizeof(source), "%s %u / CH %u",
                       b.key.kind == core::MidiBindingKind::cc ? "CC" : "NOTE", unsigned(b.key.number),
                       unsigned(b.key.channel));
-      label({846, y + 2, 1196, y + 27}, 18, kInk, source, true);
-      label({846, y + 26, 1196, y + 47}, 14, kMuted, b.key.device[0] ? asciiText(b.key.device) : "Any device");
-      label({1220, y + 4, 1688, y + 46}, 18, kInk, targetText(b), true);
+      const bool shadowed = shadowedBySwitch(st.global, b.key);  // the switch key outranks it
+      label({1034, y + 2, 1226, y + 27}, 18, shadowed ? kMuted : kInk, source, true);
+      label({1034, y + 26, 1226, y + 47}, 14, kMuted, b.key.device[0] ? asciiText(b.key.device) : "Any device");
+      label({1236, y + 4, 1700, y + 46}, 18, shadowed ? kDisabledText : kInk, targetText(b), true);
       const auto drive = core::midi_parameter_drive(b);
-      if (b.targetKind != core::MidiTargetKind::parameter && core::midi_action_is_continuous(b.action)) {
+      if (shadowed)
+        label(mode(i), 13, kMuted, "SWITCH KEY", true, true);
+      else if (b.targetKind != core::MidiTargetKind::parameter && core::midi_action_is_continuous(b.action)) {
         if (b.key.kind == core::MidiBindingKind::note)
           label(mode(i), 15, kMuted, "PRESS", true, true);  // a pad: hit, pressure, release
         else
@@ -277,11 +358,11 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
       button(remove(i), "x", st.editable);
     }
     if (count == 0) {
-      rect({832, 1204, 1966, 1404}, kCard);
-      label({866, 1240, 1932, 1282}, 22, kInk, "No controller bindings yet", true, true);
-      label({866, 1284, 1932, 1320}, 18, kMuted,
+      rect({kTableL, 1204, 1966, 1404}, kCard);
+      label({1040, 1240, 1932, 1282}, 22, kInk, "No controller bindings yet", true, true);
+      label({1040, 1284, 1932, 1320}, 18, kMuted,
             "Click LEARN, choose a panel control, then move a knob or press a pad.", false, true);
-      label({866, 1326, 1932, 1360}, 16, kMuted, "Bindings are saved separately from your sound settings.",
+      label({1040, 1326, 1932, 1360}, 16, kMuted, "Bindings are saved separately from your sound settings.",
             false, true);
     }
   }
@@ -294,8 +375,8 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     line1 = "No editable profile.";
     line2 = "Open PROFILE to create one.";
   } else if (st.armed && st.awaitTarget) {
-    line1 = "1. Choose a panel control above";
-    line2 = "or an EXTRA LEARN TARGET.";
+    line1 = "1. Choose a panel control above,";
+    line2 = "a switch key or an EXTRA TARGET.";
   } else if (st.armed) {
     line1 = "2. Move a knob or press a pad.";
     line2 = "Esc or CANCEL LEARN to cancel.";

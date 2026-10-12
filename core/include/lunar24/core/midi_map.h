@@ -60,8 +60,15 @@ enum class MidiAction : std::uint8_t {
   photo_drone_2 = 14,
   photo_drone_4 = 15,
   photo_drone_5 = 16,
+  // The keybed's two triangles: step to the previous / next MIDI profile (name order, wrapping).
+  // Global: they live in the global settings file, never in a profile.
+  profile_prev = 17,
+  profile_next = 18,
 };
-inline constexpr std::uint8_t kMidiActionCount = 17;
+inline constexpr std::uint8_t kMidiActionCount = 19;
+inline bool midi_action_is_profile_switch(MidiAction a) {
+  return a == MidiAction::profile_prev || a == MidiAction::profile_next;
+}
 // Actions that take a value rather than a press (they accept the relative modes too).
 inline bool midi_action_is_continuous(MidiAction a) {
   return a >= MidiAction::photo_drone_1 && a <= MidiAction::photo_drone_5;
@@ -313,6 +320,133 @@ inline bool midi_map_decode(const std::uint8_t* in, std::size_t n, MidiMap* out,
     if (!out->bind(parsed[i])) return false;
   }
   *settings = s;
+  return true;
+}
+
+// ---- global MIDI settings ------------------------------------------------------
+//
+// What stays the same whichever profile is current: CHANNEL / TRANSPOSE / VELOCITY / SPLIT
+// and the two profile switch keys (one hardware key per keybed triangle, or none). Stored
+// in its own file next to the profiles. The rig settings are kept per input device on disk
+// (one record with an empty device = every device) so a later multi-controller rig can
+// give each controller its own; today exactly that one record is read and written.
+struct MidiGlobalSettings {
+  MidiRigSettings rig;
+  MidiBindingKey switchKey[2];      // [0] = PREV triangle, [1] = NEXT triangle
+  bool switchBound[2] = {false, false};
+};
+
+inline MidiAction midi_switch_action(int direction) {
+  return direction == 0 ? MidiAction::profile_prev : MidiAction::profile_next;
+}
+
+// The switch keys as bindings (row 0..count-1), for matching with midi_map_find.
+inline MidiMap midi_switch_map(const MidiGlobalSettings& g) {
+  MidiMap m;
+  for (int i = 0; i < 2; ++i) {
+    if (!g.switchBound[i]) continue;
+    MidiBinding b;
+    b.key = g.switchKey[i];
+    b.targetKind = MidiTargetKind::action;
+    b.action = midi_switch_action(i);
+    (void)m.bind(b);
+  }
+  return m;
+}
+
+// Wire format "L24G", version 1, little-endian:
+//   magic (4) | version u32 | rig record count u32 (1..16) | switch record count u32 (0..2)
+//   rig record (80): device[64] | channelFilter u8 | octaveShift i8 | velocityCurve u8 |
+//                    splitNote u8 | 12 reserved zero bytes
+//   switch record (72): device[64] | channel u8 | kind u8 | number u8 | direction u8 (0 / 1) |
+//                       4 reserved zero bytes
+// Decode is all-or-nothing. Exactly one rig record must name no device; records for named
+// devices are accepted and ignored (room for per-controller settings later).
+inline constexpr std::uint32_t kMidiGlobalWireVersion = 1;
+inline constexpr std::size_t kMidiGlobalHeaderBytes = 16, kMidiGlobalRigBytes = 80, kMidiGlobalSwitchBytes = 72;
+inline constexpr std::uint32_t kMidiGlobalMaxRigRecords = 16;
+inline constexpr std::size_t kMidiGlobalMaxBytes =
+    kMidiGlobalHeaderBytes + kMidiGlobalMaxRigRecords * kMidiGlobalRigBytes + 2 * kMidiGlobalSwitchBytes;
+inline constexpr char kMidiGlobalWireMagic[4] = {'L', '2', '4', 'G'};
+
+inline bool midi_global_valid(const MidiGlobalSettings& g) {
+  if (!midi_rig_settings_valid(g.rig)) return false;
+  for (int i = 0; i < 2; ++i)
+    if (g.switchBound[i] && !midi_binding_key_valid(g.switchKey[i])) return false;
+  return !(g.switchBound[0] && g.switchBound[1] && g.switchKey[0].equals(g.switchKey[1]));
+}
+
+inline std::size_t midi_global_wire_bytes(const MidiGlobalSettings& g) {
+  return kMidiGlobalHeaderBytes + kMidiGlobalRigBytes +
+         (std::size_t(g.switchBound[0]) + std::size_t(g.switchBound[1])) * kMidiGlobalSwitchBytes;
+}
+
+// Returns the byte count, or 0 (nothing written) when invalid or `capacity` is too small.
+inline std::size_t midi_global_encode(const MidiGlobalSettings& g, std::uint8_t* out, std::size_t capacity) {
+  const std::size_t need = midi_global_wire_bytes(g);
+  if (!midi_global_valid(g) || capacity < need) return 0;
+  std::memset(out, 0, need);
+  std::memcpy(out, kMidiGlobalWireMagic, 4);
+  put_u32le(out + 4, kMidiGlobalWireVersion);
+  put_u32le(out + 8, 1);
+  put_u32le(out + 12, std::uint32_t(g.switchBound[0]) + std::uint32_t(g.switchBound[1]));
+  std::uint8_t* r = out + kMidiGlobalHeaderBytes;
+  r[64] = g.rig.channelFilter;
+  r[65] = static_cast<std::uint8_t>(g.rig.octaveShift);
+  r[66] = static_cast<std::uint8_t>(g.rig.velocityCurve);
+  r[67] = g.rig.splitNote;
+  r += kMidiGlobalRigBytes;
+  for (int i = 0; i < 2; ++i) {
+    if (!g.switchBound[i]) continue;
+    std::memcpy(r, g.switchKey[i].device, kMidiBindingDeviceCapacity);
+    r[64] = g.switchKey[i].channel;
+    r[65] = static_cast<std::uint8_t>(g.switchKey[i].kind);
+    r[66] = g.switchKey[i].number;
+    r[67] = static_cast<std::uint8_t>(i);
+    r += kMidiGlobalSwitchBytes;
+  }
+  return need;
+}
+
+inline bool midi_global_decode(const std::uint8_t* in, std::size_t n, MidiGlobalSettings* out) {
+  if (in == nullptr || out == nullptr || n < kMidiGlobalHeaderBytes) return false;
+  if (std::memcmp(in, kMidiGlobalWireMagic, 4) != 0 || get_u32le(in + 4) != kMidiGlobalWireVersion) return false;
+  const std::uint32_t rigs = get_u32le(in + 8), switches = get_u32le(in + 12);
+  if (rigs < 1 || rigs > kMidiGlobalMaxRigRecords || switches > 2) return false;
+  if (n != kMidiGlobalHeaderBytes + rigs * kMidiGlobalRigBytes + switches * kMidiGlobalSwitchBytes) return false;
+  MidiGlobalSettings g;
+  int anyDevice = 0;
+  const std::uint8_t* r = in + kMidiGlobalHeaderBytes;
+  for (std::uint32_t i = 0; i < rigs; ++i, r += kMidiGlobalRigBytes) {
+    if (std::memchr(r, '\0', kMidiBindingDeviceCapacity) == nullptr) return false;
+    for (std::size_t k = 68; k < kMidiGlobalRigBytes; ++k)
+      if (r[k] != 0) return false;
+    MidiRigSettings s;
+    s.channelFilter = r[64];
+    s.octaveShift = static_cast<std::int8_t>(r[65]);
+    s.velocityCurve = static_cast<MidiVelocityCurve>(r[66]);
+    s.splitNote = r[67];
+    if (!midi_rig_settings_valid(s)) return false;
+    if (r[0] == '\0') {
+      ++anyDevice;
+      g.rig = s;
+    }
+  }
+  if (anyDevice != 1) return false;
+  for (std::uint32_t i = 0; i < switches; ++i, r += kMidiGlobalSwitchBytes) {
+    MidiBindingKey k;
+    std::memcpy(k.device, r, kMidiBindingDeviceCapacity);
+    k.channel = r[64];
+    k.kind = static_cast<MidiBindingKind>(r[65]);
+    k.number = r[66];
+    const std::uint8_t dir = r[67];
+    if (dir > 1 || g.switchBound[dir] || r[68] || r[69] || r[70] || r[71]) return false;
+    if (!midi_binding_key_valid(k)) return false;
+    g.switchKey[dir] = k;
+    g.switchBound[dir] = true;
+  }
+  if (!midi_global_valid(g)) return false;
+  *out = g;
   return true;
 }
 

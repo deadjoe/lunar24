@@ -305,7 +305,7 @@ void drawKeybedMarks(Sink& s) {
   s.moveTo(1483, 1142); s.lineTo(1473, 1142); s.lineTo(1473, 1149); s.lineTo(1481, 1149);  // return arrow
   s.strokePath(c, 1.8f);
   s.moveTo(1478, 1146); s.lineTo(1482, 1149); s.lineTo(1478, 1152); s.strokePath(c, 1.6f);
-  drawMoon(s, 1200.f, 1386.f, 60.f, c, kKeybedRgb);
+  drawMoon(s, 1200.f, 1396.f, 52.f, c, kKeybedRgb);  // under the two-line display
   // Mounting screws along the keybed edges.
   for (float x : {412.f, 806.f, 1200.f, 1592.f, 1986.f}) {
     s.fillCircle(x, 1115, 4, 0xd0d0d0);
@@ -448,9 +448,10 @@ void drawDroneKey(Sink& s, float x0, float y0, float x1, float y1, bool open, bo
 
 // The keyboard display: a backlit blue LCD behind glass, set in a raised black bezel. Drawn in
 // two parts so the caller can put the text between them: drawDisplay (bezel and screen) and
-// drawDisplayGlass (the reflection over the text). Amounts tuned by eye.
+// drawDisplayGlass (the reflection over the text). `glow` 0..1 turns the backlight up (an LCD
+// lights up when what it shows changes, host/lcd_display.h). Amounts tuned by eye.
 template <class Sink>
-void drawDisplay(Sink& s, float x0, float y0, float x1, float y1) {
+void drawDisplay(Sink& s, float x0, float y0, float x1, float y1, float glow = 0.f) {
   roundRectPath(s, x0 - 5, y0 - 2, x1 + 9, y1 + 11, 6.f);  // shadow on the keybed
   s.fillGrad(solid(0x000000, 0.35f));
   roundRectPath(s, x0 - 7, y0 - 7, x1 + 7, y1 + 7, 5.f);    // the bezel, lit from above
@@ -466,6 +467,12 @@ void drawDisplay(Sink& s, float x0, float y0, float x1, float y1) {
   const float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rr = (x1 - x0) * 0.55f;
   s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1); s.closePath();
   s.fillGrad(radialGrad(cx, cy, 0.f, rr, 0x6a7cff, 0.55f, 0x6a7cff, 0.f));
+  if (glow > 0.f) {  // the brighter backlight: the whole screen lifts, most in the middle
+    s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1); s.closePath();
+    s.fillGrad(solid(0x5a6cff, 0.35f * glow));
+    s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1); s.closePath();
+    s.fillGrad(radialGrad(cx, cy, 0.f, rr, 0x9aa8ff, 0.45f * glow, 0x9aa8ff, 0.f));
+  }
   // The top edge of the recess shades the screen just below it.
   s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y0 + 6); s.lineTo(x0, y0 + 6); s.closePath();
   s.fillGrad(vertical(y0, y0 + 6, 0x000000, 0x000000, 0.45f, 0.f));
