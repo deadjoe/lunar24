@@ -1534,7 +1534,7 @@
   - 鼠标和 MIDI 可以交替使用，谁最后动就听谁的。
 - 收尾：在 MIDI 设置里用 **x** 删掉这两行绑定。
 
-**T15.12 多套 MIDI 方案与原有 Learn 回归** ⏳
+**T15.12 多套 MIDI 方案与原有 Learn 回归** ✅
 - 用本 PR 的 CI 构建物测试。旧 `lunar24-midi-map.bin` 不导入也不删除；首次打开是 **Untitled**，0 条自定义绑定，ANY / +0 st / LINEAR / C4。控制器不限品牌；以下 MPK 是业主现有测试设备。
 - PROFILE → **RENAME**，输入 `Studio`，Enter 确认；再次重命名输入另一名称后 Esc，应取消且不播放电脑键盘音符。命名时点击框外会确认（该次点击不再触发背后的按钮），提示应明确；空白、中文、超过 39 字符和重名应拒绝，当前方案保持；普通校验提示不得替换 **LEARN** 或 **BACK TO BINDINGS** 按钮。
 - 用 MPK 的 KnobM = Rel，按 T15.2 Learn FILTER FREQ：先显示 ABS，再左右慢转识别为 **REL 2**。关面板再开、退出再启动，REL 2 仍保存；手工选择 MODE 后不得被识别覆盖。绝对旋钮的接管行为仍按 T15.7。
