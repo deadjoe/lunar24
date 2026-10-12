@@ -420,6 +420,107 @@ int main() {
     removeTree(odir);
     removeTree(gdir);
   }
+  // Review fixes (#148): several instances share global.bin; damaged or missing files.
+  {
+    auto key = [](const char* dev, std::uint8_t ch, std::uint8_t n) {
+      core::MidiBindingKey k;
+      std::snprintf(k.device, core::kMidiBindingDeviceCapacity, "%s", dev);
+      k.channel = ch;
+      k.kind = core::MidiBindingKind::note;
+      k.number = n;
+      return k;
+    };
+    // Another instance's switch key survives this instance changing CHANNEL (merge, not overwrite).
+    const auto rdir = makeTempDir("review-merge");
+    host::MidiMapStore a, b;
+    a.setDirectory(rdir); b.setDirectory(rdir);
+    CHECK(a.load() == host::MidiMapLoadOutcome::NoFile);
+    CHECK(b.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK(b.bindSwitch(1, key("MPK", 10, 40)));
+    core::MidiRigSettings rs = a.settings();
+    rs.channelFilter = 3;
+    CHECK(a.setSettings(rs));
+    CHECK(a.global().switchBound[1]);               // merged into this instance too
+    host::MidiMapStore c;
+    c.setDirectory(rdir);
+    CHECK(c.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK(c.global().switchBound[1]);
+    CHECK_EQ(c.settings().channelFilter, 3);
+    CHECK(a.unbindSwitch(1));                       // and the reverse: A's later unbind wins
+    CHECK(b.bindSwitch(0, key("MPK", 10, 41)));
+    CHECK(c.refresh());
+    CHECK(!c.global().switchBound[1] && c.global().switchBound[0]);
+    // A global.bin this build cannot read is neither replaced by a seed nor emptied in memory.
+    const auto globalPath = c.globalPath();
+    {
+      auto* f = host::app_state_file_ops::openNative(globalPath, "wb");
+      CHECK(f != nullptr);
+      if (f) { std::fputs("L24G-future", f); std::fclose(f); }
+    }
+    const auto future = readFile(globalPath);
+    CHECK(c.refresh());
+    CHECK(c.global().switchBound[0]);
+    CHECK(readFile(globalPath) == future);
+    host::MidiMapStore d;
+    d.setDirectory(rdir);
+    CHECK(d.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK(readFile(globalPath) == future);          // a starting instance does not overwrite it either
+    removeTree(rdir);
+
+    // Every profile unreadable at startup: global.bin is still read, so a later edit keeps it.
+    const auto mdir = makeTempDir("review-malformed");
+    host::MidiMapStore m1;
+    m1.setDirectory(mdir);
+    CHECK(m1.load() == host::MidiMapLoadOutcome::NoFile);
+    CHECK(m1.bindSwitch(1, key("MPK", 10, 40)));
+    corrupt(m1.livePath());
+    host::MidiMapStore m2;
+    m2.setDirectory(mdir);
+    CHECK(m2.load() == host::MidiMapLoadOutcome::Malformed);
+    CHECK(m2.global().switchBound[1]);
+    CHECK(!m2.unbindSwitch(1));                     // not editable: nothing changes
+    CHECK(m2.create("New", false));
+    rs = m2.settings();
+    rs.channelFilter = 2;
+    CHECK(m2.setSettings(rs));
+    host::MidiMapStore m3;
+    m3.setDirectory(mdir);
+    (void)m3.load();
+    CHECK(m3.global().switchBound[1]);
+    CHECK_EQ(m3.settings().channelFilter, 2);
+    removeTree(mdir);
+
+    // A key learned in a plugin (any device) and the same pad learned in the app (named device)
+    // are one key: the warning names the other profile, the row is cleared, and vice versa.
+    const auto wdir = makeTempDir("review-wildcard");
+    host::MidiMapStore w;
+    w.setDirectory(wdir);
+    CHECK(w.load() == host::MidiMapLoadOutcome::NoFile);
+    CHECK(w.rename("A"));
+    core::MidiBinding anyDevice;
+    anyDevice.key = key("", 10, 40);
+    anyDevice.parameter = core::ParameterId::effector_blend;
+    CHECK(w.bind(anyDevice));
+    core::MidiBinding anyChannel = anyDevice;
+    anyChannel.key = key("MPK", 0, 41);
+    CHECK(w.bind(anyChannel));
+    CHECK(w.save());
+    CHECK(w.create("B", false));
+    CHECK_EQ(w.otherProfilesUsing(key("MPK", 10, 40)).size(), 1u);
+    CHECK_EQ(w.otherProfilesUsing(key("MPK", 7, 41)).size(), 1u);
+    CHECK(w.otherProfilesUsing(key("MPK", 10, 42)).empty());
+    CHECK(w.select(w.profiles()[0].id));            // back to A
+    CHECK_EQ(w.name(), "A");
+    CHECK(w.bindSwitch(1, key("MPK", 10, 40)));     // the any-device row on the same pad goes
+    CHECK_EQ(w.map().count(), 1u);
+    core::MidiBinding specific = anyDevice;
+    specific.key = key("MPK", 10, 40);
+    CHECK(w.bindSwitch(0, key("", 0, 40)));         // an any-device, any-channel switch key...
+    CHECK(!w.global().switchBound[1]);              // ...takes the pad from NEXT (later wins)
+    CHECK(w.bind(specific));                        // and a profile row on that pad frees it again
+    CHECK(!w.global().switchBound[0]);
+    removeTree(wdir);
+  }
   host::MidiMapStore noPath;
   CHECK(noPath.load() == host::MidiMapLoadOutcome::NoPath);
   CHECK(!noPath.save());

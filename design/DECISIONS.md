@@ -18,7 +18,11 @@ Keep these unless a listening test or a real bug says otherwise.
   BIND / CANCEL. The keyboard display has a second line with the profile name (slides when
   too long), and every LCD (keyboard display, cartridge slot) lights up for 3 s after any
   change. global.bin keeps rig settings per input device (one "all devices" record today)
-  so several controllers can later get their own.
+  so several controllers can later get their own. A key with no device or ANY channel (a
+  plugin learns no device) is the same key as any key it would match (`midi_keys_overlap`).
+  Every global change rereads global.bin under the library lock and changes only its own
+  field, so the app and plugins never overwrite each other's global settings; an unreadable
+  global.bin is left alone until the next deliberate change.
 - **Named MIDI profiles** (owner, 2026-10-10; settings made global 2026-10-12, see above):
   bindings form one controller setup. The app and plugins share `midi-profiles/`
   in the settings folder; DAW projects do not contain profiles. Each instance switches

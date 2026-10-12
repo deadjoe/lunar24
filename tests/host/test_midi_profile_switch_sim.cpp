@@ -9,7 +9,11 @@
 //   * a switch key outranks rows other profiles still hold on it (they stay, greyed);
 //   * stepping walks the profiles in name order, wrapping, and never changes the startup choice;
 //   * the global settings and switch keys are the same in every profile;
-//   * while the MIDI panel is open a switch key is swallowed and steps nothing.
+//   * while the MIDI panel is open a switch key is swallowed and steps nothing;
+//   * a pad learned with no device (a plugin) and the same pad learned with the app's device
+//     name are one key (core::midi_keys_overlap);
+//   * a second instance (the app next to a plugin) changing the global settings is merged,
+//     never overwritten, by this instance's next global change.
 // After every operation the store, the files on disk and the engine's snapshot must agree
 // with the model.
 
@@ -35,10 +39,17 @@ namespace {
 constexpr const char* kDevice = "MPK mini IV";
 
 // The keys a player has: pads (notes, channel 10) and knobs / buttons (CCs, channel 1).
+// Key 7 is pad 0 as a plugin learns it: no device, any channel.
+constexpr int kPlayableKeys = 7;
 core::MidiBindingKey makeKey(int i) {
   core::MidiBindingKey k;
   std::snprintf(k.device, core::kMidiBindingDeviceCapacity, "%s", kDevice);
-  if (i < 4) {
+  if (i == kPlayableKeys) {
+    k.device[0] = '\0';
+    k.kind = core::MidiBindingKind::note;
+    k.channel = 0;
+    k.number = 36;
+  } else if (i < 4) {
     k.kind = core::MidiBindingKind::note;
     k.channel = 10;
     k.number = static_cast<std::uint8_t>(36 + i);
@@ -49,7 +60,8 @@ core::MidiBindingKey makeKey(int i) {
   }
   return k;
 }
-constexpr int kKeys = 7;
+constexpr int kKeys = 8;
+bool overlap(int a, int b) { return a == b || (a == 0 && b == kPlayableKeys) || (a == kPlayableKeys && b == 0); }
 
 // Panel targets: a few knobs and a drone key.
 core::MidiBinding makeBinding(int key, int target) {
@@ -82,7 +94,9 @@ struct Model {
   std::map<std::string, std::map<int, int>> profiles;  // name -> key index -> target
   std::string current, selected;
   int switchKey[2] = {-1, -1};
+  int octave = 0;      // the global TRANSPOSE
   bool panelOpen = false;
+  bool aSynced = true;  // this instance has seen the second instance's last global change
 
   std::vector<std::string> order() const {  // name order ignoring case (names unique that way)
     std::vector<std::string> names;
@@ -100,12 +114,13 @@ struct Model {
   void bindProfile(int key, int target) {
     profiles[current][key] = target;
     for (int& k : switchKey)
-      if (k == key) k = -1;
+      if (k >= 0 && overlap(k, key)) k = -1;
   }
   void bindSwitch(int direction, int key) {
     switchKey[direction] = key;
-    if (switchKey[1 - direction] == key) switchKey[1 - direction] = -1;
-    profiles[current].erase(key);
+    if (switchKey[1 - direction] >= 0 && overlap(switchKey[1 - direction], key)) switchKey[1 - direction] = -1;
+    auto& rows = profiles[current];
+    for (auto it = rows.begin(); it != rows.end();) it = overlap(it->first, key) ? rows.erase(it) : std::next(it);
   }
 };
 
@@ -142,9 +157,12 @@ bool checkAgainstModel(const Model& m, host::MidiMapStore& store, const std::str
     const auto it = cur.find(keyIndex(b.key));
     ok &= it != cur.end() && it->second == targetIndex(b);
   }
-  for (int d = 0; d < 2; ++d) {
-    ok &= store.global().switchBound[d] == (m.switchKey[d] >= 0);
-    if (m.switchKey[d] >= 0) ok &= store.global().switchKey[d].equals(makeKey(m.switchKey[d]));
+  if (m.aSynced) {
+    for (int d = 0; d < 2; ++d) {
+      ok &= store.global().switchBound[d] == (m.switchKey[d] >= 0);
+      if (m.switchKey[d] >= 0) ok &= store.global().switchKey[d].equals(makeKey(m.switchKey[d]));
+    }
+    ok &= store.settings().octaveShift == m.octave;
   }
   // The startup choice on disk is the last profile picked or made, never a stepped one.
   const auto sel = readBytes(selectedPath);
@@ -155,6 +173,7 @@ bool checkAgainstModel(const Model& m, host::MidiMapStore& store, const std::str
   ok &= fresh.load() == host::MidiMapLoadOutcome::Ok;
   ok &= fresh.name() == m.selected;
   for (int d = 0; d < 2; ++d) ok &= fresh.global().switchBound[d] == (m.switchKey[d] >= 0);
+  ok &= fresh.settings().octaveShift == m.octave;
   if (!ok) std::printf("  model mismatch: seed %d, operation %d (current %s)\n", seed, op, m.current.c_str());
   CHECK(ok);
   return ok;
@@ -183,30 +202,45 @@ int main() {
     E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     publish(e, store, false);
+    host::MidiMapStore other;  // a second instance on the same library (global settings only)
+    other.setDirectory(dir.u8string());
+    CHECK(other.load() == host::MidiMapLoadOutcome::Ok);
     std::mt19937 rng(static_cast<std::uint32_t>(seed));
     auto pick = [&](int n) { return static_cast<int>(rng() % static_cast<std::uint32_t>(n)); };
     static const char* kNames[] = {"bravo", "Charlie", "delta", "Echo", "foxtrot"};
-    int made = 0, steps = 0, swallowed = 0, conflictsSeen = 0;
+    int made = 0, steps = 0, swallowed = 0, conflictsSeen = 0, merges = 0;
+    auto sync = [&]() {  // what opening PROFILE does: refresh (the app then republishes)
+      if (!m.aSynced) {
+        CHECK(store.refresh());
+        m.aSynced = true;
+      }
+    };
     for (int op = 0; op < 600; ++op) {
       const int what = pick(100);
       if (what < 25) {                       // Learn a panel target into the current profile
         const int key = pick(kKeys), target = pick(kTargets);
+        if (!m.aSynced) ++merges;
         CHECK(store.bind(makeBinding(key, target)));
         CHECK(store.save());
         m.bindProfile(key, target);
+        m.aSynced = true;  // bind() rereads global.bin
       } else if (what < 37) {                // Learn a switch key (BIND after any warning)
         const int direction = pick(2), key = pick(kKeys);
         if (!store.otherProfilesUsing(makeKey(key)).empty()) ++conflictsSeen;
         // The warning names exactly the other profiles holding the key.
         std::size_t expected = 0;
         for (const auto& p : m.profiles)
-          if (p.first != m.current && p.second.count(key)) ++expected;
+          if (p.first != m.current)
+            for (const auto& row : p.second) expected += overlap(row.first, key) ? 1u : 0u;
         CHECK_EQ(store.otherProfilesUsing(makeKey(key)).size(), expected);
+        if (!m.aSynced) ++merges;
         CHECK(store.bindSwitch(direction, makeKey(key)));
         CHECK(store.save());
         m.bindSwitch(direction, key);
+        m.aSynced = true;
       } else if (what < 42) {                // x under a triangle
         const int direction = pick(2);
+        sync();
         CHECK_EQ(store.unbindSwitch(direction), m.switchKey[direction] >= 0);
         m.switchKey[direction] = -1;
       } else if (what < 48) {                // x on a profile row
@@ -224,11 +258,13 @@ int main() {
           ++steps;
         }
       } else if (what < 80) {                // play a key on the controller
-        const int key = pick(kKeys);
+        const int key = pick(kPlayableKeys);
         const auto k = makeKey(key);
+        sync();
         publish(e, store, m.panelOpen);
         const int row = e.midiBindingRow(k.channel, k.kind, k.number);
-        const bool isSwitch = key == m.switchKey[0] || key == m.switchKey[1];
+        const bool isSwitch = (m.switchKey[0] >= 0 && overlap(m.switchKey[0], key)) ||
+                              (m.switchKey[1] >= 0 && overlap(m.switchKey[1], key));
         if (isSwitch) {
           CHECK(row >= E::kMidiSwitchRowBase);
           e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 100, k.channel);
@@ -236,7 +272,7 @@ int main() {
             e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(e.midiBindingRow(k.channel, k.kind, k.number)), 0);
           e.syncParametersFromAudioThread();
           const int keySteps = e.takeProfileSteps();
-          const int direction = key == m.switchKey[1] ? 1 : -1;
+          const int direction = m.switchKey[1] >= 0 && overlap(m.switchKey[1], key) ? 1 : -1;
           if (m.panelOpen) {
             CHECK_EQ(keySteps, 0);
             ++swallowed;
@@ -248,7 +284,8 @@ int main() {
           }
         } else {
           const auto& cur = m.profiles[m.current];
-          const auto it = cur.find(key);
+          auto it = cur.find(key);  // the exact row outranks the any-device one (midi_map_find)
+          if (it == cur.end() && key == 0) it = cur.find(kPlayableKeys);
           if (it == cur.end()) {
             CHECK_EQ(row, -1);
           } else {
@@ -271,12 +308,27 @@ int main() {
           m.profiles[name] = copy ? m.profiles[m.current] : std::map<int, int>{};
           m.current = m.selected = name;
         }
-      } else if (what < 96) {                // open / close the MIDI panel
+      } else if (what < 93) {                // open / close the MIDI panel
         m.panelOpen = !m.panelOpen;
+      } else if (what < 97) {                // the other instance changes the global settings
+        if (pick(2) == 0 || m.switchKey[0] < 0) {
+          core::MidiRigSettings s = other.settings();
+          s.octaveShift = static_cast<std::int8_t>(pick(7) * 12 - 36);
+          CHECK(other.setSettings(s));
+          m.octave = s.octaveShift;
+        } else {
+          CHECK(other.refresh());
+          CHECK(other.unbindSwitch(0));
+          m.switchKey[0] = -1;
+        }
+        m.aSynced = false;
       } else {                               // global settings: the same in every profile
+        if (!m.aSynced) ++merges;
         core::MidiRigSettings s = store.settings();
         s.octaveShift = static_cast<std::int8_t>(pick(7) * 12 - 36);
         CHECK(store.setSettings(s));
+        m.octave = s.octaveShift;
+        m.aSynced = true;
         const auto before = store.settings().octaveShift;
         if (!m.panelOpen && store.step(1) > 0) {
           m.step(1);
@@ -290,6 +342,7 @@ int main() {
     CHECK(steps > 20);
     CHECK(swallowed > 0);
     CHECK(conflictsSeen > 0);
+    CHECK(merges > 0);
     heap.reset();
     std::filesystem::remove_all(dir, ec);
   }

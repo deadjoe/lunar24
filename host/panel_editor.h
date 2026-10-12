@@ -161,6 +161,7 @@ struct EditorShared {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
   }
   double stepFlashAt[2] = {-100.0, -100.0};  // when each keybed triangle was last pressed
+  bool stepKeyHeld[2] = {false, false};       // [ / ] down (their key-ups end the hold)
   void flashStep(int direction) { stepFlashAt[direction > 0 ? 1 : 0] = uiNow(); }
   // The current MIDI profile's name, for the keyboard display's second line.
   std::string midiProfileName() const {
@@ -213,7 +214,8 @@ struct EditorShared {
     profileDeleteArmed = profileReloadArmed = false;
     unavailableDeleteId.clear();
     if (open && midiStore) {
-      (void)midiStore->refresh();
+      // Another instance may have changed the global settings: play what is now shown.
+      if (midiStore->refresh() && midi.switchesChanged) midi.switchesChanged();
       profileListOffset = midi_ui::pageOffset(profileListOffset, static_cast<int>(midiStore->profiles().size()));
     }
     // Browsing is not a switch. Discard messages received while browsing on return.
@@ -512,10 +514,17 @@ struct EditorShared {
       logUi(diag::Level::debug, "octave %+d (key %c)", octave, c);
       return true;
     }
-    if (c == '[' || c == ']') {  // the keybed triangles: previous / next MIDI profile
-      if (!up && !midiOpen && midi.stepProfile) {
-        flashStep(c == ']' ? 1 : -1);
-        midi.stepProfile(c == ']' ? 1 : -1);
+    if ((c == '[' || c == ']') && !k.C && !k.A) {  // the keybed triangles: previous / next MIDI profile
+      const int i = c == ']' ? 1 : 0;
+      // One step per press: the system's key repeat while it is held does not step again.
+      if (up) {
+        stepKeyHeld[i] = false;
+      } else if (!stepKeyHeld[i]) {
+        stepKeyHeld[i] = true;
+        if (!midiOpen && midi.stepProfile) {
+          flashStep(i == 1 ? 1 : -1);
+          midi.stepProfile(i == 1 ? 1 : -1);
+        }
       }
       return true;
     }
@@ -552,6 +561,7 @@ struct EditorShared {
   // The window lost the keyboard (another app, a dialog): the OS sends no key-ups for keys held
   // down now, so release them here or their notes would sound forever. Returns how many.
   int releaseHeldKeys(const char* why) {
+    stepKeyHeld[0] = stepKeyHeld[1] = false;  // a lost key-up must not swallow the next press
     const int n = keys.releaseAll([&](int semi, const ComputerKeys::Held& held) { releaseKey_(semi, held); });
     if (n > 0) {
       platesMaybeReleased();
@@ -1163,7 +1173,10 @@ class DisplayControl : public IControl {
       nameAt_ = now;
     }
     const bool changed = backlight_.show(line1() + "\n" + name_, now);
-    return changed || backlight_.animating(now) || overflow_ > 0.f || IControl::IsDirty();
+    // A long name: redraw only when it has moved (not while it pauses at either end).
+    const float shift = static_cast<float>(lcd_marquee_offset(overflow_, now - nameAt_));
+    const bool moved = std::fabs(shift - drawnShift_) >= 0.5f;
+    return changed || backlight_.animating(now) || moved || IControl::IsDirty();
   }
   void Draw(IGraphics& g) override {
     GraphicsSink sink{g};
@@ -1184,6 +1197,7 @@ class DisplayControl : public IControl {
     } else {
       style.mAlign = EAlign::Near;
       const float shift = static_cast<float>(lcd_marquee_offset(overflow_, now - nameAt_));
+      drawnShift_ = shift;
       g.PathClipRegion(line);
       g.DrawText(style, name_.c_str(), IRECT(line.L - shift, line.T, line.L - shift + measured.W() + 4.f, line.B));
       g.PathClipRegion();
@@ -1208,6 +1222,7 @@ class DisplayControl : public IControl {
   std::string name_;
   double nameAt_ = 0.0;
   float overflow_ = 0.f;
+  float drawnShift_ = 0.f;  // the marquee offset last drawn
 };
 
 // A keybed triangle (printed by art::drawKeybedMarks): the left one steps to the previous MIDI
@@ -1824,7 +1839,7 @@ class MidiOverlayControl : public IControl {
         const auto outcome = s_.midiStore->load();
         if (outcome == MidiMapLoadOutcome::Ok || outcome == MidiMapLoadOutcome::NoFile) s_.adoptedMidiProfile();
       } else if (failedSave) (void)s_.midiStore->save();
-      else (void)s_.midiStore->refresh();
+      else if (s_.midiStore->refresh() && s_.midi.switchesChanged) s_.midi.switchesChanged();
       GetUI()->SetAllControlsDirty();
       return;
     }

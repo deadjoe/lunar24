@@ -386,5 +386,30 @@ int main() {
     CHECK(midi_action_is_profile_switch(b.action));
     CHECK(!midi_action_is_profile_switch(MidiAction::master_mute));
   }
+  // midi_keys_overlap: one pad seen as a plugin key (any device) and an app key (named device).
+  {
+    auto k = [](const char* dev, std::uint8_t ch, MidiBindingKind kind, std::uint8_t n) {
+      MidiBindingKey key;
+      std::snprintf(key.device, kMidiBindingDeviceCapacity, "%s", dev);
+      key.channel = ch;
+      key.kind = kind;
+      key.number = n;
+      return key;
+    };
+    const auto pad = k("MPK", 10, MidiBindingKind::note, 40);
+    CHECK(midi_keys_overlap(pad, pad));
+    CHECK(midi_keys_overlap(pad, k("", 10, MidiBindingKind::note, 40)));
+    CHECK(midi_keys_overlap(pad, k("MPK", 0, MidiBindingKind::note, 40)));
+    CHECK(midi_keys_overlap(k("", 0, MidiBindingKind::note, 40), pad));
+    CHECK(!midi_keys_overlap(pad, k("Other", 10, MidiBindingKind::note, 40)));
+    CHECK(!midi_keys_overlap(pad, k("MPK", 9, MidiBindingKind::note, 40)));
+    CHECK(!midi_keys_overlap(pad, k("MPK", 10, MidiBindingKind::cc, 40)));
+    CHECK(!midi_keys_overlap(pad, k("MPK", 10, MidiBindingKind::note, 41)));
+    MidiGlobalSettings g;  // two triangles can never share a pad, even through a wildcard
+    g.switchKey[0] = pad;
+    g.switchKey[1] = k("", 0, MidiBindingKind::note, 40);
+    g.switchBound[0] = g.switchBound[1] = true;
+    CHECK(!midi_global_valid(g));
+  }
   return test::finish("test_midi_map");
 }

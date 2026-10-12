@@ -674,7 +674,9 @@ void LunarHostPlugin::OnIdle()
   if (uiState_ && GetUI() != nullptr && GetUI()->GetWindow() != nullptr &&
       !lunar_host_view_has_keyboard(GetUI()->GetWindow())) {
     auto& ui = *std::static_pointer_cast<lunar24::host::ui::EditorShared>(uiState_);
-    if (!ui.keys.empty() && ui.releaseHeldKeys("keyboard focus lost") > 0) GetUI()->SetAllControlsDirty();
+    if ((!ui.keys.empty() || ui.stepKeyHeld[0] || ui.stepKeyHeld[1]) &&
+        ui.releaseHeldKeys("keyboard focus lost") > 0)
+      GetUI()->SetAllControlsDirty();
   }
 #endif
 

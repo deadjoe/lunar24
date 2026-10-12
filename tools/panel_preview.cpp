@@ -297,7 +297,8 @@ int main(int argc, char** argv) {
           art::drawBarLed(sink, x0, float(w.y() + 8), x0 + 9.f, float(w.y() + 38),
                           (std::uint32_t(theme::kLedOn.r) << 16) | (theme::kLedOn.g << 8) | theme::kLedOn.b, 0.f);
         }
-        break;      case WidgetKind::ProfileStep: break;  // the printed keybed triangle (art::drawKeybedMarks)
+        break;
+      case WidgetKind::ProfileStep: break;  // the printed keybed triangle (art::drawKeybedMarks)
     }
   }
   if (showMenu) {

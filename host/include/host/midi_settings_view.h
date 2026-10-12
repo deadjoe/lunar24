@@ -126,10 +126,10 @@ inline std::string keyText(const core::MidiBindingKey& k) {
 inline std::string channelText(const core::MidiBindingKey& k) {
   return k.channel == 0 ? std::string("ANY CH") : "CH " + std::to_string(unsigned(k.channel));
 }
-// A profile row on a key that is now a switch key: the switch key outranks it.
+// A profile row on a key that is now a switch key (or overlaps one): the switch key outranks it.
 inline bool shadowedBySwitch(const core::MidiGlobalSettings& g, const core::MidiBindingKey& k) {
   for (int i = 0; i < 2; ++i)
-    if (g.switchBound[i] && g.switchKey[i].equals(k)) return true;
+    if (g.switchBound[i] && core::midi_keys_overlap(g.switchKey[i], k)) return true;
   return false;
 }
 inline const char* modeText(const core::MidiBinding& b) {

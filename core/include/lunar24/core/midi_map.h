@@ -123,6 +123,17 @@ struct MidiBindingKey {
   }
 };
 
+// Two keys that some incoming message can match both of: the same note / CC number, and
+// device and channel equal or either one a wildcard (empty device, channel 0). A plugin
+// learns keys with no device and the app with its input's name, so the same pad shows up
+// both ways in a shared library; "one key, one meaning" compares keys with this.
+inline bool midi_keys_overlap(const MidiBindingKey& a, const MidiBindingKey& b) {
+  if (a.kind != b.kind || a.number != b.number) return false;
+  if (a.channel != 0 && b.channel != 0 && a.channel != b.channel) return false;
+  return a.device[0] == '\0' || b.device[0] == '\0' ||
+         std::strncmp(a.device, b.device, kMidiBindingDeviceCapacity) == 0;
+}
+
 struct MidiBinding {
   MidiBindingKey key;
   MidiTargetKind targetKind = MidiTargetKind::parameter;
@@ -373,7 +384,7 @@ inline bool midi_global_valid(const MidiGlobalSettings& g) {
   if (!midi_rig_settings_valid(g.rig)) return false;
   for (int i = 0; i < 2; ++i)
     if (g.switchBound[i] && !midi_binding_key_valid(g.switchKey[i])) return false;
-  return !(g.switchBound[0] && g.switchBound[1] && g.switchKey[0].equals(g.switchKey[1]));
+  return !(g.switchBound[0] && g.switchBound[1] && midi_keys_overlap(g.switchKey[0], g.switchKey[1]));
 }
 
 inline std::size_t midi_global_wire_bytes(const MidiGlobalSettings& g) {
