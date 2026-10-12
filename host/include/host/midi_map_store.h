@@ -251,12 +251,22 @@ class MidiMapStore {
     return core::midi_global_rig_for(global_, device);
   }
   // Saved at once to global.bin. An empty or null `device` sets the every-device settings.
-  // False when the file already holds the most device records it can (kMidiMaxDeviceRigs).
-  bool setSettingsFor(const char* device, const core::MidiRigSettings& s) {
+  // Settings equal to the every-device ones need no record of their own (it is dropped). When
+  // the file holds the most records it can (kMidiMaxDeviceRigs), the oldest one of a device not
+  // in `keep` (the ports listed now) makes room; false when every record is kept.
+  bool setSettingsFor(const char* device, const core::MidiRigSettings& s, const std::vector<std::string>& keep = {}) {
     if (device == nullptr || device[0] == '\0') return setSettings(s);
     if (!editable() || !core::midi_rig_settings_valid(s)) return false;
     bool full = false;
     const bool saved = updateGlobal([&](core::MidiGlobalSettings& g) {
+      if (sameRig(s, g.rig)) return core::midi_global_clear_device_rig(g, device);
+      if (core::midi_global_set_device_rig(g, device, s)) return true;
+      for (int i = 0; i < g.deviceRigCount; ++i) {
+        const std::string old(g.deviceRig[i].device);
+        if (std::find(keep.begin(), keep.end(), old) != keep.end()) continue;
+        (void)core::midi_global_clear_device_rig(g, old.c_str());
+        break;
+      }
       full = !core::midi_global_set_device_rig(g, device, s);
       return !full;
     });
@@ -513,6 +523,10 @@ class MidiMapStore {
     global_ = g;
     globalSeeded_ = true;
     return true;
+  }
+  static bool sameRig(const core::MidiRigSettings& a, const core::MidiRigSettings& b) {
+    return a.channelFilter == b.channelFilter && a.octaveShift == b.octaveShift &&
+           a.velocityCurve == b.velocityCurve && a.splitNote == b.splitNote;
   }
   bool fail(const char* message, bool recoverable = true) {
     error_ = message; recoverableError_ = recoverable; return false;

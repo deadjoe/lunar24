@@ -1426,7 +1426,8 @@
   1. 在 MPK 上按住一个音；在 iPad 上按住另一个音（两个音一起响）。
   2. 保持按住，拔掉 iPad 的 USB-C 线。
   3. 看 DEVICES 和 BINDINGS。再插回 iPad，等 2 秒，在 iPad 上弹。
-- 期望：拔线后只有 iPad 的音停，**MPK 按住的音继续响**；DEVICES 里 iPad 仍是 ON、写着 **NOT CONNECTED**（INPUTS 里也是）；插回后自动连上，马上能弹；T14.10 学过的 iPad 绑定（若还没删）插回后照常生效。
+  4. （可选）Learn 一个 iPad 的打击垫到 drone 1 的光感头（白色圆顶）；按住这个垫子不放（圆顶变暗、声音变了），同时拔掉 iPad。再用 MPK 的一个垫子按住另一个光感头，在 DEVICES 里把 iPad 点成 OFF。测完删掉绑定。
+- 期望：拔线后只有 iPad 的音停，**MPK 按住的音继续响**；DEVICES 里 iPad 仍是 ON、写着 **NOT CONNECTED**（INPUTS 里也是）；插回后自动连上，马上能弹；T14.10 学过的 iPad 绑定（若还没删）插回后照常生效。第 4 步：拔线时 iPad 按住的光感头"手"抬起（圆顶恢复亮）；点 OFF 时 MPK 按住的那个光感头不受影响。
 
 **T14.12 最多同时开 4 个设备** ⏳
 - 准备：「音频 MIDI 设置」→ MIDI 工作室 → **IAC 驱动程序**，勾选 **设备在线**，并用 + 加到 3 条总线（共 3 个 IAC 端口）。

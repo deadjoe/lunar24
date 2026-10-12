@@ -105,9 +105,20 @@ int main() {
     CHECK_EQ(rows.size(), 2u);
     CHECK(rows[1].isVirtual && rows[1].on && rows[1].connected);
     CHECK(!rows[0].isVirtual);
+    CHECK_EQ(rows[0].sameName, 2);                           // the row says two ports share it
+    CHECK_EQ(rows[1].sameName, 1);
     CHECK_EQ(planText(d), "open 0:To Lunar 24");
     d.setPorts({"MPK mini IV"}, "");                         // no virtual input any more
     CHECK_EQ(planText(d), "close 0:To Lunar 24");
+  }
+  // Windows: RtMidi lists "MPK mini IV 1"; the index is not part of the name we keep.
+  {
+    using lunar24::host::midi_port_identity;
+    CHECK_EQ(midi_port_identity("MPK mini IV 1", 1, true), "MPK mini IV");
+    CHECK_EQ(midi_port_identity("2- MPK mini IV 3", 3, true), "2- MPK mini IV");  // Windows' own "2-"
+    CHECK_EQ(midi_port_identity("Port 12", 2, true), "Port 12");                   // not this index
+    CHECK_EQ(midi_port_identity("MPK mini IV 1", 1, false), "MPK mini IV 1");    // macOS: as listed
+    CHECK_EQ(midi_port_identity(" 0", 0, true), " 0");                             // nothing left
   }
   return test::finish("test_midi_devices");
 }

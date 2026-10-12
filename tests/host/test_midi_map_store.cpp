@@ -5,6 +5,7 @@
 
 #include "mini_test.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -626,15 +627,32 @@ int main() {
     CHECK(a.refresh());
     CHECK_EQ(a.settingsFor("iPad").channelFilter, 10);        // a device's own survive an every-device edit
     CHECK_EQ(a.settingsFor("Other").channelFilter, 4);
-    for (int i = 1; i < core::kMidiMaxDeviceRigs; ++i)
-      CHECK(a.setSettingsFor(("Device " + std::to_string(i)).c_str(), ipad));
+    // Back to the every-device settings: the record is dropped (the device follows them).
+    const core::MidiRigSettings now = a.settings();
+    CHECK(a.setSettingsFor("iPad", now));
+    CHECK_EQ(a.global().deviceRigCount, 0);
+    CHECK(a.setSettingsFor("iPad", ipad));
+    std::vector<std::string> listed{"iPad"};
+    for (int i = 1; i < core::kMidiMaxDeviceRigs; ++i) {
+      listed.push_back("Device " + std::to_string(i));
+      CHECK(a.setSettingsFor(listed.back().c_str(), ipad));
+    }
     CHECK_EQ(a.global().deviceRigCount, core::kMidiMaxDeviceRigs);
-    CHECK(!a.setSettingsFor("One too many", ipad));           // full: refused, nothing written
+    // Full, and every record's device is listed now: refused, nothing written.
+    CHECK(!a.setSettingsFor("One too many", ipad, listed));
     CHECK_EQ(a.settingsFor("One too many").channelFilter, 4);
-    CHECK(a.setSettingsFor("iPad", every));                   // an existing record still updates
+    CHECK(a.setSettingsFor("iPad", every, listed));            // an existing record still updates
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 0);
+    // Device 3 is not listed any more: its record (the oldest such) makes room.
+    listed.erase(std::find(listed.begin(), listed.end(), "Device 3"));
+    CHECK(a.setSettingsFor("One too many", ipad, listed));
+    CHECK_EQ(a.settingsFor("One too many").channelFilter, 10);
+    CHECK_EQ(a.settingsFor("Device 3").channelFilter, 4);      // back to the every-device settings
+    CHECK_EQ(a.settingsFor("Device 4").channelFilter, 10);     // the others keep theirs
     CHECK_EQ(a.settingsFor("iPad").channelFilter, 0);
     CHECK(b.refresh());
     CHECK_EQ(b.global().deviceRigCount, core::kMidiMaxDeviceRigs);
+    CHECK_EQ(b.settingsFor("One too many").channelFilter, 10);
     removeTree(ddir);
   }
   host::MidiMapStore noPath;

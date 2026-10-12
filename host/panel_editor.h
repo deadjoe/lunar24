@@ -2041,7 +2041,7 @@ class MidiOverlayControl : public IControl {
         if (!delta || !s_.midi.setDeviceRig) continue;
         if (!s_.midi.setDeviceRig(d.name, midi_ui::stepSetting(d.rig, k, delta)))
           s_.deviceNote = s_.midiStore && !s_.midiStore->error().empty() ? s_.midiStore->error()
-                                                                         : "Too many devices with their own settings.";
+                                                                         : "Settings not saved: unplug a device.";
         SetDirty(false);
         return;
       }

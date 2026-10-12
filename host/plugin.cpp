@@ -562,6 +562,7 @@ std::vector<lunar24::host::midi_ui::DeviceRow> LunarHostPlugin::midiDeviceRows()
     r.connected = d.connected;
     r.failed = d.failed;
     r.isVirtual = d.isVirtual;
+    r.sameName = d.sameName;
     r.active = d.slot >= 0 && midiActive_(static_cast<unsigned>(d.slot));
     r.rig = midiMapStore_.settingsFor(d.name.c_str());
     rows.push_back(r);
@@ -594,7 +595,9 @@ bool LunarHostPlugin::setMidiDeviceRig([[maybe_unused]] const std::string& name,
                                        const lunar24::core::MidiRigSettings& rig)
 {
 #ifdef APP_API
-  const bool saved = midiMapStore_.setSettingsFor(name.c_str(), rig);
+  std::vector<std::string> listed;  // their records stay; an unlisted device's may make room
+  for (const auto& d : midiDevices_.rows()) listed.push_back(d.name);
+  const bool saved = midiMapStore_.setSettingsFor(name.c_str(), rig, listed);
 #else
   const bool saved = midiMapStore_.setSettings(rig);  // the DAW track: the every-device settings
 #endif
@@ -980,6 +983,7 @@ void LunarHostPlugin::drainMidiInput(int frames)
   if (!scope) return;
   applyPendingMidiResets_();
   const int now = lunar24::host::midiArrivalStamp();
+  midiClock_.expire(now);
   midiQueue_.drain([&](unsigned device) {
     // That input's stream ended: release only the notes it still holds, so mouse, computer
     // keyboard and the other inputs (and an arpeggio they hold) keep going. Should the event
@@ -996,6 +1000,9 @@ void LunarHostPlugin::drainMidiInput(int frames)
     });
     rtLog_.push(lunar24::host::diag::RtKind::midi_input_reset, device, 0, released ? 0 : 1, count);
     midiLights_.resetDevice(device);
+    // A photo pad held on that input lifts its hand (pads are known by lane + 1).
+    const unsigned firstLane = lunar24::host::midi_lane(device, 0);
+    (void)engine_.releasePhotoPadsFromAudioThread(firstLane + 1, firstLane + 16);
     if (device == midiBendDevice_)
       engine_.pitchBendFromAudioThread(0.0);  // a bend held on that input springs back
     if (!released) {

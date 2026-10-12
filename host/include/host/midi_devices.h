@@ -5,7 +5,8 @@
 //
 // Framework-free and UI-thread only: the host lists the ports it sees, this decides which
 // are on, which input slot (0-3, the audio side's device index) each open port uses, and what
-// the DEVICES tab shows. Ports are known by name: two ports with the same name are one.
+// the DEVICES tab shows. Ports are known by name: of two ports with the same name only the
+// first is used (its row says so).
 // - Up to kMidiInputDevices ports are on at once. A new port starts off; the user's choice is
 //   remembered by name, so a port that is on reopens whenever it is plugged in again.
 // - First use (nothing ever chosen): the first real port that appears is turned on, so a
@@ -23,12 +24,24 @@
 
 namespace lunar24::host {
 
+// A port's name as the user knows it. RtMidi on Windows appends " <port index>" to every name
+// (so two identical devices differ); the index moves when another device is plugged in first,
+// so the remembered choice and the bindings use the name without it.
+inline std::string midi_port_identity(const std::string& listed, unsigned index, bool indexedNames) {
+  if (!indexedNames) return listed;
+  const std::string suffix = " " + std::to_string(index);
+  if (listed.size() > suffix.size() && listed.compare(listed.size() - suffix.size(), suffix.size(), suffix) == 0)
+    return listed.substr(0, listed.size() - suffix.size());
+  return listed;
+}
+
 struct MidiDeviceRow {
   std::string name;
   bool on = false;          // the user turned it on (remembered)
   bool connected = false;   // the port is there now
   bool failed = false;      // on and connected, but the port would not open
   bool isVirtual = false;   // the app's own virtual input (macOS)
+  int sameName = 1;         // ports with this name now (only the first is used)
   int slot = -1;            // the input slot it is open on, or -1
 };
 
@@ -64,8 +77,12 @@ class MidiDeviceSetup {
   // a system without one). True when first use turned a port on (save the choice).
   bool setPorts(const std::vector<std::string>& ports, const std::string& virtualName = "") {
     ports_.clear();
-    for (const auto& p : ports)
-      if (!p.empty() && p != virtualName && !contains(ports_, p)) ports_.push_back(p);
+    sameName_.clear();
+    for (const auto& p : ports) {
+      if (p.empty() || p == virtualName) continue;
+      if (contains(ports_, p)) sameName_.push_back(p);
+      else ports_.push_back(p);
+    }
     virtualName_ = virtualName;
     failed_.erase(std::remove_if(failed_.begin(), failed_.end(),
                                  [&](const std::string& n) { return !present(n); }), failed_.end());
@@ -134,6 +151,7 @@ class MidiDeviceSetup {
       r.failed = contains(failed_, name);
       r.isVirtual = isVirtual(name);
       r.slot = slotOf(name);
+      r.sameName = 1 + static_cast<int>(std::count(sameName_.begin(), sameName_.end(), name));
       out.push_back(r);
     };
     for (const auto& p : ports_) add(p, true);
@@ -151,6 +169,7 @@ class MidiDeviceSetup {
 
   bool configured_ = false;
   std::vector<std::string> on_, ports_, failed_;
+  std::vector<std::string> sameName_;  // the second and later ports of a name
   std::string virtualName_;
   std::string slots_[kMaxOn];
 };

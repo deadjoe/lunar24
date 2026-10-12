@@ -105,6 +105,7 @@ struct DeviceRow {
   bool on = false, connected = false, failed = false, isVirtual = false;
   bool active = false;  // a message arrived just now (the activity light)
   core::MidiRigSettings rig;
+  int sameName = 1;     // ports with this name (only the first is used)
 };
 enum class Tab { bindings, devices, profiles };
 struct State {
@@ -320,6 +321,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
                            : d.failed ? "CANNOT OPEN (in use by another app?)"
                            : !d.connected ? "NOT CONNECTED"
                            : d.isVirtual ? "Virtual input for other apps"
+                           : d.sameName > 1 ? "CONNECTED - NAME SHARED, FIRST PORT USED"
                            : d.on ? "CONNECTED" : "Connected, off";
       label({570, y + 26, 900, y + 47}, 13, d.failed ? kArmedText : kMuted, status, d.failed || !d.connected);
       for (int k = 0; k < kSettingCount; ++k) {

@@ -110,6 +110,12 @@ const char* const kVirtualMidiInput = "";
 #endif
 // The next ProbeMidiIO only applies the DEVICES choice (a port turned on or off).
 bool sMidiApplyOnly = false;
+// RtMidi on Windows numbers every port name ("MPK mini IV 1"); we keep the name without it.
+#ifdef OS_WIN
+constexpr bool kIndexedMidiPortNames = true;
+#else
+constexpr bool kIndexedMidiPortNames = false;
+#endif
 // The input channels the user chose. An open that fails with the input (e.g. the Mac microphone
 // together with Bluetooth headphones) falls back to output only for that open; the choice is kept
 // here and in the settings file, and the next automatic reopen (a device change, RESET PANEL,
@@ -423,9 +429,15 @@ void IPlugAPPHost::UpdateINI()
   WritePrivateProfileString("audio", "followdefault", sFollowDefaultOutput ? "1" : "0", ini);
   WritePrivateProfileString("audio", "inputon", sInputOn ? "1" : "0", ini);
 
-  WritePrivateProfileString("midi", "indev", mState.mMidiInDev.Get(), ini);
-  {  // Lunar 24: the MIDI inputs that are on (DEVICES)
+  {  // Lunar 24: the MIDI inputs that are on (DEVICES). "indev" keeps the first of them for an
+     // older version of the app (which reads only that one).
     const auto& midiDevices = static_cast<LunarHostPlugin*>(GetPlug())->midiDevices();
+    if (midiDevices.on().empty())
+      mState.mMidiInDev.Set(midiDevices.configured() ? OFF_TEXT : "no input");
+    else
+      mState.mMidiInDev.Set(midiDevices.isVirtual(midiDevices.on().front()) ? "virtual input"
+                                                                            : midiDevices.on().front().c_str());
+    WritePrivateProfileString("midi", "indev", mState.mMidiInDev.Get(), ini);
     WritePrivateProfileString("midi", "devicesset", midiDevices.configured() ? "1" : "0", ini);
     for (unsigned i = 0; i < lunar24::host::kMidiInputDevices; ++i)
     {
@@ -567,7 +579,7 @@ void IPlugAPPHost::ProbeMidiIO()
   {
     std::vector<std::string> ins;
     for (unsigned int i = 0; i < mMidiIn->getPortCount(); i++)
-      ins.push_back(mMidiIn->getPortName(i));
+      ins.push_back(lunar24::host::midi_port_identity(mMidiIn->getPortName(i), i, kIndexedMidiPortNames));
     if (hotplug && ins == sMidiInsSeen)
       return;
     auto has = [](const std::vector<std::string>& v, const std::string& name) {
@@ -627,7 +639,7 @@ void IPlugAPPHost::ProbeMidiIO()
       else
       {
         for (unsigned int i = 0; i < slot.in->getPortCount() && !opened; i++)
-          if (slot.in->getPortName(i) == change.name)
+          if (lunar24::host::midi_port_identity(slot.in->getPortName(i), i, kIndexedMidiPortNames) == change.name)
           {
             slot.in->openPort(i, "Lunar 24");
             opened = slot.in->isPortOpen();

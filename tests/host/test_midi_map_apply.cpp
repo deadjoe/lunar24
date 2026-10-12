@@ -566,6 +566,13 @@ int main() {
     CHECK_EQ(e.runtime()->dronePhotoShade(1), knobShade);
     CHECK(!e.photoPadRelease(10, 36));  // the late note-off finds nothing
     CHECK_EQ(e.releasePhotoPadsFromAudioThread(), 0);
+    // An app input closing (unplugged, or turned OFF in DEVICES) lifts only the hands its pads
+    // hold: pads are known by lane + 1, input 2's channel 10 is 26.
+    e.applyMidiBindingFromAudioThread(static_cast<std::uint32_t>(row), 127, 26);
+    CHECK_EQ(e.releasePhotoPadsFromAudioThread(1, 16), 0);   // input 1 closed: not its pad
+    CHECK(e.runtime()->dronePhotoShade(3) > 0.0);
+    CHECK_EQ(e.releasePhotoPadsFromAudioThread(17, 32), 1);  // input 2 closed
+    CHECK_EQ(e.runtime()->dronePhotoShade(3), 0.0);
     e.processBlock(nullptr, outs, 0, 2, 256);
   }
   // Filtering/settings and the matched binding stay on one snapshot, even when the
