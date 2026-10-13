@@ -322,7 +322,7 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
                            : !d.connected ? "NOT CONNECTED"
                            : d.isVirtual ? "Virtual input for other apps"
                            : d.sameName > 1 ? "CONNECTED - NAME SHARED, FIRST PORT USED"
-                           : d.on ? "CONNECTED" : "Connected, off";
+                           : d.on ? "CONNECTED" : "CONNECTED, OFF";
       label({570, y + 26, 900, y + 47}, 13, d.failed ? kArmedText : kMuted, status, d.failed || !d.connected);
       for (int k = 0; k < kSettingCount; ++k) {
         const Box c = deviceSetting(i, k);
@@ -345,6 +345,12 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     rect({434, 1412, 1966, 1414}, kRule, 0);
     std::string line1 = st.fromDaw ? "MIDI comes from the DAW track." : "Turn on the devices you play,";
     std::string line2 = st.fromDaw ? "Route a controller to the track." : "up to four at once.";
+    // Two ports with one name (two of the same controller): only the first is used until one
+    // is renamed (macOS: Audio MIDI Setup > MIDI Studio, its Display Name).
+    if (!st.fromDaw && std::any_of(st.devices.begin(), st.devices.end(), [](const DeviceRow& d) { return d.sameName > 1; })) {
+      line1 = "Two ports share a name: rename one";
+      line2 = "in Audio MIDI Setup > MIDI Studio.";
+    }
     if (!st.deviceNote.empty()) { line1 = st.deviceNote; line2.clear(); }
     label({434, 1424, 802, 1448}, 15, st.deviceNote.empty() ? kMuted : kArmedText, line1, true);
     label({434, 1449, 802, 1474}, 14, kMuted, line2);

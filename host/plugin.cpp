@@ -999,7 +999,10 @@ void LunarHostPlugin::drainMidiInput(int frames)
       if (midiInput_.translate(in, event, 1) == 1 && !enqueueMidi_(event[0], 0))
         released = false;
     });
-    rtLog_.push(lunar24::host::diag::RtKind::midi_input_reset, device, 0, released ? 0 : 1, count);
+    // Every block after an audio reopen resets all four inputs; only a reset that let notes go
+    // (or had to fall back to all-gates-off) is worth a log line.
+    if (count > 0 || !released)
+      rtLog_.push(lunar24::host::diag::RtKind::midi_input_reset, device, 0, released ? 0 : 1, count);
     midiLights_.resetDevice(device);
     // A photo pad held on that input lifts its hand (pads are known by lane + 1).
     const unsigned firstLane = lunar24::host::midi_lane(device, 0);

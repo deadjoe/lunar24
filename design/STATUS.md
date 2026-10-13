@@ -54,7 +54,8 @@ review and listening notes: `design/SOURCE_REVIEW.md`.
 
 ## Next steps
 1. Hand-test the Windows app (MANUAL_TESTS ⏳; the owner schedules it).
-2. Hand-test several MIDI devices at once (MANUAL_TESTS T14.7-T14.13, MPK + iPad).
+2. Several MIDI devices: hand-tested with the MPK + iPad (2026-10-13). Still to test with a second
+   device that sends notes: the same note from two devices, and a held photo pad unplugged.
 3. When the owner asks: tune sounds by ear (MANUAL_TESTS "调音待办").
 4. Plugin phases 2/3: options analysed in PLUGIN_PLAN section 9; not started.
 

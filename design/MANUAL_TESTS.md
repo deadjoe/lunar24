@@ -1333,13 +1333,13 @@
 
 ### 14. MIDI 输入（DEVICES、多个设备、插拔）
 
-**T14.2 关掉 MIDI 设备时音符停止** ⏳（原 ✅；改用 DEVICES 页签后重测）
+**T14.2 关掉 MIDI 设备时音符停止** ✅（2026-10-13，改用 DEVICES 页签后重测）
 - 安排：需要 MIDI 键盘（如 MPK mini IV）。
 - 准备：MIDI → DEVICES 里 MPK Mini IV MIDI Port 是 **ON**；PLAY = SINGLE、MODE = KEYBOARD，BLEND 最左、DRONE VOICES 全关，只听 VCO A。
 - 步骤：
   1. 在 MIDI 键盘上按住一个音不放（声音持续）。
   2. 保持按住，用鼠标在 DEVICES 里把 MPK 那一行点成 **OFF**。
-- 期望：点 OFF 的瞬间声音停止（松不松手都不应再响）。再点回 **ON**，弹奏恢复正常。
+- 期望：点 OFF 时声音像松开琴键一样停下（包络 R 的拖尾和正常松手一样长），手还按着也不再响，不会卡住。再点回 **ON**，弹奏恢复正常。
 - 备注：运行中直接拔 / 插 USB 线见 T14.6。
 
 **T14.3 关掉 MIDI 设备只停 MIDI 的音，电脑键盘的琶音继续** ⏳（原 ✅ #94；改用 DEVICES 后重测）
@@ -1353,7 +1353,7 @@
 - B. MIDI 自己的音照样会停（确认修复没把这点弄坏，同 T14.2）：
   1. 在 MPK 上按住一个键不放，声音一直响。
   2. 保持按住，在 DEVICES 里把 MPK 点成 **OFF**。
-  - 期望：**声音立即停**，手还按着也不响。
+  - 期望：**声音像松手一样停下**（拖尾和正常松手一样），手还按着也不响。
   3. 把 MPK 点回 **ON**，MPK 弹奏恢复正常。
 
 **T14.4 MIDI 切换 MUTE 时按钮跟着亮灭** ✅ (#94)
@@ -1379,24 +1379,25 @@
 - 期望：
   - 第 1 步：不用重开应用，MPK 就能弹出声音。
   - 第 2 步：列表里有 MPK 的几个端口；**MPK Mini IV MIDI Port** 是 **ON**、写着 CONNECTED，其它端口是 OFF。
-  - 第 3 步：拔线后那个音停掉，不会卡住一直响。
+  - 第 3 步：拔线后那个音像松手一样停下（有包络拖尾），不会卡住一直响。
   - 第 4 步：重新插上后马上能弹。
   - 第 5 步：应用记住了 MPK，插上后自动连上，不需要重新打开。
   - 日志（第 18 节）里能看到 `midi   port connected / disconnected` 和 `input 1 open / closed`。
 
 以下 T14.7–T14.13 用两个设备：MPK mini IV 和 iPad Pro 上的 Mult Controller（USB-C 连 MacBook；「音频 MIDI 设置」里叫 **iPad**）。准备（通用）：RESET PANEL；DRONE VOICES 全关；PLAY = SINGLE、MODE = KEYBOARD；只听 VCO A；BLEND 最左。
 
-**T14.7 升级后 MPK 仍然是开的；DEVICES 页签** ⏳
+**T14.7 升级后旧选择仍是开的；DEVICES 页签** ✅（2026-10-13）
 - 步骤：
   1. 装新版本后第一次打开 Lunar 24（不要插 iPad），在 MPK 上弹几个音。
   2. 点 **MIDI**，看顶部：PROFILE 右边有 **BINDINGS / DEVICES / PROFILES** 三个页签；点 **DEVICES**。
   3. 插上 iPad，打开 Mult Controller，等 2 秒，看 DEVICES。
 - 期望：
-  - 第 1 步：不用任何设置就能弹（以前在 Preferences 里选的 MPK 自动保留为 ON）。
+  - 第 1 步：以前在 Preferences 里选的那个输入自动保留为 ON（选的是 MPK 就能直接弹）。选的若是 virtual input，开着的是 `To Lunar24`；选的设备若没插着，它那一行是 ON、NOT CONNECTED，这时 MPK 是 OFF，点一下 ON 即可（owner 决定不自动处理）。
   - 第 2 步：每个端口一行：行首 ON / OFF、绿灯 / 灰灯、名字和状态，右边 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 四个设置。MPK Mini IV MIDI Port = ON，CONNECTED；其它是 OFF，设置是灰的、点不动。
   - 第 3 步：出现 **iPad** 一行，是 **OFF**（新设备默认不开）；在 iPad 上推推子、弹音，Lunar 24 没有反应。
 
-**T14.8 两个设备一起弹** ⏳
+**T14.8 两个设备一起弹** ✅（2026-10-13，第 2 步待测）
+- 实测：iPad 的 Mult Controller 只发 CC，不能弹奏；MPK 与 iPad 同时开着各自正常，iPad 绑定（DRONE 1–6 VOL、CC 118 → DRONE 1 PHOTO）照常工作。第 2 步（同一个音分开计）等有能发音符的第二台设备再测。
 - 步骤：
   1. DEVICES 里把 **iPad** 点成 **ON**。在 iPad 上弹几个音；在 MPK 上弹几个音；两边一起弹。
   2. 在 MPK 上按住 C4 不放；在 iPad 上也按一下 C4 再松开（同一个音）。
@@ -1406,7 +1407,7 @@
   - 第 2 步：iPad 松开后 **MPK 按住的 C4 继续响**（两个设备的同一个音是两个音），MPK 松开才停。
   - 第 3 步：哪个设备在发消息，它那一行的小灯就**闪绿**；INPUTS 列出 MPK 和 iPad 两行，点 INPUTS 会跳到 DEVICES。
 
-**T14.9 每个设备自己的 CHANNEL / TRANSPOSE / VELOCITY / SPLIT** ⏳
+**T14.9 每个设备自己的 CHANNEL / TRANSPOSE / VELOCITY / SPLIT** ✅（2026-10-13，iPad 只发 CC，第 1 步待测；重启后设置保留已确认）
 - 步骤：
   1. DEVICES 里 iPad 的 **TRANSPOSE** 点 > 调到 **+12 st**，MPK 保持 +0 st。两边各弹同一个音。
   2. MPK 的 **CHANNEL** 改成一个 MPK 琴键不用的通道（如 5），弹 MPK；再弹 iPad。
@@ -1421,7 +1422,8 @@
   3. 测完点 **x** 删掉这行。
 - 期望：新行第二行写着 **iPad**；推 iPad 推子 BLEND 跟着动；MPK 的同号 CC 不会动 BLEND（会照旧控制它原来的功能，或者什么都不做）。
 
-**T14.11 拔掉一个设备只停它自己的音** ⏳
+**T14.11 拔掉一个设备只停它自己的音** ✅（2026-10-13，第 4 步待测）
+- 说明：iPad 拔下再插回，要在「音频 MIDI 设置」的音频设备窗口里再点一次 **Enable**（macOS 对 iPad USB MIDI 的要求）；之后 DEVICES 里仍是 ON 的 iPad 自动连上。第 4 步需要能发音符的打击垫（CC 的 pad、X/Y pad 没有"按住"），等有第二台设备再测。
 - 步骤：
   1. 在 MPK 上按住一个音；在 iPad 上按住另一个音（两个音一起响）。
   2. 保持按住，拔掉 iPad 的 USB-C 线。
@@ -1429,14 +1431,19 @@
   4. （可选）Learn 一个 iPad 的打击垫到 drone 1 的光感头（白色圆顶）；按住这个垫子不放（圆顶变暗、声音变了），同时拔掉 iPad。再用 MPK 的一个垫子按住另一个光感头，在 DEVICES 里把 iPad 点成 OFF。测完删掉绑定。
 - 期望：拔线后只有 iPad 的音停，**MPK 按住的音继续响**；DEVICES 里 iPad 仍是 ON、写着 **NOT CONNECTED**（INPUTS 里也是）；插回后自动连上，马上能弹；T14.10 学过的 iPad 绑定（若还没删）插回后照常生效。第 4 步：拔线时 iPad 按住的光感头"手"抬起（圆顶恢复亮）；点 OFF 时 MPK 按住的那个光感头不受影响。
 
-**T14.12 最多同时开 4 个设备** ⏳
-- 准备：「音频 MIDI 设置」→ MIDI 工作室 → **IAC 驱动程序**，勾选 **设备在线**，并用 + 加到 3 条总线（共 3 个 IAC 端口）。
+**T14.12 最多同时开 4 个设备** ✅（2026-10-13）
+- 准备：用 MPK 自带的几个端口（MIDI / DAW / Plugin / Software Control Port）凑数，不需要 IAC。测完只留 MIDI Port 开着（DAW / Plugin 端口发的是给 DAW 脚本的控制消息）。
 - 步骤：DEVICES 里 MPK、iPad 已 ON；依次把 IAC 的端口点成 ON（用 > 翻页）。
 - 期望：第 4 个能开；第 5 个点了不变，左下角红字 **Four devices are on already.**；关掉一个后就能开另一个。测完把 IAC 端口都点回 OFF。
 
-**T14.13 Preferences 没有 MIDI 区** ⏳
+**T14.13 Preferences 没有 MIDI 区** ✅（2026-10-13）
 - 步骤：⌘, 打开 Preferences。
 - 期望：只有音频设置；底部一行 `MIDI devices: the MIDI button on the panel, then DEVICES.`；OK / Apply / Cancel 在下面，窗口没有大片空白。
+
+**T14.14 两台同型号设备：在 MIDI 工作室里改名** ✅（2026-10-13，用 iPad 验证改名；两台同型号的情况等有设备再测）
+- 背景：Lunar 24 按名字区分设备，两个同名端口只用第一个（那一行写 `NAME SHARED, FIRST PORT USED`，左下角提示去改名）。
+- 步骤：「音频 MIDI 设置」→ 窗口 → 显示 MIDI 工作室，双击设备图标，改 **Display Name**（如 iPad → LunarPad），点 Apply。看 DEVICES；拔插一次再看；最后改回原名。
+- 期望：新名字 = 新设备名 + 原端口名（`LunarPad iPad`），默认 OFF；旧名字那一行若是 ON 显示 NOT CONNECTED，点 OFF 后消失；拔插后名字保留。改名等于换了一台设备：旧名字的绑定、设置、ON 都不跟过去；改回原名后全部恢复（Mult_Knob 方案的 iPad 绑定实测照常）。
 
 ### 15. MIDI 设置与绑定
 

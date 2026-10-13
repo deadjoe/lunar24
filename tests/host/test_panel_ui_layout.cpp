@@ -321,6 +321,22 @@ int main() {
       CHECK(sink.has(page == 0 ? "CANNOT OPEN (in use by another app?)" : "Launch Control"));
       CHECK(sink.has("5 devices"));
     }
+    {  // a port name listed twice: the row and the footer say to rename one
+      State shared = state;
+      shared.offset = 0;
+      shared.devices[0].sameName = 2;
+      Sink sink;
+      draw(sink, shared);
+      CHECK_EQ(sink.bad, 0);
+      CHECK(sink.has("CONNECTED - NAME SHARED, FIRST PORT USED"));
+      CHECK(sink.has("Two ports share a name: rename one"));
+      CHECK(sink.has("in Audio MIDI Setup > MIDI Studio."));
+      shared.devices[0].sameName = 1;
+      Sink plain;
+      draw(plain, shared);
+      CHECK(!plain.has("Two ports share a name: rename one"));
+      CHECK(plain.has("CONNECTED, OFF"));  // IAC Bus: connected, turned off
+    }
     state.deviceNote = "Four devices are on already.";
     { Sink note; draw(note, state); CHECK(note.has("Four devices are on already.")); }
     state.fromDaw = true;

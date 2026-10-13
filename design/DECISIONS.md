@@ -294,7 +294,8 @@ Keep these unless a listening test or a real bug says otherwise.
   remembered by name in settings.ini and reopen when plugged in; only on first use does the
   first port turn on by itself (the old single Preferences choice carries over; "indev" keeps
   the first port that is on for an older version). Ports are known by name: of two with the same
-  name only the first is used (its row says so); on Windows RtMidi's port number is left out of
+  name only the first is used (its row says so; on macOS renaming one in Audio MIDI Setup > MIDI
+  Studio, its Display Name, makes them two: RtMidi then lists "<device name> <port name>"); on Windows RtMidi's port number is left out of
   the name, so a choice survives other devices being plugged in first.
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
