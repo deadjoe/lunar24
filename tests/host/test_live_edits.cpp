@@ -592,7 +592,7 @@ int main() {
     run(20);
     CHECK(e.panelLed(E::kLedEnvA) > 0.5f);
     float lo = 1.f, hi = 0.f;
-    for (int i = 0; i < 200; ++i) {   // about one LFO cycle at the default 1 Hz
+    for (int i = 0; i < 1000; ++i) {  // about one LFO cycle at the default 0.2 Hz
       run(1);
       lo = std::min(lo, e.panelLed(E::kLedLfoA));
       hi = std::max(hi, e.panelLed(E::kLedLfoA));

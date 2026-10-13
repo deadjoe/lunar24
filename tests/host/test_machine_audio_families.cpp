@@ -95,12 +95,12 @@ void test_vco_init() {
   CHECK(h.load(dryDefault(kSeed)));
   CHECK(h.runtime() != nullptr);
   const auto& rt = *h.runtime();
-  CHECK_CLOSE(rt.vcoATune(), 0.0, 1e-9);   CHECK_CLOSE(rt.vcoBTune(), 0.0, 1e-9);
-  CHECK_CLOSE(rt.vcoAMorph(), 0.5, 1e-9);  CHECK_CLOSE(rt.vcoBMorph(), 0.5, 1e-9);
+  CHECK_CLOSE(rt.vcoATune(), 0.0, 1e-9);   CHECK_CLOSE(rt.vcoBTune(), 0.005, 1e-9);
+  CHECK_CLOSE(rt.vcoAMorph(), 0.45, 1e-9); CHECK_CLOSE(rt.vcoBMorph(), 0.45, 1e-9);
   CHECK_CLOSE(rt.vcoAPw(), 0.5, 1e-9);     CHECK_CLOSE(rt.vcoBPw(), 0.5, 1e-9);
   CHECK_EQ(rt.vcoAOctSelect(), 0);         CHECK_EQ(rt.vcoBOctSelect(), 0);
-  CHECK_EQ(rt.vcoASubSelect(), 0);         CHECK_EQ(rt.vcoBSubSelect(), 0);
-  CHECK_CLOSE(rt.vcoACvAmt(), 1.0, 1e-9);  CHECK_CLOSE(rt.vcoBCvAmt(), 1.0, 1e-9);
+  CHECK_EQ(rt.vcoASubSelect(), 1);         CHECK_EQ(rt.vcoBSubSelect(), 0);
+  CHECK_CLOSE(rt.vcoACvAmt(), 1.0, 1e-9);  CHECK_CLOSE(rt.vcoBCvAmt(), 0.0, 1e-9);
   // lin_exp registry default is 0 -> the codec apply sets the mode to kLinear.
   CHECK(rt.vcoAControlMode() == VcoControlMode::kLinear);
   CHECK(rt.vcoBControlMode() == VcoControlMode::kLinear);
@@ -143,7 +143,12 @@ void test_vco_voices() {
     CHECK(hB.render(kF));
     const int bR = zcrOf(hB.dryB());
     CHECK(bR >= 15);                     // isolating the A->B link leaves B at its baseHz.
-    CHECK(traceDiff(hDef.dryB(), hB.dryB()) > 1e-3);  // default (A-modulated) vs cv_amt=0 (baseHz) traces differ.
+    EngineHarness hFm;  // cv_amt=1: VCO A modulates B through the normalled cable
+    DeviceStateV1 fm = r;
+    slot(fm, ParameterId::vco_b_cv_amt) = 1.0;
+    CHECK(hFm.load(fm));
+    CHECK(hFm.render(kF));
+    CHECK(traceDiff(hFm.dryB(), hB.dryB()) > 1e-3);  // A-modulated vs cv_amt=0 (baseHz) traces differ.
     EngineHarness hBt;
     DeviceStateV1 r2 = r;
     slot(r2, ParameterId::vco_b_tune) = 0.5;
@@ -240,7 +245,9 @@ void test_drone_classic() {
   DeviceStateV1 d1 = d0;
   slot(d1, ParameterId::drone_1_tune_1) = 0.9;
   DeviceStateV1 dm = d1;
-  slot(dm, ParameterId::drone_1_mute_1) = 1.0;
+  for (ParameterId m : {ParameterId::drone_1_mute_1, ParameterId::drone_1_mute_2, ParameterId::drone_1_mute_3,
+                        ParameterId::drone_1_mute_4, ParameterId::drone_1_mute_5})
+    slot(dm, m) = 1.0;
 
   EngineHarness h0, h1, hm;
   CHECK(h0.load(d0)); CHECK(h1.load(d1)); CHECK(hm.load(dm));
@@ -250,7 +257,7 @@ void test_drone_classic() {
   const double v1 = h1.runtime()->droneChannel(0);
   const double vM = hm.runtime()->droneChannel(0);
   CHECK(std::fabs(v1 - v0) > 1e-3);            // tune moved the real mixer-bus audio.
-  CHECK(vM < v1);                              // mute lowered the drone's real audio.
+  CHECK(std::fabs(vM) < std::fabs(v1));        // mute lowered the drone's real audio.
   CHECK(peakOf(h0.wetL()) > hDefWet() + 0.02);  // voice reaches WET once its vol is up.
 
   // Same route (mixer_ch1_vol=1.0) and SAME volume, ONLY the classic drone tune differs: the REAL
