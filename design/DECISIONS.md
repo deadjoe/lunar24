@@ -297,6 +297,14 @@ Keep these unless a listening test or a real bug says otherwise.
   name only the first is used (its row says so; on macOS renaming one in Audio MIDI Setup > MIDI
   Studio, its Display Name, makes them two: RtMidi then lists "<device name> <port name>"); on Windows RtMidi's port number is left out of
   the name, so a choice survives other devices being plugged in first.
+- **Audio reopens only when it concerns the stream** (owner, 2026-10-13; `host/include/host/
+  audio_device_watch.h`): the app used to reopen on every audio device added or removed, so
+  plugging in an iPad (also an audio device) cut the sound. A device-list change now reopens only
+  when one of the stream's devices is gone or changed, the followed system output moved, no
+  stream runs, or the input the user wants (but could not open) is back. Since macOS may not
+  report every way a stream dies, a heartbeat backs this up: the audio callback counts its
+  calls and a count that stops for 1 s while a stream is open reopens it (not right after an
+  open, not across a sleep; three stalls in a row and it stops trying, logged).
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet

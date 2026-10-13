@@ -224,6 +224,15 @@
   - 音频启动不了时，蓝色小屏显示 NO AUDIO。
   - Preferences 窗口能打开。
 
+**T0.3a 插拔无关设备不打断声音；用到的设备照常切换** ✅ (#157)
+- 准备：打开 DRONE VOICES 的 1，让它一直响；戴着有线耳机或用扬声器都可以。
+- 步骤与期望：
+  1. 插上 iPad 并在「音频 MIDI 设置」里点 Enable；再 Disable、拔掉。drone **一直响，不断**。日志（第 18 节）里是 `audio  devices changed: stream kept (not the stream's devices)`，没有 `open (reopen)`。
+  2. 戴上 AirPods（或插上有线耳机）：声音切到耳机，可以有一下短暂中断；摘下 / 拔掉：切回扬声器。日志里是 `devices changed: reopen (...)` 或原有的输出跟随记录。
+  3. 戴着 AirPods 时打开一个会用 AirPods 麦克风的应用（FaceTime 打开预览即可），再关掉：Lunar 24 的声音最多短暂中断，然后自动恢复，不会一直没声。若中断，日志里会有 `audio stalled ... reopening` 或 `devices changed: reopen`。
+  4. 插上又拔掉一个 USB 声卡或其它音频设备（如果有）：没被 Lunar 24 用着时，声音不断。
+- 2026-10-13 复测：iPad 插拔与 Enable / Disable 时 drone 不断；AirPods 切换照常（有一下短暂中断，属正常）；FaceTime 预览开关无影响；T0.3 同时复测通过。
+
 **T0.4 RESET PANEL** ✅ (#58；改为原地切换后 #126 复测通过)
 - 步骤：
   1. 打开 DRONE VOICES 的 1，随便转几个旋钮，接一根线。
