@@ -67,6 +67,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <host/audio_device_watch.h>
 #include <host/midi_timing.h>
 #include <host/stream_plan.h>
 
@@ -130,6 +131,22 @@ bool sStartupOpen = true;  // the first TryToChangeAudio is the app starting up
 // headphones) or the system output device changed while we follow it. The UI thread then
 // reopens on the current device (lunar_host_audio_watchdog).
 std::atomic<bool> sReopen{false};
+// Set by the macOS device-list listener: the UI thread checks whether the change concerns the
+// running stream (host/audio_device_watch.h) and reopens only then.
+std::atomic<bool> sDeviceCheck{false};
+// True while the watchdog calls TryToChangeAudio: only then is a pending device check taken (a
+// Preferences OK / Apply must never be answered with "stream kept").
+bool sWatchdogCall = false;
+// The stream that is open (UI thread), and the audio callback's heartbeat: the callback counts
+// its calls, the UI thread reopens a stream whose count stopped (it died without a notice).
+lunar24::host::AudioStreamOpen sStreamOpen;
+lunar24::host::AudioHeartbeat sHeartbeat;
+std::atomic<std::uint64_t> sCallbacks{0};
+bool sHeartbeatGaveUpLogged = false;
+double SteadySeconds()
+{
+  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 // MIDI hot-plug (lunar_host_audio_watchdog asks ProbeMidiIO for a check once a second): the
 // port names seen last time, and whether the next ProbeMidiIO is such a check. UI thread only.
 bool sMidiHotplugCheck = false;
@@ -738,6 +755,37 @@ bool IPlugAPPHost::TryToChangeAudio()
   if (mNoIO || IsScreenshotMode())
     return true;
 
+  // Lunar 24: a device was added or removed somewhere on the system. Refresh the lists (the
+  // Preferences dialog sees it) and reopen only when it concerns the running stream; an iPad
+  // or a controller that is also an audio device must not interrupt playing.
+  if (sWatchdogCall && !sReopen.load() && sDeviceCheck.exchange(false))
+  {
+    if (mExiting)
+      return false;
+    ProbeAudioIO();
+    std::vector<lunar24::host::AudioDeviceSeen> now;
+    if (mDAC)
+      for (auto id : mDAC->getDeviceIds())
+      {
+        const RtAudio::DeviceInfo info = mDAC->getDeviceInfo(id);
+        lunar24::host::AudioDeviceSeen d;
+        d.id = id;
+        d.name = std::string(lunar24::host::audio_device_display_name(info.name));
+        d.inputs = info.inputChannels;
+        d.outputs = info.outputChannels;
+        d.isDefaultOutput = info.isDefaultOutput;
+        now.push_back(d);
+      }
+    lunar24::host::AudioStreamOpen open = sStreamOpen;
+    open.running = open.running && mDAC && mDAC->isStreamRunning();
+    const auto verdict = lunar24::host::audio_device_change(open, now, sFollowDefaultOutput.load(), sInputOn,
+                                                            mState.mAudioInDev.Get());
+    HostLog(Cat::audio, Level::info, "devices changed: %s (%s)", verdict.reopen ? "reopen" : "stream kept", verdict.why);
+    if (!verdict.reopen)
+      return true;
+    sReopen = true;
+  }
+
   // Lunar 24: startup and automatic reopens pick the devices (see sFollowDefaultOutput /
   // sInputOn); any other call comes from the Preferences dialog and records the user's choice.
   const bool reopen = sReopen.exchange(false);
@@ -745,6 +793,7 @@ bool IPlugAPPHost::TryToChangeAudio()
   {
     if (mExiting)
       return false;
+    sDeviceCheck = false;  // the reopen looks at every device anyway
     CloseAudio();
     ProbeAudioIO();  // devices may have come or gone
   }
@@ -980,6 +1029,8 @@ bool IPlugAPPHost::SelectMIDIDevice(ERoute, const char*)
 
 void IPlugAPPHost::CloseAudio()
 {
+  sStreamOpen.running = false;
+  sHeartbeat.closed();
   if (mDAC && mDAC->isStreamOpen())
   {
     if (mDAC->isStreamRunning())
@@ -1128,6 +1179,14 @@ bool IPlugAPPHost::InitAudio(uint32_t inID, uint32_t outID, uint32_t sr, uint32_
 
   mActiveState = mState;
   sLastOpenTicks = std::chrono::steady_clock::now().time_since_epoch().count();
+  // Lunar 24: what is open, for the device-change check and the heartbeat.
+  sStreamOpen.running = true;
+  sStreamOpen.outId = outID;
+  sStreamOpen.outName = GetAudioDeviceName(outID);
+  sStreamOpen.inputOpen = iParams.nChannels > 0;
+  sStreamOpen.inId = inID;
+  sStreamOpen.inName = sStreamOpen.inputOpen ? GetAudioDeviceName(inID) : std::string();
+  sHeartbeat.opened(SteadySeconds());
 
   return true;
 }
@@ -1186,6 +1245,7 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
   int nins = _this->mInputBufPtrs.GetSize();
   int nouts = _this->mOutputBufPtrs.GetSize();
   
+  sCallbacks.fetch_add(1, std::memory_order_relaxed);  // Lunar 24: the heartbeat (UI thread watches it)
   double* pInputBufferD = static_cast<double*>(pInputBuffer);
   // Lunar 24: count the device's xruns for the log (lunar_host_audio_watchdog writes them).
   if (status & RTAUDIO_INPUT_OVERFLOW)
@@ -1281,8 +1341,24 @@ void IPlugAPPHost::ErrorCallback(RtAudioErrorType type, const std::string &error
 // plugged in or pulled out.
 extern "C" void lunar_host_audio_watchdog()
 {
-  if (sReopen.load() && IPlugAPPHost::sInstance)
+  if ((sReopen.load() || sDeviceCheck.load()) && IPlugAPPHost::sInstance)
+  {
+    sWatchdogCall = true;
     IPlugAPPHost::sInstance->TryToChangeAudio();
+    sWatchdogCall = false;
+  }
+  // A stream whose callback stopped (it died without telling us): reopen it.
+  if (IPlugAPPHost::sInstance && sHeartbeat.check(sCallbacks.load(std::memory_order_relaxed), SteadySeconds()))
+  {
+    HostLog(Cat::audio, Level::warn, "audio stalled: no callback for %.1f s, reopening",
+            lunar24::host::AudioHeartbeat::kStallSeconds);
+    sReopen = true;
+  }
+  else if (sHeartbeat.gaveUp() && !sHeartbeatGaveUpLogged)
+  {
+    sHeartbeatGaveUpLogged = true;
+    HostLog(Cat::audio, Level::error, "audio keeps stalling: stopped reopening (check the device in Preferences)");
+  }
   static auto lastMidiCheck = std::chrono::steady_clock::now();
   if (IPlugAPPHost::sInstance && std::chrono::steady_clock::now() - lastMidiCheck >= std::chrono::seconds(1))
   {
@@ -1310,14 +1386,14 @@ extern "C" void lunar_host_request_audio_reopen()
   sReopen = true;
 }
 
-// Lunar 24: an audio device was added or removed (macOS listener in main.mm). Reopen, so the device
-// list (and the Preferences dialog) sees it and a device that just came back is used again.
+// Lunar 24: an audio device was added or removed (macOS listener in main.mm). The UI thread
+// refreshes the lists and reopens only if it concerns the stream (TryToChangeAudio).
 extern "C" void lunar_host_devices_changed()
 {
   const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
   const auto twoSeconds = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::seconds(2)).count();
   if (now - sLastOpenTicks.load() > twoSeconds)
-    sReopen = true;
+    sDeviceCheck = true;  // the UI thread decides whether it concerns the stream
 }
 
 // Lunar 24: the system output device changed (macOS listener in main.mm).
