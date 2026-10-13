@@ -29,6 +29,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 // mini_test.h ships CHECK / CHECK_EQ / CHECK_TRUE / CHECK_FALSE only; a near-equality primitive is
@@ -143,12 +144,14 @@ void test_vco_voices() {
     CHECK(hB.render(kF));
     const int bR = zcrOf(hB.dryB());
     CHECK(bR >= 15);                     // isolating the A->B link leaves B at its baseHz.
-    EngineHarness hFm;  // cv_amt=1: VCO A modulates B through the normalled cable
+    // cv_amt=1: VCO A modulates B through the normalled cable. On the heap: a harness is
+    // ~220 KB and this function already holds four (Windows main stack is 1 MB).
+    auto hFm = std::make_unique<EngineHarness>();
     DeviceStateV1 fm = r;
     slot(fm, ParameterId::vco_b_cv_amt) = 1.0;
-    CHECK(hFm.load(fm));
-    CHECK(hFm.render(kF));
-    CHECK(traceDiff(hFm.dryB(), hB.dryB()) > 1e-3);  // A-modulated vs cv_amt=0 (baseHz) traces differ.
+    CHECK(hFm->load(fm));
+    CHECK(hFm->render(kF));
+    CHECK(traceDiff(hFm->dryB(), hB.dryB()) > 1e-3);  // A-modulated vs cv_amt=0 (baseHz) traces differ.
     EngineHarness hBt;
     DeviceStateV1 r2 = r;
     slot(r2, ParameterId::vco_b_tune) = 0.5;
