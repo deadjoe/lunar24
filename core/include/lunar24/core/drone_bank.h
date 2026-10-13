@@ -197,11 +197,12 @@ class DroneBank {
       SeededRandom vrng(deriveSeed_(seed, static_cast<std::uint64_t>(i), kStreamOsc));
       // Default tuning: each classic voice is a just-intonation stack on its own root
       // (1: 1.5: 2: 3: 4 = root, fifth, octave, twelfth, two octaves), so the low /
-      // medium / high roles of the manual hold and the machine starts on a consonant
-      // A-minor-pentatonic drone. The TUNE knobs move each generator from here.
+      // medium / high roles of the manual hold and the machine starts on a dark D-minor
+      // drone: drone 1 = D1 sub, drone 2 = A1 fifth, drone 4 = F2 minor third, drone 5 =
+      // D3 upper layer. The TUNE knobs move each generator from here.
       // Tuned by ear; the manual gives no frequencies.
       {
-        static constexpr double kVoiceRootHz[kClassicVoices] = {55.0, 82.41, 73.42, 65.41};
+        static constexpr double kVoiceRootHz[kClassicVoices] = {36.71, 55.0, 87.31, 146.83};
         static constexpr double kGenRatio[kGensPerVoice] = {1.0, 1.5, 2.0, 3.0, 4.0};
         const std::size_t group = (i / kGensPerVoice) % kClassicVoices;
         v.freqBaseHz = kVoiceRootHz[group] * kGenRatio[i % kGensPerVoice];

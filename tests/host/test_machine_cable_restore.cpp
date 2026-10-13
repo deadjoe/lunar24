@@ -180,9 +180,15 @@ void test_no_cable_default() {
 void test_override_same_owner_replaces_self_edge() {
   constexpr double kFeed = 0.6;
   EngineHarness h;
+  // VCO B's CV AMT defaults to 0 (no A->B FM); open it so whatever drives vco_b.cv_in is heard.
+  auto fmDefault = [] {
+    DeviceStateV1 st = make_default_device_state(0x4C554E4152ULL);
+    st.parameters[static_cast<std::uint32_t>(lunar24::core::ParameterId::vco_b_cv_amt)] = 1.0;
+    return st;
+  };
 
   // active A = default: the A->B normalized route is live, zero user cables.
-  CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
+  CHECK(h.load(fmDefault()));
   CHECK(h.runtime() != nullptr);
   CHECK(h.runtime()->cableCount() == 0u);
   CHECK(h.runtime()->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));
@@ -190,7 +196,7 @@ void test_override_same_owner_replaces_self_edge() {
 
   // Cable env_follower.env_out -> vco_b.cv_in on the SAME owner overrides the A->B route. check_routes
   // coherence requires the override bit set when the route's sink holds a user cable.
-  DeviceStateV1 wired = make_default_device_state(0x4C554E4152ULL);
+  DeviceStateV1 wired = fmDefault();
   setCable(wired, JackId::env_follower_env_out, JackId::vco_b_cv_in);
   overrideRoute(wired, RouteId::route_vco_b_vco_out_to_cv_in);
   CHECK(h.load(wired));
@@ -208,7 +214,7 @@ void test_override_same_owner_replaces_self_edge() {
   CHECK(maxAbsDiff(base, wiredOut) > 5e-3);
 
   // Remove the cable on the SAME owner: the route is restored and NO residual wire remains.
-  CHECK(h.load(make_default_device_state(0x4C554E4152ULL)));
+  CHECK(h.load(fmDefault()));
   CHECK(h.runtime()->cableCount() == 0u);
   CHECK(h.runtime()->cableCountInto(JackId::vco_b_cv_in) == 0u);   // no residual user cable
   CHECK(h.runtime()->normalizedActive(JackId::vco_a_dry_out, JackId::vco_b_cv_in));

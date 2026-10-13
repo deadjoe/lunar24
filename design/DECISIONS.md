@@ -387,3 +387,23 @@ Keep these unless a listening test or a real bug says otherwise.
   sound forever. The app polls `lunar_host_view_has_keyboard` from OnIdle and releases every
   held key (`host/computer_keys.h`); a key-up whose character changed while the key was down
   (Shift, an input method) is matched by its key code. MIDI notes are not affected.
+
+- **Default panel = a cinematic D-minor drone** (owner, 2026-10-13): launch and RESET PANEL
+  start on knob values aimed at a Hans Zimmer-like film sound (dark, wide, slow, long hall).
+  Every value is tuned by ear and lives in `spec/machine/lunar24.json` (`default`); the drone
+  roots live in `DroneBank` (`kVoiceRootHz`). Drones stay off at launch (the chime rule above).
+  - Classic drones at TUNE noon: drone 1 D1 (sub), 2 A1 (fifth), 4 F2 (minor third), 5 D3
+    (upper layer), each the 1 : 1.5 : 2 : 3 : 4 stack. ATT 0.7 (~3.4 s swell), RLS 0.8 (~5 s).
+  - Drone 3: low band, PITCH on A2, NOISE 0.06. Drone 6: high band, PITCH on D4, NOISE 0.3
+    (a soft tone with air). Both RATE 0.3, MOD 0.25 (gentle if FM / AM is switched on), ATT /
+    RLS as above.
+  - Mixer: drones 1 and 3 centred; 2 and 5 left, 4 and 6 right; VCOs 0.35 / 0.65.
+    VOL: 0.5 / 0.5 / 0.45 / 0.3 / 0.28 / 0.45 / 0.38 / 0.3 (drones 1-3, VCO A/B, drones 4-6).
+  - VCO A and B on saw, B detuned +6 cents, A's SUB on, B's cv amt 0 (no A -> B FM by
+    default). Envelope A 0.15 / 1.2 / 0.8 / 3.0 s (soft brass), B 0.6 / 1.5 / 0.8 / 4.0 s
+    (string bloom).
+  - Filter FREQ L 0.55 / R 0.57 (~0.9 / 1.0 kHz), RES 0.25; DIST 0.2, GAIN 0.3 (warmth).
+  - Effector Shimmer on both sides: X 0.2 (less octave-up), Y 0.25 (octave-down weight), Z
+    0.7 (~15 s), BLEND 0.55; MASTER 0.52 keeps all six drones near the old -13 dBFS.
+  - LFO A 0.2 Hz, B 0.1 Hz (they only act when patched).
+  A saved machine keeps its own values; RESET PANEL brings these in.

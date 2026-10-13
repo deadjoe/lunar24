@@ -1,6 +1,6 @@
 # Lunar 24 — status
 
-_Last updated: 2026-10-12._ Module-by-module comparison with the Solar 42N manual:
+_Last updated: 2026-10-13._ Module-by-module comparison with the Solar 42N manual:
 `design/ARCHITECTURE.md`. Manual tests and results: `design/MANUAL_TESTS.md`. Sound-source
 review and listening notes: `design/SOURCE_REVIEW.md`.
 
@@ -37,6 +37,8 @@ review and listening notes: `design/SOURCE_REVIEW.md`.
   closes it. Footer PANEL swatches recolor the face (kept across launches).
 - DRONE VOICES 1-6 latch each voice; all start off (launch, RESET PANEL). RESET PANEL keeps
   keyboard presets A-D and the MIDI setup.
+- Default panel (launch, RESET PANEL): a dark, wide D-minor film drone with a long shimmer
+  hall; open drone keys swell in over ~3 s (DECISIONS "Default panel", MANUAL_TESTS T0.12).
 - Photo sensor (white dome, drones 1/2/4/5): press = hand over it, drag up = darker,
   sideways = fingers; bends only MOD-lit generators.
 - Effector: click the cartridge slot to pick a cartridge (right-click = previous); a

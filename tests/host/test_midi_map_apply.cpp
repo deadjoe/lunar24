@@ -375,23 +375,23 @@ int main() {
     E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
     core::MidiMap m;
-    CHECK(m.bind(bindCc("", 0, 20, core::ParameterId::vco_a_sub_sel)));
+    CHECK(m.bind(bindCc("", 0, 20, core::ParameterId::vco_b_sub_sel)));
     e.publishMidiMap(m, "");
     CHECK(core::midi_parameter_drive(m.at(0)) == core::MidiParameterDrive::toggleOnPress);
     auto send = [&](int raw) {
       e.applyMidiBindingFromAudioThread(0, raw);
       e.processBlock(nullptr, outs, 0, 2, 256);
       e.syncParametersFromAudioThread();
-      return e.parameterValue(core::ParameterId::vco_a_sub_sel);
+      return e.parameterValue(core::ParameterId::vco_b_sub_sel);
     };
-    CHECK_EQ(e.parameterValue(core::ParameterId::vco_a_sub_sel), 0.0);
+    CHECK_EQ(e.parameterValue(core::ParameterId::vco_b_sub_sel), 0.0);
     CHECK_EQ(send(127), 1.0);  // first press: on
     CHECK_EQ(send(127), 1.0);  // repeated high
     CHECK_EQ(send(0), 1.0);    // release keeps it on
     CHECK_EQ(send(127), 0.0);  // second press: off
     CHECK_EQ(send(0), 0.0);
     // A panel click in between: the next press flips from the panel's value.
-    CHECK(e.postParameter(core::ParameterId::vco_a_sub_sel, 1.0));
+    CHECK(e.postParameter(core::ParameterId::vco_b_sub_sel, 1.0));
     e.processBlock(nullptr, outs, 0, 2, 256);
     CHECK_EQ(send(127), 0.0);
   }
@@ -402,7 +402,7 @@ int main() {
     auto heap = std::make_unique<E>();  // keep main's stack small on Windows (1 MB)
     E& e = *heap;
     CHECK(e.prepare(1, 48000.0, 256, 0, 2));
-    auto toggle = bindCc("", 0, 40, core::ParameterId::vco_a_sub_sel);
+    auto toggle = bindCc("", 0, 40, core::ParameterId::vco_b_sub_sel);
     toggle.key.kind = core::MidiBindingKind::note;
     auto lever = bindCc("", 0, 41, core::ParameterId::vco_a_oct_sel);
     lever.key.kind = core::MidiBindingKind::note;
@@ -417,8 +417,8 @@ int main() {
       e.syncParametersFromAudioThread();
       return e.parameterValue(id);
     };
-    CHECK_EQ(hit(0, 100, core::ParameterId::vco_a_sub_sel), 1.0);
-    CHECK_EQ(hit(0, 20, core::ParameterId::vco_a_sub_sel), 0.0);
+    CHECK_EQ(hit(0, 100, core::ParameterId::vco_b_sub_sel), 1.0);
+    CHECK_EQ(hit(0, 20, core::ParameterId::vco_b_sub_sel), 0.0);
     const double oct0 = e.parameterValue(core::ParameterId::vco_a_oct_sel);
     const double oct1 = hit(1, 90, core::ParameterId::vco_a_oct_sel);
     const double oct2 = hit(1, 90, core::ParameterId::vco_a_oct_sel);

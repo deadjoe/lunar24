@@ -189,6 +189,7 @@ int main() {
     }
     set(st, "drone_3.hold", 1);
     set(st, "drone_3.noise", 0);
+    set(st, "drone_3.hi_low", 0);  // hi band
     set(st, "drone_3.pitch", 0.3);
     const std::vector<int> base = crossings(st, 0, 1.0);
     set(st, "joystick.x", 0.6);
