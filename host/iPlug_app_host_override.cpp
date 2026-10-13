@@ -353,7 +353,9 @@ bool IPlugAPPHost::InitState()
       }
       else if (std::strcmp(buf, "no input") != 0 && std::strcmp(buf, OFF_TEXT) != 0)
       {
-        midiOn.push_back(std::strcmp(buf, "virtual input") == 0 ? std::string(kVirtualMidiInput) : std::string(buf));
+        midiOn.push_back(std::strcmp(buf, "virtual input") == 0
+                             ? std::string(kVirtualMidiInput)
+                             : lunar24::host::midi_legacy_port_identity(buf, kIndexedMidiPortNames));
         midiChosen = !midiOn.back().empty();
       }
       static_cast<LunarHostPlugin*>(GetPlug())->midiDevices().restore(midiChosen, midiOn);

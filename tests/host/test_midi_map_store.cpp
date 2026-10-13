@@ -653,6 +653,26 @@ int main() {
     CHECK(b.refresh());
     CHECK_EQ(b.global().deviceRigCount, core::kMidiMaxDeviceRigs);
     CHECK_EQ(b.settingsFor("One too many").channelFilter, 10);
+    // A port name of 64 bytes or more: its record uses the first 63, like its bindings.
+    const std::string longName(80, 'L');
+    listed.push_back(longName);
+    CHECK(b.setSettingsFor(longName.c_str(), ipad, listed));
+    CHECK_EQ(b.settingsFor(longName.c_str()).channelFilter, 10);
+    CHECK_EQ(b.settingsFor(longName.substr(0, 63).c_str()).channelFilter, 10);
+    CHECK(b.setSettingsFor(longName.c_str(), every, listed));  // updates the same record
+    CHECK_EQ(b.settingsFor(longName.c_str()).channelFilter, 0);
+    // The plugins' DAW track record is their own: an app device's edit leaves it, and its
+    // edit leaves an app device without a record of its own.
+    core::MidiRigSettings daw = b.settings();
+    daw.octaveShift = 24;
+    listed.push_back(host::kMidiDawTrackRecord);
+    CHECK(!b.setSettingsFor(host::kMidiDawTrackRecord, daw, listed));  // full, every record listed
+    listed.erase(std::find(listed.begin(), listed.end(), "Device 4"));  // Device 4 unplugged
+    CHECK(b.setSettingsFor(host::kMidiDawTrackRecord, daw, listed));
+    CHECK_EQ(b.settingsFor(host::kMidiDawTrackRecord).octaveShift, 24);
+    CHECK_EQ(b.settingsFor("Device 3").octaveShift, b.settings().octaveShift);
+    CHECK_EQ(b.settingsFor("Device 3").octaveShift, 0);
+    CHECK_EQ(b.settingsFor("Device 4").channelFilter, 4);  // its record made room
     removeTree(ddir);
   }
   host::MidiMapStore noPath;

@@ -120,5 +120,15 @@ int main() {
     CHECK_EQ(midi_port_identity("MPK mini IV 1", 1, false), "MPK mini IV 1");    // macOS: as listed
     CHECK_EQ(midi_port_identity(" 0", 0, true), " 0");                             // nothing left
   }
+  // The single input an older app saved on Windows ("MPK mini IV 1"): the index goes.
+  {
+    using lunar24::host::midi_legacy_port_identity;
+    CHECK_EQ(midi_legacy_port_identity("MPK mini IV 1", true), "MPK mini IV");
+    CHECK_EQ(midi_legacy_port_identity("BeatStep Pro 2 12", true), "BeatStep Pro 2");
+    CHECK_EQ(midi_legacy_port_identity("MPK mini IV", true), "MPK mini IV");  // no index: kept
+    CHECK_EQ(midi_legacy_port_identity("Port 2a", true), "Port 2a");
+    CHECK_EQ(midi_legacy_port_identity(" 7", true), " 7");
+    CHECK_EQ(midi_legacy_port_identity("MPK mini IV 1", false), "MPK mini IV 1");  // macOS
+  }
   return test::finish("test_midi_devices");
 }

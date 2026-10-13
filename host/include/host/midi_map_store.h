@@ -182,6 +182,10 @@ inline bool decode(const std::vector<std::uint8_t>& bytes, std::string& name,
 }  // namespace midi_profile_files
 
 // Shared library on disk; one editable profile per instance. Never used by the audio thread.
+// The plugins' settings record (their one input, the DAW track): their own, so editing them
+// never changes an app device's, and an app device's never changes them.
+inline constexpr const char* kMidiDawTrackRecord = "(DAW track)";
+
 class MidiMapStore {
  public:
   MidiMapStore() : ops_(app_state_file_ops::realOps()) {}
@@ -246,24 +250,28 @@ class MidiMapStore {
     });
   }
   // The settings input device `device` plays with: its own record, else the every-device
-  // settings (a device first seen, and the plugins, which do not know the device).
+  // settings (the one global setup before there were several devices; nothing edits it now).
+  // Records are keyed by the name's first 63 bytes, as bindings are.
   const core::MidiRigSettings& settingsFor(const char* device) const {
-    return core::midi_global_rig_for(global_, device);
+    return core::midi_global_rig_for(global_, recordKey(device).c_str());
   }
   // Saved at once to global.bin. An empty or null `device` sets the every-device settings.
   // Settings equal to the every-device ones need no record of their own (it is dropped). When
   // the file holds the most records it can (kMidiMaxDeviceRigs), the oldest one of a device not
   // in `keep` (the ports listed now) makes room; false when every record is kept.
-  bool setSettingsFor(const char* device, const core::MidiRigSettings& s, const std::vector<std::string>& keep = {}) {
-    if (device == nullptr || device[0] == '\0') return setSettings(s);
+  bool setSettingsFor(const char* name, const core::MidiRigSettings& s, const std::vector<std::string>& keep = {}) {
+    if (name == nullptr || name[0] == '\0') return setSettings(s);
     if (!editable() || !core::midi_rig_settings_valid(s)) return false;
+    const std::string key = recordKey(name);
+    const char* device = key.c_str();
     bool full = false;
     const bool saved = updateGlobal([&](core::MidiGlobalSettings& g) {
       if (sameRig(s, g.rig)) return core::midi_global_clear_device_rig(g, device);
       if (core::midi_global_set_device_rig(g, device, s)) return true;
       for (int i = 0; i < g.deviceRigCount; ++i) {
         const std::string old(g.deviceRig[i].device);
-        if (std::find(keep.begin(), keep.end(), old) != keep.end()) continue;
+        if (std::any_of(keep.begin(), keep.end(), [&](const std::string& k) { return recordKey(k.c_str()) == old; }))
+          continue;
         (void)core::midi_global_clear_device_rig(g, old.c_str());
         break;
       }
@@ -523,6 +531,12 @@ class MidiMapStore {
     global_ = g;
     globalSeeded_ = true;
     return true;
+  }
+  static std::string recordKey(const char* name) {
+    if (name == nullptr) return {};
+    std::string key(name);
+    if (key.size() >= core::kMidiBindingDeviceCapacity) key.resize(core::kMidiBindingDeviceCapacity - 1);
+    return key;
   }
   static bool sameRig(const core::MidiRigSettings& a, const core::MidiRigSettings& b) {
     return a.channelFilter == b.channelFilter && a.octaveShift == b.octaveShift &&

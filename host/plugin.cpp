@@ -471,7 +471,7 @@ void LunarHostPlugin::republishMidiMap(bool resetBindings)
     std::snprintf(inputs.name[d], sizeof(inputs.name[d]), "%s", midiInputDeviceNames_[d].c_str());
     inputs.rig[d] = midiMapStore_.settingsFor(midiDevices_.slotName(d).c_str());  // the port's own
 #else
-    inputs.rig[d] = midiMapStore_.settings();
+    inputs.rig[d] = midiMapStore_.settingsFor(lunar24::host::kMidiDawTrackRecord);
 #endif
   }
   engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_(), midiMapStore_.settings(), resetBindings,
@@ -572,7 +572,7 @@ std::vector<lunar24::host::midi_ui::DeviceRow> LunarHostPlugin::midiDeviceRows()
   daw.name = "DAW track";
   daw.on = daw.connected = true;
   daw.active = midiActive_(0);
-  daw.rig = midiMapStore_.settings();
+  daw.rig = midiMapStore_.settingsFor(lunar24::host::kMidiDawTrackRecord);
   rows.push_back(daw);
 #endif
   return rows;
@@ -595,11 +595,12 @@ bool LunarHostPlugin::setMidiDeviceRig([[maybe_unused]] const std::string& name,
                                        const lunar24::core::MidiRigSettings& rig)
 {
 #ifdef APP_API
-  std::vector<std::string> listed;  // their records stay; an unlisted device's may make room
+  // Their records stay (and the plugins'); an unlisted device's may make room.
+  std::vector<std::string> listed{lunar24::host::kMidiDawTrackRecord};
   for (const auto& d : midiDevices_.rows()) listed.push_back(d.name);
   const bool saved = midiMapStore_.setSettingsFor(name.c_str(), rig, listed);
 #else
-  const bool saved = midiMapStore_.setSettings(rig);  // the DAW track: the every-device settings
+  const bool saved = midiMapStore_.setSettingsFor(lunar24::host::kMidiDawTrackRecord, rig);
 #endif
   if (saved) republishMidiMap(false);
   return saved;

@@ -45,6 +45,17 @@ struct MidiDeviceRow {
   int slot = -1;            // the input slot it is open on, or -1
 };
 
+// The app before DEVICES saved its one input ("indev") as RtMidi listed it, so on Windows with
+// the port index appended: drop the last " <digits>" to get the name we keep now.
+inline std::string midi_legacy_port_identity(const std::string& saved, bool indexedNames) {
+  if (!indexedNames) return saved;
+  const auto space = saved.rfind(' ');
+  if (space == std::string::npos || space == 0 || space + 1 == saved.size()) return saved;
+  for (std::size_t i = space + 1; i < saved.size(); ++i)
+    if (saved[i] < '0' || saved[i] > '9') return saved;
+  return saved.substr(0, space);
+}
+
 class MidiDeviceSetup {
  public:
   static constexpr unsigned kMaxOn = kMidiInputDevices;
