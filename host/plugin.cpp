@@ -191,11 +191,11 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     shared->midi.messageSeq = [this]() { return midiMessageSeq(); };
     shared->midi.lastMessage = [this]() { return midiLastMessage(); };
     shared->midi.litPlates = [this]() { return midiLitPlates(); };
-    shared->midi.channelFilter = [this]() { return midiChannelFilter(); };
-    shared->midi.octaveShift = [this]() { return midiOctaveShift(); };
-    shared->midi.velocityCurve = [this]() { return midiVelocityCurve(); };
-    shared->midi.splitNote = [this]() { return midiSplitNote(); };
-    shared->midi.setRigSettings = [this](int c, int o, int v, int sp) { setMidiRigSettings(c, o, v, sp); };
+    shared->midi.devices = [this]() { return midiDeviceRows(); };
+    shared->midi.setDeviceOn = [this](const std::string& name, bool on) { return setMidiDeviceOn(name, on); };
+    shared->midi.setDeviceRig = [this](const std::string& name, const lunar24::core::MidiRigSettings& rig) {
+      return setMidiDeviceRig(name, rig);
+    };
     shared->rec.recording = [this]() { return recording(); };
     shared->rec.seconds = [this]() { return recordingSeconds(); };
     shared->rec.toggle = [this](int source) { toggleRecording(source); };
@@ -211,7 +211,6 @@ LunarHostPlugin::LunarHostPlugin(const InstanceInfo& info)
     shared->savePanelFace = [this](int index) { rememberPanelFace_(index); };
 #ifndef APP_API
     shared->recorderEnabled = false;
-    shared->midiNoDevice = "MIDI comes from the DAW track";
     shared->midiFromDaw = true;
     shared->midiVersion = "Lunar 24 " LUNAR24_VERSION;
     shared->midiBuild = "Build " LUNAR24_BUILD_NUMBER " - " LUNAR24_BUILD_COMMIT;
@@ -470,8 +469,10 @@ void LunarHostPlugin::republishMidiMap(bool resetBindings)
   for (unsigned d = 0; d < lunar24::host::kMidiInputDevices; ++d) {
 #ifdef APP_API
     std::snprintf(inputs.name[d], sizeof(inputs.name[d]), "%s", midiInputDeviceNames_[d].c_str());
+    inputs.rig[d] = midiMapStore_.settingsFor(midiDevices_.slotName(d).c_str());  // the port's own
+#else
+    inputs.rig[d] = midiMapStore_.settingsFor(lunar24::host::kMidiDawTrackRecord);
 #endif
-    inputs.rig[d] = midiMapStore_.settings();
   }
   engine_.publishMidiMap(midiMapStore_.map(), bindingDevice_(), midiMapStore_.settings(), resetBindings,
                          &switches, !midiPanelOpen_, &inputs);
@@ -538,16 +539,71 @@ void LunarHostPlugin::setMidiInputDevice(unsigned device, const char* name)
   republishMidiMap();
 }
 
-void LunarHostPlugin::setMidiRigSettings(int channelFilter, int octaveShift, int curve, int splitNote)
+bool LunarHostPlugin::midiActive_(unsigned device)
 {
-  using lunar24::core::kMidiSplitNoteLow;
-  using lunar24::core::kMidiSplitNoteHigh;
-  lunar24::core::MidiRigSettings s;
-  s.channelFilter = static_cast<std::uint8_t>(std::clamp(channelFilter, 0, 16));
-  s.octaveShift = static_cast<std::int8_t>(std::clamp(octaveShift, -36, 36));
-  s.velocityCurve = static_cast<lunar24::core::MidiVelocityCurve>(std::clamp(curve, 0, 2));
-  s.splitNote = static_cast<std::uint8_t>(std::clamp(splitNote, int(kMidiSplitNoteLow), int(kMidiSplitNoteHigh)));
-  if (midiMapStore_.setSettings(s)) republishMidiMap(false);  // global: saved by the store
+  constexpr auto kLit = std::chrono::milliseconds(150);  // tuned by eye
+  const auto now = std::chrono::steady_clock::now();
+  const std::uint32_t count = midiActivity_[device].load(std::memory_order_relaxed);
+  if (count != midiActivitySeen_[device]) {
+    midiActivitySeen_[device] = count;
+    midiActivityAt_[device] = now;
+  }
+  return now - midiActivityAt_[device] < kLit;
+}
+
+std::vector<lunar24::host::midi_ui::DeviceRow> LunarHostPlugin::midiDeviceRows()
+{
+  std::vector<lunar24::host::midi_ui::DeviceRow> rows;
+#ifdef APP_API
+  for (const auto& d : midiDevices_.rows()) {
+    lunar24::host::midi_ui::DeviceRow r;
+    r.name = d.name;
+    r.on = d.on;
+    r.connected = d.connected;
+    r.failed = d.failed;
+    r.isVirtual = d.isVirtual;
+    r.sameName = d.sameName;
+    r.active = d.slot >= 0 && midiActive_(static_cast<unsigned>(d.slot));
+    r.rig = midiMapStore_.settingsFor(d.name.c_str());
+    rows.push_back(r);
+  }
+#else
+  lunar24::host::midi_ui::DeviceRow daw;
+  daw.name = "DAW track";
+  daw.on = daw.connected = true;
+  daw.active = midiActive_(0);
+  daw.rig = midiMapStore_.settingsFor(lunar24::host::kMidiDawTrackRecord);
+  rows.push_back(daw);
+#endif
+  return rows;
+}
+
+bool LunarHostPlugin::setMidiDeviceOn([[maybe_unused]] const std::string& name, [[maybe_unused]] bool on)
+{
+#ifdef APP_API
+  if (!midiDevices_.setOn(name, on)) return false;
+  lunar24::host::diag::log().writef(lunar24::host::diag::Cat::midi, lunar24::host::diag::Level::info, logInstance_,
+                                    "device %s: %s", on ? "on" : "off", name.c_str());
+  if (applyMidiDevices) applyMidiDevices();
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool LunarHostPlugin::setMidiDeviceRig([[maybe_unused]] const std::string& name,
+                                       const lunar24::core::MidiRigSettings& rig)
+{
+#ifdef APP_API
+  // Their records stay (and the plugins'); an unlisted device's may make room.
+  std::vector<std::string> listed{lunar24::host::kMidiDawTrackRecord};
+  for (const auto& d : midiDevices_.rows()) listed.push_back(d.name);
+  const bool saved = midiMapStore_.setSettingsFor(name.c_str(), rig, &listed);
+#else
+  const bool saved = midiMapStore_.setSettingsFor(lunar24::host::kMidiDawTrackRecord, rig);
+#endif
+  if (saved) republishMidiMap(false);
+  return saved;
 }
 
 lunar24::host::StateSaveOutcome LunarHostPlugin::saveDeviceState()
@@ -928,6 +984,7 @@ void LunarHostPlugin::drainMidiInput(int frames)
   if (!scope) return;
   applyPendingMidiResets_();
   const int now = lunar24::host::midiArrivalStamp();
+  midiClock_.expire(now);
   midiQueue_.drain([&](unsigned device) {
     // That input's stream ended: release only the notes it still holds, so mouse, computer
     // keyboard and the other inputs (and an arpeggio they hold) keep going. Should the event
@@ -942,8 +999,14 @@ void LunarHostPlugin::drainMidiInput(int frames)
       if (midiInput_.translate(in, event, 1) == 1 && !enqueueMidi_(event[0], 0))
         released = false;
     });
-    rtLog_.push(lunar24::host::diag::RtKind::midi_input_reset, device, 0, released ? 0 : 1, count);
+    // Every block after an audio reopen resets all four inputs; only a reset that let notes go
+    // (or had to fall back to all-gates-off) is worth a log line.
+    if (count > 0 || !released)
+      rtLog_.push(lunar24::host::diag::RtKind::midi_input_reset, device, 0, released ? 0 : 1, count);
     midiLights_.resetDevice(device);
+    // A photo pad held on that input lifts its hand (pads are known by lane + 1).
+    const unsigned firstLane = lunar24::host::midi_lane(device, 0);
+    (void)engine_.releasePhotoPadsFromAudioThread(firstLane + 1, firstLane + 16);
     if (device == midiBendDevice_)
       engine_.pitchBendFromAudioThread(0.0);  // a bend held on that input springs back
     if (!released) {
@@ -972,6 +1035,8 @@ void LunarHostPlugin::ProcessMidiMsg(const IMidiMsg& msg)
 void LunarHostPlugin::processMidi_(const IMidiMsg& msg, unsigned device, int stamp)
 {
   using namespace lunar24::core;
+  if (msg.mStatus < 0xF8 && device < lunar24::host::kMidiInputDevices)  // not clock / active sensing
+    midiActivity_[device].fetch_add(1, std::memory_order_relaxed);
   const lunar24::host::StandaloneAudioEngine::AudioScope scope(engine_);
   if (!scope) return;  // the machine is being swapped; its notes are gone anyway
   applyPendingMidiResets_();

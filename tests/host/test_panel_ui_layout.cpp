@@ -195,14 +195,40 @@ int main() {
     CHECK_EQ(pageOffset(4, 4), 0);
     CHECK_EQ(pageOffset(-4, 0), 0);
     CHECK_EQ(pageOffset(128, 128), 124);
-    for (int i=0; i<kSettingCount; ++i) {
-      CHECK(!decrement(i).contains(setting(i).l+20, setting(i).t+20));
-      CHECK(!increment(i).contains(setting(i).l+20, setting(i).t+20));
-      CHECK(decrement(i).r <= increment(i).l);
-      if (i + 1 < kSettingCount) CHECK(setting(i).b < setting(i + 1).t);
+    // DEVICES: in each row the ON / OFF pill, the name, then four setting cells, each with
+    // its < and > inside it and apart, the cells apart and inside the table.
+    for (int row = 0; row < kVisibleRows; ++row) {
+      CHECK(deviceToggle(row).r < 544 && deviceSetting(row, 0).l > 900);
+      CHECK(deviceToggle(row).t >= kTableY + row * kRowH && deviceToggle(row).b <= kTableY + (row + 1) * kRowH);
+      for (int i = 0; i < kSettingCount; ++i) {
+        const Box c = deviceSetting(row, i);
+        CHECK(deviceDecrement(row, i).l >= c.l && deviceIncrement(row, i).r <= c.r);
+        CHECK(deviceDecrement(row, i).r + 100 < deviceIncrement(row, i).l);  // room for the value
+        CHECK(c.t >= kTableY + row * kRowH && c.b <= kTableY + (row + 1) * kRowH);
+        if (i + 1 < kSettingCount) CHECK(c.r < deviceSetting(row, i + 1).l);
+      }
+      CHECK(deviceSetting(row, kSettingCount - 1).r <= 1966);
     }
-    CHECK(setting(kSettingCount - 1).b < kLearn.t);  // the rows clear LEARN
-    CHECK(kLearn.b < 1412);                          // and LEARN clears the footer rule
+    // BINDINGS: four INPUTS lines (the most devices on) clear LEARN, LEARN clears the footer.
+    CHECK(inputLine(3).b <= kInputsList.b && kInputsList.b < kLearn.t);
+    CHECK(kLearn.b < 1412);
+    // The tabs sit in the header between PROFILE and CLOSE.
+    CHECK(kProfile.r < tab(0).l && tab(kTabCount - 1).r < kClose.l);
+    for (int i = 0; i + 1 < kTabCount; ++i) CHECK(tab(i).r < tab(i + 1).l);
+    // A setting's < / > wraps at either end; the values read as on the panel.
+    core::MidiRigSettings rig;
+    CHECK_EQ(settingText(rig, 0), std::string("ANY"));
+    CHECK_EQ(int(stepSetting(rig, 0, -1).channelFilter), 16);
+    rig.channelFilter = 16;
+    CHECK_EQ(int(stepSetting(rig, 0, 1).channelFilter), 0);
+    rig.octaveShift = -36;
+    CHECK_EQ(int(stepSetting(rig, 1, -1).octaveShift), 36);
+    CHECK_EQ(settingText(rig, 1), std::string("-36 st"));
+    CHECK(stepSetting(rig, 2, 1).velocityCurve == core::MidiVelocityCurve::soft);
+    CHECK_EQ(settingText(stepSetting(rig, 2, -1), 2), std::string("HARD"));
+    rig.splitNote = core::kMidiSplitNoteHigh;
+    CHECK_EQ(int(stepSetting(rig, 3, 1).splitNote), int(core::kMidiSplitNoteLow));
+    CHECK_EQ(settingText(stepSetting(rig, 3, -1), 3), noteName(core::kMidiSplitNoteHigh - 1));
     // The plugins' version lines sit in the footer between the action buttons and the pager.
     CHECK(action(4).r < kVersion.l && kVersion.r < kPrevious.l);
     CHECK(kVersion.t > 1414 && kVersion.b <= kBounds.b);
@@ -224,7 +250,6 @@ int main() {
     using namespace host::midi_ui;
     const auto inside = [](Box a, Box b) { return a.l >= b.l && a.r <= b.r && a.t >= b.t && a.b <= b.b; };
     CHECK(inside(kProfile, kBounds));
-    CHECK(kProfile.r < kInput.l && kInput.r < kClose.l);
     for (int i = 0; i < 4; ++i) {
       CHECK(inside(profileRow(i), kBounds));
       CHECK(inside(unavailableRemove(i), profileRow(i)));
@@ -245,7 +270,8 @@ int main() {
     };
     State state;
     state.profileName = std::string(39, 'W');
-    state.device = "A different MIDI controller with a long device name";
+    state.devices = {{"A different MIDI controller with a long device name", true, true, false, false, true, {}},
+                     {"Unplugged", true, false, false, false, false, {}}};
     state.version = "Lunar 24 1.0.0";
     state.build = "Build 999 - 123abcd";
     state.profiles = {{"Empty", 0, false, true}, {"Main", 128, true, true}, {"Unreadable", 0, false, false},
@@ -269,6 +295,61 @@ int main() {
       if (view == 1) { CHECK(sink.has("UNAVAILABLE")); CHECK(sink.has("CURRENT")); }
       if (view == 2) { CHECK(sink.has("Studio")); CHECK(!sink.has("Main")); }
       if (view == 3) { CHECK(sink.has("COPY PROFILE AS")); CHECK(!sink.has("SAVED PROFILES")); }
+      CHECK(sink.has("NOT CONNECTED"));  // INPUTS: the unplugged device that is on
+    }
+    // DEVICES (the app, then a plugin): every label inside the overlay, a row per port with
+    // its four values, the plugins' one DAW track row without ON / OFF or a channel to set.
+    state.profileBrowser = false;
+    state.nameAction = -1;
+    state.error.clear();
+    state.devicesTab = true;
+    core::MidiRigSettings ipad;
+    ipad.channelFilter = 10;
+    state.devices = {{"MPK mini IV", true, true, false, false, false, {}},
+                     {"iPad", true, true, false, false, true, ipad},
+                     {"Busy port", true, true, true, false, false, {}},
+                     {"IAC Bus", false, true, false, false, false, {}},
+                     {"Launch Control", true, false, false, false, false, {}}};
+    for (int page = 0; page < 2; ++page) {
+      state.offset = page * kVisibleRows;
+      Sink sink;
+      draw(sink, state);
+      CHECK_EQ(sink.bad, 0);
+      CHECK(sink.has("TRANSPOSE"));
+      CHECK(!sink.has("EXTRA LEARN TARGETS"));
+      CHECK(sink.has(page == 0 ? "10" : "NOT CONNECTED"));
+      CHECK(sink.has(page == 0 ? "CANNOT OPEN (in use by another app?)" : "Launch Control"));
+      CHECK(sink.has("5 devices"));
+    }
+    {  // a port name listed twice: the row and the footer say to rename one
+      State shared = state;
+      shared.offset = 0;
+      shared.devices[0].sameName = 2;
+      Sink sink;
+      draw(sink, shared);
+      CHECK_EQ(sink.bad, 0);
+      CHECK(sink.has("CONNECTED - NAME SHARED, FIRST PORT USED"));
+      CHECK(sink.has("Two ports share a name: rename one"));
+      CHECK(sink.has("in Audio MIDI Setup > MIDI Studio."));
+      shared.devices[0].sameName = 1;
+      Sink plain;
+      draw(plain, shared);
+      CHECK(!plain.has("Two ports share a name: rename one"));
+      CHECK(plain.has("CONNECTED, OFF"));  // IAC Bus: connected, turned off
+    }
+    state.deviceNote = "Four devices are on already.";
+    { Sink note; draw(note, state); CHECK(note.has("Four devices are on already.")); }
+    state.fromDaw = true;
+    state.offset = 0;
+    state.deviceNote.clear();
+    state.devices = {{"DAW track", true, true, false, false, false, ipad}};
+    {
+      Sink daw;
+      draw(daw, state);
+      CHECK_EQ(daw.bad, 0);
+      CHECK(daw.has("DAW track") && daw.has("DAW") && !daw.has("ON") && !daw.has("10"));
+      CHECK(daw.has("MIDI comes from the DAW track."));
+      CHECK(daw.has("Build 999 - 123abcd"));
     }
   }
   {

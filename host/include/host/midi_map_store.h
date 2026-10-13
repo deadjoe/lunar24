@@ -182,6 +182,10 @@ inline bool decode(const std::vector<std::uint8_t>& bytes, std::string& name,
 }  // namespace midi_profile_files
 
 // Shared library on disk; one editable profile per instance. Never used by the audio thread.
+// The plugins' settings record (their one input, the DAW track): their own, so editing them
+// never changes an app device's, and an app device's never changes them.
+inline constexpr const char* kMidiDawTrackRecord = "(DAW track)";
+
 class MidiMapStore {
  public:
   MidiMapStore() : ops_(app_state_file_ops::realOps()) {}
@@ -238,12 +242,49 @@ class MidiMapStore {
     return true;
   }
   // Global: saved at once to global.bin (no profile is touched).
+  // The every-device settings (the one global setup from before there were several devices).
+  // Nothing in the app or the plugins edits them now (each input has its own record); kept for
+  // setSettingsFor("") and the tests, which set up the starting point with it.
   bool setSettings(const core::MidiRigSettings& s) {
     if (!editable() || !core::midi_rig_settings_valid(s)) return false;
     return updateGlobal([&](core::MidiGlobalSettings& g) {
       g.rig = s;
       return true;
     });
+  }
+  // The settings input device `device` plays with: its own record, else the every-device
+  // settings (the one global setup before there were several devices; nothing edits it now).
+  // Records are keyed by the name's first 63 bytes, as bindings are.
+  const core::MidiRigSettings& settingsFor(const char* device) const {
+    return core::midi_global_rig_for(global_, recordKey(device).c_str());
+  }
+  // Saved at once to global.bin. An empty or null `device` sets the every-device settings.
+  // Settings equal to the every-device ones need no record of their own (it is dropped). When
+  // the file holds the most records it can (kMidiMaxDeviceRigs): with `keep` (the app: the ports
+  // it lists now, and the plugins' record) the earliest-created record of a device not in it
+  // makes room; without (the plugins, which cannot see the app's devices) nothing is removed.
+  // False when nothing could make room.
+  bool setSettingsFor(const char* name, const core::MidiRigSettings& s,
+                      const std::vector<std::string>* keep = nullptr) {
+    if (name == nullptr || name[0] == '\0') return setSettings(s);
+    if (!editable() || !core::midi_rig_settings_valid(s)) return false;
+    const std::string key = recordKey(name);
+    const char* device = key.c_str();
+    bool full = false;
+    const bool saved = updateGlobal([&](core::MidiGlobalSettings& g) {
+      if (sameRig(s, g.rig)) return core::midi_global_clear_device_rig(g, device);
+      if (core::midi_global_set_device_rig(g, device, s)) return true;
+      for (int i = 0; keep != nullptr && i < g.deviceRigCount; ++i) {
+        const std::string old(g.deviceRig[i].device);
+        if (std::any_of(keep->begin(), keep->end(), [&](const std::string& k) { return recordKey(k.c_str()) == old; }))
+          continue;
+        (void)core::midi_global_clear_device_rig(g, old.c_str());
+        break;
+      }
+      full = !core::midi_global_set_device_rig(g, device, s);
+      return !full;
+    });
+    return saved && !full;
   }
   // A profile binding. The later bind wins: a key that was a switch key (or overlaps one,
   // core::midi_keys_overlap) stops being one. Switch actions never go into a profile.
@@ -496,6 +537,16 @@ class MidiMapStore {
     global_ = g;
     globalSeeded_ = true;
     return true;
+  }
+  static std::string recordKey(const char* name) {
+    if (name == nullptr) return {};
+    std::string key(name);
+    if (key.size() >= core::kMidiBindingDeviceCapacity) key.resize(core::kMidiBindingDeviceCapacity - 1);
+    return key;
+  }
+  static bool sameRig(const core::MidiRigSettings& a, const core::MidiRigSettings& b) {
+    return a.channelFilter == b.channelFilter && a.octaveShift == b.octaveShift &&
+           a.velocityCurve == b.velocityCurve && a.splitNote == b.splitNote;
   }
   bool fail(const char* message, bool recoverable = true) {
     error_ = message; recoverableError_ = recoverable; return false;

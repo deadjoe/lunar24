@@ -22,7 +22,14 @@ struct Box {
 inline constexpr Box kBounds{410, 1112, 1990, 1482};
 inline constexpr Box kClose{1846, 1126, 1966, 1166};
 inline constexpr Box kProfile{832, 1126, 1332, 1166};
-inline constexpr Box kInput{1350, 1128, 1816, 1164};
+// The tabs: BINDINGS (Learn and the profile's table), DEVICES (the inputs and each one's
+// settings), PROFILES (the profile list, also opened by the PROFILE box).
+inline constexpr int kTabCount = 3;
+inline constexpr Box tab(int i) { return {1350.f + i * 156, 1128, 1500.f + i * 156, 1164}; }
+inline constexpr const char* kTabLabels[kTabCount] = {"BINDINGS", "DEVICES", "PROFILES"};
+// BINDINGS: the devices that are on, under INPUTS (a click opens DEVICES).
+inline constexpr Box kInputsList{434, 1204, 790, 1360};
+inline constexpr Box inputLine(int i) { return {434, 1208.f + i * 38, 790, 1242.f + i * 38}; }
 // The bindings / profiles table (x 1020..1966) leaves room on its left for the PROFILE
 // SWITCH KEYS card (x 812..984); the GLOBAL MIDI SETTINGS heading spans the settings and it.
 inline constexpr float kTableL = 1020;
@@ -49,15 +56,6 @@ inline constexpr Box kVersion{1540, 1436, 1712, 1472};  // plugins: two lines, v
 inline constexpr int kVisibleRows = 4;
 inline constexpr float kTableY = 1204, kRowH = 50;
 inline constexpr int kSettingCount = 4;  // CHANNEL, TRANSPOSE, VELOCITY, SPLIT
-inline constexpr Box setting(int i) { return {434, 1208.f + i * 40, 788, 1244.f + i * 40}; }
-inline constexpr Box decrement(int i) {
-  const auto r = setting(i);
-  return {594, r.t + 2, 638, r.b - 2};
-}
-inline constexpr Box increment(int i) {
-  const auto r = setting(i);
-  return {742, r.t + 2, 786, r.b - 2};
-}
 inline constexpr Box mode(int row) {
   const float y = kTableY + row * kRowH;
   return {1708, y + 5, 1848, y + 45};
@@ -67,6 +65,23 @@ inline constexpr Box remove(int row) {
   return {1914, y + 5, 1958, y + 45};
 }
 inline constexpr Box action(int i) { return {832.f + i * 140, 1436, 962.f + i * 140, 1472}; }
+// DEVICES: one row per port: ON / OFF, the name and its state, then its four settings.
+inline constexpr Box deviceToggle(int row) {
+  const float y = kTableY + row * kRowH;
+  return {434, y + 7, 524, y + 43};
+}
+inline constexpr Box deviceSetting(int row, int i) {
+  const float y = kTableY + row * kRowH, l = 914.f + i * 263;
+  return {l, y + 5, l + 250, y + 45};
+}
+inline constexpr Box deviceDecrement(int row, int i) {
+  const auto c = deviceSetting(row, i);
+  return {c.l, c.t, c.l + 40, c.b};
+}
+inline constexpr Box deviceIncrement(int row, int i) {
+  const auto c = deviceSetting(row, i);
+  return {c.r - 40, c.t, c.r, c.b};
+}
 inline constexpr core::MidiAction kActions[] = {
     core::MidiAction::cartridge_prev, core::MidiAction::preset_load_a, core::MidiAction::preset_load_b,
     core::MidiAction::preset_load_c, core::MidiAction::preset_load_d};
@@ -76,12 +91,23 @@ inline constexpr std::uint32_t kPaper = 0xe9e0d2, kCard = 0xf5eee3, kInk = 0x242
 // Disabled buttons are outlined ghosts: visible on paper, cards and alternate rows alike.
 // Armed status text is a deeper kRed, readable at small sizes on paper (WCAG AA).
 inline constexpr std::uint32_t kDisabledEdge = 0xb5a998, kDisabledText = 0x8a8174, kArmedText = 0xa81b20;
+// Activity lights: a message just arrived / connected and quiet.
+inline constexpr std::uint32_t kActive = 0x2e9e4f, kIdle = 0x7d756a;
 
 struct ProfileRow {
   std::string name;
   std::uint32_t bindings = 0;
   bool current = false, readable = true, deleteArmed = false;
 };
+// One DEVICES row. The plugins have one, the DAW track (its settings: the every-device ones).
+struct DeviceRow {
+  std::string name;
+  bool on = false, connected = false, failed = false, isVirtual = false;
+  bool active = false;  // a message arrived just now (the activity light)
+  core::MidiRigSettings rig;
+  int sameName = 1;     // ports with this name (only the first is used)
+};
+enum class Tab { bindings, devices, profiles };
 struct State {
   const core::MidiMap* map = nullptr;
   core::MidiGlobalSettings global;  // switch keys shown in their card; their rows are greyed
@@ -89,23 +115,52 @@ struct State {
   bool confirmSwitch = false;
   int confirmDirection = 0;
   std::vector<std::string> confirmUses;
-  std::string device;
   std::string profileName = "Untitled", error, nameText;
   std::vector<ProfileRow> profiles;
   bool profileBrowser = false, deleteArmed = false, dirty = false, reloadArmed = false, recovery = false;
   int nameAction = -1;
-  int channel = 0, octave = 0, curve = 0, offset = 0;
-  int split = core::kMidiDefaultSplitNote;  // MIDI note: TWIN / SPLIT right side starts here
+  int offset = 0;
   bool armed = false, awaitTarget = false, editable = true;
-  bool channelAppOnly = false;  // a plugin: CHANNEL filters the app's input only
-  const char* noDevice = "Choose an input in Preferences";  // shown when `device` is empty
+  bool devicesTab = false;  // DEVICES (profileBrowser: PROFILES; neither: BINDINGS)
+  std::vector<DeviceRow> devices;
+  std::string deviceNote;   // DEVICES: why the last click did nothing (e.g. four already on)
+  bool fromDaw = false;     // a plugin: MIDI comes from the DAW track
   // The plugins have no About box: their version and build are shown here (empty: not shown).
   std::string version, build;
 };
+inline Tab currentTab(const State& st) {
+  return st.profileBrowser ? Tab::profiles : st.devicesTab ? Tab::devices : Tab::bindings;
+}
 // MIDI note name with octave, middle C (60) = C4.
 inline std::string noteName(int note) {
   static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
   return std::string(names[((note % 12) + 12) % 12]) + std::to_string(note / 12 - 1);
+}
+// A DEVICES setting's value: 0 CHANNEL, 1 TRANSPOSE, 2 VELOCITY, 3 SPLIT.
+inline std::string settingText(const core::MidiRigSettings& rig, int i) {
+  static const char* const curves[] = {"LINEAR", "SOFT", "HARD"};
+  char text[24];
+  switch (i) {
+    case 0:
+      if (rig.channelFilter == 0) return "ANY";
+      return std::to_string(int(rig.channelFilter));
+    case 1: std::snprintf(text, sizeof(text), "%+d st", int(rig.octaveShift)); return text;
+    case 2: return curves[std::clamp(int(rig.velocityCurve), 0, 2)];
+    default: return noteName(rig.splitNote);
+  }
+}
+// One click on a DEVICES setting's < (-1) or > (+1): wraps at either end.
+inline core::MidiRigSettings stepSetting(core::MidiRigSettings rig, int i, int delta) {
+  constexpr int low[] = {0, -36, 0, core::kMidiSplitNoteLow}, high[] = {16, 36, 2, core::kMidiSplitNoteHigh};
+  int v = i == 0 ? rig.channelFilter : i == 1 ? rig.octaveShift : i == 2 ? int(rig.velocityCurve) : rig.splitNote;
+  v += delta;
+  if (v < low[i]) v = high[i];
+  if (v > high[i]) v = low[i];
+  if (i == 0) rig.channelFilter = static_cast<std::uint8_t>(v);
+  else if (i == 1) rig.octaveShift = static_cast<std::int8_t>(v);
+  else if (i == 2) rig.velocityCurve = static_cast<core::MidiVelocityCurve>(v);
+  else rig.splitNote = static_cast<std::uint8_t>(v);
+  return rig;
 }
 inline int pageOffset(int offset, int count) {
   return std::clamp(offset / kVisibleRows, 0, std::max(0, (count - 1) / kVisibleRows)) * kVisibleRows;
@@ -189,8 +244,9 @@ std::string fitText(std::string text, float width, Measure measure) {
 template <class Sink>
 void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   auto rect = [&](Box b, std::uint32_t c, float radius = 6) { s.fillRect(b.l, b.t, b.r, b.b, c, radius); };
+  // align: 0 left, 1 (true) centre, 2 right.
   auto label = [&](Box b, float size, std::uint32_t c, const std::string& text, bool bold = false,
-                   bool center = false) { s.label(b, size, c, text.c_str(), bold, center); };
+                   int align = 0) { s.label(b, size, c, text.c_str(), bold, align); };
   auto button = [&](Box b, const char* text, bool enabled, bool accent = false) {
     const bool hover = enabled && b.contains(mouseX, mouseY);
     rect(b, enabled ? (accent ? (st.armed ? kRed : kTeal) : kRule) : kDisabledEdge);
@@ -209,12 +265,104 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
   s.lineTo(1304, st.profileBrowser ? 1142.f : 1150.f);
   s.lineTo(1310, st.profileBrowser ? 1150.f : 1142.f);
   s.closePath(); s.fillPath(kWhite, false);
-  label({kInput.l, kInput.t, 1410, kInput.b}, 12, 0xc8bdad, "INPUT", true);
-  label({1420, kInput.t, kInput.r, kInput.b}, 17, kWhite,
-        st.device.empty() ? std::string(st.noDevice) : asciiText(st.device), true);
+  const Tab current = currentTab(st);
+  for (int i = 0; i < kTabCount; ++i) {
+    const Box b = tab(i);
+    const bool on = static_cast<int>(current) == i;
+    rect(b, on ? kPaper : b.contains(mouseX, mouseY) ? 0x504940 : 0x39342e, 5);
+    label(b, 15, on ? kInk : 0xc8bdad, kTabLabels[i], true, true);
+  }
   button(kClose, "CLOSE", true);
+  // Paging and the count, bottom right (every tab).
+  auto pager = [&](int offset, int count, const char* one, const char* many) {
+    button(kPrevious, "<", offset > 0);
+    button(kNext, ">", offset + kVisibleRows < count);
+    char page[32];
+    std::snprintf(page, sizeof(page), "%d / %d", offset / kVisibleRows + 1,
+                  std::max(1, (count + kVisibleRows - 1) / kVisibleRows));
+    label({1776, 1428, 1912, 1453}, 18, kInk, page, true, true);
+    char total[32];
+    std::snprintf(total, sizeof(total), "%d %s", count, count == 1 ? one : many);
+    label({1776, 1452, 1912, 1475}, 13, kMuted, total, false, true);
+  };
+  auto version = [&] {
+    if (st.version.empty()) return;
+    label({kVersion.l, kVersion.t, kVersion.r, kVersion.t + 18}, 13, kMuted, st.version, true);
+    label({kVersion.l, kVersion.t + 18, kVersion.r, kVersion.b}, 12, kMuted, st.build);
+  };
+  if (current == Tab::devices) {
+    const char* names[] = {"CHANNEL", "TRANSPOSE", "VELOCITY", "SPLIT"};
+    label({434, 1180, 524, 1202}, 14, kMuted, st.fromDaw ? "" : "ON", true, true);
+    label({544, 1180, 900, 1202}, 14, kMuted, st.fromDaw ? "MIDI INPUT" : "DEVICE", true);
+    for (int i = 0; i < kSettingCount; ++i) {
+      const Box c = deviceSetting(0, i);
+      label({c.l, 1180, c.r, 1202}, 14, kMuted, names[i], true, true);
+    }
+    const int count = static_cast<int>(st.devices.size());
+    const int offset = pageOffset(st.offset, count);
+    for (int i = 0; i < kVisibleRows; ++i) {
+      const float y = kTableY + i * kRowH;
+      rect({434, y + 1, 1966, y + 49}, i % 2 == 0 ? kCard : 0xe2d8c9, 5);
+      if (offset + i >= count) continue;
+      const DeviceRow& d = st.devices[static_cast<std::size_t>(offset + i)];
+      if (!st.fromDaw) {  // ON / OFF: a teal pill when on
+        const Box t = deviceToggle(i);
+        const bool hover = t.contains(mouseX, mouseY);
+        rect(t, d.on ? kTeal : kRule, 18);
+        if (!d.on) rect({t.l + 1, t.t + 1, t.r - 1, t.b - 1}, hover ? 0xd9cdbc : kWhite, 17);
+        label(t, 15, d.on ? kWhite : kInk, d.on ? "ON" : "OFF", true, true);
+      }
+      s.circle(554, y + 25, 6);
+      s.fillPath(d.active ? kActive : d.on && d.connected && !d.failed ? kIdle : kDisabledEdge, false);
+      const bool live = d.connected && !d.failed;
+      label({570, y + 2, 900, y + 27}, 18, live || st.fromDaw ? kInk : kMuted,
+            st.fromDaw ? "DAW track" : asciiText(d.name), true);
+      const char* status = st.fromDaw ? "Every MIDI message the track sends"
+                           : d.failed ? "CANNOT OPEN (in use by another app?)"
+                           : !d.connected ? "NOT CONNECTED"
+                           : d.isVirtual ? "Virtual input for other apps"
+                           : d.sameName > 1 ? "CONNECTED - NAME SHARED, FIRST PORT USED"
+                           : d.on ? "CONNECTED" : "CONNECTED, OFF";
+      label({570, y + 26, 900, y + 47}, 13, d.failed ? kArmedText : kMuted, status, d.failed || !d.connected);
+      for (int k = 0; k < kSettingCount; ++k) {
+        const Box c = deviceSetting(i, k);
+        // The DAW chooses the plugins' channel; an OFF device's settings wait until it is on.
+        const bool editable = st.editable && (st.fromDaw ? k != 0 : d.on);
+        if (editable) {
+          rect(c, kWhite, 5);
+          button(deviceDecrement(i, k), "<", true);
+          button(deviceIncrement(i, k), ">", true);
+        }
+        const std::string value = st.fromDaw && k == 0 ? std::string("DAW") : settingText(d.rig, k);
+        label({c.l + 42, c.t, c.r - 42, c.b}, 19, editable ? kInk : kDisabledText, value, true, true);
+      }
+    }
+    if (count == 0) {
+      rect({434, 1204, 1966, 1404}, kCard);
+      label({440, 1250, 1960, 1290}, 22, kInk, "No MIDI device found", true, true);
+      label({440, 1292, 1960, 1328}, 18, kMuted, "Plug in a controller; it appears here within a second.", false, true);
+    }
+    rect({434, 1412, 1966, 1414}, kRule, 0);
+    std::string line1 = st.fromDaw ? "MIDI comes from the DAW track." : "Turn on the devices you play,";
+    std::string line2 = st.fromDaw ? "Route a controller to the track." : "up to four at once.";
+    // Two ports with one name (two of the same controller): only the first is used until one
+    // is renamed (macOS: Audio MIDI Setup > MIDI Studio, its Display Name).
+    if (!st.fromDaw && std::any_of(st.devices.begin(), st.devices.end(), [](const DeviceRow& d) { return d.sameName > 1; })) {
+      line1 = "Two ports share a name: rename one";
+      line2 = "in Audio MIDI Setup > MIDI Studio.";
+    }
+    if (!st.deviceNote.empty()) { line1 = st.deviceNote; line2.clear(); }
+    label({434, 1424, 802, 1448}, 15, st.deviceNote.empty() ? kMuted : kArmedText, line1, true);
+    label({434, 1449, 802, 1474}, 14, kMuted, line2);
+    label({832, 1416, 1532, 1435}, 12, kMuted, st.fromDaw ? "" : "EACH DEVICE KEEPS ITS OWN SETTINGS", true);
+    if (!st.fromDaw)
+      label({832, 1436, 1532, 1474}, 14, kMuted, "Any device can play the plates and use the bindings.");
+    version();
+    pager(offset, count, "device", "devices");
+    return;
+  }
   rect({1000, 1186, 1002, 1404}, kRule, 0);
-  label({434, 1182, 990, 1202}, 14, kTeal, "GLOBAL MIDI SETTINGS", true);
+  label({434, 1182, 790, 1202}, 14, kTeal, "INPUTS", true);
   {  // PROFILE SWITCH KEYS: raised triangles standing for the keybed's two
     rect(kSwitchCard, kCard);
     label({kSwitchCard.l, 1210, kSwitchCard.r, 1228}, 12, kMuted, "PROFILE SWITCH KEYS", true, true);
@@ -246,23 +394,23 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
       }
     }
   }
-  const char* labels[] = {st.channelAppOnly ? "CHANNEL (APP)" : "CHANNEL", "TRANSPOSE", "VELOCITY", "SPLIT"};
-  const char* curves[] = {"LINEAR", "SOFT", "HARD"};
-  char values[kSettingCount][24];
-  if (st.channel == 0)
-    std::snprintf(values[0], sizeof(values[0]), "ANY");
-  else
-    std::snprintf(values[0], sizeof(values[0]), "%d", st.channel);
-  std::snprintf(values[1], sizeof(values[1]), "%+d st", st.octave);
-  std::snprintf(values[2], sizeof(values[2]), "%s", curves[std::clamp(st.curve, 0, 2)]);
-  std::snprintf(values[3], sizeof(values[3]), "%s", noteName(st.split).c_str());
-  for (int i = 0; i < kSettingCount; ++i) {
-    const auto b = setting(i);
-    rect(b, kCard);
-    label({b.l + 14, b.t, 590, b.b}, 16, kMuted, labels[i], true);
-    button(decrement(i), "<", st.editable && !st.profileBrowser);
-    button(increment(i), ">", st.editable && !st.profileBrowser);
-    label({640, b.t, 740, b.b}, 20, kInk, values[i], true, true);
+  {  // INPUTS: the devices that are on, each with its activity light
+    int shown = 0;
+    for (const auto& d : st.devices) {
+      if (!d.on || shown >= 4) continue;
+      const Box b = inputLine(shown++);
+      rect(b, kInputsList.contains(mouseX, mouseY) ? 0xece3d5 : kCard);
+      s.circle(b.l + 18, (b.t + b.b) / 2, 6);
+      s.fillPath(d.active ? kActive : d.connected ? kIdle : kDisabledEdge, false);
+      label({b.l + 34, b.t, d.connected ? b.r - 10 : b.r - 130, b.b}, 16, d.connected ? kInk : kMuted,
+            asciiText(d.name), true);
+      if (!d.connected) label({b.r - 126, b.t, b.r - 10, b.b}, 12, kMuted, "NOT CONNECTED", true, 2);
+    }
+    if (shown == 0) {
+      rect({kInputsList.l, kInputsList.t + 4, kInputsList.r, kInputsList.t + 80}, kCard);
+      label({448, 1212, 780, 1240}, 16, kInk, "No device is on.", true);
+      label({448, 1240, 780, 1266}, 14, kMuted, "Open DEVICES to turn one on.");
+    }
   }
   if (st.recovery && st.editable) {
     button(kRetrySave, st.dirty ? "RETRY SAVE" : "RETRY", true);
@@ -411,18 +559,8 @@ void draw(Sink& s, const State& st, float mouseX = -1, float mouseY = -1) {
     label({832, 1416, 1532, 1435}, 12, kMuted, "EXTRA LEARN TARGETS", true);
     for (int i = 0; i < 5; ++i) button(action(i), kActionLabels[i], st.editable && st.armed && st.awaitTarget);
   }
-  if (!st.version.empty()) {
-    label({kVersion.l, kVersion.t, kVersion.r, kVersion.t + 18}, 13, kMuted, st.version, true);
-    label({kVersion.l, kVersion.t + 18, kVersion.r, kVersion.b}, 12, kMuted, st.build);
-  }
-  button(kPrevious, "<", offset > 0);
-  button(kNext, ">", offset + kVisibleRows < count);
-  char page[32];
-  std::snprintf(page, sizeof(page), "%d / %d", offset / kVisibleRows + 1,
-                std::max(1, (count + kVisibleRows - 1) / kVisibleRows));
-  label({1776, 1428, 1912, 1453}, 18, kInk, page, true, true);
-  char total[32];
-  std::snprintf(total, sizeof(total), "%d %s", count, st.profileBrowser ? (count == 1 ? "profile" : "profiles") : (count == 1 ? "binding" : "bindings"));
-  label({1776, 1452, 1912, 1475}, 13, kMuted, total, false, true);
+  version();
+  if (st.profileBrowser) pager(offset, count, "profile", "profiles");
+  else pager(offset, count, "binding", "bindings");
 }
 }  // namespace lunar24::host::midi_ui

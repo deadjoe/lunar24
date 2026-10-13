@@ -281,9 +281,22 @@ Keep these unless a listening test or a real bug says otherwise.
   DAW's): each input has its own queue (one producer each) and its notes live on lanes
   (input * 16 + channel), so two inputs playing the same note are two notes, and closing one
   input releases only its notes and pedal. Bindings naming a device answer only that input;
-  CHANNEL / TRANSPOSE / VELOCITY / SPLIT are per input (named records in global.bin, older
-  versions ignore them). MIDI clock follows the first input to send it until it is silent
+  CHANNEL / TRANSPOSE / VELOCITY / SPLIT are per input (named records in global.bin; at most 15,
+  a device set back to the every-device settings drops its own, and when full the earliest-created
+  record of a device not listed now makes room; names longer than 63 bytes are cut, as in
+  bindings). The plugins keep theirs in a record of their own, "(DAW track)", so the app and the
+  plugins never change each other's; the every-device settings (the one global setup from
+  before) are only a starting point now. An older version ignores the records and, if it saves
+  global.bin, drops them: after a downgrade each device plays with the every-device settings. MIDI clock follows the first input to send it until it is silent
   for a second; pitch bend is one for the machine, the last input to move it wins.
+  The MIDI panel's DEVICES tab chooses the ports (`host/midi_devices.h`; Preferences has no
+  MIDI section and the app has no MIDI out): a new port starts off, the ones that are on are
+  remembered by name in settings.ini and reopen when plugged in; only on first use does the
+  first port turn on by itself (the old single Preferences choice carries over; "indev" keeps
+  the first port that is on for an older version). Ports are known by name: of two with the same
+  name only the first is used (its row says so; on macOS renaming one in Audio MIDI Setup > MIDI
+  Studio, its Display Name, makes them two: RtMidi then lists "<device name> <port name>"); on Windows RtMidi's port number is left out of
+  the name, so a choice survives other devices being plugged in first.
 - **MIDI timing**: events are timestamped on arrival and placed inside the next block
   (`host/include/host/midi_timing.h`) — one block of constant latency instead of jitter.
 - **Distortion uses first-order ADAA, not oversampling.** Oversampling would delay the wet

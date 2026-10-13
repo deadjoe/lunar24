@@ -47,6 +47,12 @@ class MidiClockFollower {
   // Several inputs: the first one to send clock or START leads. Another input's clock is
   // ignored until the leader has sent nothing for kHandOverUs (`stamp` is midiArrivalStamp()).
   static constexpr std::uint32_t kHandOverUs = 1000000;  // tuned by ear
+  // Once per audio block (`now` is midiArrivalStamp()): a leader silent for kHandOverUs steps
+  // down, so its last stamp never ages past the stamp's 30-bit wrap (~18 minutes).
+  void expire(int now) {
+    if (hasLeader_ && ((static_cast<std::uint32_t>(now) - lastStamp_) & 0x3FFFFFFFu) >= kHandOverUs)
+      hasLeader_ = false;
+  }
   Action onRealtime(std::uint8_t status, unsigned device = 0, int stamp = 0) {
     if (status != 0xF8 && status != 0xFA) return Action::none;  // continue, stop, active sensing, ...
     const std::uint32_t age = (static_cast<std::uint32_t>(stamp) - lastStamp_) & 0x3FFFFFFFu;

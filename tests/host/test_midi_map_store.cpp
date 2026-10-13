@@ -5,6 +5,7 @@
 
 #include "mini_test.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -600,6 +601,81 @@ int main() {
       peer.join();
     }
     removeTree(wdir);
+  }
+  // Per-device settings: a device without its own plays with the every-device settings;
+  // its own are saved in global.bin, shared with other instances, and the file holds at
+  // most kMidiMaxDeviceRigs of them.
+  {
+    const auto ddir = makeTempDir("devices");
+    host::MidiMapStore a, b;
+    a.setDirectory(ddir);
+    b.setDirectory(ddir);
+    CHECK(a.load() == host::MidiMapLoadOutcome::NoFile);
+    const core::MidiRigSettings every{0, 0, core::MidiVelocityCurve::linear, 60};
+    const core::MidiRigSettings ipad{10, -12, core::MidiVelocityCurve::hard, 72};
+    CHECK(a.setSettingsFor("", every));                      // "" = the every-device settings
+    CHECK(a.setSettingsFor("iPad", ipad));
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 10);
+    CHECK_EQ(a.settingsFor("MPK mini IV").channelFilter, 0);  // no record: every-device
+    CHECK_EQ(a.settingsFor(nullptr).splitNote, 60);
+    CHECK_EQ(a.settings().channelFilter, 0);                  // the every-device record is untouched
+    CHECK(!a.setSettingsFor("iPad", core::MidiRigSettings{17, 0, core::MidiVelocityCurve::linear, 60}));
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 10);
+    CHECK(b.load() == host::MidiMapLoadOutcome::Ok);
+    CHECK_EQ(b.settingsFor("iPad").octaveShift, -12);         // read back from global.bin
+    CHECK(b.setSettings(core::MidiRigSettings{4, 0, core::MidiVelocityCurve::soft, 60}));
+    CHECK(a.refresh());
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 10);        // a device's own survive an every-device edit
+    CHECK_EQ(a.settingsFor("Other").channelFilter, 4);
+    // Back to the every-device settings: the record is dropped (the device follows them).
+    const core::MidiRigSettings now = a.settings();
+    CHECK(a.setSettingsFor("iPad", now));
+    CHECK_EQ(a.global().deviceRigCount, 0);
+    CHECK(a.setSettingsFor("iPad", ipad));
+    std::vector<std::string> listed{"iPad"};
+    for (int i = 1; i < core::kMidiMaxDeviceRigs; ++i) {
+      listed.push_back("Device " + std::to_string(i));
+      CHECK(a.setSettingsFor(listed.back().c_str(), ipad));
+    }
+    CHECK_EQ(a.global().deviceRigCount, core::kMidiMaxDeviceRigs);
+    // Full, and every record's device is listed now: refused, nothing written.
+    CHECK(!a.setSettingsFor("One too many", ipad, &listed));
+    CHECK_EQ(a.settingsFor("One too many").channelFilter, 4);
+    CHECK(a.setSettingsFor("iPad", every, &listed));            // an existing record still updates
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 0);
+    // Device 3 is not listed any more: its record (the oldest such) makes room.
+    listed.erase(std::find(listed.begin(), listed.end(), "Device 3"));
+    CHECK(a.setSettingsFor("One too many", ipad, &listed));
+    CHECK_EQ(a.settingsFor("One too many").channelFilter, 10);
+    CHECK_EQ(a.settingsFor("Device 3").channelFilter, 4);      // back to the every-device settings
+    CHECK_EQ(a.settingsFor("Device 4").channelFilter, 10);     // the others keep theirs
+    CHECK_EQ(a.settingsFor("iPad").channelFilter, 0);
+    CHECK(b.refresh());
+    CHECK_EQ(b.global().deviceRigCount, core::kMidiMaxDeviceRigs);
+    CHECK_EQ(b.settingsFor("One too many").channelFilter, 10);
+    // A port name of 64 bytes or more: its record uses the first 63, like its bindings.
+    const std::string longName(80, 'L');
+    listed.push_back(longName);
+    CHECK(b.setSettingsFor(longName.c_str(), ipad, &listed));
+    CHECK_EQ(b.settingsFor(longName.c_str()).channelFilter, 10);
+    CHECK_EQ(b.settingsFor(longName.substr(0, 63).c_str()).channelFilter, 10);
+    CHECK(b.setSettingsFor(longName.c_str(), every, &listed));  // updates the same record
+    CHECK_EQ(b.settingsFor(longName.c_str()).channelFilter, 0);
+    // The plugins' DAW track record is their own: an app device's edit leaves it, and its
+    // edit leaves an app device without a record of its own.
+    core::MidiRigSettings daw = b.settings();
+    daw.octaveShift = 24;
+    listed.push_back(host::kMidiDawTrackRecord);
+    CHECK(!b.setSettingsFor(host::kMidiDawTrackRecord, daw));            // the plugins: never removes one
+    CHECK_EQ(b.settingsFor("Device 4").channelFilter, 10);           // the app's devices keep theirs
+    CHECK(!b.setSettingsFor(host::kMidiDawTrackRecord, daw, &listed));  // full, every record listed
+    listed.erase(std::find(listed.begin(), listed.end(), "Device 4"));  // Device 4 unplugged
+    CHECK(b.setSettingsFor(host::kMidiDawTrackRecord, daw, &listed));
+    CHECK_EQ(b.settingsFor(host::kMidiDawTrackRecord).octaveShift, 24);
+    CHECK_EQ(b.settingsFor("Device 3").octaveShift, b.settings().octaveShift);
+    CHECK_EQ(b.settingsFor("Device 3").octaveShift, 0);
+    CHECK_EQ(b.settingsFor("Device 4").channelFilter, 4);  // its record made room
+    removeTree(ddir);
   }
   host::MidiMapStore noPath;
   CHECK(noPath.load() == host::MidiMapLoadOutcome::NoPath);

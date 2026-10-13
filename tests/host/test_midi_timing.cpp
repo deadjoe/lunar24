@@ -114,6 +114,15 @@ static void clock_first_input_leads() {
   CHECK(w.onRealtime(0xF8, 2, 60) == A::none);  // the leader's second tick
   CHECK(w.onRealtime(0xF8, 3, 60 + second - 1) == A::none);
   CHECK(w.onRealtime(0xFA, 3, 60 + second) == A::restart);
+  // A leader silent for a whole wrap of the stamp (~18 minutes) would look like it just sent:
+  // the per-block expire() has stepped it down long before.
+  host::MidiClockFollower x;
+  CHECK(x.onRealtime(0xF8, 0, 1000) == A::step);
+  x.expire(1000 + second - 1);                     // not yet
+  CHECK(x.onRealtime(0xF8, 1, 1000 + second - 1) == A::none);
+  x.expire(1000 + second);                         // a second of silence: no leader
+  const int wrapped = (1000 + 0x40000000) & 0x3FFFFFFF;  // exactly one wrap later
+  CHECK(x.onRealtime(0xFA, 1, wrapped) == A::restart);   // input 2 leads at once
 }
 
 // START restarts an arpeggio from its first note and keeps the held chord (it used to send
