@@ -242,6 +242,9 @@ class MidiMapStore {
     return true;
   }
   // Global: saved at once to global.bin (no profile is touched).
+  // The every-device settings (the one global setup from before there were several devices).
+  // Nothing in the app or the plugins edits them now (each input has its own record); kept for
+  // setSettingsFor("") and the tests, which set up the starting point with it.
   bool setSettings(const core::MidiRigSettings& s) {
     if (!editable() || !core::midi_rig_settings_valid(s)) return false;
     return updateGlobal([&](core::MidiGlobalSettings& g) {
@@ -257,9 +260,12 @@ class MidiMapStore {
   }
   // Saved at once to global.bin. An empty or null `device` sets the every-device settings.
   // Settings equal to the every-device ones need no record of their own (it is dropped). When
-  // the file holds the most records it can (kMidiMaxDeviceRigs), the oldest one of a device not
-  // in `keep` (the ports listed now) makes room; false when every record is kept.
-  bool setSettingsFor(const char* name, const core::MidiRigSettings& s, const std::vector<std::string>& keep = {}) {
+  // the file holds the most records it can (kMidiMaxDeviceRigs): with `keep` (the app: the ports
+  // it lists now, and the plugins' record) the earliest-created record of a device not in it
+  // makes room; without (the plugins, which cannot see the app's devices) nothing is removed.
+  // False when nothing could make room.
+  bool setSettingsFor(const char* name, const core::MidiRigSettings& s,
+                      const std::vector<std::string>* keep = nullptr) {
     if (name == nullptr || name[0] == '\0') return setSettings(s);
     if (!editable() || !core::midi_rig_settings_valid(s)) return false;
     const std::string key = recordKey(name);
@@ -268,9 +274,9 @@ class MidiMapStore {
     const bool saved = updateGlobal([&](core::MidiGlobalSettings& g) {
       if (sameRig(s, g.rig)) return core::midi_global_clear_device_rig(g, device);
       if (core::midi_global_set_device_rig(g, device, s)) return true;
-      for (int i = 0; i < g.deviceRigCount; ++i) {
+      for (int i = 0; keep != nullptr && i < g.deviceRigCount; ++i) {
         const std::string old(g.deviceRig[i].device);
-        if (std::any_of(keep.begin(), keep.end(), [&](const std::string& k) { return recordKey(k.c_str()) == old; }))
+        if (std::any_of(keep->begin(), keep->end(), [&](const std::string& k) { return recordKey(k.c_str()) == old; }))
           continue;
         (void)core::midi_global_clear_device_rig(g, old.c_str());
         break;

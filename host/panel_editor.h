@@ -2041,7 +2041,8 @@ class MidiOverlayControl : public IControl {
         if (!delta || !s_.midi.setDeviceRig) continue;
         if (!s_.midi.setDeviceRig(d.name, midi_ui::stepSetting(d.rig, k, delta)))
           s_.deviceNote = s_.midiStore && !s_.midiStore->error().empty() ? s_.midiStore->error()
-                                                                         : "Settings not saved: unplug a device.";
+                          : s_.midiFromDaw ? "Settings not saved: too many device records."
+                                           : "Settings not saved: unplug a device.";
         SetDirty(false);
         return;
       }

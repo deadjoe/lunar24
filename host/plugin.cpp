@@ -598,7 +598,7 @@ bool LunarHostPlugin::setMidiDeviceRig([[maybe_unused]] const std::string& name,
   // Their records stay (and the plugins'); an unlisted device's may make room.
   std::vector<std::string> listed{lunar24::host::kMidiDawTrackRecord};
   for (const auto& d : midiDevices_.rows()) listed.push_back(d.name);
-  const bool saved = midiMapStore_.setSettingsFor(name.c_str(), rig, listed);
+  const bool saved = midiMapStore_.setSettingsFor(name.c_str(), rig, &listed);
 #else
   const bool saved = midiMapStore_.setSettingsFor(lunar24::host::kMidiDawTrackRecord, rig);
 #endif
