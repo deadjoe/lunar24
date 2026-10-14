@@ -832,8 +832,8 @@ class DualEffector {
   double blend() const { return knob_[3]; }
   double master() const { return knob_[4]; }
 
-  // Overall output level at MASTER noon: the default patch (four drones through a reverb)
-  // averages about -12 dBFS and only its loudest peaks reach the limiter. // tuned by ear
+  // Overall output level: the default panel with all six drones open (MASTER 0.52, a long
+  // reverb) averages about -13 dBFS and only its loudest peaks reach the limiter. // tuned by ear
   static constexpr double kOutputTrim = 1.75;
 
   void process(double& l, double& r) {

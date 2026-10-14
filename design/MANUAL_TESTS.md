@@ -28,8 +28,8 @@
 
 ### 测试常用准备
 
-- **出厂状态**：RESET PANEL（点两次）。几乎每项测试都从这里开始；不会清除键盘预设 A–D、MIDI 绑定或 CHANNEL / TRANSPOSE / VELOCITY / SPLIT。RESET 后（和每次刚打开应用时一样）DRONE VOICES 的 6 个键都是**关的**，没有 drone 声；要听 drone 就在 DRONE VOICES 里手动打开。
-- **去掉混响**：DUAL EFFECTOR 区的 **BLEND** 拖到最左。待参数平滑结束后只听干声；这不排除包络释放、滤波器振铃或其它仍在发声的通道。
+- **出厂状态**：RESET PANEL（点两次）。几乎每项测试都从这里开始；不会清除键盘预设 A–D、面板底色、MIDI 绑定或 CHANNEL / TRANSPOSE / VELOCITY / SPLIT。RESET 后（和每次刚打开应用时一样）DRONE VOICES 的 6 个键都是**关的**，没有 drone 声；要听 drone 就在 DRONE VOICES 里手动打开。
+- **去掉混响**：DUAL EFFECTOR 区的 **BLEND** 拖到最左，只听干声。
 - **只听某一路（solo）**：VOICE MIXER 里其它 9 路的 **VOL** 拖到最左。或者在 DRONE VOICES 里只打开要听的 drone。
 - **关掉所有 drone**：键盘区右边 DRONE VOICES 的 6 个键全部关掉（RESET PANEL 后本来就是全关的）。
 - **说法约定**：本文说"打开 / 关掉 DRONE N"或"DRONE VOICES 的 N"，都是指键盘区右边 DRONE VOICES 的第 N 个按键（drone 的开关，带包络）；VOICE MIXER 里的 **VOL** 只调音量，会明确写"VOL"。
@@ -190,18 +190,12 @@
   - 缩到最小（约 1200×776）后拖不动。
   - 全屏时面板居中，四周是窄边框。
 
-**T0.1W Windows 窗口与文字** ⏳（PR #136；上面的绿色全屏按钮仅适用于 Mac）
-- 用本 PR 最新 Actions 的 **Lunar24-Windows**，在 About 核对 build/commit。
-- Windows 显示设置分别选 100%、125%、150%、175%、200%（屏幕支持的档位即可），
-  每次重新打开 App：标题栏、菜单、最底部键盘都在工作区内；固定标题、旋钮读数、
-  KEYBOARD MENU 和 MIDI 窗口的字都有显示，不出现放大低清截图的糊边。
-- 优先复测已报告的 Windows 11、4K、125%、RTX 2070 环境，保持系统缩放不变；
-  从小窗口连续拖到最大，确认面板不会在中途停止变大。记录 About 中的 commit。
-- 拖四边和四角，最大化、还原、最小化再恢复：保持比例，不裁切，不出现白带，
-  小屏/高缩放也能缩小；最小尺寸会随屏幕可用空间变化。窗口缩小后字号会随之变小。
-- 有双屏时，把窗口来回拖到不同缩放的副屏（含主屏左侧的副屏），分别最大化、还原。
-  窗口应留在当前屏的工作区，字体随 DPI 重绘；旋钮、插孔、键盘的鼠标位置不偏移。
-- 放大缩小后打开 KEYBOARD MENU/MIDI，检查点击、关闭和文字；退出再打开不崩溃。
+**T0.1W Windows 窗口与文字** ⏳ (#136；Mac 的绿色全屏按钮不适用)
+- 用 main 最新 Actions 的 **Lunar24-Windows**，About 里记下 commit。
+- Windows 显示缩放依次选屏幕支持的 100%–200% 档位，每次重开 App：标题栏、菜单、最底部键盘都在工作区内；旋钮读数、KEYBOARD MENU、MIDI 窗口的字清楚、不糊。优先在已报告的 Windows 11 + 4K + 125% 环境复测。
+- 拖四边四角、最大化、还原、最小化再恢复：保持比例，不裁切，没有白带；从小拖到最大面板一直跟着变大；窗口变小字也变小。
+- 双屏：把窗口拖到不同缩放的副屏（含主屏左侧的副屏），最大化、还原：留在当前屏工作区，字随 DPI 重绘，旋钮、插孔、键盘的点击位置不偏。
+- 缩放后打开 KEYBOARD MENU / MIDI，点击、关闭正常；退出再打开不崩溃。
 
 **T0.2 基本操作** ✅ (#56)
 - 步骤：
@@ -238,7 +232,7 @@
   1. 打开 DRONE VOICES 的 1，随便转几个旋钮，接一根线。
   2. 键盘菜单 → RESET PANEL → 4 秒内再点一次。
 - 期望：旋钮回到原位、线消失；DRONE VOICES 的 6 个键全部变成关的，drone 声随之停下（只有效果器尾巴按 BLEND 慢慢消失）；接着奏一句提示乐句（见 T0.7）。
-- 重置时声音先极快地淡出再淡入（约 10 ms），没有咔哒声；不再重开音频设备，所以没有以前那一下明显的断音。重置后用 MIDI 键盘弹奏正常，没有挂音。
+- 重置时声音约 10 ms 淡出再淡入，没有咔哒声，也不重开音频设备；之后用 MIDI 键盘弹奏正常，没有挂音。
 
 **T0.4a 重置和设备重开后的操作** ✅ (#81)
 - 准备：记录想保留的面板设置；这项测试会 RESET PANEL。
@@ -246,7 +240,7 @@
   1. 键盘菜单 MODE 改成 ARPEGGIATOR，PRESSURE 改成 LOOP，接一根 PRESSURE → VCO A cv 的线；然后 RESET PANEL（两次确认）。
   2. 检查 MODE 回到 KEYBOARD、PRESSURE 回到默认值、接线清空，DRONE VOICES 1–6 都是关的。BLEND 最左，按电脑 A 键再松开。
   3. 预期按下能出声、松开后按包络释放，未按键时没有旧音符自行触发；MODE 和接线不自行跳回。
-  4. 将 PRESSURE OUTPUT 改成 AD、RISE 调到约 3/4；在 Settings 将 Output 从 MacBook Speakers 切到 BlackHole 2CH，Apply，再切回 Speakers，Apply / OK。预期设置和接线保持切换前的状态，A 键按下、松开仍正常。
+  4. 将 PRESSURE OUTPUT 改成 AD、RISE 调到约 3/4；在 Preferences 将 Output Device 从 MacBook Speakers 切到 BlackHole 2CH，Apply，再切回 Speakers，Apply / OK。预期设置和接线保持切换前的状态，A 键按下、松开仍正常。
 
 **T0.5 MUTE** ✅
 - 准备：RESET PANEL；打开 DRONE VOICES 的 1（让声音一直响）。
@@ -273,8 +267,8 @@
   - DRONE 3 / 6 S&H 图案里的红灯：按 T3.4 接好 S&H，每跳一个音闪一下。
   - JOYSTICK 的两颗灯不亮（有意如此，摇杆位置屏幕上看得见）。
 
-**T0.7 打开应用和 RESET：drone 不出声，只有提示音** ⏳
-- 背景：以前每装一台新机器（打开应用、RESET、换音频设备、插拔耳机、插件加载工程）所有关着的 drone 都会冒一声（约 -3 dBFS，混响尾巴十几秒）。现在关着的 drone 从第一个采样就安静；独立 App 在打开完成和 RESET 后改为奏一句提示乐句（2–3 秒的合成器短句，不经过效果器，没有长尾巴）。插件不响提示音。
+**T0.7 打开应用和 RESET：drone 不出声，只有提示音** ✅ (#146)
+- 说明：关着的 drone 从第一个采样就安静；独立 App 打开完成和 RESET 后奏一句 2–3 秒的提示乐句（不经过效果器，没有长尾巴）。插件不响提示音。
 - 步骤：
   1. 打开几个 DRONE VOICES 的键，⌘Q 退出，再打开应用。
   2. 打开 DRONE VOICES 的 1 和 4，再 RESET PANEL（点两次）。
@@ -286,6 +280,7 @@
   - 第 3 步：音频重开时只有 drone 1 继续响，其它 drone 不会冒一声，也不响提示音。
   - 第 4 步：静音时听不到提示音，取消 MUTE 后也不会补响。
   - 日志里有 `app    chime (app ready)` 和 `chime (RESET PANEL)`。
+- 2026-10-14 owner 在当前 main 上测试通过。
 
 **T0.8 演奏中插拔线不爆音** ✅ (#100)
 - 准备：RESET PANEL；打开 DRONE VOICES 的 1 和 4；BLEND 放中间（让混响尾巴一直在）。
@@ -310,11 +305,11 @@
   2. 看键盘区中间蓝色小屏下面。
   3. 拖动摇杆到各个方向，双击回中心；拉伸窗口、进出全屏各看一次。
 - 期望：
-  - 第 1 步：摇杆外面是一个黑色双线圆环（粗外线 + 细内线），顶上两只带内弧的小熊耳朵；外面三层断开的黑色轨道弧线，从里到外越来越细。原来摇杆四周的箭头、小圆点和灰色的活动范围圈都没有了。
+  - 第 1 步：摇杆外面是一个黑色双线圆环（粗外线 + 细内线），顶上两只带内弧的小熊耳朵；外面三层断开的黑色轨道弧线，从里到外越来越细。
   - 第 2 步：一个白色的满月：周围是三层断开的细白弧线（像轨道，不是封闭的圆圈），月面是灰点组成的月海和几个环形山（下方的 Tycho 中间有一个点）；和小屏、两边的触摸板、下面的螺丝都有间隔。
   - 第 3 步：摇杆照常拖动，能推到的范围和以前一样（推到最远时摇杆头会盖住圆环线，印刷图案在摇杆下面，正常）；缩放后图案和月亮清晰、不错位。
 
-**T0.11 面板底色** ⏳
+**T0.11 面板底色** ✅ (#142)
 - 步骤：
   1. 点红色大旋钮打开键盘菜单。看底部左侧 **PANEL**。
   2. 从左到右点每个色块，每点一个就关掉菜单看面板，再打开菜单点下一个。
@@ -323,10 +318,11 @@
   - 第 1 步：六个页签底部都有这一排。菜单卡片本身仍是原来的奶油色，黑字清楚。当前颜色的色块有黑框。
   - 第 2 步：面板底色马上换成那个色块。旋钮帽子、插孔、丝印、灯、键盘区、线的颜色不变。REC 上面的字和 WET / DRY / ALL 后面没有留下一块旧奶油色。
   - 第 3 步：重新打开仍是退出前的颜色。RESET PANEL 只复位声音和旋钮，面板颜色不动。
+- 2026-10-14 owner 在当前 main 上测试通过。
 
 **T0.12 默认音色（cinematic）** ✅ (#158)
-- 背景：开机和 RESET PANEL 后的旋钮默认值改成一组偏 Hans Zimmer 电影配乐风格的组合：D 小调、低沉、宽、长混响，drone 键按下后几秒慢慢升起。数值见 `DECISIONS.md` 的 Default panel。已保存的机器状态不会被改：第一次用新版本时先 RESET PANEL（点两次）。
-- 准备：RESET PANEL；戴耳机，MASTER 不动（默认偏中间靠左一点）。
+- 说明：开机和 RESET PANEL 后的默认旋钮是一组 D 小调、低沉、宽、长混响的电影配乐音色（数值见 `DECISIONS.md` 的 Default panel）；已保存的机器状态不变，RESET PANEL 后才是新默认。
+- 准备：RESET PANEL；戴耳机，MASTER 不动（默认约 12 点，略偏右）。
 - 步骤：
   1. 依次单独打开 DRONE VOICES 的 1、2、4、5（每次只开一个，听 10 秒再关）。
   2. 打开 3，再打开 6，各听 10 秒再关。
@@ -433,7 +429,7 @@
 **T2.8 TUNE / VOLT 平滑，MIDI 旋钮可细调** ✅
 - 准备：RESET PANEL；打开 DRONE VOICES 的 1；点亮第 3、4、5 列的 **MUTE**，只留第 1、2 列。MPK 用测试用户预设（KnobM = Rel）。
 - 步骤：
-  1. MIDI 设置里 LEARN：点第 1 列的 **TUNE**，转一下 K3（应学成 REL 2）。
+  1. 点 **MIDI** 按钮 → **+ LEARN A CONTROL** → 点第 1 列的 **TUNE** → 转一下 K3（应学成 REL 2，见 T15.2）。
   2. 慢慢地一格一格转 K3，听第 1 列的音高。
   3. 快速转 K3 一大段。
   4. 同样 LEARN 一个旋钮到 **VOLT**，先慢转、再快转。
@@ -493,10 +489,10 @@
 - 步骤：
   1. 在 hi、low 两档慢转 PITCH，尤其检查 hi 档上半段；同一位置分别用 44.1、48、96 kHz 试听。
   2. 重测 T3.2–T3.5，覆盖 mod 最小/最大、rate 最小、LFO 1 : 10，以及 S&H OUT → cv；rate 为零时内部随机采样停止。
-  3. PITCH 最小、NOISE 打开应只剩噪声；再升 PITCH 应恢复音调。检查按键锁存、HOLD、ATT/RLS，以及 RESET PANEL 后按键关闭、开机渐弱仍在。
+  3. PITCH 最小、NOISE 打开应只剩噪声；再升 PITCH 应恢复音调。检查按键锁存、HOLD、ATT/RLS，以及 RESET PANEL 后按键全关、drone 不出声（T0.7）。
   4. 在独立版及使用中的 VST3/AU 保存并重开状态，确认旋钮、接线、按键恢复；试听一个熟悉的 ambient 音色。
 - 期望：旧的成段音高平台消失，同位置的稳态音高不再随采样率明显变化；原有调制、包络和操作正常。
-- 兼容说明：旧算法丢失转折后的进度，实际音高偏低；修复后同位置可能更高，拍频也会变化。内部 LFO 时序更准确，S&H 随机值不要求与旧版逐次相同；强调制的混叠并未全部消除。
+- 说明：同一 PITCH 位置可能比旧版本高、拍频也会变；S&H 随机值不必与旧版逐次相同；强调制的混叠没有全部消除。
 - 最近一次结果（2026-10-08）：owner 完成人工测试，确认通过。
 
 ### 4. 键盘
@@ -547,8 +543,8 @@
   - 第 5 步：重启后 E 板仍是 +1.20 的音高。
   - 第 6 步：E 板回到标准音高。
 
-**T4.4 按着电脑键盘切走窗口，音不会卡住** ⏳
-- 背景：窗口失去键盘（切到别的程序、弹出 Preferences 等对话框）后，系统不再把松开按键的消息发给 Lunar 24，以前按着的音会一直响。现在一失去键盘就把按着的电脑键盘音全部松开（按 RELEASE 收掉）。
+**T4.4 按着电脑键盘切走窗口，音不会卡住** ✅ (#147)
+- 说明：窗口失去键盘（切到别的程序、弹出 Preferences 等）时，按着的电脑键盘音全部按 RELEASE 收掉。
 - 准备：RESET PANEL；BLEND 最左。
 - 步骤：
   1. 按住电脑键盘 **A** 不放，同时按 ⌘Tab 切到别的程序，再松开 A。
@@ -563,6 +559,7 @@
   - 第 4 步：Preferences 打开时 S 的声音收掉。
   - 第 5 步：MPK 的音不受窗口切换影响，松开 MPK 键时才停。
   - 日志里第 1、4 步各有一行 `ui     keyboard focus lost: released 1 computer key(s)`。
+- 2026-10-14 owner 在当前 main 上测试通过。
 
 ### 5. VCO A / VCO B
 
@@ -577,11 +574,11 @@
 - 步骤：
   1. 拖 **tune**。
   2. 拨 **oct+3 / low**。
-  3. 拨 **-1 / sub** 到 sub。
+  3. 来回拨 **-1 / sub**（VCO A 出厂就在 sub，VCO B 出厂不在）。
 - 期望：
   - tune 让音高连续变化，约一个八度。
   - oct+3 升高很多，low 降低。
-  - sub 叠加一个低八度的底音。
+  - 在 sub 时叠加一个低八度的底音，拨走就消失。
 
 **T5.3 pw / pwm** ✅
 - 步骤：
@@ -676,12 +673,12 @@
 - 说明：和 drone 的 ATT / RLS 一样，前半圈细、后半圈快。正中约 1.25 s，最右 10 s。
 - 准备：RESET PANEL；只听 VCO A。
 - 步骤与期望（鼠标悬停在旋钮上看上方的数值）：
-  1. 悬停 envelope A 的 **R**：显示 **1.50 s**（出厂值），指针在 12 点钟附近。
-  2. 双击 **A**：显示 **40 ms**，指针约 8 点半。
+  1. 悬停 envelope A 的 **R**：显示 **3.00 s**（出厂值），指针约 1 点半到 2 点之间。
+  2. 双击 **A**：显示 **150 ms**，指针约 9 点半。
   3. 把 **R** 拖到 12 点钟：约 **1.25 s**。拖到最右：**10.00 s**；拖到最左：**0 ms**。
   4. **R** 从最左慢慢往右拖到 10 点钟左右：数值在 0–0.3 s 之间一点点变，能停在想要的短尾音上。按一下键松开，听尾音从"啪"一下到短短的拖尾。
   5. 对 **D**、**A**，以及 envelope B 的 **A / D / R** 各拖一遍：都是正中约 1.25 s、最右 10 s。
-  6. 若有 MIDI 旋钮绑定了 R（MIDI 按钮 → 学习）：旋钮转到一半时也是约 1.25 s。
+  6. 若有 MIDI 旋钮绑定了 R（MIDI 按钮 → **+ LEARN A CONTROL**）：旋钮转到一半时也是约 1.25 s。
 
 ### 7. FILTER 和失真
 
@@ -804,10 +801,7 @@
 
 **T8.7 左右用不同的卡带（先选卡带，扳哪边载入哪边）** ✅ (#115)
 - 硬件做法（手册）：卡带插在槽里，扳某一边的 1-2-3 开关，这一边才从槽里的卡带载入程序。所以先让一边载入卡带 A，换上卡带 B 再扳另一边，左右就是两盒不同的卡带。
-- 卡带窗口（"cartridge slot" 下面的黑框）现在加高成三行，下面说的"标签""L 行""R 行"就是这三行：
-  - 最上面琥珀色标签：**槽里插着的卡带**（点窗口换下一盒，右键换上一盒，只换这一行，声音不变）。
-  - 第二行 **L …**：左边正在运行的卡带和档位，例如 "L  CATHEDRAL 1"。
-  - 第三行 **R …**：右边正在运行的卡带和档位。
+- 卡带窗口三行：琥珀色标签 = 槽里插着的卡带（点 / 右键只换这一行，声音不变）；**L** 行、**R** 行 = 左右正在运行的卡带和档位（见面板地图）。
 - 准备：RESET PANEL；开 DRONE VOICES 的 **1** 和 **2**；BLEND 拖到偏右（约 3 点钟）；戴耳机。
 - 步骤：
   1. 看卡带窗口：标签 CATHEDRAL，L / R 两行都是 CATHEDRAL 1。
@@ -824,16 +818,11 @@
   - 第 6 步：L 行 "L  VIBE 1"（Phaser）：扳拨杆只在当前卡带里换档。
   - 第 7 步：重启后 L / R 两行和第 6 步一样（两边的卡带各自保存）；标签显示左边的卡带 VIBE。
 
-**T8.8 高采样率、小缓冲下切卡带不掉音** ⏳
-- 为什么测：以前切程序时会一次清空几秒长的延迟缓冲，在 96 / 192 kHz、64 样本缓冲下可能超过一块的处理时间，出现咔哒或断音。现在改成逻辑清空，清空耗时不随缓冲长度增长；仍需在实际声卡上检查。
-- 准备：独立 App 在 Lunar 24 → Preferences…（⌘,）设置声卡支持的 96000 或 192000 Hz、64 样本缓冲（没有 64 就选最小值）；插件在 Ableton → Settings → Audio 设置。RESET PANEL；开 DRONE VOICES 的 **1** 和 **4**；BLEND 拖到偏右（约 3 点钟）；戴耳机，以平时的音量听。
-- 步骤：
-  1. 先听约 10 秒，确认不操作时声音正常。点卡带窗口 2 次，把琥珀色标签从 CATHEDRAL 换到 **TIME**；此时 L / R 两行和声音应不变。
-  2. 把 **L** 的 1-2-3 拨杆从 1 扳到 2，确认 L 行显示 **TIME 2**；再把 **R** 从 1 扳到 2，确认 R 行也显示 **TIME 2**。让回声响约 5 秒。
-  3. 逐次点击卡带窗口、来回扳 L / R 拨杆，切换至少 20 次；既测单边切换，也测紧接着切另一边。每次留约半秒听变化，并确认对应 L / R 行确实更新。
-  4. 把标签换回 **TIME**，分别扳 L / R 拨杆重新载入，听约 10 秒。若声卡同时支持 96 和 192 kHz，在另一采样率重复；插件用 VST3 和 AU 分别重复。
-- 期望：切换时允许原有的短暂淡出淡入和效果音色变化，不应出现额外咔哒、爆音或明显断音；切回 TIME 后没有旧卡带残留的异常声音。不操作时就断音的配置记为无法判断本项，不算通过。
-- 记录：构建号 / commit、独立 App 或 VST3 / AU、声卡、实际采样率与缓冲、切换次数、异常及 DAW 的过载提示（若有）。未支持的配置记「不支持」；未测的格式仍保留待测。测完恢复平时的采样率和缓冲。
+**T8.8 高采样率、小缓冲下切卡带不掉音** ✅ (#134)
+- 准备：独立 App 在 Preferences…（插件在 Ableton → Settings → Audio）设成声卡支持的 96 / 192 kHz、64 样本缓冲（没有就选最小）。RESET PANEL；开 DRONE VOICES 的 **1** 和 **4**；BLEND 约 3 点钟；戴耳机。
+- 步骤：点卡带窗口把标签换到 **TIME**，L、R 拨杆各从 1 扳到 2（两行都显示 **TIME 2**）；然后连续换卡带、来回扳 L / R 至少 20 次，每次听半秒。支持的话，另一采样率和 VST3 / AU 各重复一次。
+- 期望：只有原有的短暂淡出淡入，没有额外咔哒、爆音或断音；不操作时就断音的配置不算。测完恢复平时的采样率和缓冲。
+- owner 早前已测试通过；效果器切程序的代码自 #134（2026-10-06）以来未改动（之后只改过一行注释）。
 
 ### 9. LFO 和 JOYSTICK
 
@@ -848,7 +837,7 @@
   5. 线改接 LFO B 的输出，重复 2–4。
 - 期望：
   - rate 改变摆动快慢；x6、x10 快很多倍，最快时变成颤抖的音色。
-  - wave 最左（Λ 图标）是三角（平滑滑动）、最右（⊓ 图标）是方波（音高跳），和面板图标一致（#79 修正了原来左右相反的问题）。
+  - wave 最左（Λ 图标）是三角（平滑滑动）、最右（⊓ 图标）是方波（音高跳），和面板图标一致。
   - LFO B 和 LFO A 一致。
 - 备注：LFO 只输出正电压，所以是"单向"摆动。
 
@@ -857,10 +846,10 @@
 - 准备：同本节；接线 LFO A 输出 → VCO A 的 **cv**，拨杆 **x1**，LFO A 的 **wave** 拖到**最左**（Λ 三角波），按住键（或点亮 envelope A 的 **hold**）。
   - wave 要放最左：出厂的 wave 在正中，是三角波和方波各一半，方波部分每半个周期跳一次，0.10 Hz 时听起来像 5 秒就"动"一次，容易误以为周期不足 10 秒。
 - 步骤与期望（悬停看 rate 上方的数值）：
-  1. 悬停 LFO A 的 **rate**：显示 **1.00 Hz**（出厂值），指针在 11 点钟附近。
+  1. 悬停 LFO A 的 **rate**：显示 **0.20 Hz**（出厂值），指针约 8 点钟多一点。
   2. 拖到最左：**0.10 Hz**，音高用约 5 秒慢慢升上去、再用约 5 秒降下来，一个来回约 10 秒（可以看着秒表数）；拖到 12 点钟：约 **1.41 Hz**；最右：**20.00 Hz**，颤抖的音色。
   3. 从最左慢慢往右拖到 11 点钟：数值 0.10 → 1 Hz 之间一点点变，能停在 0.2、0.3 Hz 这样的慢速上。
-  4. LFO B 的 **rate** 一样。
+  4. LFO B 的 **rate** 一样（出厂 **0.10 Hz**，在最左）。
 - 注意：悬停 rate 显示的是乘倍数**之前**的值，x6 / x10 不算在读数里。周期明显不对时，先确认拨杆在 **x1**（或先 RESET PANEL）。
 
 **T9.2 JOYSTICK** ✅
@@ -933,7 +922,7 @@
   1. 输入设备仍选麦克风；RESET PANEL。
   2. DRONE VOICES 的 6 个键保持全关（RESET 后默认），等几秒让声音完全消失。
   3. 拍一下手。
-- 期望：完全安静，拍手也听不到回声。电脑输入的两个声道分别进 PREAMP 和 EXT.AUDIO；之前两者默认都开着，会把麦克风收到的环境声送出来。
+- 期望：完全安静，拍手也听不到回声（电脑输入的两个声道分别进 PREAMP 和 EXT.AUDIO，RESET 后两路都是关的）。
 - 补充：
   - 把 VOICE MIXER 的 **EXT.AUDIO** 音量转到中间再拍手，能听到带混响的拍手声（这一路直接接电脑输入）。
   - EXT.AUDIO 转回最左，把 PREAMP 的 **gain** 转到中间再拍手，也能听到（这一路经过放大，ENVELOPE FOLLOWER 的红灯跟着亮）。MacBook 自带麦克风是单声道，它同时送进这两路。
@@ -998,10 +987,7 @@
   - 第 3 步：C 板现在是最高的音，琶音仍是"C 板 → E → G"：高音 C、E、G、高音 C……（调过音的板仍按它的编号排，不按音高）。
 
 **T12.4 SCALE / ROOT** ✅ (#92)
-- 界面位置：点键盘区中间的红色大旋钮打开 KEYBOARD MENU，顶部第一个页签 **PLAY**。PLAY 页有三张卡片：
-  - 左边 **KEYBOARD** 卡：上面一行 **PLAY**（SINGLE / TWIN / SPLIT），下面一行 **MODE**（KEYBOARD / ARPEGGIATOR / SEQUENCER）。
-  - 中间 **QUANTISER** 卡：上面是 **SCALE**，一条 `<  音阶名  >`，右上角小字 `n / 19`；点 `>` 下一个、`<` 上一个。中间一行 **NOTES**（见 T12.4a）。下面是 **ROOT**，一个只有一个八度的小钢琴（C 到 B），点哪个琴键就选哪个，选中的变蓝，右上角显示字母。
-  - 右边 CLOCK 卡（本项不用）。
+- 界面：键盘菜单 PLAY 页中间的 **QUANTISER** 卡：**SCALE**（`< 音阶名 >`，右上角 `n / 19`，`>` 下一个、`<` 上一个）、**NOTES**（见 T12.4a）、**ROOT**（一个八度的小钢琴，点哪个选哪个，选中变蓝）。PLAY / MODE 在左边 KEYBOARD 卡。
   - SCALE 的顺序：1 SEMITONES、2 IONIAN（大调）、3 DORIAN、4 PHRYGIAN、5 LYDIAN、6 MIXOLYDIAN、7 AEOLIAN（小调）、8 LOCRIAN、9 BLUES-MAJOR、10 BLUES-MINOR、11 PENTATONIC-MAJOR、12 PENTATONIC-MINOR、13 FOLK、14 JAPANESE、15 GAMELAN、16 GYPSY、17 ARABIAN、18 FLAMENCO、19 WHOLE-TONE。
 - 准备：
   1. 菜单右下角 **RESET PANEL** 点两下（4 秒内），菜单会关掉。
@@ -1298,11 +1284,7 @@
   2. 菜单打开时，从菜单外的一个输出（例如 LFO B 输出）拖线，在菜单上方（键盘区 CLOCK / RESET / GATE / V/OCT 插孔所在位置）松手：**不接上任何线**。关掉菜单再拖到同一插孔，正常接上。
   3. 点 MIDI 按钮打开 MIDI 设置，重复第 2 步：同样不接线。
   4. 菜单打开时，鼠标悬停在菜单外的旋钮上，数值气泡照常显示。
-  5. 滚轮换八度：「红色大旋钮」就是键盘区中间点一下打开键盘菜单的那个红色旋钮。「滚轮」= 鼠标滚轮；MacBook 触控板上是**两指同时上下滑动**（不要按下）。
-     - 菜单关着，把鼠标指针停在红色大旋钮上（不点击），两指往一个方向滑一下：蓝色小屏的 OCT 变 1 格（例如 0 → 1），手指离开后**停在新的数字上**，不会继续跳或跳回 -3。滑得快、滑得长也只变 1 格；停半秒再滑一次再变 1 格。左右滑不改变 OCT。记下这个方向是升还是降（macOS「自然滚动」设置会让方向因人而异，以第一次看到的为准）。
-     - 点红色大旋钮打开菜单 → SERVICE 页 → ENCODER 的 DIRECTION 选 **REVERSED** → CLOSE。
-     - 指针停回红色大旋钮，用**同一个方向**再滑：这次 OCT 往反方向变。
-     - DIRECTION 选回 NORMAL：方向恢复成第一次的样子。改成 REVERSED 后退出重开程序，SERVICE 页里仍是 REVERSED。
+  5. 滚轮换八度（MacBook 触控板 = 两指上下滑，不按下）：指针停在红色大旋钮上（不点），滑一下，OCT 只变 1 格并停住；滑得快、长也只变 1 格，左右滑不变。记下方向（受 macOS「自然滚动」影响）。SERVICE 页 ENCODER 的 **DIRECTION** 选 **REVERSED** 后同方向滑，OCT 反向变；选回 NORMAL 恢复。选 REVERSED 后重开程序，仍是 REVERSED。
 
 ### 13. 其余插孔
 
@@ -1322,10 +1304,7 @@
 
 **T13.3 S&H 的 IN 和 clock 插孔** ✅
 - 插孔位置：DRONE 3 右下角的 **S&H** 框里有 3 个插孔，从左到右：**IN**（▲）、**clock**（▲ clock）、**OUT**（右上角带红三角）。LFO A 在面板最下排最左：红色 **wave** 旋钮、中间的输出插孔（下面有蓝灯）、拨杆 **x6 / x1 / x10**、红色 **rate**。LFO B 在最下排最右，布局相同。
-- 准备：
-  1. RESET PANEL；BLEND 最左；DRONE VOICES 全关。
-  2. 点亮 envelope A 的 **hold**（envelope A 左上角的黑按钮），VCO A 一直响，用它来听 S&H。
-  3. 接线：S&H 的 **OUT** → VCO A 最下排的 **cv**（左数第 2 个）。VCO A 的 **cv amt**（左上角绿色旋钮）放约 1/4。
+- 准备：同本节开头。接线：S&H 的 **OUT** → VCO A 最下排的 **cv**（左数第 2 个），**cv amt**（左上角绿色旋钮）约 1/4。
 - 步骤：
   1. 先听：VCO A 的音高在随机跳（S&H 在采样 drone 3 内部的噪声）。
   2. 接线：LFO A 的输出 → S&H 的 **IN**。LFO A 的 **wave** 和 **rate** 都往左拖到**拖不动为止**（Λ 纯三角、最慢 0.1 Hz）。
@@ -1368,7 +1347,7 @@
 - 期望：点 OFF 时声音像松开琴键一样停下（包络 R 的拖尾和正常松手一样长），手还按着也不再响，不会卡住。再点回 **ON**，弹奏恢复正常。
 - 备注：运行中直接拔 / 插 USB 线见 T14.6。
 
-**T14.3 关掉 MIDI 设备只停 MIDI 的音，电脑键盘的琶音继续** ⏳（原 ✅ #94；改用 DEVICES 后重测）
+**T14.3 关掉 MIDI 设备只停 MIDI 的音，电脑键盘的琶音继续** ✅（2026-10-14，DEVICES 页签重测）
 - 准备：MPK 切到测试用预设；DEVICES 里 MPK Mini IV MIDI Port = ON。RESET PANEL（菜单右下角点两下）；DRONE VOICES 6 个键全部点灭。
 - A. 电脑键盘的琶音不受影响（这是修复的重点）：
   1. 点红色大旋钮打开键盘菜单。PLAY 页左边 MODE 点 **ARPEGGIATOR**；再点顶部 **ARP** 页签，点亮左上角的 **HOLD**（LED 亮）。点 CLOSE 关掉菜单。
@@ -1376,11 +1355,7 @@
   3. 琶音还在响的时候，点 **MIDI** → **DEVICES**，把 MPK 点成 **OFF**。
   - 期望：**琶音继续循环 C、F、A，不停，也没有"轰"的一声**。
   4. 收尾：MPK 点回 **ON**，关掉 MIDI 面板；打开菜单，ARP 页关掉 HOLD（琶音停下），PLAY 页 MODE 点回 **KEYBOARD**。
-- B. MIDI 自己的音照样会停（确认修复没把这点弄坏，同 T14.2）：
-  1. 在 MPK 上按住一个键不放，声音一直响。
-  2. 保持按住，在 DEVICES 里把 MPK 点成 **OFF**。
-  - 期望：**声音像松手一样停下**（拖尾和正常松手一样），手还按着也不响。
-  3. 把 MPK 点回 **ON**，MPK 弹奏恢复正常。
+- B. 再做一遍 T14.2：MIDI 自己按住的音照样像松手一样停下。
 
 **T14.4 MIDI 切换 MUTE 时按钮跟着亮灭** ✅ (#94)
 - 准备：Learn 一个打击垫到 **MUTE**（MIDI CONTROL → + LEARN A CONTROL → 点 MUTE 按钮 → 敲垫子）。
@@ -1390,11 +1365,11 @@
 **T14.5 Preferences 点 Cancel 不打断声音** ✅ (#95)
 - 准备：同 T14.3 A：键盘菜单 MODE = **ARPEGGIATOR**，ARP 页 **HOLD** 打开；电脑键盘同时按下 A、F、H 再松开，琶音循环。
 - 步骤与期望：
-  1. ⌘, 打开 Preferences，什么都不改，点 **Cancel**：琶音继续，**没有"轰"一声**。Preferences 里已经没有 MIDI 区，底部一行写着 MIDI 设备在面板 MIDI 按钮的 DEVICES 里。在 MPK 上弹仍能出声。
+  1. ⌘, 打开 Preferences，什么都不改，点 **Cancel**：琶音继续，**没有"轰"一声**。在 MPK 上弹仍能出声。
   2. 再打开 Preferences，把 Buffer Size 换一个值，点 **OK**：这次会重开音频（可能有一声，琶音停下），这是改了音频设置时的正常行为。测完改回原来的 Buffer Size。
   3. 收尾：关 HOLD，MODE 改回 KEYBOARD。
 
-**T14.6 运行中插拔 MIDI 键盘** ⏳（原 ✅；第 2 步改看 DEVICES）
+**T14.6 运行中插拔 MIDI 键盘** ✅（2026-10-14，DEVICES 页签重测）
 - 准备：先拔掉 MPK 的 USB 线，再打开 Lunar 24；DRONE VOICES 全关，只听 VCO A。
 - 步骤：
   1. 应用开着，插上 MPK 的 USB 线，等 2 秒，在 MPK 上弹几个音。
@@ -1408,7 +1383,7 @@
   - 第 3 步：拔线后那个音像松手一样停下（有包络拖尾），不会卡住一直响。
   - 第 4 步：重新插上后马上能弹。
   - 第 5 步：应用记住了 MPK，插上后自动连上，不需要重新打开。
-  - 日志（第 18 节）里能看到 `midi   port connected / disconnected` 和 `input 1 open / closed`。
+  - 日志（第 18 节）里能看到 `midi   port connected: …` / `port disconnected: …` 和 `input 1 open: …` / `input 1 closed: …`。
 
 以下 T14.7–T14.13 用两个设备：MPK mini IV 和 iPad Pro 上的 Mult Controller（USB-C 连 MacBook；「音频 MIDI 设置」里叫 **iPad**）。准备（通用）：RESET PANEL；DRONE VOICES 全关；PLAY = SINGLE、MODE = KEYBOARD；只听 VCO A；BLEND 最左。
 
@@ -1423,7 +1398,7 @@
   - 第 3 步：出现 **iPad** 一行，是 **OFF**（新设备默认不开）；在 iPad 上推推子、弹音，Lunar 24 没有反应。
 
 **T14.8 两个设备一起弹** ✅（2026-10-13，第 2 步待测）
-- 实测：iPad 的 Mult Controller 只发 CC，不能弹奏；MPK 与 iPad 同时开着各自正常，iPad 绑定（DRONE 1–6 VOL、CC 118 → DRONE 1 PHOTO）照常工作。第 2 步（同一个音分开计）等有能发音符的第二台设备再测。
+- 实测：iPad 的 Mult Controller 只发 CC，不能弹奏；MPK 与 iPad 同时开着各自正常，iPad 绑定照常工作。第 2 步等 M-VAVE SMC-Mixer（DAW 模式下按钮发音符）到了再测。
 - 步骤：
   1. DEVICES 里把 **iPad** 点成 **ON**。在 iPad 上弹几个音；在 MPK 上弹几个音；两边一起弹。
   2. 在 MPK 上按住 C4 不放；在 iPad 上也按一下 C4 再松开（同一个音）。
@@ -1433,7 +1408,8 @@
   - 第 2 步：iPad 松开后 **MPK 按住的 C4 继续响**（两个设备的同一个音是两个音），MPK 松开才停。
   - 第 3 步：哪个设备在发消息，它那一行的小灯就**闪绿**；INPUTS 列出 MPK 和 iPad 两行，点 INPUTS 会跳到 DEVICES。
 
-**T14.9 每个设备自己的 CHANNEL / TRANSPOSE / VELOCITY / SPLIT** ✅（2026-10-13，iPad 只发 CC，第 1 步待测；重启后设置保留已确认）
+**T14.9 每个设备自己的 CHANNEL / TRANSPOSE / VELOCITY / SPLIT** ✅（2026-10-13，第 1 步等 SMC-Mixer 再测（iPad 只发 CC）；重启后设置保留已确认）
+- 第 1 步用 SMC-Mixer 代替 iPad（DAW 模式下按钮发音符）。
 - 步骤：
   1. DEVICES 里 iPad 的 **TRANSPOSE** 点 > 调到 **+12 st**，MPK 保持 +0 st。两边各弹同一个音。
   2. MPK 的 **CHANNEL** 改成一个 MPK 琴键不用的通道（如 5），弹 MPK；再弹 iPad。
@@ -1441,7 +1417,7 @@
   4. 收尾：两边的 CHANNEL 回 ANY、TRANSPOSE 回 +0 st。
 - 期望：第 1 步 iPad 高一个八度、MPK 不变；第 2 步 MPK 不出声、iPad 照常；第 3 步 iPad 仍是 ON，两边的设置都还在。
 
-**T14.10 绑定只认学它的那个设备** ⏳
+**T14.10 绑定只认学它的那个设备** ⏳（等 SMC-Mixer：CC 模式下推子发 CC，可代替 MPK 发同号 CC）
 - 步骤：
   1. BINDINGS 页签 → **+ LEARN A CONTROL** → 点 DUAL EFFECTOR 的 **BLEND** → 在 iPad 上推一个推子。
   2. 看新的一行；推 iPad 推子；再转 MPK 上发同一个 CC 号的旋钮（不知道号码就跳过这一步）。
@@ -1449,7 +1425,7 @@
 - 期望：新行第二行写着 **iPad**；推 iPad 推子 BLEND 跟着动；MPK 的同号 CC 不会动 BLEND（会照旧控制它原来的功能，或者什么都不做）。
 
 **T14.11 拔掉一个设备只停它自己的音** ✅（2026-10-13，第 4 步待测）
-- 说明：iPad 拔下再插回，要在「音频 MIDI 设置」的音频设备窗口里再点一次 **Enable**（macOS 对 iPad USB MIDI 的要求）；之后 DEVICES 里仍是 ON 的 iPad 自动连上。第 4 步需要能发音符的打击垫（CC 的 pad、X/Y pad 没有"按住"），等有第二台设备再测。
+- 说明：iPad 拔下再插回，要在「音频 MIDI 设置」的音频设备窗口里再点一次 **Enable**（macOS 对 iPad USB MIDI 的要求）；之后 DEVICES 里仍是 ON 的 iPad 自动连上。第 4 步需要能"按住"的音符键（CC 的 pad、X/Y pad 没有），等 SMC-Mixer（DAW 模式下按钮发音符）再测。
 - 步骤：
   1. 在 MPK 上按住一个音；在 iPad 上按住另一个音（两个音一起响）。
   2. 保持按住，拔掉 iPad 的 USB-C 线。
@@ -1459,15 +1435,15 @@
 
 **T14.12 最多同时开 4 个设备** ✅（2026-10-13）
 - 准备：用 MPK 自带的几个端口（MIDI / DAW / Plugin / Software Control Port）凑数，不需要 IAC。测完只留 MIDI Port 开着（DAW / Plugin 端口发的是给 DAW 脚本的控制消息）。
-- 步骤：DEVICES 里 MPK、iPad 已 ON；依次把 IAC 的端口点成 ON（用 > 翻页）。
-- 期望：第 4 个能开；第 5 个点了不变，左下角红字 **Four devices are on already.**；关掉一个后就能开另一个。测完把 IAC 端口都点回 OFF。
+- 步骤：DEVICES 里 MPK Mini IV MIDI Port、iPad 已 ON；依次把 MPK 的 DAW / Plugin / Software Control Port 点成 ON（用 > 翻页）。
+- 期望：第 4 个能开；第 5 个点了不变，左下角红字 **Four devices are on already.**；关掉一个后就能开另一个。测完只留 MIDI Port 和 iPad 开着。
 
 **T14.13 Preferences 没有 MIDI 区** ✅（2026-10-13）
 - 步骤：⌘, 打开 Preferences。
 - 期望：只有音频设置；底部一行 `MIDI devices: the MIDI button on the panel, then DEVICES.`；OK / Apply / Cancel 在下面，窗口没有大片空白。
 
 **T14.14 两台同型号设备：在 MIDI 工作室里改名** ✅（2026-10-13，用 iPad 验证改名；两台同型号的情况等有设备再测）
-- 背景：Lunar 24 按名字区分设备，两个同名端口只用第一个（那一行写 `NAME SHARED, FIRST PORT USED`，左下角提示去改名）。
+- 背景：Lunar 24 按名字区分设备，两个同名端口只用第一个（那一行写 `CONNECTED - NAME SHARED, FIRST PORT USED`，左下角提示 `Two ports share a name: rename one in Audio MIDI Setup > MIDI Studio.`）。
 - 步骤：「音频 MIDI 设置」→ 窗口 → 显示 MIDI 工作室，双击设备图标，改 **Display Name**（如 iPad → LunarPad），点 Apply。看 DEVICES；拔插一次再看；最后改回原名。
 - 期望：新名字 = 新设备名 + 原端口名（`LunarPad iPad`），默认 OFF；旧名字那一行若是 ON 显示 NOT CONNECTED，点 OFF 后消失；拔插后名字保留。改名等于换了一台设备：旧名字的绑定、设置、ON 都不跟过去；改回原名后全部恢复（Mult_Knob 方案的 iPad 绑定实测照常）。
 
@@ -1475,14 +1451,14 @@
 
 测试环境：macOS（MBP M1 Max）+ MPK MINI IV（用下面 TODO 里记的测试用户预设）。
 
-**T15.1 MIDI 设置界面** ⏳（原 ✅；设置移到 DEVICES 页签后重测）
+**T15.1 MIDI 设置界面** ✅（2026-10-14，DEVICES 页签重测）
 - 步骤：
   1. 点 DRONE VOICES 右边、MUTE 正下方的 **MIDI** 按钮。
   2. 看界面：暖色面板盖住键盘区；顶部 PROFILE 和 **BINDINGS / DEVICES / PROFILES** 页签；BINDINGS 左边是 INPUTS（开着的设备）、PROFILE SWITCH KEYS 和 LEARN，右边每页四条绑定（初次显示引导）。
   3. 点 **DEVICES**，再点 **PROFILES**，再点 **BINDINGS**；点 PROFILE 名字也会打开 PROFILES。
   4. 点 **CLOSE** 关掉；再打开，按 Esc（在 DEVICES / PROFILES 里按 Esc 先回 BINDINGS，再按一次关掉）。
 - 期望：开合正常；当前页签是浅色的。
-- 旧界面的左侧裁字、删除图标方框（反馈 #4 / #5）已在重设计中修复，2026-10-03 真机确认。缩放窗口后检查标题、设置值、行尾按钮、底部提示不截断或重叠；长设备名应带省略号，字号不被缩小。
+- 缩放窗口后检查标题、设置值、行尾按钮、底部提示不截断或重叠；长设备名应带省略号，字号不被缩小。
 - DEVICES 里只点设置两侧的 < / > 会改变数值，点中间的值不会误改；TRANSPOSE 的最低值应显示 -36 st。
 - 设置值首尾循环是既定行为：TRANSPOSE 在 -36 st 再点 < 跳到 +36 st；CHANNEL（ANY ↔ 16）、VELOCITY（LINEAR ↔ HARD）同样循环。
 - 建立五条以上绑定后检查分页；Learn 完成后应自动显示刚绑定的行，删除最后一页唯一一行后回到前一页。
@@ -1601,13 +1577,13 @@
   - 第 5 步：松开 E4 时那个高音正常停掉，不会卡住（音按下时属于哪边，松开就还归哪边）。
   - 第 6 步：左边是普通键盘的低音，右边两个音按节奏轮流响（琶音）。
   - 第 7 步：两边都只走 VCO A（12 个键是一个键盘）。
-  - 第 8 步：SPLIT 还是刚才改的值（存在 MIDI 绑定文件里，不随音色设置）。
+  - 第 8 步：SPLIT 还是刚才改的值（DEVICES 里 MPK 自己的设置，存在 global.bin，不随音色和方案变）。
 - 收尾：SPLIT 改回 C4，PLAY 改回 SINGLE，oct+3 拨回 low，拔掉两根线。
 
 **T15.11 MIDI 控制光敏头（旋钮 / 打击垫压力）** ✅
-- 准备：RESET PANEL；打开 DRONE VOICES 的 1；点亮 DRONE 1 第 1、3、5 列的 **MOD**（同 T2.6）。MIDI 设置的 CHANNEL 过滤为 ANY。MPK 用测试用户预设，并在 Global Menu（SHIFT + LOOP）里确认 **Aft** = Chan（打击垫按住后会发压力）。
+- 准备：RESET PANEL；打开 DRONE VOICES 的 1；点亮 DRONE 1 第 1、3、5 列的 **MOD**（同 T2.6）。DEVICES 里 MPK 的 CHANNEL = ANY。MPK 用测试用户预设，并在 Global Menu（SHIFT + LOOP）里确认 **Aft** = Chan（打击垫按住后会发压力）。
 - 步骤：
-  1. 打开 MIDI 设置，点 **LEARN**，点 DRONE 1 的大白圆（光敏头），转一下 MPK 的 K2。列表里应多一行，目标是 **DRONE 1 PHOTO**。
+  1. 打开 MIDI 设置，点 **+ LEARN A CONTROL**，点 DRONE 1 的大白圆（光敏头），转一下 MPK 的 K2。列表里应多一行，目标是 **DRONE 1 PHOTO**。
   2. 关掉 MIDI 设置，把 K2 慢慢从最小转到最大，再转回最小。
   3. 再次 LEARN：点 DRONE 1 的大白圆，敲一下 Bank A 的 1 号垫。列表里这一行的 MODE 显示 **PRESS**。
   4. 敲下 1 号垫并按住不放：先轻按住，再慢慢加大压力，再减小，最后松开。
@@ -1623,13 +1599,13 @@
 - 收尾：在 MIDI 设置里用 **x** 删掉这两行绑定。
 
 **T15.12 多套 MIDI 方案与原有 Learn 回归** ✅
-- 用本 PR 的 CI 构建物测试。旧 `lunar24-midi-map.bin` 不导入也不删除；首次打开是 **Untitled**，0 条自定义绑定，ANY / +0 st / LINEAR / C4。控制器不限品牌；以下 MPK 是业主现有测试设备。
+- 控制器不限品牌；以下 MPK 是业主现有测试设备。
 - PROFILE → **RENAME**，输入 `Studio`，Enter 确认；再次重命名输入另一名称后 Esc，应取消且不播放电脑键盘音符。命名时点击框外会确认（该次点击不再触发背后的按钮），提示应明确；空白、中文、超过 39 字符和重名应拒绝，当前方案保持；普通校验提示不得替换 **LEARN** 或 **BACK TO BINDINGS** 按钮。
 - 用 MPK 的 KnobM = Rel，按 T15.2 Learn FILTER FREQ：先显示 ABS，再左右慢转识别为 **REL 2**。关面板再开、退出再启动，REL 2 仍保存；手工选择 MODE 后不得被识别覆盖。绝对旋钮的接管行为仍按 T15.7。
-- PROFILE → **COPY** 为 `Effects`。四项设置和绑定应完整复制；把同一个旋钮重新 Learn 到 BLEND，再将 TRANSPOSE 设为 +12、VELOCITY 为 SOFT、SPLIT 为 D4。若要验证 CHANNEL，用 ANY 与实际控制器发送通道切换，避免误设成收不到输入的通道。
-- 点击 PROFILE 名称，再点击 `Studio` / `Effects`：四项设置、绑定和 MODE 同时恢复；旋钮只控制所选目标；面板音色不被方案切换重置。按住普通琴键切换，再松开，不挂音。光敏 pad 按住切换后松开也应释放原来的光敏控制。
+- PROFILE → **COPY** 为 `Effects`：绑定应完整复制；把同一个旋钮重新 Learn 到 BLEND。
+- 点击 PROFILE 名称，再点击 `Studio` / `Effects`：绑定和 MODE 同时恢复，DEVICES 里的设置不变；旋钮只控制所选目标；面板音色不被方案切换重置。按住普通琴键切换，再松开，不挂音。光敏 pad 按住切换后松开也应释放原来的光敏控制。
 - Learn 正在等待目标／消息，或已建立 ABS 但尚未识别时切换方案，再转同一旋钮：不得给新方案添加条目或修改其 MODE。重新正常 Learn 后仍能识别 REL 2。只展开方案列表再 Esc 取消，不算切换。
-- **NEW** 为 `Empty`：无自定义绑定，四项设置不变（T15.13 起是全局设置）；普通琴键、弯音和内置 CC 仍工作。在有绑定的方案逐行点 x 删光：保留名称及四项设置，重启后仍为 0 条。
+- **NEW** 为 `Empty`：无自定义绑定，DEVICES 里的设置不变（不属于方案）；普通琴键、弯音和内置 CC 仍工作。在有绑定的方案逐行点 x 删光：保留名称及四项设置，重启后仍为 0 条。
 - 建立五套以上方案验证分页；绑定列表仍独立按每页四条翻页。DELETE 第一次显示 **DELETE?**，第二次才删除当前方案并选择另一套；最后一套不可删除。Esc／关闭列表会取消删除确认。
 - 在 App 保存方案后打开 AU / VST3，PROFILE 应看到同一个方案库且可直接使用；无需重新 Learn。两个已打开实例不强制同步切换；重新展开列表、选择方案读取最新保存内容。DAW 保存重开不恢复工程专属 MIDI 映射。
 - 可用两个实例验证冲突：都选同一方案，A 改绑保存，再在 B 改绑；B 应提示 **Changed elsewhere**，不覆盖 A。B 可 **COPY** 为新名称保留自己的版本，或点 **RELOAD** → **RELOAD?** 确认放弃本地修改、读取已保存版本；此后能正常编辑保存。读取失败必须保留本地修改。若当前文件被其他实例删除，RELOAD 不得换成另一套方案；可 COPY 保留本地版本，或在可切换时手动选择方案。RELOAD 不改写共享的启动选择：A 选另一方案后，B RELOAD 原方案，新实例仍应启动到 A 所选方案。写入失败不得静默丢弃当前编辑，标题 * 与 **RETRY SAVE** 表明仍未保存。
@@ -1637,16 +1613,15 @@
 - 启动时方案库被另一实例短暂占用，出现 **RETRY LOAD**：释放占用后点击可恢复；不能只提示 Retry 却无入口。启动时记住的文件损坏，应使用其他可读方案。
 - 不可用方案行显示 **UNAVAILABLE** 和独立的 **DELETE** → **DELETE?**，无需将其载入即可删除；标题 AVAILABLE 数量只计算可读方案，最后一套可读方案仍不可删除。若当前正在使用的方案文件被外部损坏，先 COPY 保留内存中的配置，再删除不可用文件；若文件已被修复，旧的删除确认不得删除它。
 - 本项不要求延音踏板硬件测试，也不新增踏板功能。
-- 注：T15.13 起 CHANNEL / TRANSPOSE / VELOCITY / SPLIT 改为全局设置，切换方案时不再变化；上面 COPY / 切换中"四项设置随方案恢复"的检查以 T15.13 为准。
 
 **T15.13 演奏中切换 MIDI 方案（键盘区三角、切换键、全局设置）** ✅ (#148，App 与 Ableton 插件)
-- 准备：用本 PR 的 CI 构建物。MPK 切到测试用户预设（见下方"MIDI 待办"）。至少建 3 套方案，名字按想要的顺序起，例如 `A Pads`、`B Knobs`、`C Drones`（排序按名字、不分大小写）。每套里 Learn 几个不同的绑定，方便听出 / 看出是哪一套。
+- 准备：MPK 切到测试用户预设（见下方"MIDI 待办"）。至少建 3 套方案，名字按想要的顺序起，例如 `A Pads`、`B Knobs`、`C Drones`（排序按名字、不分大小写）。每套里 Learn 几个不同的绑定，方便听出 / 看出是哪一套。
 - **显示屏**：键盘区显示屏变成两行：上行 OCT +0，下行是当前方案名。屏下的月亮变小、下移，和显示屏、触摸板、底部螺丝之间都留有空隙，不重叠。把一套方案改名为很长的名字（例如 `Very long performance profile name`）：名字在第二行里慢慢向左滑到结尾，停一下再滑回来，循环；短名字居中不动。
 - **背光高亮**：按 Z / X 换八度，或换方案：显示屏整块变亮，最后一次变化后保持约 3 秒，再慢慢回到平常亮度；3 秒内连续按，每按一次重新计 3 秒。点效果器卡带槽换卡带、扳 L / R 的 1-2-3 开关：卡带槽的小屏同样变亮 3 秒。
 - **鼠标切换**：鼠标移到第 3 块触摸板下的三角上，三角内部微亮并提示 `PREVIOUS MIDI PROFILE  [`；右边的是 `NEXT MIDI PROFILE  ]`。点右三角：三角闪白一下，第二行变成下一套方案名，屏幕变亮；用 MPK 转一个旋钮，控制的是新方案里的目标。连点到最后一套后再点，回到第一套（循环）；左三角反方向。
 - **电脑键盘**：`]` = 下一套，`[` = 上一套，效果同点三角（三角也会闪）。MIDI 设置打开时这两个键不切换。
 - **切换不改启动方案**：在 PROFILE 列表里选 `A Pads`，关闭面板，用三角切到 `C Drones`，退出 App 再启动：启动后应是 `A Pads`（列表里手动选的才算启动方案）。
-- **绑定切换键**：打开 MIDI 设置。左侧标题 **GLOBAL MIDI SETTINGS** 下是四项设置，旁边 **PROFILE SWITCH KEYS** 里有两个立体小三角 PREV / NEXT，下面都写 NOT SET。点 **+ LEARN A CONTROL**，两个三角变成青色；点 NEXT，再按 MPK 的一个打击垫：NEXT 下面显示 `NOTE xx` / `CH 10`。关闭设置，按这个打击垫：切到下一套方案，键盘区右三角闪一下；打击垫不会弹出音符，也不会触发它在方案里原来的功能。只绑 NEXT、不绑 PREV 也能用（只能往一个方向切）。
+- **绑定切换键**：打开 MIDI 设置的 BINDINGS 页签。INPUTS 右边的 **PROFILE SWITCH KEYS** 卡片里有两个立体小三角 PREV / NEXT，下面都写 NOT SET。点 **+ LEARN A CONTROL**，两个三角变成青色；点 NEXT，再按 MPK 的一个打击垫：NEXT 下面显示 `NOTE xx` / `CH 10`。关闭设置，按这个打击垫：切到下一套方案，键盘区右三角闪一下；打击垫不会弹出音符，也不会触发它在方案里原来的功能。只绑 NEXT、不绑 PREV 也能用（只能往一个方向切）。
 - **CC 按钮做切换键**：再 Learn PREV 到一个 CC 按钮（打击垫切成 CC#，或旋钮下的按钮，Toggle = Off）：按一下切一次，按住不连续切。
 - **设置打开时不切换**：MIDI 设置打开时按切换键：方案不变（标题的 PROFILE 名不变），也不弹音符。关掉设置再按，正常切换。
 - **以后绑的为准**：
@@ -1655,23 +1630,23 @@
   3. 把 PREV 的 P 在方案里 Learn 到 BLEND：PREV 变回 NOT SET，P 控制 BLEND。
   4. 给 PREV 换另一个键 Q：PREV 只显示 Q，P 不再切换。
 - **其他方案也绑了这个键**：先在 `B Knobs` 里把旋钮按钮 K Learn 到 FILTER FREQ，切到 `A Pads`，Learn NEXT 时按 K：右侧表格换成提示 "This key is also bound in other profiles:"，下面列出 `B Knobs: VCF / FREQ L`。点 **CANCEL**（或 Esc）：什么都不变，NEXT 保持原样。再做一次点 **BIND**：K 成为 NEXT。切到 `B Knobs`、打开设置：K → FREQ 那一行还在，但变灰，MODE 列写 `SWITCH KEY`；按 K 是切方案而不是动 FREQ。在 `B Knobs` 里把 K 重新 Learn 到 FREQ：NEXT 变回 NOT SET，那一行恢复正常颜色。
-- **全局设置**：把 TRANSPOSE 设为 +12、SPLIT 设为 D4，切换方案：四项设置不变，弹奏音高一直高八度。退出重启后仍是 +12 / D4。旧版本留下的方案第一次打开新版本时，四项设置取自当时的启动方案。
+- **设置不随方案变**：DEVICES 里把 MPK 的 TRANSPOSE 设为 +12、SPLIT 设为 D4，切换方案：设置不变，弹奏一直高八度。退出重启后仍是 +12 / D4。
 - **按着音切换**：按住 MPK 的一个琴键，用切换键或三角换方案，松开琴键：不挂音。光敏头打击垫按住时切换，松开后手离开（同 T15.12）。
 - **插件**：在 Ableton 里打开 VST3 / AU：键盘区显示屏、三角、`[ ]` 和切换键行为同 App；和 App 共用同一个 global.bin（App 里设好的切换键，插件重新打开 MIDI 设置或重新加载后可见）。
 
 **T15.14 App 与 Ableton 插件共用切换键；插件不看通道** ✅ (#150，App 与 Ableton 插件)
-- 准备：用本 PR 的 CI 构建物。独立 App 开着，Ableton 里一条 MIDI 轨道加载 Lunar 24 VST3，轨道接收 MPK。
+- 准备：独立 App 开着，Ableton 里一条 MIDI 轨道加载 Lunar 24 VST3，轨道接收 MPK。
 - 在独立 App 的 MIDI 设置里把 pad4 Learn 到 NEXT（显示 `NOTE 39` / `CH 10`），关闭设置。
 - 不用重新加载插件：一秒内，Ableton 插件的 MIDI 设置里就能看到同样的 NEXT 绑定（已打开的面板会自动刷新）。
 - 关闭插件的 MIDI 设置，在 Ableton 里敲 pad4：插件切到下一套方案，不发出音符（Ableton 把它改成第 1 通道送来，插件不看通道）。
 - 反过来，在插件里 Learn PREV 到 pad1：显示 `NOTE xx` / `ANY CH`。一秒内独立 App 里也能看到；在独立 App 里敲 pad1 切到上一套。
-- 插件的 MIDI 设置里第一项显示 `CHANNEL (APP)`：把它设成 10，Ableton 里琴键仍然能弹（插件忽略这一项）；独立 App 里只收第 10 通道（琴键不出声、打击垫可用）。测完改回 ANY。
+- 插件 DEVICES 只有 **DAW track** 一行，CHANNEL 显示 **DAW**、点不动（通道由轨道决定）；它的 TRANSPOSE 等是插件自己的一份，不影响独立 App 里的设备。
 - 已知限制：插件里打击垫和琴键音符号相同时是同一个键，例如 NEXT 绑 pad4（D#2）时，在 Ableton 里弹琴键 D#2 也会切换。这不只限于切换键：任何绑定都一样（DRONE 开关、面板开关、光敏头等），绑定过的打击垫音符号在琴键上会触发绑定、弹不出音。
 - 通用规则：凡是要绑定的打击垫，音符号都要放在琴键弹奏范围之外，并把八度移调也算进去（例如在 MPK 的用户预设里给打击垫设很高的音符号）；或者把打击垫改成 CC 模式（SHIFT + 3 号垫，见下方"MIDI 待办"），CC 不会和琴键冲突。
 - 不想改打击垫音符号时，见 T15.15：在 Live 里把打击垫单独走第 10 通道送进插件。
 
 **T15.15 Live 里打击垫走第 10 通道，和琴键分开** ✅ (#152，VST3 与 AU)
-- 准备：用本 PR 的 CI 构建物。独立 App 里 NEXT 绑在 pad4（`NOTE 39` / `CH 10`）。MPK 不调八度。Ableton 新建 Live Set。
+- 准备：独立 App 里 NEXT 绑在 pad4（`NOTE 39` / `CH 10`）。MPK 不调八度。Ableton 新建 Live Set。
 - 1 号 MIDI 轨道加载 Lunar 24 **VST3**：MIDI From 选 `MPK mini IV (MIDI Port)`、通道 **Ch. 1**、Monitor **In**。
 - 2 号 MIDI 轨道（空轨道，不放插件）：MIDI From 选 `MPK mini IV (MIDI Port)`、通道 **Ch. 10**、Monitor **In**；MIDI To 选 `1-Lunar 24`，下面第二个下拉框应列出 `1-Lunar 24` … `16-Lunar 24`（以前 VST3 只有 `Track In` 和 `1-Lunar 24`），选 **`10-Lunar 24`**。
 - 敲 pad4：切到下一套方案，不发声；日志是 `bound pad ch=10 note=39`。
@@ -1682,6 +1657,18 @@
 - 注意：以前在插件里学的打击垫绑定（或 Live 还把打击垫改成第 1 通道时学的）显示 `ANY CH`，它不会变成只认第 10 通道，同音符号的琴键仍会触发它。打击垫改走第 10 通道后，把这类绑定重新学一次（显示 `CH 10`）。
 - 回退检查：把 2 号轨道 MIDI To 的第二个下拉框改回 `Track In`，**重新加载插件**（或重开 Live Set）：pad4 仍能切换（又回到第 1 通道、插件不看通道）。
 - AU 版重复上面几步（Live 的 AU 版本来就有 1–16 通道选项），结果相同。
+
+**T15.16 打击垫压力（Aftertouch）控制颤音和 PRESSURE 输出** ⏳
+- 准备：MPK 用测试预设（Aft = Chan）。在 BINDINGS 里找一个没有绑定的打击垫（下面叫"测试垫"）。RESET PANEL；DRONE VOICES 全关；BLEND 最左。键盘菜单 EXPRESSION 页：VIBRATO 的 **DEPTH** 约 1/4、**RATE** 放中间、**PRESSURE** 拉满。
+- 步骤：
+  1. 轻轻按住测试垫不放（会弹出一个低音），保持约 2 秒；再慢慢加大压力按到底；再慢慢放轻，松开。
+  2. VIBRATO 的 **PRESSURE** 拉到最小，重复第 1 步。
+  3. VIBRATO 的 **DEPTH** 回最小。接线：键盘右侧插孔组的 **PRESSURE** 输出 → VCO A 的 **cv**，**cv amt** 约 1/4；EXPRESSION 页 PRESSURE OUTPUT = **PRESSURE**，RISE / FALL 最小。重复第 1 步。
+- 期望：
+  - 第 1 步：轻按时颤音浅，越用力越深，放轻又变浅（按下那一刻的深浅由力度决定）。
+  - 第 2 步：颤音深浅不随压力变化。
+  - 第 3 步：用力时音高升高，放轻时回落，松开后不留残音。
+- 说明：MPK 的琴键不发 aftertouch，只有打击垫发。绑定到光敏头的打击垫，压力改为控制光敏头，不进键盘（见 T15.11）。
 
 ### 16. 录音（REC）
 
@@ -1734,9 +1721,9 @@
 4. 期望：浏览器的 Plug-Ins 里出现 **Lunar24**，下面有 **Lunar 24**（VST3 一个、AU 一个）。
 - 更新插件时重复第 1、2 步，然后重启 Ableton。
 
-**安装（Windows）**：下载 **Lunar24-Plugins-Windows**，解开得到 `Lunar24.vst3` 文件夹，整个复制到 `C:\Program Files\Common Files\VST3\`，在 Ableton 里 Rescan。
+**安装（Windows）**：下载 **Lunar24-Plugins-Windows**，解开得到 `Lunar24.vst3` 文件夹，整个复制到 `C:\Program Files\Common Files\VST3\`。Ableton Live → Settings → Plug-Ins 打开 **Use VST3 Plug-in System Folders**，点 **Rescan**。Windows 只有 VST3，没有 AU。
 
-下面的测试用 **VST3** 走一遍。AU 用同一套再走一遍（T17.10）。
+下面的测试用 **VST3** 走一遍。AU 用同一套再走一遍（T17.10）。Windows 上用 VST3 走 T17.1–T17.9、T17.11。
 
 **T17.1 载入、弹奏、面板** ✅（2026-10-08：MIDI 面板有明确的版本号；REC 点击无反应，和设计一致）
 - 步骤：
@@ -1806,7 +1793,7 @@
 - 结果：和 VST3 一致，没有问题。VST3 和 AU 编的是同一份插件代码，见 PLUGIN_PLAN。
 
 **T17.11 插件里不卡音、光敏头的手会抬起** ✅ (#153，VST3 与 AU；Live 停走带时自己补发 note-off，手是由 note-off 抬起的，DAW 复位那条路由单元测试覆盖)
-- 准备：用本 PR 的 CI 构建物。Ableton 一条 MIDI 轨道加载 Lunar 24（VST3），打开插件窗口。在插件的 MIDI 设置里点 **LEARN**，点 DRONE 1 的大白圆（光敏头），敲一下一个打击垫：列表多一行，目标是 **DRONE 1 PHOTO**（同 T15.11）。关闭 MIDI 设置。
+- 准备：Ableton 一条 MIDI 轨道加载 Lunar 24（VST3），打开插件窗口。在插件的 MIDI 设置里点 **LEARN**，点 DRONE 1 的大白圆（光敏头），敲一下一个打击垫：列表多一行，目标是 **DRONE 1 PHOTO**（同 T15.11）。关闭 MIDI 设置。
 - 电脑键盘：点一下插件面板，按住电脑键盘的 A 键（发声）不放，用鼠标点一下 Live 的编曲区或另一个程序，再松开 A：声音在切走后约一秒内停下，不会一直响。日志有 `keyboard focus lost: released 1 computer key(s)`。
 - 关窗：再点插件面板，按住 A 不放，用另一只手关掉插件窗口，再松开 A：声音停下。日志有 `window closed: released 1 computer key(s)`。
 - 光敏头：打开 DRONE 1，按住光敏头打击垫（DRONE 1 被"手"遮住、声音变化），按着的时候按空格停走带（或点 Live 的停止），然后松开打击垫：DRONE 1 恢复成没被遮的声音，不会一直被遮住。
@@ -1818,7 +1805,7 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 - Mac：`~/Library/Application Support/Lunar24/logs/`（Finder 里按 ⇧⌘G 粘贴这个路径）
 - Windows：`%LOCALAPPDATA%\Lunar24\logs\`（资源管理器地址栏粘贴）
 
-每次运行一个文件，名字是「种类-日期-时间-p进程号-段号.log」，例如 `app-20261011-155440-p4242-001.log`；插件是 `vst3-…`、`au-…`（同一个 DAW 进程里的几个插件实例写同一个文件，行里用 `#1`、`#2` 区分）。一个文件写满 2 MiB 就接着写 `-002.log`；所有日志合计超过 64 MiB 时自动删最旧的。每个文件开头都有版本、构建号、commit 和当前日志设置；正常退出时最后一行是 `session end`，下次启动会在开头写上一次有没有正常结束（崩溃、强退、断电时没有这一行）。旧版的 `audio.log` 在第一次启动时删掉。
+每次运行一个文件，名字是「种类-日期-时间-p进程号-段号.log」，例如 `app-20261011-155440-p4242-001.log`；插件是 `vst3-…`、`au-…`（同一个 DAW 进程里的几个插件实例写同一个文件，行里用 `#1`、`#2` 区分）。一个文件写满 2 MiB 就接着写 `-002.log`；所有日志合计超过 64 MiB 时自动删最旧的。每个文件开头都有版本、构建号、commit 和当前日志设置；正常退出时最后一行是 `session end`，下次启动会在开头写上一次有没有正常结束（崩溃、强退、断电时没有这一行）。
 
 每行的格式：`时间  启动后秒数  级别  类别  内容`。级别：E 错误、W 警告（丢了东西或出了问题）、I 信息、D 细节、T 更细（默认不记）。类别：`app`（启动、退出、MARK）、`audio`（设备、开始有声 / 变安静、爆音）、`midi`（每个 MIDI 音符、踏板、时钟、设备插拔）、`ui`（电脑键盘、鼠标弹的音，接线、DRONE VOICES）、`state`（快照、旋钮变化、存盘）、`engine`（引擎丢事件）、`rec`（录音）、`log`（日志自身）。
 
@@ -1828,7 +1815,9 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 
 **MARK（按 M）**：听到问题的那一刻按电脑键盘 **M**，日志里出现 `MARK 1 (key M)` 和一份完整快照（所有旋钮、接线、DRONE VOICES、引擎还按着几个键盘音、电脑键盘 / 鼠标 / MIDI 当前按着什么、输出有没有声）。不会改变声音。
 
-**T18.1 日志文件与 MARK** ⏳
+T18.1–T18.3 不单独测：平时演奏遇到问题按 M 发日志时顺带核对，对上了就在该条记 ✅ 和日期。
+
+**T18.1 日志文件与 MARK** ⏳（随日常使用检查）
 - 步骤：
   1. 打开 App，弹几下电脑键盘 A、S，鼠标点一下琴键，接一根线再拔掉，打开再关上 DRONE VOICES 1，拧一下 VCO A 的 **tune**。
   2. 按 **M**。
@@ -1841,7 +1830,7 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
   - 有 `MARK 1 (key M)`，紧接着一份 `snapshot begin reason=MARK 1` … `snapshot end`。
   - 最后一行是 `session end (clean shutdown)`。再开一次 App，新文件开头有 `previous app session ended cleanly`。
 
-**T18.2 卡音现场（停不下来的声音）** ⏳
+**T18.2 卡音现场（停不下来的声音）** ⏳（随日常使用检查）
 - 步骤：
   1. 照你平常复杂的弹法弹，接线、开 drone、用 MPK 和电脑键盘。
   2. 一旦出现「关掉 DRONE VOICES、拔掉线后声音还在」，立刻按 **M**，再按住不动观察几秒，再按一次 **M**。
@@ -1854,25 +1843,26 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
   - `output sounding` / `output silent` 的时间和你的操作对得上；`W` 开头的行说明丢过事件。
   - RESET 时有 `snapshot begin reason=before RESET PANEL`。
 
-**T18.3 插件日志（Ableton）** ⏳
+**T18.3 插件日志（Ableton）** ⏳（随日常使用检查）
 - 步骤：在 Ableton 里放两个 Lunar 24（VST3），各弹几个音（MPK），按一次 M（插件窗口在前），关闭 Ableton。
 - 期望：logs 里有 `vst3-…` 文件；行里有 `#1`、`#2`；有 `DAW: Ableton Live …`、`midi   #1 note-on ch=1 …`；最后是 `session end`。
 
-**T18.4 Windows 中文用户名** ⏳
+**T18.4 Windows 中文用户名** ⏳（随 Windows 一批测）
 - 步骤：Windows 版（用户名含中文时最有意义）打开 App 弹几下，退出。
 - 期望：`%LOCALAPPDATA%\Lunar24\logs\` 下有新文件，内容和 Mac 一样。
 
 ## 还没测的（⏳）
 
-- T4.4：按着电脑键盘切走窗口、按 Shift、打开 Preferences 时音不卡住。
-- T0.7：打开应用和 RESET 时只有提示音、drone 不出声；插拔耳机时关着的 drone 不冒声。
-- 第 18 节诊断日志：T18.1–T18.4。
+2026-10-14 在 main 上通过：T0.7、T0.11、T4.4、T8.8、T14.3、T14.6、T15.1。
 
-- ~~第 17 节插件的 Windows VST3：随 Windows 版一起测。~~ 不做了（2026-10-08）：业主没有 Windows 电脑，不在 Windows 的 Ableton 里测。CI 仍编出 Windows VST3，并用 validator 检查它能否被宿主加载。Mac 上 VST3 和 AU 的 T17.1–T17.10 已通过。
-- Windows 版（owner 另行安排）：用 Actions 的 Lunar24-Windows 包，挑 T0.1–T0.5、T0.1W、T4.1、T8.7、T12.18 走一遍。窗口与 DPI/文字的具体检查见 T0.1W。
-- T8.8：高采样率、小缓冲下切卡带不掉音（独立 App / VST3 / AU，96 / 192 kHz、64 样本；记录实际支持的配置）。
-- MIDI：pad Aftertouch → PRESSURE / VIBRATO PRESSURE（MPK 琴键只有力度，pad 可设 Chan / Poly Aftertouch）。
-- 声卡第 3 / 4 声道的 DRY 输出（需要 4 个以上输出的声卡）：DRY 本身的声音随 T16.1 的录音检查。
+- **等第二台 MIDI 设备**（M-VAVE SMC-Mixer，1–2 天到；DAW 模式下按钮发音符，CC 模式下推子发 CC）：T14.8 第 2 步、T14.9 第 1 步、T14.10、T14.11 第 4 步。插上后它在 DEVICES 里默认 OFF，先点 ON。
+- **两台同型号设备**：T14.14 的同名端口情况（暂无设备）。
+- **Windows（owner 在一台 Windows 电脑上一次测完）**：Actions 的 Lunar24-Windows 和 Lunar24-Plugins-Windows。
+  - App：T0.1–T0.5、T0.1W、T4.1、T4.4、T8.7、T12.18、T14.2、T14.6、T14.12、T16.1、T18.4（用户名含中文时最有意义）。
+  - 插件：Ableton Live for Windows 里用 VST3 走 T17.1–T17.9、T17.11。2026-10-08 "不在 Windows 的 Ableton 里测"的决定已撤销。
+- **诊断日志 T18.1–T18.3**：不单独测，随日常演奏检查（见第 18 节）。
+- **MIDI 压力**：T15.16（新写，MPK 测试预设 Aft = Chan）。
+- **DRY 第 3 / 4 声道**：条件不具备，暂不测。业主的 Mac 只有 2 声道输出，BlackHole 2ch 也开不了 4 个声道；装 BlackHole 16ch 就能测（输出 3 / 4 = DRY A / B，用多声道录音软件录）。DRY 本身的声音已随 T16.1 确认。
 
 ## TODO
 
@@ -1880,22 +1870,17 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 
 | 项目 | 现状与下一步 |
 |---|---|
-| #1 / #2：设备发现和默认选择 | 运行中插拔会被检测（每秒一次，T14.6）：ON 的设备插回自动连上，拔掉自动断开（保持 ON，显示 NOT CONNECTED）。新设备默认 OFF；只有从来没设置过时（第一次用），插上的第一个设备会自动 ON。最多同时 ON 4 个（T14.12）。 |
-| #3 / #6 / #15：交互提示 | ABS 旋钮等待接管时没有提示；CHANNEL 会过滤 Learn 的输入且没有提示，Learn 前先确认 CHANNEL = ANY。（MIDI 弹奏点亮触摸板已做，T15.8。）RESET PANEL 保留 MIDI 配置，见 DECISIONS。 |
+| #3 / #6 / #15：交互提示 | ABS 旋钮等待接管时没有提示。设备在 DEVICES 里的 CHANNEL 会过滤 Learn 的输入，也没有提示：Learn 前先确认它是 ANY。RESET PANEL 不动 MIDI 设置，见 DECISIONS。 |
 | #9：R = 0、BLEND 最小时仍有尾音 | 尚未定位，不直接归因于混响。按下面的隔离准备复测并记录持续时间。 |
 
-- **MPK MINI IV 的预设与端口（据 MPK mini IV User Guide v1.2，手册由 owner 按需上传，不进仓库）**：
-  - PLUGIN/DAW 键在两种"厂商预设"之间切换：Plugin 模式（配 AKAI 自带软件）和 DAW 模式（配一般 DAW）。owner 实测：白灯时 Lunar 24 能收到，按成红灯后收不到。
-  - 第三种是 **User Presets**（用户预设）：按住 SHIFT 再按 PLUGIN/DAW，旋转屏幕下的大旋钮选择，按下旋钮载入。只有用户预设下才能：把打击垫切成 CC#（SHIFT + 3 号垫；SHIFT + 4 号垫回音符）、改打击垫 / 旋钮发的号码（SHIFT + OCT− 进 Program Edit）、改全局设置（SHIFT + LOOP 进 Global Menu，按 PLUGIN/DAW 退出）。
-  - 琴键、打击垫、旋钮、弯音 / 调制轮的演奏数据都从 **MPK Mini IV MIDI Port** 发出（所有预设都是）；另外几个端口（DAW / Plugin / Software Control / Din）发的是给软件脚本的按钮和屏幕控制，Lunar 24 不需要。DEVICES 里只开 MIDI Port。
-  - 全局设置里和我们有关的：**Toggle**（打击垫"瞬时 / 切换"，测 TOGGLE 绑定时应为 Off）、**KnobM**（8 个旋钮一起设 Abs / Rel，测 REL 用；Program Edit 里也能单个设）、**Aft**（打击垫按压后发 Chan / Poly aftertouch，或 Off）、**MidiCh / PadCh**（琴键和打击垫的通道，打击垫默认通道 10，所以 Learn 出来是 CH 10）。
-  - **测试用预设**（owner 已建）：一个用户预设，全局设置 Toggle = Off、KnobM = Rel（无限旋钮不用对刻度，Learn 自动识别为 REL 2）、Aft = Chan、FullVel = Off，MidiCh / PadCh 保持默认（琴键 1、打击垫 10）。以后 MIDI 测试都先切到这个预设；Lunar 24 的 MIDI 设置 CHANNEL 保持 ANY。
-  - 实测：用户预设下打击垫切成 CC# 后，学到的是 `CC 36 / CH 1`（CC 走通道 1，不是打击垫音符用的通道 10）。
-  - 手册没写 Rel 模式用哪种相对编码；实测是 **REL 2**（顺时针发 1、逆时针发 127）。REL 1 在最大最小之间跳，REL 3 逆时针跳到最小。Learn 后会自动识别并改成 REL 2（T15.3）。
-  - 手册只写了 MPK 的琶音器能**接收**外部时钟（Clock = Ext），没写它会往外发 MIDI 时钟；用 MPK 驱动 Lunar 24 的琶音 / 音序器时钟可能不行，需要实测或用 DAW 发时钟。
-- **Preferences 的 OK / Apply / Cancel（#12 / #13）**：音频设置（设备、采样率、缓冲、声道）没变时，OK / Apply / Cancel 都不重开音频，琶音和按住的音不受影响（T14.5）；音频设置变了时会重开音频，这时琶音停下是正常的。MIDI 设备不在 Preferences 里了（DEVICES 页签，立即生效）。
-- **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A，其它九路 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；滤波器等下游处理可有短暂衰减，不要求逐采样立即归零。若仍有长尾，保留接线和设置截图、录音再定位。默认同时开启的 VCO B 或直送 PREAMP 的振荡源不能用于此项隔离。
-- **MUTE 尾音（#11）**：MUTE 只淡出输出，不停止演奏或效果处理；解除时能听到静音期间音符的剩余尾音，属于既定行为，见 DECISIONS。
+- **MPK mini IV**（据 User Guide v1.2；手册不进仓库）：
+  - PLUGIN/DAW 键切换两种厂商预设；白灯时 Lunar 24 能收到，红灯时收不到。SHIFT + PLUGIN/DAW 进 **User Presets**（大旋钮选、按下载入）。只有用户预设能：打击垫切 CC#（SHIFT + 3 号垫；SHIFT + 4 号垫回音符）、改号码（SHIFT + OCT− 进 Program Edit）、改全局设置（SHIFT + LOOP，按 PLUGIN/DAW 退出）。
+  - 演奏数据都从 **MPK Mini IV MIDI Port** 发出；DAW / Plugin / Software Control / Din 端口是给 DAW 脚本的，DEVICES 里只开 MIDI Port。
+  - **测试用预设**（owner 已建）：Toggle = Off、KnobM = Rel、Aft = Chan、FullVel = Off，MidiCh / PadCh 默认（琴键 1、打击垫 10，所以打击垫学出来是 CH 10；切成 CC# 后是 `CC 36 / CH 1`）。MIDI 测试都先切到它；DEVICES 里 MPK 的 CHANNEL 保持 ANY。
+  - Rel 旋钮实测是 **REL 2**（顺时针 1、逆时针 127），Learn 后自动识别（T15.3）。
+- **M-VAVE SMC-Mixer**（第二台设备，即将到）：DAW 模式下按钮发音符，CC 模式下推子发 CC；用于 T14.8–T14.11 的待测步骤。
+- **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A（VCO B 也拖到最小），其它 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；允许短暂衰减。若仍有长尾，保留接线和设置截图、录音再定位。
+- **MUTE（#11）**：MUTE 只淡出输出，解除后能听到静音期间的尾音，属既定行为（DECISIONS）。
 
 ### 调音待办（测试中记下的听感问题，留给 STATUS 的调音一步；括号内是当前值）
 
@@ -1911,4 +1896,5 @@ App 和插件都把日志写进设置文件夹下的 **logs** 文件夹：
 
 - MacBook 麦克风是单声道，Preferences 里 Input 1 (L) / Input 2 (R) 显示为空（iPlug2 设置窗口的显示问题），麦克风其实是开的。
 - AirPods 的麦克风只有通话音质（24000 Hz），48000 Hz 打不开；戴 AirPods 时请用「MacBook 麦克风 + AirPods 输出」。选了打不开的输入时，程序只开输出，并弹窗「Audio input is off」（每个设备每次运行只提示一次）。
+- 插拔与当前音频无关的设备（iPad、虚拟声卡）不再重开音频（T0.3a）。音频回调停了 1 秒以上会自动重开（日志 `audio stalled: … reopening`）；连续 3 次仍停就放弃（`audio keeps stalling`），这时去 Preferences 换设备。
 - 设备打开记录（设备名、声道、采样率、成功或失败）和爆音（xrun）在日志的 `audio` 行里，见第 18 节。

@@ -25,10 +25,18 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-VST3 needs the SDK at `third_party/iPlug2/Dependencies/IPlug/VST3_SDK`
-(CI uses tag `v3.8.1_build_84`). Without it, the app still builds, and on macOS so does the AU.
+VST3 needs the Steinberg SDK inside the iPlug2 submodule. CI fetches it like this:
 
-CI attaches the app and plugins to each run. Clear quarantine on a downloaded
-Mac build once: `xattr -cr Lunar24.app`.
+```sh
+cd third_party/iPlug2/Dependencies/IPlug
+rm -rf VST3_SDK
+git clone --quiet --depth 1 --branch v3.8.1_build_84 https://github.com/steinbergmedia/vst3sdk.git VST3_SDK
+git -C VST3_SDK submodule update --quiet --init --depth 1 base pluginterfaces public.sdk cmake
+```
+
+Without it the app still builds, and on macOS so does the AU.
+
+CI attaches the app and plugins to each run. Clear quarantine on a downloaded Mac build
+once: `xattr -cr Lunar24.app` (plugins: `xattr -dr com.apple.quarantine <plugin folder>`).
 
 Progress and how to play: [`design/STATUS.md`](design/STATUS.md).
