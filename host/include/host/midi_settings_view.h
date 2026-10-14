@@ -31,7 +31,7 @@ inline constexpr const char* kTabLabels[kTabCount] = {"BINDINGS", "DEVICES", "PR
 inline constexpr Box kInputsList{434, 1204, 790, 1360};
 inline constexpr Box inputLine(int i) { return {434, 1208.f + i * 38, 790, 1242.f + i * 38}; }
 // The bindings / profiles table (x 1020..1966) leaves room on its left for the PROFILE
-// SWITCH KEYS card (x 812..984); the GLOBAL MIDI SETTINGS heading spans the settings and it.
+// SWITCH KEYS card (x 812..984).
 inline constexpr float kTableL = 1020;
 inline constexpr Box profileRow(int row) { return {kTableL, 1205.f + row * 50, 1966, 1253.f + row * 50}; }
 inline constexpr Box profileAction(int i) { return {832.f + i * 168, 1436, 988.f + i * 168, 1472}; }
