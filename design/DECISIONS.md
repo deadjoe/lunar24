@@ -6,28 +6,26 @@ Keep these unless a listening test or a real bug says otherwise.
   under plates 3 and 10 step to the previous / next profile in name order (case ignored),
   wrapping; rename profiles to set the order. Also `[` / `]` and one hardware key per triangle
   (PROFILE SWITCH KEYS in the MIDI panel; one triangle may stay unset). Stepping saves pending
-  edits and never changes the startup choice (`selected.txt`); picking in the PROFILE list does.
+  edits and never changes the startup choice (`selected.txt`); picking in the PROFILES tab does.
   While the MIDI panel is open switch keys do nothing (still swallowed, never played).
-  **GLOBAL MIDI SETTINGS** = CHANNEL / TRANSPOSE / VELOCITY / SPLIT + the switch keys, in
-  `midi-profiles/global.bin`, the same in every profile (seeded once from the profile that was
-  current; profile files keep their old settings block, unread). Only these are global; MUTE
-  and everything else stay per profile. One key, one meaning, the later bind wins: Learn into
-  a profile frees that key from a triangle; a switch key leaves the other triangle and the
-  current profile. Rows other profiles hold on a switch key stay but are outranked (greyed,
-  MODE "SWITCH KEY"); before binding such a key the panel names those profiles and asks
-  BIND / CANCEL. The keyboard display has a second line with the profile name (slides when
-  too long), and every LCD (keyboard display, cartridge slot) lights up for 3 s after any
-  change. global.bin keeps rig settings per input device (one "all devices" record today)
-  so several controllers can later get their own. A key with no device or ANY channel (a
-  plugin learns no device) is the same key as any key it would match (`midi_keys_overlap`).
-  Every global change rereads global.bin under the library lock and changes only its own
-  field, so the app and plugins never overwrite each other's global settings; an unreadable
-  global.bin is left alone until the next deliberate change. Each instance checks
-  global.bin about once a second and adopts another instance's change at once.
+  The two switch keys are global (`midi-profiles/global.bin`, the same in every profile), as
+  are each input's CHANNEL / TRANSPOSE / VELOCITY / SPLIT (see "Several MIDI inputs");
+  profile files keep an old settings block, unread. Everything else, MUTE included, stays per
+  profile. One key, one meaning, the later bind wins: Learn into a profile frees that key from
+  a triangle; a switch key leaves the other triangle and the current profile. Rows other
+  profiles hold on a switch key stay but are outranked (greyed, MODE "SWITCH KEY"); before
+  binding such a key the panel names those profiles and asks BIND / CANCEL. A key with no
+  device or ANY channel (a plugin learns no device) is the same key as any key it would match
+  (`midi_keys_overlap`). The keyboard display's second line names the profile (slides when too
+  long), and every LCD lights up for 3 s after any change. Every global change rereads
+  global.bin under the library lock and changes only its own field, so instances never
+  overwrite each other; an unreadable global.bin is left alone until the next deliberate
+  change. Each instance checks it about once a second (`MidiMapStore::reloadGlobalIfChanged`)
+  and adopts another instance's change at once.
 - **MIDI channels in the plugins** (owner, 2026-10-12): a DAW may rewrite channels (Ableton
   Live hands every note to a plugin on channel 1), so a plugin matches bindings on any
   channel (a row on the message's own channel ranks first), learns keys as ANY channel, and
-  ignores CHANNEL (shown "CHANNEL (APP)"; the track's MIDI input picks the channel). The app
+  ignores CHANNEL (DEVICES shows "DAW"; the track's MIDI input picks the channel). The app
   still tells channels apart. Cost: in a plugin a pad and a key with the same note number are
   one key, for every binding (switch keys, drone keys, switches, photo sensors), so a bound
   pad also fires from that key and a played key on a bound note does not play. Rule for any
@@ -45,13 +43,13 @@ Keep these unless a listening test or a real bug says otherwise.
   as ANY. An ANY-channel row never becomes channel-only, so a pad bound as `ANY CH` (learned
   in a plugin while Live sent it on channel 1) must be learned again after routing the pads
   to channel 10. In the VST3 the 16 channels also make iPlug2 register its hidden MIDI CC
-  proxy parameters for each channel (16 × 130 = 2080 instead of 130; not automatable, IDs
-  from 65538, the instrument's own parameter IDs unchanged), so CCs, pitch bend and channel
-  pressure on channels 2–16 now reach the VST3 (before, the DAW dropped them).
-- **Named MIDI profiles** (owner, 2026-10-10; settings made global 2026-10-12, see above):
-  bindings form one controller setup. The app and plugins share `midi-profiles/`
-  in the settings folder; DAW projects do not contain profiles. Each instance switches
-  independently and refreshes the library when opening PROFILE. Edits auto-save; COPY
+  proxy parameters for each channel (not automatable, IDs from 65538; the instrument's own
+  parameter IDs are unchanged), so CCs, pitch bend and channel pressure on channels 2–16 now
+  reach the VST3 (before, the DAW dropped them).
+- **Named MIDI profiles** (owner, 2026-10-10; playing settings moved out of profiles
+  2026-10-12, see above): bindings form one controller setup. The app and plugins share
+  `midi-profiles/` in the settings folder; DAW projects do not contain profiles. Each instance
+  switches independently and refreshes the library when opening PROFILES. Edits auto-save; COPY
   preserves an alternate layout (or rescues edits after a conflicting save elsewhere).
   Confirmed RELOAD rereads only the current profile; failure keeps local edits and never
   switches profiles. It does not write selected.txt. Validation messages retain normal
@@ -61,8 +59,7 @@ Keep these unless a listening test or a real bug says otherwise.
   and a lock file that cannot be opened fails at once. Startup failures expose RETRY LOAD. Unavailable
   files have separate confirmed deletion, rechecked under the library lock.
   English names, 1–39 printable ASCII characters, no outer spaces, unique ignoring case.
-  NEW starts with no bindings and the current four settings; the first profile is Untitled
-  with ANY / 0 / LINEAR / C4. Clearing bindings keeps the profile and the built-in MIDI
+  NEW starts with no bindings; the first profile is Untitled. Clearing bindings keeps the profile and the built-in MIDI
   behaviour; at least one readable profile remains. Legacy `lunar24-midi-map.bin` is neither
   imported nor modified: this is an unreleased development app, and migration was declined.
   Switching stops Learn and its pending relative-mode observation; ordinary Learn still
@@ -76,7 +73,7 @@ Keep these unless a listening test or a real bug says otherwise.
   PANEL row picks one of ten faces, warm cream first. Only the panel fill and the REC / DRY
   cover patches follow it. Knob caps, jacks, silk, LEDs, the keybed, cables and the Mac
   case stay. The menu card stays cream so its black text stays readable on a red face.
-  The index is `lunar24-panel-face.txt` in the settings folder (with the MIDI map), so the
+  The index is `lunar24-panel-face.txt` in the settings folder (beside `midi-profiles/`), so the
   app and the plugins reopen on the last face. RESET PANEL and the sound presets do not
   change it.
 - **Panel = the official Solar 42N drawing.** Labels, frames and tabs are extracted by
@@ -109,14 +106,9 @@ Keep these unless a listening test or a real bug says otherwise.
   borderless one), so move / resize / full screen / shadow stay standard. Panel placement
   is `place_panel` (`window_layout.h`), shared by the case drawing and the resize code.
   In full screen the case shrinks to a thin rim (no screws) so the panel fills the screen.
-  Windows keeps a plain window, with a sizing border and a maximize button
-  (`host/resources/main.rc`). Dragging and maximizing keep the panel's shape, so the
-  dialog background does not show around the UI. A per-window subclass handles fractional
-  DPI changes, monitor-relative maximize and track limits that fit the current work area
-  (including title/menu/frame). Small/high-DPI screens can shrink below half design size.
-  There is no metal case.
-  The Windows exe declares PerMonitorV2 in its manifest before audio initialization,
-  rather than relying only on the unchecked DPI-awareness request later in WinMain.
+  Windows keeps a plain, resizable window with no metal case (sizing border, maximize;
+  `host/resources/main.rc`, `host/window_metrics_win.cpp`): dragging and maximizing keep the
+  panel's shape, and the exe declares PerMonitorV2 DPI awareness in its manifest.
 - **Version and build stamp** (owner, 2026-10-05): the version is the root `project()` VERSION
   (1.0.0), the only place to bump it; config.h, the Windows .rc and the Info.plist read it. Each
   build writes the CI run number, UTC time and commit to `build_info.h` (`host/build_info.cmake`),
@@ -128,12 +120,9 @@ Keep these unless a listening test or a real bug says otherwise.
   is an overlay opened by the red encoder; values are shown in the manual's units
   (`host/include/host/panel_format.h`). Count settings use steppers that stop at both ends
   (no wrap); presets A-D are picked directly. While open it covers the encoder, so CLOSE or
-  Esc closes it. Its footer holds RESET PANEL (two clicks): the reset swaps the power-on
-  default in place (`StandaloneAudioEngine::swapDeviceState`: a ~10 ms fade out, the new
-  machine installed, a fade back in; no audio reopen), through the same candidate path as a
-  startup restore, so it covers the stored machine state, not just knobs. Keyboard presets
-  A-D are kept (the player's saved work; INIT clears one), and MIDI bindings and CHANNEL /
-  TRANSPOSE / VELOCITY belong to the separate controller configuration and are not reset.
+  Esc closes it. Its footer holds RESET PANEL (two clicks within 4 s): a whole-machine swap
+  to the power-on default (see "Whole-machine swap"). Keyboard presets A-D, the panel face
+  and the MIDI setup (profiles, devices and their settings) are not reset.
 - **MUTE button** (right of DRONE VOICES, not on the hardware): an app-level output mute with a
   10 ms fade; the machine keeps running, nothing is saved, the app starts unmuted. This is
   not a panic / note reset: notes and effects continue while muted, so unmuting can reveal
@@ -193,15 +182,12 @@ Keep these unless a listening test or a real bug says otherwise.
   range per slow tick (about 5 cents of drone TUNE) and up to 4/512 when ticks come within
   40 ms (2/512 within 120 ms), so one encoder both fine-tunes and sweeps. Stepped switches
   keep one position per tick.
-- **Output headroom** (2026-10-04, sound round 1): the WET limiter used to be
-  `1.9 * tanh(x / 1.9)`, bending everything (1.5 dB at one drone, 3-4 dB with four drones
-  and a reverb). It is now a knee limiter (`fx::kneeLimit`): untouched up to 1.3 V (-3.7
-  dBFS), then a smooth bend to a 1.95 V ceiling. The classic drones were the hot source (five
-  generators summed, ~4 V): each voice's sum is scaled by 0.4 (`kClassicDroneLevel`), so one
-  drone sits about 5 dB above a VCO note instead of 8. The whole output is then raised
-  1.75x (`DualEffector::kOutputTrim`, owner: the first cut left the app too quiet on laptop
-  speakers): four drones with a reverb average -12 dBFS at MASTER noon and only their
-  loudest peaks (under 1 %) touch the knee.
+- **Output headroom** (2026-10-04, sound round 1): the WET knee limiter (`fx::kneeLimit`)
+  leaves the signal untouched up to 1.3 V (-3.7 dBFS), then bends smoothly to a 1.95 V
+  ceiling (a plain tanh bent everything by 1.5-4 dB). Each classic drone's five-generator sum
+  is scaled by 0.4 (`kClassicDroneLevel`), so one drone sits about 5 dB above a VCO note. The
+  output is raised 1.75x (`DualEffector::kOutputTrim`; owner: too quiet on laptop speakers);
+  only the loudest peaks of several drones with a reverb touch the knee.
 - **Filter character** (2026-10-04, sound round 2): the VCF was a clean linear SVF whose
   RESONANCE stopped short of oscillation (damping 2 -> 0.1, linear in the knob, so most of
   the action sat in the last third). It is now the same zero-delay SVF with saturating
@@ -214,16 +200,12 @@ Keep these unless a listening test or a real bug says otherwise.
   is about as loud as LP instead of 6 dB under, and a narrow one still rises above it.
   The nonlinearity is solved per sample by linearising each tanh at the previous sample
   (the "cheap zero-delay nonlinear filter" trick), so it stays one division per sample.
-- **Reverb density** (2026-10-04, sound round 3): the cartridge reverb was an 8-line FDN
-  with only the odd lines modulated. On a steady drone chord its sparse resonances made the
-  left and right reverbs (different line lengths) differ by 5 dB on average and up to 12 dB,
-  depending on the root, though they matched on noise. It is now 16 lines (31-101 ms x
-  1.35: about twice the total delay, so twice the resonance density, at the same loudness),
-  each line's length swinging by up to 2.7 ms at its own slow rate (0.15-0.4 Hz), so the
-  resonances keep drifting and the tail moves by a few cents. Space / Resonance reverb now
-  average ~1 dB apart, Shimmer ~2 dB (its octave feedback loop magnifies differences).
-  The two-tap pitch shifter still flutters at 1/window on pure tones; more taps were tried
-  and made deep pitch-dependent notches (-30 dB), so it stays until a listening test asks.
+- **Reverb density** (2026-10-04, sound round 3): a 16-line FDN (31-101 ms x 1.35), each
+  line's length swinging by up to 2.7 ms at its own 0.15-0.4 Hz. The old 8-line,
+  half-modulated FDN made left and right differ by up to 12 dB on a drone chord; now Space /
+  Resonance sit ~1 dB apart, Shimmer ~2 dB. The two-tap pitch shifter still flutters at
+  1/window on pure tones; more taps made deep notches (-30 dB), so it stays until a
+  listening test asks.
 - **VCO anti-aliasing** (2026-10-04, sound round 4): the saw and pulse edges used a two-point
   polyBLEP, which leaves aliases about 40 dB under a high note (audible as a rough flutter at
   oct+3), and the triangle's BLAMP switched itself off above ~3 kHz (naive shape, -34 dB).
@@ -236,16 +218,13 @@ Keep these unless a listening test or a real bug says otherwise.
   cents of TUNE and 47 of VOLT, and any knob moves in steps, so the generators glide to each
   new pitch instead of jumping. A whole-state load lands at once (`snapGlides`).
 - **MIDI notes under PLAY = TWIN / SPLIT** (owner's choice, 2026-10-04): split by note
-  range, so one controller plays both halves. Notes below the MIDI settings' SPLIT note
+  range, so one controller plays both halves. Notes below the input's SPLIT note (DEVICES)
   (default C4, range C1..C7, the key played before TRANSPOSE) go to the left side, the rest
   to the right. The side is fixed at note-on (`MidiNoteSides`), so a release, a pedal
   release or poly aftertouch reaches the half that holds the note; channel aftertouch
   follows the channel's latest note. Single merges both sides as before.
-- **DRONE VOICES start closed** (owner, 2026-10-04): the app opens, and RESET PANEL
-  leaves the machine, with all six keys off. Each new runtime starts with its drones
-  sounding and then closes them, so opening the app, RESET PANEL and every audio reopen
-  play a short drone swell that fades over the voices' RLS (2-5 s). The owner likes it
-  as a start-up sound; keep it.
+- **DRONE VOICES start closed** (owner, 2026-10-04): launch and RESET PANEL leave all six
+  keys off; the old start-up drone swell was replaced by the app's chime (below).
 - **The classic drones' photo sensors are played with the mouse** (owner, 2026-10-04): the
   four big white domes were decor. Light cannot be simulated, so `core/photo_sensor.h`
   models the chain instead of a knob: room light drifting slowly, a hand shadow with
@@ -273,30 +252,24 @@ Keep these unless a listening test or a real bug says otherwise.
   left, B right) to Music/Lunar 24. A full ring drops and counts frames instead of
   blocking the audio thread; a sample-rate change stops the recording.
 - **MIDI hot-plug by polling** (2026-10-04): RtMidi has no device-change notification, so the
-  idle watchdog asks the host's `ProbeMidiIO` to compare the port names once a second. On a
-  change the lists are rebuilt; the chosen input reopens when its device returns and closes
-  (all its notes released) when it goes. A chosen device that is not plugged in stays chosen
-  rather than being reset to "off".
-- **Several MIDI inputs** (owner's choice, 2026-10-12; the app opens up to 4, plugins take the
-  DAW's): each input has its own queue (one producer each) and its notes live on lanes
-  (input * 16 + channel), so two inputs playing the same note are two notes, and closing one
-  input releases only its notes and pedal. Bindings naming a device answer only that input;
-  CHANNEL / TRANSPOSE / VELOCITY / SPLIT are per input (named records in global.bin; at most 15,
-  a device set back to the every-device settings drops its own, and when full the earliest-created
-  record of a device not listed now makes room; names longer than 63 bytes are cut, as in
-  bindings). The plugins keep theirs in a record of their own, "(DAW track)", so the app and the
-  plugins never change each other's; the every-device settings (the one global setup from
-  before) are only a starting point now. An older version ignores the records and, if it saves
-  global.bin, drops them: after a downgrade each device plays with the every-device settings. MIDI clock follows the first input to send it until it is silent
-  for a second; pitch bend is one for the machine, the last input to move it wins.
-  The MIDI panel's DEVICES tab chooses the ports (`host/midi_devices.h`; Preferences has no
-  MIDI section and the app has no MIDI out): a new port starts off, the ones that are on are
+  idle watchdog asks `ProbeMidiIO` to compare port names once a second. A port that is ON
+  reopens when it returns and closes (its notes released) when it goes, staying ON and shown
+  NOT CONNECTED.
+- **Several MIDI inputs** (owner's choice, 2026-10-12): the app opens up to 4, plugins take
+  the DAW's. Each input has its own queue and its notes live on lanes (input * 16 + channel),
+  so closing one input releases only its notes and pedal; bindings naming a device answer only
+  that input. CHANNEL / TRANSPOSE / VELOCITY / SPLIT are per input (DEVICES), stored as named
+  records in global.bin: at most 15; settings equal to the every-device ones drop the record;
+  when full, the earliest-created record of a device not listed now makes room; names are cut
+  at 63 bytes. The plugins keep one record, "(DAW track)", so the app and the plugins never
+  change each other's. MIDI clock follows the first input to send it until it is silent for a
+  second; pitch bend is one for the machine, the last input to move it wins.
+  The DEVICES tab chooses the ports (`host/include/host/midi_devices.h`; Preferences has no
+  MIDI section, the app has no MIDI out): a new port starts off; the ones that are ON are
   remembered by name in settings.ini and reopen when plugged in; only on first use does the
-  first port turn on by itself (the old single Preferences choice carries over; "indev" keeps
-  the first port that is on for an older version). Ports are known by name: of two with the same
-  name only the first is used (its row says so; on macOS renaming one in Audio MIDI Setup > MIDI
-  Studio, its Display Name, makes them two: RtMidi then lists "<device name> <port name>"); on Windows RtMidi's port number is left out of
-  the name, so a choice survives other devices being plugged in first.
+  first port turn on by itself. Of two ports with the same name only the first is used (its
+  row says so; on macOS give one a Display Name in Audio MIDI Setup > MIDI Studio). On Windows
+  RtMidi's port number is left out of the name.
 - **Audio reopens only when it concerns the stream** (owner, 2026-10-13; `host/include/host/
   audio_device_watch.h`): the app used to reopen on every audio device added or removed, so
   plugging in an iPad (also an audio device) cut the sound. A device-list change now reopens only
@@ -333,6 +306,9 @@ Keep these unless a listening test or a real bug says otherwise.
   EXT.AUDIO and channel 2 the preamp, so with either at mid a mic left selected in Preferences
   put room noise (and claps, through the reverb) under the drones. A one-channel input (a
   laptop's built-in mic) feeds both, so it reaches the preamp like the hardware's contact mic.
+  The app also opens no audio input until an input channel is picked in Preferences: few
+  patches use it, macOS asks for permission, and a Bluetooth headset's mic drops its output
+  to call quality.
 - **Envelope follower ATTACK / RELEASE are exponential, 1 ms .. 1 s** (centre ~32 ms; RELEASE
   defaults to ~180 ms). The old linear law put 0.5 s at the centre, too slow for a clap to
   reach the gate detector. The gate detector has its own fast peak follower (1 ms / 50 ms,
@@ -343,7 +319,6 @@ Keep these unless a listening test or a real bug says otherwise.
   (`SynthRuntime::snapSmoothedLevels`). Pitch knobs are not smoothed (phase-continuous).
 - **Effector program switch** fades out, resets and fades in (~15 ms) — the hardware also
   reloads the program and cuts the tail (manual p.22).
-- **Per-sample constants are memoised**; the render stayed within 2e-15 of the old output.
 - **Whole-machine swap while audio runs** (owner chose "plan A", 2026-10-05): a DAW loading a
   project and RESET PANEL replace the machine with `swapDeviceState`. The outputs fade to
   silence, the audio callback sits behind its closed `AudioScope` (writes silence, touches
@@ -407,3 +382,7 @@ Keep these unless a listening test or a real bug says otherwise.
     0.7 (~15 s), BLEND 0.55; MASTER 0.52 keeps all six drones near the old -13 dBFS.
   - LFO A 0.2 Hz, B 0.1 Hz (they only act when patched).
   A saved machine keeps its own values; RESET PANEL brings these in.
+
+- **Windows hand tests** (owner, 2026-10-14; reverses the 2026-10-08 "no Windows Ableton test"):
+  the owner will hand-test the Windows app and plugins together (VST3 in Live for Windows) once
+  a Windows PC and Live for Windows are available; until then CI builds and validates them.

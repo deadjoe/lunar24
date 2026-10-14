@@ -49,11 +49,13 @@ as printed. The engine works in volts, so these relative strengths carry over. T
 on purpose: as FM they push pitch one way only.
 
 ## Product boundary
-- Only what the hardware has: no extra sound sources, modulation matrix, macros, plugin
-  formats or multi-patch library. The keyboard's own 4 presets are the only presets; the
-  app restores the last machine state on launch (like knobs and cables staying put).
+- Only what the hardware has, plus MIDI and the WAV recorder: no extra sound sources,
+  modulation matrix, macros or multi-patch library. The keyboard's own 4 presets are the only
+  presets; the app restores the last machine state on launch (like knobs and cables staying
+  put); the plugins save it in the DAW project.
 - Cables: any output to any input, one cable per jack; plugging overrides a normalled
   connection, unplugging restores it.
 - Four logical outputs: WET L/R + DRY A + DRY B. A stereo device gets WET L/R.
-- Tech: C++17, CMake, iPlug2 standalone app (macOS/Windows) with IGraphics UI; the synth
-  core (`core/`) never includes framework or platform headers.
+- Tech: C++17, CMake, iPlug2 (standalone app for macOS/Windows, VST3 for macOS/Windows, AUv2
+  for macOS) with IGraphics UI; the synth core (`core/`) never includes framework or platform
+  headers.
