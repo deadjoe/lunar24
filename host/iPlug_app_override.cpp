@@ -9,8 +9,7 @@
 // IPlugAPP.cpp at submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4.
 // The body is the upstream iPlug 2 library (its banner below is retained unchanged); the Lunar
 // modifications are Apache-2.0. See the "Lunar 24 modification" comment below the banner for the
-// exact diff. tools/check_host_override_drift.py asserts override == upstream + this allowlisted
-// hunk, so this fork is never a second divergent host truth.
+// changes.
 /*
  ==============================================================================
  
@@ -23,14 +22,11 @@
 
 // ---------------------------------------------------------------------------
 // Lunar 24 modification.
-// This is a repo-owned FORK of the pinned third_party/iPlug2/IPlug/APP/IPlugAPP.cpp at the
-// submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4. The ONLY change is inside
-// IPlugAPP::AppProcess: it no longer re-connects all MaxNChannels every block (a 2-out device
-// would then re-assert the declared 4-channel max and the callback's smaller output buffers would
-// be read out of bounds). It attaches/processes by the ACTUAL connected count the host installed
-// via LunarHostPlugin::setActualChannelPlan before OnReset. Everything else is byte-identical to
-// the upstream pin. tools/check_host_override_drift.py asserts override == upstream + this
-// allowlisted hunk, so these two files are never two divergent host truths.
+// IPlugAPP::AppProcess attaches and processes the channel count the host actually opened
+// (LunarHostPlugin::setActualChannelPlan) instead of re-connecting MaxNChannels every block: a
+// 2-out device would otherwise make the callback read past its smaller output buffers. It also
+// drains the app's MIDI input queues before each block. When upgrading iPlug2, diff this file
+// against the new upstream IPlugAPP.cpp and carry these changes over.
 // ---------------------------------------------------------------------------
 
 #include "IPlugAPP.h"

@@ -8,7 +8,7 @@
 // host/iPlug_app_host_override.cpp — a Lunar 24 FORK of the pinned third_party/iPlug2/IPlug/APP/
 // IPlugAPP_host.cpp at submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4.
 // The body is the upstream iPlug 2 library (its banner below is retained unchanged); the Lunar
-// modifications are Apache-2.0 and live in InitAudio/AudioCallback/TryToChangeAudio, named below.
+// modifications are Apache-2.0 and are summarised below the banner.
 /*
  ==============================================================================
  
@@ -21,23 +21,16 @@
 
 // ---------------------------------------------------------------------------
 // Lunar 24 modification.
-// This is a repo-owned FORK of the pinned third_party/iPlug2/IPlug/APP/IPlugAPP_host.cpp at the
-// submodule pin d54f69050f517e43b941d88c2a170f0a840b9ee4. The ONLY changes from upstream are:
-//   * InitAudio now negotiates the ACTUAL stream plan from the real device channel capability
-//     (lunar24::host::negotiate_stream_plan) and installs that actual connected count via
-//     LunarHostPlugin::setActualChannelPlan BEFORE OnReset, opens only that many channels, and
-//     fails-closed (installs 0-in/0-out + OnReset -> owner NOT-READY) on any negotiation/open/
-//     start failure. The input/output pointer lists are cleared+rebuilt to the actual count each
-//     open so a 2<->4 hot-swap can never accumulate stale pointers.
-//   * AudioCallback reads nins/nouts from the pointer-list sizes (the ACTUAL count), not from
-//     MaxNChannels.
-//   * TryToChangeAudio allows a TRUE output-only open (input off -> inert input id, never a
-//     forced input, no hard `if (inputID && outputID)` gate) and on a device lookup/disappear
-//     failure quiesces (CloseAudio) then invalidates to 0-in/0-out + OnReset (owner NOT-READY)
-//     instead of only returning false.
-// Everything else is byte-identical to the upstream pin. tools/check_host_override_drift.py
-// asserts override == upstream + these allowlisted hunks, so the two files are never two
-// divergent host truths.
+// The audio and MIDI plumbing of the standalone app is Lunar 24's own, built on this upstream
+// file:
+//   * InitAudio negotiates the channel plan the device really has (negotiate_stream_plan),
+//     installs it before OnReset, opens output only when no input is wanted, and fails closed
+//     (0-in/0-out, NO AUDIO) on any open/start failure; AudioCallback uses the opened counts.
+//   * TryToChangeAudio follows the system output, reopens only when a device change concerns
+//     the stream (audio_device_watch.h) and, from the idle watchdog, reopens a stalled stream.
+//   * MIDI: up to four input ports (midi_devices.h), hot-plug by polling, no MIDI out.
+//   * Settings (settings.ini) and the diagnostics log.
+// When upgrading iPlug2, diff against the new upstream IPlugAPP_host.cpp and carry these over.
 // ---------------------------------------------------------------------------
 
 #include "IPlugAPP_host.h"
