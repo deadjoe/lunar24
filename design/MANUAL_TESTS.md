@@ -1658,17 +1658,18 @@
 - 回退检查：把 2 号轨道 MIDI To 的第二个下拉框改回 `Track In`，**重新加载插件**（或重开 Live Set）：pad4 仍能切换（又回到第 1 通道、插件不看通道）。
 - AU 版重复上面几步（Live 的 AU 版本来就有 1–16 通道选项），结果相同。
 
-**T15.16 打击垫压力（Aftertouch）控制颤音和 PRESSURE 输出** ⏳
-- 准备：MPK 用测试预设（Aft = Chan）。在 BINDINGS 里找一个没有绑定的打击垫（下面叫"测试垫"）。RESET PANEL；DRONE VOICES 全关；BLEND 最左。键盘菜单 EXPRESSION 页：VIBRATO 的 **DEPTH** 约 1/4、**RATE** 放中间、**PRESSURE** 拉满。
+**T15.16 打击垫压力（Aftertouch）控制颤音和 PRESSURE 输出** ✅（2026-10-14）
+- 准备：MPK 用测试预设（Aft = Chan）。在 BINDINGS 里找一个没有绑定的打击垫（下面叫"测试垫"）。RESET PANEL；DRONE VOICES 全关；BLEND 最左。DEVICES 里 MPK 的 **TRANSPOSE** = **+24 st**（打击垫的音移到中音区，颤音更好听出来）。键盘菜单 EXPRESSION 页：VIBRATO 的 **DEPTH** 约 1/2、**RATE** 约 1/3、**DELAY** 最小、**PRESSURE** 拉满。
 - 步骤：
-  1. 轻轻按住测试垫不放（会弹出一个低音），保持约 2 秒；再慢慢加大压力按到底；再慢慢放轻，松开。
+  1. 轻轻按住测试垫不放，保持约 2 秒；再慢慢加大压力按到底；再慢慢放轻，松开。
   2. VIBRATO 的 **PRESSURE** 拉到最小，重复第 1 步。
-  3. VIBRATO 的 **DEPTH** 回最小。接线：键盘右侧插孔组的 **PRESSURE** 输出 → VCO A 的 **cv**，**cv amt** 约 1/4；EXPRESSION 页 PRESSURE OUTPUT = **PRESSURE**，RISE / FALL 最小。重复第 1 步。
+  3. VIBRATO 的 **DEPTH** 回最小。接线：键盘右侧插孔组的 **PRESSURE** 输出 → VCO A 的 **cv**，**cv amt** 约 1/2；EXPRESSION 页 PRESSURE OUTPUT = **PRESSURE**，RISE / FALL 最小。重复第 1 步。
 - 期望：
   - 第 1 步：轻按时颤音浅，越用力越深，放轻又变浅（按下那一刻的深浅由力度决定）。
   - 第 2 步：颤音深浅不随压力变化。
   - 第 3 步：用力时音高升高，放轻时回落，松开后不留残音。
-- 说明：MPK 的琴键不发 aftertouch，只有打击垫发。绑定到光敏头的打击垫，压力改为控制光敏头，不进键盘（见 T15.11）。
+- 说明：MPK 的琴键不发 aftertouch，只有打击垫发。绑定到光敏头的打击垫，压力改为控制光敏头，不进键盘（见 T15.11）。测完 MPK 的 TRANSPOSE 回 +0 st，拔掉 PRESSURE 的线。
+- 2026-10-14 owner 测试通过：按压时 MPK 屏幕的压力条随之变化，颤音深浅跟着变；PRESSURE 最小时不变；PRESSURE 输出带动音高。
 
 ### 16. 录音（REC）
 
@@ -1853,7 +1854,7 @@ T18.1–T18.3 不单独测：平时演奏遇到问题按 M 发日志时顺带核
 
 ## 还没测的（⏳）
 
-2026-10-14 在 main 上通过：T0.7、T0.11、T4.4、T8.8、T14.3、T14.6、T15.1。
+2026-10-14 在 main 上通过：T0.7、T0.11、T4.4、T8.8、T14.3、T14.6、T15.1、T15.16。
 
 - **等第二台 MIDI 设备**（M-VAVE SMC-Mixer，1–2 天到；DAW 模式下按钮发音符，CC 模式下推子发 CC）：T14.8 第 2 步、T14.9 第 1 步、T14.10、T14.11 第 4 步。插上后它在 DEVICES 里默认 OFF，先点 ON。
 - **两台同型号设备**：T14.14 的同名端口情况（暂无设备）。
@@ -1861,7 +1862,6 @@ T18.1–T18.3 不单独测：平时演奏遇到问题按 M 发日志时顺带核
   - App：T0.1–T0.5、T0.1W、T4.1、T4.4、T8.7、T12.18、T14.2、T14.6、T14.12、T16.1、T18.4（用户名含中文时最有意义）。
   - 插件：Ableton Live for Windows 里用 VST3 走 T17.1–T17.9、T17.11。2026-10-08 "不在 Windows 的 Ableton 里测"的决定已撤销。
 - **诊断日志 T18.1–T18.3**：不单独测，随日常演奏检查（见第 18 节）。
-- **MIDI 压力**：T15.16（新写，MPK 测试预设 Aft = Chan）。
 - **DRY 第 3 / 4 声道**：条件不具备，暂不测。业主的 Mac 只有 2 声道输出，BlackHole 2ch 也开不了 4 个声道；装 BlackHole 16ch 就能测（输出 3 / 4 = DRY A / B，用多声道录音软件录）。DRY 本身的声音已随 T16.1 确认。
 
 ## TODO
