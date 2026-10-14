@@ -1,6 +1,6 @@
 # Lunar 24 — status
 
-_Last updated: 2026-10-13._ Module-by-module comparison with the Solar 42N manual:
+_Last updated: 2026-10-14._ Module-by-module comparison with the Solar 42N manual:
 `design/ARCHITECTURE.md`. Manual tests and results: `design/MANUAL_TESTS.md`. Sound-source
 review and listening notes: `design/SOURCE_REVIEW.md`.
 
@@ -12,8 +12,9 @@ review and listening notes: `design/SOURCE_REVIEW.md`.
   5-step sequencer, preamp + envelope follower, touch keyboard (single / twin / split, arp,
   16-step sequencer, glide, vibrato, pressure modes, quantiser with scale editor, per-plate
   tuning, presets A-D). Patch cables, normalled connections, feedback loops.
-- **App (host/)**: macOS / Windows standalone with the official panel layout, MIDI input,
-  learn and named profiles, REC to WAV, machine state restored on launch.
+- **App (host/)**: macOS / Windows standalone with the official panel layout, up to four MIDI
+  inputs at once, learn and named profiles, REC to WAV, machine state restored on launch;
+  plugging in an unrelated audio device does not interrupt the sound.
 - **Plugins**: VST3 (Mac, Windows) and AUv2 (Mac) from the same code. The machine and drone
   keys are saved in the DAW project; MIDI profiles are shared with the app; REC does not
   respond. Plan: `design/PLUGIN_PLAN.md`; hand tests: MANUAL_TESTS sections 15 and 17.
@@ -55,10 +56,13 @@ review and listening notes: `design/SOURCE_REVIEW.md`.
 - REC (headphone corner): WET, DRY or ALL to 24-bit WAVs in Music/Lunar 24. `M` = log MARK.
 
 ## Next steps
-1. Hand-test the Windows app (MANUAL_TESTS ⏳; the owner schedules it).
-2. Several MIDI devices: hand-tested with the MPK + iPad (2026-10-13). Still to test with a second
-   device that sends notes: the same note from two devices, and a held photo pad unplugged.
-3. When the owner asks: tune sounds by ear (MANUAL_TESTS "调音待办").
+1. Several MIDI devices: hand-tested with the MPK + iPad (2026-10-13). Still to test with a
+   second device that sends notes (an M-VAVE SMC-Mixer is on its way), in the app and the
+   plugins: the same note from two devices, a binding that answers one device only, and a held
+   photo pad unplugged (MANUAL_TESTS T14.8-T14.11).
+2. Hand-test the Windows app and plugins together, the VST3 in Live for Windows (MANUAL_TESTS
+   ⏳; when the owner has a Windows PC and Live).
+3. A sound-polishing round when the owner schedules it: "调音待办" and the open tail issue #9.
 4. Plugin phases 2/3: options analysed in PLUGIN_PLAN section 9; not started.
 
 ## Decided not to do (for now)
@@ -66,7 +70,6 @@ review and listening notes: `design/SOURCE_REVIEW.md`.
 - Arp HOLD replacing the chord on a new press: new plates join the held chord (max 12).
 - Effector tails across a program switch (the hardware cuts them too).
 - Photo-eye LED lit by CV MOD / LFO: CV acts on pitch directly.
-- Windows Ableton hand test of the VST3 (no Windows machine; CI validates it).
 - AUv3 and CLAP: Ableton does not load CLAP; AUv3 needs an app extension and a paid
   Apple developer account.
 
