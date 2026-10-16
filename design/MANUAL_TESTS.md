@@ -1856,7 +1856,7 @@ T18.1–T18.3 不单独测：平时演奏遇到问题按 M 发日志时顺带核
 
 2026-10-14 在 main 上通过：T0.7、T0.11、T4.4、T8.8、T14.3、T14.6、T15.1、T15.16。
 
-- **等第二台 MIDI 设备**（M-VAVE SMC-Mixer，1–2 天到；DAW 模式下按钮发音符，CC 模式下推子发 CC）：T14.8 第 2 步、T14.9 第 1 步、T14.10、T14.11 第 4 步。插上后它在 DEVICES 里默认 OFF，先点 ON。
+- **第二台 MIDI 设备已到**（M-VAVE SMC-Mixer，2026-10-16；DAW 模式下按钮发音符，CC 模式下推子发 CC）：待测 T14.8 第 2 步、T14.9 第 1 步、T14.10、T14.11 第 4 步。插上后它在 DEVICES 里默认 OFF，先点 ON。
 - **两台同型号设备**：T14.14 的同名端口情况（暂无设备）。
 - **Windows（owner 在一台 Windows 电脑上一次测完）**：Actions 的 Lunar24-Windows 和 Lunar24-Plugins-Windows。
   - App：T0.1–T0.5、T0.1W、T4.1、T4.4、T8.7、T12.18、T14.2、T14.6、T14.12、T16.1、T18.4（用户名含中文时最有意义）。
@@ -1878,7 +1878,8 @@ T18.1–T18.3 不单独测：平时演奏遇到问题按 M 发日志时顺带核
   - 演奏数据都从 **MPK Mini IV MIDI Port** 发出；DAW / Plugin / Software Control / Din 端口是给 DAW 脚本的，DEVICES 里只开 MIDI Port。
   - **测试用预设**（owner 已建）：Toggle = Off、KnobM = Rel、Aft = Chan、FullVel = Off，MidiCh / PadCh 默认（琴键 1、打击垫 10，所以打击垫学出来是 CH 10；切成 CC# 后是 `CC 36 / CH 1`）。MIDI 测试都先切到它；DEVICES 里 MPK 的 CHANNEL 保持 ANY。
   - Rel 旋钮实测是 **REL 2**（顺时针 1、逆时针 127），Learn 后自动识别（T15.3）。
-- **M-VAVE SMC-Mixer**（第二台设备，即将到）：DAW 模式下按钮发音符，CC 模式下推子发 CC；用于 T14.8–T14.11 的待测步骤。
+- **M-VAVE SMC-Mixer**（2026-10-16 到货）：USB-C 和蓝牙都能连；DEVICES 里 ON / OFF、插拔、蓝牙断开重连都会自动反映。8 个无限旋钮、8 个推子、每列 4 个按钮、11 个全局按钮；DAW 模式下按钮发音符，CC 模式下推子发 CC。
+- **两台设备的号码和分工**（SMC 的 CC 分配、MPK / SMC / 鼠标各管什么、Ableton 设置）：见 [MIDI_RIG.md](MIDI_RIG.md)。
 - **尾音隔离准备（#9）**：先记录要保留的设置。PLAY = SINGLE、MODE = KEYBOARD、HOLD（ARP 页）= OFF；只开 VOICE MIXER 的 VCO A（VCO B 也拖到最小），其它 VOL 最小，DRONE VOICES 全关。envelope A hold 关、R = 0、S 适中，移除 gate / vca cv 外部接线；两侧 FILTER 的 RES 最小、FREQ 较高，DIST 最小；BLEND 最左后等一秒，MASTER 用低音量。按下再松开同一音，检查是否仍有明显长尾；允许短暂衰减。若仍有长尾，保留接线和设置截图、录音再定位。
 - **MUTE（#11）**：MUTE 只淡出输出，解除后能听到静音期间的尾音，属既定行为（DECISIONS）。
 
