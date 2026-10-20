@@ -29,7 +29,9 @@ good-sounding instrument with a usable panel UI.
   check). `design/MIDI_RIG.md` (in Chinese) is the owner's controller setup: CC numbers and
   which control (MPK / SMC-Mixer / mouse) drives what; keep it current when the rig changes.
   `design/PLUGIN_PLAN.md` (in Chinese) is the AU / VST3 plugin plan; update it when
-  the plan changes. No governance logs, role rosters, or message IDs in the repo.
+  the plan changes. `learn/` is the Chinese tutorial for teenage players; it has its own
+  rules in `learn/AGENTS.md` and never shows repo paths or code to readers. No governance
+  logs, role rosters, or message IDs in the repo.
 - **Commit messages are plain English**: what changed and why, no internal ticket jargon.
 - Before finishing: `cmake --build build && ctest --test-dir build` must pass, and for audio
   changes render a WAV with `lunar24_render` and describe what changed in the sound.
