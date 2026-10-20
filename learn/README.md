@@ -62,8 +62,9 @@ PDF 是独立文件，可以单独发。阅读页（带试听和完整词典）�
 
 - 配色取自面板：奶油底 `#E9E0D2`、墨黑 `#0C0A0A`、红 `#CB2026`、青 `#005E7A`、绿 `#005E3B`、橙（加深）`#A14E16`。章节色：Drone / 外部 = 青，VCO / 键盘 = 绿，混音 / 效果 = 橙，其余 = 红。
 - 每页一个“动手试试”，最多两个术语交给右下角的“嗡嗡词典”；术语第一次出现时解释，全集在阅读页末尾。缩写第一次出现时写出中文全称，第 5 页是缩写总表。
-- 面板图标注：红色 ①② 是跳线的两端，黑色编号对应图下的图例。标注用控件的 registry id，面板改版后坐标自动跟着走。
+- 面板图标注：红色 ①② 是跳线的两端，黑色编号对应图下的图例；同一页有跳线时，黑色图例改用 A、B、C。标注用控件的 registry id，面板改版后坐标自动跟着走。
 - 文字以 App 当前行为为准，不把硬件手册的说法直接套过来；示例 MIDI 设备是渲染示例，不是真实连接。
+- 制作说明不进读者材料，只记在这里：面板图由 App 的绘制代码离线渲染（Drone 键按开机状态画成全暗），不是运行中的截屏；8 段试听由 `lunar24_render` 离线生成，48 kHz / 16-bit，App 的 REC 录的是 24-bit。
 - 随仓库提交：`source/`、`assets/`、`output/` 当前版本、`index.html` 和两份说明；`.build/` 与 `source/node_modules/` 由 `learn/.gitignore` 排除，可随时重建。
 
 ## 已知取舍
@@ -120,7 +121,7 @@ ARCH = 仓库 `design/ARCHITECTURE.md`；头文件在 `core/include/lunar24/core
 | 40 | 10 路混音：谁在前，谁在旁边 | ARCH §16.1；voice_mixer.h（等功率 cos/sin） |
 | 41 | 双滤波器：留下什么，突出什么 | ARCH §16.2；polivoks_vcf.h（TPT/ZDF SVF，Simper）；machine_runtime.h |
 | 42 | 失真：把波形推弯 | ARCH §16.3；distortion.h（tanh、ADAA、1+40·GAIN²） |
-| 43 | 先选卡带，再让一侧载入 | ARCH §17；effector.h（15 ms 交叉淡化）；panel_editor.h |
+| 43 | 先选卡带，再让一侧载入 | ARCH §17；effector.h（约 15 ms 淡出 → 清空切换 → 约 15 ms 淡入，不重叠）；panel_editor.h |
 | 44 | Shimmer：尾音里长出八度 | ARCH §17；effector.h（16 线 FDN、颗粒移调） |
 | 45 | 卡带地图：按想要的声音找 | ARCH §18；spec lunar24.json；effector.h |
 | 46 | LFO：请一个慢动作助手 | ARCH §5.1、16.2；lfo.h；machine_runtime.h |

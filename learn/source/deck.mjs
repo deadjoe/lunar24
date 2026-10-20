@@ -59,7 +59,7 @@ function marksHtml(f, counter) {
   const html = f.marks.map(m => {
     let badge, cls = 'mark';
     if (m.n) badge = `<span class="num">${esc(m.n)}</span>`, cls += ' patch';
-    else { const k = ++counter.n; badge = `<span class="num">${k}</span>`; legend.push(`<span class="lg"><i>${k}</i>${t(m.label)}</span>`); }
+    else { const k = counter.letters ? 'ABCDEF'[counter.n++] : ++counter.n; badge = `<span class="num">${k}</span>`; legend.push(`<span class="lg"><i>${k}</i>${t(m.label)}</span>`); }
     return (m.split ? m.ids.map(id => [id]) : [m.ids]).map(ids => {
       const [x, y, bw, bh] = box(ids);
       const L = (x - cx) / cw * 100, T = (y - cy) / ch * 100, W = bw / cw * 100, H = bh / ch * 100;
@@ -76,7 +76,8 @@ function figure(f, counter, overlay = '') {
 }
 function figureArea(p, overlay = '') {
   const arrow = p.patch ? `<div class="cable"><span></span></div>` : '';
-  const counter = {n: 0};
+  // Next to red cable numbers, legend marks count A, B, C so the two never read as one series.
+  const counter = {n: 0, letters: p.figs.some(f => f.marks.some(m => m.n))};
   const items = p.figs.map(f => figure(f, counter, overlay));
   const cls = ['figs', p.stack ? 'stack' : '', p.patch ? 'patch' : '', items.some(h => h.includes('<figcaption>')) ? 'caps' : ''].join(' ');
   return `<div class="${cls}">${items.join(arrow)}</div>`;

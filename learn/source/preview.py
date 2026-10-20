@@ -91,7 +91,7 @@ page = f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="v
 <nav><div class="wrap">{navhtml}<a href="#dict" style="--c:#CB2026">词典</a></div></nav>
 <main class="wrap">{"".join(sections)}
 <div class="dict" id="dict"><div class="intro"><img src="../../assets/art/critter-a.png" alt=""><div><h2>嗡嗡词典</h2>教程里出现过的全部术语，按第一次出现的顺序排列。</div></div><dl>{glossary}</dl></div></main>
-<footer class="wrap">面板图片由 Lunar 24 自己的界面绘制程序生成，和你在 App 里看到的一致；MIDI 设备和绑定是示例。试听片段由 Lunar 24 的声音引擎离线生成（48 kHz / 16-bit），App 里 REC 录下的是 24-bit。</footer>
+<footer class="wrap">图中的 MIDI 设备和绑定只是示例，以你自己的控制器为准。</footer>
 <a class="top" href="#top">回顶部</a>
 <script>document.querySelectorAll("audio").forEach(a=>a.addEventListener("play",()=>document.querySelectorAll("audio").forEach(b=>{{if(b!==a)b.pause()}})));</script></html>'''
 
