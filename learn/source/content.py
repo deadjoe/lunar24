@@ -52,7 +52,8 @@ FIGS = {
     'mixer': ('panel', 805.5, 531.5, 791, 181),
     'processing': ('panel', 805.5, 178.5, 791, 357),
     'generator': ('generator', 805.5, 178.5, 791, 357),
-    'filter_row': ('panel', 805.5, 412, 791, 123.5),
+    # The lower half of the processing panel: MOD L / R knobs (y 362-402) stay whole.
+    'filter': ('panel', 805.5, 344, 791, 191.5),
     'lfoa': ('panel', 17.5, 880.5, 280, 152),
     'joystick': ('panel', 294.5, 880.5, 306, 152),
     'seq5': ('panel', 599.5, 880.5, 950, 152),
@@ -176,7 +177,7 @@ TERMS = {
     'smooth': ('参数平滑', 'Parameter Smoothing', '', '旋钮跳到新值时，声音参数用几毫秒追过去，而不是瞬间跳变，避免“咔哒”声。'),
     'signalpath': ('信号路径', 'Signal Path', '', '声音从产生到你耳朵所经过的路线。排查问题时顺着它一段段检查最有效。'),
     'samplerate': ('采样率 · 位深', 'Sample Rate · Bit Depth', '', '采样率是每秒记录多少个点（48 kHz = 4.8 万个）；位深是每个点记得多精细，24-bit 比 16-bit 更细腻。'),
-    'crossfade': ('交叉淡化', 'Crossfade', '', '旧声音淡出的同时新声音淡入。Lunar 换效果程序时用约 15 毫秒交叉淡化，避免爆音。'),
+    'fade': ('淡出 · 淡入', 'Fade Out · Fade In', '', 'Lunar 换效果程序时，先用约 15 毫秒把旧程序淡出，清空后换上新程序，再用约 15 毫秒淡入，避免咔哒声。新旧声音不会重叠，所以旧尾音会被切断。'),
 }
 
 P = []
@@ -208,7 +209,7 @@ page('start', '旋钮，也是你的乐器', 'split', lead='Lunar 24 是一台�
      src='ARCH §1；machine_runtime.h')
 
 page('start', '第一个声音：DRONE 1', 'split', figw=0.36,
-     figs=[fig('dronekeys', mk('drone_key.1', n='1'))],
+     figs=[fig('dronekeys', mk('drone_key.1', label='DRONE 1'), cap='开机时六个键都是暗的')],
      blocks=[('先接好耳机或音箱', ['Mac：菜单 Lunar 24 → Preferences…',
                                   'Windows：File → Preferences…（Ctrl+,）',
                                   '选好 Output Device 和输出通道，点 Apply。主音量先放低。']),
@@ -235,12 +236,12 @@ page('start', '面板上的缩写，一页看懂', 'abbr',
      src='spec/machine/lunar24.json 模块与参数名')
 
 page('start', '发声和控制，是两种工作', 'split',
-     figs=[fig('vcoa', mk('vco_a.v_oct_in', n='1'), mk(['vco_a.cv_in', 'vco_a.pwm_in', 'vco_a.sync_in'], n='2'))],
+     figs=[fig('vcoa', mk('vco_a.v_oct_in', label='音高 CV 输入'), mk(['vco_a.cv_in', 'vco_a.pwm_in', 'vco_a.sync_in'], label='其它控制输入'))],
      blocks=[('Audio：声音本身', ['振荡器不停地重复一个波形。',
                                 '每秒重复的次数叫频率，单位 Hz；重复得越快，听起来越高。']),
              ('CV 与 Gate：指挥怎样发声', ['CV（控制电压）是连续变化的控制数值，比如“音高要多高”。',
                                          'Gate（门）只有开和关：琴键按下就开，松开就关。'])],
-     try_='图中 ① 是收音高 CV 的插孔，② 是其它控制输入。这里的“电压”只是软件里的数字，不需要真的电线。',
+     try_='在图里找到 1 号音高 CV 输入和 2 号其它控制输入。这里的“电压”只是软件里的数字，不需要真的电线。',
      terms=['cv', 'hz'],
      more='Audio 和 CV 的区别在于“你拿这个信号去做什么”。可以听见的音频也能接到控制输入上，产生非常快的参数变化——后面的 FM 就是这样。',
      src='ARCH §1.4、4；signal.h；vco.h')
@@ -360,7 +361,7 @@ page('papa', 'NOISE：风、沙沙声和空气', 'split', audio='03-noise',
                                '慢慢转滤波器，就像风从明亮变得低沉。'])],
      try_='只听 DRONE 3：PITCH 最小，NOISE 开一点，然后慢慢转左右两个滤波器的 FREQ。',
      terms=['noise', 'prng'],
-     more='即使 NOISE 转到最小，内部的噪声仍然在给 S&H 使用。试听在第 6 秒降低滤波器的截止频率，注意噪声从亮变暗。',
+     more='即使 NOISE 转到最小，内部的噪声仍然在给 S&H 使用。试听在第 6 秒降低滤波器的截止频率，注意噪声从亮变暗。做完后双击 PITCH，让音调回来，下一页还要用。',
      src='ARCH §3.2；drone_noise.h（seeded PRNG）；machine_runtime.h')
 
 page('papa', 'S&H：把随机变成台阶', 'split',
@@ -376,7 +377,7 @@ page('papa', 'S&H：把随机变成台阶', 'split',
 
 page('papa', '第一根跳线：随机音高', 'split', audio='04-sample-hold',
      figs=[fig('drone3', mk('drone_3.sh_out', n='1'), mk('drone_3.cv_in', n='2'), cap='从 ① S&H OUT 拖一根线到 ② cv')],
-     blocks=[('接法和起点', ['只开 DRONE 3：fm、am 关，NOISE 最小。',
+     blocks=[('接法和起点', ['只开 DRONE 3：双击 PITCH 让音调回来（上一页把它关了），fm、am 关，NOISE 最小。',
                             '从 ① 拖线到 ②；rate 放中间，divider 先放最小。']),
              ('接着演奏它', ['慢慢加大 divider，听音高换得越来越慢。',
                            '转 PITCH，整段随机旋律跟着移到别的音区。'])],
@@ -499,7 +500,7 @@ page('ext', '把自己的声音送进 Lunar', 'split', figw=0.6,
      src='ARCH §1.3、7；preamp.h；stream_plan.h')
 
 page('ext', '包络跟随器：让声音指挥声音', 'split', figw=0.62,
-     figs=[fig('external', mk('env_follower.env_out', n='1')), fig('filter_row', mk('vcf.cv_l_in', n='2'))],
+     figs=[fig('external', mk('env_follower.env_out', n='1')), fig('filter', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
      patch=True, stack=True,
      blocks=[('env：跟着响度走', ['先把声音变成正值，再抹平抖动，得到一条响度曲线。',
                                'attack 管上升快慢，release 管回落快慢。']),
@@ -635,7 +636,7 @@ page('mix', '双滤波器：留下什么，突出什么', 'split', figw=0.6,
      src='ARCH §16.2；polivoks_vcf.h（TPT/ZDF SVF，Simper）；machine_runtime.h')
 
 page('mix', '失真：把波形推弯', 'split', figw=0.56,
-     figs=[fig('filter_row', mk('vcf.gain', label='GAIN'), mk('vcf.dist', label='DIST'))],
+     figs=[fig('filter', mk('vcf.gain', label='GAIN'), mk('vcf.dist', label='DIST'))],
      blocks=[('GAIN 决定推多狠', ['软件用 tanh 曲线把波形柔和地压弯，增加谐波。',
                                 '轻推更厚，重推像 fuzz；内置补偿让音量不会暴涨。']),
              ('DIST 决定混入多少', ['DIST 调失真前、后两种声音的比例。',
@@ -653,9 +654,9 @@ page('fx', '先选卡带，再让一侧载入', 'split', figw=0.58,
              ('左右两台效果器', ['左右可以运行不同的程序；混音器的 PAN 决定声音送去哪边。',
                                'X、Y、Z 和 BLEND 两边共用。换程序会切断旧的尾音。'])],
      try_='左边先载入 CATHEDRAL 1；再换一盒卡带载到右边，比较左右的空间感。',
-     terms=['feedback', 'crossfade'],
+     terms=['feedback', 'fade'],
      more='卡带槽标签第一行是候选卡带，下面的 L / R 是两侧正在运行的程序。右键或 Shift + 点击换到上一盒。X / Y / Z 的含义随程序变化，见附录“卡带索引”。',
-     src='ARCH §17；effector.h（15 ms 交叉淡化）；panel_editor.h')
+     src='ARCH §17；effector.h（约 15 ms 淡出 → 清空切换 → 约 15 ms 淡入，不重叠）；panel_editor.h')
 
 page('fx', 'Shimmer：尾音里长出八度', 'split', audio='07-shimmer', figw=0.58,
      figs=[fig('processing', mk(['effector.x', 'effector.y', 'effector.z'], label='X · Y · Z'), mk('effector.blend', label='BLEND'))],
@@ -681,7 +682,7 @@ page('fx', '卡带地图：按想要的声音找', 'split', figw=0.42,
 
 # ── 让参数动起来 ────────────────────────────────────────────────────────────────────────
 page('mod', 'LFO：请一个慢动作助手', 'split', figw=0.6,
-     figs=[fig('lfoa', mk('lfo_a.cv_out', n='1')), fig('filter_row', mk('vcf.cv_l_in', n='2'))],
+     figs=[fig('lfoa', mk('lfo_a.cv_out', n='1')), fig('filter', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
      patch=True, stack=True,
      blocks=[('wave、rate 和倍率', ['wave 在三角（平滑来回）和方波（两端跳）之间混合。',
                                   'rate 决定快慢，x1 / x6 / x10 开关再加速。']),
@@ -705,7 +706,7 @@ page('mod', '5 步音序器：每一步一个姿态', 'wide',
      src='ARCH §6；five_step_sequencer.h')
 
 page('mod', '一根线，做出五种明暗', 'wide',
-     figs=[fig('seq5', mk('sequencer.cv_out', n='1')), fig('filter_row', mk('vcf.cv_l_in', n='2'))],
+     figs=[fig('seq5', mk('sequencer.cv_out', n='1')), fig('filter', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
      patch=True,
      blocks=[('先做一个能听的起点', ['只开 DRONE 1，BLEND 最小。',
                                   '把 ① 5 步 cv 接到 ② 滤波器 CV L；MOD L / R 开一点，PULSER 放慢。']),
@@ -801,7 +802,7 @@ page('keep', 'REC：录下整段演奏', 'split', figw=0.4,
                            '24-bit WAV 存在“音乐”文件夹的 Lunar 24 里。插件里用 DAW 录音。'])],
      try_='录完马上回放一次：开头有没有被切掉？结尾有没有给尾音留时间？',
      terms=['samplerate'],
-     more='DRY 文件左声道是 A，右声道是 B。WET 受 MASTER 影响，DRY 绕过主处理链。本教程的试听片段是离线生成的 16-bit WAV，和 App 里 24-bit 的 REC 录音格式不同。',
+     more='DRY 文件左声道是 A，右声道是 B。WET 受 MASTER 影响，DRY 绕过主处理链。',
      src='ARCH §1.2；wav_recorder.h；main.mm / window_metrics_win.cpp（Music/Lunar 24）')
 
 page('help', '没声音？沿着声路往后找', 'flow', diagram='check',

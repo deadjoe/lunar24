@@ -21,6 +21,9 @@ def sub(old, new):
 sub('const core::DeviceStateV1& defaults()', 'core::DeviceStateV1& defaults()')
 sub('static const core::DeviceStateV1 st =', 'static core::DeviceStateV1 st =')
 sub('#include <host/panel_ui_layout.h>', '#include <host/panel_ui_layout.h>\n#include <lunar24/registry.hpp>')
+# The app lights a DRONE VOICES key only while that drone is on; at start-up all six are off.
+sub('art::drawDroneKey(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), true, false);',
+    'art::drawDroneKey(sink, float(w.x()), float(w.y()), float(w.x() + w.w), float(w.y() + w.h), false, false);')
 sub('st.arpMask = 0x12;', 'v[P::keyboard_seq_length] = 2.0 / 14.0; st.arpMask = 0x12;')
 sub('st.steps[i] = {notes[i], i != 3 && i != 9};', 'st.steps[i] = {notes[i], true};')
 sub('  const auto ws = build_panel_layout();\n', '''  if (option == "--generator") {
@@ -50,6 +53,7 @@ sub('  const auto ws = build_panel_layout();\n', '''  if (option == "--generator
     return 0;
   }
 ''')
+build.mkdir(parents=True, exist_ok=True)
 src = build / 'tutorial_preview.cpp'
 src.write_text(s)
 exe = build / 'tutorial_preview'
