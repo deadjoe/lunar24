@@ -40,6 +40,8 @@ python3 learn/source/render-audio.py               #    只在要重做试听时
 
 试排几页：`LEARN_ONLY=07,12 LEARN_REV=v4 node learn/source/deck.mjs`（不出 PDF）。大改时把两处 `v4` 换成新版本号，确认满意后删掉旧版本目录。
 
+重渲母图（第 2 步）后，内容没变的图片也可能出现肉眼看不出的字节差异。提交前用 `git checkout -- <文件>` 还原这些图，再重跑第 4、5 步，让提交里只有真正改过的页。
+
 `deck.mjs` 打出的 `CHECK` 行必须为零，之后仍要逐页看 PNG：
 - `overflows` / `spills out of the body`：文字太长，删短一点，或把这页的 `figw`（图占的宽度比例，默认 0.5）调小。
 - `title wraps`：标题超过一行，缩短标题。
