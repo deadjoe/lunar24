@@ -52,8 +52,6 @@ FIGS = {
     'mixer': ('panel', 805.5, 531.5, 791, 181),
     'processing': ('panel', 805.5, 178.5, 791, 357),
     'generator': ('generator', 805.5, 178.5, 791, 357),
-    # The lower half of the processing panel: MOD L / R knobs (y 362-402) stay whole.
-    'filter': ('panel', 805.5, 344, 791, 191.5),
     'lfoa': ('panel', 17.5, 880.5, 280, 152),
     'joystick': ('panel', 294.5, 880.5, 306, 152),
     'seq5': ('panel', 599.5, 880.5, 950, 152),
@@ -500,7 +498,7 @@ page('ext', '把自己的声音送进 Lunar', 'split', figw=0.6,
      src='ARCH §1.3、7；preamp.h；stream_plan.h')
 
 page('ext', '包络跟随器：让声音指挥声音', 'split', figw=0.62,
-     figs=[fig('external', mk('env_follower.env_out', n='1')), fig('filter', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
+     figs=[fig('external', mk('env_follower.env_out', n='1')), fig('processing', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
      patch=True, stack=True,
      blocks=[('env：跟着响度走', ['先把声音变成正值，再抹平抖动，得到一条响度曲线。',
                                'attack 管上升快慢，release 管回落快慢。']),
@@ -636,7 +634,7 @@ page('mix', '双滤波器：留下什么，突出什么', 'split', figw=0.6,
      src='ARCH §16.2；polivoks_vcf.h（TPT/ZDF SVF，Simper）；machine_runtime.h')
 
 page('mix', '失真：把波形推弯', 'split', figw=0.56,
-     figs=[fig('filter', mk('vcf.gain', label='GAIN'), mk('vcf.dist', label='DIST'))],
+     figs=[fig('processing', mk('vcf.gain', label='GAIN'), mk('vcf.dist', label='DIST'))],
      blocks=[('GAIN 决定推多狠', ['软件用 tanh 曲线把波形柔和地压弯，增加谐波。',
                                 '轻推更厚，重推像 fuzz；内置补偿让音量不会暴涨。']),
              ('DIST 决定混入多少', ['DIST 调失真前、后两种声音的比例。',
@@ -681,9 +679,9 @@ page('fx', '卡带地图：按想要的声音找', 'split', figw=0.42,
      src='ARCH §18；spec lunar24.json；effector.h')
 
 # ── 让参数动起来 ────────────────────────────────────────────────────────────────────────
-page('mod', 'LFO：请一个慢动作助手', 'split', figw=0.6,
-     figs=[fig('lfoa', mk('lfo_a.cv_out', n='1')), fig('filter', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
-     patch=True, stack=True,
+page('mod', 'LFO：请一个慢动作助手', 'split', figw=0.66,
+     figs=[fig('lfoa', mk('lfo_a.cv_out', n='1')), fig('processing', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
+     patch=True,
      blocks=[('wave、rate 和倍率', ['wave 在三角（平滑来回）和方波（两端跳）之间混合。',
                                   'rate 决定快慢，x1 / x6 / x10 开关再加速。']),
              ('接线后还要给它深度', ['把 ① LFO A 接到 ② 滤波器 CV L，rate 慢一点，MOD L / R 开一点。',
@@ -706,7 +704,7 @@ page('mod', '5 步音序器：每一步一个姿态', 'wide',
      src='ARCH §6；five_step_sequencer.h')
 
 page('mod', '一根线，做出五种明暗', 'wide',
-     figs=[fig('seq5', mk('sequencer.cv_out', n='1')), fig('filter', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
+     figs=[fig('seq5', mk('sequencer.cv_out', n='1')), fig('processing', mk('vcf.cv_l_in', n='2'), mk(['vcf.l_mod', 'vcf.r_mod'], label='MOD L / R'))],
      patch=True,
      blocks=[('先做一个能听的起点', ['只开 DRONE 1，BLEND 最小。',
                                   '把 ① 5 步 cv 接到 ② 滤波器 CV L；MOD L / R 开一点，PULSER 放慢。']),
