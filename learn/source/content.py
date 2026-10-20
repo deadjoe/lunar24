@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Lunar 24 声音实验室 — the editable source of every page.
 
 Run `python3 learn/source/content.py` to rebuild .build/slides.json (read by deck.mjs and

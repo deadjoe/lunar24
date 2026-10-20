@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Lunar 24 contributors
+// SPDX-License-Identifier: Apache-2.0
+//
 // Render every panel state the tutorial shows to a 3x master PNG.
 // The SVG comes from the tutorial copy of the app's panel_preview (shared drawing code);
 // Chrome draws its labels with Noto Sans, the font the app embeds.

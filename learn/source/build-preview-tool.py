@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Build .build/tutorial_preview: a copy of the app's tools/panel_preview.cpp with a few tutorial
 fixtures (GENERATOR loaded, a 4-step sequence) and --widgets-named (control ids + boxes for the
 red outlines). Never edits the app's own sources. Run from anywhere: python3 learn/source/build-preview-tool.py

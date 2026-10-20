@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Build the reading page output/<rev>/index.html and the learn/index.html redirect.
 
 Each page shows its slide image, the audio clip if it has one, and the "再深入一点" text;

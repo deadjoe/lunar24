@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Lunar 24 contributors
+// SPDX-License-Identifier: Apache-2.0
+//
 // Lay out every page of .build/slides.json as a 1280 x 720 HTML slide, then let Chrome render
 // output/<rev>/slides/NN.png (1920 x 1080) and output/<rev>/Lunar24-声音实验室.pdf.
 // Run from the repo root: LEARN_REV=v4 node learn/source/deck.mjs   (LEARN_ONLY=07,12 renders a few)

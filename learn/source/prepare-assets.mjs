@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Lunar 24 contributors
+// SPDX-License-Identifier: Apache-2.0
+//
 // Cut the tutorial's panel figures out of the 3x masters (render-panels.mjs) and cut the
 // red creature out of the cover art. Crop boxes live in content.py (FIGS).
 // Run from the repo root after content.py: node learn/source/prepare-assets.mjs

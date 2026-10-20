@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Lunar 24 contributors
+# SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 import subprocess,json,wave,math,array,concurrent.futures
 root=Path(__file__).resolve().parents[1]; exe=root.parent/'build/lunar24_render'; out=root/'assets/audio'
