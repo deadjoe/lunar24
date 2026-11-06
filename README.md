@@ -25,6 +25,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+The tests need `python3` on `PATH`, version 3.9 or newer, standard library only. The rarely used
+`tools/gen_*.py` scripts declare their own packages: run them with `uv run` (see each script).
+
 VST3 needs the Steinberg SDK inside the iPlug2 submodule. CI fetches it like this:
 
 ```sh

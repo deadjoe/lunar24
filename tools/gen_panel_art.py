@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Lunar 24 contributors
 # SPDX-License-Identifier: Apache-2.0
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pymupdf==2.1"]
+# ///
 """Generate host/include/host/panel_art.generated.h from the official Solar 42N panel PDF.
 
 Extracts, in 2400 x 1552 panel units:
@@ -16,9 +20,8 @@ a widget of host/include/host/panel_ui_layout.h is skipped. The widget list come
 preview tool, so build it first.
 
 The PDF itself is third-party material and is not committed. Usage:
-    pip install pymupdf
     ./build/panel_preview --widgets > widgets.json
-    python3 tools/gen_panel_art.py path/to/Solar42_panel.pdf widgets.json
+    uv run tools/gen_panel_art.py path/to/Solar42_panel.pdf widgets.json
 """
 
 import json
