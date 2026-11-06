@@ -386,3 +386,10 @@ Keep these unless a listening test or a real bug says otherwise.
 - **Windows hand tests** (owner, 2026-10-14; reverses the 2026-10-08 "no Windows Ableton test"):
   the owner will hand-test the Windows app and plugins together (VST3 in Live for Windows) once
   a Windows PC and Live for Windows are available; until then CI builds and validates them.
+
+- **Python is not pinned to a machine** (owner, 2026-11-06): both Macs share this repo but not
+  a Homebrew setup, and a stored interpreter path broke the tests when `python@3.14` went away.
+  CTest therefore calls bare `python3` off Windows, resolved from `PATH` at run time (Windows
+  keeps `find_package`; no reliable `python3` there). Those scripts stay standard library only,
+  Python 3.9 or newer. `tools/gen_*.py` carry exact package versions in their own header and
+  run through `uv run`, so nothing depends on what a machine's Python has installed.

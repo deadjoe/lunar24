@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Lunar 24 contributors
 # SPDX-License-Identifier: Apache-2.0
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["fonttools==4.63.0"]
+# ///
 """Generate host/include/host/panel_logo.generated.h: the Lunar 24 name plates as outlines.
 
 The name plates are set in Saira (SIL Open Font License 1.1, third_party/licenses/Saira-OFL.txt),
@@ -8,9 +12,8 @@ expanded width and semi-bold — a wide, rounded-square face in the spirit of th
 logotype. The text is stored as flattened outlines, so the app needs no font file.
 
 Usage:
-    pip install fonttools
     curl -LO "https://raw.githubusercontent.com/google/fonts/main/ofl/saira/Saira%5Bwdth,wght%5D.ttf"
-    python3 tools/gen_panel_logo.py "Saira[wdth,wght].ttf"
+    uv run tools/gen_panel_logo.py "Saira[wdth,wght].ttf"
 """
 
 import os

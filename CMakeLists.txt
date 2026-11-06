@@ -47,14 +47,25 @@ target_compile_features(lunar_host INTERFACE cxx_std_17)
 # end-to-end engine tests. No per-task probe/mutation/acceptance machinery.
 # ---------------------------------------------------------------------------
 enable_testing()
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# These scripts use only the standard library and run on Python 3.9 or newer. Off Windows the
+# bare name is resolved from PATH when ctest runs, so no interpreter path is stored in the build
+# tree and a Python upgrade cannot break it. Windows has no reliable python3 command.
+if(WIN32)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  set(LUNAR_PYTHON "${Python3_EXECUTABLE}")
+else()
+  set(LUNAR_PYTHON python3)
+endif()
 
 # The committed generated headers must match spec/machine/lunar24.json.
 add_test(NAME registry_regen_zero_diff
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_registry.py --check)
+  COMMAND ${LUNAR_PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_registry.py --check)
+# Reordering the spec must not change any stable numeric id.
+add_test(NAME registry_id_stability
+  COMMAND ${LUNAR_PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_id_stability.py)
 # core/ stays framework-free (no iPlug2 / platform headers).
 add_test(NAME core_headers_gate
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_core_headers.py)
+  COMMAND ${LUNAR_PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_core_headers.py)
 
 function(lunar_enable_warnings target)
   if(MSVC)

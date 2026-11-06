@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Lunar 24 contributors
 # SPDX-License-Identifier: Apache-2.0
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["fonttools==4.63.0"]
+# ///
 """Generate host/include/host/ui_font.generated.h: the panel's label font, built into the app.
 
 The app used to ask the OS for a system font by name ("Helvetica Neue" / "Segoe UI");
@@ -10,9 +14,8 @@ third_party/licenses/NotoSans-OFL.txt) is a humanist sans close to the hardware'
 Grande labels. Only the characters the panel uses are kept.
 
 Usage:
-    pip install fonttools
     curl -LO "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth,wght%5D.ttf"
-    python3 tools/gen_ui_font.py "NotoSans[wdth,wght].ttf"
+    uv run tools/gen_ui_font.py "NotoSans[wdth,wght].ttf"
 """
 
 import io
